@@ -1012,7 +1012,7 @@ export class SidebarNavService {
           { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-between-lines', routerLink: org('groups') },
         ],
       },
-      // Org admin — divider only (no section label); Profile sits under it, with EasyCLA above it when M3 is on.
+      // Org admin — divider only (no section label); Profile sits under it, with EasyCLA above it.
       {
         label: 'Organization Profile',
         icon: 'fa-light fa-memo',

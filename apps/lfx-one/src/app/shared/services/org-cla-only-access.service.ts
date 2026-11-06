@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 const NO_ORGS: ReadonlySet<string> = new Set();

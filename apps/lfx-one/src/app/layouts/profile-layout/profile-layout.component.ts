@@ -99,7 +99,7 @@ export class ProfileLayoutComponent {
   // the initial GET, so we stash it and re-apply once a GET lands (see reapplyPendingOptimisticUpdate).
   private pendingOptimisticMetadata: Partial<UserMetadata> | null = null;
 
-  public readonly tabs: ProfileTab[] = PROFILE_TABS;
+  protected readonly tabs: ProfileTab[] = PROFILE_TABS;
 
   // Profile data from the service (server-fetched). The profile GET is eventually consistent
   // (read-after-write lag in the auth-service), so after a save we apply an optimistic override

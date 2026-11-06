@@ -4,9 +4,9 @@
 /**
  * Shared setup for the Org Lens EasyCLA specs (GH-1978).
  *
- * The gate spec, the content spec and the structural spec all need the same thing before they can
- * assert anything: an authenticated app with an organization selected. Only
- * the CLA list response differs between them, so that is the parameter and the rest is fixed here.
+ * The content spec and the structural spec both need the same thing before they can assert
+ * anything: an authenticated app with an organization selected. Only the CLA list response differs
+ * between them, so that is the parameter and the rest is fixed here.
  */
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';

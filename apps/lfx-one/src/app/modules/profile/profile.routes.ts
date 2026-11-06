@@ -34,7 +34,7 @@ export const PROFILE_ROUTES: Routes = [
         loadComponent: () => import('./individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
       },
 
-      // CLAs tab — read-only EasyCLA agreements.
+      // CLAs tab — EasyCLA agreements.
       {
         path: 'clas',
         title: 'CLAs',

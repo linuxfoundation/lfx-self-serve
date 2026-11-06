@@ -357,10 +357,9 @@ describe('org-clas router', () => {
    * everything the router put in front of it, so a guard deleted from a route line would leave
    * every controller test green.
    *
-   * There is no environment gate to assert. So what stands in front of these two routes is
-   * exactly what is asserted below: the Org Lens grant on both, the impersonation guard on the
-   * write, and the CLA service's own signing-authority check past them. A shorter list than it
-   * was, which makes each of these cases more load-bearing rather than less.
+   * There is no environment gate to assert. What stands in front of these two routes is exactly
+   * what is asserted below: the Org Lens grant on both, the impersonation guard on the write, and
+   * the CLA service's own signing-authority check past them.
    */
 
   /**
