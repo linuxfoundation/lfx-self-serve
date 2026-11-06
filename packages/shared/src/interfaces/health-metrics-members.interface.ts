@@ -199,6 +199,13 @@ export interface HealthMetricsMembersGrowthLabelClasses {
   regular: string;
 }
 
+/** An end label's box in pixels, so labels that share December can be pushed apart. */
+export interface HealthMetricsMembersGrowthLabelBox {
+  offsetPx: Record<HealthMetricsMembersGrowthLabelPlacement, number>;
+  heightPx: number;
+  gapPx: number;
+}
+
 /** A label on the plot, positioned in percent of the plot box, with its offset and weight classes. */
 export interface HealthMetricsMembersGrowthLabelView {
   key: string;

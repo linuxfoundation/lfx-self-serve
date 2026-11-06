@@ -23,6 +23,7 @@ import {
   HEALTH_METRICS_MEMBERS_GROWTH_BASELINE_YEAR,
   HEALTH_METRICS_MEMBERS_GROWTH_COLORS,
   HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR,
+  HEALTH_METRICS_MEMBERS_GROWTH_LABEL_BOX,
   HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES,
   HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS,
   HEALTH_METRICS_MEMBERS_GROWTH_PLOT,
@@ -207,15 +208,25 @@ export function buildHealthMetricsMembersGrowthView(
   }
   if (raw.size === 0) return emptyGrowthView();
 
+  // A year with no measured total is missing, never a year of zeros; this year missing leaves nothing to show.
   const yearValues = (year: number, through = 11): number[] | null => {
-    const months = raw.get(year);
-    return months ? fillCumulative(months.slice(0, through + 1)) : null;
+    const months = raw.get(year)?.slice(0, through + 1);
+    return months?.some((value) => value !== null) ? fillCumulative(months) : null;
   };
-  const current = yearValues(currentYear, now) ?? fillCumulative(Array<number | null>(now + 1).fill(null));
+  const current = yearValues(currentYear, now);
+  if (current === null) return emptyGrowthView();
   const prior = yearValues(currentYear - 1);
   const baseline = currentYear > HEALTH_METRICS_MEMBERS_GROWTH_BASELINE_YEAR ? yearValues(HEALTH_METRICS_MEMBERS_GROWTH_BASELINE_YEAR) : null;
-  const earlierYears = [...raw.keys()].filter((year) => year <= currentYear - 2).sort((a, b) => b - a);
-  const earlier = new Map(earlierYears.map((year) => [year, yearValues(year) ?? []]));
+  const earlier = new Map(
+    [...raw.keys()]
+      .filter((year) => year <= currentYear - 2)
+      .sort((a, b) => b - a)
+      .flatMap((year): [number, number[]][] => {
+        const values = yearValues(year);
+        return values ? [[year, values]] : [];
+      })
+  );
+  const earlierYears = [...earlier.keys()];
   const bandYears = earlierYears.filter((year) => year >= HEALTH_METRICS_MEMBERS_GROWTH_BAND_FIRST_YEAR);
 
   const sofar = current[now];
@@ -268,36 +279,43 @@ export function buildHealthMetricsMembersGrowthView(
       .join(' ')} Z`;
   }
 
-  const labels: HealthMetricsMembersGrowthLabelView[] = [
+  const labels = separateGrowthEndLabels([
     {
       key: 'current',
       text: `${currentYear}: ${formatCount(sofar)}`,
       leftPct: leftPct(now),
       topPct: topPct(sofar),
       color: colors.current,
-      classes: growthLabelClasses('below-right', true),
+      placement: 'below-right',
+      strong: true,
     },
-  ];
-  if (hasProjection) {
-    labels.push({
-      key: 'projected',
-      text: `~${formatCount(projected)} projected`,
-      leftPct: 100,
-      topPct: topPct(projected),
-      color: colors.current,
-      classes: growthLabelClasses('right-below', false),
-    });
-  }
-  if (prior) {
-    labels.push({
-      key: 'prior',
-      text: `${currentYear - 1}: ${formatCount(prior[11])}`,
-      leftPct: 100,
-      topPct: topPct(prior[11]),
-      color: colors.prior,
-      classes: growthLabelClasses('right', true),
-    });
-  }
+    ...(hasProjection
+      ? [
+          {
+            key: 'projected',
+            text: `~${formatCount(projected)} projected`,
+            leftPct: 100,
+            topPct: topPct(projected),
+            color: colors.current,
+            placement: 'right-below' as const,
+            strong: false,
+          },
+        ]
+      : []),
+    ...(prior
+      ? [
+          {
+            key: 'prior',
+            text: `${currentYear - 1}: ${formatCount(prior[11])}`,
+            leftPct: 100,
+            topPct: topPct(prior[11]),
+            color: colors.prior,
+            placement: 'right' as const,
+            strong: true,
+          },
+        ]
+      : []),
+  ]);
 
   const columns = HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS.map((label, month): HealthMetricsMembersGrowthColumnView => {
     const rows: HealthMetricsChartTipRowView[] = [];
@@ -1081,9 +1099,40 @@ function emptyGrowthView(): HealthMetricsMembersGrowthView {
   };
 }
 
-function growthLabelClasses(placement: HealthMetricsMembersGrowthLabelPlacement, strong: boolean): string {
+/** An end label before it is laid out: where it sits off its point, and whether it is set bold. */
+interface GrowthEndLabel {
+  key: string;
+  text: string;
+  leftPct: number;
+  topPct: number;
+  color: string;
+  placement: HealthMetricsMembersGrowthLabelPlacement;
+  strong: boolean;
+}
+
+/**
+ * Lays out the labels, pushing those that share December apart so each stays readable however close their totals;
+ * only the labels move, never the points. The plot is drawn at its viewBox height, so its units are pixels.
+ */
+function separateGrowthEndLabels(labels: GrowthEndLabel[]): HealthMetricsMembersGrowthLabelView[] {
+  const box = HEALTH_METRICS_MEMBERS_GROWTH_LABEL_BOX;
+  const height = HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height;
+  const tops = new Map(labels.map((label) => [label.key, (label.topPct / 100) * height + box.offsetPx[label.placement]]));
+  const stacked = labels.filter((label) => label.leftPct === 100).sort((a, b) => (tops.get(a.key) ?? 0) - (tops.get(b.key) ?? 0));
+  stacked.forEach((label, index) => {
+    const above = index ? (tops.get(stacked[index - 1].key) ?? 0) + box.heightPx + box.gapPx : -Infinity;
+    tops.set(label.key, Math.max(tops.get(label.key) ?? 0, above));
+  });
+
   const classes = HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES;
-  return `${classes.placement[placement]} ${strong ? classes.strong : classes.regular}`;
+  return labels.map((label) => ({
+    key: label.key,
+    text: label.text,
+    leftPct: label.leftPct,
+    topPct: (((tops.get(label.key) ?? 0) - box.offsetPx[label.placement]) / height) * 100,
+    color: label.color,
+    classes: `${classes.placement[label.placement]} ${label.strong ? classes.strong : classes.regular}`,
+  }));
 }
 
 /** A year's running totals with gaps carried forward from the month before, starting from none. */
@@ -1113,8 +1162,8 @@ function buildGrowthKpis(
   projected: number
 ): HealthMetricsOverviewKpiView[] {
   const months = now + 1;
-  const monthsLabel = months === 1 ? 'in January' : `in the first ${months} months`;
-  const rest = now === 10 ? 'If December follows' : 'If the rest of the year follows';
+  const monthsLabel = growthMonthsLabel(months);
+  const rest = growthPaceSentence(now, projected);
   const since = baseline ? Math.round(((sofar - baseline) / baseline) * 100) : null;
 
   return [
@@ -1141,9 +1190,21 @@ function buildGrowthKpis(
       note: '',
       tip:
         `An estimate based on this year’s pace. ${formatCount(sofar)} new members joined ${monthsLabel}, about ` +
-        `${formatCount(Math.round(sofar / months))} a month. ${rest} the same pace, the year ends at about ${formatCount(projected)}.`,
+        `${formatCount(Math.round(sofar / months))} a month. ${rest}`,
     },
   ];
+}
+
+function growthMonthsLabel(months: number): string {
+  if (months === 1) return 'in January';
+  return months === 12 ? 'so far this year' : `in the first ${months} months`;
+}
+
+/** The projection's last sentence; in December there is no rest of the year left to follow the pace. */
+function growthPaceSentence(now: number, projected: number): string {
+  if (now === 11) return `December is the last month, so the year ends at about ${formatCount(projected)}.`;
+  const who = now === 10 ? 'December follows' : 'the rest of the year follows';
+  return `If ${who} the same pace, the year ends at about ${formatCount(projected)}.`;
 }
 
 /** The change on last year in whole percent; one that rounds to zero draws no arrow. */

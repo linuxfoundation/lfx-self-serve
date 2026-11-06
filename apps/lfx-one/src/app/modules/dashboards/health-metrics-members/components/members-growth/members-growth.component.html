@@ -106,9 +106,9 @@
           }
           <div class="absolute inset-0" role="list" aria-label="Cumulative new members per month">
             @for (column of growth.columns; track column.month; let index = $index) {
-              <!-- Each month's target is centred on it; hover or focus draws a guide down its middle. -->
+              <!-- Each month's target is centred on it and spans the month spacing; hover or focus draws a guide down its middle. -->
               <div
-                class="absolute inset-y-0 w-[calc(100%/12)] -translate-x-1/2 outline-none hover:bg-[linear-gradient(to_right,transparent_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%+0.5px),transparent_calc(50%+0.5px))] focus-visible:bg-[linear-gradient(to_right,transparent_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%+0.5px),transparent_calc(50%+0.5px))] focus-visible:ring-2 focus-visible:ring-blue-500"
+                class="absolute inset-y-0 w-[calc(100%/11)] -translate-x-1/2 outline-none hover:bg-[linear-gradient(to_right,transparent_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%+0.5px),transparent_calc(50%+0.5px))] focus-visible:bg-[linear-gradient(to_right,transparent_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%+0.5px),transparent_calc(50%+0.5px))] focus-visible:ring-2 focus-visible:ring-blue-500"
                 role="listitem"
                 tabindex="0"
                 [style.left.%]="column.leftPct"

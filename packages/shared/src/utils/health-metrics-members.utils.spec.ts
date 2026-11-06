@@ -455,9 +455,36 @@ describe('buildHealthMetricsMembersGrowthView', () => {
     expect(december.labels.map((label) => label.key)).toEqual(['current', 'prior']);
   });
 
-  it('is unmeasured with no month rows, or only rows before the first year drawn', () => {
+  it('is unmeasured with no month rows, only rows before the first year drawn, or no measured total this year', () => {
     expect(build('highlights', {}).measured).toBe(false);
     expect(build('highlights', { 2015: [1, 2, 3] }).measured).toBe(false);
+    expect(build('highlights', { ...YEARS, 2026: Array(11).fill(null) }).measured).toBe(false);
+  });
+
+  it('treats an earlier year with no measured total as missing, never as zeros', () => {
+    const view = build('highlights', { ...YEARS, 2025: Array(12).fill(null), 2024: Array(12).fill(null) });
+
+    expect(view.kpis[1].value).toBe('—');
+    expect(view.paths.map((line) => line.key)).toEqual(['projected', '2026']);
+    expect(view.legend.at(-1)?.label).toBe('2018–2019 range');
+    expect(view.columns[10].tip.rows.map((row) => row.label)).toEqual(['2026', '2019', '2018', '2017']);
+  });
+
+  it('keeps December labels apart when their totals meet, without moving the points', () => {
+    const view = build('highlights', { ...YEARS, 2025: [...YEARS[2025].slice(0, 11), 874] });
+    const [projected, prior] = ['projected', 'prior'].map((key) => view.labels.find((label) => label.key === key)!);
+    const boxTop = (topPct: number, offset: number): number => (topPct / 100) * 280 + offset;
+
+    expect(Math.abs(boxTop(prior.topPct, -8) - boxTop(projected.topPct, -2))).toBeGreaterThanOrEqual(18);
+    expect(view.paths.find((line) => line.key === '2025')?.d.endsWith('L600 35.3')).toBe(true);
+  });
+
+  it('says in December that the year ends at its total so far, with nothing left to project', () => {
+    const tip = build('highlights', YEARS, new Date(2026, 11, 2)).kpis[3].tip;
+
+    expect(tip).toContain('joined so far this year');
+    expect(tip).toContain('December is the last month, so the year ends at about');
+    expect(tip).not.toContain('follows the same pace');
   });
 });
 

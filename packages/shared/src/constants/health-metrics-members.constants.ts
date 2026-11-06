@@ -31,6 +31,7 @@ import type {
   HealthMetricsMembersDirectoryTierOption,
   HealthMetricsMembersEngagementLevel,
   HealthMetricsMembersGrowth,
+  HealthMetricsMembersGrowthLabelBox,
   HealthMetricsMembersGrowthLabelClasses,
   HealthMetricsMembersGrowthViewOption,
   HealthMetricsMembersNps,
@@ -51,7 +52,8 @@ import type {
 export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   {
     key: 'growth',
-    empty: { icon: 'fa-light fa-chart-line', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
+    // Always the running year, whatever the period, so the empty state never names a past year.
+    empty: { icon: 'fa-light fa-chart-line', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members, snapshot: true },
     label: 'Member growth by year',
     heading: 'Member growth by year',
     description: 'Cumulative new members joining each month, this year against last year and the historical range.',
@@ -213,6 +215,13 @@ export const HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES: HealthMetricsMembersGr
   },
   strong: 'font-semibold',
   regular: 'font-medium',
+};
+
+/** An end label's box in pixels: its top off its point per placement (as the classes offset it), height and least gap. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_LABEL_BOX: HealthMetricsMembersGrowthLabelBox = {
+  offsetPx: { 'below-right': 4, 'right-below': -2, right: -8 },
+  heightPx: 16,
+  gapPx: 2,
 };
 
 /** The view switch over the growth chart; the first is the default. */
