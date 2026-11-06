@@ -278,6 +278,17 @@ describe('the page grammar', () => {
     expect(mktgPrintBackTitleRich(look, 'Open standards')).toMatchObject({ color: look.onDark, align: 'CENTER', anchor: 'MIDDLE' });
     expect(mktgPrintBackTitleRich(look, 'Open standards').paras[0]).toMatchObject({ text: 'Open standards', caps: true, size: MKTG_PRINT_PAGE_SIZE.title });
     expect(cover.subtitle?.paras[0]).toMatchObject({ text: 'Logos, color, type and usage on one reference.', size: 15 });
+    expect(cover.titleBox).toBeUndefined();
+    expect(cover.subtitleBox).toBeUndefined();
+    // A cover's own boxes: carried on the page, the subtitle fitted to its own (here a box one line tall, so it is set smaller).
+    const long = Array.from({ length: 3 }, () => 'Logos, color, type and usage on one reference.').join(' ');
+    const boxes = { title: { x: 38, y: 126, w: 624, h: 139 }, subtitle: { x: 38, y: 265, w: 624, h: 30 } };
+    const own = mktgPrintCoverPage(look, 'Positioning & brand', long, [], 40, boxes);
+    expect(own.titleBox).toEqual(boxes.title);
+    expect(own.subtitleBox).toEqual(boxes.subtitle);
+    expect(own.titleRich.paras[0].size).toBe(40);
+    expect(mktgPrintCoverPage(look, 'Positioning & brand', long, [], 40).subtitle?.paras[0].size).toBe(15);
+    expect(own.subtitle?.paras[0].size).toBeLessThan(15);
     const back = mktgPrintBackPage(look, 'Open tooling for everyone', []);
     expect(back.layout).toBe('back');
     expect(back.titleRich.paras[0]).toMatchObject({ text: 'Open tooling for everyone', caps: true });

@@ -122,12 +122,13 @@ export class MktgPrintPageComponent {
   };
   /** The fixed boxes' CSS, built once. */
   protected readonly titleStyle = mktgPageBoxStyle(MKTG_PRINT_PAGE_TITLE_BOX);
-  protected readonly coverTitleStyle = mktgPageBoxStyle(MKTG_PRINT_PAGE_COVER_TITLE_BOX);
-  protected readonly coverSubtitleStyle = mktgPageBoxStyle(MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX);
   protected readonly backTitleStyle = mktgPageBoxStyle(MKTG_PRINT_PAGE_BACK_TITLE_BOX);
   protected readonly logoStyle = mktgPageBoxStyle(MKTG_PRINT_PAGE_LOGO_FRAME);
   protected readonly areaStyle = mktgPageBoxStyle(MKTG_PRINT_PAGE_AREA);
 
+  /** A cover's boxes: the page's own when it sets them, else the deck's cover boxes. */
+  protected readonly coverTitleStyle = computed(() => mktgPageBoxStyle(this.page()?.titleBox ?? MKTG_PRINT_PAGE_COVER_TITLE_BOX));
+  protected readonly coverSubtitleStyle = computed(() => mktgPageBoxStyle(this.page()?.subtitleBox ?? MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX));
   protected readonly pageLayout = computed<MktgPrintPageLayout>(() => this.page()?.layout ?? this.layout());
   protected readonly isContent = computed(() => this.pageLayout() === 'content');
   protected readonly pageTitle = computed(() => this.title() ?? this.page()?.title ?? '');

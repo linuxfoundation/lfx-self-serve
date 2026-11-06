@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_PRINT_LANDSCAPE_CLASS, MKTG_PRINT_PAGE_COVER_EYEBROW_BOX, MKTG_PRINT_PAGE_COVER_LOGO_BOX } from '@lfx-one/shared/constants';
+import {
+  MKTG_PRINT_LANDSCAPE_CLASS,
+  MKTG_PRINT_PAGE_COVER_EYEBROW_BOX,
+  MKTG_PRINT_PAGE_COVER_LOGO_BOX,
+  MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX,
+  MKTG_PRINT_PAGE_COVER_TITLE_BOX,
+} from '@lfx-one/shared/constants';
 import { mktgPagePt, mktgPrintBrand, mktgPrintFooterLine, mktgPrintPageLook, mktgPrintShapeEl } from '@lfx-one/shared/utils';
 import { describe, expect, it } from 'vitest';
 import { MktgPrintCoverComponent } from './mktg-print-cover.component';
@@ -46,6 +52,18 @@ describe('MktgPrintCoverComponent', () => {
     expect(els[4].style.top).toBe(mktgPagePt(MKTG_PRINT_PAGE_COVER_LOGO_BOX.y));
     expect(els[4].style.width).toBe(mktgPagePt(MKTG_PRINT_PAGE_COVER_LOGO_BOX.w));
     expect(els[5].style.backgroundColor).not.toBe('');
+
+    // The title and subtitle in the deck's cover boxes by default (the kit's cover), or in a document's own.
+    const title = root.querySelector<HTMLElement>('[data-testid="mktg-print-page-title"]');
+    const subtitle = root.querySelector<HTMLElement>('[data-testid="mktg-print-page-subtitle"]');
+    expect(title?.style.top).toBe(mktgPagePt(MKTG_PRINT_PAGE_COVER_TITLE_BOX.y));
+    expect(subtitle?.style.top).toBe(mktgPagePt(MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX.y));
+    fixture.componentRef.setInput('titleBox', { x: 38, y: 126, w: 624, h: 139 });
+    fixture.componentRef.setInput('subtitleBox', { x: 38, y: 265, w: 624, h: 66 });
+    await fixture.whenStable();
+    expect(title?.style.top).toBe(mktgPagePt(126));
+    expect(subtitle?.style.top).toBe(mktgPagePt(265));
+    expect(subtitle?.style.height).toBe(mktgPagePt(66));
 
     // A document's own lockup frame (the kit's cover sets none: the deck's coverSlide carries no logo).
     fixture.componentRef.setInput('logoBox', { x: 40, y: 20, w: 120, h: 30 });

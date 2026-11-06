@@ -8,6 +8,8 @@ import {
   MKTG_PRINT_PAGE_COVER_FOOTER_LEFT_BOX,
   MKTG_PRINT_PAGE_COVER_FOOTER_RIGHT_BOX,
   MKTG_PRINT_PAGE_COVER_LOGO_BOX,
+  MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX,
+  MKTG_PRINT_PAGE_COVER_TITLE_BOX,
   MKTG_PRINT_PAGE_COVER_TOP_RIGHT_BOX,
   MKTG_PRINT_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
@@ -44,6 +46,9 @@ export class MktgPrintCoverComponent {
   public readonly logo = input<MktgPrintLogo | null>(null);
   /** The lockup's box in deck points; the family cover's frame (MKTG_PRINT_PAGE_COVER_LOGO_BOX) by default. */
   public readonly logoBox = input<MktgPrintPageBox>(MKTG_PRINT_PAGE_COVER_LOGO_BOX);
+  /** The title's and the subtitle's boxes in deck points; the deck's cover boxes (the kit's) by default. */
+  public readonly titleBox = input<MktgPrintPageBox>(MKTG_PRINT_PAGE_COVER_TITLE_BOX);
+  public readonly subtitleBox = input<MktgPrintPageBox>(MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX);
   public readonly eyebrow = input('');
   public readonly topRight = input('');
   public readonly footerLeft = input('');
@@ -69,7 +74,7 @@ export class MktgPrintCoverComponent {
         ...(logo ? [{ t: 'image' as const, box: this.logoBox(), src: logo.src, alt: logo.alt, filter: logo.filter }] : []),
         ...this.els(),
       ];
-      return mktgPrintCoverPage(look, this.title(), this.subtitle(), els, this.titleSize());
+      return mktgPrintCoverPage(look, this.title(), this.subtitle(), els, this.titleSize(), { title: this.titleBox(), subtitle: this.subtitleBox() });
     });
   }
 }

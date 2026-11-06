@@ -3,9 +3,9 @@
 
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { MKTG_PRINT_LANDSCAPE_CLASS } from '@lfx-one/shared/constants';
+import { MKTG_PRINT_FAMILY_COVER_BOXES, MKTG_PRINT_LANDSCAPE_CLASS } from '@lfx-one/shared/constants';
 import { MktgFamilyPrintView } from '@lfx-one/shared/interfaces';
-import { mktgPrintBrand } from '@lfx-one/shared/utils';
+import { mktgPagePt, mktgPrintBrand } from '@lfx-one/shared/utils';
 import { expect, it } from 'vitest';
 import { MktgPrintCoverComponent } from '../mktg-print-cover/mktg-print-cover.component';
 import { MktgPrintFamilyCoverComponent } from './mktg-print-family-cover.component';
@@ -38,6 +38,11 @@ it("prints the deck's cover with the family's strings at 40 pt on the dark groun
   const cover = fixture.debugElement.query(By.directive(MktgPrintCoverComponent)).componentInstance as MktgPrintCoverComponent;
   expect(cover.titleSize()).toBe(40);
   expect(cover.logo()).toEqual(view().brand.logoOnDark);
+  // The family's own title and subtitle boxes (the appendix spec §4), not the kit cover's.
+  expect(cover.titleBox()).toEqual(MKTG_PRINT_FAMILY_COVER_BOXES.title);
+  expect(cover.subtitleBox()).toEqual(MKTG_PRINT_FAMILY_COVER_BOXES.subtitle);
+  expect(root.querySelector<HTMLElement>('[data-testid="mktg-print-page-title"]')?.style.top).toBe(mktgPagePt(126));
+  expect(root.querySelector<HTMLElement>('[data-testid="mktg-print-page-subtitle"]')?.style.top).toBe(mktgPagePt(265));
   const frame = root.querySelector<HTMLElement>('[data-testid="mktg-print-page"]');
   expect(frame?.getAttribute('data-layout')).toBe('cover');
   expect(frame?.classList.contains('lfx-print-page--dark')).toBe(true);

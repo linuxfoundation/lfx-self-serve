@@ -149,6 +149,9 @@ export interface MktgPrintPage {
   titleRich: MktgPrintRich;
   /** A cover's subtitle, fitted; none on the other layouts. */
   subtitle?: MktgPrintRich;
+  /** A cover's own boxes; absent = the deck's cover boxes. */
+  titleBox?: MktgPrintPageBox;
+  subtitleBox?: MktgPrintPageBox;
   head?: MktgPrintPageHead;
   footer?: MktgPrintPageFooter;
   els: MktgPrintPageEl[];

@@ -372,15 +372,20 @@ export function mktgPrintCoverPage(
   title: string,
   subtitle: string,
   els: MktgPrintPageEl[],
-  titleSize: number = MKTG_PRINT_PAGE_SIZE.coverTitle
+  titleSize: number = MKTG_PRINT_PAGE_SIZE.coverTitle,
+  boxes: { title?: MktgPrintPageBox; subtitle?: MktgPrintPageBox } = {}
 ): MktgPrintPage {
   const titleRich = mktgPrintCoverTitleRich(look, title, titleSize);
+  const subtitleBox = boxes.subtitle ?? MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX;
   const subtitleRich = mktgPrintFitOrCut(
     { paras: [mktgPrintPara(subtitle, MKTG_PRINT_PAGE_SIZE.coverSubtitle)], color: look.onDark, font: look.font },
-    MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX.w,
-    MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX.h
+    subtitleBox.w,
+    subtitleBox.h
   ).rich;
-  return { layout: 'cover', title, titleRich, subtitle: subtitleRich, els };
+  const page: MktgPrintPage = { layout: 'cover', title, titleRich, subtitle: subtitleRich, els };
+  if (boxes.title) page.titleBox = boxes.title;
+  if (boxes.subtitle) page.subtitleBox = boxes.subtitle;
+  return page;
 }
 
 /** A back cover: the title (a brand line) in capitals, centred, on the dark ground; `els` its own lines. */

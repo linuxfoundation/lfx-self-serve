@@ -7,6 +7,7 @@ import {
   MKTG_PRINT_LANDSCAPE_CLASS,
   MKTG_PRINT_PAGE_AREA,
   MKTG_PRINT_PAGE_BACK_TITLE_BOX,
+  MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX,
   MKTG_PRINT_PAGE_COVER_TITLE_BOX,
   MKTG_PRINT_PAGE_LEFT,
   MKTG_PRINT_PAGE_LOGO_FRAME,
@@ -173,6 +174,17 @@ describe('MktgPrintPageComponent', () => {
     expect(els).toHaveLength(3);
     expect(els[0].textContent?.trim()).toBe(`${PROJECT} · A Linux Foundation project`);
     expect(els[2].textContent?.trim()).toBe('V1.0 · November 2026');
+    // The title and subtitle sit in the deck's cover boxes, or in the page's own when it sets them.
+    const title = root.querySelector<HTMLElement>('[data-testid="mktg-print-page-title"]');
+    const subtitle = root.querySelector<HTMLElement>('[data-testid="mktg-print-page-subtitle"]');
+    expect(title?.style.top).toBe(pt(MKTG_PRINT_PAGE_COVER_TITLE_BOX.y));
+    expect(subtitle?.style.top).toBe(pt(MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX.y));
+    fixture.componentInstance.page = { ...sampleCover(), titleBox: { x: 38, y: 126, w: 624, h: 139 }, subtitleBox: { x: 38, y: 265, w: 624, h: 66 } };
+    await fixture.whenStable();
+    expect(title?.style.top).toBe(pt(126));
+    expect(title?.style.height).toBe(pt(139));
+    expect(subtitle?.style.top).toBe(pt(265));
+    expect(subtitle?.style.width).toBe(pt(624));
   });
 
   it('sets the paragraphs in the block’s face and leading, ahead of the app’s global p rules', () => {

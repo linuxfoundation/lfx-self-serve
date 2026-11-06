@@ -33,11 +33,11 @@
         </div>
       }
     } @else if (pageLayout() === 'cover') {
-      <div class="pp-box pp-title" [style]="coverTitleStyle" data-testid="mktg-print-page-title">
+      <div class="pp-box pp-title" [style]="coverTitleStyle()" data-testid="mktg-print-page-title">
         <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: titleView() }" />
       </div>
       @if (subtitleView(); as subtitle) {
-        <div class="pp-box" [style]="coverSubtitleStyle" data-testid="mktg-print-page-subtitle">
+        <div class="pp-box" [style]="coverSubtitleStyle()" data-testid="mktg-print-page-subtitle">
           <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: subtitle }" />
         </div>
       }
