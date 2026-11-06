@@ -538,6 +538,7 @@ describe('mktgPrintFamilyPlan', () => {
     // 1 cover, 2–6 framework, 7–13 kit, 14 divider, 15 cards, 16 divider, 17 grid, 18 back cover.
     expect(plan).toEqual({
       numbers: { framework: '01', kit: '02', boilerplates: '03', faq: '04' },
+      kitFirstPage: 7,
       boilerplatesFirstPage: 15,
       faqFirstPage: 17,
       boilerplateCount: 4,
@@ -551,6 +552,7 @@ describe('mktgPrintFamilyPlan', () => {
     // 1 cover, 2 divider, 3 cards (none), 4 divider, 5 grid (none).
     expect(plan).toEqual({
       numbers: { boilerplates: '01', faq: '02' },
+      kitFirstPage: 2,
       boilerplatesFirstPage: 3,
       faqFirstPage: 5,
       boilerplateCount: 0,
