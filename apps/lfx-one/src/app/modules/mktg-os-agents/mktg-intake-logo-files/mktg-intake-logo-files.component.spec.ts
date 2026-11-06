@@ -169,10 +169,10 @@ describe('MktgIntakeLogoFilesComponent', () => {
     useHandReader();
     component['onFilesSelected'](fileEvent(new File([new Uint8Array(liveConfig.maxZipBytes + 1)], 'package.zip')));
     expect(component['errorText']()).toBe(
-      'package.zip is 150 KB — keep a ZIP under 150 KB: SVG files only; the full logo package is usually too large to send. Add it as a link instead.'
+      'package.zip is 150 KB. Keep a ZIP small: SVG files only, under 150 KB; the full logo package linked on a brand page is usually too large to send.'
     );
     fixture.detectChanges();
-    expect(query('mktg-intake-logo-files-error')?.textContent).toContain('keep a ZIP under 150 KB');
+    expect(query('mktg-intake-logo-files-error')?.textContent).toContain('Keep a ZIP small: SVG files only, under 150 KB');
     expect(HandFileReader.instances).toHaveLength(0);
     expect(names()).toEqual([]);
 

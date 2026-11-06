@@ -281,7 +281,7 @@ export function validateBrandKitLogoFiles(files: unknown): BrandKitValidationRes
         errors.push(`${at}.${key} is over ${BRAND_KIT_MAX_LOGO_FILE_CHARS.toLocaleString('en-US')} characters — give the file as a link instead`);
       } else if (key === 'base64' && typeof name === 'string' && brandKitLogoFileKind(name) === 'zip' && value.length > BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS) {
         // The picker's cap, re-checked where it is trusted: a crafted request cannot carry the package the form refuses.
-        errors.push(`${at}.base64: a ZIP must stay under 150 KB (SVG files only) — give the package as a link instead`);
+        errors.push(`${at}.base64: a ZIP must stay under 150 KB (SVG files only); the full logo package linked on a brand page is usually too large to send`);
       } else {
         payloadChars += value.length;
       }

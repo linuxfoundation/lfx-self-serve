@@ -402,7 +402,7 @@ test.describe('Marketing OS new run Sources', () => {
       .first()
       .setInputFiles({ name: 'package.zip', mimeType: 'application/zip', buffer: Buffer.alloc(151 * 1024, 0) });
     await expect(page.getByTestId('mktg-intake-logo-files-error')).toContainText(
-      'package.zip is 151 KB — keep a ZIP under 150 KB: SVG files only; the full logo package is usually too large to send. Add it as a link instead.'
+      'package.zip is 151 KB. Keep a ZIP small: SVG files only, under 150 KB; the full logo package linked on a brand page is usually too large to send.'
     );
     await expect(page.getByTestId('mktg-intake-logo-files-list')).toHaveCount(0);
     expect(sources.generated).toHaveLength(0);

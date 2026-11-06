@@ -415,7 +415,7 @@ describe('validateBrandKitLogoFiles', () => {
     const over = validateBrandKitLogoFiles([{ name: 'package.zip', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS + 1) }]);
     expect(over).toEqual({
       valid: false,
-      errors: ['logoFiles[0].base64: a ZIP must stay under 150 KB (SVG files only) — give the package as a link instead'],
+      errors: ['logoFiles[0].base64: a ZIP must stay under 150 KB (SVG files only); the full logo package linked on a brand page is usually too large to send'],
     });
     expect(validateBrandKitLogoFiles([{ name: 'package.zip', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS) }])).toEqual({ valid: true, errors: [] });
     expect(validateBrandKitLogoFiles([{ name: 'logo.png', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS + 1) }])).toEqual({ valid: true, errors: [] });
