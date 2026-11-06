@@ -257,7 +257,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       // padding, every frame flush with the sheet's left edge and 11 in wide.
       await expect(print).toHaveAttribute('data-pages', '9');
       await expect(print.getByTestId('mktg-print-page')).toHaveCount(9);
-      await expect(print.locator('.lfx-framework-print')).toHaveCount(0);
+      await expect(print.locator('[data-testid^="mktg-framework-print-"]')).toHaveCount(0);
       await expect(print.getByTestId('framework-print-cover').getByTestId('mktg-print-page-subtitle')).toHaveText('Build openly.');
       const frames = await print.getByTestId('mktg-print-page').evaluateAll((nodes) =>
         nodes.map((node) => {
@@ -270,8 +270,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print).toHaveCSS('display', 'block');
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
       // Visibility-only hiding leaves screen canvas height behind: every element holding the frames, up to the body
-      // (whose own print rules clip the sheet), must be white, content-sized and unclipped, so no screen canvas bleeds
-      // through between the pages.
+      // (whose own print rules clip the sheet), must paint nothing of its own (or white), be content-sized and unclipped,
+      // so no screen canvas bleeds through between the pages.
       const ancestors = await print.evaluate((root) => {
         const out = [];
         let parent = root.parentElement;
@@ -284,8 +284,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       });
       expect(ancestors.length).toBeGreaterThan(0);
       for (const ancestor of ancestors) {
-        expect(ancestor.background).toBe('rgb(255, 255, 255)');
-        expect(ancestor.minHeight).toBe('0px');
+        expect(['rgba(0, 0, 0, 0)', 'rgb(255, 255, 255)']).toContain(ancestor.background);
+        expect(['0px', 'auto']).toContain(ancestor.minHeight);
         expect(ancestor.overflow).toBe('visible');
       }
     }
