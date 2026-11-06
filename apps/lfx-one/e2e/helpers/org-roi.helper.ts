@@ -5,7 +5,6 @@ import { expect, Page, Route, test } from '@playwright/test';
 // Deep-imported, not from the `constants` barrel: the barrel pulls in modules that depend on
 // @angular/common and fail to load outside the app, the same trap the specs hit with `utils`.
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY } from '@lfx-one/shared/constants/feature-flags.constants';
 import { ORG_LENS_ROI_NO_VALUE } from '@lfx-one/shared/constants/org-lens-roi.constants';
 import type { OrgLensRoiAnnualRow, OrgLensRoiProjectAnnual } from '@lfx-one/shared/interfaces';
 
@@ -422,24 +421,6 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
       total: hasAccess ? 1 : 0,
     })
   );
-}
-
-/**
- * Pin feature flags for this page, before any application code runs.
- *
- * A flag-gated route cannot be exercised without this. The flag SDK evaluates twice — first against an
- * anonymous context at bootstrap, then again once the authenticated user context is applied. A flag
- * targeted at named users is false in that first window, so a `canMatch` guard can resolve against it
- * and redirect before the real value arrives, leaving every case skipped or asserting against a page
- * that has already navigated away.
- *
- * The override is read only by non-production builds; see `FEATURE_FLAG_OVERRIDE_STORAGE_KEY`.
- */
-export async function stubFeatureFlags(page: Page, flags: Record<string, boolean>): Promise<void> {
-  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    JSON.stringify(flags),
-  ] as const);
 }
 
 /**

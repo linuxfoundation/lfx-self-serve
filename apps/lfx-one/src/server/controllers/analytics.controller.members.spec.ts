@@ -4,20 +4,24 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getTiers, getDirectory, getDirectoryTiers, getAtRisk, getRenewals, getBoardAttendance, getNps, getChurn, getChurnDepartures } = vi.hoisted(() => ({
-  getTiers: vi.fn(),
-  getAtRisk: vi.fn(),
-  getRenewals: vi.fn(),
-  getBoardAttendance: vi.fn(),
-  getNps: vi.fn(),
-  getChurn: vi.fn(),
-  getChurnDepartures: vi.fn(),
-  getDirectory: vi.fn(),
-  getDirectoryTiers: vi.fn(),
-}));
+const { getGrowth, getTiers, getDirectory, getDirectoryTiers, getAtRisk, getRenewals, getBoardAttendance, getNps, getChurn, getChurnDepartures } = vi.hoisted(
+  () => ({
+    getGrowth: vi.fn(),
+    getTiers: vi.fn(),
+    getAtRisk: vi.fn(),
+    getRenewals: vi.fn(),
+    getBoardAttendance: vi.fn(),
+    getNps: vi.fn(),
+    getChurn: vi.fn(),
+    getChurnDepartures: vi.fn(),
+    getDirectory: vi.fn(),
+    getDirectoryTiers: vi.fn(),
+  })
+);
 
 vi.mock('../services/health-metrics-members.service', () => ({
   HealthMetricsMembersService: class {
+    public getGrowth = getGrowth;
     public getTiers = getTiers;
     public getDirectory = getDirectory;
     public getDirectoryTiers = getDirectoryTiers;
@@ -67,6 +71,7 @@ import {
   HEALTH_METRICS_MEMBERS_NPS_UNMEASURED,
   HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_GROWTH_UNMEASURED,
   HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED,
   HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
 } from '@lfx-one/shared/constants';
@@ -75,6 +80,7 @@ import { ServiceValidationError } from '../errors';
 import { AnalyticsController } from './analytics.controller';
 
 type Handler =
+  | 'getMembersGrowth'
   | 'getMembersTiers'
   | 'getMembersDirectory'
   | 'getMembersDirectoryTiers'
@@ -98,6 +104,40 @@ function rejectedField(next: NextFunction): string | undefined {
   const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError | undefined;
   return error?.validationErrors?.[0]?.field;
 }
+
+describe('AnalyticsController.getMembersGrowth', () => {
+  beforeEach(() => {
+    getGrowth.mockReset();
+    getGrowth.mockResolvedValue(HEALTH_METRICS_MEMBERS_GROWTH_UNMEASURED);
+  });
+
+  it('passes the foundation to the service and returns its response', async () => {
+    const { res, next, promise } = call({ foundationSlug: 'acme' }, 'getMembersGrowth');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getGrowth).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_GROWTH_UNMEASURED);
+  });
+
+  it.each([{}, { foundationSlug: 'Acme Corp' }])('rejects a missing or malformed foundation (%o)', async (query) => {
+    const { next, promise } = call(query as Record<string, string>, 'getMembersGrowth');
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(getGrowth).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getGrowth.mockRejectedValue(failure);
+
+    const { next, promise } = call({ foundationSlug: 'acme' }, 'getMembersGrowth');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
 
 describe('AnalyticsController.getMembersTiers', () => {
   beforeEach(() => {

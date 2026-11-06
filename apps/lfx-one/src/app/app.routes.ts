@@ -36,7 +36,7 @@ import { legacyOrgLensMatcher, legacyOrgLensRedirect } from './shared/utils/lega
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
-import { cfOrgDonationsGuard, orgLensClaM3EnabledGuard } from './shared/guards/org-lens-flag.guard';
+import { cfOrgDonationsGuard } from './shared/guards/org-lens-flag.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
@@ -60,11 +60,7 @@ const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/or
 function orgLensPageRoutes(): Routes {
   return [
     {
-      // Componentless parent, so the dark-launch guard is declared once and later M3
-      // children (list, sign, managers, …) inherit it. A looser copy would be a way
-      // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
       path: 'easycla',
-      canMatch: [orgLensClaM3EnabledGuard],
       data: {
         lens: 'org',
         title: 'EasyCLA',

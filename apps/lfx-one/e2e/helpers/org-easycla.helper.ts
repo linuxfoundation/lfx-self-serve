@@ -2,16 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Shared setup for the Org Lens EasyCLA specs (GH-1978).
+ * Shared setup for the Company Lens EasyCLA specs (GH-1978).
  *
- * The gate spec, the content spec and the structural spec all need the same thing before they can
- * assert anything: an authenticated app with an organization selected and the M3 flag pinned. Only
- * the CLA list response differs between them, so that is the parameter and the rest is fixed here.
+ * The content spec and the structural spec both need the same thing before they can assert
+ * anything: an authenticated app with a company selected. Only the CLA list response differs
+ * between them, so that is the parameter and the rest is fixed here.
  */
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
 import { ORG_EASYCLA_PATH, ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
-import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import type {
   OrgClaActivityLogEntry,
   OrgClaActivityLogPage,
@@ -26,7 +25,6 @@ import type {
 import { expect, Locator, Page, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
-import { stubFeatureFlags } from './org-roi.helper';
 
 /** The leftover address the e2e enters through (every release routes it); the org-addressed form is asserted on the way out. */
 export const EASYCLA_URL = ORG_EASYCLA_PATH;
@@ -83,7 +81,7 @@ export function claGroup(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
     claGroupId: STUB_CLA_GROUP_ID,
     claGroupName: 'Nimbus Foundation CLA',
     // Present on every fixture row so the signing-entity subline renders: the server sends it only
-    // when it differs from the organization's own name, which is what makes the subline meaningful.
+    // when it differs from the company's own name, which is what makes the subline meaningful.
     signingEntityName: 'Acme Motors GmbH',
     foundationName: 'Nimbus Foundation',
     projects: [{ projectSfid: 'a09410000182dD3AAI', projectName: 'Cascade' }],
@@ -104,7 +102,7 @@ export function claGroupList(claGroups: OrgClaGroup[]): OrgClaGroupList {
 }
 
 /**
- * Enough org context for an account to be selected. Without it the lens has no organization, the
+ * Enough org context for an account to be selected. Without it the lens has no company, the
  * sidebar never builds its org section, and a spec would assert against a page still waiting.
  */
 export async function stubAccountContext(page: Page): Promise<void> {
@@ -112,7 +110,7 @@ export async function stubAccountContext(page: Page): Promise<void> {
     personas: ['contributor'],
     personaProjects: {},
     projects: [],
-    organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, membershipTier: '', uid: MOCK_ACCOUNT_ID }],
+    companies: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, membershipTier: '', uid: MOCK_ACCOUNT_ID }],
     isRootWriter: false,
   });
 
@@ -137,12 +135,12 @@ export async function stubAccountContext(page: Page): Promise<void> {
   });
 
   // Spec 050: an org-addressed EasyCLA address (`/company/{segment}/easycla/…`) goes through the
-  // resolver on arrival. The mock organization publishes no slug, so its canonical address is the
+  // resolver on arrival. The mock company publishes no slug, so its canonical address is the
   // SFID form — which is also what the BFF mints for a signing return.
   await page.route('**/api/orgs/resolve/*', (route) => {
     const segment = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop() ?? '');
     if (segment !== MOCK_ACCOUNT_ID) {
-      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Organization not found' }) });
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Company not found' }) });
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ uid: MOCK_ACCOUNT_ID, slug: null, name: MOCK_ACCOUNT_NAME }) });
   });
@@ -183,13 +181,12 @@ export async function stubPermissionChecks(page: Page, allowed = true): Promise<
 }
 
 /**
- * Land on `/company/easycla` with the M3 flag on and the CLA list stubbed by the caller.
+ * Land on `/company/easycla` with the CLA list stubbed by the caller.
  *
- * The visit to `/` first, then a reload, is the sequence the other Org Lens specs use to get an
+ * The visit to `/` first, then a reload, is the sequence the other Company Lens specs use to get an
  * authenticated app running before the guarded URL is requested.
  */
 export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Promise<void>, permissionAllowed = true): Promise<void> {
-  await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
   await stubPermissionChecks(page, permissionAllowed);
   await stubList(page);
@@ -230,7 +227,6 @@ export async function gotoEasyclaDetail(
   signatureId?: string,
   permissionAllowed = true
 ): Promise<void> {
-  await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
   await stubPermissionChecks(page, permissionAllowed);
   await stubActivityLog(page);
@@ -279,7 +275,7 @@ export const STUB_SIGN_URL = 'https://signing.example.org/session/e2e-stub';
  * The signature the stubbed hand-off says it opened.
  *
  * Deliberately the `id` of the default `claGroup()` row, because that is what makes the return
- * landing observable: the page only navigates to an agreement it can see in the organization's own
+ * landing observable: the page only navigates to an agreement it can see in the company's own
  * list, so a stub signature absent from the stubbed list would leave the signatory on it.
  */
 export const STUB_SIGNATURE_ID = 'signature-uuid-1';
@@ -305,7 +301,7 @@ export function signOption(overrides: Record<string, unknown> = {}) {
     cclaEnabled: true,
     iclaEnabled: true,
     matchTypes: ['project'],
-    organizations: [],
+    companies: [],
     ...overrides,
   };
 }

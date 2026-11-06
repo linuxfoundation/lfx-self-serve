@@ -704,8 +704,7 @@ export class OrgClaService {
    * Runs on the default gateway token with no impersonation branch, same as the Me-lens search:
    * the CLA Group catalogue is not organization-scoped upstream, so there is no ownership check
    * for a token swap to satisfy. The gate on this route is `requireOrgLensAccess` alone; nothing
-   * about the caller's company reaches the query. The dark-launch flag is not part of it — that
-   * flag is an Angular route guard, so it hides the page without closing this endpoint.
+   * about the caller's company reaches the query.
    */
   public async getSignOptions(req: Request, searchTerm: string): Promise<ClaGroupSearchResponse> {
     // No `startOperation` here, for the reason `getPdfUrl` above gives: the HTTP lifecycle is the

@@ -18,13 +18,13 @@
     }
     @if (hasSummary()) {
       <lfx-ui-button
-        variant="secondary"
+        [variant]="summaryPending() ? 'secondary-accent' : 'secondary'"
         size="small"
-        icon="fa-light fa-sparkles"
+        [icon]="summaryPending() ? '' : 'fa-light fa-sparkles'"
         [loading]="loadingSummary()"
         (click)="openSummary()"
         data-testid="meetings-home-row-summary">
-        AI Summary
+        {{ summaryPending() ? 'Review summary' : 'AI Summary' }}
       </lfx-ui-button>
     }
   </div>

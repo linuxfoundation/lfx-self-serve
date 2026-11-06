@@ -41,6 +41,7 @@ import { NavbarComponent } from './navbar.component';
 
 /** The navbar's protected view state, reached through a narrow cast (template is overridden empty). */
 interface NavbarView {
+  lfid: Signal<string | null>;
   menuBlocks: Signal<NavbarMenuBlock<SidebarMenuItem & { trackKey: string }>[]>;
   lensTabs: Signal<LensOption[]>;
   roleMarks: Signal<NavbarRoleMark[]>;
@@ -155,6 +156,7 @@ const createNavbarFixture = async (
         useValue: {
           user: signal({ user_id: 'u1', name: 'Ada Lovelace' } as unknown as User),
           userInitials: computed(() => 'AL'),
+          viewerUsername: signal('auth0|alovelace'),
           effectiveAvatarUrl: computed(() => ''),
           canImpersonate: signal(false),
           impersonating: signal(false),
@@ -209,6 +211,12 @@ describe('NavbarComponent', () => {
     expect(blocks.map((block) => block.section?.label ?? null)).toEqual([null, 'My Engagement', null]);
     expect(blocks.map((block) => block.items.map((item) => item.label))).toEqual([['Dashboard', 'Meetings'], ['Groups'], ['Education', 'Mentorship']]);
     expect(blocks.map((block) => block.ruleBefore)).toEqual([false, false, true]);
+  });
+
+  it('derives the account menu LFID from the viewer username, without the auth prefix (#5318)', async () => {
+    const navbar = await createNavbar([]);
+
+    expect(navbar.lfid()).toBe('alovelace');
   });
 
   it('presents the Me lens as Home and leaves the other lenses as they are', async () => {

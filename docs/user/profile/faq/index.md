@@ -14,11 +14,11 @@ Open [**Profile & Account**](/profile) and select **Edit profile** in the profil
 
 ## What is my LFID, and where do I find it?
 
-Your LFID (Linux Foundation ID) is your LFX **username**. It is not your email address. To find it:
+Your LFID (Linux Foundation ID) is your LFX **username**. It is not your email address. To find it, sign in to [app.lfx.dev](https://app.lfx.dev), then use any of these:
 
-1. Sign in to [app.lfx.dev](https://app.lfx.dev) and open [**Profile & Account**](/profile).
-2. In the profile panel on the right, select **Edit profile**.
-3. Your LFID is the **Username (read-only)** field.
+- Open your account menu in the sidebar. Your LFID appears under your name and email.
+- Open [**Profile & Account**](/profile). Your LFID appears under your name in the profile panel, labelled **LFID**, with a button to copy it.
+- In the profile panel, select **Edit profile**. Your LFID is the **Username (read-only)** field.
 
 You can't change your username. It is also the `<username>` in your public profile address, `app.lfx.dev/u/<username>`. See [Edit your profile](../edit-profile/#find-your-lfid-username).
 

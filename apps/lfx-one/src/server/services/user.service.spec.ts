@@ -1715,6 +1715,7 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
       ['m2:1', false, undefined, false],
       ['m3:1', false, undefined, false],
     ]);
+    expect(result.map((m) => m.ai_summary_awaiting_approval)).toEqual([false, undefined, undefined]);
     for (const type of ['v1_past_meeting_recording', 'v1_past_meeting_summary']) {
       expect(proxyRequest).toHaveBeenCalledWith(
         req,
@@ -1730,7 +1731,7 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     mockIndexes(
       [pastMeeting('invited:1'), pastMeeting('organized:1')],
       [],
-      [summary('invited:1', { approved: false }), summary('organized:1', { approved: false })]
+      [summary('invited:1', { approved: false, uid: 'sum-invited' }), summary('organized:1', { approved: false, uid: 'sum-organized' })]
     );
     Object.assign(service, {
       accessCheckService: {
@@ -1741,6 +1742,8 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
 
     expect(Object.fromEntries(result.map((m) => [m.id, m.has_ai_summary]))).toEqual({ 'invited:1': false, 'organized:1': true });
+    expect(Object.fromEntries(result.map((m) => [m.id, m.ai_summary_awaiting_approval]))).toEqual({ 'invited:1': undefined, 'organized:1': true });
+    expect(Object.fromEntries(result.map((m) => [m.id, m.ai_summary_uid]))).toEqual({ 'invited:1': undefined, 'organized:1': 'sum-organized' });
   });
 
   it('does not flag a whitespace-only summary', async () => {

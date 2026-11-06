@@ -39,7 +39,7 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * to the button on close). `menuAlign="end"` lines the menu up with the button's end edge, for a trigger at a row's end. A button rendered as a link (`link`) does not open a menu.
  *
  * Popover: pass an `<ng-template>` to `popover` and the inner `<button>` opens it as a non-modal dialog (`aria-haspopup="dialog"`, `aria-expanded`,
- * `aria-controls`, focus returns to the button on close). `popoverLabel` names the dialog, `popoverWidth` fixes its width in px and `popoverPadding="none"` drops its 16px padding; see `lfxUiPopover`.
+ * `aria-controls`, focus returns to the button on close). `popoverLabel` names the dialog, `popoverWidth` fixes its width in px, `popoverPadding="none"` drops its 16px padding and `popoverAlign="end"` opens it from the end edge; see `lfxUiPopover`.
  * A link does not open one, and `menu` wins when both are set.
  */
 @Component({
@@ -93,6 +93,8 @@ export class UiButtonComponent {
   public readonly popoverWidth = input<number | null>(null);
   /** `none` removes the popover panel's 16px padding for content that runs edge to edge. */
   public readonly popoverPadding = input<UiPopoverPadding>('default');
+  /** `end` opens the popover lined up with the button's end edge, toward the start side. */
+  public readonly popoverAlign = input<UiMenuAlign>('start');
   /** When set, renders a router link instead of a button. Accepts a path or a commands array. */
   public readonly link = input<string | unknown[] | null>(null);
   /* eslint-disable @angular-eslint/no-input-rename -- the aliases are the public input names of UiTooltipDirective, which this button forwards to its inner element. */
