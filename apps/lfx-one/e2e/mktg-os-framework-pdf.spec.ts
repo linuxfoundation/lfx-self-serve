@@ -83,11 +83,11 @@ test.describe('Messaging framework PDF: the deck’s pages', () => {
   }, info) => {
     const { content } = draftFrameworkAsset();
     const { print } = await openFrameworkPdf(page);
-    const framework = print.getByTestId('framework-print-page').filter({ has: print.locator('[data-title="Framework"]') });
+    const framework = print.locator('[data-testid="framework-print-page"]:has([data-title="Framework"])');
     for (const text of ['Vision', content.mf.vision, 'Mission', content.mf.mission, 'Positioning', content.mf.positioning, 'Tagline', content.mf.tagline]) {
       await expect(framework).toContainText(text);
     }
-    const goals = print.getByTestId('framework-print-page').filter({ has: print.locator('[data-title="Goal columns"]') });
+    const goals = print.locator('[data-testid="framework-print-page"]:has([data-title="Goal columns"])');
     const goal = content.mf.goals[0];
     await expect(goals).toContainText(goal.t);
     await expect(goals).toContainText(`Goal ${goal.n}`);
@@ -104,13 +104,13 @@ test.describe('Messaging framework PDF: the deck’s pages', () => {
   test('the Say and avoid page sets the say chips and, with nothing to avoid, says so; the anchor page numbers the questions', async ({ page }, info) => {
     const { content } = draftFrameworkAsset();
     const { print } = await openFrameworkPdf(page);
-    const sayAvoid = print.getByTestId('framework-print-page').filter({ has: print.locator('[data-title="Say and avoid"]') });
+    const sayAvoid = print.locator('[data-testid="framework-print-page"]:has([data-title="Say and avoid"])');
     await expect(sayAvoid).toContainText('Say');
     await expect(sayAvoid).toContainText(content.mf.say[0]);
     await expect(sayAvoid).toContainText('Avoid');
     await expect(sayAvoid).toContainText('Nothing to avoid was stated.');
     await expect(sayAvoid.locator('.pp-para--strike')).toHaveCount(0);
-    const anchor = print.getByTestId('framework-print-page').filter({ has: print.locator('[data-title="Every piece of content answers"]') });
+    const anchor = print.locator('[data-testid="framework-print-page"]:has([data-title="Every piece of content answers"])');
     await expect(anchor).toContainText(`1.  ${content.mf.anchor[0]}`);
     await sayAvoid.screenshot({ path: info.outputPath('framework-pdf-say-avoid.png') });
   });
@@ -121,7 +121,7 @@ test.describe('Messaging framework PDF: the deck’s pages', () => {
     const { content } = draftFrameworkAsset();
     const segment = content.icp[0];
     const { print } = await openFrameworkPdf(page);
-    const icp = print.getByTestId('framework-print-page').filter({ has: print.locator('[data-title="ICPs"]') });
+    const icp = print.locator('[data-testid="framework-print-page"]:has([data-title="ICPs"])');
     await expect(icp).toContainText(segment.name);
     await expect(icp).toContainText(`${segment.kind} · Basis: ${segment.basis}`);
     await expect(icp).toContainText(`Goals: ${content.mf.goals[0].t}`);
@@ -130,17 +130,17 @@ test.describe('Messaging framework PDF: the deck’s pages', () => {
     }
     await expect(icp).toContainText(segment.objection[0]);
     await expect(icp).toContainText(`${segment.personas[0][0]} — ${segment.personas[0][1]}`);
-    const house = print.getByTestId('framework-print-page').filter({ has: print.locator('[data-title="Message house"]') });
+    const house = print.locator('[data-testid="framework-print-page"]:has([data-title="Message house"])');
     await expect(house).toContainText('Umbrella');
     await expect(house).toContainText(content.mh.umbrella);
     await expect(house).toContainText(content.mh.pillars[0].t);
     await expect(house).toContainText(content.mh.pillars[0].m);
     await expect(house).toContainText('Foundation');
     await expect(house).toContainText(content.mh.found);
-    const audiences = print.getByTestId('framework-print-page').filter({ has: print.locator('[data-title="Audiences"]') });
+    const audiences = print.locator('[data-testid="framework-print-page"]:has([data-title="Audiences"])');
     await expect(audiences).toContainText(content.mh.aud[0][0]);
     await expect(audiences).toContainText(content.mh.aud[0][1]);
-    const numbers = print.getByTestId('framework-print-page').filter({ has: print.locator('[data-title="Key numbers"]') });
+    const numbers = print.locator('[data-testid="framework-print-page"]:has([data-title="Key numbers"])');
     await expect(numbers).toContainText(content.nums[0][0]);
     await expect(numbers).toContainText(content.nums[0][1]);
     await expect(numbers).toContainText('Asset Example · a Linux Foundation project');

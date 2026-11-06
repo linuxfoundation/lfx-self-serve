@@ -193,7 +193,9 @@ function goalPages(ctx: Ctx, firstIndex: number): MktgPrintPage[] {
       els.push(mktgPrintTextEl(box, goalRich(ctx, g), card(look)));
     });
     if (mf.crosscut) {
-      els.push(mktgPrintTextEl({ x: 25, y: AREA.y + h + 4, w: 671, h: crossH - 4 }, mktgPrintRich(look, [mktgPrintPara(mf.crosscut, 8.5, { color: look.muted })])));
+      els.push(
+        mktgPrintTextEl({ x: 25, y: AREA.y + h + 4, w: 671, h: crossH - 4 }, mktgPrintRich(look, [mktgPrintPara(mf.crosscut, 8.5, { color: look.muted })]))
+      );
     }
     return mktgPrintContentPage(look, mktgPrintContinued('Goal columns', firstIndex + k), head(ctx, 'framework'), els);
   });
@@ -265,7 +267,12 @@ function sayAvoidPages(ctx: Ctx): MktgPrintPage[] {
     for (const c of chips[k] ?? []) {
       const x = left.x + 12 + c.x;
       const y = left.y + 40 + c.y;
-      els.push(mktgPrintShapeEl('ROUND_RECTANGLE', { x, y, w: c.w, h: chipH }, WHITE, { color: mktgPrintMixHex(WHITE, look.dark, 0.25), weight: MKTG_PRINT_FRAMEWORK_CARD_LINE }));
+      els.push(
+        mktgPrintShapeEl('ROUND_RECTANGLE', { x, y, w: c.w, h: chipH }, WHITE, {
+          color: mktgPrintMixHex(WHITE, look.dark, 0.25),
+          weight: MKTG_PRINT_FRAMEWORK_CARD_LINE,
+        })
+      );
       els.push(
         mktgPrintTextEl(
           { x: x - 4, y: y + chipH / 2 - 14, w: c.w + 8, h: 28 },
@@ -284,7 +291,9 @@ function sayAvoidPages(ctx: Ctx): MktgPrintPage[] {
     }
     if (rows.length) {
       els.push(mktgPrintTextEl({ x: right.x + 6, y: right.y + 32, w: colA + 6, h: 26 }, mktgPrintRich(look, [mktgPrintEyebrowPara(look, 'Avoid')])));
-      els.push(mktgPrintTextEl({ x: right.x + 12 + colA, y: right.y + 32, w: colB + 6, h: 26 }, mktgPrintRich(look, [mktgPrintEyebrowPara(look, 'Say instead')])));
+      els.push(
+        mktgPrintTextEl({ x: right.x + 12 + colA, y: right.y + 32, w: colB + 6, h: 26 }, mktgPrintRich(look, [mktgPrintEyebrowPara(look, 'Say instead')]))
+      );
       let y = right.y + 58;
       for (const r of rows) {
         els.push(mktgPrintHairline(look, right.x + 12, y, right.w - 24));
@@ -406,7 +415,11 @@ function pillarRich(ctx: Ctx, p: FoundationMessagePillar, proofs: boolean, messa
   ]);
 }
 
-const pillarCard = (look: MktgPrintPageLook) => ({ shape: 'RECTANGLE' as const, fill: WHITE, line: { color: look.rule, weight: MKTG_PRINT_FRAMEWORK_CARD_LINE } });
+const pillarCard = (look: MktgPrintPageLook) => ({
+  shape: 'RECTANGLE' as const,
+  fill: WHITE,
+  line: { color: look.rule, weight: MKTG_PRINT_FRAMEWORK_CARD_LINE },
+});
 
 function messageHousePages(ctx: Ctx): MktgPrintPage[] {
   const { look, view } = ctx;

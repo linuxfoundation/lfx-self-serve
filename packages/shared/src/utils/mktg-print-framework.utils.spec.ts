@@ -27,7 +27,16 @@ function content(over: Partial<FoundationMessageContent> = {}): FoundationMessag
       positioning: 'For platform teams, the open foundation that turns a checklist into a platform.',
       tagline: 'Open foundations, audited in public.',
       goals: [
-        { id: 'adoption', n: 1, t: 'Adoption', vp: 'Ship in weeks.', key: 'The fastest route.', proof: [['1,200,000 downloads', 'Website']], bite: 'From empty to compliant', icps: ['teams'] },
+        {
+          id: 'adoption',
+          n: 1,
+          t: 'Adoption',
+          vp: 'Ship in weeks.',
+          key: 'The fastest route.',
+          proof: [['1,200,000 downloads', 'Website']],
+          bite: 'From empty to compliant',
+          icps: ['teams'],
+        },
         { id: 'community', n: 2, t: 'Community', vp: 'Reviewed quickly.', key: 'No single company steers.', proof: [], bite: '', icps: ['contributors'] },
       ],
       crosscut: 'Every goal reinforces the others.',
@@ -216,14 +225,36 @@ describe('the framework’s pages', () => {
       { x: 366, y: MKTG_PRINT_PAGE_AREA.y, w: 330, h: MKTG_PRINT_PAGE_AREA.h - 34 },
     ]);
     const first = cards[0].text?.paras.map((p) => p.text);
-    expect(first).toEqual(['Adoption', 'Goal 1', 'Value proposition', 'Ship in weeks.', 'Key message', 'The fastest route.', 'Proof', '1,200,000 downloads  ·  WEBSITE', '“From empty to compliant”', 'For Platform teams']);
+    expect(first).toEqual([
+      'Adoption',
+      'Goal 1',
+      'Value proposition',
+      'Ship in weeks.',
+      'Key message',
+      'The fastest route.',
+      'Proof',
+      '1,200,000 downloads  ·  WEBSITE',
+      '“From empty to compliant”',
+      'For Platform teams',
+    ]);
     const proof = cards[0].text?.paras.find((p) => p.text.startsWith('1,200,000'));
     expect(proof?.runs).toEqual([{ text: '1,200,000 downloads' }, { text: '  ·  WEBSITE', color: look.muted }]);
-    expect(cards[1].text?.paras.map((p) => p.text)).toEqual(['Community', 'Goal 2', 'Value proposition', 'Reviewed quickly.', 'Key message', 'No single company steers.', 'For Contributors']);
+    expect(cards[1].text?.paras.map((p) => p.text)).toEqual([
+      'Community',
+      'Goal 2',
+      'Value proposition',
+      'Reviewed quickly.',
+      'Key message',
+      'No single company steers.',
+      'For Contributors',
+    ]);
     const note = shapes(page).find((el) => el.text?.paras[0]?.text === 'Every goal reinforces the others.');
     expect(note?.box).toEqual({ x: 25, y: MKTG_PRINT_PAGE_AREA.y + MKTG_PRINT_PAGE_AREA.h - 34 + 4, w: 671, h: 30 });
 
-    const long = Array.from({ length: 40 }, (_, i) => [`Fact ${i + 1} about the adoption of the toolkit by platform teams across regions`, 'Website'] as [string, string]);
+    const long = Array.from(
+      { length: 40 },
+      (_, i) => [`Fact ${i + 1} about the adoption of the toolkit by platform teams across regions`, 'Website'] as [string, string]
+    );
     const goals = content().mf.goals.map((g) => ({ ...g, proof: long, vp: g.vp.repeat(12), key: g.key.repeat(12) }));
     const pages = buildFrameworkPrintPages(view({ mf: { ...content().mf, goals } })).filter((p) => p.title.startsWith('Goal columns'));
     expect(titles(pages)).toEqual(['Goal columns', 'Goal columns (2)']);
@@ -244,7 +275,17 @@ describe('the framework’s pages', () => {
     expect(chips[0].box).toMatchObject({ x: 37, y: MKTG_PRINT_PAGE_AREA.y + 40 });
     expect(chips[1].box.x).toBe(chips[0].box.x + chips[0].box.w + 6);
     expect(chips[0].line?.color).toBe(mktgPrintMixHex('#FFFFFF', look.dark, 0.25));
-    expect(texts(page)).toEqual(expect.arrayContaining(['open foundations', 'audited in public', 'neutral home', 'Avoid', 'Say instead', 'enterprise-ready', 'audited in public and adopted by regulated teams']));
+    expect(texts(page)).toEqual(
+      expect.arrayContaining([
+        'open foundations',
+        'audited in public',
+        'neutral home',
+        'Avoid',
+        'Say instead',
+        'enterprise-ready',
+        'audited in public and adopted by regulated teams',
+      ])
+    );
     const struck = all.find((el) => el.text?.paras[0]?.strike);
     expect(struck?.text?.paras[0]).toMatchObject({ text: 'enterprise-ready', size: 9, color: look.muted });
 
@@ -277,7 +318,12 @@ describe('the framework’s pages', () => {
     const [teams, contributors] = buildFrameworkPrintPages(v).filter((p) => p.title.startsWith('ICPs'));
     const left = shapes(teams)[0];
     expect(left.box).toEqual(MKTG_PRINT_PAGE_LEFT);
-    expect(left.text?.paras.map((p) => p.text)).toEqual(['Platform teams', 'Organization · Basis: Website', 'Teams who run the internal platform.', 'Goals: Adoption']);
+    expect(left.text?.paras.map((p) => p.text)).toEqual([
+      'Platform teams',
+      'Organization · Basis: Website',
+      'Teams who run the internal platform.',
+      'Goals: Adoption',
+    ]);
     const labels = shapes(teams)
       .filter((el) => el.text?.paras[0]?.caps && el.box.x === MKTG_PRINT_PAGE_RIGHT.x)
       .map((el) => el.text?.paras[0].text);
@@ -298,7 +344,12 @@ describe('the framework’s pages', () => {
     expect(shapes(teams).filter((el) => el.fill === look.rule)).toHaveLength(8);
     const persona = values[7] && shapes(teams).find((el) => el.text?.paras[0]?.text === 'Platform lead — predictability');
     expect(persona?.text?.paras[0].runs).toEqual([{ text: 'Platform lead', weight: 600 }, { text: ' — predictability' }]);
-    expect(shapes(contributors)[0].text?.paras.map((p) => p.text)).toEqual(['Contributors', 'Individual', 'Engineers who maintain a component.', 'Goals: Community']);
+    expect(shapes(contributors)[0].text?.paras.map((p) => p.text)).toEqual([
+      'Contributors',
+      'Individual',
+      'Engineers who maintain a component.',
+      'Goals: Community',
+    ]);
     expect(
       shapes(contributors)
         .filter((el) => el.text?.paras[0]?.caps && el.box.x === MKTG_PRINT_PAGE_RIGHT.x)
@@ -341,14 +392,22 @@ describe('the framework’s pages', () => {
   });
 
   it('continues the pillars’ proof points on a second house page when they do not fit the pillars at 85%', () => {
-    const proof = Array.from({ length: 12 }, (_, i) => [`A long proof point number ${i + 1} about the project's audits and releases`, 'Website'] as [string, string]);
+    const proof = Array.from(
+      { length: 12 },
+      (_, i) => [`A long proof point number ${i + 1} about the project's audits and releases`, 'Website'] as [string, string]
+    );
     const pillars = content().mh.pillars.map((p) => ({ ...p, p: proof }));
     const pages = buildFrameworkPrintPages(view({ mh: { ...content().mh, pillars } }));
     expect(titles(pages).filter((t) => t.startsWith('Message house'))).toEqual(['Message house', 'Message house (2)']);
     const house = pages.find((p) => p.title === 'Message house');
     const more = pages.find((p) => p.title === 'Message house (2)');
     // The house's pillars carry title and message only; the continuation the proof points without the message.
-    expect(house && shapes(house).filter((el) => el.shape === 'RECTANGLE' && el.line)[0].text?.paras.map((p) => p.text)).toEqual(['Open', 'Governed in the open.']);
+    expect(
+      house &&
+        shapes(house)
+          .filter((el) => el.shape === 'RECTANGLE' && el.line)[0]
+          .text?.paras.map((p) => p.text)
+    ).toEqual(['Open', 'Governed in the open.']);
     const cont = more && shapes(more).filter((el) => el.shape === 'RECTANGLE' && el.line)[0];
     expect(cont?.box).toMatchObject({ y: MKTG_PRINT_PAGE_AREA.y, h: MKTG_PRINT_PAGE_AREA.h });
     expect(cont?.text?.paras[0].text).toBe('Open');
@@ -382,7 +441,11 @@ describe('the framework’s pages', () => {
   });
 
   it('prints the message house alone when the framework, the segments and the numbers are empty', () => {
-    const bare = view({ mf: { ...content().mf, vision: '', mission: '', positioning: '', tagline: '', goals: [], say: [], avoid: [], anchor: [] }, icp: [], nums: [] });
+    const bare = view({
+      mf: { ...content().mf, vision: '', mission: '', positioning: '', tagline: '', goals: [], say: [], avoid: [], anchor: [] },
+      icp: [],
+      nums: [],
+    });
     const pages = buildFrameworkPrintPages(bare);
     expect(titles(pages)).toEqual(['Message house', 'Audiences']);
     expect(pages[0].head?.left).toBe('03 Message house');
