@@ -3508,8 +3508,8 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(next).not.toHaveBeenCalled();
     const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
-    expect(sent['geoTargets']).toHaveLength(500);
-    expect(sent['excludedGeoTargets']).toHaveLength(500);
+    expect(sent['geoTargets']).toHaveLength(GOOGLE_ADS_MAX_GEO_TARGETS);
+    expect(sent['excludedGeoTargets']).toHaveLength(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS);
   });
 
   it("trims an excluded code with Go's whitespace set, not JS's, so a code upstream accepts is not refused here", async () => {
@@ -3633,6 +3633,20 @@ describe('CampaignController.createCampaign cutover', () => {
     const error = refusalFrom();
     expect(error.statusCode).toBe(400);
     expect(error.field).toBe('excludedGeoTargets');
+    expect(error.message).toBe(`the list exceeds the maximum of ${MAX_GOOGLE_GEO_LIST_ENTRIES} entries`);
+  });
+
+  it('bounds the targeted geo list before the envelope walks it, at the geo bound rather than the shared 100', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: Array.from({ length: MAX_GOOGLE_GEO_LIST_ENTRIES + 1 }, () => 'US') }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('geoTargets');
     expect(error.message).toBe(`the list exceeds the maximum of ${MAX_GOOGLE_GEO_LIST_ENTRIES} entries`);
   });
 

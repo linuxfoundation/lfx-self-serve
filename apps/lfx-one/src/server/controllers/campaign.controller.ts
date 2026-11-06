@@ -7025,9 +7025,11 @@ export class CampaignController {
     // `googleDeviceBidModifierList` each allocating a fresh object per entry as they go. The named
     // caps (500 exclusions, 20 radius targets, 42 schedules, 3 devices, 20 per demographic list)
     // still make the refusal an operator can act on; this one only stops a 15mb body from being
-    // walked before they are reached. The exclusions take their own, wider bound
+    // walked before they are reached. Both geo lists take their own, wider bound
     // (MAX_GOOGLE_GEO_LIST_ENTRIES): at the shared 100 a legitimate 500-entry list would be refused
-    // here, generically, before its named cap was ever reached.
+    // here, generically, before its named cap was ever reached. The targeted list is trimmed and
+    // mapped entry by entry in `createConfigEnvelope` too, so it is bounded here as the exclusions are.
+    candidates.push(['geoTargets', raw['geoTargets'], MAX_GOOGLE_GEO_LIST_ENTRIES]);
     candidates.push(['excludedGeoTargets', raw['excludedGeoTargets'], MAX_GOOGLE_GEO_LIST_ENTRIES]);
     candidates.push(['proximityTargets', raw['proximityTargets']]);
     candidates.push(['adSchedules', raw['adSchedules']]);
