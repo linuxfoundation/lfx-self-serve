@@ -49,6 +49,13 @@
     container-type: normal !important;
     will-change: auto !important;
   }
+
+  /* The deck's frames are 792 x 594 pt on 792 x 612 pt paper (MKTG_PRINT_PAGE_FRAME_PT), so the paper's last 18 pt show
+     the document's own ground: white, not the app's off-white html background, with backgrounds on or off. */
+  html:has(body.lfx-print-brand-kit),
+  html:has(body.lfx-print-framework) {
+    background: #fff;
+  }
 }
 
 @media print {
