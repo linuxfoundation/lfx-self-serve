@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, demographic exclusions, excluded locations, conversion actions, Search partners, display paths, more ads, negative keywords and a Demand Gen video ad for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, demographic exclusions, excluded locations, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords and a Demand Gen video ad for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -18,6 +18,7 @@ tags:
     negative keywords,
     search partners,
     conversion actions,
+    audience segments,
     demand gen,
     youtube,
     video ads,
@@ -91,6 +92,15 @@ On Search and Display campaigns, the bidding settings include **Conversion Actio
 - You can still type ids into the box, one per line, as an id such as 987654321 or a full `customers/<id>/conversionActions/<id>` name. Picking keeps the ids you typed.
 - If the list cannot be shown, a note above the **Conversion Actions** box says why: your account cannot read it, it is not available here yet, or it could not be read for this project's Google Ads account. Type the ids instead.
 - If the account has no enabled conversion actions, a note says so. Type ids, or leave the box blank to use the account's own goals.
+
+## Audience segments (Search only)
+
+Search campaigns can watch how existing Google Ads audiences perform, such as your customer lists and website visitor lists. The **Google Audience Segments** section appears only for the LF marketing team, because every foundation shares one Google Ads account.
+
+- **Pick a user list** lists the account's user lists. Type part of a name to narrow the list, then choose one to add it. Each entry shows the list's type, such as **Customer list** or **Website visitors**, and says when Google reports that it is not eligible for Search.
+- A list you have added is not offered again. You can still type a list's full name, such as `customers/<id>/userLists/<id>`, into the box below the picker, for a list the picker does not show.
+- If the list cannot be shown, a note in the section says why: it is not available here, or it could not be read for this project's Google Ads account. Type the list names instead.
+- If the account has more user lists than the picker shows, a note says so. Type the name of any list that is not listed.
 
 ## Networks, display path, more ads and negative keywords (Search only)
 
