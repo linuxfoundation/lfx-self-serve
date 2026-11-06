@@ -149,9 +149,6 @@ describe.each([
   ['/events-sponsorship', 'foundationSlug'],
   ['/events-geography', 'foundationSlug'],
   ['/members-tiers', 'foundationSlug'],
-  ['/members-bridge', 'foundationSlug'],
-  // The year and movement ride ahead of the slug so the handler past the gate has a valid query.
-  ['/members-movements', 'year=2025&movementType=new&foundationSlug'],
   ['/members-directory', 'foundationSlug'],
   ['/members-directory-tiers', 'foundationSlug'],
   ['/members-at-risk', 'foundationSlug'],

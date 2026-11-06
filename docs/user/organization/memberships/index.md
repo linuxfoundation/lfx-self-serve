@@ -4,11 +4,11 @@ description: How to read the Memberships list for the selected organization, ope
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, memberships, membership, key-contacts, board, committee, agreements]
-last_updated: 2026-11-03
+last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
-These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Memberships**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
+These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer). A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Memberships**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
 
 ## What is the Memberships page?
 

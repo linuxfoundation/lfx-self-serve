@@ -81,6 +81,17 @@ export function brandKitLabelInk(hex: string, dark: string): string {
   return brandKitContrastRatio(ground, 1) >= brandKitContrastRatio(ground, 0) ? 'white' : 'black';
 }
 
+/**
+ * The ink of text set on the kit's accent, as the upstream Brand Kit renderer
+ * and the deck ink their Social card: white only when it reaches WCAG AA on
+ * the accent (4.5:1, normal text), else the kit's dark. One rule for every
+ * sample on the accent, so a print never draws a pairing its own contrast
+ * table grades as failing (a coral `#FF702D` against white: 2.8:1).
+ */
+export function brandKitInkOnAccent(accent: string, dark: string): string {
+  return brandKitContrastRatio(brandKitLuminance(accent), 1) >= BRAND_KIT_LABEL_MIN_CONTRAST ? 'white' : dark;
+}
+
 /** A px size on the 11 in page in container-width units, so the page scales with its box and prints at size. */
 export function brandKitPageUnits(px: number): string {
   return `${((px / PAGE_WIDTH_PX) * 100).toFixed(3)}cqw`;

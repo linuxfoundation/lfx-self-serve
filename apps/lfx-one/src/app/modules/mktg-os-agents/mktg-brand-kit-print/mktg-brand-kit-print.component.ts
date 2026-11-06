@@ -6,7 +6,7 @@ import { Component, computed, inject, input } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { BrandKitBookView, MktgPrintBrand } from '@lfx-one/shared/interfaces';
 import { MktgPrintService } from '@services/mktg-print.service';
-import { brandKitIsLight, brandKitLabelInk } from '@lfx-one/shared/utils';
+import { brandKitInkOnAccent, brandKitIsLight, brandKitLabelInk } from '@lfx-one/shared/utils';
 import { distinctUntilChanged, filter } from 'rxjs';
 import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 import { MktgPrintChapterHeaderComponent } from '../components/mktg-print-chapter-header/mktg-print-chapter-header.component';
@@ -111,11 +111,21 @@ export class MktgBrandKitPrintComponent {
         ground ??= tile.dark ? brand.dark : 'white';
         const hex = /^#[0-9a-f]{6}$/i.test(ground);
         const light = ground === 'white' || ground === brand.tint || (hex && brandKitIsLight(ground));
+        // On the accent, the renderer's rule (one shared helper, the contrast table's functions): white ink and the
+        // reversed logo only when white reaches AA there, else the kit's dark and the full-colour lockup. A kit whose
+        // accent is its dark keeps its dark samples.
+        const onAccent = hex && ground.toLowerCase() === brand.accent.toLowerCase() && ground.toLowerCase() !== brand.dark.toLowerCase();
+        let ink = hex ? brandKitLabelInk(ground, brand.ink) : brand.ink;
+        let logo = light ? brand.logoOnLight : brand.logoOnDark;
+        if (onAccent) {
+          ink = brandKitInkOnAccent(ground, brand.dark);
+          logo = ink === 'white' ? brand.logoOnDark : brand.logoOnLight;
+        }
         return {
           ...tile,
           ground,
-          ink: hex ? brandKitLabelInk(ground, brand.ink) : brand.ink,
-          logo: light ? brand.logoOnLight : brand.logoOnDark,
+          ink,
+          logo,
           name: example?.name ?? tile.caption,
           format: example?.format ?? '',
         };

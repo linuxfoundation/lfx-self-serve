@@ -47,6 +47,7 @@ import type {
   CreativeAssetQueueStatusView,
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
+  GoogleCreativeGroup,
   GoogleCreativeSharedCap,
   GoogleDeviceBidMode,
   KeywordActionOutcome,
@@ -1456,14 +1457,51 @@ export const GOOGLE_ADS_READ_FAILED_MESSAGE = 'Google Ads did not return the acc
 
 /**
  * The error `code` (HTTP 403) of a create refused because it carries Google audience segments and the
- * caller is not a ROOT writer or ROOT campaign manager. Every foundation's Google Ads connection
- * points at one shared LF customer and a user list cannot yet be mapped to a project, so a non-root
- * operator could otherwise target another foundation's list (linuxfoundation/lfx-v2-campaign-service#411).
+ * caller does not hold `global_marketing_ops` on the project — the LF marketing team. Every
+ * foundation's Google Ads connection points at one shared LF customer, so a foundation operator could
+ * otherwise target another foundation's list. campaign-service enforces the same relation on the
+ * same project (linuxfoundation/lfx-v2-campaign-service#501, #505).
  */
 export const GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE = 'GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED';
 /** The user-facing message of that refusal. */
 export const GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE =
-  'Google audience segments can only be added by LF administrators, because every foundation shares one Google Ads account. Remove the audience segments and create again.';
+  'Google audience segments can only be added by the LF marketing team, because every foundation shares one Google Ads account. Remove the audience segments and create again, or ask the LF marketing team to add them.';
+/** The error `code` (HTTP 503) of a create refused because the caller's audience segment access could not be verified. */
+export const GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE';
+/** The user-facing message of that refusal. Nothing was created. */
+export const GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_MESSAGE =
+  'Your access to Google audience segments could not be verified, so nothing was created. Try again in a few minutes, or remove the audience segments and create again.';
+/**
+ * The error `code` (HTTP 403) of a conversion-action list read refused because the caller lacks
+ * `global_marketing_ops` on the project: the relation campaign-service checks on the same project
+ * before it answers (linuxfoundation/lfx-v2-campaign-service#486), since the shared Google Ads account
+ * lists every foundation's conversion actions.
+ */
+export const GOOGLE_CONVERSION_ACTIONS_RESTRICTED_CODE = 'GOOGLE_CONVERSION_ACTIONS_RESTRICTED';
+/** The user-facing message of that refusal. */
+export const GOOGLE_CONVERSION_ACTIONS_RESTRICTED_MESSAGE =
+  'The conversion action list can only be read by the LF marketing team, because every foundation shares one Google Ads account. Enter the conversion action ids instead.';
+/** The error `code` (HTTP 503) of a conversion-action list read refused because the caller's access could not be verified. */
+export const GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE';
+/** The user-facing message of that refusal. */
+export const GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_MESSAGE =
+  'Your access to the conversion action list could not be verified. Try again in a few minutes, or enter the conversion action ids instead.';
+
+/**
+ * The error `code` (HTTP 403) of a user list read refused because the caller does not hold
+ * `global_marketing_ops` on the project. The list names every foundation's audiences on the shared LF
+ * Google Ads account, so campaign-service answers it on that relation of the path project
+ * (linuxfoundation/lfx-v2-campaign-service#486, #508), as it does the audience segments a create sends.
+ */
+export const GOOGLE_USER_LISTS_RESTRICTED_CODE = 'GOOGLE_USER_LISTS_RESTRICTED';
+/** The user-facing message of that refusal. */
+export const GOOGLE_USER_LISTS_RESTRICTED_MESSAGE =
+  "This Google Ads account's user lists can only be listed by the LF marketing team, because every foundation shares one Google Ads account.";
+/** The error `code` (HTTP 503) of a user list read refused because the caller's access could not be verified. */
+export const GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE';
+/** The user-facing message of that refusal. Nothing was read. */
+export const GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_MESSAGE =
+  'Your access to the Google Ads user lists could not be verified. Try again in a few minutes, or enter user list resource names instead.';
 
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
@@ -2270,6 +2308,97 @@ export function googleAdsUrlGoParseFlaw(url: string): boolean {
   const queryStart = withoutFragment.indexOf('?');
   const query = queryStart === -1 ? '' : withoutFragment.slice(queryStart + 1);
   return /%(?![0-9A-Fa-f]{2})/.test(url) || query.includes(';');
+}
+
+/** A host byte Go's `url.Parse` accepts below 0x80 (`shouldEscape(c, encodeHost)` is false): letters, digits, `-._~`, the sub-delims and `:[]<>"`. */
+const GO_URL_HOST_BYTE = /[A-Za-z0-9\-._~!$&'()*+,;=:[\]<>"]/;
+/** A userinfo byte Go's `validUserinfo` accepts below 0x80. `%` is judged separately as an escape. */
+const GO_URL_USERINFO_BYTE = /[A-Za-z0-9\-._:~!$&'()*+,;=%@]/;
+
+/**
+ * Whether `url` is malformed for Go's `net/url` `url.Parse` — the parse campaign-service runs on an
+ * image URL before it checks the scheme and host (`validateImageEntries`). Only `Parse` itself:
+ * unlike {@link googleAdsUrlGoParseFlaw} it applies none of `validateServableURL`'s extra rules (a
+ * `;` in the query, any `@` or `%` in the authority), which image URLs are not held to.
+ *
+ * For an absolute `scheme://` URL, as Go parses it:
+ * - the fragment (after the first `#`) is cut off first; before it, a C0 control byte or DEL fails;
+ * - in the path and the fragment, a `%` must start a two-hex-digit escape;
+ * - the query is not judged at all by `Parse`;
+ * - the authority runs to the first `/` or `?`. Userinfo (before its last `@`) may hold only
+ *   `validUserinfo`'s bytes, with valid escapes. The host may hold only the bytes in
+ *   {@link GO_URL_HOST_BYTE} below 0x80, and a `%` there must escape a non-ASCII byte or be `%25`.
+ *   After the host's last `:` (outside `[...]`) the port is digits only. A bracketed IPv6 host must
+ *   close, and only a port may follow it.
+ *
+ * Code units at or above 0x80 are allowed where Go allows any non-ASCII byte. A value with no
+ * `scheme://` prefix is not judged here; the caller's scheme check refuses it.
+ */
+export function googleAdsUrlParseFlaw(url: string): boolean {
+  const prefix = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.exec(url);
+  if (!prefix) return false;
+  const hashAt = url.indexOf('#');
+  const beforeFragment = hashAt === -1 ? url : url.slice(0, hashAt);
+  const fragment = hashAt === -1 ? '' : url.slice(hashAt + 1);
+  for (let i = 0; i < beforeFragment.length; i++) {
+    const code = beforeFragment.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  const queryAt = beforeFragment.indexOf('?');
+  const beforeQuery = queryAt === -1 ? beforeFragment : beforeFragment.slice(0, queryAt);
+  const rest = beforeQuery.slice(prefix[0].length);
+  const slashAt = rest.indexOf('/');
+  const authority = slashAt === -1 ? rest : rest.slice(0, slashAt);
+  const path = slashAt === -1 ? '' : rest.slice(slashAt);
+  if (badPercentEscape(path) || badPercentEscape(fragment)) return true;
+
+  const atAt = authority.lastIndexOf('@');
+  if (atAt !== -1) {
+    const userinfo = authority.slice(0, atAt);
+    for (const ch of userinfo) {
+      if (ch.charCodeAt(0) < 0x80 && !GO_URL_USERINFO_BYTE.test(ch)) return true;
+    }
+    if (badPercentEscape(userinfo)) return true;
+  }
+  return goHostFlaw(atAt === -1 ? authority : authority.slice(atAt + 1));
+}
+
+/** Whether `text` has a `%` not followed by two hex digits (Go's `unescape` fails on it). */
+function badPercentEscape(text: string): boolean {
+  return /%(?![0-9A-Fa-f]{2})/.test(text);
+}
+
+/** Go's `parseHost` plus `unescape(host, encodeHost)` for one authority's host (and port). */
+function goHostFlaw(host: string): boolean {
+  let name = host;
+  let colonPort = '';
+  if (host.startsWith('[')) {
+    const close = host.lastIndexOf(']');
+    if (close === -1) return true;
+    colonPort = host.slice(close + 1);
+    name = host.slice(1, close);
+  } else {
+    const colonAt = host.lastIndexOf(':');
+    if (colonAt !== -1) {
+      colonPort = host.slice(colonAt);
+      name = host.slice(0, colonAt);
+    }
+  }
+  if (colonPort !== '' && !/^:[0-9]*$/.test(colonPort)) return true;
+  for (let i = 0; i < name.length; i++) {
+    const ch = name[i];
+    const code = name.charCodeAt(i);
+    if (ch === '%') {
+      const escape = name.slice(i, i + 3);
+      if (!/^%[0-9A-Fa-f]{2}$/.test(escape)) return true;
+      // Only a non-ASCII byte, or a literal `%` (`%25`), may be escaped in a host.
+      if (parseInt(escape.slice(1, 2), 16) < 8 && escape !== '%25') return true;
+      i += 2;
+      continue;
+    }
+    if (code < 0x80 && !GO_URL_HOST_BYTE.test(ch)) return true;
+  }
+  return false;
 }
 
 /**
@@ -4540,6 +4669,8 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'targetRoas', label: 'target ROAS', normalized: true },
   { field: 'conversionActions', label: 'conversion actions', normalized: true },
   { field: 'demandGenCreative', label: 'Demand Gen creative', normalized: true },
+  { field: 'demandGenVideoCreative', label: 'Demand Gen video ad', normalized: true },
+  { field: 'demandGenAdGroups', label: 'Demand Gen ad groups', normalized: true },
   { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
   { field: 'displayCreative', label: 'Display creative', normalized: true },
 ] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string; normalized?: true }[];
@@ -4874,7 +5005,7 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       label: 'YouTube video IDs',
       kind: 'list',
       max: 5,
-      hint: 'Bare video IDs, one per line — a watch URL is refused upstream rather than parsed.',
+      hint: 'Bare video IDs, one per line, such as dQw4w9WgXcQ. Paste the ID, not a YouTube link.',
     },
   ],
   display: [
@@ -4926,6 +5057,108 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
     },
   ],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeFieldSpec[]>;
+
+/**
+ * The calls to action a Demand Gen video ad accepts: campaign-service's `demandGenVideoCallToActions`
+ * (`internal/platform/googleads/demandgen_video_creative.go`), each a Google `CallToActionType` a
+ * validateOnly probe accepted. Deliberately short rather than Google's whole enum — the same probe
+ * refused `REGISTER` and `GET_STARTED` — so anything else is refused before the budget.
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION = [
+  { value: 'SIGN_UP', label: 'Sign up' },
+  { value: 'LEARN_MORE', label: 'Learn more' },
+  { value: 'BOOK_NOW', label: 'Book now' },
+  { value: 'VISIT_SITE', label: 'Visit site' },
+  { value: 'WATCH_NOW', label: 'Watch now' },
+] as const;
+
+/**
+ * The most YouTube videos one Demand Gen video ad carries: campaign-service's `maxVideoAdVideos`
+ * (`video_creative.go`), which `validateDemandGenVideoSpec` applies to this ad too.
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_MAX_VIDEOS = 5;
+
+/**
+ * The Demand Gen VIDEO responsive ad's fields (#460/#481), in render order — the
+ * {@link GOOGLE_CREATIVE_FIELD_SPECS} entry for the format Demand Gen offers beside its image ad.
+ *
+ * Every bound is `validateDemandGenVideoSpec`'s (`demandgen_video_creative.go`), and several differ
+ * from the image ad's on purpose:
+ *
+ * - Headlines are **40** wide, not 30: a validateOnly probe accepted 40 and refused 41 for this ad
+ *   type (`maxDemandGenVideoHeadlineWeight`).
+ * - Long headlines are required (1-5 at 90); the image ad has none.
+ * - Exactly **one** square logo, where the image ad takes 1-5: no source states this ad type's
+ *   range, so campaign-service caps it conservatively.
+ * - The call to action is a closed list ({@link GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION}), not the
+ *   image ad's free text.
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS = [
+  {
+    control: 'youtubeVideoIds',
+    label: 'YouTube video IDs',
+    kind: 'list',
+    min: 1,
+    max: GOOGLE_DEMAND_GEN_VIDEO_MAX_VIDEOS,
+    hint: 'Bare video IDs, one per line, such as dQw4w9WgXcQ. Paste the ID, not a YouTube link.',
+  },
+  { control: 'headlines', label: 'Headlines', kind: 'list', min: 1, max: 5, width: 40 },
+  { control: 'longHeadlines', label: 'Long headlines', kind: 'list', min: 1, max: 5, width: 90 },
+  { control: 'descriptions', label: 'Descriptions', kind: 'list', min: 1, max: 5, width: 90 },
+  { control: 'businessName', label: 'Business name', kind: 'text', width: 25, requiredOnce: true, hint: 'Required by Google once a creative is supplied.' },
+  {
+    control: 'callToAction',
+    label: 'Call to action',
+    kind: 'text',
+    options: GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION,
+    hint: 'Optional. Leave it on none to send no call to action.',
+  },
+  {
+    control: 'logoImages',
+    label: 'Logo image (1:1)',
+    kind: 'list',
+    min: 1,
+    max: 1,
+    hint: 'Required: exactly one square logo.',
+    image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
+  },
+] as const satisfies readonly GoogleCreativeFieldSpec[];
+
+/** The `googleAdsConfig` key the Demand Gen video ad rides under, beside {@link GOOGLE_CREATIVE_REQUEST_KEYS}. */
+export const GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY = 'demandGenVideoCreative' satisfies keyof CampaignCreateRequest;
+
+/** The `googleAdsConfig` key the named Demand Gen ad groups ride under (#5226), INSTEAD of both creative keys. */
+export const GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY = 'demandGenAdGroups' satisfies keyof CampaignCreateRequest;
+
+/**
+ * The most named ad groups one Demand Gen campaign takes: campaign-service's `maxDemandGenAdGroups`
+ * (`internal/platform/googleads/demandgen_adgroups.go`). A service bound, not Google's: every group's
+ * images are fetched before the budget, and every group adds its own mutates after the campaign exists.
+ */
+export const GOOGLE_DEMAND_GEN_MAX_AD_GROUPS = 5;
+
+/**
+ * Why the Implement tab holds Create when Demand Gen is split into ad groups but none is left. Upstream
+ * reads an empty `demandGenAdGroups` as no split, so the campaign would be created with no ad at all.
+ */
+export const GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY = 'Add at least one ad group, or turn the split off to send the single ad instead.';
+
+/** Google's limit on an ad group's name, in characters: campaign-service's `maxAdGroupNameRunes` (`adgroup_ad.go`). */
+export const GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES = 255;
+
+/**
+ * What campaign-service appends to the event name to name a Demand Gen ad group (`demandGenAdGroupName`
+ * in `demandgen.go`). A named group's full name is `<event name> - Display | <its name>`.
+ */
+export const GOOGLE_DEMAND_GEN_AD_GROUP_NAME_SUFFIX = ' - Display';
+
+/**
+ * What campaign-service appends to a named Demand Gen ad group's full name to name its video ad
+ * (`demandGenVideoAdNameSuffix`, `internal/platform/googleads/demandgen_video_creative.go`). The ad's
+ * name is held to Google's 255 characters too (`validateDemandGenVideoAdName`), so a video group's
+ * full name has 11 fewer to spare than an image group's.
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_AD_NAME_SUFFIX = ' - Video ad';
 
 /**
  * How far a stored image's aspect ratio may sit from its Google slot's target, as a fraction of the
@@ -5027,6 +5260,32 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
   'performance-max': 'Performance Max',
   display: 'Display',
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
+
+/**
+ * Every creative the Implement tab collects, one entry per form group: each channel's image creative,
+ * then Demand Gen's video ad (#5226). The tab finds a group's catalogue here by its name, so a slot key
+ * (`<group>.<control>`) resolves the same way whichever of Demand Gen's two formats it belongs to.
+ */
+export const GOOGLE_CREATIVE_GROUPS: readonly GoogleCreativeGroup[] = [
+  ...GOOGLE_CHANNELS_WITH_CREATIVE.map(
+    (channel): GoogleCreativeGroup => ({
+      channel,
+      format: 'image',
+      groupName: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
+      label: GOOGLE_CREATIVE_SECTION_TITLES[channel],
+      fields: GOOGLE_CREATIVE_FIELD_SPECS[channel],
+    })
+  ),
+  {
+    channel: 'demand-gen',
+    format: 'video',
+    groupName: GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
+    // The same heading as the image ad: the section is "Demand Gen" whichever format is chosen, and the
+    // "Ad format" choice inside it says which.
+    label: GOOGLE_CREATIVE_SECTION_TITLES['demand-gen'],
+    fields: GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
+  },
+];
 
 /**
  * The short-description width Performance Max needs at least one description to fit: Google renders
@@ -5259,12 +5518,15 @@ export const GOOGLE_ADS_CONVERSION_ACTION_RESOURCE_PATTERN = /^customers\/\d+\/c
  * free-text box, which works exactly as it did before the picker:
  * - `forbidden`: the BFF said this caller may not read the list
  *   (`CampaignListResult.googleConversionActionsEnabled` is false), so no request is made. The list
- *   names every foundation's actions on the shared account, so only a root principal is answered.
+ *   names every foundation's actions on the shared account, so only a caller holding
+ *   `global_marketing_ops` on the project (the LF marketing team) is answered, as campaign-service
+ *   answers (linuxfoundation/lfx-v2-campaign-service#486).
  * - `unavailable`: the read was made and answered 403 or 404. The BFF had already said the caller may
- *   read it, so a 403 is campaign-service's gateway, which denies the route until the deployment sets
- *   `openfga.rootProjectUid`; a 404 is the BFF route off, or campaign-service's NotFound for the project.
- * - `failed`: anything else — campaign-service's 400, 500 or 503 (including an account holding more
- *   than 500 enabled actions, which does not clear on retry), or no answer at all.
+ *   read it, so a 403 means the relation changed between the two checks or campaign-service's gateway
+ *   refused it; a 404 is the BFF route off, or campaign-service's NotFound for the project.
+ * - `failed`: anything else — the BFF's own coded 503 when the access check could not be made
+ *   (`GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_CODE`), campaign-service's 400, 500 or 503 (including an
+ *   account holding more than 500 enabled actions, which does not clear on retry), or no answer at all.
  */
 export const GOOGLE_CONVERSION_ACTION_PICKER_REASONS = {
   forbidden: "Your account can't list this Google Ads account's conversion actions. Enter their ids below instead.",
@@ -5281,6 +5543,35 @@ export const GOOGLE_CONVERSION_ACTION_PICKER_LOADING = "Loading this account's c
  */
 export const GOOGLE_CONVERSION_ACTION_PICKER_EMPTY =
   "This Google Ads account has no enabled conversion actions. Enter ids below or leave the box blank to use the account's own goals.";
+
+/**
+ * Why the Implement tab's audience segment picker has no list, one sentence each; the typed box below
+ * it still adds a resource name. The section only shows for a caller the route admits, so a 403 or 404
+ * after that is the deployment or the gateway, not the caller.
+ */
+export const GOOGLE_USER_LIST_PICKER_REASONS = {
+  unavailable: "The user list picker isn't available here. Enter a user list resource name below instead.",
+  failed: "The user lists couldn't be read for this project's Google Ads account. Enter a user list resource name below instead.",
+} as const;
+
+/** What the audience segment picker says while its list is being read. */
+export const GOOGLE_USER_LIST_PICKER_LOADING = "Loading this account's user lists…";
+
+/** What the audience segment picker says when the account has no user list to offer. */
+export const GOOGLE_USER_LIST_PICKER_EMPTY = 'This Google Ads account has no user lists to pick from. Enter a resource name below instead.';
+
+/** What the audience segment picker says when upstream returned only part of the account's lists. */
+export const GOOGLE_USER_LIST_PICKER_TRUNCATED = "This account has more user lists than the picker shows. If one isn't listed, enter its resource name below.";
+
+/** Google's UserListType values in the words the Google Ads UI uses for them; the picker shows any other value in sentence case. */
+export const GOOGLE_USER_LIST_TYPE_LABELS: Readonly<Record<string, string>> = {
+  CRM_BASED: 'Customer list',
+  RULE_BASED: 'Website visitors',
+  LOGICAL: 'Combined list',
+  SIMILAR: 'Similar audience',
+  BASIC: 'Remarketing list',
+  LOOKALIKE: 'Lookalike',
+};
 
 /**
  * The numeric bounds campaign-service applies to the three money/ratio fields, in whole units of

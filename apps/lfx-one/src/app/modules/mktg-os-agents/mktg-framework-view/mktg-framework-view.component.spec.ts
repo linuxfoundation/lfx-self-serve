@@ -31,6 +31,7 @@ class HostComponent {
   public readonly version = signal<number | null>(null);
   public readonly approvedAsset = signal<MktgFrameworkAsset | null>(null);
   public readonly approvedVersion = signal<number | null>(null);
+  public readonly approvedCreatedAt = signal<string | null>(null);
   public readonly kit = signal<BrandKitRevision | null>(null);
   public readonly exportTarget = signal<MktgSlidesExportTarget | null>(null);
   public readonly approval = signal<MktgRevisionApproval | null>(null);
@@ -458,6 +459,7 @@ describe('MktgFrameworkViewComponent', () => {
     host.version.set(3);
     host.approvedAsset.set(ASSET);
     host.approvedVersion.set(3);
+    host.approvedCreatedAt.set('2026-10-19T08:00:00Z');
     await fixture.whenStable();
 
     const wrapper = query('mktg-framework-view-print');
@@ -485,7 +487,8 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
     expect(printer.prepare).toHaveBeenCalledWith(null);
-    expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    // The frame's title names the saved PDF like the deck: the project, the asset, the approved revision and that revision's own date.
+    expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'TestOrbit · Messaging framework · v3 · 2026-10-19');
 
     fixture.destroy();
     expect(printer.clear).toHaveBeenCalled();
@@ -553,7 +556,8 @@ describe('MktgFrameworkViewComponent', () => {
 
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
     expect(printer.prepare).toHaveBeenCalledWith('Montserrat');
-    expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    // No approved date known here: the name carries none, never the download's.
+    expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'TestOrbit · Messaging framework · v1');
   });
 
   it('opens Sources from its tab without the duplicate reviewer-note link', async () => {

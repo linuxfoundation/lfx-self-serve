@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, demographic exclusions, excluded locations, conversion actions, Search partners, display paths, more ads and negative keywords for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, demographic exclusions, excluded locations, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad and named Demand Gen ad groups for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -18,6 +18,11 @@ tags:
     negative keywords,
     search partners,
     conversion actions,
+    audience segments,
+    demand gen,
+    youtube,
+    video ads,
+    ad groups,
     implement,
   ]
 last_updated: 2026-11-06
@@ -84,9 +89,19 @@ The campaign does not serve in the places listed here.
 On Search and Display campaigns, the bidding settings include **Conversion Actions**: the conversions the campaign counts. Leave it blank to use the Google Ads account's own conversion goals.
 
 - **Pick conversion actions** lists the account's enabled conversion actions, each with its category. **Primary** marks one that counts toward the account's conversions by default. Picking one adds its id to the **Conversion Actions** box.
+- Only the LF marketing team sees the list. Every foundation shares one Google Ads account, so the list names every foundation's conversion actions. Everyone else types ids into the box.
 - You can still type ids into the box, one per line, as an id such as 987654321 or a full `customers/<id>/conversionActions/<id>` name. Picking keeps the ids you typed.
 - If the list cannot be shown, a note above the **Conversion Actions** box says why: your account cannot read it, it is not available here yet, or it could not be read for this project's Google Ads account. Type the ids instead.
 - If the account has no enabled conversion actions, a note says so. Type ids, or leave the box blank to use the account's own goals.
+
+## Audience segments (Search only)
+
+Search campaigns can watch how existing Google Ads audiences perform, such as your customer lists and website visitor lists. The **Google Audience Segments** section appears only for the LF marketing team, because every foundation shares one Google Ads account.
+
+- **Pick a user list** lists the account's user lists. Type part of a name to narrow the list, then choose one to add it. Each entry shows the list's type, such as **Customer list** or **Website visitors**, and says when Google reports that it is not eligible for Search.
+- A list you have added is not offered again. You can still type a list's full name, such as `customers/<id>/userLists/<id>`, into the box below the picker, for a list the picker does not show.
+- If the list cannot be shown, a note in the section says why: it is not available here, or it could not be read for this project's Google Ads account. Type the list names instead.
+- If the account has more user lists than the picker shows, a note says so. Type the name of any list that is not listed.
 
 ## Networks, display path, more ads and negative keywords (Search only)
 
@@ -119,8 +134,39 @@ Google Ads shows a short description on small placements, so a Performance Max c
 
 The descriptions filled in from the brief are often longer than that. If none of yours is short enough, a message appears under **Descriptions** and **Create Campaign** stays unavailable. Shorten one description, or add a short one, to continue.
 
+## Demand Gen video ads
+
+A Demand Gen campaign builds one ad: an image ad or a YouTube video ad. Choose one under **Ad format** in the **Demand Gen Creative** section. **Image ad** is the default.
+
+When you choose **Video ad (YouTube)**, the section shows the video ad's fields:
+
+- **YouTube video IDs**: 1 to 5 videos, one per line. Enter the bare video ID, such as dQw4w9WgXcQ, not a link. An ID uses only letters, digits, - and \_.
+- **Headlines**: 1 to 5, up to 40 characters each.
+- **Long headlines**: 1 to 5, up to 90 characters each.
+- **Descriptions**: 1 to 5, up to 90 characters each.
+- **Business name**: required once you fill in any field, up to 25 characters.
+- **Call to action**: optional. Choose Sign up, Learn more, Book now, Visit site or Watch now, or leave it on None.
+- **Logo image (1:1)**: exactly one square logo of at least 128 x 128 pixels, as an `https://` link or from the brief's image library.
+
+In headlines, long headlines, descriptions and the business name, Chinese, Japanese, Korean and other full-width characters count as two, and a line can't repeat another in the same list, even in different capitals.
+
+If you entered an image ad and then choose the video ad, or the other way round, what you entered is kept but not sent, and a note under **Ad format** says so. Choose the other format again to send it instead. If you leave every video field empty, the campaign is created without an ad, as it is with an empty image ad.
+
+## Demand Gen ad groups
+
+A Demand Gen campaign can be split into named ad groups, such as Retargeting and Prospecting, each with its own ad. Tick **Split into named ad groups** in the **Demand Gen Creative** section. The first ad group appears, and **Add ad group** adds more, up to 5. **Remove ad group** removes one.
+
+For each ad group:
+
+- **Name**: required. Google Ads names the ad group after the event, then " - Display | " and this name, such as "KubeCon NA - Display | Retargeting". That full name can be up to 255 characters, or 244 for an ad group with a video ad, because Google Ads names the video ad after the ad group plus " - Video ad". Each ad group needs a different name, and names that differ only in capitals count as the same.
+- **Image ad** or **Video ad (YouTube)**: choose one. The ad group shows that ad's fields, with the same rules as the campaign's single ad above. Paste image links; the brief's image library is not offered for ad groups.
+
+Every ad group needs a complete ad. Until every ad group has a name and a complete ad, a message under the ad groups explains what to fix and **Create Campaign** stays unavailable. The same happens if you remove every ad group while the checkbox is ticked: add one, or untick the checkbox.
+
+While the campaign is split, the single image ad or video ad you entered is kept but not sent, and a note under the checkbox says so. Untick the checkbox to send the single ad instead. Your ad groups are then kept but not sent, and the note says that too.
+
 ## If something is wrong
 
-If a window, adjustment, exclusion, excluded place, display path, ad, negative keyword or Performance Max description would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
+If a window, adjustment, exclusion, excluded place, display path, ad, video ad, ad group, negative keyword or Performance Max description would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
 If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to a campaign type that does not take them, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type.

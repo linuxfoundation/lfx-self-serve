@@ -51,6 +51,22 @@ export function buildFaqPrintView(asset: MktgFaqAsset, brand: MktgPrintBrand): F
   return { brand, groups: faqGroupViews(asset.content) };
 }
 
+/**
+ * The title of a printed Marketing OS document, which the browser gives the
+ * saved PDF as its file name: `<Project> · <Asset> · v<N> · <YYYY-MM-DD>`,
+ * the shape of the deck's title (`mktgSlidesExportDeckTitle`), with the
+ * revision the page shows and that revision's own date (UTC), never the
+ * download's: the same version always yields the same file name. A part the
+ * document lacks is left out: the version for the family PDF, which binds
+ * several revisions; the date when the revision carries none.
+ */
+export function mktgPrintDocumentTitle(projectName: string, asset: string, version: number | null, revisionAt: string | null): string {
+  const time = Date.parse(revisionAt ?? '');
+  const date = Number.isNaN(time) ? '' : new Date(time).toISOString().slice(0, 10);
+  const parts = [projectName.trim(), asset.trim(), version === null ? '' : `v${version}`, date];
+  return parts.filter((part) => part !== '').join(' · ');
+}
+
 /** The LF look, for a project with no Brand Kit. */
 function lfPrintBrand(): MktgPrintBrand {
   const look = MKTG_PRINT_LF_LOOK;

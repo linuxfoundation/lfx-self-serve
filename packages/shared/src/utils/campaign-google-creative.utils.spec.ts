@@ -3,9 +3,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GOOGLE_CHANNELS_WITH_CREATIVE, GOOGLE_CREATIVE_FIELD_SPECS } from '../constants/campaign.constants';
+import {
+  GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
+} from '../constants/campaign.constants';
 import type { GoogleCreativeFieldSpec } from '../interfaces/campaign.interface';
 import {
+  GOOGLE_CREATIVE_WIRE_FIELDS,
+  GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS,
   googleCreativeFieldWidth,
   googleCreativeImageFit,
   googleCreativeImageRequirement,
@@ -141,5 +148,27 @@ describe('googleCreativeFieldWidth', () => {
     for (const control of ['callToActionText', 'assetGroupName', 'path1', 'path2']) {
       expect(controls.has(control)).toBe(true);
     }
+  });
+});
+
+describe('the creative wire tables', () => {
+  it("give each creative channel its request key and the catalogue's list, image and scalar fields", () => {
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      const wire = GOOGLE_CREATIVE_WIRE_FIELDS[channel];
+      const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+      expect(wire.key).toBe(GOOGLE_CREATIVE_REQUEST_KEYS[channel]);
+      expect(wire.lists).toEqual(fields.filter((f) => f.kind === 'list').map((f) => f.control));
+      expect(wire.scalars).toEqual(fields.filter((f) => f.kind === 'text').map((f) => f.control));
+    }
+    // Display's long headline is a scalar where Performance Max's long headlines are a list.
+    expect(GOOGLE_CREATIVE_WIRE_FIELDS['display'].scalars).toContain('longHeadline');
+    expect(GOOGLE_CREATIVE_WIRE_FIELDS['performance-max'].lists).toContain('longHeadlines');
+  });
+
+  it('keep the Demand Gen video ad under its own key, with its logo the only image slot', () => {
+    expect(GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS.key).toBe(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY);
+    expect(GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS.images).toEqual(['logoImages']);
+    expect(GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS.lists).toContain('youtubeVideoIds');
+    expect(Object.values(GOOGLE_CREATIVE_WIRE_FIELDS).map((w) => w.key)).not.toContain(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY);
   });
 });

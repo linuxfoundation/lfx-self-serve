@@ -3,8 +3,8 @@ title: Newsletters
 description: Write, send, and schedule newsletters to a Newsletter group, see how they performed, and read the newsletters you receive in LFX Self Serve.
 audience: [all]
 product_area: Mailing Lists
-tags: [newsletters, newsletter, newsletter group, email, communication, schedule, analytics, personalization, share, views]
-last_updated: 2026-11-03
+tags: [newsletters, newsletter, newsletter group, email, communication, schedule, analytics, personalization, share, views, invite, member benefit]
+last_updated: 2026-11-05
 intercom_collection: Mailing Lists
 ---
 
@@ -99,6 +99,15 @@ When you open a newsletter, two counts sit to the left of it (above it on a smal
 If you aren't a member of any Newsletter group, the page says "No newsletters yet". Join a foundation or project's Newsletter group to see its newsletters.
 
 From a newsletter or a foundation card you can select **Invite a colleague** or **Invite** to invite a colleague to the foundation's newsletter. To send an invitation, you must be a member of the foundation's newsletter group and have a verified email at one of the member organizations named in the invite dialog. Your colleague's company email must also be at one of those member organizations.
+
+### Reading without an LFX account
+
+Newsletters are a member benefit, so an employee of a member company can read them without signing in:
+
+- **From an invitation email.** Your colleague selects **Accept invitation**. If they aren't signed in, a window over the page shows the foundation's logo and their email address, which they can't change. They select **Continue**, their email is added to the newsletter's list, and the latest newsletter opens. The invitation link works for 30 days. If they're already signed in, they go to the foundation's newsletters and confirm there, as before.
+- **From a shared link.** Someone who opens a link to a newsletter without signing in is asked for their work email. If the email is at a member company, **Continue** opens that newsletter. LFX then emails them a link; their email is added to the newsletter's list only after they open it. A personal address, or an address at a company that isn't a member, can't open the newsletter.
+
+Either way, the window also offers **Sign in** for people who have an LFX account. Reading without signing in lasts until the browser is closed or for 12 hours, whichever comes first, and the LFX sidebar isn't shown.
 
 If you open a link to a newsletter you can't read, you see a message such as **Restricted Newsletter** or **This newsletter is a member benefit** instead of the newsletter.
 

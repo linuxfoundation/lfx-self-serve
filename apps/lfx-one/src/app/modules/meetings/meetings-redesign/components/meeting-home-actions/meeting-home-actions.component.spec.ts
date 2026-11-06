@@ -287,7 +287,7 @@ describe('MeetingHomeActionsComponent', () => {
 
       expect(overlay.querySelector('[role="alertdialog"]')).not.toBeNull();
       expect(find('meetings-home-row-actions-remove-info')?.textContent).toContain('Synthetic sync');
-      expect(find('meetings-home-row-actions-remove-project')?.lastElementChild?.textContent?.trim()).toBe('Synthetic Project');
+      expect(find('meeting-dialog-context-project')?.lastElementChild?.textContent?.trim()).toBe('Synthetic Project');
       const message = find('meetings-home-row-actions-remove-message');
       expect(find('meetings-home-row-actions-remove-info')?.compareDocumentPosition(message as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
       const description = find('meetings-home-row-actions-remove-description');

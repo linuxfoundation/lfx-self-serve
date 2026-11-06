@@ -222,6 +222,18 @@ export function extractErrorMessage(error: unknown, fallback: string): string {
 }
 
 /**
+ * A BFF validation failure's first field-level message (e.g. "This newsletter is a member benefit of …"),
+ * else the envelope message via {@link extractErrorMessage}, else `fallback`.
+ */
+export function extractFieldOrEnvelopeMessage(error: unknown, fallback: string): string {
+  if (error instanceof HttpErrorResponse) {
+    const fieldMessage = (error.error as { errors?: { message?: string }[] } | null)?.errors?.[0]?.message;
+    if (fieldMessage) return fieldMessage;
+  }
+  return extractErrorMessage(error, fallback);
+}
+
+/**
  * Maps a join-committee failure to actionable toast copy. Reads the upstream text through
  * `serverAuthoredMessage` (both BFF error shapes) — never `err.error?.message` alone, which is
  * dead code on the error-class proxy path that emits under `error` (GH-2349).

@@ -16,11 +16,15 @@ import {
   HEALTH_METRICS_OVERVIEW_NEWSLETTER_ENGAGEMENT,
   HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE,
   HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS,
+  HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY,
   HEALTH_METRICS_OVERVIEW_STROKES,
+  HEALTH_METRICS_OVERVIEW_TREND_MIN_SPAN_DAYS,
+  HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP,
   HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS,
 } from '../constants/health-metrics-overview.constants';
+import { HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
-import { formatIsoDateLabel } from './date-time.utils';
+import { formatIsoDateLabel, parseIsoDateAsUtcMidnight } from './date-time.utils';
 import { getHealthMetricsTrainingDeliveryTypeLabel } from './health-metrics-training.utils';
 import { formatCurrency, formatNumber } from './number.utils';
 
@@ -28,8 +32,12 @@ import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interfac
 import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsForecastCurve,
+  HealthMetricsEventsForecastCurvePoint,
   HealthMetricsEventsForecastCurveSeries,
   HealthMetricsEventsForecastEvent,
+  HealthMetricsEventsSnapshot,
+  HealthMetricsEventsSnapshotPeriod,
+  HealthMetricsEventsSnapshotWeek,
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsBlankCopy, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
@@ -49,6 +57,10 @@ import type {
   HealthMetricsOverviewEmptyStateCopy,
   HealthMetricsOverviewEngagementSplit,
   HealthMetricsOverviewEvent,
+  HealthMetricsOverviewEventDialogBadgeView,
+  HealthMetricsOverviewEventDialogBadgesView,
+  HealthMetricsOverviewEventGaugeView,
+  HealthMetricsOverviewEventStatus,
   HealthMetricsOverviewEventRegistrationsView,
   HealthMetricsOverviewEventRowView,
   HealthMetricsOverviewEvents,
@@ -68,14 +80,22 @@ import type {
   HealthMetricsOverviewOutstandingBalance,
   HealthMetricsOverviewParticipatingOrgs,
   HealthMetricsOverviewParticipatingOrgsView,
+  HealthMetricsOverviewSnapshotChangeView,
+  HealthMetricsOverviewSnapshotRowView,
+  HealthMetricsOverviewSnapshotSectionView,
   HealthMetricsOverviewTrainingMetric,
   HealthMetricsOverviewTrainingView,
   HealthMetricsOverviewTrendKpiView,
+  HealthMetricsOverviewTrendNavigatorView,
   HealthMetricsOverviewTrendView,
+  HealthMetricsOverviewTrendWindow,
 } from '../interfaces/health-metrics-overview.interface';
 import type { HealthMetricsTrainingEnrollment } from '../interfaces/health-metrics-training.interface';
 
 const NOT_AVAILABLE = '—';
+
+/** A ring with no status draws blue, as the bar does. */
+const ACCENT_GAUGE: HealthMetricsOverviewEventGaugeView = { tone: 'accent', level: null, empty: false, unmeasured: false };
 
 /** The page header's year-to-date span, e.g. "Jan 1 – Oct 22, 2026", shown beside the YTD period. */
 export function buildHealthMetricsYtdRangeLabel(today: Date): string {
@@ -491,7 +511,8 @@ export function buildHealthMetricsOverviewAddPastMeetingUrl(pccUrl: string, foun
 export function buildHealthMetricsOverviewTrendView(
   row: HealthMetricsOverviewEvent,
   headline: HealthMetricsEventsForecastEvent | null,
-  series: HealthMetricsEventsForecastCurveSeries | null
+  series: HealthMetricsEventsForecastCurveSeries | null,
+  window: HealthMetricsOverviewTrendWindow | null = null
 ): HealthMetricsOverviewTrendView {
   const goal = headline?.goal ?? row.registrationsGoal;
   const high = headline?.forecastHigh ?? null;
@@ -504,12 +525,10 @@ export function buildHealthMetricsOverviewTrendView(
       {
         ...trendKpi('predicted', 'Predicted', formatCount(headline?.forecastAvg ?? null)),
         range: high !== null && low !== null ? { high: formatCount(high), low: formatCount(low) } : null,
+        tip: HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP,
       },
     ],
-    goalLabel: formatCount(goal),
-    daysTitle: 'Days left',
-    daysLabel: formatCount(headline?.daysLeft),
-    ...buildTrendChart(series, goal),
+    ...buildTrendChart(series, goal, window, false),
   };
 }
 
@@ -520,7 +539,8 @@ export function buildHealthMetricsOverviewTrendView(
 export function buildHealthMetricsOverviewPastTrendView(
   row: HealthMetricsOverviewEvent,
   curve: HealthMetricsEventsForecastCurve | null,
-  series: HealthMetricsEventsForecastCurveSeries | null
+  series: HealthMetricsEventsForecastCurveSeries | null,
+  window: HealthMetricsOverviewTrendWindow | null = null
 ): HealthMetricsOverviewTrendView {
   const lastYearFinals = (curve?.formats ?? [])
     .map((format) => [...format.points].reverse().find((point) => point.priorYear !== null)?.priorYear ?? null)
@@ -533,14 +553,106 @@ export function buildHealthMetricsOverviewPastTrendView(
       trendKpi('last-year', 'Same point last year', formatCount(lastYear)),
       trendKpi('final', 'Final', formatCount(row.registrations)),
     ],
-    goalLabel: formatCount(row.registrationsGoal),
-    daysTitle: 'Event held',
-    daysLabel: '0',
-    ...buildTrendChart(series, row.registrationsGoal),
-    // The event is over, so nothing marks today.
-    todayX: null,
-    todayPct: null,
+    // The event is over, so nothing is predicted and nothing marks today.
+    ...buildTrendChart(series, row.registrationsGoal, window, true),
   };
+}
+
+/**
+ * The event dialog's header badges: the goal as an outlined success badge, or a quiet one when no goal is set, and the
+ * days left, or "Event held". An upcoming event's days left wait for its forecast read.
+ */
+export function buildHealthMetricsOverviewEventDialogBadges(
+  row: HealthMetricsOverviewEvent,
+  isPast: boolean,
+  headline: HealthMetricsEventsForecastEvent | null
+): HealthMetricsOverviewEventDialogBadgesView {
+  const goal = headline?.goal ?? row.registrationsGoal;
+  const daysLeft = headline?.daysLeft ?? null;
+  const goalIcon = 'fa-light fa-bullseye-arrow';
+  const daysIcon = 'fa-light fa-calendar';
+
+  return {
+    goal: goal
+      ? { label: `Registration goal: ${formatCount(goal)}`, icon: goalIcon, variant: 'line', tone: 'success' }
+      : { label: 'No registration goal', icon: goalIcon, variant: 'subtle', tone: 'neutral' },
+    days: daysBadge(isPast, daysLeft, daysIcon),
+  };
+}
+
+/**
+ * The Snapshot tab's two tables for one period. Every figure runs through yesterday, which the end column dates and
+ * the design calls "today". Registrations come in ISO weeks, so their window starts on the Sunday before the first
+ * week the period touches; packages and sponsorship revenue are rolling, so theirs starts the period's days back.
+ */
+export function buildHealthMetricsOverviewSnapshotView(
+  snapshot: HealthMetricsEventsSnapshot,
+  period: HealthMetricsEventsSnapshotPeriod
+): HealthMetricsOverviewSnapshotSectionView[] {
+  const days = HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS.find((option) => option.value === period)?.days ?? 7;
+  const today = snapshot.today;
+  const endHeader = today ? `${formatIsoDateLabel(shiftIsoDate(today, -1))} (today)` : '';
+  const rollingStartHeader = today ? formatIsoDateLabel(shiftIsoDate(today, -days)) : '';
+
+  const { weeks } = snapshot;
+  const firstIndex = weeks.findIndex((week) => week.inPeriod[period]);
+  const first = firstIndex >= 0 ? weeks[firstIndex] : null;
+  const before = firstIndex > 0 ? weeks[firstIndex - 1] : null;
+  const latest = weeks.at(-1) ?? null;
+  const weekly = (level: (week: HealthMetricsEventsSnapshotWeek) => number, delta: (week: HealthMetricsEventsSnapshotWeek) => number) => {
+    const end = latest ? level(latest) : 0;
+    return { start: weeklyStart(first, before, latest, level, delta, end), end };
+  };
+  const registrations = weekly(
+    (week) => week.registrations,
+    (week) => week.registrationsDelta
+  );
+  const registrationRevenue = weekly(
+    (week) => week.registrationRevenueUsd,
+    (week) => week.registrationRevenueDeltaUsd
+  );
+
+  const packages = snapshot.packages.map((item) => ({ key: item.tier, start: item.sold - item.soldInPeriod[period], end: item.sold }));
+  const totals = packages.reduce((sum, item) => ({ start: sum.start + item.start, end: sum.end + item.end }), { start: 0, end: 0 });
+  const sponsorshipRevenue = { start: snapshot.sponsorshipRevenueUsd - snapshot.sponsorshipRevenueInPeriodUsd[period], end: snapshot.sponsorshipRevenueUsd };
+
+  return [
+    {
+      key: 'registration',
+      title: 'Registration',
+      startHeader: first ? formatIsoDateLabel(shiftIsoDate(first.weekStartDate, -1)) : rollingStartHeader,
+      endHeader,
+      rows: [
+        snapshotRow('registrations', 'Registrations', registrations, formatCount),
+        snapshotRow(
+          'registration-revenue',
+          'Registration revenue',
+          registrationRevenue,
+          formatDollars,
+          HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY.registrationRevenueTip
+        ),
+      ],
+      emptyCopy: null,
+    },
+    {
+      key: 'sponsorship',
+      title: 'Sponsorship',
+      startHeader: rollingStartHeader,
+      endHeader,
+      rows: [
+        ...packages.map((item) => snapshotRow(`package-${item.key}`, item.key, item, formatCount)),
+        ...(packages.length ? [{ ...snapshotRow('totals', 'Totals', totals, formatCount), totals: true }] : []),
+        snapshotRow(
+          'sponsorship-revenue',
+          'Sponsorship revenue',
+          sponsorshipRevenue,
+          formatDollars,
+          HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY.sponsorshipRevenueTip
+        ),
+      ],
+      emptyCopy: packages.length ? null : HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY.noPackages,
+    },
+  ];
 }
 
 /** "Springfield · Starts Dec 8, 2026", the dialog's line under the event name; either half drops out when missing. */
@@ -549,61 +661,246 @@ export function buildHealthMetricsOverviewTrendMeta(event: Pick<HealthMetricsOve
 }
 
 function trendKpi(key: string, label: string, value: string): HealthMetricsOverviewTrendKpiView {
-  return { key, label, value, range: null };
+  return { key, label, value, range: null, tip: null };
 }
 
 /**
- * The trend chart: its lines, goal and today marker, on a scale rounded up to at most 5 even steps (1, 2, 2.5 or 5
- * times a power of ten), with ticks every 30 days. The forecast and its band start at the last measured day.
+ * The trend chart over the visible span of the last 180 days, as the design draws it. It opens on a best fit (see
+ * `fitTrendWindow`) and the reader can move it. The y scale fits the visible lines in at most 5 even steps (1, 2,
+ * 2.5 or 5 times a power of ten), with the goal on it only when it sits near them. The prediction, its band and the
+ * Today marker start at the last measured day; a past event has none of them.
  */
 function buildTrendChart(
   series: HealthMetricsEventsForecastCurveSeries | null,
-  goal: number | null
-): Omit<HealthMetricsOverviewTrendView, 'kpis' | 'goalLabel' | 'daysTitle' | 'daysLabel'> {
-  const window = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
-  const points = (series?.points ?? []).filter((point) => point.daysToEvent >= -window && point.daysToEvent <= 0);
-  const peak = Math.max(goal ?? 0, ...points.flatMap((point) => [point.actual ?? 0, point.forecastHigh ?? 0, point.forecastAvg ?? 0, point.priorYear ?? 0]));
-  const { step, steps } = niceScale(peak * 1.05);
+  goal: number | null,
+  requested: HealthMetricsOverviewTrendWindow | null,
+  isPast: boolean
+): Omit<HealthMetricsOverviewTrendView, 'kpis'> {
+  const days = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
+  const line = trendLines(series, isPast);
+  const fitWindow = fitTrendWindow(line);
+  const visible = clampTrendWindow(requested ?? fitWindow);
+  const { start, end } = visible;
+  const span = end - start;
+
+  const visiblePeak = Math.max(1, ...range(start, end).map((index) => line.peak(index)));
+  const goalShown = goal !== null && goal > 0 && goal <= visiblePeak * 1.35;
+  const { step, steps } = trendScale(Math.max(visiblePeak * 1.06, goalShown ? (goal as number) * 1.05 : 0));
   const max = step * steps;
-  const x = (daysToEvent: number): number => ((window + daysToEvent) / window) * 600;
+  const x = (index: number): number => ((index - start) / span) * 600;
   const y = (value: number): number => 220 - (value / max) * 220;
-  const actual = points.filter((point) => point.actual !== null);
-  const lastActual = actual[actual.length - 1] ?? null;
-  const forecast = points.filter((point) => point.forecastAvg !== null && (lastActual === null || point.daysToEvent >= lastActual.daysToEvent));
-  const band = points.filter(
-    (point) => point.forecastLow !== null && point.forecastHigh !== null && (lastActual === null || point.daysToEvent >= lastActual.daysToEvent)
-  );
-  const path = (coords: [number, number][]): string => coords.map(([px, py], index) => `${index ? 'L' : 'M'}${px.toFixed(1)} ${py.toFixed(1)}`).join(' ');
-  const todayX = lastActual ? x(lastActual.daysToEvent) : null;
+  const plot = (values: (number | null)[], from: number, to: number): [number, number][] =>
+    range(Math.max(from, start), Math.min(to, end))
+      .filter((index) => values[index] !== null)
+      .map((index): [number, number] => [x(index), y(values[index] as number)]);
+
+  // With no measured day in the window the forecast still draws, from wherever it starts.
+  const forecastFrom = line.now ?? 0;
+  const showForecast = !isPast && forecastFrom <= end;
+  const highs = showForecast ? plot(line.high, forecastFrom, days) : [];
+  const lows = showForecast ? plot(line.low, forecastFrom, days) : [];
+  const gapEnd = line.now === null ? -1 : Math.min(line.now, end);
+  // Each fill keeps to its side by adding the point where the lines cross between two days.
+  const gap = (top: (current: number, prior: number) => number, bottom: (current: number, prior: number) => number): string => {
+    const indexes = range(start, gapEnd).filter((index) => line.actual[index] !== null && line.prior[index] !== null);
+    if (indexes.length < 2) return '';
+    const samples = indexes.flatMap((index, at): [number, number, number][] => {
+      const current = line.actual[index] as number;
+      const prior = line.prior[index] as number;
+      const next = indexes[at + 1];
+      if (next === undefined) return [[index, current, prior]];
+      const ahead = current - prior;
+      const nextAhead = (line.actual[next] as number) - (line.prior[next] as number);
+      if (ahead * nextAhead >= 0) return [[index, current, prior]];
+      const share = ahead / (ahead - nextAhead);
+      const crossing = current + share * ((line.actual[next] as number) - current);
+      return [
+        [index, current, prior],
+        [index + share * (next - index), crossing, crossing],
+      ];
+    });
+    const upper = samples.map(([day, current, prior]): [number, number] => [x(day), y(top(current, prior))]);
+    const lower = [...samples].reverse().map(([day, current, prior]): [number, number] => [x(day), y(bottom(current, prior))]);
+    return `${svgPath([...upper, ...lower])} Z`;
+  };
+  const todayShown = !isPast && line.now !== null && line.now >= start && line.now <= end;
+  const tickStep = trendTickStep(span);
+  // Ticks count days to the event, on multiples of the step, from the nearest one inside the span's right edge.
+  const firstTick = Math.ceil((days - end) / tickStep) * tickStep;
+  const goalY = goalShown ? y(goal as number) : null;
 
   return {
-    currentPath: path(actual.map((point) => [x(point.daysToEvent), y(point.actual as number)])),
-    lastYearPath: path(points.filter((point) => point.priorYear !== null).map((point) => [x(point.daysToEvent), y(point.priorYear as number)])),
-    predictedPath: forecast.length
-      ? path([
-          ...(lastActual ? ([[x(lastActual.daysToEvent), y(lastActual.actual as number)]] as [number, number][]) : []),
-          ...forecast.map((point): [number, number] => [x(point.daysToEvent), y(point.forecastAvg as number)]),
-        ])
-      : '',
-    bandPath: band.length
-      ? `${path([
-          ...band.map((point): [number, number] => [x(point.daysToEvent), y(point.forecastHigh as number)]),
-          ...[...band].reverse().map((point): [number, number] => [x(point.daysToEvent), y(point.forecastLow as number)]),
-        ])} Z`
-      : '',
-    todayX: todayX === null ? null : todayX.toFixed(1),
-    todayPct: todayX === null ? null : ((todayX / 600) * 100).toFixed(2),
-    goalY: goal !== null && goal > 0 ? y(goal).toFixed(1) : null,
+    currentPath: svgPath(plot(line.actual, 0, line.now ?? -1)),
+    lastYearPath: svgPath(plot(line.prior, 0, days)),
+    predictedPath: showForecast ? svgPath(plot(line.predicted, forecastFrom, days)) : '',
+    bandPath: highs.length > 1 ? `${svgPath([...highs, ...[...lows].reverse()])} Z` : '',
+    bandHighPath: highs.length > 1 ? svgPath(highs) : '',
+    bandLowPath: lows.length > 1 ? svgPath(lows) : '',
+    aheadPath: gap(Math.max, (_current, prior) => prior),
+    behindPath: gap((_current, prior) => prior, Math.min),
+    todayX: todayShown ? x(line.now as number).toFixed(1) : null,
+    todayPct: todayShown ? ((x(line.now as number) / 600) * 100).toFixed(2) : null,
+    goalY: goalY === null ? null : goalY.toFixed(1),
+    goalPct: goalY === null ? null : ((goalY / 220) * 100).toFixed(2),
+    goalLabel: goalShown ? `Registration goal: ${formatCount(goal)}` : null,
     yTicks: Array.from({ length: steps + 1 }, (_, index) => steps - index).map((tick) => ({
       label: formatCount(step * tick),
       pct: (100 - (tick / steps) * 100).toFixed(2),
       y: (220 - (tick / steps) * 220).toFixed(1),
     })),
-    xTicks: Array.from({ length: window / 30 + 1 }, (_, index) => window - index * 30).map((days) => ({
-      label: String(days),
-      pct: (((window - days) / window) * 100).toFixed(2),
-    })),
+    xTicks: range(0, Math.floor((days - start - firstTick) / tickStep))
+      .map((index) => firstTick + index * tickStep)
+      .map((daysOut) => ({ label: String(daysOut), pct: ((x(days - daysOut) / 600) * 100).toFixed(2) })),
+    window: visible,
+    fitWindow,
+    navigator: buildTrendNavigator(line, visible, isPast),
   };
+}
+
+/** One series' days as arrays indexed 0 (180 days out) to 180 (the event day), joined across the days between reads, with the last measured day as `now`. */
+interface TrendLines {
+  actual: (number | null)[];
+  prior: (number | null)[];
+  /** The prediction, the band's highs and its lows, each starting at the last measured day's count, or as read with none. */
+  predicted: (number | null)[];
+  high: (number | null)[];
+  low: (number | null)[];
+  now: number | null;
+  /** The highest value any line reaches on a day. */
+  peak: (index: number) => number;
+}
+
+function trendLines(series: HealthMetricsEventsForecastCurveSeries | null, isPast: boolean): TrendLines {
+  const days = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
+  const points = (series?.points ?? []).filter((point) => point.daysToEvent >= -days && point.daysToEvent <= 0);
+  const byDay = (pick: (point: HealthMetricsEventsForecastCurvePoint) => number | null): (number | null)[] => {
+    const values: (number | null)[] = Array.from({ length: days + 1 }, () => null);
+    for (const point of points) values[days + point.daysToEvent] = pick(point);
+    return values;
+  };
+  const measuredDays = byDay((point) => point.actual);
+  const actual = fillTrendGaps(measuredDays);
+  const measured = measuredDays.map((value, index) => (value === null ? -1 : index)).filter((index) => index >= 0);
+  const now = measured.length ? measured[measured.length - 1] : null;
+  const fromNow = (pick: (point: HealthMetricsEventsForecastCurvePoint) => number | null): (number | null)[] =>
+    byDay(pick).map((value, index) => {
+      if (isPast) return null;
+      if (now === null) return value;
+      if (index < now) return null;
+      return index === now ? actual[now] : value;
+    });
+  const prior = fillTrendGaps(byDay((point) => point.priorYear));
+  const predicted = fillTrendGaps(fromNow((point) => point.forecastAvg));
+  const high = fillTrendGaps(fromNow((point) => point.forecastHigh));
+  const low = fillTrendGaps(fromNow((point) => point.forecastLow));
+
+  return {
+    actual,
+    prior,
+    predicted,
+    high,
+    low,
+    now,
+    peak: (index) => Math.max(actual[index] ?? 0, prior[index] ?? 0, predicted[index] ?? 0, high[index] ?? 0),
+  };
+}
+
+/**
+ * A line's read days joined by straight segments, so every day between two of them has its value: a span that falls
+ * between read days still draws the line to its edges and scales to it. Nothing is added before the first or after the last.
+ */
+function fillTrendGaps(values: (number | null)[]): (number | null)[] {
+  const read = values.map((value, index) => (value === null ? -1 : index)).filter((index) => index >= 0);
+  const filled = [...values];
+  read.slice(1).forEach((to, at) => {
+    const from = read[at];
+    const first = values[from] as number;
+    const last = values[to] as number;
+    for (let index = from + 1; index < to; index++) filled[index] = first + ((last - first) * (index - from)) / (to - from);
+  });
+  return filled;
+}
+
+/**
+ * The design's best fit: from where registrations become meaningful (2% of the larger final, this year's or last
+ * year's), padded by 12% of the remaining span and snapped to a tick, to the event day; never so late that fewer than
+ * 14 days before today, or 21 days in all, show.
+ */
+function fitTrendWindow(line: TrendLines): HealthMetricsOverviewTrendWindow {
+  const days = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
+  const lastValue = (values: (number | null)[]): number => [...values].reverse().find((value) => value !== null) ?? 0;
+  const final = Math.max(lastValue(line.predicted), lastValue(line.actual), lastValue(line.prior));
+  const meaningful = range(0, days).find((index) => line.peak(index) >= final * 0.02) ?? 0;
+  const span = days - meaningful;
+  const pad = Math.max(5, Math.round(span * 0.12));
+  const snap = trendSnapStep(span);
+  const start = Math.max(0, Math.floor((meaningful - pad) / snap) * snap);
+  return { start: Math.min(start, Math.max(0, (line.now ?? days) - 14), days - 21), end: days };
+}
+
+function trendSnapStep(span: number): number {
+  if (span > 120) return 30;
+  if (span > 60) return 10;
+  return 5;
+}
+
+function trendTickStep(span: number): number {
+  if (span <= 40) return 5;
+  if (span <= 80) return 10;
+  if (span <= 150) return 20;
+  return 30;
+}
+
+/** A window kept on the chart and at least the minimum span wide. */
+function clampTrendWindow(requested: HealthMetricsOverviewTrendWindow): HealthMetricsOverviewTrendWindow {
+  const days = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
+  const minSpan = HEALTH_METRICS_OVERVIEW_TREND_MIN_SPAN_DAYS;
+  const start = Math.max(0, Math.min(Math.round(requested.start), days - minSpan));
+  return { start, end: Math.min(days, Math.max(Math.round(requested.end), start + minSpan)) };
+}
+
+/** The whole window's lines on their own 600×44 scale, and the visible span picked out over them. */
+function buildTrendNavigator(line: TrendLines, visible: HealthMetricsOverviewTrendWindow, isPast: boolean): HealthMetricsOverviewTrendNavigatorView {
+  const days = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
+  const top = Math.max(1, ...range(0, days).map((index) => line.peak(index))) * 1.05;
+  const plot = (values: (number | null)[]): [number, number][] =>
+    range(0, days)
+      .filter((index) => values[index] !== null)
+      .map((index): [number, number] => [(index / days) * 600, 40 - ((values[index] as number) / top) * 36]);
+  const current = plot(line.actual);
+  const first = current[0];
+  const last = current[current.length - 1];
+
+  return {
+    currentPath: svgPath(current),
+    currentAreaPath: first && last ? `${svgPath(current)} L${last[0].toFixed(1)} 40 L${first[0].toFixed(1)} 40 Z` : '',
+    lastYearPath: svgPath(plot(line.prior)),
+    predictedPath: isPast ? '' : svgPath(plot(line.predicted)),
+    selectionLeftPct: ((visible.start / days) * 100).toFixed(2),
+    selectionWidthPct: (((visible.end - visible.start) / days) * 100).toFixed(2),
+    dimRightPct: (((days - visible.end) / days) * 100).toFixed(2),
+    ticks: range(0, Math.floor(days / 30))
+      .map((index) => days - index * 30)
+      .map((daysOut) => ({ label: String(daysOut), pct: (((days - daysOut) / days) * 100).toFixed(2) })),
+  };
+}
+
+/** At most 5 even, whole-number steps of 1, 2, 2.5 or 5 times a power of ten: the design's y scale for the trend. */
+function trendScale(top: number): { step: number; steps: number } {
+  const magnitude = Math.max(1, 10 ** Math.floor(Math.log10(Math.max(top, 1) / 5)));
+  const step =
+    [1, 2, 2.5, 5, 10].map((factor) => factor * magnitude).find((candidate) => Number.isInteger(candidate) && Math.ceil(top / candidate) <= 5) ??
+    magnitude * 10;
+  return { step, steps: Math.max(1, Math.ceil(top / step)) };
+}
+
+/** Whole numbers from `from` to `to`, both included; empty when `to` is below `from`. */
+function range(from: number, to: number): number[] {
+  return to < from ? [] : Array.from({ length: to - from + 1 }, (_, index) => from + index);
+}
+
+function svgPath(coords: [number, number][]): string {
+  return coords.map(([px, py], index) => `${index ? 'L' : 'M'}${px.toFixed(1)} ${py.toFixed(1)}`).join(' ');
 }
 
 /** " since Jun" from the growth baseline, with its year when that is not the period's; none without a baseline. */
@@ -701,16 +998,6 @@ function buildNewsletterEngagement(period: HealthMetricsOverviewNewsletterPeriod
     pctLabel: formatShare(level.share),
     widthPct: level.share !== null && level.share > 0 && level.count ? Math.max(level.share * 100, 1.5) : 0,
   }));
-}
-
-/** The smallest whole step from 1, 2, 2.5 or 5 times a power of ten that covers `top` in at most 5 steps. */
-function niceScale(top: number): { step: number; steps: number } {
-  const ceiling = top > 0 ? top : 5;
-  const magnitude = Math.max(1, 10 ** Math.floor(Math.log10(ceiling / 5)));
-  const step =
-    [1, 2, 2.5, 5, 10].map((factor) => factor * magnitude).find((candidate) => Number.isInteger(candidate) && Math.ceil(ceiling / candidate) <= 5) ??
-    magnitude * 10;
-  return { step, steps: Math.max(1, Math.ceil(ceiling / step)) };
 }
 
 /** "Springfield · Dec 8–10, 2026"; either half drops out when missing. */
@@ -886,6 +1173,7 @@ function buildEventRow(event: HealthMetricsOverviewEvent, isPast: boolean): Heal
       // No rule colors upcoming proposals yet, so they stay blue; past ones are green, as the design draws them.
       barClass: isPast ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
       neutral: false,
+      gauge: isPast ? { ...ACCENT_GAUGE, tone: 'level', level: 'high' } : ACCENT_GAUGE,
       note: event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP In Review' : 'N/A',
     },
   };
@@ -898,25 +1186,41 @@ function buildEventRow(event: HealthMetricsOverviewEvent, isPast: boolean): Heal
 function buildRegistrationsBar(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventRegistrationsView {
   const goal = event.registrationsGoal;
   const countLabel = formatCount(event.registrations);
-  if (goal === null || goal <= 0) return { countLabel, sideLabel: 'No goal set', sideValue: '', widthPct: 0, barClass: '', neutral: true, statusLabel: null };
+  if (goal === null || goal <= 0) {
+    return {
+      countLabel,
+      sideLabel: 'No goal set',
+      sideValue: '',
+      widthPct: 0,
+      barClass: '',
+      neutral: true,
+      statusLabel: null,
+      gauge: { ...ACCENT_GAUGE, empty: true },
+    };
+  }
   const side = { countLabel, sideLabel: 'Goal:', sideValue: formatCount(goal), neutral: false };
-  if (event.registrations === null) return { ...side, widthPct: 0, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted, statusLabel: null };
+  if (event.registrations === null) {
+    return { ...side, widthPct: 0, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted, statusLabel: null, gauge: { ...ACCENT_GAUGE, unmeasured: true } };
+  }
 
   const share = event.registrations / goal;
   return { ...side, widthPct: clampPct(share * 100), ...statusFields(isPast ? goalShareStatus(share) : paceStatus(event.compScore)) };
 }
 
-function statusFields(status: { label: string; fillClass: string } | null): Pick<HealthMetricsOverviewEventRegistrationsView, 'barClass' | 'statusLabel'> {
-  return status ? { barClass: status.fillClass, statusLabel: status.label } : { barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue, statusLabel: null };
+function statusFields(
+  status: HealthMetricsOverviewEventStatus | null
+): Pick<HealthMetricsOverviewEventRegistrationsView, 'barClass' | 'statusLabel' | 'gauge'> {
+  if (!status) return { barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue, statusLabel: null, gauge: ACCENT_GAUGE };
+  return { barClass: status.fillClass, statusLabel: status.label, gauge: { ...ACCENT_GAUGE, tone: 'level', level: status.level } };
 }
 
-function paceStatus(compScore: string | null): { label: string; fillClass: string } | null {
+function paceStatus(compScore: string | null): HealthMetricsOverviewEventStatus | null {
   return compScore && compScore in HEALTH_METRICS_OVERVIEW_EVENT_PACE
     ? HEALTH_METRICS_OVERVIEW_EVENT_PACE[compScore as keyof typeof HEALTH_METRICS_OVERVIEW_EVENT_PACE]
     : null;
 }
 
-function goalShareStatus(share: number): { label: string; fillClass: string } {
+function goalShareStatus(share: number): HealthMetricsOverviewEventStatus {
   if (share >= HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES.onTrack) return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.onTrack;
   if (share >= HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES.atRisk) return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.atRisk;
   return HEALTH_METRICS_OVERVIEW_EVENT_STATUS.action;
@@ -999,6 +1303,73 @@ function buildInitials(name: string): string {
     .slice(0, 2)
     .map((word) => word.charAt(0).toUpperCase())
     .join('');
+}
+
+function daysBadge(isPast: boolean, daysLeft: number | null, icon: string): HealthMetricsOverviewEventDialogBadgeView | null {
+  if (isPast) return { label: 'Event held', icon, variant: 'line', tone: 'neutral' };
+  if (daysLeft === null) return null;
+  return { label: daysLeft === 1 ? '1 day left' : `${formatCount(daysLeft)} days left`, icon, variant: 'line', tone: 'neutral' };
+}
+
+/**
+ * The level before the period's first week: the week before it when read, else that week's level less its change.
+ * The newest week runs past its own end, so with nothing read before it the view's spine starts at the event's first
+ * activity, and the level before is zero.
+ */
+function weeklyStart(
+  first: HealthMetricsEventsSnapshotWeek | null,
+  before: HealthMetricsEventsSnapshotWeek | null,
+  latest: HealthMetricsEventsSnapshotWeek | null,
+  level: (week: HealthMetricsEventsSnapshotWeek) => number,
+  delta: (week: HealthMetricsEventsSnapshotWeek) => number,
+  end: number
+): number {
+  if (before) return level(before);
+  if (!first) return end;
+  if (first === latest) return 0;
+  return level(first) - delta(first);
+}
+
+function snapshotRow(
+  key: string,
+  label: string,
+  levels: { start: number; end: number },
+  format: (value: number) => string,
+  tip: string | null = null
+): HealthMetricsOverviewSnapshotRowView {
+  return {
+    key,
+    label,
+    tip,
+    startLabel: format(levels.start),
+    endLabel: format(levels.end),
+    change: snapshotChange(levels.start, levels.end, format),
+    totals: false,
+  };
+}
+
+/** "+139 (74%)" against the start; no share when the start is zero. A change under one unit reads as none. */
+function snapshotChange(start: number, end: number, format: (value: number) => string): HealthMetricsOverviewSnapshotChangeView {
+  const change = Math.round(end - start);
+  if (change === 0) return { label: 'No change', tone: 'neutral', icon: null };
+
+  const share = start > 0 ? ` (${Math.abs(Math.round((change / start) * 100))}%)` : '';
+  return change > 0
+    ? { label: `+${format(change)}${share}`, tone: 'success', icon: 'fa-solid fa-circle-arrow-up' }
+    : { label: `−${format(-change)}${share}`, tone: 'danger', icon: 'fa-solid fa-circle-arrow-down' };
+}
+
+/** Whole dollars with separators, as the Snapshot shows money: `$4,575,877`. */
+function formatDollars(value: number): string {
+  return `$${Math.round(value).toLocaleString('en-US')}`;
+}
+
+/** `YYYY-MM-DD` moved by whole days, in UTC so no offset can slip it a day. */
+function shiftIsoDate(iso: string, days: number): string {
+  const date = parseIsoDateAsUtcMidnight(iso);
+  if (!date) return iso;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function formatCount(value: number | null | undefined): string {

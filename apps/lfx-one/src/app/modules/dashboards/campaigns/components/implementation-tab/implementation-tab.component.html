@@ -163,6 +163,21 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-action-picker-live">
   {{ googleConversionActionPickerAnnouncement() }}
 </div>
+<!-- The audience segment picker's loading line, reason, empty or partial-list note, announced on the same terms (#5244). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-user-list-picker-live">
+  {{ googleUserListPickerAnnouncement() }}
+</div>
+<!-- The Demand Gen format the create will not send, kept and announced on the same terms (#5226); empty off Demand Gen. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-format-held-live">
+  {{ demandGenFormatHeldMessage() }}
+</div>
+<!-- The named Demand Gen ad groups' refusal and what the split leaves unsent (#5226); empty off Demand Gen. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ad-groups-error-live">
+  {{ demandGenAdGroupsError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ad-groups-held-live">
+  {{ demandGenAdGroupsHeldMessage() }}
+</div>
 <!-- The first ad's display-width errors, announced on the same terms; empty off Search. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-first-ad-copy-live">
   {{ googleFirstAdHeadlinesError() ?? '' }} {{ googleFirstAdDescriptionsError() ?? '' }}
@@ -1153,20 +1168,55 @@
 
         SEARCH ONLY, gated on `googleAudienceSegmentsAvailable` — upstream attaches audience criteria
         to the Search ad group and refuses them on every other channel rather than dropping them.
-        Each entry is an EXISTING user list's resource name: campaign-service creates no audiences
-        and lists none, so there is nothing to pick from. Empty sends no key, so an untouched
-        section changes nothing about the campaign.
+        Each entry is an EXISTING user list's resource name. The picker lists the account's user lists
+        (#5244) and adds the picked one's resource name exactly as typing it would; the typed box stays
+        for a list the picker does not show. Empty sends no key, so an untouched section changes
+        nothing about the campaign.
       -->
       @if (googleAudienceSegmentsAvailable()) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-audience-segments-section">
           <label class="mb-2 block text-xs font-medium text-gray-700" for="google-audience-segment-add">
             Google Audience Segments ({{ googleAudienceSegments().length }}/{{ googleMaxAudienceSegments }})
           </label>
+          @switch (googleUserListPicker().status) {
+            @case ('loaded') {
+              @if (googleUserListPickerOptions().length > 0 && !googleAudienceSegmentsFull()) {
+                <div class="mb-3">
+                  <lfx-ui-combobox
+                    #googleUserListCombobox
+                    label="Pick a user list"
+                    placeholder="Search this account's user lists"
+                    emptyText="No user list matches"
+                    size="small"
+                    (valueChange)="onGoogleUserListPicked($event)"
+                    data-testid="implementation-google-user-list-picker">
+                    @for (list of googleUserListPickerOptions(); track list.resourceName) {
+                      <lfx-ui-option [value]="list.resourceName" [label]="list.label" />
+                    }
+                  </lfx-ui-combobox>
+                </div>
+              }
+              @if (googleUserListPicker().lists.length === 0) {
+                <p class="mb-2 text-xs text-gray-500" data-testid="implementation-google-user-list-picker-empty">{{ userListPickerEmpty }}</p>
+              } @else if (googleUserListPicker().truncated) {
+                <p class="mb-2 text-xs text-gray-500" data-testid="implementation-google-user-list-picker-truncated">{{ userListPickerTruncated }}</p>
+              }
+            }
+            @case ('loading') {
+              <p class="mb-2 text-xs text-gray-500" data-testid="implementation-google-user-list-picker-loading">{{ userListPickerLoading }}</p>
+            }
+            @case ('unavailable') {
+              <p class="mb-2 text-xs text-gray-500" data-testid="implementation-google-user-list-picker-unavailable">
+                {{ googleUserListPicker().reason }}
+              </p>
+            }
+          }
           <div class="flex flex-wrap items-center gap-2">
             @for (segment of googleAudienceSegments(); track segment; let i = $index) {
               <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
                 {{ segment }}
                 <button
+                  #googleAudienceSegmentRemove
                   type="button"
                   (click)="removeGoogleAudienceSegment(i)"
                   class="ml-0.5 text-blue-600 hover:text-blue-800"
@@ -1180,6 +1230,7 @@
               <!-- Free text, as the callout box is: the resource name is the input, and its shape is
                    judged on add so a refusal arrives while the text is still in the box. -->
               <input
+                #googleAudienceSegmentAddInput
                 id="google-audience-segment-add"
                 type="text"
                 placeholder="+ Add user list resource name"
@@ -2464,6 +2515,10 @@
         whenever Search is ticked alongside it. See its docblock for why each one is withheld rather
         than shown and ignored.
       -->
+      <!-- Tracked by the channel, so the Demand Gen "Ad format" choice below stays mounted (and keeps
+           keyboard focus) when the format changes. Only the fields container re-mounts on a format
+           change, through the one-item loop tracked by the group further down: a `formGroupName`
+           does not re-register when its name changes in place. -->
       @for (section of googleCreativeSections(); track section.channel) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" [attr.data-testid]="'implementation-creative-section-' + section.channel">
           <h3 class="text-sm font-semibold text-gray-900">{{ section.label }} Creative</h3>
@@ -2478,62 +2533,247 @@
           @if (section.channel === 'performance-max' && performanceMaxPrefillShown()) {
             <p class="mt-1 text-xs text-gray-500" data-testid="implementation-creative-prefill-notice-performance-max">{{ performanceMaxPrefillNotice }}</p>
           }
-          <div class="mt-4 flex flex-col gap-4" [formGroupName]="section.groupName">
-            @for (field of section.fields; track field.control) {
-              <div class="flex flex-col gap-1">
-                <label class="text-xs font-medium text-gray-700" [attr.for]="section.channel + '-' + field.control">{{ field.label }}</label>
-                @if (field.kind === 'list') {
-                  <textarea
-                    [id]="section.channel + '-' + field.control"
-                    [formControlName]="field.control"
-                    (blur)="onGoogleImageFieldBlur(section.groupName, field)"
-                    [attr.aria-describedby]="
-                      creativeFieldErrors()[section.groupName + '.' + field.control] ? section.channel + '-' + field.control + '-error' : null
-                    "
-                    rows="3"
-                    class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control"></textarea>
-                } @else {
-                  <input
-                    type="text"
-                    [id]="section.channel + '-' + field.control"
-                    [formControlName]="field.control"
-                    [attr.aria-describedby]="
-                      creativeFieldErrors()[section.groupName + '.' + field.control] ? section.channel + '-' + field.control + '-error' : null
-                    "
-                    class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
-                }
-                <span class="text-xs text-gray-400">{{ field.guidance }}</span>
-                @if (creativeFieldErrors()[section.groupName + '.' + field.control]; as error) {
-                  <span
-                    class="text-xs text-red-600"
-                    [id]="section.channel + '-' + field.control + '-error'"
-                    [attr.data-testid]="'implementation-creative-error-' + section.channel + '-' + field.control"
-                    >{{ error }}</span
-                  >
-                }
-                @if (googleTypedImageWarnings()[section.groupName + '.' + field.control]; as warning) {
-                  <span
-                    class="text-xs break-all text-amber-700"
-                    [attr.data-testid]="'implementation-creative-url-check-' + section.channel + '-' + field.control"
-                    >{{ warning }}</span
-                  >
-                }
-                <!-- The slot's stored images, beside its pasted URLs. Present only on an image slot,
-                     and only on an explicit yes from `googleAssetUploadAvailable()`; see `googleImageSlots`. -->
-                @if (googleImageSlots()[section.groupName + '.' + field.control]; as slot) {
-                  <lfx-google-creative-image-library
-                    [slot]="slot"
-                    [accept]="creativeAssetAccept"
-                    (pick)="onGoogleImagePick(slot.key, $event)"
-                    (remove)="onGoogleImageRemove(slot.key, $event)"
-                    (upload)="onGoogleImageUpload(slot.key, $event)"
-                    (cancelUpload)="onGoogleImageUploadCancel()" />
-                }
-              </div>
+          <!--
+            Demand Gen split into named ad groups (#5226), each with its own image or video ad. On, the
+            groups replace the single ad below, which is kept but not sent; off, the groups are kept
+            but not sent. The note under the checkbox says which.
+          -->
+          @if (section.channel === 'demand-gen') {
+            <!-- `change` bubbles from the wrapper's own input to its host, as on the postal geo box. -->
+            <lfx-checkbox
+              [form]="campaignForm"
+              control="demandGenAdGroupsSplit"
+              inputId="implementation-demand-gen-ad-groups-split-input"
+              label="Split into named ad groups"
+              [ariaDescribedBy]="demandGenAdGroupsHeldMessage() ? 'implementation-demand-gen-ad-groups-held' : ''"
+              (change)="onDemandGenAdGroupsSplitChange()"
+              class="mt-4 block"
+              data-testid="implementation-demand-gen-ad-groups-split" />
+            @if (demandGenAdGroupsHeldMessage()) {
+              <p id="implementation-demand-gen-ad-groups-held" class="mt-1 text-xs text-gray-500" data-testid="implementation-demand-gen-ad-groups-held">
+                {{ demandGenAdGroupsHeldMessage() }}
+              </p>
             }
-          </div>
+          }
+          @if (section.channel === 'demand-gen' && demandGenAdGroupsActive()) {
+            <div class="mt-4 flex flex-col gap-4" formArrayName="demandGenAdGroups" data-testid="implementation-demand-gen-ad-groups">
+              <p class="text-xs text-gray-500">
+                Up to {{ demandGenMaxAdGroups }} ad groups, such as Retargeting and Prospecting, each with its own ad. Google Ads names each one after the
+                event, then " - Display | " and its name.
+              </p>
+              @for (group of campaignForm.controls.demandGenAdGroups.controls; track group; let i = $index) {
+                <fieldset
+                  class="flex flex-col gap-3 rounded-md border border-gray-200 p-4"
+                  [formGroupName]="i"
+                  [attr.data-testid]="'implementation-demand-gen-ad-group-' + i">
+                  <legend class="px-1 text-xs font-medium text-gray-700">Ad group {{ i + 1 }}</legend>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-700" [attr.for]="'demand-gen-ad-group-' + i + '-name'">Name</label>
+                    <lfx-input-text
+                      [form]="group"
+                      control="name"
+                      type="text"
+                      size="small"
+                      [inputId]="'demand-gen-ad-group-' + i + '-name'"
+                      [attr.data-testid]="'implementation-demand-gen-ad-group-name-' + i" />
+                  </div>
+                  <div class="flex flex-wrap gap-4" [attr.data-testid]="'implementation-demand-gen-ad-group-format-' + i">
+                    <lfx-radio-button
+                      [form]="group"
+                      control="format"
+                      [name]="'demand-gen-ad-group-' + i + '-format'"
+                      value="image"
+                      label="Image ad"
+                      [inputId]="'demand-gen-ad-group-' + i + '-format-image'"
+                      [attr.data-testid]="'implementation-demand-gen-ad-group-format-image-' + i" />
+                    <lfx-radio-button
+                      [form]="group"
+                      control="format"
+                      [name]="'demand-gen-ad-group-' + i + '-format'"
+                      value="video"
+                      label="Video ad (YouTube)"
+                      [inputId]="'demand-gen-ad-group-' + i + '-format-video'"
+                      [attr.data-testid]="'implementation-demand-gen-ad-group-format-video-' + i" />
+                  </div>
+                  <!-- One-item loop tracked by the format, so the fields re-mount on the other group when it changes. -->
+                  @for (format of [group.controls.format.value]; track format) {
+                    <div class="flex flex-col gap-4" [formGroupName]="format === 'video' ? 'videoCreative' : 'creative'">
+                      @for (field of demandGenAdGroupFields[format]; track field.control) {
+                        @let fieldId = 'demand-gen-ad-group-' + i + '-' + field.control;
+                        @let fieldError = demandGenAdGroupFieldErrors()[i + '.' + format + '.' + field.control];
+                        <div class="flex flex-col gap-1">
+                          <label class="text-xs font-medium text-gray-700" [attr.for]="fieldId">{{ field.label }}</label>
+                          @if (field.kind === 'list') {
+                            <lfx-textarea
+                              [form]="format === 'video' ? group.controls.videoCreative : group.controls.creative"
+                              [control]="field.control"
+                              [inputId]="fieldId"
+                              [rows]="3"
+                              [describedBy]="fieldError ? fieldId + '-error' : undefined"
+                              [invalid]="!!fieldError"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control" />
+                          } @else if (field.options) {
+                            <lfx-select
+                              [form]="format === 'video' ? group.controls.videoCreative : group.controls.creative"
+                              [control]="field.control"
+                              [options]="field.selectOptions ?? []"
+                              [inputId]="fieldId"
+                              size="small"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control" />
+                          } @else {
+                            <lfx-input-text
+                              [form]="format === 'video' ? group.controls.videoCreative : group.controls.creative"
+                              [control]="field.control"
+                              type="text"
+                              size="small"
+                              [inputId]="fieldId"
+                              [describedBy]="fieldError ? fieldId + '-error' : null"
+                              [invalid]="!!fieldError"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control" />
+                          }
+                          <span class="text-xs text-gray-400">{{ field.guidance }}</span>
+                          @if (fieldError) {
+                            <span
+                              class="text-xs text-red-600"
+                              [id]="fieldId + '-error'"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-error-' + i + '-' + field.control"
+                              >{{ fieldError }}</span
+                            >
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+                  <div>
+                    <lfx-button
+                      label="Remove ad group"
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="removeDemandGenAdGroup(i)"
+                      [attr.data-testid]="'implementation-demand-gen-ad-group-remove-' + i" />
+                  </div>
+                </fieldset>
+              }
+              @if (campaignForm.controls.demandGenAdGroups.length < demandGenMaxAdGroups) {
+                <div>
+                  <lfx-button
+                    label="Add ad group"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="addDemandGenAdGroup()"
+                    data-testid="implementation-demand-gen-ad-group-add" />
+                </div>
+              }
+              @if (demandGenAdGroupsError(); as error) {
+                <p class="text-xs text-red-600" data-testid="implementation-demand-gen-ad-groups-error">{{ error }}</p>
+              }
+            </div>
+          }
+          <!--
+            Demand Gen builds ONE ad, an image ad or a video ad (#5226). The choice decides which of the
+            two creative groups this section renders and the create sends; the other keeps what was
+            typed into it, and the note below says it will not be sent.
+          -->
+          @if (section.channel === 'demand-gen' && !demandGenAdGroupsActive()) {
+            <fieldset
+              class="mt-4 flex flex-col gap-2"
+              [attr.aria-describedby]="demandGenFormatHeldMessage() ? 'implementation-demand-gen-format-held' : null"
+              data-testid="implementation-creative-demand-gen-format">
+              <legend class="text-xs font-medium text-gray-700">Ad format</legend>
+              <div class="flex flex-wrap gap-4">
+                <lfx-radio-button
+                  [form]="campaignForm"
+                  control="demandGenAdFormat"
+                  name="demandGenAdFormat"
+                  value="image"
+                  label="Image ad"
+                  inputId="implementation-demand-gen-format-image"
+                  data-testid="implementation-creative-demand-gen-format-image" />
+                <lfx-radio-button
+                  [form]="campaignForm"
+                  control="demandGenAdFormat"
+                  name="demandGenAdFormat"
+                  value="video"
+                  label="Video ad (YouTube)"
+                  inputId="implementation-demand-gen-format-video"
+                  data-testid="implementation-creative-demand-gen-format-video" />
+              </div>
+              @if (demandGenFormatHeldMessage()) {
+                <p id="implementation-demand-gen-format-held" class="text-xs text-gray-500" data-testid="implementation-demand-gen-format-held">
+                  {{ demandGenFormatHeldMessage() }}
+                </p>
+              }
+            </fieldset>
+          }
+          @for (groupName of [section.groupName]; track groupName) {
+            <div class="mt-4 flex flex-col gap-4" [formGroupName]="groupName">
+              @for (field of section.fields; track field.control) {
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-medium text-gray-700" [attr.for]="section.channel + '-' + field.control">{{ field.label }}</label>
+                  @if (field.kind === 'list') {
+                    <textarea
+                      [id]="section.channel + '-' + field.control"
+                      [formControlName]="field.control"
+                      (blur)="onGoogleImageFieldBlur(section.groupName, field)"
+                      [attr.aria-describedby]="
+                        creativeFieldErrors()[section.groupName + '.' + field.control] ? section.channel + '-' + field.control + '-error' : null
+                      "
+                      rows="3"
+                      class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control"></textarea>
+                  } @else if (field.options) {
+                    <!-- A closed list upstream accepts, so a select rather than free text; "None" sends none. -->
+                    <lfx-select
+                      [form]="creativeGroups[section.groupName]"
+                      [control]="field.control"
+                      [options]="field.selectOptions ?? []"
+                      [inputId]="section.channel + '-' + field.control"
+                      size="small"
+                      [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
+                  } @else {
+                    <input
+                      type="text"
+                      [id]="section.channel + '-' + field.control"
+                      [formControlName]="field.control"
+                      [attr.aria-describedby]="
+                        creativeFieldErrors()[section.groupName + '.' + field.control] ? section.channel + '-' + field.control + '-error' : null
+                      "
+                      class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
+                  }
+                  <span class="text-xs text-gray-400">{{ field.guidance }}</span>
+                  @if (creativeFieldErrors()[section.groupName + '.' + field.control]; as error) {
+                    <span
+                      class="text-xs text-red-600"
+                      [id]="section.channel + '-' + field.control + '-error'"
+                      [attr.data-testid]="'implementation-creative-error-' + section.channel + '-' + field.control"
+                      >{{ error }}</span
+                    >
+                  }
+                  @if (googleTypedImageWarnings()[section.groupName + '.' + field.control]; as warning) {
+                    <span
+                      class="text-xs break-all text-amber-700"
+                      [attr.data-testid]="'implementation-creative-url-check-' + section.channel + '-' + field.control"
+                      >{{ warning }}</span
+                    >
+                  }
+                  <!-- The slot's stored images, beside its pasted URLs. Present only on an image slot,
+                     and only on an explicit yes from `googleAssetUploadAvailable()`; see `googleImageSlots`. -->
+                  @if (googleImageSlots()[section.groupName + '.' + field.control]; as slot) {
+                    <lfx-google-creative-image-library
+                      [slot]="slot"
+                      [accept]="creativeAssetAccept"
+                      (pick)="onGoogleImagePick(slot.key, $event)"
+                      (remove)="onGoogleImageRemove(slot.key, $event)"
+                      (upload)="onGoogleImageUpload(slot.key, $event)"
+                      (cancelUpload)="onGoogleImageUploadCancel()" />
+                  }
+                </div>
+              }
+            </div>
+          }
         </div>
       }
 

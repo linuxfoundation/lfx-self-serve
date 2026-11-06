@@ -4,7 +4,7 @@ description: How the Organization lens Events page and People → Event Attendee
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, events, event-attendees, registered, attended, counted-by, company-email, filters, all-employees]
-last_updated: 2026-11-04
+last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
@@ -48,7 +48,7 @@ Open **Events** in the Organization lens sidebar. The three tiles at the top, **
 | **Show**                            | **My org's activity** (default): events where the organization has registrants, a submitted speaker or a sponsorship. **All foundation events** also lists events with no activity from the organization. |
 | **Counted by** (under More filters) | See [Counted by](#counted-by).                                                                                                                                                                            |
 
-The **Event Attendees** column header and cells explain what the number counts when you point at them. Select an attendee count to open the people behind it. Linux Foundation staff also see the event's registration goal next to the count.
+The **Event Attendees** column header and cells explain what the number counts when you point at them. Select an attendee count to open the people behind it.
 
 The filters are kept in the page address (`?range=`, `?foundation=`, `?participation=`, `?eventScope=`, `?attribution=`), left out while they are at their defaults, and carried when you switch between the Upcoming and Past tabs. **Clear filters** returns all of them, and the search and status, to their defaults.
 
