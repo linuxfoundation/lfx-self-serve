@@ -283,6 +283,7 @@ export class SurveysTableComponent {
         displayStatus: getSurveyDisplayStatus(survey),
         editCommands: getEntityCommands('surveys', survey.uid, survey.is_foundation, 'edit') ?? ['/surveys', survey.uid, 'edit'],
         editQueryParams: this.buildEditQueryParams(survey),
+        groupName: this.getGroupName(survey),
         groupCommands: this.buildGroupCommands(survey),
         groupQueryParams: survey.project_slug ? { project: survey.project_slug } : null,
       }));
@@ -294,7 +295,7 @@ export class SurveysTableComponent {
 
       const group = this.groupFilter();
       if (group) {
-        filtered = filtered.filter((survey) => this.getGroupName(survey) === group);
+        filtered = filtered.filter((survey) => survey.groupName === group);
       }
 
       const type = this.typeFilter();

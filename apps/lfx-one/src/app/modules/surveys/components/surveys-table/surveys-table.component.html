@@ -123,17 +123,17 @@
                     [routerLink]="survey.groupCommands"
                     [queryParams]="survey.groupQueryParams"
                     class="lfx-table-name-link inline-block max-w-full truncate text-sm"
-                    [pTooltip]="getGroupName(survey)"
+                    [pTooltip]="survey.groupName"
                     tooltipPosition="top"
                     [attr.data-testid]="'surveys-group-link-' + rowId">
-                    {{ getGroupName(survey) }}
+                    {{ survey.groupName }}
                   </a>
                 } @else {
                   <span
                     class="inline-block max-w-full truncate bg-white border border-gray-300 text-gray-700 text-xs px-2 py-0.5 rounded"
-                    [pTooltip]="getGroupName(survey)"
+                    [pTooltip]="survey.groupName"
                     tooltipPosition="top">
-                    {{ getGroupName(survey) }}
+                    {{ survey.groupName }}
                   </span>
                 }
               </td>
