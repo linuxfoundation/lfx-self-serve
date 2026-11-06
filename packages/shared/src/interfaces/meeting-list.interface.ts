@@ -162,6 +162,10 @@ export interface MeetingSummaryDialogData {
   summary: PastMeetingSummary;
   /** Gets the summary after each saved edit or approval. */
   onChange?: (summary: PastMeetingSummary) => void;
+  /** Defaults to `page`. */
+  origin?: MeetingDialogOrigin;
+  /** Shows a summary still awaiting approval to any reader, marked Pending Review, as the meeting page does. */
+  showPending?: boolean;
 }
 
 /** What the meetings home edit scope dialog opens with. */

@@ -21,8 +21,13 @@ export class MeetingsHomeDialogsService {
   private readonly document = inject(DOCUMENT);
 
   /** The caller checks the viewer may see the summary; `onChange` gets each saved edit or approval. */
-  public openSummary(row: MeetingHomeRow, summary: PastMeetingSummary, onChange?: (summary: PastMeetingSummary) => void): DialogRef<void> {
-    return this.modal.open<void, MeetingSummaryDialogData>(MeetingsHomeSummaryDialogComponent, { data: { row, summary, onChange } });
+  public openSummary(
+    row: MeetingHomeRow,
+    summary: PastMeetingSummary,
+    onChange?: (summary: PastMeetingSummary) => void,
+    options: Pick<MeetingSummaryDialogData, 'origin' | 'showPending'> = {}
+  ): DialogRef<void> {
+    return this.modal.open<void, MeetingSummaryDialogData>(MeetingsHomeSummaryDialogComponent, { data: { row, summary, onChange, ...options } });
   }
 
   /** Opens the recording's share link in a new tab. */
