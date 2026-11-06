@@ -18,7 +18,7 @@
     [els]="c.els"
     data-testid="framework-print-cover" />
   <!-- The content pages from the shared page plan, each in its section's running head, with its number in the footer. -->
-  @for (page of pages(); track $index) {
+  @for (page of pages(); track page.footer?.number ?? page.title) {
     <lfx-mktg-print-page
       [page]="page"
       [look]="look()"
