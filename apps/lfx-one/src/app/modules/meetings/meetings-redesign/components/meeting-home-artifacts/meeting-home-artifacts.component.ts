@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MEETINGS_HOME_SUMMARY_ARTIFACT } from '@lfx-one/shared/constants';
-import { Meeting, MeetingHomeArtifact, MeetingHomeRow, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingHomeArtifact, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
 import { getPastMeetingSummaryContent, isPastMeetingSummaryAwaitingApproval } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -47,13 +47,13 @@ export class MeetingHomeArtifactsComponent {
     const meeting: Meeting | PastMeeting = this.row().meeting;
     return 'has_ai_summary' in meeting && meeting.has_ai_summary === true;
   });
-  /** The organizer's summary awaits approval: the Last card's copy, else false once approved this session, else the feed. */
+  /** The organizer's summary awaits approval: the Last card's copy, else false once the feed's summary was approved this session, else the feed. */
   protected readonly summaryPending: Signal<boolean> = computed(() => {
     const row = this.row();
     const lastSummary = this.store.lastMeeting()?.key === row.key ? this.store.lastMeetingSummary() : null;
     if (lastSummary) return isPastMeetingSummaryAwaitingApproval(lastSummary);
-    if (this.store.approvedSummaries().has(row.key)) return false;
     const meeting: Partial<PastMeeting> = row.meeting;
+    if (meeting.ai_summary_uid && this.store.approvedSummaries().get(row.key) === meeting.ai_summary_uid) return false;
     return meeting.ai_summary_awaiting_approval === true;
   });
 

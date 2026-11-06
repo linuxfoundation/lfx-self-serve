@@ -812,7 +812,11 @@ export class UserService {
       if (recordingUrl) meeting.recording_share_url = recordingUrl;
       meeting.has_ai_summary = primarySummaries.has(meeting.id) ? getPastMeetingSummaryContent(meeting, primarySummaries.get(meeting.id)) !== null : undefined;
       // Only an organizer gets a summary that awaits approval, so the flag never reaches an invitee.
-      if (meeting.has_ai_summary) meeting.ai_summary_awaiting_approval = isPastMeetingSummaryAwaitingApproval(primarySummaries.get(meeting.id));
+      const summary = meeting.has_ai_summary ? primarySummaries.get(meeting.id) : null;
+      if (summary) {
+        meeting.ai_summary_awaiting_approval = isPastMeetingSummaryAwaitingApproval(summary);
+        meeting.ai_summary_uid = summary.uid;
+      }
     }
     return withAccess;
   }

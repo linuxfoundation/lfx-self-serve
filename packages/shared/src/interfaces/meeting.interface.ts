@@ -1090,6 +1090,8 @@ export interface PastMeeting extends Meeting {
   has_ai_summary?: boolean;
   /** Whether that summary still awaits the viewing organizer's approval — /api/user/past-meetings?include=artifacts only, set with `has_ai_summary` */
   ai_summary_awaiting_approval?: boolean;
+  /** Uid of the summary those flags describe — /api/user/past-meetings?include=artifacts only, set with `has_ai_summary` */
+  ai_summary_uid?: string;
 }
 
 /** Angular router target for navigating to a specific meeting occurrence. */

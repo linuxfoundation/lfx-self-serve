@@ -145,7 +145,7 @@ describe('MeetingHomeArtifactsComponent', () => {
   });
 
   it('offers an organizer "Review summary" until the summary is approved from its dialog', async () => {
-    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true }));
+    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true, ai_summary_uid: 'synthetic-summary' }));
     const button = (): HTMLButtonElement | null | undefined => query('meetings-home-row-summary')?.querySelector('button');
 
     expect(button()?.textContent?.trim()).toBe('Review summary');
@@ -162,12 +162,17 @@ describe('MeetingHomeArtifactsComponent', () => {
 
     // A row hidden and shown again is a new component over the same, not yet re-indexed feed.
     fixture.destroy();
-    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true }));
+    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true, ai_summary_uid: 'synthetic-summary' }));
     expect(button()?.textContent?.trim()).toBe('AI Summary');
+
+    // A refreshed feed that selects a newer pending summary asks for review again.
+    fixture.destroy();
+    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true, ai_summary_uid: 'newer-summary' }));
+    expect(button()?.textContent?.trim()).toBe('Review summary');
   });
 
   it('keeps "Review summary" after an edit that leaves the summary pending', async () => {
-    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true }));
+    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true, ai_summary_uid: 'synthetic-summary' }));
 
     await click('meetings-home-row-summary');
     const onChange = openSummary.mock.calls[0][2] as (change: PastMeetingSummary) => void;
