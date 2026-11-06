@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MKTG_PRINT_PAGE_AREA,
   MKTG_PRINT_PAGE_CANVAS,
+  MKTG_PRINT_PAGE_CAPS_TRACKING_EM,
   MKTG_PRINT_PAGE_FOOTER_LEFT_X,
   MKTG_PRINT_PAGE_FRAME_PT,
   MKTG_PRINT_PAGE_INSET,
@@ -28,6 +29,7 @@ import {
 import { MKTG_PRINT_INK_ON_LIGHT } from '../constants/mktg-print.constants';
 import { MktgPrintRich } from '../interfaces/mktg-print-page.interface';
 import {
+  mktgPrintCharEm,
   mktgPrintCharsPerLine,
   mktgPrintCutPara,
   mktgPrintCutText,
@@ -45,11 +47,13 @@ import {
   mktgPageBoxStyle,
   mktgPagePt,
   mktgPrintBackPage,
+  mktgPrintBackTitleRich,
   mktgPrintBulletParas,
   mktgPrintClampRow,
   mktgPrintContentPage,
   mktgPrintContinued,
   mktgPrintCoverPage,
+  mktgPrintCoverTitleRich,
   mktgPrintFooterEls,
   mktgPrintFooterLine,
   mktgPrintHeadEls,
@@ -63,11 +67,13 @@ import {
   mktgPrintScaleRows,
   mktgPrintStack,
   mktgPrintTextEl,
+  mktgPrintTitleRich,
   mktgPrintWithFooter,
   mktgPrintWithSentence,
   mktgPrintWithoutNote,
   mktgPrintWithoutSourceSentences,
 } from './mktg-print-page.utils';
+import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
 import { mktgPrintBrand } from './mktg-print.utils';
 
 const look = mktgPrintPageLook(mktgPrintBrand(null));
@@ -111,6 +117,10 @@ describe('the fit', () => {
     expect(plain).toBe(Math.floor((200 - 2 * 7.2) / (11 * 0.55)));
     expect(mktgPrintCharsPerLine(MKTG_PRINT_PAGE_LEFT.w, MKTG_PRINT_PAGE_SIZE.prose, { weight: 600 })).toBeLessThan(plain);
     expect(mktgPrintCharsPerLine(MKTG_PRINT_PAGE_LEFT.w, MKTG_PRINT_PAGE_SIZE.prose, { caps: true })).toBeLessThan(plain);
+    // Capitals count the letter-spacing the print draws (the deck's 0.72 em plus the tracking), bold does not.
+    expect(mktgPrintCharEm({ caps: true })).toBeCloseTo(0.72 + MKTG_PRINT_PAGE_CAPS_TRACKING_EM, 9);
+    expect(mktgPrintCharEm({ weight: 600 })).toBe(0.6);
+    expect(mktgPrintCharsPerLine(420, 7.5, { caps: true })).toBe(Math.floor((420 - 2 * 7.2) / (7.5 * (0.72 + MKTG_PRINT_PAGE_CAPS_TRACKING_EM))));
     expect(mktgPrintCharsPerLine(MKTG_PRINT_PAGE_LEFT.w, MKTG_PRINT_PAGE_SIZE.prose, { bullet: true })).toBeLessThan(plain);
     expect(mktgPrintCharsPerLine(1, 100)).toBe(1);
   });
@@ -143,6 +153,14 @@ describe('the fit', () => {
     expect(mktgPrintCutText('First sentence. Second sentence is longer.', 20)).toBe('First sentence.');
     expect(mktgPrintCutText('No sentence end here at all for a while', 12)).toBe('No sentence…');
     expect(mktgPrintCutText('short', 12)).toBe('short');
+    // The split keeps the deck's semantics on a double space and on tabs, and the cut sheds a run of tabs and
+    // punctuation before its ellipsis in one pass (CodeQL: no trailing-class regex on library input).
+    expect(mktgPrintSentences('a. b.  c')).toEqual(['a. b.  c']);
+    expect(mktgPrintSentences('A. B.  C')).toEqual(['A.', 'B.', 'C']);
+    expect(mktgPrintSentences('One.\tTwo.')).toEqual(['One.', 'Two.']);
+    expect(mktgPrintCutText(`Word, trail${'\t'.repeat(40)}and more words after the tabs`, 14)).toBe('Word, trail…');
+    expect(mktgPrintCutText(`Lead word.${'\t'.repeat(2000)}X`.repeat(1), 11)).toBe('Lead word.');
+    expect(mktgPrintCutText('A tabbed\t\tphrase, — more words follow here', 18)).toBe('A tabbed phrase…');
     expect(mktgPrintOneLine('A short line', 200, 11)).toBe('A short line');
     expect(mktgPrintOneLine(sentence.repeat(3), 100, 11).endsWith('…')).toBe(true);
   });
@@ -158,6 +176,16 @@ describe('the fit', () => {
     expect(cut.runs?.map((run) => run.text).join('')).toBe(cut.text);
     expect(cut.runs?.[0]).toEqual({ text: 'Label:', weight: 600 });
     expect(mktgPrintCutPara(para, 200)).toEqual(para);
+    // A run's tail sheds the middle dot too (the deck's run set), the ellipsis on the last run kept.
+    const dotted = {
+      text: 'Name · the rest of a long row of text',
+      size: 9.5,
+      runs: [{ text: 'Name ·', weight: 600 }, { text: ' the rest of a long row of text' }],
+    };
+    const dottedCut = mktgPrintCutPara(dotted, 8);
+    expect(dottedCut.runs?.map((run) => run.text).join('')).toBe(dottedCut.text);
+    expect(dottedCut.text.endsWith('…')).toBe(true);
+    expect(dottedCut.text).not.toContain('·…');
   });
 
   it('fits or cuts: the block always fits its box, the longest paragraph cut first', () => {
@@ -191,7 +219,8 @@ describe('the page grammar', () => {
 
   it("derives the look from the print brand as the deck's look.ts does: tint, muted and rule mixed from the dark, the on-dark ink by contrast", () => {
     const brand = mktgPrintBrand(null);
-    expect(look).toMatchObject({ dark: brand.dark, accent: brand.accent, font: brand.fontStack });
+    expect(look).toMatchObject({ dark: brand.dark, ink: brand.ink, accent: brand.accent, font: brand.fontStack });
+    expect(look.ink).toBe(brand.dark);
     expect(look.tint).toBe(mktgPrintMixHex('#FFFFFF', brand.dark, 0.06));
     expect(look.muted).toBe(mktgPrintMixHex(brand.dark, '#FFFFFF', 0.3));
     expect(look.rule).toBe(mktgPrintMixHex('#FFFFFF', brand.dark, 0.16));
@@ -204,6 +233,15 @@ describe('the page grammar', () => {
     expect(light.onDark).toBe(MKTG_PRINT_INK_ON_LIGHT);
     const named = mktgPrintPageLook({ ...brand, dark: 'navy', tint: 'azure', onDark: 'white' });
     expect(named).toMatchObject({ tint: 'azure', onDark: 'white', muted: MKTG_PRINT_PAGE_MUTED_INK, rule: MKTG_PRINT_PAGE_RULE_INK });
+    // A kit whose dark is white: the covers and panels keep the white ground, the body text takes the brand's
+    // contrast-safe ink (mktgPrintBrand), never white on white.
+    const kit = brandKitTestRevision();
+    const white = mktgPrintPageLook(mktgPrintBrand({ ...kit, kit: { ...kit.kit, dark: '#FFFFFF' } }));
+    expect(white.dark).toBe('#FFFFFF');
+    expect(white.ink).toBe(MKTG_PRINT_INK_ON_LIGHT);
+    expect(white.onDark).toBe(MKTG_PRINT_INK_ON_LIGHT);
+    expect(mktgPrintProseColumn(white, [{ text: 'Body text.', size: 11 }]).text?.color).toBe(MKTG_PRINT_INK_ON_LIGHT);
+    expect(mktgPrintTitleRich(white, 'Title').color).toBe(MKTG_PRINT_INK_ON_LIGHT);
   });
 
   it('builds a content page with the title fitted to the band and the two eyebrow lines, and a footer with a two-digit number', () => {
@@ -235,6 +273,10 @@ describe('the page grammar', () => {
     expect(cover.layout).toBe('cover');
     expect(cover.titleRich.paras[0]).toMatchObject({ text: 'Brand Kit', size: 44 });
     expect(cover.titleRich.color).toBe(look.onDark);
+    expect(cover.titleRich).toEqual(mktgPrintCoverTitleRich(look, 'Brand Kit'));
+    expect(mktgPrintCoverTitleRich(look, 'Brand Kit', 36).paras[0].size).toBe(36);
+    expect(mktgPrintBackTitleRich(look, 'Open standards')).toMatchObject({ color: look.onDark, align: 'CENTER', anchor: 'MIDDLE' });
+    expect(mktgPrintBackTitleRich(look, 'Open standards').paras[0]).toMatchObject({ text: 'Open standards', caps: true, size: MKTG_PRINT_PAGE_SIZE.title });
     expect(cover.subtitle?.paras[0]).toMatchObject({ text: 'Logos, color, type and usage on one reference.', size: 15 });
     const back = mktgPrintBackPage(look, 'Open tooling for everyone', []);
     expect(back.layout).toBe('back');

@@ -1,30 +1,9 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- One sample icon: the shared shapes on the 24-unit grid, one stroke in the current colour, no fill. Decorative: the label beside it is the text. -->
+<!-- One sample icon, the shared drawing (lfx-mktg-brand-kit-icon): the shapes on the 24-unit grid, one stroke in the current colour. Decorative: the label beside it is the text. -->
 <ng-template #iconTpl let-icon let-size="size">
-  <svg
-    [attr.width]="size"
-    [attr.height]="size"
-    [attr.viewBox]="viewBox"
-    fill="none"
-    stroke="currentColor"
-    [attr.stroke-width]="strokeWidth"
-    [attr.stroke-linecap]="linecap"
-    [attr.stroke-linejoin]="linejoin"
-    class="mx-auto block shrink-0"
-    aria-hidden="true"
-    focusable="false">
-    @for (shape of icon.shapes; track $index) {
-      @if (shape.kind === 'path') {
-        <svg:path [attr.d]="shape.d" />
-      } @else if (shape.kind === 'circle') {
-        <svg:circle [attr.cx]="shape.cx" [attr.cy]="shape.cy" [attr.r]="shape.r" />
-      } @else if (shape.kind === 'rect') {
-        <svg:rect [attr.x]="shape.x" [attr.y]="shape.y" [attr.width]="shape.width" [attr.height]="shape.height" [attr.rx]="shape.rx" />
-      }
-    }
-  </svg>
+  <lfx-mktg-brand-kit-icon [icon]="icon" [size]="size" />
 </ng-template>
 
 @if (print()) {

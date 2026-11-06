@@ -34,7 +34,10 @@ export class MktgPrintBackCoverComponent {
       const els: MktgPrintPageEl[] = [];
       if (this.host().trim()) {
         els.push(
-          mktgPrintTextEl(MKTG_PRINT_PAGE_BACK_HOST_BOX, mktgPrintRich(look, [mktgPrintPara(this.host(), 10, { color: look.onDark })], { align: 'CENTER' }))
+          mktgPrintTextEl(
+            MKTG_PRINT_PAGE_BACK_HOST_BOX,
+            mktgPrintRich(look, [mktgPrintPara(this.host(), MKTG_PRINT_PAGE_SIZE.backHost, { color: look.onDark })], { align: 'CENTER' })
+          )
         );
       }
       if (this.notice().trim()) {

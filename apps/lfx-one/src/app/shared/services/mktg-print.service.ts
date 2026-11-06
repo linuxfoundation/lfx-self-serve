@@ -18,6 +18,7 @@ import {
   MKTG_PRINT_FRAME_LINGER_MS,
   MKTG_PRINT_FRAME_PAPER_IN,
   MKTG_PRINT_LANDSCAPE_CLASS,
+  MKTG_PRINT_DECK_PAGE_NAME,
   MKTG_PRINT_LANDSCAPE_PAGE_SETUP,
   MKTG_PRINT_PAGE_MARGINS_CLASS,
   MKTG_PRINT_PAGE_SETUPS,
@@ -194,10 +195,12 @@ export class MktgPrintService {
     // On the page margins (WebKit) the portrait setup also restates the named framework page, after
     // the cloned sheets, so an engine that did honour named pages could not print the margin-less
     // setup; the book's landscape setup is never written into the framework's page.
+    // The deck pages name their own page (MKTG_PRINT_DECK_PAGE_NAME, set by every page frame), which
+    // beats the `page: mktg-framework` or `page: brand-kit` the print bodies set on the whole document;
+    // the frame writes the landscape setup as that named rule, and unnamed for an engine that does not
+    // honour named pages (WebKit). The portrait documents' named pages are never restated for them.
     const setup = doc.createElement('style');
-    const pageSetup = landscape ? MKTG_PRINT_LANDSCAPE_PAGE_SETUP : this.pageSetup(bodyClass, roots, pageMargins);
-    const restatesFramework = pageSetup === MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'];
-    setup.textContent = restatesFramework ? `@page { ${pageSetup} }\n@page mktg-framework { ${pageSetup} }` : `@page { ${pageSetup} }`;
+    setup.textContent = landscape ? this.landscapeSetup() : this.portraitSetup(bodyClass, roots, pageMargins);
     doc.head.appendChild(setup);
     // Only the three existing print-only wrappers, selected by their shared constants.
     // Keep Angular's scoping attributes; never clone the interactive app shell or its scripts/streams.
@@ -268,6 +271,18 @@ export class MktgPrintService {
     if (bodyClass === BRAND_KIT_PRINT_BODY_CLASS) wrapper = BRAND_KIT_PRINT_ONLY_CLASS;
     if (bodyClass === FOUNDATION_MESSAGE_PRINT_BODY_CLASS) wrapper = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
     return wrapper ? Array.from(this.document.querySelectorAll<HTMLElement>(`.${wrapper}`)) : [];
+  }
+
+  /** The deck pages' setup: the frame's unnamed rule and the deck's named page, both MKTG_PRINT_LANDSCAPE_PAGE_SETUP. */
+  private landscapeSetup(): string {
+    return `@page { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }\n@page ${MKTG_PRINT_DECK_PAGE_NAME} { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }`;
+  }
+
+  /** A portrait document's setup as the frame's unnamed rule; on the page margins the named framework page restated with them. */
+  private portraitSetup(bodyClass: string, roots: HTMLElement[], pageMargins: boolean): string {
+    const pageSetup = this.pageSetup(bodyClass, roots, pageMargins);
+    const restatesFramework = pageSetup === MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'];
+    return restatesFramework ? `@page { ${pageSetup} }\n@page mktg-framework { ${pageSetup} }` : `@page { ${pageSetup} }`;
   }
 
   /** Whether the print's documents are landscape deck pages: a root carries MKTG_PRINT_LANDSCAPE_CLASS, or holds a page that does (the portrait kit class's test). */
