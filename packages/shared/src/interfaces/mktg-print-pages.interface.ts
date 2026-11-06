@@ -9,7 +9,7 @@
 import type { MktgPrintPageBox } from './mktg-print-page.interface';
 import type { MktgSlidesExportAssetKind } from './mktg-slides-export.interface';
 
-/** The appendix pages' layout numbers, pt: the spec's §1 cards (gaps, border, radius, padding, label-to-body gap, least height, row scale floor, the lone last card's threshold, the label's tracking in em) and §2 grid (gaps, sizes, weight, the deck's paragraph gaps as shares of the answer size, the page scales tried before a page is full). */
+/** The appendix pages' layout numbers, pt: the spec's §1 cards (gaps, border, radius, padding, label-to-body gap, least height, row scale floor, the lone last card's threshold, the label's tracking in em) and §2 grid (gaps, sizes, weight, the deck's paragraph gaps in pt and as shares of the answer size, the page scales tried before a page is full). */
 export interface MktgPrintAppendixLayout {
   cardColumnGap: number;
   cardRowGap: number;
@@ -28,7 +28,7 @@ export interface MktgPrintAppendixLayout {
   faqQuestionWeight: number;
   faqAnswerSize: number;
   faqAnswerGap: number;
-  faqBulletGapEm: number;
+  faqListItemGap: number;
   faqPlainAfterBulletEm: number;
   faqBulletAfterPlainEm: number;
   faqSourceGap: number;
@@ -85,7 +85,7 @@ export interface MktgPrintFaqLine {
   marker: string;
 }
 
-/** One question and its answer as the FAQ grid binds them: the field path (the track key), the answer as restricted Markdown rebuilt from its lines (a list item `- ` or `1. ` by its kind; '' when unanswered), the source label ('' when none), the sizes (pt) at the page's scale and whether the answer was cut. */
+/** One question and its answer as the FAQ grid binds them: the field path (the track key), the answer as restricted Markdown rebuilt from its lines (a list item `- ` or `1. ` by its kind; '' when unanswered), the source label ('' when none), the sizes (question, answer, source line) and the fixed gaps (under the question, between items, over the source), pt at the entry's scale, and whether the answer was cut. */
 export interface MktgPrintFaqEntry {
   path: string;
   question: string;
@@ -94,6 +94,10 @@ export interface MktgPrintFaqEntry {
   source: string;
   questionSize: number;
   answerSize: number;
+  sourceSize: number;
+  answerGap: number;
+  listItemGap: number;
+  sourceGap: number;
   cut: boolean;
 }
 
@@ -103,25 +107,27 @@ export interface MktgPrintFaqRow {
   height: number;
 }
 
-/** One page of the grid: `Questions and answers`, `Questions and answers (2)`, …, the share of the sizes the whole page is set at (1, 0.95 or 0.9), the source line's size at it, and its rows. */
+/** One page of the grid: `Questions and answers`, `Questions and answers (2)`, …, the share of the sizes the whole page is set at (1, 0.95 or 0.9) and its rows. */
 export interface MktgPrintFaqPage {
   title: string;
   scale: number;
-  sourceSize: number;
   rows: MktgPrintFaqRow[];
 }
 
-/** A question and its answer as the grid template binds them: the fitted sizes as page lengths. */
+/** A question and its answer as the grid template binds them: the fitted sizes and gaps as page lengths. */
 export interface MktgFaqPrintEntry extends MktgPrintFaqEntry {
   questionSizePt: string;
   answerSizePt: string;
+  sourceSizePt: string;
+  answerGapPt: string;
+  listItemGapPt: string;
+  sourceGapPt: string;
 }
 
-/** One page of the grid as the template binds it: its deck-wide number, its rows' heights as a grid template, its source size as a page length. */
+/** One page of the grid as the template binds it: its deck-wide number and its rows' heights as a grid template. */
 export interface MktgFaqPrintPage extends Omit<MktgPrintFaqPage, 'rows'> {
   number: string;
   rowsTemplate: string;
-  sourceSizePt: string;
   rows: { entries: MktgFaqPrintEntry[] }[];
 }
 

@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { MKTG_FAQ_PRINT_UNANSWERED } from '../constants/mktg-print.constants';
 import {
   MKTG_PRINT_PAGE_AREA,
+  MKTG_PRINT_PAGE_CAPS_TRACKING_EM,
   MKTG_PRINT_PAGE_INSET,
   MKTG_PRINT_PAGE_LINE,
   MKTG_PRINT_PAGE_LOGO_FRAME,
@@ -36,8 +37,8 @@ import faqEnvelope from './__fixtures__/faq-envelope.json';
 import { boilerplatesAssetOfRevision } from './boilerplates.utils';
 import { buildBrandKitBookView } from './brand-kit-book.utils';
 import { faqAssetOfRevision } from './faq.utils';
-import { mktgPrintCharEm, mktgPrintRichHeight, mktgPrintScaleRich } from './mktg-print-fit.utils';
-import { mktgPrintBulletParas, mktgPrintContinued, mktgPrintMixHex, mktgPrintPageLook, mktgPrintPara } from './mktg-print-page.utils';
+import { mktgPrintCharEm, mktgPrintCharsPerLine, mktgPrintRichHeight, mktgPrintScaleRich, mktgPrintWrapLines } from './mktg-print-fit.utils';
+import { mktgPrintContinued, mktgPrintMixHex, mktgPrintPageLook, mktgPrintPara } from './mktg-print-page.utils';
 import {
   mktgBoilerplatesPageCount,
   mktgFaqPageCount,
@@ -95,7 +96,7 @@ function lineOf(size: number): number {
 function cardRowHeight(row: MktgPrintCardRow): number {
   const inner = (area.w - layout.cardColumnGap) / 2 - 2 * layout.cardPaddingX - 2 * layout.cardBorder;
   const capsEm = mktgPrintCharEm({ caps: true });
-  const headInner = (inner * capsEm) / (capsEm + layout.cardLabelTracking);
+  const headInner = (inner * capsEm) / (capsEm - MKTG_PRINT_PAGE_CAPS_TRACKING_EM + layout.cardLabelTracking);
   return Math.max(
     ...row.cards.map((card) =>
       Math.max(
@@ -109,22 +110,25 @@ function cardRowHeight(row: MktgPrintCardRow): number {
   );
 }
 
-/** The width of a grid column: a text box of the deck's, its insets inside. */
-const faqColumnWidth = (area.w - layout.faqColumnGap) / 2;
+/** The width of a grid column: a text box of the deck's (327 pt on the page area), its insets inside. */
+const faqColumnWidth = Math.floor((area.w - layout.faqColumnGap) / 2);
 
-/** The height a FAQ entry takes in its column, from the measure the pagination uses (a plain answer, the source line when one). */
-function faqEntryHeight(entry: MktgPrintFaqEntry, sourceSize: number): number {
-  return mktgPrintRichHeight(
-    {
-      paras: [
-        { text: entry.question, size: entry.questionSize, weight: layout.faqQuestionWeight },
-        { text: entry.answered ? entry.answer : MKTG_FAQ_PRINT_UNANSWERED, size: entry.answerSize, above: layout.faqAnswerGap },
-        ...(entry.source ? [{ text: `${MKTG_PRINT_SOURCE_LEAD} · ${entry.source}`, size: sourceSize, above: layout.faqSourceGap }] : []),
-      ],
-      color: '',
-      font: null,
-    },
-    faqColumnWidth
+/** The height a FAQ entry's text takes in its column (the box's height less its insets), from the deck's measure (a plain answer, the source line when one). */
+function faqEntryHeight(entry: MktgPrintFaqEntry): number {
+  return (
+    mktgPrintRichHeight(
+      {
+        paras: [
+          { text: entry.question, size: entry.questionSize, weight: layout.faqQuestionWeight },
+          { text: entry.answered ? entry.answer : MKTG_FAQ_PRINT_UNANSWERED, size: entry.answerSize, above: entry.answerGap },
+          ...(entry.source ? [{ text: `${MKTG_PRINT_SOURCE_LEAD} · ${entry.source}`, size: entry.sourceSize, above: entry.sourceGap }] : []),
+        ],
+        color: '',
+        font: null,
+      },
+      faqColumnWidth
+    ) -
+    2 * MKTG_PRINT_PAGE_INSET
   );
 }
 
@@ -342,7 +346,7 @@ describe('paginateBoilerplateCards', () => {
 
 describe('paginateFaqPairs', () => {
   it('gives one page with no rows for no questions, so the page keeps its title and proportions', () => {
-    expect(paginateFaqPairs([])).toEqual([{ title: MKTG_PRINT_SECTION_TITLES.faq, scale: 1, sourceSize: MKTG_PRINT_PAGE_SIZE.eyebrow, rows: [] }]);
+    expect(paginateFaqPairs([])).toEqual([{ title: MKTG_PRINT_SECTION_TITLES.faq, scale: 1, rows: [] }]);
     expect(paginateFaqPairs([{ name: 'Empty', path: 'faq[0]', questions: [], unanswered: 0 }])[0].rows).toEqual([]);
     expect(mktgFaqPageCount([])).toBe(1);
   });
@@ -365,30 +369,67 @@ describe('paginateFaqPairs', () => {
         source: 'Website',
         questionSize: layout.faqQuestionSize,
         answerSize: layout.faqAnswerSize,
+        sourceSize: MKTG_PRINT_PAGE_SIZE.eyebrow,
+        answerGap: layout.faqAnswerGap,
+        listItemGap: layout.faqListItemGap,
+        sourceGap: layout.faqSourceGap,
         cut: false,
       })
     );
     expect(third).toEqual(expect.objectContaining({ question: 'How much does membership cost?', answer: '', answered: false, source: '', cut: false }));
   });
 
-  it("reads the deck's list markers, keeps each item's kind in the answer it hands the renderer, and measures the paragraphs with the deck's gaps", () => {
-    const answer = 'Lead-in:\n• One\n• Two\n1) First\n2) Second\n\nClosing line.';
+  it('wraps a column as the deck wraps its text box: 327 pt wide, the text inside the insets, a bullet line 18 pt in, the height without the insets', () => {
+    expect(faqColumnWidth).toBe(327);
+    const long = Array.from({ length: 200 }, () => 'word').join(' ');
+    const [page] = paginateFaqPairs([
+      {
+        name: 'Wrap',
+        path: 'faq[0]',
+        questions: [
+          { path: 'faq[0][1][0]', question: 'Plain?', answer: long, source: '', answered: true },
+          { path: 'faq[0][1][1]', question: 'Bullet?', answer: `- ${long}`, source: '', answered: true },
+        ],
+        unanswered: 0,
+      },
+    ]);
+    const [plain, bullet] = page.rows[0].entries;
+    const size = layout.faqAnswerSize;
+    const lines = (p: { bullet?: boolean }) => mktgPrintWrapLines(long, mktgPrintCharsPerLine(faqColumnWidth, size, p));
+    expect(mktgPrintCharsPerLine(faqColumnWidth, size)).toBe(Math.floor((327 - 2 * MKTG_PRINT_PAGE_INSET) / (size * mktgPrintCharEm({}))));
+    expect(mktgPrintCharsPerLine(faqColumnWidth, size, { bullet: true })).toBe(
+      Math.floor((327 - 2 * MKTG_PRINT_PAGE_INSET - 18) / (size * mktgPrintCharEm({})))
+    );
+    expect(lines({ bullet: true })).toBeGreaterThanOrEqual(lines({}));
+    const question = layout.faqQuestionSize * MKTG_PRINT_PAGE_LINE;
+    expect(faqEntryHeight(plain)).toBeCloseTo(question + layout.faqAnswerGap + lines({}) * size * MKTG_PRINT_PAGE_LINE, 6);
+    expect(faqEntryHeight(bullet)).toBeCloseTo(question + layout.faqAnswerGap + lines({ bullet: true }) * size * MKTG_PRINT_PAGE_LINE, 6);
+    expect(page.rows[0].height).toBeCloseTo(faqEntryHeight(bullet), 6);
+  });
+
+  it("reads the deck's list markers ('-', '*', '•', '1.', '1)'), keeps each item's kind for the renderer, and measures the paragraphs with the deck's gaps", () => {
+    const answer = 'Lead-in:\n• One\n* Two\n- Three\n1) First\n2. Second\n\n+ Not a marker\n\nClosing line.';
     const [page] = paginateFaqPairs([
       { name: 'Lists', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Which steps?', answer, source: '', answered: true }], unanswered: 0 },
     ]);
     const [entry] = page.rows[0].entries;
-    expect(entry.answer).toBe('Lead-in:\n\n- One\n- Two\n1. First\n2. Second\n\nClosing line.');
+    expect(entry.answer).toBe('Lead-in:\n\n- One\n- Two\n- Three\n1. First\n2. Second\n\n+ Not a marker\n\nClosing line.');
     expect(entry.cut).toBe(false);
     const size = layout.faqAnswerSize;
+    const item = (text: string, above: number) => mktgPrintPara(text, size, { bullet: true, above });
     const paras: MktgPrintPara[] = [
       mktgPrintPara('Which steps?', layout.faqQuestionSize, { weight: layout.faqQuestionWeight }),
       mktgPrintPara('Lead-in:', size, { above: layout.faqAnswerGap }),
-      ...mktgPrintBulletParas(['One', 'Two', 'First', 'Second'], size, size * layout.faqBulletAfterPlainEm),
-      mktgPrintPara('Closing line.', size, { above: size * layout.faqPlainAfterBulletEm }),
+      item('One', size * layout.faqBulletAfterPlainEm),
+      item('Two', layout.faqListItemGap),
+      item('Three', layout.faqListItemGap),
+      item('First', layout.faqListItemGap),
+      item('Second', layout.faqListItemGap),
+      mktgPrintPara('+ Not a marker', size, { above: size * layout.faqPlainAfterBulletEm }),
+      mktgPrintPara('Closing line.', size, { above: 0 }),
     ];
-    expect(page.rows[0].height).toBeCloseTo(mktgPrintRichHeight({ paras, color: '', font: null }, faqColumnWidth), 6);
-    // The gap between items is the shell's bullet paragraphs' (the deck's); the layout carries it for the stylesheet.
-    expect(mktgPrintBulletParas(['a', 'b'], 10)[1].above).toBeCloseTo(10 * layout.faqBulletGapEm, 9);
+    expect(layout.faqListItemGap).toBe(2);
+    expect(page.rows[0].height).toBeCloseTo(mktgPrintRichHeight({ paras, color: '', font: null }, faqColumnWidth) - 2 * MKTG_PRINT_PAGE_INSET, 6);
   });
 
   it('fills a page at 100, 95 or 90 % before continuing on a numbered page, one answer line kept free', () => {
@@ -409,19 +450,41 @@ describe('paginateFaqPairs', () => {
       expect(page.rows.length).toBeGreaterThan(0);
       page.rows.forEach((row) => {
         expect(row.entries.length).toBeLessThanOrEqual(2);
-        expect(row.height).toBeCloseTo(Math.max(...row.entries.map((entry) => faqEntryHeight(entry, page.sourceSize))), 6);
+        expect(row.height).toBeCloseTo(Math.max(...row.entries.map((entry) => faqEntryHeight(entry))), 6);
       });
       const height = page.rows.reduce((h, row) => h + row.height, 0) + (page.rows.length - 1) * layout.faqRowGap;
       expect(height).toBeLessThanOrEqual(area.h - lineOf(scaledSize(layout.faqAnswerSize, page.scale)) + 0.01);
     });
-    // A page set smaller carries smaller sizes on every entry.
+    // A page set smaller carries the sizes and the gaps at its scale on every entry, rounded as the shell rounds them.
     const smaller = pages.find((page) => page.scale < 1);
-    if (smaller) {
-      smaller.rows.forEach((row) => row.entries.forEach((entry) => expect(entry.answerSize).toBeLessThan(layout.faqAnswerSize)));
-    }
+    expect(smaller).toBeDefined();
+    smaller?.rows.forEach((row) =>
+      row.entries.forEach((entry) => {
+        expect(entry.answerSize).toBe(scaledSize(layout.faqAnswerSize, smaller.scale));
+        expect(entry.questionSize).toBe(scaledSize(layout.faqQuestionSize, smaller.scale));
+        expect(entry.answerGap).toBe(Math.round(layout.faqAnswerGap * smaller.scale * 10) / 10);
+        expect(entry.sourceGap).toBe(Math.round(layout.faqSourceGap * smaller.scale * 10) / 10);
+      })
+    );
   });
 
-  it('fits a pair whose answer is longer than the area: set smaller, then the answer cut at a sentence, the question intact', () => {
+  it('sets an entry a little too tall for the area smaller as a whole, the question and the gaps with the answer, before anything is cut', () => {
+    const answer = Array.from({ length: 34 }, (_, i) => `Sentence number ${i + 1} of a long answer.`).join(' ');
+    const pages = paginateFaqPairs([
+      { name: 'Tall', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Why so tall?', answer, source: 'Docs', answered: true }], unanswered: 0 },
+    ]);
+    const [entry] = pages[0].rows[0].entries;
+    expect(entry.cut).toBe(false);
+    expect(entry.answer).toBe(answer);
+    expect(entry.answerSize).toBeLessThan(layout.faqAnswerSize);
+    expect(entry.answerSize).toBeGreaterThan(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
+    expect(entry.questionSize).toBeLessThan(layout.faqQuestionSize);
+    expect(entry.sourceSize).toBeLessThan(MKTG_PRINT_PAGE_SIZE.eyebrow);
+    expect(entry.answerGap).toBeLessThan(layout.faqAnswerGap);
+    expect(pages[0].rows[0].height).toBeLessThanOrEqual(area.h - lineOf(layout.faqAnswerSize) + 0.01);
+  });
+
+  it('fits a pair whose answer is longer than the area: set smaller to the floor, then the answer cut at a sentence, the question intact', () => {
     const answer = Array.from({ length: 120 }, (_, i) => `Sentence number ${i + 1} of a very long answer.`).join(' ');
     const pages = paginateFaqPairs([
       { name: 'Long', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Why so long?', answer, source: 'Docs', answered: true }], unanswered: 0 },
@@ -430,15 +493,16 @@ describe('paginateFaqPairs', () => {
     const [entry] = pages[0].rows[0].entries;
     expect(entry.cut).toBe(true);
     expect(entry.question).toBe('Why so long?');
-    expect(entry.answerSize).toBeLessThan(layout.faqAnswerSize);
+    expect(entry.answerSize).toBe(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
+    expect(entry.questionSize).toBe(scaledSize(layout.faqQuestionSize, MKTG_PRINT_PAGE_MIN_SCALE));
     expect(entry.answer.length).toBeLessThan(answer.length);
     expect(entry.answer.endsWith('.')).toBe(true);
     expect(answer.startsWith(entry.answer)).toBe(true);
     expect(pages[0].rows[0].height).toBeLessThanOrEqual(area.h - lineOf(layout.faqAnswerSize) + 0.01);
   });
 
-  it('fits a pair of many short list items as the deck does: the question whole, the answer at the floor, the trailing items dropped and the last kept marked', () => {
-    const items = Array.from({ length: 80 }, (_, i) => `- Step ${i + 1} of the list`);
+  it('fits a pair of many short list items as the deck does: the question whole, the answer at the floor, the items too short to cut, the trailing ones dropped and the last kept marked', () => {
+    const items = Array.from({ length: 80 }, (_, i) => `- Step ${i + 1}`);
     const answer = ['Steps:', ...items].join('\n');
     const [page] = paginateFaqPairs([
       {
@@ -451,7 +515,7 @@ describe('paginateFaqPairs', () => {
     const [entry] = page.rows[0].entries;
     expect(entry.cut).toBe(true);
     expect(entry.question).toBe('Which steps, in order?');
-    expect(entry.questionSize).toBe(layout.faqQuestionSize);
+    expect(entry.questionSize).toBe(scaledSize(layout.faqQuestionSize, MKTG_PRINT_PAGE_MIN_SCALE));
     expect(entry.answerSize).toBe(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
     const lines = entry.answer.split('\n').filter((line) => line !== '');
     expect(lines[0]).toBe('Steps:');

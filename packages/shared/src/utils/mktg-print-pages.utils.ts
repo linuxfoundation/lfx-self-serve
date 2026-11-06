@@ -11,6 +11,7 @@ import { MKTG_FAMILY_EXPORT_KINDS, MKTG_FAMILY_EXPORT_VERSION_LABELS } from '../
 import { MKTG_FAQ_PRINT_UNANSWERED } from '../constants/mktg-print.constants';
 import {
   MKTG_PRINT_PAGE_AREA,
+  MKTG_PRINT_PAGE_CAPS_TRACKING_EM,
   MKTG_PRINT_PAGE_INSET,
   MKTG_PRINT_PAGE_LINE,
   MKTG_PRINT_PAGE_LOGO_FRAME,
@@ -59,7 +60,6 @@ import { brandKitMonthYear } from './brand-kit.utils';
 import { isMktgFamilyExportAgentKey } from './mktg-family-export.utils';
 import { mktgPrintCharEm, mktgPrintFitOrCut, mktgPrintPaginate, mktgPrintRichHeight, mktgPrintScaleRich } from './mktg-print-fit.utils';
 import {
-  mktgPrintBulletParas,
   mktgPrintContinued,
   mktgPrintEyebrowPara,
   mktgPrintFooterLine,
@@ -203,9 +203,10 @@ export function paginateBoilerplateCards(
 ): MktgPrintCardPage[] {
   const budget = area.h - lineOf(MKTG_PRINT_PAGE_SIZE.card);
   const textWidth = (area.w - layout.cardColumnGap) / 2 - 2 * layout.cardPaddingX - 2 * layout.cardBorder;
-  // The label's tracking widens each character: the head wraps as if the column were narrower by that share.
+  // The shell counts its capitals' tracking in their em; the label is tracked by its own share instead, so the head
+  // wraps as if the column were narrower by the ratio of the two.
   const capsEm = mktgPrintCharEm({ caps: true });
-  const headWidth = (textWidth * capsEm) / (capsEm + layout.cardLabelTracking);
+  const headWidth = (textWidth * capsEm) / (capsEm - MKTG_PRINT_PAGE_CAPS_TRACKING_EM + layout.cardLabelTracking);
   const frame = 2 * layout.cardPaddingY + 2 * layout.cardBorder;
   const head = (row: BoilerplatesLengthRow) => mktgPrintPara(mktgPrintCardHead(row), MKTG_PRINT_PAGE_SIZE.eyebrow, { weight: 600, caps: true });
   const body = (text: string, size: number) => mktgPrintPara(text, size, { above: layout.cardBodyGap });
@@ -252,8 +253,11 @@ export function mktgBoilerplatesPageCount(lengths: BoilerplatesLengthRow[]): num
   return paginateBoilerplateCards(lengths).length;
 }
 
-/** A line that opens as a list item, as the deck reads one: `- `, `* `, `+ `, `• `, `1. ` or `1) `. */
-const LIST_LINE = /^\s*(?:([-*+•])|(\d+)[.)])\s+/;
+/** A line that opens as a list item, as the deck reads one (its LIST_LINE): `- `, `* `, `• `, `1. ` or `1) `. */
+const LIST_LINE = /^\s*(?:([-*•])|(\d+)[.)])\s+/;
+
+/** The punctuation a dropped tail sheds before its `…` (the deck's cut), scanned once from the end. */
+const TAIL_CHARS = ',;:.—-';
 
 /** An answer's lines, blank ones dropped, each with its marker by kind. */
 function faqLines(answer: string): MktgPrintFaqLine[] {
@@ -281,96 +285,98 @@ function faqMarkdown(lines: MktgPrintFaqLine[]): string {
 }
 
 /**
- * The lines as paragraphs at `size` with the deck's gaps: the answer's gap under the question, a run of items through
- * the shell's bullet paragraphs, a paragraph after a paragraph none, a paragraph after an item and an item after a
- * paragraph their shares of the size.
+ * The lines as paragraphs at `size` with the deck's gaps (its answerParas): the answer's gap under the question, a
+ * paragraph after a paragraph none, a paragraph after an item a share of the size, an item after an item the item
+ * gap, an item after a paragraph a share of the size. An item is a bullet paragraph (the deck's 18 pt indent).
  */
-function faqAnswerParas(lines: MktgPrintFaqLine[], size: number, layout: MktgPrintAppendixLayout): MktgPrintPara[] {
-  const paras: MktgPrintPara[] = [];
-  let i = 0;
-  while (i < lines.length) {
+function faqAnswerParas(lines: MktgPrintFaqLine[], size: number, gaps: { answer: number; item: number }, layout: MktgPrintAppendixLayout): MktgPrintPara[] {
+  return lines.map((line, i) => {
+    const bullet = line.marker !== '';
     const afterItem = i > 0 && lines[i - 1].marker !== '';
-    if (lines[i].marker === '') {
-      let above = 0;
-      if (i === 0) above = layout.faqAnswerGap;
-      else if (afterItem) above = size * layout.faqPlainAfterBulletEm;
-      paras.push(mktgPrintPara(lines[i].text, size, { above }));
-      i++;
-      continue;
-    }
-    let end = i;
-    while (end < lines.length && lines[end].marker !== '') end++;
-    const firstAbove = i === 0 ? layout.faqAnswerGap : size * layout.faqBulletAfterPlainEm;
-    paras.push(
-      ...mktgPrintBulletParas(
-        lines.slice(i, end).map((line) => line.text),
-        size,
-        firstAbove
-      )
-    );
-    i = end;
-  }
-  return paras;
+    let above = 0;
+    if (i === 0) above = gaps.answer;
+    else if (bullet) above = afterItem ? gaps.item : size * layout.faqBulletAfterPlainEm;
+    else if (afterItem) above = size * layout.faqPlainAfterBulletEm;
+    return mktgPrintPara(line.text, size, { above, bullet });
+  });
 }
 
-/** The lines with the last one marked `…` (the deck's mark of a dropped tail). */
+/** The lines with the last one marked `…` (the deck's mark of a dropped tail), its trailing punctuation shed first. */
 function withEllipsis(lines: MktgPrintFaqLine[]): MktgPrintFaqLine[] {
   const last = lines[lines.length - 1];
   if (!last || last.text.endsWith('…')) return lines;
-  return [...lines.slice(0, -1), { ...last, text: `${last.text.replace(/[\s,;:.—-]+$/, '')}…` }];
+  let end = last.text.length;
+  while (end > 0 && (/\s/.test(last.text[end - 1]) || TAIL_CHARS.includes(last.text[end - 1]))) end--;
+  return [...lines.slice(0, -1), { ...last, text: `${last.text.slice(0, end)}…` }];
+}
+
+/** A gap at a share of itself, rounded as the shell rounds a paragraph's space above (to the tenth of a point). */
+function scaledGap(gap: number, scale: number): number {
+  return Math.round(gap * scale * 10) / 10;
 }
 
 /**
  * The FAQ as pages of a two-column grid (the spec's §2): the pairs in group order flowing row by row, each column
- * a text box of the deck's (its insets inside), a row as tall as the taller pair; as many rows to a page as fit at
- * 100 %, then 95 %, then 90 % of the sizes, the whole page together, one answer line kept free; the rest continues
- * on a numbered page. A pair taller than the budget alone is fitted as the deck fits it: the question whole, the
- * answer set smaller to the floor, then its trailing paragraphs dropped and the last kept marked `…`, a lone
- * paragraph still over cut at a sentence. An unanswered question prints its label; a source prints its line. No
- * questions give one page with no rows.
+ * a text box of the deck's (the text wrapping inside its insets, an entry's height the text's without them), a row
+ * as tall as the taller entry; as many rows to a page as fit at 100 %, then 95 %, then 90 % of the sizes and gaps,
+ * the whole page together, one answer line kept free; the rest continues on a numbered page. An entry taller than
+ * the budget alone is fitted as the deck fits an item: the whole entry set smaller down to the floor; still over,
+ * the question kept whole and the answer fitted to the room left (its longest paragraph cut at a sentence), then
+ * its trailing paragraphs dropped and the last kept marked `…`; a question that alone fills the area is cut as
+ * any block. An unanswered question prints its label; a source prints its line. No questions give one page with
+ * no rows.
  */
 export function paginateFaqPairs(
   groups: FaqGroupView[],
   layout: MktgPrintAppendixLayout = MKTG_PRINT_APPENDIX_LAYOUT,
   area: MktgPrintPageBox = MKTG_PRINT_PAGE_AREA
 ): MktgPrintFaqPage[] {
-  const columnWidth = (area.w - layout.faqColumnGap) / 2;
-  const sourceSize: number = MKTG_PRINT_PAGE_SIZE.eyebrow;
+  // The deck's boxes are whole points: 327 on the page area.
+  const columnWidth = Math.floor((area.w - layout.faqColumnGap) / 2);
+  const inset = 2 * MKTG_PRINT_PAGE_INSET;
   const budgetAt = (s: number) => area.h - lineOf(scaledSize(layout.faqAnswerSize, s));
-  const height = (paras: MktgPrintPara[]) => mktgPrintRichHeight(measured(paras), columnWidth);
+  const height = (paras: MktgPrintPara[]) => mktgPrintRichHeight(measured(paras), columnWidth) - inset;
   const question = (entry: MktgPrintFaqEntry) => mktgPrintPara(entry.question, entry.questionSize, { weight: layout.faqQuestionWeight });
-  const source = (entry: MktgPrintFaqEntry, size: number): MktgPrintPara[] =>
-    entry.source ? [mktgPrintPara(`${MKTG_PRINT_SOURCE_LEAD} · ${entry.source}`, size, { above: layout.faqSourceGap })] : [];
-  const answer = (entry: MktgPrintFaqEntry, lines: MktgPrintFaqLine[], size: number): MktgPrintPara[] =>
-    entry.answered ? faqAnswerParas(lines, size, layout) : [mktgPrintPara(MKTG_FAQ_PRINT_UNANSWERED, size, { above: layout.faqAnswerGap })];
-  const paras = (entry: MktgPrintFaqEntry, sourceAt = sourceSize): MktgPrintPara[] => [
-    question(entry),
-    ...answer(entry, faqLines(entry.answer), entry.answerSize),
-    ...source(entry, sourceAt),
-  ];
+  const source = (entry: MktgPrintFaqEntry): MktgPrintPara[] =>
+    entry.source ? [mktgPrintPara(`${MKTG_PRINT_SOURCE_LEAD} · ${entry.source}`, entry.sourceSize, { above: entry.sourceGap })] : [];
+  const answer = (entry: MktgPrintFaqEntry, lines: MktgPrintFaqLine[]): MktgPrintPara[] => {
+    const gaps = { answer: entry.answerGap, item: entry.listItemGap };
+    return entry.answered
+      ? faqAnswerParas(lines, entry.answerSize, gaps, layout)
+      : [mktgPrintPara(MKTG_FAQ_PRINT_UNANSWERED, entry.answerSize, { above: entry.answerGap })];
+  };
+  const paras = (entry: MktgPrintFaqEntry): MktgPrintPara[] => [question(entry), ...answer(entry, faqLines(entry.answer)), ...source(entry)];
+  const sized = (entry: MktgPrintFaqEntry, s: number): MktgPrintFaqEntry => ({
+    ...entry,
+    questionSize: scaledSize(entry.questionSize, s),
+    answerSize: scaledSize(entry.answerSize, s),
+    sourceSize: scaledSize(entry.sourceSize, s),
+    answerGap: scaledGap(entry.answerGap, s),
+    listItemGap: scaledGap(entry.listItemGap, s),
+    sourceGap: scaledGap(entry.sourceGap, s),
+  });
   const fitEntry = (base: MktgPrintFaqEntry, lines: MktgPrintFaqLine[]): MktgPrintFaqEntry => {
     const budget = budgetAt(1);
-    const fits = (kept: MktgPrintFaqLine[], size: number) =>
-      height([question(base), ...answer(base, kept, size), ...source(base, sourceSize)]) <= budget + 0.01;
     for (let s = 1; s >= MKTG_PRINT_PAGE_MIN_SCALE - 1e-9; s -= MKTG_PRINT_PAGE_SCALE_STEP) {
-      const size = scaledSize(base.answerSize, s);
-      if (fits(lines, size)) return { ...base, answerSize: size };
+      const entry = sized(base, s);
+      if (height(paras(entry)) <= budget + 0.01) return entry;
     }
-    const size = scaledSize(base.answerSize, MKTG_PRINT_PAGE_MIN_SCALE);
-    for (let kept = lines.length - 1; kept >= 1; kept--) {
-      const cut = withEllipsis(lines.slice(0, kept));
-      if (fits(cut, size)) return { ...base, answer: faqMarkdown(cut), answerSize: size, cut: true };
-    }
+    const floor = sized(base, MKTG_PRINT_PAGE_MIN_SCALE);
     if (lines.length === 0) {
-      // Nothing to drop: the question itself is over the budget, so it is cut as any block is.
-      const fitted = mktgPrintFitOrCut(measured(paras(base)), columnWidth, budget);
-      return { ...base, question: fitted.rich.paras[0].text, questionSize: fitted.rich.paras[0].size, cut: fitted.cut };
+      // Nothing under the question to fit: it is over the budget by itself, so it is cut as any block is.
+      const fitted = mktgPrintFitOrCut(measured(paras(floor)), columnWidth, budget + inset, 1);
+      return { ...floor, question: fitted.rich.paras[0].text, cut: fitted.cut };
     }
-    // One paragraph left and still over: cut its text at a sentence to the room under the question and the source.
-    const room = budget - height([question(base), ...source(base, sourceSize)]);
-    const [para] = answer(base, lines.slice(0, 1), size);
-    const fitted = mktgPrintFitOrCut(measured([para]), columnWidth, room + 2 * MKTG_PRINT_PAGE_INSET, 1);
-    return { ...base, answer: faqMarkdown([{ ...lines[0], text: fitted.rich.paras[0].text }]), answerSize: size, cut: true };
+    const room = budget - height([question(floor), ...source(floor)]) + inset;
+    const fits = (kept: MktgPrintFaqLine[]) => height([question(floor), ...answer(floor, kept), ...source(floor)]) <= budget + 0.01;
+    const fitted = mktgPrintFitOrCut(measured(answer(floor, lines)), columnWidth, room, 1);
+    const cutLines = lines.map((line, i) => ({ ...line, text: fitted.rich.paras[i].text }));
+    if (fits(cutLines)) return { ...floor, answer: faqMarkdown(cutLines), cut: fitted.cut };
+    for (let kept = cutLines.length - 1; kept >= 1; kept--) {
+      const tail = withEllipsis(cutLines.slice(0, kept));
+      if (fits(tail)) return { ...floor, answer: faqMarkdown(tail), cut: true };
+    }
+    return { ...floor, answer: faqMarkdown(withEllipsis(cutLines.slice(0, 1))), cut: true };
   };
   const entries = groups.flatMap((group) =>
     group.questions.map((row): MktgPrintFaqEntry => {
@@ -383,26 +389,25 @@ export function paginateFaqPairs(
         source: row.source,
         questionSize: layout.faqQuestionSize,
         answerSize: layout.faqAnswerSize,
+        sourceSize: MKTG_PRINT_PAGE_SIZE.eyebrow,
+        answerGap: layout.faqAnswerGap,
+        listItemGap: layout.faqListItemGap,
+        sourceGap: layout.faqSourceGap,
         cut: false,
       };
       return height(paras(base)) <= budgetAt(1) + 0.01 ? base : fitEntry(base, lines);
     })
   );
-  const sized = (entry: MktgPrintFaqEntry, s: number): MktgPrintFaqEntry => ({
-    ...entry,
-    questionSize: scaledSize(entry.questionSize, s),
-    answerSize: scaledSize(entry.answerSize, s),
-  });
-  const rowHeight = (row: MktgPrintFaqEntry[], s: number) => Math.max(...row.map((entry) => height(paras(sized(entry, s), scaledSize(sourceSize, s)))));
+  const rowHeight = (row: MktgPrintFaqEntry[], s: number) => Math.max(...row.map((entry) => height(paras(sized(entry, s)))));
   const fitsAt = (page: MktgPrintFaqEntry[][], s: number) =>
     page.reduce((h, row) => h + rowHeight(row, s), 0) + (page.length - 1) * layout.faqRowGap <= budgetAt(s) + 0.01;
   const smallest = layout.faqPageScales[layout.faqPageScales.length - 1] ?? 1;
   const pages = mktgPrintPaginate(pairs(entries), (page) => fitsAt(page, smallest));
-  if (pages.length === 0) return [{ title: MKTG_PRINT_SECTION_TITLES.faq, scale: 1, sourceSize, rows: [] }];
+  if (pages.length === 0) return [{ title: MKTG_PRINT_SECTION_TITLES.faq, scale: 1, rows: [] }];
   return pages.map((page, index): MktgPrintFaqPage => {
     const scale = layout.faqPageScales.find((s) => fitsAt(page, s)) ?? smallest;
     const rows = page.map((row): MktgPrintFaqRow => ({ entries: row.map((entry) => sized(entry, scale)), height: rowHeight(row, scale) }));
-    return { title: mktgPrintContinued(MKTG_PRINT_SECTION_TITLES.faq, index), scale, sourceSize: scaledSize(sourceSize, scale), rows };
+    return { title: mktgPrintContinued(MKTG_PRINT_SECTION_TITLES.faq, index), scale, rows };
   });
 }
 
