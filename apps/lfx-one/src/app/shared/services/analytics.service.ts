@@ -115,15 +115,11 @@ import {
   HealthMetricsEventsSpeakersQuery,
   HealthMetricsEventsSponsorship,
   HealthMetricsEventsSponsorshipQuery,
-  HealthMetricsMembersBridge,
-  HealthMetricsMembersBridgeQuery,
   HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskQuery,
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryQuery,
   HealthMetricsMembersDirectoryTiers,
-  HealthMetricsMembersMovements,
-  HealthMetricsMembersMovementsQuery,
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardAttendanceQuery,
   HealthMetricsMembersChurn,
@@ -1329,36 +1325,6 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsMembersTiers>('/api/analytics/members-tiers', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] members-tiers failed', { query, error });
-        return throwError(() => error);
-      })
-    );
-  }
-
-  public getMembersBridge(query: HealthMetricsMembersBridgeQuery): Observable<HealthMetricsMembersBridge> {
-    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
-
-    // Errors propagate so the section shows its error state, not a year with no movement.
-    return this.http.get<HealthMetricsMembersBridge>('/api/analytics/members-bridge', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] members-bridge failed', { query, error });
-        return throwError(() => error);
-      })
-    );
-  }
-
-  public getMembersMovements(query: HealthMetricsMembersMovementsQuery): Observable<HealthMetricsMembersMovements> {
-    const params: Record<string, string> = {
-      foundationSlug: query.foundationSlug,
-      year: String(query.year),
-      movementType: query.movementType,
-      offset: String(query.offset),
-      pageSize: String(query.pageSize),
-    };
-
-    // Errors propagate so the drawer shows its error state, not a bar with no organizations behind it.
-    return this.http.get<HealthMetricsMembersMovements>('/api/analytics/members-movements', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] members-movements failed', { query, error });
         return throwError(() => error);
       })
     );
