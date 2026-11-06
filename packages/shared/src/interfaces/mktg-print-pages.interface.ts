@@ -85,7 +85,7 @@ export interface MktgPrintFaqLine {
   marker: string;
 }
 
-/** One question and its answer as the FAQ grid binds them: the field path (the track key), the answer as restricted Markdown rebuilt from its lines (every list line a bullet `- `, as the deck draws it; '' when unanswered), the source label ('' when none), the sizes (question, answer, source line) and the fixed gaps (under the question, between items, over the source), pt at the entry's scale, that scale (a share of the base sizes, never under the floor), and whether the answer was cut. */
+/** One question and its answer as the FAQ grid binds them: the field path (the track key), the answer as restricted Markdown rebuilt from its lines (every list line a bullet `- `, as the deck draws it; '' when unanswered), the source label ('' when none), the sizes (question, answer, source line) and the fixed gaps (under the question, between items, over the source), pt at the entry's scale, and whether the answer was cut. */
 export interface MktgPrintFaqEntry {
   path: string;
   question: string;
@@ -98,7 +98,6 @@ export interface MktgPrintFaqEntry {
   answerGap: number;
   listItemGap: number;
   sourceGap: number;
-  scale: number;
   cut: boolean;
 }
 

@@ -58,7 +58,7 @@ import type { MktgSlidesExportAssetKind } from '../interfaces/mktg-slides-export
 import { brandKitContrastRatio, brandKitLuminance } from './brand-kit-book.utils';
 import { brandKitMonthYear } from './brand-kit.utils';
 import { isMktgFamilyExportAgentKey } from './mktg-family-export.utils';
-import { mktgPrintCharEm, mktgPrintFitOrCut, mktgPrintPaginate, mktgPrintRichHeight, mktgPrintScaleRich } from './mktg-print-fit.utils';
+import { mktgPrintCharEm, mktgPrintFitOrCut, mktgPrintPaginate, mktgPrintRichHeight, mktgPrintScaleRich, mktgPrintTrimTrailing } from './mktg-print-fit.utils';
 import {
   mktgPrintContinued,
   mktgPrintEyebrowPara,
@@ -256,9 +256,6 @@ export function mktgBoilerplatesPageCount(lengths: BoilerplatesLengthRow[]): num
 /** A line that opens as a list item, as the deck reads one (its LIST_LINE): `- `, `* `, `• `, `1. ` or `1) `. */
 const LIST_LINE = /^\s*(?:[-*•]|\d+[.)])\s+/;
 
-/** The punctuation a dropped tail sheds before its `…` (the deck's cut), scanned once from the end. */
-const TAIL_CHARS = ',;:.—-';
-
 /** An answer's lines, blank ones dropped, every list line a bullet whatever its marker (the deck draws each as a bullet paragraph). */
 function faqLines(answer: string): MktgPrintFaqLine[] {
   return answer
@@ -300,13 +297,11 @@ function faqAnswerParas(lines: MktgPrintFaqLine[], size: number, gaps: { answer:
   });
 }
 
-/** The lines with the last one marked `…` (the deck's mark of a dropped tail), its trailing punctuation shed first. */
+/** The lines with the last one marked `…` (the deck's mark of a dropped tail), the punctuation a cut sheds trimmed first. */
 function withEllipsis(lines: MktgPrintFaqLine[]): MktgPrintFaqLine[] {
   const last = lines[lines.length - 1];
   if (!last || last.text.endsWith('…')) return lines;
-  let end = last.text.length;
-  while (end > 0 && (/\s/.test(last.text[end - 1]) || TAIL_CHARS.includes(last.text[end - 1]))) end--;
-  return [...lines.slice(0, -1), { ...last, text: `${last.text.slice(0, end)}…` }];
+  return [...lines.slice(0, -1), { ...last, text: `${mktgPrintTrimTrailing(last.text, ',;:.—-')}…` }];
 }
 
 /** A gap at a share of itself, rounded as the shell rounds a paragraph's space above (to the tenth of a point). */
@@ -345,26 +340,21 @@ export function paginateFaqPairs(
       : [mktgPrintPara(MKTG_FAQ_PRINT_UNANSWERED, entry.answerSize, { above: entry.answerGap })];
   };
   const paras = (entry: MktgPrintFaqEntry): MktgPrintPara[] => [question(entry), ...answer(entry, faqLines(entry.answer)), ...source(entry)];
-  // An entry's sizes never fall under the floor of the base sizes: an entry already set smaller to fit alone keeps the
-  // floor when its page is set smaller too (the scales do not stack below it).
-  const sized = (entry: MktgPrintFaqEntry, s: number): MktgPrintFaqEntry => {
-    const scale = Math.max(s, MKTG_PRINT_PAGE_MIN_SCALE / entry.scale);
-    if (scale >= 1 - 1e-9) return entry;
-    return {
-      ...entry,
-      scale: Math.round(entry.scale * scale * 100) / 100,
-      questionSize: scaledSize(entry.questionSize, scale),
-      answerSize: scaledSize(entry.answerSize, scale),
-      sourceSize: scaledSize(entry.sourceSize, scale),
-      answerGap: scaledGap(entry.answerGap, scale),
-      listItemGap: scaledGap(entry.listItemGap, scale),
-      sourceGap: scaledGap(entry.sourceGap, scale),
-    };
-  };
+  // The page's scale applies on top of whatever each entry already is, as the deck's gridPages does after its fitItem
+  // (an entry fitted to 0.72 on a 0.9 page draws at 0.648 of the base sizes): no floor is kept across the two.
+  const sized = (entry: MktgPrintFaqEntry, s: number): MktgPrintFaqEntry => ({
+    ...entry,
+    questionSize: scaledSize(entry.questionSize, s),
+    answerSize: scaledSize(entry.answerSize, s),
+    sourceSize: scaledSize(entry.sourceSize, s),
+    answerGap: scaledGap(entry.answerGap, s),
+    listItemGap: scaledGap(entry.listItemGap, s),
+    sourceGap: scaledGap(entry.sourceGap, s),
+  });
   const fitEntry = (base: MktgPrintFaqEntry, lines: MktgPrintFaqLine[]): MktgPrintFaqEntry => {
     const budget = budgetAt(1);
     for (let s = 1; s >= MKTG_PRINT_PAGE_MIN_SCALE - 1e-9; s -= MKTG_PRINT_PAGE_SCALE_STEP) {
-      const entry = sized(base, Math.round(s * 100) / 100);
+      const entry = sized(base, s);
       if (height(paras(entry)) <= budget + 0.01) return entry;
     }
     const floor = sized(base, MKTG_PRINT_PAGE_MIN_SCALE);
@@ -399,7 +389,6 @@ export function paginateFaqPairs(
         answerGap: layout.faqAnswerGap,
         listItemGap: layout.faqListItemGap,
         sourceGap: layout.faqSourceGap,
-        scale: 1,
         cut: false,
       };
       return height(paras(base)) <= budgetAt(1) + 0.01 ? base : fitEntry(base, lines);

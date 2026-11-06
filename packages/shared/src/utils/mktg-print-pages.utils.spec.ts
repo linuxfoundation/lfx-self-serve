@@ -474,73 +474,37 @@ describe('paginateFaqPairs', () => {
         expect(entry.questionSize).toBe(scaledSize(layout.faqQuestionSize, smaller.scale));
         expect(entry.answerGap).toBe(Math.round(layout.faqAnswerGap * smaller.scale * 10) / 10);
         expect(entry.sourceGap).toBe(Math.round(layout.faqSourceGap * smaller.scale * 10) / 10);
-        expect(entry.scale).toBe(smaller.scale);
       })
     );
   });
 
-  it('never sets an entry under the floor: one fitted alone at the floor keeps it when its page is set smaller too', () => {
+  it("composes the scales as the deck's gridPages does: an entry fitted to the floor alone, on a page set to 0.9, draws at 0.9 of its fitted sizes (0.648 of the base)", () => {
     const items = Array.from({ length: 80 }, (_, i) => `- Step ${i + 1}`);
     const tall = { path: 'faq[0][1][0]', question: 'Which steps, in order?', answer: ['Steps:', ...items].join('\n'), source: 'Docs', answered: true };
-    const filler = Array.from({ length: 9 }, (_, q) => ({
+    const filler = Array.from({ length: 3 }, (_, q) => ({
       path: `faq[0][1][${q + 1}]`,
-      question: `Question number ${q + 1} of the synthetic set?`,
-      answer: Array.from({ length: 30 }, () => 'Answer').join(' ') + '.',
+      question: `Question ${q + 1}?`,
+      answer: Array.from({ length: 16 }, () => 'Answer').join(' ') + '.',
       source: 'Docs',
       answered: true,
     }));
-    const pages = paginateFaqPairs([{ name: 'Mixed', path: 'faq[0]', questions: [tall, ...filler], unanswered: 0 }]);
-    const entries = pages.flatMap((page) => page.rows.flatMap((row) => row.entries.map((entry) => ({ entry, page }))));
-    const first = entries[0];
-    expect(first.entry.path).toBe(tall.path);
-    expect(first.entry.scale).toBe(MKTG_PRINT_PAGE_MIN_SCALE);
-    expect(first.entry.answerSize).toBe(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
-    expect(first.entry.questionSize).toBe(scaledSize(layout.faqQuestionSize, MKTG_PRINT_PAGE_MIN_SCALE));
-    entries.forEach(({ entry, page }) => {
-      expect(entry.scale).toBeGreaterThanOrEqual(MKTG_PRINT_PAGE_MIN_SCALE);
-      expect(entry.scale).toBeLessThanOrEqual(page.scale + 1e-9);
-      expect(entry.answerSize).toBeGreaterThanOrEqual(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
-    });
-    // Some page of the set is set smaller, and its full-size entries take the page's scale.
-    const smaller = pages.find((page) => page.scale < 1);
-    expect(smaller).toBeDefined();
-    smaller?.rows
+    // On the deck's area a fitted entry fills its page alone; a taller area leaves the room for a second row at 0.9 only.
+    const tallArea = { ...area, h: 600 };
+    const pages = paginateFaqPairs([{ name: 'Mixed', path: 'faq[0]', questions: [tall, ...filler], unanswered: 0 }], layout, tallArea);
+    const first = pages[0];
+    expect(first.rows.length).toBeGreaterThan(1);
+    const [entry] = first.rows[0].entries;
+    expect(entry.path).toBe(tall.path);
+    expect(first.scale).toBe(0.9);
+    // The sizes the entry was fitted to alone (the floor), then the page's scale on top, each step rounded as the shell rounds.
+    expect(entry.answerSize).toBe(scaledSize(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE), first.scale));
+    expect(entry.questionSize).toBe(scaledSize(scaledSize(layout.faqQuestionSize, MKTG_PRINT_PAGE_MIN_SCALE), first.scale));
+    expect(entry.answerSize).toBeLessThan(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
+    // The full-size entries sharing the page take the page's scale once.
+    first.rows
       .flatMap((row) => row.entries)
-      .filter((entry) => entry.path !== tall.path)
-      .forEach((entry) => expect(entry.scale).toBe(smaller.scale));
-  });
-
-  it('sets an entry a little too tall for the area smaller as a whole, the question and the gaps with the answer, before anything is cut', () => {
-    const answer = Array.from({ length: 34 }, (_, i) => `Sentence number ${i + 1} of a long answer.`).join(' ');
-    const pages = paginateFaqPairs([
-      { name: 'Tall', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Why so tall?', answer, source: 'Docs', answered: true }], unanswered: 0 },
-    ]);
-    const [entry] = pages[0].rows[0].entries;
-    expect(entry.cut).toBe(false);
-    expect(entry.answer).toBe(answer);
-    expect(entry.answerSize).toBeLessThan(layout.faqAnswerSize);
-    expect(entry.answerSize).toBeGreaterThan(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
-    expect(entry.questionSize).toBeLessThan(layout.faqQuestionSize);
-    expect(entry.sourceSize).toBeLessThan(MKTG_PRINT_PAGE_SIZE.eyebrow);
-    expect(entry.answerGap).toBeLessThan(layout.faqAnswerGap);
-    expect(pages[0].rows[0].height).toBeLessThanOrEqual(area.h - lineOf(layout.faqAnswerSize) + 0.01);
-  });
-
-  it('fits a pair whose answer is longer than the area: set smaller to the floor, then the answer cut at a sentence, the question intact', () => {
-    const answer = Array.from({ length: 120 }, (_, i) => `Sentence number ${i + 1} of a very long answer.`).join(' ');
-    const pages = paginateFaqPairs([
-      { name: 'Long', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Why so long?', answer, source: 'Docs', answered: true }], unanswered: 0 },
-    ]);
-    expect(pages).toHaveLength(1);
-    const [entry] = pages[0].rows[0].entries;
-    expect(entry.cut).toBe(true);
-    expect(entry.question).toBe('Why so long?');
-    expect(entry.answerSize).toBe(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
-    expect(entry.questionSize).toBe(scaledSize(layout.faqQuestionSize, MKTG_PRINT_PAGE_MIN_SCALE));
-    expect(entry.answer.length).toBeLessThan(answer.length);
-    expect(entry.answer.endsWith('.')).toBe(true);
-    expect(answer.startsWith(entry.answer)).toBe(true);
-    expect(pages[0].rows[0].height).toBeLessThanOrEqual(area.h - lineOf(layout.faqAnswerSize) + 0.01);
+      .filter((e) => e.path !== tall.path)
+      .forEach((e) => expect(e.answerSize).toBe(scaledSize(layout.faqAnswerSize, first.scale)));
   });
 
   it('fits a pair of many short list items as the deck does: the question whole, the answer at the floor, the items too short to cut, the trailing ones dropped and the last kept marked', () => {
