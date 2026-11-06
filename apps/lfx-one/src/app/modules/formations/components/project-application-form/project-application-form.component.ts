@@ -1,7 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, output, Signal, signal, viewChild } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  output,
+  PLATFORM_ID,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -32,6 +47,7 @@ import {
 import type { ProjectApplicationAnswers, ProjectApplicationLegalContactMode } from '@lfx-one/shared/interfaces';
 import { isEmailShape, parseEmailList } from '@lfx-one/shared/utils';
 import { projectApplicationEmailListValidator, projectApplicationLegalEmailValidator, projectApplicationUrlValidator } from '@lfx-one/shared/validators';
+import { UserService } from '@services/user.service';
 
 /**
  * The "Propose a project" intake form (#3037), shared by the propose page (create) and the
@@ -59,6 +75,8 @@ export class ProjectApplicationFormComponent {
   // === Services ===
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly userService = inject(UserService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly legalPicker = viewChild(UserSearchComponent);
 
@@ -122,6 +140,8 @@ export class ProjectApplicationFormComponent {
   private readonly descriptionValue = signal('');
   /** The legal contact's current address, which is also the label the directory search shows once one is picked. */
   protected readonly legalEmailValue = signal('');
+  /** The employer lookup runs at most once per form, however many times the bound answers change. */
+  private prefillRequested = false;
   /** Directory search (create) or a plain email input (manual entry, and revise with a stored address). */
   protected readonly legalMode = signal<ProjectApplicationLegalContactMode>('search');
   /** Per-control "show the error" state, refreshed on every form event so the template reads a signal. */
@@ -146,7 +166,12 @@ export class ProjectApplicationFormComponent {
     // Seed from the held answers whenever a different application is bound (drawer revise).
     toObservable(this.initialAnswers)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((answers) => this.patchFromAnswers(answers));
+      .subscribe((answers) => {
+        this.patchFromAnswers(answers);
+        if (answers === null) {
+          this.prefillOrganization();
+        }
+      });
   }
 
   // === Protected Methods ===
@@ -200,6 +225,28 @@ export class ProjectApplicationFormComponent {
   }
 
   // === Private Helpers ===
+  /**
+   * Create mode only: fill the organization with the submitter's current employer. Once, browser-only,
+   * and only if the field is still empty when the answer arrives — a name the user typed meanwhile
+   * wins. A failed or empty lookup leaves it blank; it never runs on revise.
+   */
+  private prefillOrganization(): void {
+    if (this.prefillRequested || !isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    this.prefillRequested = true;
+    this.userService
+      .getCurrentEmployerName()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((name) => {
+        const organization = this.form.controls.contributing_organization;
+        if (!name || this.initialAnswers() !== null || organization.value.trim()) {
+          return;
+        }
+        organization.setValue(name.slice(0, PROJECT_APPLICATION_TEXT_MAX));
+      });
+  }
+
   /** Keyboard users activate a link that removes itself; land them on the field that replaced it. */
   private focusLegalInput(): void {
     afterNextRender(() => this.host.nativeElement.querySelector<HTMLInputElement>('#pa-legal')?.focus(), { injector: this.injector });

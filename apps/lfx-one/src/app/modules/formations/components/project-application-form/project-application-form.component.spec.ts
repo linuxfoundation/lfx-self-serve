@@ -9,7 +9,7 @@ import { UserSearchComponent } from '@components/user-search/user-search.compone
 import type { ProjectApplicationAnswers } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import type { AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectApplicationFormComponent } from './project-application-form.component';
 
@@ -321,5 +321,96 @@ describe('ProjectApplicationFormComponent organization and legal contact pickers
       access().onSubmit();
       expect(emitted[0].legal_contact_email).toBe('legal@example.org');
     });
+  });
+});
+
+const WORK_EXPERIENCES_URL = '/api/profile/work-experiences';
+
+describe('ProjectApplicationFormComponent organization prefill (#5251)', () => {
+  let fixture: ComponentFixture<ProjectApplicationFormComponent>;
+  let component: ProjectApplicationFormComponent;
+  let http: HttpTestingController;
+  let messages: MessageService;
+
+  const access = (): FormAccess => component as unknown as FormAccess;
+  const organization = (): string => access().form.controls.contributing_organization.value;
+  const CURRENT = [{ organization: 'Acme Motors', organizationId: 'org-1', startDate: 'Jan 2020', endDate: null }];
+
+  const render = async (initialAnswers: ProjectApplicationAnswers | null = null): Promise<void> => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [ProjectApplicationFormComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting(), MessageService],
+    }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
+    messages = TestBed.inject(MessageService);
+    fixture = TestBed.createComponent(ProjectApplicationFormComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('initialAnswers', initialAnswers);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  it('prefills the empty organization with the current employer on create', async () => {
+    await render();
+
+    http.expectOne(WORK_EXPERIENCES_URL).flush(CURRENT);
+    await fixture.whenStable();
+
+    expect(organization()).toBe('Acme Motors');
+    http.expectNone('/api/organizations/resolve');
+  });
+
+  it('asks once, not again when the form re-renders', async () => {
+    await render();
+    http.expectOne(WORK_EXPERIENCES_URL).flush(CURRENT);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    http.expectNone(WORK_EXPERIENCES_URL);
+  });
+
+  it('does not overwrite text the user typed before the lookup returned', async () => {
+    await render();
+    access().form.controls.contributing_organization.setValue('Typed Org');
+
+    http.expectOne(WORK_EXPERIENCES_URL).flush(CURRENT);
+    await fixture.whenStable();
+
+    expect(organization()).toBe('Typed Org');
+  });
+
+  it('leaves the field blank, and raises no toast, when the lookup fails', async () => {
+    await render();
+    const add = vi.spyOn(messages, 'add');
+
+    http.expectOne(WORK_EXPERIENCES_URL).error(new ProgressEvent('error'));
+    await fixture.whenStable();
+
+    expect(organization()).toBe('');
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('leaves the field blank when the person has no work history', async () => {
+    await render();
+
+    http.expectOne(WORK_EXPERIENCES_URL).flush([]);
+    await fixture.whenStable();
+
+    expect(organization()).toBe('');
+  });
+
+  it('never prefills, and makes no request, on revise', async () => {
+    await render({ ...VALID, contributing_organization: 'Stored Org' });
+
+    http.expectNone(WORK_EXPERIENCES_URL);
+    expect(organization()).toBe('Stored Org');
+  });
+
+  it('never prefills a revise whose stored organization is empty', async () => {
+    await render({ project_name: 'Example Foundation' });
+
+    http.expectNone(WORK_EXPERIENCES_URL);
+    expect(organization()).toBe('');
   });
 });
