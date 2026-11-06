@@ -62,7 +62,10 @@ function sampleContent(): MktgPrintPage {
   ]);
   const visual = mktgPrintShapeEl('ROUND_RECTANGLE', MKTG_PRINT_PAGE_RIGHT, look.tint);
   const slot = { t: 'slot' as const, box: { x: MKTG_PRINT_PAGE_RIGHT.x + 20, y: MKTG_PRINT_PAGE_RIGHT.y + 20, w: 200, h: 60 }, slot: 'sample-visual' };
-  const page = mktgPrintContentPage(look, 'Logo system', { left: '01 Logo', right: `${PROJECT} Brand Kit` }, [column, visual, slot]);
+  const imageBox = { x: MKTG_PRINT_PAGE_RIGHT.x + 20, y: MKTG_PRINT_PAGE_RIGHT.y + 100, w: 200, h: 60 };
+  const image = { t: 'image' as const, box: imageBox, src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>', alt: 'Lockup', filter: '' };
+  const stretched = { ...image, box: { ...imageBox, y: imageBox.y + 80 }, transform: 'scaleX(1.45)' };
+  const page = mktgPrintContentPage(look, 'Logo system', { left: '01 Logo', right: `${PROJECT} Brand Kit` }, [column, visual, slot, image, stretched]);
   return mktgPrintWithFooter(page, mktgPrintFooterLine(PROJECT), 3);
 }
 
@@ -138,7 +141,7 @@ describe('MktgPrintPageComponent', () => {
     expect(logo?.querySelector('img')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
 
     const els = root.querySelectorAll<HTMLElement>('[data-testid="mktg-print-page-el"]');
-    expect(els).toHaveLength(3);
+    expect(els).toHaveLength(5);
     expect(els[0].style.left).toBe(pt(MKTG_PRINT_PAGE_LEFT.x));
     expect(els[0].style.height).toBe(pt(MKTG_PRINT_PAGE_LEFT.h));
     expect(els[0].textContent).toContain('The primary lockup sets the symbol beside the wordmark.');
@@ -155,6 +158,18 @@ describe('MktgPrintPageComponent', () => {
     expect(els[1].classList.contains('pp-shape--round')).toBe(true);
     expect(els[2].getAttribute('data-slot')).toBe('sample-visual');
     expect(els[2].querySelector('[data-testid="sample-visual"]')?.textContent).toBe('Visual markup');
+    // An image sits in its box, clipped to it, with no transform; a distorted one (the watchouts) carries its transform
+    // and its box is not clipped, so nothing of the stretched or rotated lockup is cut, as in the deck.
+    expect(els[3].classList.contains('pp-image')).toBe(true);
+    expect(els[3].classList.contains('pp-image--transformed')).toBe(false);
+    expect(els[3].querySelector('img')?.style.transform).toBe('');
+    expect(els[4].classList.contains('pp-image--transformed')).toBe(true);
+    expect(els[4].querySelector('img')?.style.transform).toBe('scaleX(1.45)');
+    // The sheet centres an image in its box (the deck's createImage) and keeps the footer lockup at the frame's left edge.
+    const sheets = Array.from(document.head.querySelectorAll('style'), (style) => style.textContent ?? '').join('\n');
+    expect(sheets).toMatch(/\.pp-image(?:\[[^\]]*\])? img(?:\[[^\]]*\])?\s*\{[^}]*object-position:\s*center/);
+    expect(sheets).toMatch(/\.pp-logo(?:\[[^\]]*\])? img(?:\[[^\]]*\])?\s*\{[^}]*object-position:\s*left center/);
+    expect(sheets).toMatch(/\.pp-image--transformed(?:\[[^\]]*\])?\s*\{[^}]*overflow:\s*visible/);
   });
 
   it('draws the cover on the dark ground with its title and subtitle fitted, and no head, footer or logo frame', async () => {
@@ -171,7 +186,7 @@ describe('MktgPrintPageComponent', () => {
     expect(root.querySelector('[data-testid="mktg-print-page-footer"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-print-page-logo"]')).toBeNull();
     const els = root.querySelectorAll<HTMLElement>('[data-testid="mktg-print-page-el"]');
-    expect(els).toHaveLength(3);
+    expect(els).toHaveLength(5);
     expect(els[0].textContent?.trim()).toBe(`${PROJECT} · A Linux Foundation project`);
     expect(els[2].textContent?.trim()).toBe('V1.0 · November 2026');
   });

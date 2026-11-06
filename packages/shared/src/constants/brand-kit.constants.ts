@@ -445,11 +445,12 @@ export const BRAND_KIT_PRINT_BODY_CLASS = 'lfx-print-brand-kit';
 export const BRAND_KIT_PRINT_ONLY_CLASS = 'lfx-brand-kit-print-only';
 
 /**
- * The class of the kit's portrait print document (`lfx-mktg-brand-kit-print`,
- * on the shared `mktg-framework` page), as against the legacy landscape book:
- * `body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait)` switches the page
- * setup in mktg-family-print.scss, and the print frame picks its `@page` rule
- * by the same test. The template and the stylesheets carry the literal.
+ * The class of the kit's former portrait print sheet. No kit print root
+ * carries it since the kit prints the deck's landscape pages
+ * (`lfx-mktg-brand-kit-print` mounts page frames); the print frame still
+ * tests for it (`MktgPrintService`), and mktg-family-print.scss still carries
+ * its portrait page setup, until the portrait kit sheet's leftovers are
+ * removed with the family PDF's move to the deck's pages.
  */
 export const BRAND_KIT_PORTRAIT_PRINT_CLASS = 'lfx-brand-kit-portrait';
 

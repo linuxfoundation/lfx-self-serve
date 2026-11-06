@@ -15,7 +15,7 @@
     [footerRight]="c.footerRight"
     data-testid="kit-print-cover" />
   <!-- The contents and the chapter pages, each from the shared page plan; the Iconography page's icons fill its slots. -->
-  @for (page of pages(); track $index) {
+  @for (page of pages(); track page.footer?.number ?? page.title) {
     <lfx-mktg-print-page [page]="page" [look]="look()" [logo]="brand().logoOnLight" [attr.data-page]="page.footer?.number" data-testid="kit-print-page">
       <ng-template [lfxMktgPrintPageSlot]="iconSlot" let-icon>
         <span class="lfx-brand-kit-pages__icon" [style.color]="icon.color" [attr.data-index]="icon.index" data-testid="kit-print-icon">

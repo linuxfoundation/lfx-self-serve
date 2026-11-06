@@ -5,31 +5,25 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, input, Signal } from '@angular/core';
 import {
   BRAND_KIT_ICON_HIGHLIGHT_INDEX,
-  BRAND_KIT_ICON_PRINT_STRIP_SIZE_PX,
   BRAND_KIT_ICON_SAMPLES,
   BRAND_KIT_ICON_STRIP_INK,
   BRAND_KIT_ICON_STRIP_SIZE_PX,
-  BRAND_KIT_ICON_TILE_COLUMNS,
   BRAND_KIT_ICON_TILE_SIZE_PX,
 } from '@lfx-one/shared/constants';
-import { BrandKitIconColours, BrandKitIconSample, BrandKitIconStripItem } from '@lfx-one/shared/interfaces';
+import { BrandKitIconColours, BrandKitIconStripItem } from '@lfx-one/shared/interfaces';
 import { MktgBrandKitIconComponent } from '../mktg-brand-kit-icon/mktg-brand-kit-icon.component';
 
 /**
  * The Brand Kit's iconography samples as the design board draws them: the
  * eight line icons in a 4 × 2 grid of labelled tiles, inked in the kit's
  * dark, then a strip on the kit's dark with the eight icons in white and the
- * third in the highlight colour. The one renderer for the web view's Visual
- * tab and the print sheet (`print`: the board's proportions on the sheet's
- * own Iconography page, drawn with table and table-cell boxes only, since
- * Chromium fragments grid and flex contents away from their boxes inside a
- * paginated table), so the two never drift: each icon is the one shared
- * drawing (`lfx-mktg-brand-kit-icon`, which the landscape PDF's Iconography
- * page places box by box too), the shapes from the shared constant, inline
- * SVG primitives (no markup string, no `innerHTML`), the labels text beside
- * the icons, never inside them.
+ * third in the highlight colour. The web view's Visual tab's card; each icon
+ * is the one shared drawing (`lfx-mktg-brand-kit-icon`, which the PDF's
+ * Iconography page places box by box), the shapes from the shared constant,
+ * inline SVG primitives (no markup string, no `innerHTML`), the labels text
+ * beside the icons, never inside them, so the card and the page never drift.
  * Print-safe: solid colours only, no filter, gradient or shadow. The host is
- * a block, so the sheet's `break-inside: avoid` holds it whole.
+ * a block.
  */
 @Component({
   selector: 'lfx-mktg-brand-kit-icon-samples',
@@ -42,25 +36,18 @@ export class MktgBrandKitIconSamplesComponent {
   // === Inputs ===
   /** The kit's three colour roles (`brandKitIconColours`): the tiles' ink, the strip's ground and the highlight. */
   public readonly colours = input.required<BrandKitIconColours>();
-  /** The print sheet's variant: the board's sizes in table boxes, beside the rules on the sheet's Iconography page. */
-  public readonly print = input(false);
 
   // === The shared drawing frame ===
   protected readonly icons = BRAND_KIT_ICON_SAMPLES;
   protected readonly tileIconSize = BRAND_KIT_ICON_TILE_SIZE_PX;
-  /** The board's 4 × 2 tiles as rows, for the print sheet's table. */
-  protected readonly tileRows: readonly (readonly BrandKitIconSample[])[] = Array.from(
-    { length: Math.ceil(BRAND_KIT_ICON_SAMPLES.length / BRAND_KIT_ICON_TILE_COLUMNS) },
-    (_, row) => BRAND_KIT_ICON_SAMPLES.slice(row * BRAND_KIT_ICON_TILE_COLUMNS, (row + 1) * BRAND_KIT_ICON_TILE_COLUMNS)
-  );
+  /** The strip icons' side: 24 px, so the strip holds one row of eight in the half-width card. */
+  protected readonly stripIconSize = BRAND_KIT_ICON_STRIP_SIZE_PX;
   /** The strip in words, for assistive technology: its icons are decorative, the ground and the highlight are the point. */
   protected readonly stripLabel = `The ${BRAND_KIT_ICON_SAMPLES.length} icons in white on the kit's dark ground; ${BRAND_KIT_ICON_SAMPLES[BRAND_KIT_ICON_HIGHLIGHT_INDEX].label} in the highlight colour`;
 
   // === Computed ===
   /** The strip's icons in the board's order, each with its ink: white, except the highlighted one in the kit's highlight. */
   protected readonly strip: Signal<BrandKitIconStripItem[]> = this.initStrip();
-  /** The strip icons' side: the board's 30 px in print; 24 px on the web, where the strip must hold one row in the half-width card. */
-  protected readonly stripIconSize = computed(() => (this.print() ? BRAND_KIT_ICON_PRINT_STRIP_SIZE_PX : BRAND_KIT_ICON_STRIP_SIZE_PX));
 
   // === Private initializers ===
   private initStrip(): Signal<BrandKitIconStripItem[]> {

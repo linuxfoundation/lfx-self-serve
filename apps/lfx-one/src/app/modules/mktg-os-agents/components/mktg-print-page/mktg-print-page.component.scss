@@ -71,7 +71,20 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/* An image sits centred in its box, as the deck's createImage places it; the footer's lockup keeps the frame's left edge. */
+.pp-image img {
+  object-position: center;
+}
+
+.pp-logo img {
   object-position: left center;
+}
+
+/* A distorted image (the watchouts' stretch and rotation) is not clipped at its box: the tile around it bounds it, as the deck. */
+.pp-image--transformed {
+  overflow: visible;
 }
 
 .pp-logo {

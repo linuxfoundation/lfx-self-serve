@@ -51,14 +51,15 @@ test.describe('Brand kit PDF: the deck’s pages', () => {
     const titles = await pages.evaluateAll((nodes) => nodes.map((node) => node.querySelector('[data-testid="mktg-print-page"]')?.getAttribute('data-title')));
     expect(titles).toEqual(CONTENT_TITLES);
     // The running head: the chapter left, the document right; the footer: the project's line left, the page number right.
-    const logo = pages.first();
-    await expect(logo.getByTestId('mktg-print-page-head')).toHaveText(['Contents', `${kit.projectName} Brand Kit`]);
+    const contents = pages.first();
+    await expect(contents.getByTestId('mktg-print-page-head')).toHaveText(['Contents', `${kit.projectName} Brand Kit`]);
     await expect(pages.nth(1).getByTestId('mktg-print-page-head').first()).toHaveText('01 Logo');
-    await expect(logo.getByTestId('mktg-print-page-footer')).toHaveText([`${kit.projectName} · a Linux Foundation project`, '02']);
+    await expect(contents.getByTestId('mktg-print-page-footer')).toHaveText([`${kit.projectName} · a Linux Foundation project`, '02']);
     await expect(pages.last().getByTestId('mktg-print-page-footer').last()).toHaveText('15');
     // The contents list the page each chapter page starts on.
-    await expect(logo).toContainText('03   Logo system');
-    await expect(logo).toContainText('15   Voice in brief');
+    await expect(contents).toContainText('03   Logo system');
+    await expect(contents).toContainText('15   Voice in brief');
+    await expect(contents).toContainText('16   Back cover');
     // No inner page shows the version (#5224): the cover does, the file name does.
     for (let index = 0; index < CONTENT_TITLES.length; index++) {
       await expect(pages.nth(index)).not.toContainText('V1.0');
@@ -91,7 +92,7 @@ test.describe('Brand kit PDF: the deck’s pages', () => {
     const kit = brandKitTestRevision();
     const colours = brandKitIconColours(kit);
     const { print } = await openKitPdf(page);
-    const iconography = print.getByTestId('kit-print-page').filter({ has: print.locator('[data-title="Iconography"]') });
+    const iconography = print.locator('[data-testid="kit-print-page"]:has([data-title="Iconography"])');
     await expect(iconography).toHaveCount(1);
     const icons = iconography.getByTestId('kit-print-icon');
     await expect(icons).toHaveCount(2 * BRAND_KIT_ICON_SAMPLES.length);
@@ -111,12 +112,12 @@ test.describe('Brand kit PDF: the deck’s pages', () => {
     page,
   }, info) => {
     const { print } = await openKitPdf(page);
-    const symbol = print.getByTestId('kit-print-page').filter({ has: print.locator('[data-title="Symbol & symbol in shape"]') });
+    const symbol = print.locator('[data-testid="kit-print-page"]:has([data-title="Symbol & symbol in shape"])');
     await expect(symbol).toContainText('The symbol.');
     await expect(symbol).not.toContainText('Variants');
     await expect(symbol).not.toContainText('In shape');
-    await expect(symbol.locator('img')).toHaveCount(1); // the running head's lockup alone
-    const system = print.getByTestId('kit-print-page').filter({ has: print.locator('[data-title="Logo system"]') });
+    await expect(symbol.locator('img')).toHaveCount(1); // the footer's lockup alone
+    const system = print.locator('[data-testid="kit-print-page"]:has([data-title="Logo system"])');
     await expect(system).toContainText('Primary · horizontal lockup');
     await expect(system.getByTestId('mktg-print-page-el').locator('img')).toHaveCount(1);
     await expect(system).not.toContainText('stacked');

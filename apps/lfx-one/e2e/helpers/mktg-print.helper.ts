@@ -3,6 +3,7 @@
 
 import { expect, FrameLocator, Locator, Page } from '@playwright/test';
 import {
+  MKTG_PRINT_DECK_PAGE_NAME,
   MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN,
   MKTG_PRINT_FRAME_PAPER_IN,
   MKTG_PRINT_LANDSCAPE_PAGE_SETUP,
@@ -120,11 +121,14 @@ export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locato
 
 /**
  * The landscape page setup the frame wrote for a deck-page print, the same in both engines (fixed frames, no table
- * head or foot to repeat, so WebKit takes the zero-margin setup too): `size: 11in 8.5in; margin: 0;` and no page-margins
- * body class.
+ * head or foot to repeat, so WebKit takes the zero-margin setup too): `size: 11in 8.5in; margin: 0;` as the unnamed
+ * page's rule and again as the deck's named page's (WebKit ignores named pages; Chromium takes the frames' `page:
+ * mktg-deck`), and no page-margins body class.
  */
 export async function expectMktgPrintLandscapePageSetup(frame: FrameLocator): Promise<void> {
-  expect(await frame.locator('head style').last().textContent()).toBe(`@page { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }`);
+  expect(await frame.locator('head style').last().textContent()).toBe(
+    `@page { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }\n@page ${MKTG_PRINT_DECK_PAGE_NAME} { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }`
+  );
   expect(MKTG_PRINT_LANDSCAPE_PAGE_SETUP).toBe('size: 11in 8.5in; margin: 0;');
   await expect(frame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`)).toHaveCount(0);
 }
