@@ -3,7 +3,7 @@
 
 import { DecimalPipe, isPlatformBrowser, LowerCasePipe, SlicePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, PLATFORM_ID, signal, untracked } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, PLATFORM_ID, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   AbstractControl,
@@ -1797,11 +1797,9 @@ export class ImplementationTabComponent implements OnInit {
    * Google's audience segments — existing Customer Match or remarketing user lists the Search ad
    * group targets, as full resource names (`customers/{customerId}/userLists/{id}`).
    *
-   * Free text rather than a select, unlike {@link googleGeoOptions}, because there is nothing to
-   * enumerate from: campaign-service creates no audiences and exposes no listing of an account's
-   * user lists — its Google audience read is an age/gender/device breakdown, and the brief's
-   * audience rows are HubSpot lists. The resource name is what upstream takes, so it is the input.
-   * Its SHAPE is what upstream judges, and that judgement is mirrored on the add path.
+   * The resource name is what upstream takes, so it is the input: picked from the account's user lists
+   * (`googleUserListPicker`, #5244) or typed, for a list the picker does not show. Both go through
+   * `addGoogleAudienceSegment`, where upstream's judgement of its SHAPE is mirrored.
    */
   protected readonly googleAudienceSegments = signal<string[]>([]);
   protected readonly googleMaxAudienceSegments = GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS;
@@ -3766,8 +3764,12 @@ export class ImplementationTabComponent implements OnInit {
   );
   /** The picker's loading line, reason, empty or partial-list note, for its always-mounted live region; `''` otherwise. */
   protected readonly googleUserListPickerAnnouncement: Signal<string> = this.initGoogleUserListPickerAnnouncement();
-  /** The combobox's own value: cleared back to `null` as soon as a pick is added, so it stays ready for the next one. */
-  protected readonly googleUserListPick = signal<string | null>(null);
+  /**
+   * The picker's combobox, cleared after each pick. Its `value` is a model the combobox sets itself when a
+   * row is picked, so clearing a parent signal bound to it would never reach it, and a list removed and
+   * picked again would read as no change and add nothing.
+   */
+  private readonly googleUserListCombobox = viewChild(UiComboboxComponent);
   protected readonly userListPickerEmpty = GOOGLE_USER_LIST_PICKER_EMPTY;
   protected readonly userListPickerLoading = GOOGLE_USER_LIST_PICKER_LOADING;
   protected readonly userListPickerTruncated = GOOGLE_USER_LIST_PICKER_TRUNCATED;
@@ -5084,14 +5086,13 @@ export class ImplementationTabComponent implements OnInit {
   }
   /**
    * A list picked from the audience segment picker: its resource name is added exactly as typing it
-   * would add it, then the combobox is cleared for the next pick. A `null` (the field cleared) adds
-   * nothing.
+   * would add it, then the combobox itself is cleared for the next pick. A `null` (the field cleared)
+   * adds nothing.
    */
   protected onGoogleUserListPicked(resourceName: string | null): void {
-    this.googleUserListPick.set(resourceName);
     if (resourceName === null) return;
     this.addGoogleAudienceSegment(resourceName);
-    this.googleUserListPick.set(null);
+    this.googleUserListCombobox()?.writeValue(null);
   }
 
   /**
@@ -9185,6 +9186,7 @@ export class ImplementationTabComponent implements OnInit {
               })
             ),
             catchError((err: unknown) => {
+              console.error('Failed to read the Google Ads user lists for the audience segment picker:', err);
               const status = err instanceof HttpErrorResponse ? err.status : 0;
               if (status === 403 || status === 404) return of(state('unavailable', GOOGLE_USER_LIST_PICKER_REASONS.unavailable));
               return of(state('unavailable', GOOGLE_USER_LIST_PICKER_REASONS.failed));
@@ -9676,6 +9678,7 @@ export class ImplementationTabComponent implements OnInit {
               })
             ),
             catchError((err: unknown) => {
+              console.error('Failed to read the Google Ads conversion actions for the conversion action picker:', err);
               const status = err instanceof HttpErrorResponse ? err.status : 0;
               if (status === 403 || status === 404) return of(state('unavailable', GOOGLE_CONVERSION_ACTION_PICKER_REASONS.unavailable));
               return of(state('unavailable', GOOGLE_CONVERSION_ACTION_PICKER_REASONS.failed));

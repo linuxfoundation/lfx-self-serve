@@ -1180,7 +1180,6 @@
                     placeholder="Search this account's user lists"
                     emptyText="No user list matches"
                     size="small"
-                    [value]="googleUserListPick()"
                     (valueChange)="onGoogleUserListPicked($event)"
                     data-testid="implementation-google-user-list-picker">
                     @for (list of googleUserListPickerOptions(); track list.resourceName) {

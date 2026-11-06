@@ -71,6 +71,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { AutoComplete } from 'primeng/autocomplete';
@@ -9241,13 +9242,6 @@ describe('ImplementationTabComponent google conversion action picker', () => {
 });
 
 /**
- * The Google audience segment chips.
- *
- * Free text, because campaign-service lists no user lists to pick from, so every branch of
- * upstream's `validateAudienceSegments` is mirrored on the add path — and each test below is one of
- * those branches, plus the accept-cases that keep the guards from refusing what upstream takes.
- */
-/**
  * The audience segment picker (#5244): a searchable list of the account's user lists inside Google
  * Audience Segments, which adds a picked list's resource name exactly as typing it would, and the
  * typed box alone, with the reason, whenever the list cannot be read.
@@ -9311,10 +9305,30 @@ describe('ImplementationTabComponent google user list picker', () => {
     c['onGoogleUserListPicked'](LIST_B);
     fixture.detectChanges();
     expect(c['googleAudienceSegments']()).toEqual([LIST_B]);
-    expect(c['googleUserListPick']()).toBeNull();
     // A picked list is not offered again, and the typed box stays for one the picker does not show.
     expect(c['googleUserListPickerOptions']().map((l: { resourceName: string }) => l.resourceName)).toEqual([LIST_A]);
     expect(query('implementation-google-audience-segment-add')).not.toBeNull();
+  });
+
+  it('clears the combobox itself after a pick, so a list removed and picked again is added again', async () => {
+    await setup(() => of(LISTS));
+    const c = seedSearch();
+    const combobox = (): UiComboboxComponent =>
+      fixture.debugElement.query(By.css('[data-testid="implementation-google-user-list-picker"]')).componentInstance as UiComboboxComponent;
+    // Picks through the combobox's own select path, which sets its model before emitting.
+    const pick = (resourceName: string): void => {
+      (combobox() as unknown as { select(option: { value: string; label: string }): void }).select({ value: resourceName, label: resourceName });
+      fixture.detectChanges();
+    };
+
+    pick(LIST_B);
+    expect(c['googleAudienceSegments']()).toEqual([LIST_B]);
+    expect(combobox().value()).toBeNull();
+
+    c['removeGoogleAudienceSegment'](0);
+    fixture.detectChanges();
+    pick(LIST_B);
+    expect(c['googleAudienceSegments']()).toEqual([LIST_B]);
   });
 
   it('sends the same audienceSegments for a picked list as for the same list typed', async () => {
@@ -9393,6 +9407,13 @@ describe('ImplementationTabComponent google user list picker', () => {
   });
 });
 
+/**
+ * The Google audience segment chips.
+ *
+ * Every branch of upstream's `validateAudienceSegments` is mirrored on the add path, which a typed
+ * resource name and a picked one (#5244) both go through — and each test below is one of those
+ * branches, plus the accept-cases that keep the guards from refusing what upstream takes.
+ */
 describe('ImplementationTabComponent google audience segments', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
   const LIST_A = 'customers/1234567890/userLists/111';
