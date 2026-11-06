@@ -3096,9 +3096,13 @@ export class CampaignController {
       // service. Each runs its deployment test first, so a deployment that cannot serve it asks no
       // persona question at all.
       // Audience segments: the create route's own test — `global_marketing_ops` on THIS project.
-      // A check that cannot be made answers no (the create route would answer 503), so the tab
-      // holds Create rather than offering inputs the create would refuse.
-      const googleAudienceSegmentsEnabled = canCreateWithAudienceSegments() && (await this.googleAudienceSegmentsAccess(req, projectSlug)) === 'granted';
+      // A check that cannot be made answers `null`, not `false`: unverified is not a denial, so the
+      // tab holds Create with a Retry (its `failed` block) rather than the `restricted` one.
+      let googleAudienceSegmentsEnabled: boolean | null = false;
+      if (canCreateWithAudienceSegments()) {
+        const access = await this.googleAudienceSegmentsAccess(req, projectSlug);
+        googleAudienceSegmentsEnabled = access === 'unverified' ? null : access === 'granted';
+      }
       // The conversion-action picker's read (#4991) is a shared-account read, answered on the two
       // checks its route makes: the create road, then a root principal.
       const googleConversionActionsEnabled = canCreateWithGoogleCriteria() && (await this.isRootCampaignPrincipal(req));

@@ -652,9 +652,10 @@ export function canCreateMetaInstagramDsa(): boolean {
 
 /**
  * Whether this deployment's create path can carry Google `audienceSegments` at all — the
- * deployment half of `CampaignListResult.googleAudienceSegmentsEnabled`, whose other half (a ROOT
- * caller) the controller decides. Only the campaign-service create path reads the key: the legacy
- * creator never does, and would create the campaign without the user lists while reporting success.
+ * deployment half of `CampaignListResult.googleAudienceSegmentsEnabled`, whose other half
+ * (`global_marketing_ops` on the project) the controller decides. Only the campaign-service
+ * create path reads the key: the legacy creator never does, and would create the campaign
+ * without the user lists while reporting success.
  */
 export function canCreateWithAudienceSegments(): boolean {
   return cutoverOwnsCreate();
