@@ -64,8 +64,9 @@ export class ProjectApplicationService {
   });
   /**
    * Applications awaiting a decision over {@link staffApplications}, so the Formations tab and the panel agree and
-   * an accept, deny or withdraw (recorded in the overlay) drops it without a refetch. `null` — never 0 — while
-   * there is no good read or the latest read failed.
+   * an accept, deny or withdraw (recorded in the overlay) drops it without a refetch. `null` — never 0 — until
+   * a read has succeeded, and from a failed read until the next one succeeds (a retry stays hidden). While a refresh
+   * after a successful read is pending, the last good count stays visible, so the badge doesn't flicker.
    */
   public readonly pendingStaffCount: Signal<number | null> = computed(() => {
     const merged = this.staffApplications();
