@@ -17,7 +17,7 @@ import { columnAssetRevisionResponse, openAssetDocument } from './helpers/mktg-o
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import { pinMktgOsFlags } from './helpers/mktg-os-flags.helper';
 
-const KIT_FOOTER_PDF = "PDF as the deck's landscape pages: cover, contents, logo, colour, typography, visual, usage and voice, back cover.";
+const KIT_FOOTER_PDF = 'PDF as the deck’s landscape pages: cover, contents, logo, colour, typography, visual, usage and voice, back cover.';
 const KIT_FOOTER_SLIDES = 'Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.';
 
 test.use({ viewport: { width: 1440, height: 1000 } });

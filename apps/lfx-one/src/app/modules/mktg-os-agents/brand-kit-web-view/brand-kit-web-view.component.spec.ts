@@ -188,7 +188,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('mktg-slides-export-running')).not.toBeNull();
       expect(button('brand-kit-web-view-export-slides')?.disabled).toBe(true);
       expect(query('brand-kit-web-view-footer')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-        "PDF as the deck's landscape pages: cover, contents, logo, colour, typography, visual, usage and voice, back cover. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo."
+        'PDF as the deck’s landscape pages: cover, contents, logo, colour, typography, visual, usage and voice, back cover. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.'
       );
     });
 
@@ -214,7 +214,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(button('brand-kit-web-view-export-slides')?.classList.contains('p-button-outlined')).toBe(true);
       expect(button('brand-kit-web-view-download-pdf')?.classList.contains('p-button-outlined')).toBe(false);
       expect(query('brand-kit-web-view-footer')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-        "PDF as the deck's landscape pages: cover, contents, logo, colour, typography, visual, usage and voice, back cover. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo."
+        'PDF as the deck’s landscape pages: cover, contents, logo, colour, typography, visual, usage and voice, back cover. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.'
       );
     });
 

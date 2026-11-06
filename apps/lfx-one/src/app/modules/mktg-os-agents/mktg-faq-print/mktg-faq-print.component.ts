@@ -22,7 +22,7 @@ import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/m
     MktgPrintSheetRowComponent,
   ],
   templateUrl: './mktg-faq-print.component.html',
-  styleUrl: '../mktg-framework-print/mktg-framework-print.component.scss',
+  styleUrl: '../components/mktg-print-portrait/mktg-print-portrait.scss',
 })
 export class MktgFaqPrintComponent {
   public readonly view = input.required<FaqPrintView>();
