@@ -87,7 +87,7 @@ The campaign does not serve in the places listed here.
 - Pick countries from the **Countries** list. It offers the same countries as the targeted country list.
 - To exclude a city, region, metro or postal code, type its numeric Google geo target id in **Geo target id** and choose **Exclude**.
 - Each excluded place shows as a chip. Select its **×** to remove it.
-- You can exclude up to 60 places. This limit is separate from the 60 places you can target.
+- You can exclude up to 500 places. This limit is separate from the 500 places you can target.
 - A place cannot be both targeted and excluded, even when the two are written differently, such as `US` and its id `2840`. If you have added no target country, postal code or radius, the campaign targets the event country, so you cannot exclude that country either.
 
 ## Demand Gen bidding and languages
