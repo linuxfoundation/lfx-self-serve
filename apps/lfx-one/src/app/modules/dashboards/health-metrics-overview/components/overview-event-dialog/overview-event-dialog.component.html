@@ -44,6 +44,7 @@
       size="small"
       icon="fa-light fa-arrow-down-to-line"
       [loading]="exporting()"
+      [disabled]="!canExport()"
       (click)="downloadPng()"
       data-testid="overview-event-dialog-png"
       >Download PNG</lfx-ui-button
@@ -62,9 +63,10 @@
     <lfx-overview-event-trend [event]="event" [isPast]="isPast" [reads]="reads()" [status]="status()" />
   </div>
   @if (snapshotShown()) {
+    <!-- 674px is the Snapshot tables' own minimum, which a capture widens the panel to. -->
     <div
       #snapshotPanel
-      class="mt-[12px]"
+      class="mt-[12px] data-[exporting]:min-w-[674px]"
       role="tabpanel"
       id="overview-event-dialog-panel-snapshot"
       aria-labelledby="overview-event-dialog-tab-snapshot"

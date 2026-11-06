@@ -335,7 +335,7 @@ describe('HealthMetricsEventsService.getSnapshot', () => {
     expect(tiersSql).toMatch(/EXISTS \(\s*SELECT 1\s*FROM ANALYTICS\.PLATINUM_LFX_ONE\.EVENT_REGISTRATIONS_WEEK_OVER_WEEK w\s*WHERE w\.foundation_slug = \?/);
   });
 
-  it('maps the weeks and folds tiers into packages, priciest per package first, keeping fee lines in the revenue only', async () => {
+  it('maps the weeks and folds tiers into packages, priciest per package first, an unnamed tier as Other and fee lines in the revenue only', async () => {
     execute
       .mockResolvedValueOnce({ rows: [weekRow({ WEEK_START_DATE: '2026-10-19', WEEK_END_DATE: '2026-10-25', REGISTRATIONS: 5759, IN_7D: false }), weekRow()] })
       .mockResolvedValueOnce({
@@ -344,6 +344,7 @@ describe('HealthMetricsEventsService.getSnapshot', () => {
           tierRow({ SPONSORSHIP_TIER: 'Diamond', SOLD: 10, SOLD_90D: 1, REVENUE_USD: 2114350, REVENUE_90D_USD: 246600 }),
           tierRow({ SPONSORSHIP_TIER: 'Gold ', SOLD: 1, SOLD_30D: 0, SOLD_90D: 0, REVENUE_USD: 80000, REVENUE_30D_USD: 0, REVENUE_90D_USD: 0 }),
           tierRow({ SPONSORSHIP_TIER: 'Sales Tax', SOLD: 0, SOLD_30D: 0, SOLD_90D: 0, REVENUE_USD: 13289, REVENUE_30D_USD: 1732, REVENUE_90D_USD: 4897 }),
+          tierRow({ SPONSORSHIP_TIER: null, SOLD: 2, SOLD_30D: 0, SOLD_90D: 0, REVENUE_USD: 2000, REVENUE_30D_USD: 0, REVENUE_90D_USD: 0 }),
         ],
       });
 
@@ -362,8 +363,9 @@ describe('HealthMetricsEventsService.getSnapshot', () => {
     expect(snapshot.packages).toEqual([
       { tier: 'Diamond', sold: 10, soldInPeriod: { '7d': 0, '30d': 1, '90d': 1 }, revenueUsd: 2114350 },
       { tier: 'Gold', sold: 38, soldInPeriod: { '7d': 0, '30d': 1, '90d': 5 }, revenueUsd: 3032895 },
+      { tier: 'Other', sold: 2, soldInPeriod: { '7d': 0, '30d': 0, '90d': 0 }, revenueUsd: 2000 },
     ]);
-    expect(snapshot.sponsorshipRevenueUsd).toBe(2952895 + 2114350 + 80000 + 13289);
+    expect(snapshot.sponsorshipRevenueUsd).toBe(2952895 + 2114350 + 80000 + 13289 + 2000);
     expect(snapshot.sponsorshipRevenueInPeriodUsd).toEqual({ '7d': 0, '30d': 80000 * 2 + 1732, '90d': 446040 + 246600 + 4897 });
   });
 

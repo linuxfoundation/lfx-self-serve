@@ -42,6 +42,7 @@ import {
 
 import type {
   HealthMetricsEventsAtAGlance,
+  HealthMetricsEventsForecastEvent,
   HealthMetricsEventsSnapshot,
   HealthMetricsEventsSnapshotWeek,
   HealthMetricsEventsSponsorship,
@@ -1160,7 +1161,19 @@ describe('buildHealthMetricsOverviewEventDialogBadges', () => {
   };
 
   it('shows the goal as an outlined success badge and the days left once the forecast is read', () => {
-    const headline = { goal: 1200, daysLeft: 1 } as Parameters<typeof buildHealthMetricsOverviewEventDialogBadges>[2];
+    const headline: HealthMetricsEventsForecastEvent = {
+      eventId: 'e1',
+      eventName: 'Acme Summit',
+      eventStartDate: '2026-12-08',
+      forecastAvg: 620,
+      forecastLow: 560,
+      forecastHigh: 680,
+      registrationsNow: 330,
+      priorYearSamePoint: 300,
+      goal: 1200,
+      daysLeft: 1,
+      isNewEvent: false,
+    };
 
     expect(buildHealthMetricsOverviewEventDialogBadges(row, false, null)).toEqual({
       goal: { label: 'Registration goal: 1,000', icon: 'fa-light fa-bullseye-arrow', variant: 'line', tone: 'success' },

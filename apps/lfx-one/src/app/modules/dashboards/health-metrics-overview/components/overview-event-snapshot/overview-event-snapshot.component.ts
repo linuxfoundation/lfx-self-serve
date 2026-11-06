@@ -35,10 +35,11 @@ export class OverviewEventSnapshotComponent {
   private readonly projectContextService = inject(ProjectContextService);
 
   public readonly eventId = input.required<string>();
+  /** Read by the dialog, which offers Download PNG only once the tables are in. */
+  public readonly status = signal<HealthMetricsOverviewCardStatus>('loading');
 
   protected readonly periods = HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS;
   protected readonly period = signal<HealthMetricsEventsSnapshotPeriod>('7d');
-  protected readonly status = signal<HealthMetricsOverviewCardStatus>('loading');
   private readonly snapshot = this.initSnapshot();
   protected readonly sections = computed<HealthMetricsOverviewSnapshotSectionView[]>(() => {
     const snapshot = this.snapshot();

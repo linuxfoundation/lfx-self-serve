@@ -1531,14 +1531,13 @@ function mapSnapshotWeek(row: SnapshotWeekRow): HealthMetricsEventsSnapshotWeek 
 }
 
 /**
- * One package per tier name, its lines across projects added up; tax and fee lines sell no package, so they drop
- * out here and stay in the revenue. Priciest per package first, so Diamond leads as the design's list does.
+ * One package per tier name, its lines across projects added up, and an unnamed tier as Other; tax and fee lines sell
+ * no package, so they drop out here and stay in the revenue. Priciest per package first, so Diamond leads.
  */
 function groupSnapshotPackages(rows: SnapshotTierRow[]): HealthMetricsEventsSnapshotPackage[] {
   const byTier = new Map<string, HealthMetricsEventsSnapshotPackage>();
   for (const row of rows) {
-    const tier = row.SPONSORSHIP_TIER?.trim();
-    if (!tier) continue;
+    const tier = row.SPONSORSHIP_TIER?.trim() || 'Other';
 
     const current = byTier.get(tier) ?? { tier, sold: 0, soldInPeriod: { '7d': 0, '30d': 0, '90d': 0 }, revenueUsd: 0 };
     current.sold += Number(row.SOLD ?? 0);

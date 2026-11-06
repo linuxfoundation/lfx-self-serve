@@ -68,6 +68,9 @@ export class OverviewEventDialogComponent {
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   private readonly trendPanel = viewChild.required<ElementRef<HTMLElement>>('trendPanel');
   private readonly snapshotPanel = viewChild<ElementRef<HTMLElement>>('snapshotPanel');
+  private readonly snapshot = viewChild(OverviewEventSnapshotComponent);
+  /** A loading or failed tab has nothing worth saving, so Download PNG waits for the tab on show to be read. */
+  protected readonly canExport = computed(() => (this.tab() === 'snapshot' ? this.snapshot()?.status() : this.status()) === 'ready');
 
   public constructor() {
     // The title takes focus, so a screen reader names the event and no ring lands on the close button.
@@ -88,12 +91,15 @@ export class OverviewEventDialogComponent {
   protected async downloadPng(): Promise<void> {
     const tab = this.tabs.find((candidate) => candidate.value === this.tab());
     const panel = this.tab() === 'snapshot' ? this.snapshotPanel() : this.trendPanel();
-    if (!tab || !panel || this.exporting()) return;
+    if (!tab || !panel || !this.canExport() || this.exporting()) return;
 
     this.exporting.set(true);
+    // Widens the panel to its tables for the capture, so a narrow screen's scrolled-off columns are in the image.
+    panel.nativeElement.setAttribute('data-exporting', '');
     const exported = await this.exportImage(panel.nativeElement, `${slugify(this.event.eventName) || 'event'}-${slugify(tab.label)}`, {
       backgroundColor: lfxColors.white,
     });
+    panel.nativeElement.removeAttribute('data-exporting');
     this.exporting.set(false);
 
     this.toast.show(

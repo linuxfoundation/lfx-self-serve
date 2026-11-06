@@ -8,7 +8,7 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OverviewEventDialogComponent } from './overview-event-dialog.component';
@@ -52,9 +52,11 @@ describe('OverviewEventDialogComponent', () => {
   let toast: { show: ReturnType<typeof vi.fn> };
   const downloadCardAsImage = vi.fn();
 
-  async function render(options: { event?: HealthMetricsOverviewEvent; isPast?: boolean; tab?: HealthMetricsOverviewEventDialogTab } = {}): Promise<void> {
+  async function render(
+    options: { event?: HealthMetricsOverviewEvent; isPast?: boolean; tab?: HealthMetricsOverviewEventDialogTab; trendFails?: boolean } = {}
+  ): Promise<void> {
     close = vi.fn();
-    history = vi.fn().mockReturnValue(of(CURVE));
+    history = vi.fn().mockReturnValue(options.trendFails ? throwError(() => new Error('down')) : of(CURVE));
     snapshot = vi.fn().mockReturnValue(of(HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED));
     toast = { show: vi.fn() };
     await TestBed.configureTestingModule({
@@ -144,14 +146,20 @@ describe('OverviewEventDialogComponent', () => {
     expect(snapshot).toHaveBeenCalledTimes(1);
   });
 
-  it('downloads the tab on show as a PNG named for the event and the tab, then says so', async () => {
-    downloadCardAsImage.mockResolvedValue(true);
+  it('downloads the tab on show as a PNG named for the event and the tab, widened for the capture, then says so', async () => {
+    let widened = false;
+    downloadCardAsImage.mockImplementation(async (element: HTMLElement) => {
+      widened = element.hasAttribute('data-exporting');
+      return true;
+    });
     await render();
 
     query('overview-event-dialog-png')?.querySelector('button')?.click();
     await fixture.whenStable();
 
     expect(downloadCardAsImage).toHaveBeenCalledWith(query('overview-event-dialog-panel-trend'), 'acme-summit-registration-trend', expect.anything());
+    expect(widened).toBe(true);
+    expect(query('overview-event-dialog-panel-trend')?.hasAttribute('data-exporting')).toBe(false);
     expect(toast.show).toHaveBeenCalledWith({ variant: 'dark', message: 'Registration trend downloaded as PNG' });
   });
 
@@ -164,6 +172,16 @@ describe('OverviewEventDialogComponent', () => {
 
     expect(downloadCardAsImage).toHaveBeenCalledWith(query('overview-event-dialog-panel-snapshot'), 'acme-summit-snapshot', expect.anything());
     expect(toast.show).toHaveBeenCalledWith({ variant: 'error', message: 'Snapshot could not be downloaded. Try again.' });
+  });
+
+  it('offers no download while the tab on show has nothing to save', async () => {
+    await render({ isPast: true, trendFails: true });
+
+    expect(query('overview-event-dialog-png')?.querySelector('button')?.disabled).toBe(true);
+    query('overview-event-dialog-png')?.querySelector('button')?.click();
+    await fixture.whenStable();
+
+    expect(downloadCardAsImage).not.toHaveBeenCalled();
   });
 
   it('closes the dialog from its close button', async () => {
