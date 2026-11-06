@@ -224,7 +224,7 @@
                   tabindex="0"
                   aria-label="Visible range"
                   aria-valuemin="0"
-                  [attr.aria-valuemax]="windowDays"
+                  [attr.aria-valuemax]="windowDays - (view().window.end - view().window.start)"
                   [attr.aria-valuenow]="view().window.start"
                   [attr.aria-valuetext]="windowDays - view().window.start + ' to ' + (windowDays - view().window.end) + ' days before the event'"
                   [style.background]="colors.navigatorSelection"

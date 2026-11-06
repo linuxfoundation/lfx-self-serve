@@ -1057,6 +1057,28 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     expect(view.navigator).toMatchObject({ selectionLeftPct: '38.89', selectionWidthPct: '61.11', dimRightPct: '0.00' });
   });
 
+  it('keeps whole-number steps for tiny counts and for a span that misses every line', () => {
+    const tiny = (peak: number) => ({ format: 'In Person', points: [point(-30, peak, null, null), point(-10, peak, null, null)] });
+    const labels = (view: ReturnType<typeof buildHealthMetricsOverviewTrendView>): string[] => view.yTicks.map((tick) => tick.label);
+    const noGoal = { ...row, registrationsGoal: null };
+
+    expect(labels(buildHealthMetricsOverviewTrendView(noGoal, null, tiny(1), whole))).toEqual(['2', '1', '0']);
+    expect(labels(buildHealthMetricsOverviewTrendView(noGoal, null, tiny(2), whole))).toEqual(['3', '2', '1', '0']);
+    // Nothing is drawn from 180 to 120 days out here.
+    expect(labels(buildHealthMetricsOverviewTrendView(noGoal, null, tiny(2), { start: 0, end: 60 }))).toEqual(['2', '1', '0']);
+  });
+
+  it('still draws the prediction and its band when no measured day falls inside the window', () => {
+    const early = { format: 'In Person', points: [point(-200, 40, null, null), point(-60, null, 300, null), point(0, null, 620, null)] };
+    const view = buildHealthMetricsOverviewTrendView(row, headline, early, whole);
+
+    expect(view.currentPath).toBe('');
+    expect(view.predictedPath.startsWith('M400.0')).toBe(true);
+    expect(view.bandPath.endsWith(' Z')).toBe(true);
+    expect(view.navigator.predictedPath).not.toBe('');
+    expect(view.todayX).toBeNull();
+  });
+
   it('keeps a moved window on the chart and at least 7 days wide', () => {
     const view = buildHealthMetricsOverviewTrendView(row, headline, series, { start: 175, end: 178 });
 

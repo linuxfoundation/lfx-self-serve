@@ -679,8 +679,8 @@ function buildTrendChart(
   const days = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
   const line = trendLines(series, isPast);
   const fitWindow = fitTrendWindow(line);
-  const window = clampTrendWindow(requested ?? fitWindow);
-  const { start, end } = window;
+  const visible = clampTrendWindow(requested ?? fitWindow);
+  const { start, end } = visible;
   const span = end - start;
 
   const visiblePeak = Math.max(1, ...range(start, end).map((index) => line.peak(index)));
@@ -688,16 +688,17 @@ function buildTrendChart(
   const { step, steps } = trendScale(Math.max(visiblePeak * 1.06, goalShown ? (goal as number) * 1.05 : 0));
   const max = step * steps;
   const x = (index: number): number => ((index - start) / span) * 600;
-  // A value far above the visible span is held just over the top, so a steep line leaves the plot instead of scaling it.
-  const y = (value: number): number => 220 - (Math.min(value, max * 1.2) / max) * 220;
+  const y = (value: number): number => 220 - (value / max) * 220;
   const plot = (values: (number | null)[], from: number, to: number): [number, number][] =>
     range(Math.max(from, start), Math.min(to, end))
       .filter((index) => values[index] !== null)
       .map((index): [number, number] => [x(index), y(values[index] as number)]);
 
-  const showForecast = line.now !== null && line.now <= end;
-  const highs = showForecast ? plot(line.high, line.now as number, days) : [];
-  const lows = showForecast ? plot(line.low, line.now as number, days) : [];
+  // With no measured day in the window the forecast still draws, from wherever it starts.
+  const forecastFrom = line.now ?? 0;
+  const showForecast = !isPast && forecastFrom <= end;
+  const highs = showForecast ? plot(line.high, forecastFrom, days) : [];
+  const lows = showForecast ? plot(line.low, forecastFrom, days) : [];
   const gapEnd = line.now === null ? -1 : Math.min(line.now, end);
   const gap = (top: (current: number, prior: number) => number, bottom: (current: number, prior: number) => number): string => {
     const indexes = range(start, gapEnd).filter((index) => line.actual[index] !== null && line.prior[index] !== null);
@@ -716,7 +717,7 @@ function buildTrendChart(
   return {
     currentPath: svgPath(plot(line.actual, 0, line.now ?? -1)),
     lastYearPath: svgPath(plot(line.prior, 0, days)),
-    predictedPath: showForecast ? svgPath(plot(line.predicted, line.now as number, days)) : '',
+    predictedPath: showForecast ? svgPath(plot(line.predicted, forecastFrom, days)) : '',
     bandPath: highs.length > 1 ? `${svgPath([...highs, ...[...lows].reverse()])} Z` : '',
     bandHighPath: highs.length > 1 ? svgPath(highs) : '',
     bandLowPath: lows.length > 1 ? svgPath(lows) : '',
@@ -735,9 +736,9 @@ function buildTrendChart(
     xTicks: range(0, Math.floor((days - start - firstTick) / tickStep))
       .map((index) => firstTick + index * tickStep)
       .map((daysOut) => ({ label: String(daysOut), pct: ((x(days - daysOut) / 600) * 100).toFixed(2) })),
-    window,
+    window: visible,
     fitWindow,
-    navigator: buildTrendNavigator(line, window, isPast),
+    navigator: buildTrendNavigator(line, visible, isPast),
   };
 }
 
@@ -745,7 +746,7 @@ function buildTrendChart(
 interface TrendLines {
   actual: (number | null)[];
   prior: (number | null)[];
-  /** The prediction, the band's highs and its lows, each starting at the last measured day's count. */
+  /** The prediction, the band's highs and its lows, each starting at the last measured day's count, or as read with none. */
   predicted: (number | null)[];
   high: (number | null)[];
   low: (number | null)[];
@@ -767,7 +768,9 @@ function trendLines(series: HealthMetricsEventsForecastCurveSeries | null, isPas
   const now = measured.length ? measured[measured.length - 1] : null;
   const fromNow = (pick: (point: HealthMetricsEventsForecastCurvePoint) => number | null): (number | null)[] =>
     byDay(pick).map((value, index) => {
-      if (isPast || now === null || index < now) return null;
+      if (isPast) return null;
+      if (now === null) return value;
+      if (index < now) return null;
       return index === now ? actual[now] : value;
     });
   const prior = byDay((point) => point.priorYear);
@@ -817,15 +820,15 @@ function trendTickStep(span: number): number {
 }
 
 /** A window kept on the chart and at least the minimum span wide. */
-function clampTrendWindow(window: HealthMetricsOverviewTrendWindow): HealthMetricsOverviewTrendWindow {
+function clampTrendWindow(requested: HealthMetricsOverviewTrendWindow): HealthMetricsOverviewTrendWindow {
   const days = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
   const minSpan = HEALTH_METRICS_OVERVIEW_TREND_MIN_SPAN_DAYS;
-  const start = Math.max(0, Math.min(Math.round(window.start), days - minSpan));
-  return { start, end: Math.min(days, Math.max(Math.round(window.end), start + minSpan)) };
+  const start = Math.max(0, Math.min(Math.round(requested.start), days - minSpan));
+  return { start, end: Math.min(days, Math.max(Math.round(requested.end), start + minSpan)) };
 }
 
 /** The whole window's lines on their own 600×44 scale, and the visible span picked out over them. */
-function buildTrendNavigator(line: TrendLines, window: HealthMetricsOverviewTrendWindow, isPast: boolean): HealthMetricsOverviewTrendNavigatorView {
+function buildTrendNavigator(line: TrendLines, visible: HealthMetricsOverviewTrendWindow, isPast: boolean): HealthMetricsOverviewTrendNavigatorView {
   const days = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
   const top = Math.max(1, ...range(0, days).map((index) => line.peak(index))) * 1.05;
   const plot = (values: (number | null)[]): [number, number][] =>
@@ -841,17 +844,21 @@ function buildTrendNavigator(line: TrendLines, window: HealthMetricsOverviewTren
     currentAreaPath: first && last ? `${svgPath(current)} L${last[0].toFixed(1)} 40 L${first[0].toFixed(1)} 40 Z` : '',
     lastYearPath: svgPath(plot(line.prior)),
     predictedPath: isPast ? '' : svgPath(plot(line.predicted)),
-    selectionLeftPct: ((window.start / days) * 100).toFixed(2),
-    selectionWidthPct: (((window.end - window.start) / days) * 100).toFixed(2),
-    dimRightPct: (((days - window.end) / days) * 100).toFixed(2),
-    ticks: [180, 150, 120, 90, 60, 30, 0].map((daysOut) => ({ label: String(daysOut), pct: (((days - daysOut) / days) * 100).toFixed(2) })),
+    selectionLeftPct: ((visible.start / days) * 100).toFixed(2),
+    selectionWidthPct: (((visible.end - visible.start) / days) * 100).toFixed(2),
+    dimRightPct: (((days - visible.end) / days) * 100).toFixed(2),
+    ticks: range(0, Math.floor(days / 30))
+      .map((index) => days - index * 30)
+      .map((daysOut) => ({ label: String(daysOut), pct: (((days - daysOut) / days) * 100).toFixed(2) })),
   };
 }
 
-/** At most 5 even steps of 1, 2, 2.5 or 5 times a power of ten, the design's y scale for the trend. */
+/** At most 5 even, whole-number steps of 1, 2, 2.5 or 5 times a power of ten: the design's y scale for the trend. */
 function trendScale(top: number): { step: number; steps: number } {
-  const magnitude = 10 ** Math.floor(Math.log10(Math.max(top, 1) / 5));
-  const step = [1, 2, 2.5, 5, 10].map((factor) => factor * magnitude).find((candidate) => Math.ceil(top / candidate) <= 5) ?? magnitude * 10;
+  const magnitude = Math.max(1, 10 ** Math.floor(Math.log10(Math.max(top, 1) / 5)));
+  const step =
+    [1, 2, 2.5, 5, 10].map((factor) => factor * magnitude).find((candidate) => Number.isInteger(candidate) && Math.ceil(top / candidate) <= 5) ??
+    magnitude * 10;
   return { step, steps: Math.max(1, Math.ceil(top / step)) };
 }
 
