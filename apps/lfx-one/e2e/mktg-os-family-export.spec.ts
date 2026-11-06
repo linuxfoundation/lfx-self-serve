@@ -7,21 +7,19 @@ import {
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_PRINT_DECK_PAGE_NAME,
   MKTG_PRINT_LANDSCAPE_PAGE_SETUP,
-  MKTG_PRINT_PAGE_MARGINS_CLASS,
 } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { draftFrameworkAsset } from './helpers/mktg-os-asset-views.helper';
+import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
+import { familyPrintPlan } from './helpers/mktg-os-family-export.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
-import {
-  expectMktgPrintFrame,
-  finishMktgPrintFrame,
-  layoutMktgPrintFrame,
-  mktgPrintComputedPx,
-  PRINT_FRAME_LANDSCAPE,
-  stubMktgPrintFrame,
-} from './helpers/mktg-print.helper';
+import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, PRINT_FRAME_LANDSCAPE, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
+
+/** The deck-wide page numbers of the stubbed family, from the shared builders the assembly plans with (never guessed). */
+const PLAN = familyPrintPlan(draftFrameworkAsset().content, DOCUMENT_PROJECT.name);
 
 test('export stays on the Family URL and Back returns to Kit, never to an export action', async ({ page }, info) => {
   await openFamilyExports(page, { existing: true });
@@ -268,23 +266,38 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(back.getByTestId('mktg-print-page')).toHaveAttribute('data-layout', 'back');
   await expect(back.getByTestId('mktg-print-page-title')).not.toBeEmpty();
   await expect(back).toContainText('trademarks of the Linux Foundation');
-  // The kit inside the family is the deck's landscape kit numbered from the family's plan: its cover at 2, its fourteen
-  // content pages 3–16 (the contents list the family's numbers), no back cover of its own (the family's closes the file).
+  // The framework inside the family is the deck's landscape framework numbered from the family's plan: its cover at 2
+  // (the deck's cover: the title, the tagline, no logo), then its content pages with the deck's numbers in their
+  // footers and no footer line; none of the portrait framework's sheets.
+  const frameworkPrint = printDocument.getByTestId('mktg-framework-print');
+  await expect(frameworkPrint).toHaveAttribute('data-pages', String(PLAN.frameworkPages));
+  const frameworkCover = frameworkPrint.getByTestId('framework-print-cover');
+  await expect(frameworkCover.getByTestId('mktg-print-page')).toHaveAttribute('data-layout', 'cover');
+  await expect(frameworkCover.getByTestId('mktg-print-page-title')).toHaveText('Messaging Framework');
+  await expect(frameworkCover.getByTestId('mktg-print-page-subtitle')).toHaveText(draftFrameworkAsset().content.mf.tagline);
+  await expect(frameworkCover.locator('img')).toHaveCount(0);
+  const frameworkPages = frameworkPrint.getByTestId('framework-print-page');
+  await expect(frameworkPages).toHaveCount(PLAN.frameworkPages - 1);
+  await expect(frameworkPages.first().getByTestId('mktg-print-page-head').first()).toHaveText('01 Framework');
+  await expect(frameworkPages.first().getByTestId('mktg-print-page-footer')).toHaveText(['', String(PLAN.frameworkFirstPage + 1)]);
+  await expect(printDocument.locator('lfx-mktg-framework-print lfx-mktg-print-sheet, lfx-mktg-framework-print table')).toHaveCount(0);
+  // The kit inside the family is the deck's landscape kit numbered from the family's plan: its cover after the framework,
+  // its fourteen content pages (the contents list the family's numbers), no back cover of its own (the family's closes
+  // the file).
   const kitPrint = printDocument.getByTestId('mktg-brand-kit-print');
-  await expect(kitPrint).toHaveAttribute('data-pages', '15');
+  await expect(kitPrint).toHaveAttribute('data-pages', String(PLAN.kitPages));
   await expect(kitPrint.getByTestId('kit-print-cover')).toHaveCount(1);
   await expect(kitPrint.getByTestId('kit-print-back-cover')).toHaveCount(0);
   const kitPages = kitPrint.getByTestId('kit-print-page');
-  await expect(kitPages).toHaveCount(14);
-  await expect(kitPages.first()).toHaveAttribute('data-page', '03');
-  await expect(kitPages.first()).toContainText('04   Logo system');
+  await expect(kitPages).toHaveCount(PLAN.kitPages - 1);
+  await expect(kitPages.first()).toHaveAttribute('data-page', PLAN.pageNumber(PLAN.kitFirstPage + 1));
+  await expect(kitPages.first()).toContainText(`${PLAN.pageNumber(PLAN.kitFirstPage + 2)}   Logo system`);
   await expect(kitPages.nth(1).getByTestId('mktg-print-page-head')).toHaveText(['01 Logo', / Brand Kit$/]);
-  await expect(kitPages.last().getByTestId('mktg-print-page-footer').last()).toHaveText('16');
+  await expect(kitPages.last().getByTestId('mktg-print-page-footer').last()).toHaveText(PLAN.pageNumber(PLAN.kitFirstPage + PLAN.kitPages - 1));
   // Every landscape page is one fixed frame holding one 16:9 slide that breaks after itself, numbered deck-wide on the
-  // content pages only (the family cover 1, the kit 2–16, the dividers 17 and 19, the back cover 21; the framework
-  // prints in its own flow for now).
+  // content pages only (the family cover 1, the framework, the kit, the dividers, the cards, the grid, the back cover).
   const landscapePages = printDocument.getByTestId('mktg-print-page');
-  await expect(landscapePages).toHaveCount(21);
+  await expect(landscapePages).toHaveCount(PLAN.pageCount);
   for (const frame of await landscapePages.all()) {
     await expect(frame).toHaveCSS('position', 'relative');
     await expect(frame).toHaveCSS('overflow', 'hidden');
@@ -295,11 +308,12 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   }
   const footerLine = / · a Linux Foundation project$/;
   await expect(printDocument.getByTestId('mktg-print-page-footer')).toHaveText([
-    ...Array.from({ length: 14 }, (_, i) => [footerLine, String(3 + i).padStart(2, '0')]).flat(),
+    ...Array.from({ length: PLAN.frameworkPages - 1 }, (_, i) => ['', String(PLAN.frameworkFirstPage + 1 + i)]).flat(),
+    ...Array.from({ length: PLAN.kitPages - 1 }, (_, i) => [footerLine, PLAN.pageNumber(PLAN.kitFirstPage + 1 + i)]).flat(),
     footerLine,
-    '18',
+    PLAN.pageNumber(PLAN.boilerplatesFirstPage),
     footerLine,
-    '20',
+    PLAN.pageNumber(PLAN.faqFirstPage),
   ]);
   // Nothing leaves its page: every card and every pair sits inside its page's body area.
   for (const pageTestId of ['mktg-boilerplates-print-page', 'mktg-faq-print-page']) {
@@ -325,43 +339,21 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
     return backgrounds;
   });
   expect(ancestorBackgrounds.every((color) => color === 'rgb(255, 255, 255)')).toBe(true);
-  await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2']);
-  await expect(printDocument.getByTestId('mktg-framework-print-goals')).toBeVisible();
-  await expect(printDocument.getByTestId('mktg-framework-print-pillars')).toHaveCount(0);
-  await expect(printDocument.locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(0);
-  for (const selector of ['lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
+  for (const selector of ['lfx-mktg-framework-print', 'lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
     await expect(printDocument.locator(selector).getByTestId('mktg-print-page-head').first()).toBeVisible();
     await expect(printDocument.locator(selector).getByTestId('mktg-print-page-logo')).toBeVisible();
   }
-  await expect(printFrame.getByTestId('mktg-framework-print-cover')).toBeHidden();
-  // The cover's whole sheet goes with it: its head and foot room alone would print as a blank page.
-  await expect(printDocument.locator('lfx-mktg-print-sheet:has([data-testid="mktg-framework-print-cover"])')).toBeHidden();
-  // None of the portrait kit's chapters print: the kit is its landscape pages (above).
+  // None of the portrait prints' chrome prints: the framework and the kit are their landscape pages (above).
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter, lfx-mktg-brand-kit-print lfx-mktg-print-chapter-header')).toHaveCount(0);
-  // The framework's room is in the document, not the @page margin (none, so no browser header or footer): its sections
-  // print in sheets that repeat a head and pad their last row, one row per block — no footer group anywhere, for which
-  // Chromium prints an empty page per table. Its cover sheet is in the DOM, hidden above, and counted by toHaveCount.
-  await expect(printDocument.locator('tfoot, [data-testid="mktg-print-sheet-foot"]')).toHaveCount(0);
-  await expect(printDocument.getByTestId('mktg-print-sheet-head')).toHaveCount(3);
-  // Visible sheets, not heads: the framework's cover sheet is hidden with its cover.
-  await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(3);
-  await expect(printDocument.locator('lfx-mktg-print-sheet').locator('visible=true')).toHaveCount(2);
+  await expect(printDocument.locator('lfx-mktg-print-sheet, tfoot, [data-testid="mktg-print-sheet-foot"], [data-testid="mktg-print-sheet-head"]')).toHaveCount(
+    0
+  );
   // The page setup is the deck pages' in both engines: the frame's unnamed rule and the deck's named page, both the
-  // landscape setup (margin 0), and no margins mode, so the portrait framework printed alongside keeps its room in the
-  // document in WebKit too (the interim, until its landscape pages land).
+  // landscape setup (margin 0); every page of the family is a deck page.
   expect(await printFrame.locator('head style').last().textContent()).toBe(
     `@page { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }\n@page ${MKTG_PRINT_DECK_PAGE_NAME} { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }`
   );
-  await expect(printFrame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`)).toHaveCount(0);
-  await expect(printDocument.locator('lfx-mktg-framework-print .lfx-framework-print')).toHaveCSS('padding-left', '57.6px');
-  // The framework's last rows' bottom room, to a tenth (mktgPrintComputedPx): a sheet's 0.55in = 52.8px.
-  expect(
-    await mktgPrintComputedPx(
-      printDocument.locator('lfx-mktg-framework-print lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell').last(),
-      'padding-bottom'
-    )
-  ).toBeCloseTo(52.8, 1);
-  await expect(printDocument.locator('lfx-brand-kit-view, .lfx-brand-kit-page')).toHaveCount(0);
+  await expect(printDocument.locator('lfx-brand-kit-view, .lfx-brand-kit-page, .lfx-framework-print')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('four-assets-print-document.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);

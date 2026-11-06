@@ -1,8 +1,9 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-/* Shared portrait composition for family PDFs and the standalone native kit print. The family's own pages (its
-   cover, dividers, boilerplate cards and FAQ grid) are fixed landscape frames with their own stylesheets. */
+/* The print-only wrappers' composition for the family PDF and the standalone native kit print. The family prints
+   deck pages only (the shell's fixed landscape frames own their page setup and breaks); the portrait named page and
+   the hidden portrait chrome below are the standalone kit's. */
 .lfx-family-print-only {
   display: none;
 }
@@ -36,11 +37,10 @@
     background: white !important;
   }
 
-  body.lfx-print-family,
   body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
     page: mktg-framework;
 
-    /* One cover and one contents list for the family, not a second per asset. The framework's cover goes with
+    /* One cover and one contents list, not a second per asset. The framework's cover goes with
        its whole sheet: a sheet left behind would print its 1.1in of head and foot room alone on a blank page. */
     lfx-mktg-print-sheet:has([data-testid='mktg-framework-print-cover']),
     [data-testid='mktg-framework-print-cover'],
@@ -51,13 +51,17 @@
     }
   }
 
+  /* The portrait named page is the standalone prints'; the family's pages name their own (the shell's mktg-deck). */
+  body.lfx-print-framework:has(.lfx-framework-print),
+  body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
+    page: mktg-framework;
+  }
+
   /* :has raises specificity above the legacy body height:0/overflow:hidden
      rules emitted after this partial by styles.scss. */
   body.lfx-print-framework:has(.lfx-framework-print),
   body.lfx-print-family,
   body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
-    page: mktg-framework;
-
     /* Named pages require in-flow boxes. Keep only the document's ancestor chain
        and its contents; hidden siblings must not reserve blank printed space. */
     *:not(:has(:is(.lfx-framework-print-only, .lfx-family-print-only, .lfx-brand-kit-print-only))):not(
@@ -88,13 +92,20 @@
       transform: none !important;
     }
 
+    /* The whole ancestor chain of a print root paints white: the screen's canvas never shows through a page. In the
+       family the roots hold the shell's frames, which own their page and breaks, so they take no page of their own. */
     lfx-mktg-framework-print,
     lfx-mktg-brand-kit-print {
-      page: mktg-framework;
       width: 100%;
-      break-before: page;
-      /* The whole ancestor chain of a print root paints white: the screen's canvas never shows through a page. */
       background: white;
+    }
+
+    &:not(.lfx-print-family) {
+      lfx-mktg-framework-print,
+      lfx-mktg-brand-kit-print {
+        page: mktg-framework;
+        break-before: page;
+      }
     }
 
     /* The legacy standalone book uses hidden visibility on the shell. Its

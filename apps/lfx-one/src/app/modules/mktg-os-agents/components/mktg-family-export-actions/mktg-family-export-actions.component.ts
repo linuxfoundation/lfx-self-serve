@@ -34,7 +34,15 @@ import {
   MktgSlidesExportMode,
   MktgSlidesExportPhase,
 } from '@lfx-one/shared/interfaces';
-import { mktgBrandKitBookPageCount, mktgFamilyExportAgentKeys, mktgPrintDocumentTitle, mktgPrintFamilyPlan, mktgPrintPageLook } from '@lfx-one/shared/utils';
+import {
+  buildBrandKitPrintPages,
+  mktgBrandKitBookPageCount,
+  mktgFamilyExportAgentKeys,
+  mktgPrintDocumentTitle,
+  mktgPrintFamilyPlan,
+  mktgPrintFrameworkPageCount,
+  mktgPrintPageLook,
+} from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
@@ -313,7 +321,7 @@ export class MktgFamilyExportActionsComponent {
   private initPrintPlan(): Signal<MktgPrintFamilyPlan | null> {
     return computed(() => {
       const view = this.printView();
-      return view ? mktgPrintFamilyPlan(view, this.frameworkPageCount(), this.kitPageCount(view)) : null;
+      return view ? mktgPrintFamilyPlan(view, this.frameworkPageCount(view), this.kitPageCount(view)) : null;
     });
   }
 
@@ -432,13 +440,13 @@ export class MktgFamilyExportActionsComponent {
     });
   }
 
-  /** How many deck pages the framework prints: none while it prints in its own portrait flow (its landscape pages bring their own count helper; this is the one place to switch). */
-  private frameworkPageCount(): number {
-    return 0;
+  /** How many deck pages the framework prints inside the family: its cover and content pages (the deck has no back cover for it). */
+  private frameworkPageCount(view: MktgFamilyPrintView): number {
+    return view.framework ? mktgPrintFrameworkPageCount(view.framework) : 0;
   }
 
   /** How many deck pages the kit prints inside the family: its cover and content pages, its own back cover left out (the family's closes the file). */
   private kitPageCount(view: MktgFamilyPrintView): number {
-    return view.kit ? mktgBrandKitBookPageCount(view.kit, view.brand, view.projectName, { backCover: false }) : 0;
+    return view.kit ? mktgBrandKitBookPageCount(buildBrandKitPrintPages(view.kit, view.brand, view.projectName, { backCover: false }), false) : 0;
   }
 }

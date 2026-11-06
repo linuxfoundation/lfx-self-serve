@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS } from '@lfx-one/shared/constants';
-import type { FaqContent, MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
+import type { FaqContent, FoundationMessageContent, MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
+// Deep imports, not the `@lfx-one/shared/utils` barrel: the barrel reaches Angular, which the Playwright process has no compiler for.
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils/brand-kit-book.utils';
+import { buildBrandKitPrintPages, mktgBrandKitBookPageCount } from '@lfx-one/shared/utils/mktg-print-brand-kit.utils';
+import { mktgPrintFrameworkPageCount } from '@lfx-one/shared/utils/mktg-print-framework.utils';
+import { mktgPrintPageNumber } from '@lfx-one/shared/utils/mktg-print-page.utils';
+import { buildFoundationMessagePrintView, mktgPrintBrand } from '@lfx-one/shared/utils/mktg-print.utils';
 import { expect, Page } from '@playwright/test';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '../../src/app/shared/testing/mktg-family-export-test-data';
 import { suppressCookieBanner } from './account-settings-email.helper';
@@ -159,5 +166,41 @@ export async function openFamilyExports(
     },
     lookupReads: () => lookupReads,
     releasePrint,
+  };
+}
+
+/** The deck-wide page numbers of the stubbed family as the assembly plans them (mktgPrintFamilyPlan with the shared builders' counts): the family cover 1, the framework's cover at 2, the kit's after it, a divider, the one card page, a divider, the one grid page, the back cover last. `pageNumber` prints one as the footers and the contents do. */
+export function familyPrintPlan(
+  content: FoundationMessageContent,
+  projectName: string
+): {
+  frameworkPages: number;
+  kitPages: number;
+  frameworkFirstPage: number;
+  kitFirstPage: number;
+  boilerplatesFirstPage: number;
+  faqFirstPage: number;
+  pageCount: number;
+  pageNumber: (page: number) => string;
+} {
+  const kit = brandKitTestRevision();
+  const frameworkPages = mktgPrintFrameworkPageCount(buildFoundationMessagePrintView(content, projectName, 1, kit));
+  const kitPages = mktgBrandKitBookPageCount(
+    buildBrandKitPrintPages(buildBrandKitBookView(kit, 1), mktgPrintBrand(kit), projectName, { backCover: false }),
+    false
+  );
+  const frameworkFirstPage = 2;
+  const kitFirstPage = frameworkFirstPage + frameworkPages;
+  const boilerplatesFirstPage = kitFirstPage + kitPages + 1;
+  const faqFirstPage = boilerplatesFirstPage + 2;
+  return {
+    frameworkPages,
+    kitPages,
+    frameworkFirstPage,
+    kitFirstPage,
+    boilerplatesFirstPage,
+    faqFirstPage,
+    pageCount: faqFirstPage + 1,
+    pageNumber: mktgPrintPageNumber,
   };
 }

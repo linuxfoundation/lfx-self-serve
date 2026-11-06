@@ -28,11 +28,13 @@ import {
   boilerplatesAssetOfRevision,
   buildBoilerplatesPrintView,
   buildBrandKitBookView,
+  buildBrandKitPrintPages,
   buildFaqPrintView,
   buildFoundationMessagePrintView,
   faqAssetOfRevision,
   mktgBrandKitBookPageCount,
   mktgPrintBrand,
+  mktgPrintFrameworkPageCount,
 } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import boilerplatesEnvelope from '@lfx-one/shared/utils/__fixtures__/boilerplates.envelope.json';
@@ -471,9 +473,8 @@ describe('Family export slot', () => {
     ]);
     expect(coverEls[4].querySelector('img')?.getAttribute('src')).toBe(brand.logoOnDark?.src);
     expect(cover?.querySelector('[data-testid="mktg-print-page-footer"]')).toBeNull();
-    // The parts are numbered in the family order; the dividers count each part; the kit's and the appendix pages are
-    // numbered deck-wide after the cover, the kit and the dividers (the framework prints in its own flow for now: none
-    // of its pages are counted).
+    // The parts are numbered in the family order; the dividers count each part; the framework's, the kit's and the
+    // appendix pages are numbered deck-wide after the cover, the framework, the kit and the dividers.
     const dividers = Array.from(document?.querySelectorAll('lfx-mktg-print-divider') ?? []);
     const dividerEls = (divider: Element) => Array.from(divider.querySelectorAll('[data-testid="mktg-print-page-el"]'), (el) => el.textContent?.trim());
     expect(dividers.map(dividerEls)).toEqual([
@@ -481,9 +482,11 @@ describe('Family export slot', () => {
       ['04 · POSITIONING & BRAND', 'Questions and answers', '4 questions and answers', ''],
     ]);
     expect(dividers.every((divider) => divider.querySelector('[data-testid="mktg-print-page-footer"]') === null)).toBe(true);
-    // The kit inside the family: its cover at 2, its fourteen content pages 3–16 with the family's running count, no back
-    // cover of its own; then the divider 17, the cards 18, the divider 19, the grid 20, the family's back cover 21.
-    const kitPages = mktgBrandKitBookPageCount(kitView, brand, 'Synthetic project', { backCover: false });
+    // The framework inside the family: its cover at 2, its two content pages 3 and 4 (the deck's numbers, no footer line).
+    // The kit: its cover at 5, its fourteen content pages 06–19 with the family's running count, no back cover of its
+    // own; then the divider 20, the cards 21, the divider 22, the grid 23, the family's back cover 24.
+    expect(mktgPrintFrameworkPageCount(framework)).toBe(3);
+    const kitPages = mktgBrandKitBookPageCount(buildBrandKitPrintPages(kitView, brand, 'Synthetic project', { backCover: false }), false);
     expect(kitPages).toBe(15);
     const kitPrint = document?.querySelector('[data-testid="mktg-brand-kit-print"]');
     expect(kitPrint?.getAttribute('data-pages')).toBe('15');
@@ -491,11 +494,11 @@ describe('Family export slot', () => {
     expect(kitPrint?.querySelectorAll('[data-testid="kit-print-back-cover"]')).toHaveLength(0);
     const kitContent = Array.from(kitPrint?.querySelectorAll('[data-testid="kit-print-page"]') ?? []);
     expect(kitContent).toHaveLength(14);
-    expect(kitContent[0].getAttribute('data-page')).toBe('03');
-    expect(kitContent[0].textContent).toContain('04   Logo system');
+    expect(kitContent[0].getAttribute('data-page')).toBe('06');
+    expect(kitContent[0].textContent).toContain('07   Logo system');
     const line = 'Synthetic project · a Linux Foundation project';
     const footers = Array.from(document?.querySelectorAll('[data-testid="mktg-print-page-footer"]') ?? []).map((el) => el.textContent?.trim());
-    expect(footers).toEqual([...kitContent.flatMap((_, i) => [line, String(3 + i).padStart(2, '0')]), line, '18', line, '20']);
+    expect(footers).toEqual(['', '3', '', '4', ...kitContent.flatMap((_, i) => [line, String(6 + i).padStart(2, '0')]), line, '21', line, '23']);
     expect(
       Array.from(document?.querySelectorAll('lfx-mktg-boilerplates-print [data-testid="mktg-print-page-head"]') ?? []).map((el) => el.textContent?.trim())
     ).toEqual(['03 Boilerplates', 'Synthetic project Positioning & brand']);

@@ -104,7 +104,8 @@
     @if (printPlan(); as plan) {
       <lfx-mktg-print-family-cover [view]="document" [familyName]="familyName()" />
       @if (document.framework; as framework) {
-        <lfx-mktg-framework-print [view]="framework" [number]="plan.numbers.framework ?? ''" />
+        <!-- The framework's landscape pages (its cover and content pages, no back cover) numbered from the plan. -->
+        <lfx-mktg-framework-print [view]="framework" [number]="plan.numbers.framework ?? ''" [firstPage]="plan.frameworkFirstPage" />
       }
       @if (document.kit; as kit) {
         <!-- The kit's landscape pages numbered from the plan, its own back cover left out: the family's closes the file. -->
