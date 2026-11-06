@@ -463,8 +463,9 @@ describe('BrandKitWebViewComponent', () => {
       const samples = icons?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-samples"]');
       expect(samples?.previousElementSibling?.tagName).toBe('H3');
       expect(samples?.nextElementSibling?.tagName).toBe('UL');
-      // Hand-test feedback 1: a clear gap above the rules (the card's gap-2 + mt-3), the rules close together, each rule's
-      // comment affordance an inline-block in the text's own flow (a flex row cannot follow the last line of wrapped text).
+      // Hand-test feedback 1: a clear gap above the rules (the card's gap-2 + mt-3), the rules close together: each rule's
+      // comment affordance floats at the right end of the rule's first line (never a row of its own), its empty count hidden,
+      // back to a block under the text while its composer is open; a clearfix keeps the float inside the list item.
       const rules = samples?.nextElementSibling;
       for (const cls of ['mt-3', 'gap-0.5', 'leading-snug', 'list-disc']) {
         expect(rules?.classList.contains(cls)).toBe(true);
@@ -475,9 +476,21 @@ describe('BrandKitWebViewComponent', () => {
       for (const item of ruleItems) {
         expect(item.classList.contains('group/commentfield')).toBe(true);
         expect(item.hasAttribute('data-mktg-comment-group')).toBe(true);
-        for (const cls of ['[&>lfx-mktg-field-comments]:inline-block', '[&>lfx-mktg-field-comments]:align-baseline', '[&>lfx-mktg-field-comments]:ml-2']) {
+        for (const cls of [
+          '[&>lfx-mktg-field-comments]:float-right',
+          '[&>lfx-mktg-field-comments]:ml-2',
+          '[&_[data-testid=mktg-field-comment-count].invisible]:hidden',
+          '[&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:float-none',
+          '[&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:block',
+          '[&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:ml-0',
+          'after:block',
+          'after:clear-both',
+          "after:content-['']",
+        ]) {
           expect(item.classList.contains(cls)).toBe(true);
         }
+        expect(item.classList.contains('flow-root')).toBe(false);
+        expect(Array.from(item.classList).some((cls) => /inline-block|flex/.test(cls))).toBe(false);
         expect(item.querySelector('.flex, .flex-wrap')).toBeNull();
         expect(item.children).toHaveLength(0);
       }
