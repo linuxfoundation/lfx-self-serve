@@ -1250,6 +1250,12 @@ describe('buildHealthMetricsOverviewSnapshotView', () => {
     expect(rowsOf(sponsorship)).toEqual([['Sponsorship revenue', '$0', '$5,000', '+$5,000']]);
   });
 
+  it('starts from zero when the only week read is the newest, which runs past its own change', () => {
+    const [registration] = buildHealthMetricsOverviewSnapshotView({ ...snapshot, weeks: [week('2026-10-26', '2026-11-01', 40, 25, [true, true, true])] }, '7d');
+
+    expect(rowsOf(registration)[0]).toEqual(['Registrations', '0', '40', '+40']);
+  });
+
   it('marks a fall in red with a down arrow', () => {
     const [registration] = buildHealthMetricsOverviewSnapshotView(
       { ...snapshot, weeks: [week('2026-10-19', '2026-10-25', 120, 10, [false, true, true]), week('2026-10-26', '2026-11-01', 100, 0, [true, true, true])] },

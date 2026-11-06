@@ -52,7 +52,8 @@ describe('OverviewEventTrendComponent', () => {
     fixture = TestBed.createComponent(OverviewEventTrendComponent);
     fixture.componentRef.setInput('event', EVENT);
     fixture.componentRef.setInput('isPast', isPast);
-    fixture.componentRef.setInput('reads', curve ? { forecast: isPast ? null : { events: [HEADLINE] }, curve } : null);
+    const forecast = isPast ? null : { events: [HEADLINE] };
+    fixture.componentRef.setInput('reads', curve ? { forecast, curve } : null);
     fixture.componentRef.setInput('status', status);
     fixture.detectChanges();
     await fixture.whenStable();

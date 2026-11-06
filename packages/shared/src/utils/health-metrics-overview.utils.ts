@@ -54,6 +54,7 @@ import type {
   HealthMetricsOverviewEmptyStateCopy,
   HealthMetricsOverviewEngagementSplit,
   HealthMetricsOverviewEvent,
+  HealthMetricsOverviewEventDialogBadgeView,
   HealthMetricsOverviewEventDialogBadgesView,
   HealthMetricsOverviewEventRegistrationsView,
   HealthMetricsOverviewEventRowView,
@@ -564,11 +565,7 @@ export function buildHealthMetricsOverviewEventDialogBadges(
     goal: goal
       ? { label: `Registration goal: ${formatCount(goal)}`, icon: goalIcon, variant: 'line', tone: 'success' }
       : { label: 'No registration goal', icon: goalIcon, variant: 'subtle', tone: 'neutral' },
-    days: isPast
-      ? { label: 'Event held', icon: daysIcon, variant: 'line', tone: 'neutral' }
-      : daysLeft === null
-        ? null
-        : { label: daysLeft === 1 ? '1 day left' : `${formatCount(daysLeft)} days left`, icon: daysIcon, variant: 'line', tone: 'neutral' },
+    days: daysBadge(isPast, daysLeft, daysIcon),
   };
 }
 
@@ -591,11 +588,9 @@ export function buildHealthMetricsOverviewSnapshotView(
   const first = firstIndex >= 0 ? weeks[firstIndex] : null;
   const before = firstIndex > 0 ? weeks[firstIndex - 1] : null;
   const latest = weeks.at(-1) ?? null;
-  // The newest week's level runs past its own end, so its delta cannot rebuild the level before it; an earlier week's can.
   const weekly = (level: (week: HealthMetricsEventsSnapshotWeek) => number, delta: (week: HealthMetricsEventsSnapshotWeek) => number) => {
     const end = latest ? level(latest) : 0;
-    const start = before ? level(before) : first ? level(first) - delta(first) : end;
-    return { start, end };
+    return { start: weeklyStart(first, before, latest, level, delta, end), end };
   };
   const registrations = weekly(
     (week) => week.registrations,
@@ -1102,6 +1097,31 @@ function buildInitials(name: string): string {
     .slice(0, 2)
     .map((word) => word.charAt(0).toUpperCase())
     .join('');
+}
+
+function daysBadge(isPast: boolean, daysLeft: number | null, icon: string): HealthMetricsOverviewEventDialogBadgeView | null {
+  if (isPast) return { label: 'Event held', icon, variant: 'line', tone: 'neutral' };
+  if (daysLeft === null) return null;
+  return { label: daysLeft === 1 ? '1 day left' : `${formatCount(daysLeft)} days left`, icon, variant: 'line', tone: 'neutral' };
+}
+
+/**
+ * The level before the period's first week: the week before it when read, else that week's level less its change.
+ * The newest week runs past its own end, so with nothing read before it the view's spine starts at the event's first
+ * activity, and the level before is zero.
+ */
+function weeklyStart(
+  first: HealthMetricsEventsSnapshotWeek | null,
+  before: HealthMetricsEventsSnapshotWeek | null,
+  latest: HealthMetricsEventsSnapshotWeek | null,
+  level: (week: HealthMetricsEventsSnapshotWeek) => number,
+  delta: (week: HealthMetricsEventsSnapshotWeek) => number,
+  end: number
+): number {
+  if (before) return level(before);
+  if (!first) return end;
+  if (first === latest) return 0;
+  return level(first) - delta(first);
 }
 
 function snapshotRow(
