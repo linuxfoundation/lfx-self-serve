@@ -52,6 +52,15 @@ class BothTooltipsHostComponent {}
 class TooltipHostComponent {}
 
 @Component({
+  selector: 'lfx-ui-button-tooltip-icon-host',
+  imports: [UiButtonComponent],
+  template: `<lfx-ui-button lfxUiTooltip="Only invited people can join" lfxUiTooltipTitle="Restricted" lfxUiTooltipIcon="fa-solid fa-lock"
+    >Join</lfx-ui-button
+  >`,
+})
+class TooltipIconHostComponent {}
+
+@Component({
   selector: 'lfx-ui-button-disabled-tooltip-host',
   imports: [UiButtonComponent, UiTooltipDirective],
   template: `<lfx-ui-button lfxUiTooltip="Copy link" [disabled]="disabled()">Copy</lfx-ui-button
@@ -475,6 +484,14 @@ describe('UiButtonComponent', () => {
       expect(describedBy).toBeTruthy();
       expect(document.getElementById(describedBy as string)?.textContent).toBe('Copy link');
       expect(wrapper.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('forwards the tooltip title icon to the inner button', async () => {
+      const host = TestBed.createComponent(TooltipIconHostComponent);
+      await host.whenStable();
+      const tooltip = host.debugElement.query(By.directive(UiTooltipDirective)).injector.get(UiTooltipDirective);
+      expect(tooltip.icon()).toBe('fa-solid fa-lock');
+      expect(tooltip.title()).toBe('Restricted');
     });
 
     describe('while disabled', () => {
