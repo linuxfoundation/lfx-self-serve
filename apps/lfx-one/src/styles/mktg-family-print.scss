@@ -62,6 +62,14 @@
       -webkit-print-color-adjust: exact;
     }
 
+    /* On the page margins (WebKit: MKTG_PRINT_PAGE_MARGINS_CLASS on the frame's body) the cover is the page
+       area under the 0.55in margins, and the 0.6in at its sides is the margin's, not its own. */
+    &.lfx-print-page-margins .lfx-family-print-cover {
+      min-height: calc(100vh - 1.1in);
+      margin-left: 0;
+      margin-right: 0;
+    }
+
     /* One cover and one contents list for the family, not a second per asset. The framework's cover goes with
        its whole sheet: a sheet left behind would print its 1.1in of head and foot room alone on a blank page. */
     lfx-mktg-print-sheet:has([data-testid='mktg-framework-print-cover']),

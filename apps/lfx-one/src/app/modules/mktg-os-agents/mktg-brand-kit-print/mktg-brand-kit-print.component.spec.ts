@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
+import { MKTG_PRINT_PAGE_MARGINS_CLASS } from '@lfx-one/shared/constants';
 import { buildBrandKitBookView, mktgPrintBrand } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MktgPrintService } from '@services/mktg-print.service';
@@ -53,6 +54,14 @@ it('prints five native portrait chapters with branded heads, real SVG logo asset
   // 0.55in (52.8px at 96dpi, jsdom's computed value).
   expect(getComputedStyle(footCell).height).toBe('52.8px');
   expect(getComputedStyle(headCell).paddingTop).toBe('52.8px');
+  // On the page margins (WebKit prints a table's head and foot once) the margin is the room and the chapters give none.
+  document.body.classList.add(MKTG_PRINT_PAGE_MARGINS_CLASS);
+  try {
+    expect(getComputedStyle(footCell).height).toBe('0px');
+    expect(getComputedStyle(headCell).paddingTop).toBe('0px');
+  } finally {
+    document.body.classList.remove(MKTG_PRINT_PAGE_MARGINS_CLASS);
+  }
   expect(root.querySelectorAll('lfx-mktg-print-chapter-header')).toHaveLength(5);
   root.querySelectorAll<HTMLElement>('lfx-mktg-print-chapter-header').forEach((header) => {
     expect(header.style.getPropertyValue('--mfp-chapter-accent')).toBe(view.accent);

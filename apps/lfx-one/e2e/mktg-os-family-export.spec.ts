@@ -5,7 +5,14 @@ import { expect, test } from '@playwright/test';
 import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
-import { expectMktgPrintCover, expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
+import {
+  expectMktgPrintCover,
+  expectMktgPrintFrame,
+  expectMktgPrintPageSetup,
+  finishMktgPrintFrame,
+  layoutMktgPrintFrame,
+  stubMktgPrintFrame,
+} from './helpers/mktg-print.helper';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -136,7 +143,10 @@ test('unsupported family shows one line without export buttons or Positioning no
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 
-test('Download PDF stays disabled behind the checking line until prepared, then the first click prints from the isolated frame', async ({ page }, info) => {
+test('Download PDF stays disabled behind the checking line until prepared, then the first click prints from the isolated frame', async ({
+  page,
+  browserName,
+}, info) => {
   await stubMktgPrintFrame(page);
   const controls = await openFamilyExports(page, { allAssets: true, holdPrint: true });
   const pdf = page.getByTestId('family-export-pdf').getByRole('button');
@@ -179,6 +189,8 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printFrame.getByTestId('family-export-actions')).toHaveCount(0);
   const cover = printFrame.getByTestId('family-export-print-cover');
   await expectMktgPrintCover(cover);
+  // The cover's 0.6in at the sides is its own where the page has no margin, and the margin's in WebKit.
+  await expect(cover).toHaveCSS('margin-left', browserName === 'webkit' ? '0px' : '57.6px');
   await expect(printFrame.getByTestId('family-export-print-title')).toHaveText('Positioning & brand');
   await expect(printFrame.getByTestId('family-export-print-title')).toHaveCSS('text-wrap', 'balance');
   await expect(printFrame.getByTestId('family-export-print-logo')).toBeVisible();
@@ -218,7 +230,12 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printDocument.getByTestId('mktg-print-sheet-foot')).toHaveCount(6);
   await expect(printDocument.getByTestId('mktg-print-sheet-foot').locator('visible=true')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-print-sheet-row')).toHaveCount(1 + 9 + 4 + 5);
-  expect(await printFrame.locator('head style').last().textContent()).toBe('@page { size: portrait; margin: 0; }');
+  // The engine's page setup: Chromium margin 0 with the room in the document; WebKit the margins, the room collapsed.
+  await expectMktgPrintPageSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'), browserName);
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tfoot > tr > td').first()).toHaveCSS(
+    'height',
+    browserName === 'webkit' ? '0px' : '52.8px'
+  );
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
   const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');
   // This fixture's short contrast table stays whole: no one/two-row Letter tail.

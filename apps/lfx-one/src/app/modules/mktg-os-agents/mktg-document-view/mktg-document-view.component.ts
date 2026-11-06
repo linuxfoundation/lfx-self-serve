@@ -153,6 +153,8 @@ import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-downstream.component';
+import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/mktg-print-sheet-row.component';
+import { MktgPrintSheetComponent } from '../components/mktg-print-sheet/mktg-print-sheet.component';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
@@ -186,6 +188,8 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
     RouterLink,
     BrandKitWebViewComponent,
     MarkdownRendererComponent,
+    MktgPrintSheetComponent,
+    MktgPrintSheetRowComponent,
     MessageComponent,
     MktgSkeletonComponent,
     MktgBoilerplatesViewComponent,

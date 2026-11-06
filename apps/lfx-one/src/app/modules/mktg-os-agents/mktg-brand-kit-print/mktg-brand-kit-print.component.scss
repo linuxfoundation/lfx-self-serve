@@ -45,6 +45,17 @@
   }
 }
 
+/* On the page margins (WebKit, which prints a table's head and foot once: MKTG_PRINT_PAGE_MARGINS_CLASS
+   on the frame's body) the margin gives the room again, and the chapters give none. */
+:host-context(.lfx-print-page-margins) .kit-chapter {
+  > thead > tr > td {
+    padding-top: 0;
+  }
+  > tfoot > tr > td {
+    height: 0;
+  }
+}
+
 .kit-block,
 tr,
 figure {

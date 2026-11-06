@@ -1088,6 +1088,12 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-print-overall')?.textContent).toContain(typed.overall_score.toFixed(1));
       expect(query('mktg-document-view-print')?.querySelector('article')?.classList.contains('print:[print-color-adjust:exact]')).toBe(true);
       expect(query('mktg-document-view-print')?.querySelector('article')?.classList.contains('print:[-webkit-print-color-adjust:exact]')).toBe(true);
+      // The report prints through one flowing sheet row, so every page it runs over gets the sheet's top and bottom room.
+      const sheetRows =
+        query('mktg-document-view-print')?.querySelectorAll('article.lfx-framework-print > lfx-mktg-print-sheet lfx-mktg-print-sheet-row') ?? [];
+      expect(Array.from(sheetRows, (row) => row.classList.contains('lfx-print-sheet-row-flows'))).toEqual([true]);
+      expect(sheetRows[0]?.querySelector('[data-testid="mktg-document-view-print-overall"]')).not.toBeNull();
+      expect(sheetRows[0]?.querySelector('lfx-aeo-geo-report')).not.toBeNull();
       expect(query('mktg-document-view-print-verdict')?.textContent).toContain(typed.verdict);
       for (const row of typed.scorecard) {
         expect(query(`mktg-document-view-score-${row.key}`)?.textContent).toContain(`${row.score}/10`);

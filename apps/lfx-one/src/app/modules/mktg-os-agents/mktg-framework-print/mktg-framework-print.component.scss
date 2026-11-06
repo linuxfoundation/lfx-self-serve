@@ -27,11 +27,7 @@
 @media print {
   .lfx-framework-print {
     page: mktg-framework;
-    /* The page prints with no margin, which keeps the browser's header and footer off the PDF
-       (MKTG_PRINT_PAGE_SETUPS). The sides' room is the root's: every page fragment keeps it. The top
-       and bottom room repeats per page from the sheet tables (lfx-mktg-print-sheet, the kit's chapters). */
-    box-sizing: border-box;
-    padding: 0 0.6in;
+    /* The sides' room is styles.scss's, on every print root (the page's margin is the engine's there). */
   }
 
   .mfp-cover {
@@ -40,6 +36,12 @@
     min-height: calc(100vh - 1.2in);
     box-sizing: border-box;
     break-inside: avoid;
+  }
+
+  /* On the page margins (WebKit: MKTG_PRINT_PAGE_MARGINS_CLASS on the frame's body) the page area under
+     the 0.55in margins is the cover's height, as before the margins moved into the document. */
+  :host-context(.lfx-print-page-margins) .mfp-cover {
+    min-height: calc(100vh - 1.1in);
   }
 }
 

@@ -89,6 +89,21 @@ function betterInkOn(background: string): string {
  * text near-invisible, so it takes the app's darkest gray there and keeps
  * its dark as the cover's ground. Without a kit: the LF look.
  */
+/**
+ * Whether a user agent string is a WebKit engine (Safari on macOS and every
+ * browser on iOS and iPadOS, which all run WebKit; Playwright's webkit too):
+ * `AppleWebKit/` present and none of the tokens the other engines add to
+ * their WebKit-shaped strings (Blink's `Chrome/`, `HeadlessChrome/`, `Chromium/`,
+ * `Edg/`, `OPR/`; Gecko's `Firefox/`). iOS Chrome (`CriOS/`), Firefox (`FxiOS/`) and Edge
+ * (`EdgiOS/`) carry none of those tokens and are WebKit, which is the point:
+ * the print engine, not the brand. A feature test cannot tell what a printed
+ * page repeats, so the engine is read from the user agent (the documented
+ * fallback for engine-specific layout bugs), once, at print time.
+ */
+export function mktgPrintIsWebKit(userAgent: string): boolean {
+  return /AppleWebKit\//.test(userAgent) && !/(?:Chrome|Chromium|Edg|OPR|Firefox)\//.test(userAgent);
+}
+
 export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
   if (!kit) {
     return lfPrintBrand();

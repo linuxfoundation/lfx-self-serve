@@ -3,6 +3,7 @@
 
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { MKTG_PRINT_PAGE_MARGINS_CLASS } from '@lfx-one/shared/constants';
 import { expect, it } from 'vitest';
 import { MktgPrintSheetComponent } from './mktg-print-sheet.component';
 import { MktgPrintSheetRowComponent } from '../mktg-print-sheet-row/mktg-print-sheet-row.component';
@@ -42,6 +43,13 @@ it('is a table whose head and foot repeat the page room on every page, with the 
   expect(rooms.map((room) => room && getComputedStyle(room).height)).toEqual(['52.8px', '52.8px']);
   // The body holds the rows and nothing else: a page breaks only between them.
   expect(Array.from(body.children, (row) => row.tagName.toLowerCase())).toEqual(['lfx-mktg-print-sheet-row']);
+  // On the page margins (WebKit prints a table's head and foot once) the margin is the room and the rows give none.
+  document.body.classList.add(MKTG_PRINT_PAGE_MARGINS_CLASS);
+  try {
+    expect(rooms.map((room) => room && getComputedStyle(room).height)).toEqual(['0px', '0px']);
+  } finally {
+    document.body.classList.remove(MKTG_PRINT_PAGE_MARGINS_CLASS);
+  }
 });
 
 it('keeps each row whole across a page break unless the caller lets it flow, and leaves the block its own layout', async () => {

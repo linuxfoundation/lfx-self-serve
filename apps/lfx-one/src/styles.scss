@@ -119,11 +119,25 @@
      No paper size: the document is as wide as the page area, so it fits whichever paper the dialog has.
      No margin: the browser draws its header and footer only in the page margin area, so none reaches the PDF;
      the page's room is inside the document (lfx-mktg-print-sheet and the kit's chapter tables: 0.55in top and
-     bottom per page; the print roots' padding: 0.6in at the sides).
-     The print frame repeats these values as its unnamed @page rule: MKTG_PRINT_PAGE_SETUPS (shared constants). */
+     bottom per page; the print roots' padding below: 0.6in at the sides). This is Chromium's setup, mirrored
+     from MKTG_PRINT_PAGE_SETUPS['mktg-framework'] (shared constants), which the print frame also writes as its
+     unnamed @page rule. In WebKit, which prints a table's head and foot once, the frame writes the margins
+     instead ('mktg-framework-page-margins'), restates this named rule with them, and marks its body
+     MKTG_PRINT_PAGE_MARGINS_CLASS, under which the documents' own room collapses. */
   @page mktg-framework {
     size: portrait;
     margin: 0;
+  }
+
+  /* The sides' room of every print root (the framework, the kit, the FAQ, the boilerplates, the AEO/GEO
+     report): the root's, so every page fragment keeps it; the top and bottom room repeats per page from the
+     sheet tables (lfx-mktg-print-sheet, the kit's chapters). None on the page margins, which give it. */
+  .lfx-framework-print {
+    box-sizing: border-box;
+    padding: 0 0.6in;
+  }
+  body.lfx-print-page-margins .lfx-framework-print {
+    padding: 0;
   }
 
   body.lfx-print-framework {

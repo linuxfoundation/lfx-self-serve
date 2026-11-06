@@ -401,15 +401,20 @@
           }
           <p class="text-sm text-gray-500">Report · one-off document · never revised. Audit again creates a separate report.</p>
         </section>
-        <!-- Reuse the asset pages' print-only CSS and browser-print service; never download Markdown. -->
+        <!-- Reuse the asset pages' print-only CSS and browser-print service; never download Markdown. The report flows
+             through one sheet row: the sheet repeats the page's top and bottom room on every page it runs over. -->
         <div [class]="aeoPrintOnlyClass" data-testid="mktg-document-view-print">
           <article class="lfx-framework-print bg-white text-gray-900 print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact]">
-            <ng-container [ngTemplateOutlet]="auditHero" [ngTemplateOutletContext]="{ print: true }" />
-            @if (report.report; as typed) {
-              <lfx-aeo-geo-report [report]="typed" />
-            } @else {
-              <lfx-markdown-renderer [content]="view()?.markdown ?? ''" />
-            }
+            <lfx-mktg-print-sheet>
+              <lfx-mktg-print-sheet-row [flows]="true">
+                <ng-container [ngTemplateOutlet]="auditHero" [ngTemplateOutletContext]="{ print: true }" />
+                @if (report.report; as typed) {
+                  <lfx-aeo-geo-report [report]="typed" />
+                } @else {
+                  <lfx-markdown-renderer [content]="view()?.markdown ?? ''" />
+                }
+              </lfx-mktg-print-sheet-row>
+            </lfx-mktg-print-sheet>
           </article>
         </div>
       }

@@ -16,6 +16,7 @@ import {
   layoutMktgPrintFrame,
   PRINT_FRAME_LETTER,
   stubMktgPrintFrame,
+  expectMktgPrintPageSetup,
 } from './helpers/mktg-print.helper';
 
 import {
@@ -212,7 +213,7 @@ test.describe('Native FAQ document approval and header', () => {
 });
 
 for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
-  test(`${key} isolated print frame preserves paper-sized layout without content-column containment`, async ({ page }, info) => {
+  test(`${key} isolated print frame preserves paper-sized layout without content-column containment`, async ({ page, browserName }, info) => {
     await page.setViewportSize({ width: 1280, height: 1000 });
     await stubMktgPrintFrame(page);
     await openAssetDocument(page, key, 200, true, false, columnAssetRevisionResponse(key));
@@ -239,8 +240,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     const box = await print.boundingBox();
     if (!box) throw new Error('The approved print document must be rendered');
     expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: PRINT_FRAME_LETTER.width });
-    await expect(print).toHaveCSS('padding-left', '57.6px');
-    expect(await frame.locator('head style').last().textContent()).toBe('@page { size: portrait; margin: 0; }');
+    await expectMktgPrintPageSetup(frame, print, browserName);
     if (key === 'brand-kit') {
       await expect(print.locator('.kit-chapter')).toHaveCount(5);
       await expect(print.locator('lfx-mktg-print-chapter-header h2 > span')).toHaveText(['1', '2', '3', '4', '5']);
@@ -251,10 +251,12 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     } else {
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
       await expectMktgPrintCover(frame.getByTestId('mktg-framework-print-cover'));
-      // Each section prints in a sheet whose head and foot repeat the page room (the @page margin is 0: no browser header
-      // or footer), one row per block, so a page breaks only between blocks: 1 (cover) + 5 (framework) + 3 (key numbers).
+      // Each section prints in a sheet whose head and foot repeat the page room in Chromium (the @page margin is 0: no
+      // browser header or footer; in WebKit the margins give it and the rows are empty), one row per block, so a page
+      // breaks only between blocks: 1 (cover) + 5 (framework) + 3 (key numbers).
       await expect(print.getByTestId('mktg-print-sheet-foot')).toHaveCount(3);
       await expect(print.getByTestId('mktg-print-sheet-foot').first()).toHaveCSS('display', 'table-footer-group');
+      await expect(print.locator('.lfx-print-sheet-room').first()).toHaveCSS('height', browserName === 'webkit' ? '0px' : '52.8px');
       await expect(print.locator('lfx-mktg-print-sheet-row')).toHaveCount(9);
       await expect(print.locator('lfx-mktg-print-sheet-row').first()).toHaveCSS('display', 'table-row');
       await expect(print).toHaveCSS('position', 'static');

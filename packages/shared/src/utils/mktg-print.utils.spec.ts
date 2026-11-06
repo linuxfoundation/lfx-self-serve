@@ -17,6 +17,7 @@ import {
   buildFoundationMessagePrintView,
   foundationMessagePrintSections,
   mktgPrintBrand,
+  mktgPrintIsWebKit,
 } from './mktg-print.utils';
 import boilerplatesEnvelope from './__fixtures__/boilerplates.envelope.json';
 import faqEnvelope from './__fixtures__/faq-envelope.json';
@@ -138,6 +139,34 @@ const CONTENT: FoundationMessageContent = {
   },
   nums: [['1,200', 'members']],
 };
+
+describe('the print engine', () => {
+  it.each([
+    ['Safari 18 on macOS', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15'],
+    [
+      'Safari on iOS',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1',
+    ],
+    [
+      'Chrome on iOS, a WebKit engine too',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.73 Mobile/15E148 Safari/604.1',
+    ],
+    ['Playwright webkit on Linux', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'],
+  ])('reads %s as WebKit, where a table head and foot print once', (_name, userAgent) => {
+    expect(mktgPrintIsWebKit(userAgent)).toBe(true);
+  });
+
+  it.each([
+    ['Chrome 131 on macOS', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'],
+    ['Edge on Windows', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.2903.70'],
+    ['Opera on Windows', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 OPR/116.0.0.0'],
+    ['Firefox on macOS', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.7; rv:132.0) Gecko/20100101 Firefox/132.0'],
+    ['Playwright chromium headless', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/131.0.6778.33 Safari/537.36'],
+    ['no user agent', ''],
+  ])('reads %s as not WebKit, where the sheets repeat their room per page', (_name, userAgent) => {
+    expect(mktgPrintIsWebKit(userAgent)).toBe(false);
+  });
+});
 
 describe('the print’s brand', () => {
   it('is the LF look without a kit: the LF navy and blue, Inter, and the Linux Foundation logo', () => {

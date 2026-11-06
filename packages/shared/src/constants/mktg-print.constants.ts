@@ -76,34 +76,53 @@ export const MKTG_PRINT_FRAME_LINGER_MS = 5 * 60 * 1000;
  * cover and shifted the page breaks. Letter is the SHORTER common paper (11in
  * against A4's 11.69in; it is the wider one, 8.5in against 8.27in), so a cover
  * sized from `vh` fills a Letter page and never spills a blank sheet on A4;
- * never size print rules from `vw`. The pages print with no `@page` margin
- * (see `MKTG_PRINT_PAGE_SETUPS`), so a page is `100vh` tall and holds its
+ * never size print rules from `vw`. Where the pages print with no `@page`
+ * margin (`MKTG_PRINT_PAGE_SETUPS`), a page is `100vh` tall and holds its
  * 1.1in of head and foot room (0.55in each, repeated on every page by the
  * sheet tables) plus a cover of `calc(100vh - 1.2in)`: 0.1in of slack in the
  * cover itself, and the frame's own 0.1in under 11in behind it, so a fraction
- * of rounding never pushes an empty remainder onto a blank sheet.
+ * of rounding never pushes an empty remainder onto a blank sheet. Where they
+ * print on the page margins instead, the cover is `calc(100vh - 1.1in)`, the
+ * page area under those margins.
  */
 export const MKTG_PRINT_FRAME_PAPER_IN = { width: 8.5, height: 10.9 } as const;
 
 /**
- * The page setups of the named `@page` rules in styles.scss (`brand-kit`:
- * the legacy landscape book; `mktg-framework`: every portrait document, the
- * brand kit's own portrait print included), repeated as the ONE unnamed
- * `@page` rule the print frame writes into its document. WebKit's support for
- * named pages is doubtful, and on the browser's default margins a cover sized
- * to the page area spills a blank sheet. Chrome is unchanged: a matched named
- * rule outranks the unnamed one and carries the same values. Both setups print
- * with `margin: 0`: Chromium and WebKit draw the browser's header and footer
- * (date, title, URL, page numbers) only in the page margin area, so no margin
- * is the standard way to keep them off a saved PDF. The room the portrait
- * pages used to take from the margin (0.55in top and bottom, 0.6in at the
- * sides) is inside the documents now: styles/mktg-family-print.scss. Keep
- * these in step with styles.scss, which cannot read them.
+ * The page setups the print frame writes as the ONE unnamed `@page` rule of
+ * its document (WebKit's support for named pages is doubtful, and on the
+ * browser's default margins a cover sized to the page area spills a blank
+ * sheet). `brand-kit` is the legacy landscape book; `mktg-framework` every
+ * portrait document (the brand kit's own portrait print included) in
+ * Chromium and every other non-WebKit engine, mirrored by the named
+ * `@page mktg-framework` in styles.scss, which a matched named rule outranks
+ * in Chrome with the same values. Both print with `margin: 0`: the browser
+ * draws its header and footer (date, title, URL, page numbers) only in the
+ * page margin area, so no margin is the standard way to keep them off a saved
+ * PDF, and the room the portrait pages used to take from the margin (0.55in
+ * top and bottom, 0.6in at the sides) is inside the documents, repeated per
+ * page by their table head and foot groups (lfx-mktg-print-sheet, the kit's
+ * chapters). WebKit does not repeat a table's head and foot on every printed
+ * page (bug 17205, open), so in Safari the portrait documents print on
+ * `mktg-framework-page-margins`, exactly the margins they had before, with
+ * that in-document room collapsed under `MKTG_PRINT_PAGE_MARGINS_CLASS`: the
+ * browser's header and footer stay, as before, and the user unticks them in
+ * Safari's print dialog. Keep these in step with styles.scss, which cannot
+ * read them.
  */
 export const MKTG_PRINT_PAGE_SETUPS = {
   'brand-kit': 'size: letter landscape; margin: 0;',
   'mktg-framework': 'size: portrait; margin: 0;',
+  'mktg-framework-page-margins': 'size: portrait; margin: 0.55in 0.6in;',
 } as const;
+
+/**
+ * The class the print frame sets on its body when the page prints on its
+ * margins (`mktg-framework-page-margins`: WebKit), under which the documents'
+ * own room collapses to nothing: the sheets' head and foot rows, the kit
+ * chapters' head padding and foot, the print roots' side padding, the covers
+ * sized back to the page area. Each room rule carries its collapse beside it.
+ */
+export const MKTG_PRINT_PAGE_MARGINS_CLASS = 'lfx-print-page-margins';
 
 /**
  * The weights the framework print sets the brand's typeface in, loaded before
