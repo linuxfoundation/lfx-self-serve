@@ -17,6 +17,9 @@ export const MEETINGS_HOME_SUMMARY_ARTIFACT: MeetingHomeArtifact = { noun: 'summ
 /** Rows the meetings home list loads per page. */
 export const MEETINGS_HOME_PAGE_SIZE = 20;
 
+/** Gap in px between the tabs rule and a day heading; must match the day-group separator's -mt-[20px] and pt-[20px]. */
+export const MEETINGS_HOME_DAY_HEADING_GAP_PX = 20;
+
 /** Filters with nothing applied. */
 export const MEETINGS_HOME_DEFAULT_FILTERS: MeetingsHomeFilters = {
   foundation: null,
