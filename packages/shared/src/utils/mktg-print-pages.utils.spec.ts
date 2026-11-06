@@ -31,7 +31,7 @@ import type { FaqGroupView } from '../interfaces/faq.interface';
 import type { FoundationMessageContent } from '../interfaces/foundation-message.interface';
 import type { MktgFamilyPrintView } from '../interfaces/mktg-family-export.interface';
 import type { FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
-import type { MktgPrintPara, MktgPrintPageShapeEl } from '../interfaces/mktg-print-page.interface';
+import type { MktgPrintPage, MktgPrintPageShapeEl, MktgPrintPara } from '../interfaces/mktg-print-page.interface';
 import type { MktgPrintCardRow, MktgPrintFaqEntry } from '../interfaces/mktg-print-pages.interface';
 import boilerplatesEnvelope from './__fixtures__/boilerplates.envelope.json';
 import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
@@ -135,6 +135,11 @@ function faqEntryHeight(entry: MktgPrintFaqEntry): number {
 }
 
 /** A framework print built by its builder from a synthetic content with the brand line and tagline given. */
+/** The page's shape elements, in order, with their kind checked rather than asserted. */
+function shapeEls(page: MktgPrintPage): MktgPrintPageShapeEl[] {
+  return page.els.filter((el): el is MktgPrintPageShapeEl => el.t === 'shape');
+}
+
 function frameworkView(line: string, tagline: string): FoundationMessagePrintView {
   const content: FoundationMessageContent = {
     mf: {
@@ -221,7 +226,7 @@ describe("the family's grammar", () => {
     expect(page.title).toBe('');
     expect(page.head).toBeUndefined();
     expect(page.footer).toBeUndefined();
-    const [eyebrow, title, count] = page.els as MktgPrintPageShapeEl[];
+    const [eyebrow, title, count] = shapeEls(page);
     expect(eyebrow.box).toEqual(MKTG_PRINT_DIVIDER_LAYOUT.eyebrow);
     expect(eyebrow.text?.paras[0]).toEqual(expect.objectContaining({ text: '03 · POSITIONING & BRAND', caps: true, color: '#2563EB' }));
     expect(title.box).toEqual(MKTG_PRINT_DIVIDER_LAYOUT.title);
@@ -236,7 +241,7 @@ describe("the family's grammar", () => {
   it("sets the divider's eyebrow in the on-dark ink when the accent does not read 3:1 on the dark", () => {
     const eyebrowColor = (dark: string, accent: string) => {
       const look = mktgPrintPageLook({ ...mktgPrintBrand(null), dark, accent });
-      const [eyebrow] = mktgPrintDividerPage(look, mktgPrintDivider('faq', '04', 2, 'Positioning & brand'), null).els as MktgPrintPageShapeEl[];
+      const [eyebrow] = shapeEls(mktgPrintDividerPage(look, mktgPrintDivider('faq', '04', 2, 'Positioning & brand'), null));
       return { color: eyebrow.text?.paras[0].color, look };
     };
     const coral = eyebrowColor('#000000', '#FF702D');
