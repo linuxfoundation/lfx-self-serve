@@ -619,6 +619,40 @@ describe('CommitteeViewComponent', () => {
     });
   });
 
+  describe('back navigation', () => {
+    const openedWithState = (state: Record<string, unknown>): CommitteeViewComponent => {
+      (TestBed.inject(Router).getCurrentNavigation as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ extras: { state } });
+      return createComponent();
+    };
+
+    it('returns to the Groups list by default', () => {
+      const component = createComponent();
+
+      component.goBack();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/groups']);
+      expect(TestBed.inject(LensService).setLens).not.toHaveBeenCalled();
+    });
+
+    it('returns to the list the user came from and restores Me when opened from the Me lens surveys list', () => {
+      const component = openedWithState({ backLabel: 'Surveys', backPath: '/surveys', fromMeLens: true });
+
+      component.goBack();
+
+      expect(component.backLabel()).toBe('Surveys');
+      expect(TestBed.inject(LensService).setLens).toHaveBeenCalledWith('me');
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/surveys']);
+    });
+
+    it('falls back to the Groups list for a back path outside the allowed list routes', () => {
+      const component = openedWithState({ backPath: '/somewhere-else' });
+
+      component.goBack();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/groups']);
+    });
+  });
+
   describe('Edit Group link and settings-saved navigation', () => {
     const getProject = (): ReturnType<typeof vi.fn> => TestBed.inject(ProjectService).getProject as unknown as ReturnType<typeof vi.fn>;
     const asWriter = (overrides: Partial<Committee> = {}): void => {

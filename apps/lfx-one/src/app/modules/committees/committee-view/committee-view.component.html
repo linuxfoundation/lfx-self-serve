@@ -79,7 +79,7 @@
                 (onClick)="refreshCommittee()"
                 data-testid="committee-view-access-denied-retry"></lfx-button>
               <lfx-button
-                label="Back to Groups"
+                [label]="'Back to ' + backLabel()"
                 severity="secondary"
                 [outlined]="true"
                 icon="fa-light fa-arrow-left"
@@ -93,7 +93,7 @@
           </div>
           <h2 class="text-lg font-semibold text-gray-900 mb-2">Group Not Found</h2>
           <p class="text-sm text-gray-500 mb-6">The group you're looking for doesn't exist, has been removed, or you may not have permission to view it.</p>
-          <lfx-button label="Back to Groups" severity="secondary" [outlined]="true" icon="fa-light fa-arrow-left" (onClick)="goBack()"></lfx-button>
+          <lfx-button [label]="'Back to ' + backLabel()" severity="secondary" [outlined]="true" icon="fa-light fa-arrow-left" (onClick)="goBack()"></lfx-button>
         } @else {
           <div class="w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center mx-auto mb-4">
             <i class="fa-light fa-cloud-exclamation text-2xl text-amber-500"></i>
@@ -102,7 +102,12 @@
           <p class="text-sm text-gray-500 mb-6">We couldn't load this group right now. Please try again.</p>
           <div class="flex items-center justify-center gap-3">
             <lfx-button label="Try Again" severity="info" [outlined]="true" icon="fa-light fa-rotate-right" (onClick)="refreshCommittee()"></lfx-button>
-            <lfx-button label="Back to Groups" severity="secondary" [outlined]="true" icon="fa-light fa-arrow-left" (onClick)="goBack()"></lfx-button>
+            <lfx-button
+              [label]="'Back to ' + backLabel()"
+              severity="secondary"
+              [outlined]="true"
+              icon="fa-light fa-arrow-left"
+              (onClick)="goBack()"></lfx-button>
           </div>
         }
       </div>

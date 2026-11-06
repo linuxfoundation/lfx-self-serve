@@ -164,7 +164,7 @@ export class SurveysTableComponent {
   }
 
   protected getGroupName(survey: Survey): string {
-    return survey.committees?.[0]?.committee_name || 'Unknown';
+    return survey.committees?.[0]?.committee_name || 'No group';
   }
 
   protected getResponseTooltip(survey: Survey): string {
@@ -283,7 +283,7 @@ export class SurveysTableComponent {
         displayStatus: getSurveyDisplayStatus(survey),
         editCommands: getEntityCommands('surveys', survey.uid, survey.is_foundation, 'edit') ?? ['/surveys', survey.uid, 'edit'],
         editQueryParams: this.buildEditQueryParams(survey),
-        groupName: this.getGroupName(survey),
+        groupName: survey.committees?.[0]?.committee_name || null,
         groupCommands: this.buildGroupCommands(survey),
         groupQueryParams: survey.project_slug ? { project: survey.project_slug } : null,
       }));
@@ -295,7 +295,7 @@ export class SurveysTableComponent {
 
       const group = this.groupFilter();
       if (group) {
-        filtered = filtered.filter((survey) => survey.groupName === group);
+        filtered = filtered.filter((survey) => this.getGroupName(survey) === group);
       }
 
       const type = this.typeFilter();

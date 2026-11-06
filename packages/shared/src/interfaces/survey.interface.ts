@@ -156,8 +156,8 @@ export type SurveyTableRow = Survey & {
   editCommands: string[];
   /** Edit-link query params: the row's own project slug + committee scope */
   editQueryParams: Record<string, string>;
-  /** Display name of the primary committee, or 'Unknown' when the survey has none */
-  groupName: string;
+  /** Display name of the primary committee, or null when the survey has none */
+  groupName: string | null;
   /** Canonical group details commands for the primary committee; null when the survey has no committee uid */
   groupCommands: string[] | null;
   /** Group-link query params: the row's own project slug, so the group opens in its project context */

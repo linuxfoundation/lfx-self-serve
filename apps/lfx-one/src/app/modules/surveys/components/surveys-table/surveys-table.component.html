@@ -122,20 +122,22 @@
                   <a
                     [routerLink]="survey.groupCommands"
                     [queryParams]="survey.groupQueryParams"
+                    [state]="isMeLens() ? { backLabel: 'Surveys', backPath: '/surveys', fromMeLens: true } : undefined"
                     class="lfx-table-name-link inline-block max-w-full truncate text-sm"
-                    [pTooltip]="survey.groupName"
+                    [pTooltip]="survey.groupName || ''"
+                    [tooltipDisabled]="!survey.groupName"
                     tooltipPosition="top"
                     [attr.data-testid]="'surveys-group-link-' + rowId">
-                    {{ survey.groupName }}
+                    {{ survey.groupName || '-' }}
                   </a>
                 } @else {
                   <span
                     class="inline-block max-w-full truncate text-sm text-gray-700"
-                    [pTooltip]="survey.committees?.[0]?.committee_name || ''"
-                    [tooltipDisabled]="!survey.committees?.[0]?.committee_name"
+                    [pTooltip]="survey.groupName || ''"
+                    [tooltipDisabled]="!survey.groupName"
                     tooltipPosition="top"
                     [attr.data-testid]="'surveys-group-text-' + rowId">
-                    {{ survey.committees?.[0]?.committee_name || '-' }}
+                    {{ survey.groupName || '-' }}
                   </span>
                 }
               </td>
