@@ -14,12 +14,12 @@ The Dashboard is the central starting point of LFX Self Serve. It adapts to show
 
 The LFX dashboard uses a **lens** concept to let you switch between different viewing perspectives:
 
-| Lens             | Description                                            |
-| ---------------- | ------------------------------------------------------ |
-| **Me**           | Your personal activity, contributions, and involvement |
-| **Foundation**   | Foundation-level governance, projects, and analytics   |
-| **Projects**     | A specific project's metrics, committees, and activity |
-| **Company** | Your company's membership and participation       |
+| Lens           | Description                                            |
+| -------------- | ------------------------------------------------------ |
+| **Me**         | Your personal activity, contributions, and involvement |
+| **Foundation** | Foundation-level governance, projects, and analytics   |
+| **Projects**   | A specific project's metrics, committees, and activity |
+| **Company**    | Your company's membership and participation            |
 
 Not all users see all lenses.
 
@@ -27,12 +27,12 @@ Not all users see all lenses.
 
 Which lenses you see depends on your roles on Linux Foundation projects, such as committee seats, maintainer roles, and admin access.
 
-| Lens             | Who sees it                                                                                                                                                                                                                                                                                                            |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Me**           | Everyone.                                                                                                                                                                                                                                                                                                              |
-| **Projects**     | Almost everyone who is signed in: anyone with a project role, such as committee member or maintainer, and project admins. Users whose only roles are foundation-level, such as a board seat, executive director or Linux Foundation staff, do not see it unless they also have a project role or project admin access. |
-| **Foundation**   | Board members and executive directors of a foundation, foundation admins, Linux Foundation staff, and a few other Linux Foundation admin, auditor and marketing roles.                                                                                                                                                 |
-| **Company** | Everyone sees the lens. The pages for a specific company show only if you have access to that company. See [Who can access this](#who-can-access-this) under Your company's activity.                                                                                                                             |
+| Lens           | Who sees it                                                                                                                                                                                                                                                                                                            |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Me**         | Everyone.                                                                                                                                                                                                                                                                                                              |
+| **Projects**   | Almost everyone who is signed in: anyone with a project role, such as committee member or maintainer, and project admins. Users whose only roles are foundation-level, such as a board seat, executive director or Linux Foundation staff, do not see it unless they also have a project role or project admin access. |
+| **Foundation** | Board members and executive directors of a foundation, foundation admins, Linux Foundation staff, and a few other Linux Foundation admin, auditor and marketing roles.                                                                                                                                                 |
+| **Company**    | Everyone sees the lens. The pages for a specific company show only if you have access to that company. See [Who can access this](#who-can-access-this) under Your company's activity.                                                                                                                                  |
 
 If you can use both the Foundation and Projects lenses, the sidebar shows a single **Projects** tab instead of two separate tabs. It lists both foundations and projects; select a foundation to open the Foundation lens.
 

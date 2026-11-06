@@ -40,10 +40,10 @@ When you cannot open the company, the page is replaced by the same access messag
 
 The tiles count the groups in the list and the seats the company's people hold in them. Groups has no time range: it shows the seats the company's people hold now.
 
-| Tile             | What it counts                                                    |
-| ---------------- | ----------------------------------------------------------------- |
+| Tile             | What it counts                                               |
+| ---------------- | ------------------------------------------------------------ |
 | **Total Groups** | The groups where the company's people hold at least one seat |
-| **Total Seats**  | The seats they hold across all of those groups                    |
+| **Total Seats**  | The seats they hold across all of those groups               |
 
 A tile follows for each group type that has at least one group, largest first: **Boards**, **Oversight**, **Working Groups**, **SIGs** and **Ambassadors**, with **Other** always last. **Other** covers groups that fit none of those types. **Boards** covers board-like groups outside the **Board** category, such as an advisory council.
 
@@ -79,12 +79,12 @@ The file has the columns **Group**, **Foundation**, **Type**, **Our Seats** and 
 
 An empty list says why, and a failed load says so. An empty list is not the same as a failed load.
 
-| What you see                                                                                                   | What it means                                                          | What to do                             |
-| -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------- |
-| **No group participation found.** — **Your company's employees are not listed as members of any groups.** | The company's people hold no seats outside the **Board** category | Board seats are on **Memberships**     |
-| **No groups match the current filters**                                                                        | The search or menus match no group                                     | Select **Clear filters**               |
-| **Unable to load group participation**                                                                         | The list did not load                                                  | Refresh the page                       |
-| **Select a company to view group participation.**                                                        | No company is selected                                            | Select a company in the switcher |
+| What you see                                                                                              | What it means                                                     | What to do                         |
+| --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------- |
+| **No group participation found.** — **Your company's employees are not listed as members of any groups.** | The company's people hold no seats outside the **Board** category | Board seats are on **Memberships** |
+| **No groups match the current filters**                                                                   | The search or menus match no group                                | Select **Clear filters**           |
+| **Unable to load group participation**                                                                    | The list did not load                                             | Refresh the page                   |
+| **Select a company to view group participation.**                                                         | No company is selected                                            | Select a company in the switcher   |
 
 ## Related sections
 

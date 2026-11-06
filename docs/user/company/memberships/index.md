@@ -36,7 +36,7 @@ The three cards on **Active** summarize the company's active memberships, and th
 
 | Card                        | What it counts                                                                                                                                  |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Active Memberships**      | How many active foundation memberships the company has                                                                                     |
+| **Active Memberships**      | How many active foundation memberships the company has                                                                                          |
 | **Renewing Within 90 Days** | How many of those memberships have a tier end date between today and 90 days from today. A tier end date that has already passed is not counted |
 | **Governance Roles**        | The board seats and committee seats on those memberships, added together                                                                        |
 
@@ -63,7 +63,7 @@ Each row is one foundation membership. Select the foundation name to open its me
 | **Member Since**      | The month and year the membership started, or a dash (**—**) when that date is missing                                                                                                          |
 | **Board Members**     | How many board seats this membership has                                                                                                                                                        |
 | **Committee Members** | How many committee seats this membership has                                                                                                                                                    |
-| **Org Projects**      | How many projects your company is involved in at that foundation. A number above 0 opens the **Org Projects** panel. **0** is text and does not open the panel                             |
+| **Org Projects**      | How many projects your company is involved in at that foundation. A number above 0 opens the **Org Projects** panel. **0** is text and does not open the panel                                  |
 
 The line under the foundation name is not the **Org Projects** count. **Org Projects** is the last column.
 
@@ -110,8 +110,8 @@ The **Discover** tab lists foundations where the company's people contribute to 
 | ----------------- | ------------------------------------------------------------------------------------------------------------ |
 | **Foundation**    | The foundation name, and under it the category, a middle dot, the count, and the words **relevant projects** |
 | **Category**      | The suggested tier, with **Suggested tier** under it                                                         |
-| **Contributors**  | How many of the company's people contributed to that foundation's LF projects in the last 12 months     |
-| **Contributions** | How many commits the company's people made to those projects                                            |
+| **Contributors**  | How many of the company's people contributed to that foundation's LF projects in the last 12 months          |
+| **Contributions** | How many commits the company's people made to those projects                                                 |
 | **Actions**       | **Join**                                                                                                     |
 
 When there are no rows, the tab says **No new opportunities available right now** and **Check back later for new membership opportunities.** When the list fails to load, it says **Failed to load discover opportunities** and **Please try again.** Select **Retry**.
@@ -138,16 +138,16 @@ You change a key contact from the pencil on the **Key Contacts** tab, when that 
 
 The tab lists nine contact types, in this order. Hover a type to read what it is for. An empty type says **No** followed by the type name and **assigned**, such as **No Billing Contact assigned**.
 
-| Contact type                      | What the hover text says                                                 | How many this membership can have |
-| --------------------------------- | ------------------------------------------------------------------------ | --------------------------------- |
+| Contact type                      | What the hover text says                                            | How many this membership can have |
+| --------------------------------- | ------------------------------------------------------------------- | --------------------------------- |
 | **Representative/Voting Contact** | Primary voting representative for your company on this membership.  | One, and one is required          |
-| **Billing Contact**               | Receives invoices and billing communications for this membership.        | At least 1, and up to 3           |
-| **Technical Contact**             | Primary technical point of contact for this membership.                  | At least 1, and up to 10          |
-| **PO Contact**                    | Receives purchase-order communications.                                  | Up to 3. None is allowed          |
-| **Marketing Contact**             | Coordinates marketing and co-branding activities.                        | At least 1, and up to 10          |
-| **PR Contact**                    | Handles press and public-relations communications.                       | Up to 3. None is allowed          |
-| **Legal Contact**                 | Receives legal and contractual communications.                           | Up to 3. None is allowed          |
-| **Event Sponsorship Contact**     | Coordinates event sponsorship for this membership.                       | Up to 3. None is allowed          |
+| **Billing Contact**               | Receives invoices and billing communications for this membership.   | At least 1, and up to 3           |
+| **Technical Contact**             | Primary technical point of contact for this membership.             | At least 1, and up to 10          |
+| **PO Contact**                    | Receives purchase-order communications.                             | Up to 3. None is allowed          |
+| **Marketing Contact**             | Coordinates marketing and co-branding activities.                   | At least 1, and up to 10          |
+| **PR Contact**                    | Handles press and public-relations communications.                  | Up to 3. None is allowed          |
+| **Legal Contact**                 | Receives legal and contractual communications.                      | Up to 3. None is allowed          |
+| **Event Sponsorship Contact**     | Coordinates event sponsorship for this membership.                  | Up to 3. None is allowed          |
 | **Authorized Signatory**          | Authorized to sign membership agreements on behalf of your company. | One, and one is required          |
 
 A blue note in the dialog repeats that limit. **Representative/Voting Contact** and **Authorized Signatory** say **Your company must have one key contact of this type.** **Billing Contact** says **Your company must have at least 1, and can have up to 3 contacts of this type.** **Technical Contact** and **Marketing Contact** say **Your company must have at least 1, and can have up to 10 contacts of this type.** **PO Contact**, **PR Contact**, **Legal Contact**, and **Event Sponsorship Contact** say **Your company can have up to 3 contacts of this type.**

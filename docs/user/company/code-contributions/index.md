@@ -18,7 +18,7 @@ The page heading is **Code Contributions**. The line under it is **Commits, cont
 
 | Card                       | What it counts                                                                                                                                                             |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Projects with Activity** | Projects the company's contributors contributed code to in the time range                                                                                             |
+| **Projects with Activity** | Projects the company's contributors contributed code to in the time range                                                                                                  |
 | **Repositories**           | Repositories they contributed code to                                                                                                                                      |
 | **Code contributions**     | Their code count. It says **Commits** when you count commits. See [the code count options](#what-do-all-code-contributions-all-commits-and-only-main-branch-commits-count) |
 
@@ -42,14 +42,14 @@ The **Repositories** tab lists each repository the company's contributors contri
 
 The **Repositories** tab has these columns:
 
-| Column                 | What it shows                                                                                            |
-| ---------------------- | -------------------------------------------------------------------------------------------------------- |
-| **Project**            | The project the repository belongs to                                                                    |
-| **Repository**         | The repository's path. When it is a link, it opens the repository on its source site                     |
-| **Source**             | Where the repository is hosted: **GitHub**, **GitLab**, **Gerrit** or **Git**                            |
+| Column                 | What it shows                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------------- |
+| **Project**            | The project the repository belongs to                                                               |
+| **Repository**         | The repository's path. When it is a link, it opens the repository on its source site                |
+| **Source**             | Where the repository is hosted: **GitHub**, **GitLab**, **Gerrit** or **Git**                       |
 | **Code contributions** | The company's code count in that repository. It says **Commits** when you count commits             |
 | **First contribution** | The date of the company's first contribution there. It says **First Commit** when you count commits |
-| **Last contribution**  | The date of the most recent one. It says **Last Commit** when you count commits                          |
+| **Last contribution**  | The date of the most recent one. It says **Last Commit** when you count commits                     |
 
 It starts sorted by the code count, most first. Select the count or a date heading to sort by it, and select it again to reverse the order.
 
@@ -107,12 +107,12 @@ See [People](../people/) for that page.
 
 When the filters match nothing, the table says so. When the page fails to load, it says **Failed to load code contributions** and **Please try again.** Select **Retry**. An empty table is not the same as a failed load.
 
-| What you see                                           | What it means                            | What to do                                                                    |
-| ------------------------------------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------- |
-| **No repositories match your filters**                 | No repository has code for these filters | Select **Clear filters**, or choose a longer time range                       |
-| **No commits match your filters**                      | No commit matches these filters          | Clear the search, or choose a longer time range                               |
-| **Failed to load code contributions**                  | The page could not load                  | Select **Retry**                                                              |
-| **Select a company to view code contributions.** | No company is selected              | Pick one; see [Choose and switch a company](../choose-a-company/) |
+| What you see                                     | What it means                            | What to do                                                        |
+| ------------------------------------------------ | ---------------------------------------- | ----------------------------------------------------------------- |
+| **No repositories match your filters**           | No repository has code for these filters | Select **Clear filters**, or choose a longer time range           |
+| **No commits match your filters**                | No commit matches these filters          | Clear the search, or choose a longer time range                   |
+| **Failed to load code contributions**            | The page could not load                  | Select **Retry**                                                  |
+| **Select a company to view code contributions.** | No company is selected                   | Pick one; see [Choose and switch a company](../choose-a-company/) |
 
 ## Related sections
 

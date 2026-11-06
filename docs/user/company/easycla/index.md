@@ -32,12 +32,12 @@ If no company is selected, the page says **No org selected** and asks you to sel
 
 You can open EasyCLA when you have an Company lens role on that company, or when you are a CLA Manager or initial CLA Manager designee for that company. You can change a corporate CLA only when you are a CLA Manager named on that agreement. An initial CLA Manager designee can sign the corporate CLA they were nominated for and change nothing else. A role added or removed in the last 30 minutes may not have taken effect yet.
 
-| Who you are                                                       | What you can see                                                                                                                                            | What you can change                                                                                        |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Company admin or viewer                                      | Every corporate CLA of the company                                                                                                                          | Only a corporate CLA you are named on as a CLA Manager. The company's other corporate CLAs stay read-only. |
+| Who you are                                                  | What you can see                                                                                                                                       | What you can change                                                                                        |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| Company admin or viewer                                      | Every corporate CLA of the company                                                                                                                     | Only a corporate CLA you are named on as a CLA Manager. The company's other corporate CLAs stay read-only. |
 | CLA Manager with no other Company lens role                  | EasyCLA only. The rest of the Company lens stays closed.                                                                                               | Only the corporate CLAs you are named on                                                                   |
 | Initial CLA Manager designee with no other Company lens role | EasyCLA only. Once the corporate CLA you were nominated for is signed, you keep EasyCLA as its CLA Manager. The rest of the Company lens stays closed. | Nothing, except signing the corporate CLA you were nominated for                                           |
-| Someone with no EasyCLA role at the company                  | The page title **We couldn't load your CLAs**, with the reason in the text under the title                                                                  | Nothing on this page                                                                                       |
+| Someone with no EasyCLA role at the company                  | The page title **We couldn't load your CLAs**, with the reason in the text under the title                                                             | Nothing on this page                                                                                       |
 
 A signed corporate CLA that does not name you as a CLA Manager is marked **View only**, both on its card in the list and next to its name at the top of its page. The page also says **Only the CLA Managers named on this CLA can change it.** and **See who manages it** opens the **CLA Managers** tab. The label depends only on the CLA Manager list: a corporate CLA that names you has no label, and neither does the preview you reach from **Sign CLA** before an agreement is signed.
 
@@ -144,7 +144,7 @@ You can add, edit, and delete entries when you are a CLA Manager named on this a
 | ------------------- | ---------------------------------------------- |
 | **Email domain**    | A domain, such as `example.com`                |
 | **Email**           | One address, such as `contributor@example.com` |
-| **GitHub org**      | A GitHub company login                    |
+| **GitHub org**      | A GitHub company login                         |
 | **GitHub username** | One GitHub username                            |
 | **GitLab group**    | A GitLab group URL                             |
 | **GitLab username** | One GitLab username                            |

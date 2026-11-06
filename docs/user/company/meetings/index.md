@@ -51,12 +51,12 @@ The range is not kept in the page address, so the page opens on **Past 365 days*
 
 The four cards count the selected company's meeting activity in the time range, and each one compares it with the prior period.
 
-| Card                      | What it counts                                     |
-| ------------------------- | -------------------------------------------------- |
+| Card                      | What it counts                                |
+| ------------------------- | --------------------------------------------- |
 | **Employees Active**      | The company's employees who attended meetings |
-| **Meetings Attended**     | Meetings those employees attended                  |
-| **Projects Supported**    | Projects whose meetings they attended              |
-| **Foundations Supported** | Foundations whose meetings they attended           |
+| **Meetings Attended**     | Meetings those employees attended             |
+| **Projects Supported**    | Projects whose meetings they attended         |
+| **Foundations Supported** | Foundations whose meetings they attended      |
 
 With each number, the change shows as a percentage, such as **+12% vs. prior period**. It says **No change vs. prior period** when the number is unchanged, and **New** when there was nothing in the prior period.
 
@@ -78,10 +78,10 @@ Each card shows its total number of attendances and a bar for each value with it
 | Column                        | What it shows                                                                                                                                                                                                           |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Project**                   | The project's name                                                                                                                                                                                                      |
-| **Rank among companies**      | The company's rank, such as **#2 of 15**, among the companies that contributed code or attended meetings on the project in the time range. Point at or select it for what the rank compares                        |
-| **Ecosystem Influence**       | The company's influence level on the project: **Leading**, **Contributing**, **Participating** or **Silent**                                                                                                       |
+| **Rank among companies**      | The company's rank, such as **#2 of 15**, among the companies that contributed code or attended meetings on the project in the time range. Point at or select it for what the rank compares                             |
+| **Ecosystem Influence**       | The company's influence level on the project: **Leading**, **Contributing**, **Participating** or **Silent**                                                                                                            |
 | **Attendance's contribution** | The share of the measures shown that comes from meeting attendance, such as **12% of score**. It leaves out the membership-tier part of the score. The bar is scaled for legibility; the percentage is the actual share |
-| **Δ vs. prior period**        | How the company's score changed from the prior period, such as **+5.2%**, **No change**, **New**, or **No comparable prior period** when there is no earlier score                                                 |
+| **Δ vs. prior period**        | How the company's score changed from the prior period, such as **+5.2%**, **No change**, **New**, or **No comparable prior period** when there is no earlier score                                                      |
 
 Select **Projects** at the end of a row to open that project's page in the Company lens.
 
@@ -93,11 +93,11 @@ Because a project appears only once it has a published Ecosystem Influence Score
 
 Each section loads on its own, so one section can be empty or fail while the others show. An empty section is not the same as a failed load.
 
-| What you see                                                                        | What it means                                                                         | What to do                                                                           |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| What you see                                                                        | What it means                                                                    | What to do                                                                           |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | **No meetings in this period**, or **No influence scores in this period**           | The company has nothing recorded for the time range                              | Pick a wider time range, or select **Reset filters** to go back to **Past 365 days** |
-| **This section could not be loaded**                                                | That section did not load. The rest of the page is unaffected                         | Select **Retry**                                                                     |
-| **Select a company to view meeting insights.**                                | No company is selected                                                           | Select a company in the switcher                                               |
+| **This section could not be loaded**                                                | That section did not load. The rest of the page is unaffected                    | Select **Retry**                                                                     |
+| **Select a company to view meeting insights.**                                      | No company is selected                                                           | Select a company in the switcher                                                     |
 | **Meeting insights aren't available for this company right now. Please try again.** | The company's meeting data could not be matched to it                            | Reload the page later                                                                |
 | **Access could not be verified**                                                    | Your access to the company could not be checked. Your permissions did not change | Select **Retry**                                                                     |
 

@@ -35,14 +35,14 @@ Select the pencil button on your avatar to upload a new image. The upload happen
 
 ### Personal information
 
-| Field            | Required | Limit / notes                                                           |
-| ---------------- | -------- | ----------------------------------------------------------------------- |
-| **About Me**     | Optional | Up to **2,000 characters** (see below)                                  |
-| **First Name**   | Optional | Up to 50 characters                                                     |
-| **Last Name**    | Optional | Up to 50 characters                                                     |
-| **Username**     | —        | Your LFID. Read-only — you cannot change it here                        |
-| **Job Title**    | Optional | Up to 100 characters                                                    |
-| **Company** | Optional | Chosen from your work experience; add a work experience first to set it |
+| Field          | Required | Limit / notes                                                           |
+| -------------- | -------- | ----------------------------------------------------------------------- |
+| **About Me**   | Optional | Up to **2,000 characters** (see below)                                  |
+| **First Name** | Optional | Up to 50 characters                                                     |
+| **Last Name**  | Optional | Up to 50 characters                                                     |
+| **Username**   | —        | Your LFID. Read-only — you cannot change it here                        |
+| **Job Title**  | Optional | Up to 100 characters                                                    |
+| **Company**    | Optional | Chosen from your work experience; add a work experience first to set it |
 
 ### Find your LFID (username)
 

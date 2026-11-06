@@ -16,7 +16,7 @@ These steps apply to Admins and Viewers of the company. Only an Admin can make c
 
 | Role                             | Shown as    | What they can do                                                                                                 |
 | -------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
-| **Org Admin – Editor**           | **Admin**   | Full access to the company's Company Lens, including adding, changing and removing other people's access.       |
+| **Org Admin – Editor**           | **Admin**   | Full access to the company's Company Lens, including adding, changing and removing other people's access.        |
 | **Org Admin – Viewer**           | **Viewer**  | Read-only access. They can view all data and reports, but cannot make changes or manage access for other people. |
 | Someone who has not yet accepted | **Invited** | Nothing yet. They appear as **Invited** next to their name until they accept the invite.                         |
 

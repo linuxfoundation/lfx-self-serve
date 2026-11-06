@@ -16,16 +16,16 @@ The People page lists the selected company's employees and how each one takes pa
 
 The page heading is **People —** followed by the company's name. The line under it is **All employee involvement with the Linux Foundation — board, committees, maintainership, code, training, and events.** The page has eight tabs:
 
-| Tab                 | What it lists                                                                                                       |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **All Employees**   | Everyone with recorded activity, a seat, a contact role or Company Lens access, with all of it in one row (the default) |
-| **Board**           | Employees who hold a seat on a foundation's governing board                                                         |
-| **Committee**       | Employees who sit on foundation committees                                                                          |
-| **Key Contacts**    | Employees named as contacts on the company's foundation memberships                                            |
-| **Contributors**    | Employees who contributed code, and whether they are maintainers                                                    |
-| **Event Attendees** | People who registered for, attended or spoke at events                                                              |
-| **Trainees**        | Employees who enrolled in courses or earned certifications                                                          |
-| **Company Lens Access** | Who can open the company, covered in [Manage Company Lens Access](../manage-company-lens-access/)                      |
+| Tab                     | What it lists                                                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **All Employees**       | Everyone with recorded activity, a seat, a contact role or Company Lens access, with all of it in one row (the default) |
+| **Board**               | Employees who hold a seat on a foundation's governing board                                                             |
+| **Committee**           | Employees who sit on foundation committees                                                                              |
+| **Key Contacts**        | Employees named as contacts on the company's foundation memberships                                                     |
+| **Contributors**        | Employees who contributed code, and whether they are maintainers                                                        |
+| **Event Attendees**     | People who registered for, attended or spoke at events                                                                  |
+| **Trainees**            | Employees who enrolled in courses or earned certifications                                                              |
+| **Company Lens Access** | Who can open the company, covered in [Manage Company Lens Access](../manage-company-lens-access/)                       |
 
 Select a person's name on any tab to open their details. On **Event Attendees**, only people with a roster profile have a selectable name; for anyone else, select the row to see their events.
 
@@ -48,14 +48,14 @@ The **All Employees** tab shows the company's people in one table, one row per p
 
 Five cards at the top count **Employees Active in Open Source**, **In Governance**, **Code Contributors**, **Event Attendees** and **Trainees**. The table has these columns:
 
-| Column                 | What it shows                                                                                                                                              |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Employee**           | The person's name and job title. **Former** marks someone who no longer works at the company                                                          |
-| **Board & Committee**  | How many board and committee seats they hold, such as **2 seats**                                                                                          |
-| **Code contributions** | Their code count under the chosen code count. The heading changes to **Commits** when you count commits. Hover it for what it counts                       |
-| **Events**             | How many events they attended                                                                                                                              |
-| **Training**           | How many courses they took                                                                                                                                 |
-| **Company Lens Access**    | **Admin** or **Viewer** when they can open the company in the Company lens, or **Invited** when they have been invited and have not accepted yet |
+| Column                  | What it shows                                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Employee**            | The person's name and job title. **Former** marks someone who no longer works at the company                                                     |
+| **Board & Committee**   | How many board and committee seats they hold, such as **2 seats**                                                                                |
+| **Code contributions**  | Their code count under the chosen code count. The heading changes to **Commits** when you count commits. Hover it for what it counts             |
+| **Events**              | How many events they attended                                                                                                                    |
+| **Training**            | How many courses they took                                                                                                                       |
+| **Company Lens Access** | **Admin** or **Viewer** when they can open the company in the Company lens, or **Invited** when they have been invited and have not accepted yet |
 
 A dash (**—**) means none. Select a row with a chevron to expand it. Rows without one, such as a person listed only for a seat or Company Lens access, have no detail to show. The expanded row lists the person's **Governance — Board Seats**, **Meetings — Committee Seats**, **Code Contributions**, **Events**, and **Training & Certifications**. When a person has nothing recorded there, it says **No LF activity detail recorded for this employee.**
 
@@ -180,15 +180,15 @@ See [Code Contributions](../code-contributions/) for that page.
 
 A tab that finds nobody says so in its table, and a tab that fails to load names what failed and offers **Retry**. An empty tab is not the same as a failed load.
 
-| What you see                                                                                     | Where                                      | What to do                                                  |
-| ------------------------------------------------------------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------- |
-| **No employees match the current filters.**, and the same for other tabs                         | Any tab, with filters set                  | Clear the search or change the menus                        |
-| **No employees found for this company.**                                                    | **All Employees**                          | The company has no recorded activity in the time range |
-| **No contributors found for this company in the** time range                                | **Contributors**                           | **Choose All time to include older contributions.**         |
+| What you see                                                                                     | Where                                      | What to do                                             |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------------------------------ |
+| **No employees match the current filters.**, and the same for other tabs                         | Any tab, with filters set                  | Clear the search or change the menus                   |
+| **No employees found for this company.**                                                         | **All Employees**                          | The company has no recorded activity in the time range |
+| **No contributors found for this company in the** time range                                     | **Contributors**                           | **Choose All time to include older contributions.**    |
 | **No board members found.**, **No committee members found.**, **No key contact data available.** | **Board**, **Committee**, **Key Contacts** | The company has no seats or contacts on record         |
-| **Former employees couldn't be loaded, so only current employees are shown.**                    | **All Employees**                          | The list is incomplete. Reload the page later               |
-| **Failed to load employees**, **Failed to load contributors**, and so on                         | Any tab                                    | Select **Retry**                                            |
-| **Failed to load activity detail.**                                                              | An expanded **All Employees** row          | Select **Retry** in the row                                 |
+| **Former employees couldn't be loaded, so only current employees are shown.**                    | **All Employees**                          | The list is incomplete. Reload the page later          |
+| **Failed to load employees**, **Failed to load contributors**, and so on                         | Any tab                                    | Select **Retry**                                       |
+| **Failed to load activity detail.**                                                              | An expanded **All Employees** row          | Select **Retry** in the row                            |
 
 ## Related sections
 

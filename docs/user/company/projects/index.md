@@ -34,15 +34,15 @@ When you cannot open the company, Projects is replaced by the same access messag
 
 Each row of the Projects table shows one project's health, the company's technical and ecosystem influence on it, its influence trend over the past year, and how many of the company's employees contribute and participate. Select a project name to open its detail page. Hover a column heading to read what it measures.
 
-| Column                   | What it shows                                                                                                                                                                                                                                              |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Project**              | The project logo and name. The name opens the project's detail page                                                                                                                                                                                        |
-| **Health**               | The project's LFX Insights health label: **Excellent**, **Healthy**, **Fair**, **Concerning**, **Critical**, or **Unavailable**                                                                                                                            |
-| **Technical influence**  | The company's influence on the project's code activity (commits and pull requests), as a band: **Leading**, **Contributing**, **Participating**, or **Silent**                                                                                        |
-| **Ecosystem influence**  | The company's influence on the project's non-code collaboration (documentation, committees, meetings, events), as the same bands. A project outside the Linux Foundation (LF) shows **Non-LF Project**                                                |
-| **Influence Trend (1y)** | A line showing how the company's combined influence changed over the rolling 12 months, and the change as a percentage                                                                                                                                |
+| Column                   | What it shows                                                                                                                                                                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Project**              | The project logo and name. The name opens the project's detail page                                                                                                                                                                              |
+| **Health**               | The project's LFX Insights health label: **Excellent**, **Healthy**, **Fair**, **Concerning**, **Critical**, or **Unavailable**                                                                                                                  |
+| **Technical influence**  | The company's influence on the project's code activity (commits and pull requests), as a band: **Leading**, **Contributing**, **Participating**, or **Silent**                                                                                   |
+| **Ecosystem influence**  | The company's influence on the project's non-code collaboration (documentation, committees, meetings, events), as the same bands. A project outside the Linux Foundation (LF) shows **Non-LF Project**                                           |
+| **Influence Trend (1y)** | A line showing how the company's combined influence changed over the rolling 12 months, and the change as a percentage                                                                                                                           |
 | **Contributors**         | How many of the company's employees contributed code to the project in the past 2 years, counted under the chosen **Company scope** and **Team members** choices. The number opens the project's detail page with its **Contributors** card open |
-| **Participants**         | How many of the company's employees were involved in the project in any way in the past 2 years, including code contributions, documentation collaboration, events, and training. The number opens the project's detail page                          |
+| **Participants**         | How many of the company's employees were involved in the project in any way in the past 2 years, including code contributions, documentation collaboration, events, and training. The number opens the project's detail page                     |
 
 The hover text on both influence columns says **Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).** and **Comparing our company's share of these activities to the project total indicates greater influence in the project.** Each band also shows signal bars: four filled for **Leading**, down to one for **Silent**.
 
@@ -203,22 +203,22 @@ The **Our Influence** tab shows the company's share of the project's activity, i
 
 Each card shows a chart of the company's activity over the time range, a headline figure, and a short sentence. For example, the **Commits** card can say **Employees made** a percentage **of all commits.** A card whose chart has no data points for the time range shows **No data** in place of its chart. A recorded zero is still data, so a period with no activity draws a chart at zero.
 
-| Card                       | Group     | What it counts                                                                                                                   |
-| -------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Maintainer roles**       | Technical | People named as maintainers in the project's governance files, counted once per project, credited to their current employer      |
-| **Contributors**           | Technical | Individuals who made at least one contribution (commit, PR, review, or comment) in the selected time range                       |
-| **Commits**                | Technical | Code contributions committed directly to the project's repositories                                                              |
-| **Pull Requests Opened**   | Technical | Pull requests opened against the project's repositories in the selected time range                                               |
+| Card                       | Group     | What it counts                                                                                                              |
+| -------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Maintainer roles**       | Technical | People named as maintainers in the project's governance files, counted once per project, credited to their current employer |
+| **Contributors**           | Technical | Individuals who made at least one contribution (commit, PR, review, or comment) in the selected time range                  |
+| **Commits**                | Technical | Code contributions committed directly to the project's repositories                                                         |
+| **Pull Requests Opened**   | Technical | Pull requests opened against the project's repositories in the selected time range                                          |
 | **Avg Time to Merge PRs**  | Technical | Average time from when a pull request is opened to when it is merged, for the company's contributors, compared with average |
-| **Collaboration Activity** | Ecosystem | Interactions across collaboration platforms including Slack, mailing lists, GitHub Issues, Jira, and community forums            |
-| **Meeting Attendance**     | Ecosystem | Attendance at project committee, working group, and community meetings                                                           |
-| **Board Members**          | Ecosystem | Seats on the governing board of the project's foundation                                                                         |
-| **Committee Members**      | Ecosystem | People on a foundation committee, such as advisory groups, steering committees, and marketing committees                         |
-| **Event Attendance**       | Ecosystem | Registration and attendance at events hosted or co-located with the project's foundation                                         |
-| **Event Speakers**         | Ecosystem | Employees who presented talks, workshops, or keynotes at foundation-hosted events                                                |
+| **Collaboration Activity** | Ecosystem | Interactions across collaboration platforms including Slack, mailing lists, GitHub Issues, Jira, and community forums       |
+| **Meeting Attendance**     | Ecosystem | Attendance at project committee, working group, and community meetings                                                      |
+| **Board Members**          | Ecosystem | Seats on the governing board of the project's foundation                                                                    |
+| **Committee Members**      | Ecosystem | People on a foundation committee, such as advisory groups, steering committees, and marketing committees                    |
+| **Event Attendance**       | Ecosystem | Registration and attendance at events hosted or co-located with the project's foundation                                    |
+| **Event Speakers**         | Ecosystem | Employees who presented talks, workshops, or keynotes at foundation-hosted events                                           |
 | **Event Sponsorships**     | Ecosystem | Events where the company sponsored, co-sponsored, or provided in-kind support                                               |
-| **Meetup Attendance**      | Ecosystem | Attendance at community meetups organized under the project's foundation                                                         |
-| **Certified Individuals**  | Ecosystem | Employees who hold active certifications issued or recognized by the project's foundation                                        |
+| **Meetup Attendance**      | Ecosystem | Attendance at community meetups organized under the project's foundation                                                    |
+| **Certified Individuals**  | Ecosystem | Employees who hold active certifications issued or recognized by the project's foundation                                   |
 
 A project outside the Linux Foundation has no ecosystem cards. Its ecosystem chip says **Non-LF**, and the row says **No ecosystem influence data for this project yet.**
 
@@ -271,15 +271,15 @@ Four ecosystem categories, **Meeting Attendance**, **Event Attendance**, **Meetu
 
 Each category earns points on its own, with no preset weights, and the points are added up to the total score.
 
-| Score     | Categories                                                                                                        | Points                                                                                                                                                                                                                      |
-| --------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Score     | Categories                                                                                                        | Points                                                                                                                                                                                                       |
+| --------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Technical | **Maintainer roles**                                                                                              | 10 points when the company has maintainers on the project in the time range. Only companies with code contributions in that range are scored, so a company can hold maintainer roles and still earn 0 points |
-| Technical | **Contributors**, **PRs Opened**                                                                                  | 0.1 point for each 0.1% share of the project's total, plus 1 point for any share above 0%                                                                                                                                   |
-| Technical | **Commits**                                                                                                       | Scored like Contributors, but from all commit credit, including co-authored commits. The count and share shown are authored commits only, so a company can show 0 authored commits and still earn points              |
-| Ecosystem | **Collaboration Activities**, **Meeting Attendance**, **Committee Members**, **Event Speakers**                   | 0.1 point for each 0.1% share of the project's or foundation's total, plus 1 point for any share above 0%                                                                                                                   |
-| Ecosystem | **Board Members**                                                                                                 | 1 point when the company has at least one board member on the project's foundation                                                                                                                                     |
-| Ecosystem | **Event Attendance**, **Meetup Attendance**, **Certified Individuals**, **Event sponsorship - attendees reached** | 0, 0.33, 0.66 or 1 point for no share, a share up to 25%, up to 50%, or over 50%                                                                                                                                            |
-| Ecosystem | **Membership Tier**                                                                                               | 1 point for Premier, 0.66 point for Strategic, otherwise 0                                                                                                                                                                  |
+| Technical | **Contributors**, **PRs Opened**                                                                                  | 0.1 point for each 0.1% share of the project's total, plus 1 point for any share above 0%                                                                                                                    |
+| Technical | **Commits**                                                                                                       | Scored like Contributors, but from all commit credit, including co-authored commits. The count and share shown are authored commits only, so a company can show 0 authored commits and still earn points     |
+| Ecosystem | **Collaboration Activities**, **Meeting Attendance**, **Committee Members**, **Event Speakers**                   | 0.1 point for each 0.1% share of the project's or foundation's total, plus 1 point for any share above 0%                                                                                                    |
+| Ecosystem | **Board Members**                                                                                                 | 1 point when the company has at least one board member on the project's foundation                                                                                                                           |
+| Ecosystem | **Event Attendance**, **Meetup Attendance**, **Certified Individuals**, **Event sponsorship - attendees reached** | 0, 0.33, 0.66 or 1 point for no share, a share up to 25%, up to 50%, or over 50%                                                                                                                             |
+| Ecosystem | **Membership Tier**                                                                                               | 1 point for Premier, 0.66 point for Strategic, otherwise 0                                                                                                                                                   |
 
 The count next to **Maintainer roles** is the maintainer roles the company holds on the project against every company's roles, with people marked as team members in LFX left out. It is counted separately from the points.
 
@@ -301,16 +301,16 @@ The total score maps to a band:
 
 When Projects or a project detail page fails to load, it shows a message naming what failed, usually with **Retry**. A failed load is not the same as an empty list.
 
-| What you see                                    | Where             | What to do                                                                |
-| ----------------------------------------------- | ----------------- | ------------------------------------------------------------------------- |
-| **Could not load your saved workspaces.**       | Projects          | Select **Retry** to restore the workspaces                                |
-| **Something went wrong loading your projects.** | Projects          | Select **Retry**. Your workspaces are still available                     |
-| **Could not load projects for this workspace**  | Projects          | Select **Retry**, or add the projects to the workspace again              |
+| What you see                                    | Where             | What to do                                                           |
+| ----------------------------------------------- | ----------------- | -------------------------------------------------------------------- |
+| **Could not load your saved workspaces.**       | Projects          | Select **Retry** to restore the workspaces                           |
+| **Something went wrong loading your projects.** | Projects          | Select **Retry**. Your workspaces are still available                |
+| **Could not load projects for this workspace**  | Projects          | Select **Retry**, or add the projects to the workspace again         |
 | **Project not found**                           | Project detail    | The project is not one of the company's. Select **Back to Projects** |
-| **Failed to load project detail**               | Project detail    | Select **Retry**                                                          |
-| **Failed to load influence cards**              | **Our Influence** | Select **Retry**                                                          |
-| **Failed to load leaderboard**                  | **Leaderboards**  | Select **Retry** on that board                                            |
-| **Failed to load influence trend**              | **Leaderboards**  | Select **Retry** under **Influence Trend**                                |
+| **Failed to load project detail**               | Project detail    | Select **Retry**                                                     |
+| **Failed to load influence cards**              | **Our Influence** | Select **Retry**                                                     |
+| **Failed to load leaderboard**                  | **Leaderboards**  | Select **Retry** on that board                                       |
+| **Failed to load influence trend**              | **Leaderboards**  | Select **Retry** under **Influence Trend**                           |
 
 **Project not found** comes with **We couldn't find that project for your company.** The other project detail failures come with **Please try again.**
 

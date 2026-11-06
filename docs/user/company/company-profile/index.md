@@ -82,7 +82,7 @@ The line under **Upload Logo** reads **SVG only, not more than 2MB. SVGs are san
 | **Logo too large** — **Logo must be 2MB or smaller.**                                       | The file is larger than 2MB                     | Choose a smaller SVG file                     |
 | **Logo rejected**, with a reason or **This image could not be used. Try a different file.** | The SVG cannot be used, and retrying won't help | Fix what the reason names, or use another SVG |
 | **Upload failed**, with a reason or **Unable to upload logo. Please try again.**            | The upload did not complete                     | Try again                                     |
-| **Permission denied** — **You no longer have permission to edit this company.**        | You can no longer edit the company         | Ask an **Org Admin Editor** to change it      |
+| **Permission denied** — **You no longer have permission to edit this company.**             | You can no longer edit the company              | Ask an **Org Admin Editor** to change it      |
 
 ## Why can't I edit the company name or addresses?
 
@@ -95,15 +95,15 @@ The company name and the addresses cannot be changed on the Company Profile page
 
 The Company Profile page shows an error message when the profile does not load, a field is not valid, or a save fails, and each one says what went wrong. A failed save keeps your changes in the form, so you can try again.
 
-| What you see                                                                                         | What it means                                       | What to do                                     |
-| ---------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------- |
+| What you see                                                                               | What it means                                       | What to do                                     |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------- | ---------------------------------------------- |
 | **Unable to load company profile** — **There was a problem reaching the company service.** | The profile did not load                            | Select **Retry**                               |
-| **Number of employees must be 0 or greater.**                                                        | **Number of Employees** is below 0                  | Enter 0 or more                                |
-| **Crunchbase URL must be a valid `https://` address.**                                               | **Crunchbase Profile** is not an `https://` address | Enter an address that starts with `https://`   |
-| **Description must be 2000 characters or fewer.**                                                    | **Company Description** is too long            | Shorten it                                     |
-| **Save failed** — **Unable to save changes. Please try again.**                                      | The save did not reach the company's record    | Select **Save Changes** again                  |
-| **Save failed** — **Something went wrong while saving. Please try again.**                           | The save failed for another reason                  | Select **Save Changes** again                  |
-| **Permission denied** — **You no longer have permission to edit this company.**                 | Your edit access was removed                        | Ask an **Org Admin Editor** to make the change |
+| **Number of employees must be 0 or greater.**                                              | **Number of Employees** is below 0                  | Enter 0 or more                                |
+| **Crunchbase URL must be a valid `https://` address.**                                     | **Crunchbase Profile** is not an `https://` address | Enter an address that starts with `https://`   |
+| **Description must be 2000 characters or fewer.**                                          | **Company Description** is too long                 | Shorten it                                     |
+| **Save failed** — **Unable to save changes. Please try again.**                            | The save did not reach the company's record         | Select **Save Changes** again                  |
+| **Save failed** — **Something went wrong while saving. Please try again.**                 | The save failed for another reason                  | Select **Save Changes** again                  |
+| **Permission denied** — **You no longer have permission to edit this company.**            | Your edit access was removed                        | Ask an **Org Admin Editor** to make the change |
 
 ## Related sections
 
