@@ -178,8 +178,9 @@ export class NewsletterService {
     return this.newsletterClient.getNewsletter(req, projectUid, newsletterUid, options);
   }
 
-  public listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {
-    return this.newsletterClient.listNewsletters(req, projectUid, params);
+  /** `options.bearerToken` scopes an M2M override to this one read (the signed-out guest reader). */
+  public listNewsletters(req: Request, projectUid: string, params: NewsletterListParams, options?: ApiRequestOptions): Promise<NewsletterListResponse> {
+    return this.newsletterClient.listNewsletters(req, projectUid, params, options);
   }
 
   /**

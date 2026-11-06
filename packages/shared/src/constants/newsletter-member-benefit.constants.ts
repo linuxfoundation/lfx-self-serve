@@ -165,3 +165,39 @@ export const NEWSLETTER_INVITE_EMAIL_PATTERN = /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[
  * domain check cannot be probed for free.
  */
 export const NEWSLETTER_INVITE_COUNTED_LOCALS_KEY = 'newsletterInviteCounted';
+
+/** App route a signed-out invitee lands on from a newsletter invite email; the signed token rides in the URL fragment. */
+export const NEWSLETTER_GUEST_INVITE_PATH = '/newsletters/invite';
+
+/** URL-fragment key of the signed newsletter invite token (`/newsletters/invite#token=…`), kept out of server and proxy logs. */
+export const NEWSLETTER_INVITE_TOKEN_FRAGMENT_KEY = 'token';
+
+/** How long a signed newsletter invite or subscription-confirmation link stays valid. */
+export const NEWSLETTER_INVITE_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Longest signed newsletter invite token or guest cookie value the BFF will try to verify. */
+export const NEWSLETTER_GUEST_TOKEN_MAX_LENGTH = 1024;
+
+/** Browser-session cookie that lets a signed-out member-company reader see a foundation's newsletter. */
+export const NEWSLETTER_GUEST_COOKIE_NAME = 'lfx_newsletter_guest';
+
+/** Path the guest cookie is scoped to — only the public newsletter endpoints ever receive it. */
+export const NEWSLETTER_GUEST_COOKIE_PATH = '/public/api/newsletters';
+
+/** Most `status=sent` list pages walked to find a newsletter group's latest issue (the list is ordered by `updated_at`, not `sent_at`). */
+export const NEWSLETTER_GUEST_LATEST_MAX_PAGES = 10;
+
+/** Guest newsletter requests (invite checks, email checks) one IP may make per window (per pod). */
+export const NEWSLETTER_GUEST_RATE_LIMIT_MAX = 30;
+
+/** Window of the guest newsletter rate limit. */
+export const NEWSLETTER_GUEST_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+
+/** 400 code of a signed-out reader whose email is not at a member company of the newsletter's foundation. */
+export const NEWSLETTER_GUEST_NOT_ELIGIBLE_ERROR_CODE = 'NEWSLETTER_GUEST_NOT_ELIGIBLE';
+
+/** 404 code of a shared newsletter link a signed-out reader cannot open as a member benefit (unknown, unsent, or sent to no newsletter group). */
+export const NEWSLETTER_GUEST_UNAVAILABLE_ERROR_CODE = 'NEWSLETTER_GUEST_UNAVAILABLE';
+
+/** 410 code of an expired or tampered newsletter invite link. */
+export const NEWSLETTER_INVITE_EXPIRED_ERROR_CODE = 'NEWSLETTER_INVITE_EXPIRED';

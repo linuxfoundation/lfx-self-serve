@@ -55,7 +55,7 @@ export class NewsletterServiceClient {
     );
   }
 
-  public async listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {
+  public async listNewsletters(req: Request, projectUid: string, params: NewsletterListParams, options?: ApiRequestOptions): Promise<NewsletterListResponse> {
     const query: Record<string, string> = {};
     if (params.status) {
       query['status'] = params.status;
@@ -68,7 +68,10 @@ export class NewsletterServiceClient {
       'LFX_V2_SERVICE',
       `/projects/${projectUid}/newsletters`,
       'GET',
-      Object.keys(query).length ? query : undefined
+      Object.keys(query).length ? query : undefined,
+      undefined,
+      undefined,
+      options
     );
   }
 
