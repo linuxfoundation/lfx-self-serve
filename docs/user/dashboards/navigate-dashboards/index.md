@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, organization, company, employer]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Dashboards
 ---
 
@@ -24,6 +24,8 @@ Your lens selection is saved for 30 days. The next time you sign in, the app res
 ## Me lens
 
 The **Me** lens (the default view at `/`) shows your personal activity across all your projects. You see your recent contributions, upcoming meetings, earned badges, and training enrollments.
+
+In the **Meetings** section, the card labelled **Next Meeting** shows the meeting that is about to start, in progress, or coming up first. When you have more than one upcoming meeting, the card header shows **‹ 1 of 5 ›** buttons. Use them to step through your next five upcoming meetings in place, and back again. The label changes to **Upcoming Meeting** once you move past the first one. The buttons are disabled at the first and last meeting. Leaving the page or switching lens takes you back to the first meeting.
 
 If you manage groups, **My Pending Actions** also shows **Join request** rows across all the groups you can manage, with the applicant's email, optional name, and group. Select **View all** to review requests in the Pending Actions drawer. **Approve** asks you to confirm the applicant and group; **Reject** lets you add optional notes. A request disappears only after your decision is saved, and the drawer stays open while the list refreshes. After the final action is resolved, the drawer shows **All caught up!** and stays open until you close it. Users without managed groups or pending requests see no join-request rows.
 
