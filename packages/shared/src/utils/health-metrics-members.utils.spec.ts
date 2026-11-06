@@ -488,6 +488,21 @@ describe('buildHealthMetricsMembersGrowthView', () => {
     expect(view.todayDot.topPct).toBeCloseTo((1 - 10 / 600) * 100, 5);
   });
 
+  it.each([
+    ['near zero', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10]],
+    ['zero', Array(11).fill(0)],
+  ])('keeps every label inside the plot and apart with a total %s', (_, current) => {
+    const view = build('highlights', { ...YEARS, 2026: current });
+    const offsets: Record<string, number> = { current: 4, projected: -2, prior: -8 };
+    const tops = view.labels.map((label) => (label.topPct / 100) * 280 + offsets[label.key]).sort((a, b) => a - b);
+
+    tops.forEach((top, index) => {
+      expect(top).toBeGreaterThanOrEqual(0);
+      expect(top + 16).toBeLessThanOrEqual(280);
+      if (index) expect(top - tops[index - 1]).toBeGreaterThanOrEqual(18);
+    });
+  });
+
   it('says in December that the year ends at its total so far, with nothing left to project', () => {
     const tip = build('highlights', YEARS, new Date(2026, 11, 2)).kpis[3].tip;
 

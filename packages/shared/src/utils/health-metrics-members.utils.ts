@@ -1110,11 +1110,17 @@ function emptyGrowthView(): HealthMetricsMembersGrowthView {
 function separateGrowthEndLabels(labels: HealthMetricsMembersGrowthEndLabel[]): HealthMetricsMembersGrowthLabelView[] {
   const box = HEALTH_METRICS_MEMBERS_GROWTH_LABEL_BOX;
   const height = HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height;
-  const tops = new Map(labels.map((label) => [label.key, (label.topPct / 100) * height + box.offsetPx[label.placement]]));
-  const stacked = labels.filter((label) => label.stacks).sort((a, b) => (tops.get(a.key) ?? 0) - (tops.get(b.key) ?? 0));
+  const bottom = height - box.heightPx;
+  // Every label stays inside the plot, so one near zero never sits on the month labels.
+  const tops = new Map(labels.map((label) => [label.key, Math.min(Math.max((label.topPct / 100) * height + box.offsetPx[label.placement], 0), bottom)]));
+  const top = (label: HealthMetricsMembersGrowthEndLabel): number => tops.get(label.key) ?? 0;
+  const stacked = labels.filter((label) => label.stacks).sort((a, b) => top(a) - top(b));
+  // Down from the top to part them, then back up from the plot's bottom edge for any pushed past it.
   stacked.forEach((label, index) => {
-    const above = index ? (tops.get(stacked[index - 1].key) ?? 0) + box.heightPx + box.gapPx : -Infinity;
-    tops.set(label.key, Math.max(tops.get(label.key) ?? 0, above));
+    if (index) tops.set(label.key, Math.max(top(label), top(stacked[index - 1]) + box.heightPx + box.gapPx));
+  });
+  [...stacked].reverse().forEach((label, index, upward) => {
+    tops.set(label.key, Math.min(top(label), index ? top(upward[index - 1]) - box.heightPx - box.gapPx : bottom));
   });
 
   const classes = HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES;
