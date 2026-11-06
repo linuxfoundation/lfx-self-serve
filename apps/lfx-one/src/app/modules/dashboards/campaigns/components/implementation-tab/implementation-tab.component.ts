@@ -157,6 +157,7 @@ import {
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
+  GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CONVERSION_ACTION_PICKER_EMPTY,
   GOOGLE_CONVERSION_ACTION_PICKER_LOADING,
@@ -328,10 +329,15 @@ import {
   describeCampaignDispatchFailure,
   googleAdditionalSearchAdsRefusal,
   googleAdScheduleRefusal,
+  googleAdsDevicesOn,
   googleAdsTextWeight,
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
+  googleChannelDeviceAdjustmentRefusedSentence,
   googleChannelOffersManualCpc,
+  googleChannelRefusesScheduleAdjustments,
+  googleChannelScheduleAdjustmentRefusedSentence,
+  googleChannelTakesDeviceExclusionsOnly,
   googleConversionActionLabel,
   googleConversionActionsTextWithPicked,
   googleCreateNegativeKeywords,
@@ -3680,19 +3686,6 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleTakesTargetCpa: Signal<boolean> = this.initGoogleTakesTargetCpa();
   protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
   protected readonly googleLanguagesChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleLanguagesChannel();
-  protected readonly googleLanguagesWithheldOn: Signal<string | null> = this.initGoogleLanguagesWithheldOn();
-  /**
-   * The held-languages sentence, or `''` when nothing is held. ONE string feeds the visible notice and
-   * the always-mounted live region at the top of the template, as {@link googleProximityWithheldMessage}
-   * does: the notice is created by the channel switch that gives it its text, so a region mounted with
-   * it would not reliably announce (#3568).
-   */
-  protected readonly googleLanguagesWithheldMessage = computed(() => {
-    const channelLabel = this.googleLanguagesWithheldOn();
-    if (channelLabel === null) return '';
-    const count = this.googleLanguages().length;
-    return `${channelLabel} campaigns do not take campaign languages, so the ${count} you picked will not be sent and this campaign will serve in every language. Switch the channel back to keep them.`;
-  });
   /**
    * Whether the targeting panel offers ad schedules / device adjustments, and so whether the request
    * carries them: `googleBiddingChannel` (a Google channel on the campaign-service road) fenced by the
@@ -3700,6 +3693,23 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleAdSchedulesAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_AD_SCHEDULES));
   protected readonly googleDeviceBidModifiersAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS));
+  /**
+   * The devices the dispatched channel takes (`googleAdsDevicesOn`): the device control's rows. Demand
+   * Gen adds TV screens; every other channel gets the three. Empty while no channel is dispatched.
+   */
+  protected readonly googleDeviceVocabulary = computed(() => {
+    const channel = this.googleBiddingChannel();
+    return channel === null ? [] : googleAdsDevicesOn(channel);
+  });
+  /**
+   * The device entries the request carries: those in {@link googleDeviceVocabulary}. A TV screens
+   * exclusion set on Demand Gen is held, not sent, after a switch to a channel without it, and
+   * `googleTargetingWithheldMessage` says so; the judge, the payload and the held notice all read this list.
+   */
+  protected readonly googleDeviceBidModifiersSent = computed(() => {
+    const vocabulary: readonly string[] = this.googleDeviceVocabulary();
+    return this.googleDeviceBidModifiers().filter((d) => vocabulary.includes(d.device));
+  });
   /**
    * The shared refusal the BFF would answer the create with, or `null`; `canSubmit` blocks on it.
    * Judged under the EFFECTIVE strategy, as for devices, so a window adjusted under a strategy Google
@@ -8948,9 +8958,10 @@ export class ImplementationTabComponent implements OnInit {
    *    the same reason. Languages ride on the `googleAdsConfig` envelope and the in-process creator
    *    reads none of it, so a language picked there would be collected, dropped, and the campaign
    *    created serving in every language while the operator believes they narrowed it.
-   * 3. {@link GOOGLE_CHANNELS_WITH_LANGUAGES} — Demand Gen. `validateCriteriaPlan` REFUSES the whole
-   *    non-location criteria set there rather than dropping it, so offering the control on that
-   *    channel would not produce a wider campaign, it would produce a failed create.
+   * 3. {@link GOOGLE_CHANNELS_WITH_LANGUAGES} — every channel since campaign-service v1.0.31, which
+   *    takes Demand Gen languages on the ad group (#459), so today this gate passes whenever the first
+   *    two do. A channel taken out of that constant would withhold a picked list with no notice, so
+   *    fencing one again needs a held-list notice too.
    *
    * Video is in that constant and still never reaches here: `GOOGLE_VIDEO_CREATE_SUPPORTED` is
    * false, so `selectedGoogleChannels` drops it and there is no Video create for a language to ride
@@ -8968,24 +8979,6 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * The label of the channel a picked language list is being WITHHELD on, or null when nothing is.
-   *
-   * Non-null only when the Google section is live on a dispatched channel (`googleBiddingChannel`)
-   * that takes no languages, and the operator has picked some — in practice languages chosen under
-   * Search and then left behind by a switch to Demand Gen. The list is held for a switch back, not
-   * sent, so the campaign serves in every language; the template says so rather than letting the
-   * section simply vanish. Off on the legacy road and with no Google channel, where
-   * `googleBiddingChannel` is null and nothing about languages is on screen to explain.
-   */
-  private initGoogleLanguagesWithheldOn(): Signal<string | null> {
-    return computed(() => {
-      const channel = this.googleBiddingChannel();
-      if (!channel || this.googleLanguagesChannel() || this.googleLanguages().length === 0) return null;
-      return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
-    });
-  }
-
-  /**
    * The shared device refusal the BFF would answer the create with, judged under the EFFECTIVE
    * strategy — the one `googleBiddingPayload` sends, or the channel default it leaves upstream to
    * pick — so an adjustment the strategy refuses blocks Create here rather than failing the create.
@@ -8995,7 +8988,7 @@ export class ImplementationTabComponent implements OnInit {
       const channel = this.googleBiddingChannel();
       const strategy = this.googleBiddingStrategy();
       if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null) return null;
-      return googleDeviceBidModifierRefusal(this.googleDeviceBidModifiers(), strategy, channel);
+      return googleDeviceBidModifierRefusal(this.googleDeviceBidModifiersSent(), strategy, channel);
     });
   }
 
@@ -9072,13 +9065,19 @@ export class ImplementationTabComponent implements OnInit {
    * adjustment only under Manual CPC and Maximize Clicks and ignores it under Smart Bidding, so the
    * shared judge refuses one there. The windows themselves still apply. The way back names only the
    * strategies the channel offers (`googleScheduleAdjustmentStrategiesOn`) — Search both, Display
-   * Maximize Clicks, Performance Max and Video neither. `null` while the schedule section is not shown.
+   * Maximize Clicks, Performance Max and Video neither. On Demand Gen the reason is the channel, not the
+   * strategy: it takes a window only without an adjustment, whatever the strategy
+   * (`googleChannelRefusesScheduleAdjustments`). `null` while the schedule section is not shown.
    */
   private initGoogleScheduleAdjustBlockedReason(): Signal<string | null> {
     return computed(() => {
       const channel = this.googleBiddingChannel();
       const strategy = this.googleBiddingStrategy();
-      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null || googleStrategyTakesScheduleAdjustments(strategy)) return null;
+      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null) return null;
+      if (googleChannelRefusesScheduleAdjustments(channel)) {
+        return `${googleChannelScheduleAdjustmentRefusedSentence(channel)} The windows still decide when the campaign serves.`;
+      }
+      if (googleStrategyTakesScheduleAdjustments(strategy)) return null;
       const lead = `${googleScheduleAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The windows still decide when the campaign serves.`;
       const offered = googleScheduleAdjustmentStrategiesOn(channel).map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]);
       const takes = GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES.map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]).join(' or ');
@@ -9092,11 +9091,16 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => {
       const channel = this.googleBiddingChannel();
       const strategy = this.googleBiddingStrategy();
-      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null || googleStrategyTakesScheduleAdjustments(strategy)) return '';
+      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null) return '';
+      const byChannel = googleChannelRefusesScheduleAdjustments(channel);
+      if (!byChannel && googleStrategyTakesScheduleAdjustments(strategy)) return '';
       const adjusted = this.googleAdSchedules().filter((s) => s.bidModifier !== undefined).length;
       if (adjusted === 0) return '';
       const one = adjusted === 1;
       const pronoun = one ? 'it' : 'them';
+      if (byChannel) {
+        return `${googleChannelScheduleAdjustmentRefusedSentence(channel)} The bid ${one ? 'adjustment' : 'adjustments'} on ${adjusted} ad schedule ${one ? 'window is' : 'windows are'} kept for a switch back, and Create Campaign waits until you clear ${pronoun}.`;
+      }
       const offered = googleScheduleAdjustmentStrategiesOn(channel).map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]);
       const way = offered.length > 0 ? `clear ${pronoun}, or choose ${offered.join(' or ')}` : `clear ${pronoun}`;
       return `${googleScheduleAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The bid ${one ? 'adjustment' : 'adjustments'} on ${adjusted} ad schedule ${one ? 'window is' : 'windows are'} kept for a switch back, and Create Campaign waits until you ${way}.`;
@@ -9110,13 +9114,18 @@ export class ImplementationTabComponent implements OnInit {
    * Maximize Clicks and Target CPA it would, so the shared
    * `googleDeviceAdjustmentNotSentSentence` gives whichever reason is true. The way back differs by channel — Search can switch to Manual CPC,
    * Display and Video offer no Manual CPC here — so the sentence says which. `null` while the device
-   * section is not shown, as for {@link initGoogleDeviceAdjustmentsHeldMessage}.
+   * section is not shown, as for {@link initGoogleDeviceAdjustmentsHeldMessage}. On Demand Gen the reason
+   * is the channel, which takes a device only as an exclusion whatever the strategy
+   * (`googleChannelTakesDeviceExclusionsOnly`).
    */
   private initGoogleDeviceAdjustBlockedReason(): Signal<string | null> {
     return computed(() => {
       const channel = this.googleBiddingChannel();
       const strategy = this.googleBiddingStrategy();
-      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null || strategy === 'manual-cpc') return null;
+      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null) return null;
+      if (googleChannelTakesDeviceExclusionsOnly(channel))
+        return `${googleChannelDeviceAdjustmentRefusedSentence(channel)} You can keep the default bid or exclude a device.`;
+      if (strategy === 'manual-cpc') return null;
       const manual = GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc'];
       const lead = `${googleDeviceAdjustmentNotSentSentence(strategy)} You can keep the default bid or exclude a device.`;
       return googleChannelOffersManualCpc(channel)
@@ -9129,11 +9138,16 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => {
       const channel = this.googleBiddingChannel();
       const strategy = this.googleBiddingStrategy();
-      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null || strategy === 'manual-cpc') return '';
-      const adjusted = this.googleDeviceBidModifiers().filter((d) => d.bidModifier !== 0);
+      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null) return '';
+      const byChannel = googleChannelTakesDeviceExclusionsOnly(channel);
+      if (!byChannel && strategy === 'manual-cpc') return '';
+      const adjusted = this.googleDeviceBidModifiersSent().filter((d) => d.bidModifier !== 0);
       if (adjusted.length === 0) return '';
       const one = adjusted.length === 1;
       const names = joinAsSentenceList(adjusted.map((d) => GOOGLE_ADS_DEVICE_LABELS[d.device]));
+      if (byChannel) {
+        return `${googleChannelDeviceAdjustmentRefusedSentence(channel)} The ${one ? 'adjustment' : 'adjustments'} on ${names} ${one ? 'is' : 'are'} kept for a switch back, and Create Campaign waits until you set ${one ? 'it' : 'them'} to Default bid or Exclude.`;
+      }
       const way = googleChannelOffersManualCpc(channel)
         ? `Default bid or Exclude, or choose ${GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc']} again`
         : 'Default bid or Exclude';
@@ -9156,6 +9170,10 @@ export class ImplementationTabComponent implements OnInit {
       const held: string[] = [];
       const schedules = this.googleAdSchedulesAvailable() ? 0 : this.googleAdSchedules().length;
       const devices = this.googleDeviceBidModifiersAvailable() ? 0 : this.googleDeviceBidModifiers().length;
+      // On a channel that takes devices, an entry outside its vocabulary — TV screens, set on Demand
+      // Gen — is held rather than sent; `googleDeviceBidModifiersSent` leaves it out.
+      const sentDevices: readonly string[] = this.googleDeviceVocabulary();
+      const unsentDevices = this.googleDeviceBidModifiersAvailable() ? this.googleDeviceBidModifiers().filter((d) => !sentDevices.includes(d.device)) : [];
       const demographics = this.googleDemographicExclusionsAvailable() ? 0 : this.googleExcludedAgeRanges().length + this.googleExcludedGenders().length;
       if (schedules > 0) {
         kinds.push('ad schedules');
@@ -9164,6 +9182,10 @@ export class ImplementationTabComponent implements OnInit {
       if (devices > 0) {
         kinds.push('device bid adjustments');
         held.push(`${devices} device ${devices === 1 ? 'setting' : 'settings'}`);
+      }
+      if (unsentDevices.length > 0) {
+        kinds.push(joinAsSentenceList(unsentDevices.map((d) => GOOGLE_ADS_DEVICE_LABELS[d.device])));
+        held.push(`${unsentDevices.length} device ${unsentDevices.length === 1 ? 'setting' : 'settings'}`);
       }
       if (demographics > 0) {
         kinds.push('demographic exclusions');
@@ -9650,9 +9672,16 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  /**
+   * A target ROAS is never offered on a channel in {@link GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS} —
+   * Demand Gen, where `validateBiddingPlan` refuses one even under Maximize Conversion Value — so the
+   * field cannot express that refusal and the payload withholds a value typed on another channel.
+   */
   private initGoogleTakesTargetRoas(): Signal<boolean> {
     return computed(() => {
       const strategy = this.googleBiddingStrategy();
+      const channel = this.googleBiddingChannel();
+      if (channel === null || (GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS as readonly string[]).includes(channel)) return false;
       return strategy !== null && (GOOGLE_BIDDING_ROAS_STRATEGIES as readonly string[]).includes(strategy);
     });
   }
@@ -10225,7 +10254,7 @@ export class ImplementationTabComponent implements OnInit {
     const payload: Partial<CampaignCreateRequest> = {};
     const schedules = this.googleAdSchedules();
     if (this.googleAdSchedulesAvailable() && schedules.length > 0) payload.adSchedules = schedules.map((s) => ({ ...s }));
-    const devices = this.googleDeviceBidModifiers();
+    const devices = this.googleDeviceBidModifiersSent();
     if (this.googleDeviceBidModifiersAvailable() && devices.length > 0) payload.deviceBidModifiers = devices.map((d) => ({ ...d }));
     if (this.googleDemographicExclusionsAvailable()) {
       const ageRanges = this.googleExcludedAgeRanges();

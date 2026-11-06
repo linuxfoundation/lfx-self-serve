@@ -11,6 +11,7 @@ import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/sha
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import {
   googleAdScheduleRefusal,
+  googleAdsDevicesOn,
   googleDeviceBidModifierRefusal,
   googleEffectiveBiddingStrategy,
   googleExcludedAgeRangesRefusal,
@@ -133,7 +134,6 @@ import {
   GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
-  GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS,
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
@@ -1282,20 +1282,9 @@ export class CampaignController {
 
           const languages = googleUpperCodeList(rawLanguages);
           if (languages.length > 0 && typeof googleChannel === 'string') {
-            // REFUSED by name, not dropped: upstream's contract for the field is "refused, never
-            // silently dropped", and `validateCriteriaPlan` fails the whole Demand Gen create on it.
-            // The UI never sends this — its control and payload gate on the same channel list.
-            if (!(GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(googleChannel)) {
-              next(
-                ServiceValidationError.forField(
-                  'languages',
-                  `Google Ads does not accept campaign languages on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the languages or pick a different channel, then create again.`,
-                  { operation: 'campaign_create', service: 'campaign_controller' }
-                )
-              );
-              return;
-            }
-
+            // No channel fence: every channel takes languages since campaign-service v1.0.31
+            // (`validateCriteriaPlan`; Demand Gen on its ad group, #459).
+            //
             // Upstream's cap, checked BEFORE de-duplication there and so here too: a list over the
             // cap only because it repeats a code is still refused.
             if (languages.length > GOOGLE_ADS_MAX_LANGUAGES) {
@@ -1346,10 +1335,10 @@ export class CampaignController {
           }
 
           if (rawAdSchedules.length > 0 && typeof googleChannel === 'string') {
-            // REFUSED by name, not withheld: `validateCriteriaPlan` fails the whole Demand Gen
-            // create on any non-location criterion, ad schedules included. Performance Max is NOT
-            // fenced out — Google documents ad schedules as a Performance Max campaign criterion,
-            // and upstream keeps them there alongside languages.
+            // REFUSED by name, not withheld, for a channel the list leaves out — none since
+            // campaign-service v1.0.31, which takes ad schedules on Demand Gen too (#474). A Demand
+            // Gen window carrying a bid modifier is refused by `googleAdScheduleRefusal` below, as
+            // `validateCriteriaPlan` refuses it there under every strategy.
             if (!(GOOGLE_CHANNELS_WITH_AD_SCHEDULES as readonly string[]).includes(googleChannel)) {
               refuseAdSchedules(
                 `Google Ads does not accept ad schedules on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the ad schedules or pick a different channel, then create again.`
@@ -1420,11 +1409,10 @@ export class CampaignController {
           }
 
           if (devices.length > 0 && typeof googleChannel === 'string') {
-            // REFUSED by name, not withheld, and on one channel FEWER than ad schedules.
-            // `validateCriteriaPlan` fails the whole Demand Gen create on any of these criteria, then
-            // SPLITS Performance Max in two: it keeps the languages and ad schedules Google documents
-            // as Performance Max campaign criteria, and refuses device bid modifiers, because that
-            // channel's automated bidding owns the bid and sets no device adjustment.
+            // REFUSED by name, not withheld, on Performance Max: campaign-service v1.0.31 takes a
+            // Performance Max device exclusion (#500), but this client does not offer one yet. Demand
+            // Gen is inside the fence, and `googleDeviceBidModifierRefusal` below refuses any modifier
+            // but 0 there, as `validateCriteriaPlan` does.
             if (!(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS as readonly string[]).includes(googleChannel)) {
               refuseDevices(
                 `Google Ads does not accept device bid modifiers on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove them or pick a different channel, then create again.`
@@ -1433,12 +1421,14 @@ export class CampaignController {
             }
 
             // Upstream's cap, checked against the SUBMITTED count exactly where
-            // `validateDeviceBidModifiers` checks its own. It is one entry per device this client
-            // accepts, so a longer list necessarily repeats one — the per-entry pass would refuse it
-            // anyway, but upstream names the cap first and so does this.
-            if (devices.length > GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS) {
+            // `validateDeviceBidModifiers` checks its own: the size of the channel's device
+            // vocabulary (`deviceTypesFor`), four on Demand Gen and three elsewhere. A longer list
+            // necessarily repeats a device — the per-entry pass would refuse it anyway, but upstream
+            // names the cap first and so does this.
+            const maxDevices = googleAdsDevicesOn(criteriaChannel as GoogleCampaignChannel).length;
+            if (devices.length > maxDevices) {
               refuseDevices(
-                `Google Ads accepts at most ${GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS} device bid modifiers on one campaign, one per device, and this one has ${devices.length}. Remove some and create again.`
+                `Google Ads accepts at most ${maxDevices} device bid modifiers on one ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[criteriaChannel as GoogleCampaignChannel]} campaign, one per device, and this one has ${devices.length}. Remove some and create again.`
               );
               return;
             }
@@ -7206,11 +7196,11 @@ export class CampaignController {
    * leaving it out leaves the campaign exactly as wide as it is today. That is why an empty result
    * omits rather than refuses, as `geoTargets` does.
    *
-   * CHANNEL-GATED, which `geoTargets` is not. `validateCriteriaPlan`
-   * (`internal/platform/googleads/campaign_criteria.go`) refuses the whole non-location criteria
-   * set on the Demand Gen path — that channel attaches targeting at the ad group level — so a
-   * Demand Gen create carrying languages fails upstream with nothing created. So this helper never
-   * forwards a list for a channel outside {@link GOOGLE_CHANNELS_WITH_LANGUAGES}, and the `{}` it
+   * CHANNEL-GATED, which `geoTargets` is not, on {@link GOOGLE_CHANNELS_WITH_LANGUAGES}. That list
+   * names every channel since campaign-service v1.0.31, whose `validateCriteriaPlan` takes Demand Gen
+   * languages and attaches them to the ad group (#459). The gate stays so a channel fenced again
+   * upstream needs only the constant changed. This helper never forwards a list for a channel
+   * outside the list, and the `{}` it
    * returns there is never dispatched either: `createCampaign` reads the request's own list and
    * refuses such a create by name before anything is sent, on upstream's "refused, never silently
    * dropped" rule for this field.
@@ -7384,8 +7374,9 @@ export class CampaignController {
    * The campaign's ad schedules, normalized and spread-ready, or `{}` when the request names none or
    * the channel cannot take them.
    *
-   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}, which is every channel but Demand
-   * Gen. The `{}` returned there is never dispatched either: `createCampaign` reads the request's
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}, which is every channel since
+   * campaign-service v1.0.31 (Demand Gen without a bid modifier, #474). For a channel outside it the
+   * `{}` returned is never dispatched either: `createCampaign` reads the request's
    * own list and refuses such a create by name first, on upstream's "refused, never silently
    * dropped" rule — a campaign that serves around the clock when the operator asked for weekday
    * evenings spends the whole budget in the hours they excluded.
@@ -7404,9 +7395,9 @@ export class CampaignController {
    * channel cannot take them.
    *
    * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, which is one channel fewer
-   * than the ad-schedule and language gates: `validateCriteriaPlan` refuses the whole criteria set
-   * on Demand Gen and then refuses THIS half of it again on Performance Max, whose automated bidding
-   * owns the bid and sets no device adjustment. The `{}` returned there is never dispatched either —
+   * than the ad-schedule and language gates: Performance Max, where campaign-service v1.0.31 takes a
+   * device exclusion (#500) that this client does not offer yet. Demand Gen is inside it, exclusions
+   * only. The `{}` returned on Performance Max is never dispatched either —
    * `createCampaign` reads the request's own list and refuses such a create by name first, on
    * upstream's "refused, never silently dropped" rule.
    *

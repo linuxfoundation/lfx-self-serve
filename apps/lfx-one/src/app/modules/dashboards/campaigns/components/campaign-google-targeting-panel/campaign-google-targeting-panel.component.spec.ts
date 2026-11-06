@@ -339,6 +339,30 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
     expect(devices.at(-1)).toEqual([{ device: 'MOBILE', bidModifier: 1.25 }]);
   });
 
+  it('lists a row per device it is given, TV screens on Demand Gen, and excludes it', async () => {
+    render({});
+    expect(query('implementation-google-device-CONNECTED_TV')).toBeNull();
+
+    fixture.componentRef.setInput('devices', ['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV']);
+    fixture.componentRef.setInput('deviceAdjustBlockedReason', 'Exclusions only.');
+    fixture.detectChanges();
+    expect(query('implementation-google-device-CONNECTED_TV')?.textContent).toContain('TV screens');
+    expect(await optionLabels('implementation-google-device-mode-CONNECTED_TV')).toEqual(['Default bid', 'Exclude']);
+
+    await pick('implementation-google-device-mode-CONNECTED_TV', 'Exclude');
+    expect(devices.at(-1)).toEqual([{ device: 'CONNECTED_TV', bidModifier: 0 }]);
+  });
+
+  it('keeps a TV screens entry the rows do not list when another device changes, so a held exclusion survives', async () => {
+    render({ devices: [{ device: 'CONNECTED_TV', bidModifier: 0 }] });
+
+    await pick('implementation-google-device-mode-MOBILE', 'Exclude');
+    expect(devices.at(-1)).toEqual([
+      { device: 'MOBILE', bidModifier: 0 },
+      { device: 'CONNECTED_TV', bidModifier: 0 },
+    ]);
+  });
+
   it('offers Adjust bid under Manual CPC and says the adjustment range', async () => {
     render({});
 

@@ -4148,11 +4148,24 @@ describe('CampaignController.createCampaign cutover', () => {
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toHaveLength(1);
   });
 
-  it('refuses ad schedules on Demand Gen by name, the one channel upstream fences them off', async () => {
-    // Named, not silently withheld: an operator who day-parted a campaign and got one serving
-    // around the clock would have no way to know the schedule was dropped.
+  it('dispatches a Demand Gen window with no bid modifier, which campaign-service v1.0.31 takes (#474)', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000031', error: null });
+
     await controller.createCampaign(
       buildReq(googleBody({ campaignTypes: ['demand-gen'], adSchedules: [WEEKDAY] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toEqual([WEEKDAY]);
+  });
+
+  it('refuses a Demand Gen window carrying a bid modifier, even under Maximize Clicks, as validateCriteriaPlan does', async () => {
+    // Maximize Clicks is Demand Gen's default and takes a schedule adjustment on Search and Display,
+    // so only the channel rule refuses this.
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], adSchedules: [{ ...WEEKDAY, bidModifier: 1.2 }] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );
@@ -4160,7 +4173,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
     expect(error.field).toBe('adSchedules');
-    expect(error.message).toContain('Demand Gen');
+    expect(error.message).toContain('Demand Gen campaigns take an ad schedule only without a bid adjustment');
   });
 
   it('refuses a 43rd ad schedule, matching the cap upstream checks against the submitted count', async () => {
@@ -4544,7 +4557,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('Performance Max');
   });
 
-  it('refuses device bid modifiers on Demand Gen, which refuses the whole criteria set', async () => {
+  it('refuses a non-zero device modifier on Demand Gen, which takes a device only as an exclusion', async () => {
     await controller.createCampaign(
       buildReq(googleBody({ campaignTypes: ['demand-gen'], deviceBidModifiers: [MOBILE_BID] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
@@ -4554,7 +4567,40 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
     expect(error.field).toBe('deviceBidModifiers');
-    expect(error.message).toContain('Demand Gen');
+    expect(error.message).toContain('Demand Gen campaigns take a device only as an exclusion');
+  });
+
+  it('dispatches a Demand Gen CONNECTED_TV exclusion, which only Demand Gen takes (#474)', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000031', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], deviceBidModifiers: [{ device: 'CONNECTED_TV', bidModifier: 0 }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['deviceBidModifiers']).toEqual([
+      { device: 'CONNECTED_TV', bidModifier: 0 },
+    ]);
+  });
+
+  it('caps a Demand Gen device list at four, the size of its vocabulary', async () => {
+    const all = ['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV'].map((device) => ({ device, bidModifier: 0 }));
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], deviceBidModifiers: [...all, { device: 'MOBILE', bidModifier: 0 }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('at most 4 device bid modifiers on one Demand Gen campaign');
   });
 
   it.each([['video'], ['display']])('dispatches a device exclusion on %s, which upstream leaves un-narrowed', async (channel) => {
@@ -5535,24 +5581,17 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('41');
   });
 
-  it('refuses languages on Demand Gen by name, the one channel upstream refuses the whole criteria set on', async () => {
-    // `validateCriteriaPlan` refuses languages, device bid modifiers, demographics and ad schedules
-    // together on Demand Gen, and upstream's contract for the field is "refused, never silently
-    // dropped". Dropping the list here instead would create a campaign serving in every language
-    // and report success. The UI never sends this; a direct caller gets a named 400, nothing sent.
-    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['EN'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+  it('forwards languages on Demand Gen, which campaign-service v1.0.31 attaches to the ad group (#459)', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000031', error: null });
 
-    expect(createCampaigns).not.toHaveBeenCalled();
-    const error = refusalFrom();
-    expect(error.statusCode).toBe(400);
-    expect(error.field).toBe('languages');
-    expect(error.message).toContain('Demand Gen');
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['en'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['languages']).toEqual(['EN']);
   });
 
-  it('refuses a blank-only list on Demand Gen for the channel, because upstream counts blanks as asked', async () => {
-    // `validateCriteriaPlan` counts `len(in.Languages)`, so `['', '  ']` trips the Demand Gen fence
-    // before `resolveLanguageList` sees a blank. Dropping the blanks would dispatch an every-language
-    // campaign upstream refuses.
+  it('refuses a blank-only list on Demand Gen by its blank entry, as resolveLanguageList does', async () => {
+    // Blanks are counted as asked, not dropped: dropping them would dispatch an every-language campaign.
     await controller.createCampaign(
       buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['', '  '] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
@@ -5562,7 +5601,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
     expect(error.field).toBe('languages');
-    expect(error.message).toContain('Demand Gen');
+    expect(error.message).toContain('blank entry');
   });
 
   it('forwards languages on Performance Max, which upstream documents as taking campaign languages', async () => {
@@ -5638,7 +5677,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).not.toContain('ZU');
   });
 
-  it('refuses an over-cap Demand Gen list for the channel, which upstream judges before the cap', async () => {
+  it('refuses an over-cap Demand Gen list on the cap, as it does on every channel', async () => {
     const forty = Object.keys(GOOGLE_ADS_LANGUAGE_MAP).slice(0, 39);
     await controller.createCampaign(
       buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: [...forty, 'EN', 'DE'] }), { project: 'tlf', brief_id: 'b-1' }),
@@ -5646,7 +5685,7 @@ describe('CampaignController.createCampaign cutover', () => {
       next
     );
 
-    expect(refusalFrom().message).toContain('Demand Gen');
+    expect(refusalFrom().message).toContain('41');
   });
 
   it('accepts the largest canonical language constant id, int64 max, which upstream parses', async () => {
