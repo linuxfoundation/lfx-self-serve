@@ -3,41 +3,7 @@
 
 export const AKRITES_ENABLED_FLAG = 'akrites-enabled';
 export const MKTG_OS_AGENTS_ENABLED_FLAG = 'mktg-os-agents-enabled';
-export const MY_CLAS_ENABLED_FLAG = 'my-clas-enabled';
-/**
- * Dark-launch gate for the M2 My CLAs overlay (#1738) — Sign CLA, Status column,
- * kebab/actions, and Signed as. The M1 list (project / type / signed / document) stays
- * when this is off. Default false: LaunchDarkly targeting (DEV on for everyone,
- * PROD team-only until testing) is the rollout switch, not the code default.
- *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not
- * gate the BFF; hiding Sign CLA is how the write path stays unreachable from
- * this page.
- */
-export const MY_CLAS_M2_ENABLED_FLAG = 'my-clas-m2-enabled';
 export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
-/**
- * Dark-launch gate for the M3 Organization Lens CLA module (#1982) — the EasyCLA
- * route and sidebar entry. The org-lens prefix keeps it in the lens family; the `m3` suffix
- * follows the `MY_CLAS_M2_ENABLED_FLAG` milestone-gate precedent. Default false: a missing
- * LaunchDarkly flag keeps the module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
- *
- * Evaluated through `FeatureFlagService.getBooleanFlag`, which is the Web SDK and never runs
- * server-side, so this hides the route and nav without closing the BFF. **Turning this flag off
- * therefore stops the UI reaching the module; it does not stop a direct call to the BFF.** It is
- * not a kill switch, and it is not an authorization boundary — the routes are protected by the
- * Org Lens grant, by `blockDuringImpersonation` on the write, and by the CLA service's own
- * signing-authority and trade-compliance checks.
- *
- * The first M3 write path has now landed on these routes: corporate CLA signing (#1983), which
- * creates a signature record and a DocuSign envelope. A server-side gate was reconsidered at that
- * point, as the note here previously said it should be, and still not added — the same corporate
- * signature is requestable by the same caller through the ACS-authorized EasyCLA v4 API and the
- * Corporate CLA Console, so a gate withholds no capability while costing a GitOps round-trip and
- * a pod roll per rollout. What changed is that this is now written down as a decision about a
- * write, rather than resting on the reads being harmless.
- */
-export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
 /**
  * Dark-launch gate for the Org Lens Crowdfunding Donations page (lfx-crowdfunding#415): the route (`cfOrgDonationsGuard`,
  * fail closed) and its sidebar entry. Default false. **UI-only**: the BFF stays open, and CF's auditor check on the
@@ -144,8 +110,8 @@ export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';
 
 /**
  * Default budget `FeatureFlagService.waitForReady()` gives the OpenFeature provider to reach
- * READY before a flag-gated guard falls back to its no-ready path (fail-open for
- * `myClasEnabledGuard`, fail-closed for the dark-launch guards). Doubled from the original 5s
+ * READY before a flag-gated guard falls back to its no-ready path (fail-closed for the
+ * dark-launch guards). Doubled from the original 5s
  * (GH-1351 follow-up) after DEV/PROD reproductions showed LaunchDarkly occasionally taking longer
  * than 5s to stream READY, which the fail-closed guards were surfacing as a user-visible redirect
  * even though LD wasn't actually down — just slow. Also drives

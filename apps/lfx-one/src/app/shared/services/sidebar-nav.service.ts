@@ -21,7 +21,6 @@ import {
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_EASYCLA_PATH,
-  ORG_LENS_CLA_M3_ENABLED_FLAG,
   CF_ORG_DONATIONS_FLAG,
   ORG_EVENTS_ATTRIBUTION_QUERY_PARAM,
   ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
@@ -76,8 +75,6 @@ export class SidebarNavService {
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
   /** Pilot gate: decides whether the Newsletters links point at the embed or at LFX's own pages. */
   private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
-  /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA nav entry when off. */
-  private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens Donations entry (#415), matching `cfOrgDonationsGuard`. */
   private readonly isCfOrgDonationsEnabled = this.featureFlagService.getBooleanFlag(CF_ORG_DONATIONS_FLAG, false);
   /** Dark-launch gate for the Projects and Foundation lens Mentorship Programs entries (lfx-mentorship#398); sidebar only. */
@@ -256,10 +253,9 @@ export class SidebarNavService {
   private readonly showsOrgLfStaffOnlySection = computed(() => this.personaService.isLFStaff() && !this.userService.impersonating());
 
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
-    // M3: an org reached only as its CLA Manager has the EasyCLA tab and nothing else (flag-gated in the service).
+    // M3: an org reached only as its CLA Manager has the EasyCLA tab and nothing else.
     if (this.orgClaOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid)) return [this.orgEasyclaNavItem()];
-    const base = this.orgLensItems();
-    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
+    const items = this.withEasyclaNavItem(this.orgLensItems());
     // Initiatives (#348) follows a direct writer grant on the selected organization — CF lists an
     // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
     const initiativesItems = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '') ? [this.orgInitiativesNavItem()] : [];
