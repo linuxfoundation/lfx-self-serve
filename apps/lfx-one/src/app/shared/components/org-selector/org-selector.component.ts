@@ -28,6 +28,7 @@ import {
   ORG_LENS_LIST_INCOMPLETE_NOTICE,
   ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL,
   ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL,
+  ROLLUP_ACCOUNT_NAME,
 } from '@lfx-one/shared/constants';
 import { Account, ContextSelectorVariant, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
@@ -93,6 +94,12 @@ export class OrgSelectorComponent {
   public readonly variant = input<ContextSelectorVariant>('default');
   /** The viewer picked an organization — the one already selected included, which re-addresses nothing by itself. */
   public readonly itemSelected = output<OrgItem>();
+  /**
+   * The viewer picked the All Organizations roll-up. Separate from `itemSelected`, which carries an
+   * `OrgItem`: the roll-up is a view mode and has no org-items row to emit. Hosts that only need
+   * "the selection changed, commit the preview and close the drawer" listen to both.
+   */
+  public readonly rollUpSelected = output<void>();
 
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
 
@@ -105,6 +112,35 @@ export class OrgSelectorComponent {
 
   protected readonly displayName: Signal<string> = computed(() => this.selectedAccount().accountName || 'Select Organization');
   protected readonly displayLogo: Signal<string> = computed(() => this.selectedAccount().logoUrl ?? '');
+
+  /**
+   * The All Organizations roll-up entry (#4132). Pinned above the organization rows, shown only to a
+   * caller holding two or more organizations, and never filtered out by a search — a query matching
+   * no organization still leaves the roll-up pickable.
+   *
+   * Not a grant: it carries no persona badge and no `(Original)` / `(Inherited)` suffix, and it
+   * leaves the labelling on the real rows untouched.
+   */
+  // `isRollUp()` as well as eligibility: the trigger already shows a cookie-restored roll-up while
+  // the grants load, and in the conglomerate case — one persona seed, siblings as inherited grants
+  // — the count sits at 1 through that window. Keying the row on eligibility alone hid it from the
+  // panel while the roll-up was the selection, so the only rows on offer were organizations and
+  // picking one silently left roll-up mode (#4415, Cursor).
+  protected readonly showRollUpRow: Signal<boolean> = computed(() => this.accountContextService.canSelectRollUp() || this.accountContextService.isRollUp());
+  protected readonly isRollUpSelected: Signal<boolean> = this.accountContextService.isRollUp;
+  protected readonly rollUpOrganizationCount: Signal<number> = this.accountContextService.rollUpOrganizationCount;
+  /**
+   * The trigger renders this whenever the roll-up is selected, which includes the window where a
+   * cookie-restored roll-up is admitted before the grant sets have landed — the count can read 0 or
+   * 1 there, so the noun has to agree.
+   */
+  protected readonly rollUpTriggerSubtitle: Signal<string> = computed(() => {
+    const count = this.rollUpOrganizationCount();
+    return `${count} ${count === 1 ? 'organization' : 'organizations'}`;
+  });
+  protected readonly rollUpSubtitle: Signal<string> = computed(() => `Combined view of related organizations · ${this.rollUpTriggerSubtitle()}`);
+  /** The row's name, from the same constant the trigger and the cookie-restored selection carry, so one rename covers every surface. */
+  protected readonly rollUpName = ROLLUP_ACCOUNT_NAME;
 
   protected readonly items: Signal<OrgItem[]> = this.orgNavigationService.items;
   protected readonly loading: Signal<boolean> = this.orgNavigationService.loading;
@@ -168,6 +204,10 @@ export class OrgSelectorComponent {
    */
   protected readonly isSingleOrg: Signal<boolean> = computed(() => {
     const items = this.items();
+    // The roll-up row is something to switch to. Without this a caller whose siblings arrive as
+    // inherited grants — one org-items row, two or more organizations — would get the static card
+    // and no way to open the panel the roll-up lives in (#4132).
+    if (this.showRollUpRow()) return false;
     if (this.isStaff() || this.loading() || this.hasMore() || this.listIncomplete() || items.length !== 1) return false;
     // The one row must be the selection: a deep-linked selection outside the list still needs the
     // panel to switch back, and the not-found dead end recovers through picking the selected row.
@@ -323,6 +363,61 @@ export class OrgSelectorComponent {
     this.popoverRef()?.hide();
   }
 
+  /**
+   * Activate the focused `[role=option]`, resolved by IDENTITY rather than by its position.
+   *
+   * `listboxOptions()` is every option in the DOM; `displayedRows()` is only the organization rows.
+   * The pinned roll-up is an option that sits outside that loop, so indexing the rows by a DOM
+   * position selected the row *after* the focused one and dropped the last (PR #4415 review). Each
+   * option carries what it is (`data-option-kind`) and, for an organization, which one
+   * (`data-org-uid`), so the two lists cannot drift again.
+   *
+   * Returns whether something was activated, so the caller only restores focus when it was.
+   */
+  protected activateOption(active: HTMLElement): boolean {
+    if (active.dataset['optionKind'] === 'rollup') {
+      this.selectRollUp();
+      return true;
+    }
+    const uid = active.dataset['orgUid'];
+    const row = this.displayedRows().find((candidate) => candidate.display.item.uid === uid);
+    if (!row) return false;
+    this.selectItem(row.display.item);
+    return true;
+  }
+
+  /**
+   * Pick the roll-up. Mirrors `selectItem`'s contract: re-picking the current selection changes
+   * nothing, except on the not-found dead end, where the pick is the viewer's way out. A new pick
+   * lands on `/org/all/overview` (#4133) rather than carrying the current page across. No canonical
+   * fetch — the roll-up names a set, not a `b2b_org` row.
+   */
+  protected selectRollUp(): void {
+    // Re-picking the current selection changes nothing — FR-014, as `selectItem` applies it — with
+    // the same not-found exception: on the dead end the pick is the viewer's way out, and the
+    // selection there never made it into the address.
+    if (this.isRollUpSelected()) {
+      if (this.orgLensNavigation.isOnNotFound()) {
+        this.orgLensNavigation.navigateToRollUpHome();
+      }
+      this.rollUpSelected.emit();
+      this.popoverRef()?.hide();
+      return;
+    }
+    if (!this.accountContextService.selectRollUp()) {
+      return;
+    }
+    // #4133: a new roll-up pick lands on `/org/all/overview`, not the page it was made from. Unlike
+    // an organization switch, the roll-up does not support every page — Org Profile is single-org
+    // by definition (#4125) — so carrying the current page across can land on one that has no
+    // roll-up rendering at all.
+    this.orgLensNavigation.navigateToRollUpHome();
+    // The host (navbar) commits a mobile Org Lens preview and closes its drawer off this; without
+    // it a roll-up picked from the Me or Project lens stays an invisible selection change.
+    this.rollUpSelected.emit();
+    this.popoverRef()?.hide();
+  }
+
   protected selectItem(item: OrgItem): void {
     // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
     // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The
@@ -444,6 +539,10 @@ export class OrgSelectorComponent {
     // breaking caret/text nav in inputs like the LF-team search field.
     if (!this.isEventInsidePanel(event)) return;
 
+    // The caller is driving now, so the deferred initial-focus retry must not fire later and yank
+    // focus back off whatever they navigated to while the list was still loading.
+    this.pendingInitialFocus = false;
+
     // Escape always closes the panel — including from the LF-team search input.
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -502,9 +601,13 @@ export class OrgSelectorComponent {
         // deterministic and identical for Enter and Space (whose native activation timings
         // differ), and keeps preventDefault from letting Space scroll the panel.
         event.preventDefault();
-        const row = this.displayedRows()[activeIndex];
-        if (!row) return;
-        this.selectItem(row.display.item);
+        // Dispatch through the focused ELEMENT, never `displayedRows()[activeIndex]`. `options` is
+        // every `[role=option]` in the DOM, and the pinned roll-up row is one of them while sitting
+        // outside the row loop — indexing the rows by a DOM position therefore selected the row
+        // after the focused one and dropped the last. Resolving by identity keeps the two lists
+        // independent, so another out-of-loop option cannot reintroduce the same off-by-one.
+        const active = options[activeIndex];
+        if (!active || !this.activateOption(active)) return;
         // The row is leaving the DOM; restore focus to the combobox trigger to match Escape's
         // contract (WAI-ARIA APG) rather than dumping the keyboard caller on `body`.
         queueMicrotask(() => this.triggerRef()?.nativeElement.focus());
@@ -553,7 +656,15 @@ export class OrgSelectorComponent {
       if (options.length === 0) return;
       const selectedIdx = options.findIndex((el) => el.getAttribute('aria-selected') === 'true');
       this.moveFocusTo(options, selectedIdx >= 0 ? selectedIdx : 0);
-      this.pendingInitialFocus = false;
+      // The pinned roll-up row renders before `/api/nav/org-items` answers, so "the listbox is
+      // empty" no longer means "the caller's organizations have not arrived". Clearing the retry
+      // here would land initial focus on the roll-up for good and leave the selected organization
+      // unfocused when its row finally renders — the exact deferral this flag exists for. Focus it
+      // provisionally and keep the retry armed until the selected row is here, or the list has
+      // settled and there is nothing further to wait for (#4415, Copilot).
+      if (selectedIdx >= 0 || this.orgNavigationService.loaded()) {
+        this.pendingInitialFocus = false;
+      }
     });
   }
 
@@ -600,7 +711,8 @@ export class OrgSelectorComponent {
   }
 
   private bootstrapOrgList(): void {
-    const restoredUid = this.accountContextService.selectedAccount().uid ?? this.accountContextService.getStoredUid();
+    // Never the roll-up sentinel: it names no organization for the list to pin (see `orgListPinUid`).
+    const restoredUid = this.accountContextService.orgListPinUid();
     // Shown only because the mobile drawer previews Org Lens (#4208): load the list without bootstrap semantics, so it
     // can't default-select an organization, clear one or navigate away — the page underneath is another lens's.
     if (this.lensService.previewingMenuLens()) {

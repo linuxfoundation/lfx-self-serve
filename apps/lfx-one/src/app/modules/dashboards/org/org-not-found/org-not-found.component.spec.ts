@@ -102,6 +102,11 @@ function setup(): Harness {
           selectedUrlSegment: computed(() => orgUrlSegment(selectedAccount())),
           hasOrgSelectorAccess: signal(true),
           getStoredUid: () => 'cookie-uid',
+          // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
+          orgListPinUid: () => {
+            const uid = selectedAccount().uid || 'cookie-uid';
+            return uid === 'all' ? null : uid;
+          },
           setAccount,
           refreshCanonicalRecord: vi.fn(() => Promise.resolve()),
         },

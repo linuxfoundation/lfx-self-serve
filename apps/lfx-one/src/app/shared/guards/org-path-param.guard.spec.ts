@@ -30,6 +30,9 @@ describe('orgPathParamGuard', () => {
   let refreshCanonicalRecord: Mock;
   let resolve: Mock;
   let noteAddressed: Mock;
+  let selectRollUp: Mock;
+  let setAccount: Mock;
+  let demoteAddressedRollUp: Mock;
   let router: Router;
 
   const account = (overrides: Partial<Account>): Account => ({
@@ -69,12 +72,27 @@ describe('orgPathParamGuard', () => {
     refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
     resolve = vi.fn().mockReturnValue(of(null));
     noteAddressed = vi.fn();
+    selectRollUp = vi.fn(() => true);
+    setAccount = vi.fn((next: Account) => selectedAccount.set(next));
+    demoteAddressedRollUp = vi.fn(() => null);
 
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
         { provide: PLATFORM_ID, useFactory: () => platformId },
-        { provide: AccountContextService, useValue: { selectedAccount, adoptFromAddress, pinSelection, clearAccount, refreshCanonicalRecord } },
+        {
+          provide: AccountContextService,
+          useValue: {
+            selectedAccount,
+            adoptFromAddress,
+            pinSelection,
+            clearAccount,
+            refreshCanonicalRecord,
+            selectRollUp,
+            setAccount,
+            demoteAddressedRollUp,
+          },
+        },
         { provide: OrgSlugResolverService, useValue: { resolve } },
         { provide: OrgClaOnlyAccessService, useValue: { noteAddressed } },
       ],
@@ -287,6 +305,91 @@ describe('orgPathParamGuard', () => {
       resolve.mockReturnValue(httpError(503));
       expect(await outcome('bravo-llc', '/org/bravo-llc/projects')).toBe('/org/not-found');
       expect(adoptFromAddress).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * lfx-self-serve#4125/#4133 — the All Organizations roll-up. Added after PR #4415 review 2 noted
+   * that three behaviour changes here shipped untested, one of them (`prefer`) a single condition
+   * whose loss had been a high-severity regression in round 1.
+   */
+  describe('All Organizations roll-up', () => {
+    /**
+     * The `admitWhilePending` argument is the contract this guard owes the service, so it is pinned
+     * here: on a cold deep link the grant sets have not answered, and without opting in a
+     * conglomerate admin whose siblings are inherited grants would be bounced to their single
+     * persona seed before anyone knows better. What that flag then *does* is the service's
+     * behaviour and is covered by its own specs — asserting it here against a mock that honours the
+     * argument would only restate this expectation.
+     */
+    it('adopts /org/all without asking the resolver, opting into admission while pending', async () => {
+      expect(await runGuard('all', '/org/all/people')).toBe(true);
+      expect(selectRollUp).toHaveBeenCalledWith({ admitWhilePending: true });
+      expect(resolve).not.toHaveBeenCalled();
+    });
+
+    // Re-pointed at the organization they do hold, keeping the page they asked for — not bounced to
+    // overview, and not sent to the dead end: the address names something that shrank, not something
+    // unreachable.
+    it('re-points an ineligible caller at their own organization, same page', async () => {
+      selectRollUp.mockReturnValue(false);
+      selectedAccount.set(account({ uid: UID_A, slug: 'alpha-inc' }));
+      demoteAddressedRollUp.mockReturnValue(account({ uid: UID_A, slug: 'alpha-inc' }));
+      expect(await outcome('all', '/org/all/people')).toBe('/org/alpha-inc/people');
+    });
+
+    /**
+     * Regression, PR #4415 review 7. A caller whose organizations are all inherited grants has no
+     * persona seeds, so nothing has selected one and `selectedAccount()` is the placeholder.
+     * Falling back to it alone sent them to the dead end while they held an organization the
+     * roll-up had been counting a moment earlier.
+     */
+    it('re-points at the organization the service demotes to, keeping the page', async () => {
+      selectRollUp.mockReturnValue(false);
+      demoteAddressedRollUp.mockReturnValue(account({ uid: UID_B, slug: 'beta-llc' }));
+
+      expect(await outcome('all', '/org/all/people')).toBe('/org/beta-llc/people');
+      expect(demoteAddressedRollUp).toHaveBeenCalledTimes(1);
+    });
+
+    // Which organization, whether the stored choice survives, and the address pin are all the
+    // service's call — the guard only turns its answer into an address (#4415 review 9).
+    it('lands on not-found only when the service has nothing to demote to', async () => {
+      selectRollUp.mockReturnValue(false);
+      demoteAddressedRollUp.mockReturnValue(null);
+
+      expect(await outcome('all', '/org/all/people')).toBe('/org/not-found');
+    });
+
+    it('renders without a selection on the server rather than redirecting', async () => {
+      platformId = 'server';
+      selectRollUp.mockReturnValue(false);
+      expect(await runGuard('all', '/org/all/people')).toBe(true);
+      expect(clearAccount).toHaveBeenCalled();
+    });
+
+    /**
+     * Regression guard, PR #4415 review round 1. The server validates `prefer` against
+     * `ORG_ACCOUNT_ID_PATTERN` and rejects anything else outright, so leaving roll-up mode by a Back
+     * or a concrete-organization link sent `prefer=all`, drew a 400, and landed a perfectly valid
+     * address on `/org/not-found`.
+     */
+    it('never offers the roll-up sentinel to the slug resolver as a preference', async () => {
+      selectedAccount.set(account({ uid: 'all', accountId: 'all', slug: null }));
+      resolve.mockReturnValue(of(hit(UID_B, 'beta-llc')));
+
+      await runGuard('beta-llc', '/org/beta-llc/overview');
+
+      expect(resolve).toHaveBeenCalledWith('beta-llc', null);
+    });
+
+    it('still prefers a concrete SFID selection when breaking a slug tie', async () => {
+      selectedAccount.set(account({ uid: UID_A, slug: 'alpha-inc' }));
+      resolve.mockReturnValue(of(hit(UID_B, 'beta-llc')));
+
+      await runGuard('beta-llc', '/org/beta-llc/overview');
+
+      expect(resolve).toHaveBeenCalledWith('beta-llc', UID_A);
     });
   });
 });

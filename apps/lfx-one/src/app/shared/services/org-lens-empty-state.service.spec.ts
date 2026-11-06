@@ -3,6 +3,7 @@
 
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
 import { Account, OrgLensEmptyStateName, OrgLensLookupOutcome, OrgLensStaffCheck } from '@lfx-one/shared/interfaces';
 import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
@@ -32,6 +33,7 @@ interface Harness {
   inheritedAuditorSet: WritableSignal<Set<string>>;
   selectedAccount: WritableSignal<Account>;
   hasOrgSelectorAccess: WritableSignal<boolean>;
+  canSelectRollUp: WritableSignal<boolean>;
   /** Organizations `OrgClaOnlyAccessService.isClaOnly` answers true for. */
   claOnlyUids: WritableSignal<Set<string>>;
   /** `OrgClaOnlyAccessService.lookupFailed` — the flag-gated CLA-manager scopes outage. */
@@ -70,6 +72,7 @@ function setup(): Harness {
   const inheritedAuditorSet = signal(new Set<string>());
   const selectedAccount = signal<Account>(account(''));
   const hasOrgSelectorAccess = signal(false);
+  const canSelectRollUp = signal(true);
   const claOnlyUids = signal(new Set<string>());
   const claLookupFailed = signal(false);
   const affiliatedToMember = signal(false);
@@ -115,7 +118,20 @@ function setup(): Harness {
         provide: OrgClaOnlyAccessService,
         useValue: { isClaOnly: (uid: string | null | undefined) => !!uid && claOnlyUids().has(uid), lookupFailed: claLookupFailed },
       },
-      { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, getStoredUid: () => 'cookie-uid' } },
+      {
+        provide: AccountContextService,
+        useValue: {
+          selectedAccount,
+          hasOrgSelectorAccess,
+          canSelectRollUp,
+          getStoredUid: () => 'cookie-uid',
+          // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
+          orgListPinUid: () => {
+            const uid = selectedAccount().uid || 'cookie-uid';
+            return uid === ORG_ROLLUP_SEGMENT ? null : uid;
+          },
+        },
+      },
       {
         provide: OrgNavigationService,
         useValue: { loaded: listLoaded, loading: listLoading, generation: listGeneration, firstPageLandedGeneration: firstPageLanded, refreshList },
@@ -137,6 +153,7 @@ function setup(): Harness {
     inheritedAuditorSet,
     selectedAccount,
     hasOrgSelectorAccess,
+    canSelectRollUp,
     claOnlyUids,
     claLookupFailed,
     affiliatedToMember,
@@ -181,6 +198,103 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.pageState()).toBeNull();
     // FR-010: the incomplete list is the switcher's notice, not a page state.
     expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  /**
+   * Copilot on PR #4415. The roll-up names no `b2b_org` row, so a uid lookup finds it in no grant
+   * set and called it unheld — withdrawing the FR-010 notice and its Retry exactly when the roster
+   * was short, and, for a contractor, sending them to the probe instead of their page.
+   */
+  it('treats the roll-up as held while the caller may select it', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(true);
+    h.lookupOutcome.set('partial');
+
+    expect(h.service.selectedHeld()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it('does not treat the roll-up as held once the caller may no longer select it', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.canSelectRollUp.set(false);
+
+    expect(h.service.selectedHeld()).toBe(false);
+  });
+
+  /**
+   * Cursor on PR #4415. Keying only on `canSelectRollUp` reopened the hole for the case the
+   * admission path exists for: a conglomerate's siblings arrive as *inherited* grants, so the count
+   * sits below two for the whole partial window while the selection legitimately stands. The notice
+   * and its Retry vanished there, and a contractor was probed with the reserved sentinel.
+   */
+  it('keeps the roll-up held through the partial window the admission path rides out', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(false);
+    h.lookupOutcome.set('partial');
+
+    expect(h.service.selectedHeld()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  /**
+   * Copilot on PR #4415. Writing the failure check as one disjunct among others let optimism
+   * short-circuit it: two persona seeds keep `canSelectRollUp` true after the roster fails, so the
+   * page-level outage and its shared Retry disappeared behind a roll-up that could still be picked.
+   */
+  it('lets the outage win even when the seeds still make the roll-up selectable', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(true);
+    h.lookupOutcome.set('failed');
+
+    expect(h.service.selectedHeld()).toBe(false);
+    expect(h.service.pageState()).toBe('could-not-load');
+  });
+
+  // Rule 3 — a lower bound with nothing held at all is the same outage, not a window to ride out.
+  it('lets the outage win for a partial lookup that leaves the caller holding nothing', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(false);
+    h.canSelectRollUp.set(false);
+    h.lookupOutcome.set('partial');
+
+    expect(h.service.selectedHeld()).toBe(false);
+    expect(h.service.pageState()).toBe('could-not-load');
+  });
+
+  // A failed lookup is not a lower bound: rule 2 owns that render, rather than a page over an outage.
+  it('lets the outage win over an admitted roll-up when the lookup failed outright', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(false);
+    h.lookupOutcome.set('failed');
+
+    expect(h.service.selectedHeld()).toBe(false);
+    expect(h.service.pageState()).toBe('could-not-load');
+  });
+
+  /**
+   * Cursor on PR #4415. `selectedHeld` returns false for the roll-up in the outage branches by
+   * design, and `contractorProbeUid` keyed on exactly that — so a contractor in roll-up mode during
+   * an outage probed the reserved sentinel. The server refuses it and `settled` waits on the
+   * verdict, parking them on the skeleton until the doomed request finished.
+   */
+  it('never probes the roll-up sentinel for a contractor, even during an outage', () => {
+    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.isContractor.set(true);
+    h.canSelectRollUp.set(false);
+    h.lookupOutcome.set('failed');
+
+    // `settled` is what forces the probe: it waits on the verdict whenever a uid is owed, whatever
+    // `pageState` decides first. Reading it is the whole point of the test — the probe signal is
+    // lazy, so asserting on `readCheck` without driving `settled` proves nothing.
+    expect(h.service.settled()).toBe(true);
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.selectedHeld()).toBe(false);
   });
 
   it('counts an inherited grant as holding the selection', () => {

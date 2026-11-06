@@ -141,10 +141,13 @@ export class AppComponent {
       this.userService.authenticated.set(true);
       this.userService.user.set(this.auth.user);
 
-      // Initialize user organizations from backend (matched from committee memberships)
-      if (this.auth.organizations && this.auth.organizations.length > 0) {
-        this.accountContextService.initializeUserOrganizations(this.auth.organizations);
-      }
+      // Initialize user organizations from backend (matched from committee memberships).
+      // Called even with an empty list: a caller whose organizations are all inherited grants has no
+      // persona seeds, and skipping this left their stored selection unread — so a restored
+      // `{ uid: 'all' }` never came back, and org-items could pin a concrete organization over it
+      // (#4415 review 8). With no seeds and nothing stored this settles on the placeholder, which is
+      // what the bootstrap value already was.
+      this.accountContextService.initializeUserOrganizations(this.auth.organizations ?? []);
 
       this.userService.canImpersonate.set(Boolean(this.auth?.canImpersonate));
 

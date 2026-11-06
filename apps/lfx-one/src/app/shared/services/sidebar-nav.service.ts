@@ -259,13 +259,17 @@ export class SidebarNavService {
     // M3: an org reached only as its CLA Manager has the EasyCLA tab and nothing else (flag-gated in the service).
     if (this.orgClaOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid)) return [this.orgEasyclaNavItem()];
     const base = this.orgLensItems();
-    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
+    // EasyCLA is single-organization too: a corporate CLA belongs to one company, so its requests
+    // need a concrete organization and `/org/all/easycla` could only error (#4415, Copilot).
+    const items = this.isOrgLensClaM3Enabled() && !this.accountContext.isRollUp() ? this.withEasyclaNavItem(base) : base;
     // Initiatives (#348) follows a direct writer grant on the selected organization — CF lists an
     // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
     const initiativesItems = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '') ? [this.orgInitiativesNavItem()] : [];
     // Donations (#415) is dark-launched behind `cf-org-donations` and shown to every org viewer, like the other org
     // pages: CF lists them to auditors, which the lens route already requires. The page shows a 403 state otherwise.
-    const donationsItems = this.isCfOrgDonationsEnabled() ? [this.orgDonationsNavItem()] : [];
+    // Crowdfunding Donations is single-organization too: `/api/crowdfunding/org-donations` takes an
+    // `orgUid` its SFID validator refuses the sentinel for, so `/org/all/donations` only errors (#4415, Copilot).
+    const donationsItems = this.isCfOrgDonationsEnabled() && !this.accountContext.isRollUp() ? [this.orgDonationsNavItem()] : [];
     const withInitiatives = this.placeAfterOrgProjects(items, [...initiativesItems, ...donationsItems]);
     // ROI Metrics sits in the LF Staff Only section, which closes the menu.
     return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
@@ -1017,12 +1021,22 @@ export class SidebarNavService {
         ],
       },
       // Org admin — divider only (no section label); Profile sits under it, with EasyCLA above it when M3 is on.
-      {
-        label: 'Organization Profile',
-        icon: 'fa-light fa-memo',
-        routerLink: org('profile'),
-        dividerBefore: true,
-      },
+      //
+      // Profile is dropped in roll-up mode. It is single-org by definition (#4125) and will never
+      // gain a combined rendering, and `orgLensPath` prefixes every item with the selected segment
+      // — so the link read `/org/all/profile`, where the page asks for `/api/orgs/uid/all`, the
+      // SFID validator refuses the sentinel and the caller lands on an error page (#4415, Copilot).
+      // `withEasyclaNavItem` already handles Profile being absent.
+      ...(this.accountContext.isRollUp()
+        ? []
+        : [
+            {
+              label: 'Organization Profile',
+              icon: 'fa-light fa-memo',
+              routerLink: org('profile'),
+              dividerBefore: true,
+            },
+          ]),
     ];
   });
 
