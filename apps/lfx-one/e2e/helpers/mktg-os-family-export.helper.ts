@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS } from '@lfx-one/shared/constants';
-import type { MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
+import type { FaqContent, MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page } from '@playwright/test';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '../../src/app/shared/testing/mktg-family-export-test-data';
 import { suppressCookieBanner } from './account-settings-email.helper';
@@ -24,6 +24,8 @@ export async function openFamilyExports(
     holdPrint?: boolean;
     approvedFamily?: boolean;
     allAssets?: boolean;
+    /** With `allAssets`: the FAQ the family PDF prints, instead of the canonical envelope's. */
+    faqContent?: FaqContent;
   } = {}
 ) {
   await suppressCookieBanner(page);
@@ -88,12 +90,14 @@ export async function openFamilyExports(
   if (options.allAssets) {
     for (const current of members) {
       const asset = columnAssetRevisionResponse(current.agentKey);
+      const markdown = current.agentKey === 'faq' && options.faqContent ? JSON.stringify(options.faqContent) : asset.markdown;
       const revision = { ...asset.revision, id: current.revisionId, contentSha256: current.contentSha256 };
       await page.route(`**/api/mktg-agents/documents/${current.agentKey}/living/revisions/**`, async (route) => {
         if (options.holdPrint) await printGate;
         return route.fulfill({
           json: {
             ...asset,
+            markdown,
             project: DOCUMENT_PROJECT.uid,
             revision,
             revisions: [revision],

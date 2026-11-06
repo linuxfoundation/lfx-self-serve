@@ -23,6 +23,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { describeMktgAcceptedGaps, faqGroupViews, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
+import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
@@ -35,7 +36,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
 // gaps. Purely presentational: the run page and the Documents area feed it.
 @Component({
   selector: 'lfx-mktg-faq-view',
-  imports: [NgClass, RouterLink, MktgAssetMetaComponent, MktgFieldCommentsComponent],
+  imports: [NgClass, RouterLink, MarkdownRendererComponent, MktgAssetMetaComponent, MktgFieldCommentsComponent],
   templateUrl: './mktg-faq-view.component.html',
 })
 export class MktgFaqViewComponent {
