@@ -179,12 +179,16 @@ describe('MktgPrintPageComponent', () => {
     const subtitle = root.querySelector<HTMLElement>('[data-testid="mktg-print-page-subtitle"]');
     expect(title?.style.top).toBe(pt(MKTG_PRINT_PAGE_COVER_TITLE_BOX.y));
     expect(subtitle?.style.top).toBe(pt(MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX.y));
-    fixture.componentInstance.page = { ...sampleCover(), titleBox: { x: 38, y: 126, w: 624, h: 139 }, subtitleBox: { x: 38, y: 265, w: 624, h: 66 } };
-    await fixture.whenStable();
-    expect(title?.style.top).toBe(pt(126));
-    expect(title?.style.height).toBe(pt(139));
-    expect(subtitle?.style.top).toBe(pt(265));
-    expect(subtitle?.style.width).toBe(pt(624));
+    const own = TestBed.createComponent(HostComponent);
+    own.componentInstance.page = { ...sampleCover(), titleBox: { x: 38, y: 126, w: 624, h: 139 }, subtitleBox: { x: 38, y: 265, w: 624, h: 66 } };
+    await own.whenStable();
+    const ownRoot: HTMLElement = own.nativeElement;
+    const ownTitle = ownRoot.querySelector<HTMLElement>('[data-testid="mktg-print-page-title"]');
+    const ownSubtitle = ownRoot.querySelector<HTMLElement>('[data-testid="mktg-print-page-subtitle"]');
+    expect(ownTitle?.style.top).toBe(pt(126));
+    expect(ownTitle?.style.height).toBe(pt(139));
+    expect(ownSubtitle?.style.top).toBe(pt(265));
+    expect(ownSubtitle?.style.width).toBe(pt(624));
   });
 
   it('sets the paragraphs in the block’s face and leading, ahead of the app’s global p rules', () => {
