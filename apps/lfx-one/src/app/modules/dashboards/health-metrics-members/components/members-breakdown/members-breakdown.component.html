@@ -34,7 +34,6 @@
           }
         </div>
         <div
-          #plot
           class="relative flex h-[220px] border-b border-gray-200 bg-[linear-gradient(theme(colors.gray.100)_1px,transparent_1px)] bg-[length:100%_25%]"
           role="list"
           aria-label="Members per tier by year">
@@ -45,10 +44,11 @@
               tabindex="0"
               [attr.aria-label]="column.ariaLabel"
               [attr.data-testid]="'members-breakdown-column-' + column.year"
-              (mouseenter)="showTip(index, $event, plot)"
-              (focus)="showTip(index, $event, plot)"
+              (mouseenter)="showTip(index, $event)"
+              (focus)="showTip(index, $event)"
               (mouseleave)="hideTip(index)"
-              (blur)="hideTip(index)">
+              (blur)="hideTip(index)"
+              (keydown.escape)="hideTip(index)">
               <div class="absolute bottom-0 left-1/2 h-full w-[44px] max-w-[70%] -translate-x-1/2" aria-hidden="true">
                 @for (segment of column.segments; track segment.key) {
                   <span
@@ -102,9 +102,9 @@
             <span class="flex items-center whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600" role="columnheader">Tier</span>
             @for (column of breakdown.columns; track column.year) {
               <span
-                class="flex items-center justify-end whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600"
+                class="flex min-w-0 items-center justify-end whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600"
                 role="columnheader"
-                >{{ column.label }}</span
+                ><span class="min-w-0 truncate">{{ column.label }}</span></span
               >
             }
           </div>
@@ -122,7 +122,10 @@
                 <span class="truncate" [attr.title]="row.label">{{ row.label }}</span>
               </span>
               @for (cell of row.cells; track $index) {
-                <span [class]="cell.cellClass" role="cell">{{ cell.label }}</span>
+                <!-- A figure too wide for a narrow column ends in an ellipsis, as the design clips it. -->
+                <span [class]="cell.cellClass" role="cell"
+                  ><span class="min-w-0 truncate">{{ cell.label }}</span></span
+                >
               }
             </div>
           }

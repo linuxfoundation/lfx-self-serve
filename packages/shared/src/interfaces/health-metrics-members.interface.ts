@@ -118,6 +118,18 @@ export interface HealthMetricsMembersBreakdownRowView {
   cells: HealthMetricsMembersBreakdownCellView[];
 }
 
+/** The breakdown table's class strings, by row kind where they differ. */
+export interface HealthMetricsMembersBreakdownTableClasses {
+  label: Record<HealthMetricsMembersBreakdownRowKind, string>;
+  cell: Record<HealthMetricsMembersBreakdownRowKind, string>;
+  lastCell: Record<HealthMetricsMembersBreakdownRowKind, string>;
+  change: Record<'up' | 'down', string>;
+  cellBase: string;
+  rowRule: string;
+  cellRule: string;
+  totalRule: string;
+}
+
 /** A table row as drawn: its rules, and each cell's type and fill as classes. */
 export interface HealthMetricsMembersBreakdownTableRow {
   key: string;

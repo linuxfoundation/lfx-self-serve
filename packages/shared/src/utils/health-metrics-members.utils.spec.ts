@@ -332,6 +332,25 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
     expect(change?.cells[7]).toEqual({ label: '+20.8%', tone: 'up' });
   });
 
+  it('lists the table in tier order, even when a higher tier is grouped into Others', () => {
+    const view = build([
+      ...tier('Diamond Membership', 1, [9, 9, 9, 9, 9, 9, 9, 9]),
+      ...PGS.map((row) => ({ ...row, sortRank: row.sortRank + 1 })),
+      ...tier('Associate Membership', 5, [1, 1, 1, 1, 1, 1, 1, 1]),
+    ]);
+
+    expect(view.columns[0].segments.map((segment) => segment.key)).toEqual(['Platinum', 'Gold', 'Silver', 'Others']);
+    expect(view.rows.filter((row) => row.kind === 'tier').map((row) => row.label)).toEqual(['Diamond', 'Platinum', 'Gold', 'Silver', 'Associate']);
+  });
+
+  it('keeps a measured zero as zero, not unmeasured', () => {
+    const view = build(tier('Platinum Membership', 1, [0, 0, 0, 0, 0, 0, 0, 0]));
+
+    expect(view.measured).toBe(true);
+    expect(view.count).toBe(0);
+    expect(view.rows.find((row) => row.key === 'members')?.cells[7].label).toBe('0');
+  });
+
   it('reads an unchanged year as no change, with no arrow and no sign', () => {
     const flat = build(tier('Platinum Membership', 1, [4, 4, 4, 4, 4, 4, 4, 4]));
 

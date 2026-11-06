@@ -6,6 +6,7 @@ import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal }
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import {
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_TIP_ROOM_PX,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_VIEW_OPTIONS,
   HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
@@ -24,37 +25,12 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 import { OverviewKpiStripComponent } from '../../../health-metrics-overview/components/overview-kpi-strip/overview-kpi-strip.component';
 
 import type {
-  HealthMetricsMembersBreakdownRowKind,
   HealthMetricsMembersBreakdownTableRow,
   HealthMetricsMembersBreakdownView,
   HealthMetricsMembersBreakdownViewMode,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersQuery,
 } from '@lfx-one/shared/interfaces';
-
-// Tailwind scans only the app's sources, so the table's class strings live here rather than in the shared package.
-
-/** The table's row labels: tiers medium, totals bold, change rows small and muted. */
-const LABEL_CLASSES: Record<HealthMetricsMembersBreakdownRowKind, string> = {
-  tier: 'text-[13px] font-medium text-gray-900',
-  total: 'text-[13px] font-semibold text-gray-900',
-  change: 'text-[12px] font-normal text-gray-500',
-};
-
-/** A value cell's type and fill: the last year washed in accent, a change tinted by its direction. */
-const CELL_CLASSES: Record<HealthMetricsMembersBreakdownRowKind, { base: string; last: string }> = {
-  tier: { base: 'text-[13px] font-normal text-gray-900', last: 'bg-blue-50' },
-  total: { base: 'text-[13px] font-semibold text-gray-900', last: 'bg-blue-100' },
-  change: { base: 'text-[12px] font-normal text-gray-400', last: 'bg-blue-50' },
-};
-
-const CHANGE_CLASSES: Record<'up' | 'down', string> = {
-  up: 'text-[12px] font-medium text-emerald-600 bg-[var(--ui-success-50)]',
-  down: 'text-[12px] font-medium text-red-600 bg-[var(--ui-danger-50)]',
-};
-
-const CELL_BASE_CLASS = 'flex min-w-0 items-center justify-end whitespace-nowrap px-[10px] py-[11px] leading-[18px]';
-const RULE_CLASS = 'border-[color:var(--ui-neutral-alpha-100)]';
 
 /**
  * `#breakdown` — members per tier at each year's end as stacked columns or a table, under a metrics row for the
@@ -119,11 +95,12 @@ export class MembersBreakdownComponent {
     if (option) this.mode.set(option.value);
   }
 
-  /** Opens a column's popup beside it, on its left when the right has no room for it. */
-  protected showTip(index: number, event: Event, plot: HTMLElement): void {
+  /** Opens a column's popup beside it, on its left only when the right has no room for it and the left has more. */
+  protected showTip(index: number, event: Event): void {
     const column = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const bounds = plot.getBoundingClientRect();
-    this.tip.set({ index, flip: column.left + column.width / 2 + HEALTH_METRICS_MEMBERS_BREAKDOWN_TIP_ROOM_PX > bounds.right });
+    const centre = column.left + column.width / 2;
+    const roomRight = document.documentElement.clientWidth - centre;
+    this.tip.set({ index, flip: roomRight < HEALTH_METRICS_MEMBERS_BREAKDOWN_TIP_ROOM_PX && centre > roomRight });
   }
 
   protected hideTip(index: number): void {
@@ -133,18 +110,19 @@ export class MembersBreakdownComponent {
   /** Each row's rules and each cell's type and fill; a total's rule above replaces the row's own below. */
   private initTableRows(): Signal<HealthMetricsMembersBreakdownTableRow[]> {
     return computed(() => {
+      const classes = HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES;
       const rows = this.view().rows;
       return rows.map((row, index) => ({
         key: row.key,
         label: row.label,
         icon: row.icon,
-        rowClass: [rows[index + 1]?.kind === 'total' ? '' : `border-b ${RULE_CLASS}`, row.kind === 'total' ? 'border-t border-gray-900' : ''].join(' '),
-        labelClass: LABEL_CLASSES[row.kind],
+        rowClass: [rows[index + 1]?.kind === 'total' ? '' : classes.rowRule, row.kind === 'total' ? classes.totalRule : ''].join(' '),
+        labelClass: classes.label[row.kind],
         cells: row.cells.map((cell, cellIndex) => {
           const last = cellIndex === row.cells.length - 1;
-          const fill = cell.tone ? CHANGE_CLASSES[cell.tone] : `${CELL_CLASSES[row.kind].base} ${last ? CELL_CLASSES[row.kind].last : ''}`;
+          const fill = cell.tone ? classes.change[cell.tone] : `${classes.cell[row.kind]} ${last ? classes.lastCell[row.kind] : ''}`;
           // The last year's left edge is the dashed rule, not a solid one.
-          return { label: cell.label, cellClass: `${CELL_BASE_CLASS} ${fill} ${last ? '' : `border-l ${RULE_CLASS}`}` };
+          return { label: cell.label, cellClass: `${classes.cellBase} ${fill} ${last ? '' : classes.cellRule}` };
         }),
       }));
     });

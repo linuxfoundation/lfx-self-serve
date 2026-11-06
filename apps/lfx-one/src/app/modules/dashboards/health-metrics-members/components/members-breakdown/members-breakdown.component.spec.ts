@@ -168,6 +168,14 @@ describe('MembersBreakdownComponent', () => {
     column.dispatchEvent(new Event('mouseleave'));
     await settle();
     expect(query('health-metrics-chart-tip', column)).toBeNull();
+
+    // Escape dismisses a popup opened by focus, without moving focus off the column.
+    column.dispatchEvent(new Event('focus'));
+    await settle();
+    expect(query('health-metrics-chart-tip', column)).not.toBeNull();
+    column.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await settle();
+    expect(query('health-metrics-chart-tip', column)).toBeNull();
   });
 
   it('switches to a table of every real tier, totals and their changes', async () => {

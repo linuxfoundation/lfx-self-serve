@@ -17,6 +17,7 @@ import type {
   HealthMetricsMembersAtRiskBucket,
   HealthMetricsMembersAtRiskFilterOption,
   HealthMetricsMembersBreakdownPaletteEntry,
+  HealthMetricsMembersBreakdownTableClasses,
   HealthMetricsMembersBreakdownViewOption,
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardCohort,
@@ -237,6 +238,32 @@ export const HEALTH_METRICS_MEMBERS_TIER_ICONS: Record<HealthMetricsMembersReser
 
 /** Room a column's popup needs on its right before it opens on the left; the design caps the popup at 280px. */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_TIP_ROOM_PX = 292;
+
+/**
+ * The breakdown table's classes: row labels by kind, value cells by kind (the last year washed in accent), a change
+ * tinted by its direction, and the rules between cells. Applied via [class], so Tailwind's safelist carries them.
+ */
+export const HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES: HealthMetricsMembersBreakdownTableClasses = {
+  label: {
+    tier: 'text-[13px] font-medium text-gray-900',
+    total: 'text-[13px] font-semibold text-gray-900',
+    change: 'text-[12px] font-normal text-gray-500',
+  },
+  cell: {
+    tier: 'text-[13px] font-normal text-gray-900',
+    total: 'text-[13px] font-semibold text-gray-900',
+    change: 'text-[12px] font-normal text-gray-400',
+  },
+  lastCell: { tier: 'bg-blue-50', total: 'bg-blue-100', change: 'bg-blue-50' },
+  change: {
+    up: 'text-[12px] font-medium text-emerald-600 bg-emerald-50',
+    down: 'text-[12px] font-medium text-red-600 bg-red-50',
+  },
+  cellBase: 'flex min-w-0 items-center justify-end whitespace-nowrap px-[10px] py-[11px] leading-[18px]',
+  rowRule: 'border-b border-[color:var(--ui-neutral-alpha-100)]',
+  cellRule: 'border-l border-[color:var(--ui-neutral-alpha-100)]',
+  totalRule: 'border-t border-gray-900',
+};
 
 /** The view switch over the breakdown; the first is the default. */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_VIEW_OPTIONS: readonly HealthMetricsMembersBreakdownViewOption[] = [

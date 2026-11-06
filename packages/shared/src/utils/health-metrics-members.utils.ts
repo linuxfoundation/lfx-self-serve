@@ -114,7 +114,8 @@ export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembe
   const years = Array.from({ length: currentYear - firstYear + 1 }, (_, index) => firstYear + index);
   const tierList = collectBreakdownTiers(rows);
   const series = buildBreakdownSeries(tierList);
-  const totals = years.map((year) => sumNullable(tierList.map((tier) => tier.members.get(year) ?? null)));
+  // Totals count every row, so a measured zero stays zero after the empty tiers drop out of the chart.
+  const totals = years.map((year) => sumNullable(rows.filter((row) => row.year === year).map((row) => row.memberCount)));
   const revenue = years.map((year) => sumNullable(rows.filter((row) => row.year === year).map((row) => row.revenueUsd)));
   const step = breakdownScaleStep(Math.max(0, ...totals.map((total) => total ?? 0)));
   const top = step * 4;
@@ -142,8 +143,8 @@ export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembe
     };
   });
 
-  const ordered = series.flatMap((entry) => entry.tiers);
-  const tierRows = ordered.map(
+  // The table keeps tier order, even where the chart stacks Platinum, Gold and Silver first.
+  const tierRows = tierList.map(
     (tier): HealthMetricsMembersBreakdownRowView => ({
       key: `tier-${tier.label}`,
       label: tier.label,
@@ -752,7 +753,8 @@ interface BreakdownSeries {
 /** The tier's name without a trailing "Membership" or "Member", so "Platinum Membership" reads as Platinum. */
 function breakdownTierLabel(raw: string): { label: string; reserved: HealthMetricsMembersReservedTier | null } {
   const trimmed = raw.trim();
-  const label = trimmed.replace(/\s+(membership|member)$/i, '').trim() || trimmed;
+  const suffix = [' membership', ' member'].find((candidate) => trimmed.toLowerCase().endsWith(candidate));
+  const label = (suffix ? trimmed.slice(0, -suffix.length).trim() : trimmed) || trimmed;
   const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((key) => key === label.toLowerCase()) ?? null;
   return { label: reserved ? HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS[reserved] : label, reserved };
 }
