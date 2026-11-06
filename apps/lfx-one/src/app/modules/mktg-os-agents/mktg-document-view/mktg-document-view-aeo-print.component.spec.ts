@@ -218,12 +218,12 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
     const overall = query('mktg-document-view-print-overall');
     const markdown = article.querySelector('lfx-markdown-renderer');
     if (!overall || !markdown) throw new Error('Missing synthetic legacy report print blocks');
-    // No typed title block: the Markdown's own H1 is the only heading, so the report never prints two titles.
+    // No typed title block: the Markdown's own H1 is the only title, so the report never prints two (its `##` sections are h2 by design).
     expect(query('mktg-document-view-print-headline')).toBeNull();
     expect(query('mktg-document-view-print-subline')).toBeNull();
     expect(article.querySelector('lfx-aeo-geo-report')).toBeNull();
-    const headings = Array.from(article.querySelectorAll('h1, h2'), (heading) => heading.textContent?.trim());
-    expect(headings).toEqual(['AEO/GEO Analysis: project.example']);
+    const titles = Array.from(article.querySelectorAll('h1'), (heading) => heading.textContent?.trim());
+    expect(titles).toEqual(['AEO/GEO Analysis: project.example']);
     expect(overall.compareDocumentPosition(markdown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // The running head still rides in the sheet's head group.
     expect(article.querySelector('[data-testid="mktg-print-sheet-head"] [data-testid="mktg-print-running-head"]')?.textContent).toContain('AEO/GEO report');
