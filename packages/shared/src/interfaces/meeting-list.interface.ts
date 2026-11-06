@@ -225,3 +225,50 @@ export interface MeetingHomeAttendance {
   /** A past meeting that fewer than half of the invitees attended. */
   poor: boolean;
 }
+
+/** An invitee's answer before a meeting, or their attendance after it, in the attendee avatar grid. */
+export type MeetingAttendeeStatus = 'yes' | 'maybe' | 'no' | 'no_response' | 'attended' | 'absent';
+
+/** Label and Tailwind fills of an attendee status. */
+export interface MeetingAttendeeStatusInfo {
+  /** "Yes", "No response", "Attended"... */
+  label: string;
+  /** Fill of the status dot on an avatar. */
+  dotClass: string;
+  /** Fill of the dot in the stats line. */
+  legendDotClass: string;
+}
+
+/** One person in the attendee avatar grid. */
+export interface MeetingAttendeeGridPerson {
+  /** Registrant or participant uid. */
+  id: string;
+  name: string;
+  /** Photo URL; empty shows initials. */
+  avatarUrl: string;
+  status: MeetingAttendeeStatus;
+  /** "{name} · {status}", the tooltip and spoken label. */
+  label: string;
+}
+
+/** One status count in the attendee grid stats line. */
+export interface MeetingAttendeeGridStat {
+  status: MeetingAttendeeStatus;
+  label: string;
+  count: number;
+}
+
+/** Invitees ordered for the attendee avatar grid, with their counts per status. */
+export interface MeetingAttendeeGrid {
+  /** Ordered by status, then name A–Z. */
+  people: MeetingAttendeeGridPerson[];
+  /** Statuses with a count above zero, in grid order. */
+  stats: MeetingAttendeeGridStat[];
+}
+
+/** How many avatars the grid shows and whether more are hidden. */
+export interface MeetingAttendeeGridOverflow {
+  visible: number;
+  /** More people than the visible rows hold: fade the last row and offer "View all". */
+  more: boolean;
+}
