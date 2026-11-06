@@ -13,8 +13,12 @@ import {
   MKTG_FAMILY_PRINT_ONLY_CLASS,
   MKTG_PRINT_FONT_LINK_ID_PREFIX,
   MKTG_PRINT_FONT_WAIT_MS,
+  MKTG_PRINT_DECK_PAGE_NAME,
+  MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN,
   MKTG_PRINT_FRAME_LINGER_MS,
   MKTG_PRINT_FRAME_PAPER_IN,
+  MKTG_PRINT_LANDSCAPE_CLASS,
+  MKTG_PRINT_LANDSCAPE_PAGE_SETUP,
   MKTG_PRINT_PAGE_MARGINS_CLASS,
   MKTG_PRINT_PAGE_SETUPS,
 } from '@lfx-one/shared/constants';
@@ -170,6 +174,53 @@ describe('MktgPrintService isolated frame', () => {
     expect(framePageRule()).toBe(`@page { ${MKTG_PRINT_PAGE_SETUPS['brand-kit']} }`);
     expect(framePageRule()).not.toContain('@page mktg-framework');
     expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(true);
+  });
+
+  const DECK_SETUP = `@page { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }\n@page ${MKTG_PRINT_DECK_PAGE_NAME} { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }`;
+
+  it.each([
+    ['holding a page host', FOUNDATION_MESSAGE_PRINT_BODY_CLASS, FOUNDATION_MESSAGE_PRINT_ONLY_CLASS, false],
+    ['carrying the class itself', MKTG_FAMILY_PRINT_BODY_CLASS, MKTG_FAMILY_PRINT_ONLY_CLASS, true],
+    ['holding a page host', BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS, false],
+  ])(
+    "prints the deck pages landscape under a root %s (%s): the landscape frame, the setup unnamed and as the deck's named page",
+    (_, bodyClass, wrapper, onRoot) => {
+      root.className = onRoot ? `${wrapper} ${MKTG_PRINT_LANDSCAPE_CLASS}` : wrapper;
+      root.innerHTML = `<section class="${onRoot ? '' : MKTG_PRINT_LANDSCAPE_CLASS}" data-testid="synthetic-print">Synthetic page</section>`;
+      configure().printNow(bodyClass);
+      const frame = currentFrame();
+      expect(MKTG_PRINT_LANDSCAPE_PAGE_SETUP).toBe('size: 11in 8.5in; margin: 0;');
+      expect(frame.style.width).toBe(`${MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN.width}in`);
+      expect(frame.style.height).toBe(`${MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN.height}in`);
+      expect(framePageRule()).toBe(DECK_SETUP);
+      expect(framePageRule()).not.toContain('@page mktg-framework');
+      expect(frame.contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(false);
+      expect(frame.contentDocument?.querySelector('[data-testid="synthetic-print"]')?.textContent).toBe('Synthetic page');
+    }
+  );
+
+  it('in WebKit prints the deck pages on the same landscape setup: no page margins, no restated framework page', () => {
+    printAs(SAFARI_UA);
+    root.className = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
+    root.innerHTML = `<section class="${MKTG_PRINT_LANDSCAPE_CLASS}" data-testid="synthetic-print">Synthetic page</section>`;
+    configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    expect(framePageRule()).toBe(DECK_SETUP);
+    expect(framePageRule()).not.toContain('@page mktg-framework');
+    expect(framePageRule()).not.toMatch(/margin: [0-9.]+(in|cm|mm|pt|px)/);
+    expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(false);
+  });
+
+  it('keeps a portrait root on its own setup when a landscape page is elsewhere on the page, outside the print roots', () => {
+    const stray = document.createElement('div');
+    stray.className = MKTG_PRINT_LANDSCAPE_CLASS;
+    document.body.appendChild(stray);
+    try {
+      configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+      expect(framePageRule()).toBe(`@page { ${MKTG_PRINT_PAGE_SETUPS['mktg-framework']} }`);
+      expect(currentFrame().style.width).toBe(`${MKTG_PRINT_FRAME_PAPER_IN.width}in`);
+    } finally {
+      stray.remove();
+    }
   });
 
   it('copies head CSS, base and page classes, but never scripts or interactive shell content', async () => {

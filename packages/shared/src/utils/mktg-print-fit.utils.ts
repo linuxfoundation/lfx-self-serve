@@ -13,6 +13,7 @@
 
 import {
   MKTG_PRINT_PAGE_BULLET_INDENT,
+  MKTG_PRINT_PAGE_CAPS_TRACKING_EM,
   MKTG_PRINT_PAGE_CUT_MIN_CHARS,
   MKTG_PRINT_PAGE_CUT_SHARE,
   MKTG_PRINT_PAGE_INSET,
@@ -22,9 +23,13 @@ import {
 } from '../constants/mktg-print-page.constants';
 import type { MktgPrintPara, MktgPrintParaRun, MktgPrintRich } from '../interfaces/mktg-print-page.interface';
 
-/** Average character width in ems: wider for bold and for capitals. */
+/**
+ * Average character width in ems: wider for bold and for capitals, which the
+ * print also letter-spaces (MKTG_PRINT_PAGE_CAPS_TRACKING_EM, counted here so
+ * the fit sees the width the page draws).
+ */
 export function mktgPrintCharEm(p: { weight?: number; caps?: boolean }): number {
-  if (p.caps) return 0.72;
+  if (p.caps) return 0.72 + MKTG_PRINT_PAGE_CAPS_TRACKING_EM;
   return (p.weight ?? 400) >= 600 ? 0.6 : 0.55;
 }
 
@@ -120,7 +125,27 @@ export function mktgPrintCutText(text: string, max: number): string {
     if (next.length + 1 > max) break;
     out = next;
   }
-  return `${(out || text.slice(0, Math.max(1, max - 1))).replace(/[\s,;:.—-]+$/, '')}…`;
+  return `${trimTrailing(out || text.slice(0, Math.max(1, max - 1)), CUT_TAIL_CHARS)}…`;
+}
+
+/** The punctuation a cut sheds before its ellipsis (the deck's); a run's tail sheds the middle dot too. */
+const CUT_TAIL_CHARS = ',;:.—-';
+const RUN_TAIL_CHARS = `${CUT_TAIL_CHARS}·`;
+
+/**
+ * A text without its trailing whitespace and `chars`: one pass from the end
+ * (a trailing-class regex such as `[\s,;:.—-]+$` backtracks once per
+ * character on a long run of tabs or spaces, which CodeQL flags as polynomial
+ * on library input; the scan is linear).
+ */
+function trimTrailing(text: string, chars: string): string {
+  let end = text.length;
+  while (end > 0) {
+    const c = text[end - 1];
+    if (!(/\s/.test(c) || chars.includes(c))) break;
+    end--;
+  }
+  return text.slice(0, end);
 }
 
 /**
@@ -153,7 +178,7 @@ export function mktgPrintCutPara(p: MktgPrintPara, max: number): MktgPrintPara {
   while (runs.length > 0 && runs[runs.length - 1].text.trim() === '') runs.pop();
   if (runs.length === 0) return { ...p, text: cut, runs: undefined };
   const last = runs[runs.length - 1];
-  runs[runs.length - 1] = { ...last, text: tail ? `${last.text.replace(/[\s,;:.·—-]+$/, '')}${tail}` : last.text };
+  runs[runs.length - 1] = { ...last, text: tail ? `${trimTrailing(last.text, RUN_TAIL_CHARS)}${tail}` : last.text };
   return { ...p, text: runs.map((r) => r.text).join(''), runs };
 }
 

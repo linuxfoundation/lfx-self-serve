@@ -13,6 +13,8 @@
 import {
   MKTG_PRINT_PAGE_BACK_TITLE_BOX,
   MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX,
+  MKTG_PRINT_PAGE_CUT_MIN_CHARS,
+  MKTG_PRINT_PAGE_CUT_SHARE,
   MKTG_PRINT_PAGE_COVER_TITLE_BOX,
   MKTG_PRINT_PAGE_FOOTER_LEFT_BOX,
   MKTG_PRINT_PAGE_FOOTER_RIGHT_BOX,
@@ -34,6 +36,7 @@ import type {
   MktgPrintPage,
   MktgPrintPageBox,
   MktgPrintPageEl,
+  MktgPrintPageElView,
   MktgPrintPageHead,
   MktgPrintPageLine,
   MktgPrintPageLook,
@@ -41,6 +44,8 @@ import type {
   MktgPrintPageShapeEl,
   MktgPrintPara,
   MktgPrintRich,
+  MktgPrintRichView,
+  MktgPrintStackBlock,
 } from '../interfaces/mktg-print-page.interface';
 import type { MktgPrintBrand } from '../interfaces/mktg-print.interface';
 import { MKTG_PRINT_BODY_INK_MIN_CONTRAST, MKTG_PRINT_INK_ON_DARK, MKTG_PRINT_INK_ON_LIGHT } from '../constants/mktg-print.constants';
@@ -58,6 +63,32 @@ export function mktgPagePt(n: number): string {
 /** The CSS inset styles of a box on the 720 × 405 pt canvas, in deck points through mktgPagePt. */
 export function mktgPageBoxStyle(box: MktgPrintPageBox): Record<string, string> {
   return { left: mktgPagePt(box.x), top: mktgPagePt(box.y), width: mktgPagePt(box.w), height: mktgPagePt(box.h) };
+}
+
+/** A paragraph's inline CSS: its size and space above in page units, its weight, colour and typeface when set. */
+export function mktgPrintParaStyle(p: MktgPrintPara): Record<string, string> {
+  const style: Record<string, string> = { 'font-size': mktgPagePt(p.size) };
+  if (p.above) style['margin-top'] = mktgPagePt(p.above);
+  if (p.weight) style['font-weight'] = String(p.weight);
+  if (p.color) style['color'] = p.color;
+  if (p.font) style['font-family'] = p.font;
+  return style;
+}
+
+/** A text block as the page shell renders it: each paragraph with its CSS, built once per page, never per change detection. */
+export function mktgPrintRichView(rich: MktgPrintRich): MktgPrintRichView {
+  return { rich, paras: rich.paras.map((para) => ({ para, style: mktgPrintParaStyle(para) })) };
+}
+
+/** A page element as the page shell renders it: its box's CSS, a shape's fill and outline (an inset shadow, so the box keeps its size), and its text's view. */
+export function mktgPrintElView(el: MktgPrintPageEl): MktgPrintPageElView {
+  const style = mktgPageBoxStyle(el.box);
+  if (el.t !== 'shape') return { el, style, text: null };
+  if (el.fill) style['background-color'] = el.fill;
+  // A solid outline as an inset shadow (no box growth, no corner gap); a dashed one as a border, which a shadow cannot draw.
+  if (el.line?.dash) style['border'] = `${mktgPagePt(el.line.weight)} dashed ${el.line.color}`;
+  else if (el.line) style['box-shadow'] = `inset 0 0 0 ${mktgPagePt(el.line.weight)} ${el.line.color}`;
+  return { el, style, text: el.text ? mktgPrintRichView(el.text) : null };
 }
 
 /** A `#RRGGBB` colour. */
@@ -80,24 +111,32 @@ export function mktgPrintMixHex(a: string, b: string, share: number): string {
   return `#${channel(1)}${channel(3)}${channel(5)}`.toUpperCase();
 }
 
+/** The ink on the brand's dark: white when it reads there (AA), else the app's darkest gray; a dark that is no `#RRGGBB` keeps the brand's own. */
+function mktgPrintOnDarkInk(brand: MktgPrintBrand, hex: boolean): string {
+  if (!hex) return brand.onDark;
+  const contrast = brandKitContrastRatio(brandKitLuminance(brand.dark), brandKitLuminance(MKTG_PRINT_INK_ON_DARK));
+  if (contrast >= MKTG_PRINT_BODY_INK_MIN_CONTRAST) return MKTG_PRINT_INK_ON_DARK;
+  return MKTG_PRINT_INK_ON_LIGHT;
+}
+
 /**
  * The look a print's brand gives its pages, as the deck's look.ts computes it
  * from the kit (7839d985): the dark and the accent; the tint 6% of the dark in
  * white; the ink on the dark white when it reaches AA there, else the app's
  * darkest gray; the muted ink 30% white in the dark (the book's 70% opacity);
- * the rule 16% of the dark in white (the book's black/10); the typeface. A
- * dark that is not `#RRGGBB` keeps the brand's own tint and on-dark ink and
- * takes the app's grays for the muted ink and the rule.
+ * the rule 16% of the dark in white (the book's black/10); the typeface. The
+ * body ink is the brand's (`ink`: the dark where it reads on white, else the
+ * app's darkest gray), so a kit whose dark is white keeps its text legible
+ * while its covers and panels keep the dark. A dark that is not `#RRGGBB`
+ * keeps the brand's own tint and on-dark ink and takes the app's grays for
+ * the muted ink and the rule.
  */
 export function mktgPrintPageLook(brand: MktgPrintBrand): MktgPrintPageLook {
   const hex = HEX_RGB.test(brand.dark);
-  const onDark = hex
-    ? brandKitContrastRatio(brandKitLuminance(brand.dark), brandKitLuminance(MKTG_PRINT_INK_ON_DARK)) >= MKTG_PRINT_BODY_INK_MIN_CONTRAST
-      ? MKTG_PRINT_INK_ON_DARK
-      : MKTG_PRINT_INK_ON_LIGHT
-    : brand.onDark;
+  const onDark = mktgPrintOnDarkInk(brand, hex);
   return {
     dark: brand.dark,
+    ink: brand.ink,
     accent: brand.accent,
     tint: hex ? mktgPrintMixHex(MKTG_PRINT_INK_ON_DARK, brand.dark, 0.06) : brand.tint,
     muted: hex ? mktgPrintMixHex(brand.dark, MKTG_PRINT_INK_ON_DARK, 0.3) : MKTG_PRINT_PAGE_MUTED_INK,
@@ -116,8 +155,9 @@ export function mktgPrintEyebrowPara(look: MktgPrintPageLook, text: string, opts
   return { text, size: MKTG_PRINT_PAGE_SIZE.eyebrow, caps: true, color: look.muted, weight: 600, ...opts };
 }
 
+/** A block of text in the look's body ink and typeface (its colour, alignment and anchor overridable). */
 export function mktgPrintRich(look: MktgPrintPageLook, paras: MktgPrintPara[], opts: Partial<Omit<MktgPrintRich, 'paras'>> = {}): MktgPrintRich {
-  return { paras: paras.filter((p) => p.text.trim() !== ''), color: look.dark, font: look.font, ...opts };
+  return { paras: paras.filter((p) => p.text.trim() !== ''), color: look.ink, font: look.font, ...opts };
 }
 
 /** A text box (or a shape holding text) with its text fitted to the box: set smaller, then cut. */
@@ -163,15 +203,6 @@ export function mktgPrintBulletParas(items: string[], size: number = MKTG_PRINT_
   return items.filter((t) => t.trim() !== '').map((t, i) => mktgPrintPara(t, size, { bullet: true, above: i === 0 ? firstAbove : size * 0.45 }));
 }
 
-/** A block stacked down a column (mktgPrintStack). */
-export interface MktgPrintStackBlock {
-  rich: MktgPrintRich;
-  gap?: number;
-  fill?: string | null;
-  line?: MktgPrintPageLine | null;
-  shape?: MktgPrintPageShape;
-}
-
 /**
  * Text blocks stacked down a column, each in a box as tall as it needs, the
  * gaps kept: all set smaller together until the stack fits the height, then
@@ -199,7 +230,7 @@ export function mktgPrintStack(blocks: MktgPrintStackBlock[], x: number, y: numb
       let pi = -1;
       scaled.forEach((r, i) =>
         r.paras.forEach((p, j) => {
-          if (p.runs || p.text.length < 12) return;
+          if (p.runs || p.text.length < MKTG_PRINT_PAGE_CUT_MIN_CHARS) return;
           if (bi === -1 || p.text.length > scaled[bi].paras[pi].text.length) {
             bi = i;
             pi = j;
@@ -208,7 +239,7 @@ export function mktgPrintStack(blocks: MktgPrintStackBlock[], x: number, y: numb
       );
       if (bi === -1) break;
       const p = scaled[bi].paras[pi];
-      const cut = mktgPrintCutText(p.text, Math.floor(p.text.length * 0.85));
+      const cut = mktgPrintCutText(p.text, Math.floor(p.text.length * MKTG_PRINT_PAGE_CUT_SHARE));
       if (cut === p.text) break;
       scaled = scaled.map((r, i) => (i === bi ? { ...r, paras: r.paras.map((q, j) => (j === pi ? { ...q, text: cut } : q)) } : r));
     }
@@ -265,14 +296,38 @@ export function mktgPrintHeadEls(look: MktgPrintPageLook, head: MktgPrintPageHea
   ];
 }
 
-/** The title as set in the content layout's title band, fitted to it. */
+/** The title as set in the content layout's title band, fitted to it, in the body ink. */
 export function mktgPrintTitleRich(
   look: MktgPrintPageLook,
   title: string,
   size: number = MKTG_PRINT_PAGE_SIZE.title,
   box: MktgPrintPageBox = MKTG_PRINT_PAGE_TITLE_BOX
 ): MktgPrintRich {
-  return mktgPrintFitOrCut({ paras: [mktgPrintPara(title, size, { weight: 600 })], color: look.dark, font: look.font, anchor: 'BOTTOM' }, box.w, box.h).rich;
+  return mktgPrintFitOrCut({ paras: [mktgPrintPara(title, size, { weight: 600 })], color: look.ink, font: look.font, anchor: 'BOTTOM' }, box.w, box.h).rich;
+}
+
+/** The title as set in the cover layout's placeholder: large, on the dark ground in the on-dark ink, fitted to the box. */
+export function mktgPrintCoverTitleRich(look: MktgPrintPageLook, title: string, size: number = MKTG_PRINT_PAGE_SIZE.coverTitle): MktgPrintRich {
+  return mktgPrintFitOrCut(
+    { paras: [mktgPrintPara(title, size, { weight: 600 })], color: look.onDark, font: look.font, anchor: 'BOTTOM' },
+    MKTG_PRINT_PAGE_COVER_TITLE_BOX.w,
+    MKTG_PRINT_PAGE_COVER_TITLE_BOX.h
+  ).rich;
+}
+
+/** The back cover's title: a brand line in capitals, centred on the dark ground in the on-dark ink, fitted to its box. */
+export function mktgPrintBackTitleRich(look: MktgPrintPageLook, title: string): MktgPrintRich {
+  return mktgPrintFitOrCut(
+    {
+      paras: [mktgPrintPara(title, MKTG_PRINT_PAGE_SIZE.title, { caps: true, weight: 600 })],
+      color: look.onDark,
+      font: look.font,
+      align: 'CENTER',
+      anchor: 'MIDDLE',
+    },
+    MKTG_PRINT_PAGE_BACK_TITLE_BOX.w,
+    MKTG_PRINT_PAGE_BACK_TITLE_BOX.h
+  ).rich;
 }
 
 /** A content page: the running head as two eyebrow lines, the title in the band, the body elements. The footer comes from mktgPrintWithFooter. */
@@ -319,11 +374,7 @@ export function mktgPrintCoverPage(
   els: MktgPrintPageEl[],
   titleSize: number = MKTG_PRINT_PAGE_SIZE.coverTitle
 ): MktgPrintPage {
-  const titleRich = mktgPrintFitOrCut(
-    { paras: [mktgPrintPara(title, titleSize, { weight: 600 })], color: look.onDark, font: look.font, anchor: 'BOTTOM' },
-    MKTG_PRINT_PAGE_COVER_TITLE_BOX.w,
-    MKTG_PRINT_PAGE_COVER_TITLE_BOX.h
-  ).rich;
+  const titleRich = mktgPrintCoverTitleRich(look, title, titleSize);
   const subtitleRich = mktgPrintFitOrCut(
     { paras: [mktgPrintPara(subtitle, MKTG_PRINT_PAGE_SIZE.coverSubtitle)], color: look.onDark, font: look.font },
     MKTG_PRINT_PAGE_COVER_SUBTITLE_BOX.w,
@@ -334,18 +385,7 @@ export function mktgPrintCoverPage(
 
 /** A back cover: the title (a brand line) in capitals, centred, on the dark ground; `els` its own lines. */
 export function mktgPrintBackPage(look: MktgPrintPageLook, title: string, els: MktgPrintPageEl[]): MktgPrintPage {
-  const titleRich = mktgPrintFitOrCut(
-    {
-      paras: [mktgPrintPara(title, MKTG_PRINT_PAGE_SIZE.title, { caps: true, weight: 600 })],
-      color: look.onDark,
-      font: look.font,
-      align: 'CENTER',
-      anchor: 'MIDDLE',
-    },
-    MKTG_PRINT_PAGE_BACK_TITLE_BOX.w,
-    MKTG_PRINT_PAGE_BACK_TITLE_BOX.h
-  ).rich;
-  return { layout: 'back', title, titleRich, els };
+  return { layout: 'back', title, titleRich: mktgPrintBackTitleRich(look, title), els };
 }
 
 /** "Title", "Title (2)", … : the title of the i-th page a list continues on. */

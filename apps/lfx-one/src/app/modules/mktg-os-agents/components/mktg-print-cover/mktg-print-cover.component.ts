@@ -11,7 +11,7 @@ import {
   MKTG_PRINT_PAGE_COVER_TOP_RIGHT_BOX,
   MKTG_PRINT_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
-import { MktgPrintLogo, MktgPrintPage, MktgPrintPageEl, MktgPrintPageLook, MktgPrintRichAlign } from '@lfx-one/shared/interfaces';
+import { MktgPrintLogo, MktgPrintPage, MktgPrintPageBox, MktgPrintPageEl, MktgPrintPageLook, MktgPrintRichAlign } from '@lfx-one/shared/interfaces';
 import { mktgPrintCoverPage, mktgPrintPara, mktgPrintRich, mktgPrintTextEl } from '@lfx-one/shared/utils';
 import { MktgPrintPageComponent } from '../mktg-print-page/mktg-print-page.component';
 
@@ -22,9 +22,11 @@ import { MktgPrintPageComponent } from '../mktg-print-page/mktg-print-page.compo
  * `eyebrow` top-left in capitals ("<Project> · A Linux Foundation project"),
  * `topRight` (the kit's version, a month), `footerLeft` (the footer line),
  * `footerRight` (the kit's "host · version · month", a versions line) — and
- * the project lockup above the title. A document's extra cover elements (the
- * framework's accent bar, rule and contents line) come through `els`. Units
- * are deck points (lfx-mktg-print-page).
+ * a project lockup when the document sets one (`logo`, in `logoBox`: the
+ * family cover's frame by default; the kit's cover draws none, as the deck's
+ * coverSlide has none). A document's extra cover elements (the framework's
+ * accent bar, rule and contents line) come through `els`. Units are deck
+ * points (lfx-mktg-print-page).
  */
 @Component({
   selector: 'lfx-mktg-print-cover',
@@ -38,8 +40,10 @@ export class MktgPrintCoverComponent {
   public readonly subtitle = input('');
   /** The title's size in deck points: the kit's cover sets 44, the framework's 36. */
   public readonly titleSize = input<number>(MKTG_PRINT_PAGE_SIZE.coverTitle);
-  /** The lockup drawn on the dark ground (the brand's logoOnDark); null draws none. */
+  /** The lockup drawn on the dark ground (the brand's logoOnDark); null (the default) draws none. */
   public readonly logo = input<MktgPrintLogo | null>(null);
+  /** The lockup's box in deck points; the family cover's frame (MKTG_PRINT_PAGE_COVER_LOGO_BOX) by default. */
+  public readonly logoBox = input<MktgPrintPageBox>(MKTG_PRINT_PAGE_COVER_LOGO_BOX);
   public readonly eyebrow = input('');
   public readonly topRight = input('');
   public readonly footerLeft = input('');
@@ -62,7 +66,7 @@ export class MktgPrintCoverComponent {
         ...line(this.topRight(), MKTG_PRINT_PAGE_COVER_TOP_RIGHT_BOX, false, 'END'),
         ...line(this.footerLeft(), MKTG_PRINT_PAGE_COVER_FOOTER_LEFT_BOX),
         ...line(this.footerRight(), MKTG_PRINT_PAGE_COVER_FOOTER_RIGHT_BOX, false, 'END'),
-        ...(logo ? [{ t: 'image' as const, box: MKTG_PRINT_PAGE_COVER_LOGO_BOX, src: logo.src, alt: logo.alt, filter: logo.filter }] : []),
+        ...(logo ? [{ t: 'image' as const, box: this.logoBox(), src: logo.src, alt: logo.alt, filter: logo.filter }] : []),
         ...this.els(),
       ];
       return mktgPrintCoverPage(look, this.title(), this.subtitle(), els, this.titleSize());

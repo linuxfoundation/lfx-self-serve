@@ -2,12 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/constants';
+import {
+  MKTG_FAMILY_EXPORT_API_PATH,
+  MKTG_FAMILY_PRINT_BODY_CLASS,
+  MKTG_PRINT_DECK_PAGE_NAME,
+  MKTG_PRINT_LANDSCAPE_PAGE_SETUP,
+  MKTG_PRINT_PAGE_MARGINS_CLASS,
+} from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import {
   expectMktgPrintFrame,
-  expectMktgPrintLandscapeSetup,
   finishMktgPrintFrame,
   layoutMktgPrintFrame,
   mktgPrintComputedPx,
@@ -329,10 +334,14 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   // Visible sheets, not heads: the framework's cover sheet is hidden with its cover.
   await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(3);
   await expect(printDocument.locator('lfx-mktg-print-sheet').locator('visible=true')).toHaveCount(2);
-  // The page setup is the landscape deck pages' in both engines (margin 0, no margins mode), so the portrait framework
-  // and kit printed alongside keep their room in the document in WebKit too (the interim, until their landscape pages
-  // land; their head and foot rows then repeat per page in Chromium only).
-  await expectMktgPrintLandscapeSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'));
+  // The page setup is the deck pages' in both engines: the frame's unnamed rule and the deck's named page, both the
+  // landscape setup (margin 0), and no margins mode, so the portrait framework printed alongside keeps its room in the
+  // document in WebKit too (the interim, until its landscape pages land).
+  expect(await printFrame.locator('head style').last().textContent()).toBe(
+    `@page { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }\n@page ${MKTG_PRINT_DECK_PAGE_NAME} { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }`
+  );
+  await expect(printFrame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`)).toHaveCount(0);
+  await expect(printDocument.locator('lfx-mktg-framework-print .lfx-framework-print')).toHaveCSS('padding-left', '57.6px');
   // The last rows' bottom room, to a tenth (mktgPrintComputedPx): the kit's calc(10pt + 0.55in) = 66.13px; a sheet's
   // 0.55in = 52.8px.
   expect(

@@ -121,9 +121,13 @@ export const MKTG_PRINT_PAGE_SETUPS = {
  * print-only wrappers for it the way it tests for the kit's portrait class:
  * a document whose roots hold such a page prints on the landscape setup
  * (MKTG_PRINT_LANDSCAPE_PAGE_SETUP, in mktg-print-page.constants.ts) in a
- * landscape frame, whatever its body class, so a new document made of these
- * pages (the family PDF) needs no service change. The legacy `brand-kit`
- * setup and its test are untouched.
+ * landscape frame. The pages hold under any print body class because each
+ * frame names its own page (MKTG_PRINT_DECK_PAGE_NAME), which beats the
+ * `page: mktg-framework` or `page: brand-kit` the body sets; the body's
+ * styles must still let the frames show (styles.scss shows `.lfx-print-page`
+ * under the kit's body, whose rule hides everything but the legacy book), so
+ * a new document made of these pages checks its body's print rules, not the
+ * service. The legacy `brand-kit` setup and its test are untouched.
  */
 export const MKTG_PRINT_LANDSCAPE_CLASS = 'lfx-mktg-print-landscape';
 

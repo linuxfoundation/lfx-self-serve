@@ -17,7 +17,7 @@ const PRINT_FRAME_TIMEOUT_MS = 10_000;
 /** The production frame's viewport at CSS pixels (Letter's width, a hair under its height): the initial containing block the print geometry is measured against. */
 export const PRINT_FRAME_LETTER = { width: Math.round(MKTG_PRINT_FRAME_PAPER_IN.width * 96), height: Math.round(MKTG_PRINT_FRAME_PAPER_IN.height * 96) };
 
-/** The frame's viewport for the landscape deck pages (Letter landscape's width, a hair under its height), which the service picks when a root carries a landscape page. */
+/** The landscape deck-page prints' frame at CSS pixels (Letter landscape's width, a hair under its height): the brand kit's pages. */
 export const PRINT_FRAME_LANDSCAPE = {
   width: Math.round(MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN.width * 96),
   height: Math.round(MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN.height * 96),
@@ -85,16 +85,15 @@ export async function expectMktgPrintFrame(page: Page, bodyClass: string, docume
 
 /**
  * Lay the printed frame out for measurement: production already gives it a
- * paper-sized viewport (asserted here against `size`, Letter portrait unless the
- * spec says landscape, so the geometry below is production's), but keeps it
- * transparent. Make the frame element visible, on top, and put the page under
- * print media (the frame inherits the emulation). The document inside is
- * untouched: what is measured is the production layout.
+ * paper-sized viewport (asserted here, so the geometry below is production's),
+ * but keeps it transparent. Make the frame element visible, on top, and put the
+ * page under print media (the frame inherits the emulation). The document
+ * inside is untouched: what is measured is the production layout.
  */
-export async function layoutMktgPrintFrame(page: Page, size: { width: number; height: number } = PRINT_FRAME_LETTER): Promise<FrameLocator> {
+export async function layoutMktgPrintFrame(page: Page, paper: { width: number; height: number } = PRINT_FRAME_LETTER): Promise<FrameLocator> {
   const frame = page.getByTestId('lfx-print-frame');
   const box = await frame.boundingBox();
-  expect(box && { width: Math.round(box.width), height: Math.round(box.height) }).toEqual(size);
+  expect(box && { width: Math.round(box.width), height: Math.round(box.height) }).toEqual(paper);
   await frame.evaluate((element) => {
     element.style.opacity = '1';
     element.style.zIndex = '2147483647';
@@ -120,16 +119,17 @@ export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locato
 }
 
 /**
- * The landscape page setup the frame wrote when a root carries a deck page, the same in both engines: the paper
- * landscape with no margin (the pages are fixed frames with their own room), the margins mode never taken, so a
- * portrait root printed alongside keeps its room in the document.
+ * The landscape page setup the frame wrote for a deck-page print, the same in both engines (fixed frames, no table
+ * head or foot to repeat, so WebKit takes the zero-margin setup too): `size: 11in 8.5in; margin: 0;` and no page-margins
+ * body class.
  */
-export async function expectMktgPrintLandscapeSetup(frame: FrameLocator, portraitRoot: Locator): Promise<void> {
+export async function expectMktgPrintLandscapePageSetup(frame: FrameLocator): Promise<void> {
   expect(await frame.locator('head style').last().textContent()).toBe(`@page { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }`);
+  expect(MKTG_PRINT_LANDSCAPE_PAGE_SETUP).toBe('size: 11in 8.5in; margin: 0;');
   await expect(frame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`)).toHaveCount(0);
-  await expect(portraitRoot).toHaveCSS('padding-left', '57.6px');
 }
 
+/** A viewport-height cover in the laid-out frame fills the page: the 1px frame left it at its content's height. */
 /**
  * A table box's computed length in px, to compare to a tenth: Chromium reports a table row's laid-out height snapped to
  * 1/64 px (52.7969px for 0.55in) and WebKit serialises 10pt with six decimals (13.333333px), so an exact string fails.

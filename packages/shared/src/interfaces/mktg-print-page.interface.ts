@@ -22,7 +22,7 @@ export interface MktgPrintPara {
   weight?: number;
   italic?: boolean;
   strike?: boolean;
-  /** Set in capitals (the text is upper-cased when written). */
+  /** Drawn in capitals (CSS text-transform; the text is kept as given). */
   caps?: boolean;
   color?: string;
   /** Space above the paragraph, pt. */
@@ -55,10 +55,11 @@ export interface MktgPrintRich {
 /** The shapes the page plan draws. */
 export type MktgPrintPageShape = 'TEXT_BOX' | 'RECTANGLE' | 'ROUND_RECTANGLE' | 'ELLIPSE';
 
-/** A shape's outline: its colour and weight (pt). */
+/** A shape's outline: its colour and weight (pt); `dash` draws it dashed (the clear-space frame, a partner logo's slot). */
 export interface MktgPrintPageLine {
   color: string;
   weight: number;
+  dash?: boolean;
 }
 
 /** A shape (a text box, a filled rectangle, a pill) in its box; `text` is fitted to the box before it is placed. */
@@ -80,6 +81,8 @@ export interface MktgPrintPageImageEl {
   alt: string;
   /** CSS filter on the image ('' to draw it as it is). */
   filter?: string;
+  /** A CSS transform on the image, for a distortion shown on purpose (the watchouts' stretched and rotated lockup). */
+  transform?: string;
 }
 
 /**
@@ -91,13 +94,27 @@ export interface MktgPrintPageSlotEl {
   t: 'slot';
   box: MktgPrintPageBox;
   slot: string;
+  /** What the document's template for the slot receives as its context (one template, many boxes: an icon's index and ink). */
+  context?: Record<string, string | number | boolean>;
 }
 
 export type MktgPrintPageEl = MktgPrintPageShapeEl | MktgPrintPageImageEl | MktgPrintPageSlotEl;
 
+/** A block stacked down a column (mktgPrintStack): its text, the gap above it, and the box's fill, outline and shape. */
+export interface MktgPrintStackBlock {
+  rich: MktgPrintRich;
+  gap?: number;
+  fill?: string | null;
+  line?: MktgPrintPageLine | null;
+  shape?: MktgPrintPageShape;
+}
+
 /** The inks and the typeface a document's pages are set in. */
 export interface MktgPrintPageLook {
+  /** The brand's dark: the covers' ground and the panels. */
   dark: string;
+  /** The body ink on white: the dark when it reads there, else the app's darkest gray (mktgPrintBrand's `ink`). */
+  ink: string;
   accent: string;
   tint: string;
   /** The eyebrow and footer ink, and the page's rules. */
@@ -135,4 +152,23 @@ export interface MktgPrintPage {
   head?: MktgPrintPageHead;
   footer?: MktgPrintPageFooter;
   els: MktgPrintPageEl[];
+}
+
+/** A paragraph as the page shell renders it: the paragraph and its inline CSS (size, space above, weight, colour, typeface, in page units). */
+export interface MktgPrintParaView {
+  para: MktgPrintPara;
+  style: Record<string, string>;
+}
+
+/** A text block as the page shell renders it: the block and its paragraphs' views, built once per change of the page. */
+export interface MktgPrintRichView {
+  rich: MktgPrintRich;
+  paras: MktgPrintParaView[];
+}
+
+/** A page element as the page shell renders it: the element, its box's CSS (and a shape's fill and outline), and its text's view. */
+export interface MktgPrintPageElView {
+  el: MktgPrintPageEl;
+  style: Record<string, string>;
+  text: MktgPrintRichView | null;
 }

@@ -10,13 +10,10 @@ import {
   BRAND_KIT_ICON_STRIP_INK,
   BRAND_KIT_ICON_STRIP_SIZE_PX,
   BRAND_KIT_ICON_TILE_COLUMNS,
-  BRAND_KIT_ICON_STROKE_LINECAP,
-  BRAND_KIT_ICON_STROKE_LINEJOIN,
-  BRAND_KIT_ICON_STROKE_WIDTH,
   BRAND_KIT_ICON_TILE_SIZE_PX,
-  BRAND_KIT_ICON_VIEWBOX_SIZE,
 } from '@lfx-one/shared/constants';
 import { BrandKitIconColours, BrandKitIconSample, BrandKitIconStripItem } from '@lfx-one/shared/interfaces';
+import { MktgBrandKitIconComponent } from '../mktg-brand-kit-icon/mktg-brand-kit-icon.component';
 
 /**
  * The Brand Kit's iconography samples as the design board draws them: the
@@ -26,15 +23,17 @@ import { BrandKitIconColours, BrandKitIconSample, BrandKitIconStripItem } from '
  * tab and the print sheet (`print`: the board's proportions on the sheet's
  * own Iconography page, drawn with table and table-cell boxes only, since
  * Chromium fragments grid and flex contents away from their boxes inside a
- * paginated table), so the two never drift: the shapes come from the shared
- * constant, drawn inline as SVG primitives (no markup string, no
- * `innerHTML`), the labels are text beside the icons, never inside them.
+ * paginated table), so the two never drift: each icon is the one shared
+ * drawing (`lfx-mktg-brand-kit-icon`, which the landscape PDF's Iconography
+ * page places box by box too), the shapes from the shared constant, inline
+ * SVG primitives (no markup string, no `innerHTML`), the labels text beside
+ * the icons, never inside them.
  * Print-safe: solid colours only, no filter, gradient or shadow. The host is
  * a block, so the sheet's `break-inside: avoid` holds it whole.
  */
 @Component({
   selector: 'lfx-mktg-brand-kit-icon-samples',
-  imports: [NgTemplateOutlet],
+  imports: [NgTemplateOutlet, MktgBrandKitIconComponent],
   templateUrl: './mktg-brand-kit-icon-samples.component.html',
   // `@container`: the web strip queries the host's width to choose one row of eight or 4 + 4.
   host: { class: '@container block', 'data-testid': 'brand-kit-icon-samples' },
@@ -48,10 +47,6 @@ export class MktgBrandKitIconSamplesComponent {
 
   // === The shared drawing frame ===
   protected readonly icons = BRAND_KIT_ICON_SAMPLES;
-  protected readonly viewBox = `0 0 ${BRAND_KIT_ICON_VIEWBOX_SIZE} ${BRAND_KIT_ICON_VIEWBOX_SIZE}`;
-  protected readonly strokeWidth = BRAND_KIT_ICON_STROKE_WIDTH;
-  protected readonly linecap = BRAND_KIT_ICON_STROKE_LINECAP;
-  protected readonly linejoin = BRAND_KIT_ICON_STROKE_LINEJOIN;
   protected readonly tileIconSize = BRAND_KIT_ICON_TILE_SIZE_PX;
   /** The board's 4 × 2 tiles as rows, for the print sheet's table. */
   protected readonly tileRows: readonly (readonly BrandKitIconSample[])[] = Array.from(
