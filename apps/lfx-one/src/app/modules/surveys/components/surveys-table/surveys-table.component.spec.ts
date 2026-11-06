@@ -228,11 +228,24 @@ describe('SurveysTableComponent — row-scoped draft edit access', () => {
       expect(link?.textContent?.trim()).toBe('Synthetic primary');
     });
 
-    it('renders the group as plain text, without a link, when the survey has no committee', () => {
+    it('renders a dash as plain text, without a link or chip, when the survey has no committee', () => {
       render([survey('s1', [])]);
 
       expect(groupLink('s1')).toBeNull();
-      expect(fixture.nativeElement.textContent).toContain('Unknown');
+      const text = fixture.nativeElement.querySelector('[data-testid="surveys-group-text-s1"]') as HTMLElement | null;
+      expect(text?.textContent?.trim()).toBe('-');
+      expect(fixture.nativeElement.textContent).not.toContain('Unknown');
+    });
+
+    it('renders a named group without a uid as plain text, without a link or chip', () => {
+      const noUid = survey('s1', ['primary']);
+      noUid.committees[0].committee_uid = '';
+      render([noUid]);
+
+      expect(groupLink('s1')).toBeNull();
+      const text = fixture.nativeElement.querySelector('[data-testid="surveys-group-text-s1"]') as HTMLElement | null;
+      expect(text?.textContent?.trim()).toBe('Synthetic primary');
+      expect(text?.className).not.toContain('border');
     });
   });
 

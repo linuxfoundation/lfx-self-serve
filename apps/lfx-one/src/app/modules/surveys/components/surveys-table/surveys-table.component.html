@@ -130,10 +130,12 @@
                   </a>
                 } @else {
                   <span
-                    class="inline-block max-w-full truncate bg-white border border-gray-300 text-gray-700 text-xs px-2 py-0.5 rounded"
-                    [pTooltip]="survey.groupName"
-                    tooltipPosition="top">
-                    {{ survey.groupName }}
+                    class="inline-block max-w-full truncate text-sm text-gray-700"
+                    [pTooltip]="survey.committees?.[0]?.committee_name || ''"
+                    [tooltipDisabled]="!survey.committees?.[0]?.committee_name"
+                    tooltipPosition="top"
+                    [attr.data-testid]="'surveys-group-text-' + rowId">
+                    {{ survey.committees?.[0]?.committee_name || '-' }}
                   </span>
                 }
               </td>
