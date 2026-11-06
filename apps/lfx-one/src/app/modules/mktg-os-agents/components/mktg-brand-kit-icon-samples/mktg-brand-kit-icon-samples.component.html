@@ -79,12 +79,13 @@
     }
   </ul>
   <!--
-    The strip: the eight icons on the kit's dark, white, the third in the highlight. The board's fixed 26 px gap is
-    for its 624 px card; in the half-width card the eight spread evenly with a 12 px minimum, so they stay one row
-    wherever the card is wider than ≈ 360 px and wrap only in a narrow one, inside the strip.
+    The strip: the eight icons on the kit's dark, white, the third in the highlight. The board's 30 px icons and fixed
+    26 px gap are for its 624 px card; in the half-width card (a 334 px strip at 1440) the eight are 28 px and spread
+    evenly with an 8 px minimum gap inside 12 px of padding, so they stay one row wherever the strip is at least
+    304 px wide and wrap only in a narrower one, inside the strip.
   -->
   <div
-    class="mt-[14px] flex min-h-[110px] flex-wrap items-center justify-between gap-x-3 gap-y-3 rounded-[10px] px-4 py-4 [print-color-adjust:exact]"
+    class="mt-[14px] flex min-h-[110px] flex-wrap items-center justify-between gap-x-2 gap-y-3 rounded-[10px] px-3 py-4 [print-color-adjust:exact]"
     [style.background-color]="colours().stripGround"
     role="img"
     [attr.aria-label]="stripLabel"

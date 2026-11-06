@@ -75,11 +75,15 @@ describe('MktgBrandKitIconSamplesComponent', () => {
     const strip = root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]');
     expect(strip?.style.backgroundColor).toBe(cssColour(COLOURS.stripGround));
     expect(strip?.getAttribute('role')).toBe('img');
-    // In the half-width card the eight spread evenly with a 12 px minimum gap, one row wherever the card allows, wrapping inside the strip otherwise.
-    for (const cls of ['flex', 'flex-wrap', 'justify-between', 'gap-x-3', 'px-4']) {
+    // In the half-width card the eight 28 px icons spread evenly with an 8 px minimum gap in 12 px of padding (one row from
+    // a 304 px strip up), wrapping inside the strip in a narrower one.
+    for (const cls of ['flex', 'flex-wrap', 'justify-between', 'gap-x-2', 'px-3']) {
       expect(strip?.classList.contains(cls)).toBe(true);
     }
-    expect(strip?.classList.contains('gap-x-[26px]')).toBe(false);
+    for (const cls of ['gap-x-3', 'gap-x-[26px]', 'px-4']) {
+      expect(strip?.classList.contains(cls)).toBe(false);
+    }
+    expect(BRAND_KIT_ICON_STRIP_SIZE_PX).toBe(28);
     expect(strip?.getAttribute('aria-label')).toContain('Global in the highlight colour');
     const icons = Array.from(strip?.querySelectorAll<HTMLElement>('[data-testid^="brand-kit-icon-strip-"]') ?? []);
     expect(icons.map((icon) => icon.getAttribute('data-testid'))).toEqual(BRAND_KIT_ICON_SAMPLES.map((icon) => `brand-kit-icon-strip-${icon.id}`));

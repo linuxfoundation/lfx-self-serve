@@ -23,8 +23,12 @@ export const BRAND_KIT_ICON_STROKE_LINEJOIN = 'round';
 
 /** The icon's side in a labelled tile, in CSS pixels (the board's). */
 export const BRAND_KIT_ICON_TILE_SIZE_PX = 32;
-/** The icon's side in the dark strip, in CSS pixels (the board's). */
-export const BRAND_KIT_ICON_STRIP_SIZE_PX = 30;
+/**
+ * The icon's side in the web card's dark strip, in CSS pixels: 28, from the board's 30, so the eight fit one row in
+ * the half-width Iconography card (a 334 px strip at 1440: 8 × 28 + 7 × 8 + 2 × 12 = 304 px). The export's PNGs
+ * take `MKTG_SLIDES_EXPORT_ICON_SIDE_PX`, not this.
+ */
+export const BRAND_KIT_ICON_STRIP_SIZE_PX = 28;
 /** The icons' side in the print sheet's compact rows (tiles and strip alike), where the samples sit beside the rules. */
 export const BRAND_KIT_ICON_COMPACT_SIZE_PX = 18;
 
