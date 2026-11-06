@@ -117,11 +117,12 @@ You can also pick the languages a Demand Gen campaign serves in, as on the other
 
 Ad extensions add links and details to your ads. Which ones a campaign takes depends on its type:
 
-| Campaign type            | Sitelinks | Callouts, structured snippets, call extensions, promotions and prices |
-| ------------------------ | --------- | --------------------------------------------------------------------- |
-| Search                   | Yes       | Yes                                                                   |
-| Demand Gen               | Yes       | No                                                                    |
-| Display, Performance Max | No        | No                                                                    |
+| Campaign type   | Sitelinks | Callouts and structured snippets | Call extensions, promotions and prices |
+| --------------- | --------- | -------------------------------- | -------------------------------------- |
+| Search          | Yes       | Yes                              | Yes                                    |
+| Performance Max | Yes       | Yes                              | No                                     |
+| Demand Gen      | Yes       | No                               | No                                     |
+| Display         | No        | No                               | No                                     |
 
 **Google Sitelinks** add extra links to the ad. For each sitelink, enter the **Link text** and the **Destination URL**, and optionally two description lines, then select **+ Add sitelink**.
 
@@ -132,7 +133,9 @@ Ad extensions add links and details to your ads. Which ones a campaign takes dep
 
 When it creates the campaign, LFX One's campaign service adds the campaign's tracking parameters to each sitelink destination, as it does to the ad's own link, so you don't need to add them yourself.
 
-On a Demand Gen campaign, **Google Sitelinks** is the only ad extension section that appears. If you entered callouts, structured snippets, call extensions, promotions or prices on a Search campaign and then switch to Demand Gen, they are kept but not sent, and a notice says so. On Display and Performance Max, sitelinks are kept but not sent too, and a notice says to switch to Search or Demand Gen to keep them.
+On a Performance Max campaign, **Google Sitelinks**, **Google Callouts** and **Google Structured Snippets** appear, with the same limits as on Search, and apply to the whole campaign. Call extensions, promotions and prices you entered on a Search campaign are kept but not sent on Performance Max, and a notice says to switch back to Search to keep them.
+
+On a Demand Gen campaign, **Google Sitelinks** is the only ad extension section that appears. If you entered callouts, structured snippets, call extensions, promotions or prices on a Search campaign and then switch to Demand Gen, they are kept but not sent, and a notice says so. On Display, sitelinks are kept but not sent too, and a notice says to switch to Search, Demand Gen or Performance Max to keep them.
 
 ## Conversion actions
 
@@ -275,4 +278,4 @@ While the campaign is split, the single Display ad you entered is kept but not s
 
 If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword, Performance Max description or search theme would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
-If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Placement exclusions are sent on Display only, and kept with a notice on the other campaign types. Sitelinks are sent on Search and Demand Gen, and the other ad extensions on Search only; each is kept the same way on the other campaign types, with a notice.
+If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Placement exclusions are sent on Display only, and kept with a notice on the other campaign types. Sitelinks are sent on Search, Demand Gen and Performance Max, callouts and structured snippets on Search and Performance Max, and call extensions, promotions and prices on Search only; each is kept the same way on the other campaign types, with a notice.
