@@ -5,6 +5,7 @@ import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
@@ -37,6 +38,7 @@ import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
     ButtonComponent,
     DatePipe,
     ReactiveFormsModule,
+    RouterLink,
     InputTextComponent,
     SelectComponent,
     SurveyStatusLabelPipe,
@@ -281,6 +283,9 @@ export class SurveysTableComponent {
         displayStatus: getSurveyDisplayStatus(survey),
         editCommands: getEntityCommands('surveys', survey.uid, survey.is_foundation, 'edit') ?? ['/surveys', survey.uid, 'edit'],
         editQueryParams: this.buildEditQueryParams(survey),
+        groupName: this.getGroupName(survey),
+        groupCommands: this.buildGroupCommands(survey),
+        groupQueryParams: survey.project_slug ? { project: survey.project_slug } : null,
       }));
 
       const searchTerm = this.searchTerm()?.toLowerCase() || '';
@@ -290,7 +295,7 @@ export class SurveysTableComponent {
 
       const group = this.groupFilter();
       if (group) {
-        filtered = filtered.filter((survey) => this.getGroupName(survey) === group);
+        filtered = filtered.filter((survey) => survey.groupName === group);
       }
 
       const type = this.typeFilter();
@@ -329,6 +334,14 @@ export class SurveysTableComponent {
     const committeeUid = resolveSurveyCommitteeCandidates(survey.committees, this.committeeUid()).find((uid) => uid.trim().length > 0);
     if (committeeUid) params['committee_uid'] = committeeUid;
     return params;
+  }
+
+  // Group details link for the primary committee shown in the Group column. Derives from the survey's
+  // owning tier like the edit link; unenriched rows fall back to the flat path, which lensRedirectGuard prefixes.
+  private buildGroupCommands(survey: Survey): string[] | null {
+    const committeeUid = survey.committees?.[0]?.committee_uid?.trim();
+    if (!committeeUid) return null;
+    return getEntityCommands('groups', committeeUid, survey.is_foundation) ?? ['/groups', committeeUid];
   }
 
   private sortSurveys<T extends SurveyTableRow>(surveys: T[]): T[] {
