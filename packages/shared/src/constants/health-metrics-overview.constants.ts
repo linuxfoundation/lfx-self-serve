@@ -336,7 +336,7 @@ export const HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS = {
   newsletters: { label: 'Explore Newsletters', commands: [HEALTH_METRICS_BASE_PATH, 'engagement'], fragment: 'newsletters', queryParams: { nlMode: null } },
 } as const satisfies Record<string, HealthMetricsOverviewExploreLink>;
 
-/** The design's purple for maintainers and this year's registrations; no `lfxColors` scale carries it. */
+/** The design's purple for maintainers, the newsletter click rate and the upcoming hatch; no `lfxColors` scale carries it. */
 export const HEALTH_METRICS_OVERVIEW_PURPLE = '#AD46FF';
 
 /** Fills for dots, bars and legend swatches, applied via `[class]`. */
@@ -349,7 +349,7 @@ export const HEALTH_METRICS_OVERVIEW_FILL_CLASSES = {
   purple: 'bg-[#AD46FF]',
 } as const;
 
-/** The same tones as SVG strokes, for the donut, gauge, training arc and trend chart. */
+/** The same tones as SVG strokes, for the donut, gauge, training arc and newsletter charts; the trend has its own. */
 export const HEALTH_METRICS_OVERVIEW_STROKES = {
   high: lfxColors.emerald[500],
   medium: lfxColors.amber[400],
@@ -357,14 +357,40 @@ export const HEALTH_METRICS_OVERVIEW_STROKES = {
   track: lfxColors.gray[100],
   progress: lfxColors.blue[500],
   needle: lfxColors.gray[900],
-  gridline: lfxColors.gray[100],
-  axis: lfxColors.gray[300],
-  lastYear: lfxColors.gray[400],
-  today: lfxColors.gray[300],
   thisYear: HEALTH_METRICS_OVERVIEW_PURPLE,
 } as const;
 
-/** The progress blue at 10%: the trend chart's forecast band and the fill under the newsletter card's open rate. */
+/**
+ * The registration trend chart's colours, as the design draws them: this year and the prediction in the accent blue,
+ * last year grey, the predicted range's band with green highs and red lows, and the gap to last year green ahead and
+ * red behind. Alpha suffixes are 8-digit hex: `1F` is 12%, `24` 14%, `B8` 72%, `0F` 6%.
+ */
+export const HEALTH_METRICS_OVERVIEW_TREND_COLORS = {
+  thisYear: lfxColors.blue[500],
+  lastYear: lfxColors.gray[400],
+  predicted: lfxColors.blue[500],
+  band: `${lfxColors.blue[500]}1F`,
+  bandHigh: lfxColors.emerald[500],
+  bandLow: lfxColors.red[500],
+  ahead: `${lfxColors.emerald[500]}24`,
+  behind: `${lfxColors.red[500]}1F`,
+  goal: lfxColors.emerald[500],
+  today: lfxColors.gray[500],
+  axis: lfxColors.gray[300],
+  gridline: lfxColors.gray[100],
+  navigatorArea: `${lfxColors.blue[500]}24`,
+  navigatorDim: `${lfxColors.gray[50]}B8`,
+  navigatorSelection: `${lfxColors.blue[900]}0F`,
+} as const;
+
+/** The predicted figure's tooltip on the trend tab. */
+export const HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP =
+  "Where registrations are expected to land by the event day, projected from the current pace and how last year's registrations built up. High and low are the likely range.";
+
+/** The narrowest span, in days, the trend's navigator lets the reader zoom to. */
+export const HEALTH_METRICS_OVERVIEW_TREND_MIN_SPAN_DAYS = 7;
+
+/** The progress blue at 10%: the fill under the newsletter charts' open rate. */
 export const HEALTH_METRICS_OVERVIEW_PROGRESS_TINT = `${lfxColors.blue[500]}1A`;
 
 /** The three event statuses: the label the legend shows and a screen reader hears, and the bar fill that shows it. */
@@ -415,7 +441,7 @@ export const HEALTH_METRICS_OVERVIEW_EVENTS_PAGE_SIZE = 5;
 /** How strongly the NPS gauge's inactive segments keep their color, mixed toward white. */
 export const HEALTH_METRICS_OVERVIEW_GAUGE_TINT = 0.22;
 
-/** The registration trend's window: days before the event at the chart's left edge. */
+/** The registration trend's whole window, in days before the event, which the navigator spans; the chart shows a span inside it. */
 export const HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS = 180;
 
 /** Board attendance at or above this share draws green; above zero amber, zero red. */

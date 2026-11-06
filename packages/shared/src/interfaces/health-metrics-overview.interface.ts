@@ -600,7 +600,10 @@ export interface HealthMetricsOverviewTrendKpiView {
   key: string;
   label: string;
   value: string;
+  /** The predicted range beside the prediction, as "High:" and "Low:" lines. */
   range: { high: string; low: string } | null;
+  /** A question-mark tooltip after the label; `null` without one. */
+  tip: string | null;
 }
 
 /** An axis tick: its label and where it sits, as a percentage of the plot. */
@@ -614,7 +617,36 @@ export interface HealthMetricsOverviewTrendYTickView extends HealthMetricsOvervi
   y: string;
 }
 
-/** The registration trend dialog: its figures, axis ticks and chart paths on the 600×220 viewBox. */
+/** The chart's visible span, as day indexes from the window's first day (0, 180 days out) to the event day (180). */
+export interface HealthMetricsOverviewTrendWindow {
+  start: number;
+  end: number;
+}
+
+/** A drag on the trend's navigator: by a handle or the span itself, from which pointer x, and the span when it began. */
+export interface HealthMetricsOverviewTrendDrag {
+  kind: 'start' | 'end' | 'pan';
+  x: number;
+  /** The navigator's width in px, to turn the pointer's travel into days. */
+  width: number;
+  from: HealthMetricsOverviewTrendWindow;
+}
+
+/** The strip under the chart: the whole window's lines on their own scale, and the visible span picked out over them. */
+export interface HealthMetricsOverviewTrendNavigatorView {
+  currentAreaPath: string;
+  currentPath: string;
+  lastYearPath: string;
+  predictedPath: string;
+  /** Where the visible span starts and how wide it is, as percentages of the strip. */
+  selectionLeftPct: string;
+  selectionWidthPct: string;
+  /** The dimmed strip right of the span. */
+  dimRightPct: string;
+  ticks: HealthMetricsOverviewTrendTickView[];
+}
+
+/** The registration trend tab: its figures, axis ticks and chart paths on the 600×220 viewBox, over the visible span. */
 export interface HealthMetricsOverviewTrendView {
   /** Current, Same point last year, and Predicted (or Final for a past event). */
   kpis: HealthMetricsOverviewTrendKpiView[];
@@ -624,12 +656,26 @@ export interface HealthMetricsOverviewTrendView {
   lastYearPath: string;
   predictedPath: string;
   bandPath: string;
-  /** `null` once the event is past the chart's window or has no actuals. */
+  /** The predicted range's top edge (the highs) and bottom edge (the lows). */
+  bandHighPath: string;
+  bandLowPath: string;
+  /** Up to today, the area where this year runs ahead of last year, and where it runs behind. */
+  aheadPath: string;
+  behindPath: string;
+  /** `null` when today is outside the visible span, for a past event, or with no actuals. */
   todayX: string | null;
   /** Where the "Today" label sits, as a percentage of the plot's width. */
   todayPct: string | null;
-  /** The registration goal's dashed line; `null` without a goal. */
+  /** The registration goal's dashed line; `null` without a goal, or when it sits far above the visible lines. */
   goalY: string | null;
+  /** Where the goal's inline label sits, as a percentage of the plot's height. */
+  goalPct: string | null;
+  /** e.g. "Registration goal: 10,000". */
+  goalLabel: string | null;
+  /** The span drawn, and the best fit the chart opens on; they differ once the reader moves the window. */
+  window: HealthMetricsOverviewTrendWindow;
+  fitWindow: HealthMetricsOverviewTrendWindow;
+  navigator: HealthMetricsOverviewTrendNavigatorView;
 }
 
 /** One Overview card's read: the response once it lands, and where the read stands. */
