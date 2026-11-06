@@ -134,7 +134,7 @@ When you choose **Video ad (YouTube)**, the section shows the video ad's fields:
 - **Descriptions**: 1 to 5, up to 90 characters each.
 - **Business name**: required once you fill in any field, up to 25 characters.
 - **Call to action**: optional. Choose Sign up, Learn more, Book now, Visit site or Watch now, or leave it on None.
-- **Logo image (1:1)**: exactly one square logo of at least 128 x 128 pixels, as an https:// link or from the brief's image library.
+- **Logo image (1:1)**: exactly one square logo of at least 128 x 128 pixels, as an `https://` link or from the brief's image library.
 
 In headlines, long headlines, descriptions and the business name, Chinese, Japanese, Korean and other full-width characters count as two, and a line can't repeat another in the same list, even in different capitals.
 
