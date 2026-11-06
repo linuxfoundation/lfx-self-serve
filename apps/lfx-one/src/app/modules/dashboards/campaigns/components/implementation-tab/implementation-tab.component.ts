@@ -664,8 +664,8 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * Whether THIS caller may send Google audience segments — `CampaignListResult.googleAudienceSegmentsEnabled`.
-   * Root only, until a user list can be mapped to a project: every foundation's Google Ads connection
-   * points at one shared LF customer. `null` (unanswered) and `false` hide the section, and a draft
+   * `global_marketing_ops` on the project (the LF marketing team) only: every foundation's Google Ads
+   * connection points at one shared LF customer. `null` (unanswered) and `false` hide the section, and a draft
    * that still holds segments raises `googleAudienceSegmentsBlock` rather than dropping them.
    */
   public readonly googleAudienceSegmentsEnabled = input<boolean | null>(null);
@@ -9046,7 +9046,7 @@ export class ImplementationTabComponent implements OnInit {
    */
   private initGoogleAudienceSegmentsAvailable(): Signal<boolean> {
     return computed(() => {
-      // Root only: the per-caller capability must be an explicit yes, never a `null`.
+      // LF marketing only: the per-caller capability must be an explicit yes, never a `null`.
       if (this.googleAudienceSegmentsEnabled() !== true) return false;
       const channel = this.googleBiddingChannel();
       return channel !== null && (GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS as readonly string[]).includes(channel);
@@ -9059,8 +9059,8 @@ export class ImplementationTabComponent implements OnInit {
    *
    * Speaks only on a channel that takes segments: anywhere else the channel is the reason, and
    * {@link initGoogleAudienceSegmentsWithheldWarning} says so whatever the capability answers.
-   * `restricted` is the root-only rule — the caller is not a root writer or root campaign manager,
-   * so the create route would answer 403. It HOLDS Create rather than dropping the list, because
+   * `restricted` is the LF-marketing-only rule — the caller does not hold `global_marketing_ops` on
+   * the project, so the create route would answer 403. It HOLDS Create rather than dropping the list, because
    * segments change who the campaign is aimed at; Remove is offered in every state.
    */
   private initGoogleAudienceSegmentsBlock(): Signal<CampaignGoogleAudienceSegmentsBlock | null> {
@@ -9080,7 +9080,7 @@ export class ImplementationTabComponent implements OnInit {
       if (this.googleAudienceSegmentsEnabled() === false) {
         return {
           kind: 'restricted',
-          message: `Only LF administrators can add Google audience segments, because every foundation shares one Google Ads account. Remove the ${held} on this brief to create the campaign.`,
+          message: `Only the LF marketing team can add Google audience segments, because every foundation shares one Google Ads account. Remove the ${held} on this brief to create the campaign, or ask the LF marketing team to add them.`,
         };
       }
       // `unknown` is treated like a failure, as the bidding block records: nothing else starts the read.

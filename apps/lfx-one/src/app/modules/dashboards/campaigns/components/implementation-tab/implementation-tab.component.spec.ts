@@ -9260,16 +9260,20 @@ describe('ImplementationTabComponent google audience segments', () => {
   }
 
   /**
-   * ROOT-ONLY. A non-root caller is answered `false`: the section hides, nothing is sent, and a
+   * LF MARKETING ONLY (`global_marketing_ops` on the project). Any other caller, a foundation ED or a
+   * ROOT writer without the relation, is answered `false`: the section hides, nothing is sent, and a
    * draft that still holds segments HOLDS Create with a way out rather than dropping them.
    */
-  it('hides the section and holds Create for a non-root caller whose draft still has segments', () => {
+  it('hides the section and holds Create for a caller without global_marketing_ops whose draft still has segments', () => {
     const c = holdSegment(false, 'ready');
 
     expect(find('implementation-google-audience-segments-section')).toBeNull();
     expect(c['googleAudienceSegmentsPayload']()).toEqual({});
     expect(c['googleAudienceSegmentsBlock']()?.kind).toBe('restricted');
-    expect(find('implementation-google-audience-segments-block-restricted')?.textContent).toContain('Only LF administrators can add Google audience segments');
+    expect(find('implementation-google-audience-segments-block-restricted')?.textContent).toContain(
+      'Only the LF marketing team can add Google audience segments'
+    );
+    expect(find('implementation-google-audience-segments-block-restricted')?.textContent).toContain('ask the LF marketing team to add them');
     expect(find('implementation-google-audience-segments-block-live')?.textContent?.trim()).toBe(c['googleAudienceSegmentsBlockMessage']());
     expect(c['canSubmit']()).toBe(false);
     expect(find('implementation-google-audience-segments-block-retry')).toBeNull();
@@ -9282,7 +9286,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(c['canSubmit']()).toBe(true);
   });
 
-  it('hides the section for a non-root caller with no segments, and holds nothing', () => {
+  it('hides the section for a caller without global_marketing_ops with no segments, and holds nothing', () => {
     const c = seedAudience({ includeSearch: true }, false);
 
     expect(find('implementation-google-audience-segments-section')).toBeNull();
@@ -9322,7 +9326,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(c['googleAudienceSegmentsBlock']()?.kind).toBe('unsupported');
   });
 
-  it('clears the block once a root caller is answered yes', () => {
+  it('clears the block once a global_marketing_ops holder is answered yes', () => {
     const c = holdSegment(null, 'pending');
     fixture.componentRef.setInput('createCapabilityRead', 'ready');
     fixture.componentRef.setInput('googleAudienceSegmentsEnabled', true);
