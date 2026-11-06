@@ -65,6 +65,7 @@ describe('Family export slot', () => {
         projectName: 'Synthetic project',
         printedAt: '2026-10-28T00:00:00Z',
         newestRevisionAt: '2026-10-21T10:00:00Z',
+        revisionNumbers: {},
         fontFamily: null,
         weights: [400],
       })
@@ -425,6 +426,7 @@ describe('Family export slot', () => {
         projectName: 'Synthetic project',
         printedAt: '2026-10-28T00:00:00Z',
         newestRevisionAt: '2026-10-21T10:00:00Z',
+        revisionNumbers: { 'foundation-message': 3, 'brand-kit': 1, boilerplates: 2, faq: 1 },
         fontFamily: brand.fontFamily,
         weights: [400],
       })
@@ -560,6 +562,7 @@ describe('Family export slot', () => {
       projectName: 'Synthetic project',
       printedAt: '2026-10-28T00:00:00Z',
       newestRevisionAt: '2026-10-21T10:00:00Z',
+      revisionNumbers: {},
       fontFamily: null,
       weights: [400],
     });

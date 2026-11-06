@@ -15,9 +15,6 @@ export const MKTG_PRINT_SECTION_TITLES = {
   faq: 'Questions and answers',
 } as const;
 
-/** The parts in the deck's order; a part the family lacks renumbers the rest. */
-export const MKTG_PRINT_FAMILY_PARTS = ['framework', 'kit', 'boilerplates', 'faq'] as const;
-
 /** The dividers' count lines: the noun for one and for several. */
 export const MKTG_PRINT_DIVIDER_NOUNS = {
   boilerplates: { one: 'boilerplate', many: 'boilerplates' },
@@ -27,7 +24,12 @@ export const MKTG_PRINT_DIVIDER_NOUNS = {
 /** The source line's lead on a pair that carries a source: `Source · Website`. */
 export const MKTG_PRINT_SOURCE_LEAD = 'Source';
 
-/** The appendix spec §1 (two bordered card columns, a "LABEL · N WORDS" line, the body at the card size) and §2 (two open Q/A columns, the page set at 100, 95 or 90 % before it is full). */
+/**
+ * The appendix spec §1 (two bordered card columns, a "LABEL · N WORDS" line tracked +0.08em, the body at the card
+ * size) and §2 (two open Q/A columns, the page set at 100, 95 or 90 % before it is full, the deck's gaps between an
+ * answer's paragraphs as shares of the answer size: bullet after bullet, plain after bullet, bullet after plain; plain
+ * after plain none).
+ */
 export const MKTG_PRINT_APPENDIX_LAYOUT: MktgPrintAppendixLayout = {
   cardColumnGap: 9,
   cardRowGap: 9,
@@ -39,13 +41,16 @@ export const MKTG_PRINT_APPENDIX_LAYOUT: MktgPrintAppendixLayout = {
   cardMinHeight: 60,
   cardRowMinScale: 0.8,
   cardLoneMinHeight: 132,
+  cardLabelTracking: 0.08,
   faqColumnGap: 16.5,
   faqRowGap: 7.5,
   faqQuestionSize: 10,
   faqQuestionWeight: 700,
   faqAnswerSize: 9,
   faqAnswerGap: 3,
-  faqListItemGap: 2,
+  faqBulletGapEm: 0.45,
+  faqPlainAfterBulletEm: 0.5,
+  faqBulletAfterPlainEm: 0.4,
   faqSourceGap: 3,
   faqPageScales: [1, 0.95, 0.9],
 };
@@ -60,7 +65,7 @@ export const MKTG_PRINT_DIVIDER_LAYOUT: MktgPrintDividerLayout = {
   softShare: 0.3,
 };
 
-/** The least contrast of the divider's eyebrow in the accent against the dark before it is set in the on-dark ink (WCAG 2.1 SC 1.4.11, non-text contrast: 3:1). */
+/** The least contrast of the divider's eyebrow in the accent against the dark before it is set in the on-dark ink: 3:1 per the appendix spec v1.3 (the WCAG 2.1 SC 1.4.11 threshold). */
 export const MKTG_PRINT_DIVIDER_EYEBROW_MIN_CONTRAST = 3;
 
 /** The family cover's title size, pt (the appendix spec §4). */

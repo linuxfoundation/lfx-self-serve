@@ -7,8 +7,9 @@
 // heads. Units are deck points on the 720 × 405 pt slide.
 
 import type { MktgPrintPageBox } from './mktg-print-page.interface';
+import type { MktgSlidesExportAssetKind } from './mktg-slides-export.interface';
 
-/** The appendix pages' layout numbers, pt: the spec's §1 cards (gaps, border, radius, padding, label-to-body gap, least height, row scale floor, the lone last card's threshold) and §2 grid (gaps, sizes, weight, the page scales tried before a page is full). */
+/** The appendix pages' layout numbers, pt: the spec's §1 cards (gaps, border, radius, padding, label-to-body gap, least height, row scale floor, the lone last card's threshold, the label's tracking in em) and §2 grid (gaps, sizes, weight, the deck's paragraph gaps as shares of the answer size, the page scales tried before a page is full). */
 export interface MktgPrintAppendixLayout {
   cardColumnGap: number;
   cardRowGap: number;
@@ -20,13 +21,16 @@ export interface MktgPrintAppendixLayout {
   cardMinHeight: number;
   cardRowMinScale: number;
   cardLoneMinHeight: number;
+  cardLabelTracking: number;
   faqColumnGap: number;
   faqRowGap: number;
   faqQuestionSize: number;
   faqQuestionWeight: number;
   faqAnswerSize: number;
   faqAnswerGap: number;
-  faqListItemGap: number;
+  faqBulletGapEm: number;
+  faqPlainAfterBulletEm: number;
+  faqBulletAfterPlainEm: number;
   faqSourceGap: number;
   faqPageScales: readonly number[];
 }
@@ -63,7 +67,25 @@ export interface MktgPrintCardPage {
   rows: MktgPrintCardRow[];
 }
 
-/** One question and its answer as the FAQ grid binds them: the field path (the track key), the restricted-Markdown answer ('' when unanswered), the source label ('' when none), the sizes (pt) at the page's scale and whether the answer was cut. */
+/** A card as the page template binds it: its body's fitted size as a page length. */
+export interface MktgBoilerplatesPrintCard extends MktgPrintCard {
+  bodySize: string;
+}
+
+/** One page of cards as the template binds it: its deck-wide number and its rows' heights as a grid template. */
+export interface MktgBoilerplatesPrintPage extends Omit<MktgPrintCardPage, 'rows'> {
+  number: string;
+  rowsTemplate: string;
+  rows: { cards: MktgBoilerplatesPrintCard[] }[];
+}
+
+/** A line of an answer's restricted Markdown: its text and its list marker ('' for a paragraph, `-` for a bullet, `1.` for a numbered item). */
+export interface MktgPrintFaqLine {
+  text: string;
+  marker: string;
+}
+
+/** One question and its answer as the FAQ grid binds them: the field path (the track key), the answer as restricted Markdown rebuilt from its lines (a list item `- ` or `1. ` by its kind; '' when unanswered), the source label ('' when none), the sizes (pt) at the page's scale and whether the answer was cut. */
 export interface MktgPrintFaqEntry {
   path: string;
   question: string;
@@ -89,8 +111,19 @@ export interface MktgPrintFaqPage {
   rows: MktgPrintFaqRow[];
 }
 
-/** The family's parts, in the deck's order. */
-export type MktgPrintFamilyPart = 'framework' | 'kit' | 'boilerplates' | 'faq';
+/** A question and its answer as the grid template binds them: the fitted sizes as page lengths. */
+export interface MktgFaqPrintEntry extends MktgPrintFaqEntry {
+  questionSizePt: string;
+  answerSizePt: string;
+}
+
+/** One page of the grid as the template binds it: its deck-wide number, its rows' heights as a grid template, its source size as a page length. */
+export interface MktgFaqPrintPage extends Omit<MktgPrintFaqPage, 'rows'> {
+  number: string;
+  rowsTemplate: string;
+  sourceSizePt: string;
+  rows: { entries: MktgFaqPrintEntry[] }[];
+}
 
 /** A section divider's strings: `03 · POSITIONING & BRAND`, `Boilerplates`, `4 boilerplates`. */
 export interface MktgPrintDividerView {
@@ -118,7 +151,7 @@ export interface MktgPrintPageChrome {
 
 /** The family print's page plan: each present part's two-digit number, the deck-wide number of the first card page and of the first grid page (the cover is 1; every page counts, numbered or not), the dividers' counts, and the file's page count (the back cover included when the kit is present). */
 export interface MktgPrintFamilyPlan {
-  numbers: Partial<Record<MktgPrintFamilyPart, string>>;
+  numbers: Partial<Record<MktgSlidesExportAssetKind, string>>;
   boilerplatesFirstPage: number;
   faqFirstPage: number;
   boilerplateCount: number;

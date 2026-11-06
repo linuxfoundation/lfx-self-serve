@@ -9,7 +9,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { MKTG_FAQ_PRINT_UNANSWERED } from '../constants/mktg-print.constants';
-import { MKTG_PRINT_PAGE_AREA, MKTG_PRINT_PAGE_INSET, MKTG_PRINT_PAGE_LOGO_FRAME, MKTG_PRINT_PAGE_SIZE } from '../constants/mktg-print-page.constants';
+import {
+  MKTG_PRINT_PAGE_AREA,
+  MKTG_PRINT_PAGE_INSET,
+  MKTG_PRINT_PAGE_LINE,
+  MKTG_PRINT_PAGE_LOGO_FRAME,
+  MKTG_PRINT_PAGE_MIN_SCALE,
+  MKTG_PRINT_PAGE_SIZE,
+} from '../constants/mktg-print-page.constants';
 import {
   MKTG_PRINT_APPENDIX_LAYOUT,
   MKTG_PRINT_DIVIDER_LAYOUT,
@@ -18,15 +25,19 @@ import {
 } from '../constants/mktg-print-pages.constants';
 import type { BoilerplatesLengthRow } from '../interfaces/boilerplates.interface';
 import type { FaqGroupView } from '../interfaces/faq.interface';
+import type { FoundationMessageContent } from '../interfaces/foundation-message.interface';
 import type { MktgFamilyPrintView } from '../interfaces/mktg-family-export.interface';
+import type { FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import type { MktgPrintPara, MktgPrintPageShapeEl } from '../interfaces/mktg-print-page.interface';
 import type { MktgPrintCardRow, MktgPrintFaqEntry } from '../interfaces/mktg-print-pages.interface';
 import boilerplatesEnvelope from './__fixtures__/boilerplates.envelope.json';
+import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
 import faqEnvelope from './__fixtures__/faq-envelope.json';
 import { boilerplatesAssetOfRevision } from './boilerplates.utils';
+import { buildBrandKitBookView } from './brand-kit-book.utils';
 import { faqAssetOfRevision } from './faq.utils';
-import { mktgPrintRichHeight } from './mktg-print-fit.utils';
-import { mktgPrintContinued, mktgPrintMixHex, mktgPrintPageLook } from './mktg-print-page.utils';
+import { mktgPrintCharEm, mktgPrintRichHeight, mktgPrintScaleRich } from './mktg-print-fit.utils';
+import { mktgPrintBulletParas, mktgPrintContinued, mktgPrintMixHex, mktgPrintPageLook, mktgPrintPara } from './mktg-print-page.utils';
 import {
   mktgBoilerplatesPageCount,
   mktgFaqPageCount,
@@ -42,7 +53,7 @@ import {
   paginateBoilerplateCards,
   paginateFaqPairs,
 } from './mktg-print-pages.utils';
-import { buildBoilerplatesPrintView, buildFaqPrintView, mktgPrintBrand } from './mktg-print.utils';
+import { buildBoilerplatesPrintView, buildFaqPrintView, buildFoundationMessagePrintView, mktgPrintBrand } from './mktg-print.utils';
 
 const layout = MKTG_PRINT_APPENDIX_LAYOUT;
 const area = MKTG_PRINT_PAGE_AREA;
@@ -70,38 +81,90 @@ function textHeight(paras: MktgPrintPara[], width: number): number {
   return mktgPrintRichHeight({ paras, color: '', font: null }, width + 2 * MKTG_PRINT_PAGE_INSET) - 2 * MKTG_PRINT_PAGE_INSET;
 }
 
-/** The height a row of cards takes on the page, from the measure the pagination uses. */
+/** A type size at a share of itself, as the shell rounds it. */
+function scaledSize(size: number, scale: number): number {
+  return mktgPrintScaleRich({ paras: [mktgPrintPara('', size)], color: '', font: null }, scale).paras[0].size;
+}
+
+/** One line of text at `size`: what a page keeps free under its rows. */
+function lineOf(size: number): number {
+  return size * MKTG_PRINT_PAGE_LINE;
+}
+
+/** The height a row of cards takes on the page, from the measure the pagination uses: the card's text column inside its border and padding, the tracked head wrapping as in a narrower column. */
 function cardRowHeight(row: MktgPrintCardRow): number {
-  const inner = (area.w - layout.cardColumnGap) / 2 - 2 * layout.cardPaddingX;
+  const inner = (area.w - layout.cardColumnGap) / 2 - 2 * layout.cardPaddingX - 2 * layout.cardBorder;
+  const capsEm = mktgPrintCharEm({ caps: true });
+  const headInner = (inner * capsEm) / (capsEm + layout.cardLabelTracking);
   return Math.max(
     ...row.cards.map((card) =>
       Math.max(
         layout.cardMinHeight,
         2 * layout.cardPaddingY +
           2 * layout.cardBorder +
-          textHeight(
-            [
-              { text: card.head, size: MKTG_PRINT_PAGE_SIZE.eyebrow, weight: 600, caps: true },
-              { text: card.text, size: card.size, above: layout.cardBodyGap },
-            ],
-            inner
-          )
+          textHeight([{ text: card.head, size: MKTG_PRINT_PAGE_SIZE.eyebrow, weight: 600, caps: true }], headInner) +
+          textHeight([{ text: card.text, size: card.size, above: layout.cardBodyGap }], inner)
       )
     )
   );
 }
 
+/** The width of a grid column: a text box of the deck's, its insets inside. */
+const faqColumnWidth = (area.w - layout.faqColumnGap) / 2;
+
 /** The height a FAQ entry takes in its column, from the measure the pagination uses (a plain answer, the source line when one). */
 function faqEntryHeight(entry: MktgPrintFaqEntry, sourceSize: number): number {
-  const columnWidth = (area.w - layout.faqColumnGap) / 2;
-  return textHeight(
-    [
-      { text: entry.question, size: entry.questionSize, weight: layout.faqQuestionWeight },
-      { text: entry.answered ? entry.answer : MKTG_FAQ_PRINT_UNANSWERED, size: entry.answerSize, above: layout.faqAnswerGap },
-      ...(entry.source ? [{ text: `${MKTG_PRINT_SOURCE_LEAD} · ${entry.source}`, size: sourceSize, above: layout.faqSourceGap }] : []),
-    ],
-    columnWidth
+  return mktgPrintRichHeight(
+    {
+      paras: [
+        { text: entry.question, size: entry.questionSize, weight: layout.faqQuestionWeight },
+        { text: entry.answered ? entry.answer : MKTG_FAQ_PRINT_UNANSWERED, size: entry.answerSize, above: layout.faqAnswerGap },
+        ...(entry.source ? [{ text: `${MKTG_PRINT_SOURCE_LEAD} · ${entry.source}`, size: sourceSize, above: layout.faqSourceGap }] : []),
+      ],
+      color: '',
+      font: null,
+    },
+    faqColumnWidth
   );
+}
+
+/** A framework print built by its builder from a synthetic content with the brand line and tagline given. */
+function frameworkView(line: string, tagline: string): FoundationMessagePrintView {
+  const content: FoundationMessageContent = {
+    mf: {
+      vision: 'A vision.',
+      mission: 'A mission.',
+      positioning: 'For platform teams.',
+      tagline,
+      goals: [{ id: 'adoption', n: 1, t: 'Adoption', vp: 'VP.', key: 'Key.', proof: [['1,200 members', 'Website']], bite: 'In the open', icps: ['users'] }],
+      crosscut: 'Every column grows the audience.',
+      say: ['open'],
+      avoid: [['synergy', 'working together']],
+      anchor: ['Which goal does this serve?'],
+      notes: '',
+    },
+    icp: [
+      {
+        id: 'users',
+        name: 'End users',
+        kind: 'Individual',
+        who: 'Engineers.',
+        goals: ['adoption'],
+        need: 'Need.',
+        value: 'Value.',
+        lead: 'Ship with confidence.',
+        proof: [['A fact', 'Docs']],
+        cta: 'Try it.',
+        channels: ['Docs'],
+        objection: ['Too early?', null],
+        personas: [['SRE', 'uptime']],
+        basis: 'Website',
+      },
+    ],
+    mh: { umbrella: 'Umbrella.', line, pillars: [{ t: 'Open', m: 'Open message.', p: [['Fact', 'Web']] }], found: 'A Linux Foundation project.', aud: [] },
+    nums: [['1,200', 'members']],
+  };
+  return buildFoundationMessagePrintView(content, 'Synthetic Mesh', 3, null);
 }
 
 function printView(overrides: Partial<MktgFamilyPrintView> = {}): MktgFamilyPrintView {
@@ -110,14 +173,16 @@ function printView(overrides: Partial<MktgFamilyPrintView> = {}): MktgFamilyPrin
     framework: null,
     kit: null,
     boilerplates: { brand, lengths: [] },
-    faq: { brand, groups: [], unanswered: 0 },
+    faq: { brand, groups: [] },
     brand,
     projectName: 'Synthetic Mesh',
     printedAt: '2026-11-06T00:00:00Z',
     newestRevisionAt: '2026-10-21T10:00:00Z',
     revisionNumbers: { boilerplates: 2, faq: 1 },
+    fontFamily: null,
+    weights: [400],
     ...overrides,
-  } as MktgFamilyPrintView;
+  };
 }
 
 describe("the family's grammar", () => {
@@ -187,18 +252,17 @@ describe("the family's grammar", () => {
     });
   });
 
-  it('prefers the brand line, falls back to the print date, and says the kit version in its own form', () => {
-    const framework = { mh: { line: ' Open mesh for everyone ' }, mf: { tagline: 'Tagline' } } as unknown as MktgFamilyPrintView['framework'];
-    const kit = {} as unknown as MktgFamilyPrintView['kit'];
+  it("prefers the brand line, falls back to the print date, and says the versions line in the spec's names, the kit's in its own form", () => {
+    const framework = frameworkView(' Open mesh for everyone ', 'Tagline');
+    const kit = buildBrandKitBookView(brandKitTestRevision(), 1);
     const cover = mktgPrintFamilyCover(
       printView({ framework, kit, newestRevisionAt: null, revisionNumbers: { 'foundation-message': 3, 'brand-kit': 1, boilerplates: 2 } }),
       'Positioning & brand'
     );
     expect(cover.subtitle).toBe('Open mesh for everyone');
     expect(cover.date).toBe('November 2026');
-    expect(cover.footerRight).toBe('Messaging framework v3 · Brand Kit V1.0 · Boilerplates v2');
-    const tagline = { mh: { line: '' }, mf: { tagline: 'Tagline' } } as unknown as MktgFamilyPrintView['framework'];
-    expect(mktgPrintFamilyCover(printView({ framework: tagline }), 'Positioning & brand').subtitle).toBe('Tagline');
+    expect(cover.footerRight).toBe('Messaging Framework v3 · Brand Kit V1.0 · Boilerplates v2');
+    expect(mktgPrintFamilyCover(printView({ framework: frameworkView('', 'Tagline') }), 'Positioning & brand').subtitle).toBe('Tagline');
   });
 });
 
@@ -238,10 +302,10 @@ describe('paginateBoilerplateCards', () => {
     expect(mktgPrintCardHead(miscounted)).toBe(`${lengths[0].label.toUpperCase()} · 99 WORDS`);
   });
 
-  it('spreads twelve long cards over several pages, none over the body height, titled in sequence', () => {
+  it('spreads twelve long cards over several pages, one body line kept free on each, titled in sequence', () => {
     const lengths = Array.from({ length: 12 }, (_, i) => lengthRow(i, `Length ${i + 1}`, 90, 100));
     const pages = paginateBoilerplateCards(lengths);
-    expect(pages.length).toBeGreaterThanOrEqual(2);
+    expect(pages).toHaveLength(6);
     expect(mktgBoilerplatesPageCount(lengths)).toBe(pages.length);
     expect(pages.map((page) => page.title)).toEqual(pages.map((_, i) => (i === 0 ? 'Boilerplates' : `Boilerplates (${i + 1})`)));
     expect(pages.flatMap((page) => page.rows.flatMap((row) => row.cards)).map((card) => card.index)).toEqual(lengths.map((row) => row.index));
@@ -252,7 +316,7 @@ describe('paginateBoilerplateCards', () => {
         expect(row.height).toBeCloseTo(cardRowHeight(row), 6);
       });
       const height = page.rows.reduce((h, row) => h + row.height, 0) + (page.rows.length - 1) * layout.cardRowGap;
-      expect(height).toBeLessThanOrEqual(area.h + 0.01);
+      expect(height).toBeLessThanOrEqual(area.h - lineOf(MKTG_PRINT_PAGE_SIZE.card) + 0.01);
     });
   });
 
@@ -272,7 +336,7 @@ describe('paginateBoilerplateCards', () => {
     expect(card.size).toBeLessThan(MKTG_PRINT_PAGE_SIZE.card);
     expect(card.text.endsWith('.') || card.text.endsWith('…')).toBe(true);
     expect(card.text.length).toBeLessThan(lengthRow(0, 'Essay', 900, 1000).text.length);
-    expect(row.height).toBeLessThanOrEqual(area.h + 0.01);
+    expect(row.height).toBeLessThanOrEqual(area.h - lineOf(MKTG_PRINT_PAGE_SIZE.card) + 0.01);
   });
 });
 
@@ -307,7 +371,27 @@ describe('paginateFaqPairs', () => {
     expect(third).toEqual(expect.objectContaining({ question: 'How much does membership cost?', answer: '', answered: false, source: '', cut: false }));
   });
 
-  it('fills a page at 100, 95 or 90 % before continuing on a numbered page, and never over the body height', () => {
+  it("reads the deck's list markers, keeps each item's kind in the answer it hands the renderer, and measures the paragraphs with the deck's gaps", () => {
+    const answer = 'Lead-in:\n• One\n• Two\n1) First\n2) Second\n\nClosing line.';
+    const [page] = paginateFaqPairs([
+      { name: 'Lists', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Which steps?', answer, source: '', answered: true }], unanswered: 0 },
+    ]);
+    const [entry] = page.rows[0].entries;
+    expect(entry.answer).toBe('Lead-in:\n\n- One\n- Two\n1. First\n2. Second\n\nClosing line.');
+    expect(entry.cut).toBe(false);
+    const size = layout.faqAnswerSize;
+    const paras: MktgPrintPara[] = [
+      mktgPrintPara('Which steps?', layout.faqQuestionSize, { weight: layout.faqQuestionWeight }),
+      mktgPrintPara('Lead-in:', size, { above: layout.faqAnswerGap }),
+      ...mktgPrintBulletParas(['One', 'Two', 'First', 'Second'], size, size * layout.faqBulletAfterPlainEm),
+      mktgPrintPara('Closing line.', size, { above: size * layout.faqPlainAfterBulletEm }),
+    ];
+    expect(page.rows[0].height).toBeCloseTo(mktgPrintRichHeight({ paras, color: '', font: null }, faqColumnWidth), 6);
+    // The gap between items is the shell's bullet paragraphs' (the deck's); the layout carries it for the stylesheet.
+    expect(mktgPrintBulletParas(['a', 'b'], 10)[1].above).toBeCloseTo(10 * layout.faqBulletGapEm, 9);
+  });
+
+  it('fills a page at 100, 95 or 90 % before continuing on a numbered page, one answer line kept free', () => {
     const questions = Array.from({ length: 40 }, (_, q) => ({
       path: `faq[0][1][${q}]`,
       question: `Question number ${q + 1} of the synthetic set?`,
@@ -328,7 +412,7 @@ describe('paginateFaqPairs', () => {
         expect(row.height).toBeCloseTo(Math.max(...row.entries.map((entry) => faqEntryHeight(entry, page.sourceSize))), 6);
       });
       const height = page.rows.reduce((h, row) => h + row.height, 0) + (page.rows.length - 1) * layout.faqRowGap;
-      expect(height).toBeLessThanOrEqual(area.h + 0.01);
+      expect(height).toBeLessThanOrEqual(area.h - lineOf(scaledSize(layout.faqAnswerSize, page.scale)) + 0.01);
     });
     // A page set smaller carries smaller sizes on every entry.
     const smaller = pages.find((page) => page.scale < 1);
@@ -350,14 +434,40 @@ describe('paginateFaqPairs', () => {
     expect(entry.answer.length).toBeLessThan(answer.length);
     expect(entry.answer.endsWith('.')).toBe(true);
     expect(answer.startsWith(entry.answer)).toBe(true);
-    expect(pages[0].rows[0].height).toBeLessThanOrEqual(area.h + 0.01);
+    expect(pages[0].rows[0].height).toBeLessThanOrEqual(area.h - lineOf(layout.faqAnswerSize) + 0.01);
+  });
+
+  it('fits a pair of many short list items as the deck does: the question whole, the answer at the floor, the trailing items dropped and the last kept marked', () => {
+    const items = Array.from({ length: 80 }, (_, i) => `- Step ${i + 1} of the list`);
+    const answer = ['Steps:', ...items].join('\n');
+    const [page] = paginateFaqPairs([
+      {
+        name: 'Steps',
+        path: 'faq[0]',
+        questions: [{ path: 'faq[0][1][0]', question: 'Which steps, in order?', answer, source: 'Docs', answered: true }],
+        unanswered: 0,
+      },
+    ]);
+    const [entry] = page.rows[0].entries;
+    expect(entry.cut).toBe(true);
+    expect(entry.question).toBe('Which steps, in order?');
+    expect(entry.questionSize).toBe(layout.faqQuestionSize);
+    expect(entry.answerSize).toBe(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
+    const lines = entry.answer.split('\n').filter((line) => line !== '');
+    expect(lines[0]).toBe('Steps:');
+    expect(lines.length).toBeGreaterThan(2);
+    expect(lines.length).toBeLessThan(items.length + 1);
+    lines.slice(1).forEach((line) => expect(line.startsWith('- Step ')).toBe(true));
+    expect(lines[lines.length - 1].endsWith('…')).toBe(true);
+    expect(lines.slice(0, -1).some((line) => line.includes('…'))).toBe(false);
+    expect(page.rows[0].height).toBeLessThanOrEqual(area.h - lineOf(entry.answerSize) + 0.01);
   });
 });
 
 describe('mktgPrintFamilyPlan', () => {
   it('counts the cover, the framework and kit pages, each divider and each appendix page, the back cover last', () => {
-    const framework = {} as unknown as MktgFamilyPrintView['framework'];
-    const kit = {} as unknown as MktgFamilyPrintView['kit'];
+    const framework = frameworkView('Open mesh for everyone', 'Tagline');
+    const kit = buildBrandKitBookView(brandKitTestRevision(), 1);
     const brand = mktgPrintBrand(null);
     const view = printView({ framework, kit, boilerplates: { brand, lengths: fixtureLengths() }, faq: { brand, groups: fixtureGroups() } });
     const plan = mktgPrintFamilyPlan(view, 5, 7);
