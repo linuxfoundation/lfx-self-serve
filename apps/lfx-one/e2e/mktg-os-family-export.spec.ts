@@ -8,8 +8,10 @@ import {
   MKTG_PRINT_DECK_PAGE_NAME,
   MKTG_PRINT_LANDSCAPE_PAGE_SETUP,
 } from '../../../packages/shared/src/constants';
+import type { FaqContent } from '../../../packages/shared/src/interfaces';
+import { faqAssetOfRevision } from '../../../packages/shared/src/utils/faq.utils';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { draftFrameworkAsset } from './helpers/mktg-os-asset-views.helper';
+import { draftFrameworkAsset, nativeAssetRevisionResponse } from './helpers/mktg-os-asset-views.helper';
 import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
 import { familyPrintPlan, openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, PRINT_FRAME_LANDSCAPE, stubMktgPrintFrame } from './helpers/mktg-print.helper';
@@ -19,6 +21,22 @@ test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 
 /** The deck-wide page numbers of the stubbed family: mktgPrintFamilyPlan over the stub's own assets, as the assembly plans them (never guessed). */
 const PLAN = familyPrintPlan(draftFrameworkAsset().content, DOCUMENT_PROJECT.name);
+
+/** The lead-in and the two items of the one listed answer the print test feeds: a `- ` line and a `1. ` line, both bullets in print. */
+const FAQ_LISTED_LEAD_IN = 'Three ways, in order:';
+const FAQ_LISTED_ITEMS = ['Open a pull request on GitHub.', 'Join the weekly call.'] as const;
+
+/** The stub's own FAQ (its four pairs, one unanswered) with its last answer swapped for the listed one: the family PDF's one listed pair, the plan's counts untouched. */
+function listedFaqContent(): FaqContent {
+  const response = nativeAssetRevisionResponse('faq');
+  const asset = faqAssetOfRevision(response.markdown, response.sidecar);
+  if (!asset) throw new Error('The stubbed FAQ could not be read.');
+  const { content } = asset;
+  const [lastGroup] = content.faq.slice(-1);
+  const [lastEntry] = lastGroup[1].slice(-1);
+  lastEntry[1] = `${FAQ_LISTED_LEAD_IN}\n- ${FAQ_LISTED_ITEMS[0]}\n1. ${FAQ_LISTED_ITEMS[1]}`;
+  return content;
+}
 
 test('export stays on the Family URL and Back returns to Kit, never to an export action', async ({ page }, info) => {
   await openFamilyExports(page, { existing: true });
@@ -148,7 +166,7 @@ test('unsupported family shows one line without export buttons or Positioning no
 
 test('Download PDF stays disabled behind the checking line until prepared, then the first click prints from the isolated frame', async ({ page }, info) => {
   await stubMktgPrintFrame(page);
-  const controls = await openFamilyExports(page, { allAssets: true, holdPrint: true });
+  const controls = await openFamilyExports(page, { allAssets: true, holdPrint: true, faqContent: listedFaqContent() });
   const pdf = page.getByTestId('family-export-pdf').getByRole('button');
   await expect(pdf).toBeDisabled();
   await expect(pdf).toHaveText('Download PDF');
@@ -216,7 +234,9 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   // The dividers: dark section pages with the part's number and the family in capitals, the title, the count line and the
   // lockup; counted but unnumbered.
   const dividers = printDocument.locator('lfx-mktg-print-divider');
-  await expect(dividers.getByTestId('mktg-print-page')).toHaveAttribute('data-layout', 'cover');
+  const dividerFrames = dividers.getByTestId('mktg-print-page');
+  await expect(dividerFrames).toHaveCount(2);
+  for (const frame of await dividerFrames.all()) await expect(frame).toHaveAttribute('data-layout', 'cover');
   await expect(dividers.getByTestId('mktg-print-page-el')).toHaveText([
     '03 · POSITIONING & BRAND',
     'Boilerplates',
@@ -252,8 +272,14 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(faq.getByTestId('mktg-faq-print-pair').first().locator('h3')).toHaveCSS('font-weight', '700');
   await expect(faq).toContainText('Needs an answer');
   await expect(faq.getByTestId('mktg-faq-print-source').first()).toHaveText('Source · Website');
-  // A list prints as real items: no paragraph or item opens with a Markdown dash.
-  await expect(faq.locator('[data-testid="mktg-faq-print-answer"] ul > li').first()).toBeVisible();
+  // The listed answer prints as a lead-in paragraph over real items, the `1. ` line a bullet like the `- ` one (as the
+  // deck draws every list line), in no ordered list; no paragraph or item opens with a Markdown dash.
+  const listedAnswer = faq.getByTestId('mktg-faq-print-pair').last().getByTestId('mktg-faq-print-answer');
+  await expect(listedAnswer.locator('p')).toHaveText([FAQ_LISTED_LEAD_IN]);
+  await expect(listedAnswer.locator('p + ul')).toHaveCount(1);
+  await expect(listedAnswer.locator('ul > li')).toHaveText([...FAQ_LISTED_ITEMS]);
+  await expect(faq.locator('[data-testid="mktg-faq-print-answer"] ol')).toHaveCount(0);
+  await expect(faq.locator('[data-testid="mktg-faq-print-answer"] ul > li')).toHaveCount(FAQ_LISTED_ITEMS.length);
   expect(
     await faq
       .locator('[data-testid="mktg-faq-print-answer"] :is(p, li)')
