@@ -23,9 +23,11 @@ import {
   MKTG_PRINT_FRAMEWORK_NUMBERS_PER_PAGE,
   MKTG_PRINT_FRAMEWORK_SECTIONS,
 } from '../constants/mktg-print-framework.constants';
-import { MKTG_PRINT_PAGE_AREA, MKTG_PRINT_PAGE_LEFT, MKTG_PRINT_PAGE_RIGHT, MKTG_PRINT_PAGE_SIZE } from '../constants/mktg-print-page.constants';
+import { MKTG_PRINT_PAGE_AREA, MKTG_PRINT_PAGE_LEFT, MKTG_PRINT_PAGE_RIGHT } from '../constants/mktg-print-page.constants';
 import type { FoundationMessagePair, FoundationMessagePillar } from '../interfaces/foundation-message.interface';
 import type {
+  MktgPrintFrameworkChip,
+  MktgPrintFrameworkContext,
   MktgPrintFrameworkCover,
   MktgPrintFrameworkOptions,
   MktgPrintFrameworkSection,
@@ -62,34 +64,27 @@ import {
 const AREA = MKTG_PRINT_PAGE_AREA;
 const LEFT = MKTG_PRINT_PAGE_LEFT;
 const RIGHT = MKTG_PRINT_PAGE_RIGHT;
-const SIZE = MKTG_PRINT_PAGE_SIZE;
 const WHITE = MKTG_PRINT_INK_ON_DARK;
 
-interface Ctx {
-  view: FoundationMessagePrintView;
-  look: MktgPrintPageLook;
-  projectName: string;
-}
+type Ctx = MktgPrintFrameworkContext;
 
-/** The sections the framework prints, in the cover's order: the framework when it has a statement or a column, the ICPs and the key numbers when there are any, the message house always. */
+/**
+ * The sections the framework prints, in the cover's order, as the deck's
+ * presentSections: the framework and the message house always (the deck
+ * prints the framework whenever the asset has an `mf`, and LFX One's content
+ * always has one), the ICPs and the key numbers when there are any.
+ */
 export function mktgPrintFrameworkSections(view: FoundationMessagePrintView): MktgPrintFrameworkSection[] {
-  const present: MktgPrintFrameworkSectionId[] = [];
-  if (hasFramework(view)) present.push('framework');
+  const present: MktgPrintFrameworkSectionId[] = ['framework'];
   if (view.icps.length) present.push('icps');
   present.push('message-house');
   if (view.numbers.length) present.push('numbers');
   return MKTG_PRINT_FRAMEWORK_SECTIONS.filter((s) => present.includes(s.id));
 }
 
-/** The deck prints the framework section when the asset has an `mf`; LFX One's content always has one, so its statements and lists stand in: any of them. */
-function hasFramework(view: FoundationMessagePrintView): boolean {
-  const { mf } = view;
-  return !!(mf.vision || mf.mission || mf.positioning || mf.tagline || mf.goals.length || mf.say.length || mf.avoid.length || mf.anchor.length);
-}
-
 function head(ctx: Ctx, id: MktgPrintFrameworkSectionId): MktgPrintPageHead {
   const s = MKTG_PRINT_FRAMEWORK_SECTIONS.find((x) => x.id === id) ?? MKTG_PRINT_FRAMEWORK_SECTIONS[0];
-  return { left: `${s.number} ${s.title}`, right: `${ctx.projectName} ${FOUNDATION_MESSAGE_PRINT_TITLE}`.trim() };
+  return { left: `${s.number} ${s.title}`, right: ctx.view.runningHead };
 }
 
 const card = (look: MktgPrintPageLook) => ({
@@ -110,7 +105,6 @@ function proofPara(look: MktgPrintPageLook, fact: string, source: string, size: 
 
 /** The cover's lines and its own elements, as the deck's cover sets them (framework-print.ts coverSlide): the eyebrow, the version, the accent bar, the rule and the contents line. */
 export function mktgPrintFrameworkCover(view: FoundationMessagePrintView, look: MktgPrintPageLook): MktgPrintFrameworkCover {
-  const name = view.projectName.trim();
   const soft = mktgPrintMixHex(look.onDark, look.dark, 0.4);
   const sections = mktgPrintFrameworkSections(view);
   const contents = sections.map((s) => `${s.number}  ${s.title}`).join('        ');
@@ -118,7 +112,7 @@ export function mktgPrintFrameworkCover(view: FoundationMessagePrintView, look: 
   return {
     title: FOUNDATION_MESSAGE_PRINT_TITLE,
     subtitle: view.mf.tagline || view.mh.line || '',
-    eyebrow: name ? `${name} · a Linux Foundation project` : 'A Linux Foundation project',
+    eyebrow: view.eyebrow,
     topRight: view.versionLabel,
     els: [
       mktgPrintShapeEl('RECTANGLE', { x: 38, y: 118, w: 36, h: 3 }, look.accent),
@@ -206,12 +200,7 @@ function chipWidth(text: string, size: number): number {
   return Math.ceil(text.length * size * mktgPrintCharEm({})) + MKTG_PRINT_FRAMEWORK_CHIP.inset;
 }
 
-interface Chip {
-  text: string;
-  x: number;
-  y: number;
-  w: number;
-}
+type Chip = MktgPrintFrameworkChip;
 
 /** The say chips flow in rows of the card's width; those that do not fit the card continue on the next page. */
 function chipPages(say: string[], innerW: number, cardH: number): Chip[][] {
@@ -467,7 +456,7 @@ function messageHousePages(ctx: Ctx): MktgPrintPage[] {
       mktgPrintTextEl({ x: 25 + i * (pw + 10), y: AREA.y, w: pw, h: AREA.h }, pillarRich(ctx, p, true, false), pillarCard(look))
     );
     pillars.forEach((_, i) => more.push(mktgPrintShapeEl('RECTANGLE', { x: 25 + i * (pw + 10), y: AREA.y, w: pw, h: 3 }, look.accent)));
-    pages.push(mktgPrintContentPage(look, 'Message house (2)', head(ctx, 'message-house'), more));
+    pages.push(mktgPrintContentPage(look, mktgPrintContinued('Message house', 1), head(ctx, 'message-house'), more));
   }
   const nameW = 190;
   const leadW = 671 - nameW;
@@ -498,7 +487,7 @@ function messageHousePages(ctx: Ctx): MktgPrintPage[] {
 // ---------------------------------------------------------------------------
 
 function numberPages(ctx: Ctx): MktgPrintPage[] {
-  const { look, view, projectName } = ctx;
+  const { look, view } = ctx;
   const w = (671 - 20) / 3;
   const tiles: FoundationMessagePair[] = view.numbers.map((r) => [r.number, r.label]);
   return mktgPrintPaginate(tiles, (page) => page.length <= MKTG_PRINT_FRAMEWORK_NUMBERS_PER_PAGE).map((page, k) => {
@@ -512,13 +501,7 @@ function numberPages(ctx: Ctx): MktgPrintPage[] {
         { shape: 'ROUND_RECTANGLE', fill: look.tint, line: null }
       )
     );
-    const name = projectName.trim();
-    els.push(
-      mktgPrintTextEl(
-        { x: 25, y: 318, w: 671, h: 24 },
-        mktgPrintRich(look, [mktgPrintPara(name ? `${name} · a Linux Foundation project` : 'A Linux Foundation project', 7.5, { color: look.muted })])
-      )
-    );
+    els.push(mktgPrintTextEl({ x: 25, y: 318, w: 671, h: 24 }, mktgPrintRich(look, [mktgPrintPara(view.eyebrow, 7.5, { color: look.muted })])));
     return mktgPrintContentPage(look, mktgPrintContinued('Key numbers', k), head(ctx, 'numbers'), els);
   });
 }
@@ -535,14 +518,12 @@ function numberPages(ctx: Ctx): MktgPrintPage[] {
  */
 export function buildFrameworkPrintPages(view: FoundationMessagePrintView, options: MktgPrintFrameworkOptions = {}): MktgPrintPage[] {
   const first = options.firstPage ?? 1;
-  const ctx: Ctx = { view, look: mktgPrintPageLook(view.brand), projectName: view.projectName.trim() };
+  const ctx: Ctx = { view, look: mktgPrintPageLook(view.brand) };
   const out: MktgPrintPage[] = [];
-  if (hasFramework(view)) {
-    out.push(frameworkPage(ctx));
-    if (view.goals.length) out.push(...goalPages(ctx, 0));
-    if (view.mf.say.length || view.avoidRows.length) out.push(...sayAvoidPages(ctx));
-    if (view.mf.anchor.length) out.push(anchorPage(ctx));
-  }
+  out.push(frameworkPage(ctx));
+  if (view.goals.length) out.push(...goalPages(ctx, 0));
+  if (view.mf.say.length || view.avoidRows.length) out.push(...sayAvoidPages(ctx));
+  if (view.mf.anchor.length) out.push(anchorPage(ctx));
   if (view.icps.length) out.push(...icpPages(ctx));
   out.push(...messageHousePages(ctx));
   if (view.numbers.length) out.push(...numberPages(ctx));
@@ -550,7 +531,7 @@ export function buildFrameworkPrintPages(view: FoundationMessagePrintView, optio
 }
 
 /** How many pages the framework prints: the cover and its content pages (buildFrameworkPrintPages). The deck has no back cover for it. */
-export function mktgFrameworkPrintPageCount(view: FoundationMessagePrintView, options: MktgPrintFrameworkOptions = {}): number {
+export function mktgPrintFrameworkPageCount(view: FoundationMessagePrintView, options: MktgPrintFrameworkOptions = {}): number {
   return 1 + buildFrameworkPrintPages(view, options).length;
 }
 

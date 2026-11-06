@@ -13,8 +13,9 @@ import type { MktgPrintFrameworkSection } from '../interfaces/mktg-print-framewo
  * The print's sections, numbered as the cover lists them (framework-print.ts
  * PRINT_SECTIONS): the deck prints the ICPs and the message house, which the
  * framework's screen tabs (FOUNDATION_MESSAGE_VIEW_TABS) and the portrait
- * print's sections (FOUNDATION_MESSAGE_PRINT_TAB_IDS) leave out. A section
- * prints when the framework has its content (mktgPrintFrameworkSections).
+ * print's sections (FOUNDATION_MESSAGE_PRINT_TAB_IDS) leave out. The
+ * framework and the message house always print; the ICPs and the key numbers
+ * when there are any (mktgPrintFrameworkSections).
  */
 export const MKTG_PRINT_FRAMEWORK_SECTIONS: readonly MktgPrintFrameworkSection[] = [
   { id: 'framework', number: '01', title: 'Framework' },

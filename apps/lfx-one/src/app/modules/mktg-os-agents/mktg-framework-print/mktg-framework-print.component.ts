@@ -4,8 +4,14 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MKTG_PRINT_FRAMEWORK_COVER_TITLE_SIZE } from '@lfx-one/shared/constants';
-import { FoundationMessagePrintView, MktgPrintFrameworkCover, MktgPrintPage, MktgPrintPageLook } from '@lfx-one/shared/interfaces';
-import { buildFrameworkPrintPages, mktgPrintFrameworkCover, mktgPrintFrameworkSectionOf, mktgPrintPageLook } from '@lfx-one/shared/utils';
+import { FoundationMessagePrintView, MktgPrintFrameworkCover, MktgPrintFrameworkSectionId, MktgPrintPage, MktgPrintPageLook } from '@lfx-one/shared/interfaces';
+import {
+  buildFrameworkPrintPages,
+  mktgPrintFrameworkCover,
+  mktgPrintFrameworkPageCount,
+  mktgPrintFrameworkSectionOf,
+  mktgPrintPageLook,
+} from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { distinctUntilChanged, filter } from 'rxjs';
 import { MktgPrintCoverComponent } from '../components/mktg-print-cover/mktg-print-cover.component';
@@ -47,10 +53,13 @@ export class MktgFrameworkPrintComponent {
   // === The pages ===
   protected readonly look = computed<MktgPrintPageLook>(() => mktgPrintPageLook(this.view().brand));
   protected readonly cover = computed<MktgPrintFrameworkCover>(() => mktgPrintFrameworkCover(this.view(), this.look()));
-  protected readonly pages = computed<MktgPrintPage[]>(() => buildFrameworkPrintPages(this.view(), { firstPage: this.firstPage() }));
-  protected readonly pageCount = computed(() => 1 + this.pages().length);
+  private readonly options = computed(() => ({ firstPage: this.firstPage() }));
+  /** Each content page with the section its running head names, computed once with the pages. */
+  protected readonly pages = computed<{ page: MktgPrintPage; section: MktgPrintFrameworkSectionId | null }[]>(() =>
+    buildFrameworkPrintPages(this.view(), this.options()).map((page) => ({ page, section: mktgPrintFrameworkSectionOf(page) }))
+  );
+  protected readonly pageCount = computed(() => mktgPrintFrameworkPageCount(this.view(), this.options()));
   protected readonly coverTitleSize = MKTG_PRINT_FRAMEWORK_COVER_TITLE_SIZE;
-  protected readonly sectionOf = mktgPrintFrameworkSectionOf;
 
   public constructor() {
     // The typeface comes from Google Fonts, loaded once per stylesheet (the

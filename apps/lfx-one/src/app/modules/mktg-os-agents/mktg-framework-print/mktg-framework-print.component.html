@@ -18,13 +18,13 @@
     [els]="c.els"
     data-testid="framework-print-cover" />
   <!-- The content pages from the shared page plan, each in its section's running head, with its number in the footer. -->
-  @for (page of pages(); track page.footer?.number ?? page.title) {
+  @for (item of pages(); track item.page.footer?.number ?? item.page.title) {
     <lfx-mktg-print-page
-      [page]="page"
+      [page]="item.page"
       [look]="look()"
       [logo]="v.brand.logoOnLight"
-      [attr.data-page]="page.footer?.number"
-      [attr.data-section]="sectionOf(page)"
+      [attr.data-page]="item.page.footer?.number"
+      [attr.data-section]="item.section"
       data-testid="framework-print-page" />
   }
 </div>

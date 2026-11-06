@@ -11,7 +11,7 @@ import type { FoundationMessagePrintView } from '../interfaces/mktg-print.interf
 import { buildFoundationMessagePrintView } from './mktg-print.utils';
 import {
   buildFrameworkPrintPages,
-  mktgFrameworkPrintPageCount,
+  mktgPrintFrameworkPageCount,
   mktgPrintFrameworkCover,
   mktgPrintFrameworkSectionOf,
   mktgPrintFrameworkSections,
@@ -115,10 +115,10 @@ describe('the framework’s print sections', () => {
     expect(MKTG_PRINT_FRAMEWORK_SECTIONS.map((s) => s.id)).toEqual(['framework', 'icps', 'message-house', 'numbers']);
   });
 
-  it('drops the ICPs and the key numbers when there are none, and the framework when every statement and list is empty', () => {
+  it('drops the ICPs and the key numbers when there are none, and keeps the framework as the deck does when every statement and list is empty', () => {
     expect(mktgPrintFrameworkSections(view({ icp: [], nums: [] })).map((s) => s.id)).toEqual(['framework', 'message-house']);
     const bare = view({ mf: { ...content().mf, vision: '', mission: '', positioning: '', tagline: '', goals: [], say: [], avoid: [], anchor: [] } });
-    expect(mktgPrintFrameworkSections(bare).map((s) => s.id)).toEqual(['icps', 'message-house', 'numbers']);
+    expect(mktgPrintFrameworkSections(bare).map((s) => s.id)).toEqual(['framework', 'icps', 'message-house', 'numbers']);
   });
 });
 
@@ -180,13 +180,13 @@ describe('the framework’s pages', () => {
     expect(pages[0].head?.right).toBe('Project One Messaging Framework');
     expect(pages.every((p) => p.layout === 'content')).toBe(true);
     expect(mktgPrintFrameworkSectionOf(pages[4])).toBe('icps');
-    expect(mktgFrameworkPrintPageCount(view())).toBe(10);
+    expect(mktgPrintFrameworkPageCount(view())).toBe(10);
   });
 
   it('numbers from firstPage inside a larger document', () => {
     const pages = buildFrameworkPrintPages(view(), { firstPage: 5 });
     expect(pages[0].footer?.number).toBe('6');
-    expect(mktgFrameworkPrintPageCount(view(), { firstPage: 5 })).toBe(10);
+    expect(mktgPrintFrameworkPageCount(view(), { firstPage: 5 })).toBe(10);
   });
 
   it('sets the Framework page as the deck does: the three statements in cards, the tagline in a tinted panel with the accent bar', () => {
@@ -440,15 +440,16 @@ describe('the framework’s pages', () => {
     expect(shapes(pages[1]).filter((el) => el.fill === look.tint)).toHaveLength(1);
   });
 
-  it('prints the message house alone when the framework, the segments and the numbers are empty', () => {
+  it('prints the framework page (as the deck does, whatever its statements hold) and the message house when the segments and the numbers are empty', () => {
     const bare = view({
       mf: { ...content().mf, vision: '', mission: '', positioning: '', tagline: '', goals: [], say: [], avoid: [], anchor: [] },
       icp: [],
       nums: [],
     });
     const pages = buildFrameworkPrintPages(bare);
-    expect(titles(pages)).toEqual(['Message house', 'Audiences']);
-    expect(pages[0].head?.left).toBe('03 Message house');
-    expect(mktgFrameworkPrintPageCount(bare)).toBe(3);
+    expect(titles(pages)).toEqual(['Framework', 'Message house', 'Audiences']);
+    expect(pages[0].head?.left).toBe('01 Framework');
+    expect(pages[1].head?.left).toBe('03 Message house');
+    expect(mktgPrintFrameworkPageCount(bare)).toBe(4);
   });
 });

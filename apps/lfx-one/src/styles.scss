@@ -38,11 +38,10 @@
      right and clipped at the right edge, and pushed down so the framework's
      cover ran onto a second sheet. While a print class is on the body, every
      element holding the print document stops being a containing block. The
-     deck pages (lfx-mktg-print-page frames, in flow) get the same: a container
-     or a transform around them would clip or move their fragments. */
+     framework's deck pages (lfx-mktg-print-page frames, in flow) get the same:
+     a container or a transform around them would clip or move their fragments. */
   body.lfx-print-brand-kit :has(.lfx-brand-kit-book),
   body.lfx-print-framework :has(.lfx-framework-print),
-  body.lfx-print-brand-kit :has(.lfx-print-page),
   body.lfx-print-framework :has(.lfx-print-page) {
     position: static !important;
     transform: none !important;
