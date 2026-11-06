@@ -36,6 +36,7 @@ import {
   googleDemandGenSingleAdGroupName,
 } from '@lfx-one/shared/utils/campaign-google-demand-gen-ad-groups.utils';
 import { googleDemandGenVideoCreativeRefusal } from '@lfx-one/shared/utils/campaign-google-demand-gen-video.utils';
+import { googleCampaignAudienceSegmentFault, googleCampaignAudienceSegmentsRefusal } from '@lfx-one/shared/utils/campaign-google-user-lists.utils';
 import {
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
@@ -138,6 +139,7 @@ import {
   GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_CAMPAIGN_AUDIENCE_SEGMENT_ENTRIES,
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
@@ -716,8 +718,14 @@ export class CampaignController {
       // about WHO is asking. A check that cannot be made is a 503, never an admission. Any present
       // value other than an empty list counts as carrying segments, so a malformed one cannot slip
       // past to a shape refusal an unauthorised caller could probe with.
-      const rawSegments = body?.audienceSegments as unknown;
-      const carriesSegments = rawSegments !== undefined && rawSegments !== null && !(Array.isArray(rawSegments) && rawSegments.length === 0);
+      //
+      // Both audience fields: `audienceSegments` and the Search campaign-level
+      // `campaignAudienceSegments`, which campaign-service gates on the same relation
+      // (`internal/service/create_marketing_ops.go:58,147-148` at v1.0.33, lfx-v2-campaign-service#525).
+      const carriesList = (raw: unknown): boolean => raw !== undefined && raw !== null && !(Array.isArray(raw) && raw.length === 0);
+      const carriesAdGroupSegments = carriesList(body?.audienceSegments as unknown);
+      const carriesCampaignSegments = carriesList(body?.campaignAudienceSegments as unknown);
+      const carriesSegments = carriesAdGroupSegments || carriesCampaignSegments;
       if (platforms.includes('google-ads') && carriesSegments) {
         const access = await this.googleMarketingOpsAccess(req, projectSlug, 'check_google_audience_segments_access', 'audience segments');
         if (access !== 'granted') {
@@ -745,8 +753,9 @@ export class CampaignController {
       // form never sends them in that state (`googleAudienceSegmentsEnabled` is false there), but a
       // capability read and a create can land on pods with different flags mid-rollout.
       if (platforms.includes('google-ads') && carriesSegments && !canCreateWithAudienceSegments()) {
+        const field = carriesAdGroupSegments ? 'audienceSegments' : 'campaignAudienceSegments';
         next(
-          ServiceValidationError.forField('audienceSegments', 'Google audience segments are not enabled on this deployment; omit audienceSegments', {
+          ServiceValidationError.forField(field, `Google audience segments are not enabled on this deployment; omit ${field}`, {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
@@ -1597,6 +1606,27 @@ export class CampaignController {
             );
             return;
           }
+        }
+      }
+
+      // The Search campaign-level user lists (lfx-v2-campaign-service#525), in
+      // `validateCampaignAudienceSegments`' own order (`search_campaign_audiences.go:63-115` at
+      // v1.0.33): the Go decode into `[]string`, then nothing at all for an empty list (`:65`), the
+      // Search-only fence (`:68`), the one-level rule beside `audienceSegments` (`:71`), the raw bound
+      // (`:82`), each entry (`:87-104`), and the cap on the distinct lists (`:111`). Upstream runs it
+      // in the job, after the `audienceSegments` checks above, so a request that breaks both is
+      // refused for those first. Every refusal names the entry by position, never by its text.
+      //
+      // Two upstream rules are not repeated here. The account match (`:99`): the BFF cannot see the
+      // campaign's account without an upstream call, so that refusal arrives as the job's own
+      // result. And `adGroups[].audienceSegments` (`:74-78`): no request field reaches it, because the
+      // Search ad group this BFF names (`googleSearchAds`) never carries segments of its own.
+      const rawCampaignSegments = body?.campaignAudienceSegments as unknown;
+      if (cutoverOn && platforms.includes('google-ads') && rawCampaignSegments !== undefined && rawCampaignSegments !== null) {
+        const refusal = this.googleCampaignAudienceSegmentsRefusal(body, rawCampaignSegments, googleChannel);
+        if (refusal !== null) {
+          next(ServiceValidationError.forField('campaignAudienceSegments', refusal, { operation: 'campaign_create', service: 'campaign_controller' }));
+          return;
         }
       }
 
@@ -3858,7 +3888,7 @@ export class CampaignController {
    * FGA on, this check is the route's whole gate: the route is registered ahead of the blanket
    * `requireCampaignManager`, behind its own `requireGoogleUserListsAccess`, for the same reason as the
    * conversion-action list's (#5239). Answers 404, as if it were not mounted, while the create road that
-   * sends `audienceSegments` (`canCreateWithAudienceSegments`) is off. Every refusal leaves the tab on its
+   * sends `campaignAudienceSegments` (`canCreateWithAudienceSegments`) is off. Every refusal leaves the tab on its
    * typed box.
    */
   public async getGoogleAdsUserLists(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -3904,14 +3934,15 @@ export class CampaignController {
       }
       const result: GoogleAdsUserListsResult = {
         accountId: typeof payload.account_id === 'string' ? payload.account_id : '',
-        // A row whose resource name is not the `customers/<id>/userLists/<id>` form `audienceSegments`
-        // accepts cannot be trusted to send, so it is dropped rather than offered; a repeated resource
-        // name is offered once, since the picker keys its rows by it.
+        // A row whose resource name is not a `customers/<id>/userLists/<id>` entry `campaignAudienceSegments`
+        // accepts (canonical list id included, `googleCampaignAudienceSegmentFault`) cannot be trusted to
+        // send, so it is dropped rather than offered; a repeated resource name is offered once, since the
+        // picker keys its rows by it.
         userLists: payload.user_lists
           .filter(
             (l, i, all) =>
               typeof l?.resource_name === 'string' &&
-              GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN.test(l.resource_name) &&
+              googleCampaignAudienceSegmentFault(l.resource_name) === null &&
               all.findIndex((other) => other?.resource_name === l.resource_name) === i
           )
           .map((l) => ({
@@ -6236,6 +6267,8 @@ export class CampaignController {
     const sitelinks = this.googleSitelinks(body, 'search');
     // Normalized only, as the extensions are — `createCampaign` names every segment refusal first.
     const audienceSegments = this.googleAudienceSegments(body);
+    // Normalized only, likewise — `createCampaign` names every campaign-level list refusal first.
+    const campaignAudienceSegments = this.googleCampaignAudienceSegments(body);
     // Normalized only, as the two above are — `createCampaign` names every snippet refusal first.
     const structuredSnippets = this.googleStructuredSnippets(body);
     // Normalized only, as the three above are — `createCampaign` names every call, promotion and
@@ -6282,6 +6315,7 @@ export class CampaignController {
       ...this.googleDemographicExclusions(body, 'search'),
       ...searchLanguages,
       ...audienceSegments,
+      ...campaignAudienceSegments,
       ...callouts,
       ...sitelinks,
       ...structuredSnippets,
@@ -6506,6 +6540,58 @@ export class CampaignController {
   private googleAudienceSegments(body: CampaignCreateRequest): { audienceSegments?: string[] } {
     const clean = this.googleAudienceSegmentList(body?.audienceSegments);
     return clean.length > 0 ? { audienceSegments: clean } : {};
+  }
+
+  /**
+   * The Search campaign's campaign-level user lists, spread-ready, or `{}` when the request names none
+   * (lfx-v2-campaign-service#525). Search only, as {@link googleAudienceSegments} is: `createCampaign`
+   * refuses them on any other channel by name. Trimmed as that list is; repeats are kept for upstream
+   * to collapse (`search_campaign_audiences.go:105-107`). Omitted rather than sent empty, so a create
+   * without lists is the request it was before the field existed.
+   */
+  private googleCampaignAudienceSegments(body: CampaignCreateRequest): { campaignAudienceSegments?: string[] } {
+    const clean = this.googleAudienceSegmentList(body?.campaignAudienceSegments);
+    return clean.length > 0 ? { campaignAudienceSegments: clean } : {};
+  }
+
+  /**
+   * Why upstream would refuse the request's `campaignAudienceSegments`, or `null`: each branch of
+   * `validateCampaignAudienceSegments` it can judge, in its order (see the call site). `raw` is the
+   * present, non-null value.
+   */
+  private googleCampaignAudienceSegmentsRefusal(body: CampaignCreateRequest, raw: unknown, googleChannel: unknown): string | null {
+    // The Go decode into `[]string` refuses a non-list or a non-string entry before any rule runs.
+    if (!Array.isArray(raw) || raw.some((s) => typeof s !== 'string')) {
+      return 'Google Ads campaign audience lists must be a list of user list resource names.';
+    }
+    const segments = this.googleAudienceSegmentList(raw);
+    if (segments.length === 0 || typeof googleChannel !== 'string') return null;
+    if (!(GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS as readonly string[]).includes(googleChannel)) {
+      const label = GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel;
+      return `Google Ads observes user lists on the whole campaign only on Search campaigns, not on ${label} campaigns. Remove the lists or pick Search, then create again.`;
+    }
+    if (this.googleAudienceSegmentList(body?.audienceSegments).length > 0) {
+      return 'Google Ads observes a user list at one level only, so a campaign cannot carry campaign-level lists (campaignAudienceSegments) and ad group audience segments (audienceSegments) together. Keep the lists in one of them and create again.';
+    }
+    const refusal = googleCampaignAudienceSegmentsRefusal(segments);
+    if (refusal === null) return null;
+    if (refusal.rule === 'entries') {
+      return `Google Ads accepts at most ${GOOGLE_ADS_MAX_CAMPAIGN_AUDIENCE_SEGMENT_ENTRIES} campaign audience list entries (${GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS} different lists), and this one has ${refusal.count}. Remove some and create again.`;
+    }
+    if (refusal.rule === 'lists') {
+      return `Google Ads accepts at most ${GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS} different user lists on one campaign, and this one has ${refusal.count}. Remove some and create again.`;
+    }
+    const at = `campaign audience list ${refusal.position}`;
+    switch (refusal.fault) {
+      case 'blank':
+        return `Google Ads campaign audience lists cannot include a blank entry (${at}). Remove it and create again.`;
+      case 'shape':
+        return `The Google Ads ${at} is not a user list resource name. Use the form customers/{customerId}/userLists/{id}, with the customer id written without dashes, and create again.`;
+      case 'notUserList':
+        return `The Google Ads ${at} is not a user list. A Search campaign observes only user lists, customers/{customerId}/userLists/{id}; Google refuses a custom audience there. Replace it with a user list and create again.`;
+      case 'id':
+        return `The Google Ads ${at} has a list id that is not written as Google returns it: a positive number with no leading zeros. Pick the list again, or correct its id, and create again.`;
+    }
   }
 
   /**
@@ -6927,6 +7013,7 @@ export class CampaignController {
     candidates.push(['conversionActions', raw['conversionActions']]);
     candidates.push(['callouts', raw['callouts']]);
     candidates.push(['audienceSegments', raw['audienceSegments']]);
+    candidates.push(['campaignAudienceSegments', raw['campaignAudienceSegments']]);
     // The geo lists, the ad schedules and the three criteria lists are bounded here and not only by
     // their own caps further down, because `createConfigEnvelope` runs BEFORE those caps and
     // normalizes whatever it is handed — `googleProximityList`, `googleAdScheduleList` and

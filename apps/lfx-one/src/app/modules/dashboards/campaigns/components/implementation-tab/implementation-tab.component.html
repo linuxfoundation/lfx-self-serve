@@ -1151,8 +1151,9 @@
       <!--
         Google Ads: audience segments.
 
-        SEARCH ONLY, gated on `googleAudienceSegmentsAvailable` — upstream attaches audience criteria
-        to the Search ad group and refuses them on every other channel rather than dropping them.
+        SEARCH ONLY, gated on `googleAudienceSegmentsAvailable` — sent as `campaignAudienceSegments`,
+        which upstream observes on the whole Search campaign and refuses on every other channel rather
+        than dropping them (linuxfoundation/lfx-v2-campaign-service#525).
         Each entry is an EXISTING user list's resource name. The picker lists the account's user lists
         (#5244) and adds the picked one's resource name exactly as typing it would; the typed box stays
         for a list the picker does not show. Empty sends no key, so an untouched section changes
@@ -1163,6 +1164,10 @@
           <label class="mb-2 block text-xs font-medium text-gray-700" for="google-audience-segment-add">
             Google Audience Segments ({{ googleAudienceSegments().length }}/{{ googleMaxAudienceSegments }})
           </label>
+          <p class="mb-3 text-xs text-gray-500" data-testid="implementation-google-audience-segments-scope">
+            These lists apply to the whole campaign, including any ad group added later. They only observe: Google reports on them without narrowing who sees
+            the ads.
+          </p>
           @switch (googleUserListPicker().status) {
             @case ('loaded') {
               @if (googleUserListPickerOptions().length > 0 && !googleAudienceSegmentsFull()) {
@@ -1242,10 +1247,20 @@
             <p id="google-audience-segment-shape" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-audience-segment-shape">
               Enter a user list's full resource name, like customers/1234567890/userLists/987654321 — the customer id without dashes.
             </p>
+          } @else if (googleAudienceSegmentDraftError() === 'id') {
+            <p id="google-audience-segment-id" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-audience-segment-id">
+              Write the list id as Google Ads shows it: a positive number with no leading zeros, like customers/1234567890/userLists/987654321.
+            </p>
           } @else if (googleAudienceSegments().length === 0) {
             <span class="mt-2 block text-xs text-gray-500" data-testid="implementation-google-audience-segments-default">
-              No audience segments added — this campaign targets no user lists.
+              No audience segments added — this campaign observes no user lists.
             </span>
+          }
+          <!-- A restored list the campaign-level field refuses: Create waits until it is removed. -->
+          @if (googleAudienceSegmentsInvalidPosition(); as position) {
+            <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-audience-segments-invalid">
+              Audience segment {{ position }} cannot be sent: its list id is not written as Google Ads shows it. Remove it, then pick or type the list again.
+            </p>
           }
         </div>
       }

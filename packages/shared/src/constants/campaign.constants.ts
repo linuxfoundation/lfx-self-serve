@@ -4642,7 +4642,8 @@ export const GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG = ['performance-max', 'vide
  * reads `geoTargets`, `keywords`, `headlines` and `descriptions` and nothing else Google-specific.
  * Every field here would be dropped there while the create reports success, so the BFF refuses a
  * non-empty one by name instead (#3692, and #3568 for the bidding plan and creative). `geoTargets` postal-code ids and `proximityTargets` have
- * their own refusal (`canCreateWithFinerGoogleGeo`), as do `audienceSegments`.
+ * their own refusal (`canCreateWithFinerGoogleGeo`), as do `audienceSegments` and `campaignAudienceSegments`
+ * (`canCreateWithAudienceSegments`).
  *
  * In `validateGeoPlan`, `validateCriteriaPlan` then `validateAssetPlan` order, so a request
  * carrying several is refused by the one upstream would have judged first.
@@ -4852,6 +4853,10 @@ export const GOOGLE_CHANNELS_WITH_SITELINKS = ['search', 'demand-gen'] as const;
  * Performance Max has no ad group to hang them on. A separate list from
  * {@link GOOGLE_CHANNELS_WITH_AD_EXTENSIONS} although it holds the same one channel, because the two
  * fences are upstream's for different reasons and either could move without the other.
+ *
+ * It fences the campaign-level `campaignAudienceSegments` too: upstream refuses them on any channel
+ * but Search (`search_campaign_audiences.go` `validateCampaignAudienceSegments`), where the tab's
+ * lists now go (linuxfoundation/lfx-v2-campaign-service#525).
  */
 export const GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS = ['search'] as const;
 
@@ -4859,8 +4864,21 @@ export const GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS = ['search'] as const;
  * Upstream's own bound on a Google Ads audience segment list (`targeting.go`'s
  * `maxAudienceSegments`), checked against the RAW list before any entry — so a list that is only
  * over the cap because it repeats a segment is refused on the cap, as {@link GOOGLE_ADS_MAX_CALLOUTS} is.
+ *
+ * The same constant bounds the Search campaign-level lists (`campaignAudienceSegments`), but there
+ * upstream applies it to the DISTINCT lists, after its dedupe
+ * (`search_campaign_audiences.go` `validateCampaignAudienceSegments`), with
+ * {@link GOOGLE_ADS_MAX_CAMPAIGN_AUDIENCE_SEGMENT_ENTRIES} as the looser bound on the raw list.
  */
 export const GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS = 20;
+
+/**
+ * Upstream's loose bound on the RAW `campaignAudienceSegments` list, `4*maxAudienceSegments`, checked
+ * before any entry is parsed (`search_campaign_audiences.go` `validateCampaignAudienceSegments`). The
+ * real cap, {@link GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS}, is on the distinct lists, so repeats that collapse
+ * to 20 or fewer are accepted.
+ */
+export const GOOGLE_ADS_MAX_CAMPAIGN_AUDIENCE_SEGMENT_ENTRIES = 4 * GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS;
 
 /**
  * The one audience segment shape upstream attaches: a Customer Match or remarketing user list the

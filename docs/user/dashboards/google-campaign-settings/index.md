@@ -29,7 +29,7 @@ tags:
     ad groups,
     implement,
   ]
-last_updated: 2026-11-06
+last_updated: 2026-11-07
 intercom_collection: Dashboards
 ---
 
@@ -135,10 +135,14 @@ Performance Max campaigns do not offer **Conversion Actions** here, and use the 
 
 Search campaigns can watch how existing Google Ads audiences perform, such as your customer lists and website visitor lists. The **Google Audience Segments** section appears only for the LF marketing team, because every foundation shares one Google Ads account.
 
+The lists apply to the whole campaign, including any ad group added later, for example from **Optimize**. They only observe: Google reports on them without narrowing who sees the ads.
+
 - **Pick a user list** lists the account's user lists. Type part of a name to narrow the list, then choose one to add it. Each entry shows the list's type, such as **Customer list** or **Website visitors**, and says when Google reports that it is not eligible for Search.
 - A list you have added is not offered again. You can still type a list's full name, such as `customers/<id>/userLists/<id>`, into the box below the picker, for a list the picker does not show.
 - If the list cannot be shown, a note in the section says why: it is not available here, or it could not be read for this project's Google Ads account. Type the list names instead.
 - If the account has more user lists than the picker shows, a note says so. Type the name of any list that is not listed.
+- A list id must be written as Google Ads shows it, a positive number with no leading zeros. If a saved brief holds a list written another way, a message in the section names it and **Create Campaign** stays unavailable until you remove it.
+- You can add up to 20 lists. Each must belong to the campaign's own Google Ads account. A list from another account is refused when you create the campaign, and the Google Ads campaign is not created.
 
 ## Networks, display path, more ads and negative keywords (Search only)
 
