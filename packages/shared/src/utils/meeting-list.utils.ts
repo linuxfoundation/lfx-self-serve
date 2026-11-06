@@ -327,11 +327,11 @@ export function getMeetingStartsInLabel(start: string | Date, now: Date = new Da
   return `Meeting starts in ${Math.max(1, Math.floor(diffMs / HOUR_MS))} h`;
 }
 
-/** Visibility badges for a row: Private and Restricted can both show, Public only when neither applies. */
+/** Visibility badges for a row: Restricted then Private can both show, Public only when neither applies. */
 export function getMeetingVisibilityBadges(meeting: Pick<Meeting, 'visibility' | 'restricted'>): MeetingVisibilityInfo[] {
   const badges: MeetingVisibilityInfo[] = [];
-  if (meeting.visibility === MeetingVisibility.PRIVATE) badges.push(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PRIVATE]);
   if (meeting.restricted) badges.push(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.RESTRICTED]);
+  if (meeting.visibility === MeetingVisibility.PRIVATE) badges.push(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PRIVATE]);
   return badges.length > 0 ? badges : [MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PUBLIC]];
 }
 
