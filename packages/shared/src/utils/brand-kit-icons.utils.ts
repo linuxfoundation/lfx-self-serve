@@ -22,24 +22,25 @@ function namedInRules(entry: BrandKitPaletteEntry, rules: readonly string[]): bo
 
 /**
  * The three colour roles of the iconography samples, from the kit's own
- * colours (the design board's, with the editor's correction): the tiles'
- * ink and the strip's ground are the kit's dark; the highlight (the one
- * strip icon not in white) is the kit's spark when it is a colour, else the
- * last palette colour the kit's Iconography rules name ("Coral only for a
- * single active state"), else the accent.
+ * colours (the design board's, with the maintainer's correction): the
+ * tiles' ink and the strip's ground are the kit's dark; the highlight (the
+ * one strip icon not in white) is the colour the kit's own Iconography rule
+ * names ("Lilac only for a single active state": the last palette colour
+ * the rules name, in palette order), else the kit's spark when it is a
+ * colour, else the accent. The rule wins over the spark because a kit's
+ * spark and the colour its rule reserves for the active state can differ,
+ * and the samples show what the rule says.
  */
 export function brandKitIconColours(kit: BrandKitRevision): BrandKitIconColours {
   const { dark, accent, spark } = kit.kit;
+  const rules = kit.chapters.visual.icons.rules;
+  const named = kit.chapters.color.palette.filter((entry) => BRAND_KIT_HEX_REGEX.test(entry.hex) && namedInRules(entry, rules));
+  const last = named.at(-1);
   let highlight = accent;
-  if (BRAND_KIT_HEX_REGEX.test(spark)) {
+  if (last) {
+    highlight = last.hex;
+  } else if (BRAND_KIT_HEX_REGEX.test(spark)) {
     highlight = spark;
-  } else {
-    const rules = kit.chapters.visual.icons.rules;
-    const named = kit.chapters.color.palette.filter((entry) => BRAND_KIT_HEX_REGEX.test(entry.hex) && namedInRules(entry, rules));
-    const last = named.at(-1);
-    if (last) {
-      highlight = last.hex;
-    }
   }
   return { tileInk: dark, stripGround: dark, highlight };
 }

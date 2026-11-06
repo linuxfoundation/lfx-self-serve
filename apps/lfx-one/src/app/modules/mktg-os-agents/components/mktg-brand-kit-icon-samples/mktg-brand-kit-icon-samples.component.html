@@ -12,7 +12,7 @@
     [attr.stroke-width]="strokeWidth"
     [attr.stroke-linecap]="linecap"
     [attr.stroke-linejoin]="linejoin"
-    class="shrink-0"
+    class="mx-auto block shrink-0"
     aria-hidden="true"
     focusable="false">
     @for (shape of icon.shapes; track $index) {
@@ -27,35 +27,76 @@
   </svg>
 </ng-template>
 
-<!-- The 4 × 2 tiles: each icon in the kit's dark, its label as text under it (the board's 10 px gap, 11 px label, 10 px radius). -->
-<ul class="grid grid-cols-4 gap-3" data-testid="brand-kit-icon-tiles">
-  @for (icon of icons; track icon.id) {
-    <li
-      class="flex flex-col items-center justify-center gap-[10px] rounded-[10px] border border-gray-200"
-      [class]="tileClass()"
-      [style.color]="colours().tileInk"
-      [attr.data-testid]="'brand-kit-icon-tile-' + icon.id">
-      <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: icon, size: tileIconSize }" />
-      <span class="text-[11px] leading-[1.4] text-gray-500">{{ icon.label }}</span>
-    </li>
-  }
-</ul>
-
-<!-- The strip: the eight icons on the kit's dark, white, the third in the highlight. Wraps on a narrow card instead of overflowing it. -->
-<div
-  class="flex flex-wrap items-center gap-x-[26px] gap-y-3 rounded-[10px] px-[30px] [print-color-adjust:exact]"
-  [class]="stripClass()"
-  [style.background-color]="colours().stripGround"
-  role="img"
-  [attr.aria-label]="stripLabel"
-  data-testid="brand-kit-icon-strip">
-  @for (item of strip(); track item.icon.id) {
-    <span
-      class="flex"
-      [style.color]="item.ink"
-      [attr.data-highlight]="item.highlight ? 'true' : null"
-      [attr.data-testid]="'brand-kit-icon-strip-' + item.icon.id">
-      <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: item.icon, size: stripIconSize }" />
-    </span>
-  }
-</div>
+@if (compact()) {
+  <!--
+    The print sheet's compact rows: plain block flow only. Inside the sheet's paginated table, Chromium fragments a
+    grid or flex item's contents away from its box (QA round 1: empty tiles on one page, their icons on the next), so
+    the tiles are inline blocks, four to a line, and the strip is a line of inline blocks; no grid, no flex. Sized to
+    sit beside the rules in the Iconography row (≈ 98 px tall: 30 px tiles, 18 px icons, 8 px labels, a 30 px strip).
+  -->
+  <ul class="block" data-testid="brand-kit-icon-tiles">
+    @for (icon of icons; track icon.id) {
+      <li
+        class="inline-block h-[30px] w-[23%] rounded-[6px] border border-gray-200 pt-[1px] text-center align-top [&:not(:nth-child(4n))]:mr-[2.5%] [&:nth-child(-n+4)]:mb-1"
+        [style.color]="colours().tileInk"
+        [attr.data-testid]="'brand-kit-icon-tile-' + icon.id">
+        <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: icon, size: iconSize() }" />
+        <span class="block text-[8px] leading-[10px] text-gray-500">{{ icon.label }}</span>
+      </li>
+    }
+  </ul>
+  <!-- The strip: the eight icons on the kit's dark, white, the third in the highlight; the board's left-aligned row. -->
+  <div
+    class="mt-1 block h-[30px] whitespace-nowrap rounded-[6px] px-3 py-[6px] [print-color-adjust:exact]"
+    [style.background-color]="colours().stripGround"
+    role="img"
+    [attr.aria-label]="stripLabel"
+    data-testid="brand-kit-icon-strip">
+    @for (item of strip(); track item.icon.id) {
+      <span
+        class="inline-block align-top [&:not(:last-child)]:mr-4"
+        [style.color]="item.ink"
+        [attr.data-highlight]="item.highlight ? 'true' : null"
+        [attr.data-testid]="'brand-kit-icon-strip-' + item.icon.id">
+        <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: item.icon, size: iconSize() }" />
+      </span>
+    }
+  </div>
+} @else {
+  <!--
+    The web card: the board's 4 × 2 tiles (book.js L91: gap 12 px, height 110 px, radius 10 px, icon 32 px, label 11 px,
+    10 px between them), two to a row under the sm breakpoint so a label never breaks mid-word in a narrow card.
+  -->
+  <ul class="grid grid-cols-2 gap-[12px] sm:grid-cols-4" data-testid="brand-kit-icon-tiles">
+    @for (icon of icons; track icon.id) {
+      <li
+        class="flex h-[110px] flex-col items-center justify-center gap-[10px] rounded-[10px] border border-gray-200"
+        [style.color]="colours().tileInk"
+        [attr.data-testid]="'brand-kit-icon-tile-' + icon.id">
+        <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: icon, size: iconSize() }" />
+        <span class="text-[11px] leading-[1.4] text-gray-500">{{ icon.label }}</span>
+      </li>
+    }
+  </ul>
+  <!--
+    The strip: the eight icons on the kit's dark, white, the third in the highlight. The board's fixed 26 px gap is
+    for its 624 px card; in the half-width card the eight spread evenly with a 12 px minimum, so they stay one row
+    wherever the card is wider than ≈ 360 px and wrap only in a narrow one, inside the strip.
+  -->
+  <div
+    class="mt-[14px] flex min-h-[110px] flex-wrap items-center justify-between gap-x-3 gap-y-3 rounded-[10px] px-4 py-4 [print-color-adjust:exact]"
+    [style.background-color]="colours().stripGround"
+    role="img"
+    [attr.aria-label]="stripLabel"
+    data-testid="brand-kit-icon-strip">
+    @for (item of strip(); track item.icon.id) {
+      <span
+        class="flex"
+        [style.color]="item.ink"
+        [attr.data-highlight]="item.highlight ? 'true' : null"
+        [attr.data-testid]="'brand-kit-icon-strip-' + item.icon.id">
+        <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: item.icon, size: stripIconSize }" />
+      </span>
+    }
+  </div>
+}

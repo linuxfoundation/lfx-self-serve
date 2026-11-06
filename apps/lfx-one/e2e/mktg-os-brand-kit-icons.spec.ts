@@ -3,6 +3,7 @@
 
 import { BRAND_KIT_ICON_HIGHLIGHT_INDEX, BRAND_KIT_ICON_SAMPLES, BRAND_KIT_ICON_STRIP_INK, BRAND_KIT_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { brandKitIconColours } from '@lfx-one/shared/utils/brand-kit-icons.utils';
 import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { columnAssetRevisionResponse, openAssetDocument } from './helpers/mktg-os-asset-views.helper';
@@ -36,7 +37,8 @@ test.describe('Brand kit iconography samples: the board’s icons in the kit’s
     await expect(tiles).toHaveText(BRAND_KIT_ICON_SAMPLES.map((icon) => icon.label));
     await expect(tiles.first()).toHaveCSS('color', rgb(kit.kit.dark));
     await expect(tiles.first().locator('svg')).toBeVisible();
-    // The strip: the kit's dark ground, white icons, the third one in the kit's spark.
+    // The strip: the kit's dark ground, white icons, the third one in the kit's highlight (the colour its Iconography rule
+    // names, else its spark: this fixture's rules name none).
     const strip = samples.getByTestId('brand-kit-icon-strip');
     await expect(strip).toHaveCSS('background-color', rgb(kit.kit.dark));
     const stripIcons = strip.getByTestId(/^brand-kit-icon-strip-/);
@@ -44,7 +46,7 @@ test.describe('Brand kit iconography samples: the board’s icons in the kit’s
     await expect(stripIcons.first()).toHaveCSS('color', rgb(BRAND_KIT_ICON_STRIP_INK));
     const highlighted = strip.getByTestId(`brand-kit-icon-strip-${BRAND_KIT_ICON_SAMPLES[BRAND_KIT_ICON_HIGHLIGHT_INDEX].id}`);
     await expect(highlighted).toHaveAttribute('data-highlight', 'true');
-    await expect(highlighted).toHaveCSS('color', rgb(kit.kit.spark));
+    await expect(highlighted).toHaveCSS('color', rgb(brandKitIconColours(kit).highlight));
     // The rules and the recommended set stay, under the samples.
     await expect(card).toContainText(kit.chapters.visual.icons.rules[0]);
     await expect(card).toContainText(`Recommended set: ${kit.chapters.visual.icons.recommended}`);
@@ -54,7 +56,7 @@ test.describe('Brand kit iconography samples: the board’s icons in the kit’s
     await page.screenshot({ path: info.outputPath('visual-iconography.png'), fullPage: true });
   });
 
-  test('the PDF’s Visual chapter prints the same samples, compact, inside the Iconography block', async ({ page }, info) => {
+  test('the PDF’s Visual chapter prints the same samples, compact, beside the rules in the Iconography block', async ({ page }, info) => {
     const kit = brandKitTestRevision();
     await page.setViewportSize({ width: 1280, height: 1000 });
     await stubMktgPrintFrame(page);
@@ -70,13 +72,35 @@ test.describe('Brand kit iconography samples: the board’s icons in the kit’s
     await expect(samples.getByTestId('brand-kit-icon-strip')).toHaveCSS('background-color', rgb(kit.kit.dark));
     await expect(samples.getByTestId(`brand-kit-icon-strip-${BRAND_KIT_ICON_SAMPLES[BRAND_KIT_ICON_HIGHLIGHT_INDEX].id}`)).toHaveCSS(
       'color',
-      rgb(kit.kit.spark)
+      rgb(brandKitIconColours(kit).highlight)
     );
-    // The block holds together on one page, and the samples are the compact rows (shorter tiles than the web card).
+    // The board's print layout: the rules at the left, the samples beside them in one table row, so the Iconography row
+    // stays as short as the rules and the chapter keeps its page; the row and the samples hold together.
+    const row = visual.getByTestId('kit-print-icon-row');
+    await expect(row).toHaveCSS('display', 'table');
+    await expect(row).toHaveCSS('break-inside', 'avoid');
     await expect(samples).toHaveCSS('break-inside', 'avoid');
-    const tile = await samples.getByTestId('brand-kit-icon-tile-documents').boundingBox();
-    if (!tile) throw new Error('The print tile must be laid out');
-    expect(tile.height).toBeLessThanOrEqual(90);
+    const rules = await row.locator('.kit-icon-rules').boundingBox();
+    const samplesBox = await samples.boundingBox();
+    if (!rules || !samplesBox) throw new Error('The rules and the samples must be laid out');
+    expect(samplesBox.x).toBeGreaterThanOrEqual(rules.x + rules.width - 1);
+    expect(Math.abs(samplesBox.y - rules.y)).toBeLessThanOrEqual(4);
+    expect(samplesBox.height).toBeLessThanOrEqual(102);
+    // Every tile printed whole: its icon and its label inside its own border, four to a line.
+    const tiles = samples.getByTestId(/^brand-kit-icon-tile-/);
+    for (const tile of await tiles.all()) {
+      const box = await tile.boundingBox();
+      const icon = await tile.locator('svg').boundingBox();
+      const label = await tile.locator('span').boundingBox();
+      if (!box || !icon || !label) throw new Error('The print tile must be laid out');
+      expect(box.height).toBeLessThanOrEqual(32);
+      expect(icon.y).toBeGreaterThanOrEqual(box.y - 1);
+      expect(label.y + label.height).toBeLessThanOrEqual(box.y + box.height + 1);
+    }
+    const tops = await tiles.evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)));
+    expect(new Set(tops.slice(0, 4)).size).toBe(1);
+    expect(new Set(tops.slice(4)).size).toBe(1);
+    expect(tops[4]).toBeGreaterThan(tops[0]);
     await samples.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('print-iconography.png'), fullPage: true });
     await page.emulateMedia({ media: 'screen' });

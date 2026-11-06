@@ -35,7 +35,8 @@ test.describe('Brand kit iconography samples structure', () => {
     expect(new Set(tops.slice(0, 4)).size).toBe(1);
     expect(tops[4]).toBeGreaterThan(tops[0]);
     expect(new Set(tops.slice(4)).size).toBe(1);
-    // The strip's icons sit in one row, inside the strip, and nothing overflows the card.
+    // The strip's eight icons sit in ONE row in the half-width card (spread evenly, 12 px minimum gap), inside the strip,
+    // and nothing overflows the card.
     const strip = await samples.getByTestId('brand-kit-icon-strip').boundingBox();
     const stripIconTops = await samples
       .getByTestId(/^brand-kit-icon-strip-/)
@@ -48,5 +49,39 @@ test.describe('Brand kit iconography samples structure', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await samples.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('iconography-structure.png'), fullPage: true });
+  });
+
+  test('on a 390 px screen the tiles go two to a row with whole labels, and the strip’s icons wrap inside the strip', async ({ page }, info) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openAssetDocument(page, 'brand-kit', 200, true, false, columnAssetRevisionResponse('brand-kit'));
+    await page.getByTestId('brand-kit-web-view-tab-visual').click();
+    await expect(page.getByTestId('brand-kit-web-view-panel-visual')).toBeVisible({ timeout: TAB_TIMEOUT });
+
+    const samples = page.getByTestId('brand-kit-web-view-icons').getByTestId('brand-kit-icon-samples');
+    await samples.scrollIntoViewIfNeeded();
+    // Two tiles to a row, so the first two share a top edge and the third starts the next row.
+    const tops = await samples.getByTestId(/^brand-kit-icon-tile-/).evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)));
+    expect(new Set(tops.slice(0, 2)).size).toBe(1);
+    expect(tops[2]).toBeGreaterThan(tops[0]);
+    expect(new Set(tops).size).toBe(4);
+    // No label breaks mid-word: each label is one line of its own text.
+    const labelLines = await samples
+      .getByTestId(/^brand-kit-icon-tile-/)
+      .locator('span')
+      .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().height / parseFloat(getComputedStyle(node).lineHeight))));
+    expect(labelLines).toEqual(BRAND_KIT_ICON_SAMPLES.map(() => 1));
+    // The strip's icons may wrap into rows here, but every one stays inside the strip's box.
+    const strip = await samples.getByTestId('brand-kit-icon-strip').boundingBox();
+    if (!strip) throw new Error('The strip must be laid out');
+    for (const icon of await samples.getByTestId(/^brand-kit-icon-strip-/).all()) {
+      const box = await icon.boundingBox();
+      if (!box) throw new Error('The strip icon must be laid out');
+      expect(box.x).toBeGreaterThanOrEqual(strip.x - 1);
+      expect(box.x + box.width).toBeLessThanOrEqual(strip.x + strip.width + 1);
+      expect(box.y).toBeGreaterThanOrEqual(strip.y - 1);
+      expect(box.y + box.height).toBeLessThanOrEqual(strip.y + strip.height + 1);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath('iconography-structure-390.png'), fullPage: true });
   });
 });

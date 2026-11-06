@@ -88,22 +88,36 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(root.querySelector('[data-testid="kit-print-type"]')?.textContent).toContain('500 · 64/72 px');
   expect(root.querySelector<HTMLElement>('[data-testid="mktg-brand-kit-print"]')?.style.getPropertyValue('--mfp-font')).toBe(brand.fontStack);
   expect(root.querySelector('[data-testid="kit-print-visual"]')?.textContent).toContain(kit.chapters.visual.icons.recommended);
-  // The board's sample icons, compact, inside the Iconography block between its title and its rules, in the kit's colours.
-  const samples = root.querySelector<HTMLElement>('[data-testid="kit-print-visual"] .kit-icon-samples');
-  expect(samples?.getAttribute('data-testid')).toBe('brand-kit-icon-samples');
-  expect(samples?.previousElementSibling?.tagName).toBe('H3');
-  expect(samples?.nextElementSibling?.tagName).toBe('UL');
-  expect(samples?.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(8);
-  expect(samples?.querySelector('[data-testid="brand-kit-icon-tile-documents"]')?.classList.contains('h-[88px]')).toBe(true);
-  expect(samples?.querySelector<HTMLElement>('[data-highlight="true"]')?.getAttribute('data-testid')).toBe('brand-kit-icon-strip-global');
+  // The board's print layout for Iconography: under the title, one table row with the rules in the left cell and the
+  // sample icons (compact, block flow, the kit's colours) in the right cell, so the row stays as short as the rules.
+  const iconRow = root.querySelector<HTMLElement>('[data-testid="kit-print-visual"] [data-testid="kit-print-icon-row"]');
+  if (!iconRow) throw new Error('Missing synthetic icon row');
+  expect(iconRow.previousElementSibling?.tagName).toBe('H3');
+  expect(getComputedStyle(iconRow).display).toBe('table');
+  expect(getComputedStyle(iconRow).breakInside).toBe('avoid');
+  const cells = Array.from(iconRow.children) as HTMLElement[];
+  expect(cells.map((cell) => cell.className)).toEqual(['kit-icon-rules', 'kit-icon-samples-cell']);
+  for (const cell of cells) {
+    expect(getComputedStyle(cell).display).toBe('table-cell');
+  }
+  expect(Array.from(cells[0].querySelectorAll('li'), (li) => li.textContent)).toEqual(kit.chapters.visual.icons.rules);
+  const samples = cells[1].querySelector<HTMLElement>('.kit-icon-samples');
+  if (!samples) throw new Error('Missing synthetic icon samples');
+  expect(samples.getAttribute('data-testid')).toBe('brand-kit-icon-samples');
+  expect(samples.classList.contains('block')).toBe(true);
+  expect(getComputedStyle(samples).breakInside).toBe('avoid');
+  expect(samples.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(8);
+  const tile = samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tile-documents"]');
+  expect(tile?.classList.contains('inline-block')).toBe(true);
+  expect(tile?.classList.contains('h-[30px]')).toBe(true);
+  expect(tile?.querySelector('svg')?.getAttribute('width')).toBe('18');
+  expect(samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]')?.classList.contains('h-[30px]')).toBe(true);
+  expect(samples.querySelector<HTMLElement>('[data-highlight="true"]')?.getAttribute('data-testid')).toBe('brand-kit-icon-strip-global');
+  // No grid or flex box in the samples: inside the paginated table they fragment their contents away from their boxes.
+  expect(samples.querySelectorAll('.grid, .flex, .inline-flex')).toHaveLength(0);
   const probe = document.createElement('span');
   probe.style.color = kit.kit.dark;
-  expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]')?.style.backgroundColor).toBe(probe.style.color);
-  if (!samples) throw new Error('Missing synthetic icon samples');
-  expect(getComputedStyle(samples).breakInside).toBe('avoid');
-  for (const rule of kit.chapters.visual.icons.rules) {
-    expect(root.querySelector('[data-testid="kit-print-visual"]')?.textContent).toContain(rule);
-  }
+  expect(samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]')?.style.backgroundColor).toBe(probe.style.color);
   expect(root.querySelectorAll('[data-testid="kit-print-usage"]')).toHaveLength(kit.chapters.usage.examples.length);
   expect(root.querySelector('[data-testid="kit-print-voice"]')?.textContent).toContain(kit.chapters.voice.umbrella);
   kit.chapters.voice.attributes.forEach((attribute) => expect(root.textContent).toContain(attribute.line));

@@ -25,6 +25,8 @@ export const BRAND_KIT_ICON_STROKE_LINEJOIN = 'round';
 export const BRAND_KIT_ICON_TILE_SIZE_PX = 32;
 /** The icon's side in the dark strip, in CSS pixels (the board's). */
 export const BRAND_KIT_ICON_STRIP_SIZE_PX = 30;
+/** The icons' side in the print sheet's compact rows (tiles and strip alike), where the samples sit beside the rules. */
+export const BRAND_KIT_ICON_COMPACT_SIZE_PX = 18;
 
 /** The strip icon drawn in the highlight colour: the third (Global); the rest are white. */
 export const BRAND_KIT_ICON_HIGHLIGHT_INDEX = 2;

@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { BRAND_KIT_ICON_HIGHLIGHT_INDEX, BRAND_KIT_ICON_SAMPLES, BRAND_KIT_ICON_STRIP_INK } from '@lfx-one/shared/constants';
+import {
+  BRAND_KIT_ICON_COMPACT_SIZE_PX,
+  BRAND_KIT_ICON_HIGHLIGHT_INDEX,
+  BRAND_KIT_ICON_SAMPLES,
+  BRAND_KIT_ICON_STRIP_INK,
+  BRAND_KIT_ICON_STRIP_SIZE_PX,
+  BRAND_KIT_ICON_TILE_SIZE_PX,
+} from '@lfx-one/shared/constants';
 import { BrandKitIconColours } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 import { MktgBrandKitIconSamplesComponent } from './mktg-brand-kit-icon-samples.component';
@@ -29,6 +36,14 @@ describe('MktgBrandKitIconSamplesComponent', () => {
   it('draws the eight tiles in the board’s order, each icon inline as stroked shapes in the kit’s dark, its label as text', async () => {
     const { root } = await setup();
     expect(root.getAttribute('data-testid')).toBe('brand-kit-icon-samples');
+    // A block host: the print sheet's `break-inside: avoid` holds it whole (an inline or flex host would not).
+    expect(root.classList.contains('block')).toBe(true);
+    expect(root.classList.contains('flex')).toBe(false);
+    // The board's 4 × 2 grid with its 12 px gap (book.js L91); two to a row below the sm breakpoint so no label breaks mid-word.
+    const grid = root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tiles"]');
+    expect(grid?.classList.contains('gap-[12px]')).toBe(true);
+    expect(grid?.classList.contains('sm:grid-cols-4')).toBe(true);
+    expect(grid?.classList.contains('grid-cols-2')).toBe(true);
     const tiles = Array.from(root.querySelectorAll<HTMLElement>('[data-testid^="brand-kit-icon-tile-"]'));
     expect(tiles.map((tile) => tile.getAttribute('data-testid'))).toEqual(BRAND_KIT_ICON_SAMPLES.map((icon) => `brand-kit-icon-tile-${icon.id}`));
     expect(tiles.map((tile) => tile.querySelector('span')?.textContent)).toEqual(BRAND_KIT_ICON_SAMPLES.map((icon) => icon.label));
@@ -42,7 +57,7 @@ describe('MktgBrandKitIconSamplesComponent', () => {
       expect(svg?.getAttribute('stroke-linecap')).toBe('round');
       expect(svg?.getAttribute('stroke-linejoin')).toBe('round');
       expect(svg?.getAttribute('aria-hidden')).toBe('true');
-      expect(svg?.getAttribute('width')).toBe('32');
+      expect(svg?.getAttribute('width')).toBe(String(BRAND_KIT_ICON_TILE_SIZE_PX));
       // One element per shape of the shared constant, of its kind: the shapes are drawn, never pasted as markup.
       const shapes = Array.from(svg?.children ?? []);
       expect(shapes.map((shape) => shape.tagName.toLowerCase())).toEqual(BRAND_KIT_ICON_SAMPLES[index].shapes.map((shape) => shape.kind));
@@ -60,6 +75,11 @@ describe('MktgBrandKitIconSamplesComponent', () => {
     const strip = root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]');
     expect(strip?.style.backgroundColor).toBe(cssColour(COLOURS.stripGround));
     expect(strip?.getAttribute('role')).toBe('img');
+    // In the half-width card the eight spread evenly with a 12 px minimum gap, one row wherever the card allows, wrapping inside the strip otherwise.
+    for (const cls of ['flex', 'flex-wrap', 'justify-between', 'gap-x-3', 'px-4']) {
+      expect(strip?.classList.contains(cls)).toBe(true);
+    }
+    expect(strip?.classList.contains('gap-x-[26px]')).toBe(false);
     expect(strip?.getAttribute('aria-label')).toContain('Global in the highlight colour');
     const icons = Array.from(strip?.querySelectorAll<HTMLElement>('[data-testid^="brand-kit-icon-strip-"]') ?? []);
     expect(icons.map((icon) => icon.getAttribute('data-testid'))).toEqual(BRAND_KIT_ICON_SAMPLES.map((icon) => `brand-kit-icon-strip-${icon.id}`));
@@ -67,7 +87,7 @@ describe('MktgBrandKitIconSamplesComponent', () => {
       const highlighted = index === BRAND_KIT_ICON_HIGHLIGHT_INDEX;
       expect(icon.getAttribute('data-highlight')).toBe(highlighted ? 'true' : null);
       expect(icon.style.color).toBe(cssColour(highlighted ? COLOURS.highlight : BRAND_KIT_ICON_STRIP_INK));
-      expect(icon.querySelector('svg')?.getAttribute('width')).toBe('30');
+      expect(icon.querySelector('svg')?.getAttribute('width')).toBe(String(BRAND_KIT_ICON_STRIP_SIZE_PX));
       expect(icon.textContent?.trim()).toBe('');
     });
     expect(icons[BRAND_KIT_ICON_HIGHLIGHT_INDEX].getAttribute('data-testid')).toBe('brand-kit-icon-strip-global');
@@ -82,15 +102,41 @@ describe('MktgBrandKitIconSamplesComponent', () => {
     expect(root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip-code"]')?.style.color).toBe(cssColour('#FFFFFF'));
   });
 
-  it('keeps the icons and labels in the compact rows the print sheet asks for, only the tiles and the strip shorter', async () => {
+  it('draws the print sheet’s compact rows in plain block flow: 30 px inline-block tiles four to a line, 18 px icons, 8 px labels, a 30 px strip of inline blocks, no grid or flex', async () => {
     const { root } = await setup(COLOURS, true);
-    const tile = root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tile-documents"]');
-    expect(tile?.classList.contains('h-[88px]')).toBe(true);
-    expect(tile?.classList.contains('h-[110px]')).toBe(false);
-    expect(root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]')?.classList.contains('min-h-[72px]')).toBe(true);
-    expect(root.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(8);
-    expect(root.querySelectorAll('[data-testid^="brand-kit-icon-strip-"]')).toHaveLength(8);
-    expect(tile?.querySelector('svg')?.getAttribute('width')).toBe('32');
+    expect(root.classList.contains('block')).toBe(true);
+    // No grid or flex box anywhere: inside the sheet's paginated table Chromium fragments their contents away from their boxes.
+    for (const node of Array.from(root.querySelectorAll<HTMLElement>('*'))) {
+      expect(Array.from(node.classList).filter((cls) => /^(grid|flex|inline-flex|grid-cols-\d|sm:grid-cols-\d)$/.test(cls))).toEqual([]);
+    }
+    const tiles = Array.from(root.querySelectorAll<HTMLElement>('[data-testid^="brand-kit-icon-tile-"]'));
+    expect(tiles).toHaveLength(8);
+    expect(tiles.map((tile) => tile.querySelector('span')?.textContent)).toEqual(BRAND_KIT_ICON_SAMPLES.map((icon) => icon.label));
+    for (const tile of tiles) {
+      for (const cls of ['inline-block', 'h-[30px]', 'w-[23%]', 'align-top', 'text-center']) {
+        expect(tile.classList.contains(cls)).toBe(true);
+      }
+      expect(tile.classList.contains('h-[110px]')).toBe(false);
+      expect(tile.style.color).toBe(cssColour(COLOURS.tileInk));
+      expect(tile.querySelector('svg')?.getAttribute('width')).toBe(String(BRAND_KIT_ICON_COMPACT_SIZE_PX));
+      expect(tile.querySelector('svg')?.classList.contains('block')).toBe(true);
+      expect(tile.querySelector('span')?.classList.contains('text-[8px]')).toBe(true);
+      expect(tile.querySelector('span')?.classList.contains('block')).toBe(true);
+    }
+    const strip = root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]');
+    for (const cls of ['block', 'h-[30px]', 'whitespace-nowrap']) {
+      expect(strip?.classList.contains(cls)).toBe(true);
+    }
+    expect(strip?.style.backgroundColor).toBe(cssColour(COLOURS.stripGround));
+    const icons = Array.from(strip?.querySelectorAll<HTMLElement>('[data-testid^="brand-kit-icon-strip-"]') ?? []);
+    expect(icons).toHaveLength(8);
+    icons.forEach((icon, index) => {
+      expect(icon.classList.contains('inline-block')).toBe(true);
+      expect(icon.querySelector('svg')?.getAttribute('width')).toBe(String(BRAND_KIT_ICON_COMPACT_SIZE_PX));
+      const highlighted = index === BRAND_KIT_ICON_HIGHLIGHT_INDEX;
+      expect(icon.getAttribute('data-highlight')).toBe(highlighted ? 'true' : null);
+      expect(icon.style.color).toBe(cssColour(highlighted ? COLOURS.highlight : BRAND_KIT_ICON_STRIP_INK));
+    });
     // Print-safe: no filter, gradient or shadow anywhere in the markup.
     expect(root.innerHTML).not.toMatch(/filter|gradient|shadow/i);
   });

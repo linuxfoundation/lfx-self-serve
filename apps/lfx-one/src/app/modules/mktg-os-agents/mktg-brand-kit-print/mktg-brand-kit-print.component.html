@@ -269,12 +269,19 @@
   <tr class="kit-block">
     <td>
       <h3>Iconography · {{ v.visual.icons.recommended }}</h3>
-      <lfx-mktg-brand-kit-icon-samples class="kit-icon-samples" [colours]="v.iconColours" [compact]="true" />
-      <ul>
-        @for (rule of v.visual.icons.rules; track $index) {
-          <li>{{ rule }}</li>
-        }
-      </ul>
+      <!-- The board's print layout: the rules at the left, the samples beside them (a table row, the sheet's own layout model). -->
+      <div class="kit-icon-row" data-testid="kit-print-icon-row">
+        <div class="kit-icon-rules">
+          <ul>
+            @for (rule of v.visual.icons.rules; track $index) {
+              <li>{{ rule }}</li>
+            }
+          </ul>
+        </div>
+        <div class="kit-icon-samples-cell">
+          <lfx-mktg-brand-kit-icon-samples class="kit-icon-samples" [colours]="v.iconColours" [compact]="true" />
+        </div>
+      </div>
     </td>
   </tr>
   <tr class="kit-block">

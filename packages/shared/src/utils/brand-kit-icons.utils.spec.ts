@@ -65,16 +65,22 @@ describe('BRAND_KIT_ICON_SAMPLES', () => {
 });
 
 describe('brandKitIconColours', () => {
-  it('inks the tiles and grounds the strip in the kit’s dark, and highlights in the kit’s spark', () => {
+  it('inks the tiles and grounds the strip in the kit’s dark, and highlights in the palette colour the Iconography rules name, over the spark', () => {
+    // A kit whose spark is one colour while its own rule reserves another for the active state: the rule's colour shows.
     const kit = brandKitTestRevision();
-    kit.kit.spark = '#00AEEF';
-    expect(brandKitIconColours(kit)).toEqual({ tileInk: kit.kit.dark, stripGround: kit.kit.dark, highlight: '#00AEEF' });
+    kit.kit.spark = '#FF702D';
+    kit.chapters.color.palette = [
+      ...kit.chapters.color.palette,
+      { name: 'Lilac', hex: '#B6B0D0', rgb: [182, 176, 208], role: 'Active state', found_in: { kind: 'page', source: 'the page' } },
+    ];
+    kit.chapters.visual.icons.rules = ['Line icons on a 24 px grid.', 'One color: Charcoal on light, white on dark. Lilac only for a single active state.'];
+    expect(brandKitIconColours(kit)).toEqual({ tileInk: kit.kit.dark, stripGround: kit.kit.dark, highlight: '#B6B0D0' });
     expect(BRAND_KIT_HEX_REGEX.test(brandKitIconColours(kit).highlight)).toBe(true);
   });
 
-  it('falls back to the last palette colour the Iconography rules name, as a whole word, when the spark is not a colour', () => {
+  it('takes the last palette colour the rules name, as a whole word, in palette order', () => {
     const kit = brandKitTestRevision();
-    kit.kit.spark = '';
+    kit.kit.spark = '#00AEEF';
     kit.chapters.visual.icons.rules = ['Line icons on a 24 px grid.', 'One color: Charcoal on light, white on dark. Orange only for a single active state.'];
     expect(brandKitIconColours(kit).highlight).toBe('#F37625');
     // The last named entry in palette order wins, whatever order the rule names them in; a name inside a longer word does not match.
@@ -84,10 +90,12 @@ describe('brandKitIconColours', () => {
     expect(brandKitIconColours(kit).highlight).toBe('#4D4E4E');
   });
 
-  it('falls back to the accent when the spark is not a colour and the rules name no palette colour', () => {
+  it('falls back to the spark when the rules name no palette colour, and to the accent when the spark is not a colour either', () => {
     const kit = brandKitTestRevision();
-    kit.kit.spark = 'spark';
+    kit.kit.spark = '#00AEEF';
     kit.chapters.visual.icons.rules = ['Line icons.', 'Pair every icon with a text label.'];
+    expect(brandKitIconColours(kit)).toEqual({ tileInk: '#4D4E4E', stripGround: '#4D4E4E', highlight: '#00AEEF' });
+    kit.kit.spark = 'spark';
     expect(brandKitIconColours(kit)).toEqual({ tileInk: '#4D4E4E', stripGround: '#4D4E4E', highlight: '#F37625' });
   });
 });

@@ -326,10 +326,29 @@ figcaption {
   }
 }
 
-/* The Iconography samples (one shared component, compact rows): one fragment with the block around them, the strip's
-   ground and the icons' inks printed as set (solid colours, no filter), room under them before the rules. */
+/* The Iconography row: the rules at the left and the samples (one shared component, compact rows) beside them, as the
+   board prints them, so the row stays as short as the rules and the chapter keeps its page. Table and table-cell
+   boxes, the sheet's own layout model (a grid or flex box here fragments its contents away from their boxes when
+   Chromium paginates the table); one fragment; the strip's ground and the icons' inks printed as set (solid colours,
+   no filter). */
+.kit-icon-row {
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+  margin-top: 2pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.kit-icon-rules,
+.kit-icon-samples-cell {
+  display: table-cell;
+  vertical-align: top;
+}
+.kit-icon-rules {
+  width: 44%;
+  padding-right: 10pt;
+}
 .kit-icon-samples {
-  margin: 6pt 0 8pt;
   break-inside: avoid;
   page-break-inside: avoid;
   print-color-adjust: exact;

@@ -48,8 +48,9 @@ export interface BrandKitIconSample {
 /**
  * The three colour roles the samples take from a kit (`brandKitIconColours`):
  * the tiles' ink and the strip's ground are the kit's dark; the highlight is
- * the one strip icon drawn in the kit's spark, else the palette colour the
- * Iconography rule names, else the accent. Each a `#RRGGBB` the kit carries.
+ * the one strip icon drawn in the palette colour the kit's Iconography rule
+ * names (the last one named), else the kit's spark, else the accent. Each a
+ * `#RRGGBB` the kit carries.
  */
 export interface BrandKitIconColours {
   tileInk: string;
