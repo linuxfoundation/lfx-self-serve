@@ -6115,12 +6115,13 @@ export interface CampaignListResult {
    * Whether THIS caller may send Google audience segments (`audienceSegments`) on a create.
    *
    * Per CALLER, unlike every capability above: true only when the campaign-service create path
-   * serves the create AND the caller is a ROOT writer or ROOT campaign manager. Every foundation's
-   * Google Ads connection points at one shared LF customer, and a user list cannot yet be mapped to
-   * a project, so a non-root operator could otherwise target another foundation's list — the same
-   * reason campaign-service refuses to list user lists on the shared account
-   * (linuxfoundation/lfx-v2-campaign-service#411). The create route refuses a non-root caller's
-   * segments with a 403 `GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE`. Modelled on the client like the
+   * serves the create AND the caller holds `global_marketing_ops` on the listed project (the LF
+   * marketing team; `campaign_manager` alone, which admits foundation EDs, is not enough). Every
+   * foundation's Google Ads connection points at one shared LF customer, so a foundation operator
+   * could otherwise target another foundation's list. campaign-service checks the same relation on
+   * the same project (linuxfoundation/lfx-v2-campaign-service#501, #505). False, too, when that
+   * check cannot be made. The create route refuses such a caller's segments with a 403
+   * `GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE`, or a 503 when the check cannot be made. Modelled on the client like the
    * capabilities above (`boolean | null`, `null` for unanswered): only an explicit yes shows the section.
    */
   googleAudienceSegmentsEnabled: boolean;
@@ -6129,8 +6130,8 @@ export interface CampaignListResult {
    * `GET /api/campaigns/google/conversion-actions`. Per caller: true only when the campaign-service
    * create path serves the create AND the caller is a ROOT writer or ROOT campaign manager — the two
    * checks that route makes — because the shared LF Google Ads account lists every foundation's
-   * actions. Its own field rather than {@link googleAudienceSegmentsEnabled}, whose root-only meaning
-   * lasts only until a user list can be mapped to a project. Optional, so a BFF that predates it reads
+   * actions. Its own field rather than {@link googleAudienceSegmentsEnabled}, which answers a different
+   * question (`global_marketing_ops` on the listed project). Optional, so a BFF that predates it reads
    * as unanswered (`null` on the client) and the tab keeps its free-text box without asking.
    */
   googleConversionActionsEnabled?: boolean;
@@ -6356,8 +6357,8 @@ export interface CampaignGoogleLocationsCapabilityBlock {
 
 /**
  * Why Create is blocked for Google audience segments the draft still holds but the request cannot
- * carry. `restricted`: the caller is not a root writer or root campaign manager, so the segments
- * would be refused (`CampaignListResult.googleAudienceSegmentsEnabled`). `unsupported`: the
+ * carry. `restricted`: the caller does not hold `global_marketing_ops` on the project, so the
+ * segments would be refused (`CampaignListResult.googleAudienceSegmentsEnabled`). `unsupported`: the
  * campaign-service create path does not serve this deployment. The other kinds mean what they do on
  * `CampaignBiddingCapabilityBlock`: the same capability read answers all of them.
  */

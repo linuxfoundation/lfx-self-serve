@@ -11,6 +11,7 @@ import {
   CAMPAIGN_RESUME_REFUSED_CODE,
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
+  GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_CODE,
   GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
@@ -169,7 +170,11 @@ vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown: 
 // The real helper pulls the `@lfx-one/shared/utils` barrel, which loads `@angular/forms` and throws
 // outside Angular (GH-2381). The shared-account monitor gate is covered in campaign.controller.monitor.spec.ts.
 vi.mock('../utils/persona-helper', () => ({
-  personaDetectionService: { checkRootWriter: vi.fn(async () => true), checkRootCampaignManager: vi.fn(async () => true) },
+  personaDetectionService: {
+    checkRootWriter: vi.fn(async () => true),
+    checkRootCampaignManager: vi.fn(async () => true),
+    checkProjectGlobalMarketingOpsStrict: vi.fn(async () => true),
+  },
 }));
 
 import { personaDetectionService } from '../utils/persona-helper';
@@ -5511,21 +5516,33 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * Root-only, until a user list can be mapped to a project: every foundation's Google Ads
-   * connection points at one shared LF customer, so a non-root caller could name another
-   * foundation's list. Refused FIRST, before any normalising or dispatch, on either path.
+   * `global_marketing_ops` on the request's project only — the LF marketing team, matching
+   * campaign-service (linuxfoundation/lfx-v2-campaign-service#501, #505). `campaign_manager` also
+   * admits a foundation ED, and every foundation's Google Ads connection points at one shared LF
+   * customer. Refused FIRST, before any normalising or dispatch, on either path.
    */
-  const asNonRoot = (): void => {
-    vi.mocked(personaDetectionService.checkRootWriter).mockResolvedValueOnce(false);
-    vi.mocked(personaDetectionService.checkRootCampaignManager).mockResolvedValueOnce(false);
+  const marketingOps = vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict);
+  /** A campaign manager on the project (an ED) without `global_marketing_ops` there. */
+  const asWithoutMarketingOps = (): void => {
+    marketingOps.mockResolvedValueOnce(false);
   };
+
+  it('dispatches segments for a holder of global_marketing_ops on the project, asking about that project', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b1', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ audienceSegments: ['customers/1/userLists/2'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(marketingOps).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['audienceSegments']).toEqual(['customers/1/userLists/2']);
+  });
 
   it.each([
     ['a user list', ['customers/1234567890/userLists/111']],
     ['a malformed value, which must not reach the shape refusal first', 'customers/1234567890/userLists/111'],
     ['a list a later guard would refuse', ['nope']],
-  ])('refuses %s from a non-root caller with a 403 before anything is built or created', async (_label, audienceSegments) => {
-    asNonRoot();
+  ])('refuses %s from a campaign manager without global_marketing_ops with a 403 before anything is built or created', async (_label, audienceSegments) => {
+    asWithoutMarketingOps();
     const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
 
     await controller.createCampaign(buildReq(googleBody({ audienceSegments } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
@@ -5539,8 +5556,39 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(legacyCreate).not.toHaveBeenCalled();
   });
 
-  it('refuses a non-root caller on the legacy path too, which would otherwise drop the list', async () => {
-    asNonRoot();
+  /**
+   * The behaviour change from the old ROOT test: a ROOT writer (or ROOT campaign manager) without
+   * `global_marketing_ops` on the project is refused here, as campaign-service would refuse it.
+   */
+  it('refuses a ROOT writer without global_marketing_ops on the project, and never asks the ROOT questions', async () => {
+    // The persona mock's default answers every ROOT question yes.
+    asWithoutMarketingOps();
+
+    await controller.createCampaign(buildReq(googleBody({ audienceSegments: ['customers/1/userLists/2'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as AuthorizationError;
+    expect(error).toBeInstanceOf(AuthorizationError);
+    expect(error.code).toBe(GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE);
+    expect(personaDetectionService.checkRootWriter).not.toHaveBeenCalled();
+    expect(personaDetectionService.checkRootCampaignManager).not.toHaveBeenCalled();
+    expect(createCampaigns).not.toHaveBeenCalled();
+  });
+
+  it('refuses with a 503 rather than admitting when the global_marketing_ops check cannot be made', async () => {
+    marketingOps.mockRejectedValueOnce(new Error('access check unavailable'));
+
+    await controller.createCampaign(buildReq(googleBody({ audienceSegments: ['customers/1/userLists/2'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error.statusCode).toBe(503);
+    expect(error.code).toBe(GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_CODE);
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+  });
+
+  it('refuses a caller without global_marketing_ops on the legacy path too, which would otherwise drop the list', async () => {
+    asWithoutMarketingOps();
     isServerFeatureEnabled.mockReturnValue(false);
 
     await controller.createCampaign(buildReq(googleBody({ audienceSegments: ['customers/1/userLists/2'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
@@ -5550,12 +5598,12 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * A ROOT caller's segments are REFUSED, not dropped, when the serving create path cannot carry
+   * A permitted caller's segments are REFUSED, not dropped, when the serving create path cannot carry
    * them: the legacy creator never reads the key and would report success without the user lists.
    * Reachable from the page mid-rollout, when the capability read and the create land on pods with
    * different flags.
    */
-  it("refuses a root caller's segments by name when the cutover is off, rather than falling through to legacy", async () => {
+  it("refuses a permitted caller's segments by name when the cutover is off, rather than falling through to legacy", async () => {
     isServerFeatureEnabled.mockReturnValue(false);
 
     await controller.createCampaign(buildReq(googleBody({ audienceSegments: ['customers/1/userLists/2'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
@@ -5567,7 +5615,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(createCampaigns).not.toHaveBeenCalled();
   });
 
-  it('still serves a root caller on the legacy path when the segment list is empty', async () => {
+  it('still serves the legacy path when the segment list is empty', async () => {
     isServerFeatureEnabled.mockReturnValue(false);
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_legacy_2' });
@@ -5576,17 +5624,6 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(legacyCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it('dispatches segments for a ROOT campaign manager who is not a root writer', async () => {
-    vi.mocked(personaDetectionService.checkRootWriter).mockResolvedValueOnce(false);
-    vi.mocked(personaDetectionService.checkRootCampaignManager).mockResolvedValueOnce(true);
-    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b1', error: null });
-
-    await controller.createCampaign(buildReq(googleBody({ audienceSegments: ['customers/1/userLists/2'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['audienceSegments']).toEqual(['customers/1/userLists/2']);
   });
 
   it.each([
@@ -5599,6 +5636,7 @@ describe('CampaignController.createCampaign cutover', () => {
     await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(next).not.toHaveBeenCalled();
+    expect(marketingOps).not.toHaveBeenCalled();
     expect(personaDetectionService.checkRootWriter).not.toHaveBeenCalled();
   });
 
@@ -8139,15 +8177,20 @@ describe('CampaignController.listBriefCampaigns', () => {
     listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: false });
   });
 
-  /** The one per-caller capability: root only, and only where the campaign-service create path serves. */
+  /**
+   * Per caller. Audience segments: `global_marketing_ops` on the listed project, the create route's
+   * own test. Conversion actions (#4991): a root principal, the two checks its route makes.
+   */
   it.each([
-    ['a root writer on the create path', true, [true, false], true],
-    ['a root campaign manager on the create path', true, [false, true], true],
-    ['a non-root caller on the create path', true, [false, false], false],
-  ])('answers googleAudienceSegmentsEnabled for %s', async (_label, createPath, [writer, manager], expected) => {
+    ['global_marketing_ops on the project, not root', true, true, [false, false], true, false],
+    ['a campaign manager (ED) without it, not root', true, false, [false, false], false, false],
+    ['a ROOT writer without it', true, false, [true, false], false, true],
+    ['a ROOT campaign manager without it on the project', true, false, [false, true], false, true],
+  ])('answers the per-caller capabilities for %s', async (_label, createPath, marketingOpsHeld, [writer, manager], audiences, conversions) => {
     listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, googleCreativeEnabled: createPath, googleAudienceSegmentsEnabled: false });
     // The create path is the three cutover flags, read here exactly as the create route reads them.
     isServerFeatureEnabled.mockReturnValue(createPath as boolean);
+    vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValueOnce(marketingOpsHeld as boolean);
     vi.mocked(personaDetectionService.checkRootWriter).mockResolvedValueOnce(writer as boolean);
     // Queued only when it will be asked: a root writer short-circuits, and a leftover queued answer
     // would leak into the next test.
@@ -8155,9 +8198,19 @@ describe('CampaignController.listBriefCampaigns', () => {
 
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: expected }));
-    // The conversion-action picker's capability (#4991): the same two checks its route makes.
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleConversionActionsEnabled: expected }));
+    expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: audiences, googleConversionActionsEnabled: conversions }));
+  });
+
+  it('answers no for audience segments, rather than failing the list, when the global_marketing_ops check cannot be made', async () => {
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, googleCreativeEnabled: true, googleAudienceSegmentsEnabled: false });
+    isServerFeatureEnabled.mockReturnValue(true);
+    vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockRejectedValueOnce(new Error('access check unavailable'));
+
+    await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: false }));
   });
 
   it('answers no without asking who the caller is when the create path does not serve', async () => {
@@ -8167,6 +8220,7 @@ describe('CampaignController.listBriefCampaigns', () => {
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: false, googleConversionActionsEnabled: false }));
+    expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
     expect(personaDetectionService.checkRootWriter).not.toHaveBeenCalled();
   });
 

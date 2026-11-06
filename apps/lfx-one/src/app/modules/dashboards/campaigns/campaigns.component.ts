@@ -1126,7 +1126,7 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMultiCampaignPlatforms = signal<string[] | null>(null);
   /**
    * Whether THIS caller may send Google audience segments — `CampaignListResult.googleAudienceSegmentsEnabled`,
-   * read and cleared like the capabilities above. Per caller, not per deployment: root only.
+   * read and cleared like the capabilities above. Per caller, not per deployment: `global_marketing_ops` on the project.
    */
   protected readonly briefCampaignsGoogleAudienceSegmentsEnabled = signal<boolean | null>(null);
   /**
