@@ -151,4 +151,20 @@ describe('MyMeetingsComponent', () => {
     expect(testId('dashboard-next-meeting-error')?.textContent).toContain("Couldn't load upcoming meetings");
     expect(testId('dashboard-next-meeting-error')?.textContent).not.toContain('your');
   });
+
+  describe('card order', () => {
+    it('puts the next meeting before the last meeting in the DOM, so stacked and side-by-side layouts agree', () => {
+      const next = testId('dashboard-next-meeting-column');
+      const last = testId('dashboard-last-meeting-column');
+
+      expect(next).not.toBeNull();
+      expect(last).not.toBeNull();
+      expect(next!.compareDocumentPosition(last!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('does not reorder either column with order utilities, which would split tab order from what is on screen', () => {
+      expect(testId('dashboard-next-meeting-column')?.className).not.toMatch(/\border-\d/);
+      expect(testId('dashboard-last-meeting-column')?.className).not.toMatch(/\border-\d/);
+    });
+  });
 });
