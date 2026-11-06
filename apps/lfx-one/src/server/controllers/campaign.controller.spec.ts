@@ -6462,6 +6462,8 @@ describe('CampaignController.createCampaign cutover', () => {
     ['one description line', [link('Register', { description1: 'Talks' })], 'both description lines'],
     ['a description line over 35 runes', [link('Register', { description1: 'A'.repeat(36), description2: 'B' })], 'description lines of at most 35'],
     ['no destination', [link('Register', { finalUrl: '  ' })], 'has no destination URL'],
+    ['a non-web destination', [link('Register', { finalUrl: 'javascript:alert(1)' })], 'not a web address Google accepts'],
+    ['a destination with credentials', [link('Register', { finalUrl: 'https://user:pw@events.example.org/' })], 'not a web address Google accepts'],
     ['21 sitelinks', [...SITELINKS_20, link('Extra')], 'at most 20 sitelinks'],
   ])('refuses a Demand Gen sitelink with %s, as on Search', async (_label, sitelinks, expected) => {
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], sitelinks }), { project: 'tlf', brief_id: 'b-1' }), res, next);

@@ -1880,7 +1880,7 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleCalloutDraft = signal('');
   /**
-   * Google's sitelink extensions — extra links rendered under the Search ad.
+   * Google's sitelink extensions — extra links rendered with the ad, on Search and Demand Gen.
    *
    * Four fields rather than the callout's one, so the draft is an OBJECT and the add guard has more
    * to say. An entry arrives through {@link addGoogleSitelink} or a restored draft; the BFF guard

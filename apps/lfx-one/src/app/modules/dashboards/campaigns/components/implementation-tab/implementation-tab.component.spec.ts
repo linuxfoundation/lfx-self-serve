@@ -10824,8 +10824,9 @@ describe('ImplementationTabComponent google sitelinks', () => {
     const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
 
     expect(find('implementation-google-sitelinks-section')).not.toBeNull();
-    expect(find('implementation-google-callouts-section')).toBeNull();
-    expect(find('implementation-google-structured-snippets-section')).toBeNull();
+    for (const id of ['callouts', 'structured-snippets', 'call-extensions', 'promotions', 'prices']) {
+      expect(find(`implementation-google-${id}-section`)).toBeNull();
+    }
   });
 
   /** Omitted rather than sent empty, so the upstream default is reached by the absent-key route. */
@@ -17653,7 +17654,7 @@ describe('ImplementationTabComponent create another campaign', () => {
 });
 
 /**
- * #5226 W1a opened Demand Gen bidding, languages, ad schedules and devices. A create that touches
+ * #5262 W1a opened Demand Gen bidding, languages, ad schedules and devices. A create that touches
  * none of them must send exactly the request it sent before, on Demand Gen and on every other
  * channel this screen can create. The literal was captured from the tab at the base commit and
  * matched byte for byte after the change.

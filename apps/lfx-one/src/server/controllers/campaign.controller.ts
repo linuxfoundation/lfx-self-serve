@@ -6586,9 +6586,11 @@ export class CampaignController {
    *
    * The four steps the sitelink, callout and snippet guards each spell out, in their order: an
    * absent or null list is "none asked for"; anything the Go decode refuses is refused by shape; a
-   * non-empty list on a channel but Search is refused by name, because `validateAssetPlan` fails the
-   * whole create there (Demand Gen included: it takes sitelinks alone); then the raw-slice cap, and only then the entries. `entryRefusal` returns the
-   * first bad entry's sentence already numbered.
+   * non-empty list on a channel outside the guard's list is refused by name, because
+   * `validateAssetPlan` fails the whole create there (Search for these three, callouts and snippets;
+   * Search and Demand Gen for sitelinks, the one extension Demand Gen takes); then the raw-slice cap,
+   * and only then the entries. `entryRefusal` returns the first bad entry's sentence already
+   * numbered.
    */
   private googleAssetListRefusal(
     raw: unknown,
