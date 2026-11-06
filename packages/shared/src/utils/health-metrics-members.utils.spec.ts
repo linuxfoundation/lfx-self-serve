@@ -334,15 +334,45 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
     expect(change?.cells[7]).toEqual({ label: '+20.8%', tone: 'up' });
   });
 
-  it('lists the table in tier order, even when a higher tier is grouped into Others', () => {
+  it('stacks Diamond first in its own colour beside Platinum, Gold and Silver, and leads the table with the reserved tiers', () => {
     const view = build([
       ...tier('Diamond Membership', 1, [9, 9, 9, 9, 9, 9, 9, 9]),
-      ...PGS.map((row) => ({ ...row, sortRank: row.sortRank + 1 })),
-      ...tier('Associate Membership', 5, [1, 1, 1, 1, 1, 1, 1, 1]),
+      ...tier('Premier Membership', 2, [4, 4, 4, 4, 4, 4, 4, 4]),
+      ...PGS.map((row) => ({ ...row, sortRank: row.sortRank + 2 })),
+      ...tier('Associate Membership', 6, [1, 1, 1, 1, 1, 1, 1, 1]),
     ]);
 
-    expect(view.columns[0].segments.map((segment) => segment.key)).toEqual(['Platinum', 'Gold', 'Silver', 'Others']);
-    expect(view.rows.filter((row) => row.kind === 'tier').map((row) => row.label)).toEqual(['Diamond', 'Platinum', 'Gold', 'Silver', 'Associate']);
+    expect(view.columns[0].segments.map((segment) => segment.key)).toEqual(['Diamond', 'Platinum', 'Gold', 'Silver', 'Others']);
+    expect(view.legend).toEqual([
+      { label: 'Diamond', color: lfxColors.violet[500], divided: false },
+      { label: 'Platinum', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.platinum, divided: false },
+      { label: 'Gold', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold, divided: false },
+      { label: 'Silver', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.silver, divided: false },
+      { label: 'Others', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR, divided: true },
+    ]);
+    expect(view.rows.filter((row) => row.kind === 'tier').map((row) => [row.label, row.icon])).toEqual([
+      ['Diamond', 'diamond'],
+      ['Platinum', 'platinum'],
+      ['Gold', 'gold'],
+      ['Silver', 'silver'],
+      ['Premier', null],
+      ['Associate', null],
+    ]);
+  });
+
+  it('leads with the reserved tiers present without all three, keeping purple for Diamond only while it is present', () => {
+    const others = [...tier('Associate Membership', 1, [3, 3, 3, 3, 3, 3, 3, 3]), ...tier('Diamond Startup', 2, [2, 2, 2, 2, 2, 2, 2, 2])];
+    const diamond = build([...others, ...tier('Diamond Membership', 3, [1, 1, 1, 1, 1, 1, 1, 1]), ...tier('Gold Membership', 4, [1, 1, 1, 1, 1, 1, 1, 1])]);
+
+    expect(diamond.legend.map((item) => [item.label, item.color])).toEqual([
+      ['Diamond', lfxColors.violet[500]],
+      ['Gold', HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold],
+      ['Associate', lfxColors.blue[500]],
+      ['Diamond Startup', lfxColors.emerald[500]],
+    ]);
+    expect(diamond.rows.filter((row) => row.kind === 'tier').map((row) => row.label)).toEqual(['Diamond', 'Gold', 'Associate', 'Diamond Startup']);
+    expect(build(tier('Diamond Membership', 1, [1, 1, 1, 1, 1, 1, 1, 1])).legend.map((item) => item.color)).toEqual([lfxColors.violet[500]]);
+    expect(build(others).legend.map((item) => item.color)).toEqual([lfxColors.blue[500], lfxColors.violet[500]]);
   });
 
   it('keeps a measured zero as zero, not unmeasured', () => {

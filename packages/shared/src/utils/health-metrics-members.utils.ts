@@ -11,6 +11,7 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
   HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR,
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_GROUPING_TIERS,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_LABEL,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_PALETTE,
@@ -117,9 +118,9 @@ export function buildHealthMetricsMembersSections(year: number): HealthMetricsL2
 }
 
 /**
- * `#breakdown` — members per tier at each year's end, from the first year shown to the running one. Platinum, Gold
- * and Silver keep their own colours; with all three present the other tiers share one grey segment, otherwise every
- * tier is its own colour. Only the metrics row follows the selected period.
+ * `#breakdown` — members per tier at each year's end, from the first year shown to the running one. Diamond, Platinum,
+ * Gold and Silver keep their own colours and lead in that order; with Platinum, Gold and Silver all present the other
+ * tiers share one grey segment, otherwise every tier is its own colour. Only the metrics row follows the selected period.
  */
 export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembersTiers, range: HealthMetricsRange): HealthMetricsMembersBreakdownView {
   const currentYear = getYearForRange('YTD');
@@ -159,8 +160,8 @@ export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembe
     };
   });
 
-  // The table keeps tier order, even where the chart stacks Platinum, Gold and Silver first.
-  const tierRows = tierList.map(
+  // The table leads with the reserved tiers too, as the chart stacks them.
+  const tierRows = leadWithReservedTiers(tierList).map(
     (tier): HealthMetricsMembersBreakdownRowView => ({
       key: `tier-${tier.label}`,
       label: tier.label,
@@ -966,13 +967,13 @@ function collectBreakdownTiers(rows: HealthMetricsMembersTierYear[]): BreakdownT
 function buildBreakdownSeries(tiers: BreakdownTier[]): BreakdownSeries[] {
   const reserved = new Set(tiers.flatMap((tier) => (tier.reserved ? [tier.reserved] : [])));
   const single = (tier: BreakdownTier, color: string, grey = false): BreakdownSeries => ({ key: tier.label, label: tier.label, color, grey, tiers: [tier] });
+  const ordered = leadWithReservedTiers(tiers);
+  const rest = tiers.filter((tier) => !tier.reserved);
 
-  if (reserved.size === HEALTH_METRICS_MEMBERS_RESERVED_TIERS.length) {
-    const main = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.map((key) => {
-      const tier = tiers.find((candidate) => candidate.reserved === key) as BreakdownTier;
-      return single(tier, HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS[key]);
-    });
-    const rest = tiers.filter((tier) => !tier.reserved);
+  if (HEALTH_METRICS_MEMBERS_BREAKDOWN_GROUPING_TIERS.every((key) => reserved.has(key))) {
+    const main = ordered
+      .filter((tier) => tier.reserved)
+      .map((tier) => single(tier, HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS[tier.reserved as HealthMetricsMembersReservedTier]));
     if (rest.length === 0) return main;
     if (rest.length === 1) return [...main, single(rest[0], HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR, true)];
 
@@ -982,9 +983,15 @@ function buildBreakdownSeries(tiers: BreakdownTier[]): BreakdownSeries[] {
 
   const palette = HEALTH_METRICS_MEMBERS_BREAKDOWN_PALETTE.filter((entry) => !entry.resembles || !reserved.has(entry.resembles));
   let next = 0;
-  return tiers.map((tier) =>
+  return ordered.map((tier) =>
     single(tier, tier.reserved ? HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS[tier.reserved] : palette[next++ % palette.length].color)
   );
+}
+
+/** The reserved tiers present, as Diamond, Platinum, Gold, Silver, then the other tiers in rank order. */
+function leadWithReservedTiers(tiers: BreakdownTier[]): BreakdownTier[] {
+  const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.flatMap((key) => tiers.filter((tier) => tier.reserved === key));
+  return [...reserved, ...tiers.filter((tier) => !tier.reserved)];
 }
 
 function seriesValue(series: BreakdownSeries, year: number): number | null {

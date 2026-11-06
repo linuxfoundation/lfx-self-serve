@@ -239,37 +239,42 @@ export const HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP = 500;
 /** The first year the breakdown shows; a foundation that started later starts at its own first year. */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR = 2019;
 
-/** The tiers with a colour and an icon of their own, in the order they stack from the bottom. */
-export const HEALTH_METRICS_MEMBERS_RESERVED_TIERS = ['platinum', 'gold', 'silver'] as const;
+/** The tiers with a colour and an icon of their own, in the order they always lead and stack from the bottom. */
+export const HEALTH_METRICS_MEMBERS_RESERVED_TIERS = ['diamond', 'platinum', 'gold', 'silver'] as const;
+
+/** With all three present, every tier that is not reserved is grey; Diamond does not count towards it. */
+export const HEALTH_METRICS_MEMBERS_BREAKDOWN_GROUPING_TIERS = ['platinum', 'gold', 'silver'] as const satisfies readonly HealthMetricsMembersReservedTier[];
 
 /** How a reserved tier reads, whatever the foundation's spelling of it. */
 export const HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS: Record<HealthMetricsMembersReservedTier, string> = {
+  diamond: 'Diamond',
   platinum: 'Platinum',
   gold: 'Gold',
   silver: 'Silver',
 };
 
-/** Platinum, Gold and Silver keep these colours in every tier setup, and no other tier takes them. */
+/** The reserved tiers keep these colours in every tier setup; while one is present, no other tier takes its colour. */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS: Record<HealthMetricsMembersReservedTier, string> = {
+  diamond: lfxColors.violet[500],
   platinum: lfxColors.blue[900],
   // The design's dark yellow has no palette token.
   gold: '#D08700',
   silver: lfxColors.blue[500],
 };
 
-/** With Platinum, Gold and Silver all present, every other tier is this grey, as one segment. */
+/** With Platinum, Gold and Silver all present, every tier that is not reserved is this grey, as one segment. */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR = lfxColors.gray[300];
 
 /** The label of the grey segment when two or more tiers share it. */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_LABEL = 'Others';
 
 /**
- * The other tiers' colours, in order, when any of Platinum, Gold and Silver is missing. An entry is skipped when the
- * reserved tier it resembles is present; past the last, the colours repeat.
+ * The other tiers' colours, in order, when any of Platinum, Gold and Silver is missing. An entry is skipped while the
+ * reserved tier it resembles is present, and back in rotation without it; past the last, the colours repeat.
  */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_PALETTE: readonly HealthMetricsMembersBreakdownPaletteEntry[] = [
   { color: lfxColors.blue[500], resembles: 'silver' },
-  { color: lfxColors.violet[500], resembles: null },
+  { color: lfxColors.violet[500], resembles: 'diamond' },
   { color: lfxColors.emerald[500], resembles: null },
   { color: lfxColors.amber[500], resembles: 'gold' },
   { color: lfxColors.red[500], resembles: null },
@@ -286,10 +291,16 @@ export const HEALTH_METRICS_MEMBERS_BREAKDOWN_PALETTE: readonly HealthMetricsMem
 ];
 
 /**
- * The tier icons as the design draws them: a metallic gradient cut to a diamond (Platinum) or a ring (Gold, Silver).
+ * The tier icons as the design draws them: a gradient cut to a diamond (Diamond, Platinum) or a ring (Gold, Silver).
  * The Platinum gradient is the design's darker one.
  */
 export const HEALTH_METRICS_MEMBERS_TIER_ICONS: Record<HealthMetricsMembersReservedTier, HealthMetricsMembersTierIcon> = {
+  diamond: {
+    // Platinum's shape in purple; the design's deep stop has no palette token.
+    background: `linear-gradient(135deg, ${lfxColors.violet[400]} 0%, ${lfxColors.violet[900]} 40%, ${lfxColors.violet[300]} 58%, #2F0D68 85%, ${lfxColors.violet[800]} 100%)`,
+    mask: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.6 14.4 8 8 14.4 1.6 8Z' fill='none' stroke='%23000' stroke-width='2.2' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat`,
+    radius: '0',
+  },
   platinum: {
     background: `linear-gradient(135deg, ${lfxColors.gray[500]} 0%, ${lfxColors.gray[800]} 40%, ${lfxColors.gray[400]} 58%, ${lfxColors.gray[900]} 85%, ${lfxColors.gray[700]} 100%)`,
     mask: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.6 14.4 8 8 14.4 1.6 8Z' fill='none' stroke='%23000' stroke-width='2.2' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat`,
