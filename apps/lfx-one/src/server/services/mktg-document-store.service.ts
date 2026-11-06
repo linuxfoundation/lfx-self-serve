@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  BRAND_KIT_INTAKE,
   MKTG_ARTIFACT_DEFAULT_DRAFT_VERSION,
   MKTG_ARTIFACT_INTAKE_MODES,
   MKTG_ARTIFACT_PARTITION_REGEX,
@@ -33,6 +34,7 @@ import {
   MktgArtifactStoredResponse,
   MktgDocumentAgentKey,
   MktgDocumentApprovalAnnotation,
+  MktgRevisionAccepted,
   MktgDocumentCurrentRecord,
   MktgDocumentCurrentSelection,
   MktgDocumentCurrentSnapshot,
@@ -68,10 +70,12 @@ import {
   findMktgDocumentStatus,
   findMktgDocumentType,
   isAeoGeoEnvelope,
+  mktgAcceptedSnapshotOf,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
   readLinkedinDocumentContent,
   readMktgFrameworkRef,
+  readMktgRevisionAccepted,
   projectMktgRebuildStaleness,
   validateMktgRedraftResult,
 } from '@lfx-one/shared/utils';
@@ -539,6 +543,9 @@ export class MktgDocumentStoreService {
       throw ServiceValidationError.forField('revisionId', 'A revision must be stored before it can be approved.');
     }
     if (view.revision.latest && view.approval) return view;
+    // A brand kit approval also records what its report shows at this moment: the Sources tab marks those items
+    // afterwards. Other documents' approvals stay as they were.
+    const accepted = type.agentKey === BRAND_KIT_INTAKE.agentId ? mktgAcceptedSnapshotOf(view.sidecar?.['report']) : null;
     const committed = await this.writeCurrent(
       req,
       project,
@@ -547,7 +554,9 @@ export class MktgDocumentStoreService {
       snapshot,
       view.revision.id,
       view.revisions.map((entry) => entry.id),
-      true
+      true,
+      false,
+      accepted
     );
     if (!committed) throw new PreconditionFailedError('The document changed while making a revision current. Reload and try again.');
     const updated = await this.withApprovals(
@@ -888,7 +897,9 @@ export class MktgDocumentStoreService {
       const { approvedAt, approvedBy } = annotation;
       if (typeof approvedAt !== 'string' || !Number.isFinite(Date.parse(approvedAt))) continue;
       if (approvedBy !== null && (typeof approvedBy !== 'string' || !approvedBy.trim())) continue;
-      approvals[id] = { approvedAt, approvedBy };
+      // A malformed snapshot is dropped, the approval kept: the view then derives what it can, as for older approvals.
+      const accepted = readMktgRevisionAccepted(annotation['accepted']);
+      approvals[id] = { approvedAt, approvedBy, ...(accepted ? { accepted } : {}) };
     }
     return approvals;
   }
@@ -908,7 +919,11 @@ export class MktgDocumentStoreService {
           detail.revisions.slice(offset, offset + concurrency).map(async (revision) => {
             const annotation = Object.hasOwn(approvals, revision.id) ? approvals[revision.id] : null;
             const approval = annotation
-              ? { approvedAt: annotation.approvedAt, approvedBy: await this.authors.resolveAuthor(req, annotation.approvedBy) }
+              ? {
+                  approvedAt: annotation.approvedAt,
+                  approvedBy: await this.authors.resolveAuthor(req, annotation.approvedBy),
+                  ...(annotation.accepted ? { accepted: annotation.accepted } : {}),
+                }
               : null;
             return { ...revision, approval };
           })
@@ -929,7 +944,8 @@ export class MktgDocumentStoreService {
     revisionId: string,
     revisionIds: string[],
     approve = false,
-    keepSelection = false
+    keepSelection = false,
+    accepted: MktgRevisionAccepted | null = null
   ): Promise<MktgDocumentCurrentRecord | null> {
     const existingIds = snapshot.record
       ? snapshot.record.revisionIds
@@ -939,7 +955,7 @@ export class MktgDocumentStoreService {
     const kept = keepSelection ? snapshot.record : null;
     const changedAt = kept ? kept.changedAt : new Date().toISOString();
     const changedBy = kept ? kept.changedBy : this.author(req);
-    if (approve && !approvals[revisionId]) approvals[revisionId] = { approvedAt: changedAt, approvedBy: changedBy };
+    if (approve && !approvals[revisionId]) approvals[revisionId] = { approvedAt: changedAt, approvedBy: changedBy, ...(accepted ? { accepted } : {}) };
     const record: MktgDocumentCurrentRecord = {
       revisionId: kept ? kept.revisionId : revisionId,
       revisionIds: committedIds,

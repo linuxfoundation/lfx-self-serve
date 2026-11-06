@@ -1,14 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QUERY_SERVICE_MAX_PAGE_SIZE, QUERY_SERVICE_MAX_PAGES } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
 import type { GroupsIOMemberResponse, MailingListMember } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { checkSingleAccessStrict, addAccessToResource, proxyRequest, getEffectiveEmail } = vi.hoisted(() => ({
+const { checkSingleAccessStrict, addAccessToResource, addAccessToResources, proxyRequest, getEffectiveEmail } = vi.hoisted(() => ({
   checkSingleAccessStrict: vi.fn(),
   addAccessToResource: vi.fn(async (_req: unknown, resource: unknown) => resource),
+  addAccessToResources: vi.fn(async (_req: unknown, resources: unknown) => resources),
   proxyRequest: vi.fn(),
   getEffectiveEmail: vi.fn(),
 }));
@@ -17,6 +19,7 @@ vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public checkSingleAccessStrict = checkSingleAccessStrict;
     public addAccessToResource = addAccessToResource;
+    public addAccessToResources = addAccessToResources;
   },
 }));
 vi.mock('./microservice-proxy.service', () => ({
@@ -91,9 +94,61 @@ describe('MailingListService member authorization', () => {
   beforeEach(() => {
     checkSingleAccessStrict.mockReset();
     addAccessToResource.mockReset().mockImplementation(async (_req: unknown, resource: unknown) => resource);
+    addAccessToResources.mockReset().mockImplementation(async (_req: unknown, resources: unknown) => resources);
     proxyRequest.mockReset();
     getEffectiveEmail.mockReset();
     service = new MailingListService();
+  });
+
+  describe('getMembers completeness', () => {
+    it('returns and enriches a complete roster across pages', async () => {
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ type: 'groupsio_member', id: 'groupsio_member:member-1', data: indexedMember }], page_token: 'next' })
+        .mockResolvedValueOnce({ resources: [] });
+
+      await expect(service.getMembers(req, 'list-1', { page_size: 1, page_token: 'ignored' })).resolves.toEqual([indexedMember]);
+      expect(proxyRequest.mock.calls[0][4]).toEqual({ type: 'groupsio_member', tags: 'mailing_list_uid:list-1', page_size: QUERY_SERVICE_MAX_PAGE_SIZE });
+      expect(proxyRequest.mock.calls[1][4]).toEqual({
+        type: 'groupsio_member',
+        tags: 'mailing_list_uid:list-1',
+        page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
+        page_token: 'next',
+      });
+      expect(addAccessToResources).toHaveBeenCalledWith(req, [indexedMember], 'groupsio_member');
+    });
+
+    it('rejects a repeated token instead of enriching a partial roster', async () => {
+      proxyRequest.mockResolvedValue({
+        resources: [{ type: 'groupsio_member', id: 'groupsio_member:member-1', data: indexedMember }],
+        page_token: 'repeated',
+      });
+
+      await expect(service.getMembers(req, 'list-1')).rejects.toMatchObject({ code: 'QUERY_SERVICE_PAGINATION_LIMIT', statusCode: 502 });
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(addAccessToResources).not.toHaveBeenCalled();
+    });
+
+    it('rejects a continuing roster at the page cap instead of reporting a complete list', async () => {
+      let page = 0;
+      proxyRequest.mockImplementation(async () => ({
+        resources: [{ type: 'groupsio_member', id: 'groupsio_member:member-1', data: indexedMember }],
+        page_token: `page-${++page}`,
+      }));
+
+      await expect(service.getMembers(req, 'list-1')).rejects.toMatchObject({ code: 'QUERY_SERVICE_PAGINATION_LIMIT', statusCode: 502 });
+      expect(proxyRequest).toHaveBeenCalledTimes(QUERY_SERVICE_MAX_PAGES);
+      expect(addAccessToResources).not.toHaveBeenCalled();
+    });
+
+    it('propagates a later-page error rather than returning a successful prefix', async () => {
+      const failure = Object.assign(new Error('page failed'), { statusCode: 400 });
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ type: 'groupsio_member', id: 'groupsio_member:member-1', data: indexedMember }], page_token: 'next' })
+        .mockRejectedValueOnce(failure);
+
+      await expect(service.getMembers(req, 'list-1')).rejects.toBe(failure);
+      expect(addAccessToResources).not.toHaveBeenCalled();
+    });
   });
 
   describe('createMember', () => {
@@ -279,5 +334,49 @@ describe('MailingListService member authorization', () => {
       await expect(service.deleteMember(req, 'list-1', 'member-1')).rejects.toBe(lookupError);
       expect(proxiedMethods()).not.toContain('DELETE');
     });
+  });
+});
+
+describe('MailingListService.updateMailingList index wait', () => {
+  const service = new MailingListService();
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function routeUpdate(indexedCommittees: { uid: string }[][]): void {
+    let queryCalls = 0;
+    proxyRequest.mockImplementation(async (_req: unknown, _svc: unknown, path: string) => {
+      if (path === '/query/resources') {
+        const committees = indexedCommittees[Math.min(queryCalls++, indexedCommittees.length - 1)];
+        return { resources: [{ data: { uid: 'list-1', committees } }] };
+      }
+      return { uid: 'list-1', committees: [] };
+    });
+  }
+
+  it('waits until the linked group is visible in the index before returning', async () => {
+    routeUpdate([[], [], [{ uid: 'committee-1' }]]);
+
+    const pending = service.updateMailingList(req, 'list-1', { committee_uid: 'committee-1' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    const result = await pending;
+
+    expect(result.committees).toEqual([{ uid: 'committee-1' }]);
+    expect(proxyRequest.mock.calls.filter((call) => call[2] === '/query/resources')).toHaveLength(3);
+  });
+
+  it('does not wait on a specific group when unlinking', async () => {
+    routeUpdate([[]]);
+
+    const result = await service.updateMailingList(req, 'list-1', { committee_uid: null });
+
+    expect(result.uid).toBe('list-1');
+    expect(proxyRequest.mock.calls.filter((call) => call[2] === '/query/resources')).toHaveLength(1);
   });
 });

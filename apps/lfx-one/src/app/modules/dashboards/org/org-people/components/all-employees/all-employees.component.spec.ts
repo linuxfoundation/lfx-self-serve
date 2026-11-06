@@ -1529,6 +1529,57 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
   });
 
+  // lfx-self-serve#4598 — the tile is the People -> Event Attendees tab's Attendees number for the range, not the listed-employee count.
+  describe('in the browser, with the Event Attendees tile', () => {
+    const tile = (): string => el().querySelector('[data-testid="org-people-all-employees-stat-events"] div')?.textContent?.trim() ?? '';
+    const listed = (): OrgAllEmployeeRow[] => [row('p-1', 'Ada Lovelace', { eventsCount: 2 }), row('p-2', 'Grace Hopper', { eventsCount: 0 })];
+
+    async function answer(current: OrgAllEmployeesResponse, former: OrgAllEmployeesResponse = response([], 0)): Promise<void> {
+      snowflake$.next(current);
+      snowflake$.complete();
+      live$.next(current);
+      live$.complete();
+      former$.next(former);
+      former$.complete();
+      await settle();
+    }
+
+    it('shows the server summary number, whatever the listed employees', async () => {
+      await mount('browser');
+      await answer({ ...response(listed(), 1), eventAttendeesTotal: 486 });
+
+      expect(tile()).toBe('486');
+    });
+
+    it('keeps the summary number under the Former and All employment views', async () => {
+      await mount('browser', '/?employment=all');
+      await answer({ ...response(listed(), 1), eventAttendeesTotal: 486 }, response([row('p-9', 'Alan Turing', { isFormer: true, eventsCount: 1 })], 1));
+
+      expect(tile()).toBe('486');
+    });
+
+    it('counts the listed employees with an event under the Non-LF project scope, which has no events summary', async () => {
+      await mount('browser', '/?projectScope=non_lf');
+      await answer(response(listed(), 1));
+
+      expect(tile()).toBe('1');
+    });
+
+    it('says the number is unavailable, and does not count the listed employees, when the server could not read the summary', async () => {
+      await mount('browser');
+      await answer({ ...response(listed(), 1), eventAttendeesTotal: null });
+
+      expect(tile()).toBe('—');
+    });
+
+    it('ignores a number that belongs to another account', async () => {
+      await mount('browser');
+      await answer({ ...response(listed(), 1, OTHER_ORG), eventAttendeesTotal: 486 });
+
+      expect(tile()).not.toBe('486');
+    });
+  });
+
   // lfx-self-serve#4685
   describe('in the browser, with the team members filter', () => {
     const teamMembersControl = (): FormControl<string> =>

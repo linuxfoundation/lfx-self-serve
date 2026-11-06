@@ -8,6 +8,7 @@ import { formatCurrency, formatNumber } from '../utils/number.utils';
 import { EMPTY_CHART_DATA, NO_TOOLTIP_CHART_OPTIONS } from './chart-options.constants';
 import { lfxColors } from './colors.constants';
 import { ORG_MAINTAINER_ROLES_LABEL } from './org-maintainer-roles.constants';
+import { ORG_TRAINING_STAT_DEFINITIONS } from './org-training-stats.constants';
 
 import type {
   BoardMeetingParticipationSummaryResponse,
@@ -362,12 +363,12 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
 ];
 
 // ============================================
-// Org Overview Involvement Metrics (cross-foundation, non-clickable)
+// Org Overview Involvement Metrics (cross-foundation)
 // ============================================
 
 /**
  * Engagement card configuration for the /org/overview involvement section.
- * 6 cards aggregated across all LF foundations. Cards are NOT clickable — no drawerType.
+ * 7 cards aggregated across all LF foundations. No drawerType: only the 3 Education cards are clickable, opening the Training page.
  */
 export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
   {
@@ -403,20 +404,31 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartData: EMPTY_CHART_DATA,
   },
   {
-    title: 'Certified Employees',
-    icon: 'fa-light fa-graduation-cap',
+    // Same number and label as the Training page's "People with training activity" tile at its default range: people on the people list. Stat-only: no chart.
+    title: ORG_TRAINING_STAT_DEFINITIONS.peopleWithTrainingActivity.label,
+    icon: 'fa-light fa-user-graduate',
     chartType: 'line',
+    hideChart: true,
     category: 'education',
-    testId: 'org-overview-involvement-card-certified-employees',
-    chartData: EMPTY_CHART_DATA,
+    testId: 'org-overview-involvement-card-people-with-training-activity',
   },
   {
-    title: 'Training Enrollments',
+    // Same number and label as the Training page's "Certified people" tile at its default range (lfx-self-serve#4290). Stat-only: no chart.
+    title: ORG_TRAINING_STAT_DEFINITIONS.certifiedPeople.label,
     icon: 'fa-light fa-graduation-cap',
     chartType: 'line',
+    hideChart: true,
+    category: 'education',
+    testId: 'org-overview-involvement-card-certified-employees',
+  },
+  {
+    // Same number and label as the Training page's "Courses taken" tile at its default range (lfx-self-serve#4290). Stat-only: no chart.
+    title: ORG_TRAINING_STAT_DEFINITIONS.coursesTaken.label,
+    icon: 'fa-light fa-graduation-cap',
+    chartType: 'line',
+    hideChart: true,
     category: 'education',
     testId: 'org-overview-involvement-card-training-enrollments',
-    chartData: EMPTY_CHART_DATA,
   },
 ];
 

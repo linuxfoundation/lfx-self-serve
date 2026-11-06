@@ -74,14 +74,10 @@ export class MeetingsHomeDeleteService {
         if (!done) return;
         if (occurrence) {
           this.store.removeOccurrence(row.meeting.id, occurrence.occurrence_id);
-          this.toast.show({
-            variant: 'dark',
-            message: 'Occurrence cancelled',
-            description: 'This occurrence was cancelled. The rest of the series is unchanged.',
-          });
+          this.toast.show({ variant: 'dark', message: 'Meeting occurrence cancelled' });
         } else {
           this.store.removeMeeting(row.meeting.id);
-          this.toast.show({ variant: 'dark', message: 'Success', description: 'Meeting deleted successfully.' });
+          this.toast.show({ variant: 'dark', message: 'Meeting deleted' });
         }
         this.userService.refreshUserMeetings();
         this.userService.refreshUserPastMeetings();

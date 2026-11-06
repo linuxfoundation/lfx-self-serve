@@ -21,7 +21,7 @@ import {
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { UiTooltipSide } from '@lfx-one/shared/interfaces';
+import { UiTooltipItem, UiTooltipSide } from '@lfx-one/shared/interfaces';
 import { toSpokenKeys } from '@lfx-one/shared/utils';
 import { Subscription, take } from 'rxjs';
 
@@ -54,6 +54,8 @@ export class UiTooltipDirective {
   public readonly title = input<string>('', { alias: 'lfxUiTooltipTitle' });
   /** Keys shown as key caps after the text, such as `['⌘', 'C']`. */
   public readonly shortcut = input<string[]>([], { alias: 'lfxUiTooltipShortcut' });
+  /** Counts shown in one line in place of the text, such as `Yes 12 · No 3`. The text stays the spoken description. */
+  public readonly items = input<UiTooltipItem[]>([], { alias: 'lfxUiTooltipItems' });
   /** Preferred side. The tooltip sits 6px from the host and flips to the opposite side, then the other two, if it would leave the window. */
   public readonly side = input<UiTooltipSide>('top', { alias: 'lfxUiTooltipSide' });
   /** Milliseconds between hover or keyboard focus and the tooltip appearing. Escape and blur close it at once; leaving with the pointer waits a short grace period. */
@@ -83,6 +85,7 @@ export class UiTooltipDirective {
     text: this.text(),
     title: this.title(),
     shortcut: this.shortcut(),
+    items: this.items(),
     disabled: this.disabled() || this.hostDisabled(),
   }));
 
@@ -169,7 +172,7 @@ export class UiTooltipDirective {
     });
   };
 
-  private apply(config: { text: string; title: string; shortcut: string[]; disabled: boolean }): void {
+  private apply(config: { text: string; title: string; shortcut: string[]; items: UiTooltipItem[]; disabled: boolean }): void {
     this.hasContent = !!(config.text || config.title);
     this.syncFocusMonitor();
     const empty = config.disabled || !(config.text || config.title);
@@ -182,6 +185,7 @@ export class UiTooltipDirective {
     this.panel.setInput('text', config.text);
     this.panel.setInput('heading', config.title);
     this.panel.setInput('shortcut', config.shortcut);
+    this.panel.setInput('items', config.items);
     // The new content may be taller or wider, so place it again once it has rendered.
     afterNextRender(() => this.overlayRef?.updatePosition(), { injector: this.injector });
   }
@@ -287,6 +291,7 @@ export class UiTooltipDirective {
     panel.setInput('text', this.text());
     panel.setInput('heading', this.title());
     panel.setInput('shortcut', this.shortcut());
+    panel.setInput('items', this.items());
     // The CDK can dispose the overlay itself, such as on navigation; drop the stale reference when it does.
     overlayRef
       .detachments()

@@ -54,6 +54,9 @@
           <span class="text-sm text-gray-600">{{ attributionName }}</span>
         </div>
       }
+      @if (showCreator() && initiative().creator; as creator) {
+        <span class="text-sm text-gray-500" data-testid="initiative-creator">Created by {{ creator }}</span>
+      }
       <lfx-markdown-renderer class="text-sm text-gray-500" [content]="initiative().description" />
       @if (industryTags().length > 0) {
         <div class="flex items-center gap-1.5 flex-wrap mt-1" data-testid="initiative-tags">

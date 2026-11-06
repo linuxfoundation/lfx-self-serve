@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { MeetingHomeRow, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
-import { toPastMeetingHomeRow } from '@lfx-one/shared/utils';
+import { formatMeetingWhen, toPastMeetingHomeRow } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
@@ -73,7 +73,7 @@ const rowOf = (meeting: PastMeeting): MeetingHomeRow => toPastMeetingHomeRow(mee
 
 describe('LastMeetingCardComponent', () => {
   let navigateByUrl: ReturnType<typeof vi.fn>;
-  let dialogs: { openSummary: ReturnType<typeof vi.fn>; openRecording: ReturnType<typeof vi.fn> };
+  let dialogs: { openSummary: ReturnType<typeof vi.fn>; openRecording: ReturnType<typeof vi.fn>; copyRecordingLink: ReturnType<typeof vi.fn> };
 
   const render = async (inputs: Record<string, unknown>): Promise<ComponentFixture<LastMeetingCardComponent>> => {
     const fixture = TestBed.createComponent(LastMeetingCardComponent);
@@ -89,7 +89,7 @@ describe('LastMeetingCardComponent', () => {
 
   beforeEach(() => {
     navigateByUrl = vi.fn().mockResolvedValue(true);
-    dialogs = { openSummary: vi.fn(), openRecording: vi.fn() };
+    dialogs = { openSummary: vi.fn(), openRecording: vi.fn(), copyRecordingLink: vi.fn() };
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl } },
@@ -133,18 +133,42 @@ describe('LastMeetingCardComponent', () => {
     expect(text(fixture, 'meetings-home-last-card-date')).toContain(String(START.getDate()));
     expect(query(fixture, 'meetings-home-last-card-project')?.getAttribute('aria-label')).toBe('Jump to project: Kubernetes');
     expect(text(fixture, 'meetings-home-last-card-title')).toBe('Steering sync');
-    const day = START.toLocaleString('en-US', { weekday: 'short' });
-    const time = START.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-    expect(text(fixture, 'meetings-home-last-card-when')).toBe(`${day}, ${time} · 60m`);
+    expect(text(fixture, 'meetings-home-last-card-when')).toBe(formatMeetingWhen(START, 60));
     expect(text(fixture, 'meetings-home-last-card-type')).toBe('Technical');
     expect(text(fixture, 'meetings-home-last-card-recurring')).toBe('Recurring');
-    expect(fixture.nativeElement.textContent).not.toContain('Steering Committee');
+    expect(query(fixture, 'meetings-home-last-card-recurring')?.querySelector('i')?.classList).toContain('fa-arrows-repeat');
+  });
+
+  it('badges each of the meeting groups between the type and recurring tags', async () => {
+    const meeting = buildMeeting({ recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } });
+    const fixture = await render({ row: rowOf(meeting), summary: null });
+    const tags = Array.from(fixture.nativeElement.querySelectorAll('lfx-ui-badge')).map((badge) => (badge as HTMLElement).dataset['testid']);
+
+    expect(text(fixture, 'meetings-home-last-card-group')).toBe('Steering Committee');
+    expect(query(fixture, 'meetings-home-last-card-group')?.querySelector('i')?.classList).toContain('fa-users');
+    expect(query(fixture, 'meetings-home-last-card-group')?.getAttribute('title')).toBe('Steering Committee');
+    expect(tags).toEqual(['meetings-home-last-card-type', 'meetings-home-last-card-group', 'meetings-home-last-card-recurring']);
+  });
+
+  it('shows no group tag for a meeting without groups', async () => {
+    const fixture = await render({ row: rowOf(buildMeeting({ committees: [] })), summary: null });
+
+    expect(query(fixture, 'meetings-home-last-card-group')).toBeNull();
   });
 
   it('shows no recurring tag for a one-off meeting', async () => {
     const fixture = await render({ row: rowOf(buildMeeting()), summary: null });
 
     expect(query(fixture, 'meetings-home-last-card-recurring')).toBeNull();
+  });
+
+  it('shows the attendance of a meeting the viewer organized, and nothing without counts', async () => {
+    const organized = await render({ row: rowOf(buildMeeting({ attendance_summary: { invited: 8, attended: 6 } })), summary: null });
+    const other = await render({ row: rowOf(buildMeeting()), summary: null });
+
+    expect(organized.nativeElement.querySelector('[data-testid="meetings-home-attendance-label"]')?.textContent?.trim()).toBe('6 of 8 attended · 75%');
+    expect(organized.nativeElement.querySelector('[data-testid="meetings-home-attendance-poor"]')).toBeNull();
+    expect(query(other, 'meetings-home-last-card-attendance')).toBeNull();
   });
 
   it('opens the meeting page when the card is clicked', async () => {
@@ -192,19 +216,24 @@ describe('LastMeetingCardComponent', () => {
     it('puts Recording before AI Summary', async () => {
       const fixture = await render({ row: rowOf(buildMeeting()), summary: buildSummary(), recordingUrl: 'https://zoom.example/rec' });
 
-      const buttons = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('lfx-ui-button'));
+      const buttons = Array.from<HTMLElement>(
+        fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-last-card-recording"], [data-testid="meetings-home-last-card-summary"]')
+      );
       expect(buttons.map((button) => button.dataset['testid'])).toEqual(['meetings-home-last-card-recording', 'meetings-home-last-card-summary']);
     });
 
-    it('opens the recording and summary dialogs without opening the meeting', async () => {
+    it('opens the recording, copies its link and opens the summary without opening the meeting', async () => {
       const summary = buildSummary();
       const fixture = await render({ row: rowOf(buildMeeting()), summary, recordingUrl: 'https://zoom.example/rec' });
 
-      clickButton(fixture, 'meetings-home-last-card-recording');
+      clickButton(fixture, 'ui-split-button-main');
+      clickButton(fixture, 'ui-split-button-secondary');
       clickButton(fixture, 'meetings-home-last-card-summary');
 
       expect(navigateByUrl).not.toHaveBeenCalled();
-      expect(dialogs.openRecording).toHaveBeenCalledWith(expect.objectContaining({ key: 'm-1-occ' }), 'https://zoom.example/rec');
+      expect(query(fixture, 'ui-split-button-secondary')?.getAttribute('aria-label')).toBe('Copy recording link');
+      expect(dialogs.openRecording).toHaveBeenCalledWith('https://zoom.example/rec');
+      expect(dialogs.copyRecordingLink).toHaveBeenCalledWith('https://zoom.example/rec');
       expect(dialogs.openSummary).toHaveBeenCalledWith(expect.objectContaining({ key: 'm-1-occ', title: 'Steering sync' }), summary, expect.any(Function));
     });
 

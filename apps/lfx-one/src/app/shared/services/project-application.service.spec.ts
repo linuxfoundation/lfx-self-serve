@@ -75,6 +75,69 @@ describe('ProjectApplicationService (#3037)', () => {
     request.flush({ application: buildApplication(), etag: null });
   });
 
+  it('sends the starting foundation as target_parent_uid when given, and nothing when null (#5187)', () => {
+    service.create({ project_name: 'Example' }, '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d').subscribe();
+    const withParent = http.expectOne('/api/project-applications');
+    expect(withParent.request.body).toEqual({ application: { project_name: 'Example' }, target_parent_uid: '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d' });
+    withParent.flush({ application: buildApplication(), etag: null });
+
+    service.create({ project_name: 'Example' }, null).subscribe();
+    const without = http.expectOne('/api/project-applications');
+    expect(without.request.body).toEqual({ application: { project_name: 'Example' } });
+    without.flush({ application: buildApplication(), etag: null });
+  });
+
+  describe('getStartedFrom (#5187)', () => {
+    const uid = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    const foundation = { uid, name: 'Example Foundation', stage: 'Active', funding: 'Funded', funding_model: ['Membership'], legal_entity_type: 'Corporation' };
+
+    const resolve = (value: string | null | undefined, response?: { body: object; status?: number }): unknown => {
+      let result: unknown = 'pending';
+      service.getStartedFrom(value).subscribe((project) => (result = project));
+      if (response) {
+        http.expectOne(`/api/projects/${value}`).flush(response.body, { status: response.status ?? 200, statusText: 'x' });
+      }
+      return result;
+    };
+
+    it('resolves a foundation through the cached project read, once per uid', () => {
+      const names: (string | undefined)[] = [];
+      service.getStartedFrom(uid).subscribe((project) => names.push(project?.name));
+      service.getStartedFrom(uid).subscribe((project) => names.push(project?.name));
+      http.expectOne(`/api/projects/${uid}`).flush(foundation);
+      expect(names).toEqual(['Example Foundation', 'Example Foundation']);
+    });
+
+    it('matches the hint to the project case-insensitively, since a UUID is valid in either case', () => {
+      const upper = uid.toUpperCase();
+      let result: { uid: string } | null = null;
+      service.getStartedFrom(upper).subscribe((project) => (result = project));
+      http.expectOne(`/api/projects/${upper}`).flush(foundation);
+      expect(result).toEqual(expect.objectContaining({ uid }));
+    });
+
+    it('resolves to null, with no request, without a usable uid', () => {
+      expect(resolve(null)).toBeNull();
+      expect(resolve(undefined)).toBeNull();
+      expect(resolve('agentic-ai-foundation')).toBeNull();
+      http.expectNone('/api/projects/agentic-ai-foundation');
+    });
+
+    it('resolves to null for a project that cannot be read', () => {
+      expect(resolve('11111111-2222-4333-8444-555555555555', { body: { error: 'forbidden' }, status: 403 })).toBeNull();
+    });
+
+    it('resolves to null for a project that is not a foundation, so a submitter-chosen uid is never shown or prefilled', () => {
+      const other = '22222222-3333-4444-8555-666666666666';
+      expect(resolve(other, { body: { ...foundation, uid: other, funding: 'Unfunded', funding_model: [] } })).toBeNull();
+    });
+
+    it('resolves to null when the read returns a different project than the one asked for', () => {
+      const other = '33333333-4444-4555-8666-777777777777';
+      expect(resolve(other, { body: foundation })).toBeNull();
+    });
+  });
+
   it('sends the held revision as If-Match on every mutation', () => {
     const application = buildApplication();
     service.revise(application, { project_name: 'Renamed' }).subscribe();

@@ -238,7 +238,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-      expect(result.members[0]).toMatchObject({ invited: 0, classification: 'High' });
+      expect(result.members[0]).toMatchObject({ invited: 0, classification: 'New' });
       expect(result.summary.active_count).toBe(1);
     });
 
@@ -249,7 +249,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-      expect(result.members[0]).toMatchObject({ invited: 0, classification: 'High' });
+      expect(result.members[0]).toMatchObject({ invited: 0, classification: 'New' });
       expect(result.summary.active_count).toBe(1);
     });
 
@@ -264,7 +264,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-      expect(result.members[0]).toMatchObject({ invited: 0, classification: 'High' });
+      expect(result.members[0]).toMatchObject({ invited: 0, classification: 'New' });
       expect(result.summary.active_count).toBe(1);
     });
 
@@ -300,7 +300,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       // model's last refresh) — so `member.voting?.status || row?.MEMBER_VOTING_STATUS` both resolve
       // undefined and fall all the way through to the `CommitteeMemberVotingStatus.NONE` sentinel.
       // `recentJoin` makes `joinedWithinWindow` genuinely true, so without the fix this would
-      // tenure-grace to 'High' on a literal 0/0 seat (case 3) instead of short-circuiting to
+      // tenure-grace to 'New' on a literal 0/0 seat (case 3) instead of short-circuiting to
       // 'LF Staff' the same way an Observer seat already did.
       const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
       getCommitteeMembers.mockResolvedValueOnce([member('m1'), member('staff', { role: { name: 'LF Staff' } as never, created_at: recentJoin })]);
@@ -403,7 +403,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.at_risk_count).toBe(1);
     });
 
-    it('classifies a never-invited veteran member as Inactive, and a never-invited-but-joined-within-window member as High', async () => {
+    it('classifies a never-invited veteran member as Inactive, and a never-invited-but-joined-within-window member as New', async () => {
       const recentJoin = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
       getCommitteeMembers.mockResolvedValueOnce([member('veteran'), member('new-joiner')]);
       generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'veteran' }), row({ MEMBER_USER_ID: 'new-joiner', MEMBER_JOINED_AT: recentJoin })]);
@@ -411,7 +411,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
       expect(result.members.find((m) => m.uid === 'veteran')?.classification).toBe('Inactive');
-      expect(result.members.find((m) => m.uid === 'new-joiner')?.classification).toBe('High');
+      expect(result.members.find((m) => m.uid === 'new-joiner')?.classification).toBe('New');
     });
 
     it('computes summary as an aggregation over the (varied, non-zero) members — not hardcoded zeros', async () => {
@@ -643,7 +643,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
       expect(result.data_available).toBe(true);
-      expect(result.members.find((m) => m.uid === 'new-joiner')).toMatchObject({ classification: 'High', invited: 0 });
+      expect(result.members.find((m) => m.uid === 'new-joiner')).toMatchObject({ classification: 'New', invited: 0 });
       expect(result.summary.active_count).toBe(2); // both members active: one via real attendance, one via tenure grace
     });
 
@@ -731,7 +731,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       // Confirmed-unmapped member: no row to join, but the committee DOES have usable data (one real
       // match), so the roster created_at tenure-grace fallback still applies — same as an
       // individually unmatched member on an otherwise-working join.
-      expect(result.members.find((m) => m.uid === 'unmapped')).toMatchObject({ invited: 0, attended: 0, classification: 'High' });
+      expect(result.members.find((m) => m.uid === 'unmapped')).toMatchObject({ invited: 0, attended: 0, classification: 'New' });
       expect(result.summary.active_count).toBe(2);
     });
 

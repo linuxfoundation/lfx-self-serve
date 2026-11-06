@@ -6,6 +6,7 @@ import { inject, Injectable, Signal, signal } from '@angular/core';
 import type {
   AcceptProjectApplicationRequest,
   CreateProjectApplicationRequest,
+  Project,
   ProjectApplication,
   ProjectApplicationAccess,
   ProjectApplicationAnswers,
@@ -13,7 +14,8 @@ import type {
   ProjectApplicationViewMode,
 } from '@lfx-one/shared/interfaces';
 import { PROJECT_APPLICATION_API_BASE_PATH } from '@lfx-one/shared/constants';
-import { upsertProjectApplication } from '@lfx-one/shared/utils';
+import { computeIsFoundation, isUuid, upsertProjectApplication } from '@lfx-one/shared/utils';
+import { ProjectService } from '@services/project.service';
 import { catchError, map, Observable, of, take, throwError } from 'rxjs';
 
 /**
@@ -24,6 +26,7 @@ import { catchError, map, Observable, of, take, throwError } from 'rxjs';
 @Injectable({ providedIn: 'root' })
 export class ProjectApplicationService {
   private readonly http = inject(HttpClient);
+  private readonly projectService = inject(ProjectService);
 
   /**
    * Write results the index hasn't caught up with yet, per list mode. The list applies them to every read
@@ -64,8 +67,25 @@ export class ProjectApplicationService {
     );
   }
 
-  public create(application: ProjectApplicationAnswers): Observable<ProjectApplicationWriteResult> {
-    const body: CreateProjectApplicationRequest = { application };
+  /**
+   * The project a proposal started from (#5187), for the formation team's "Started from" line and the accept
+   * form's parent prefill, and for the propose page's "Proposing under" line. One cached read per uid
+   * (`ProjectService.getProject`); resolves to `null` — never an error — for no hint, a value that is not a UUID, a
+   * project the reader cannot load, or a project that is not a foundation. The BFF only checks the hint is a UUID,
+   * so every consumer applies the same foundation rule the form applied when it sent it.
+   */
+  public getStartedFrom(targetParentUid: string | null | undefined): Observable<Project | null> {
+    if (!targetParentUid || !isUuid(targetParentUid)) {
+      return of(null);
+    }
+    return this.projectService
+      .getProject(targetParentUid, false)
+      .pipe(map((project) => (project && project.uid.toLowerCase() === targetParentUid.toLowerCase() && computeIsFoundation(project) ? project : null)));
+  }
+
+  /** `targetParentUid` is the foundation the applicant started from (#5187); omitted from the body when absent. */
+  public create(application: ProjectApplicationAnswers, targetParentUid?: string | null): Observable<ProjectApplicationWriteResult> {
+    const body: CreateProjectApplicationRequest = { application, ...(targetParentUid ? { target_parent_uid: targetParentUid } : {}) };
     return this.http.post<ProjectApplicationWriteResult>(PROJECT_APPLICATION_API_BASE_PATH, body).pipe(take(1));
   }
 

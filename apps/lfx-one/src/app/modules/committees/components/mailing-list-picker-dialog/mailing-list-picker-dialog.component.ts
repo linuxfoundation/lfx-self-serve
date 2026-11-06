@@ -10,18 +10,31 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { GroupsIOMailingList, MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
+import { MAILING_LIST_ACCESS_DENIED_MESSAGE } from '@lfx-one/shared/constants';
 import { getMailingListEmail } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
-import { LensService } from '@services/lens.service';
+import { PersonaService } from '@services/persona.service';
+import { ProjectService } from '@services/project.service';
+import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { finalize, take } from 'rxjs';
+import { TooltipModule } from 'primeng/tooltip';
+import { finalize, map, Observable, of, switchMap, take } from 'rxjs';
 
 import { MailingListEmailPipe } from '../../pipes/mailing-list-email.pipe';
 import { MailingListTypePipe } from '../committee-settings-tab/pipes/mailing-list-type.pipe';
 
 @Component({
   selector: 'lfx-mailing-list-picker-dialog',
-  imports: [ButtonComponent, CheckboxComponent, InputTextComponent, ReactiveFormsModule, TagComponent, MailingListEmailPipe, MailingListTypePipe],
+  imports: [
+    ButtonComponent,
+    CheckboxComponent,
+    InputTextComponent,
+    ReactiveFormsModule,
+    TagComponent,
+    TooltipModule,
+    MailingListEmailPipe,
+    MailingListTypePipe,
+  ],
   templateUrl: './mailing-list-picker-dialog.component.html',
 })
 export class MailingListPickerDialogComponent {
@@ -29,7 +42,9 @@ export class MailingListPickerDialogComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly destroyRef = inject(DestroyRef);
   private readonly committeeService = inject(CommitteeService);
-  private readonly lensService = inject(LensService);
+  private readonly messageService = inject(MessageService);
+  private readonly personaService = inject(PersonaService);
+  private readonly projectService = inject(ProjectService);
   private readonly router = inject(Router);
 
   public readonly mailingLists: GroupsIOMailingList[] = this.config.data.mailingLists;
@@ -60,7 +75,7 @@ export class MailingListPickerDialogComponent {
     const associatedUids = this.config.data.associatedUids as Set<string>;
     const controls: Record<string, FormControl<boolean>> = {};
     for (const ml of this.mailingLists) {
-      controls[ml.uid] = new FormControl(associatedUids.has(ml.uid), { nonNullable: true });
+      controls[ml.uid] = new FormControl({ value: associatedUids.has(ml.uid), disabled: !this.canModify(ml) }, { nonNullable: true });
     }
     this.mlCheckboxForm = new FormGroup(controls);
 
@@ -72,7 +87,15 @@ export class MailingListPickerDialogComponent {
       });
   }
 
+  /** Linking or unlinking a list updates the list itself, so the user needs write access to it. */
+  public canModify(ml: GroupsIOMailingList): boolean {
+    return ml.writer === true;
+  }
+
   public toggleMailingList(uid: string): void {
+    const ml = this.mailingLists.find((m) => m.uid === uid);
+    if (!ml || !this.canModify(ml)) return;
+
     const current = new Set(this.selectedMailingListUids());
     if (current.has(uid)) {
       current.delete(uid);
@@ -84,26 +107,22 @@ export class MailingListPickerDialogComponent {
   }
 
   public onCreateNewList(): void {
-    const overviewPath = this.lensService.activeLens() === 'foundation' ? '/foundation/overview' : '/project/overview';
-    const denyParams: Record<string, string> = { _notice: 'mailing-lists' };
-    if (this.projectSlug) denyParams['project'] = this.projectSlug;
-    const deny = () => {
-      this.cancel();
-      void this.router.navigate([overviewPath], { queryParams: denyParams });
-    };
-
     this.creating.set(true);
     this.committeeService
       .getCommittee(this.committeeUid)
       .pipe(
         take(1),
+        // Creating a list is a project-level action (the create route is guarded on project write access),
+        // so being able to write this group is not enough — check the project too before leaving the page.
+        switchMap((fresh) => (fresh?.writer === true ? this.hasProjectWriteAccess() : of(false))),
         finalize(() => this.creating.set(false)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
-        next: (fresh) => {
-          if (fresh?.writer !== true) {
-            deny();
+        next: (allowed) => {
+          if (!allowed) {
+            // Stay on the page the user is on rather than redirecting them away from it.
+            this.messageService.add({ severity: 'warn', summary: 'Access Denied', detail: MAILING_LIST_ACCESS_DENIED_MESSAGE });
             return;
           }
           const createParams: Record<string, string> = {};
@@ -111,7 +130,7 @@ export class MailingListPickerDialogComponent {
           this.cancel();
           void this.router.navigate(['/mailing-lists', 'create'], { queryParams: createParams });
         },
-        error: () => deny(),
+        error: () => this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Unable to verify your access. Please try again.' }),
       });
   }
 
@@ -121,5 +140,17 @@ export class MailingListPickerDialogComponent {
 
   public cancel(): void {
     this.dialogRef.close(null);
+  }
+
+  // Mirrors writerGuard for the create route: executive directors pass, otherwise the project's `writer` flag decides.
+  // With no project slug there is nothing to check here, so navigation proceeds and the guard decides.
+  private hasProjectWriteAccess(): Observable<boolean> {
+    if (this.personaService.currentPersona() === 'executive-director' || !this.projectSlug) {
+      return of(true);
+    }
+    return this.projectService.getProjectStrict(this.projectSlug).pipe(
+      take(1),
+      map((project) => project.writer === true)
+    );
   }
 }

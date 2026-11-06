@@ -22,13 +22,15 @@ import {
   MENTORSHIP_PROGRAM_VISIBILITY_FAILED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
+  Lens,
   MentorshipAdminProgramPage,
   MentorshipProgramDetailTab,
   MentorshipProgramDetailTabSource,
   MentorshipProgramVisibilityAction,
 } from '@lfx-one/shared/interfaces';
-import { getMentorshipProgramDetailTabs } from '@lfx-one/shared/utils';
+import { getMentorshipAdminBasePath, getMentorshipLensQueryParams, getMentorshipProgramDetailTabs } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { catchError, map, of, switchMap, take, tap } from 'rxjs';
 
@@ -69,6 +71,7 @@ export class ProgramDetailComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly messageService = inject(MessageService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   protected readonly isLoading = signal(true);
   protected readonly page = signal<MentorshipAdminProgramPage | null>(null);
@@ -77,6 +80,11 @@ export class ProgramDetailComponent {
   protected readonly noAccessTitle = MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_TITLE;
   protected readonly noAccessMessage = MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_MESSAGE;
   protected readonly loadErrorMessage = MENTORSHIP_ADMIN_PROGRAM_LOAD_ERROR_MESSAGE;
+  private readonly lens = this.route.snapshot.data['lens'] as Lens | undefined;
+  /** The lens's program list and edit wizard: the Me lens's Admin, or the Project lens's Mentorship Programs (lfx-mentorship#398). */
+  protected readonly basePath = getMentorshipAdminBasePath(this.lens);
+  /** The lens's project in `?project=` on the back link and Edit; this page has route params, so nothing backfills it. */
+  protected readonly lensQueryParams = computed(() => getMentorshipLensQueryParams(this.lens, this.projectContextService.activeContext()?.slug));
 
   private readonly reloadCount = signal(0);
   /** Bumped by every page read and silent refresh; only the latest one may write the page. */
@@ -118,7 +126,7 @@ export class ProgramDetailComponent {
 
   /** Opens the enroll wizard in edit mode for this program. */
   protected onEditProgram(): void {
-    void this.router.navigate(['/mentorship/admin/enroll'], { queryParams: { programId: this.programId() } });
+    void this.router.navigate([this.basePath, 'enroll'], { queryParams: { ...this.lensQueryParams(), programId: this.programId() } });
   }
 
   /**

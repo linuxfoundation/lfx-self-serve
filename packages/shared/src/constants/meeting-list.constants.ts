@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibilityKind } from '../enums';
-import type { MeetingHomeArtifact, MeetingResponseFilterOption, MeetingRsvpChoice, MeetingsHomeFilters, MeetingVisibilityInfo } from '../interfaces';
-
-/** The recording of a past meetings home row. */
-export const MEETINGS_HOME_RECORDING_ARTIFACT: MeetingHomeArtifact = { noun: 'recording', title: 'Recording' };
+import type {
+  MeetingHomeArtifact,
+  MeetingHomeAttendanceKind,
+  MeetingResponseFilterOption,
+  MeetingRsvpChoice,
+  MeetingsHomeFilters,
+  MeetingVisibilityInfo,
+} from '../interfaces';
 
 /** The AI summary of a past meetings home row. */
 export const MEETINGS_HOME_SUMMARY_ARTIFACT: MeetingHomeArtifact = { noun: 'summary', title: 'AI Summary' };
@@ -34,9 +38,9 @@ export const MEETINGS_HOME_RSVP_FILTER_OPTIONS: readonly MeetingResponseFilterOp
 
 /** RSVP answers on a meetings home row, in button order. */
 export const MEETINGS_HOME_RSVP_CHOICES: readonly MeetingRsvpChoice[] = [
-  { response: 'accepted', action: 'Yes', label: 'Going', icon: 'fa-solid fa-circle-check', tone: 'accent' },
-  { response: 'declined', action: 'No', label: 'Not going', icon: 'fa-solid fa-circle-xmark', tone: 'danger' },
-  { response: 'maybe', action: 'Maybe', label: 'Maybe', icon: 'fa-solid fa-circle-question', tone: 'warning' },
+  { response: 'accepted', action: 'Yes', label: 'Going', icon: 'fa-solid fa-circle-check', buttonIcon: 'fa-light fa-circle-check', tone: 'accent' },
+  { response: 'maybe', action: 'Maybe', label: 'Maybe', icon: 'fa-solid fa-circle-question', buttonIcon: 'fa-light fa-circle-question', tone: 'warning' },
+  { response: 'declined', action: 'No', label: 'Not going', icon: 'fa-solid fa-circle-xmark', buttonIcon: 'fa-light fa-circle-xmark', tone: 'danger' },
 ];
 
 /** Applied-filter chip copy. */
@@ -54,6 +58,14 @@ export const MEETING_VISIBILITY_BG_CLASSES: Record<MeetingVisibilityKind, string
   [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
   [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
   [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
+};
+
+/** Tailwind fill of an attendance bar segment and legend dot per kind. */
+export const MEETING_HOME_ATTENDANCE_BG_CLASSES: Record<MeetingHomeAttendanceKind, string> = {
+  yes: 'bg-blue-500',
+  maybe: 'bg-amber-500',
+  no: 'bg-red-500',
+  attended: 'bg-blue-500',
 };
 
 /** Visibility badge icon and tooltip copy per kind. */

@@ -16,19 +16,29 @@
   <!-- Elevator pitch -->
   <div class="flex flex-col gap-1.5" data-testid="settings-field-description">
     <div class="flex items-center justify-between">
-      <label for="settings-description" class="text-sm font-medium text-gray-700">
+      <label id="settings-description-label" class="text-sm font-medium text-gray-700">
         Elevator Pitch <span class="text-red-500" aria-hidden="true">*</span>
       </label>
-      <span class="text-xs text-gray-400">{{ descriptionLength() }}/500</span>
+      <span class="text-xs" [class.text-gray-400]="!descriptionTooLong()" [class.text-red-500]="descriptionTooLong()" data-testid="settings-description-count"
+        >{{ descriptionLength() }}/{{ descriptionMaxChars }}</span
+      >
     </div>
-    <lfx-textarea
+    <lfx-rich-editor
       [form]="form"
       control="description"
-      id="settings-description"
-      styleClass="w-full"
-      [rows]="4"
-      [maxlength]="500"
-      placeholder="Describe your initiative in a few sentences…" />
+      placeholder="Describe your initiative in a few sentences…"
+      [editorStyle]="{ minHeight: '160px' }"
+      ariaLabelledBy="settings-description-label"
+      dataTest="settings-description-editor" />
+    @if (descriptionTooLong()) {
+      <p class="text-xs text-red-500" role="alert" data-testid="settings-description-length-error">
+        Keep the elevator pitch to {{ descriptionMaxChars }} characters or fewer.
+      </p>
+    } @else if (descriptionMarkupTooLong()) {
+      <p class="text-xs text-red-500" role="alert" data-testid="settings-description-markup-error">
+        The elevator pitch has too much formatting to save. Remove some formatting or shorten the text.
+      </p>
+    }
   </div>
 
   <!-- Topic / Category tags -->

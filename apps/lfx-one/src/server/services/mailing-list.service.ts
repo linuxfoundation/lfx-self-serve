@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QUERY_SERVICE_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
 import {
   CreateGroupsIOServiceRequest,
@@ -326,7 +327,12 @@ export class MailingListService {
       'groupsio_mailing_list',
       'groupsio_mailing_list_uid',
       mailingListId,
-      { mailing_list_uid: mailingListId }
+      { mailing_list_uid: mailingListId },
+      // The list already exists in the index, so existence alone would return the pre-update doc.
+      // When linking a group, wait until that association is visible, otherwise a follow-up read by
+      // committee_uid misses the change. Unlinking has no marker to wait on (the previous group is
+      // not part of the request), so it keeps the existence check.
+      data.committee_uid ? (indexedList) => !!indexedList.committees?.some((c) => c.uid === data.committee_uid) : undefined
     );
 
     return indexed ?? updatedMailingList;
@@ -499,13 +505,18 @@ export class MailingListService {
       ...queryFilters,
       type: 'groupsio_member',
       tags: `mailing_list_uid:${mailingListId}`,
+      page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
-    const members = await fetchAllQueryResources<MailingListMember>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    // The members UI treats this array as the complete, locally searchable roster.
+    const members = await fetchAllQueryResources<MailingListMember>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
     );
 
     // Add writer access field to all members
@@ -748,7 +759,8 @@ export class MailingListService {
     type: string,
     tagKey: string,
     tagValue: string,
-    metadata: Record<string, unknown>
+    metadata: Record<string, unknown>,
+    isCurrent?: (resource: T) => boolean
   ): Promise<T | null> {
     return pollUntilIndexed<T>({
       req,
@@ -758,7 +770,8 @@ export class MailingListService {
           type,
           tags: `${tagKey}:${tagValue}`,
         });
-        return resources.length > 0 ? resources[0].data : null;
+        const resource = resources.length > 0 ? resources[0].data : null;
+        return resource && (!isCurrent || isCurrent(resource)) ? resource : null;
       },
       metadata,
     });

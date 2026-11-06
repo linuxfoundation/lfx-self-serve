@@ -3,7 +3,7 @@
 
 import { DatePipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, OnInit, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -11,12 +11,12 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PROJECT_APPLICATION_STATE_FILTER_OPTIONS } from '@lfx-one/shared/constants';
+import { PROJECT_APPLICATION_FROM_FOUNDATION_COPY, PROJECT_APPLICATION_STATE_FILTER_OPTIONS } from '@lfx-one/shared/constants';
 import type { FilterPillOption, ProjectApplication, ProjectApplicationRow, ProjectApplicationViewMode } from '@lfx-one/shared/interfaces';
 import { reconcileProjectApplications, toProjectApplicationRow } from '@lfx-one/shared/utils';
 import { ProjectApplicationService } from '@services/project-application.service';
 import type { TablePageEvent } from 'primeng/table';
-import { catchError, debounceTime, EMPTY, Subject, switchMap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, EMPTY, forkJoin, map, of, Subject, switchMap } from 'rxjs';
 
 import { ProjectApplicationDrawerComponent } from '../project-application-drawer/project-application-drawer.component';
 
@@ -56,6 +56,7 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   // === Template constants ===
   protected readonly stateFilterOptions: FilterPillOption[] = PROJECT_APPLICATION_STATE_FILTER_OPTIONS;
   protected readonly proposeRoute = ['/formations/propose'];
+  protected readonly startedFromLabel = PROJECT_APPLICATION_FROM_FOUNDATION_COPY.startedFrom;
 
   // === Forms ===
   public readonly searchForm = new FormGroup({
@@ -77,6 +78,8 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   // === Computed Signals ===
   protected readonly applications: Signal<ProjectApplicationRow[]> = this.initApplications();
   protected readonly filteredApplications: Signal<ProjectApplicationRow[]> = this.initFilteredApplications();
+  /** Names of the foundations proposals started from (#5187), by uid — staff only. A uid that does not resolve is simply absent. */
+  protected readonly startedFromNames: Signal<Record<string, string>> = this.initStartedFromNames();
   /** The paginator offset, pulled back onto the last page when a delete or filter leaves it past the end. */
   protected readonly pageFirst: Signal<number> = this.initPageFirst();
   protected readonly selectedApplication: Signal<ProjectApplication | null> = computed(
@@ -172,6 +175,27 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   }
 
   // === Private Initializers ===
+  private initStartedFromNames(): Signal<Record<string, string>> {
+    const uids = computed(() =>
+      this.isStaff()
+        ? [...new Set(this.applications().flatMap((application) => (application.target_parent_uid ? [application.target_parent_uid] : [])))].sort()
+        : []
+    );
+    return toSignal(
+      toObservable(uids).pipe(
+        distinctUntilChanged((a, b) => a.join() === b.join()),
+        switchMap((list) =>
+          list.length === 0
+            ? of<Record<string, string>>({})
+            : forkJoin(list.map((uid) => this.projectApplicationService.getStartedFrom(uid).pipe(map((project) => [uid, project?.name] as const)))).pipe(
+                map((entries) => Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => !!entry[1])))
+              )
+        )
+      ),
+      { initialValue: {} as Record<string, string> }
+    );
+  }
+
   private initApplications(): Signal<ProjectApplicationRow[]> {
     return computed(() => {
       const mode = this.mode();

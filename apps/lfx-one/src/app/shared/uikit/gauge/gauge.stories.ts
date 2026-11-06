@@ -8,7 +8,17 @@ import { UiGaugeComponent } from './gauge.component';
 const meta: Meta<UiGaugeComponent> = {
   title: 'Uikit/Gauge',
   component: UiGaugeComponent,
-  args: { value: 92, label: 'Health score', size: 'default', tone: 'level', showValue: true, indeterminate: false },
+  args: {
+    value: 92,
+    label: 'Health score',
+    size: 'default',
+    tone: 'level',
+    level: null,
+    weight: 'default',
+    showValue: true,
+    indeterminate: false,
+    empty: false,
+  },
   render: (args) => ({ props: args, template: `<lfx-ui-gauge ${argsToTemplate(args)} />` }),
 };
 export default meta;
@@ -27,5 +37,16 @@ export const Indeterminate: Story = { args: { size: 'small', indeterminate: true
 export const WithVisibleLabel: Story = {
   render: () => ({
     template: `<span class="inline-flex items-center gap-[8px] copy-14 text-ui-neutral-900"><lfx-ui-gauge [value]="58" label="Health score" size="small" /> Health score</span>`,
+  }),
+};
+/** An 8-unit ring with square ends at a size the scale lacks, coloured by the caller's own rule, beside its number. Exact px; 14px root. */
+export const ThinInARow: Story = {
+  render: () => ({
+    template: `
+      <div class="flex items-center gap-[24px]">
+        <span class="inline-flex items-center gap-[10px] copy-14 text-ui-neutral-900"><lfx-ui-gauge [value]="78" [size]="52" weight="thin" level="high" [showValue]="false" label="Registrations against goal" /> 780</span>
+        <span class="inline-flex items-center gap-[10px] copy-14 text-ui-neutral-900"><lfx-ui-gauge [value]="45" [size]="52" weight="thin" level="mid" [showValue]="false" label="Registrations against goal" /> 450</span>
+        <span class="inline-flex items-center gap-[10px] copy-14 text-ui-neutral-900"><lfx-ui-gauge [size]="52" weight="thin" empty label="Registrations, no goal set" /> 210</span>
+      </div>`,
   }),
 };

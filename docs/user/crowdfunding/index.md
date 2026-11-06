@@ -4,7 +4,7 @@ description: Manage your crowdfunding initiatives and track your donations in LF
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, donations, funding, sponsors]
-last_updated: 2026-10-29
+last_updated: 2026-11-05
 intercom_collection: Crowdfunding
 ---
 
@@ -18,6 +18,7 @@ The Crowdfunding section lets you manage the fundraising initiatives you own and
 - Manage saved payment methods
 - Cancel or review recurring donation subscriptions
 - View the initiatives run on behalf of a project, foundation, or organization you write to
+- View the donations made on behalf of an organization you can view
 
 ## Who this applies to
 
@@ -30,6 +31,8 @@ Users with write access to a project, foundation, or organization also see that 
 Go to **app.lfx.dev** and select **Crowdfunding** from the left navigation sidebar under the **Me** lens. The section expands to show **Initiatives** ([app.lfx.dev/crowdfunding/initiatives](https://app.lfx.dev/crowdfunding/initiatives)) and **Donations** ([app.lfx.dev/crowdfunding/donations](https://app.lfx.dev/crowdfunding/donations)).
 
 Under the **Project**, **Foundation**, and **Org** lenses, select **Crowdfunding Initiatives** from the left navigation sidebar to see the initiatives run on behalf of the selected project, foundation, or organization. This item appears only if you can write to that project or foundation, or have a writer role granted directly on that organization.
+
+Under the **Organization** lens, select **Crowdfunding Donations** to see the donations made on behalf of the selected organization. Anyone who can view the organization can open it — see [Organization Donations](./lens-donations/).
 
 ## Key concepts
 
@@ -48,6 +51,7 @@ Under the **Project**, **Foundation**, and **Org** lenses, select **Crowdfunding
 ## Related sections
 
 - [Lens-scoped Initiatives](./lens-initiatives/) — initiatives run on behalf of a project, foundation, or organization
+- [Organization Donations](./lens-donations/) — donations made on behalf of an organization
 - [Crowdfunding FAQ](./faq/) — answers to common questions about initiatives and donations
 - [Transactions](../account/transactions/) — view purchase and billing history across all LFX products
 - [Profile](../profile/) — manage your account details associated with your donations

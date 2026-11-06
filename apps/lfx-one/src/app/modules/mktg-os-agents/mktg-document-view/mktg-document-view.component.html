@@ -5,6 +5,44 @@
   <span class="sr-only" role="status" aria-live="polite" [textContent]="savingStatus()" data-testid="mktg-document-view-saving-status"></span>
   <div class="flex flex-col gap-5 mt-3">
     <lfx-mktg-breadcrumb [page]="breadcrumbPage()" />
+    <span
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="mktg-document-view-current-banner-status"
+      [textContent]="currentBanner()?.sentence ?? ''"></span>
+    <!-- BannerPhone.dc.html: 12px padding / 14px type; Banner.dc.html: 16px x 12px / 15px type (the app root is 14px). -->
+    @if (currentBanner(); as banner) {
+      <div
+        data-testid="mktg-document-view-current-banner"
+        class="flex min-w-0 flex-col gap-3 rounded-lg border border-blue-600 bg-blue-50 p-[12px] text-[14px] leading-[1.45] text-gray-900 md:flex-row md:items-center md:px-[16px] md:text-[15px]">
+        <span class="min-w-0 flex-1">
+          <strong>v{{ banner.number }} is now the current version</strong>{{ banner.approverClause }}. You are reading v{{ banner.viewedNumber }}.
+        </span>
+        <div class="flex w-full shrink-0 gap-2 md:w-auto">
+          <a
+            [routerLink]="submittingGeneration() ? null : []"
+            [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
+            [attr.tabindex]="submittingGeneration() ? -1 : null"
+            [class.opacity-50]="submittingGeneration()"
+            [queryParams]="{ revision: banner.id }"
+            queryParamsHandling="merge"
+            data-testid="mktg-document-view-current-banner-open"
+            class="min-w-0 flex-1 whitespace-normal rounded-lg bg-blue-600 px-4 py-2 text-center font-semibold text-white hover:bg-blue-700 md:flex-none md:whitespace-nowrap"
+            (click)="onBannerOpen($event)"
+            >Open v{{ banner.number }}</a
+          >
+          <button
+            type="button"
+            data-testid="mktg-document-view-current-banner-dismiss"
+            class="min-w-0 flex-1 whitespace-normal rounded-lg border border-gray-200 bg-white px-4 py-2 text-center hover:bg-gray-50 md:flex-none md:whitespace-nowrap"
+            (click)="dismissCurrentBanner()">
+            Keep reading v{{ banner.viewedNumber }}
+          </button>
+        </div>
+      </div>
+    }
     <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-title-card">
       <div class="flex min-w-0 flex-col gap-1">
@@ -13,7 +51,12 @@
             <lfx-mktg-skeleton variant="header" />
           </div>
         } @else {
-          <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">
+          <h1
+            #documentTitle
+            tabindex="-1"
+            class="text-base font-semibold text-gray-900"
+            [class.break-words]="isLinkedinDocument()"
+            data-testid="mktg-document-view-title">
             {{ isAeoDocument() && title() ? aeoHeaderTitle() : title() || 'Document' }}
           </h1>
         }
@@ -22,7 +65,7 @@
             <lfx-mktg-asset-meta [metadata]="meta" prefix="mktg-document-view" />
           }
         }
-        @if (view() && !runState()) {
+        @if (view()) {
           <p class="text-xs text-gray-500" data-testid="mktg-document-view-readiness">{{ readiness() }}</p>
         }
       </div>
@@ -172,7 +215,7 @@
         [polling]="publicProgressPolling()"
         [continuous]="publicProgressPolling()"
         [refreshKey]="progressRefreshKey()"
-        [loadRevision]="publicProgressPolling()"
+        [loadRevision]="readStoredBody()"
         [revisionId]="revisionParam()"
         [expectedPending]="!!generationParam()"
         [viewSnapshot]="view()"
@@ -466,72 +509,6 @@
           @if (isAeoDocument() && current.aeoGeoReport?.report) {
             <ng-container [ngTemplateOutlet]="auditReport" />
           }
-          @if (current.type.kind === 'living' && !current.revision.latest) {
-            @let active = currentRevision();
-            @let viewedAuthor = viewedAuthorLabel();
-            @let viewedDate = current.revision.createdAt | date: 'd MMM';
-            @let historySummary =
-              "You're viewing v" +
-              current.revision.number +
-              (viewedDate ? ' · ' + viewedDate : '') +
-              ' · ' +
-              viewedAuthor +
-              (active ? ' · v' + active.number + ' is current' : '');
-            <!-- The tester requested 32–36px height and 13px type. Below lg, clear the layout's sticky menu (h-10 + py-3 + border = 4rem + 1px). -->
-            <!-- Offsets target the standard layout; the impersonation banner is an accepted offset exception. -->
-            <div
-              class="sticky top-[calc(4rem+1px)] lg:top-0 z-10 flex h-[34px] min-w-0 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-600"
-              role="group"
-              aria-label="Revision navigation"
-              [attr.aria-busy]="restoringId() !== null"
-              data-testid="mktg-document-view-history-bar">
-              <span
-                class="hidden min-w-0 flex-1 truncate sm:block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
-                tabindex="0"
-                role="note"
-                [textContent]="historySummary"
-                [attr.aria-label]="historySummary"
-                [pTooltip]="historySummary"
-                tooltipPosition="bottom"
-                tooltipEvent="both"
-                [escape]="true"
-                appendTo="body"
-                data-testid="mktg-document-view-history-bar-summary"></span>
-              <span
-                class="min-w-0 flex-1 sm:hidden"
-                [textContent]="'Viewing v' + current.revision.number"
-                data-testid="mktg-document-view-history-bar-mobile-summary"></span>
-              <span class="sm:hidden" aria-hidden="true">·</span>
-              <button
-                type="button"
-                class="h-full shrink-0 text-blue-700 underline hover:text-blue-900 disabled:cursor-not-allowed disabled:text-gray-400"
-                [disabled]="writePending()"
-                data-testid="mktg-document-view-history-bar-make-current"
-                (click)="onRestore(current.revision)">
-                @if (restoringId() === current.revision.id) {
-                  <span>Saving…</span>
-                } @else {
-                  <span class="hidden sm:inline" [textContent]="'Make v' + current.revision.number + ' current'"></span>
-                  <span class="sm:hidden">Make current</span>
-                }
-              </button>
-              @if (active) {
-                <span class="sm:hidden" aria-hidden="true">·</span>
-                <a
-                  class="shrink-0 text-blue-700 underline hover:text-blue-900"
-                  [routerLink]="submittingGeneration() ? null : []"
-                  [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
-                  [attr.tabindex]="submittingGeneration() ? -1 : null"
-                  [queryParams]="{ revision: active.id }"
-                  queryParamsHandling="merge"
-                  data-testid="mktg-document-view-history-bar-back">
-                  <span class="hidden sm:inline" [textContent]="'Back to v' + active.number"></span>
-                  <span class="sm:hidden">Back</span>
-                </a>
-              }
-            </div>
-          }
-          <!-- History precedes the asset headers in DOM, preserving its keyboard summary after Back. -->
           @if (asset(); as framework) {
             <lfx-mktg-framework-view
               class="block min-w-0"
@@ -543,7 +520,7 @@
               [kit]="printKit()"
               [approvedAsset]="approvedFramework()"
               [approvedVersion]="approvedVersion()"
-              [approvedLoading]="approvedView().loading"
+              [approvedLoading]="approvedView().loading && approvedReadIsExplicit()"
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
@@ -583,7 +560,7 @@
               [showMetadata]="false"
               [approvedKit]="approvedKit()"
               [approvedVersion]="approvedVersion()"
-              [approvedLoading]="approvedView().loading"
+              [approvedLoading]="approvedView().loading && approvedReadIsExplicit()"
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
@@ -668,7 +645,29 @@
                     </span>
                   </div>
                   @if (revision.id === current.revision.id) {
-                    <span class="shrink-0 text-gray-500">here</span>
+                    <span class="flex w-16 shrink-0 flex-col items-end gap-1 text-right text-gray-500">
+                      <span>here</span>
+                      @if (!revision.latest && current.type.kind === 'living') {
+                        <button
+                          type="button"
+                          data-testid="mktg-document-view-viewed-make-current"
+                          class="text-right text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
+                          [disabled]="writePending()"
+                          [attr.aria-label]="'Make revision ' + revision.number + ' current'"
+                          [pTooltip]="makeCurrentHint"
+                          lfxTooltipHostFocus
+                          tooltipEvent="hover"
+                          tooltipPosition="top"
+                          aria-describedby="mktg-document-view-make-current-help"
+                          (click)="onRestore(revision)">
+                          @if (restoringId() === revision.id) {
+                            Saving…
+                          } @else {
+                            Make current
+                          }
+                        </button>
+                      }
+                    </span>
                   } @else {
                     <!-- w-16 intentionally wraps Make current below Open in the design's narrow right-aligned actions column. -->
                     <span

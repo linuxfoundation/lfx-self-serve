@@ -107,10 +107,10 @@ export class UiChoiceboxComponent {
       // Exact px, not rem: 14px root. 12px gap and 12px/16px padding are library spacing-3 and spacing-4.
       const base =
         'relative flex items-start gap-[12px] rounded-ui-md px-[16px] py-[12px] ring-1 transition-[box-shadow,background-color] duration-ui-base ease-ui-standard motion-reduce:transition-none';
-      const ring = this.isChecked() ? 'ring-ui-accent-500' : 'ring-ui-neutral-alpha-200';
+      const ring = this.isChecked() ? 'ring-ui-accent-500' : 'ring-ui-neutral-alpha-300';
       if (this.isDisabled()) return `${base} ${ring} cursor-not-allowed bg-ui-neutral-50`;
       if (this.isChecked()) return `${base} ${ring} cursor-pointer bg-ui-accent-50`;
-      return `${base} ${ring} cursor-pointer bg-ui-background-100 hover:bg-ui-neutral-alpha-50 hover:ring-ui-neutral-alpha-300`;
+      return `${base} ${ring} cursor-pointer bg-ui-background-100 hover:bg-ui-neutral-alpha-50 hover:ring-ui-neutral-alpha-400`;
     });
   }
 

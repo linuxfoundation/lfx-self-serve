@@ -18,6 +18,17 @@
 
   <div class="flex flex-col xl:flex-row xl:items-start gap-8">
     <div class="flex-1 min-w-0">
+      @if (parentFoundation(); as foundation) {
+        <div class="flex flex-wrap items-center gap-2 mb-6 max-w-3xl text-sm text-gray-700" data-testid="propose-project-parent">
+          <i class="fa-light fa-building-columns text-gray-400" aria-hidden="true"></i>
+          <span data-testid="propose-project-parent-line">
+            {{ fromFoundationCopy.proposingUnder }} <span class="font-medium text-gray-900">{{ foundation.name }}</span>
+          </span>
+          <button type="button" class="text-blue-600 hover:underline" (click)="onChangeParent()" data-testid="propose-project-parent-change">
+            {{ fromFoundationCopy.change }}
+          </button>
+        </div>
+      }
       <lfx-project-application-form
         [submitting]="submitting()"
         [errorMessage]="errorMessage()"

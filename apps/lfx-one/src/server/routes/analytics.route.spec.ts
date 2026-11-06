@@ -371,8 +371,6 @@ const ORG_SCOPED_ROWS = new Set([
   '/org-involvement-contributors-monthly',
   '/org-involvement-maintainers-monthly',
   '/org-involvement-event-attendance-monthly',
-  '/org-involvement-certified-employees-monthly',
-  '/org-involvement-training-enrollments',
   '/org-lens-account-context',
 ]);
 

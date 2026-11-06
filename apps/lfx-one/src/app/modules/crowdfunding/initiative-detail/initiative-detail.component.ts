@@ -7,10 +7,9 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { filter, firstValueFrom, map, switchMap, take, tap } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
-import { CROWDFUNDING_ATTRIBUTION_STEP_FLAG, NAV_LENSES } from '@lfx-one/shared/constants';
+import { NAV_LENSES } from '@lfx-one/shared/constants';
 import { CrowdfundingInitiativeStatus, EditAttributionDialogData, InitiativeDetail, Lens, NavLens } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -41,13 +40,14 @@ export class InitiativeDetailComponent {
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
-  private readonly featureFlagService = inject(FeatureFlagService);
 
   // ─── Route Fields ──────────────────────────────────────────────────────────
   // Opened from a lens Initiatives page — Project/Foundation (#347, keeping ?project=) or Org (#348, the selected
   // organization's address): go back there.
   private readonly lens = this.route.snapshot.data['lens'] as Lens | undefined;
   private readonly isNavLens = NAV_LENSES.includes(this.lens as NavLens);
+  // Lens pages (Org, Project, Foundation) show who created the initiative (lfx-crowdfunding#452).
+  protected readonly isLensPage = this.lens === 'org' || this.isNavLens;
   protected readonly backLink: string | string[] = this.initBackLink();
   protected readonly backQueryParams: Record<string, string> = this.isNavLens ? this.route.snapshot.queryParams : {};
 
@@ -63,7 +63,6 @@ export class InitiativeDetailComponent {
   protected readonly initiativeSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('slug') ?? '')), { initialValue: '' });
   private readonly initiativeFetched: Signal<InitiativeDetail | null> = this.initInitiative();
   protected readonly initiative = computed(() => this.initiativeOverride() ?? this.initiativeFetched());
-  private readonly attributionEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ATTRIBUTION_STEP_FLAG, false);
   protected readonly canEditAttribution: Signal<boolean> = this.initCanEditAttribution();
 
   protected onInitiativeSaved(updated: InitiativeDetail): void {
@@ -102,9 +101,10 @@ export class InitiativeDetailComponent {
     });
   }
 
-  // CF sets is_owner only on the manage read; write responses would otherwise hide the creator's Edit attribution.
+  // CF sets is_owner and creator only on the manage read; write responses would otherwise drop them.
   private applyUpdate(updated: InitiativeDetail): void {
-    this.initiativeOverride.set({ ...updated, isOwner: this.initiative()?.isOwner ?? false });
+    const current = this.initiative();
+    this.initiativeOverride.set({ ...updated, isOwner: current?.isOwner ?? false, creator: current?.creator });
   }
 
   // ─── Private Initializers ──────────────────────────────────────────────────
@@ -118,7 +118,7 @@ export class InitiativeDetailComponent {
   private initCanEditAttribution(): Signal<boolean> {
     return computed(() => {
       const initiative = this.initiative();
-      return this.attributionEnabled() && this.lens === 'me' && !!initiative?.isOwner && initiative.status === 'submitted';
+      return this.lens === 'me' && !!initiative?.isOwner && initiative.status === 'submitted';
     });
   }
 

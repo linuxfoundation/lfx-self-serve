@@ -24,6 +24,8 @@ import type {
   CampaignDeliveryTypeOption,
   CampaignEmailSegment,
   CampaignEmailTypeOption,
+  CampaignSurveyEmailCountOption,
+  CampaignSurveyTypeOption,
   CampaignGoalOption,
   CampaignOptimizeControlLever,
   CampaignOptimizeLever,
@@ -46,6 +48,7 @@ import type {
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
   GoogleCreativeSharedCap,
+  GoogleDeviceBidMode,
   KeywordActionOutcome,
   KeywordActionPlatform,
   LinkedInGeoTarget,
@@ -178,6 +181,7 @@ export function campaignPlatformMonitorable(platform: CampaignPlatform): boolean
 export const CAMPAIGN_DELIVERY_TYPES: readonly CampaignDeliveryTypeOption[] = [
   { id: 'paid-marketing', label: 'Paid Marketing', breadcrumbLabel: 'Paid Marketing' },
   { id: 'email', label: 'Email', breadcrumbLabel: 'Email' },
+  { id: 'survey', label: 'Survey & Report', breadcrumbLabel: 'Survey & Report' },
 ] as const;
 
 export const CAMPAIGN_PROGRAM_TYPES: readonly CampaignProgramTypeOption[] = [
@@ -1450,6 +1454,17 @@ export const GOOGLE_ADS_NOT_CONFIGURED_MESSAGE = 'Google Ads is not configured o
 /** Leads a failed read of the BFF's own Google Ads account, before the Google Ads error code when there is one (#4526). */
 export const GOOGLE_ADS_READ_FAILED_MESSAGE = 'Google Ads did not return the account data.';
 
+/**
+ * The error `code` (HTTP 403) of a create refused because it carries Google audience segments and the
+ * caller is not a ROOT writer or ROOT campaign manager. Every foundation's Google Ads connection
+ * points at one shared LF customer and a user list cannot yet be mapped to a project, so a non-root
+ * operator could otherwise target another foundation's list (linuxfoundation/lfx-v2-campaign-service#411).
+ */
+export const GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE = 'GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED';
+/** The user-facing message of that refusal. */
+export const GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE =
+  'Google audience segments can only be added by LF administrators, because every foundation shares one Google Ads account. Remove the audience segments and create again.';
+
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
 
@@ -1887,15 +1902,43 @@ export const GOOGLE_ADS_SCHEDULE_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THUR
  */
 export const GOOGLE_ADS_SCHEDULE_MINUTES = [0, 15, 30, 45] as const;
 
+/** What the Implementation tab's ad-schedule editor calls each {@link GOOGLE_ADS_SCHEDULE_DAYS} value. */
+export const GOOGLE_ADS_SCHEDULE_DAY_LABELS = {
+  MONDAY: 'Monday',
+  TUESDAY: 'Tuesday',
+  WEDNESDAY: 'Wednesday',
+  THURSDAY: 'Thursday',
+  FRIDAY: 'Friday',
+  SATURDAY: 'Saturday',
+  SUNDAY: 'Sunday',
+} as const;
+
+/**
+ * Every quarter-hour of the day as minutes since midnight, 00:00 through 24:00, for the ad-schedule
+ * editor's time pickers. Every entry's minute is a {@link GOOGLE_ADS_SCHEDULE_MINUTES} value, so a
+ * pick never writes a minute Google refuses. Not every entry is a valid time at both ends, though:
+ * 24:00 is only an end (the only way to end a window at midnight), and 00:00 through 00:45 are only
+ * starts, since an end hour of 0 is refused. The editor offers starts up to 23:45 and ends from
+ * 01:00. A pick can still make an empty or inverted window, which `googleAdScheduleRefusal` reports.
+ */
+export const GOOGLE_ADS_SCHEDULE_TIME_OPTIONS = Array.from({ length: 24 * 4 + 1 }, (_, i) => ({
+  value: i * 15,
+  label: `${String(Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`,
+}));
+
 /**
  * Google's documented bid-adjustment range for an ad schedule or device criterion
  * (`campaign_criteria.go`'s `minBidModifier` / `maxBidModifier`): a multiplier of 0.1 through 10.0,
- * which is -90%..+900%.
+ * which is -90%..+900% (Google's "About bid adjustments",
+ * https://support.google.com/google-ads/answer/2732132).
  *
- * 0 is NOT below the minimum — it is the -100% "do not serve here at all" opt-out, and it sits
- * outside the range above rather than at its bottom end: upstream accepts it on its own, before the
- * range is ever tested. What upstream refuses is a value strictly between 0 and the minimum, so a
- * guard that simply tested `value < 0.1` would refuse the opt-out every day-parted campaign uses.
+ * On a DEVICE, 0 is NOT below the minimum — it is the -100% "do not serve on this device" exclusion,
+ * and it sits outside the range above rather than at its bottom end: upstream accepts it on its own,
+ * before the range is ever tested, and a device guard that simply tested `value < 0.1` would refuse
+ * the exclusion. On an AD SCHEDULE it is below the minimum: Google's `CampaignCriterion` contract
+ * reserves 0 for device exclusions and takes only 0.1 through 10.0 on a schedule, so
+ * `googleAdScheduleRefusal` refuses it even though campaign-service's shared `validateBidModifier`
+ * would forward it (#5088 review). A window is switched off by leaving it out of the schedule.
  */
 export const GOOGLE_ADS_MIN_BID_MODIFIER = 0.1;
 export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
@@ -1914,10 +1957,12 @@ export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
  * refuses them with different messages for different reasons — a bid Performance Max does not set,
  * against demographics it takes as asset-group signals — and either could move without the other.
  *
- * NOT a rule about automated bidding, which is a different rule with a different shape: an automated
- * SEARCH campaign ignores a device adjustment too, and that belongs to the bidding plan, where the
- * strategy is known. Widening this fence to every automated channel would refuse the device
- * EXCLUSIONS (the 0 opt-out) that Google honours.
+ * NOT a rule about automated bidding, which is a different rule with a different shape:
+ * `validateBiddingPlan` refuses a NON-ZERO device modifier under every strategy but Manual CPC, on
+ * every channel, and `googleDeviceBidModifierRefusal` judges that with the effective strategy.
+ * Widening this fence to every automated channel would refuse the device EXCLUSIONS (the 0 opt-out)
+ * that Google honours. So on Display and Video, which offer no Manual CPC here, this list carries
+ * exclusions only.
  *
  * Video is listed because upstream accepts it there, not because this client can reach it — the
  * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
@@ -1959,6 +2004,24 @@ export const GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS = 3;
  */
 export const GOOGLE_ADS_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET'] as const;
 
+/** What the Implementation tab's device control calls each {@link GOOGLE_ADS_DEVICES} value, in Google's own words. */
+export const GOOGLE_ADS_DEVICE_LABELS = {
+  MOBILE: 'Mobile phones',
+  DESKTOP: 'Computers',
+  TABLET: 'Tablets',
+} as const;
+
+/**
+ * What the Implementation tab's device mode picker calls each choice, in the order it offers them.
+ * Adjust bid is offered only while the effective bidding strategy is Manual CPC: campaign-service
+ * refuses a non-zero device bid modifier under any other (`validateBiddingPlan`).
+ */
+export const GOOGLE_DEVICE_BID_MODE_LABELS = {
+  default: 'Default bid',
+  adjust: 'Adjust bid',
+  exclude: 'Exclude',
+} as const satisfies Record<GoogleDeviceBidMode, string>;
+
 /**
  * Upstream's bound on EACH demographic exclusion list
  * (`campaign_criteria.go`'s `maxDemographicExclusions`).
@@ -1968,6 +2031,47 @@ export const GOOGLE_ADS_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET'] as const;
  * each list on its own, not to the two added together.
  */
 export const GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS = 20;
+
+/**
+ * The Google channels that take responsive search ads, their display paths, campaign-level negative
+ * keywords and the Search partners opt-in: Search alone. campaign-service refuses `adGroups`,
+ * `path1`/`path2`, `negativeKeywords` and `searchPartners` on every other channel
+ * (`preflightCampaignKind`) rather than dropping them.
+ */
+export const GOOGLE_CHANNELS_WITH_SEARCH_ADS = ['search'] as const;
+
+/** Google's limit of enabled responsive search ads in one ad group (campaign-service's `maxAdsPerAdGroup`). */
+export const GOOGLE_ADS_MAX_SEARCH_ADS_PER_AD_GROUP = 3;
+
+/**
+ * Most headlines and descriptions one responsive search ad takes (`ad_copy.go`'s `maxHeadlines` and
+ * `maxDescriptions`). Upstream drops the rows past these with a note; the shared judge
+ * (`googleAdditionalSearchAdsRefusal`) deliberately refuses them instead, stricter than upstream, so
+ * no line the operator wrote is silently left out. The Implement tab stops offering Add at the cap.
+ */
+export const GOOGLE_ADS_MAX_SEARCH_HEADLINES = 15;
+export const GOOGLE_ADS_MAX_SEARCH_DESCRIPTIONS = 4;
+
+/**
+ * Most display width each responsive search ad display path takes (`ad_copy.go`'s
+ * `maxSearchAdPathWeight`), counted as Google counts it: CJK and full-width characters count double
+ * (see `googleAdsTextWeight`).
+ */
+export const GOOGLE_ADS_MAX_SEARCH_AD_PATH_WIDTH = 15;
+
+/**
+ * The characters a display path may not hold besides whitespace and control characters
+ * (`pmax_creative.go`'s `displayPathPunctuation`): each would break the visible URL Google renders.
+ */
+export const GOOGLE_ADS_SEARCH_AD_PATH_REFUSED_CHARACTERS = '/?#&=';
+
+/**
+ * The theme label of the one ad group a Search campaign with several responsive search ads is sent
+ * as. campaign-service requires a name on every `adGroups` entry and APPENDS it to the composed ad
+ * group name ("LFX | Ad Group | <project> | <event> | <suffix> | Main"); a campaign with one ad is
+ * sent without `adGroups` and keeps the name it has always had.
+ */
+export const GOOGLE_SEARCH_AD_GROUP_NAME = 'Main';
 
 /**
  * The age ranges accepted on a campaign-level exclusion, mapped to Google's `AgeRangeType` enum
@@ -2019,6 +2123,27 @@ export const GOOGLE_ADS_AGE_RANGES = Object.keys(GOOGLE_ADS_AGE_RANGE_MAP).filte
  * `UNDETERMINED` is a member for the same reason it is one in {@link GOOGLE_ADS_AGE_RANGE_MAP}.
  */
 export const GOOGLE_ADS_GENDERS = ['MALE', 'FEMALE', 'UNDETERMINED'] as const;
+
+/**
+ * What the Implementation tab's demographic exclusion checkboxes call each friendly
+ * {@link GOOGLE_ADS_AGE_RANGES} spelling, in Google's own words. `UNDETERMINED` is Google's "Unknown".
+ */
+export const GOOGLE_ADS_AGE_RANGE_LABELS: Readonly<Record<string, string>> = {
+  '18-24': '18 to 24',
+  '25-34': '25 to 34',
+  '35-44': '35 to 44',
+  '45-54': '45 to 54',
+  '55-64': '55 to 64',
+  '65+': '65 or more',
+  UNDETERMINED: 'Unknown',
+};
+
+/** What the Implementation tab's demographic exclusion checkboxes call each {@link GOOGLE_ADS_GENDERS} value. */
+export const GOOGLE_ADS_GENDER_LABELS = {
+  MALE: 'Male',
+  FEMALE: 'Female',
+  UNDETERMINED: 'Unknown',
+} as const;
 
 /**
  * Upstream's own bound on a Google Ads callout list (`assets.go`'s `maxCallouts`).
@@ -3700,6 +3825,128 @@ export const DEFAULT_CAMPAIGN_EMAIL_TYPE_ID = 'main-registration-push';
  */
 export const CAMPAIGN_EMAIL_STAGES = ['CFP Launch', 'Schedule Announcement', 'Registration Push', 'Discount Offer', 'Final Countdown', 'Post-Event'] as const;
 
+/**
+ * Every stage a SURVEY campaign can occupy — a separate vocabulary from `CAMPAIGN_EMAIL_STAGES`,
+ * not an extension of it.
+ *
+ * An email stage names WHICH SEND in an event's series it is; a survey stage names WHICH ASSET is
+ * being promoted. Upstream enforces the split in both directions (`briefIdentityPairProblem` and
+ * the column's own pair CHECK), so `(email, 'Survey Promo')` and `(survey, 'Final Countdown')` are
+ * both refused — pooling the two lists here would offer the operator a pair the server rejects.
+ */
+export const CAMPAIGN_SURVEY_STAGES = ['Survey Promo', 'Survey Reminder', 'Survey Closing', 'Report Promo'] as const;
+
+/**
+ * What the operator picks on the survey surface: which SEND of which asset this is.
+ *
+ * The counterpart of `CAMPAIGN_EMAIL_TYPES`, and deliberately the same shape, so the stage picker
+ * renders from either list without a second code path. `keywords` rank clone templates the same
+ * way they do for email.
+ *
+ * A survey's promotion is a SERIES — an opening send, a reminder while it is still in field, and a
+ * closing push — so three of the four entries promote the same instrument at different points.
+ * Each is its own brief with its own audience and its own draft, exactly as the six event stages
+ * are. Report promotion has no series: a published report does not close, so there is no reminder
+ * or closing send to write.
+ */
+export const CAMPAIGN_SURVEY_TYPES: readonly CampaignSurveyTypeOption[] = [
+  {
+    id: 'survey-promo',
+    label: 'Survey Promotion',
+    stage: 'Survey Promo',
+    keywords: ['survey', 'participate', 'research', 'questionnaire'],
+  },
+  {
+    id: 'survey-reminder',
+    label: 'Survey Reminder',
+    stage: 'Survey Reminder',
+    keywords: ['survey', 'reminder', 'still open', 'research', 'participate'],
+  },
+  {
+    id: 'survey-closing',
+    label: 'Survey Closing',
+    stage: 'Survey Closing',
+    keywords: ['survey', 'closing', 'last chance', 'deadline', 'final'],
+  },
+  {
+    id: 'report-promo',
+    label: 'Report Promotion',
+    stage: 'Report Promo',
+    keywords: ['report', 'findings', 'research', 'insights', 'study'],
+  },
+] as const;
+
+/** The survey type a fresh selection starts on. */
+export const DEFAULT_CAMPAIGN_SURVEY_TYPE_ID = 'survey-promo';
+
+/**
+ * Every stage a SEND surface can carry, email and survey together. For the places that only
+ * CARRY a stage (restoring a stored brief); a picker offers its own surface's list instead.
+ */
+export const CAMPAIGN_SEND_STAGES = [...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES] as const;
+
+/**
+ * Last URL path segments that name a survey tool's PAGE rather than the survey (Google Forms ends
+ * every form in `viewform`). A survey brief is keyed on its slug, so these fall back to the asset's
+ * own name instead of making every form in a project one brief.
+ */
+export const CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS: ReadonlySet<string> = new Set([
+  'viewform',
+  'formresponse',
+  'responsepage',
+  'edit',
+  'index',
+  'form',
+  'survey',
+  's',
+  'r',
+]);
+
+/**
+ * The longest survey source document campaign-service accepts, in characters, counted as
+ * `campaignSurveySourceTextLength` counts them. Longer is a 400 at brief save and at copy
+ * generation upstream: the copy would otherwise be written from a cut document, silently losing a
+ * finding, date or incentive.
+ */
+export const CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS = 3000;
+
+/**
+ * A raw-length ceiling checked BEFORE the source is normalised and counted, so an oversized body
+ * is refused without copying it. Generous on purpose: collapsing whitespace can shrink a pasted
+ * document, so the raw text may run well past the counted limit and still be within it.
+ */
+export const CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS = CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS * 8;
+
+/** The longest send-workflow name campaign-service accepts. */
+export const CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS = 200;
+
+/** The most briefs (and dates) one send workflow can carry upstream. */
+export const CAMPAIGN_SEND_WORKFLOW_MAX_SENDS = 10;
+
+/**
+ * sessionStorage key prefix for how many times a survey series was started over, per project and
+ * survey slug. A restarted series writes NEW briefs (`<slug>-r2`, `-r3`...) so campaign-service
+ * creates new drafts; remembering the count across a reload keeps the page from writing the
+ * ORIGINAL briefs again, whose drafts campaign-service would hand back unchanged.
+ */
+export const CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX = 'lfx-campaigns-survey-series-restart:';
+
+/** A send-workflow date as campaign-service takes it: a calendar date, YYYY-MM-DD. */
+export const CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * How many emails a survey can be promoted by: one, sent on its own, or the full three-send
+ * series (promo, reminder, closing).
+ *
+ * There is no two-send option. A series is sent by copying ONE configured HubSpot workflow, and
+ * campaign-service requires that workflow's send-step count to equal the number of briefs -- so a
+ * second series length would need a second source workflow, which the deployment does not have.
+ */
+export const CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS: readonly CampaignSurveyEmailCountOption[] = [
+  { count: 1, label: 'One email', description: 'A single send, scheduled on its own', stages: ['Survey Promo'] },
+  { count: 3, label: 'Three emails', description: 'Opening, reminder, then closing', stages: ['Survey Promo', 'Survey Reminder', 'Survey Closing'] },
+] as const;
+
 // ---------------------------------------------------------------------------
 // Audience Builder
 // ---------------------------------------------------------------------------
@@ -4165,8 +4412,11 @@ export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
  * Far above any paste an operator produces, so the invariant the bound above states — a resource
  * ceiling never refuses what upstream accepts — holds here too, while a pathological body is still
  * stopped before `createConfigEnvelope` walks it. Only the one field named above is measured against
- * it: every other nested name upstream decodes as a plain `string`, so an array under one of those
- * is a body upstream refuses outright and has no over-refusal to relax.
+ * it. The other nested LISTS are `additionalSearchAds[].headlines` and `.descriptions` (#4991), each a
+ * `[]string` upstream: they are bounded at {@link MAX_GOOGLE_CREATIVE_LIST_ENTRIES}, far above the
+ * 15 headlines and 4 descriptions one ad takes, so that bound refuses nothing upstream accepts. Every
+ * other nested name upstream decodes as a plain `string`, so an array under one of those is a body
+ * upstream refuses outright and has no over-refusal to relax.
  */
 export const MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES = 1000;
 
@@ -4270,6 +4520,15 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'callExtensions', label: 'call extensions' },
   { field: 'promotions', label: 'promotions' },
   { field: 'prices', label: 'price extensions' },
+  // The Search ad group's further ads, every ad's display paths, the create-time negatives and the
+  // Search partners opt-in (#4991): the legacy creator builds one ad from `headlines`/`descriptions`
+  // on Google Search alone, and nothing else.
+  { field: 'path1', label: 'display path 1' },
+  { field: 'path2', label: 'display path 2' },
+  { field: 'additionalSearchAds', label: 'additional search ads' },
+  { field: 'negativeKeywords', label: 'negative keywords' },
+  // `false` asks for nothing (Google Search only), like an empty list: see `unservedGoogleCriteriaField`.
+  { field: 'searchPartners', label: 'Search partners' },
   // The bidding plan and the per-channel creative (#3568), judged by what the cutover's own
   // normalizers would SEND rather than by presence: `googleBidding` drops a blank strategy, a zero
   // or non-numeric bid and blank conversion actions, and `googleCreative` drops a creative whose
@@ -4777,6 +5036,26 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
 export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH = 60;
 
 /**
+ * The Google creative text fields campaign-service bounds by RUNE count rather than by display width:
+ * the call to action (`maxDemandGenCallToActionRunes`, `maxDisplayCallToActionRunes`), the Performance
+ * Max asset group name (`maxAssetGroupNameRunes`) and its display paths (`maxDisplayPathRunes`). Every
+ * other bounded creative field — headlines, long headlines, descriptions, business name — is judged by
+ * `textWeight`, where a double-width character counts twice. Read by `googleCreativeFieldWidth`.
+ */
+export const GOOGLE_CREATIVE_RUNE_COUNTED_CONTROLS: readonly string[] = ['callToActionText', 'assetGroupName', 'path1', 'path2'];
+
+/**
+ * Why a Performance Max create with no short description is held, as the clause the Implement tab's
+ * creative error follows its section name with, worded once for the tab and the BFF's refusal (#5219). campaign-service
+ * refuses that create before the budget (`validatePerformanceMaxCreative`, `pmax_creative.go`), but
+ * the job reports only "platform campaign creation failed", so the reason has to be said here.
+ */
+export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL = `needs at least one description of ${GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH} characters or fewer, which Google shows on small placements. Shorten one or add a short one; CJK and full-width characters count double.`;
+
+/** {@link GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL} as a whole sentence, the form the tab's creative error takes. */
+export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL = `Performance Max creative ${GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL}`;
+
+/**
  * Shown on the Performance Max creative while some of its copy is still what the brief prefilled
  * (#4784). That copy makes the creative a started one, which Google refuses without its required
  * images, so the note says both ways forward.
@@ -4904,6 +5183,41 @@ export const GOOGLE_BIDDING_ROAS_STRATEGIES = ['maximize-conversion-value', 'tar
 export const GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES = ['target-cpa', 'target-roas'] as const;
 
 /**
+ * The strategies under which Google Ads does not apply a device bid adjustment, apart from a -100%
+ * device exclusion: Maximize Conversions, Maximize Conversion Value and Target ROAS (Google's "About
+ * bid adjustments", https://support.google.com/google-ads/answer/2732132). Target CPA is NOT here:
+ * Google applies a device adjustment there as an adjustment of the device's CPA target
+ * (https://support.google.com/google-ads/answer/6268632), so a device adjustment is withheld under it
+ * only by campaign-service's Manual-CPC-only rule (`validateBiddingPlan`), as under Maximize Clicks.
+ * Names which of the two reasons `googleDeviceAdjustmentNotSentSentence` gives. Not the ad-schedule
+ * rule, which is {@link GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES} and refuses Target CPA as well.
+ */
+export const GOOGLE_DEVICE_ADJUSTMENT_IGNORED_STRATEGIES = [
+  'maximize-conversions',
+  'maximize-conversion-value',
+  'target-roas',
+] as const satisfies readonly (typeof GOOGLE_BIDDING_STRATEGIES)[number][];
+
+/**
+ * The strategies under which Google Ads applies an ad-schedule bid adjustment: Manual CPC and
+ * Maximize Clicks. Google's "About bid adjustments"
+ * (https://support.google.com/google-ads/answer/2732132) lists Maximize Clicks as honouring ad
+ * schedule adjustments, and Smart Bidding (Maximize Conversions, Target CPA, Maximize Conversion
+ * Value, Target ROAS) as not supporting them.
+ *
+ * Under Smart Bidding Google stores a schedule's bid modifier and does not bid it, so a window
+ * adjusted under one of them would report a successful create and never bid differently.
+ * campaign-service accepts such a modifier (its `validateBiddingPlan` refuses only device
+ * adjustments), so LFX One refuses it in `googleAdScheduleRefusal`, which the Implementation tab and
+ * the BFF both judge by. The windows themselves are honoured under every strategy; only the
+ * percentage is held.
+ */
+export const GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES = [
+  'manual-cpc',
+  'maximize-clicks',
+] as const satisfies readonly (typeof GOOGLE_BIDDING_STRATEGIES)[number][];
+
+/**
  * The channels that accept a conversion-action list at create time.
  *
  * Not a Search-versus-the-rest split: `campaign.selective_optimization` is defined for SEARCH,
@@ -4926,6 +5240,47 @@ export const GOOGLE_ADS_MAX_CONVERSION_ACTIONS = 100;
  * upstream refuses a foreign one by name before any mutate.
  */
 export const GOOGLE_ADS_CONVERSION_ACTION_PATTERN = /^(?:\d+|customers\/\d+\/conversionActions\/\d+)$/;
+
+/**
+ * The bare numeric conversion action id — the short form of {@link
+ * GOOGLE_ADS_CONVERSION_ACTION_PATTERN}.
+ */
+export const GOOGLE_ADS_CONVERSION_ACTION_ID_PATTERN = /^\d+$/;
+
+/**
+ * The full `customers/<id>/conversionActions/<id>` resource name ONLY — the long form of
+ * {@link GOOGLE_ADS_CONVERSION_ACTION_PATTERN}, which also accepts a bare id. Group 1 is the trailing
+ * conversion action id, so a reader can check it names the same action as the row's own `id`.
+ */
+export const GOOGLE_ADS_CONVERSION_ACTION_RESOURCE_PATTERN = /^customers\/\d+\/conversionActions\/(\d+)$/;
+
+/**
+ * Why the Implement tab's conversion-action picker offers no list. Each ends by pointing at the
+ * free-text box, which works exactly as it did before the picker:
+ * - `forbidden`: the BFF said this caller may not read the list
+ *   (`CampaignListResult.googleConversionActionsEnabled` is false), so no request is made. The list
+ *   names every foundation's actions on the shared account, so only a root principal is answered.
+ * - `unavailable`: the read was made and answered 403 or 404. The BFF had already said the caller may
+ *   read it, so a 403 is campaign-service's gateway, which denies the route until the deployment sets
+ *   `openfga.rootProjectUid`; a 404 is the BFF route off, or campaign-service's NotFound for the project.
+ * - `failed`: anything else — campaign-service's 400, 500 or 503 (including an account holding more
+ *   than 500 enabled actions, which does not clear on retry), or no answer at all.
+ */
+export const GOOGLE_CONVERSION_ACTION_PICKER_REASONS = {
+  forbidden: "Your account can't list this Google Ads account's conversion actions. Enter their ids below instead.",
+  unavailable: "The conversion action list isn't available here yet. Enter their ids below instead.",
+  failed: "The conversion action list couldn't be read for this project's Google Ads account. Enter their ids below instead.",
+} as const;
+
+/** What the picker says while its list is being read. */
+export const GOOGLE_CONVERSION_ACTION_PICKER_LOADING = "Loading this account's conversion actions…";
+
+/**
+ * What the picker says when the account has no enabled conversion action. A blank box sends no
+ * `conversionActions`, so the campaign uses the account's own conversion goals.
+ */
+export const GOOGLE_CONVERSION_ACTION_PICKER_EMPTY =
+  "This Google Ads account has no enabled conversion actions. Enter ids below or leave the box blank to use the account's own goals.";
 
 /**
  * The numeric bounds campaign-service applies to the three money/ratio fields, in whole units of

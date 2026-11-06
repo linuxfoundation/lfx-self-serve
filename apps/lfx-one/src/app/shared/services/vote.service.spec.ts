@@ -847,6 +847,22 @@ describe('VoteService', () => {
       expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/summary', {});
       expect(next).toHaveBeenCalledWith({ recipient_count: 3, failed_count: 0, skipped_count: 1, uncertain_count: 2 });
     });
+
+    it('getVoteSummaryPreview GETs the encoded summary-recipients URL and passes through the preview (#4830)', () => {
+      const preview = {
+        ready: [{ uid: 'r-1', user_email: 'avery@acme-motors.example' }],
+        missing_email: [],
+        unique_email_count: 1,
+        shared_email_voter_count: 0,
+      };
+      http.get.mockReturnValue(of(preview));
+      const next = vi.fn();
+
+      service.getVoteSummaryPreview('vote/1').subscribe(next);
+
+      expect(http.get).toHaveBeenCalledWith('/api/votes/vote%2F1/summary-recipients');
+      expect(next).toHaveBeenCalledWith(preview);
+    });
   });
 
   it('extendVote posts the new end_time/end_time_timezone to the dedicated extend endpoint', () => {

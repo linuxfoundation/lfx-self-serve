@@ -9,7 +9,7 @@ import { UiBadgeComponent } from './badge.component';
 const meta: Meta<UiBadgeComponent> = {
   title: 'Uikit/Badge',
   component: UiBadgeComponent,
-  args: { tone: 'neutral', variant: 'subtle', size: 'md', dot: null },
+  args: { tone: 'neutral', variant: 'subtle', size: 'md', dot: null, interactive: false },
   render: (args) => ({ props: args, template: `<lfx-ui-badge ${argsToTemplate(args)}>Beta</lfx-ui-badge>` }),
 };
 export default meta;
@@ -30,6 +30,8 @@ export const Outline: Story = {
     template: `<div class="flex flex-wrap items-center gap-[12px]"><lfx-ui-badge variant="outline">Outline</lfx-ui-badge><lfx-ui-badge variant="outline" size="sm">v2.4.0</lfx-ui-badge></div>`,
   }),
 };
+/** The tone's solid colour as text and a 1px ring on a transparent fill, for a quiet coloured fact. */
+export const Line: Story = { render: () => ({ template: row('line') }) };
 export const Small: Story = { render: () => ({ template: row('subtle', 'sm') }) };
 export const SmallSolid: Story = { render: () => ({ template: row('solid', 'sm') }) };
 export const WithIcon: Story = {
@@ -43,3 +45,8 @@ export const WithDot: Story = {
   }),
 };
 export const Count: Story = { render: () => ({ template: `<lfx-ui-badge size="sm">128</lfx-ui-badge>` }) };
+export const Interactive: Story = {
+  render: () => ({
+    template: `<div class="flex flex-wrap items-center gap-[12px]"><lfx-ui-badge interactive variant="outline">Technical Steering Committee</lfx-ui-badge><lfx-ui-badge interactive tone="accent">Subtle</lfx-ui-badge><lfx-ui-badge interactive tone="accent" variant="solid">Solid</lfx-ui-badge></div>`,
+  }),
+};
