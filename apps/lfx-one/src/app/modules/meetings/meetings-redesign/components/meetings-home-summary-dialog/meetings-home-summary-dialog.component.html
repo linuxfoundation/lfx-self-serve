@@ -2,51 +2,84 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Exact [Npx] values: rem undershoots at the 14px root. -->
-<lfx-ui-modal heading="Meeting Summary" [subtitle]="title" sticky data-testid="meetings-home-dialog-summary">
-  <span class="flex flex-wrap items-center gap-[6px]">
-    <lfx-ui-badge tone="feature" size="sm"><i class="fa-light fa-sparkles" aria-hidden="true"></i>AI Summary</lfx-ui-badge>
-    @if (awaitingReview()) {
-      <lfx-ui-badge tone="warning" size="sm" data-testid="meetings-home-dialog-summary-pending">Awaiting your review</lfx-ui-badge>
-    }
+<lfx-ui-modal heading="AI Summary" [width]="720" [height]="800" sticky closable scrollFade data-testid="meetings-home-dialog-summary">
+  @if (awaitingReview()) {
+    <lfx-ui-badge modalTitleSuffix tone="warning" variant="line" size="sm" data-testid="meetings-home-dialog-summary-pending"
+      ><i class="fa-light fa-clock" aria-hidden="true"></i>Awaiting your review</lfx-ui-badge
+    >
+  } @else if (!readOnly && summary().approved) {
+    <lfx-ui-badge modalTitleSuffix tone="success" variant="line" size="sm" data-testid="meetings-home-dialog-summary-approved"
+      ><i class="fa-light fa-check" aria-hidden="true"></i>Approved</lfx-ui-badge
+    >
+  } @else if (pendingReview()) {
+    <lfx-ui-badge modalTitleSuffix tone="warning" variant="line" size="sm" data-testid="meetings-home-dialog-summary-pending-review"
+      ><i class="fa-light fa-clock" aria-hidden="true"></i>Pending Review</lfx-ui-badge
+    >
+  }
+
+  <span modalHeaderActions class="flex items-center gap-[4px]">
+    <lfx-ui-button
+      variant="tertiary"
+      [iconOnly]="true"
+      icon="fa-light fa-copy"
+      ariaLabel="Copy summary"
+      lfxUiTooltip="Copy summary"
+      lfxUiTooltipSide="bottom"
+      [disabled]="!content()"
+      (click)="copy()"
+      data-testid="meetings-home-dialog-summary-copy" />
+    <span class="mx-[4px] h-[20px] w-px bg-gray-200" aria-hidden="true"></span>
   </span>
 
+  <!-- The padding offsets the context block's own full-bleed margin. -->
+  <div modalHeaderExtra class="px-[24px]">
+    <lfx-meeting-dialog-context [row]="row" [origin]="origin" data-testid="meetings-home-dialog-summary-info" />
+  </div>
+
   @if (editing()) {
-    <!-- The library textarea is 80px tall by default; a summary needs room. -->
     <lfx-ui-textarea
-      class="[&_textarea]:min-h-[320px] [&_textarea]:font-mono"
-      label="Edit Summary"
+      class="flex-1 [&_textarea]:min-h-[320px]"
+      ariaLabel="Edit summary"
       placeholder="Edit the meeting summary..."
       [(value)]="draft"
       [disabled]="saving()"
       data-testid="meetings-home-dialog-summary-editor" />
   } @else if (content()) {
-    <lfx-markdown-renderer class="text-[14px] leading-[21px] text-gray-700" [content]="content()" data-testid="meetings-home-dialog-summary-content" />
+    <!-- Overrides the renderer's prose sizes: H2 16/24, H3 14/20, text 14/22, 12px between blocks. -->
+    <lfx-markdown-renderer
+      class="[&_.prose]:flex [&_.prose]:flex-col [&_.prose]:gap-[12px] [&_.prose]:text-[14px] [&_.prose]:leading-[22px] [&_.prose]:text-gray-700 [&_.prose>*]:!my-0 [&_.prose>h2:not(:first-child)]:!mt-[16px] [&_.prose>h3:not(:first-child)]:!mt-[8px] [&_.prose>h3]:!-mb-[8px] [&_h2]:!text-[16px] [&_h2]:!font-medium [&_h2]:!leading-[24px] [&_h2]:!text-gray-900 [&_h3]:!text-[14px] [&_h3]:!font-medium [&_h3]:!leading-[20px] [&_h3]:!text-gray-900 [&_p]:!leading-[22px] [&_strong]:!font-medium [&_strong]:!text-gray-900 [&_ul]:flex [&_ul]:flex-col [&_ul]:gap-[6px] [&_ul]:!pl-[20px] [&_li]:!my-0"
+      [content]="content()"
+      data-testid="meetings-home-dialog-summary-content" />
   } @else {
-    <p class="py-[16px] text-center text-[14px] leading-[20px] text-gray-500" data-testid="meetings-home-dialog-summary-empty">No summary content available.</p>
+    <p
+      class="flex flex-1 items-center justify-center p-[24px] text-center text-[14px] leading-[20px] text-gray-500"
+      data-testid="meetings-home-dialog-summary-empty">
+      No summary content available.
+    </p>
   }
 
   <ng-container modalActions>
     @if (editing()) {
+      <span class="mr-auto flex items-center gap-[6px] text-[12px] leading-[16px] text-gray-500" data-testid="meetings-home-dialog-summary-markdown-note">
+        <i class="fa-brands fa-markdown text-[14px]" aria-hidden="true"></i>Markdown formatting is supported
+      </span>
       <lfx-ui-button variant="secondary" [disabled]="saving()" (click)="cancelEdit()" data-testid="meetings-home-dialog-summary-cancel">Cancel</lfx-ui-button>
       <lfx-ui-button [disabled]="!canSave()" [loading]="saving()" (click)="save()" data-testid="meetings-home-dialog-summary-save">Save</lfx-ui-button>
-    } @else {
-      @if (!readOnly) {
-        <span class="mr-auto flex items-center gap-[12px]">
-          <lfx-ui-button variant="secondary" icon="fa-light fa-pen" [disabled]="approving()" (click)="edit()" data-testid="meetings-home-dialog-summary-edit"
-            >Edit</lfx-ui-button
-          >
-          @if (summary().approved) {
-            <lfx-ui-badge tone="success" data-testid="meetings-home-dialog-summary-approved"
-              ><i class="fa-light fa-circle-check" aria-hidden="true"></i>Approved</lfx-ui-badge
-            >
-          } @else {
-            <lfx-ui-button icon="fa-light fa-check" [loading]="approving()" (click)="approve()" data-testid="meetings-home-dialog-summary-approve"
-              >Approve</lfx-ui-button
-            >
-          }
-        </span>
+    } @else if (!readOnly) {
+      <lfx-ui-button
+        class="mr-auto"
+        variant="secondary"
+        icon="fa-light fa-pen"
+        [disabled]="approving()"
+        (click)="edit()"
+        data-testid="meetings-home-dialog-summary-edit"
+        >Edit</lfx-ui-button
+      >
+      @if (!summary().approved) {
+        <lfx-ui-button icon="fa-light fa-check" [loading]="approving()" (click)="approve()" data-testid="meetings-home-dialog-summary-approve"
+          >Approve</lfx-ui-button
+        >
       }
-      <lfx-ui-button variant="secondary" (click)="close()" data-testid="meetings-home-dialog-summary-close">Close</lfx-ui-button>
     }
   </ng-container>
 </lfx-ui-modal>
