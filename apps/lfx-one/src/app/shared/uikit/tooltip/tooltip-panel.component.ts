@@ -21,6 +21,8 @@ export class UiTooltipPanelComponent {
   public readonly text = input<string>('');
   /** Bold first line. Setting it switches to the rich layout. */
   public readonly heading = input<string>('');
+  /** Font Awesome classes for an 11px icon before the heading. */
+  public readonly icon = input<string>('');
   /** Keys shown as small key caps after the text, such as `['⌘', 'C']`. */
   public readonly shortcut = input<string[]>([]);
   /** Counts shown in one line in place of the text. */

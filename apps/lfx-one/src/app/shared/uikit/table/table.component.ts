@@ -101,7 +101,7 @@ export class UiTableComponent {
       const sort = this.sort();
       const templates = this.cellTemplates();
       return this.columns().map((column) => {
-        const align = column.align === 'end' ? 'text-right tabular-nums' : 'text-left';
+        const align = column.align === 'end' ? 'text-right' : 'text-left';
         const sorted = sort?.key === column.key ? sort.direction : null;
         const sortIcons = { asc: 'fa-light fa-arrow-up', desc: 'fa-light fa-arrow-down' };
         const ariaSorts = { asc: 'ascending', desc: 'descending' } as const;
