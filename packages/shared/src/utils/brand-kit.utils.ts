@@ -45,6 +45,7 @@ import {
   BRAND_KIT_LOGO_SLOTS,
   BRAND_KIT_MAX_LOGO_FILE_CHARS,
   BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS,
+  BRAND_KIT_MAX_LOGO_ZIP_BYTES,
   BRAND_KIT_FRAMEWORK_TEXT_FIELD_STATUSES,
   BRAND_KIT_MAX_LOGO_FILES,
   BRAND_KIT_MAX_FRAMEWORK_CHARS,
@@ -93,6 +94,7 @@ import {
 } from '../interfaces/brand-kit.interface';
 import { MktgRunAnswer, MktgRunQuestion } from '../interfaces/mktg-run.interface';
 import { buildMktgArtifactObjectKey } from './mktg-artifact.utils';
+import { formatFileSize } from './file.utils';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
 import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
 import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
@@ -279,9 +281,12 @@ export function validateBrandKitLogoFiles(files: unknown): BrandKitValidationRes
         errors.push(`${at}.${key} must be a non-empty string`);
       } else if (value.length > BRAND_KIT_MAX_LOGO_FILE_CHARS) {
         errors.push(`${at}.${key} is over ${BRAND_KIT_MAX_LOGO_FILE_CHARS.toLocaleString('en-US')} characters — give the file as a link instead`);
-      } else if (key === 'base64' && typeof name === 'string' && brandKitLogoFileKind(name) === 'zip' && value.length > BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS) {
-        // The picker's cap, re-checked where it is trusted: a crafted request cannot carry the package the form refuses.
-        errors.push(`${at}.base64: a ZIP must stay under 150 KB (SVG files only); the full logo package linked on a brand page is usually too large to send`);
+      } else if (typeof name === 'string' && brandKitLogoFileKind(name.trim()) === 'zip' && value.length > BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS) {
+        // The picker's cap, re-checked where it is trusted, on the trimmed name the rest of the check and the controller use,
+        // and on either content key: a crafted request cannot carry the package the form refuses.
+        errors.push(
+          `${at}.${key}: a ZIP must stay under ${formatFileSize(BRAND_KIT_MAX_LOGO_ZIP_BYTES)} (SVG files only); the full logo package linked on a brand page is usually too large to send`
+        );
       } else {
         payloadChars += value.length;
       }
