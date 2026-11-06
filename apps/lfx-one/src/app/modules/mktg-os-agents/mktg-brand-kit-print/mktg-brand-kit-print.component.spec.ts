@@ -89,8 +89,8 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(root.querySelector<HTMLElement>('[data-testid="mktg-brand-kit-print"]')?.style.getPropertyValue('--mfp-font')).toBe(brand.fontStack);
   expect(root.querySelector('[data-testid="kit-print-visual"]')?.textContent).toContain(kit.chapters.visual.icons.recommended);
   // The board's print layout for Iconography, on the Visual chapter's first page by itself: the block ends its page
-  // (break-after, never break-before, which would leave a page holding only the title); under the title, one table row
-  // with the rules in the left cell and the sample icons (the print variant, the kit's colours) in the right cell.
+  // (break-after, never break-before, which would leave a page holding only the title); under the title, the rules
+  // across the sheet, then the sample icons (the print variant, the kit's colours) across the full content width.
   const iconBlock = root.querySelector<HTMLElement>('[data-testid="kit-print-visual"] [data-testid="kit-print-icon-block"]');
   if (!iconBlock) throw new Error('Missing synthetic icon block');
   expect(iconBlock.tagName).toBe('TR');
@@ -98,21 +98,23 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(getComputedStyle(iconBlock).breakAfter).toBe('page');
   expect(getComputedStyle(iconBlock).breakBefore).not.toBe('page');
   expect(getComputedStyle(iconBlock).breakInside).toBe('avoid');
-  const iconRow = iconBlock.querySelector<HTMLElement>('[data-testid="kit-print-icon-row"]');
-  if (!iconRow) throw new Error('Missing synthetic icon row');
-  expect(iconRow.previousElementSibling?.tagName).toBe('H3');
-  expect(getComputedStyle(iconRow).display).toBe('table');
-  expect(getComputedStyle(iconRow).breakInside).toBe('avoid');
-  const cells = Array.from(iconRow.children) as HTMLElement[];
-  expect(cells.map((cell) => cell.className)).toEqual(['kit-icon-rules', 'kit-icon-samples-cell']);
-  for (const cell of cells) {
-    expect(getComputedStyle(cell).display).toBe('table-cell');
+  const rulesBlock = iconBlock.querySelector<HTMLElement>('[data-testid="kit-print-icon-rules"]');
+  const samplesBlock = iconBlock.querySelector<HTMLElement>('[data-testid="kit-print-icon-samples"]');
+  if (!rulesBlock || !samplesBlock) throw new Error('Missing synthetic icon rules or samples block');
+  expect(rulesBlock.previousElementSibling?.tagName).toBe('H3');
+  expect(rulesBlock.nextElementSibling).toBe(samplesBlock);
+  expect(iconBlock.querySelector('.kit-icon-row')).toBeNull();
+  for (const block of [rulesBlock, samplesBlock]) {
+    expect(getComputedStyle(block).display).toBe('block');
+    // Full content width: the e2e spec measures it in the browser; here the scss sets it.
+    expect(getComputedStyle(block).width).not.toBe('auto');
   }
-  expect(Array.from(cells[0].querySelectorAll('li'), (li) => li.textContent)).toEqual(kit.chapters.visual.icons.rules);
-  const samples = cells[1].querySelector<HTMLElement>('.kit-icon-samples');
+  expect(Array.from(rulesBlock.querySelectorAll('li'), (li) => li.textContent)).toEqual(kit.chapters.visual.icons.rules);
+  const samples = samplesBlock.querySelector<HTMLElement>('.kit-icon-samples');
   if (!samples) throw new Error('Missing synthetic icon samples');
   expect(samples.getAttribute('data-testid')).toBe('brand-kit-icon-samples');
   expect(samples.classList.contains('block')).toBe(true);
+  expect(getComputedStyle(samples).display).toBe('block');
   expect(getComputedStyle(samples).breakInside).toBe('avoid');
   expect(samples.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(8);
   // The board's sizes in table boxes: a 2 × 4 table of 110 px tiles (32 px icons, 11 px labels), a 110 px strip of eight cells (30 px icons).

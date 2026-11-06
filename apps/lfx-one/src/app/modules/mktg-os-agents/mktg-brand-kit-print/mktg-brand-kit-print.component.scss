@@ -327,33 +327,25 @@ figcaption {
 }
 
 /* The Iconography block has the Visual chapter's first page to itself, at the board's proportions (the operator's
-   word): the page ends after it, so Imagery and the graphic elements start the next one. Inside, the rules at the
-   left (≈ 300 px of the 700 px sheet, as the board) and the samples (one shared component, its print variant) beside
-   them. Table and table-cell boxes, the sheet's own layout model (a grid or flex box here fragments its contents away
-   from their boxes when Chromium paginates the table); one fragment; the strip's ground and the icons' inks printed
-   as set (solid colours, no filter). */
+   word): the page ends after it, so Imagery and the graphic elements start the next one. Inside, the rules across the
+   sheet, then the samples (one shared component, its print variant) across the full content width, as the tester
+   asked. Block flow, and table / table-cell boxes inside the samples (a grid or flex box here fragments its contents
+   away from their boxes when Chromium paginates the table); the samples one fragment; the strip's ground and the
+   icons' inks printed as set (solid colours, no filter). */
 .kit-icon-block {
   break-after: page;
   page-break-after: always;
 }
-.kit-icon-row {
-  display: table;
-  table-layout: fixed;
-  width: 100%;
-  margin-top: 4pt;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
 .kit-icon-rules,
-.kit-icon-samples-cell {
-  display: table-cell;
-  vertical-align: top;
+.kit-icon-samples-block {
+  display: block;
+  width: 100%;
 }
-.kit-icon-rules {
-  width: 43%;
-  padding-right: 12pt;
+.kit-icon-samples-block {
+  margin-top: 12pt;
 }
 .kit-icon-samples {
+  display: block;
   break-inside: avoid;
   page-break-inside: avoid;
   print-color-adjust: exact;

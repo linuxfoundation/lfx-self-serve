@@ -56,7 +56,7 @@ test.describe('Brand kit iconography samples: the board’s icons in the kit’s
     await page.screenshot({ path: info.outputPath('visual-iconography.png'), fullPage: true });
   });
 
-  test('the PDF gives Iconography the Visual chapter’s first page: the samples at the board’s proportions beside the rules, the page ending after them', async ({
+  test('the PDF gives Iconography the Visual chapter’s first page: the rules across the sheet, the samples at the board’s proportions across its full width under them, the page ending after them', async ({
     page,
   }, info) => {
     const kit = brandKitTestRevision();
@@ -76,20 +76,25 @@ test.describe('Brand kit iconography samples: the board’s icons in the kit’s
       'color',
       rgb(brandKitIconColours(kit).highlight)
     );
-    // The board's print layout: the Iconography block has the chapter's first page to itself (the page ends after it,
-    // never before it), the rules at the left and the samples beside them in one table row; the block holds together.
+    // The print layout: the Iconography block has the chapter's first page to itself (the page ends after it, never
+    // before it); under the title the rules across the sheet, then the samples across the full content width, as wide
+    // as the rules' block; the samples hold together.
     const block = visual.getByTestId('kit-print-icon-block');
     await expect(block).toHaveCSS('break-after', 'page');
     await expect(block).not.toHaveCSS('break-before', 'page');
-    const row = block.getByTestId('kit-print-icon-row');
-    await expect(row).toHaveCSS('display', 'table');
-    await expect(row).toHaveCSS('break-inside', 'avoid');
+    await expect(block.getByTestId('kit-print-icon-row')).toHaveCount(0);
+    const rulesBlock = block.getByTestId('kit-print-icon-rules');
+    await expect(rulesBlock).toHaveCSS('display', 'block');
+    await expect(rulesBlock.locator('li')).toHaveText(kit.chapters.visual.icons.rules);
+    await expect(block.getByTestId('kit-print-icon-samples')).toHaveCSS('display', 'block');
     await expect(samples).toHaveCSS('break-inside', 'avoid');
-    const rules = await row.locator('.kit-icon-rules').boundingBox();
+    const rules = await rulesBlock.boundingBox();
     const samplesBox = await samples.boundingBox();
     if (!rules || !samplesBox) throw new Error('The rules and the samples must be laid out');
-    expect(samplesBox.x).toBeGreaterThanOrEqual(rules.x + rules.width - 1);
-    expect(Math.abs(samplesBox.y - rules.y)).toBeLessThanOrEqual(4);
+    expect(samplesBox.y).toBeGreaterThanOrEqual(rules.y + rules.height);
+    expect(Math.abs(samplesBox.x - rules.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(samplesBox.width - rules.width)).toBeLessThanOrEqual(1);
+    expect(samplesBox.width).toBeGreaterThanOrEqual(600);
     // The board's proportions, in table boxes: 110 px tiles with the icon above the label inside the border, four to a
     // row with 12 px gaps, then the 110 px strip 14 px below with its eight icons spread across its full width.
     const tiles = samples.getByTestId(/^brand-kit-icon-tile-/);
