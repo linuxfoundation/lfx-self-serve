@@ -648,10 +648,15 @@ function imageryPage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
       }
     ),
     eyebrowEl(ctx, { x: x2, y: 247, w: 216, h: 24 }, 'Call-out card'),
-    // The prototype's call-out: solid accent, the text in the dark, no rule.
+    // The prototype's call-out: solid accent, no rule, the text in the ink every sample on the accent takes (the dark when
+    // white does not read on the accent, as the prototype; white when the dark would not).
     mktgPrintTextEl(
       { x: x2, y: 272, w: 216, h: 64 },
-      mktgPrintRich(look, [mktgPrintPara('One per view, for the main call to action.', 10, { weight: 500, color: look.dark })], { anchor: 'MIDDLE' }),
+      mktgPrintRich(
+        look,
+        [mktgPrintPara('One per view, for the main call to action.', 10, { weight: 500, color: brandKitInkOnAccent(look.accent, look.dark) })],
+        { anchor: 'MIDDLE' }
+      ),
       { shape: 'ROUND_RECTANGLE', fill: look.accent, line: null }
     ),
   ];

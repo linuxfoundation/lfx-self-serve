@@ -21,7 +21,7 @@ import { MKTG_PRINT_INK_ON_DARK } from '../constants/mktg-print.constants';
 import type { BrandKitContrastRow, BrandKitRevision } from '../interfaces/brand-kit.interface';
 import type { MktgPrintPage, MktgPrintPageEl, MktgPrintPageShapeEl, MktgPrintPageSlotEl } from '../interfaces/mktg-print-page.interface';
 import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
-import { buildBrandKitBookView } from './brand-kit-book.utils';
+import { brandKitInkOnAccent, buildBrandKitBookView } from './brand-kit-book.utils';
 import {
   buildBrandKitPrintPages,
   mktgBrandKitBookPageCount,
@@ -296,7 +296,19 @@ describe('buildBrandKitPrintPages', () => {
     const imagery = pagesOf(kit).find((p) => p.title === 'Imagery & graphic elements') as MktgPrintPage;
     const [callout] = shapesWith(imagery, 'One per view, for the main call to action.');
     expect(callout).toMatchObject({ shape: 'ROUND_RECTANGLE', fill: look.accent, line: null });
+    // The call-out's ink is every accent sample's: the dark on this orange (white would not reach AA there)...
     expect(callout.text?.paras[0].color).toBe(look.dark);
+    expect(callout.text?.paras[0].color).toBe(brandKitInkOnAccent(look.accent, look.dark));
+    // ...and white on an accent dark enough for it (a navy), where the dark would vanish.
+    const navy = brandKitTestRevision();
+    navy.kit = { ...navy.kit, accent: '#1E3A8A' };
+    const navyLook = mktgPrintPageLook(mktgPrintBrand(navy));
+    const [navyCallout] = shapesWith(
+      pagesOf(navy).find((p) => p.title === 'Imagery & graphic elements') as MktgPrintPage,
+      'One per view, for the main call to action.'
+    );
+    expect(navyCallout.text?.paras[0].color).toBe('white');
+    expect(navyCallout.fill).toBe(navyLook.accent);
     expect(imagery.els.filter((el) => el.t === 'shape' && el.fill === look.tint)).toHaveLength(0);
     // The hero band and the usage cards are flat (the grid ground printed coarse; the covers keep theirs): no element carries a ground.
     const [hero] = shapesWith(imagery, '— Eyebrow');
