@@ -35,10 +35,10 @@ it('is a table whose head and foot repeat the page room on every page, with the 
   expect(getComputedStyle(head).display).toBe('table-header-group');
   expect(getComputedStyle(body).display).toBe('table-row-group');
   expect(getComputedStyle(foot).display).toBe('table-footer-group');
-  // 0.55in each, the room the portrait page margin used to give: the declared value, as jsdom lays nothing out.
+  // 0.55in each (52.8px at 96dpi, jsdom's computed value): the room the portrait page margin used to give.
   const rooms = [head, foot].map((group) => group.querySelector<HTMLElement>('.lfx-print-sheet-room'));
   expect(rooms.map((room) => room && getComputedStyle(room).display)).toEqual(['table-row', 'table-row']);
-  expect(rooms.map((room) => room && getComputedStyle(room).height)).toEqual(['0.55in', '0.55in']);
+  expect(rooms.map((room) => room && getComputedStyle(room).height)).toEqual(['52.8px', '52.8px']);
   // The body holds the rows and nothing else: a page breaks only between them.
   expect(Array.from(body.children, (row) => row.tagName.toLowerCase())).toEqual(['lfx-mktg-print-sheet-row']);
 });
