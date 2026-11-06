@@ -5253,6 +5253,20 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(refusalFrom()).toMatchObject({ field: 'demandGenVideoCreative', message: expect.stringContaining('https image URL') });
     });
 
+    it('refuses a logo URL Go cannot parse (a port that is not digits), before dispatch', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenVideoCreative: { ...VIDEO, logoImages: ['https://cdn.example:abc/logo.png'] } }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ field: 'demandGenVideoCreative', message: expect.stringContaining('well-formed https image URL') });
+    });
+
     it('leaves the image ad request exactly as before when no video ad is sent', async () => {
       createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005227', error: null });
 

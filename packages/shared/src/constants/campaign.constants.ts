@@ -2273,6 +2273,97 @@ export function googleAdsUrlGoParseFlaw(url: string): boolean {
   return /%(?![0-9A-Fa-f]{2})/.test(url) || query.includes(';');
 }
 
+/** A host byte Go's `url.Parse` accepts below 0x80 (`shouldEscape(c, encodeHost)` is false): letters, digits, `-._~`, the sub-delims and `:[]<>"`. */
+const GO_URL_HOST_BYTE = /[A-Za-z0-9\-._~!$&'()*+,;=:[\]<>"]/;
+/** A userinfo byte Go's `validUserinfo` accepts below 0x80. `%` is judged separately as an escape. */
+const GO_URL_USERINFO_BYTE = /[A-Za-z0-9\-._:~!$&'()*+,;=%@]/;
+
+/**
+ * Whether `url` is malformed for Go's `net/url` `url.Parse` — the parse campaign-service runs on an
+ * image URL before it checks the scheme and host (`validateImageEntries`). Only `Parse` itself:
+ * unlike {@link googleAdsUrlGoParseFlaw} it applies none of `validateServableURL`'s extra rules (a
+ * `;` in the query, any `@` or `%` in the authority), which image URLs are not held to.
+ *
+ * For an absolute `scheme://` URL, as Go parses it:
+ * - the fragment (after the first `#`) is cut off first; before it, a C0 control byte or DEL fails;
+ * - in the path and the fragment, a `%` must start a two-hex-digit escape;
+ * - the query is not judged at all by `Parse`;
+ * - the authority runs to the first `/` or `?`. Userinfo (before its last `@`) may hold only
+ *   `validUserinfo`'s bytes, with valid escapes. The host may hold only the bytes in
+ *   {@link GO_URL_HOST_BYTE} below 0x80, and a `%` there must escape a non-ASCII byte or be `%25`.
+ *   After the host's last `:` (outside `[...]`) the port is digits only. A bracketed IPv6 host must
+ *   close, and only a port may follow it.
+ *
+ * Code units at or above 0x80 are allowed where Go allows any non-ASCII byte. A value with no
+ * `scheme://` prefix is not judged here; the caller's scheme check refuses it.
+ */
+export function googleAdsUrlParseFlaw(url: string): boolean {
+  const prefix = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.exec(url);
+  if (!prefix) return false;
+  const hashAt = url.indexOf('#');
+  const beforeFragment = hashAt === -1 ? url : url.slice(0, hashAt);
+  const fragment = hashAt === -1 ? '' : url.slice(hashAt + 1);
+  for (let i = 0; i < beforeFragment.length; i++) {
+    const code = beforeFragment.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  const queryAt = beforeFragment.indexOf('?');
+  const beforeQuery = queryAt === -1 ? beforeFragment : beforeFragment.slice(0, queryAt);
+  const rest = beforeQuery.slice(prefix[0].length);
+  const slashAt = rest.indexOf('/');
+  const authority = slashAt === -1 ? rest : rest.slice(0, slashAt);
+  const path = slashAt === -1 ? '' : rest.slice(slashAt);
+  if (badPercentEscape(path) || badPercentEscape(fragment)) return true;
+
+  const atAt = authority.lastIndexOf('@');
+  if (atAt !== -1) {
+    const userinfo = authority.slice(0, atAt);
+    for (const ch of userinfo) {
+      if (ch.charCodeAt(0) < 0x80 && !GO_URL_USERINFO_BYTE.test(ch)) return true;
+    }
+    if (badPercentEscape(userinfo)) return true;
+  }
+  return goHostFlaw(atAt === -1 ? authority : authority.slice(atAt + 1));
+}
+
+/** Whether `text` has a `%` not followed by two hex digits (Go's `unescape` fails on it). */
+function badPercentEscape(text: string): boolean {
+  return /%(?![0-9A-Fa-f]{2})/.test(text);
+}
+
+/** Go's `parseHost` plus `unescape(host, encodeHost)` for one authority's host (and port). */
+function goHostFlaw(host: string): boolean {
+  let name = host;
+  let colonPort = '';
+  if (host.startsWith('[')) {
+    const close = host.lastIndexOf(']');
+    if (close === -1) return true;
+    colonPort = host.slice(close + 1);
+    name = host.slice(1, close);
+  } else {
+    const colonAt = host.lastIndexOf(':');
+    if (colonAt !== -1) {
+      colonPort = host.slice(colonAt);
+      name = host.slice(0, colonAt);
+    }
+  }
+  if (colonPort !== '' && !/^:[0-9]*$/.test(colonPort)) return true;
+  for (let i = 0; i < name.length; i++) {
+    const ch = name[i];
+    const code = name.charCodeAt(i);
+    if (ch === '%') {
+      const escape = name.slice(i, i + 3);
+      if (!/^%[0-9A-Fa-f]{2}$/.test(escape)) return true;
+      // Only a non-ASCII byte, or a literal `%` (`%25`), may be escaped in a host.
+      if (parseInt(escape.slice(1, 2), 16) < 8 && escape !== '%25') return true;
+      i += 2;
+      continue;
+    }
+    if (code < 0x80 && !GO_URL_HOST_BYTE.test(ch)) return true;
+  }
+  return false;
+}
+
 /**
  * Whether a destination URL is one upstream's `validateServableURL` will serve: absolute, http(s),
  * with a hostname, no embedded credentials, and none of the Go parser flaws

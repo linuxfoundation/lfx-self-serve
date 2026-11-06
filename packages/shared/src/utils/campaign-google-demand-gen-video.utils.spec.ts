@@ -51,11 +51,25 @@ describe('googleDemandGenVideoCreativeRefusal', () => {
     ['a CJK headline that is 42 wide in 21 characters', { ...VALID, headlines: ['日'.repeat(21)] }, 'longer than the 40'],
     ['six headlines', { ...VALID, headlines: ['a', 'b', 'c', 'd', 'e', 'f'] }, 'at most 5 headlines'],
     ['a repeat that differs only in case', { ...VALID, descriptions: ['Register', 'register'] }, 'description 2 repeats an earlier one'],
-    ['a logo URL over http', { ...VALID, logoImages: ['http://cdn.example/logo.png'] }, 'must be an https image URL'],
-    ['a logo URL with no host', { ...VALID, logoImages: ['https:///logo.png'] }, 'must be an https image URL'],
-    ['a logo URL whose authority is only credentials', { ...VALID, logoImages: ['https://user@/logo.png'] }, 'must be an https image URL'],
-    ['an opaque https logo', { ...VALID, logoImages: ['https:cdn.example/logo.png'] }, 'must be an https image URL'],
-    ['a logo stored-image ref with a blank id', { ...VALID, logoImages: [{ imageAssetId: '  ' }] }, 'must be an https image URL'],
+    ['a logo URL over http', { ...VALID, logoImages: ['http://cdn.example/logo.png'] }, 'well-formed https image URL'],
+    ['a logo URL with no host', { ...VALID, logoImages: ['https:///logo.png'] }, 'well-formed https image URL'],
+    ['a logo URL whose authority is only credentials', { ...VALID, logoImages: ['https://user@/logo.png'] }, 'well-formed https image URL'],
+    ['an opaque https logo', { ...VALID, logoImages: ['https:cdn.example/logo.png'] }, 'well-formed https image URL'],
+    ['a logo stored-image ref with a blank id', { ...VALID, logoImages: [{ imageAssetId: '  ' }] }, 'well-formed https image URL'],
+    ['a logo URL whose port is not digits', { ...VALID, logoImages: ['https://cdn.example:abc/logo.png'] }, 'well-formed https image URL'],
+    ['a logo URL with a bad escape in the path', { ...VALID, logoImages: ['https://cdn.example/%ZZ.png'] }, 'well-formed https image URL'],
+    ['a logo URL with a bad escape in the fragment', { ...VALID, logoImages: ['https://cdn.example/logo.png#%G1'] }, 'well-formed https image URL'],
+    ['a logo URL with a control character', { ...VALID, logoImages: ['https://cdn.example/lo\u0001go.png'] }, 'well-formed https image URL'],
+    ['a logo URL with a space in the host', { ...VALID, logoImages: ['https://cdn example/logo.png'] }, 'well-formed https image URL'],
+    ['a logo URL with an ASCII escape in the host', { ...VALID, logoImages: ['https://cdn%2Eexample/logo.png'] }, 'well-formed https image URL'],
+    ['a logo URL with a bad byte in the userinfo', { ...VALID, logoImages: ['https://us"er@cdn.example/logo.png'] }, 'well-formed https image URL'],
+    ['a logo URL with an unclosed IPv6 host', { ...VALID, logoImages: ['https://[::1/logo.png'] }, 'well-formed https image URL'],
+    [
+      'descriptions that are one line once Go decodes the lone surrogates',
+      { ...VALID, descriptions: ['Register\ud800', 'Register\ud801'] },
+      'description 2 repeats an earlier one',
+    ],
+    ['headlines that differ only in a lone surrogate', { ...VALID, headlines: ['Join\udc00', 'join\udfff'] }, 'headline 2 repeats an earlier one'],
     ['no long headline', { ...VALID, longHeadlines: ['  '] }, 'at least 1 long headline'],
     ['a long headline one past 90', { ...VALID, longHeadlines: ['l'.repeat(91)] }, 'longer than the 90'],
     ['no description', { ...VALID, descriptions: [] }, 'at least 1 description'],
@@ -71,6 +85,24 @@ describe('googleDemandGenVideoCreativeRefusal', () => {
     expect(googleDemandGenVideoCreativeRefusal({ ...VALID, logoImages: ['https://cdn.example/logo.png'] })).toBeNull();
     expect(googleDemandGenVideoCreativeRefusal({ ...VALID, logoImages: ['HTTPS://cdn.example:8443/logo.png'] })).toBeNull();
     expect(googleDemandGenVideoCreativeRefusal({ ...VALID, logoImages: [{ imageAssetId: '3f2504e0-4f89-11d3-9a0c-0305e82c3301' }] })).toBeNull();
+  });
+
+  it('accepts what Go url.Parse accepts: an empty port, a non-ASCII host, a semicolon or bad escape in the query, a control character in the fragment', () => {
+    for (const logo of [
+      'https://cdn.example:/logo.png',
+      'https://bücher.example/logo.png',
+      'https://cdn.example/logo.png?v=1;x=%ZZ',
+      'https://cdn.example/logo.png#a\u0001',
+      'https://user:pa;ss@cdn.example/logo.png',
+      'https://[2001:db8::1]:443/logo.png',
+      'https://cdn.example/%E2%82%AC.png',
+    ]) {
+      expect(googleDemandGenVideoCreativeRefusal({ ...VALID, logoImages: [logo] })).toBeNull();
+    }
+  });
+
+  it('keeps two lines that stay distinct after Go decodes them: a well-formed surrogate pair is kept', () => {
+    expect(googleDemandGenVideoCreativeRefusal({ ...VALID, descriptions: ['Register 😀', 'Register'] })).toBeNull();
   });
 
   it('never echoes what was pasted: a link with credentials is named by its position', () => {

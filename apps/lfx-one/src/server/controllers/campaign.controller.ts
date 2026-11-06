@@ -24,9 +24,12 @@ import {
   googleSearchAdCopyWidthRefusal,
   googleSearchAdPathsRefusal,
 } from '@lfx-one/shared/utils/campaign-google-search-ads.utils';
-import { googlePerformanceMaxShortDescriptionMissing } from '@lfx-one/shared/utils/campaign-google-creative.utils';
+import {
+  GOOGLE_CREATIVE_WIRE_FIELDS,
+  GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS,
+  googlePerformanceMaxShortDescriptionMissing,
+} from '@lfx-one/shared/utils/campaign-google-creative.utils';
 import { googleDemandGenVideoCreativeRefusal } from '@lfx-one/shared/utils/campaign-google-demand-gen-video.utils';
-import { GOOGLE_CREATIVE_WIRE_FIELDS, GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS } from '@lfx-one/shared/utils/campaign-google-creative.utils';
 import {
   googleAdsToUpperCode,
   googleCallExtensionRefusal,

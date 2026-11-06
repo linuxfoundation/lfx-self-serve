@@ -5,8 +5,9 @@ import {
   GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION,
   GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
   GOOGLE_DEMAND_GEN_VIDEO_MAX_VIDEOS,
+  googleAdsDecodedText,
   googleAdsToLower,
-  googleAdsTrimSpace,
+  googleAdsUrlParseFlaw,
 } from '../constants/campaign.constants';
 import type { GoogleCreativeFieldSpec } from '../interfaces/campaign.interface';
 import { googleAdsTextWeight } from './campaign-google-search-ads.utils';
@@ -39,7 +40,7 @@ export function googleDemandGenVideoIdsRefusal(ids: readonly string[]): string |
   const seen = new Set<string>();
   let position = 0;
   for (const raw of ids) {
-    const id = googleAdsTrimSpace(raw);
+    const id = googleAdsDecodedText(raw);
     if (id === '') continue;
     position++;
     if (id.includes('/') || id.includes(':') || id.includes('?')) {
@@ -83,7 +84,7 @@ export function googleDemandGenVideoCreativeRefusal(creative: unknown): string |
     return `The Demand Gen video ad needs exactly one logo image, and ${logos} ${logos === 1 ? 'is' : 'are'} set. ${logos > 1 ? 'Remove the extra ones' : 'Add a square logo'} and create again.`;
   }
   if (!googleDemandGenVideoLogoUsable(logoImages[0])) {
-    return "The Demand Gen video ad's logo must be an https image URL with a host, or an image from the brief's library. Correct it and create again.";
+    return "The Demand Gen video ad's logo must be a well-formed https image URL with a host, or an image from the brief's library. Correct it and create again.";
   }
 
   // Widened to the interface: the `as const` catalogue gives each entry only the keys it sets.
@@ -95,14 +96,14 @@ export function googleDemandGenVideoCreativeRefusal(creative: unknown): string |
     if (refusal !== null) return refusal;
   }
 
-  const name = typeof ad['businessName'] === 'string' ? googleAdsTrimSpace(ad['businessName']) : '';
+  const name = typeof ad['businessName'] === 'string' ? googleAdsDecodedText(ad['businessName']) : '';
   const nameField = fields.find((entry) => entry.control === 'businessName');
   if (name === '') return 'The Demand Gen video ad needs a business name.';
   if (nameField?.width !== undefined && googleAdsTextWeight(name) > nameField.width) {
     return `The Demand Gen video ad's business name is longer than the ${nameField.width} characters Google Ads allows; CJK and full-width characters count double. Shorten it and create again.`;
   }
 
-  const cta = typeof ad['callToAction'] === 'string' ? googleAdsTrimSpace(ad['callToAction']) : '';
+  const cta = typeof ad['callToAction'] === 'string' ? googleAdsDecodedText(ad['callToAction']) : '';
   if (cta !== '' && !GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION.some((option) => option.value === cta)) {
     const allowed = GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION.map((option) => option.label).join(', ');
     return `The Demand Gen video ad's call to action is not one Google Ads takes for this ad. Choose ${allowed}, or none.`;
@@ -117,30 +118,39 @@ const HTTPS_AUTHORITY_PATTERN = /^https:\/\/([^/?#]*)/i;
  * Whether campaign-service would accept this logo entry before fetching it (`validateImageEntries`):
  * a stored library image (`{ imageAssetId }`, resolved upstream) or an `https` URL with a host.
  *
- * Upstream parses with Go's `net/url` and requires `Scheme` to be https and `Host` non-empty. The
- * pattern reads the same two things: the scheme, and the authority with any `user@` part removed
- * (Go's `Host` excludes the userinfo). A scheme-relative, opaque (`https:host`) or host-less
- * (`https:///x`, `https://user@/x`) entry is refused, as upstream refuses it.
+ * Upstream parses with Go's `net/url` and refuses a URL `url.Parse` rejects, then requires `Scheme`
+ * to be https and `Host` non-empty. {@link googleAdsUrlParseFlaw} mirrors the parse (a bad port, a
+ * bad `%` escape, a control character, a byte Go refuses in the host or userinfo). The pattern reads
+ * the other two: the scheme, and the authority with any `user@` part removed (Go's `Host` excludes
+ * the userinfo). A scheme-relative, opaque (`https:host`) or host-less (`https:///x`,
+ * `https://user@/x`) entry is refused, as upstream refuses it.
  */
 function googleDemandGenVideoLogoUsable(entry: unknown): boolean {
   if (entry !== null && typeof entry === 'object' && !Array.isArray(entry)) {
     const id = (entry as Record<string, unknown>)['imageAssetId'];
-    return typeof id === 'string' && googleAdsTrimSpace(id) !== '';
+    return typeof id === 'string' && googleAdsDecodedText(id) !== '';
   }
   if (typeof entry !== 'string') return false;
-  const match = HTTPS_AUTHORITY_PATTERN.exec(googleAdsTrimSpace(entry));
+  const url = googleAdsDecodedText(entry);
+  if (googleAdsUrlParseFlaw(url)) return false;
+  const match = HTTPS_AUTHORITY_PATTERN.exec(url);
   if (match === null) return false;
   const authority = match[1];
   const host = authority.slice(authority.lastIndexOf('@') + 1);
   return host !== '';
 }
 
-/** A list field's non-blank strings, trimmed as upstream trims them; anything else is empty. */
+/**
+ * A list field's non-blank strings as upstream reads them: decoded as Go's JSON decoder decodes them
+ * (a lone surrogate becomes U+FFFD) and trimmed with Go's rules ({@link googleAdsDecodedText}).
+ * Without the decode, `Register\ud800` and `Register\ud801` are two lines here and one repeated
+ * line upstream. Anything that is not a string is empty.
+ */
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((entry): entry is string => typeof entry === 'string')
-    .map((entry) => googleAdsTrimSpace(entry))
+    .map((entry) => googleAdsDecodedText(entry))
     .filter((entry) => entry !== '');
 }
 
