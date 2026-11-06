@@ -88,6 +88,59 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(root.querySelector('[data-testid="kit-print-type"]')?.textContent).toContain('500 · 64/72 px');
   expect(root.querySelector<HTMLElement>('[data-testid="mktg-brand-kit-print"]')?.style.getPropertyValue('--mfp-font')).toBe(brand.fontStack);
   expect(root.querySelector('[data-testid="kit-print-visual"]')?.textContent).toContain(kit.chapters.visual.icons.recommended);
+  // The board's print layout for Iconography, on the Visual chapter's first page by itself: the block ends its page
+  // (break-after, never break-before, which would leave a page holding only the title); under the title, the rules
+  // across the sheet, then the sample icons (the print variant, the kit's colours) across the full content width.
+  const iconBlock = root.querySelector<HTMLElement>('[data-testid="kit-print-visual"] [data-testid="kit-print-icon-block"]');
+  if (!iconBlock) throw new Error('Missing synthetic icon block');
+  expect(iconBlock.tagName).toBe('TR');
+  expect(iconBlock.classList.contains('kit-block')).toBe(true);
+  expect(getComputedStyle(iconBlock).breakAfter).toBe('page');
+  expect(getComputedStyle(iconBlock).breakBefore).not.toBe('page');
+  expect(getComputedStyle(iconBlock).breakInside).toBe('avoid');
+  const rulesBlock = iconBlock.querySelector<HTMLElement>('[data-testid="kit-print-icon-rules"]');
+  const samplesBlock = iconBlock.querySelector<HTMLElement>('[data-testid="kit-print-icon-samples"]');
+  if (!rulesBlock || !samplesBlock) throw new Error('Missing synthetic icon rules or samples block');
+  expect(rulesBlock.previousElementSibling?.tagName).toBe('H3');
+  expect(rulesBlock.nextElementSibling).toBe(samplesBlock);
+  expect(iconBlock.querySelector('.kit-icon-row')).toBeNull();
+  for (const block of [rulesBlock, samplesBlock]) {
+    expect(getComputedStyle(block).display).toBe('block');
+    // Full content width: the e2e spec measures it in the browser; here the scss sets it.
+    expect(getComputedStyle(block).width).not.toBe('auto');
+  }
+  expect(Array.from(rulesBlock.querySelectorAll('li'), (li) => li.textContent)).toEqual(kit.chapters.visual.icons.rules);
+  const samples = samplesBlock.querySelector<HTMLElement>('.kit-icon-samples');
+  if (!samples) throw new Error('Missing synthetic icon samples');
+  expect(samples.getAttribute('data-testid')).toBe('brand-kit-icon-samples');
+  expect(samples.classList.contains('block')).toBe(true);
+  expect(getComputedStyle(samples).display).toBe('block');
+  expect(getComputedStyle(samples).breakInside).toBe('avoid');
+  expect(samples.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(8);
+  // The board's sizes in table boxes: a 2 × 4 table of 110 px tiles (32 px icons, 11 px labels), a 110 px strip of eight cells (30 px icons).
+  // These boxes are Tailwind utilities, which the unit environment does not load (only the component's scss), so they are
+  // asserted by class; the e2e spec measures them in the browser.
+  const tiles = samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tiles"]');
+  expect(tiles?.classList.contains('table')).toBe(true);
+  expect(tiles?.querySelectorAll(':scope > .table-row')).toHaveLength(2);
+  expect(tiles?.querySelectorAll(':scope > .table-row > .table-cell')).toHaveLength(8);
+  const tile = samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tile-documents"]');
+  expect(tile?.classList.contains('table')).toBe(true);
+  expect(tile?.classList.contains('h-[110px]')).toBe(true);
+  expect(tile?.querySelector('svg')?.getAttribute('width')).toBe('32');
+  expect(tile?.querySelector('span')?.classList.contains('text-[11px]')).toBe(true);
+  const strip = samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]');
+  expect(strip?.classList.contains('table')).toBe(true);
+  expect(strip?.classList.contains('h-[110px]')).toBe(true);
+  expect(strip?.classList.contains('px-[30px]')).toBe(true);
+  expect(strip?.querySelectorAll(':scope > .table-row > .table-cell')).toHaveLength(8);
+  expect(strip?.querySelector('svg')?.getAttribute('width')).toBe('30');
+  expect(samples.querySelector<HTMLElement>('[data-highlight="true"]')?.getAttribute('data-testid')).toBe('brand-kit-icon-strip-global');
+  // No grid or flex box in the samples: inside the paginated table they fragment their contents away from their boxes.
+  expect(samples.querySelectorAll('.grid, .flex, .inline-flex, .flex-wrap')).toHaveLength(0);
+  const probe = document.createElement('span');
+  probe.style.color = kit.kit.dark;
+  expect(samples.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]')?.style.backgroundColor).toBe(probe.style.color);
   expect(root.querySelectorAll('[data-testid="kit-print-usage"]')).toHaveLength(kit.chapters.usage.examples.length);
   expect(root.querySelector('[data-testid="kit-print-voice"]')?.textContent).toContain(kit.chapters.voice.umbrella);
   kit.chapters.voice.attributes.forEach((attribute) => expect(root.textContent).toContain(attribute.line));

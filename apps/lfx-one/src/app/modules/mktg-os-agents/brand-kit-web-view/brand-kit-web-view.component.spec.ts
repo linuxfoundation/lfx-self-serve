@@ -451,7 +451,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(scale?.textContent).toContain('Eyebrow');
     });
 
-    it('Visual: the iconography rules and the recommended set with no sample icon, the imagery rule and what to avoid, the graphic elements in the kit’s colours', async () => {
+    it('Visual: the board’s sample icons in the kit’s colours above the iconography rules and the recommended set, the imagery rule and what to avoid, the graphic elements in the kit’s colours', async () => {
       await open('visual');
 
       const icons = query('brand-kit-web-view-icons');
@@ -459,6 +459,61 @@ describe('BrandKitWebViewComponent', () => {
       expect(icons?.textContent).toContain('Label.');
       expect(icons?.querySelectorAll('i')).toHaveLength(0);
       expect(icons?.textContent).toContain('Recommended set: Lucide');
+      // The samples sit between the title and the rules; the rules and the caption keep their comment fields.
+      const samples = icons?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-samples"]');
+      expect(samples?.previousElementSibling?.tagName).toBe('H3');
+      expect(samples?.nextElementSibling?.tagName).toBe('UL');
+      // Hand-test feedback 1: a clear gap above the rules (the card's gap-2 + mt-3), the rules close together: each rule's
+      // comment affordance floats at the right end of the rule's first line (never a row of its own), its empty count hidden,
+      // back to a block under the text while its composer is open; a clearfix keeps the float inside the list item.
+      const rules = samples?.nextElementSibling;
+      for (const cls of ['mt-3', 'gap-0.5', 'leading-snug', 'list-disc']) {
+        expect(rules?.classList.contains(cls)).toBe(true);
+      }
+      expect(rules?.classList.contains('gap-1')).toBe(false);
+      const ruleItems = Array.from(rules?.querySelectorAll<HTMLElement>(':scope > li') ?? []);
+      expect(ruleItems).toHaveLength(brandKitTestRevision().chapters.visual.icons.rules.length);
+      for (const item of ruleItems) {
+        expect(item.classList.contains('group/commentfield')).toBe(true);
+        expect(item.hasAttribute('data-mktg-comment-group')).toBe(true);
+        for (const cls of [
+          '[&>lfx-mktg-field-comments]:float-right',
+          '[&>lfx-mktg-field-comments]:ml-2',
+          '[&_[data-testid=mktg-field-comment-count].invisible]:hidden',
+          '[&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:float-none',
+          '[&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:block',
+          '[&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:ml-0',
+          'after:block',
+          'after:clear-both',
+          "after:content-['']",
+        ]) {
+          expect(item.classList.contains(cls)).toBe(true);
+        }
+        expect(item.classList.contains('flow-root')).toBe(false);
+        expect(Array.from(item.classList).some((cls) => /inline-block|flex/.test(cls))).toBe(false);
+        expect(item.querySelector('.flex, .flex-wrap')).toBeNull();
+        expect(item.children).toHaveLength(0);
+      }
+      // With comments on, the affordance is the list item's direct child, in the text's flow after it.
+      fixture.componentRef.setInput('commentsEnabled', true);
+      await fixture.whenStable();
+      for (const item of ruleItems) {
+        expect(Array.from(item.children, (child) => child.tagName.toLowerCase())).toEqual(['lfx-mktg-field-comments']);
+        expect(item.firstChild?.textContent?.trim().length).toBeGreaterThan(0);
+      }
+      expect(samples?.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(8);
+      expect(samples?.querySelectorAll('[data-testid^="brand-kit-icon-strip-"]')).toHaveLength(8);
+      expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tile-documents"]')?.textContent?.trim()).toBe('Documents');
+      const inkProbe = document.createElement('span');
+      inkProbe.style.color = brandKitTestRevision().kit.dark;
+      expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tile-documents"]')?.style.color).toBe(inkProbe.style.color);
+      expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]')?.style.backgroundColor).toBe(inkProbe.style.color);
+      const highlightProbe = document.createElement('span');
+      highlightProbe.style.color = brandKitTestRevision().kit.spark;
+      const highlighted = samples?.querySelector<HTMLElement>('[data-highlight="true"]');
+      expect(highlighted?.getAttribute('data-testid')).toBe('brand-kit-icon-strip-global');
+      expect(highlighted?.style.color).toBe(highlightProbe.style.color);
+      expect(icons?.querySelectorAll('[data-mktg-comment-group]').length).toBe(brandKitTestRevision().chapters.visual.icons.rules.length + 1);
       expect(query('brand-kit-web-view-imagery')?.textContent).toContain('Structure.');
       expect(query('brand-kit-web-view-imagery')?.textContent).toContain('Hackers');
       expect(query('brand-kit-web-view-elements')?.textContent).toContain('Primary button');
