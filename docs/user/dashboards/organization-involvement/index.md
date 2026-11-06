@@ -70,7 +70,7 @@ When one of the cards fails to load, the section shows a single message in place
 
 ## How is this different from the Org Overview?
 
-The Involvement section on the Foundation overview covers one foundation, and every card except **Membership Tier** opens a panel. The [Org Overview](../../organization/org-overview/), the Dashboard of the **Organization** lens, totals the organization's involvement across all Linux Foundation foundations. Its cards count differently, and only its **Certified people** and **Courses taken** cards open another page.
+The Involvement section on the Foundation overview covers one foundation, and every card except **Membership Tier** opens a panel. The [Org Overview](../../organization/org-overview/), the Dashboard of the **Organization** lens, totals the organization's involvement across all Linux Foundation foundations. Its cards count differently, and only its three **Education** cards, **People with training activity**, **Certified people** and **Courses taken**, open another page.
 
 The **Organization Dependency** card in the Foundation overview's health metrics is a different card: it shows how concentrated the foundation's contributions are across organizations. See [Organization Dependency](../foundation-health-metrics/#organization-dependency).
 

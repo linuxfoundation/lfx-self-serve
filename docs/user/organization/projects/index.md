@@ -257,7 +257,7 @@ A score breakdown shows how one organization earned its influence score on the p
 
 1. The panel's title is the organization's name. The line under it names the project and **Technical Influence** or **Ecosystem Influence**.
 2. A summary sentence gives the organization's band and score, such as **Acme has a Contributing technical influence in Kubernetes and a score of 6.25**. When they are known, it also gives the organization's share of the project's contribution activity (technical) or collaboration activity (ecosystem), and its rank, such as **#3 out of 120 companies participating in the project**.
-3. A list of categories, introduced by **The % of** the organization's **score that each category contributes, and the points it earned**. Each category shows its points and a bar for its share of the total score, highest points first. Most also show the organization's count, or its count against the project's total, such as **(12 of 340)**.
+3. A list of categories, introduced by **The % of** the organization's **score that each category contributes, and the points it earned**. Each category shows its points and a bar for its share of the total score, highest points first. Most also show the organization's count, or its count against the project's or the foundation's total, depending on the category, such as **(12 of 340)**.
 4. **Total score**: the sum of the points. It is the same score as the leaderboard row.
 5. **How this score is calculated**: how each category earns points, and how the score maps to a band.
 
