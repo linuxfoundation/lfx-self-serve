@@ -31,24 +31,26 @@
 
 /* The dark covers paint the slide area only: the page's bands stay white, so the printed page reads as the
    slide on paper. `print-color-adjust: exact` keeps the ground when the print dialog's background graphics
-   are off (Chromium honours it; WebKit prints backgrounds by its own setting). The ground is the prototype's
-   gridGround (book.js: a glow of the accent at 78% 22%, a quiet grid of the accent at its pitch, on the dark;
-   the maintainer's call): the accent's 0x55 and 0x22 alphas as color-mix shares, since the look's accent is
-   any CSS colour, not always a hex to append an alpha to. */
+   are off (Chromium honours it; WebKit prints backgrounds by its own setting). */
 .lfx-print-page--dark {
   color: var(--pp-on-dark);
+}
 
-  .lfx-print-page__slide {
-    background-color: var(--pp-dark);
-    background-image:
-      linear-gradient(color-mix(in srgb, var(--pp-accent) 13%, transparent) var(--pp-hairline), transparent var(--pp-hairline)),
-      linear-gradient(90deg, color-mix(in srgb, var(--pp-accent) 13%, transparent) var(--pp-hairline), transparent var(--pp-hairline)),
-      radial-gradient(ellipse at 78% 22%, color-mix(in srgb, var(--pp-accent) 33%, transparent), transparent 55%);
-    background-size:
-      var(--pp-grid) var(--pp-grid),
-      var(--pp-grid) var(--pp-grid),
-      100% 100%;
-  }
+/* The prototype's gridGround (book.js: a glow of the accent at 78% 22%, a quiet grid of the accent at its pitch,
+   on the dark; the maintainer's call), one source for the dark covers' slide and for the elements the plan marks
+   (`ground: 'grid'`: the imagery hero band, the keynote card). The accent's 0x55 and 0x22 alphas are color-mix
+   shares, since the look's accent is any CSS colour, not always a hex to append an alpha to. */
+.lfx-print-page--dark .lfx-print-page__slide,
+.pp-ground-grid {
+  background-color: var(--pp-dark);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--pp-accent) 13%, transparent) var(--pp-hairline), transparent var(--pp-hairline)),
+    linear-gradient(90deg, color-mix(in srgb, var(--pp-accent) 13%, transparent) var(--pp-hairline), transparent var(--pp-hairline)),
+    radial-gradient(ellipse at 78% 22%, color-mix(in srgb, var(--pp-accent) 33%, transparent), transparent 55%);
+  background-size:
+    var(--pp-grid) var(--pp-grid),
+    var(--pp-grid) var(--pp-grid),
+    100% 100%;
 }
 
 /* A hairline under the running head of a content page, from the head's left to its right, above the title
@@ -85,6 +87,11 @@
 
 .pp-shape--ellipse {
   border-radius: 50%;
+}
+
+/* A pill: the prototype's border-radius 999px. */
+.pp-shape--pill {
+  border-radius: 999pt;
 }
 
 .pp-image img,
