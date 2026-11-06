@@ -5,7 +5,6 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { catchError, Observable, of } from 'rxjs';
 
-import { DEFAULT_ORG_EVENTS_ATTRIBUTION } from '@lfx-one/shared/constants';
 import type {
   OrgFoundationCoverageResponse,
   OrgInvolvementContributorsMonthlyResponse,
@@ -47,7 +46,6 @@ export class OrgInvolvementAnalyticsService {
             accountName: '',
             totalAttended: 0,
             totalSpeakers: 0,
-            servedAttribution: DEFAULT_ORG_EVENTS_ATTRIBUTION,
             attendeesMonthlyData: [],
             speakersMonthlyData: [],
             monthlyLabels: [],

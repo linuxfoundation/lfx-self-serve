@@ -48,11 +48,11 @@ describe('parseOrgEventsFilters', () => {
 
   it('reads each param', () => {
     const filters = parseOrgEventsFilters(
-      buildReq({ attribution: 'company_email', participation: 'attended', eventScope: 'all', foundation: 'foundation-one', range: '90d' }),
+      buildReq({ attribution: 'self_reported', participation: 'attended', eventScope: 'all', foundation: 'foundation-one', range: '90d' }),
       'op'
     );
 
-    expect(filters).toEqual({ attribution: 'company_email', participation: 'attended', scope: 'all', foundation: 'foundation-one', range: '90d' });
+    expect(filters).toEqual({ attribution: 'self_reported', participation: 'attended', scope: 'all', foundation: 'foundation-one', range: '90d' });
   });
 
   it('reads the registered or attended participation', () => {
@@ -62,6 +62,8 @@ describe('parseOrgEventsFilters', () => {
 
   it.each([
     ['attribution', { attribution: 'everyone' }],
+    ['attribution', { attribution: 'company_email' }],
+    ['attribution', { attribution: 'account' }],
     ['participation', { participation: 'maybe' }],
     ['eventScope', { eventScope: 'some' }],
     ['range', { range: '5d' }],
@@ -73,27 +75,26 @@ describe('parseOrgEventsFilters', () => {
 
 describe('SQL fragments', () => {
   it('derives the ORG_EVENTS columns from the typed option', () => {
-    expect(orgEventsCountColumn('company_email', 'registered')).toBe('REGISTERED_COUNT_COMPANY_EMAIL');
-    expect(orgEventsCountColumn('account', 'attended')).toBe('ATTENDED_COUNT_ACCOUNT');
+    expect(orgEventsCountColumn('verified', 'registered')).toBe('REGISTERED_COUNT_VERIFIED');
+    expect(orgEventsCountColumn('self_reported', 'attended')).toBe('ATTENDED_COUNT_SELF_REPORTED');
     expect(orgEventsCountColumn('all', 'registered')).toBe('REGISTERED_COUNT_ALL');
-    expect(orgEventsCountColumn('company_email', 'all')).toBe('ALL_COUNT_COMPANY_EMAIL');
-    expect(orgEventsCountColumn('account', 'all')).toBe('ALL_COUNT_ACCOUNT');
+    expect(orgEventsCountColumn('self_reported', 'all')).toBe('ALL_COUNT_SELF_REPORTED');
     expect(orgEventsCountColumn('all', 'all')).toBe('ALL_COUNT_ALL');
     expect(orgEventsFootprintColumn('all')).toBe('HAS_FOOTPRINT_ALL');
+    expect(orgEventsFootprintColumn('self_reported')).toBe('HAS_FOOTPRINT_SELF_REPORTED');
   });
 
   it('builds the attendee predicate as the one dbt conjunction flag of the pair', () => {
-    expect(orgEventsAttendeePredicate('company_email', 'registered')).toBe('IS_COUNTED_REGISTERED_COMPANY_EMAIL = TRUE');
-    expect(orgEventsAttendeePredicate('account', 'attended')).toBe('IS_COUNTED_ATTENDED_ACCOUNT = TRUE');
+    expect(orgEventsAttendeePredicate('verified', 'registered')).toBe('IS_COUNTED_REGISTERED_VERIFIED = TRUE');
+    expect(orgEventsAttendeePredicate('self_reported', 'attended')).toBe('IS_COUNTED_ATTENDED_SELF_REPORTED = TRUE');
     expect(orgEventsAttendeePredicate('all', 'registered')).toBe('IS_COUNTED_REGISTERED_ALL = TRUE');
-    expect(orgEventsAttendeePredicate('company_email', 'all')).toBe('IS_COUNTED_ALL_COMPANY_EMAIL = TRUE');
-    expect(orgEventsAttendeePredicate('account', 'all')).toBe('IS_COUNTED_ALL_ACCOUNT = TRUE');
+    expect(orgEventsAttendeePredicate('self_reported', 'all')).toBe('IS_COUNTED_ALL_SELF_REPORTED = TRUE');
     expect(orgEventsAttendeePredicate('all', 'all')).toBe('IS_COUNTED_ALL_ALL = TRUE');
   });
 
   it('builds the speaker predicate as the one dbt conjunction flag of the attribution', () => {
-    expect(orgEventsSpeakerPredicate('company_email')).toBe('IS_COUNTED_SPEAKER_COMPANY_EMAIL = TRUE');
-    expect(orgEventsSpeakerPredicate('account')).toBe('IS_COUNTED_SPEAKER_ACCOUNT = TRUE');
+    expect(orgEventsSpeakerPredicate('verified')).toBe('IS_COUNTED_SPEAKER_VERIFIED = TRUE');
+    expect(orgEventsSpeakerPredicate('self_reported')).toBe('IS_COUNTED_SPEAKER_SELF_REPORTED = TRUE');
     expect(orgEventsSpeakerPredicate('all')).toBe('IS_COUNTED_SPEAKER_ALL = TRUE');
   });
 
