@@ -327,7 +327,7 @@ test.describe('Meetings home page', () => {
       await expect(homeToast(page, 'Recording link copied to clipboard')).toBeVisible();
 
       await rail.getByTestId('meetings-home-last-card-summary').click();
-      const summary = page.getByRole('dialog', { name: 'Meeting Summary' });
+      const summary = page.getByRole('dialog', { name: 'AI Summary' });
       await expect(summary).toContainText(MEETINGS_HOME_SUMMARY_TEXT);
     });
 
@@ -348,7 +348,7 @@ test.describe('Meetings home page', () => {
       await expect(homeToast(page, 'Recording link copied to clipboard')).toBeVisible();
 
       await row.getByRole('button', { name: 'AI Summary', exact: true }).click();
-      await expect(page.getByRole('dialog', { name: 'Meeting Summary' })).toContainText(MEETINGS_HOME_SUMMARY_TEXT);
+      await expect(page.getByRole('dialog', { name: 'AI Summary' })).toContainText(MEETINGS_HOME_SUMMARY_TEXT);
     });
   });
 

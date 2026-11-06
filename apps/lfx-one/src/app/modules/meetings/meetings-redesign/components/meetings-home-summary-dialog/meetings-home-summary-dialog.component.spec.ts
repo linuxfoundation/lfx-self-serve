@@ -197,6 +197,7 @@ describe('MeetingsHomeSummaryDialogComponent', () => {
 
       await click(fixture, 'meetings-home-dialog-summary-edit');
       expect(query(fixture, 'meetings-home-dialog-summary-markdown-note')?.textContent?.trim()).toBe('Markdown formatting is supported');
+      expect((query(fixture, 'meetings-home-dialog-summary-copy')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
       const textarea = query(fixture, 'meetings-home-dialog-summary-editor')?.querySelector('textarea') as HTMLTextAreaElement;
       expect(textarea.value).toBe(summary.summary_data.content);
       await click(fixture, 'meetings-home-dialog-summary-cancel');

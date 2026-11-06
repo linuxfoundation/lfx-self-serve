@@ -29,7 +29,7 @@ export class MeetingsHomeSummaryDialogComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly toast = inject(UiToastService);
   private readonly clipboard = inject(Clipboard);
-  // showPending reads past the approval gate, as an organizer would.
+  // showPending skips the approval gate, the helper's only organizer branch.
   private readonly reader = this.data.showPending ? { organizer: true } : this.data.row.meeting;
 
   protected readonly row = this.data.row;
