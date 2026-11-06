@@ -445,7 +445,8 @@ export function googleDeviceBidModifierRefusal(devices: NormalizedGoogleDeviceBi
   if (googleChannelTakesDeviceExclusionsOnly(channel)) {
     for (const [index, entry] of devices.entries()) {
       if (entry.bidModifier !== undefined && entry.bidModifier !== 0) {
-        return `The Google Ads device bid modifier ${index + 1} gives ${googleAdsTrimSpace(entry.device).toUpperCase()} a bid modifier of ${entry.bidModifier}. ${googleChannelDeviceAdjustmentRefusedSentence(channel)} Set it to 0 to exclude the device or remove it, then create again.`;
+        // Echoed bounded: this runs before the vocabulary check, so the device is still the caller's text.
+        return `The Google Ads device bid modifier ${index + 1} gives ${googleAdsEchoed(googleAdsTrimSpace(entry.device).toUpperCase())} a bid modifier of ${entry.bidModifier}. ${googleChannelDeviceAdjustmentRefusedSentence(channel)} Set it to 0 to exclude the device or remove it, then create again.`;
       }
     }
   }

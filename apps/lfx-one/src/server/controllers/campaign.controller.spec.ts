@@ -4878,7 +4878,7 @@ describe('CampaignController.createCampaign cutover', () => {
   it.each([
     ['excludedAgeRanges', { excludedAgeRanges: ['18-24'] }],
     ['excludedGenders', { excludedGenders: ['MALE'] }],
-  ])('refuses %s on Demand Gen, which refuses the whole criteria set', async (field, overrides) => {
+  ])('refuses %s on Demand Gen, which refuses demographic exclusions on its audience-grouped ad group', async (field, overrides) => {
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(createCampaigns).not.toHaveBeenCalled();

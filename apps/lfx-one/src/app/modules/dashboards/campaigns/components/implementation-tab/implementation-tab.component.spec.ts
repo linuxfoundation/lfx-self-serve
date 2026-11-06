@@ -8289,8 +8289,9 @@ describe('ImplementationTabComponent google location targets held by the capabil
  *
  * The control is a `<select>` over the supported table's own keys, so the guards left are the ones
  * a select cannot express — the cap, not adding a code twice — plus the CHANNEL gate, which the geo
- * sibling has no equivalent of: upstream's `validateCriteriaPlan` refuses the whole non-location
- * criteria set on Demand Gen, so the section and the payload both close there.
+ * sibling has no equivalent of. Every channel takes languages since campaign-service v1.0.31 (Demand
+ * Gen attaches them to its ad group, #459), so the gate is open everywhere and the section and the
+ * payload follow `GOOGLE_CHANNELS_WITH_LANGUAGES` if upstream fences a channel again.
  */
 describe('ImplementationTabComponent google languages', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;

@@ -4828,7 +4828,8 @@ export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
  *
  * Upstream attaches audience criteria to the ad group the Search cascade builds, and refuses them
  * on every other channel rather than dropping them (`internal/platform/googleads/campaign.go`:
- * "audience segments are not supported on %s"): Demand Gen's ad group takes no criteria and
+ * "audience segments are not supported on %s"): Demand Gen's ad group is audience-grouped, so Google
+ * refuses a user list attached to it directly (it takes one Audience and languages instead, #459), and
  * Performance Max has no ad group to hang them on. A separate list from
  * {@link GOOGLE_CHANNELS_WITH_AD_EXTENSIONS} although it holds the same one channel, because the two
  * fences are upstream's for different reasons and either could move without the other.

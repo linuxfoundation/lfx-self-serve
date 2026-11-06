@@ -1282,9 +1282,21 @@ export class CampaignController {
 
           const languages = googleUpperCodeList(rawLanguages);
           if (languages.length > 0 && typeof googleChannel === 'string') {
-            // No channel fence: every channel takes languages since campaign-service v1.0.31
-            // (`validateCriteriaPlan`; Demand Gen on its ad group, #459).
-            //
+            // REFUSED by name, not dropped, for a channel the list leaves out: upstream's contract for
+            // the field is "refused, never silently dropped". None is left out since campaign-service
+            // v1.0.31 (Demand Gen takes them on its ad group, #459), so this arm is dormant; it stays so
+            // a channel fenced again needs only the constant changed, as the ad schedule arm does.
+            if (!(GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(googleChannel)) {
+              next(
+                ServiceValidationError.forField(
+                  'languages',
+                  `Google Ads does not accept campaign languages on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the languages or pick a different channel, then create again.`,
+                  { operation: 'campaign_create', service: 'campaign_controller' }
+                )
+              );
+              return;
+            }
+
             // Upstream's cap, checked BEFORE de-duplication there and so here too: a list over the
             // cap only because it repeats a code is still refused.
             if (languages.length > GOOGLE_ADS_MAX_LANGUAGES) {

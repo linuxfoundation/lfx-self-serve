@@ -346,6 +346,12 @@ describe('googleDeviceBidModifierRefusal on Demand Gen', () => {
     expect(googleDeviceBidModifierRefusal(all, 'maximize-conversions', 'demand-gen')).toBeNull();
   });
 
+  it('echoes a device it has not yet checked against the vocabulary at most 32 characters long', () => {
+    const refusal = googleDeviceBidModifierRefusal([{ device: 'x'.repeat(200), bidModifier: 1.2 }], 'manual-cpc', 'demand-gen');
+    expect(refusal).toContain(`gives ${'X'.repeat(32)}… a bid modifier of 1.2.`);
+    expect(refusal).not.toContain('X'.repeat(33));
+  });
+
   it('refuses any modifier but 0, under every strategy, before the vocabulary', () => {
     expect(googleChannelTakesDeviceExclusionsOnly('demand-gen')).toBe(true);
     expect(googleChannelTakesDeviceExclusionsOnly('search')).toBe(false);
