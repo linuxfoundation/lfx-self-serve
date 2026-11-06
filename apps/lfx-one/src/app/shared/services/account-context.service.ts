@@ -292,6 +292,19 @@ export class AccountContextService {
     }
 
     if (seeds.length === 0) {
+      // Reached with a stored roll-up only once the grants have settled below the minimum, since
+      // the branch above admits every unsettled visit. Leaving the sentinel in the cookie would
+      // restore the combined view on the next bootstrap's unsettled window and flicker through it
+      // before reconciliation demoted again, so it is replaced with whatever the caller does hold
+      // — inherited grants included — or cleared (#4415, Cursor).
+      if (isOrgRollUpSegment(storedUid)) {
+        const fallback = this.rollUpFallbackOrganization();
+        if (fallback) {
+          this.setAccount(fallback);
+          return;
+        }
+        this.clearStorage();
+      }
       this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
       return;
     }

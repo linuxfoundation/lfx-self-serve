@@ -72,7 +72,13 @@ export class OrgLensEmptyStateService {
     if (!this.roleGrants.loaded() || !this.roleGrants.isContractor() || this.selectedHeld() || this.selectedClaOnly()) {
       return null;
     }
-    return this.accountContext.selectedAccount().uid || null;
+    const uid = this.accountContext.selectedAccount().uid;
+    // Never the roll-up. The read gate is per organization and the server refuses the reserved
+    // sentinel, so the probe could only fail — and `settled` waits on its verdict, parking a
+    // contractor on the page skeleton until the doomed request finishes. This cannot lean on
+    // `selectedHeld`, which returns false for the roll-up in the outage branches by design
+    // (#4415, Cursor).
+    return uid && !isOrgRollUpSegment(uid) ? uid : null;
   });
 
   /** The read gate's answer for `contractorProbeUid`; `admitted` is `undefined` until it lands. */
