@@ -6650,13 +6650,6 @@ export interface CampaignGoogleLocationsCapabilityBlock {
 }
 
 /**
- * Why Create is blocked for Google audience segments the draft still holds but the request cannot
- * carry. `restricted`: the caller does not hold `global_marketing_ops` on the project, so the
- * segments would be refused (`CampaignListResult.googleAudienceSegmentsEnabled`). `unsupported`: the
- * campaign-service create path does not serve this deployment. The other kinds mean what they do on
- * `CampaignBiddingCapabilityBlock`: the same capability read answers all of them.
- */
-/**
  * Why upstream refuses one trimmed `campaignAudienceSegments` entry, in the order
  * `validateCampaignAudienceSegments` checks it (`search_campaign_audiences.go`): `blank`, then `shape`
  * (not `customers/{digits}/{kind}/{digits}`), then `notUserList` (a well-formed name of another kind,
@@ -6677,6 +6670,13 @@ export type GoogleCampaignAudienceSegmentsRefusal =
   | { rule: 'entry'; position: number; fault: GoogleCampaignAudienceSegmentFault }
   | { rule: 'lists'; count: number };
 
+/**
+ * Why Create is blocked for Google audience segments the draft still holds but the request cannot
+ * carry. `restricted`: the caller does not hold `global_marketing_ops` on the project, so the
+ * segments would be refused (`CampaignListResult.googleAudienceSegmentsEnabled`). `unsupported`: the
+ * campaign-service create path does not serve this deployment. The other kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers all of them.
+ */
 export interface CampaignGoogleAudienceSegmentsBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
   message: string;

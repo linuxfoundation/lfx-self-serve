@@ -4642,7 +4642,8 @@ export const GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG = ['performance-max', 'vide
  * reads `geoTargets`, `keywords`, `headlines` and `descriptions` and nothing else Google-specific.
  * Every field here would be dropped there while the create reports success, so the BFF refuses a
  * non-empty one by name instead (#3692, and #3568 for the bidding plan and creative). `geoTargets` postal-code ids and `proximityTargets` have
- * their own refusal (`canCreateWithFinerGoogleGeo`), as do `audienceSegments`.
+ * their own refusal (`canCreateWithFinerGoogleGeo`), as do `audienceSegments` and `campaignAudienceSegments`
+ * (`canCreateWithAudienceSegments`).
  *
  * In `validateGeoPlan`, `validateCriteriaPlan` then `validateAssetPlan` order, so a request
  * carrying several is refused by the one upstream would have judged first.
