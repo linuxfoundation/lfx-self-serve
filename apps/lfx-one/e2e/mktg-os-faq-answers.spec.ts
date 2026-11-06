@@ -15,7 +15,8 @@
  *   A1  FAQ tab at 1440 and 390: the plain answer's text, the lead-in then five items in order,
  *       "$5,000 to $75,000" verbatim, nothing injected survives
  *   A2  Family PDF (Download PDF on /project/mktg-os-agents/families/positioning-brand, the isolated
- *       print frame): the list pair prints a paragraph and five items; the plain pairs one paragraph
+ *       landscape print frame, the FAQ grid page): the list pair prints a paragraph and five items;
+ *       the plain pairs one paragraph
  *
  * Every read is stubbed (`openAssetDocument`, `openFamilyExports`): no edit rights, no Guild key
  * and no live document store are needed. The Marketing OS pages are dark-launched behind
@@ -28,7 +29,7 @@ import { FAQ_LIST_ITEMS, FAQ_LIST_LEAD_IN, FAQ_PLAIN_ANSWER, FAQ_PRICE_ANSWER, f
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { nativeAssetRevisionResponse, openAssetDocument } from './helpers/mktg-os-asset-views.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
-import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
+import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, PRINT_FRAME_LANDSCAPE, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 
@@ -93,9 +94,9 @@ test('A2: the family PDF prints the lead-in as a paragraph and its items as a li
   await expect(pdf).toBeEnabled();
   await pdf.click();
   await expectMktgPrintFrame(page, MKTG_FAMILY_PRINT_BODY_CLASS, '[data-testid="family-export-print-document"]');
-  const frame = await layoutMktgPrintFrame(page);
-  const faqPrint = frame.getByTestId('mktg-faq-print');
-  const pairs = faqPrint.getByTestId('mktg-faq-print-pair');
+  // The family prints as the deck's landscape pages; the FAQ is its two-column grid.
+  const frame = await layoutMktgPrintFrame(page, PRINT_FRAME_LANDSCAPE);
+  const pairs = frame.getByTestId('mktg-faq-print-grid').getByTestId('mktg-faq-print-pair');
   await expect(pairs).toHaveCount(4);
 
   // (a) and (c): one paragraph each, the exact text.
@@ -107,7 +108,7 @@ test('A2: the family PDF prints the lead-in as a paragraph and its items as a li
   await expect(listAnswer.locator('p + ul')).toHaveCount(1);
   await expect(listAnswer.locator('ul > li')).toHaveText([...FAQ_LIST_ITEMS]);
   await expect(pairs.nth(1)).toHaveCSS('break-inside', 'avoid');
-  await expect(pairs.nth(1)).toContainText('Source: Docs');
+  await expect(pairs.nth(1)).toContainText('Source · Docs');
   // (d): nothing injected survives in print either.
   await expect(pairs.nth(3).locator('img, script, [onerror], a')).toHaveCount(0);
 
