@@ -93,13 +93,13 @@ export class ProfilePanelComponent {
       this.messageService.add({
         severity: 'success',
         summary: 'LFID Copied',
-        detail: 'Your LFID has been copied to your clipboard',
+        detail: 'The LFID has been copied to your clipboard',
       });
     } else {
       this.messageService.add({
         severity: 'error',
         summary: 'Copy Failed',
-        detail: 'Unable to copy your LFID. Please copy it manually.',
+        detail: 'Unable to copy the LFID. Please copy it manually.',
       });
     }
   }
