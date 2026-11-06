@@ -1088,6 +1088,8 @@ export interface PastMeeting extends Meeting {
   recording_share_url?: string;
   /** Whether an AI summary with content is visible to the viewer (organizers include awaiting approval) — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
   has_ai_summary?: boolean;
+  /** Whether that summary still awaits the viewing organizer's approval — /api/user/past-meetings?include=artifacts only, set with `has_ai_summary` */
+  ai_summary_awaiting_approval?: boolean;
 }
 
 /** Angular router target for navigating to a specific meeting occurrence. */

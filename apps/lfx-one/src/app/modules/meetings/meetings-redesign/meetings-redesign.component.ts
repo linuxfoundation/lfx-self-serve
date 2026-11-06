@@ -21,7 +21,7 @@ import {
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { IMPERSONATION_BANNER_HEIGHT_PX } from '@lfx-one/shared/constants';
 import { MeetingDashboardView, MeetingHomeRow, UiTabItem } from '@lfx-one/shared/interfaces';
 import { countAppliedMeetingFilters } from '@lfx-one/shared/utils';
 import { AppFooterComponent } from '@components/app-footer/app-footer.component';
@@ -156,10 +156,6 @@ export class MeetingsRedesignComponent {
     if (countAppliedMeetingFilters(this.store.filters()) === 0) return 'No meetings match your search';
     return this.store.search().trim() ? 'No meetings match your filters' : 'Try adjusting your filter criteria';
   });
-  /** "All N meetings loaded" once every row of a list longer than one page is shown. */
-  protected readonly allLoaded: Signal<boolean> = computed(
-    () => !this.store.loading() && !this.store.hasMore() && this.store.filteredRows().length > MEETINGS_HOME_PAGE_SIZE
-  );
 
   public constructor() {
     this.destroyRef.onDestroy(this.appService.claimFooter());

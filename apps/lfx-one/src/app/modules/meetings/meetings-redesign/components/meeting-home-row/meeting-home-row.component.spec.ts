@@ -200,7 +200,7 @@ describe('MeetingHomeRowComponent', () => {
       [{ visibility: MeetingVisibility.PUBLIC, restricted: false }, []],
       [{ visibility: MeetingVisibility.PRIVATE, restricted: false }, ['private']],
       [{ visibility: MeetingVisibility.PUBLIC, restricted: true }, ['restricted']],
-      [{ visibility: MeetingVisibility.PRIVATE, restricted: true }, ['private', 'restricted']],
+      [{ visibility: MeetingVisibility.PRIVATE, restricted: true }, ['restricted', 'private']],
     ])('shows the visibility badges for %j', async (overrides, kinds) => {
       const fixture = await render(buildRow(buildMeeting(overrides)));
       const badges = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid^="meetings-home-row-visibility-"]'));

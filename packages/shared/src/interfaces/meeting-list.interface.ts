@@ -192,8 +192,8 @@ export interface MeetingHomeArtifact {
   title: string;
 }
 
-/** What a meetings home attendance count or bar segment measures. */
-export type MeetingHomeAttendanceKind = 'yes' | 'maybe' | 'no' | 'attended';
+/** What a meetings home attendance count or bar segment measures; `attendedPoor` is attendance under 50%. */
+export type MeetingHomeAttendanceKind = 'yes' | 'maybe' | 'no' | 'attended' | 'attendedPoor';
 
 /** One answer count in the meetings home attendance legend. */
 export interface MeetingHomeAttendanceCount {

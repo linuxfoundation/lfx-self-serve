@@ -398,16 +398,14 @@ test.describe('Meetings home page', () => {
   });
 
   test.describe('Paging', () => {
-    test('a list longer than one page loads the rest on scroll and says so', async ({ page }) => {
+    test('a list longer than one page loads the rest on scroll', async ({ page }) => {
       await gotoMeetingsHome(page, { extraCount: 20 });
 
       await expect(homeRows(page)).toHaveCount(20);
-      await expect(page.getByTestId('meetings-home-all-loaded')).toHaveCount(0);
 
       await homeRows(page).last().scrollIntoViewIfNeeded();
       await expect(homeRows(page)).toHaveCount(25);
       await expect(page.getByRole('tab', { name: 'Upcoming, 25 meetings' })).toBeVisible();
-      await expect(page.getByTestId('meetings-home-all-loaded')).toHaveText('All 25 meetings loaded');
     });
   });
 });

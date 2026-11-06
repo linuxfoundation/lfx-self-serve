@@ -39,6 +39,7 @@ describe('MeetingHomeArtifactsComponent', () => {
   let toastShow: ReturnType<typeof vi.fn>;
   let lastMeeting: WritableSignal<MeetingHomeRow | null>;
   let setLastMeetingSummary: ReturnType<typeof vi.fn>;
+  let lastMeetingSummary: WritableSignal<PastMeetingSummary | null | undefined>;
 
   const render = async (value: MeetingHomeRow): Promise<void> => {
     fixture = TestBed.createComponent(MeetingHomeArtifactsComponent);
@@ -59,13 +60,14 @@ describe('MeetingHomeArtifactsComponent', () => {
     toastShow = vi.fn();
     lastMeeting = signal(null);
     setLastMeetingSummary = vi.fn();
+    lastMeetingSummary = signal(undefined);
 
     TestBed.configureTestingModule({
       providers: [
         { provide: MeetingService, useValue: { getPastMeetingSummary } },
         { provide: MeetingsHomeDialogsService, useValue: { openRecording, copyRecordingLink, openSummary } },
         { provide: UiToastService, useValue: { show: toastShow } },
-        { provide: MeetingsHomeStore, useValue: { lastMeeting, setLastMeetingSummary } },
+        { provide: MeetingsHomeStore, useValue: { lastMeeting, lastMeetingSummary, setLastMeetingSummary } },
       ],
     });
   });
@@ -125,7 +127,41 @@ describe('MeetingHomeArtifactsComponent', () => {
     await click('meetings-home-row-summary');
 
     expect(getPastMeetingSummary).toHaveBeenCalledWith('synthetic-past-key');
-    expect(openSummary).toHaveBeenCalledWith(value, summary(), undefined);
+    expect(openSummary).toHaveBeenCalledWith(value, summary(), expect.any(Function));
+    expect(setLastMeetingSummary).not.toHaveBeenCalled();
+  });
+
+  it('offers an organizer "Review summary" until the summary is approved from its dialog', async () => {
+    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true }));
+    const button = (): HTMLButtonElement | null | undefined => query('meetings-home-row-summary')?.querySelector('button');
+
+    expect(button()?.textContent?.trim()).toBe('Review summary');
+    expect(button()?.className).toContain('text-ui-accent-500');
+    expect(button()?.querySelector('i')).toBeNull();
+
+    await click('meetings-home-row-summary');
+    const onChange = openSummary.mock.calls[0][2] as (change: PastMeetingSummary) => void;
+    onChange(summary());
+    await fixture.whenStable();
+
+    expect(button()?.textContent?.trim()).toBe('AI Summary');
+    expect(button()?.querySelector('i.fa-sparkles')).not.toBeNull();
+
+    // A refresh rebuilds the row from the same, not yet re-indexed feed.
+    fixture.componentRef.setInput('row', row({ has_ai_summary: true, ai_summary_awaiting_approval: true }));
+    await fixture.whenStable();
+    expect(button()?.textContent?.trim()).toBe('AI Summary');
+  });
+
+  it('follows the Last meeting card when the row is the last meeting', async () => {
+    const value = row({ has_ai_summary: true, ai_summary_awaiting_approval: true });
+    lastMeeting.set(value);
+    await render(value);
+
+    lastMeetingSummary.set(summary());
+    await fixture.whenStable();
+
+    expect(query('meetings-home-row-summary')?.textContent?.trim()).toBe('AI Summary');
   });
 
   it('keeps the Last meeting card in step with a summary edited from its row', async () => {

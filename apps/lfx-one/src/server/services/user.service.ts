@@ -61,6 +61,7 @@ import {
   getSurveyDisplayStatus,
   hasMeetingEnded,
   isMeetingInviteResponsesEnabled,
+  isPastMeetingSummaryAwaitingApproval,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   parseToInt,
@@ -810,6 +811,8 @@ export class UserService {
       // Sent with the feed so the home page copies it within the click (Safari drops clipboard access after an await).
       if (recordingUrl) meeting.recording_share_url = recordingUrl;
       meeting.has_ai_summary = primarySummaries.has(meeting.id) ? getPastMeetingSummaryContent(meeting, primarySummaries.get(meeting.id)) !== null : undefined;
+      // Only an organizer gets a summary that awaits approval, so the flag never reaches an invitee.
+      if (meeting.has_ai_summary) meeting.ai_summary_awaiting_approval = isPastMeetingSummaryAwaitingApproval(primarySummaries.get(meeting.id));
     }
     return withAccess;
   }
