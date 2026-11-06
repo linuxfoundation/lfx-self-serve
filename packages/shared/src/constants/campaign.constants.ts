@@ -2024,7 +2024,7 @@ export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
  *
  * Every Google channel: Search, Video, Display, and Demand Gen and Performance Max, which
  * `validateCriteriaPlan` (campaign-service v1.0.33) takes only as an exclusion — see
- * {@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}. Performance Max joined with #500: upstream
+ * {@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}. Performance Max joined with linuxfoundation/lfx-v2-campaign-service#500: upstream
  * sends its exclusion as a bid modifier of 0 on the device row Google creates on every Performance
  * Max campaign. Kept as a list rather than dropped, so a channel added to
  * {@link GOOGLE_CAMPAIGN_CHANNELS} starts outside it until someone confirms upstream takes devices there.
@@ -2049,8 +2049,8 @@ export const GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS = ['search', 'demand-gen'
  * The channels that take a device only as an EXCLUSION (a bid modifier of 0): Demand Gen and
  * Performance Max. `validateCriteriaPlan` (campaign-service v1.0.33) refuses any other modifier on
  * both, under every bidding strategy, for two different reasons: the validateOnly probe that opened
- * Demand Gen devices (#474) sent only 0, and on Performance Max Google itself refuses an adjustment
- * (OPERATION_NOT_PERMITTED_FOR_CAMPAIGN_TYPE, #500).
+ * Demand Gen devices (linuxfoundation/lfx-v2-campaign-service#474) sent only 0, and on Performance Max Google itself refuses an adjustment
+ * (OPERATION_NOT_PERMITTED_FOR_CAMPAIGN_TYPE, linuxfoundation/lfx-v2-campaign-service#500).
  */
 export const GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY = ['demand-gen', 'performance-max'] as const;
 
@@ -2093,7 +2093,7 @@ export const GOOGLE_ADS_DEMAND_GEN_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET', 'CO
 
 /**
  * Performance Max's device vocabulary (`campaign_criteria.go`'s `performanceMaxDeviceCriterionIDs`,
- * #500): the same four devices as {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}, each the row Google creates
+ * linuxfoundation/lfx-v2-campaign-service#500): the same four devices as {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}, each the row Google creates
  * on every Performance Max campaign. Its own list, as upstream keeps its own map, because the two
  * channels reached the same four by different probes. Every entry is an exclusion
  * ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}), and excluding all four is refused, since the
@@ -4726,7 +4726,7 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'callExtensions', label: 'call extensions' },
   { field: 'promotions', label: 'promotions' },
   { field: 'prices', label: 'price extensions' },
-  // The Performance Max asset group's search themes (#461), judged after the extensions upstream.
+  // The Performance Max asset group's search themes (linuxfoundation/lfx-v2-campaign-service#461), judged after the extensions upstream.
   { field: 'performanceMaxSearchThemes', label: 'Performance Max search themes' },
   // The Search ad group's further ads, every ad's display paths, the create-time negatives and the
   // Search partners opt-in (#4991): the legacy creator builds one ad from `headlines`/`descriptions`
@@ -4899,7 +4899,7 @@ export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
  * The Google channels this application sends callouts and structured snippets on: Search and
  * Performance Max.
  *
- * Upstream's `validateAssetPlan` (campaign-service v1.0.31) takes both on Performance Max (#461),
+ * Upstream's `validateAssetPlan` (campaign-service v1.0.31) takes both on Performance Max (linuxfoundation/lfx-v2-campaign-service#461),
  * through the same `validateCallouts` and `validateStructuredSnippets` rules as Search and the same
  * `createCampaignAssets` link, which attaches each asset to the CAMPAIGN (a `campaignAsset`), not to
  * the asset group. It refuses both on Demand Gen, Display and Video.
@@ -5522,7 +5522,7 @@ export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL = `Performance Max
 /**
  * The Google channels that take search themes: Performance Max alone.
  *
- * A search theme is an asset group SIGNAL (campaign-service v1.0.31, #461): `validatePerformanceMaxSignals`
+ * A search theme is an asset group SIGNAL (campaign-service v1.0.31, linuxfoundation/lfx-v2-campaign-service#461): `validatePerformanceMaxSignals`
  * (`internal/platform/googleads/pmax_signals.go`) refuses it on every other channel, because only
  * Performance Max has asset groups. Refused there at preflight, before the budget mutate, so a theme
  * sent on Search produces no campaign at all. Not behind a deployment flag: the themes are free text

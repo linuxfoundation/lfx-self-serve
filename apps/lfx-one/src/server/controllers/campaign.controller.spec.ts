@@ -4704,7 +4704,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
   /**
    * Performance Max device exclusions (#5262). campaign-service v1.0.33's `validateCriteriaPlan` takes
-   * a device there only as an exclusion (#500), sent as a bid modifier of 0 on the row Google creates
+   * a device there only as an exclusion (linuxfoundation/lfx-v2-campaign-service#500), sent as a bid modifier of 0 on the row Google creates
    * on every Performance Max campaign; refuses any other modifier, 1 included; refuses a list excluding
    * all four devices; and caps the list at its four-device vocabulary, CONNECTED_TV included.
    */
@@ -4792,7 +4792,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('Demand Gen campaigns take a device only as an exclusion');
   });
 
-  it('dispatches a Demand Gen CONNECTED_TV exclusion, which Demand Gen takes (#474)', async () => {
+  it('dispatches a Demand Gen CONNECTED_TV exclusion, which Demand Gen takes (linuxfoundation/lfx-v2-campaign-service#474)', async () => {
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000031', error: null });
 
     await controller.createCampaign(
@@ -7672,7 +7672,7 @@ describe('CampaignController.createCampaign cutover', () => {
       controller.createCampaign(buildReq(body as never, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     /**
-     * `validateAssetPlan` (v1.0.31, #461) takes sitelinks, callouts and structured snippets on
+     * `validateAssetPlan` (v1.0.31, linuxfoundation/lfx-v2-campaign-service#461) takes sitelinks, callouts and structured snippets on
      * Performance Max and links each to the campaign. Pinned whole, trimmed with Go's rules.
      */
     it('dispatches sitelinks, callouts and snippets on a Performance Max create, trimmed', async () => {

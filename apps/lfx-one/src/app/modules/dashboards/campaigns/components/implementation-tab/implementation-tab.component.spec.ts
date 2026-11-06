@@ -9094,7 +9094,7 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
   // Display and Performance Max default to Maximize Conversions, under which the window's -20% is
   // refused (Google would not bid it), so their payload is built but Create waits on it. Demand Gen
   // refuses it on the channel (`validateCriteriaPlan`), whatever the strategy. Every channel takes the
-  // tablet exclusion, Performance Max since campaign-service v1.0.33 (#500).
+  // tablet exclusion, Performance Max since campaign-service v1.0.33 (linuxfoundation/lfx-v2-campaign-service#500).
   it.each([
     ['search', { includeSearch: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, false],
     ['display', { includeDisplay: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, true],
@@ -19130,7 +19130,7 @@ describe('ImplementationTabComponent demand gen audience', () => {
 
 /**
  * Performance Max search themes (#5262): campaign-service v1.0.31 takes `performanceMaxSearchThemes`
- * on the asset group (`validatePerformanceMaxSignals`, #461), Performance Max only, and only beside a
+ * on the asset group (`validatePerformanceMaxSignals`, linuxfoundation/lfx-v2-campaign-service#461), Performance Max only, and only beside a
  * creative that creates the asset group.
  */
 describe('ImplementationTabComponent google performance max search themes', () => {
@@ -19289,7 +19289,7 @@ describe('ImplementationTabComponent google performance max search themes', () =
 
 /**
  * Ad extensions on Performance Max (#5262): campaign-service v1.0.31's `validateAssetPlan` takes
- * sitelinks, callouts and structured snippets there (#461), linked to the campaign, and still refuses
+ * sitelinks, callouts and structured snippets there (linuxfoundation/lfx-v2-campaign-service#461), linked to the campaign, and still refuses
  * call extensions, promotions and prices.
  */
 describe('ImplementationTabComponent google extensions on performance max', () => {
@@ -19414,7 +19414,7 @@ describe('ImplementationTabComponent google extensions on performance max', () =
 
 /**
  * Device exclusions on Performance Max (#5262). campaign-service v1.0.33's `validateCriteriaPlan`
- * takes a device there only as an exclusion (#500), TV screens included, and refuses a list that
+ * takes a device there only as an exclusion (linuxfoundation/lfx-v2-campaign-service#500), TV screens included, and refuses a list that
  * excludes all four devices. The tab offers the same four rows, holds an adjustment, and waits on
  * the shared refusal the BFF answers with.
  */

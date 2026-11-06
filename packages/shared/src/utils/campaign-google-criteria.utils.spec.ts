@@ -333,6 +333,7 @@ describe('googleDeviceBidModifierRefusal', () => {
 describe('googleDeviceBidModifierRefusal on Demand Gen', () => {
   it('takes CONNECTED_TV there and on Performance Max, and nowhere else', () => {
     expect(googleAdsDevicesOn('demand-gen')).toEqual(['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV']);
+    expect(googleAdsDevicesOn('performance-max')).toEqual(['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV']);
     expect(googleAdsDevicesOn('search')).toEqual(['MOBILE', 'DESKTOP', 'TABLET']);
     expect(googleAdsDevicesOn('display')).toEqual(['MOBILE', 'DESKTOP', 'TABLET']);
     expect(googleDeviceBidModifierRefusal([{ device: 'CONNECTED_TV', bidModifier: 0 }], 'maximize-clicks', 'demand-gen')).toBeNull();
@@ -373,7 +374,7 @@ describe('googleDeviceBidModifierRefusal on Demand Gen', () => {
 
 /**
  * `validateCriteriaPlan`'s Performance Max arm and `performanceMaxDeviceCriterionIDs` (campaign-service
- * v1.0.33, #500): a device only as an exclusion, 1 included; every device excluded refused, keyed on
+ * v1.0.33, linuxfoundation/lfx-v2-campaign-service#500): a device only as an exclusion, 1 included; every device excluded refused, keyed on
  * the trimmed, upper-cased name; CONNECTED_TV in the four-device vocabulary.
  */
 describe('googleDeviceBidModifierRefusal on Performance Max', () => {

@@ -1945,7 +1945,7 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleCalloutDraft = signal('');
   /**
-   * Google's sitelink extensions — extra links rendered with the ad, on Search and Demand Gen.
+   * Google's sitelink extensions — extra links rendered with the ad, on Search, Demand Gen and Performance Max.
    *
    * Four fields rather than the callout's one, so the draft is an OBJECT and the add guard has more
    * to say. An entry arrives through {@link addGoogleSitelink} or a restored draft; the BFF guard
@@ -8170,7 +8170,7 @@ export class ImplementationTabComponent implements OnInit {
     // below does: `googleCalloutsPayload` gates on `googleCalloutsAvailable` and
     // `googleSitelinksPayload` on `googleSitelinksAvailable`, so a list seeded under Display is HELD
     // and not sent, and is still there if the operator switches to a channel that takes it. (On
-    // Performance Max both are sent since campaign-service v1.0.31, #461, as on Search.) `googleCalloutsWithheldWarning` is what
+    // Performance Max both are sent since campaign-service v1.0.31, linuxfoundation/lfx-v2-campaign-service#461, as on Search.) `googleCalloutsWithheldWarning` is what
     // tells them that is happening — or `googleExtensionsCapabilityBlock`, when what withheld the
     // list is the unanswered capability rather than the channel.
     if (brief.googleCallouts !== undefined) {
@@ -10837,9 +10837,15 @@ export class ImplementationTabComponent implements OnInit {
    * The sitelink extensions as the request carries them, or `{}` when there is nothing to send.
    *
    * Withholding and omit-when-empty are {@link googleCalloutsPayload}'s exactly; the gate is
-   * {@link googleSitelinksAvailable}, which adds Demand Gen. The entries are COPIED rather than
+   * {@link googleSitelinksAvailable}, which adds Demand Gen and Performance Max. The entries are COPIED rather than
    * passed by reference, so a later chip edit cannot reach a request that has already been built.
    */
+  private googleSitelinksPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleSitelinksAvailable()) return {};
+    const sitelinks = this.googleSitelinks();
+    return sitelinks.length > 0 ? { sitelinks: sitelinks.map((s) => ({ ...s })) } : {};
+  }
+
   /**
    * The search themes as the request carries them, or `{}` when there is nothing to send. Gated on
    * {@link googleSearchThemesAvailable}, the section's own gate, and omitted when empty, as
@@ -10858,12 +10864,6 @@ export class ImplementationTabComponent implements OnInit {
       .split(/\r?\n/)
       .map((line) => googleAdsTrimSpace(line))
       .filter((line) => line !== '');
-  }
-
-  private googleSitelinksPayload(): Partial<CampaignCreateRequest> {
-    if (!this.googleSitelinksAvailable()) return {};
-    const sitelinks = this.googleSitelinks();
-    return sitelinks.length > 0 ? { sitelinks: sitelinks.map((s) => ({ ...s })) } : {};
   }
 
   /**

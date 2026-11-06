@@ -3864,7 +3864,7 @@ export interface CampaignCreateRequest {
   demandGenAudience?: string;
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   /**
-   * The Performance Max asset group's search themes (campaign-service v1.0.31, #461): free text naming
+   * The Performance Max asset group's search themes (campaign-service v1.0.31, linuxfoundation/lfx-v2-campaign-service#461): free text naming
    * the searches the campaign is for. A signal, not targeting, so Google may serve beyond them.
    *
    * Omitted when empty, on the same rule as {@link callouts}. PERFORMANCE MAX ONLY
@@ -4049,7 +4049,7 @@ export interface CampaignCreateRequest {
    * existed, so an absent key and an empty list agree — the same rule as {@link geoTargets}.
    *
    * SEARCH AND PERFORMANCE MAX (`GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS`; campaign-service
-   * v1.0.31 takes them on Performance Max, #461, linked to the campaign). On Demand Gen, Display and
+   * v1.0.31 takes them on Performance Max, linuxfoundation/lfx-v2-campaign-service#461, linked to the campaign). On Demand Gen, Display and
    * Video upstream refuses the create outright rather than dropping the list, so the UI withholds it
    * there and the BFF refuses it by name.
    */

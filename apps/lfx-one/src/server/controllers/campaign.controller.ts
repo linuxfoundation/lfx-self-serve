@@ -1868,7 +1868,7 @@ export class CampaignController {
       // Call extensions, promotions and prices, after the snippets and in that order, as
       // `validateAssetPlan` runs `validateCallExtensions`, `validatePromotionExtensions` and
       // `validatePriceExtensions` after `validateStructuredSnippets`. Each list takes the same four
-      // steps the three above do — JSON decode, the Search-only fence, the raw-slice cap, then each
+      // steps the three above do — JSON decode, a channel fence (here Search only), the raw-slice cap, then each
       // entry in upstream's own order, first bad one wins — so they share one walk rather than
       // three copies of it. The per-entry rules live in `campaign-google-assets.utils`, the one copy
       // the Implementation tab's add guard also judges by.
@@ -1910,12 +1910,12 @@ export class CampaignController {
         }
       }
 
-      // Performance Max search themes (#461), after the extensions and the creative, as
+      // Performance Max search themes (linuxfoundation/lfx-v2-campaign-service#461), after the extensions and the creative, as
       // `preflightCampaignKind` runs `validatePerformanceMaxSignals` after `validateAssetPlan` and
       // `validatePerformanceMaxCreative`: JSON decode, the Performance-Max-only fence, the asset group
       // the themes attach to, then the shared judge (the cap on the submitted list, then each entry).
       // Each would otherwise fail in Go as the opaque "platform campaign creation failed".
-      const rawSearchThemes = (body as unknown as Record<string, unknown> | undefined)?.['performanceMaxSearchThemes'];
+      const rawSearchThemes: unknown = body?.performanceMaxSearchThemes;
       if (cutoverOn && platforms.includes('google-ads') && rawSearchThemes !== undefined && rawSearchThemes !== null) {
         const refuse = (message: string): void =>
           next(ServiceValidationError.forField('performanceMaxSearchThemes', message, { operation: 'campaign_create', service: 'campaign_controller' }));
@@ -7214,8 +7214,8 @@ export class CampaignController {
    * The Search campaign's call, promotion and price extensions, spread-ready, each key omitted when
    * its list is empty — the absent-key route {@link googleCallouts} takes.
    *
-   * Search only, as {@link googleCallouts}: `createCampaign` refuses all three on any other channel
-   * by name, and every per-entry refusal, before this is dispatched. The keys are
+   * Search only (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`; upstream refuses them on Performance Max):
+   * `createCampaign` refuses all three on any other channel by name, and every per-entry refusal, before this is dispatched. The keys are
    * campaign-service's own (`googleAdsConfig.callExtensions`, `.promotions`, `.prices`), so nothing
    * is renamed on the way through.
    */
@@ -8077,7 +8077,7 @@ export class CampaignController {
    * channel cannot take them.
    *
    * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, which holds every Google
-   * channel: Demand Gen and Performance Max (campaign-service v1.0.33, #474 and #500) take exclusions
+   * channel: Demand Gen and Performance Max (campaign-service v1.0.33, linuxfoundation/lfx-v2-campaign-service#474 and linuxfoundation/lfx-v2-campaign-service#500) take exclusions
    * only. A `{}` for a channel outside it would never be dispatched either — `createCampaign` reads the
    * request's own list and refuses such a create by name first, on upstream's "refused, never
    * silently dropped" rule.
