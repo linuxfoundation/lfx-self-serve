@@ -199,7 +199,19 @@ export interface HealthMetricsMembersGrowthLabelClasses {
   regular: string;
 }
 
-/** An end label's box in pixels, so labels that share December can be pushed apart. */
+/** An end label before it is laid out: where it sits off its point, its weight, and whether it stacks with December's. */
+export interface HealthMetricsMembersGrowthEndLabel {
+  key: string;
+  text: string;
+  leftPct: number;
+  topPct: number;
+  color: string;
+  placement: HealthMetricsMembersGrowthLabelPlacement;
+  strong: boolean;
+  stacks: boolean;
+}
+
+/** An end label's box in pixels, so labels that stack can be pushed apart. */
 export interface HealthMetricsMembersGrowthLabelBox {
   offsetPx: Record<HealthMetricsMembersGrowthLabelPlacement, number>;
   heightPx: number;

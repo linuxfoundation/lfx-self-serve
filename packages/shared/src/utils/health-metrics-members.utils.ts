@@ -73,7 +73,7 @@ import type {
   HealthMetricsMembersDirectoryRowView,
   HealthMetricsMembersGrowth,
   HealthMetricsMembersGrowthColumnView,
-  HealthMetricsMembersGrowthLabelPlacement,
+  HealthMetricsMembersGrowthEndLabel,
   HealthMetricsMembersGrowthLabelView,
   HealthMetricsMembersGrowthLegendItemView,
   HealthMetricsMembersGrowthPathView,
@@ -279,6 +279,7 @@ export function buildHealthMetricsMembersGrowthView(
       .join(' ')} Z`;
   }
 
+  // The plot's width is unknown here, so from November, when this year's label can reach December's, it stacks with them.
   const labels = separateGrowthEndLabels([
     {
       key: 'current',
@@ -288,6 +289,7 @@ export function buildHealthMetricsMembersGrowthView(
       color: colors.current,
       placement: 'below-right',
       strong: true,
+      stacks: now >= 10,
     },
     ...(hasProjection
       ? [
@@ -299,6 +301,7 @@ export function buildHealthMetricsMembersGrowthView(
             color: colors.current,
             placement: 'right-below' as const,
             strong: false,
+            stacks: true,
           },
         ]
       : []),
@@ -312,6 +315,7 @@ export function buildHealthMetricsMembersGrowthView(
             color: colors.prior,
             placement: 'right' as const,
             strong: true,
+            stacks: true,
           },
         ]
       : []),
@@ -1099,26 +1103,15 @@ function emptyGrowthView(): HealthMetricsMembersGrowthView {
   };
 }
 
-/** An end label before it is laid out: where it sits off its point, and whether it is set bold. */
-interface GrowthEndLabel {
-  key: string;
-  text: string;
-  leftPct: number;
-  topPct: number;
-  color: string;
-  placement: HealthMetricsMembersGrowthLabelPlacement;
-  strong: boolean;
-}
-
 /**
- * Lays out the labels, pushing those that share December apart so each stays readable however close their totals;
- * only the labels move, never the points. The plot is drawn at its viewBox height, so its units are pixels.
+ * Lays out the labels, pushing those that stack apart so each stays readable however close their totals; only the
+ * labels move, never the points. The plot is drawn at its viewBox height, so its units are pixels.
  */
-function separateGrowthEndLabels(labels: GrowthEndLabel[]): HealthMetricsMembersGrowthLabelView[] {
+function separateGrowthEndLabels(labels: HealthMetricsMembersGrowthEndLabel[]): HealthMetricsMembersGrowthLabelView[] {
   const box = HEALTH_METRICS_MEMBERS_GROWTH_LABEL_BOX;
   const height = HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height;
   const tops = new Map(labels.map((label) => [label.key, (label.topPct / 100) * height + box.offsetPx[label.placement]]));
-  const stacked = labels.filter((label) => label.leftPct === 100).sort((a, b) => (tops.get(a.key) ?? 0) - (tops.get(b.key) ?? 0));
+  const stacked = labels.filter((label) => label.stacks).sort((a, b) => (tops.get(a.key) ?? 0) - (tops.get(b.key) ?? 0));
   stacked.forEach((label, index) => {
     const above = index ? (tops.get(stacked[index - 1].key) ?? 0) + box.heightPx + box.gapPx : -Infinity;
     tops.set(label.key, Math.max(tops.get(label.key) ?? 0, above));

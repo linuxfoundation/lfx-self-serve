@@ -479,6 +479,15 @@ describe('buildHealthMetricsMembersGrowthView', () => {
     expect(view.paths.find((line) => line.key === '2025')?.d.endsWith('L600 35.3')).toBe(true);
   });
 
+  it('stacks this year’s November label with the projection, which narrow plots would otherwise overlap', () => {
+    const view = build('highlights', { ...YEARS, 2026: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10] });
+    const [current, projected] = ['current', 'projected'].map((key) => view.labels.find((label) => label.key === key)!);
+    const boxTop = (topPct: number, offset: number): number => (topPct / 100) * 280 + offset;
+
+    expect(Math.abs(boxTop(current.topPct, 4) - boxTop(projected.topPct, -2))).toBeGreaterThanOrEqual(18);
+    expect(view.todayDot.topPct).toBeCloseTo((1 - 10 / 600) * 100, 5);
+  });
+
   it('says in December that the year ends at its total so far, with nothing left to project', () => {
     const tip = build('highlights', YEARS, new Date(2026, 11, 2)).kpis[3].tip;
 

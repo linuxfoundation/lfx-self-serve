@@ -25,9 +25,10 @@
       </lfx-ui-switch>
     </div>
 
-    <!-- The right padding leaves room for the end labels past December. -->
+    <!-- The right padding leaves room for the end labels past December. The y labels centre on the gridlines, so their
+         column overhangs the plot by half a label each way. -->
     <div class="flex gap-[8px] pt-[16px]" data-testid="members-growth-chart">
-      <div class="-my-[6px] flex h-[280px] flex-col justify-between text-right text-[11px] leading-[12px] text-gray-400" aria-hidden="true">
+      <div class="-my-[6px] flex h-[292px] flex-col justify-between text-right text-[11px] leading-[12px] text-gray-400" aria-hidden="true">
         @for (tick of growth.yTicks; track $index) {
           <span>{{ tick }}</span>
         }
