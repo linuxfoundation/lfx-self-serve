@@ -137,6 +137,9 @@ test.describe('family export card', () => {
     // Still the card's fluid button: it spans the card's content width on its own.
     expect(Math.abs(contentWidth - slidesBox.width)).toBeLessThanOrEqual(1);
     await expect(card).not.toContainText('PDF');
+    await expect(page.getByTestId('mktg-family-intro')).toHaveText(
+      'The framework comes first; boilerplates, FAQ and the brand kit read it. Any asset, or the whole family, exports to Google Slides.'
+    );
     // No PDF is prepared while its button is hidden: the checking line is gone and the print document stays unprepared.
     await expect(card.getByTestId('family-export-loading')).toHaveCount(0);
     await expect(page.getByTestId('family-export-print-document')).toHaveAttribute('data-prepared', 'false');
@@ -161,6 +164,7 @@ test.describe('family export card', () => {
       await expect(card.getByTestId(`family-export-${action}`).getByRole('button')).toHaveClass(/p-button-outlined/);
     }
     await expect(page.getByTestId('family-export-pdf-note')).toHaveText('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
+    await expect(page.getByTestId('mktg-family-intro')).toContainText('exports to PDF or Google Slides.');
     await page.screenshot({ path: info.outputPath('family-export-flag-on.png'), fullPage: true });
   });
 });

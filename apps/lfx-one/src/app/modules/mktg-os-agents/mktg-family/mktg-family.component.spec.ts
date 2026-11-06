@@ -14,6 +14,7 @@ import {
   MKTG_REBUILD_NAVIGATION_STATE_KEY,
   MKTG_AGENT_INTAKES,
   MKTG_KIT_FAMILIES,
+  MKTG_KIT_POSITIONING_FAMILY_ID,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
 import { MktgDocumentsResponse, MktgRevisionRef } from '@lfx-one/shared/interfaces';
@@ -48,10 +49,12 @@ describe('Marketing family page', () => {
   const refresh = vi.fn(() => of(documents()));
   const run = vi.fn(() => of({ project: 'synthetic', framework, chainId: 'chain', ownerToken: 'token', status: 'complete', steps: [] }));
   const writer = signal(false);
+  const pdfFlag = signal(true);
   const lastExport = vi.fn(() => of(null));
   beforeEach(() => {
     MKTG_AGENTS.splice(0, MKTG_AGENTS.length, ...originalAgents);
     writer.set(true);
+    pdfFlag.set(true);
     lastExport.mockClear();
     projectSlug.set('synthetic');
     documents.set({ project: 'synthetic', groups: [] });
@@ -93,8 +96,8 @@ describe('Marketing family page', () => {
           useValue: { activeContext: computed(() => ({ uid: 'synthetic', name: 'Synthetic project', slug: projectSlug() })), canWrite: writer },
         },
         { provide: MktgFamilyExportService, useValue: { last: lastExport, running: () => null } },
-        // The Download PDF flag (#5302) pinned on: this page's export card is asserted with both actions.
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        // The Download PDF flag (#5302) pinned on: this page's export card is asserted with both actions; one test turns it off.
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => pdfFlag } },
         { provide: MktgDocumentStoreService, useValue: { getRevision: () => of(null) } },
         provideRouter([
           { path: 'project/mktg-os-agents/families/:familyId', component: MktgFamilyComponent },
@@ -550,6 +553,24 @@ describe('Marketing family page', () => {
     const current = harness.routeNativeElement?.querySelector('[data-testid="mktg-family-current-linkedin-post"]');
     expect(current?.textContent).toContain('10 Oct');
     expect(current?.textContent).not.toContain('v1');
+  });
+
+  it('reads the catalog intro while Download PDF is on, and its Slides-only intro while the flag is off (#5302)', async () => {
+    const positioning = MKTG_KIT_FAMILIES.find((family) => family.id === MKTG_KIT_POSITIONING_FAMILY_ID);
+    if (!positioning?.intro || !positioning.introSlidesOnly) throw new Error('The positioning family carries both intros');
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl(`/project/mktg-os-agents/families/${MKTG_KIT_POSITIONING_FAMILY_ID}`, MktgFamilyComponent);
+    const intro = () => harness.routeNativeElement?.querySelector('[data-testid="mktg-family-intro"]')?.textContent?.trim();
+    expect(intro()).toBe(positioning.intro);
+    expect(intro()).toContain('PDF or Google Slides');
+    pdfFlag.set(false);
+    await harness.fixture.whenStable();
+    expect(intro()).toBe(positioning.introSlidesOnly);
+    expect(intro()).not.toContain('PDF');
+    // A family without a Slides-only intro keeps its intro, then its description, as before.
+    await harness.navigateByUrl('/project/mktg-os-agents/families/events', MktgFamilyComponent);
+    const events = MKTG_KIT_FAMILIES.find((family) => family.id === 'events');
+    expect(intro()).toBe(events?.intro ?? events?.description);
   });
 
   it('handles coming-soon and unknown family ids on the same route', async () => {
