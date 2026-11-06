@@ -324,8 +324,20 @@ class LayoutHostComponent {
 }
 
 class ResizeObserverStub {
-  public readonly observe = vi.fn();
-  public readonly disconnect = vi.fn();
+  public static last: ResizeObserverStub | undefined;
+  public observed: Element[] = [];
+
+  public constructor(public readonly callback: ResizeObserverCallback) {
+    ResizeObserverStub.last = this;
+  }
+
+  public observe(target: Element): void {
+    this.observed.push(target);
+  }
+
+  public disconnect(): void {
+    this.observed = [];
+  }
 }
 
 describe('UiModalComponent dialog layout', () => {
@@ -416,6 +428,20 @@ describe('UiModalComponent dialog layout', () => {
     await scrollTo(600);
     expect(body().style.getPropertyValue('--fade-top')).toBe('32px');
     expect(body().style.getPropertyValue('--fade-bottom')).toBe('0px');
+  });
+
+  it('watches the body and its children, so content that grows without scrolling updates the fade', async () => {
+    await open();
+    const observer = ResizeObserverStub.last as ResizeObserverStub;
+    expect(observer.observed).toContain(body());
+    expect(observer.observed).toContain(q('#content'));
+
+    Object.entries({ scrollTop: 0, scrollHeight: 1000, clientHeight: 400 }).forEach(([key, value]) =>
+      Object.defineProperty(body(), key, { value, configurable: true, writable: true })
+    );
+    observer.callback([], observer as unknown as ResizeObserver);
+    await settle();
+    expect(body().style.getPropertyValue('--fade-bottom')).toBe('32px');
   });
 
   it('has no fade unless scrollFade is set', async () => {

@@ -80,7 +80,7 @@ export class UiModalComponent {
   public readonly height = input<number | undefined>(undefined);
   /** Keeps the title in place while a long body scrolls under it. The actions footer always stays in place. */
   public readonly sticky = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Shows a close button at the right of the title that closes the dialog. It takes first focus; point a form's `autoFocus` at its first field. */
+  /** Shows a close button at the right of the title that closes the dialog. Header controls take first focus; point a form's `autoFocus` at its first field. */
   public readonly closable = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Fades the body's top edge (32px) once scrolled and its bottom edge while more follows. Read on the first render only. */
   public readonly scrollFade = input<boolean, unknown>(false, { transform: booleanAttribute });
@@ -106,13 +106,22 @@ export class UiModalComponent {
       if (!this.scrollFade()) return;
       const el = this.body().nativeElement;
       const resize = new ResizeObserver(() => this.measure());
-      const mutation = new MutationObserver(() => this.measure());
+      // The body keeps its size when content grows, so its children are observed too, as in the scroller.
+      const sync = (): void => {
+        resize.disconnect();
+        resize.observe(el);
+        Array.from(el.children).forEach((child) => resize.observe(child));
+        this.measure();
+      };
+      const mutation = new MutationObserver((records) => {
+        if (records.some((record) => record.target === el)) sync();
+        else this.measure();
+      });
       // Bound here, not in the template, so bodies without fades don't schedule a render on every scroll.
       const onScroll = (): void => this.measure();
       el.addEventListener('scroll', onScroll, { passive: true });
-      resize.observe(el);
       mutation.observe(el, { childList: true, subtree: true, characterData: true });
-      this.measure();
+      sync();
       this.destroyRef.onDestroy(() => {
         el.removeEventListener('scroll', onScroll);
         resize.disconnect();
