@@ -44,6 +44,8 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
+  GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL,
   META_OBJECTIVE_LABELS,
   REDDIT_CALL_TO_ACTIONS,
 } from '@lfx-one/shared/constants';
@@ -5617,8 +5619,9 @@ describe('ImplementationTabComponent google creative sections', () => {
 
   /**
    * The rune-counting fix, pinned at the boundary on BOTH call sites — `creativeTextBounds` and
-   * `creativeListBounds` each count with {@link codePointLength}, and each would silently regress
-   * to the old over-refusal if someone swapped in `String.length`.
+   * `creativeListBounds` each measure with `googleCreativeFieldWidth`, which charges an emoji 1 as
+   * campaign-service's `textWeight` does, and each would silently regress to the old over-refusal if
+   * someone swapped in `String.length`.
    *
    * ASCII cannot catch that: `'a'.repeat(n)` is `n` units and `n` runes, so the test above stays
    * green under either implementation. A non-BMP character is where the two measures diverge — an
@@ -5653,6 +5656,51 @@ describe('ImplementationTabComponent google creative sections', () => {
 
     headlines.setValue(emoji.repeat(list.width + 1));
     expect(headlines.errors?.['creativeListWidth']).toEqual({ label: list.label, width: list.width });
+  });
+
+  /**
+   * Display width, as campaign-service judges headlines, long headlines, descriptions and business
+   * names (`validateCreativeText`, `textWeight`): a CJK ideograph counts 2. Each value below is
+   * within the field's width in code points and over it in display width, so a code-point bound
+   * (what this tab measured before #5219's review) accepts it and upstream refuses it after the
+   * budget. Both list call sites and the scalar one are pinned.
+   */
+  it('bounds headlines, descriptions and business names by display width, CJK counting double', () => {
+    const cjk = '会';
+    const c = seedChannel(fixture, { includeDemandGen: true, includeDisplay: true, includePerformanceMax: true });
+
+    const pmaxDescriptions = c['campaignForm'].controls.performanceMaxCreative.controls.descriptions;
+    pmaxDescriptions.setValue(cjk.repeat(45));
+    expect(pmaxDescriptions.valid).toBe(true);
+    pmaxDescriptions.setValue(cjk.repeat(46));
+    expect(pmaxDescriptions.errors?.['creativeListWidth']).toEqual({ label: 'Descriptions', width: 90 });
+
+    const dgHeadlines = c['campaignForm'].controls.demandGenCreative.controls.headlines;
+    dgHeadlines.setValue(cjk.repeat(15));
+    expect(dgHeadlines.valid).toBe(true);
+    dgHeadlines.setValue(cjk.repeat(16));
+    expect(dgHeadlines.errors?.['creativeListWidth']).toEqual({ label: 'Headlines', width: 30 });
+
+    const businessName = c['campaignForm'].controls.displayCreative.controls.businessName;
+    businessName.setValue(cjk.repeat(12));
+    expect(businessName.valid).toBe(true);
+    businessName.setValue(cjk.repeat(13));
+    expect(businessName.errors?.['maxlength']).toEqual({ requiredLength: 25, actualLength: 26 });
+  });
+
+  /**
+   * The call to action is the other regime: campaign-service bounds it by rune count
+   * (`maxDisplayCallToActionRunes`), so 16 ideographs — 32 wide — are inside its 30 and must not be
+   * refused here.
+   */
+  it('bounds the call to action by rune count, as campaign-service does', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const cta = c['campaignForm'].controls.displayCreative.controls.callToActionText;
+
+    cta.setValue('会'.repeat(30));
+    expect(cta.valid).toBe(true);
+    cta.setValue('会'.repeat(31));
+    expect(cta.errors?.['maxlength']).toEqual({ requiredLength: 30, actualLength: 31 });
   });
 
   /**
@@ -5934,6 +5982,75 @@ describe('ImplementationTabComponent google creative minimums', () => {
 
     expect(c['googleCreativeError']()).toBe(`${GOOGLE_CREATIVE_SECTION_TITLES.display} creative needs at least 1 entry in ${spec.label} — 0 given.`);
     expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * Performance Max's short description (#5219). campaign-service refuses a started creative unless
+   * one description has a display width of 60 or less, before the budget, and the job reports it only
+   * as "platform campaign creation failed" — and a generated brief's descriptions often are all longer.
+   */
+  describe('performance max short description', () => {
+    const PMAX_COMPLETE = {
+      headlines: 'One headline\nTwo headline\nThree headline',
+      longHeadlines: 'A long headline',
+      businessName: 'Acme',
+      marketingImages: 'https://example.com/a.png',
+      squareMarketingImages: 'https://example.com/square.png',
+      logoImages: 'https://example.com/logo.png',
+    };
+    const wide = (n: number): string => `Join us in Barcelona ${'x'.repeat(n - 21)}`;
+
+    it('holds Create and names the rule beneath the creative and under Descriptions when every description is wider than 60', () => {
+      const c = seedChannel(fixture, { includePerformanceMax: true });
+      c['campaignForm'].controls.performanceMaxCreative.patchValue({ ...PMAX_COMPLETE, descriptions: `${wide(61)}\n${wide(90)}` });
+      fixture.detectChanges();
+
+      expect(c['googleCreativeError']()).toBe(
+        `${GOOGLE_CREATIVE_SECTION_TITLES['performance-max']} creative ${GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL}`
+      );
+      expect(c['googleCreativeError']()).toBe(GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL);
+      expect(c['canSubmit']()).toBe(false);
+      const el = fixture.nativeElement as HTMLElement;
+      const error = el.querySelector('[data-testid="implementation-creative-error-performance-max-descriptions"]');
+      expect(error?.textContent?.trim()).toBe(GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL);
+      const field = el.querySelector('[data-testid="implementation-creative-performance-max-descriptions"]');
+      expect(field?.getAttribute('aria-describedby')).toBe(error?.id);
+      expect(error?.id).toBe('performance-max-descriptions-error');
+    });
+
+    it('releases Create once one description is 60 or less, counting CJK double', () => {
+      const c = seedChannel(fixture, { includePerformanceMax: true });
+      const group = c['campaignForm'].controls.performanceMaxCreative;
+
+      // 31 ideographs are 31 characters but a display width of 62, so this one is still too wide.
+      group.patchValue({ ...PMAX_COMPLETE, descriptions: `${wide(90)}\n${'会'.repeat(31)}` });
+      expect(c['googleCreativeError']()).toBe(GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL);
+
+      group.patchValue({ descriptions: `${wide(90)}\n${wide(60)}` });
+      fixture.detectChanges();
+      expect(c['googleCreativeError']()).toBeNull();
+      expect(c['creativeFieldErrors']()['performanceMaxCreative.descriptions']).toBeUndefined();
+      expect(c['canSubmit']()).toBe(true);
+      const field = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-performance-max-descriptions"]');
+      expect(field?.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    /** The rule is Performance Max's alone: Demand Gen and Display take long descriptions as they are. */
+    it('does not hold demand gen or display on long descriptions', () => {
+      const dg = seedChannel(fixture, { includeDemandGen: true });
+      dg['campaignForm'].controls.demandGenCreative.patchValue({
+        headlines: 'One headline',
+        descriptions: wide(90),
+        businessName: 'Acme',
+        logoImages: 'https://example.com/logo.png',
+        marketingImages: 'https://example.com/a.png',
+      });
+      expect(dg['googleCreativeError']()).toBeNull();
+
+      const display = seedChannel(fixture, { includeDemandGen: false, includeDisplay: true });
+      display['campaignForm'].controls.displayCreative.patchValue({ ...DISPLAY_COMPLETE, descriptions: wide(90) });
+      expect(display['googleCreativeError']()).toBeNull();
+    });
   });
 
   /** Demand Gen's pair stays reciprocal: either shape alone satisfies it. */
@@ -15475,6 +15592,26 @@ describe('ImplementationTabComponent performance max prefill', () => {
     const seeded = lines(pmax()['descriptions']);
     expect(seeded).toHaveLength(5);
     expect(seeded).toContain('Register today.');
+  });
+
+  /**
+   * Short by Google's display width, as campaign-service's rule counts it (#5219): 31 ideographs are
+   * 31 characters but 62 wide, so the prefill must not swap one in as the short description.
+   */
+  it('does not take a CJK description as short when its display width is over 60', () => {
+    const wordy = Array.from({ length: 5 }, (_, i) => `${longText(70)} ${i}`);
+    const cjk = '会'.repeat(31);
+    seed(brief({ google_search: { headlines: [], descriptions: wordy }, google_display: { descriptions: [cjk] } }));
+
+    expect(lines(pmax()['descriptions'])).not.toContain(cjk);
+  });
+
+  /** The prefill holds each value to its field's display width, so a 46-ideograph description — 92 wide — is not seeded. */
+  it('does not seed a description wider than 90 by display width', () => {
+    const cjk = '会'.repeat(46);
+    seed(brief({ google_search: { headlines: [], descriptions: [cjk, 'Register today.'] } }));
+
+    expect(lines(pmax()['descriptions'])).toEqual(['Register today.']);
   });
 
   it('seeds from the older demand_gen key too', () => {
