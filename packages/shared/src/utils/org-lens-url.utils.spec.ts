@@ -194,6 +194,7 @@ describe('legacyDocsRedirectTarget', () => {
     ['/docs/organization/org-profile', '/docs/company/company-profile'],
     ['/docs/organization/people', '/docs/company/people'],
     ['/docs/organization/faq', '/docs/company/faq'],
+    ['/docs/dashboards/organization-involvement', '/docs/dashboards/company-involvement'],
     ['/docs/organization/projects', '/docs/company/projects'],
     ['/docs/organization/easycla?x=1', '/docs/company/easycla?x=1'],
   ])('moves %s to %s', (from, to) => {

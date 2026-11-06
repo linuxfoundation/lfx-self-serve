@@ -186,6 +186,11 @@ const LEGACY_DOCS_PAGE_RENAMES: Readonly<Record<string, string>> = {
   'org-profile': 'company-profile',
 };
 
+/** Single pages outside `docs/user/organization` whose folder carried the old wording; each maps to its renamed address. */
+const LEGACY_DOCS_SINGLE_PAGES: Readonly<Record<string, string>> = {
+  '/docs/dashboards/organization-involvement': '/docs/dashboards/company-involvement',
+};
+
 /**
  * The permanent-redirect target for a pre-rename user-docs address, or null when `pathAndQuery` is not one.
  * `/docs/organization[/{page}…]` → `/docs/company[/{page}…]`, with the three renamed pages mapped to their new
@@ -196,6 +201,10 @@ export function legacyDocsRedirectTarget(pathAndQuery: string): string | null {
   const queryStart = pathAndQuery.indexOf('?');
   const path = queryStart === -1 ? pathAndQuery : pathAndQuery.slice(0, queryStart);
   const query = queryStart === -1 ? '' : pathAndQuery.slice(queryStart);
+  const movedPage = LEGACY_DOCS_SINGLE_PAGES[path];
+  if (movedPage) {
+    return `${movedPage}${query}`;
+  }
   const root = '/docs/organization';
   if (path !== root && !path.startsWith(`${root}/`)) {
     return null;

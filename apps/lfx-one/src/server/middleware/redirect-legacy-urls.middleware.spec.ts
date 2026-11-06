@@ -22,6 +22,7 @@ describe('redirectLegacyUrls', () => {
     ['/org/overview', '/company/overview'],
     ['/docs/organization/choose-an-organization', '/docs/company/choose-a-company'],
     ['/docs/organization/projects', '/docs/company/projects'],
+    ['/docs/dashboards/organization-involvement', '/docs/dashboards/company-involvement'],
   ])('answers %s with a 301 to %s', (from, to) => {
     const { redirect, next } = run(from);
     expect(redirect).toHaveBeenCalledWith(301, to);

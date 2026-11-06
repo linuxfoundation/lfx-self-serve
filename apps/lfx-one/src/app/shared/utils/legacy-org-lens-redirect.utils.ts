@@ -29,9 +29,11 @@ export function legacyDocsRedirect(data: LegacyRedirectData): UrlTree {
   return redirectTo(data, '/docs', legacyDocsRedirectTarget);
 }
 
-/** Matches the moved docs section (`organization` and anything beneath it) under the `docs` route. */
+/** Matches the moved docs section (`organization` and anything beneath it) and the renamed dashboards page under the `docs` route. */
 export function legacyDocsMatcher(segments: UrlSegment[]): UrlMatchResult | null {
-  return segments[0]?.path === 'organization' ? { consumed: segments } : null;
+  const movedDashboardsPage = segments.length === 2 && segments[0].path === 'dashboards' && segments[1].path === 'organization-involvement';
+
+  return segments[0]?.path === 'organization' || movedDashboardsPage ? { consumed: segments } : null;
 }
 
 interface LegacyRedirectData {
