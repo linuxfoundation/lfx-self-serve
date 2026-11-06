@@ -192,8 +192,8 @@ export interface MeetingHomeArtifact {
   title: string;
 }
 
-/** What a meetings home attendance count or bar segment measures. */
-export type MeetingHomeAttendanceKind = 'yes' | 'maybe' | 'no' | 'attended';
+/** What a meetings home attendance count or bar segment measures; `attendedPoor` is attendance under 50%. */
+export type MeetingHomeAttendanceKind = 'yes' | 'maybe' | 'no' | 'attended' | 'attendedPoor';
 
 /** One answer count in the meetings home attendance legend. */
 export interface MeetingHomeAttendanceCount {
@@ -271,4 +271,11 @@ export interface MeetingAttendeeGridOverflow {
   visible: number;
   /** More people than the visible rows hold: fade the last row and offer "View all". */
   more: boolean;
+}
+
+/** An organizer's edit or approval of a past meeting summary, for the row it was opened from. */
+export interface MeetingHomeSummaryChange {
+  /** Key of the row the summary dialog was opened from. */
+  key: string;
+  summary: PastMeetingSummary;
 }

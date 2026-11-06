@@ -68,7 +68,7 @@ test.describe('Brand kit iconography samples: the board’s icons in the kit’s
     await expectMktgPrintFrame(page, BRAND_KIT_PRINT_BODY_CLASS, 'lfx-mktg-brand-kit-print');
     const frame = await layoutMktgPrintFrame(page, PRINT_FRAME_LANDSCAPE);
     const print = frame.getByTestId('mktg-brand-kit-print');
-    const iconography = print.getByTestId('kit-print-page').filter({ has: print.locator('[data-title="Iconography"]') });
+    const iconography = print.locator('[data-testid="kit-print-page"]:has([data-title="Iconography"])');
     await expect(iconography).toHaveCount(1);
     await expect(iconography.getByTestId('mktg-print-page-head').first()).toHaveText('04 Visual');
     await expect(iconography).toContainText(`Recommended set: ${kit.chapters.visual.icons.recommended}`);

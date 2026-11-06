@@ -269,6 +269,7 @@ export * from './mktg-document-redraft.interface';
 export * from './mktg-document-run.interface';
 export * from './mktg-print.interface';
 export * from './mktg-print-page.interface';
+export * from './mktg-print-brand-kit.interface';
 export * from './mktg-print-framework.interface';
 export * from './mktg-run.interface';
 export * from './mktg-slides-export.interface';

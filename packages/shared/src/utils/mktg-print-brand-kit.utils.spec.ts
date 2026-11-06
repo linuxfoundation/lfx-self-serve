@@ -74,12 +74,18 @@ describe('buildBrandKitPrintPages', () => {
     expect(later[0].footer?.number).toBe('06');
   });
 
-  it('lists on the contents page the page each chapter page starts on, in two columns', () => {
+  it('lists on the contents page the page each book page starts on, the back cover’s row among them, in two columns', () => {
     const [contents] = pagesOf();
     const rows = texts(contents).filter((t) => /^\d\d {3}/.test(t));
-    expect(rows).toHaveLength(CONTENT_TITLES.length);
+    // Every BOOK_PAGES id has a row (kit-book.ts builds them over all of them): the thirteen chapter pages and the back cover.
+    expect(rows).toHaveLength(CONTENT_TITLES.length + 1);
     expect(rows[0]).toBe('03   Logo system');
-    expect(rows[rows.length - 1]).toBe(`${String(CONTENT_TITLES.length + 2).padStart(2, '0')}   Voice in brief`);
+    expect(rows[rows.length - 2]).toBe(`${String(CONTENT_TITLES.length + 2).padStart(2, '0')}   Voice in brief`);
+    expect(rows[rows.length - 1]).toBe('16   Back cover');
+    // Without the back cover (inside a document with its own), its row goes too.
+    const [alone] = pagesOf(brandKitTestRevision(), { backCover: false });
+    expect(texts(alone).filter((t) => /^\d\d {3}/.test(t))).toHaveLength(CONTENT_TITLES.length);
+    expect(texts(alone)).not.toContain('16   Back cover');
     const columns = contents.els.filter((el) => el.t === 'shape' && el.box.x >= MKTG_PRINT_PAGE_RIGHT.x && el.text && el.text.paras.length > 1);
     expect(columns).toHaveLength(2);
     expect(texts(contents)[0]).toContain('Built from');
@@ -102,6 +108,7 @@ describe('buildBrandKitPrintPages', () => {
     expect(logos.one_color?.filter).not.toBe('');
     // No symbol file and no symbol crop: no symbol, so the Symbol page's tiles and shapes are dropped, never labelled.
     expect(logos.symbol).toBeNull();
+    expect(logos.symbol_reversed).toBeNull();
     const pages = pagesOf(kit);
     const symbol = pages.find((p) => p.title === 'Symbol & symbol in shape');
     expect(images(symbol as MktgPrintPage)).toHaveLength(0);
@@ -154,6 +161,14 @@ describe('buildBrandKitPrintPages', () => {
     expect(pages.find((p) => p.title === 'Typography')?.footer?.number).toBe('12');
     expect(texts(pages[0])).toContain('12   Typography');
     expect(mktgBrandKitBookPageCount(buildBrandKitBookView(kit, 1), mktgPrintBrand(kit), kit.projectName)).toBe(pages.length + 2);
+    // A kit with no pairs keeps its one Color contrast page, the rule alone, so the contents' row points at a page.
+    const none = brandKitTestRevision();
+    none.chapters.color.contrast = { ...none.chapters.color.contrast, pairs: [] };
+    const bare = pagesOf(none);
+    expect(bare.filter((p) => /^Color contrast/.test(p.title)).map((p) => p.title)).toEqual(['Color contrast']);
+    expect(texts(bare.find((p) => p.title === 'Color contrast') as MktgPrintPage)).toContain(none.chapters.color.contrast.rule);
+    expect(texts(bare[0])).toContain('10   Color contrast');
+    expect(texts(bare[0])).toContain('11   Typography');
   });
 
   it('sets the typography page in the kit’s typeface: the family, the specimen, the weights and the scale', () => {
@@ -196,6 +211,19 @@ describe('buildBrandKitPrintPages', () => {
     expect(t).toContain('one.example.org');
     expect(t).toEqual(expect.arrayContaining(kit.chapters.usage.examples.map((e) => `${e.name} · ${e.format}`)));
     expect(t).toContain('[Partner] joins Project One');
+    // The Primary button and the host pill sit on the kit's dark in the ink that reads on it (white on a dark dark, the
+    // on-light ink on a light one), not white regardless.
+    const onDark = (page: MktgPrintPage, text: string) =>
+      page.els.flatMap((el) => (el.t === 'shape' && el.text ? el.text.paras : [])).find((para) => para.text === text)?.color;
+    expect(onDark(page, 'one.example.org')).toBe(look.onDark);
+    const light = brandKitTestRevision();
+    light.kit = { ...light.kit, dark: '#F2F2F2' };
+    const lightLook = mktgPrintPageLook(mktgPrintBrand(light));
+    expect(lightLook.onDark).not.toBe(MKTG_PRINT_INK_ON_DARK);
+    const lightUsage = pagesOf(light).find((p) => p.title === 'Example usage') as MktgPrintPage;
+    expect(onDark(lightUsage, 'one.example.org')).toBe(lightLook.onDark);
+    const buttons = pagesOf(light).find((p) => p.title === 'Imagery & graphic elements') as MktgPrintPage;
+    expect(onDark(buttons, 'Primary button')).toBe(lightLook.onDark);
   });
 
   it('sets the voice page: the umbrella and the brand line over a rule, the four attributes under them on the same page when they fit', () => {
@@ -212,6 +240,9 @@ describe('buildBrandKitPrintPages', () => {
     const cover = mktgPrintBrandKitCover(view, kit.projectName);
     expect(cover.title).toBe('Brand Kit');
     expect(cover.subtitle).toBe('Open standards for one computing. Logos, color, type and usage on one reference, for members, partners and the press.');
+    // The brand line's trailing stop and space go before the sentence is joined (a linear trim, not a trailing-class regex).
+    const trailing = buildBrandKitBookView({ ...kit, chapters: { ...kit.chapters, voice: { ...kit.chapters.voice, line: 'Open standards.  ' } } }, 1);
+    expect(mktgPrintBrandKitCover(trailing, kit.projectName).subtitle).toMatch(/^Open standards\. Logos,/);
     expect(cover.eyebrow).toBe('Project One · A Linux Foundation project');
     expect(cover.topRight).toBe('V1.0');
     expect(cover.footerLeft).toBe('Project One · a Linux Foundation project');

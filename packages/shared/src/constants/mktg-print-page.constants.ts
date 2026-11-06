@@ -36,8 +36,8 @@ export const MKTG_PRINT_PAGE_FRAME_PT = { w: 792, h: 594 } as const;
 export const MKTG_PRINT_PAGE_SCALE = MKTG_PRINT_PAGE_FRAME_PT.w / MKTG_PRINT_PAGE_CANVAS.w;
 
 /**
- * The CSS custom property the page shell sets to MKTG_PRINT_PAGE_SCALE on its host: every box a consumer
- * sizes on a page is in deck points and scaled through it (`mktgPagePt`), never by a hard-coded factor.
+ * The CSS custom property the page shell sets to MKTG_PRINT_PAGE_SCALE on the page frame (`.lfx-print-page`): every
+ * box a consumer sizes on a page is in deck points and scaled through it (`mktgPagePt`), never by a hard-coded factor.
  */
 export const MKTG_PRINT_PAGE_SCALE_PROPERTY = '--mktg-page-scale';
 
@@ -134,8 +134,8 @@ export const MKTG_PRINT_PAGE_COVER_TOP_RIGHT_BOX: MktgPrintPageBox = { x: 508, y
 export const MKTG_PRINT_PAGE_COVER_FOOTER_LEFT_BOX: MktgPrintPageBox = { x: 38, y: 362, w: 330, h: 26 };
 export const MKTG_PRINT_PAGE_COVER_FOOTER_RIGHT_BOX: MktgPrintPageBox = { x: 368, y: 362, w: 294, h: 26 };
 /**
- * The project lockup on a cover, when a document draws one: the family cover's frame (D1 §4), above the title and
- * left-aligned with it. The kit's cover draws none (the deck's coverSlide has no logo; the maintainer's ruling c6ece95f).
+ * The project lockup on a cover, when a document draws one: the family cover's lockup frame, above the title and
+ * left-aligned with it. The kit's cover draws none, as the deck's coverSlide has no logo.
  */
 export const MKTG_PRINT_PAGE_COVER_LOGO_BOX: MktgPrintPageBox = { x: 38, y: 44, w: 180, h: 50 };
 /** The back cover's lines (kit-book.ts backCoverSlide): the site's host under the title, the notice near the foot, both centred. */

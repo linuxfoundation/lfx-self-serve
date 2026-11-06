@@ -4,8 +4,8 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { BRAND_KIT_ICON_SAMPLES, MKTG_PRINT_BRAND_KIT_ICON_SLOT } from '@lfx-one/shared/constants';
-import { BrandKitBookView, MktgPrintBrand, MktgPrintPage, MktgPrintPageLook } from '@lfx-one/shared/interfaces';
-import { buildBrandKitPrintPages, mktgPrintBrandKitCover, mktgPrintPageLook } from '@lfx-one/shared/utils';
+import { BrandKitBookView, MktgPrintBrand, MktgPrintBrandKitOptions, MktgPrintPage, MktgPrintPageLook } from '@lfx-one/shared/interfaces';
+import { buildBrandKitPrintPages, mktgBrandKitBookPageCount, mktgPrintBrandKitCover, mktgPrintPageLook } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { distinctUntilChanged, filter } from 'rxjs';
 import { MktgBrandKitIconComponent } from '../components/mktg-brand-kit-icon/mktg-brand-kit-icon.component';
@@ -49,10 +49,10 @@ export class MktgBrandKitPrintComponent {
   // === The pages ===
   protected readonly look = computed<MktgPrintPageLook>(() => mktgPrintPageLook(this.brand()));
   protected readonly cover = computed(() => mktgPrintBrandKitCover(this.view(), this.projectName()));
-  protected readonly pages = computed<MktgPrintPage[]>(() =>
-    buildBrandKitPrintPages(this.view(), this.brand(), this.projectName(), { firstPage: this.firstPage() })
-  );
-  protected readonly pageCount = computed(() => 1 + this.pages().length + (this.backCover() ? 1 : 0));
+  /** The builder's options: the cover's number and whether the back cover is in (the contents list its row). */
+  private readonly options = computed<MktgPrintBrandKitOptions>(() => ({ firstPage: this.firstPage(), backCover: this.backCover() }));
+  protected readonly pages = computed<MktgPrintPage[]>(() => buildBrandKitPrintPages(this.view(), this.brand(), this.projectName(), this.options()));
+  protected readonly pageCount = computed(() => mktgBrandKitBookPageCount(this.view(), this.brand(), this.projectName(), this.options()));
   /** The back cover's title: the brand line, else the project name (the deck's back cover). */
   protected readonly backTitle = computed(() => this.view().voice.line || this.projectName());
   protected readonly icons = BRAND_KIT_ICON_SAMPLES;

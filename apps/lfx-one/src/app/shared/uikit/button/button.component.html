@@ -45,6 +45,7 @@
     [attr.aria-controls]="ariaControls() || null"
     [attr.aria-busy]="loading() || null"
     [cdkMenuTriggerFor]="loading() ? null : menuRef"
+    [cdkMenuPosition]="menuPositions()"
     [lfxUiTooltip]="tooltip()"
     [lfxUiTooltipTitle]="tooltipTitle()"
     [lfxUiTooltipShortcut]="tooltipShortcut()"

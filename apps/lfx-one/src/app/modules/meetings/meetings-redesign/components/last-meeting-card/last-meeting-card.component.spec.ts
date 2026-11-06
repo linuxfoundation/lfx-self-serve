@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
-import { MeetingHomeRow, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
+import { MeetingHomeRow, MeetingHomeSummaryChange, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import { formatMeetingWhen, toPastMeetingHomeRow } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -124,6 +124,10 @@ describe('LastMeetingCardComponent', () => {
     expect(await badges({ visibility: MeetingVisibility.PUBLIC, restricted: false })).toEqual([]);
     expect(await badges({ visibility: MeetingVisibility.PRIVATE, restricted: false })).toEqual(['meetings-home-last-card-visibility-private']);
     expect(await badges({ visibility: MeetingVisibility.PUBLIC, restricted: true })).toEqual(['meetings-home-last-card-visibility-restricted']);
+    expect(await badges({ visibility: MeetingVisibility.PRIVATE, restricted: true })).toEqual([
+      'meetings-home-last-card-visibility-restricted',
+      'meetings-home-last-card-visibility-private',
+    ]);
   });
 
   it('renders the tile, project, title, when line and the type and recurring tags', async () => {
@@ -191,15 +195,19 @@ describe('LastMeetingCardComponent', () => {
       expect(!!query(fixture, 'meetings-home-last-card-summary')).toBe(shown);
     });
 
-    it('tells an organizer the summary is awaiting their review', async () => {
+    it('offers an organizer "Review summary" until the summary is approved', async () => {
       const pending = { approved: false, requires_approval: true };
       const fixture = await render({ row: rowOf(buildMeeting({ organizer: true })), summary: buildSummary(pending) });
+      const button = (): HTMLButtonElement | null | undefined => query(fixture, 'meetings-home-last-card-summary')?.querySelector('button');
 
-      expect(text(fixture, 'meetings-home-last-card-summary-pending')).toBe('Awaiting your review');
+      expect(text(fixture, 'meetings-home-last-card-summary')).toBe('Review summary');
+      expect(button()?.className).toContain('text-ui-accent-500');
+      expect(button()?.querySelector('i')).toBeNull();
 
       fixture.componentRef.setInput('summary', buildSummary());
       await fixture.whenStable();
-      expect(query(fixture, 'meetings-home-last-card-summary-pending')).toBeNull();
+      expect(text(fixture, 'meetings-home-last-card-summary')).toBe('AI Summary');
+      expect(button()?.querySelector('i.fa-sparkles')).not.toBeNull();
     });
 
     it.each<[PastMeetingSummary | null | undefined, string | null | undefined]>([
@@ -239,14 +247,14 @@ describe('LastMeetingCardComponent', () => {
 
     it('passes a summary saved in the dialog back out', async () => {
       const fixture = await render({ row: rowOf(buildMeeting({ organizer: true })), summary: buildSummary({ approved: false }) });
-      const changes: PastMeetingSummary[] = [];
+      const changes: MeetingHomeSummaryChange[] = [];
       fixture.componentInstance.summaryChange.subscribe((change) => changes.push(change));
 
       clickButton(fixture, 'meetings-home-last-card-summary');
       const approved = buildSummary({ approved: true });
       dialogs.openSummary.mock.calls[0][2](approved);
 
-      expect(changes).toEqual([approved]);
+      expect(changes).toEqual([{ key: 'm-1-occ', summary: approved }]);
     });
   });
 });

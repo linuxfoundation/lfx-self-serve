@@ -251,7 +251,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.getByTestId('mktg-print-page')).toHaveCount(16);
       await expect(print.locator('.kit-chapter')).toHaveCount(0);
       await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
-      await expect(print.getByTestId('kit-print-page').filter({ has: print.locator('[data-title="Typography"]') })).toContainText('Montserrat');
+      await expect(print.locator('[data-testid="kit-print-page"]:has([data-title="Typography"])')).toContainText('Montserrat');
     } else {
       // Nine frames (the cover and the eight content pages of the draft framework), outside the portrait root and its side
       // padding, every frame flush with the sheet's left edge and 11 in wide.

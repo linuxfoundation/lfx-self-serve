@@ -46,27 +46,29 @@
         <lfx-button
           label="Export to Google Slides"
           icon="fa-light fa-presentation-screen"
-          [outlined]="true"
+          [outlined]="pdfEnabled()"
           [loading]="slidesExport.busy()"
           [disabled]="!slidesExport.canExport()"
           ariaLabel="Export the brand kit to Google Slides"
           data-testid="brand-kit-web-view-export-slides"
           (onClick)="slidesExport.onExport()" />
       </span>
-      <span
-        [pTooltip]="pdfTooltip()"
-        tooltipPosition="bottom"
-        tooltipEvent="both"
-        [attr.aria-label]="pdfTooltip() || null"
-        [attr.tabindex]="pdfTooltip() ? 0 : null">
-        <lfx-button
-          label="Download PDF"
-          icon="fa-light fa-file-pdf"
-          [disabled]="!printView()"
-          ariaLabel="Download the approved current brand kit as a PDF"
-          data-testid="brand-kit-web-view-download-pdf"
-          (onClick)="onDownloadPdf()" />
-      </span>
+      @if (pdfEnabled()) {
+        <span
+          [pTooltip]="pdfTooltip()"
+          tooltipPosition="bottom"
+          tooltipEvent="both"
+          [attr.aria-label]="pdfTooltip() || null"
+          [attr.tabindex]="pdfTooltip() ? 0 : null">
+          <lfx-button
+            label="Download PDF"
+            icon="fa-light fa-file-pdf"
+            [disabled]="!printView()"
+            ariaLabel="Download the approved current brand kit as a PDF"
+            data-testid="brand-kit-web-view-download-pdf"
+            (onClick)="onDownloadPdf()" />
+        </span>
+      }
     }
   </ng-template>
 
@@ -921,13 +923,17 @@
     }
   }
 
-  <!-- Footer: what Download PDF and the Google Slides export give you -->
+  <!-- Footer: what Download PDF (while its flag is on) and the Google Slides export give you. The PDF sentence carries the space that joins the two. -->
   <p class="px-1 text-xs text-gray-500" data-testid="brand-kit-web-view-footer">
-    PDF in portrait pages: logo, colour, typography, visual and voice. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours,
-    typeface and logo.
+    @if (pdfEnabled()) {
+      <span data-testid="brand-kit-web-view-footer-pdf"
+        >PDF as the deck's landscape pages: cover, contents, logo, colour, typography, visual, usage and voice, back cover.
+      </span>
+    }
+    Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.
   </p>
 
-  <!-- The same native portrait chapters as the family PDF; the screen view stays unchanged. -->
+  <!-- The deck's landscape pages, the body the family PDF mounts too; the screen view stays unchanged. -->
   @if (printView(); as approvedPrint) {
     <div [class]="printOnlyClass" data-testid="brand-kit-web-view-print">
       <lfx-mktg-brand-kit-print [view]="approvedPrint" [brand]="printBrand()" [projectName]="projectName()" />

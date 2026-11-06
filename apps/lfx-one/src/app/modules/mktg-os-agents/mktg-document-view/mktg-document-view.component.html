@@ -105,7 +105,9 @@
             (click)="onRunAgain()"
             >Audit again</a
           >
-          <lfx-button label="Download PDF" icon="fa-light fa-file-pdf" (onClick)="onDownload()" data-testid="mktg-document-view-download" />
+          @if (pdfEnabled()) {
+            <lfx-button label="Download PDF" icon="fa-light fa-file-pdf" (onClick)="onDownload()" data-testid="mktg-document-view-download" />
+          }
         </div>
       }
       @if (memberResult(); as result) {

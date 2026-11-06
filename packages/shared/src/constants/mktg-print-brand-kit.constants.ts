@@ -6,7 +6,9 @@
 // 7839d985), ported value for value. The page grammar they are laid out in is
 // mktg-print-page.constants.ts; the kit's own content constants (the pages,
 // the chapters, the type specimen, the back-cover notice) are
-// brand-kit.constants.ts, which the builder reads directly.
+// brand-kit.constants.ts, which the builder reads directly (the typography
+// page's weights and their names come through the view, from the kit's
+// BRAND_KIT_WEIGHT_NAMES and BRAND_KIT_DEFAULT_WEIGHTS).
 
 import { BRAND_KIT_FOUND_IN_KINDS } from './brand-kit.constants';
 
@@ -18,22 +20,6 @@ export const MKTG_PRINT_BRAND_KIT_SOURCE_LINES: Record<(typeof BRAND_KIT_FOUND_I
   page: null,
   unsourced: null,
 };
-
-/** The weights' names by CSS weight (kit-book.ts WEIGHT_NAMES). */
-export const MKTG_PRINT_BRAND_KIT_WEIGHT_NAMES: Record<number, string> = {
-  100: 'Thin',
-  200: 'ExtraLight',
-  300: 'Light',
-  400: 'Regular',
-  500: 'Medium',
-  600: 'SemiBold',
-  700: 'Bold',
-  800: 'ExtraBold',
-  900: 'Black',
-};
-
-/** The weights the typography page shows when the kit names none (kit-book.ts DEFAULT_WEIGHTS). */
-export const MKTG_PRINT_BRAND_KIT_DEFAULT_WEIGHTS: readonly number[] = [300, 400, 500, 600, 700];
 
 /** A typeface the retyped-wordmark watchout is set in: plainly not the brand's (kit-book.ts RETYPED_FONT). */
 export const MKTG_PRINT_BRAND_KIT_RETYPED_FONT = 'Georgia';

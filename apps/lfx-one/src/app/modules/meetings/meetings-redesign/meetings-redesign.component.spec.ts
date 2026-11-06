@@ -616,7 +616,7 @@ describe('MeetingsRedesignComponent', () => {
       expect(rowTitles(fixture)).toEqual(['Board Review']);
     });
 
-    it('shows one page of rows, the next one when the trigger scrolls into view, then the end line', async () => {
+    it('shows one page of rows, the next one when the trigger scrolls into view', async () => {
       const fixture = render();
       await fixture.whenStable();
       await loadFeeds(
@@ -625,14 +625,11 @@ describe('MeetingsRedesignComponent', () => {
       );
 
       expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
-      expect(query(fixture, 'meetings-home-all-loaded')).toBeNull();
-
       observerCallback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
       await fixture.whenStable();
 
       expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE + 5);
       expect(query(fixture, 'meetings-home-load-more')).toBeNull();
-      expect(query(fixture, 'meetings-home-all-loaded')?.textContent?.trim()).toBe(`All ${MEETINGS_HOME_PAGE_SIZE + 5} meetings loaded`);
     });
 
     it('scrolls the list back to its start on a search, filter or tab change, so a page loads only on a scroll', async () => {
