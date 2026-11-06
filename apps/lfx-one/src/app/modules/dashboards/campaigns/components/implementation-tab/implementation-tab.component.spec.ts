@@ -44,6 +44,7 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY,
   GOOGLE_DEMAND_GEN_MAX_AD_GROUPS,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL,
@@ -6610,7 +6611,9 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
     expect(c['demandGenFormatHeldMessage']()).toBe('');
     expect(c['demandGenAdGroupsHeldMessage']()).toContain('single Demand Gen ad you entered is kept but not sent');
     expect(find(fixture, 'implementation-demand-gen-ad-groups-held-live')?.textContent).toContain('kept but not sent');
-    expect(find(fixture, 'implementation-demand-gen-ad-groups-split')?.getAttribute('aria-describedby')).toBe('implementation-demand-gen-ad-groups-held');
+    expect(find(fixture, 'implementation-demand-gen-ad-groups-split')?.querySelector('input')?.getAttribute('aria-describedby')).toBe(
+      'implementation-demand-gen-ad-groups-held'
+    );
 
     c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(false);
     fixture.detectChanges();
@@ -6622,6 +6625,54 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
     expect(c['googleDemandGenAdGroupsPayload']()).toEqual({});
     expect(c['demandGenAdGroupsError']()).toBeNull();
     expect(find(fixture, 'implementation-demand-gen-ad-groups-held')?.textContent).toContain('kept but not sent');
+  });
+
+  it('says nothing is held when the split is turned on and off with nothing entered', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(true);
+    c['onDemandGenAdGroupsSplitChange']();
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(false);
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.demandGenAdGroups.length).toBe(1);
+    expect(c['demandGenAdGroupsHeldMessage']()).toBe('');
+    expect(find(fixture, 'implementation-demand-gen-ad-groups-held')).toBeNull();
+  });
+
+  it("counts text typed only inside a group's ad as entered", () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(true);
+    c['onDemandGenAdGroupsSplitChange']();
+    c['campaignForm'].controls.demandGenAdGroups.at(0).controls.videoCreative.patchValue({ headlines: 'A video headline' });
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(false);
+    fixture.detectChanges();
+
+    expect(c['demandGenAdGroupsHeldMessage']()).toBe(
+      'The ad group you entered is kept but not sent while the campaign is not split. Turn the split on to send it instead.'
+    );
+  });
+
+  it('holds Create when the split is on with every ad group removed', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    split(c, [{ name: 'Retargeting' }]);
+    c['removeDemandGenAdGroup'](0);
+    fixture.detectChanges();
+
+    expect(c['googleDemandGenAdGroupsPayload']()).toEqual({ demandGenAdGroups: [] });
+    expect(c['demandGenAdGroupsError']()).toBe(GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  it('adds the first ad group when the split checkbox itself is ticked', () => {
+    seedChannel(fixture, { includeDemandGen: true });
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    const box = find(fixture, 'implementation-demand-gen-ad-groups-split')?.querySelector('input') as HTMLInputElement;
+    box.click();
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.demandGenAdGroupsSplit.value).toBe(true);
+    expect(c['campaignForm'].controls.demandGenAdGroups.length).toBe(1);
+    expect(find(fixture, 'implementation-demand-gen-ad-group-name-0')).not.toBeNull();
   });
 
   it('does not hold Create on a value left in a group the create does not send', () => {

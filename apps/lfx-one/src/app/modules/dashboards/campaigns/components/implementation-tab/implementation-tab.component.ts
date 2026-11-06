@@ -36,6 +36,7 @@ import {
 } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
+import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -166,6 +167,7 @@ import {
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_GROUPS,
   GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
+  GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY,
   GOOGLE_DEMAND_GEN_MAX_AD_GROUPS,
   GOOGLE_CREATIVE_SHARED_CAPS,
   GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
@@ -418,6 +420,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     ReactiveFormsModule,
     ButtonComponent,
     AutocompleteComponent,
+    CheckboxComponent,
     InputTextComponent,
     RadioButtonComponent,
     SelectComponent,
@@ -10854,6 +10857,9 @@ export class ImplementationTabComponent implements OnInit {
       void this.campaignFormRevision();
       const groups = this.googleDemandGenAdGroupsPayload().demandGenAdGroups;
       if (groups === undefined) return null;
+      // Upstream reads an empty list as no split and would create the campaign with no ad at all, so the
+      // tab holds Create instead: every group removed, or a draft restored split with none.
+      if (groups.length === 0) return GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY;
       return googleDemandGenAdGroupsRefusal(this.campaignForm.controls.eventName.value, groups, (creative) => {
         const missing = this.googleCreativeShortfall('demand-gen', creative as Record<string, string | GoogleCreativeImageRef[]>);
         return missing === null ? null : `the image ad ${missing}`;
@@ -10877,7 +10883,11 @@ export class ImplementationTabComponent implements OnInit {
         if (!held && !single.some((groupName) => typed(this.creativeGroup(groupName).getRawValue()))) return '';
         return 'The single Demand Gen ad you entered is kept but not sent while the campaign is split into ad groups. Turn the split off to send it instead.';
       }
-      const groups = this.campaignForm.controls.demandGenAdGroups.controls.filter((group) => typed(group.getRawValue()));
+      // A group's own `format` is always set, so it is the name and the two creatives that say whether
+      // anything was entered, not the group's top-level values.
+      const groups = this.campaignForm.controls.demandGenAdGroups.controls.filter(
+        (group) => group.controls.name.value.trim() !== '' || typed(group.controls.creative.getRawValue()) || typed(group.controls.videoCreative.getRawValue())
+      );
       if (groups.length === 0) return '';
       const subject = groups.length === 1 ? 'ad group you entered is' : 'ad groups you entered are';
       return `The ${subject} kept but not sent while the campaign is not split. Turn the split on to send ${groups.length === 1 ? 'it' : 'them'} instead.`;

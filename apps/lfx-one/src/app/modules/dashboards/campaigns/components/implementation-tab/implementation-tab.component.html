@@ -2539,16 +2539,16 @@
             but not sent. The note under the checkbox says which.
           -->
           @if (section.channel === 'demand-gen') {
-            <label class="mt-4 flex items-center gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                formControlName="demandGenAdGroupsSplit"
-                (change)="onDemandGenAdGroupsSplitChange()"
-                [attr.aria-describedby]="demandGenAdGroupsHeldMessage() ? 'implementation-demand-gen-ad-groups-held' : null"
-                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                data-testid="implementation-demand-gen-ad-groups-split" />
-              Split into named ad groups
-            </label>
+            <!-- `change` bubbles from the wrapper's own input to its host, as on the postal geo box. -->
+            <lfx-checkbox
+              [form]="campaignForm"
+              control="demandGenAdGroupsSplit"
+              inputId="implementation-demand-gen-ad-groups-split-input"
+              label="Split into named ad groups"
+              [ariaDescribedBy]="demandGenAdGroupsHeldMessage() ? 'implementation-demand-gen-ad-groups-held' : ''"
+              (change)="onDemandGenAdGroupsSplitChange()"
+              class="mt-4 block"
+              data-testid="implementation-demand-gen-ad-groups-split" />
             @if (demandGenAdGroupsHeldMessage()) {
               <p id="implementation-demand-gen-ad-groups-held" class="mt-1 text-xs text-gray-500" data-testid="implementation-demand-gen-ad-groups-held">
                 {{ demandGenAdGroupsHeldMessage() }}
@@ -2569,11 +2569,12 @@
                   <legend class="px-1 text-xs font-medium text-gray-700">Ad group {{ i + 1 }}</legend>
                   <div class="flex flex-col gap-1">
                     <label class="text-xs font-medium text-gray-700" [attr.for]="'demand-gen-ad-group-' + i + '-name'">Name</label>
-                    <input
+                    <lfx-input-text
+                      [form]="group"
+                      control="name"
                       type="text"
-                      [id]="'demand-gen-ad-group-' + i + '-name'"
-                      formControlName="name"
-                      class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      size="small"
+                      [inputId]="'demand-gen-ad-group-' + i + '-name'"
                       [attr.data-testid]="'implementation-demand-gen-ad-group-name-' + i" />
                   </div>
                   <div class="flex flex-wrap gap-4" [attr.data-testid]="'implementation-demand-gen-ad-group-format-' + i">
@@ -2603,13 +2604,14 @@
                         <div class="flex flex-col gap-1">
                           <label class="text-xs font-medium text-gray-700" [attr.for]="fieldId">{{ field.label }}</label>
                           @if (field.kind === 'list') {
-                            <textarea
-                              [id]="fieldId"
-                              [formControlName]="field.control"
-                              [attr.aria-describedby]="fieldError ? fieldId + '-error' : null"
-                              rows="3"
-                              class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control"></textarea>
+                            <lfx-textarea
+                              [form]="format === 'video' ? group.controls.videoCreative : group.controls.creative"
+                              [control]="field.control"
+                              [inputId]="fieldId"
+                              [rows]="3"
+                              [describedBy]="fieldError ? fieldId + '-error' : undefined"
+                              [invalid]="!!fieldError"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control" />
                           } @else if (field.options) {
                             <lfx-select
                               [form]="format === 'video' ? group.controls.videoCreative : group.controls.creative"
@@ -2619,12 +2621,14 @@
                               size="small"
                               [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control" />
                           } @else {
-                            <input
+                            <lfx-input-text
+                              [form]="format === 'video' ? group.controls.videoCreative : group.controls.creative"
+                              [control]="field.control"
                               type="text"
-                              [id]="fieldId"
-                              [formControlName]="field.control"
-                              [attr.aria-describedby]="fieldError ? fieldId + '-error' : null"
-                              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              size="small"
+                              [inputId]="fieldId"
+                              [describedBy]="fieldError ? fieldId + '-error' : null"
+                              [invalid]="!!fieldError"
                               [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control" />
                           }
                           <span class="text-xs text-gray-400">{{ field.guidance }}</span>
