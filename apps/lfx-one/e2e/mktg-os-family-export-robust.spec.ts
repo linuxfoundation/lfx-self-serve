@@ -12,7 +12,7 @@ import { MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/const
 test.use({ viewport: { width: 1440, height: 1000 } });
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 
-/** The stubbed family's page counts, from the shared builders the assembly plans with. */
+/** The stubbed family's page counts: mktgPrintFamilyPlan over the stub's own assets, as the assembly plans them. */
 const PLAN = familyPrintPlan(draftFrameworkAsset().content, DOCUMENT_PROJECT.name);
 for (const width of [1440, 1280, 390]) {
   test(`Family export structure at ${width}px`, async ({ page }, info) => {

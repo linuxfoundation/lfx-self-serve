@@ -11,14 +11,13 @@ import {
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { draftFrameworkAsset } from './helpers/mktg-os-asset-views.helper';
 import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
-import { familyPrintPlan } from './helpers/mktg-os-family-export.helper';
-import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
+import { familyPrintPlan, openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, PRINT_FRAME_LANDSCAPE, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 
-/** The deck-wide page numbers of the stubbed family, from the shared builders the assembly plans with (never guessed). */
+/** The deck-wide page numbers of the stubbed family: mktgPrintFamilyPlan over the stub's own assets, as the assembly plans them (never guessed). */
 const PLAN = familyPrintPlan(draftFrameworkAsset().content, DOCUMENT_PROJECT.name);
 
 test('export stays on the Family URL and Back returns to Kit, never to an export action', async ({ page }, info) => {

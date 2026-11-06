@@ -1,9 +1,9 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-/* The print-only wrappers' composition for the family PDF and the standalone native kit print. The family prints
-   deck pages only (the shell's fixed landscape frames own their page setup and breaks); the portrait named page and
-   the hidden portrait chrome below are the standalone kit's. */
+/* The print-only wrappers' composition for the family PDF and the standalone native prints (the framework's, the
+   kit's). The family prints deck pages only (the shell's fixed landscape frames own their page setup and breaks); the
+   portrait named page below is the standalone prints', and the hidden portrait chrome the standalone kit's. */
 .lfx-family-print-only {
   display: none;
 }
@@ -38,12 +38,7 @@
   }
 
   body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
-    page: mktg-framework;
-
-    /* One cover and one contents list, not a second per asset. The framework's cover goes with
-       its whole sheet: a sheet left behind would print its 1.1in of head and foot room alone on a blank page. */
-    lfx-mktg-print-sheet:has([data-testid='mktg-framework-print-cover']),
-    [data-testid='mktg-framework-print-cover'],
+    /* The portrait kit's own cover, contents list and back cover: the standalone print draws its own. */
     [data-testid='brand-kit-page-cover'],
     [data-testid='brand-kit-page-contents'],
     [data-testid='brand-kit-page-back-cover'] {

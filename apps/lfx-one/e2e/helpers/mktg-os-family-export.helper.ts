@@ -2,14 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS } from '@lfx-one/shared/constants';
-import type { FaqContent, FoundationMessageContent, MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
+import type { FaqContent, FoundationMessageContent, MktgDocumentsResponse, MktgPrintFamilyPlan, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 // Deep imports, not the `@lfx-one/shared/utils` barrel: the barrel reaches Angular, which the Playwright process has no compiler for.
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { boilerplatesAssetOfRevision } from '@lfx-one/shared/utils/boilerplates.utils';
 import { buildBrandKitBookView } from '@lfx-one/shared/utils/brand-kit-book.utils';
+import { faqAssetOfRevision } from '@lfx-one/shared/utils/faq.utils';
 import { buildBrandKitPrintPages, mktgBrandKitBookPageCount } from '@lfx-one/shared/utils/mktg-print-brand-kit.utils';
 import { mktgPrintFrameworkPageCount } from '@lfx-one/shared/utils/mktg-print-framework.utils';
 import { mktgPrintPageNumber } from '@lfx-one/shared/utils/mktg-print-page.utils';
-import { buildFoundationMessagePrintView, mktgPrintBrand } from '@lfx-one/shared/utils/mktg-print.utils';
+import { mktgPrintFamilyPlan } from '@lfx-one/shared/utils/mktg-print-pages.utils';
+import { buildBoilerplatesPrintView, buildFaqPrintView, buildFoundationMessagePrintView, mktgPrintBrand } from '@lfx-one/shared/utils/mktg-print.utils';
 import { expect, Page } from '@playwright/test';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '../../src/app/shared/testing/mktg-family-export-test-data';
 import { suppressCookieBanner } from './account-settings-email.helper';
@@ -169,38 +172,34 @@ export async function openFamilyExports(
   };
 }
 
-/** The deck-wide page numbers of the stubbed family as the assembly plans them (mktgPrintFamilyPlan with the shared builders' counts): the family cover 1, the framework's cover at 2, the kit's after it, a divider, the one card page, a divider, the one grid page, the back cover last. `pageNumber` prints one as the footers and the contents do. */
+/** The stubbed family's page plan, as the assembly plans it: `mktgPrintFamilyPlan` over the print view built from the stub's own assets (the framework from `content`, the kit, the boilerplates and the FAQ from the fixtures `openFamilyExports` serves), fed the framework's and the kit's counts from the shared builders. `pageNumber` prints one as the footers and the contents do. */
 export function familyPrintPlan(
   content: FoundationMessageContent,
   projectName: string
-): {
-  frameworkPages: number;
-  kitPages: number;
-  frameworkFirstPage: number;
-  kitFirstPage: number;
-  boilerplatesFirstPage: number;
-  faqFirstPage: number;
-  pageCount: number;
-  pageNumber: (page: number) => string;
-} {
+): MktgPrintFamilyPlan & { frameworkPages: number; kitPages: number; pageNumber: (page: number) => string } {
   const kit = brandKitTestRevision();
-  const frameworkPages = mktgPrintFrameworkPageCount(buildFoundationMessagePrintView(content, projectName, 1, kit));
-  const kitPages = mktgBrandKitBookPageCount(
-    buildBrandKitPrintPages(buildBrandKitBookView(kit, 1), mktgPrintBrand(kit), projectName, { backCover: false }),
-    false
-  );
-  const frameworkFirstPage = 2;
-  const kitFirstPage = frameworkFirstPage + frameworkPages;
-  const boilerplatesFirstPage = kitFirstPage + kitPages + 1;
-  const faqFirstPage = boilerplatesFirstPage + 2;
-  return {
-    frameworkPages,
-    kitPages,
-    frameworkFirstPage,
-    kitFirstPage,
-    boilerplatesFirstPage,
-    faqFirstPage,
-    pageCount: faqFirstPage + 1,
-    pageNumber: mktgPrintPageNumber,
+  const brand = mktgPrintBrand(kit);
+  const boilerplatesResponse = columnAssetRevisionResponse('boilerplates');
+  const faqResponse = columnAssetRevisionResponse('faq');
+  const boilerplates = boilerplatesAssetOfRevision(boilerplatesResponse.markdown, boilerplatesResponse.sidecar);
+  const faq = faqAssetOfRevision(faqResponse.markdown, faqResponse.sidecar);
+  if (!boilerplates || !faq) throw new Error('The stubbed boilerplates or FAQ could not be read.');
+  const framework = buildFoundationMessagePrintView(content, projectName, 1, kit);
+  const book = buildBrandKitBookView(kit, 1);
+  const view = {
+    framework,
+    kit: book,
+    boilerplates: buildBoilerplatesPrintView(boilerplates, brand),
+    faq: buildFaqPrintView(faq, brand),
+    brand,
+    projectName,
+    printedAt: '2026-10-19T12:00:00Z',
+    newestRevisionAt: null,
+    revisionNumbers: {},
+    fontFamily: null,
+    weights: [],
   };
+  const frameworkPages = mktgPrintFrameworkPageCount(framework);
+  const kitPages = mktgBrandKitBookPageCount(buildBrandKitPrintPages(book, brand, projectName, { backCover: false }), false);
+  return { ...mktgPrintFamilyPlan(view, frameworkPages, kitPages), frameworkPages, kitPages, pageNumber: mktgPrintPageNumber };
 }
