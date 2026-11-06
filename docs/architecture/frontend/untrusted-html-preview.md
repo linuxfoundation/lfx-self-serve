@@ -73,6 +73,16 @@ Node >= 22.19 here, because `jsdom@30` pulls an `undici` that calls
 `worker_threads.markAsUncloneable`, and a Node 20 machine cannot run the suite at all. That is a
 machine constraint, not repo policy — `yarn test` is an ordinary local command on a supported Node.
 
+### Newsletter previews
+
+`NewsletterPreviewComponent` (newsletters module) is the second approved instance. A blocks
+newsletter's server render is a complete email document, so the manage, list and reader previews
+frame it with the same `sandbox="allow-popups allow-popups-to-escape-sandbox"` and
+`referrerpolicy="no-referrer"`, after adding `<base target="_blank">` so every link opens in a new
+tab. Unlike `EmailBodyPreviewComponent` it sets no `default-src 'none'` policy, because a newsletter
+loads remote images. The document is the body the service renders and sends, not model output.
+`newsletter-preview.component.spec.ts` pins the sandbox value on both routes into the iframe.
+
 ## The second of two controls — except where it is the only one
 
 For **generated** copy, server-side sanitization happens first and is unchanged. The campaign
