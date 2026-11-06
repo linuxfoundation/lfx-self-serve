@@ -44,6 +44,7 @@ import {
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
@@ -140,6 +141,8 @@ describe('MktgAgentRunComponent', () => {
   let rememberedAnswers: Record<string, MktgAnswerMemory>;
   let loadRun: Mock;
   let lastIntake: Mock;
+  /** The Download PDF flag (#5302), pinned on so the intake intros read as today; one test turns it off. */
+  const pdfFlag = signal(true);
   let listDocuments: Mock;
   let queryParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   let getProject: Mock;
@@ -172,6 +175,7 @@ describe('MktgAgentRunComponent', () => {
 
   const configure = async (platformId: 'browser' | 'server' = 'browser', agentId = SHELL_AGENT.id, params: Record<string, string> = {}): Promise<void> => {
     window.localStorage.clear();
+    pdfFlag.set(true);
     activeContext = signal<ProjectContext | null>(null);
     userSignal = signal<User | null>({ sub: 'auth0|user-1' } as User);
     storedRuns = {};
@@ -223,6 +227,7 @@ describe('MktgAgentRunComponent', () => {
           },
         },
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: () => activeContext()?.uid ?? '' } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => pdfFlag } },
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
         {
@@ -3143,6 +3148,22 @@ describe('MktgAgentRunComponent', () => {
     };
 
     beforeEach(async () => configure('browser', 'brand-kit'));
+
+    it('reads the intake intro while Download PDF is on, and its Slides-only intro, naming no PDF, while the flag is off (#5302)', async () => {
+      const intake = MKTG_AGENT_INTAKES['brand-kit'];
+      if (!intake?.introSlidesOnly) throw new Error('The Brand Kit intake carries a Slides-only intro');
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const intro = () => query('mktg-agent-run-form-intro')?.textContent?.trim();
+      expect(intro()).toBe(intake.intro);
+      expect(intro()).toContain('downloads as a 16-page PDF');
+      pdfFlag.set(false);
+      await fixture.whenStable();
+      expect(intro()).toBe(intake.introSlidesOnly);
+      expect(intro()).not.toContain('PDF');
+      expect(intro()).toContain('The kit opens here as a page, one tab per chapter. Every result is stored as a new revision in Documents.');
+    });
 
     it('asks for the project, the website, the brand page and notes, offers the logo-files section, and submits the files with the form', async () => {
       dependencyDocs = { 'proj-1:foundation-setup': latestFramework };

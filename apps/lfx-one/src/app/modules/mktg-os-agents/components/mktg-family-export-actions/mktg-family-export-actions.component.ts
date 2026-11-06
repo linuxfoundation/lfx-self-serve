@@ -9,14 +9,17 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
   MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE_SLIDES_ONLY,
   MKTG_FAMILY_EXPORT_HIGHLIGHT_MS,
   MKTG_FAMILY_EXPORT_FORMAT_HINT,
+  MKTG_FAMILY_EXPORT_FORMAT_HINT_SLIDES_ONLY,
   MKTG_DOCUMENT_TYPES,
   MKTG_FAMILY_PDF_NOTE,
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_ONLY_CLASS,
   MKTG_FAMILY_SLIDES_NOTE,
   MKTG_KIT_FAMILIES,
+  MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
 } from '@lfx-one/shared/constants';
@@ -30,6 +33,7 @@ import {
   MktgSlidesExportPhase,
 } from '@lfx-one/shared/interfaces';
 import { mktgFamilyExportAgentKeys, mktgPrintDocumentTitle } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -70,7 +74,14 @@ export class MktgFamilyExportActionsComponent {
   public readonly familyId = input.required<string>();
   protected readonly slidesNote = MKTG_FAMILY_SLIDES_NOTE;
   protected readonly pdfNote = MKTG_FAMILY_PDF_NOTE;
-  protected readonly approvalNote = MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE;
+  /**
+   * Download PDF, its note and the PDF words of the card's copy render only while the flag is on (#5302), and the PDF is
+   * prepared only then: nothing else reads the prepared print document. The print rendering and the print path stay.
+   */
+  protected readonly pdfEnabled = inject(FeatureFlagService).getBooleanFlag(MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, false);
+  protected readonly approvalNote = computed(() =>
+    this.pdfEnabled() ? MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE : MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE_SLIDES_ONLY
+  );
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly focusRequested = signal(false);
   protected readonly highlighted = signal(false);
@@ -108,15 +119,18 @@ export class MktgFamilyExportActionsComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      combineLatest([toObservable(this.focusRequested), toObservable(this.checking), toObservable(this.canPrint)])
+      combineLatest([toObservable(this.focusRequested), toObservable(this.checking), toObservable(this.canPrint), toObservable(this.canExport)])
         .pipe(takeUntilDestroyed())
         .subscribe(([requested]) => {
           if (!requested || !this.focusRequested()) return;
-          if (this.canPrint()) {
+          // Off, Export to Google Slides is the card's one format: the request lands on it once it can export.
+          const ready = this.pdfEnabled() ? this.canPrint() : this.canExport();
+          if (ready) {
+            const action = this.pdfEnabled() ? 'pdf' : 'slides';
             afterNextRender(
               () => {
-                if (this.canPrint())
-                  this.host.nativeElement.querySelector<HTMLButtonElement>('[data-testid="family-export-pdf"] button')?.focus({ preventScroll: true });
+                if (this.pdfEnabled() ? this.canPrint() : this.canExport())
+                  this.host.nativeElement.querySelector<HTMLButtonElement>(`[data-testid="family-export-${action}"] button`)?.focus({ preventScroll: true });
               },
               { injector: this.injector }
             );
@@ -144,7 +158,7 @@ export class MktgFamilyExportActionsComponent {
     const reduced = this.host.nativeElement.ownerDocument.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     this.host.nativeElement.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
     this.highlighted.set(true);
-    this.formatHint.set(MKTG_FAMILY_EXPORT_FORMAT_HINT);
+    this.formatHint.set(this.pdfEnabled() ? MKTG_FAMILY_EXPORT_FORMAT_HINT : MKTG_FAMILY_EXPORT_FORMAT_HINT_SLIDES_ONLY);
     clearTimeout(this.highlightTimer);
     this.highlightTimer = setTimeout(() => {
       this.highlighted.set(false);
@@ -188,20 +202,26 @@ export class MktgFamilyExportActionsComponent {
     this.pdfRetry.next();
   }
 
-  /** Prepare independently of busy(): finishing a fetch must never trigger another fetch or print. */
+  /** Prepare independently of busy(): finishing a fetch must never trigger another fetch or print. Off, nothing is prepared. */
   private initPdf(): void {
-    const scope = computed(() => ({ target: this.target(), writer: this.writer(), lookup: this.lookup(), checking: this.checking() }));
+    const scope = computed(() => ({
+      target: this.target(),
+      writer: this.writer(),
+      lookup: this.lookup(),
+      checking: this.checking(),
+      enabled: this.pdfEnabled(),
+    }));
     toObservable(scope)
       .pipe(
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
-        switchMap(({ target, writer, lookup, checking }) => {
+        switchMap(({ target, writer, lookup, checking, enabled }) => {
           this.printView.set(null);
           this.pdfReady.set(false);
           this.pdfPending.set(false);
           this.pdfScope = '';
           this.pdfPreparedScope.set('');
           this.printing.set(false);
-          if (!target || !writer || checking || !lookup?.currentMembers.length) return of(null);
+          if (!enabled || !target || !writer || checking || !lookup?.currentMembers.length) return of(null);
           const key = JSON.stringify([target, lookup.currentMembers]);
           return this.pdfRetry.pipe(
             startWith(undefined),
