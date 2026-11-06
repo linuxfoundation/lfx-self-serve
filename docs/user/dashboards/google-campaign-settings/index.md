@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen ad groups and Demand Gen audiences for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups and Demand Gen audiences for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -244,6 +244,19 @@ A Demand Gen ad group can target one Google Ads Audience, such as an Audience bu
 - If a saved campaign holds an Audience that cannot be sent, a notice under the targeting settings says why and lists the Audience when the **Demand Gen Creative** section is not shown. This includes a Demand Gen campaign selected together with a Search campaign. **Create Campaign** stays unavailable until it is sent or removed, so the Audience is never dropped. The notice says you are not on the LF marketing team, that Audiences are not available on this deployment, that your access is still being checked, that it can be checked once the brief is saved, or that it could not be checked, with **Retry**. Choose **Remove audience** (**Remove audiences** for several) to create without them.
 
 Leave the picker alone and the campaign is created exactly as before, with no Audience.
+
+## Display ad groups
+
+A Display campaign can be split into named ad groups, such as Retargeting and Prospecting, each with its own responsive display ad. Tick **Split into named ad groups** in the **Display Creative** section. The first ad group appears, and **Add ad group** adds more, up to 5. **Remove ad group** removes one.
+
+For each ad group:
+
+- **Name**: required. Google Ads names the ad group after the event, then " - Display Network | " and this name, such as "KubeCon NA - Display Network | Retargeting". That full name can be up to 255 characters. Each ad group needs a different name, and names that differ only in capitals count as the same.
+- **The ad**: the same fields and rules as the campaign's single Display ad. Paste image links; the brief's image library is not offered for ad groups.
+
+Every ad group needs a complete ad. Until every ad group has a name and a complete ad, a message under the ad groups explains what to fix and **Create Campaign** stays unavailable. The same happens if you remove every ad group while the checkbox is ticked: add one, or untick the checkbox.
+
+While the campaign is split, the single Display ad you entered is kept but not sent, and a note under the checkbox says so. Untick the checkbox to send the single ad instead. Your ad groups are then kept but not sent, and the note says that too. Placement exclusions cover every ad group. Ad groups do not take their own audiences here.
 
 ## If something is wrong
 
