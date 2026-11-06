@@ -68,13 +68,13 @@ describe('UiDescriptionComponent', () => {
     expect(help()).toBeNull();
   });
 
-  it('right-aligns and uses tabular figures', async () => {
+  it('right-aligns', async () => {
     fixture.componentRef.setInput('align', 'right');
     await fixture.whenStable();
 
     expect(list().className).toContain('items-end');
     expect(list().className).toContain('text-right');
-    expect(value().className).toContain('tabular-nums');
+    expect(value().className).not.toContain('tabular-nums');
   });
 
   it('shows no tooltip on a value that is not truncated', async () => {
