@@ -433,7 +433,8 @@ export class AccountContextService {
       return familySeed;
     }
     if (familyUids.length > 0) {
-      return { ...PLACEHOLDER_ACCOUNT, uid: familyUids[0] };
+      // `accountId` too, for the same reason as the grant-set stub below.
+      return { ...PLACEHOLDER_ACCOUNT, uid: familyUids[0], accountId: familyUids[0] };
     }
     const seed = this.userOrganizations()[0];
     if (seed) {

@@ -1149,6 +1149,19 @@ describe('AccountContextService — family roll-up', () => {
     expect(next?.accountId).toBe(UID_B);
   });
 
+  // The same rule outside the addressed family: the caller's only organization sits in another one.
+  it('carries accountId on a grant-only demotion target from another family', () => {
+    const UID_C = '0014100000MgcCCCCC';
+    service.selectRollUp(ROOT, { admitWhilePending: true });
+    service.initializeUserOrganizations([]);
+    grants.writerSet.set(new Set([UID_C]));
+
+    const next = service.demoteAddressedRollUp(ROOT);
+
+    expect(next?.uid).toBe(UID_C);
+    expect(next?.accountId).toBe(UID_C);
+  });
+
   describe('orgListPinUid', () => {
     it('answers null while the roll-up is selected', () => {
       service.initializeUserOrganizations([seedA, seedB]);
