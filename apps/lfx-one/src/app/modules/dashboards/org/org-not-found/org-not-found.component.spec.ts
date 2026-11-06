@@ -5,7 +5,7 @@ import { computed, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { Account, OrgItem, OrgLensEmptyStateName, OrgLensLookupOutcome, OrgLensStaffCheck } from '@lfx-one/shared/interfaces';
-import { orgUrlSegment } from '@lfx-one/shared/utils';
+import { isOrgRollUpSegment, orgUrlSegment } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
@@ -105,7 +105,7 @@ function setup(): Harness {
           // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
           orgListPinUid: () => {
             const uid = selectedAccount().uid || 'cookie-uid';
-            return uid === 'all' ? null : uid;
+            return isOrgRollUpSegment(uid) ? null : uid;
           },
           setAccount,
           refreshCanonicalRecord: vi.fn(() => Promise.resolve()),

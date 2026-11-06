@@ -3,15 +3,15 @@
 
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
-import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_ROLLUP_SEGMENT, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 
 import { AccountContextService } from '../services/account-context.service';
 
 const CLA_PAGE = 'easycla';
 
 /**
- * Keeps a page that is single-organization *by definition* off the All Organizations roll-up,
- * sending it to the roll-up's own overview instead (#4125).
+ * Keeps a page that is single-organization *by definition* off a family roll-up, sending it to
+ * that roll-up's own overview instead (#4125).
  *
  * Three pages qualify. Organization Profile edits one `b2b_org` record, EasyCLA is about a
  * corporate CLA, which belongs to one company, and Crowdfunding Donations reads
@@ -20,7 +20,7 @@ const CLA_PAGE = 'easycla';
  *
  * Dropping their sidebar items is not enough on its own. `navigateToSelectedOrg` canonicalizes a
  * legacy `/org/profile` by inserting the selected segment, so in roll-up mode the app itself
- * rewrites that address to `/org/all/profile`, where the page asks for `/api/orgs/uid/all`, the
+ * rewrites that address to `/org/family-{id}/profile`, where the page asks for `/api/orgs/uid/family-{id}`, the
  * SFID validator refuses the sentinel and the caller lands on an error (#4415, Cursor). A typed or
  * bookmarked address, and a cookie that restores the roll-up under a legacy address, arrive the
  * same way; EasyCLA's own requests need a concrete organization for the same reason.
@@ -33,7 +33,8 @@ const CLA_PAGE = 'easycla';
  * roll-up SSR render of `/org/profile` redirects rather than rendering a page it cannot fill.
  */
 export const orgRollUpSingleOrgPageGuard: CanActivateFn = (route: ActivatedRouteSnapshot): boolean | UrlTree => {
-  if (!inject(AccountContextService).isRollUp()) {
+  const accountContext = inject(AccountContextService);
+  if (!accountContext.isRollUp()) {
     return true;
   }
   // One address is let through: a corporate-signing return minted on the leftover
@@ -46,15 +47,15 @@ export const orgRollUpSingleOrgPageGuard: CanActivateFn = (route: ActivatedRoute
   // insert, for the same reason (#4415, Copilot).
   //
   // All three conditions matter. Only the EasyCLA page adopts the parameter, so on Profile it is
-  // just an unread query string and `?org=` would have waved `/org/all/profile` straight through
+  // just an unread query string and `?org=` would have waved `/org/family-{id}/profile` straight through
   // to the error this guard exists to prevent. Only the LEGACY mount can carry such a return — an
-  // addressed `/org/{segment}/easycla` already names its organization — so `/org/all/easycla?org=`
+  // addressed `/org/{segment}/easycla` already names its organization — so `/org/family-{id}/easycla?org=`
   // is a hand-made address, not a return, and is refused. And an empty value adopts nothing
   // (#4415, Copilot again).
   if (isLegacyEasyclaReturn(route)) {
     return true;
   }
-  return inject(Router).createUrlTree(['/org', ORG_ROLLUP_SEGMENT, 'overview']);
+  return inject(Router).createUrlTree(['/org', accountContext.selectedAccount().uid, 'overview']);
 };
 
 /**
