@@ -184,9 +184,6 @@ export const NEWSLETTER_GUEST_COOKIE_NAME = 'lfx_newsletter_guest';
 /** Path the guest cookie is scoped to — only the public newsletter endpoints ever receive it. */
 export const NEWSLETTER_GUEST_COOKIE_PATH = '/public/api/newsletters';
 
-/** Most `status=sent` list pages walked to find a newsletter group's latest issue (the list is ordered by `updated_at`, not `sent_at`). */
-export const NEWSLETTER_GUEST_LATEST_MAX_PAGES = 10;
-
 /** Guest newsletter requests (invite checks, email checks) one IP may make per window (per pod). */
 export const NEWSLETTER_GUEST_RATE_LIMIT_MAX = 30;
 

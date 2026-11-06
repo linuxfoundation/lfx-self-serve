@@ -107,7 +107,7 @@ Newsletters are a member benefit, so an employee of a member company can read th
 - **From an invitation email.** Your colleague selects **Accept invitation**. If they aren't signed in, a window over the page shows the foundation's logo and their email address, which they can't change. They select **Continue**, their email is added to the newsletter's list, and the latest newsletter opens. The invitation link works for 30 days. If they're already signed in, they go to the foundation's newsletters and confirm there, as before.
 - **From a shared link.** Someone who opens a link to a newsletter without signing in is asked for their work email. If the email is at a member company, **Continue** opens that newsletter. LFX then emails them a link; their email is added to the newsletter's list only after they open it. A personal address, or an address at a company that isn't a member, can't open the newsletter.
 
-Either way, the window also offers **Sign in** for people who have an LFX account. Reading without signing in lasts until the browser is closed, and the LFX sidebar isn't shown.
+Either way, the window also offers **Sign in** for people who have an LFX account. Reading without signing in lasts until the browser is closed or for 12 hours, whichever comes first, and the LFX sidebar isn't shown.
 
 If you open a link to a newsletter you can't read, you see a message such as **Restricted Newsletter** or **This newsletter is a member benefit** instead of the newsletter.
 

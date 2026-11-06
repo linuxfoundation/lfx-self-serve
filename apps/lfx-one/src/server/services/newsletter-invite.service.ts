@@ -19,6 +19,7 @@ import {
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
 } from '@lfx-one/shared/constants';
 import {
+  ApiRequestOptions,
   Committee,
   FoundationNewsletterGroup,
   MyNewsletter,
@@ -271,9 +272,9 @@ export class NewsletterInviteService {
   }
 
   /** The invite landing's foundation — strict: an unresolved project is a retryable 503, never an "invalid invite". */
-  public async resolveFoundation(req: Request, projectUid: string | undefined): Promise<ResolvedNewsletterFoundation | null> {
+  public async resolveFoundation(req: Request, projectUid: string | undefined, options?: ApiRequestOptions): Promise<ResolvedNewsletterFoundation | null> {
     if (!projectUid) return null;
-    const { resolved, unresolvedProjectUids } = await this.resolveFoundations(req, [projectUid]);
+    const { resolved, unresolvedProjectUids } = await this.resolveFoundations(req, [projectUid], options);
     if (unresolvedProjectUids.length > 0) this.throwFoundationUnavailable(unresolvedProjectUids[0]);
     return resolved.get(projectUid) ?? null;
   }
@@ -553,12 +554,14 @@ export class NewsletterInviteService {
    * `getProjectsByIds` is fail-soft (an outage reads as "no such project"), so a project or parent
    * that does not come back is reported in `unresolvedProjectUids` rather than guessed at.
    */
+  /** `options.bearerToken` scopes an M2M override to the project reads (the signed-out guest reader has no session). */
   private async resolveFoundations(
     req: Request,
-    projectUids: string[]
+    projectUids: string[],
+    options?: ApiRequestOptions
   ): Promise<{ resolved: Map<string, ResolvedNewsletterFoundation>; unresolvedProjectUids: string[] }> {
     const [owners, rootUid] = await Promise.all([
-      this.projectService.getProjectsByIds(req, new Set(projectUids)),
+      this.projectService.getProjectsByIds(req, new Set(projectUids), options),
       resolveRootProjectUid(req, this.natsService),
     ]);
     const parentOf = (project: Project): string | undefined => collapseRootParentUid(project.parent_uid, rootUid) || undefined;
@@ -568,7 +571,7 @@ export class NewsletterInviteService {
       const parentUid = parentOf(owner);
       if (!computeIsFoundation(owner) && parentUid && !owners.has(parentUid)) parentUids.add(parentUid);
     }
-    const parents = parentUids.size > 0 ? await this.projectService.getProjectsByIds(req, parentUids) : new Map<string, Project>();
+    const parents = parentUids.size > 0 ? await this.projectService.getProjectsByIds(req, parentUids, options) : new Map<string, Project>();
 
     const resolved = new Map<string, ResolvedNewsletterFoundation>();
     const unresolvedProjectUids: string[] = [];

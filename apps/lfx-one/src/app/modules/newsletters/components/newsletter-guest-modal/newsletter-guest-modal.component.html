@@ -36,6 +36,9 @@
 
     <p class="max-w-md text-base text-gray-600" data-testid="newsletter-guest-modal-description">{{ description() }}</p>
 
+    <!-- The field's own error is not announced; this live region tells screen-reader users when Continue fails. -->
+    <p class="sr-only" role="alert" aria-live="assertive" data-testid="newsletter-guest-modal-live">{{ errorMessage() }}</p>
+
     <form class="flex w-full max-w-sm flex-col items-stretch gap-5 text-left" (submit)="onSubmit($event)" novalidate data-testid="newsletter-guest-modal-form">
       <lfx-ui-input
         label="Your email"

@@ -1,14 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpErrorResponse } from '@angular/common/http';
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router } from '@angular/router';
 import { UserService } from '@app/shared/services/user.service';
-import { extractErrorMessage } from '@app/shared/utils/http-error.utils';
+import { extractFieldOrEnvelopeMessage } from '@app/shared/utils/http-error.utils';
 import { NEWSLETTER_INVITE_QUERY_PARAM, NEWSLETTER_INVITE_TOKEN_FRAGMENT_KEY } from '@lfx-one/shared/constants';
 import { NewsletterGuestInviteInfo, NewsletterGuestPageState } from '@lfx-one/shared/interfaces';
 import { formatLfxDocumentTitle } from '@lfx-one/shared/utils';
@@ -82,8 +81,8 @@ export class NewsletterInviteGuestComponent implements OnInit {
     this.submitting.set(true);
     this.errorMessage.set('');
     this.newsletterService
+      // A write: not cancelled on destroy (the service's take(1) completes it), so leaving the page cannot abort the add or email.
       .acceptNewsletterGuestInvite(this.token)
-      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (issue) => {
           this.submitting.set(false);
@@ -93,7 +92,7 @@ export class NewsletterInviteGuestComponent implements OnInit {
         },
         error: (error: unknown) => {
           this.submitting.set(false);
-          this.errorMessage.set(this.continueErrorMessage(error));
+          this.errorMessage.set(extractFieldOrEnvelopeMessage(error, "We couldn't open the newsletter. Please try again."));
         },
       });
   }
@@ -161,14 +160,5 @@ export class NewsletterInviteGuestComponent implements OnInit {
         // The service already logged it; a failed read is not "invalid link", so show the retry copy.
         error: () => this.state.set({ status: 'error' }),
       });
-  }
-
-  /** Field-level validation messages first, then the envelope. */
-  private continueErrorMessage(error: unknown): string {
-    if (error instanceof HttpErrorResponse) {
-      const fieldMessage = (error.error as { errors?: { message?: string }[] } | null)?.errors?.[0]?.message;
-      if (fieldMessage) return fieldMessage;
-    }
-    return extractErrorMessage(error, "We couldn't open the newsletter. Please try again.");
   }
 }

@@ -178,9 +178,19 @@ export class NewsletterService {
     return this.newsletterClient.getNewsletter(req, projectUid, newsletterUid, options);
   }
 
-  /** `options.bearerToken` scopes an M2M override to this one read (the signed-out guest reader). */
-  public listNewsletters(req: Request, projectUid: string, params: NewsletterListParams, options?: ApiRequestOptions): Promise<NewsletterListResponse> {
-    return this.newsletterClient.listNewsletters(req, projectUid, params, options);
+  public listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {
+    return this.newsletterClient.listNewsletters(req, projectUid, params);
+  }
+
+  /**
+   * The newest sent issue addressed to a newsletter group, or null when it has sent none. The
+   * committee-scoped upstream list is sent-only and ordered by `sent_at` descending, so the first row
+   * of the first page is the latest. Only the signed-out guest reader calls this, with an M2M token
+   * (`options.bearerToken`), after it has verified the reader in-app.
+   */
+  public async getLatestCommitteeNewsletter(req: Request, committeeUid: string, options?: ApiRequestOptions): Promise<CommitteeNewsletter | null> {
+    const page = await this.newsletterClient.listCommitteeNewsletters(req, committeeUid, undefined, options);
+    return page.newsletters?.[0] ?? null;
   }
 
   /**

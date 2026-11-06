@@ -25,6 +25,7 @@ export class PublicNewsletterGuestController {
     try {
       const info = await this.guestService.inspectInvite(req, this.bodyString(req, 'token'));
       logger.success(req, operation, startTime, { status: info.status, committee_uid: info.committee_uid });
+      this.noStore(res);
       res.json(info);
     } catch (error) {
       next(error);
@@ -72,6 +73,7 @@ export class PublicNewsletterGuestController {
       const session = this.session(req);
       const issue = session ? await this.guestService.getLatestIssue(req, session) : null;
       logger.success(req, operation, startTime, { has_session: !!session, found: !!issue });
+      this.noStore(res);
       res.json({ issue } satisfies NewsletterGuestIssueResponse);
     } catch (error) {
       next(error);
@@ -87,6 +89,7 @@ export class PublicNewsletterGuestController {
       const session = this.session(req);
       const response = await this.guestService.getSharedIssue(req, session, projectSlug, newsletterUid);
       logger.success(req, operation, startTime, { has_session: !!session, found: !!response.issue });
+      this.noStore(res);
       res.json(response);
     } catch (error) {
       next(error);
@@ -104,7 +107,13 @@ export class PublicNewsletterGuestController {
       sameSite: 'lax',
       path: NEWSLETTER_GUEST_COOKIE_PATH,
     });
+    this.noStore(res);
     res.json(issue);
+  }
+
+  /** Guest answers carry the reader's email and the issue body and depend on a cookie: no shared or browser cache may keep them. */
+  private noStore(res: Response): void {
+    res.set('Cache-Control', 'private, no-store');
   }
 
   private session(req: Request): NewsletterGuestSession | null {

@@ -17,7 +17,7 @@ vi.mock('./logger.service', () => ({
 
 import type { Request } from 'express';
 
-import { AuthorizationError, InvalidRequestError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, InvalidRequestError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { createNewsletterInviteToken, readNewsletterInviteToken } from '../utils/newsletter-guest-token.util';
 import { NewsletterGuestService } from './newsletter-guest.service';
 
@@ -50,7 +50,7 @@ function makeDeps() {
     },
     newsletterService: {
       getNewsletter: vi.fn(async (_req: Request, _projectUid: string, id: string) => sentIssue(id, '2026-10-01T00:00:00Z')),
-      listNewsletters: vi.fn(),
+      getLatestCommitteeNewsletter: vi.fn().mockResolvedValue({ id: 'n-new', project_uid: 'p-1', subject: 'Issue n-new', sent_at: '2026-10-15T00:00:00Z' }),
     },
     projectService: { getProjectIdBySlug: vi.fn().mockResolvedValue({ exists: true, uid: 'p-1' }) },
     emailService: { sendEmail: vi.fn().mockResolvedValue(undefined) },
@@ -103,13 +103,6 @@ describe('NewsletterGuestService', () => {
 
   describe('acceptInvite', () => {
     it('adds the invited address to the group and returns the latest issue sent to it', async () => {
-      deps.newsletterService.listNewsletters
-        .mockResolvedValueOnce({
-          newsletters: [sentIssue('n-old', '2026-09-01T00:00:00Z'), sentIssue('n-other', '2026-12-01T00:00:00Z', ['c-board'])],
-          next_page_token: 'p2',
-        })
-        .mockResolvedValueOnce({ newsletters: [sentIssue('n-new', '2026-10-15T00:00:00Z')] });
-
       const grant = await service.acceptInvite(req, createNewsletterInviteToken('c-news', 'jane@acme-motors.example'));
 
       expect(deps.memberBenefitService.addToNewsletterGroup).toHaveBeenCalledWith(
@@ -118,13 +111,15 @@ describe('NewsletterGuestService', () => {
         { uid: 'c-news', name: 'Acme Newsletter' },
         { email: 'jane@acme-motors.example', b2b_org_uid: 'org-1', company_name: 'Acme Motors' }
       );
-      expect(deps.newsletterService.listNewsletters).toHaveBeenNthCalledWith(2, req, 'p-1', { status: 'sent', page_token: 'p2' }, { bearerToken: 'm2m' });
+      expect(deps.newsletterService.getLatestCommitteeNewsletter).toHaveBeenCalledWith(req, 'c-news', { bearerToken: 'm2m' });
+      expect(deps.newsletterService.getNewsletter).toHaveBeenCalledWith(req, 'p-1', 'n-new', { bearerToken: 'm2m' });
+      expect(deps.inviteService.resolveFoundation).toHaveBeenCalledWith(req, 'p-1', { bearerToken: 'm2m' });
       expect(grant.issue).toMatchObject({ foundation, email: 'jane@acme-motors.example', confirmation_sent: false, newsletter: { id: 'n-new' } });
       expect(grant.session).toEqual({ e: 'jane@acme-motors.example', c: 'c-news', f: 'f-1', v: true });
     });
 
     it('returns no issue when the group has sent none', async () => {
-      deps.newsletterService.listNewsletters.mockResolvedValueOnce({ newsletters: [] });
+      deps.newsletterService.getLatestCommitteeNewsletter.mockResolvedValueOnce(null);
       const grant = await service.acceptInvite(req, createNewsletterInviteToken('c-news', 'jane@acme-motors.example'));
       expect(grant.issue.newsletter).toBeNull();
     });
@@ -177,9 +172,19 @@ describe('NewsletterGuestService', () => {
       expect((await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example')).issue.confirmation_sent).toBe(true);
       expect(deps.emailService.sendEmail).not.toHaveBeenCalled();
 
-      deps.emailService.sendEmail.mockRejectedValueOnce(new Error('nats down'));
+      deps.emailService.sendEmail.mockRejectedValueOnce(new MicroserviceError('rejected', 502, 'EMAIL_SEND_FAILED'));
       expect((await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example')).issue.confirmation_sent).toBe(true);
       expect(deps.inviteService.releaseRecipientCooldown).toHaveBeenCalledWith(`c-news|jane@acme-motors.example`);
+    });
+
+    it('keeps the confirmation cooldown when the send outcome is unknown', async () => {
+      deps.emailService.sendEmail.mockRejectedValueOnce(new MicroserviceError('unconfirmed', 502, 'EMAIL_SEND_UNCONFIRMED'));
+      await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example');
+
+      deps.emailService.sendEmail.mockRejectedValueOnce(new MicroserviceError('lost', 502, 'EMAIL_SEND_FAILED', { transportFailure: true }));
+      await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example');
+
+      expect(deps.inviteService.releaseRecipientCooldown).not.toHaveBeenCalled();
     });
   });
 

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  NEWSLETTER_GUEST_LATEST_MAX_PAGES,
   NEWSLETTER_GUEST_NOT_ELIGIBLE_ERROR_CODE,
   NEWSLETTER_GUEST_UNAVAILABLE_ERROR_CODE,
   NEWSLETTER_INVITE_EXPIRED_ERROR_CODE,
@@ -20,7 +19,6 @@ import {
   NewsletterGuestNewsletter,
   NewsletterGuestSession,
   NewsletterGuestSharedTarget,
-  NewsletterListItem,
   NewsletterMemberBenefitGroup,
   ResolvedNewsletterFoundation,
 } from '@lfx-one/shared/interfaces';
@@ -219,7 +217,7 @@ export class NewsletterGuestService {
     committeeUid: string
   ): Promise<{ committee: Committee; resolved: ResolvedNewsletterFoundation } | null> {
     const committee = await this.inviteService.getNewsletterCommittee(req, m2mToken, committeeUid);
-    const resolved = committee ? await this.inviteService.resolveFoundation(req, committee.project_uid) : null;
+    const resolved = committee ? await this.inviteService.resolveFoundation(req, committee.project_uid, { bearerToken: m2mToken }) : null;
     return committee && resolved ? { committee, resolved } : null;
   }
 
@@ -246,39 +244,18 @@ export class NewsletterGuestService {
 
     const group = await this.memberBenefitService.resolveNewsletterGroup(req, m2mToken, newsletter);
     if (!group) return null;
-    const resolved = await this.inviteService.resolveFoundation(req, project.uid);
+    const resolved = await this.inviteService.resolveFoundation(req, project.uid, { bearerToken: m2mToken });
     return resolved ? { newsletter, group, resolved } : null;
   }
 
-  /**
-   * The newsletter group's most recently sent issue, or null when it has sent none. The project list
-   * is ordered by `updated_at`, not `sent_at`, so it walks the sent pages (bounded) and picks the
-   * newest send addressed to the group, then reads that issue for its body.
-   */
+  /** The newsletter group's most recently sent issue (sent-time ordered, group-scoped upstream list), or null when it has sent none. */
   private async findLatestIssue(req: Request, m2mToken: string, committee: Committee): Promise<NewsletterGuestNewsletter | null> {
-    let latest: NewsletterListItem | null = null;
-    let pageToken: string | undefined;
-    let pages = 0;
-    do {
-      const page = await this.newsletterService.listNewsletters(
-        req,
-        committee.project_uid,
-        { status: 'sent', ...(pageToken && { page_token: pageToken }) },
-        { bearerToken: m2mToken }
-      );
-      for (const item of page.newsletters ?? []) {
-        if (item.status !== 'sent' || !item.committee_uids?.includes(committee.uid)) continue;
-        if (!latest || (item.sent_at ?? '') > (latest.sent_at ?? '')) latest = item;
-      }
-      pageToken = page.next_page_token;
-      pages += 1;
-    } while (pageToken && pages < NEWSLETTER_GUEST_LATEST_MAX_PAGES);
-
+    const latest = await this.newsletterService.getLatestCommitteeNewsletter(req, committee.uid, { bearerToken: m2mToken });
     if (!latest) {
       logger.debug(req, 'find_newsletter_guest_latest_issue', 'Newsletter group has no sent issue', { committee_uid: committee.uid });
       return null;
     }
-    const newsletter = await this.newsletterService.getNewsletter(req, committee.project_uid, latest.id, { bearerToken: m2mToken });
+    const newsletter = await this.newsletterService.getNewsletter(req, latest.project_uid, latest.id, { bearerToken: m2mToken });
     return this.toGuestNewsletter(newsletter);
   }
 
@@ -314,7 +291,11 @@ export class NewsletterGuestService {
       try {
         await this.emailService.sendEmail(req, { to: email, ...rendered });
       } catch (error) {
-        this.inviteService.releaseRecipientCooldown(cooldownKey);
+        // Release only on a confirmed pre-send refusal. A lost reply or an unconfirmed outcome may
+        // already have delivered, and an anonymous retry must not mail the address again today.
+        if (isBaseApiError(error) && error.code === 'EMAIL_SEND_FAILED' && !error.transportFailure) {
+          this.inviteService.releaseRecipientCooldown(cooldownKey);
+        }
         throw error;
       }
       return 'sent';

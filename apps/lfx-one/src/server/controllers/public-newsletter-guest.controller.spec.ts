@@ -19,7 +19,7 @@ const session = { e: 'jane@acme-motors.example', c: 'c-news', f: 'f-1', v: true 
 const issue = { foundation: { uid: 'f-1', slug: 'acme', name: 'Acme', logo_url: null }, email: session.e, newsletter: null, confirmation_sent: false };
 
 function makeRes() {
-  const res = { cookie: vi.fn(), json: vi.fn() };
+  const res = { cookie: vi.fn(), json: vi.fn(), set: vi.fn() };
   return res as typeof res & Response;
 }
 
@@ -50,6 +50,7 @@ describe('PublicNewsletterGuestController', () => {
     expect(readNewsletterGuestSessionValue(value)).toMatchObject(session);
     expect(options).toMatchObject({ httpOnly: true, sameSite: 'lax', path: NEWSLETTER_GUEST_COOKIE_PATH });
     expect(options).not.toHaveProperty('maxAge');
+    expect(res.set).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
     expect(res.json).toHaveBeenCalledWith(issue);
   });
 
@@ -64,6 +65,7 @@ describe('PublicNewsletterGuestController', () => {
     await controller.getLatestIssue({ headers: { cookie } } as Request, res, next);
     expect(guestService['getLatestIssue']).toHaveBeenCalledWith(expect.anything(), expect.objectContaining(session));
     expect(res.json).toHaveBeenCalledWith({ issue });
+    expect(res.set).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
 
     const anonymous = makeRes();
     await controller.getLatestIssue({ headers: { cookie: `${NEWSLETTER_GUEST_COOKIE_NAME}=forged.value` } } as Request, anonymous, next);

@@ -142,6 +142,19 @@ describe('NewsletterSharePreviewComponent', () => {
     expect(modal()!.errorMessage()).toBe('This newsletter is a member benefit of Acme Foundation. Use your work email, or sign in.');
   });
 
+  it('offers a retry, not the members-only card, when the guest lookup fails', () => {
+    getNewsletterGuestSharedIssue.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    getNewsletterGuestSharedIssue.mockReturnValueOnce(of({ issue: null, foundation, membership_name: 'Acme Foundation' }));
+    const el = render();
+
+    expect(el.querySelector('[data-testid="newsletter-share-preview-error"]')).not.toBeNull();
+    (el.querySelector('[data-testid="newsletter-share-preview-retry"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(getNewsletterGuestSharedIssue).toHaveBeenCalledTimes(2);
+    expect(el.querySelector('[data-testid="newsletter-guest-modal"]')).not.toBeNull();
+  });
+
   it('skips the modal when the guest session already covers the issue', () => {
     getNewsletterGuestSharedIssue.mockReturnValue(of({ issue: guestIssue, foundation, membership_name: 'Acme Foundation' }));
 

@@ -955,7 +955,8 @@ export interface NewsletterGuestConfirmEmailContext {
 
 /** Load state of a signed-out newsletter guest page. */
 export interface NewsletterGuestPageState {
-  status: 'loading' | 'prompt' | 'reading' | 'error';
+  /** `unavailable`: the issue is not one the member benefit opens; `error`: the lookup itself failed (retryable). */
+  status: 'loading' | 'prompt' | 'reading' | 'unavailable' | 'error';
   invite?: NewsletterGuestInviteInfo;
   issue?: NewsletterGuestIssue;
 }

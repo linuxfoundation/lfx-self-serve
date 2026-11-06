@@ -55,7 +55,7 @@ export class NewsletterServiceClient {
     );
   }
 
-  public async listNewsletters(req: Request, projectUid: string, params: NewsletterListParams, options?: ApiRequestOptions): Promise<NewsletterListResponse> {
+  public async listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {
     const query: Record<string, string> = {};
     if (params.status) {
       query['status'] = params.status;
@@ -68,10 +68,7 @@ export class NewsletterServiceClient {
       'LFX_V2_SERVICE',
       `/projects/${projectUid}/newsletters`,
       'GET',
-      Object.keys(query).length ? query : undefined,
-      undefined,
-      undefined,
-      options
+      Object.keys(query).length ? query : undefined
     );
   }
 
@@ -79,16 +76,25 @@ export class NewsletterServiceClient {
    * Member-facing committee-scoped list: sent newsletters whose audience
    * includes the committee, ordered by sent_at descending. The upstream
    * gateway authorizes the caller against `committee:{committee_uid}#member`
-   * (live FGA membership), so this must always run with the user's bearer
-   * token — never M2M.
+   * (live FGA membership), so My Newsletters runs it with the user's bearer
+   * token. The only M2M caller (`options.bearerToken`) is the signed-out guest
+   * reader, after its in-app member-company check (#5235).
    */
-  public async listCommitteeNewsletters(req: Request, committeeUid: string, pageToken?: string): Promise<CommitteeNewsletterListResponse> {
+  public async listCommitteeNewsletters(
+    req: Request,
+    committeeUid: string,
+    pageToken?: string,
+    options?: ApiRequestOptions
+  ): Promise<CommitteeNewsletterListResponse> {
     return this.microserviceProxy.proxyRequest<CommitteeNewsletterListResponse>(
       req,
       'LFX_V2_SERVICE',
       `/committees/${committeeUid}/newsletters`,
       'GET',
-      pageToken ? { page_token: pageToken } : undefined
+      pageToken ? { page_token: pageToken } : undefined,
+      undefined,
+      undefined,
+      options
     );
   }
 

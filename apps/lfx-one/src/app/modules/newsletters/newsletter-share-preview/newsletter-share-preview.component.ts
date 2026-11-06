@@ -1,13 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpErrorResponse } from '@angular/common/http';
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
-import { extractErrorMessage } from '@app/shared/utils/http-error.utils';
+import { extractFieldOrEnvelopeMessage } from '@app/shared/utils/http-error.utils';
 import { NEWSLETTER_SHARE_PREVIEW_FALLBACK_TITLE } from '@lfx-one/shared/constants';
 import { NewsletterGuestIssueResponse, NewsletterGuestPageState, NewsletterSharePreviewState } from '@lfx-one/shared/interfaces';
 import { formatLfxDocumentTitle, newsletterIssuePath } from '@lfx-one/shared/utils';
@@ -74,34 +73,22 @@ export class NewsletterSharePreviewComponent implements OnInit {
   // === Lifecycle ===
   public ngOnInit(): void {
     if (!isPlatformBrowser(this.platformId) || !this.projectSlug || !this.newsletterId) return;
-    this.newsletterService
-      .getNewsletterGuestSharedIssue(this.projectSlug, this.newsletterId)
-      .pipe(
-        catchError((error: unknown) => {
-          console.error('Failed to load newsletter guest access', error);
-          return of<NewsletterGuestIssueResponse>({ issue: null });
-        }),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((response) => {
-        if (response.issue) {
-          this.guest.set({ status: 'reading', issue: response.issue });
-          return;
-        }
-        // No foundation: not an issue the member benefit opens (or the check failed) — keep the sign-in card.
-        this.prompt.set(response);
-        this.guest.set({ status: response.foundation ? 'prompt' : 'error' });
-      });
+    this.loadGuestAccess();
   }
 
   // === Protected Methods ===
+  protected onRetry(): void {
+    this.guest.set({ status: 'loading' });
+    this.loadGuestAccess();
+  }
+
   protected onContinue(email: string): void {
     if (this.submitting()) return;
     this.submitting.set(true);
     this.errorMessage.set('');
     this.newsletterService
+      // A write: not cancelled on destroy (the service's take(1) completes it), so leaving the page cannot abort the add or email.
       .requestNewsletterGuestAccess(this.projectSlug, this.newsletterId, email)
-      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (issue) => {
           this.submitting.set(false);
@@ -109,7 +96,7 @@ export class NewsletterSharePreviewComponent implements OnInit {
         },
         error: (error: unknown) => {
           this.submitting.set(false);
-          this.errorMessage.set(this.continueErrorMessage(error));
+          this.errorMessage.set(extractFieldOrEnvelopeMessage(error, "We couldn't open the newsletter. Please try again."));
         },
       });
   }
@@ -138,13 +125,24 @@ export class NewsletterSharePreviewComponent implements OnInit {
   }
 
   // === Private Helpers ===
-  /** Field-level validation messages first (e.g. "This newsletter is a member benefit of …"), then the envelope. */
-  private continueErrorMessage(error: unknown): string {
-    if (error instanceof HttpErrorResponse) {
-      const fieldMessage = (error.error as { errors?: { message?: string }[] } | null)?.errors?.[0]?.message;
-      if (fieldMessage) return fieldMessage;
-    }
-    return extractErrorMessage(error, "We couldn't open the newsletter. Please try again.");
+  /** The guest session's issue, else the foundation the prompt names; a failed lookup is retryable, not "no guest access". */
+  private loadGuestAccess(): void {
+    this.newsletterService
+      .getNewsletterGuestSharedIssue(this.projectSlug, this.newsletterId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (response) => {
+          if (response.issue) {
+            this.guest.set({ status: 'reading', issue: response.issue });
+            return;
+          }
+          // No foundation: not an issue the member benefit opens — keep the sign-in card.
+          this.prompt.set(response);
+          this.guest.set({ status: response.foundation ? 'prompt' : 'unavailable' });
+        },
+        // The service already logged it.
+        error: () => this.guest.set({ status: 'error' }),
+      });
   }
 
   private applyMetadata(): void {
