@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
+import { MKTG_PRINT_REVERSED_FILTER } from '@lfx-one/shared/constants';
 import { buildBrandKitBookView, mktgPrintBrand } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MktgPrintService } from '@services/mktg-print.service';
@@ -237,6 +238,37 @@ it('renders two-up usage samples with ground, logo and the current server-suppli
   fixture.componentRef.setInput('projectName', 'Updated project context');
   await fixture.whenStable();
   expect(root.querySelector('.kit-chapter > thead')?.textContent).toContain('Updated project context Brand kit');
+});
+
+it('inks a sample on the accent as the deck does: the kit’s dark and the full-colour lockup when white fails AA there, white and the reversed lockup when it passes', async () => {
+  const { root, kit, view, brand, fixture } = await setup();
+  const examples = kit.chapters.usage.examples.map((example, index) => (index === 1 ? { ...example, ground: 'accent' } : example));
+  fixture.componentRef.setInput('view', { ...view, usage: { ...view.usage, examples } });
+  await fixture.whenStable();
+  const social = root.querySelectorAll<HTMLElement>('.kit-usage-frame')[1];
+  const colour = (value: string): string => {
+    const probe = document.createElement('span');
+    probe.style.color = value;
+    return probe.style.color;
+  };
+  // The fixture's orange accent reads 2.7:1 against white, as its own contrast table would grade it.
+  expect(social.getAttribute('data-layout')).toBe('social');
+  expect(social.style.backgroundColor).toBe(colour(brand.accent));
+  expect(social.style.color).toBe(colour(brand.dark));
+  expect(social.style.color).not.toBe(colour('white'));
+  // The fixture supplies no reversed artwork, so the reversed lockup is the primary one filtered white; the full-colour one is unfiltered.
+  expect(brand.logoOnDark?.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+  expect(social.querySelector('img')?.style.filter).toBe('');
+  // A dark accent that passes AA against white: white ink and the reversed lockup.
+  fixture.componentRef.setInput('brand', { ...brand, accent: '#1F4E79' });
+  await fixture.whenStable();
+  expect(social.style.backgroundColor).toBe(colour('#1F4E79'));
+  expect(social.style.color).toBe(colour('white'));
+  expect(social.querySelector('img')?.style.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+  // The samples on the dark and on white are inked as before.
+  const frames = root.querySelectorAll<HTMLElement>('.kit-usage-frame');
+  expect(frames[0].style.color).toBe(colour('white'));
+  expect(frames[2].style.color).toBe(colour(brand.ink));
 });
 
 it('keeps captioned pairs indivisible with explicit frame heights and the intro inside the first pair', async () => {
