@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, FrameLocator, Locator, Page } from '@playwright/test';
-import { MKTG_PRINT_FRAME_PAPER_IN, MKTG_PRINT_PAGE_MARGINS_CLASS, MKTG_PRINT_PAGE_SETUPS } from '@lfx-one/shared/constants';
+import {
+  MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN,
+  MKTG_PRINT_FRAME_PAPER_IN,
+  MKTG_PRINT_LANDSCAPE_PAGE_SETUP,
+  MKTG_PRINT_PAGE_MARGINS_CLASS,
+  MKTG_PRINT_PAGE_SETUPS,
+} from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './account-settings-email.helper';
 
 /** The frame prints once its own stylesheets, faces and images settle, or at the service's cap. */
@@ -10,6 +16,12 @@ const PRINT_FRAME_TIMEOUT_MS = 10_000;
 
 /** The production frame's viewport at CSS pixels (Letter's width, a hair under its height): the initial containing block the print geometry is measured against. */
 export const PRINT_FRAME_LETTER = { width: Math.round(MKTG_PRINT_FRAME_PAPER_IN.width * 96), height: Math.round(MKTG_PRINT_FRAME_PAPER_IN.height * 96) };
+
+/** The frame's viewport for the landscape deck pages (Letter landscape's width, a hair under its height), which the service picks when a root carries a landscape page. */
+export const PRINT_FRAME_LANDSCAPE = {
+  width: Math.round(MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN.width * 96),
+  height: Math.round(MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN.height * 96),
+};
 
 /** What a cover sized `calc(100vh - 1.2in)` must at least measure in that frame: the collapse this guards against left it at its content's height. */
 export const PRINT_COVER_MIN_HEIGHT = 900;
@@ -73,15 +85,16 @@ export async function expectMktgPrintFrame(page: Page, bodyClass: string, docume
 
 /**
  * Lay the printed frame out for measurement: production already gives it a
- * paper-sized viewport (asserted here, so the geometry below is production's),
- * but keeps it transparent. Make the frame element visible, on top, and put the
- * page under print media (the frame inherits the emulation). The document
- * inside is untouched: what is measured is the production layout.
+ * paper-sized viewport (asserted here against `size`, Letter portrait unless the
+ * spec says landscape, so the geometry below is production's), but keeps it
+ * transparent. Make the frame element visible, on top, and put the page under
+ * print media (the frame inherits the emulation). The document inside is
+ * untouched: what is measured is the production layout.
  */
-export async function layoutMktgPrintFrame(page: Page): Promise<FrameLocator> {
+export async function layoutMktgPrintFrame(page: Page, size: { width: number; height: number } = PRINT_FRAME_LETTER): Promise<FrameLocator> {
   const frame = page.getByTestId('lfx-print-frame');
   const box = await frame.boundingBox();
-  expect(box && { width: Math.round(box.width), height: Math.round(box.height) }).toEqual(PRINT_FRAME_LETTER);
+  expect(box && { width: Math.round(box.width), height: Math.round(box.height) }).toEqual(size);
   await frame.evaluate((element) => {
     element.style.opacity = '1';
     element.style.zIndex = '2147483647';
@@ -106,7 +119,17 @@ export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locato
   await expect(root).toHaveCSS('padding-left', webkit ? '0px' : '57.6px');
 }
 
-/** A viewport-height cover in the laid-out frame fills the page: the 1px frame left it at its content's height. */
+/**
+ * The landscape page setup the frame wrote when a root carries a deck page, the same in both engines: the paper
+ * landscape with no margin (the pages are fixed frames with their own room), the margins mode never taken, so a
+ * portrait root printed alongside keeps its room in the document.
+ */
+export async function expectMktgPrintLandscapeSetup(frame: FrameLocator, portraitRoot: Locator): Promise<void> {
+  expect(await frame.locator('head style').last().textContent()).toBe(`@page { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }`);
+  await expect(frame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`)).toHaveCount(0);
+  await expect(portraitRoot).toHaveCSS('padding-left', '57.6px');
+}
+
 /**
  * A table box's computed length in px, to compare to a tenth: Chromium reports a table row's laid-out height snapped to
  * 1/64 px (52.7969px for 0.55in) and WebKit serialises 10pt with six decimals (13.333333px), so an exact string fails.

@@ -15,13 +15,18 @@
     [footerLine]="c.footerLine"
     aria-label="FAQ"
     data-testid="mktg-faq-print-page">
-    <!-- Two open columns, the rows at the heights the pagination measured them at (a row grows for a line the
-         estimate missed, never shrinks under it), so the PDF and the deck lay the same pairs on the same page. -->
+    <!-- Two open columns, each pair a text box of the deck's (the shell's insets inside it), the rows at the heights
+         the pagination measured them at (a row grows for a line the estimate missed, never shrinks under it; a page
+         keeps one answer line free for it), the paragraph gaps the deck's, so the PDF lays the pairs the pagination
+         counted at the deck's measure. -->
     <div
       class="mfq-grid"
       [style.--mfq-ink]="l.dark"
       [style.--mfq-muted]="l.muted"
       [style.--mfq-source-size]="page.sourceSizePt"
+      [style.--mfq-bullet-gap]="bulletGap"
+      [style.--mfq-plain-after-bullet-gap]="plainAfterBulletGap"
+      [style.--mfq-bullet-after-plain-gap]="bulletAfterPlainGap"
       [style.grid-template-rows]="page.rowsTemplate"
       data-testid="mktg-faq-print-grid">
       @for (row of page.rows; track $index) {

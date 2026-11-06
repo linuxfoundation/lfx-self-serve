@@ -2,11 +2,14 @@
 /* SPDX-License-Identifier: MIT */
 
 /* The deck's FAQ grid (its appendix spec §2), in deck points inside the
-   shell's body AREA: two open columns 16.5 pt apart, rows 7.5 pt apart at
-   the heights the pagination measured, no boxes or rules; the question bold
-   in the dark, the answer 3 pt under it at the shell's line height, a list's items
-   indented 18 pt with real bullet glyphs in the ink and 2 pt between them,
-   the source line in the muted ink 3 pt under the answer. */
+   shell's body AREA: two open columns 16.5 pt apart, each pair a text box
+   of the deck's (the shell's insets on every side), rows 7.5 pt apart at the
+   heights the pagination measured, no boxes or rules; the question bold in
+   the dark, the answer 3 pt under it at the shell's line height, a list's
+   items indented 18 pt with real bullet glyphs in the ink, the gaps between
+   an answer's paragraphs the deck's (the layout's shares of the answer size,
+   none between two plain ones), the source line in the muted ink 3 pt under
+   the answer. Every length here is one the pagination measured with. */
 
 @use '../../../../styles/mktg-print-pt' as *;
 
@@ -21,7 +24,9 @@
 }
 
 .mfq-pair {
+  box-sizing: border-box;
   min-width: 0;
+  padding: var(--pp-inset);
   overflow: hidden;
   break-inside: avoid;
   overflow-wrap: anywhere;
@@ -49,8 +54,9 @@
 }
 
 /* The renderer's screen utilities are rem and the app's base rule sizes every bare `p`: inside the grid
-   its paragraphs and items take the entry's typeface, size, leading and ink, and the list its indent, gap
-   and a disc marker in the ink. */
+   its paragraphs and items take the entry's typeface, size, leading and ink, and the list its indent and a
+   disc marker in the ink. The gaps are the measure's: none over the first block or between two paragraphs,
+   the deck's shares of the size between items, after a list and before one. */
 :host ::ng-deep .mfq-answer .prose {
   max-width: none;
   color: inherit;
@@ -67,7 +73,7 @@
 
   ul,
   ol {
-    margin: pt(2) 0 0;
+    margin: 0;
     padding-left: pt(18);
   }
 
@@ -76,11 +82,24 @@
   }
 
   li {
-    margin: pt(2) 0 0;
+    margin: 0;
     padding-left: 0;
     font-family: inherit;
     font-size: inherit;
     line-height: inherit;
+  }
+
+  li + li,
+  :is(ul, ol) + :is(ul, ol) {
+    margin-top: var(--mfq-bullet-gap);
+  }
+
+  :is(ul, ol) + p {
+    margin-top: var(--mfq-plain-after-bullet-gap);
+  }
+
+  p + :is(ul, ol) {
+    margin-top: var(--mfq-bullet-after-plain-gap);
   }
 
   li::marker {

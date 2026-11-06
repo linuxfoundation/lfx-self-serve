@@ -457,7 +457,7 @@ describe('Family export slot', () => {
       'SYNTHETIC PROJECT · A LINUX FOUNDATION PROJECT',
       'October 2026',
       'Synthetic project · a Linux Foundation project',
-      'Messaging framework v3 · Brand Kit V1.0 · Boilerplates v2 · FAQ v1',
+      'Messaging Framework v3 · Brand Kit V1.0 · Boilerplates v2 · FAQ v1',
       '',
     ]);
     expect(coverEls[4].querySelector('img')?.getAttribute('src')).toBe(brand.logoOnDark?.src);

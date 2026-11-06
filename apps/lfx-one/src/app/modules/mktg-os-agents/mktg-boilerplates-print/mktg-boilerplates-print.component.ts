@@ -2,22 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input } from '@angular/core';
-import { MKTG_PRINT_LANDSCAPE_CLASS, MKTG_PRINT_SECTION_TITLES } from '@lfx-one/shared/constants';
-import { BoilerplatesPrintView, MktgPrintCard, MktgPrintCardPage } from '@lfx-one/shared/interfaces';
+import { MKTG_PRINT_APPENDIX_LAYOUT, MKTG_PRINT_LANDSCAPE_CLASS, MKTG_PRINT_SECTION_TITLES } from '@lfx-one/shared/constants';
+import { BoilerplatesPrintView, MktgBoilerplatesPrintPage } from '@lfx-one/shared/interfaces';
 import { mktgPagePt, mktgPrintPageChrome, mktgPrintPageLook, mktgPrintPageNumber, paginateBoilerplateCards } from '@lfx-one/shared/utils';
 import { MktgPrintPageComponent } from '../components/mktg-print-page/mktg-print-page.component';
-
-/** A card as the template binds it: its body's fitted size as a page length. */
-interface BoilerplatesPrintCard extends MktgPrintCard {
-  bodySize: string;
-}
-
-/** One page of cards as the template binds it: its deck-wide number and its rows' heights as a grid template. */
-interface BoilerplatesPrintPage extends Omit<MktgPrintCardPage, 'rows'> {
-  number: string;
-  rowsTemplate: string;
-  rows: { cards: BoilerplatesPrintCard[] }[];
-}
 
 /**
  * The boilerplates as the family deck prints them: pages of two-column
@@ -40,9 +28,11 @@ export class MktgBoilerplatesPrintComponent {
   public readonly familyName = input.required<string>();
   /** The deck-wide number of the first card page. */
   public readonly firstPage = input(1);
+  /** The label's tracking, as the pagination models it. */
+  protected readonly headTracking = `${MKTG_PRINT_APPENDIX_LAYOUT.cardLabelTracking}em`;
   protected readonly chrome = computed(() => mktgPrintPageChrome(this.projectName(), this.familyName(), this.number(), MKTG_PRINT_SECTION_TITLES.boilerplates));
   protected readonly look = computed(() => mktgPrintPageLook(this.view().brand));
-  protected readonly pages = computed<BoilerplatesPrintPage[]>(() =>
+  protected readonly pages = computed<MktgBoilerplatesPrintPage[]>(() =>
     paginateBoilerplateCards(this.view().lengths).map((page, index) => ({
       ...page,
       number: mktgPrintPageNumber(this.firstPage() + index),

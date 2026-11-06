@@ -7,10 +7,11 @@ import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import {
   expectMktgPrintFrame,
-  expectMktgPrintPageSetup,
+  expectMktgPrintLandscapeSetup,
   finishMktgPrintFrame,
   layoutMktgPrintFrame,
   mktgPrintComputedPx,
+  PRINT_FRAME_LANDSCAPE,
   stubMktgPrintFrame,
 } from './helpers/mktg-print.helper';
 
@@ -143,10 +144,7 @@ test('unsupported family shows one line without export buttons or Positioning no
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 
-test('Download PDF stays disabled behind the checking line until prepared, then the first click prints from the isolated frame', async ({
-  page,
-  browserName,
-}, info) => {
+test('Download PDF stays disabled behind the checking line until prepared, then the first click prints from the isolated frame', async ({ page }, info) => {
   await stubMktgPrintFrame(page);
   const controls = await openFamilyExports(page, { allAssets: true, holdPrint: true });
   const pdf = page.getByTestId('family-export-pdf').getByRole('button');
@@ -176,8 +174,8 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(page.getByTestId('family-export-print-document')).toBeHidden();
   await expect(page.locator('body')).not.toHaveClass(new RegExp(MKTG_FAMILY_PRINT_BODY_CLASS));
   await expect(page.getByTestId('family-export-pdf-note')).toHaveText('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
-  // The geometry proof measures the frame's document: the one the dialog prints.
-  const printFrame = await layoutMktgPrintFrame(page);
+  // The geometry proof measures the frame's document: the one the dialog prints, sized for the landscape deck pages.
+  const printFrame = await layoutMktgPrintFrame(page, PRINT_FRAME_LANDSCAPE);
   const printDocument = printFrame.getByTestId('family-export-print-document');
   // The family deck's order: the cover, the framework, the kit, a divider and the pages of each appendix part, the back cover last.
   await expect(printDocument.locator(':scope > *')).toHaveCount(8);
@@ -205,7 +203,7 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(coverEls.nth(0)).toHaveText(/^[A-Z0-9 .&'-]+ · A LINUX FOUNDATION PROJECT$/);
   await expect(coverEls.nth(1)).toHaveText(/^[A-Z][a-z]+ \d{4}$/);
   await expect(coverEls.nth(2)).toHaveText(/ · a Linux Foundation project$/);
-  await expect(coverEls.nth(3)).toHaveText('Messaging framework v1 · Brand Kit V1.0 · Boilerplates v1 · FAQ v1');
+  await expect(coverEls.nth(3)).toHaveText('Messaging Framework v1 · Brand Kit V1.0 · Boilerplates v1 · FAQ v1');
   await expect(coverEls.nth(4).locator('img')).toBeVisible();
   await expect(cover.getByTestId('mktg-print-page-footer')).toHaveCount(0);
   const coverColors = await cover
@@ -252,7 +250,13 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(faq.getByTestId('mktg-faq-print-pair').first().locator('h3')).toHaveCSS('font-weight', '700');
   await expect(faq).toContainText('Needs an answer');
   await expect(faq.getByTestId('mktg-faq-print-source').first()).toHaveText('Source · Website');
-  await expect(faq).not.toContainText('- ');
+  // A list prints as real items: no paragraph or item opens with a Markdown dash.
+  await expect(faq.locator('[data-testid="mktg-faq-print-answer"] ul > li').first()).toBeVisible();
+  expect(
+    await faq
+      .locator('[data-testid="mktg-faq-print-answer"] :is(p, li)')
+      .evaluateAll((nodes) => nodes.some((node) => (node.textContent ?? '').trimStart().startsWith('- ')))
+  ).toBe(false);
   await expect(faq.getByTestId('mktg-faq-print-grid')).toHaveCSS('grid-template-columns', /^\d+(\.\d+)?px \d+(\.\d+)?px$/);
   // The back cover closes the file: the kit's brand line in capitals on the dark ground, the host and the trademark notice.
   const back = printDocument.getByTestId('family-export-print-back-cover');
@@ -322,23 +326,24 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printDocument.locator('tfoot, [data-testid="mktg-print-sheet-foot"]')).toHaveCount(0);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
   await expect(printDocument.getByTestId('mktg-print-sheet-head')).toHaveCount(3);
-  // Visible sheets, not heads: on the page margins (WebKit) the head room is 0px high, so no head counts as visible.
+  // Visible sheets, not heads: the framework's cover sheet is hidden with its cover.
   await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(3);
   await expect(printDocument.locator('lfx-mktg-print-sheet').locator('visible=true')).toHaveCount(2);
-  await expect(printDocument.locator('lfx-mktg-print-sheet-row')).toHaveCount(9);
-  // The engine's page setup: Chromium margin 0 with the room in the document; WebKit the margins, the room collapsed.
-  await expectMktgPrintPageSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'), browserName);
-  // The last rows' bottom room, to a tenth (mktgPrintComputedPx): the kit's calc(10pt + 0.55in) = 66.13px or its 10pt
-  // alone on the page margins; a sheet's 0.55in = 52.8px or 0.
+  // The page setup is the landscape deck pages' in both engines (margin 0, no margins mode), so the portrait framework
+  // and kit printed alongside keep their room in the document in WebKit too (the interim, until their landscape pages
+  // land; their head and foot rows then repeat per page in Chromium only).
+  await expectMktgPrintLandscapeSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'));
+  // The last rows' bottom room, to a tenth (mktgPrintComputedPx): the kit's calc(10pt + 0.55in) = 66.13px; a sheet's
+  // 0.55in = 52.8px.
   expect(
     await mktgPrintComputedPx(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tbody > tr:last-child > td').first(), 'padding-bottom')
-  ).toBeCloseTo(browserName === 'webkit' ? 13.333 : 66.133, 1);
+  ).toBeCloseTo(66.133, 1);
   expect(
     await mktgPrintComputedPx(
       printDocument.locator('lfx-mktg-framework-print lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell').last(),
       'padding-bottom'
     )
-  ).toBeCloseTo(browserName === 'webkit' ? 0 : 52.8, 1);
+  ).toBeCloseTo(52.8, 1);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
   const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');
   // This fixture's short contrast table stays whole: no one/two-row Letter tail.

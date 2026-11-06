@@ -26,6 +26,8 @@ import {
   MktgFamilyExportRunUpdate,
   MktgFamilyExportTarget,
   MktgFamilyPrintView,
+  MktgPrintFamilyPlan,
+  MktgPrintPageLook,
   MktgSlidesExportMode,
   MktgSlidesExportPhase,
 } from '@lfx-one/shared/interfaces';
@@ -90,16 +92,6 @@ export class MktgFamilyExportActionsComponent {
   protected readonly completed = signal<MktgFamilyExportRecord | null>(null);
   protected readonly printing = signal(false);
   protected readonly printView = signal<MktgFamilyPrintView | null>(null);
-  /** The print's page plan: the parts' numbers and where each appendix part starts in the deck-wide count. */
-  protected readonly printPlan = computed(() => {
-    const view = this.printView();
-    return view ? mktgPrintFamilyPlan(view, this.frameworkPageCount(), this.kitPageCount()) : null;
-  });
-  /** The look of the print's dark pages (the back cover), from the family's brand. */
-  protected readonly printLook = computed(() => {
-    const view = this.printView();
-    return view ? mktgPrintPageLook(view.brand) : null;
-  });
   private readonly retry = new Subject<boolean>();
 
   private run: Subscription | null = null;
@@ -118,6 +110,8 @@ export class MktgFamilyExportActionsComponent {
   protected readonly last = computed(() => this.lookup()?.last ?? this.completed());
   protected readonly memberVersions = this.initMemberVersions();
   protected readonly skipped = this.initSkipped();
+  protected readonly printPlan = this.initPrintPlan();
+  protected readonly printLook = this.initPrintLook();
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -294,6 +288,22 @@ export class MktgFamilyExportActionsComponent {
           ?.skippedMembers.map((key) => MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === key)?.label ?? key)
           .join(', ') ?? ''
     );
+  }
+
+  /** The print's page plan: the parts' numbers and where each appendix part starts in the deck-wide count. */
+  private initPrintPlan(): Signal<MktgPrintFamilyPlan | null> {
+    return computed(() => {
+      const view = this.printView();
+      return view ? mktgPrintFamilyPlan(view, this.frameworkPageCount(), this.kitPageCount()) : null;
+    });
+  }
+
+  /** The look of the print's dark pages (the back cover), from the family's brand. */
+  private initPrintLook(): Signal<MktgPrintPageLook | null> {
+    return computed(() => {
+      const view = this.printView();
+      return view ? mktgPrintPageLook(view.brand) : null;
+    });
   }
 
   private initLookup(): void {

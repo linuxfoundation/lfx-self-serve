@@ -6,9 +6,10 @@
    heights the pagination measured; a white card with a 0.75 pt rule border
    (a border, so it prints with Background graphics off), 9 / 7.5 pt padding,
    the "LABEL · N WORDS" line in the muted ink (7.5 pt, capitals, weight 600,
-   tracked +0.08em: the spec's §1 v1.3; the deck draws it plain, as the Slides
-   API has no letter-spacing) and the body in the dark, 4 pt under it, at the
-   shell's line height. */
+   tracked by the layout's share of an em: the spec's §1 v1.3; the deck draws
+   it plain, as the Slides API has no letter-spacing) and the body in the
+   dark, 4 pt under it, at the shell's line height. Every length here is one
+   the pagination measured with. */
 
 @use '../../../../styles/mktg-print-pt' as *;
 
@@ -38,7 +39,7 @@
   font-size: pt(7.5);
   font-weight: 600;
   line-height: var(--pp-line);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--mbp-head-tracking);
   text-transform: uppercase;
   color: var(--mbp-muted);
 }

@@ -4,7 +4,7 @@
 import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
-import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
+import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, PRINT_FRAME_LANDSCAPE, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 import { MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/constants';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
@@ -44,7 +44,7 @@ test('Family PDF structure: the landscape pages carry their data-testid contract
   await openFamilyExports(page, { allAssets: true });
   await page.getByTestId('family-export-pdf').getByRole('button').click();
   await expectMktgPrintFrame(page, MKTG_FAMILY_PRINT_BODY_CLASS, '[data-testid="family-export-print-document"]');
-  const printFrame = await layoutMktgPrintFrame(page);
+  const printFrame = await layoutMktgPrintFrame(page, PRINT_FRAME_LANDSCAPE);
   const printDocument = printFrame.getByTestId('family-export-print-document');
   // The cover, two dividers, one page each of cards and of the grid, and the back cover: six landscape frames, each a page.
   await expect(printDocument.getByTestId('mktg-print-page')).toHaveCount(6);

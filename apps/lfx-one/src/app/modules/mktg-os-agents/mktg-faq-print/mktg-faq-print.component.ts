@@ -3,24 +3,16 @@
 
 import { Component, computed, input } from '@angular/core';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
-import { MKTG_FAQ_PRINT_UNANSWERED, MKTG_PRINT_LANDSCAPE_CLASS, MKTG_PRINT_SECTION_TITLES, MKTG_PRINT_SOURCE_LEAD } from '@lfx-one/shared/constants';
-import { FaqPrintView, MktgPrintFaqEntry, MktgPrintFaqPage } from '@lfx-one/shared/interfaces';
+import {
+  MKTG_FAQ_PRINT_UNANSWERED,
+  MKTG_PRINT_APPENDIX_LAYOUT,
+  MKTG_PRINT_LANDSCAPE_CLASS,
+  MKTG_PRINT_SECTION_TITLES,
+  MKTG_PRINT_SOURCE_LEAD,
+} from '@lfx-one/shared/constants';
+import { FaqPrintView, MktgFaqPrintPage } from '@lfx-one/shared/interfaces';
 import { mktgPagePt, mktgPrintPageChrome, mktgPrintPageLook, mktgPrintPageNumber, paginateFaqPairs } from '@lfx-one/shared/utils';
 import { MktgPrintPageComponent } from '../components/mktg-print-page/mktg-print-page.component';
-
-/** A question and its answer as the template binds them: the fitted sizes as page lengths. */
-interface FaqPrintEntry extends MktgPrintFaqEntry {
-  questionSizePt: string;
-  answerSizePt: string;
-}
-
-/** One page of the grid as the template binds it: its deck-wide number, its rows' heights as a grid template, its source size. */
-interface FaqPrintPage extends Omit<MktgPrintFaqPage, 'rows'> {
-  number: string;
-  rowsTemplate: string;
-  sourceSizePt: string;
-  rows: { entries: FaqPrintEntry[] }[];
-}
 
 /**
  * The FAQ as the family deck prints it: pages of a two-column grid, the
@@ -47,9 +39,13 @@ export class MktgFaqPrintComponent {
   public readonly firstPage = input(1);
   protected readonly unansweredLabel = MKTG_FAQ_PRINT_UNANSWERED;
   protected readonly sourceLead = MKTG_PRINT_SOURCE_LEAD;
+  /** The deck's gaps between an answer's paragraphs, as shares of the answer size (em), as the pagination measured them. */
+  protected readonly bulletGap = `${MKTG_PRINT_APPENDIX_LAYOUT.faqBulletGapEm}em`;
+  protected readonly plainAfterBulletGap = `${MKTG_PRINT_APPENDIX_LAYOUT.faqPlainAfterBulletEm}em`;
+  protected readonly bulletAfterPlainGap = `${MKTG_PRINT_APPENDIX_LAYOUT.faqBulletAfterPlainEm}em`;
   protected readonly chrome = computed(() => mktgPrintPageChrome(this.projectName(), this.familyName(), this.number(), MKTG_PRINT_SECTION_TITLES.faq));
   protected readonly look = computed(() => mktgPrintPageLook(this.view().brand));
-  protected readonly pages = computed<FaqPrintPage[]>(() =>
+  protected readonly pages = computed<MktgFaqPrintPage[]>(() =>
     paginateFaqPairs(this.view().groups).map((page, index) => ({
       ...page,
       number: mktgPrintPageNumber(this.firstPage() + index),

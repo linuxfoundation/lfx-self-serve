@@ -16,12 +16,14 @@
     aria-label="Boilerplates"
     data-testid="mktg-boilerplates-print-page">
     <!-- Two columns of cards, the rows at the heights the pagination measured them at (a row grows for a line the
-         estimate missed, never shrinks under it), so the PDF and the deck lay the same cards on the same page. -->
+         estimate missed, never shrinks under it; a page keeps one body line free for it), the card's border, padding,
+         label gap and tracking the numbers the measure used, so the PDF lays the cards the pagination counted. -->
     <div
       class="mbp-grid"
       [style.--mbp-ink]="l.dark"
       [style.--mbp-muted]="l.muted"
       [style.--mbp-rule]="l.rule"
+      [style.--mbp-head-tracking]="headTracking"
       [style.grid-template-rows]="page.rowsTemplate"
       data-testid="mktg-boilerplates-print-grid">
       @for (row of page.rows; track $index) {

@@ -38,8 +38,6 @@ it("prints the deck's cover with the family's strings at 40 pt on the dark groun
   const cover = fixture.debugElement.query(By.directive(MktgPrintCoverComponent)).componentInstance as MktgPrintCoverComponent;
   expect(cover.titleSize()).toBe(40);
   expect(cover.logo()).toEqual(view().brand.logoOnDark);
-  // The cover draws the lockup at its own box: the wrapper passes the logo alone and no box (D1 §4 is the cover's default).
-  expect((cover as unknown as Record<string, unknown>)['logoBox']).toBeUndefined();
   const frame = root.querySelector<HTMLElement>('[data-testid="mktg-print-page"]');
   expect(frame?.getAttribute('data-layout')).toBe('cover');
   expect(frame?.classList.contains('lfx-print-page--dark')).toBe(true);

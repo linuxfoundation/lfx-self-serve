@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_PRINT_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { MKTG_PRINT_APPENDIX_LAYOUT, MKTG_PRINT_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { BoilerplatesLengthRow } from '@lfx-one/shared/interfaces';
 import { boilerplatesAssetOfRevision, buildBoilerplatesPrintView, mktgPagePt, mktgBoilerplatesPageCount, mktgPrintBrand } from '@lfx-one/shared/utils';
 import envelope from '@lfx-one/shared/utils/__fixtures__/boilerplates.envelope.json';
@@ -48,6 +48,8 @@ it('prints the four lengths as two rows of bordered cards on one landscape page,
   const grid = pages[0].querySelector<HTMLElement>('[data-testid="mktg-boilerplates-print-grid"]');
   expect(grid?.style.gridTemplateRows.split(' minmax(')).toHaveLength(2);
   expect(grid?.style.getPropertyValue('--mbp-ink')).toBe(brand.dark);
+  // The label's tracking the stylesheet draws is the layout's (the measure's).
+  expect(grid?.style.getPropertyValue('--mbp-head-tracking')).toBe(`${MKTG_PRINT_APPENDIX_LAYOUT.cardLabelTracking}em`);
   const cards = pages[0].querySelectorAll('[data-testid="mktg-boilerplates-print-card"]');
   expect(cards).toHaveLength(4);
   cards.forEach((card, index) => {

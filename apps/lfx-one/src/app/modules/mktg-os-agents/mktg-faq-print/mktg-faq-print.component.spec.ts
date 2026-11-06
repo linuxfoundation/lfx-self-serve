@@ -55,6 +55,10 @@ it('prints the pairs as a two-column grid on one landscape page, question over a
   const grid = pages[0].querySelector<HTMLElement>('[data-testid="mktg-faq-print-grid"]');
   expect(grid?.style.gridTemplateRows.split(' minmax(')).toHaveLength(2);
   expect(grid?.style.getPropertyValue('--mfq-ink')).toBe(brand.dark);
+  // The paragraph gaps the stylesheet draws are the layout's (the measure's), as shares of the answer size.
+  expect(grid?.style.getPropertyValue('--mfq-bullet-gap')).toBe(`${MKTG_PRINT_APPENDIX_LAYOUT.faqBulletGapEm}em`);
+  expect(grid?.style.getPropertyValue('--mfq-plain-after-bullet-gap')).toBe(`${MKTG_PRINT_APPENDIX_LAYOUT.faqPlainAfterBulletEm}em`);
+  expect(grid?.style.getPropertyValue('--mfq-bullet-after-plain-gap')).toBe(`${MKTG_PRINT_APPENDIX_LAYOUT.faqBulletAfterPlainEm}em`);
   // The pairs flow row by row in group order, with no group heading of their own on the grid.
   const pairs = pages[0].querySelectorAll('[data-testid="mktg-faq-print-pair"]');
   expect(pairs).toHaveLength(4);
