@@ -46,6 +46,7 @@ import {
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY,
   GOOGLE_DEMAND_GEN_MAX_AD_GROUPS,
+  GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL,
   META_OBJECTIVE_LABELS,
@@ -6803,6 +6804,300 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
       c['removeDemandGenAdGroup'](0);
       await settle();
       expect(focused()).toBe('implementation-demand-gen-ad-group-add');
+    });
+  });
+});
+
+describe('ImplementationTabComponent several demand gen ads', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const IMAGE_COMPLETE = {
+    headlines: 'One headline',
+    descriptions: 'A description',
+    businessName: 'Acme',
+    logoImages: 'https://example.com/logo.png',
+    marketingImages: 'https://example.com/a.png',
+  };
+  const VIDEO_COMPLETE = {
+    youtubeVideoIds: 'dQw4w9WgXcQ',
+    headlines: 'Join us in Salt Lake City',
+    longHeadlines: 'Four days of cloud native talks and labs',
+    descriptions: 'Register today',
+    businessName: 'Acme',
+    logoImages: 'https://example.com/logo.png',
+  };
+  const VIDEO_WIRE = {
+    youtubeVideoIds: ['dQw4w9WgXcQ'],
+    headlines: ['Join us in Salt Lake City'],
+    longHeadlines: ['Four days of cloud native talks and labs'],
+    descriptions: ['Register today'],
+    businessName: 'Acme',
+    logoImages: ['https://example.com/logo.png'],
+  };
+
+  const find = (f: ComponentFixture<ImplementationTabComponent>, testId: string): HTMLElement | null =>
+    f.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  /** The single ad group with a video ad 1 named `first`, then `ads` added after it. */
+  const several = (c: Record<string, any>, first: string, ads: { name: string; format?: 'image' | 'video'; creative?: Record<string, string> }[]): void => {
+    c['campaignForm'].controls.demandGenAdFormat.setValue('video');
+    c['campaignForm'].controls.demandGenVideoCreative.patchValue(VIDEO_COMPLETE);
+    c['campaignForm'].controls.demandGenAdName.setValue(first);
+    ads.forEach((ad, i) => {
+      c['addDemandGenAd'](null);
+      const controls = c['campaignForm'].controls.demandGenAds.at(i).controls;
+      controls.name.setValue(ad.name);
+      controls.format.setValue(ad.format ?? 'video');
+      controls[ad.format === 'image' ? 'creative' : 'videoCreative'].patchValue(ad.creative ?? VIDEO_COMPLETE);
+    });
+  };
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('turns the single ad into ad 1 of demandGenAds once another is added, up to five', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    fixture.detectChanges();
+    expect(find(fixture, 'implementation-demand-gen-ad-add')).not.toBeNull();
+    expect(find(fixture, 'implementation-demand-gen-ad-1-name')).toBeNull();
+
+    several(c, ' Teaser ', [{ name: 'Recap' }]);
+    fixture.detectChanges();
+    expect(find(fixture, 'implementation-demand-gen-ad-1-name')).not.toBeNull();
+    expect(find(fixture, 'implementation-demand-gen-ad-2-name')).not.toBeNull();
+    expect(find(fixture, 'implementation-demand-gen-ad-2-youtubeVideoIds')).not.toBeNull();
+    const payload = c['googleCreativeWirePayload']();
+    expect(payload).not.toHaveProperty('demandGenVideoCreative');
+    expect(payload).not.toHaveProperty('demandGenCreative');
+    expect(payload['demandGenAds']).toEqual([
+      { name: 'Teaser', videoCreative: VIDEO_WIRE },
+      { name: 'Recap', videoCreative: VIDEO_WIRE },
+    ]);
+    expect(c['demandGenAdsError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+
+    for (let i = 0; i < 5; i++) c['addDemandGenAd'](null);
+    fixture.detectChanges();
+    expect(c['campaignForm'].controls.demandGenAds.length).toBe(GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP - 1);
+    expect(find(fixture, 'implementation-demand-gen-ad-add')).toBeNull();
+  });
+
+  it.each([
+    ['a blank first ad name', '  ', [{ name: 'Recap' }], 'Ad 1 of the Demand Gen ad group needs a name'],
+    ['a name repeated ignoring case', 'Teaser', [{ name: 'TEASER' }], 'Ad 2 of the Demand Gen ad group has the same name as ad 1'],
+    ['an empty ad', 'Teaser', [{ name: 'Recap', creative: {} }], 'Ad 2 of the Demand Gen ad group has no creative'],
+    [
+      'an image ad below its minimums',
+      'Teaser',
+      [{ name: 'Recap', format: 'image' as const, creative: { headlines: 'One' } }],
+      'Ad 2 of the Demand Gen ad group: the image ad needs',
+    ],
+    ['a video ad name over 255', 'x'.repeat(240), [{ name: 'Recap' }], 'which makes'],
+  ])('holds Create on %s, saying why and announcing it', (_label, first, ads, fragment) => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    several(c, first, ads);
+    fixture.detectChanges();
+
+    expect(c['demandGenAdsError']()).toContain(fragment);
+    expect(c['canSubmit']()).toBe(false);
+    expect(find(fixture, 'implementation-demand-gen-ads-error')?.textContent).toContain(fragment);
+    expect(find(fixture, 'implementation-demand-gen-ads-error-live')?.textContent).toContain(fragment);
+  });
+
+  it('holds a video ad name to 255 counting the ad group name, the event name then " - Display"', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['campaignForm'].controls.eventName.setValue('E'.repeat(255 - ' - Display - ab'.length));
+    several(c, 'ab', [{ name: 'Recap', format: 'image', creative: IMAGE_COMPLETE }]);
+    expect(c['demandGenAdsError']()).toBeNull();
+
+    c['campaignForm'].controls.demandGenAdName.setValue('abc');
+    expect(c['demandGenAdsError']()).toContain(
+      'Ad 1 of the Demand Gen ad group is a video ad, named after the ad group, then " - " and its name, which makes 256 characters'
+    );
+  });
+
+  it('holds Create on an empty first ad instead of warning about it', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    several(c, 'Teaser', [{ name: 'Recap' }]);
+    c['campaignForm'].controls.demandGenVideoCreative.reset();
+    fixture.detectChanges();
+
+    expect(c['demandGenAdsError']()).toContain('Ad 1 of the Demand Gen ad group has no creative');
+    expect(c['googleCreativeEmptyWarning']()).toBeNull();
+  });
+
+  it('does not hold Create on a value left in an ad the create does not send', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    several(c, 'Teaser', [{ name: 'Recap', format: 'image', creative: { ...IMAGE_COMPLETE, headlines: 'h'.repeat(31) } }]);
+    fixture.detectChanges();
+    expect(c['campaignForm'].invalid).toBe(true);
+
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(true);
+    c['onDemandGenAdGroupsSplitChange']();
+    c['campaignForm'].controls.demandGenAdGroups.at(0).controls.name.setValue('Retargeting');
+    c['campaignForm'].controls.demandGenAdGroups.at(0).controls.creative.patchValue(IMAGE_COMPLETE);
+    fixture.detectChanges();
+    expect(c['campaignForm'].invalid).toBe(false);
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it("sends a named group's ads in place of its own ad once another is added", () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(true);
+    c['onDemandGenAdGroupsSplitChange']();
+    const group = c['campaignForm'].controls.demandGenAdGroups.at(0);
+    group.controls.name.setValue('Retargeting');
+    group.controls.format.setValue('video');
+    group.controls.videoCreative.patchValue(VIDEO_COMPLETE);
+    c['addDemandGenAd'](0);
+    group.controls.adName.setValue('Teaser');
+    group.controls.ads.at(0).controls.name.setValue('Recap');
+    group.controls.ads.at(0).controls.format.setValue('video');
+    group.controls.ads.at(0).controls.videoCreative.patchValue(VIDEO_COMPLETE);
+    fixture.detectChanges();
+
+    expect(find(fixture, 'implementation-demand-gen-ad-group-0-ad-1-name')).not.toBeNull();
+    expect(find(fixture, 'implementation-demand-gen-ad-group-0-ad-2-name')).not.toBeNull();
+    expect(c['googleDemandGenAdGroupsPayload']()).toEqual({
+      demandGenAdGroups: [
+        {
+          name: 'Retargeting',
+          ads: [
+            { name: 'Teaser', videoCreative: VIDEO_WIRE },
+            { name: 'Recap', videoCreative: VIDEO_WIRE },
+          ],
+        },
+      ],
+    });
+    expect(c['demandGenAdGroupsError']()).toBeNull();
+
+    group.controls.ads.at(0).controls.name.setValue('teaser');
+    fixture.detectChanges();
+    expect(c['demandGenAdGroupsError']()).toContain('Ad 2 of Demand Gen ad group 1 has the same name as ad 1');
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /** One ad is byte-identical: a create whose extra ads were all removed sends the request it made before they existed. */
+  it.each([
+    ['the single ad group', false],
+    ['a named group', true],
+  ])('sends the same request with one ad in %s', async (_label, splitOn) => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const requestFrom = async (f: ComponentFixture<ImplementationTabComponent>, addAndRemove: boolean): Promise<string> => {
+      const c = seedChannel(f, { includeDemandGen: true });
+      c['campaignForm'].controls.demandGenAdFormat.setValue('video');
+      c['campaignForm'].controls.demandGenVideoCreative.patchValue(VIDEO_COMPLETE);
+      if (splitOn) {
+        c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(true);
+        c['onDemandGenAdGroupsSplitChange']();
+        const group = c['campaignForm'].controls.demandGenAdGroups.at(0);
+        group.controls.name.setValue('Retargeting');
+        group.controls.creative.patchValue(IMAGE_COMPLETE);
+      }
+      if (addAndRemove) {
+        const owner = splitOn ? 0 : null;
+        c['addDemandGenAd'](owner);
+        c['demandGenAdList'](owner).at(0).controls.name.setValue('Recap');
+        c['removeDemandGenAd'](owner, 0);
+      }
+      f.detectChanges();
+      expect(c['canSubmit']()).toBe(true);
+      createCampaign.mockClear();
+      c['submit']();
+      await f.whenStable();
+      return JSON.stringify(createCampaign.mock.calls[0][0]);
+    };
+
+    const before = await requestFrom(fixture, false);
+    const other = TestBed.createComponent(ImplementationTabComponent);
+    other.detectChanges();
+    await other.whenStable();
+    const after = await requestFrom(other, true);
+
+    expect(after).toBe(before);
+    expect(after).not.toContain('demandGenAds');
+    expect(after).not.toContain('"ads"');
+  });
+
+  it('carries the ads through the draft, and restores them defensively', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    let captured: CampaignImplementationDraft | null = null;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    several(c, 'Teaser', [{ name: 'Recap' }]);
+    c['emitDraft']();
+    const draft = captured as unknown as CampaignImplementationDraft;
+    expect(draft.demandGenAdName).toBe('Teaser');
+    expect(draft.demandGenAds?.[0]).toMatchObject({ name: 'Recap', format: 'video', videoCreative: { youtubeVideoIds: 'dQw4w9WgXcQ' } });
+
+    c['campaignForm'].controls.demandGenAds.clear();
+    restoreGoogleDraft(fixture, c, {
+      includeDemandGen: true,
+      demandGenAdName: 'Teaser',
+      demandGenAds: [
+        { name: 7, format: 'carousel', creative: { headlines: 'Join us', gone: 'x', businessName: 9 }, videoCreative: {} },
+        ...Array.from({ length: 6 }, (_v, i) => ({ name: `a${i}`, format: 'video', creative: {}, videoCreative: {} })),
+      ] as never,
+      demandGenAdGroupsSplit: false,
+      demandGenAdGroups: [
+        {
+          name: 'G',
+          format: 'image',
+          creative: {},
+          videoCreative: {},
+          adName: 'One',
+          ads: [{ name: 'Two', format: 'video', creative: {}, videoCreative: {} }],
+        },
+      ],
+    });
+
+    const ads = c['campaignForm'].controls.demandGenAds;
+    expect(ads.length).toBe(GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP - 1);
+    expect(ads.at(0).controls.name.value).toBe('');
+    expect(ads.at(0).controls.format.value).toBe('image');
+    expect(ads.at(0).controls.creative.controls['headlines'].value).toBe('Join us');
+    expect(ads.at(0).controls.creative.controls['businessName'].value).toBe('');
+    expect(c['campaignForm'].controls.demandGenAdName.value).toBe('Teaser');
+    const group = c['campaignForm'].controls.demandGenAdGroups.at(0);
+    expect(group.controls.adName.value).toBe('One');
+    expect(group.controls.ads.at(0).controls.name.value).toBe('Two');
+    expect(group.controls.ads.at(0).controls.format.value).toBe('video');
+  });
+
+  describe('focus after adding or removing an ad', () => {
+    const focused = (): string | null => {
+      const active = document.activeElement as HTMLElement | null;
+      return active?.id || active?.closest('[data-testid]')?.getAttribute('data-testid') || null;
+    };
+    const settle = async (): Promise<void> => {
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+
+    beforeEach(() => document.body.appendChild(fixture.nativeElement));
+    afterEach(() => fixture.nativeElement.remove());
+
+    it("moves focus to a new ad's name, and on removal to the ad in its place, the last, or Add another ad", async () => {
+      const c = seedChannel(fixture, { includeDemandGen: true });
+      await settle();
+
+      c['addDemandGenAd'](null);
+      await settle();
+      expect(focused()).toBe('demand-gen-ad-2-name');
+      c['addDemandGenAd'](null);
+      await settle();
+      expect(focused()).toBe('demand-gen-ad-3-name');
+
+      c['removeDemandGenAd'](null, 0);
+      await settle();
+      expect(focused()).toBe('demand-gen-ad-2-name');
+
+      c['removeDemandGenAd'](null, 0);
+      await settle();
+      expect(focused()).toBe('implementation-demand-gen-ad-add');
     });
   });
 });

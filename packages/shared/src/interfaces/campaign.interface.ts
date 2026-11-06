@@ -1457,6 +1457,10 @@ export interface CampaignImplementationDraft {
    * on, so turning it off and on again restores them. Absent leaves the form's groups alone.
    */
   demandGenAdGroups?: GoogleDemandGenAdGroupDraft[];
+  /** The single Demand Gen ad group's first ad's name, used once it has more than one ad. Absent leaves it alone. */
+  demandGenAdName?: string;
+  /** The single Demand Gen ad group's second and later ads, both formats raw. Absent leaves the form's alone. */
+  demandGenAds?: GoogleDemandGenAdDraft[];
   /**
    * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
    * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
@@ -3071,10 +3075,11 @@ export interface GoogleDemandGenVideoCreative {
 /**
  * One named Demand Gen ad group (#5226), typed to an entry of `googleAdsConfig.demandGenAdGroups`
  * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenAdGroupConfig`, #460). campaign-service names
- * the group `<event name> - Display | <name>` and gives it exactly one of the two creatives.
+ * the group `<event name> - Display | <name>` and gives it one ad from exactly one of the two creatives,
+ * or several from {@link ads} instead.
  *
- * Upstream also takes `audience` (one Audience per group) and `ads` (several ads per group). Neither is
- * sent yet; each is a field added here, beside the two creatives, when the Implement tab collects it.
+ * Upstream also takes `audience` (one Audience per group). It is not sent yet; it is a field added here
+ * when the Implement tab collects it.
  */
 export interface GoogleDemandGenAdGroup {
   name: string;
@@ -3082,22 +3087,65 @@ export interface GoogleDemandGenAdGroup {
   creative?: GoogleDemandGenCreative;
   /** The group's video ad, the same shape as {@link CampaignCreateRequest.demandGenVideoCreative}. */
   videoCreative?: GoogleDemandGenVideoCreative;
+  /** The group's several named ads (#474 upstream), sent INSTEAD of both creatives above. At most 5. */
+  ads?: GoogleDemandGenAd[];
 }
 
-/** One Demand Gen ad group as the Implement tab's draft keeps it: the raw text of both formats, and which is chosen. */
-export interface GoogleDemandGenAdGroupDraft {
+/**
+ * One of several named ads of a Demand Gen ad group, typed to an entry of `googleAdsConfig.demandGenAds`
+ * or of a group's `ads` (`googleAdsDemandGenAdConfig`, lfx-v2-campaign-service#482): a name and exactly
+ * one of the two creatives. campaign-service names a video ad `<ad group name> - <name>`; an image ad's
+ * name is not sent to Google.
+ */
+export interface GoogleDemandGenAd {
+  name: string;
+  creative?: GoogleDemandGenCreative;
+  videoCreative?: GoogleDemandGenVideoCreative;
+}
+
+/** One Demand Gen ad as the Implement tab's draft keeps it: its name, the raw text of both formats, and which is chosen. */
+export interface GoogleDemandGenAdDraft {
   name: string;
   format: GoogleDemandGenAdFormat;
   creative: Record<string, string>;
   videoCreative: Record<string, string>;
 }
 
-/** The form controls of one Demand Gen ad group on the Implement tab: {@link GoogleDemandGenAdGroupDraft}, live. */
-export interface GoogleDemandGenAdGroupControls {
+/**
+ * One Demand Gen ad group as the Implement tab's draft keeps it: its name, its first ad's raw text in
+ * both formats and which is chosen, and, when it has several ads, the first ad's name and the others.
+ */
+export interface GoogleDemandGenAdGroupDraft extends GoogleDemandGenAdDraft {
+  /** The first ad's name, used once the group has more than one ad. Absent restores blank. */
+  adName?: string;
+  /** The group's second and later ads. Absent restores none. */
+  ads?: GoogleDemandGenAdDraft[];
+}
+
+/** The form controls of one Demand Gen ad on the Implement tab: {@link GoogleDemandGenAdDraft}, live. */
+export interface GoogleDemandGenAdControls {
   name: import('@angular/forms').FormControl<string>;
   format: import('@angular/forms').FormControl<GoogleDemandGenAdFormat>;
   creative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
   videoCreative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
+}
+
+/**
+ * A form holding one Demand Gen ad's controls: an ad's own form group, or a named group's, whose
+ * first ad it holds. Structural, because a `FormGroup` of the group's wider controls is not assignable
+ * to a `FormGroup` of the ad's.
+ */
+export interface GoogleDemandGenAdForm {
+  controls: GoogleDemandGenAdControls;
+}
+
+/**
+ * The form controls of one Demand Gen ad group on the Implement tab: {@link GoogleDemandGenAdGroupDraft},
+ * live. `name` is the group's name; `format` and the two creatives are its first ad.
+ */
+export interface GoogleDemandGenAdGroupControls extends GoogleDemandGenAdControls {
+  adName: import('@angular/forms').FormControl<string>;
+  ads: import('@angular/forms').FormArray<import('@angular/forms').FormGroup<GoogleDemandGenAdControls>>;
 }
 
 /**
@@ -3706,6 +3754,12 @@ export interface CampaignCreateRequest {
    * campaign-service refuses the list beside either of them. At most `GOOGLE_DEMAND_GEN_MAX_AD_GROUPS`.
    */
   demandGenAdGroups?: GoogleDemandGenAdGroup[];
+  /**
+   * Several named ads for the single Demand Gen ad group (lfx-v2-campaign-service#482), sent INSTEAD
+   * of both creatives above and never beside {@link demandGenAdGroups}. At most
+   * `GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP`.
+   */
+  demandGenAds?: GoogleDemandGenAd[];
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
   /**
