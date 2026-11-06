@@ -48,6 +48,7 @@ import {
   lfxColors,
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
+  MEETING_ATTENDEE_STATUS_INFO,
   MEETING_HOME_ATTENDANCE_BG_CLASSES,
   MEETING_VISIBILITY_BG_CLASSES,
   MENTION_SENTIMENT_CONFIG,
@@ -158,6 +159,8 @@ export default {
     ...Object.values(MEETING_VISIBILITY_BG_CLASSES),
     // Meetings home attendance bar and legend fills (MEETING_HOME_ATTENDANCE_BG_CLASSES, not scanned here)
     ...Object.values(MEETING_HOME_ATTENDANCE_BG_CLASSES),
+    // Meetings attendee grid status dots (MEETING_ATTENDEE_STATUS_INFO, not scanned here)
+    ...Object.values(MEETING_ATTENDEE_STATUS_INFO).flatMap((info) => [info.dotClass, info.legendDotClass]),
     // Social Listening platform icon colors (MENTION_PLATFORM_CONFIG in @lfx-one/shared, not scanned here)
     ...Object.values(MENTION_PLATFORM_CONFIG).map((c) => c.colorClass),
     // Social Listening analytics distribution bars (barClass on MENTION_PLATFORM_CONFIG / MENTION_SENTIMENT_CONFIG)
