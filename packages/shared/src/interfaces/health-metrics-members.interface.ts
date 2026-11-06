@@ -47,7 +47,7 @@ export interface HealthMetricsMembersTiers {
   rows: HealthMetricsMembersTierYear[];
 }
 
-/** Platinum, Gold or Silver: the tiers with a colour and an icon of their own. */
+/** Diamond, Platinum, Gold or Silver: the tiers with a colour and an icon of their own. */
 export type HealthMetricsMembersReservedTier = (typeof HEALTH_METRICS_MEMBERS_RESERVED_TIERS)[number];
 
 /** A tier icon's fill, and the CSS mask that cuts it to shape. */

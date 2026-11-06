@@ -30,7 +30,7 @@ class FakeResizeObserver {
 describe('OverviewKpiStripComponent', () => {
   let fixture: ComponentFixture<OverviewKpiStripComponent>;
 
-  async function render(count: number): Promise<void> {
+  async function render(count: number, variant?: 'card' | 'section'): Promise<void> {
     vi.stubGlobal('ResizeObserver', FakeResizeObserver);
     await TestBed.configureTestingModule({ imports: [OverviewKpiStripComponent] }).compileComponents();
     fixture = TestBed.createComponent(OverviewKpiStripComponent);
@@ -39,6 +39,7 @@ describe('OverviewKpiStripComponent', () => {
       Array.from({ length: count }, (_, index) => kpi(`k${index}`))
     );
     fixture.componentRef.setInput('testId', 'strip');
+    if (variant) fixture.componentRef.setInput('variant', variant);
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -83,5 +84,27 @@ describe('OverviewKpiStripComponent', () => {
     expect(item('k2')).not.toContain('border-l');
     expect(item('k2')).toContain('border-t');
     expect(item('k3')).toContain('border-l');
+  });
+
+  it('draws a card change with its arrow and the deeper shades, and a section change as coloured text', async () => {
+    const withDelta = (key: string): HealthMetricsOverviewKpiView => ({ ...kpi(key), delta: { label: '−14%', direction: 'down', good: false } });
+
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    await TestBed.configureTestingModule({ imports: [OverviewKpiStripComponent] }).compileComponents();
+    for (const variant of ['card', 'section'] as const) {
+      const strip = TestBed.createComponent(OverviewKpiStripComponent);
+      strip.componentRef.setInput('kpis', [kpi('k0'), withDelta('k1')]);
+      strip.componentRef.setInput('testId', variant);
+      strip.componentRef.setInput('variant', variant);
+      strip.detectChanges();
+      const delta: HTMLElement = strip.nativeElement.querySelector(`[data-testid="${variant}-k1-delta"]`);
+      const item: HTMLElement = strip.nativeElement.querySelector(`[data-testid="${variant}-k1"]`);
+
+      expect(delta.textContent?.replace(/\s+/g, ' ').trim()).toBe('Down−14%');
+      expect(delta.querySelector('i') !== null).toBe(variant === 'card');
+      expect(delta.className).toContain(variant === 'card' ? 'text-red-700' : 'text-red-600');
+      expect(item.className).toContain(variant === 'card' ? 'gap-[2px]' : 'gap-[8px]');
+      expect(item.className).toContain(variant === 'card' ? 'pl-[20px]' : 'pl-[24px]');
+    }
   });
 });
