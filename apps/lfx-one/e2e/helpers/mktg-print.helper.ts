@@ -4,6 +4,7 @@
 import { expect, FrameLocator, Locator, Page } from '@playwright/test';
 import {
   MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN,
+  MKTG_PRINT_DECK_PAGE_NAME,
   MKTG_PRINT_FRAME_PAPER_IN,
   MKTG_PRINT_LANDSCAPE_PAGE_SETUP,
   MKTG_PRINT_PAGE_MARGINS_CLASS,
@@ -124,7 +125,10 @@ export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locato
  * body class.
  */
 export async function expectMktgPrintLandscapePageSetup(frame: FrameLocator): Promise<void> {
-  expect(await frame.locator('head style').last().textContent()).toBe(`@page { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }`);
+  // The setup as the frame's unnamed rule and as the deck pages' named one (each frame names its page: MKTG_PRINT_DECK_PAGE_NAME).
+  expect(await frame.locator('head style').last().textContent()).toBe(
+    `@page { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }\n@page ${MKTG_PRINT_DECK_PAGE_NAME} { ${MKTG_PRINT_LANDSCAPE_PAGE_SETUP} }`
+  );
   expect(MKTG_PRINT_LANDSCAPE_PAGE_SETUP).toBe('size: 11in 8.5in; margin: 0;');
   await expect(frame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`)).toHaveCount(0);
 }

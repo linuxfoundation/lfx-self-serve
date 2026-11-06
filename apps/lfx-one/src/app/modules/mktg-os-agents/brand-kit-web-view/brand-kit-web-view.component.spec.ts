@@ -260,25 +260,30 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-mode')?.textContent?.trim()).toBe(label);
     });
 
-    it('prints the active project identity and local chapter numbers, not kit-content identity or family prefixes', async () => {
+    it('prints the active project identity in the pages’ running heads and the cover, not kit-content identity or family prefixes', async () => {
       const wrapper = query('brand-kit-web-view-print');
-      const head = () => wrapper?.querySelector('[data-testid="mktg-print-running-head"]')?.textContent;
-      expect(head()).toContain('Synthetic project Brand kit');
+      // The first content page's running head, right: the document.
+      const head = () => wrapper?.querySelectorAll('[data-testid="kit-print-page"] [data-testid="mktg-print-page-head"]')[1]?.textContent;
+      expect(head()).toContain('Synthetic project Brand Kit');
       expect(head()).not.toContain('Project One');
-      expect(Array.from(wrapper?.querySelectorAll('h2 > span') ?? []).map((span) => span.textContent?.trim())).toEqual(['1', '2', '3', '4', '5']);
+      // The kit's pages number themselves from the cover (two digits), no family prefix.
+      expect(Array.from(wrapper?.querySelectorAll('[data-testid="kit-print-page"]') ?? []).map((page) => page.getAttribute('data-page'))).toEqual(
+        Array.from({ length: 14 }, (_, index) => String(index + 2).padStart(2, '0'))
+      );
       activeContext.set({ slug: 'synthetic', name: 'Updated project context' });
       await fixture.whenStable();
-      expect(head()).toContain('Updated project context Brand kit');
+      expect(head()).toContain('Updated project context Brand Kit');
       expect(wrapper?.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V1.0');
     });
 
-    it('keeps the shared native portrait chapters in the print-only wrapper without changing screen content', () => {
+    it('keeps the deck’s landscape pages in the print-only wrapper without changing screen content', () => {
       const wrapper = query('brand-kit-web-view-print');
       expect(wrapper?.classList.contains(BRAND_KIT_PRINT_ONLY_CLASS)).toBe(true);
       expect(wrapper?.classList.contains(FOUNDATION_MESSAGE_PRINT_ONLY_CLASS)).toBe(true);
-      expect(wrapper?.querySelector('.lfx-framework-print.lfx-brand-kit-portrait')).not.toBeNull();
-      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
-      expect(wrapper?.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
+      // Outside the portrait prints' root class and its side padding: the sixteen frames are the kit root's block children.
+      expect(wrapper?.querySelector('.lfx-framework-print')).toBeNull();
+      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="mktg-print-page"]')).toHaveLength(16);
+      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(0);
       expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(0);
       expect(host().querySelector(`.${BRAND_KIT_PRINT_ONLY_CLASS}`)?.contains(query('mktg-brand-kit-print'))).toBe(true);
       // The book brings no toolbar of its own: the actions are the web view's.
@@ -678,7 +683,9 @@ describe('BrandKitWebViewComponent', () => {
       expect(frame?.contentDocument?.querySelector('lfx-mktg-brand-kit-print')).not.toBeNull();
       // The frame's title names the saved PDF like the deck: the project, the asset, the approved revision and that revision's own date.
       expect(frame?.contentDocument?.title).toBe('Synthetic project · Brand kit · v1 · 2026-10-20');
-      expect(frame?.contentDocument?.querySelector('[data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project Brand kit');
+      expect(frame?.contentDocument?.querySelectorAll('[data-testid="kit-print-page"] [data-testid="mktg-print-page-head"]')[1]?.textContent).toContain(
+        'Synthetic project Brand Kit'
+      );
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
       expect(print).not.toHaveBeenCalled();
 

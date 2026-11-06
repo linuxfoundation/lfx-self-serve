@@ -1,32 +1,34 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, input } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { FoundationMessagePrintView } from '@lfx-one/shared/interfaces';
+import { MKTG_PRINT_FRAMEWORK_COVER_TITLE_SIZE } from '@lfx-one/shared/constants';
+import { FoundationMessagePrintView, MktgPrintFrameworkCover, MktgPrintPage, MktgPrintPageLook } from '@lfx-one/shared/interfaces';
+import { buildFrameworkPrintPages, mktgPrintFrameworkCover, mktgPrintFrameworkSectionOf, mktgPrintPageLook } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { distinctUntilChanged, filter } from 'rxjs';
-import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
-import { MktgPrintChapterHeaderComponent } from '../components/mktg-print-chapter-header/mktg-print-chapter-header.component';
-import { MktgPrintSheetComponent } from '../components/mktg-print-sheet/mktg-print-sheet.component';
-import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/mktg-print-sheet-row.component';
+import { MktgPrintCoverComponent } from '../components/mktg-print-cover/mktg-print-cover.component';
+import { MktgPrintPageComponent } from '../components/mktg-print-page/mktg-print-page.component';
 
-// The Messaging Framework's PRINT rendering (Download PDF): the framework
-// view's tabs as one document on portrait pages of the paper the print
-// dialog has (A4 or US Letter) — a cover, then the framework (the
-// statements, the goal columns, say and avoid, the anchor questions) and the
-// key numbers. ICPs and the message house stay hidden. The run's
-// sources and gaps, and the reviewer's note, stay on screen. Set in the
-// project's brand when it has a Brand Kit (its colours, typeface and logo),
-// in the LF look otherwise. On screen the framework is its app page
-// (lfx-mktg-framework-view), which holds this document in a print-only
-// wrapper and prints it with Download PDF (the browser's print; the global
-// print rules in styles.scss show it alone). The layout grew from the brand
-// kit book's sheet and the one pager's letter page.
+/**
+ * The Messaging Framework as Download PDF prints it: the deck's pages
+ * (marketing-os-agents `agents/slides-export` framework-print.ts), one
+ * landscape page per slide, in the deck's order with its headings — the cover
+ * (the eyebrow, the title, the tagline, the sections), then 01 Framework, 02
+ * ICPs, 03 Message house and 04 Key numbers (`buildFrameworkPrintPages`, the
+ * shared page plan the Slides export builds from), each on the page shell
+ * (`lfx-mktg-print-page`) in the project's brand. The deck has no back cover
+ * for the framework, so neither has this. Inside a larger document (the
+ * family PDF) `firstPage` numbers the cover. The framework's data path is
+ * unchanged: the view comes in as before, and the brand's typeface is loaded
+ * through the print service. On screen the framework is its app page
+ * (lfx-mktg-framework-view), which holds this document in a print-only
+ * wrapper and prints it with Download PDF.
+ */
 @Component({
   selector: 'lfx-mktg-framework-print',
-  imports: [NgTemplateOutlet, MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent, MktgPrintSheetComponent, MktgPrintSheetRowComponent],
+  imports: [MktgPrintCoverComponent, MktgPrintPageComponent],
   templateUrl: './mktg-framework-print.component.html',
   styleUrl: './mktg-framework-print.component.scss',
 })
@@ -37,17 +39,23 @@ export class MktgFrameworkPrintComponent {
   // === Inputs ===
   /** The framework as the print lays it out, with the brand it is set in. */
   public readonly view = input.required<FoundationMessagePrintView>();
-  /** Family document number; standalone exports retain their own section numbers. */
+  /** Family document number; the deck's pages carry none, so it is accepted and not drawn. */
   public readonly number = input('');
+  /** The page number of the cover in the document that holds the framework (1 when it prints alone). */
+  public readonly firstPage = input(1);
 
-  // === Computed ===
-  /** The Google Fonts stylesheet of the brand's typeface, when the kit says it is there (null otherwise). */
-  private readonly fontUrl$ = toObservable(computed(() => this.view().brand.fontUrl));
+  // === The pages ===
+  protected readonly look = computed<MktgPrintPageLook>(() => mktgPrintPageLook(this.view().brand));
+  protected readonly cover = computed<MktgPrintFrameworkCover>(() => mktgPrintFrameworkCover(this.view(), this.look()));
+  protected readonly pages = computed<MktgPrintPage[]>(() => buildFrameworkPrintPages(this.view(), { firstPage: this.firstPage() }));
+  protected readonly pageCount = computed(() => 1 + this.pages().length);
+  protected readonly coverTitleSize = MKTG_PRINT_FRAMEWORK_COVER_TITLE_SIZE;
+  protected readonly sectionOf = mktgPrintFrameworkSectionOf;
 
   public constructor() {
     // The typeface comes from Google Fonts, loaded once per stylesheet (the
     // print service shares the link with the brand kit book).
-    this.fontUrl$
+    toObservable(computed(() => this.view().brand.fontUrl))
       .pipe(
         filter((url): url is string => !!url),
         distinctUntilChanged(),

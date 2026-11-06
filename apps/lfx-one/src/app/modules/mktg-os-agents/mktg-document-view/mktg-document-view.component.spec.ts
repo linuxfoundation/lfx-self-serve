@@ -3317,7 +3317,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(slidesExport.last).toHaveBeenCalledExactlyOnceWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living' });
     expect(query('mktg-framework-view-print')?.className).toContain('lfx-framework-print-only');
     expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
-    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 2');
+    expect(query('framework-print-cover')?.textContent).toContain('Version 2');
   });
 
   it('keeps expanded Show all and the selected FAQ tab through two polls and a focus re-read', async () => {

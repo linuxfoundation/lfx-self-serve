@@ -10,16 +10,12 @@ import {
 } from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import {
-  expectMktgPrintCover,
   expectMktgPrintFrame,
   finishMktgPrintFrame,
   layoutMktgPrintFrame,
   PRINT_FRAME_LANDSCAPE,
-  PRINT_FRAME_LETTER,
   stubMktgPrintFrame,
   expectMktgPrintLandscapePageSetup,
-  expectMktgPrintPageSetup,
-  mktgPrintComputedPx,
 } from './helpers/mktg-print.helper';
 
 import {
@@ -216,7 +212,7 @@ test.describe('Native FAQ document approval and header', () => {
 });
 
 for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
-  test(`${key} isolated print frame preserves paper-sized layout without content-column containment`, async ({ page, browserName }, info) => {
+  test(`${key} isolated print frame preserves paper-sized layout without content-column containment`, async ({ page }, info) => {
     await page.setViewportSize({ width: 1280, height: 1000 });
     await stubMktgPrintFrame(page);
     await openAssetDocument(page, key, 200, true, false, columnAssetRevisionResponse(key));
@@ -234,8 +230,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     await expect(page.getByTestId('mktg-document-view-revisions')).toBeVisible();
     // Media emulation does not paginate or apply @page margins. Measure the frame's own layout
     // against a paper-sized initial containing block: that is the document the dialog prints.
-    // The kit prints the deck's landscape pages (its own frame size); the framework the portrait sheets.
-    const paper = key === 'brand-kit' ? PRINT_FRAME_LANDSCAPE : PRINT_FRAME_LETTER;
+    // Both print the deck's landscape pages (the landscape frame size).
+    const paper = PRINT_FRAME_LANDSCAPE;
     const frame = await layoutMktgPrintFrame(page, paper);
     const print = frame.getByTestId(testId);
     await expect(print).toBeVisible();
@@ -245,72 +241,34 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     const box = await print.boundingBox();
     if (!box) throw new Error('The approved print document must be rendered');
     expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: paper.width });
+    // The deck's pages: the landscape setup in both engines, fixed page frames, none of the portrait sheets' tables or named page.
+    await expectMktgPrintLandscapePageSetup(frame);
+    await expect(print.locator('table')).toHaveCount(0);
+    await expect(print.locator('lfx-mktg-print-sheet')).toHaveCount(0);
     if (key === 'brand-kit') {
-      // The deck's pages: the landscape setup in both engines, sixteen fixed page frames (cover, contents, thirteen
-      // chapter pages, back cover), none of the portrait sheet's tables or named page.
-      await expectMktgPrintLandscapePageSetup(frame);
+      // Sixteen frames (cover, contents, thirteen chapter pages, back cover).
       await expect(print).toHaveAttribute('data-pages', '16');
       await expect(print.getByTestId('mktg-print-page')).toHaveCount(16);
       await expect(print.locator('.kit-chapter')).toHaveCount(0);
       await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
       await expect(print.getByTestId('kit-print-page').filter({ has: print.locator('[data-title="Typography"]') })).toContainText('Montserrat');
     } else {
-      await expectMktgPrintPageSetup(frame, print, browserName);
-      await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
-      await expectMktgPrintCover(frame.getByTestId('mktg-framework-print-cover'));
-      // Each section prints in a sheet whose head repeats the page's top room in Chromium (the @page margin is 0: no
-      // browser header or footer; in WebKit the margins give it and the row is empty) and whose last row carries the
-      // bottom room — no footer group, for which Chromium prints an empty page per sheet —, one row per block, so a
-      // page breaks only between blocks: 1 (cover) + 5 (framework) + 3 (key numbers).
-      await expect(print.getByTestId('mktg-print-sheet-head')).toHaveCount(3);
-      await expect(print.getByTestId('mktg-print-sheet-head').first()).toHaveCSS('display', 'table-header-group');
-      await expect(print.getByTestId('mktg-print-sheet-foot')).toHaveCount(0);
-      // 0.55in = 52.8px, head row and last cell, or 0 on the page margins; to a tenth (mktgPrintComputedPx).
-      expect(await mktgPrintComputedPx(print.locator('.lfx-print-sheet-room').first(), 'height')).toBeCloseTo(browserName === 'webkit' ? 0 : 52.8, 1);
-      expect(await mktgPrintComputedPx(print.locator('lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell').first(), 'padding-bottom')).toBeCloseTo(
-        browserName === 'webkit' ? 0 : 52.8,
-        1
+      // Nine frames (the cover and the eight content pages of the draft framework), outside the portrait root and its side
+      // padding, every frame flush with the sheet's left edge and 11 in wide.
+      await expect(print).toHaveAttribute('data-pages', '9');
+      await expect(print.getByTestId('mktg-print-page')).toHaveCount(9);
+      await expect(print.locator('.lfx-framework-print')).toHaveCount(0);
+      await expect(print.getByTestId('framework-print-cover').getByTestId('mktg-print-page-subtitle')).toHaveText('Build openly.');
+      const frames = await print.getByTestId('mktg-print-page').evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const rect = node.getBoundingClientRect();
+          return [Math.round(rect.left), Math.round(rect.width)];
+        })
       );
-      await expect(print.locator('lfx-mktg-print-sheet-row')).toHaveCount(9);
-      await expect(print.locator('lfx-mktg-print-sheet-row').first()).toHaveCSS('display', 'table-row');
+      expect(new Set(frames.map((frame) => frame.join('x')))).toEqual(new Set([`0x${paper.width}`]));
       await expect(print).toHaveCSS('position', 'static');
       await expect(print).toHaveCSS('display', 'block');
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
-      const rowLabels = print.getByTestId('mktg-framework-print-goals').locator('tbody th');
-      await expect(rowLabels).toHaveText(['Value proposition', 'Key message', 'Proof', 'Sound bite']);
-      for (const label of await rowLabels.all()) {
-        await expect(label).toHaveCSS('word-break', 'normal');
-        await expect(label).toHaveCSS('overflow-wrap', 'normal');
-        await expect(label).toHaveCSS('hyphens', 'none');
-        await expect(label).toHaveCSS('text-transform', 'uppercase');
-        const tracking = await label.evaluate((element) => {
-          const style = getComputedStyle(element);
-          return parseFloat(style.letterSpacing) / parseFloat(style.fontSize);
-        });
-        expect(tracking).toBeCloseTo(0.16);
-      }
-      // Visibility-only hiding leaves screen canvas height behind. The entire
-      // ancestor chain in the frame must be white/content-sized, and nothing else in flow.
-      const flow = await print.evaluate((root) => {
-        const ancestors = [];
-        let parent = root.parentElement;
-        while (parent) {
-          const css = getComputedStyle(parent);
-          ancestors.push({ background: css.backgroundColor, minHeight: css.minHeight, overflow: css.overflow });
-          parent = parent.parentElement;
-        }
-        return {
-          ancestors,
-          end: root.getBoundingClientRect().bottom,
-          bodyEnd: root.ownerDocument.body.getBoundingClientRect().bottom,
-        };
-      });
-      for (const ancestor of flow.ancestors) {
-        expect(ancestor.background).toBe('rgb(255, 255, 255)');
-        expect(ancestor.minHeight).toBe('0px');
-        expect(ancestor.overflow).toBe('visible');
-      }
-      expect(Math.abs(flow.bodyEnd - flow.end)).toBeLessThan(2);
     }
     // page.pdf prints the app window, not the frame, so there is no PDF artifact; the screenshot
     // shows the laid-out frame over the page.

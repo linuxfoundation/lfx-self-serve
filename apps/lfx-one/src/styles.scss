@@ -37,9 +37,13 @@
      the page wrapper's offset (the shell's padding and top margin) — shifted
      right and clipped at the right edge, and pushed down so the framework's
      cover ran onto a second sheet. While a print class is on the body, every
-     element holding the print document stops being a containing block. */
+     element holding the print document stops being a containing block. The
+     deck pages (lfx-mktg-print-page frames, in flow) get the same: a container
+     or a transform around them would clip or move their fragments. */
   body.lfx-print-brand-kit :has(.lfx-brand-kit-book),
-  body.lfx-print-framework :has(.lfx-framework-print) {
+  body.lfx-print-framework :has(.lfx-framework-print),
+  body.lfx-print-brand-kit :has(.lfx-print-page),
+  body.lfx-print-framework :has(.lfx-print-page) {
     position: static !important;
     transform: none !important;
     filter: none !important;
@@ -162,6 +166,14 @@
 
     .lfx-framework-print,
     .lfx-framework-print * {
+      visibility: visible;
+    }
+
+    /* The framework's deck pages (lfx-mktg-print-page frames, named page `mktg-deck`: MKTG_PRINT_DECK_PAGE_NAME) print
+       under this body too, outside `.lfx-framework-print` and its side padding; each frame names its own page, so the
+       portrait framework page below never takes them. */
+    .lfx-print-page,
+    .lfx-print-page * {
       visibility: visible;
     }
 
