@@ -12140,7 +12140,7 @@ describe('ImplementationTabComponent google bidding', () => {
     c['campaignForm'].patchValue({ includeDemandGen: false, includePerformanceMax: true });
     expect(c['googleBiddingPayload']().conversionActions).toBeUndefined();
     expect(c['googleConversionActionsWithheldMessage']()).toBe(
-      "LFX One creates Performance Max campaigns on the Google Ads account's own conversion goals, so the 1 conversion action you entered will not be sent. Switch the channel back to keep them."
+      "LFX One creates Performance Max campaigns on the Google Ads account's own conversion goals, so the 1 conversion action you entered will not be sent. Switch the channel back to keep it."
     );
 
     c['campaignForm'].patchValue({ includePerformanceMax: false, includeDemandGen: true });

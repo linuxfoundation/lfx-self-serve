@@ -6384,7 +6384,7 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * Demand Gen takes sitelinks alone (campaign-service v1.0.31, `validateAssetPlan`, #474): the
+   * Demand Gen takes sitelinks alone (campaign-service v1.0.31, `validateAssetPlan`, linuxfoundation/lfx-v2-campaign-service#474): the
    * same `validateSitelinks` as Search, linked by the same `createCampaignAssets`. Pinned whole, so a
    * builder that leaked a Search-shaped field onto the Demand Gen envelope alongside them fails here.
    */

@@ -1353,7 +1353,7 @@ describe('Google Ads campaign criteria vocabularies', () => {
   });
 
   it('fences sitelinks apart from the other extensions, which differ on demand gen', () => {
-    // `validateAssetPlan` (v1.0.31) takes sitelinks alone on Demand Gen (#474) and refuses every
+    // `validateAssetPlan` (v1.0.31) takes sitelinks alone on Demand Gen (linuxfoundation/lfx-v2-campaign-service#474) and refuses every
     // other extension list there. Performance Max is not opened by this client for either.
     expect([...GOOGLE_CHANNELS_WITH_SITELINKS]).toEqual(['search', 'demand-gen']);
     expect([...GOOGLE_CHANNELS_WITH_AD_EXTENSIONS]).toEqual(['search']);

@@ -9903,7 +9903,7 @@ export class ImplementationTabComponent implements OnInit {
       void this.campaignFormRevision();
       const count = this.splitCreativeLines(this.campaignForm.getRawValue().googleConversionActions).length;
       if (count === 0) return '';
-      return `LFX One creates ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns on the Google Ads account's own conversion goals, so the ${count} conversion ${count === 1 ? 'action' : 'actions'} you entered will not be sent. Switch the channel back to keep them.`;
+      return `LFX One creates ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns on the Google Ads account's own conversion goals, so the ${count} conversion ${count === 1 ? 'action' : 'actions'} you entered will not be sent. Switch the channel back to keep ${count === 1 ? 'it' : 'them'}.`;
     });
   }
 
