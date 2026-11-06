@@ -11,7 +11,7 @@ const PRINT_FRAME_TIMEOUT_MS = 10_000;
 /** The production frame's viewport at CSS pixels (Letter's width, a hair under its height): the initial containing block the print geometry is measured against. */
 export const PRINT_FRAME_LETTER = { width: Math.round(MKTG_PRINT_FRAME_PAPER_IN.width * 96), height: Math.round(MKTG_PRINT_FRAME_PAPER_IN.height * 96) };
 
-/** What a cover sized `calc(100vh - 1.1in)` must at least measure in that frame: the collapse this guards against left it at its content's height. */
+/** What a cover sized `calc(100vh - 1.2in)` must at least measure in that frame: the collapse this guards against left it at its content's height. */
 export const PRINT_COVER_MIN_HEIGHT = 900;
 
 export function mktgPrintFrame(page: Page): FrameLocator {

@@ -27,11 +27,17 @@
 @media print {
   .lfx-framework-print {
     page: mktg-framework;
+    /* The page prints with no margin, which keeps the browser's header and footer off the PDF
+       (MKTG_PRINT_PAGE_SETUPS). The sides' room is the root's: every page fragment keeps it. The top
+       and bottom room repeats per page from the sheet tables (lfx-mktg-print-sheet, the kit's chapters). */
+    box-sizing: border-box;
+    padding: 0 0.6in;
   }
 
   .mfp-cover {
-    /* The named page reserves 0.55in at each edge on A4 and Letter. */
-    min-height: calc(100vh - 1.1in);
+    /* The page prints with no margin; its sheet's head and foot take 1.1in on A4 and Letter, and 0.1in of
+       slack keeps a fraction of rounding off a blank sheet (styles/mktg-family-print.scss). */
+    min-height: calc(100vh - 1.2in);
     box-sizing: border-box;
     break-inside: avoid;
   }

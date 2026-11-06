@@ -207,6 +207,12 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printFrame.getByTestId('mktg-framework-print-cover')).toBeHidden();
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
+  // The page's room is in the document, not the @page margin (none, so no browser header or footer): every kit chapter
+  // repeats a 0.55in foot per page, and the other sections print in sheets that repeat a head and a foot.
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tfoot')).toHaveCount(5);
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tfoot').first()).toHaveCSS('display', 'table-footer-group');
+  await expect(printDocument.locator('.lfx-print-sheet > tfoot')).toHaveCount(5);
+  expect(await printFrame.locator('head style').last().textContent()).toBe('@page { size: portrait; margin: 0; }');
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
   const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');
   // This fixture's short contrast table stays whole: no one/two-row Letter tail.

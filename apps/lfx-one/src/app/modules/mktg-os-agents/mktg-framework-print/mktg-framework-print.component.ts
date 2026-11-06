@@ -9,6 +9,7 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { distinctUntilChanged, filter } from 'rxjs';
 import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 import { MktgPrintChapterHeaderComponent } from '../components/mktg-print-chapter-header/mktg-print-chapter-header.component';
+import { MktgPrintSheetComponent } from '../components/mktg-print-sheet/mktg-print-sheet.component';
 
 // The Messaging Framework's PRINT rendering (Download PDF): the framework
 // view's tabs as one document on portrait pages of the paper the print
@@ -24,7 +25,7 @@ import { MktgPrintChapterHeaderComponent } from '../components/mktg-print-chapte
 // kit book's sheet and the one pager's letter page.
 @Component({
   selector: 'lfx-mktg-framework-print',
-  imports: [NgTemplateOutlet, MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent],
+  imports: [NgTemplateOutlet, MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent, MktgPrintSheetComponent],
   templateUrl: './mktg-framework-print.component.html',
   styleUrl: './mktg-framework-print.component.scss',
 })

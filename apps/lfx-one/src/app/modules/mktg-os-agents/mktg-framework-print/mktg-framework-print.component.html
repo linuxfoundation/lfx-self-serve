@@ -5,13 +5,14 @@
 <!--
   The print's utility sets, declared once and reused on every section. Sizes
   are arbitrary pt and in values on purpose: this is a portrait page printed
-  at size, on the paper the print dialog has (A4 or US Letter; styles.scss
-  sets the margins: 0.55 in top and bottom, 0.6 in at the sides, and makes the
-  document as wide as the page area), which no rem-based spacing step
-  expresses. Colours and the typeface are the brand's custom properties (the
+  at size, on the paper the print dialog has (A4 or US Letter; the page has no
+  margin, so the browser's header and footer stay off it, and the document
+  carries the room itself: 0.6 in at the sides as the root's padding, 0.55 in
+  top and bottom repeated per page by each section's sheet), which no
+  rem-based spacing step expresses. Colours and the typeface are the brand's custom properties (the
   component's SCSS), never the app's palette.
 -->
-@let section = 'flex flex-col gap-[14pt] break-before-page';
+@let section = 'flex flex-col gap-[14pt]';
 @let subTitle = 'text-[11pt] font-semibold';
 @let eyebrow = 'text-[7pt] font-semibold uppercase tracking-[0.16em] opacity-60';
 @let card = 'flex flex-col gap-[6pt] rounded-[6pt] border border-black/10 p-[10pt] break-inside-avoid';
@@ -34,10 +35,18 @@
   [style.--mfp-font]="v.brand.fontStack"
   [attr.data-brand]="v.brand.source"
   data-testid="mktg-framework-print">
+  <!-- Every section prints on its own sheet, the page's room repeated on each of its pages (lfx-mktg-print-sheet);
+       the sections follow as templates so each keeps its own breaks. -->
+  <lfx-mktg-print-sheet class="break-after-page"><ng-container *ngTemplateOutlet="cover" /></lfx-mktg-print-sheet>
+  <lfx-mktg-print-sheet class="break-before-page"><ng-container *ngTemplateOutlet="framework" /></lfx-mktg-print-sheet>
+  <lfx-mktg-print-sheet class="break-before-page"><ng-container *ngTemplateOutlet="numbers" /></lfx-mktg-print-sheet>
+</div>
+
+<ng-template #cover>
   <!-- A bounded cover grid, not a viewport-height flexbox: native pagination
        keeps the title and contents on one sheet without a growing child. -->
   <section
-    class="mfp-cover grid content-between gap-[18pt] rounded-[10pt] bg-[color:var(--mfp-dark)] p-[0.55in] text-[color:var(--mfp-on-dark)] break-after-page"
+    class="mfp-cover grid content-between gap-[18pt] rounded-[10pt] bg-[color:var(--mfp-dark)] p-[0.55in] text-[color:var(--mfp-on-dark)]"
     aria-label="Cover"
     data-testid="mktg-framework-print-cover">
     <div class="flex items-baseline justify-between gap-[12pt] text-[7.5pt] uppercase tracking-[0.2em] opacity-80">
@@ -67,8 +76,10 @@
       }
     </dl>
   </section>
+</ng-template>
 
-  <!-- 01 · FRAMEWORK: the statements, the goal columns, say and avoid, the anchor questions -->
+<!-- 01 · FRAMEWORK: the statements, the goal columns, say and avoid, the anchor questions -->
+<ng-template #framework>
   <section [class]="section" aria-label="Framework" data-testid="mktg-framework-print-framework">
     <ng-container *ngTemplateOutlet="runningHead" />
     <lfx-mktg-print-chapter-header [number]="number() ? number() + '.1' : v.sections[0].number" [title]="v.sections[0].title" [accent]="v.brand.accent" />
@@ -202,8 +213,10 @@
       </ol>
     </div>
   </section>
+</ng-template>
 
-  <!-- 02 · KEY NUMBERS -->
+<!-- 02 · KEY NUMBERS -->
+<ng-template #numbers>
   <section [class]="section" aria-label="Key numbers" data-testid="mktg-framework-print-numbers">
     <ng-container *ngTemplateOutlet="runningHead" />
     <lfx-mktg-print-chapter-header [number]="number() ? number() + '.2' : v.sections[1].number" [title]="v.sections[1].title" [accent]="v.brand.accent" />
@@ -217,7 +230,7 @@
     </div>
     <p class="mt-[6pt] text-[7.5pt] opacity-60">{{ v.eyebrow }}</p>
   </section>
-</div>
+</ng-template>
 
 <!-- The running head of every section: what the document is, and the brand's logo on white. -->
 <ng-template #runningHead>

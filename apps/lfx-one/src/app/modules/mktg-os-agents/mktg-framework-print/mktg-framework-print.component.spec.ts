@@ -168,12 +168,18 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(root?.classList.contains('flex')).toBe(false);
     expect(cover?.classList.contains('grid')).toBe(true);
     expect(root?.querySelector('.h-screen, .min-h-screen, .flex-1')).toBeNull();
-    expect(Array.from(root?.children ?? []).map((child) => child.getAttribute('data-testid'))).toEqual([
+    // Each section is one sheet (a table whose head and foot repeat the page room): the cover's breaks after, the others' before.
+    const sheets = Array.from(root?.children ?? []);
+    expect(sheets.map((sheet) => sheet.tagName.toLowerCase())).toEqual(['lfx-mktg-print-sheet', 'lfx-mktg-print-sheet', 'lfx-mktg-print-sheet']);
+    expect(sheets.map((sheet) => sheet.querySelector('tbody > tr > td > section')?.getAttribute('data-testid'))).toEqual([
       'mktg-framework-print-cover',
       'mktg-framework-print-framework',
       'mktg-framework-print-numbers',
     ]);
-    expect(root?.lastElementChild?.classList.contains('break-after-page')).toBe(false);
+    expect(sheets.map((sheet) => sheet.classList.contains('break-after-page'))).toEqual([true, false, false]);
+    expect(sheets.map((sheet) => sheet.classList.contains('break-before-page'))).toEqual([false, true, true]);
+    expect(cover?.classList.contains('break-after-page')).toBe(false);
+    expect(root?.querySelectorAll('.lfx-print-sheet > tfoot')).toHaveLength(3);
   });
 
   it('sets its body text in the brand’s ink, not its dark: a kit whose "dark" is white still prints readable text', async () => {

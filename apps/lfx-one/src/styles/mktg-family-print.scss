@@ -53,9 +53,10 @@
     page: mktg-framework;
 
     .lfx-family-print-cover {
-      /* Leave room for the named page margins. Grid without a viewport-height
-         flex-growing child keeps title/contents together on either paper size. */
-      min-height: calc(100vh - 1.1in);
+      /* The sheet's head and foot take 1.1in of the page; 0.1in of slack under that keeps a fraction of
+         rounding off a blank sheet. Grid without a viewport-height flex-growing child keeps
+         title/contents together on either paper size. */
+      min-height: calc(100vh - 1.2in);
       align-content: space-between;
       print-color-adjust: exact;
       -webkit-print-color-adjust: exact;

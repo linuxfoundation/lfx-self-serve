@@ -11,6 +11,11 @@
   [style.--mfp-ink]="v.brand.ink"
   aria-label="FAQ"
   data-testid="mktg-faq-print">
+  <!-- One sheet: the page's top and bottom room repeats on every page (lfx-mktg-print-sheet); the sides are the root's padding. -->
+  <lfx-mktg-print-sheet><ng-container *ngTemplateOutlet="body" /></lfx-mktg-print-sheet>
+</section>
+
+<ng-template #body>
   <!-- Always render the document identity, even with no questions or an empty first group. -->
   <header class="break-inside-avoid break-after-avoid">
     <lfx-mktg-print-running-head [brand]="v.brand" [label]="projectName() + ' FAQ'" />
@@ -36,4 +41,4 @@
       </article>
     }
   }
-</section>
+</ng-template>

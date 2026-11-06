@@ -12,6 +12,11 @@
   [style.--mfp-ink]="v.brand.ink"
   aria-label="Boilerplates"
   data-testid="mktg-boilerplates-print">
+  <!-- One sheet: the page's top and bottom room repeats on every page (lfx-mktg-print-sheet); the sides are the root's padding. -->
+  <lfx-mktg-print-sheet><ng-container *ngTemplateOutlet="body" /></lfx-mktg-print-sheet>
+</section>
+
+<ng-template #body>
   @for (length of v.lengths; track length.index; let first = $first) {
     <article class="flex flex-col gap-[6pt] pb-[14pt] break-inside-avoid" data-testid="mktg-boilerplates-print-length">
       @if (first) {
@@ -22,4 +27,4 @@
       <p class="whitespace-pre-line rounded-[6pt] bg-[color:var(--mfp-tint)] p-[10pt]">{{ length.text }}</p>
     </article>
   }
-</section>
+</ng-template>

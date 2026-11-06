@@ -239,15 +239,21 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     const box = await print.boundingBox();
     if (!box) throw new Error('The approved print document must be rendered');
     expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: PRINT_FRAME_LETTER.width });
+    await expect(print).toHaveCSS('padding-left', '57.6px');
+    expect(await frame.locator('head style').last().textContent()).toBe('@page { size: portrait; margin: 0; }');
     if (key === 'brand-kit') {
       await expect(print.locator('.kit-chapter')).toHaveCount(5);
       await expect(print.locator('lfx-mktg-print-chapter-header h2 > span')).toHaveText(['1', '2', '3', '4', '5']);
       await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
       await expect(print).toHaveCSS('page', 'mktg-framework');
       await expect(print.getByTestId('kit-print-type')).toContainText('Typography');
+      await expect(print.locator('.kit-chapter > tfoot')).toHaveCount(5);
     } else {
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
       await expectMktgPrintCover(frame.getByTestId('mktg-framework-print-cover'));
+      // Each section prints in a sheet whose head and foot repeat the page room (the @page margin is 0: no browser header or footer).
+      await expect(print.locator('.lfx-print-sheet > tfoot')).toHaveCount(3);
+      await expect(print.locator('.lfx-print-sheet > tfoot').first()).toHaveCSS('display', 'table-footer-group');
       await expect(print).toHaveCSS('position', 'static');
       await expect(print).toHaveCSS('display', 'block');
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);

@@ -115,12 +115,15 @@
 }
 
 @media print {
-  /* A named page, so only the framework prints on these margins — every other print keeps its own setup.
+  /* A named page, so only the framework prints on this setup — every other print keeps its own.
      No paper size: the document is as wide as the page area, so it fits whichever paper the dialog has.
+     No margin: the browser draws its header and footer only in the page margin area, so none reaches the PDF;
+     the page's room is inside the document (lfx-mktg-print-sheet and the kit's chapter tables: 0.55in top and
+     bottom per page; the print roots' padding: 0.6in at the sides).
      The print frame repeats these values as its unnamed @page rule: MKTG_PRINT_PAGE_SETUPS (shared constants). */
   @page mktg-framework {
     size: portrait;
-    margin: 0.55in 0.6in;
+    margin: 0;
   }
 
   body.lfx-print-framework {

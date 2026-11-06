@@ -128,6 +128,15 @@ describe('MktgPrintService isolated frame', () => {
     expect(framePageRule()).toBe(`@page { ${MKTG_PRINT_PAGE_SETUPS['mktg-framework']} }`);
   });
 
+  it('prints every page with no margin, where the browser would draw its header and footer', () => {
+    root.className = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
+    configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    const rule = framePageRule();
+    expect(rule).toContain('margin: 0;');
+    expect(rule).toContain('size: portrait;');
+    expect(rule).not.toMatch(/margin: [0-9.]+(in|cm|mm|pt|px)/);
+  });
+
   it('copies head CSS, base and page classes, but never scripts or interactive shell content', async () => {
     const sheet = document.createElement('link');
     sheet.rel = 'stylesheet';

@@ -154,7 +154,7 @@ export class MktgPrintService {
     });
     // The surface's page setup as the frame's unnamed @page rule, chosen as mktg-family-print.scss
     // chooses the named page: the brand kit's legacy book is landscape, every portrait document
-    // (the kit's portrait print included) is on the framework's margins. Last in the head, after
+    // (the kit's portrait print included) is on the framework's setup. Last in the head, after
     // the cloned sheets; in Chrome the matched named rule still outranks it with the same values.
     const setup = doc.createElement('style');
     setup.textContent = `@page { ${this.pageSetup(bodyClass, roots)} }`;

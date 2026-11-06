@@ -24,11 +24,24 @@
     display: table-header-group;
     break-inside: avoid;
   }
+  > tfoot {
+    display: table-footer-group;
+  }
 
   > thead > tr > td,
   > tbody > tr > td {
     padding: 0 0 10pt;
     vertical-align: top;
+  }
+
+  /* The page's room, 0.55in top and bottom on every page, as lfx-mktg-print-sheet gives the other prints:
+     the page prints with no margin. The head's padding keeps the running head where the margin put it. */
+  > thead > tr > td {
+    padding-top: 0.55in;
+  }
+  > tfoot > tr > td {
+    height: 0.55in;
+    padding: 0;
   }
 }
 

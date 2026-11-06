@@ -43,6 +43,15 @@ it('prints five native portrait chapters with branded heads, real SVG logo asset
   expect(root.textContent).not.toContain('V3.0');
   expect(root.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V3.0');
   expect(root.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
+  // The page's room, repeated per page by the chapter's head (its padding) and an empty foot: no @page margin remains.
+  expect(root.querySelectorAll('.kit-chapter > tfoot > tr > td')).toHaveLength(5);
+  const foot = root.querySelector<HTMLElement>('.kit-chapter > tfoot');
+  const footCell = root.querySelector<HTMLElement>('.kit-chapter > tfoot > tr > td');
+  const headCell = root.querySelector<HTMLElement>('.kit-chapter > thead > tr > td');
+  if (!foot || !footCell || !headCell) throw new Error('Missing synthetic kit chapter room');
+  expect(getComputedStyle(foot).display).toBe('table-footer-group');
+  expect(getComputedStyle(footCell).height).toBe('52.8px');
+  expect(getComputedStyle(headCell).paddingTop).toBe('52.8px');
   expect(root.querySelectorAll('lfx-mktg-print-chapter-header')).toHaveLength(5);
   root.querySelectorAll<HTMLElement>('lfx-mktg-print-chapter-header').forEach((header) => {
     expect(header.style.getPropertyValue('--mfp-chapter-accent')).toBe(view.accent);

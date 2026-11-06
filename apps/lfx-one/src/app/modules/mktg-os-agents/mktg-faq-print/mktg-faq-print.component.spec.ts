@@ -101,7 +101,9 @@ it.each([false, true])('prints the document identity even with an empty first gr
   fixture.componentRef.setInput('projectName', 'Synthetic project');
   await fixture.whenStable();
   const root: HTMLElement = fixture.nativeElement;
-  expect(root.querySelector('section')?.firstElementChild?.tagName).toBe('HEADER');
+  // The document flows in one sheet, whose head and foot repeat the page room on every page; the identity leads it.
+  expect(root.querySelector('section')?.firstElementChild?.tagName).toBe('LFX-MKTG-PRINT-SHEET');
+  expect(root.querySelector('.lfx-print-sheet > tbody > tr > td')?.firstElementChild?.tagName).toBe('HEADER');
   expect(root.querySelector('header')?.textContent).toContain('Synthetic project FAQ');
   expect(root.querySelector('h2')?.textContent).toContain('04');
   expect(root.querySelectorAll('h2')).toHaveLength(1);
