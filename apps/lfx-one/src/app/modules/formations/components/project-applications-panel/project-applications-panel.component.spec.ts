@@ -3,6 +3,7 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
@@ -268,13 +269,14 @@ describe('ProjectApplicationsPanelComponent — deep link (#5229)', () => {
   const OTHER = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
   let navigate: MockInstance<Router['navigate']>;
 
-  const mount = async (mode: ProjectApplicationViewMode, param: string | null, fetched: ProjectApplication[]) => {
+  const mount = async (mode: ProjectApplicationViewMode, param: string | null, fetched: ProjectApplication[], platform = 'browser') => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [ProjectApplicationsPanelComponent],
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: platform },
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(param ? { tab: 'proposals', application: param } : {})) } },
@@ -319,6 +321,48 @@ describe('ProjectApplicationsPanelComponent — deep link (#5229)', () => {
     const panel = await mount('staff', 'not-a-uuid', [buildApplication({ uid: 'not-a-uuid' })]);
     expect(panel.selectedUid()).toBeNull();
     expect(navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing on the server, so SSR never turns the URL change into a redirect', async () => {
+    const panel = await mount('staff', KNOWN, [buildApplication({ uid: KNOWN })], 'server');
+    expect(panel.selectedUid()).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('is not consumed by a failed read, so a retry still opens the proposal', async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [ProjectApplicationsPanelComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap({ tab: 'proposals', application: KNOWN })) } },
+        { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])), getProject: vi.fn(() => of(null)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        DialogService,
+      ],
+    }).compileComponents();
+    const router = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    vi.spyOn(TestBed.inject(ProjectApplicationService), 'getApplications')
+      .mockReturnValueOnce(throwError(() => new Error('boom')))
+      .mockReturnValue(of([buildApplication({ uid: KNOWN })]));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fixture = TestBed.createComponent(ProjectApplicationsPanelComponent);
+    fixture.componentRef.setInput('mode', 'staff');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const panel = fixture.componentInstance as unknown as { selectedUid: () => string | null; retry: () => void };
+    expect(panel.selectedUid()).toBeNull();
+    expect(router).not.toHaveBeenCalled();
+
+    panel.retry();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(panel.selectedUid()).toBe(KNOWN);
+    expect(router).toHaveBeenCalledTimes(1);
   });
 
   it('ignores the param in submitter mode', async () => {

@@ -269,6 +269,21 @@ describe('ProjectApplicationService (#3037)', () => {
       expect(service.pendingStaffCount()).toBe(2);
     });
 
+    it('keeps a failed read hidden through its retry, and keeps the last good count while a healthy refresh is pending', () => {
+      service.refreshStaff();
+      flushQueue();
+      service.refreshStaff();
+      expect(service.pendingStaffCount()).toBe(2);
+      http.expectOne('/api/project-applications/queue').flush('boom', { status: 500, statusText: 'Server Error' });
+      expect(service.pendingStaffCount()).toBeNull();
+
+      service.refreshStaff();
+      expect(service.staffLoading()).toBe(true);
+      expect(service.pendingStaffCount()).toBeNull();
+      flushQueue();
+      expect(service.pendingStaffCount()).toBe(2);
+    });
+
     it('shows no count, not zero, when the very first read fails', () => {
       service.refreshStaff();
       http.expectOne('/api/project-applications/queue').flush('boom', { status: 500, statusText: 'Server Error' });

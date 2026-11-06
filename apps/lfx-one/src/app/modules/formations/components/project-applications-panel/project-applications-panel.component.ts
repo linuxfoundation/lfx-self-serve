@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, input, OnInit, Signal, signal, untracked } from '@angular/core';
+import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, inject, input, OnInit, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -21,7 +21,7 @@ import type { FilterPillOption, ProjectApplication, ProjectApplicationRow, Proje
 import { isUuid, reconcileProjectApplications, toProjectApplicationRow } from '@lfx-one/shared/utils';
 import { ProjectApplicationService } from '@services/project-application.service';
 import type { TablePageEvent } from 'primeng/table';
-import { catchError, debounceTime, distinctUntilChanged, EMPTY, forkJoin, map, of, Subject, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, filter, forkJoin, map, of, Subject, switchMap, take } from 'rxjs';
 
 import { ProjectApplicationDrawerComponent } from '../project-application-drawer/project-application-drawer.component';
 
@@ -56,6 +56,7 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
   public readonly mode = input<ProjectApplicationViewMode>('submitter');
@@ -82,7 +83,6 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   private readonly fetched = signal<ProjectApplication[]>([]);
   private readonly load$ = new Subject<void>();
   private panelRequestedStaffRead = false;
-  private deepLinkHandled = false;
 
   // === Computed Signals ===
   /** Staff reads live in the root service (shared with the Formations tab's count); submitter reads stay local. */
@@ -90,7 +90,7 @@ export class ProjectApplicationsPanelComponent implements OnInit {
     this.mode() === 'staff' ? this.projectApplicationService.staffLoading() : this.submitterLoading()
   );
   protected readonly hasError: Signal<boolean> = computed(() =>
-    this.mode() === 'staff' ? this.projectApplicationService.staffError() : this.submitterError()
+    this.mode() === 'staff' ? this.projectApplicationService.staffError() && !this.projectApplicationService.staffLoading() : this.submitterError()
   );
   protected readonly applications: Signal<ProjectApplicationRow[]> = this.initApplications();
   protected readonly filteredApplications: Signal<ProjectApplicationRow[]> = this.initFilteredApplications();
@@ -203,27 +203,41 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   }
 
   /**
-   * `?application=<uid>` (#5229), staff only: once this panel's own read has landed, open that proposal's drawer a
-   * single time and drop the param so closing, reloading or sharing the URL doesn't reopen it. A uid that is
-   * malformed, unknown or not in the caller's queue is ignored silently.
+   * `?application=<uid>` (#5229), staff only, browser only (the SSR renderer would turn the URL change into a
+   * redirect that drops the param before the browser can use it). Once this panel's own read has succeeded, open that
+   * proposal's drawer a single time. The param is dropped after that first successful read either way, so closing,
+   * reloading or sharing the URL never reopens it. A uid that is malformed, unknown or not in the caller's queue
+   * opens nothing, silently. A failed read consumes nothing, so a retry can still honour the link.
    */
   private initDeepLink(): void {
-    const requested = toSignal(this.route.queryParamMap.pipe(map((params) => params.get(PROJECT_APPLICATION_DEEP_LINK_QUERY_PARAM))), { initialValue: null });
-    effect(() => {
-      const uid = requested();
-      if (this.deepLinkHandled || !uid || !this.isStaff() || !this.panelRequestedStaffRead || this.loading() || this.hasError()) {
-        return;
-      }
-      if (this.projectApplicationService.staffFetchedApplications() === null) {
-        return;
-      }
-      this.deepLinkHandled = true;
-      const application = isUuid(uid) ? this.applications().find((row) => row.uid.toLowerCase() === uid.toLowerCase()) : undefined;
-      untracked(() => {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    const requested$ = this.route.queryParamMap.pipe(
+      map((params) => params.get(PROJECT_APPLICATION_DEEP_LINK_QUERY_PARAM)),
+      distinctUntilChanged()
+    );
+    const readLanded$ = toObservable(
+      computed(
+        () =>
+          this.isStaff() &&
+          this.panelRequestedStaffRead &&
+          !this.loading() &&
+          !this.hasError() &&
+          this.projectApplicationService.staffFetchedApplications() !== null
+      )
+    );
+    combineLatest([requested$, readLanded$])
+      .pipe(
+        filter(([uid, landed]) => !!uid && landed),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(([uid]) => {
+        const application = uid && isUuid(uid) ? this.applications().find((row) => row.uid.toLowerCase() === uid.toLowerCase()) : undefined;
         if (application) {
           this.open(application);
         }
-        // Dropped whether or not it matched, so a later refresh of the URL can't open a drawer unexpectedly.
         void this.router.navigate([], {
           relativeTo: this.route,
           queryParams: { [PROJECT_APPLICATION_DEEP_LINK_QUERY_PARAM]: null },
@@ -231,7 +245,6 @@ export class ProjectApplicationsPanelComponent implements OnInit {
           replaceUrl: true,
         });
       });
-    });
   }
 
   // === Private Initializers ===

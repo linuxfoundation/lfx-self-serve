@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, effect, inject, Signal, signal, untracked } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
@@ -26,7 +26,7 @@ import {
   PROJECT_APPLICATION_TABS,
 } from '@lfx-one/shared/constants';
 import { withProposalsPendingCount } from '@lfx-one/shared/utils';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, filter, finalize, map, of, switchMap } from 'rxjs';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { FormationPageTabsComponent } from '../components/formation-page-tabs/formation-page-tabs.component';
@@ -129,11 +129,9 @@ export class FormationsQueueComponent {
   public constructor() {
     // The count needs the staff queue even while the Formations tab is showing. The read is shared with the
     // proposals panel (joined while in flight), and is made only for callers who can see the tab at all.
-    effect(() => {
-      if (this.showProposalsTab()) {
-        untracked(() => this.projectApplicationService.refreshStaff());
-      }
-    });
+    toObservable(this.showProposalsTab)
+      .pipe(filter(Boolean), takeUntilDestroyed())
+      .subscribe(() => this.projectApplicationService.refreshStaff());
   }
 
   protected onPageTabChange(tab: string): void {

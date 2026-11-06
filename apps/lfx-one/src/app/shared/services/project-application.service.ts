@@ -55,7 +55,7 @@ export class ProjectApplicationService {
   public readonly staffFetchedApplications: Signal<ProjectApplication[] | null> = this.staffFetched.asReadonly();
   /** A staff read is in flight. */
   public readonly staffLoading: Signal<boolean> = this.staffLoadingState.asReadonly();
-  /** The latest staff read failed; the next {@link refreshStaff} tries again. */
+  /** The latest staff read failed and none has succeeded since; the next {@link refreshStaff} tries again. */
   public readonly staffError: Signal<boolean> = this.staffErrorState.asReadonly();
   /** The staff queue as the panel shows it: the last read plus the write overlay, minus deletions. `null` until a read has succeeded. */
   public readonly staffApplications: Signal<ProjectApplication[] | null> = computed(() => {
@@ -92,8 +92,8 @@ export class ProjectApplicationService {
       }
       this.staffRead.unsubscribe();
     }
+    // The error flag stays set until a read succeeds, so a retry never brings a hidden count back before it lands.
     this.staffLoadingState.set(true);
-    this.staffErrorState.set(false);
     // A response only counts for the identity the read started under; the identity-change reset also cancels the read.
     const identity = this.userService.meetingFeedIdentity();
     const current = (): boolean => identity === this.userService.meetingFeedIdentity();
@@ -104,6 +104,7 @@ export class ProjectApplicationService {
         }
         this.reconcile('staff', applications);
         this.staffFetched.set(applications);
+        this.staffErrorState.set(false);
       },
       error: () => {
         if (!current()) {
