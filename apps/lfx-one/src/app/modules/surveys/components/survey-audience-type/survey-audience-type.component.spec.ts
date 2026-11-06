@@ -67,6 +67,7 @@ describe('SurveyAudienceTypeComponent template picker (#5124)', () => {
     await render({ status: 'ready', options: [{ label: 'Board NPS Survey', value: '1' }] });
 
     expect(byTestId('survey-template-heading')?.textContent).toContain('NPS Survey Templates');
+    expect(byTestId('survey-template-heading')?.querySelector('span')?.getAttribute('aria-hidden')).toBe('true');
     expect(byTestId('survey-template-guidance')?.textContent?.trim()).toBe(
       'Templates come from the SurveyMonkey survey workgroup. Select one to use its questions in your survey.'
     );

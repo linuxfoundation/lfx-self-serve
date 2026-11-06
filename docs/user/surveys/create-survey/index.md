@@ -4,7 +4,7 @@ description: How to create and send an NPS survey to the members of one or more 
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, create, nps, feedback, reminders, email, schedule]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Surveys
 ---
 
