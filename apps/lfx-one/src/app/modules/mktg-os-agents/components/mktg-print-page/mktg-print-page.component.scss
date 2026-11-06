@@ -1,0 +1,134 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* One fixed frame per printed page (CSS Paged Media Level 3: `@page { size: 11in 8.5in; margin: 0 }` from the
+   print frame, fragmentation by `break-after: page`): fixed dimensions, relative, overflow hidden, absolute
+   children, never sized from the viewport, a percentage height or flex, so the frames paginate the same in
+   Chromium and WebKit, on Letter and on A4. The frame is Letter's width and a hair under A4's height
+   (MKTG_PRINT_PAGE_FRAME_PT, 792 × 594pt): a PDF printed to A4 (wider, shorter) would spill a Letter-tall
+   frame onto a blank sheet per page; this one fits both papers whole. */
+.lfx-print-page {
+  position: relative;
+  box-sizing: border-box;
+  width: 792pt;
+  height: 594pt;
+  overflow: hidden;
+  background: white;
+  color: var(--pp-dark);
+  font-family: var(--pp-font, inherit);
+  break-after: page;
+  break-inside: avoid;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+/* The dark covers paint the slide area only: the page's bands stay white, so the printed page reads as the
+   slide on paper. `print-color-adjust: exact` keeps the ground when the print dialog's background graphics
+   are off (Chromium honours it; WebKit prints backgrounds by its own setting). */
+.lfx-print-page--dark {
+  color: var(--pp-on-dark);
+
+  .lfx-print-page__slide {
+    background: var(--pp-dark);
+  }
+}
+
+/* The 16:9 slide area: the canvas scaled once to the page's width (792 × 445.5pt), centred. */
+.lfx-print-page__slide {
+  position: absolute;
+  left: 0;
+  width: 792pt;
+  height: 445.5pt;
+  overflow: hidden;
+}
+
+/* A page plan box, in pt, scaled: the model fitted its text, the box clips whatever is left. */
+.pp-box {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.pp-shape--round {
+  border-radius: 6pt;
+}
+
+.pp-shape--ellipse {
+  border-radius: 50%;
+}
+
+.pp-image img,
+.pp-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.pp-logo {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.pp-slot {
+  overflow: hidden;
+}
+
+/* A block of text: the deck's insets, its line height, its alignment and anchor. */
+.pp-rich {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: var(--pp-inset);
+  line-height: var(--pp-line);
+  text-align: left;
+  overflow-wrap: break-word;
+}
+
+.pp-rich--center {
+  text-align: center;
+}
+
+.pp-rich--end {
+  text-align: right;
+}
+
+.pp-rich--middle {
+  justify-content: center;
+}
+
+.pp-rich--bottom {
+  justify-content: flex-end;
+}
+
+.pp-para {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.pp-para--caps {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.pp-para--italic {
+  font-style: italic;
+}
+
+/* A bulleted paragraph: the deck's indent (MKTG_PRINT_PAGE_BULLET_INDENT, 18pt on the canvas, scaled by the
+   shell's --mktg-page-scale), the bullet in the indent. */
+.pp-para--bullet {
+  position: relative;
+  padding-left: calc(var(--mktg-page-scale) * 18pt);
+
+  &::before {
+    content: '•';
+    position: absolute;
+    left: calc(var(--mktg-page-scale) * 5pt);
+  }
+}

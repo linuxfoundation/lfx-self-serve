@@ -14,8 +14,11 @@ import {
   MKTG_PRINT_FONT_LINK_ID_PREFIX,
   MKTG_PRINT_FONT_WAIT_MS,
   MKTG_PRINT_FONT_WEIGHTS,
+  MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN,
   MKTG_PRINT_FRAME_LINGER_MS,
   MKTG_PRINT_FRAME_PAPER_IN,
+  MKTG_PRINT_LANDSCAPE_CLASS,
+  MKTG_PRINT_LANDSCAPE_PAGE_SETUP,
   MKTG_PRINT_PAGE_MARGINS_CLASS,
   MKTG_PRINT_PAGE_SETUPS,
 } from '@lfx-one/shared/constants';
@@ -107,12 +110,16 @@ export class MktgPrintService {
     this.cleanupFrame?.();
     const roots = this.printRoots(bodyClass);
     if (!roots.length) return;
+    // The deck-page prints (a page host with MKTG_PRINT_LANDSCAPE_CLASS under a root) are landscape fixed frames: their
+    // own frame size (WebKit lays the subframe out at the frame's size) and setup, the same for every engine.
+    const landscape = this.isLandscape(roots);
+    const paper = landscape ? MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN : MKTG_PRINT_FRAME_PAPER_IN;
     const frame = this.document.createElement('iframe');
     frame.setAttribute('data-testid', 'lfx-print-frame');
     frame.setAttribute('aria-hidden', 'true');
     frame.setAttribute('title', 'Print document');
     frame.tabIndex = -1;
-    frame.style.cssText = `position:fixed;width:${MKTG_PRINT_FRAME_PAPER_IN.width}in;height:${MKTG_PRINT_FRAME_PAPER_IN.height}in;left:0;top:0;opacity:0;pointer-events:none;border:0`;
+    frame.style.cssText = `position:fixed;width:${paper.width}in;height:${paper.height}in;left:0;top:0;opacity:0;pointer-events:none;border:0`;
     this.document.body.appendChild(frame);
     const doc = frame.contentDocument;
     const view = frame.contentWindow;
@@ -165,7 +172,8 @@ export class MktgPrintService {
     doc.body.classList.add(bodyClass);
     // The engine, read once per print from the app window (the same-origin frame shares it): WebKit prints a
     // table's head and foot once, so there the pages print on their margins and the documents' room collapses.
-    const pageMargins = mktgPrintIsWebKit(this.document.defaultView.navigator.userAgent);
+    // The landscape pages are fixed frames with no table head or foot, so they never print on the margins.
+    const pageMargins = !landscape && mktgPrintIsWebKit(this.document.defaultView.navigator.userAgent);
     if (pageMargins) doc.body.classList.add(MKTG_PRINT_PAGE_MARGINS_CLASS);
     doc.body.style.cssText = this.document.body.style.cssText;
     doc.title = title ?? this.document.title;
@@ -187,7 +195,7 @@ export class MktgPrintService {
     // the cloned sheets, so an engine that did honour named pages could not print the margin-less
     // setup; the book's landscape setup is never written into the framework's page.
     const setup = doc.createElement('style');
-    const pageSetup = this.pageSetup(bodyClass, roots, pageMargins);
+    const pageSetup = landscape ? MKTG_PRINT_LANDSCAPE_PAGE_SETUP : this.pageSetup(bodyClass, roots, pageMargins);
     const restatesFramework = pageSetup === MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'];
     setup.textContent = restatesFramework ? `@page { ${pageSetup} }\n@page mktg-framework { ${pageSetup} }` : `@page { ${pageSetup} }`;
     doc.head.appendChild(setup);
@@ -260,6 +268,11 @@ export class MktgPrintService {
     if (bodyClass === BRAND_KIT_PRINT_BODY_CLASS) wrapper = BRAND_KIT_PRINT_ONLY_CLASS;
     if (bodyClass === FOUNDATION_MESSAGE_PRINT_BODY_CLASS) wrapper = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
     return wrapper ? Array.from(this.document.querySelectorAll<HTMLElement>(`.${wrapper}`)) : [];
+  }
+
+  /** Whether the print's documents are landscape deck pages: a root carries MKTG_PRINT_LANDSCAPE_CLASS, or holds a page that does (the portrait kit class's test). */
+  private isLandscape(roots: HTMLElement[]): boolean {
+    return roots.some((root) => root.classList.contains(MKTG_PRINT_LANDSCAPE_CLASS) || root.querySelector(`.${MKTG_PRINT_LANDSCAPE_CLASS}`));
   }
 
   /**

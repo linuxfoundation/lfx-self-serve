@@ -116,6 +116,18 @@ export const MKTG_PRINT_PAGE_SETUPS = {
 } as const;
 
 /**
+ * The class every landscape deck page's host carries (lfx-mktg-print-page,
+ * and the cover and back-cover pages built on it). The print frame tests the
+ * print-only wrappers for it the way it tests for the kit's portrait class:
+ * a document whose roots hold such a page prints on the landscape setup
+ * (MKTG_PRINT_LANDSCAPE_PAGE_SETUP, in mktg-print-page.constants.ts) in a
+ * landscape frame, whatever its body class, so a new document made of these
+ * pages (the family PDF) needs no service change. The legacy `brand-kit`
+ * setup and its test are untouched.
+ */
+export const MKTG_PRINT_LANDSCAPE_CLASS = 'lfx-mktg-print-landscape';
+
+/**
  * The class the print frame sets on its body when the page prints on its
  * margins (`mktg-framework-page-margins`: WebKit), under which the documents'
  * own room collapses to nothing: the sheets' head and foot rows, the kit

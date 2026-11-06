@@ -1,0 +1,114 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let l = look();
+<section
+  class="lfx-print-page"
+  [class.lfx-print-page--dark]="!isContent()"
+  [style.--pp-font]="l.font"
+  [style.--pp-dark]="l.dark"
+  [style.--pp-accent]="l.accent"
+  [style.--pp-tint]="l.tint"
+  [style.--pp-on-dark]="l.onDark"
+  [style.--pp-rule]="l.rule"
+  [style.--pp-inset]="inset"
+  [style.--pp-line]="lineHeight"
+  [attr.data-layout]="pageLayout()"
+  [attr.data-title]="pageTitle()"
+  data-testid="mktg-print-page">
+  <div class="lfx-print-page__slide" [style.top]="slideTop" data-testid="mktg-print-page-slide">
+    @if (isContent()) {
+      <div class="pp-box pp-title" [style]="boxStyle(titleBox)" data-testid="mktg-print-page-title">
+        <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: titleRich() }" />
+      </div>
+      @for (el of headEls(); track $index) {
+        <ng-container *ngTemplateOutlet="elTpl; context: { $implicit: el, testid: 'mktg-print-page-head' }" />
+      }
+      @for (el of footerEls(); track $index) {
+        <ng-container *ngTemplateOutlet="elTpl; context: { $implicit: el, testid: 'mktg-print-page-footer' }" />
+      }
+      @if (logo(); as lockup) {
+        <div class="pp-logo" [style]="boxStyle(logoFrame)" data-testid="mktg-print-page-logo">
+          <img [src]="lockup.src" [alt]="lockup.alt" [style.filter]="lockup.filter" />
+        </div>
+      }
+    } @else if (pageLayout() === 'cover') {
+      <div class="pp-box pp-title" [style]="boxStyle(coverTitleBox)" data-testid="mktg-print-page-title">
+        <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: titleRich() }" />
+      </div>
+      @if (page()?.subtitle; as subtitle) {
+        <div class="pp-box" [style]="boxStyle(coverSubtitleBox)" data-testid="mktg-print-page-subtitle">
+          <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: subtitle }" />
+        </div>
+      }
+    } @else {
+      <div class="pp-box pp-title" [style]="boxStyle(backTitleBox)" data-testid="mktg-print-page-title">
+        <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: titleRich() }" />
+      </div>
+    }
+    @for (el of els(); track $index) {
+      <ng-container *ngTemplateOutlet="elTpl; context: { $implicit: el, testid: 'mktg-print-page-el' }" />
+    }
+    <!-- A consumer's own content, at the deck's AREA (deck points, scaled by the shell). -->
+    <div class="pp-box pp-area" [style]="boxStyle(area)" data-testid="mktg-print-page-area">
+      <ng-content />
+    </div>
+  </div>
+</section>
+
+<ng-template #elTpl let-el let-testid="testid">
+  @switch (el.t) {
+    @case ('shape') {
+      <div
+        class="pp-box pp-shape"
+        [class.pp-shape--round]="el.shape === 'ROUND_RECTANGLE'"
+        [class.pp-shape--ellipse]="el.shape === 'ELLIPSE'"
+        [style]="shapeStyle(el)"
+        [attr.data-testid]="testid">
+        @if (el.text; as text) {
+          <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: text }" />
+        }
+      </div>
+    }
+    @case ('image') {
+      <div class="pp-box pp-image" [style]="boxStyle(el.box)" [attr.data-testid]="testid">
+        <img [src]="el.src" [alt]="el.alt" [style.filter]="el.filter ?? ''" />
+      </div>
+    }
+    @case ('slot') {
+      <div class="pp-box pp-slot" [style]="boxStyle(el.box)" [attr.data-slot]="el.slot" [attr.data-testid]="testid">
+        @if (slotTemplate(el.slot); as slot) {
+          <ng-container *ngTemplateOutlet="slot" />
+        }
+      </div>
+    }
+  }
+</ng-template>
+
+<ng-template #richTpl let-r>
+  <div
+    class="pp-rich"
+    [class.pp-rich--center]="r.align === 'CENTER'"
+    [class.pp-rich--end]="r.align === 'END'"
+    [class.pp-rich--middle]="r.anchor === 'MIDDLE'"
+    [class.pp-rich--bottom]="r.anchor === 'BOTTOM'"
+    [style.color]="r.color"
+    [style.font-family]="r.font">
+    @for (para of r.paras; track $index) {
+      <p
+        class="pp-para"
+        [class.pp-para--bullet]="para.bullet"
+        [class.pp-para--caps]="para.caps"
+        [class.pp-para--italic]="para.italic"
+        [style]="paraStyle(para)">
+        @if (para.runs; as runs) {
+          @for (run of runs; track $index) {
+            <span [style.color]="run.color" [style.font-weight]="run.weight">{{ run.text }}</span>
+          }
+        } @else {
+          {{ para.text }}
+        }
+      </p>
+    }
+  </div>
+</ng-template>
