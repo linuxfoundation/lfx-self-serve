@@ -273,7 +273,7 @@ export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), 
  * @description Prompts come from the vote detail (`poll_comment_prompts`), not the results payload — the results
  * endpoint only reports prompts that have responses, which would hide prompts on zero-response votes. Responses
  * left-join in by `prompt_id` when present. Timestamped responses sort newest-first; timestamp-free
- * pseudo-anonymous responses preserve the server's comment-text order. Pagination slices this ordered list.
+ * pseudo-anonymous responses preserve the server's comment-text order. The Comments tab renders this ordered list continuously.
  * If the detail supplied no prompts (e.g. it failed and the list-vote fallback lacks them), degrade to the results payload's prompts that have responses.
  * @param commentResults - `comment_results` from the results API
  * @param detailPrompts - `poll_comment_prompts` from the vote detail, when available
