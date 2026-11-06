@@ -153,6 +153,7 @@ export class MktgFamilyExportService {
           projectName,
           printedAt: new Date().toISOString(),
           newestRevisionAt: newestRevisionAt ?? null,
+          revisionNumbers: Object.fromEntries(printable.map((member) => [member.agentKey, member.revisionNumber])),
           fontFamily: book?.fontUrl ? book.type.family : brand.fontFamily,
           weights: book?.weights.map((weight) => weight.weight) ?? MKTG_PRINT_FONT_WEIGHTS,
         };

@@ -172,6 +172,8 @@ describe('Family export client', () => {
     expect(view?.fontFamily).toBe('Montserrat');
     // The newest dated member revision names the family PDF; a member without a date is passed over.
     expect(view?.newestRevisionAt).toBe('2026-10-28T09:00:00Z');
+    // The members' revision numbers travel with the view, for the cover's versions line.
+    expect(view?.revisionNumbers).toEqual({ 'brand-kit': 1, boilerplates: 1, faq: 1 });
   });
 
   it.each(['boilerplates', 'faq'] as const)('rejects unreadable approved %s instead of silently omitting it', (agentKey) => {

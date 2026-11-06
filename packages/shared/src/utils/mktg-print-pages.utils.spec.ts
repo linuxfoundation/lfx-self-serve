@@ -1,0 +1,391 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The family PDF's own pages: the family's grammar (parts, numbers, cover,
+// dividers, running heads), the appendix paginated from the data by the
+// shell's measure, and the page plan. The measure and the fit are the shell's
+// (mktg-print-fit.utils.spec.ts).
+
+import { describe, expect, it } from 'vitest';
+
+import { MKTG_FAQ_PRINT_UNANSWERED } from '../constants/mktg-print.constants';
+import { MKTG_PRINT_PAGE_AREA, MKTG_PRINT_PAGE_INSET, MKTG_PRINT_PAGE_LOGO_FRAME, MKTG_PRINT_PAGE_SIZE } from '../constants/mktg-print-page.constants';
+import {
+  MKTG_PRINT_APPENDIX_LAYOUT,
+  MKTG_PRINT_DIVIDER_LAYOUT,
+  MKTG_PRINT_SECTION_TITLES,
+  MKTG_PRINT_SOURCE_LEAD,
+} from '../constants/mktg-print-pages.constants';
+import type { BoilerplatesLengthRow } from '../interfaces/boilerplates.interface';
+import type { FaqGroupView } from '../interfaces/faq.interface';
+import type { MktgFamilyPrintView } from '../interfaces/mktg-family-export.interface';
+import type { MktgPrintPara, MktgPrintPageShapeEl } from '../interfaces/mktg-print-page.interface';
+import type { MktgPrintCardRow, MktgPrintFaqEntry } from '../interfaces/mktg-print-pages.interface';
+import boilerplatesEnvelope from './__fixtures__/boilerplates.envelope.json';
+import faqEnvelope from './__fixtures__/faq-envelope.json';
+import { boilerplatesAssetOfRevision } from './boilerplates.utils';
+import { faqAssetOfRevision } from './faq.utils';
+import { mktgPrintRichHeight } from './mktg-print-fit.utils';
+import { mktgPrintContinued, mktgPrintMixHex, mktgPrintPageLook } from './mktg-print-page.utils';
+import {
+  mktgBoilerplatesPageCount,
+  mktgFaqPageCount,
+  mktgPrintCardHead,
+  mktgPrintDivider,
+  mktgPrintDividerPage,
+  mktgPrintFamilyCover,
+  mktgPrintFamilyPartNumbers,
+  mktgPrintFamilyParts,
+  mktgPrintFamilyPlan,
+  mktgPrintFaqQuestionCount,
+  mktgPrintPageChrome,
+  paginateBoilerplateCards,
+  paginateFaqPairs,
+} from './mktg-print-pages.utils';
+import { buildBoilerplatesPrintView, buildFaqPrintView, mktgPrintBrand } from './mktg-print.utils';
+
+const layout = MKTG_PRINT_APPENDIX_LAYOUT;
+const area = MKTG_PRINT_PAGE_AREA;
+
+function fixtureLengths(): BoilerplatesLengthRow[] {
+  const asset = boilerplatesAssetOfRevision(JSON.stringify(boilerplatesEnvelope.content), boilerplatesEnvelope);
+  if (!asset) throw new Error('Invalid synthetic boilerplates');
+  return buildBoilerplatesPrintView(asset, mktgPrintBrand(null)).lengths;
+}
+
+function fixtureGroups(): FaqGroupView[] {
+  const asset = faqAssetOfRevision(JSON.stringify(faqEnvelope.content), faqEnvelope);
+  if (!asset) throw new Error('Invalid synthetic FAQ');
+  return buildFaqPrintView(asset, mktgPrintBrand(null)).groups;
+}
+
+/** A synthetic length row of `words` words. */
+function lengthRow(index: number, label: string, words: number, max: number): BoilerplatesLengthRow {
+  const text = Array.from({ length: words }, (_, i) => (i % 9 === 8 ? 'project.' : 'Synthetic')).join(' ');
+  return { index, label, hint: '', text, words, max, over: words > max, countLabel: `${words} / ${max} words` };
+}
+
+/** The height a column of text takes, by the shell's measure, its insets taken off. */
+function textHeight(paras: MktgPrintPara[], width: number): number {
+  return mktgPrintRichHeight({ paras, color: '', font: null }, width + 2 * MKTG_PRINT_PAGE_INSET) - 2 * MKTG_PRINT_PAGE_INSET;
+}
+
+/** The height a row of cards takes on the page, from the measure the pagination uses. */
+function cardRowHeight(row: MktgPrintCardRow): number {
+  const inner = (area.w - layout.cardColumnGap) / 2 - 2 * layout.cardPaddingX;
+  return Math.max(
+    ...row.cards.map((card) =>
+      Math.max(
+        layout.cardMinHeight,
+        2 * layout.cardPaddingY +
+          2 * layout.cardBorder +
+          textHeight(
+            [
+              { text: card.head, size: MKTG_PRINT_PAGE_SIZE.eyebrow, weight: 600, caps: true },
+              { text: card.text, size: card.size, above: layout.cardBodyGap },
+            ],
+            inner
+          )
+      )
+    )
+  );
+}
+
+/** The height a FAQ entry takes in its column, from the measure the pagination uses (a plain answer, the source line when one). */
+function faqEntryHeight(entry: MktgPrintFaqEntry, sourceSize: number): number {
+  const columnWidth = (area.w - layout.faqColumnGap) / 2;
+  return textHeight(
+    [
+      { text: entry.question, size: entry.questionSize, weight: layout.faqQuestionWeight },
+      { text: entry.answered ? entry.answer : MKTG_FAQ_PRINT_UNANSWERED, size: entry.answerSize, above: layout.faqAnswerGap },
+      ...(entry.source ? [{ text: `${MKTG_PRINT_SOURCE_LEAD} · ${entry.source}`, size: sourceSize, above: layout.faqSourceGap }] : []),
+    ],
+    columnWidth
+  );
+}
+
+function printView(overrides: Partial<MktgFamilyPrintView> = {}): MktgFamilyPrintView {
+  const brand = mktgPrintBrand(null);
+  return {
+    framework: null,
+    kit: null,
+    boilerplates: { brand, lengths: [] },
+    faq: { brand, groups: [], unanswered: 0 },
+    brand,
+    projectName: 'Synthetic Mesh',
+    printedAt: '2026-11-06T00:00:00Z',
+    newestRevisionAt: '2026-10-21T10:00:00Z',
+    revisionNumbers: { boilerplates: 2, faq: 1 },
+    ...overrides,
+  } as MktgFamilyPrintView;
+}
+
+describe("the family's grammar", () => {
+  it('lists the parts present in the deck order, renumbered when one is missing', () => {
+    expect(mktgPrintFamilyParts(printView())).toEqual(['boilerplates', 'faq']);
+    expect(mktgPrintFamilyPartNumbers(printView())).toEqual({ boilerplates: '01', faq: '02' });
+  });
+
+  it('says a content page running head and a divider as the deck does', () => {
+    expect(mktgPrintPageChrome('Acme Mesh', 'Positioning & brand', '03', 'Boilerplates')).toEqual({
+      eyebrowLeft: '03 Boilerplates',
+      eyebrowRight: 'Acme Mesh Positioning & brand',
+      footerLine: 'Acme Mesh · a Linux Foundation project',
+    });
+    expect(mktgPrintDivider('boilerplates', '03', 4, 'Positioning & brand')).toEqual({
+      eyebrow: '03 · POSITIONING & BRAND',
+      title: 'Boilerplates',
+      countLine: '4 boilerplates',
+    });
+    expect(mktgPrintDivider('faq', '04', 1, 'Positioning & brand').countLine).toBe('1 question and answer');
+    expect(mktgPrintDivider('faq', '04', 12, 'Positioning & brand').countLine).toBe('12 questions and answers');
+    expect(mktgPrintFaqQuestionCount(fixtureGroups())).toBe(4);
+  });
+
+  it('models a divider as a dark cover page: the eyebrow in the accent, the title and the softened count line in the on-dark ink, the lockup in the logo frame', () => {
+    const look = mktgPrintPageLook({ ...mktgPrintBrand(null), dark: '#0F172A', accent: '#2563EB' });
+    const divider = mktgPrintDivider('boilerplates', '03', 4, 'Positioning & brand');
+    const page = mktgPrintDividerPage(look, divider, { src: 'data:image/svg+xml,logo', alt: 'Synthetic', filter: '' });
+    expect(page.layout).toBe('cover');
+    expect(page.title).toBe('');
+    expect(page.head).toBeUndefined();
+    expect(page.footer).toBeUndefined();
+    const [eyebrow, title, count] = page.els as MktgPrintPageShapeEl[];
+    expect(eyebrow.box).toEqual(MKTG_PRINT_DIVIDER_LAYOUT.eyebrow);
+    expect(eyebrow.text?.paras[0]).toEqual(expect.objectContaining({ text: '03 · POSITIONING & BRAND', caps: true, color: '#2563EB' }));
+    expect(title.box).toEqual(MKTG_PRINT_DIVIDER_LAYOUT.title);
+    expect(title.text?.paras[0]).toEqual(expect.objectContaining({ text: 'Boilerplates', size: 30, weight: 600 }));
+    expect(title.text?.color).toBe(look.onDark);
+    expect(count.text?.paras[0]).toEqual(expect.objectContaining({ text: '4 boilerplates', size: 11 }));
+    expect(count.text?.color).toBe(mktgPrintMixHex(look.onDark, look.dark, 0.3));
+    expect(page.els[3]).toEqual({ t: 'image', box: MKTG_PRINT_PAGE_LOGO_FRAME, src: 'data:image/svg+xml,logo', alt: 'Synthetic', filter: '' });
+    expect(mktgPrintDividerPage(look, divider, null).els).toHaveLength(3);
+  });
+
+  it("sets the divider's eyebrow in the on-dark ink when the accent does not read 3:1 on the dark", () => {
+    const eyebrowColor = (dark: string, accent: string) => {
+      const look = mktgPrintPageLook({ ...mktgPrintBrand(null), dark, accent });
+      const [eyebrow] = mktgPrintDividerPage(look, mktgPrintDivider('faq', '04', 2, 'Positioning & brand'), null).els as MktgPrintPageShapeEl[];
+      return { color: eyebrow.text?.paras[0].color, look };
+    };
+    const coral = eyebrowColor('#000000', '#FF702D');
+    expect(coral.color).toBe('#FF702D');
+    const close = eyebrowColor('#003B5C', '#005EB8');
+    expect(close.color).toBe(close.look.onDark);
+    expect(close.color).not.toBe('#005EB8');
+  });
+
+  it('says the family cover: the eyebrow in capitals, the newest revision month, the parts as the subtitle and the versions line', () => {
+    const cover = mktgPrintFamilyCover(printView(), 'Positioning & brand');
+    expect(cover).toEqual({
+      eyebrow: 'SYNTHETIC MESH · A LINUX FOUNDATION PROJECT',
+      date: 'October 2026',
+      title: 'Positioning & brand',
+      subtitle: 'Boilerplates · Questions and answers',
+      footerLeft: 'Synthetic Mesh · a Linux Foundation project',
+      footerRight: 'Boilerplates v2 · FAQ v1',
+    });
+  });
+
+  it('prefers the brand line, falls back to the print date, and says the kit version in its own form', () => {
+    const framework = { mh: { line: ' Open mesh for everyone ' }, mf: { tagline: 'Tagline' } } as unknown as MktgFamilyPrintView['framework'];
+    const kit = {} as unknown as MktgFamilyPrintView['kit'];
+    const cover = mktgPrintFamilyCover(
+      printView({ framework, kit, newestRevisionAt: null, revisionNumbers: { 'foundation-message': 3, 'brand-kit': 1, boilerplates: 2 } }),
+      'Positioning & brand'
+    );
+    expect(cover.subtitle).toBe('Open mesh for everyone');
+    expect(cover.date).toBe('November 2026');
+    expect(cover.footerRight).toBe('Messaging framework v3 · Brand Kit V1.0 · Boilerplates v2');
+    const tagline = { mh: { line: '' }, mf: { tagline: 'Tagline' } } as unknown as MktgFamilyPrintView['framework'];
+    expect(mktgPrintFamilyCover(printView({ framework: tagline }), 'Positioning & brand').subtitle).toBe('Tagline');
+  });
+});
+
+describe('paginateBoilerplateCards', () => {
+  it('gives one page with no rows for no lengths, so the page keeps its title and proportions', () => {
+    expect(paginateBoilerplateCards([])).toEqual([{ title: MKTG_PRINT_SECTION_TITLES.boilerplates, rows: [] }]);
+    expect(mktgBoilerplatesPageCount([])).toBe(1);
+  });
+
+  it('puts one short card on one page at the card size, headed by its label and word count', () => {
+    const pages = paginateBoilerplateCards([lengthRow(0, 'One-liner', 10, 12)]);
+    expect(pages).toHaveLength(1);
+    expect(pages[0].title).toBe('Boilerplates');
+    expect(pages[0].rows).toHaveLength(1);
+    expect(pages[0].rows[0].scale).toBe(1);
+    expect(pages[0].rows[0].height).toBe(layout.cardMinHeight);
+    expect(pages[0].rows[0].cards).toEqual([expect.objectContaining({ index: 0, head: 'ONE-LINER · 10 WORDS', size: MKTG_PRINT_PAGE_SIZE.card, cut: false })]);
+  });
+
+  it('lays the fixture out two cards to a row in contract order at one size, the head carrying the agent count', () => {
+    const lengths = fixtureLengths();
+    const pages = paginateBoilerplateCards(lengths);
+    expect(pages).toHaveLength(1);
+    expect(pages[0].rows.map((row) => row.cards.map((card) => card.index))).toEqual([
+      [0, 1],
+      [2, 3],
+    ]);
+    const cards = pages[0].rows.flatMap((row) => row.cards);
+    cards.forEach((card, index) => {
+      expect(card.head).toBe(mktgPrintCardHead(lengths[index]));
+      expect(card.head).toBe(`${lengths[index].label.toUpperCase()} · ${lengths[index].words} WORDS`);
+      expect(card.text).toBe(lengths[index].text);
+      expect(card.cut).toBe(false);
+      expect(card.size).toBe(MKTG_PRINT_PAGE_SIZE.card);
+    });
+    const miscounted = { ...lengths[0], words: 99 };
+    expect(mktgPrintCardHead(miscounted)).toBe(`${lengths[0].label.toUpperCase()} · 99 WORDS`);
+  });
+
+  it('spreads twelve long cards over several pages, none over the body height, titled in sequence', () => {
+    const lengths = Array.from({ length: 12 }, (_, i) => lengthRow(i, `Length ${i + 1}`, 90, 100));
+    const pages = paginateBoilerplateCards(lengths);
+    expect(pages.length).toBeGreaterThanOrEqual(2);
+    expect(mktgBoilerplatesPageCount(lengths)).toBe(pages.length);
+    expect(pages.map((page) => page.title)).toEqual(pages.map((_, i) => (i === 0 ? 'Boilerplates' : `Boilerplates (${i + 1})`)));
+    expect(pages.flatMap((page) => page.rows.flatMap((row) => row.cards)).map((card) => card.index)).toEqual(lengths.map((row) => row.index));
+    pages.forEach((page) => {
+      expect(page.rows.length).toBeGreaterThan(0);
+      page.rows.forEach((row) => {
+        expect(row.cards.length).toBeLessThanOrEqual(2);
+        expect(row.height).toBeCloseTo(cardRowHeight(row), 6);
+      });
+      const height = page.rows.reduce((h, row) => h + row.height, 0) + (page.rows.length - 1) * layout.cardRowGap;
+      expect(height).toBeLessThanOrEqual(area.h + 0.01);
+    });
+  });
+
+  it('brings the row before down to join a short lone last card', () => {
+    const lengths = [...Array.from({ length: 4 }, (_, i) => lengthRow(i, `Length ${i + 1}`, 40, 50)), lengthRow(4, 'Tail', 8, 12)];
+    const pages = paginateBoilerplateCards(lengths);
+    expect(pages.map((page) => page.rows.map((row) => row.cards.map((card) => card.index)))).toEqual([[[0, 1]], [[2, 3], [4]]]);
+  });
+
+  it('fits a boilerplate too long for a row of its own: the row set smaller, then cut at a sentence, never past the frame', () => {
+    const pages = paginateBoilerplateCards([lengthRow(0, 'Essay', 900, 1000)]);
+    expect(pages).toHaveLength(1);
+    const [row] = pages[0].rows;
+    const [card] = row.cards;
+    expect(row.scale).toBe(layout.cardRowMinScale);
+    expect(card.cut).toBe(true);
+    expect(card.size).toBeLessThan(MKTG_PRINT_PAGE_SIZE.card);
+    expect(card.text.endsWith('.') || card.text.endsWith('…')).toBe(true);
+    expect(card.text.length).toBeLessThan(lengthRow(0, 'Essay', 900, 1000).text.length);
+    expect(row.height).toBeLessThanOrEqual(area.h + 0.01);
+  });
+});
+
+describe('paginateFaqPairs', () => {
+  it('gives one page with no rows for no questions, so the page keeps its title and proportions', () => {
+    expect(paginateFaqPairs([])).toEqual([{ title: MKTG_PRINT_SECTION_TITLES.faq, scale: 1, sourceSize: MKTG_PRINT_PAGE_SIZE.eyebrow, rows: [] }]);
+    expect(paginateFaqPairs([{ name: 'Empty', path: 'faq[0]', questions: [], unanswered: 0 }])[0].rows).toEqual([]);
+    expect(mktgFaqPageCount([])).toBe(1);
+  });
+
+  it('flows the fixture row by row in group order at full size, and marks the unanswered one', () => {
+    const pages = paginateFaqPairs(fixtureGroups());
+    expect(pages).toHaveLength(1);
+    expect(pages[0].title).toBe('Questions and answers');
+    expect(pages[0].scale).toBe(1);
+    expect(pages[0].rows.map((row) => row.entries.map((entry) => entry.path))).toEqual([
+      ['faq[0][1][0]', 'faq[0][1][1]'],
+      ['faq[0][1][2]', 'faq[1][1][0]'],
+    ]);
+    const [first, , third] = pages[0].rows.flatMap((row) => row.entries);
+    expect(first).toEqual(
+      expect.objectContaining({
+        question: 'What is Example Search?',
+        answer: 'Example Search is an open source search and analytics suite.',
+        answered: true,
+        source: 'Website',
+        questionSize: layout.faqQuestionSize,
+        answerSize: layout.faqAnswerSize,
+        cut: false,
+      })
+    );
+    expect(third).toEqual(expect.objectContaining({ question: 'How much does membership cost?', answer: '', answered: false, source: '', cut: false }));
+  });
+
+  it('fills a page at 100, 95 or 90 % before continuing on a numbered page, and never over the body height', () => {
+    const questions = Array.from({ length: 40 }, (_, q) => ({
+      path: `faq[0][1][${q}]`,
+      question: `Question number ${q + 1} of the synthetic set?`,
+      answer: Array.from({ length: 30 }, () => 'Answer').join(' ') + '.',
+      source: 'Docs',
+      answered: true,
+    }));
+    const pages = paginateFaqPairs([{ name: 'Many', path: 'faq[0]', questions, unanswered: 0 }]);
+    expect(pages.length).toBeGreaterThan(1);
+    expect(mktgFaqPageCount([{ name: 'Many', path: 'faq[0]', questions, unanswered: 0 }])).toBe(pages.length);
+    expect(pages.map((page) => page.title)).toEqual(pages.map((_, i) => mktgPrintContinued('Questions and answers', i)));
+    expect(pages.flatMap((page) => page.rows.flatMap((row) => row.entries)).map((entry) => entry.path)).toEqual(questions.map((row) => row.path));
+    pages.forEach((page) => {
+      expect(layout.faqPageScales).toContain(page.scale);
+      expect(page.rows.length).toBeGreaterThan(0);
+      page.rows.forEach((row) => {
+        expect(row.entries.length).toBeLessThanOrEqual(2);
+        expect(row.height).toBeCloseTo(Math.max(...row.entries.map((entry) => faqEntryHeight(entry, page.sourceSize))), 6);
+      });
+      const height = page.rows.reduce((h, row) => h + row.height, 0) + (page.rows.length - 1) * layout.faqRowGap;
+      expect(height).toBeLessThanOrEqual(area.h + 0.01);
+    });
+    // A page set smaller carries smaller sizes on every entry.
+    const smaller = pages.find((page) => page.scale < 1);
+    if (smaller) {
+      smaller.rows.forEach((row) => row.entries.forEach((entry) => expect(entry.answerSize).toBeLessThan(layout.faqAnswerSize)));
+    }
+  });
+
+  it('fits a pair whose answer is longer than the area: set smaller, then the answer cut at a sentence, the question intact', () => {
+    const answer = Array.from({ length: 120 }, (_, i) => `Sentence number ${i + 1} of a very long answer.`).join(' ');
+    const pages = paginateFaqPairs([
+      { name: 'Long', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Why so long?', answer, source: 'Docs', answered: true }], unanswered: 0 },
+    ]);
+    expect(pages).toHaveLength(1);
+    const [entry] = pages[0].rows[0].entries;
+    expect(entry.cut).toBe(true);
+    expect(entry.question).toBe('Why so long?');
+    expect(entry.answerSize).toBeLessThan(layout.faqAnswerSize);
+    expect(entry.answer.length).toBeLessThan(answer.length);
+    expect(entry.answer.endsWith('.')).toBe(true);
+    expect(answer.startsWith(entry.answer)).toBe(true);
+    expect(pages[0].rows[0].height).toBeLessThanOrEqual(area.h + 0.01);
+  });
+});
+
+describe('mktgPrintFamilyPlan', () => {
+  it('counts the cover, the framework and kit pages, each divider and each appendix page, the back cover last', () => {
+    const framework = {} as unknown as MktgFamilyPrintView['framework'];
+    const kit = {} as unknown as MktgFamilyPrintView['kit'];
+    const brand = mktgPrintBrand(null);
+    const view = printView({ framework, kit, boilerplates: { brand, lengths: fixtureLengths() }, faq: { brand, groups: fixtureGroups() } });
+    const plan = mktgPrintFamilyPlan(view, 5, 7);
+    // 1 cover, 2–6 framework, 7–13 kit, 14 divider, 15 cards, 16 divider, 17 grid, 18 back cover.
+    expect(plan).toEqual({
+      numbers: { framework: '01', kit: '02', boilerplates: '03', faq: '04' },
+      boilerplatesFirstPage: 15,
+      faqFirstPage: 17,
+      boilerplateCount: 4,
+      faqQuestionCount: 4,
+      pageCount: 18,
+    });
+  });
+
+  it('renumbers the parts present and skips a missing part, with no back cover when the kit is missing', () => {
+    const plan = mktgPrintFamilyPlan(printView(), 5, 7);
+    // 1 cover, 2 divider, 3 cards (none), 4 divider, 5 grid (none).
+    expect(plan).toEqual({
+      numbers: { boilerplates: '01', faq: '02' },
+      boilerplatesFirstPage: 3,
+      faqFirstPage: 5,
+      boilerplateCount: 0,
+      faqQuestionCount: 0,
+      pageCount: 5,
+    });
+    const faqOnly = mktgPrintFamilyPlan(printView({ boilerplates: null }));
+    expect(faqOnly.numbers).toEqual({ faq: '01' });
+    expect(faqOnly.faqFirstPage).toBe(3);
+    expect(faqOnly.pageCount).toBe(3);
+  });
+});

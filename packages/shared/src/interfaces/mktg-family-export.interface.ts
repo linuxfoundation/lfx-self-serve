@@ -91,6 +91,8 @@ export interface MktgFamilyPrintView {
   printedAt: string;
   /** When the newest of the printed member revisions was stored (ISO), for the PDF's name; null when none carries a date. */
   newestRevisionAt: string | null;
+  /** The revision number of each printed member, by agent key, for the cover's versions line. */
+  revisionNumbers: Partial<Record<MktgFamilyExportAgentKey, number>>;
   fontFamily: string | null;
   weights: readonly number[];
 }

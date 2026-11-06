@@ -111,6 +111,7 @@ export * from './mktg-envelope.utils';
 export * from './mktg-print.utils';
 export * from './mktg-print-fit.utils';
 export * from './mktg-print-page.utils';
+export * from './mktg-print-pages.utils';
 export * from './mktg-slides-export.utils';
 export * from './mktg-session-event.utils';
 export * from './mktg-run-activity.utils';

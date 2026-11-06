@@ -1,0 +1,127 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The family PDF's own pages (Download PDF on the family card): the page data
+// the appendix builders (mktg-print-pages.utils.ts) give the card and grid
+// pages to bind, and the strings of the cover, the dividers and the running
+// heads. Units are deck points on the 720 × 405 pt slide.
+
+import type { MktgPrintPageBox } from './mktg-print-page.interface';
+
+/** The appendix pages' layout numbers, pt: the spec's §1 cards (gaps, border, radius, padding, label-to-body gap, least height, row scale floor, the lone last card's threshold) and §2 grid (gaps, sizes, weight, the page scales tried before a page is full). */
+export interface MktgPrintAppendixLayout {
+  cardColumnGap: number;
+  cardRowGap: number;
+  cardBorder: number;
+  cardRadius: number;
+  cardPaddingX: number;
+  cardPaddingY: number;
+  cardBodyGap: number;
+  cardMinHeight: number;
+  cardRowMinScale: number;
+  cardLoneMinHeight: number;
+  faqColumnGap: number;
+  faqRowGap: number;
+  faqQuestionSize: number;
+  faqQuestionWeight: number;
+  faqAnswerSize: number;
+  faqAnswerGap: number;
+  faqListItemGap: number;
+  faqSourceGap: number;
+  faqPageScales: readonly number[];
+}
+
+/** The section divider's layout (§3): its three boxes, the title and count sizes, and the share of the dark mixed into the count line's ink. */
+export interface MktgPrintDividerLayout {
+  eyebrow: MktgPrintPageBox;
+  title: MktgPrintPageBox;
+  count: MktgPrintPageBox;
+  titleSize: number;
+  countSize: number;
+  softShare: number;
+}
+
+/** One boilerplate card as the page binds it: the length's index (the track key), its `ONE-LINER · 10 WORDS` head, the text (cut at a sentence when it did not fit even set smaller), the body size (pt) and whether it was cut. */
+export interface MktgPrintCard {
+  index: number;
+  head: string;
+  text: string;
+  size: number;
+  cut: boolean;
+}
+
+/** One row of two cards in order, its estimated height (pt) and the share of the body size it is set at. */
+export interface MktgPrintCardRow {
+  cards: MktgPrintCard[];
+  height: number;
+  scale: number;
+}
+
+/** One page of boilerplate cards: `Boilerplates`, `Boilerplates (2)`, …, and as many rows as fit the body area. */
+export interface MktgPrintCardPage {
+  title: string;
+  rows: MktgPrintCardRow[];
+}
+
+/** One question and its answer as the FAQ grid binds them: the field path (the track key), the restricted-Markdown answer ('' when unanswered), the source label ('' when none), the sizes (pt) at the page's scale and whether the answer was cut. */
+export interface MktgPrintFaqEntry {
+  path: string;
+  question: string;
+  answer: string;
+  answered: boolean;
+  source: string;
+  questionSize: number;
+  answerSize: number;
+  cut: boolean;
+}
+
+/** One row of the grid, a left and a right entry, and its estimated height (pt) at the page's scale. */
+export interface MktgPrintFaqRow {
+  entries: MktgPrintFaqEntry[];
+  height: number;
+}
+
+/** One page of the grid: `Questions and answers`, `Questions and answers (2)`, …, the share of the sizes the whole page is set at (1, 0.95 or 0.9), the source line's size at it, and its rows. */
+export interface MktgPrintFaqPage {
+  title: string;
+  scale: number;
+  sourceSize: number;
+  rows: MktgPrintFaqRow[];
+}
+
+/** The family's parts, in the deck's order. */
+export type MktgPrintFamilyPart = 'framework' | 'kit' | 'boilerplates' | 'faq';
+
+/** A section divider's strings: `03 · POSITIONING & BRAND`, `Boilerplates`, `4 boilerplates`. */
+export interface MktgPrintDividerView {
+  eyebrow: string;
+  title: string;
+  countLine: string;
+}
+
+/** The family cover's strings: `ACME MESH · A LINUX FOUNDATION PROJECT`, the newest revision's month ('' when none carries a date), `Positioning & brand`, the brand line (else the tagline, else the parts in words), `Acme Mesh · a Linux Foundation project`, and the versions line of the parts present. */
+export interface MktgPrintFamilyCoverView {
+  eyebrow: string;
+  date: string;
+  title: string;
+  subtitle: string;
+  footerLeft: string;
+  footerRight: string;
+}
+
+/** The running head and footer of one appendix content page: `03 Boilerplates`, `Acme Mesh Positioning & brand`, `Acme Mesh · a Linux Foundation project`. */
+export interface MktgPrintPageChrome {
+  eyebrowLeft: string;
+  eyebrowRight: string;
+  footerLine: string;
+}
+
+/** The family print's page plan: each present part's two-digit number, the deck-wide number of the first card page and of the first grid page (the cover is 1; every page counts, numbered or not), the dividers' counts, and the file's page count (the back cover included when the kit is present). */
+export interface MktgPrintFamilyPlan {
+  numbers: Partial<Record<MktgPrintFamilyPart, string>>;
+  boilerplatesFirstPage: number;
+  faqFirstPage: number;
+  boilerplateCount: number;
+  faqQuestionCount: number;
+  pageCount: number;
+}
