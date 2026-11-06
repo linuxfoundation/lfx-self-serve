@@ -4,11 +4,11 @@ description: View and manage an organization's corporate CLAs in the Organizatio
 audience: [all]
 product_area: Organization
 tags: [organization, easycla, cla, ccla, cla-manager, approval-list, signing]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
-These steps apply to anyone who can open **EasyCLA** for an organization in the Organization lens: an organization admin, a viewer, Linux Foundation staff with access to that organization, or a CLA (Contributor License Agreement) Manager or initial CLA Manager designee whose only Organization lens page is EasyCLA.
+These steps apply to anyone who can open **EasyCLA** for an organization in the Organization lens: an organization admin, a viewer, or a CLA (Contributor License Agreement) Manager or initial CLA Manager designee whose only Organization lens page is EasyCLA.
 
 **EasyCLA** lists the corporate CLAs (Contributor License Agreements) the selected organization holds. A CLA is the agreement that covers contributions to a Linux Foundation project that requires one. A **CCLA** (Corporate CLA) is the agreement a company signs so its people can contribute under the company's name. EasyCLA answers: which corporate CLAs does this organization hold, who can change each one, and what still needs a signature?
 
@@ -224,4 +224,4 @@ Sending the agreement by email also leaves the signature to the signatory. Self 
 
 - [Organization FAQ](../faq/) — short answers about switching organizations and, for EasyCLA, editing, missing companies, access after removal, and a first CLA Manager
 - [CLAs](../../account/my-clas/) — your own Individual CLA (ICLA) and your coverage under an employer's corporate CLA
-- [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) — CLA concepts and troubleshooting outside Self Serve
+- [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) — CLA concepts

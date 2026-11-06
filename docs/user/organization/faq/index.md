@@ -26,7 +26,7 @@ tags:
     remove,
     invite,
   ]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
@@ -36,7 +36,7 @@ You switch organizations from the organization switcher at the top of the sideba
 
 ## What does the Org Overview dashboard show?
 
-The Org Overview, the **Dashboard** of the Organization lens, summarizes how the selected organization takes part in Linux Foundation foundations and projects. Its **Involvement** cards count the organization's active contributors, maintainer roles, event attendees (registered or attended, by company email or as employees) and speakers, and its people's training: people with training activity, certified people and courses taken. Its **Foundations and Projects** section totals the foundations it is a member of, its projects, governance roles and this week's meetings, then lists each foundation with the organization's role, voting status and meeting participation. Selecting a foundation row, other than **Outside LF**, opens **Memberships**, and selecting an LF project opens that project's page. Return on investment (ROI) figures are on a separate page for Linux Foundation staff. See [What is the Org Overview?](../org-overview/#what-is-the-org-overview).
+The Org Overview, the **Dashboard** of the Organization lens, summarizes how the selected organization takes part in Linux Foundation foundations and projects. Its **Involvement** cards count the organization's active contributors, maintainer roles, event attendees (registered or attended, by company email or as employees) and speakers, and its people's training: people with training activity, certified people and courses taken. Its **Foundations and Projects** section totals the foundations it is a member of, its projects, governance roles and this week's meetings, then lists each foundation with the organization's role, voting status and meeting participation. Selecting a foundation row, other than **Outside LF**, opens **Memberships**, and selecting an LF project opens that project's page. See [What is the Org Overview?](../org-overview/#what-is-the-org-overview).
 
 ## What does the Memberships page show?
 
