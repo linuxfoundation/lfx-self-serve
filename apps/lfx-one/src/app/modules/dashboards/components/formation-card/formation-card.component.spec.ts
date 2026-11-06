@@ -324,6 +324,7 @@ describe('FormationCardComponent', () => {
 
     interface DrawerConfig {
       data: { projectUid: string; openRequiredCount: number; save: (changes: { legal_entity_name: string }) => Observable<void> };
+      canClose: () => boolean;
     }
     async function openEditDrawer(value = formation()): Promise<DrawerConfig> {
       await renderWithInput(value);
@@ -399,30 +400,106 @@ describe('FormationCardComponent', () => {
       expect(saved).not.toHaveBeenCalled();
     });
 
-    it('stops listening for the drawer result when the card is destroyed', async () => {
+    it('keeps recording the drawer closure after the card is destroyed, and completes on the first emit', async () => {
       await openEditDrawer();
 
       fixture.destroy();
+      expect(drawerClosed.observed).toBe(true);
 
+      drawerClosed.next(undefined);
       expect(drawerClosed.observed).toBe(false);
     });
 
-    it('reports a failed write to the drawer and toasts only when the drawer is already gone', async () => {
-      const config = await openEditDrawer();
+    describe('a failed write', () => {
       const failure = new Error('boom');
-      const outcome = vi.fn();
 
-      config.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: outcome });
-      putRequest.error(failure);
-      expect(outcome).toHaveBeenCalledWith(failure);
-      expect(messageAdd).not.toHaveBeenCalled();
-      expect(refreshActiveProject).not.toHaveBeenCalled();
+      it('reaches the drawer inline, without a toast, while the drawer is still listening', async () => {
+        const config = await openEditDrawer();
+        const outcome = vi.fn();
 
-      putRequest = new Subject<Project>();
-      drawerClosed.next(undefined);
-      config.data.save({ legal_entity_name: 'Again' }).subscribe({ error: () => undefined });
-      putRequest.error(failure);
-      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+        config.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: outcome });
+        putRequest.error(failure);
+
+        expect(outcome).toHaveBeenCalledWith(failure);
+        expect(messageAdd).not.toHaveBeenCalled();
+        expect(refreshActiveProject).not.toHaveBeenCalled();
+      });
+
+      it('toasts, with no inline error, when a dismissal was requested (canClose asked) before the exit animation ended', async () => {
+        const config = await openEditDrawer();
+        const outcome = vi.fn();
+
+        config.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: outcome });
+        // Escape, the backdrop and the header close all ask canClose first; the drawer is still subscribed until it is destroyed.
+        expect(config.canClose()).toBe(true);
+        putRequest.error(failure);
+
+        expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Not saved' }));
+        expect(outcome).not.toHaveBeenCalled();
+        expect(drawerClosed.observed).toBe(true);
+      });
+
+      it('keeps the failure inline when no dismissal was requested and the drawer is open and subscribed', async () => {
+        const config = await openEditDrawer();
+        const outcome = vi.fn();
+        const canClose = vi.spyOn(config, 'canClose');
+
+        config.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: outcome });
+        putRequest.error(failure);
+
+        expect(canClose).not.toHaveBeenCalled();
+        expect(outcome).toHaveBeenCalledWith(failure);
+        expect(messageAdd).not.toHaveBeenCalled();
+      });
+
+      it('starts every open undismissed, so a dismissed earlier drawer does not toast a later inline failure', async () => {
+        const first = await openEditDrawer();
+        first.canClose();
+        const button = fixture.nativeElement.querySelector('[data-testid="formation-card-edit-button"] button') as HTMLButtonElement;
+        button.click();
+        const second = openDrawer.mock.calls[1][1] as DrawerConfig;
+        const outcome = vi.fn();
+
+        second.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: outcome });
+        putRequest.error(failure);
+
+        expect(outcome).toHaveBeenCalledWith(failure);
+        expect(messageAdd).not.toHaveBeenCalled();
+      });
+
+      it('toasts when the drawer stopped listening before it finished closing', async () => {
+        const config = await openEditDrawer();
+        const outcome = vi.fn();
+
+        config.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: outcome }).unsubscribe();
+        putRequest.error(failure);
+
+        expect(outcome).not.toHaveBeenCalled();
+        expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Not saved' }));
+      });
+
+      it('toasts when the drawer has closed', async () => {
+        const config = await openEditDrawer();
+
+        config.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: () => undefined });
+        drawerClosed.next(undefined);
+        putRequest.error(failure);
+
+        expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+      });
+
+      it('toasts when the card is destroyed and the drawer closed before the write settled', async () => {
+        const config = await openEditDrawer();
+
+        // A live subscriber stays attached, so only the closure flag recorded after teardown can route this to the toast.
+        config.data.save({ legal_entity_name: 'Changed' }).subscribe({ error: () => undefined });
+        fixture.destroy();
+        drawerClosed.next(undefined);
+        putRequest.error(failure);
+
+        expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+        expect(refreshActiveProject).not.toHaveBeenCalled();
+      });
     });
 
     it('renders the sub-stage, announcement date and slug from the response, never from the project context', async () => {

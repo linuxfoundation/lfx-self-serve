@@ -4,11 +4,11 @@ description: How to read and edit the Organization lens Organization Profile pag
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, profile, organization-profile, logo, website, crunchbase, industry, sector, address, edit]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
-These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. Only someone who can edit the organization, such as an **Org Admin Editor**, can change the profile. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Organization Profile**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/). The page is about one organization, so it is not part of the **All Organizations Roll-Up**: while the combined view is selected, **Organization Profile** is not in the menu.
+These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer). Only someone who can edit the organization, such as an **Org Admin Editor**, can change the profile. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Organization Profile**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/). The page is about one organization, so it is not part of the **All Organizations Roll-Up**: while the combined view is selected, **Organization Profile** is not in the menu.
 
 ## What is the Organization Profile page?
 
@@ -40,7 +40,7 @@ When you cannot open the organization, the page is replaced by the same access m
 
 You can edit the organization profile when you can edit the organization, for example as an **Org Admin Editor**, including one inherited from a related organization. Only then does the page show **Edit Profile**, under **Last Updated:**.
 
-An **Org Admin Viewer**, and Linux Foundation staff with read-only access, see the same profile without **Edit Profile**. Every save is checked again when you select **Save Changes**, so if your access was removed after you opened the page, the save is refused with **Permission denied**. For what each role in the organization switcher means, see [What does my role in the organization switcher mean?](../choose-an-organization/#what-does-my-role-in-the-organization-switcher-mean).
+An **Org Admin Viewer** sees the same profile without **Edit Profile**. Every save is checked again when you select **Save Changes**, so if your access was removed after you opened the page, the save is refused with **Permission denied**. For what each role in the organization switcher means, see [What does my role in the organization switcher mean?](../choose-an-organization/#what-does-my-role-in-the-organization-switcher-mean).
 
 ## How do I edit the organization profile?
 

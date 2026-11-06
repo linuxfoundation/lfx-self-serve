@@ -1126,13 +1126,14 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMultiCampaignPlatforms = signal<string[] | null>(null);
   /**
    * Whether THIS caller may send Google audience segments — `CampaignListResult.googleAudienceSegmentsEnabled`,
-   * read and cleared like the capabilities above. Per caller, not per deployment: root only.
+   * read and cleared like the capabilities above. Per caller, not per deployment: `global_marketing_ops` on the project.
    */
   protected readonly briefCampaignsGoogleAudienceSegmentsEnabled = signal<boolean | null>(null);
   /**
    * Whether THIS caller may read the conversion-action picker's list —
    * `CampaignListResult.googleConversionActionsEnabled`, read and cleared like the capabilities
-   * above. Per caller: root only. Absent from an older BFF reads as `null`.
+   * above. Per caller, not per deployment: `global_marketing_ops` on the project. Absent from an older
+   * BFF reads as `null`.
    */
   protected readonly briefCampaignsGoogleConversionActionsEnabled = signal<boolean | null>(null);
   /**

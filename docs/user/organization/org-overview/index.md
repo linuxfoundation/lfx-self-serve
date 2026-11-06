@@ -4,11 +4,11 @@ description: What each card on the Organization lens Dashboard (the Org Overview
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, dashboard, overview, involvement, foundations, projects, governance, meetings]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
-These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not the Org Overview. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
+These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer). A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not the Org Overview. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
 
 ## What is the Org Overview?
 
@@ -84,10 +84,6 @@ The Org Overview links to the **Memberships** and **Projects** pages of the same
 
 On a keyboard, move to a foundation or project row and press Enter or Space to open it.
 
-## Where are the return on investment (ROI) figures?
-
-Return on investment (ROI) figures are not on the Org Overview. They are on the separate **ROI Metrics** page, which only Linux Foundation staff can see. See the [ROI documentation](../../roi/) for what that page shows and how the figures are estimated.
-
 ## What do the messages on the Org Overview mean?
 
 The Org Overview shows a message in place of the page or a section when there is nothing to show, you cannot open an organization, or something did not load.
@@ -98,7 +94,6 @@ The Org Overview shows a message in place of the page or a section when there is
 | **No organization linked to your account**          | LFX did not find an organization you have access to, and could not confirm that your employer is a Linux Foundation member. **Add an affiliation** links your profile to your employer, but an affiliation does not by itself give you access: you still need a grant from your organization's Organization Lens administrators. If you already added one, select **Already added one? Contact support** |
 | **You do not have access to the Organization Lens** | Your employer is a Linux Foundation member, but you have not been granted access to it. Access is limited to a small set of admins: ask one, likely your open source program office (OSPO), to grant it, or select **Contact support**                                                                                                                                                                   |
 | **Some organizations could not be loaded**          | Your organizations did not load. This is a temporary problem and does not change your access. Select **Retry**                                                                                                                                                                                                                                                                                           |
-| **We could not confirm your staff access**          | LFX could not finish checking your access, and your permissions have not changed. Select **Retry**. If it keeps failing, select **Still failing? Send this reference to support**                                                                                                                                                                                                                        |
 | **No foundations or projects yet.**                 | The organization is not involved in any foundation or project yet, so the table is empty                                                                                                                                                                                                                                                                                                                 |
 | **No engagement yet**                               | Shown next to the Involvement heading. The organization is involved in no foundation, or the count of its foundations did not load. If you expected foundations, reload the page                                                                                                                                                                                                                         |
 | **Couldn't load Foundations and Projects.**         | The Foundations and Projects section did not load. Select **Retry**. The Involvement cards above it are not affected                                                                                                                                                                                                                                                                                     |
@@ -111,4 +106,3 @@ If a link shows a message such as **You do not have access to this organization*
 - [Projects and project detail](../projects/) — the organization's projects, and each project's influence and leaderboards
 - [Manage Org Lens Access](../manage-org-lens-access/) — who can open the organization, and how an Admin adds or removes them
 - [Organization FAQ](../faq/) — short answers about the Organization lens
-- [ROI documentation](../../roi/) — how return on investment is estimated and read, for Linux Foundation staff

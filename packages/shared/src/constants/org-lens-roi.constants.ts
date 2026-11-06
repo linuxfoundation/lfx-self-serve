@@ -257,8 +257,7 @@ export const ORG_LENS_ROI_VALUE_DRIVERS_COLORS = {
  * Wording is tied to the warehouse model (lf-dbt#3163, docs/lfx_roi/decomposition.md):
  * `PCT_DEVIATION_FROM_TYPICAL_MARKUP` is the percent by which a category moves the portfolio's
  * markup away from the typical organization-project pair. The UI says "return" for it, since that is
- * the page's own vocabulary. Keep these claims in step with that doc and with
- * `docs/user/roi/value-drivers/index.md`.
+ * the page's own vocabulary. Keep these claims in step with that doc.
  */
 export const ORG_LENS_ROI_VALUE_DRIVERS_COPY = {
   howToRead:

@@ -483,6 +483,22 @@ describe('OrgSelectorComponent family roll-ups', () => {
     expect(charlieRow).toEqual(expect.objectContaining({ name: 'All Charlie Organizations', organizationCount: 2 }));
   });
 
+  /**
+   * Cursor on PR #4415. The trigger shows a cookie-restored roll-up while the grants and families
+   * load, but the row keyed on eligibility alone — and in the conglomerate case the count sits at 1
+   * through that window, so the panel offered only organizations and picking one silently left
+   * roll-up mode.
+   */
+  it('keeps the selected roll-up row while its family is not offered yet', async () => {
+    const view = await create({ families: [charlieFamily], selectedRootUid: UID_A, selected: orgRollUpAccount(UID_A, null) });
+
+    expect(view.showRollUpRow()).toBe(true);
+    expect(view.rollUpRows()).toEqual([
+      { rootUid: UID_A, name: ROLLUP_ACCOUNT_NAME, subtitle: 'Combined view of related organizations', organizationCount: 0, isSelected: true },
+      expect.objectContaining({ rootUid: UID_C, isSelected: false }),
+    ]);
+  });
+
   // The service renames the selection once the family lands, so the trigger reads the selection
   // and agrees with every page heading.
   it('names the trigger from the selection', async () => {

@@ -123,13 +123,30 @@ export class OrgSelectorComponent {
    */
   protected readonly rollUpRows: Signal<OrgRollUpSelectorRow[]> = computed(() => {
     const selectedRootUid = this.accountContextService.selectedRollUpRootUid();
-    return this.accountContextService.eligibleRollUpFamilies().map((family: OrgRollUpFamily) => ({
+    const rows = this.accountContextService.eligibleRollUpFamilies().map((family: OrgRollUpFamily) => ({
       rootUid: family.rootUid,
       name: orgRollUpAccount(family.rootUid, family.name).accountName,
       subtitle: `Combined view of related organizations · ${organizationCountLabel(family.orgUids.length)}`,
       organizationCount: family.orgUids.length,
       isSelected: family.rootUid === selectedRootUid,
     }));
+    // The selected roll-up keeps its row even while its family is not offered: the trigger already
+    // shows a cookie-restored roll-up before the grants and families settle (and again while they
+    // reload after Retry), and in the conglomerate case the count sits at 1 through that window.
+    // Without the row the panel offered only organizations, so picking one silently left roll-up
+    // mode (#4415, Cursor).
+    if (selectedRootUid && !rows.some((row) => row.rootUid === selectedRootUid)) {
+      const family = this.accountContextService.selectedRollUpFamily();
+      const count = family?.orgUids.length ?? 0;
+      rows.unshift({
+        rootUid: selectedRootUid,
+        name: orgRollUpAccount(selectedRootUid, family?.name ?? null).accountName,
+        subtitle: count > 0 ? `Combined view of related organizations · ${organizationCountLabel(count)}` : 'Combined view of related organizations',
+        organizationCount: count,
+        isSelected: true,
+      });
+    }
+    return rows;
   });
   protected readonly showRollUpRow: Signal<boolean> = computed(() => this.rollUpRows().length > 0);
   protected readonly isRollUpSelected: Signal<boolean> = this.accountContextService.isRollUp;

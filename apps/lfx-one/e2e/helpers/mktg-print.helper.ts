@@ -97,11 +97,11 @@ export async function expectMktgPrintCover(cover: Locator): Promise<void> {
   expect(box?.height ?? 0).toBeGreaterThanOrEqual(PRINT_COVER_MIN_HEIGHT);
 }
 
+/** Dispatched from the page, not from inside the frame: the service's afterprint cleanup removes the frame at once, and a
+ *  call evaluated in the frame's own world would have no frame to return to (locator.evaluate: Frame was detached). */
 export async function finishMktgPrintFrame(page: Page): Promise<void> {
-  await mktgPrintFrame(page)
-    .locator('html')
-    .evaluate((root) => {
-      root.ownerDocument.defaultView?.dispatchEvent(new Event('afterprint'));
-    });
+  await page.getByTestId('lfx-print-frame').evaluate((frame) => {
+    (frame as HTMLIFrameElement).contentWindow?.dispatchEvent(new Event('afterprint'));
+  });
   await expect(page.getByTestId('lfx-print-frame')).toHaveCount(0);
 }

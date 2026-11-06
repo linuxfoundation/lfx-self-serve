@@ -1132,6 +1132,23 @@ describe('AccountContextService — family roll-up', () => {
    * sentinel, so sending it was at best ignored and at worst rejected at the request boundary —
    * failing the list and leaving the panel with the roll-up row and nothing to switch to.
    */
+  /**
+   * Copilot on PR #4415. The grant-only stub carried `uid` but no `accountId`, and the pages key on
+   * `accountId` — Events filters out a null one before its `switchMap`. Demoting off the roll-up
+   * with that page open therefore fired no new request, leaving the combined results on screen
+   * under the concrete organization's address.
+   */
+  it('carries accountId on a grant-only demotion target, not just uid', () => {
+    service.selectRollUp(ROOT, { admitWhilePending: true });
+    service.initializeUserOrganizations([]);
+    grants.writerSet.set(new Set([UID_B]));
+
+    const next = service.demoteAddressedRollUp(ROOT);
+
+    expect(next?.uid).toBe(UID_B);
+    expect(next?.accountId).toBe(UID_B);
+  });
+
   describe('orgListPinUid', () => {
     it('answers null while the roll-up is selected', () => {
       service.initializeUserOrganizations([seedA, seedB]);

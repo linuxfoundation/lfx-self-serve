@@ -27,12 +27,14 @@ The **Work history & Affiliations** tab is where you record your employment hist
 
 Your employment history determines which organization your contributions are attributed to. Your work experience also populates the **Organization** choices in the [Edit Profile drawer](../../profile/edit-profile/#set-your-organization).
 
+Your entries appear in a table with **Organization**, **Job Title**, and **Dates** columns.
+
 ### Add a work experience
 
 1. Select **Add work experience**.
-2. Fill in the fields (only **Role** is required):
+2. In the **Add work experience** dialog, fill in the fields. **Organization**, **Role**, and **Start Date** are marked required (`*`):
    - **Organization** — search and pick your employer (for example, `Google`, `Red Hat`).
-   - **Role** (required) — your job title (for example, `Senior Software Engineer`).
+   - **Role** — your job title (for example, `Senior Software Engineer`).
    - **Start Date** — month and year.
    - **End Date** — month and year, or select **I currently work here** to mark it as your current role (this hides the end date).
 3. Select **Add experience**.
@@ -41,10 +43,10 @@ Your employment history determines which organization your contributions are att
 
 ### Edit or delete a work experience
 
-- Open the actions menu on an entry and select **Edit**, change the fields, then select **Save changes**.
-- To remove an entry, select **Delete** and confirm with **Delete experience**. This can't be undone.
+- Open the actions menu on an entry and select **Edit**. The **Edit work experience** dialog opens; change the fields, then select **Save changes**.
+- To remove an entry, select **Delete**. The **Delete work experience** dialog asks _Are you sure you want to delete this work experience? This action cannot be undone._ — confirm with **Delete experience**.
 
-If you have no entries yet, the section shows _No work experience added_ — use **Add work experience** to get started.
+If you have no entries yet, the section shows _No work experience added_ — _Add your employment history to improve the accuracy of your project affiliations._ Use **Add work experience** to get started.
 
 ## Project Involvement (affiliations)
 
@@ -60,7 +62,7 @@ Your contributions are attributed based on three inputs (see the **How affiliati
 
 ### Confirm or adjust your affiliation history
 
-When the system attributes contributions from your employment timeline, you may see a prompt: _We've attributed your project contributions based on your employment timeline. Confirm or adjust if needed._ Select **Confirm Affiliation History** (or **Edit Affiliation** on a project) to open the affiliation editor, where you can adjust the organization and dates per project and override anything the system got wrong.
+When the system attributes contributions from your employment timeline, you may see an **Affiliations calculated from work history** banner: _We've attributed your project contributions based on your employment timeline. Confirm or adjust if needed._ Select **Confirm Affiliation History** (or **Edit Affiliation** on a project) to open the affiliation editor, where you can adjust the organization and dates per project and override anything the system got wrong.
 
 ### Maintainer and Contributor labels
 

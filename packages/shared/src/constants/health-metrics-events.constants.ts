@@ -17,6 +17,8 @@ import type {
   HealthMetricsEventsRegistrationsGrowthMetricOption,
   HealthMetricsEventsRevenue,
   HealthMetricsEventsSectionKey,
+  HealthMetricsEventsSnapshot,
+  HealthMetricsEventsSnapshotPeriodOption,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersTabOption,
   HealthMetricsEventsSponsorship,
@@ -388,3 +390,19 @@ export const HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED: HealthMetricsEventsGeog
 
 /** Countries ranked in the list. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES = 5;
+
+/** The event dialog Snapshot's periods, as the design orders them. */
+export const HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS: readonly HealthMetricsEventsSnapshotPeriodOption[] = [
+  { value: '7d', label: '7d', days: 7 },
+  { value: '30d', label: '30d', days: 30 },
+  { value: '90d', label: '90d', days: 90 },
+];
+
+/** An event the snapshot views hold nothing for: no weeks, no packages and no revenue. */
+export const HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED: HealthMetricsEventsSnapshot = {
+  today: null,
+  weeks: [],
+  packages: [],
+  sponsorshipRevenueUsd: 0,
+  sponsorshipRevenueInPeriodUsd: { '7d': 0, '30d': 0, '90d': 0 },
+};
