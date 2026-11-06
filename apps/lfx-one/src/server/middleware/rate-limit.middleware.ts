@@ -149,7 +149,9 @@ export const newsletterInviteRateLimiter = rateLimit({
  * Applied per-route to `POST /api/projects/:projectUid/newsletters/test-send`, which emails a full
  * newsletter from the LF sending domain. The controller only allows the caller's own address; this
  * caps how often. Keyed on the authenticated user, with the /56-masked IP key as the anonymous
- * fallback. Per-pod MemoryStore like the limiters above. A failed request does not spend budget.
+ * fallback. Per-pod MemoryStore like the limiters above. Every attempt counts, including failed
+ * ones: a refund on failure would also refund a client that drops the connection while the email
+ * is still sent, and a bad payload is already caught by the form.
  */
 export const newsletterTestSendRateLimiter = rateLimit({
   windowMs: NEWSLETTER_TEST_SEND_RATE_LIMIT_WINDOW_MS,
@@ -158,7 +160,6 @@ export const newsletterTestSendRateLimiter = rateLimit({
   legacyHeaders: false,
   statusCode: 429,
   message: { error: "You've sent the maximum number of test emails for now. Try again later.", code: 'RATE_LIMITED' },
-  skipFailedRequests: true,
   keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
 });
 

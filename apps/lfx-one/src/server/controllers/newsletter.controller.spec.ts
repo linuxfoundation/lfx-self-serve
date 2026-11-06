@@ -51,7 +51,8 @@ vi.mock('@lfx-one/shared/constants', () => ({
   SHARE_CHANNELS: ['x', 'linkedin', 'reddit', 'email', 'copy_link'],
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(() => 'me@example.com') }));
+const { getEffectiveEmail } = vi.hoisted(() => ({ getEffectiveEmail: vi.fn<() => string | null>(() => 'me@example.com') }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail }));
 vi.mock('@lfx-one/shared/utils', () => ({ isUuid: vi.fn((v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)) }));
 
 vi.mock('../services/newsletter.service', () => ({
@@ -430,7 +431,15 @@ describe('NewsletterController.testSend — validateTestSendPayload', () => {
     testSend.mockResolvedValue({ ok: true });
     const own = await run({ ...base, body_html: '<p>hi</p>', to_email: ' Me@Example.com ' });
     expect(own).not.toHaveBeenCalled();
-    expect(testSend).toHaveBeenCalled();
+    // The checked, normalised address is what goes upstream.
+    expect(testSend.mock.calls[0][2].to_email).toBe('me@example.com');
+  });
+
+  it('refuses a test send when the caller has no verified email', async () => {
+    getEffectiveEmail.mockReturnValueOnce(null);
+    const next = await run({ ...base, body_html: '<p>hi</p>' });
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(testSend).not.toHaveBeenCalled();
   });
 
   it('rejects ed_reply_email only when supplied and invalid', async () => {

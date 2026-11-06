@@ -108,14 +108,22 @@ export class NewsletterController {
       // A test send goes from the LF sending domain, so it may only go to the
       // caller's own verified address (#4358 F1).
       const ownEmail = getEffectiveEmail(req);
-      if (!ownEmail || payload.to_email.trim().toLowerCase() !== ownEmail) {
+      if (!ownEmail) {
+        throw ServiceValidationError.forField('to_email', 'Verify your email address to send a test email', {
+          operation: 'newsletter_test_send',
+          service: 'newsletter_controller',
+          path: req.path,
+        });
+      }
+      if (payload.to_email.trim().toLowerCase() !== ownEmail) {
         throw ServiceValidationError.forField('to_email', 'Test emails can only be sent to your own email address', {
           operation: 'newsletter_test_send',
           service: 'newsletter_controller',
           path: req.path,
         });
       }
-      const result = await this.newsletterService.testSend(req, projectUid, payload);
+      // Forward the address that was checked, so the service reads it the same way.
+      const result = await this.newsletterService.testSend(req, projectUid, { ...payload, to_email: ownEmail });
       // PII (recipient email) intentionally omitted from log metadata.
       logger.success(req, 'newsletter_test_send', startTime, {});
       res.json(result);
