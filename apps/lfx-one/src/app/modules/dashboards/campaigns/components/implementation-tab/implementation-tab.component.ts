@@ -182,6 +182,12 @@ import {
   GOOGLE_USER_LIST_PICKER_LOADING,
   GOOGLE_USER_LIST_PICKER_REASONS,
   GOOGLE_USER_LIST_PICKER_TRUNCATED,
+  GOOGLE_AUDIENCE_PICKER_EMPTY,
+  GOOGLE_AUDIENCE_PICKER_LOADING,
+  GOOGLE_AUDIENCE_PICKER_REASONS,
+  GOOGLE_AUDIENCE_PICKER_TRUNCATED,
+  GOOGLE_DEMAND_GEN_AUDIENCE_HELD_WHILE_SPLIT,
+  GOOGLE_DEMAND_GEN_AUDIENCE_NOT_ALLOWED,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   DEFAULT_GOOGLE_DAILY_BUDGET_USD,
@@ -310,6 +316,7 @@ import type {
   GoogleTypedImageProbe,
   GoogleUserListPickerOption,
   GoogleUserListPickerState,
+  GoogleAudiencePickerState,
   LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
@@ -353,6 +360,7 @@ import {
   googleCreativeImageFit,
   googleDemandGenVideoCreativeRefusal,
   googleDemandGenAdGroupsRefusal,
+  googleDemandGenAudiencesRefusal,
   googleDemandGenAdsRefusal,
   googleDemandGenSingleAdGroupName,
   googleCreativeImageRequirement,
@@ -737,6 +745,13 @@ export class ImplementationTabComponent implements OnInit {
    * keeps the free-text box and asks nothing.
    */
   public readonly googleConversionActionsEnabled = input<boolean | null>(null);
+  /**
+   * Whether THIS caller may pick and send a Demand Gen audience (#5244) —
+   * `CampaignListResult.googleDemandGenAudienceEnabled`, the two checks the Audience route and the create
+   * gate make. Only an explicit yes shows the picker; a draft that still holds an audience otherwise holds
+   * Create (`demandGenAudienceError`) rather than dropping it.
+   */
+  public readonly googleDemandGenAudienceEnabled = input<boolean | null>(null);
 
   /** @see microsoftScheduleEnabled — an explicit yes, never a `null`. */
   protected readonly microsoftScheduleAvailable = computed<boolean>(() => this.microsoftScheduleEnabled() === true);
@@ -1200,6 +1215,9 @@ export class ImplementationTabComponent implements OnInit {
     // (#5226). Empty by default, which sends the single ad above exactly as before; with any, the ad
     // above becomes ad 1 of `demandGenAds` (`googleDemandGenAdsPayload`).
     demandGenAdName: this.fb.nonNullable.control(''),
+    // The single ad group's Audience resource name (#5244), set only by the picker or a restored draft.
+    // Empty by default, which sends no `demandGenAudience`; held, not sent, while the campaign is split.
+    demandGenAudience: this.fb.nonNullable.control(''),
     demandGenAds: new FormArray<FormGroup<GoogleDemandGenAdControls>>([]),
     // The Google bidding plan. All five are STRINGS, including the three money/ratio fields, so
     // that "" can mean "not supplied" — which is a different answer from a typed 0, and the one
@@ -3427,6 +3445,8 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.demandGenAdGroupsError() !== null) return false;
     // The single ad group's several ads campaign-service would refuse (#5226).
     if (googleSelected && this.demandGenAdsError() !== null) return false;
+    // A Demand Gen audience campaign-service would refuse, or this caller may not send (#5244).
+    if (googleSelected && this.demandGenAudienceError() !== null) return false;
     // Postal-code or radius targets the request cannot carry yet. Withholding them would not shrink
     // the campaign but WIDEN it to the event country, so Create waits — see the block's own doc.
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
@@ -3889,6 +3909,26 @@ export class ImplementationTabComponent implements OnInit {
   /** Why campaign-service would refuse the single ad group's several ads, holding Create, or `null` (#5226). */
   protected readonly demandGenAdsError: Signal<string | null> = this.initDemandGenAdsError();
   protected readonly demandGenMaxAds = GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP;
+  /**
+   * Whether the Demand Gen audience picker may show (#5244): Demand Gen's creative section is on screen
+   * and this caller may send an audience (`googleDemandGenAudienceEnabled`, an explicit yes).
+   */
+  protected readonly demandGenAudienceAvailable: Signal<boolean> = this.initDemandGenAudienceAvailable();
+  /** The Account's Audiences for the picker, read only while it may show; `unavailable` with a reason otherwise. */
+  protected readonly demandGenAudiencePicker: Signal<GoogleAudiencePickerState> = this.initDemandGenAudiencePicker();
+  /** Each listed Audience's name by resource name, so a picked one is shown by name. */
+  protected readonly demandGenAudienceNames: Signal<ReadonlyMap<string, string>> = computed(
+    () => new Map(this.demandGenAudiencePicker().audiences.map((audience) => [audience.resourceName, audience.name]))
+  );
+  /** The picker's loading line, reason, empty or partial-list note, for its always-mounted live region; `''` otherwise. */
+  protected readonly demandGenAudiencePickerAnnouncement: Signal<string> = this.initDemandGenAudiencePickerAnnouncement();
+  /** Why Create is held for a Demand Gen audience the create would carry, or `null` (#5244). */
+  protected readonly demandGenAudienceError: Signal<string | null> = this.initDemandGenAudienceError();
+  /** The note when the single ad group's Audience is kept but not sent because the campaign is split; `''` otherwise. */
+  protected readonly demandGenAudienceHeldMessage: Signal<string> = this.initDemandGenAudienceHeldMessage();
+  protected readonly audiencePickerEmpty = GOOGLE_AUDIENCE_PICKER_EMPTY;
+  protected readonly audiencePickerLoading = GOOGLE_AUDIENCE_PICKER_LOADING;
+  protected readonly audiencePickerTruncated = GOOGLE_AUDIENCE_PICKER_TRUNCATED;
   /**
    * Each ad group and ad field's error, on the creative sections' terms, keyed `<group index>.<format>.<control>`
    * for a group's first ad, `<group index>.ad-<n>.<format>.<control>` for its ad n, and `ad-<n>.<format>.<control>`
@@ -5666,6 +5706,9 @@ export class ImplementationTabComponent implements OnInit {
       // The named Demand Gen ad groups (#5226), on the same gate; absent unless the split is active,
       // when the payload above carries no Demand Gen creative.
       ...(platforms.includes('google-ads') ? this.googleDemandGenAdGroupsPayload() : {}),
+      // The single ad group's Audience (#5244), on the same gate; absent unless one was picked and the
+      // campaign is not split.
+      ...(platforms.includes('google-ads') ? this.googleDemandGenAudiencePayload() : {}),
       // The bidding plan, Google-gated for the same reason the creative is, and already narrowed
       // to the fields the effective strategy and channel actually take.
       ...(platforms.includes('google-ads') ? this.googleBiddingPayload() : {}),
@@ -5915,6 +5958,28 @@ export class ImplementationTabComponent implements OnInit {
    * The split checkbox changed (#5226). Turning it on with no group yet adds the first, so the operator
    * has a group to fill in rather than an empty list; the groups are otherwise left as they were.
    */
+  /** The audience control of ad group `group`, or the single ad group's for `null` (#5244). */
+  protected demandGenAudienceControl(group: number | null): FormControl<string> {
+    return group === null ? this.campaignForm.controls.demandGenAudience : this.campaignForm.controls.demandGenAdGroups.at(group).controls.audience;
+  }
+
+  /**
+   * An Audience picked for ad group `group` (the single one for `null`): its resource name is set, which
+   * hides the picker while it holds focus, so focus moves to the picked Audience's Remove button once that
+   * has rendered. A `null` (the field cleared) sets nothing.
+   */
+  protected onDemandGenAudiencePicked(group: number | null, resourceName: string | null): void {
+    if (resourceName === null) return;
+    this.demandGenAudienceControl(group).setValue(resourceName);
+    this.focusDemandGenAudienceAfterRender(group, 'remove');
+  }
+
+  /** Remove ad group `group`'s Audience (the single one for `null`); focus moves to the picker that replaces it. */
+  protected removeDemandGenAudience(group: number | null): void {
+    this.demandGenAudienceControl(group).setValue('');
+    this.focusDemandGenAudienceAfterRender(group, 'picker');
+  }
+
   protected onDemandGenAdGroupsSplitChange(): void {
     const groups = this.campaignForm.controls.demandGenAdGroups;
     if (this.campaignForm.controls.demandGenAdGroupsSplit.value && groups.length === 0) groups.push(this.buildDemandGenAdGroup());
@@ -7201,6 +7266,9 @@ export class ImplementationTabComponent implements OnInit {
     // The single ad group's several ads (#5226), on the groups' terms.
     if (typeof draft.demandGenAdName === 'string') this.campaignForm.controls.demandGenAdName.setValue(draft.demandGenAdName);
     if (Array.isArray(draft.demandGenAds)) this.restoreDemandGenAds(this.campaignForm.controls.demandGenAds, draft.demandGenAds);
+    // The single ad group's Audience (#5244), a string only; its shape and account are judged on Create
+    // (`demandGenAudienceError`), so a value the create would refuse is shown with its reason, not dropped.
+    if (typeof draft.demandGenAudience === 'string') this.campaignForm.controls.demandGenAudience.setValue(draft.demandGenAudience);
     if (typeof draft.demandGenAdGroupsSplit === 'boolean') {
       this.campaignForm.controls.demandGenAdGroupsSplit.setValue(draft.demandGenAdGroupsSplit);
     }
@@ -7609,10 +7677,13 @@ export class ImplementationTabComponent implements OnInit {
         ...this.demandGenAdDraft(group),
         adName: group.controls.adName.value,
         ads: group.controls.ads.controls.map((ad) => this.demandGenAdDraft(ad)),
+        audience: group.controls.audience.value,
       })),
       // The single ad group's several ads (#5226), on the same terms.
       demandGenAdName: this.campaignForm.controls.demandGenAdName.value,
       demandGenAds: this.campaignForm.controls.demandGenAds.controls.map((ad) => this.demandGenAdDraft(ad)),
+      // The single ad group's Audience (#5244), split or not, so turning the split off restores it.
+      demandGenAudience: this.campaignForm.controls.demandGenAudience.value,
       // Copied per slot, so the parent holds a snapshot rather than this component's arrays.
       googleImageAssets: Object.fromEntries(
         Object.entries(this.googleHeldImages()).map(([slotKey, images]) => [slotKey, images.map((image) => ({ ...image }))])
@@ -8092,6 +8163,7 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.demandGenAdGroups.clear();
     this.campaignForm.controls.demandGenAdName.reset();
     this.campaignForm.controls.demandGenAds.clear();
+    this.campaignForm.controls.demandGenAudience.reset();
     this.googleGeoTargets.set([]);
     this.googlePostalGeoTargets.set([]);
     this.googlePostalGeoLabels.set({});
@@ -10967,19 +11039,22 @@ export class ImplementationTabComponent implements OnInit {
    * active, so a create without the split is byte-identical to one made before it existed. Each group
    * sends its name and the creative of its chosen format, built as the sections' creatives are; a
    * creative that empties out is omitted, which {@link demandGenAdGroupsError} then refuses. A group with
-   * a second ad sends `ads` instead: its own ad first, under its ad name, then the others.
+   * a second ad sends `ads` instead: its own ad first, under its ad name, then the others. A group's picked
+   * Audience goes last, trimmed, and only when it has one (#5244).
    */
   private googleDemandGenAdGroupsPayload(): { demandGenAdGroups?: GoogleDemandGenAdGroup[] } {
     if (!this.demandGenAdGroupsActive()) return {};
     const groups = this.campaignForm.controls.demandGenAdGroups.controls.map((group): GoogleDemandGenAdGroup => {
-      if (group.controls.ads.length === 0) return this.demandGenAdEntry(group.controls.name.value, group);
-      return {
+      const audience = group.controls.audience.value.trim();
+      const withAudience = (entry: GoogleDemandGenAdGroup): GoogleDemandGenAdGroup => (audience === '' ? entry : { ...entry, audience });
+      if (group.controls.ads.length === 0) return withAudience(this.demandGenAdEntry(group.controls.name.value, group));
+      return withAudience({
         name: group.controls.name.value.trim(),
         ads: [
           this.demandGenAdEntry(group.controls.adName.value, group),
           ...group.controls.ads.controls.map((ad) => this.demandGenAdEntry(ad.controls.name.value, ad)),
         ],
-      };
+      });
     });
     return { demandGenAdGroups: groups };
   }
@@ -11099,12 +11174,107 @@ export class ImplementationTabComponent implements OnInit {
         (group) =>
           group.controls.name.value.trim() !== '' ||
           group.controls.ads.length > 0 ||
+          group.controls.audience.value.trim() !== '' ||
           typed(group.controls.creative.getRawValue()) ||
           typed(group.controls.videoCreative.getRawValue())
       );
       if (groups.length === 0) return '';
       const subject = groups.length === 1 ? 'ad group you entered is' : 'ad groups you entered are';
       return `The ${subject} kept but not sent while the campaign is not split. Turn the split on to send ${groups.length === 1 ? 'it' : 'them'} instead.`;
+    });
+  }
+
+  /** {@link demandGenAudienceAvailable}: Demand Gen's creative section is on screen and the caller may send an audience. */
+  private initDemandGenAudienceAvailable(): Signal<boolean> {
+    return computed(() => this.googleDemandGenAudienceEnabled() === true && this.googleCreativeSections().some((section) => section.channel === 'demand-gen'));
+  }
+
+  /**
+   * The Demand Gen audience picker's list (#5244), read only while the picker may show and the project is
+   * known, both read INSIDE the trigger so a change to either drops a read that no longer applies. The
+   * picker shows only for a caller the route admits, so a 403 or 404 here is the deployment or the
+   * gateway, not the caller, and reads as unavailable.
+   */
+  private initDemandGenAudiencePicker(): Signal<GoogleAudiencePickerState> {
+    const state = (status: GoogleAudiencePickerState['status'], reason: string | null = null): GoogleAudiencePickerState => ({
+      status,
+      audiences: [],
+      accountId: '',
+      truncated: false,
+      reason,
+    });
+    const trigger = computed(() => ({ projectSlug: this.activeFoundationSlug(), shown: this.demandGenAudienceAvailable() }));
+    return toSignal(
+      toObservable(trigger).pipe(
+        switchMap(({ projectSlug, shown }) => {
+          if (projectSlug === '' || !shown) return of(state('idle'));
+          return this.campaignService.getGoogleAdsAudiences(projectSlug).pipe(
+            map(
+              (result): GoogleAudiencePickerState => ({
+                status: 'loaded',
+                audiences: result.audiences,
+                accountId: result.accountId,
+                truncated: result.truncated,
+                reason: null,
+              })
+            ),
+            catchError((err: unknown) => {
+              console.error('Failed to read the Google Ads Audiences for the Demand Gen audience picker:', err);
+              const status = err instanceof HttpErrorResponse ? err.status : 0;
+              if (status === 403 || status === 404) return of(state('unavailable', GOOGLE_AUDIENCE_PICKER_REASONS.unavailable));
+              return of(state('unavailable', GOOGLE_AUDIENCE_PICKER_REASONS.failed));
+            }),
+            startWith(state('loading'))
+          );
+        })
+      ),
+      { initialValue: state('idle') }
+    );
+  }
+
+  private initDemandGenAudiencePickerAnnouncement(): Signal<string> {
+    return computed(() => {
+      const picker = this.demandGenAudiencePicker();
+      if (picker.status === 'loading') return GOOGLE_AUDIENCE_PICKER_LOADING;
+      if (picker.status === 'unavailable') return picker.reason ?? '';
+      if (picker.status === 'loaded' && picker.audiences.length === 0) return GOOGLE_AUDIENCE_PICKER_EMPTY;
+      if (picker.status === 'loaded' && picker.truncated) return GOOGLE_AUDIENCE_PICKER_TRUNCATED;
+      return '';
+    });
+  }
+
+  /**
+   * The single ad group's Audience as the create sends it (#5244), trimmed, or `{}` when none was picked or
+   * the campaign is split (the value is then held), so a create without one is byte-identical to one made
+   * before it existed.
+   */
+  private googleDemandGenAudiencePayload(): { demandGenAudience?: string } {
+    const audience = this.campaignForm.controls.demandGenAudience.value.trim();
+    return this.demandGenAdsShown() && audience !== '' ? { demandGenAudience: audience } : {};
+  }
+
+  /**
+   * {@link demandGenAudienceError}: over exactly what the create sends, a caller who may not send an audience
+   * first (#501), then the shared judge the BFF refuses on, here with the account the picker read, so
+   * another account's Audience is refused too. The account is not judged until the list has loaded.
+   */
+  private initDemandGenAudienceError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const single = this.googleDemandGenAudiencePayload().demandGenAudience;
+      const groups = this.googleDemandGenAdGroupsPayload().demandGenAdGroups;
+      if (single === undefined && !(groups ?? []).some((group) => group.audience !== undefined)) return null;
+      if (this.googleDemandGenAudienceEnabled() !== true) return GOOGLE_DEMAND_GEN_AUDIENCE_NOT_ALLOWED;
+      return googleDemandGenAudiencesRefusal(single, groups, this.demandGenAudiencePicker().accountId);
+    });
+  }
+
+  /** {@link demandGenAudienceHeldMessage}: Demand Gen's section is on screen, the campaign is split and the single ad group holds an Audience. */
+  private initDemandGenAudienceHeldMessage(): Signal<string> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.demandGenAdGroupsActive() || this.campaignForm.controls.demandGenAudience.value.trim() === '') return '';
+      return GOOGLE_DEMAND_GEN_AUDIENCE_HELD_WHILE_SPLIT;
     });
   }
 
@@ -11132,6 +11302,22 @@ export class ImplementationTabComponent implements OnInit {
       }
       return errors;
     });
+  }
+
+  /** Focus the audience Remove button or picker input of ad group `group` (the single one for `null`) once rendered. */
+  private focusDemandGenAudienceAfterRender(group: number | null, target: 'remove' | 'picker'): void {
+    const key = group === null ? 'single' : `${group}`;
+    afterNextRender(
+      () => {
+        const host = this.host.nativeElement;
+        const element =
+          target === 'remove'
+            ? host.querySelector<HTMLElement>(`#demand-gen-audience-${key}-remove`)
+            : host.querySelector<HTMLElement>(`[data-testid="implementation-demand-gen-audience-picker-${key}"] input`);
+        element?.focus();
+      },
+      { injector: this.injector }
+    );
   }
 
   /** Focus ad group `index`'s name once it has rendered, or Add ad group for `-1`. */
@@ -11167,12 +11353,14 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * One named Demand Gen ad group's controls, filled from a saved draft entry when one is given: its name
-   * and first ad, its first ad's name, and its second and later ads (#5226).
+   * and first ad, its first ad's name, its second and later ads (#5226), and its Audience (#5244), a string
+   * only.
    */
   private buildDemandGenAdGroup(saved?: GoogleDemandGenAdGroupDraft): FormGroup<GoogleDemandGenAdGroupControls> {
     const group = new FormGroup<GoogleDemandGenAdGroupControls>({
       ...this.demandGenAdControls(saved),
       adName: this.fb.nonNullable.control(typeof saved?.adName === 'string' ? saved.adName : ''),
+      audience: this.fb.nonNullable.control(typeof saved?.audience === 'string' ? saved.audience : ''),
       ads: new FormArray<FormGroup<GoogleDemandGenAdControls>>([]),
     });
     if (Array.isArray(saved?.ads)) this.restoreDemandGenAds(group.controls.ads, saved.ads);

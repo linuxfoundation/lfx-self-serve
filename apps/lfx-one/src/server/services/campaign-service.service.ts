@@ -83,6 +83,7 @@ import type {
   CampaignServiceAccessibleAccounts,
   CampaignServiceGoogleAdsConversionActions,
   CampaignServiceGoogleAdsGeoTargetSuggestions,
+  CampaignServiceGoogleAdsAudiences,
   CampaignServiceGoogleAdsUserLists,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
@@ -3438,6 +3439,29 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/google-ads/user-lists`,
       'GET'
+    );
+  }
+
+  /**
+   * The Google Ads Audience resources on the account a create for this project uses
+   * (`list-google-ads-audiences` with `type=audience`, linuxfoundation/lfx-v2-campaign-service#504), for
+   * the Implement tab's Demand Gen audience picker (#5244). Upstream answers it on `global_marketing_ops`
+   * of the path project, the relation the BFF checks first; it returns up to 500 enabled, account-scoped
+   * Audiences sorted by name, with `truncated` set when more matched. Failures are left to the caller.
+   */
+  public async listGoogleAdsAudiences(req: Request, projectSlug: string): Promise<CampaignServiceGoogleAdsAudiences> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'An Audience read requires the project it belongs to.', {
+        operation: 'list_google_ads_audiences',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceGoogleAdsAudiences>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/audiences`,
+      'GET',
+      { type: 'audience' }
     );
   }
 

@@ -170,6 +170,17 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ad-groups-held-live">
   {{ demandGenAdGroupsHeldMessage() }}
 </div>
+<!-- The Demand Gen audience picker's loading line, reason, empty or partial-list note (#5244); empty while it is hidden. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-audience-picker-live">
+  {{ demandGenAudiencePickerAnnouncement() }}
+</div>
+<!-- Why Create is held for a Demand Gen audience, and the single ad group's audience held while split (#5244). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-audience-error-live">
+  {{ demandGenAudienceError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-audience-held-live">
+  {{ demandGenAudienceHeldMessage() }}
+</div>
 <!-- The single Demand Gen ad group's several ads' refusal (#5226); empty with one ad. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ads-error-live">
   {{ demandGenAdsError() ?? '' }}
@@ -2540,6 +2551,9 @@
                 {{ demandGenAdGroupsHeldMessage() }}
               </p>
             }
+            @if (demandGenAudienceHeldMessage()) {
+              <p class="mt-1 text-xs text-gray-500" data-testid="implementation-demand-gen-audience-held">{{ demandGenAudienceHeldMessage() }}</p>
+            }
           }
           @if (section.channel === 'demand-gen' && demandGenAdGroupsActive()) {
             <div class="mt-4 flex flex-col gap-4" formArrayName="demandGenAdGroups" data-testid="implementation-demand-gen-ad-groups">
@@ -2647,6 +2661,7 @@
                       demandGenAdListTemplate;
                       context: { $implicit: i, ads: group.controls.ads, prefix: 'demand-gen-ad-group-' + i + '-ad' }
                     " />
+                  <ng-container *ngTemplateOutlet="demandGenAudienceTemplate; context: { $implicit: i }" />
                   <div>
                     <lfx-button
                       label="Remove ad group"
@@ -2795,9 +2810,83 @@
             @if (demandGenAdsError(); as error) {
               <p class="mt-2 text-xs text-red-600" data-testid="implementation-demand-gen-ads-error">{{ error }}</p>
             }
+            <ng-container *ngTemplateOutlet="demandGenAudienceTemplate; context: { $implicit: null }" />
+          }
+          @if (section.channel === 'demand-gen') {
+            @if (demandGenAudienceError(); as error) {
+              <p class="mt-2 text-xs text-red-600" data-testid="implementation-demand-gen-audience-error">{{ error }}</p>
+            }
           }
         </div>
       }
+
+      <!--
+        The Audience of one Demand Gen ad group (#5244): the single one for a null context, else named
+        group i. Shown to a caller who may send one, and to anyone while a restored draft holds one, so it
+        can be removed. A picked Audience is shown by name with Remove; with none, the picker lists the
+        account's Audiences. A pick sets the resource name and replaces the picker, so it is never cleared.
+      -->
+      <ng-template #demandGenAudienceTemplate let-group>
+        @let key = group === null ? 'single' : '' + group;
+        @let audience = demandGenAudienceControl(group).value;
+        @if (demandGenAudienceAvailable() || audience !== '') {
+          <div class="mt-4 flex flex-col gap-2" [attr.data-testid]="'implementation-demand-gen-audience-' + key">
+            <span class="text-xs font-medium text-gray-700">Audience</span>
+            @if (audience !== '') {
+              @let audienceName = demandGenAudienceNames().get(audience) ?? audience;
+              <span
+                class="inline-flex w-fit items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                [attr.data-testid]="'implementation-demand-gen-audience-picked-' + key">
+                {{ audienceName }}
+                <button
+                  [id]="'demand-gen-audience-' + key + '-remove'"
+                  type="button"
+                  (click)="removeDemandGenAudience(group)"
+                  class="ml-0.5 text-blue-600 hover:text-blue-800"
+                  [attr.aria-label]="'Remove ' + audienceName"
+                  [attr.data-testid]="'implementation-demand-gen-audience-remove-' + key">
+                  <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                </button>
+              </span>
+            } @else {
+              @switch (demandGenAudiencePicker().status) {
+                @case ('loaded') {
+                  @if (demandGenAudiencePicker().audiences.length > 0) {
+                    <lfx-ui-combobox
+                      label="Pick an Audience"
+                      placeholder="Search this account's Audiences"
+                      emptyText="No Audience matches"
+                      size="small"
+                      (valueChange)="onDemandGenAudiencePicked(group, $event)"
+                      [attr.data-testid]="'implementation-demand-gen-audience-picker-' + key">
+                      @for (option of demandGenAudiencePicker().audiences; track option.resourceName) {
+                        <lfx-ui-option [value]="option.resourceName" [label]="option.name" />
+                      }
+                    </lfx-ui-combobox>
+                    @if (demandGenAudiencePicker().truncated) {
+                      <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-audience-picker-truncated-' + key">
+                        {{ audiencePickerTruncated }}
+                      </p>
+                    }
+                  } @else {
+                    <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-audience-picker-empty-' + key">{{ audiencePickerEmpty }}</p>
+                  }
+                }
+                @case ('loading') {
+                  <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-audience-picker-loading-' + key">
+                    {{ audiencePickerLoading }}
+                  </p>
+                }
+                @case ('unavailable') {
+                  <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-audience-picker-unavailable-' + key">
+                    {{ demandGenAudiencePicker().reason }}
+                  </p>
+                }
+              }
+            }
+          </div>
+        }
+      </ng-template>
 
       <!--
         The second and later ads of one Demand Gen ad group (#5226): the single one for a null context,
