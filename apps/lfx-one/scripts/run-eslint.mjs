@@ -9,8 +9,8 @@
  * Typed linting builds a full TypeScript program for every `parserOptions.project` it meets
  * and keeps it alive until the process exits (see eslint.config.js). The app run also lints the
  * stories, so it holds the app and Storybook programs; the two spec runs hold one program each.
- * Holding them all in one process needs ~7 GB of heap. Split this way, each run fits in Node's
- * default heap.
+ * Holding them all in one process needs ~7 GB of heap. Split this way, each run stays near
+ * Node's default heap; CI gives the lint job 8 GB of headroom for large branches.
  *
  * Arguments starting with `-` are forwarded to every run (e.g. `--fix`). Any other argument
  * is a file path, as lint-staged passes them. It goes to the run that owns its project: app
