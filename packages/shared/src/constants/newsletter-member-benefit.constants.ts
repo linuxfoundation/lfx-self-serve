@@ -193,11 +193,26 @@ export const NEWSLETTER_GUEST_RATE_LIMIT_MAX = 30;
 /** Window of the guest newsletter rate limit. */
 export const NEWSLETTER_GUEST_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 
-/** 400 code of a signed-out reader whose email is not at a member company of the newsletter's foundation. */
+/** Code of a signed-out reader whose email is not at a member company of the newsletter's foundation: 400 on the shared-link email check, 403 on an invite accept. */
 export const NEWSLETTER_GUEST_NOT_ELIGIBLE_ERROR_CODE = 'NEWSLETTER_GUEST_NOT_ELIGIBLE';
 
 /** 404 code of a shared newsletter link a signed-out reader cannot open as a member benefit (unknown, unsent, or sent to no newsletter group). */
 export const NEWSLETTER_GUEST_UNAVAILABLE_ERROR_CODE = 'NEWSLETTER_GUEST_UNAVAILABLE';
 
-/** 410 code of an expired or tampered newsletter invite link. */
+/** 400 code of an expired or tampered newsletter invite link. */
 export const NEWSLETTER_INVITE_EXPIRED_ERROR_CODE = 'NEWSLETTER_INVITE_EXPIRED';
+
+/** How long a signed-out reader's guest session is honoured, whatever the browser does with the session cookie. */
+export const NEWSLETTER_GUEST_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+/** HMAC purpose label of a signed newsletter invite / confirmation link token — keeps a cookie from replaying as a token. */
+export const NEWSLETTER_INVITE_TOKEN_PURPOSE = 'newsletter-invite';
+
+/** HMAC purpose label of a signed newsletter guest session cookie. */
+export const NEWSLETTER_GUEST_SESSION_PURPOSE = 'newsletter-guest';
+
+/** HKDF info label deriving the newsletter guest signing key from `PCC_AUTH0_SECRET` (never the raw session secret). */
+export const NEWSLETTER_GUEST_SIGNING_KEY_INFO = 'lfx-newsletter-guest-v1';
+
+/** 503 code of the guest newsletter endpoints when the signing secret is not configured. */
+export const NEWSLETTER_GUEST_SIGNING_UNAVAILABLE_ERROR_CODE = 'NEWSLETTER_GUEST_SIGNING_UNAVAILABLE';

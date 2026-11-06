@@ -1,7 +1,13 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ui-overlay px-4 py-8 backdrop-blur-md" data-testid="newsletter-guest-modal">
+<!--
+  Deliberately not lfx-ui-modal / UiModalService: this modal is the page itself for a signed-out reader —
+  it cannot be dismissed (no close, no Escape, no backdrop click), it blurs the page behind it, and it
+  renders as part of the route template rather than a CDK overlay opened imperatively. Focus is trapped
+  with cdkTrapFocus and labelled by the heading, as the uikit modal does.
+-->
+<div class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-gray-900/40 px-4 py-8 backdrop-blur-md" data-testid="newsletter-guest-modal">
   <div
     role="dialog"
     aria-modal="true"

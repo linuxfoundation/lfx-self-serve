@@ -219,12 +219,24 @@ export class NewsletterService {
 
   /** Signed-out invite landing: the guest session's latest issue (`issue: null` without a session). Errors propagate. */
   public getNewsletterGuestLatestIssue(): Observable<NewsletterGuestIssueResponse> {
-    return this.http.get<NewsletterGuestIssueResponse>('/public/api/newsletters/guest/latest').pipe(take(1));
+    return this.http.get<NewsletterGuestIssueResponse>('/public/api/newsletters/guest/latest').pipe(
+      take(1),
+      catchError((error) => {
+        console.error('[NewsletterService] Failed to load the newsletter guest session', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   /** Signed-out shared link: the issue when the guest session covers it, else the foundation the email prompt names. */
   public getNewsletterGuestSharedIssue(projectSlug: string, newsletterUid: string): Observable<NewsletterGuestIssueResponse> {
-    return this.http.get<NewsletterGuestIssueResponse>(`/public/api/newsletters/guest/${this.enc(projectSlug)}/${this.enc(newsletterUid)}`).pipe(take(1));
+    return this.http.get<NewsletterGuestIssueResponse>(`/public/api/newsletters/guest/${this.enc(projectSlug)}/${this.enc(newsletterUid)}`).pipe(
+      take(1),
+      catchError((error) => {
+        console.error('[NewsletterService] Failed to load the shared newsletter for a guest', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   /** Emails a colleague an invitation to a foundation's newsletter (server checks sender and invitee eligibility). */

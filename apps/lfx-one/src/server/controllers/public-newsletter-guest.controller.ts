@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { NEWSLETTER_GUEST_COOKIE_NAME, NEWSLETTER_GUEST_COOKIE_PATH } from '@lfx-one/shared/constants';
-import { NewsletterGuestIssueResponse, NewsletterGuestSession } from '@lfx-one/shared/interfaces';
+import { NewsletterGuestGrant, NewsletterGuestIssueResponse, NewsletterGuestSession } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { logger } from '../services/logger.service';
-import { NewsletterGuestGrant, NewsletterGuestService } from '../services/newsletter-guest.service';
+import { NewsletterGuestService } from '../services/newsletter-guest.service';
 import { createNewsletterGuestSessionValue, readCookie, readNewsletterGuestSessionValue } from '../utils/newsletter-guest-token.util';
 
 /**
@@ -51,6 +51,12 @@ export class PublicNewsletterGuestController {
     const startTime = logger.startOperation(req, operation, { project_slug: projectSlug, newsletter_uid: newsletterUid });
     try {
       const grant = await this.guestService.requestSharedAccess(req, projectSlug, newsletterUid, req.body?.email);
+      // A reader who already proved this address for this list (an accepted invite) keeps that proof.
+      const previous = this.session(req);
+      if (previous?.v && previous.e === grant.session.e && previous.c === grant.session.c) {
+        grant.session = { ...grant.session, v: true };
+        grant.issue = { ...grant.issue, confirmation_sent: false };
+      }
       this.grant(res, grant);
       logger.success(req, operation, startTime, { committee_uid: grant.session.c, confirmation_sent: grant.issue.confirmation_sent });
     } catch (error) {
@@ -87,7 +93,10 @@ export class PublicNewsletterGuestController {
     }
   }
 
-  /** Sets the guest session cookie and answers with the issue. No `maxAge`: it ends with the browser session. */
+  /**
+   * Sets the guest session cookie and answers with the issue. No `maxAge`: it ends with the browser
+   * session; the signed payload also carries its own expiry, so a restored or copied cookie still ends.
+   */
   private grant(res: Response, { issue, session }: NewsletterGuestGrant): void {
     res.cookie(NEWSLETTER_GUEST_COOKIE_NAME, createNewsletterGuestSessionValue(session), {
       httpOnly: true,

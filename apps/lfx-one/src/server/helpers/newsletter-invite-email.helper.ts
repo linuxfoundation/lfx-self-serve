@@ -5,10 +5,18 @@ import { NEWSLETTER_GUEST_INVITE_PATH, NEWSLETTER_INVITE_TOKEN_FRAGMENT_KEY } fr
 import { NewsletterGuestConfirmEmailContext, NewsletterInviteEmailContext, RenderedEmail } from '@lfx-one/shared/interfaces';
 import { escapeHtml } from '@lfx-one/shared/utils/html-utils';
 
+import { MicroserviceError } from '../errors';
+
 /** The app origin for emailed links; never guessed — a wrong origin would mail out dead links. */
 export function requireAppBaseUrl(): string {
   const baseUrl = process.env['PCC_BASE_URL'];
-  if (!baseUrl) throw new Error('PCC_BASE_URL is not configured; cannot build newsletter links');
+  if (!baseUrl) {
+    throw new MicroserviceError('PCC_BASE_URL is not configured; cannot build newsletter links', 503, 'APP_BASE_URL_NOT_CONFIGURED', {
+      operation: 'build_newsletter_link',
+      service: 'newsletter_invite',
+      clientMessage: 'Newsletter emails are temporarily unavailable. Please try again later.',
+    });
+  }
   return baseUrl;
 }
 

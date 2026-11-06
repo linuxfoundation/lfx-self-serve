@@ -7,7 +7,10 @@
       @if (shownFoundation()?.logo_url; as logoUrl) {
         <img [src]="logoUrl" alt="" class="h-8 w-8 shrink-0 rounded-full border border-gray-200 bg-white object-contain p-0.5" />
       }
-      <span class="truncate text-sm font-semibold text-gray-900" data-testid="newsletter-guest-reader-foundation">
+      <span
+        class="line-clamp-2 text-sm font-semibold text-gray-900 sm:line-clamp-1"
+        [attr.title]="shownFoundation()?.name ?? null"
+        data-testid="newsletter-guest-reader-foundation">
         {{ shownFoundation()?.name ?? 'Newsletter' }}
       </span>
     </div>
@@ -19,6 +22,7 @@
     >
   </header>
 
+  <!-- max-w-[600px] throughout = the newsletter email body width, matching the signed-in reader. -->
   <main class="flex w-full flex-1 flex-col items-center gap-4 px-4 py-6 sm:px-8">
     @if (issue(); as current) {
       @if (current.confirmation_sent) {

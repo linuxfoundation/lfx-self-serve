@@ -119,6 +119,7 @@ describe('NewsletterInviteService', () => {
     vi.clearAllMocks();
     NewsletterInviteService.resetRecentInvites();
     process.env['PCC_BASE_URL'] = 'https://app.lfx.example';
+    process.env['PCC_AUTH0_SECRET'] = 'test-session-secret';
     committees = [NEWSLETTER_GROUP, BOARD];
 
     generateM2MToken.mockResolvedValue('m2m');

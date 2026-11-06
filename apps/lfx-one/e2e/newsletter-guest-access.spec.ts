@@ -63,6 +63,21 @@ test.describe('Newsletter invite link (signed out)', () => {
     expect(new URL(page.url()).hash).toBe('');
   });
 
+  test('tells a new subscriber when the newsletter has not sent an issue yet', async ({ page }) => {
+    await page.route('**/public/api/newsletters/invites/inspect', (route) => route.fulfill({ json: INVITE }));
+    await page.route('**/public/api/newsletters/invites/accept', (route) =>
+      route.fulfill({ json: { ...ISSUE, newsletter: null } satisfies NewsletterGuestIssue })
+    );
+
+    await page.goto('/newsletters/invite#token=signed.token');
+    await page.getByTestId('newsletter-guest-modal-continue').click({ timeout: ELEMENT_TIMEOUT });
+
+    const empty = page.getByTestId('newsletter-guest-reader-empty');
+    await expect(empty).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(empty).toContainText('No issues yet');
+    await expect(empty).toContainText('jane.doe@acme-motors.example');
+  });
+
   test('offers only Sign in for an expired link', async ({ page }) => {
     await page.route('**/public/api/newsletters/invites/inspect', (route) => route.fulfill({ json: { status: 'expired' } }));
 

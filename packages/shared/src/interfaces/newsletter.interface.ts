@@ -870,6 +870,21 @@ export interface NewsletterGuestSession {
   c: string;
   f: string;
   v: boolean;
+  /** Expiry (epoch ms), signed with the rest — the server's bound on the session, independent of the browser. */
+  exp: number;
+}
+
+/** A sent issue a signed-out reader opened from a shared link, with the group and foundation that make it a member benefit (BFF-internal). */
+export interface NewsletterGuestSharedTarget {
+  newsletter: Newsletter;
+  group: NewsletterMemberBenefitGroup;
+  resolved: ResolvedNewsletterFoundation;
+}
+
+/** An issue to show a guest, and the guest session (without its expiry, which the controller stamps) that may read it (BFF-internal). */
+export interface NewsletterGuestGrant {
+  issue: NewsletterGuestIssue;
+  session: Omit<NewsletterGuestSession, 'exp'>;
 }
 
 /** Outcome of reading a signed newsletter invite token. */

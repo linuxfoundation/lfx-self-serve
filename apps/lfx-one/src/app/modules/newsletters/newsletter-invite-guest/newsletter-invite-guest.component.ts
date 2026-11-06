@@ -13,7 +13,6 @@ import { NEWSLETTER_INVITE_QUERY_PARAM, NEWSLETTER_INVITE_TOKEN_FRAGMENT_KEY } f
 import { NewsletterGuestInviteInfo, NewsletterGuestPageState } from '@lfx-one/shared/interfaces';
 import { formatLfxDocumentTitle } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
-import { catchError, of } from 'rxjs';
 
 import { NewsletterGuestModalComponent } from '../components/newsletter-guest-modal/newsletter-guest-modal.component';
 import { NewsletterGuestReaderComponent } from '../components/newsletter-guest-reader/newsletter-guest-reader.component';
@@ -156,12 +155,11 @@ export class NewsletterInviteGuestComponent implements OnInit {
     }
     this.newsletterService
       .getNewsletterGuestLatestIssue()
-      .pipe(
-        catchError(() => of({ issue: null })),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe(({ issue }) => {
-        this.state.set(issue ? { status: 'reading', issue } : { status: 'prompt', invite: { status: 'invalid' } });
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: ({ issue }) => this.state.set(issue ? { status: 'reading', issue } : { status: 'prompt', invite: { status: 'invalid' } }),
+        // The service already logged it; a failed read is not "invalid link", so show the retry copy.
+        error: () => this.state.set({ status: 'error' }),
       });
   }
 

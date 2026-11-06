@@ -13,11 +13,13 @@ import {
   MemberBenefitCompany,
   Newsletter,
   NewsletterFoundationSummary,
+  NewsletterGuestGrant,
   NewsletterGuestInviteInfo,
   NewsletterGuestIssue,
   NewsletterGuestIssueResponse,
   NewsletterGuestNewsletter,
   NewsletterGuestSession,
+  NewsletterGuestSharedTarget,
   NewsletterListItem,
   NewsletterMemberBenefitGroup,
   ResolvedNewsletterFoundation,
@@ -35,19 +37,6 @@ import { NewsletterInviteService } from './newsletter-invite.service';
 import { NewsletterMemberBenefitService } from './newsletter-member-benefit.service';
 import { NewsletterService } from './newsletter.service';
 import { ProjectService } from './project.service';
-
-/** A sent issue a signed-out reader opened from a shared link, with the group and foundation that make it a member benefit. */
-interface SharedNewsletterTarget {
-  newsletter: Newsletter;
-  group: NewsletterMemberBenefitGroup;
-  resolved: ResolvedNewsletterFoundation;
-}
-
-/** An issue to show a guest, and the guest session that may read it. */
-export interface NewsletterGuestGrant {
-  issue: NewsletterGuestIssue;
-  session: NewsletterGuestSession;
-}
 
 /**
  * Signed-out newsletter reading as a member benefit (#5235). There is no LFX session, so every
@@ -177,15 +166,17 @@ export class NewsletterGuestService {
       );
     }
 
-    const confirmationSent = await this.sendConfirmation(req, m2mToken, group, email, company, resolved.foundation);
+    const confirmation = await this.sendConfirmation(req, m2mToken, group, email, company, resolved.foundation);
     logger.info(req, operation, 'Signed-out member-company reader opened a shared newsletter', {
       newsletter_uid: newsletter.id,
       committee_uid: group.uid,
       b2b_org_uid: company.b2b_org_uid,
-      confirmation_sent: confirmationSent,
+      confirmation,
     });
+    // `confirmation_sent` is constant for every member-company address: answering with the real outcome
+    // would tell an anonymous caller whether any typed address is already on the list.
     return {
-      issue: { foundation: resolved.foundation, email, newsletter: this.toGuestNewsletter(newsletter), confirmation_sent: confirmationSent },
+      issue: { foundation: resolved.foundation, email, newsletter: this.toGuestNewsletter(newsletter), confirmation_sent: true },
       session: { e: email, c: group.uid, f: resolved.foundation.uid, v: false },
     };
   }
@@ -237,7 +228,7 @@ export class NewsletterGuestService {
    * member benefit opens. Malformed params, an unknown slug or issue, an unsent issue and any upstream
    * 4xx are all null, so drafts are not revealed.
    */
-  private async resolveSharedIssue(req: Request, m2mToken: string, projectSlug: string, newsletterUid: string): Promise<SharedNewsletterTarget | null> {
+  private async resolveSharedIssue(req: Request, m2mToken: string, projectSlug: string, newsletterUid: string): Promise<NewsletterGuestSharedTarget | null> {
     if (!NEWSLETTER_SHARE_PREVIEW_SLUG_PATTERN.test(projectSlug ?? '') || !isUuid(newsletterUid ?? '')) return null;
     const project = await this.projectService.getProjectIdBySlug(req, projectSlug, { unavailableAsMissing: false });
     if (!project.exists) return null;
@@ -292,8 +283,9 @@ export class NewsletterGuestService {
   }
 
   /**
-   * Emails a shared-link reader the link that subscribes them. Fail-soft: the read already succeeded,
-   * so an address already on the list, a recent confirmation, or a failed send only means no new email.
+   * Emails a shared-link reader the link that subscribes them, and returns what happened — for the
+   * server log only, never the response. Fail-soft: the read already succeeded, so an address already
+   * on the list, a recent confirmation, or a failed send only means no new email.
    */
   private async sendConfirmation(
     req: Request,
@@ -302,17 +294,17 @@ export class NewsletterGuestService {
     email: string,
     company: MemberBenefitCompany,
     foundation: NewsletterFoundationSummary
-  ): Promise<boolean> {
+  ): Promise<'sent' | 'already_member' | 'recently_sent' | 'failed'> {
     const operation = 'send_newsletter_guest_confirmation';
     const cooldownKey = `${group.uid}|${email}`;
     try {
       if (await this.memberBenefitService.isEmailInGroup(req, m2mToken, group.uid, email)) {
         logger.debug(req, operation, 'Reader is already on the newsletter list — no confirmation sent', { committee_uid: group.uid });
-        return false;
+        return 'already_member';
       }
       if (!this.inviteService.claimRecipientCooldown(cooldownKey)) {
         logger.debug(req, operation, 'Confirmation already emailed recently — not emailed again', { committee_uid: group.uid });
-        return true;
+        return 'recently_sent';
       }
       const rendered = renderNewsletterGuestConfirmEmail({
         company_name: this.inviteService.singleLine(company.company_name || 'your company'),
@@ -325,10 +317,10 @@ export class NewsletterGuestService {
         this.inviteService.releaseRecipientCooldown(cooldownKey);
         throw error;
       }
-      return true;
+      return 'sent';
     } catch (error) {
       logger.warning(req, operation, 'Subscription confirmation could not be sent — reading continues', { committee_uid: group.uid, err: error });
-      return false;
+      return 'failed';
     }
   }
 

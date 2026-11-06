@@ -64,6 +64,7 @@ describe('NewsletterGuestService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env['PCC_BASE_URL'] = 'https://app.lfx.example';
+    process.env['PCC_AUTH0_SECRET'] = 'test-session-secret';
     generateM2MToken.mockResolvedValue('m2m');
     deps = makeDeps();
     service = new NewsletterGuestService(deps as unknown as ConstructorParameters<typeof NewsletterGuestService>[0]);
@@ -171,13 +172,13 @@ describe('NewsletterGuestService', () => {
       await expect(service.requestSharedAccess(req, 'acme-foundation', 'not-a-uuid', 'jane@acme-motors.example')).rejects.toBeInstanceOf(ResourceNotFoundError);
     });
 
-    it('still opens the issue when the reader is already on the list or the email fails', async () => {
+    it('answers the same whether or not the reader is already on the list, and survives a failed email', async () => {
       deps.memberBenefitService.isEmailInGroup.mockResolvedValueOnce(true);
-      expect((await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example')).issue.confirmation_sent).toBe(false);
+      expect((await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example')).issue.confirmation_sent).toBe(true);
       expect(deps.emailService.sendEmail).not.toHaveBeenCalled();
 
       deps.emailService.sendEmail.mockRejectedValueOnce(new Error('nats down'));
-      expect((await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example')).issue.confirmation_sent).toBe(false);
+      expect((await service.requestSharedAccess(req, 'acme-foundation', issueId, 'jane@acme-motors.example')).issue.confirmation_sent).toBe(true);
       expect(deps.inviteService.releaseRecipientCooldown).toHaveBeenCalledWith(`c-news|jane@acme-motors.example`);
     });
   });
@@ -185,13 +186,25 @@ describe('NewsletterGuestService', () => {
   describe('getSharedIssue', () => {
     it('returns only the foundation prompt without a session, or with a session for another foundation', async () => {
       expect(await service.getSharedIssue(req, null, 'acme-foundation', issueId)).toEqual({ issue: null, foundation, membership_name: 'Acme Foundation' });
-      expect(await service.getSharedIssue(req, { e: 'jane@acme-motors.example', c: 'c-x', f: 'f-other', v: true }, 'acme-foundation', issueId)).toMatchObject({
+      expect(
+        await service.getSharedIssue(
+          req,
+          { e: 'jane@acme-motors.example', c: 'c-x', f: 'f-other', v: true, exp: Date.now() + 1000 },
+          'acme-foundation',
+          issueId
+        )
+      ).toMatchObject({
         issue: null,
       });
     });
 
     it('returns the issue for a session on its foundation', async () => {
-      const response = await service.getSharedIssue(req, { e: 'jane@acme-motors.example', c: 'c-news', f: 'f-1', v: false }, 'acme-foundation', issueId);
+      const response = await service.getSharedIssue(
+        req,
+        { e: 'jane@acme-motors.example', c: 'c-news', f: 'f-1', v: false, exp: Date.now() + 1000 },
+        'acme-foundation',
+        issueId
+      );
       expect(response.issue).toMatchObject({ email: 'jane@acme-motors.example', confirmation_sent: true, newsletter: { id: issueId } });
     });
 

@@ -24,6 +24,7 @@ function makeRes() {
 }
 
 describe('PublicNewsletterGuestController', () => {
+  process.env['PCC_AUTH0_SECRET'] = 'test-session-secret';
   let guestService: Record<string, ReturnType<typeof vi.fn>>;
   let controller: PublicNewsletterGuestController;
   const next = vi.fn() as unknown as NextFunction;
@@ -46,7 +47,7 @@ describe('PublicNewsletterGuestController', () => {
     expect(guestService['acceptInvite']).toHaveBeenCalledWith(expect.anything(), 't');
     const [name, value, options] = res.cookie.mock.calls[0];
     expect(name).toBe(NEWSLETTER_GUEST_COOKIE_NAME);
-    expect(readNewsletterGuestSessionValue(value)).toEqual(session);
+    expect(readNewsletterGuestSessionValue(value)).toMatchObject(session);
     expect(options).toMatchObject({ httpOnly: true, sameSite: 'lax', path: NEWSLETTER_GUEST_COOKIE_PATH });
     expect(options).not.toHaveProperty('maxAge');
     expect(res.json).toHaveBeenCalledWith(issue);
@@ -61,7 +62,7 @@ describe('PublicNewsletterGuestController', () => {
     const res = makeRes();
     const cookie = `${NEWSLETTER_GUEST_COOKIE_NAME}=${encodeURIComponent(createNewsletterGuestSessionValue(session))}`;
     await controller.getLatestIssue({ headers: { cookie } } as Request, res, next);
-    expect(guestService['getLatestIssue']).toHaveBeenCalledWith(expect.anything(), session);
+    expect(guestService['getLatestIssue']).toHaveBeenCalledWith(expect.anything(), expect.objectContaining(session));
     expect(res.json).toHaveBeenCalledWith({ issue });
 
     const anonymous = makeRes();
@@ -70,11 +71,30 @@ describe('PublicNewsletterGuestController', () => {
     expect(anonymous.json).toHaveBeenCalledWith({ issue: null });
   });
 
+  it('keeps a proven session proven when the same reader also continues on a shared link', async () => {
+    const res = makeRes();
+    const cookie = `${NEWSLETTER_GUEST_COOKIE_NAME}=${encodeURIComponent(createNewsletterGuestSessionValue(session))}`;
+    guestService['requestSharedAccess'].mockResolvedValueOnce({ issue: { ...issue, confirmation_sent: true }, session: { ...session, v: false } });
+
+    await controller.requestSharedAccess(
+      { headers: { cookie }, params: { projectSlug: 'acme', newsletterUid: 'n-1' }, body: { email: session.e } } as unknown as Request,
+      res,
+      next
+    );
+
+    expect(readNewsletterGuestSessionValue(res.cookie.mock.calls[0][1])).toMatchObject({ v: true });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ confirmation_sent: false }));
+  });
+
   it('forwards service errors to the error handler without setting a cookie', async () => {
     const error = new Error('boom');
     guestService['requestSharedAccess'].mockRejectedValueOnce(error);
     const res = makeRes();
-    await controller.requestSharedAccess({ params: { projectSlug: 'acme', newsletterUid: 'n-1' }, body: { email: 'x' } } as unknown as Request, res, next);
+    await controller.requestSharedAccess(
+      { headers: {}, params: { projectSlug: 'acme', newsletterUid: 'n-1' }, body: { email: 'x' } } as unknown as Request,
+      res,
+      next
+    );
 
     expect(next).toHaveBeenCalledWith(error);
     expect(res.cookie).not.toHaveBeenCalled();
