@@ -1132,7 +1132,8 @@ export class CampaignsComponent {
   /**
    * Whether THIS caller may read the conversion-action picker's list —
    * `CampaignListResult.googleConversionActionsEnabled`, read and cleared like the capabilities
-   * above. Per caller: root only. Absent from an older BFF reads as `null`.
+   * above. Per caller, not per deployment: `global_marketing_ops` on the project. Absent from an older
+   * BFF reads as `null`.
    */
   protected readonly briefCampaignsGoogleConversionActionsEnabled = signal<boolean | null>(null);
   /**

@@ -87,6 +87,7 @@ The campaign does not serve in the places listed here.
 On Search and Display campaigns, the bidding settings include **Conversion Actions**: the conversions the campaign counts. Leave it blank to use the Google Ads account's own conversion goals.
 
 - **Pick conversion actions** lists the account's enabled conversion actions, each with its category. **Primary** marks one that counts toward the account's conversions by default. Picking one adds its id to the **Conversion Actions** box.
+- Only the LF marketing team sees the list. Every foundation shares one Google Ads account, so the list names every foundation's conversion actions. Everyone else types ids into the box.
 - You can still type ids into the box, one per line, as an id such as 987654321 or a full `customers/<id>/conversionActions/<id>` name. Picking keeps the ids you typed.
 - If the list cannot be shown, a note above the **Conversion Actions** box says why: your account cannot read it, it is not available here yet, or it could not be read for this project's Google Ads account. Type the ids instead.
 - If the account has no enabled conversion actions, a note says so. Type ids, or leave the box blank to use the account's own goals.

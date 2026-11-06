@@ -239,3 +239,21 @@ export async function requireGoogleMonitorAccess(req: Request, res: Response, ne
     next(error);
   }
 }
+
+/**
+ * Google conversion-action list only (#5239). With marketing FGA on, the controller's strict check of
+ * `global_marketing_ops` on the project is the whole gate: campaign-service answers this read on that
+ * relation alone (lfx-v2-campaign-service#486), and it is narrower than `campaign_manager` (`executive_director`
+ * or `global_marketing_ops`), which also admits ROOT writers the controller refuses anyway. Running
+ * `requireCampaignManager` first would answer an access-check outage with its uncoded
+ * `MARKETING_ACCESS_REQUIRED` 403, because its project check is not strict, so the picker could never tell
+ * an outage (the controller's coded 503) from a refusal. Flag-off keeps the ED-only baseline, then the
+ * controller's own check. Never use for any other route.
+ */
+export async function requireGoogleConversionActionsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga)) {
+    next();
+    return;
+  }
+  await requireCampaignManager(req, res, next);
+}

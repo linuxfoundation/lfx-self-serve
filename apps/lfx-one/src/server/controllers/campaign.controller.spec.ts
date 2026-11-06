@@ -8365,31 +8365,30 @@ describe('CampaignController.listBriefCampaigns', () => {
   });
 
   /**
-   * Per caller. Audience segments: `global_marketing_ops` on the listed project, the create route's
-   * own test. Conversion actions (#4991): a root principal, the two checks its route makes.
+   * Per caller. Both answer on `global_marketing_ops` on the listed project, the relation
+   * campaign-service checks: audience segments (the create route's own test) and the conversion-action
+   * picker's read (#4991, lfx-v2-campaign-service#486). A ROOT writer or ROOT campaign manager without
+   * it on the project is answered no, as campaign-service would refuse them; neither is asked about.
    */
   it.each([
-    ['global_marketing_ops on the project, not root', true, true, [false, false], true, false],
-    ['a campaign manager (ED) without it, not root', true, false, [false, false], false, false],
-    ['a ROOT writer without it', true, false, [true, false], false, true],
-    ['a ROOT campaign manager without it on the project', true, false, [false, true], false, true],
-  ])('answers the per-caller capabilities for %s', async (_label, createPath, marketingOpsHeld, [writer, manager], audiences, conversions) => {
+    ['global_marketing_ops on the project', true, true, true, true],
+    ['a campaign manager (ED) without it', true, false, false, false],
+  ])('answers the per-caller capabilities for %s', async (_label, createPath, marketingOpsHeld, audiences, conversions) => {
     listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, googleCreativeEnabled: createPath, googleAudienceSegmentsEnabled: false });
     // The create path is the three cutover flags, read here exactly as the create route reads them.
     isServerFeatureEnabled.mockReturnValue(createPath as boolean);
     vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValueOnce(marketingOpsHeld as boolean);
-    vi.mocked(personaDetectionService.checkRootWriter).mockResolvedValueOnce(writer as boolean);
-    // Queued only when it will be asked: a root writer short-circuits, and a leftover queued answer
-    // would leak into the next test.
-    if (!writer) vi.mocked(personaDetectionService.checkRootCampaignManager).mockResolvedValueOnce(manager as boolean);
 
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
+    expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).toHaveBeenCalledTimes(1);
     expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(personaDetectionService.checkRootWriter).not.toHaveBeenCalled();
+    expect(personaDetectionService.checkRootCampaignManager).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: audiences, googleConversionActionsEnabled: conversions }));
   });
 
-  it('answers null (unverified, not denied) for audience segments, rather than failing the list, when the global_marketing_ops check cannot be made', async () => {
+  it('answers null (unverified, not denied) for audience segments and no for the conversion picker, rather than failing the list, when the global_marketing_ops check cannot be made', async () => {
     listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, googleCreativeEnabled: true, googleAudienceSegmentsEnabled: false });
     isServerFeatureEnabled.mockReturnValue(true);
     vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockRejectedValueOnce(new Error('access check unavailable'));
@@ -8397,7 +8396,7 @@ describe('CampaignController.listBriefCampaigns', () => {
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: null }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: null, googleConversionActionsEnabled: false }));
   });
 
   it('answers no without asking who the caller is when the create path does not serve', async () => {

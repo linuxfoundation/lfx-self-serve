@@ -2488,7 +2488,8 @@ export interface GoogleAdsConversionActionsResult {
 
 /**
  * Where the Implement tab's conversion-action picker stands. `unavailable` is a list that could not
- * load — the caller is not root, the route is off or denied on this deployment, or Google failed —
+ * load — the caller lacks `global_marketing_ops` on the project, the route is off on this deployment,
+ * the access check could not be made, or Google failed —
  * and `reason` says which in one sentence; the free-text box is the way in then, as it always was.
  */
 export interface GoogleConversionActionPickerState {
@@ -4599,7 +4600,7 @@ export interface CampaignServiceGoogleAdsConversionAction {
   primary_for_goal: boolean;
 }
 
-/** campaign-service `GET /projects/{project_id}/google-ads/conversion-actions` (root principals only). */
+/** campaign-service `GET /projects/{project_id}/google-ads/conversion-actions` (`global_marketing_ops` on the project only, lfx-v2-campaign-service#486). */
 export interface CampaignServiceGoogleAdsConversionActions {
   account_id: string;
   conversion_actions: CampaignServiceGoogleAdsConversionAction[];
@@ -6221,11 +6222,13 @@ export interface CampaignListResult {
   /**
    * Whether THIS caller may read the Implement tab's conversion-action picker list (#4991), through
    * `GET /api/campaigns/google/conversion-actions`. Per caller: true only when the campaign-service
-   * create path serves the create AND the caller is a ROOT writer or ROOT campaign manager — the two
-   * checks that route makes — because the shared LF Google Ads account lists every foundation's
-   * actions. Its own field rather than {@link googleAudienceSegmentsEnabled}, which answers a different
-   * question (`global_marketing_ops` on the listed project). Optional, so a BFF that predates it reads
-   * as unanswered (`null` on the client) and the tab keeps its free-text box without asking.
+   * create path serves the create AND the caller holds `global_marketing_ops` on the listed project —
+   * the two checks that route makes, and the relation campaign-service checks before it answers
+   * (linuxfoundation/lfx-v2-campaign-service#486) — because the shared LF Google Ads account lists
+   * every foundation's actions. Its own field rather than {@link googleAudienceSegmentsEnabled}: the
+   * relation is the same, but the deployment test differs (the create road here, the audience-segment
+   * gate there). Optional, so a BFF that predates it reads as unanswered (`null` on the client) and
+   * the tab keeps its free-text box without asking.
    */
   googleConversionActionsEnabled?: boolean;
   /**

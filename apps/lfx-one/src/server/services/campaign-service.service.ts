@@ -3391,9 +3391,9 @@ export class CampaignServiceClient {
 
   /**
    * The enabled conversion actions on the Google Ads account a create for this project uses
-   * (`list-google-ads-conversion-actions`), for the Implement tab's picker (#4991). Upstream admits
-   * only a root principal, and its gateway denies every caller until the deployment sets
-   * `openfga.rootProjectUid`; a 503 there includes an account holding more than 500 enabled actions.
+   * (`list-google-ads-conversion-actions`), for the Implement tab's picker (#4991). Upstream answers
+   * only a caller holding `global_marketing_ops` on the path project (lfx-v2-campaign-service#486); a
+   * 503 there includes an account holding more than 500 enabled actions.
    * Failures are left to the caller, which falls back to the free-text box.
    */
   public async listGoogleAdsConversionActions(req: Request, projectSlug: string): Promise<CampaignServiceGoogleAdsConversionActions> {

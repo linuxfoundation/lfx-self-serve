@@ -9551,10 +9551,10 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The conversion-action picker's list, read only while the section is shown and only for a caller
    * the BFF would answer. `googleConversionActionsEnabled` is the per-caller answer its route gives —
-   * the campaign-service create road AND a root campaign principal — so `false` shows the refusal
-   * note with no request, and `null` (unanswered) waits on the free-text box. A 403 after that yes is
-   * the upstream gateway, which denies the route until the deployment opens it, so it reads as
-   * unavailable here rather than as the caller's fault. Each action carries its label, built once.
+   * the campaign-service create road AND `global_marketing_ops` on the project — so `false` shows the
+   * refusal note with no request, and `null` (unanswered) waits on the free-text box. A 403 after that
+   * yes means the relation changed between the two checks or the upstream gateway refused, so it reads
+   * as unavailable here rather than as the caller's fault. Each action carries its label, built once.
    */
   private initGoogleConversionActionPicker(): Signal<GoogleConversionActionPickerState> {
     const state = (status: GoogleConversionActionPickerState['status'], reason: string | null = null): GoogleConversionActionPickerState => ({

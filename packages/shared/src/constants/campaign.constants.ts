@@ -1471,6 +1471,21 @@ export const GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_AUDIENCE
 /** The user-facing message of that refusal. Nothing was created. */
 export const GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_MESSAGE =
   'Your access to Google audience segments could not be verified, so nothing was created. Try again in a few minutes, or remove the audience segments and create again.';
+/**
+ * The error `code` (HTTP 403) of a conversion-action list read refused because the caller lacks
+ * `global_marketing_ops` on the project: the relation campaign-service checks on the same project
+ * before it answers (linuxfoundation/lfx-v2-campaign-service#486), since the shared Google Ads account
+ * lists every foundation's conversion actions.
+ */
+export const GOOGLE_CONVERSION_ACTIONS_RESTRICTED_CODE = 'GOOGLE_CONVERSION_ACTIONS_RESTRICTED';
+/** The user-facing message of that refusal. */
+export const GOOGLE_CONVERSION_ACTIONS_RESTRICTED_MESSAGE =
+  'The conversion action list can only be read by the LF marketing team, because every foundation shares one Google Ads account. Enter the conversion action ids instead.';
+/** The error `code` (HTTP 503) of a conversion-action list read refused because the caller's access could not be verified. */
+export const GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE';
+/** The user-facing message of that refusal. */
+export const GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_MESSAGE =
+  'Your access to the conversion action list could not be verified. Try again in a few minutes, or enter the conversion action ids instead.';
 
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
@@ -5453,12 +5468,15 @@ export const GOOGLE_ADS_CONVERSION_ACTION_RESOURCE_PATTERN = /^customers\/\d+\/c
  * free-text box, which works exactly as it did before the picker:
  * - `forbidden`: the BFF said this caller may not read the list
  *   (`CampaignListResult.googleConversionActionsEnabled` is false), so no request is made. The list
- *   names every foundation's actions on the shared account, so only a root principal is answered.
+ *   names every foundation's actions on the shared account, so only a caller holding
+ *   `global_marketing_ops` on the project (the LF marketing team) is answered, as campaign-service
+ *   answers (linuxfoundation/lfx-v2-campaign-service#486).
  * - `unavailable`: the read was made and answered 403 or 404. The BFF had already said the caller may
- *   read it, so a 403 is campaign-service's gateway, which denies the route until the deployment sets
- *   `openfga.rootProjectUid`; a 404 is the BFF route off, or campaign-service's NotFound for the project.
- * - `failed`: anything else — campaign-service's 400, 500 or 503 (including an account holding more
- *   than 500 enabled actions, which does not clear on retry), or no answer at all.
+ *   read it, so a 403 means the relation changed between the two checks or campaign-service's gateway
+ *   refused it; a 404 is the BFF route off, or campaign-service's NotFound for the project.
+ * - `failed`: anything else — the BFF's own coded 503 when the access check could not be made
+ *   (`GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_CODE`), campaign-service's 400, 500 or 503 (including an
+ *   account holding more than 500 enabled actions, which does not clear on retry), or no answer at all.
  */
 export const GOOGLE_CONVERSION_ACTION_PICKER_REASONS = {
   forbidden: "Your account can't list this Google Ads account's conversion actions. Enter their ids below instead.",

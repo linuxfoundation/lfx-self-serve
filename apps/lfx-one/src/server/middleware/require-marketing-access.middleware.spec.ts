@@ -43,7 +43,7 @@ vi.mock('../services/project.service', () => ({
   }),
 }));
 
-const { requireMarketingAuditor, requireCampaignManager, requireMarketingAuditorOrLfStaff, requireNorthStarAccess } =
+const { requireMarketingAuditor, requireCampaignManager, requireMarketingAuditorOrLfStaff, requireNorthStarAccess, requireGoogleConversionActionsAccess } =
   await import('./require-marketing-access.middleware');
 
 interface PersonaResult {
@@ -491,5 +491,56 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
       expect(verdict(next)).toBe('deny');
       expect(getProjectIdBySlug).not.toHaveBeenCalled();
     });
+  });
+});
+
+// The conversion-action list's route guard (#5239): with marketing FGA on the controller's strict
+// `global_marketing_ops` check is the whole gate, so this must not run the campaign_manager middleware,
+// whose non-strict project check would turn an access-check outage into an uncoded 403.
+describe('requireGoogleConversionActionsAccess', () => {
+  beforeEach(() => {
+    getPersonas.mockReset();
+    checkSingleAccess.mockReset();
+    getProjectIdBySlug.mockReset();
+  });
+
+  afterEach(() => {
+    delete process.env[ServerFeatureFlag.MarketingOpsFga];
+  });
+
+  it('with the flag on, passes straight to the controller without any campaign_manager check', async () => {
+    setFlag(true);
+    const next = vi.fn();
+
+    await requireGoogleConversionActionsAccess(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('allow');
+    expect(getPersonas).not.toHaveBeenCalled();
+    expect(checkSingleAccess).not.toHaveBeenCalled();
+  });
+
+  it('with the flag off, keeps the ED-only baseline and denies a non-ED caller', async () => {
+    setFlag(false);
+    getPersonas.mockResolvedValue({ personas: ['contributor'], personaProjects: {} });
+    const next = vi.fn();
+
+    await requireGoogleConversionActionsAccess(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('deny');
+  });
+
+  it('with the flag off, admits a scoped ED to the controller', async () => {
+    setFlag(false);
+    getPersonas.mockResolvedValue({
+      personas: ['executive-director'],
+      personaProjects: { 'executive-director': [{ projectUid: 'uid-tlf', projectSlug: 'tlf', projectName: 'tlf' }] },
+      isRootWriter: false,
+      isLFStaff: false,
+    });
+    const next = vi.fn();
+
+    await requireGoogleConversionActionsAccess(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('allow');
   });
 });
