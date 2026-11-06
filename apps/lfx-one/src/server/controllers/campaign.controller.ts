@@ -155,6 +155,10 @@ import {
   GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_MESSAGE,
   GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
   GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE,
+  GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_CODE,
+  GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_MESSAGE,
+  GOOGLE_CONVERSION_ACTIONS_RESTRICTED_CODE,
+  GOOGLE_CONVERSION_ACTIONS_RESTRICTED_MESSAGE,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
@@ -702,7 +706,7 @@ export class CampaignController {
       const rawSegments = body?.audienceSegments as unknown;
       const carriesSegments = rawSegments !== undefined && rawSegments !== null && !(Array.isArray(rawSegments) && rawSegments.length === 0);
       if (platforms.includes('google-ads') && carriesSegments) {
-        const access = await this.googleAudienceSegmentsAccess(req, projectSlug);
+        const access = await this.googleMarketingOpsAccess(req, projectSlug, 'check_google_audience_segments_access', 'audience segments');
         if (access !== 'granted') {
           next(
             access === 'denied'
@@ -3074,17 +3078,24 @@ export class CampaignController {
       // The PER-CALLER capabilities, decided here where the caller is known rather than in the
       // service. Each runs its deployment test first, so a deployment that cannot serve it asks no
       // persona question at all.
-      // Audience segments: the create route's own test — `global_marketing_ops` on THIS project.
-      // A check that cannot be made answers `null`, not `false`: unverified is not a denial, so the
-      // tab holds Create with a Retry (its `failed` block) rather than the `restricted` one.
+      // Both answer on `global_marketing_ops` on THIS project, the relation campaign-service checks:
+      // audience segments at create (the create route's own test) and the conversion-action picker's
+      // read (#4991, linuxfoundation/lfx-v2-campaign-service#486). Asked once, and only when a
+      // deployment test passes. A check that cannot be made is not a denial for audience segments: it
+      // answers `null`, so the tab holds Create with a Retry (its `failed` block) rather than the
+      // `restricted` one (#5240). The picker answers no on it and keeps its free-text box; its route
+      // would answer 503.
+      const segmentsDeployed = canCreateWithAudienceSegments();
+      const conversionsDeployed = canCreateWithGoogleCriteria();
+      const marketingOps =
+        segmentsDeployed || conversionsDeployed
+          ? await this.googleMarketingOpsAccess(req, projectSlug, 'list_brief_campaigns', 'Google marketing-ops capabilities')
+          : 'denied';
       let googleAudienceSegmentsEnabled: boolean | null = false;
-      if (canCreateWithAudienceSegments()) {
-        const access = await this.googleAudienceSegmentsAccess(req, projectSlug);
-        googleAudienceSegmentsEnabled = access === 'unverified' ? null : access === 'granted';
+      if (segmentsDeployed) {
+        googleAudienceSegmentsEnabled = marketingOps === 'unverified' ? null : marketingOps === 'granted';
       }
-      // The conversion-action picker's read (#4991) is a shared-account read, answered on the two
-      // checks its route makes: the create road, then a root principal.
-      const googleConversionActionsEnabled = canCreateWithGoogleCriteria() && (await this.isRootCampaignPrincipal(req));
+      const googleConversionActionsEnabled = conversionsDeployed && marketingOps === 'granted';
       const result: CampaignListResult = { ...listed, googleAudienceSegmentsEnabled, googleConversionActionsEnabled };
       logger.success(req, 'list_brief_campaigns', startTime, { count: result.campaigns.length, possiblyStale: result.possiblyStale });
       res.json(result);
@@ -3699,22 +3710,44 @@ export class CampaignController {
 
   /**
    * The enabled conversion actions on the Google Ads account a create for this project uses, for the
-   * Implement tab's picker (#4991), camel-cased. Root-only, as the account list is: the account is
-   * shared by every foundation, so the list names all of their actions. Answers 404, as if it were not
-   * mounted, while the campaign-service Google create road (`canCreateWithGoogleCriteria`) is off — the
-   * only road that sends `conversionActions`. Every refusal leaves the tab on its free-text box.
+   * Implement tab's picker (#4991), camel-cased. The account is shared by every foundation, so the list
+   * names all of their actions: it is answered only to a caller holding `global_marketing_ops` on the
+   * project the request names (the LF marketing team), the relation campaign-service checks on the same
+   * project before it answers (linuxfoundation/lfx-v2-campaign-service#486). Not `campaign_manager`,
+   * which also admits the project's `executive_director`, and not a ROOT writer without the relation,
+   * whom campaign-service would refuse. A denied caller gets a 403 with a code and a check that cannot be
+   * made a 503, both before any upstream call. Answers 404, as if it were not mounted, while the
+   * campaign-service Google create road (`canCreateWithGoogleCriteria`) is off — the only road that sends
+   * `conversionActions` — which says nothing about the caller. Every refusal leaves the tab on its
+   * free-text box.
    */
   public async getGoogleAdsConversionActions(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'google_ads_conversion_actions';
-    if (!(await this.requireSharedAccountMonitorAccess(req, next, operation, 'Google Ads'))) {
-      return;
-    }
     if (!canCreateWithGoogleCriteria()) {
       next(this.monitorDisabledError(operation));
       return;
     }
     const projectSlug = this.requireMonitorProject(req, next, operation);
     if (projectSlug === null) {
+      return;
+    }
+    const access = await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the conversion action list');
+    if (access !== 'granted') {
+      next(
+        access === 'denied'
+          ? new AuthorizationError(GOOGLE_CONVERSION_ACTIONS_RESTRICTED_MESSAGE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              code: GOOGLE_CONVERSION_ACTIONS_RESTRICTED_CODE,
+            })
+          : new MicroserviceError(GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_MESSAGE, 503, GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_CODE, {
+              operation,
+              service: 'campaign_controller',
+              path: req.path,
+              clientMessage: GOOGLE_CONVERSION_ACTIONS_ACCESS_UNAVAILABLE_MESSAGE,
+            })
+      );
       return;
     }
     const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
@@ -5034,17 +5067,23 @@ export class CampaignController {
   }
 
   /**
-   * Whether the caller may send Google audience segments on `projectSlug`: `global_marketing_ops` on
-   * that project, the relation campaign-service checks on the same project before it sends audiences
-   * to the shared LF Google Ads account (linuxfoundation/lfx-v2-campaign-service#501, #505). Not
-   * `campaign_manager`, which also admits the project's `executive_director`, and not a ROOT writer.
-   * `unverified` when the slug lookup or access check fails: callers refuse on it, never admit.
+   * Whether the caller holds `global_marketing_ops` on `projectSlug`: the relation campaign-service
+   * checks on the same project before it lets a request name or read resources on the shared LF
+   * Google Ads account — audience segments at create (linuxfoundation/lfx-v2-campaign-service#501,
+   * #505) and the conversion action list (#486). Not `campaign_manager`, which also admits the
+   * project's `executive_director`, and not a ROOT writer. `unverified` when the slug lookup or access
+   * check fails: callers refuse on it, never admit. `subject` names the guarded input in the log.
    */
-  private async googleAudienceSegmentsAccess(req: Request, projectSlug: string): Promise<'granted' | 'denied' | 'unverified'> {
+  private async googleMarketingOpsAccess(
+    req: Request,
+    projectSlug: string,
+    operation: string,
+    subject: string
+  ): Promise<'granted' | 'denied' | 'unverified'> {
     try {
       return (await personaDetectionService.checkProjectGlobalMarketingOpsStrict(req, projectSlug)) ? 'granted' : 'denied';
     } catch (error) {
-      logger.warning(req, 'check_google_audience_segments_access', 'Project global_marketing_ops check failed; refusing audience segments', {
+      logger.warning(req, operation, `Project global_marketing_ops check failed; refusing ${subject}`, {
         err: error,
         projectSlug,
       });
@@ -5054,8 +5093,9 @@ export class CampaignController {
 
   /**
    * Whether the caller is a cross-foundation principal: a ROOT writer, or a holder of ROOT
-   * `global_marketing_ops`. The test for the shared-account reads — monitor reads and the
-   * conversion-action picker. Both checks are request-cached and fail closed, and a ROOT writer
+   * `global_marketing_ops`. The test for the shared-account monitor reads (the conversion-action
+   * picker answers on the project's own `global_marketing_ops` instead, as campaign-service does). Both
+   * checks are request-cached and fail closed, and a ROOT writer
    * returns without a second lookup.
    */
   private async isRootCampaignPrincipal(req: Request): Promise<boolean> {
