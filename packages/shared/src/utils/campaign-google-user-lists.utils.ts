@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { GOOGLE_USER_LIST_TYPE_LABELS } from '../constants/campaign.constants';
 import type { GoogleAdsUserListOption } from '../interfaces/campaign.interface';
 
 /**
@@ -15,20 +16,10 @@ import type { GoogleAdsUserListOption } from '../interfaces/campaign.interface';
  * it cannot serve on Search (the only channel that takes audience segments here).
  */
 export function googleUserListLabel(list: GoogleAdsUserListOption): string {
-  const type = USER_LIST_TYPE_WORDS[list.type] ?? sentenceCase(list.type);
+  const type = GOOGLE_USER_LIST_TYPE_LABELS[list.type] ?? sentenceCase(list.type);
   const words = type === '' ? '' : ` · ${type}`;
   return `${list.name}${words}${list.eligibleForSearch === false ? ' · not eligible for Search' : ''}`;
 }
-
-/** Google's UserListType values in the words the Google Ads UI uses for them; any other value is shown in sentence case. */
-const USER_LIST_TYPE_WORDS: Readonly<Record<string, string>> = {
-  CRM_BASED: 'Customer list',
-  RULE_BASED: 'Website visitors',
-  LOGICAL: 'Combined list',
-  SIMILAR: 'Similar audience',
-  BASIC: 'Remarketing list',
-  LOOKALIKE: 'Lookalike',
-};
 
 function sentenceCase(value: string): string {
   const words = value.toLowerCase().replace(/_/g, ' ');

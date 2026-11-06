@@ -4670,6 +4670,7 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'conversionActions', label: 'conversion actions', normalized: true },
   { field: 'demandGenCreative', label: 'Demand Gen creative', normalized: true },
   { field: 'demandGenVideoCreative', label: 'Demand Gen video ad', normalized: true },
+  { field: 'demandGenAdGroups', label: 'Demand Gen ad groups', normalized: true },
   { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
   { field: 'displayCreative', label: 'Display creative', normalized: true },
 ] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string; normalized?: true }[];
@@ -5126,6 +5127,39 @@ export const GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS = [
 /** The `googleAdsConfig` key the Demand Gen video ad rides under, beside {@link GOOGLE_CREATIVE_REQUEST_KEYS}. */
 export const GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY = 'demandGenVideoCreative' satisfies keyof CampaignCreateRequest;
 
+/** The `googleAdsConfig` key the named Demand Gen ad groups ride under (#5226), INSTEAD of both creative keys. */
+export const GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY = 'demandGenAdGroups' satisfies keyof CampaignCreateRequest;
+
+/**
+ * The most named ad groups one Demand Gen campaign takes: campaign-service's `maxDemandGenAdGroups`
+ * (`internal/platform/googleads/demandgen_adgroups.go`). A service bound, not Google's: every group's
+ * images are fetched before the budget, and every group adds its own mutates after the campaign exists.
+ */
+export const GOOGLE_DEMAND_GEN_MAX_AD_GROUPS = 5;
+
+/**
+ * Why the Implement tab holds Create when Demand Gen is split into ad groups but none is left. Upstream
+ * reads an empty `demandGenAdGroups` as no split, so the campaign would be created with no ad at all.
+ */
+export const GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY = 'Add at least one ad group, or turn the split off to send the single ad instead.';
+
+/** Google's limit on an ad group's name, in characters: campaign-service's `maxAdGroupNameRunes` (`adgroup_ad.go`). */
+export const GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES = 255;
+
+/**
+ * What campaign-service appends to the event name to name a Demand Gen ad group (`demandGenAdGroupName`
+ * in `demandgen.go`). A named group's full name is `<event name> - Display | <its name>`.
+ */
+export const GOOGLE_DEMAND_GEN_AD_GROUP_NAME_SUFFIX = ' - Display';
+
+/**
+ * What campaign-service appends to a named Demand Gen ad group's full name to name its video ad
+ * (`demandGenVideoAdNameSuffix`, `internal/platform/googleads/demandgen_video_creative.go`). The ad's
+ * name is held to Google's 255 characters too (`validateDemandGenVideoAdName`), so a video group's
+ * full name has 11 fewer to spare than an image group's.
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_AD_NAME_SUFFIX = ' - Video ad';
+
 /**
  * How far a stored image's aspect ratio may sit from its Google slot's target, as a fraction of the
  * target — campaign-service's `demandGenAspectTolerance`, which every Google slot is held to (Google
@@ -5528,6 +5562,16 @@ export const GOOGLE_USER_LIST_PICKER_EMPTY = 'This Google Ads account has no use
 
 /** What the audience segment picker says when upstream returned only part of the account's lists. */
 export const GOOGLE_USER_LIST_PICKER_TRUNCATED = "This account has more user lists than the picker shows. If one isn't listed, enter its resource name below.";
+
+/** Google's UserListType values in the words the Google Ads UI uses for them; the picker shows any other value in sentence case. */
+export const GOOGLE_USER_LIST_TYPE_LABELS: Readonly<Record<string, string>> = {
+  CRM_BASED: 'Customer list',
+  RULE_BASED: 'Website visitors',
+  LOGICAL: 'Combined list',
+  SIMILAR: 'Similar audience',
+  BASIC: 'Remarketing list',
+  LOOKALIKE: 'Lookalike',
+};
 
 /**
  * The numeric bounds campaign-service applies to the three money/ratio fields, in whole units of
