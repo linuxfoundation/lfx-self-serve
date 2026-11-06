@@ -780,13 +780,30 @@ describe('MeetingsHomeStore', () => {
       expect(store.lastMeetingSummary()?.approved).toBe(false);
     });
 
-    it('remembers a summary approved from a row by its key', () => {
+    it('lets an approval confirmed this session outrank a last meeting summary the index still has as pending', () => {
       const store = create();
+      latestPast$.next([buildPastMeeting('b', inDays(-1))]);
+      TestBed.tick();
+      summary$.next({ ...summary, requires_approval: true, approved: false });
+      const key = store.lastMeeting()?.key ?? '';
 
-      store.setSummaryPending('row-a', true);
-      store.setSummaryPending('row-a', false);
+      expect(store.lastMeetingSummary()?.approved).toBe(false);
+      store.markSummaryApproved(key);
+      expect(store.approvedSummaryKeys().has(key)).toBe(true);
+      expect(store.lastMeetingSummary()?.approved).toBe(true);
+    });
 
-      expect(store.summaryPending()).toEqual(new Map([['row-a', false]]));
+    it('records an approval from the Last meeting card, but not an edit that leaves it pending', () => {
+      const store = create();
+      latestPast$.next([buildPastMeeting('b', inDays(-1))]);
+      TestBed.tick();
+      summary$.next(summary);
+      const key = store.lastMeeting()?.key ?? '';
+
+      store.setLastMeetingSummary({ ...summary, requires_approval: true, approved: false });
+      expect(store.approvedSummaryKeys().has(key)).toBe(false);
+      store.setLastMeetingSummary({ ...summary, requires_approval: true, approved: true });
+      expect(store.approvedSummaryKeys().has(key)).toBe(true);
     });
 
     it('reads a missing or failed artifact lookup as none, logging only the failure', () => {

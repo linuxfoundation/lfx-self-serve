@@ -40,7 +40,7 @@ describe('MeetingHomeArtifactsComponent', () => {
   let lastMeeting: WritableSignal<MeetingHomeRow | null>;
   let setLastMeetingSummary: ReturnType<typeof vi.fn>;
   let lastMeetingSummary: WritableSignal<PastMeetingSummary | null | undefined>;
-  let summaryPending: WritableSignal<ReadonlyMap<string, boolean>>;
+  let approvedSummaryKeys: WritableSignal<ReadonlySet<string>>;
 
   const render = async (value: MeetingHomeRow): Promise<void> => {
     fixture = TestBed.createComponent(MeetingHomeArtifactsComponent);
@@ -62,7 +62,7 @@ describe('MeetingHomeArtifactsComponent', () => {
     lastMeeting = signal(null);
     setLastMeetingSummary = vi.fn();
     lastMeetingSummary = signal(undefined);
-    summaryPending = signal(new Map());
+    approvedSummaryKeys = signal(new Set());
 
     TestBed.configureTestingModule({
       providers: [
@@ -75,8 +75,8 @@ describe('MeetingHomeArtifactsComponent', () => {
             lastMeeting,
             lastMeetingSummary,
             setLastMeetingSummary,
-            summaryPending,
-            setSummaryPending: (key: string, pending: boolean) => summaryPending.update((states) => new Map(states).set(key, pending)),
+            approvedSummaryKeys,
+            markSummaryApproved: (key: string) => approvedSummaryKeys.update((keys) => new Set(keys).add(key)),
           },
         },
       ],
@@ -162,6 +162,28 @@ describe('MeetingHomeArtifactsComponent', () => {
     fixture.destroy();
     await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true }));
     expect(button()?.textContent?.trim()).toBe('AI Summary');
+  });
+
+  it('keeps "Review summary" after an edit that leaves the summary pending', async () => {
+    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true }));
+
+    await click('meetings-home-row-summary');
+    const onChange = openSummary.mock.calls[0][2] as (change: PastMeetingSummary) => void;
+    onChange(summary({ approved: false }));
+    await fixture.whenStable();
+
+    expect(approvedSummaryKeys().size).toBe(0);
+    expect(query('meetings-home-row-summary')?.textContent?.trim()).toBe('Review summary');
+  });
+
+  it('stays "AI Summary" when an approved row becomes the last meeting before the index catches up', async () => {
+    const value = row({ has_ai_summary: true, ai_summary_awaiting_approval: true });
+    approvedSummaryKeys.set(new Set([value.key]));
+    lastMeeting.set(value);
+    lastMeetingSummary.set(summary({ approved: false }));
+    await render(value);
+
+    expect(query('meetings-home-row-summary')?.textContent?.trim()).toBe('AI Summary');
   });
 
   it('follows the Last meeting card when the row is the last meeting', async () => {

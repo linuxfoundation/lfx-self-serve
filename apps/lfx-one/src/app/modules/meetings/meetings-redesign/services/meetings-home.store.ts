@@ -29,6 +29,7 @@ import {
   getRsvpTimestampMs,
   groupMeetingsByDayBucket,
   isMeetingHomeRowPendingRsvp,
+  isPastMeetingSummaryAwaitingApproval,
   selectApplicableRsvp,
   sortPastMeetingsDescending,
   toPastMeetingHomeRow,
@@ -170,11 +171,17 @@ export class MeetingsHomeStore {
     this.meetingService.getPastMeetingSummary(id)
   );
   private readonly lastMeetingSummaryState: WritableSignal<PastMeetingSummary | null | undefined> = linkedSignal(() => this.fetchedLastMeetingSummary());
-  private readonly summaryPendingState: WritableSignal<ReadonlyMap<string, boolean>> = signal(new Map());
-  /** Summary approval state an organizer set from a row's dialog, by row key; the feed lags until re-indexed. */
-  public readonly summaryPending: Signal<ReadonlyMap<string, boolean>> = this.summaryPendingState.asReadonly();
+  private readonly approvedSummaryKeysState: WritableSignal<ReadonlySet<string>> = signal(new Set());
+  /** Row keys whose summary an organizer approved this session; the feed and index lag until re-indexed. */
+  public readonly approvedSummaryKeys: Signal<ReadonlySet<string>> = this.approvedSummaryKeysState.asReadonly();
   /** Last meeting's AI summary: undefined while loading, null when there is none or the lookup failed. */
-  public readonly lastMeetingSummary: Signal<PastMeetingSummary | null | undefined> = this.lastMeetingSummaryState.asReadonly();
+  public readonly lastMeetingSummary: Signal<PastMeetingSummary | null | undefined> = computed(() => {
+    const summary = this.lastMeetingSummaryState();
+    const key = this.lastMeeting()?.key;
+    // An approval confirmed this session outranks an index that has not caught up yet.
+    if (summary && key && this.approvedSummaryKeys().has(key) && isPastMeetingSummaryAwaitingApproval(summary)) return { ...summary, approved: true };
+    return summary;
+  });
   /** Share URL of the last meeting's recording: undefined while loading, null when there is none or the lookup failed. */
   public readonly lastMeetingRecordingUrl: Signal<string | null | undefined> = this.initLastMeetingArtifact((id) =>
     this.meetingService.getPastMeetingRecording(id).pipe(map((recording) => getLargestSessionShareUrl(recording)))
@@ -234,11 +241,13 @@ export class MeetingsHomeStore {
   /** Keeps the Last meeting card in step after an organizer edits or approves the summary. */
   public setLastMeetingSummary(summary: PastMeetingSummary): void {
     this.lastMeetingSummaryState.set(summary);
+    const key = this.lastMeeting()?.key;
+    if (key && !isPastMeetingSummaryAwaitingApproval(summary)) this.markSummaryApproved(key);
   }
 
-  /** Records whether a row's summary still awaits approval after an organizer edits or approves it. */
-  public setSummaryPending(key: string, pending: boolean): void {
-    this.summaryPendingState.update((states) => new Map(states).set(key, pending));
+  /** Records a summary approved from its dialog; an edit leaves the approval state to the feed. */
+  public markSummaryApproved(key: string): void {
+    this.approvedSummaryKeysState.update((keys) => new Set(keys).add(key));
   }
 
   /** Shows the previous (-1) or the next (1) concurrent date on the Next meeting card. */
