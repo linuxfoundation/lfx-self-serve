@@ -5506,13 +5506,17 @@ export class CampaignController {
     // Each named Demand Gen ad group's two creatives and its `ads`, and the single group's
     // `demandGenAds` (#5226), on the same terms.
     return (
-      this.storedImageInAdList(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, raw?.[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY]) ??
-      this.storedImageInAdList(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, raw?.[GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY])
+      this.storedImageInAdList(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, raw?.[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY], true) ??
+      this.storedImageInAdList(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, raw?.[GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY], false)
     );
   }
 
-  /** The first stored-image entry in a Demand Gen ad group or ad list (#5226), as `<field>[i].<creative key>.…`, or `null`. */
-  private storedImageInAdList(field: string, list: unknown): string | null {
+  /**
+   * The first stored-image entry in a Demand Gen ad group or ad list (#5226), as
+   * `<field>[i].<creative key>.…`, or `null`. `groups` is true only for `demandGenAdGroups`: a group's
+   * `ads` is walked one level down, and an ad's own `ads` never, because nothing that deep is sent.
+   */
+  private storedImageInAdList(field: string, list: unknown, groups: boolean): string | null {
     if (!Array.isArray(list)) return null;
     for (const [index, entry] of list.entries()) {
       if (entry === null || typeof entry !== 'object') continue;
@@ -5524,7 +5528,8 @@ export class CampaignController {
         const found = this.storedImageIn(source[key], spec);
         if (found !== null) return `${field}[${index}].${key}.${found}`;
       }
-      const nested = this.storedImageInAdList(`${field}[${index}].ads`, source['ads']);
+      if (!groups) continue;
+      const nested = this.storedImageInAdList(`${field}[${index}].ads`, source['ads'], false);
       if (nested !== null) return nested;
     }
     return null;
@@ -5532,9 +5537,10 @@ export class CampaignController {
 
   /**
    * {@link oversizedGoogleCreativeField} for one Demand Gen ad group or ad list (#5226): the list's
-   * length, then each entry's name, its two creatives and, on a group, its own `ads`.
+   * length, then each entry's name, its two creatives and, on a group (`groups` true), its own `ads`,
+   * one level down only: an ad's own `ads` is never sent, so it is neither judged nor walked.
    */
-  private oversizedDemandGenAdList(field: string, list: unknown): { field: string; message: string } | null {
+  private oversizedDemandGenAdList(field: string, list: unknown, groups: boolean): { field: string; message: string } | null {
     if (!Array.isArray(list)) return null;
     if (list.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES)
       return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
@@ -5547,7 +5553,7 @@ export class CampaignController {
       const found =
         this.oversizedBoundableField(`${field}.creative`, creative) ??
         this.oversizedBoundableField(`${field}.videoCreative`, videoCreative) ??
-        this.oversizedDemandGenAdList(`${field}.ads`, ads);
+        (groups ? this.oversizedDemandGenAdList(`${field}.ads`, ads, false) : null);
       if (found !== null) return found;
     }
     return null;
@@ -6952,8 +6958,8 @@ export class CampaignController {
     // each entry's two creatives on the creative keys' own terms, and each group's own `ads`, because
     // `googleDemandGenAdGroups` and `googleDemandGenAdList` normalize them all.
     const adEntries =
-      this.oversizedDemandGenAdList(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, raw[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY]) ??
-      this.oversizedDemandGenAdList(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, raw[GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY]);
+      this.oversizedDemandGenAdList(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, raw[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY], true) ??
+      this.oversizedDemandGenAdList(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, raw[GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY], false);
     if (adEntries !== null) return adEntries;
 
     // Nine request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES

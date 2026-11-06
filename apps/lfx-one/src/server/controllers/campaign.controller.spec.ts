@@ -5496,6 +5496,55 @@ describe('CampaignController.createCampaign cutover', () => {
       ]);
     });
 
+    it("ignores an ad's own ads, which is never sent, however deep or oversized", async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000523a', error: null });
+      // Deep enough to overflow the stack if anything walked it.
+      let chain: Record<string, unknown> = {
+        name: 'deep',
+        creative: { headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `H${i}`) },
+      };
+      for (let depth = 0; depth < 20000; depth++) chain = { name: `n${depth}`, ads: [chain] };
+      const unsent = [chain];
+
+      await create({
+        demandGenAds: [
+          { name: 'Teaser', videoCreative: VIDEO, ads: unsent },
+          { name: 'Banner', creative: { headlines: ['Join us'] } },
+        ],
+      });
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config['demandGenAds']).toEqual([
+        { name: 'Teaser', videoCreative: VIDEO },
+        { name: 'Banner', creative: { headlines: ['Join us'] } },
+      ]);
+    });
+
+    it("ignores the ads of a group's ad, one level below what is sent", async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000523b', error: null });
+      const oversized = [{ name: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) }];
+
+      await create({
+        demandGenAdGroups: [
+          {
+            name: 'Retargeting',
+            ads: [
+              { name: 'Teaser', videoCreative: VIDEO, ads: oversized },
+              { name: 'Banner', creative: { headlines: ['Join us'] } },
+            ],
+          },
+        ],
+      });
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect((config['demandGenAdGroups'] as { ads: unknown[] }[])[0].ads).toEqual([
+        { name: 'Teaser', videoCreative: VIDEO },
+        { name: 'Banner', creative: { headlines: ['Join us'] } },
+      ]);
+    });
+
     it('leaves the request byte-identical when no list, or an empty list, is sent', async () => {
       createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005230', error: null });
       await create({ demandGenVideoCreative: VIDEO });

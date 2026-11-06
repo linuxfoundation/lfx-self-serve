@@ -195,7 +195,7 @@ A Demand Gen campaign can be split into named ad groups, such as Retargeting and
 
 For each ad group:
 
-- **Name**: required. Google Ads names the ad group after the event, then " - Display | " and this name, such as "KubeCon NA - Display | Retargeting". That full name can be up to 255 characters, or 244 for an ad group with a video ad, because Google Ads names the video ad after the ad group plus " - Video ad". Each ad group needs a different name, and names that differ only in capitals count as the same.
+- **Name**: required. Google Ads names the ad group after the event, then " - Display | " and this name, such as "KubeCon NA - Display | Retargeting". That full name can be up to 255 characters, or 244 for an ad group with a single video ad, because Google Ads names that video ad after the ad group plus " - Video ad". With several ads, each video ad is named after the ad group plus " - " and the ad's name instead (see below). Each ad group needs a different name, and names that differ only in capitals count as the same.
 - **Image ad** or **Video ad (YouTube)**: choose one. The ad group shows that ad's fields, with the same rules as the campaign's single ad above. Paste image links; the brief's image library is not offered for ad groups.
 
 Every ad group needs a complete ad. Until every ad group has a name and a complete ad, a message under the ad groups explains what to fix and **Create Campaign** stays unavailable. The same happens if you remove every ad group while the checkbox is ticked: add one, or untick the checkbox.
