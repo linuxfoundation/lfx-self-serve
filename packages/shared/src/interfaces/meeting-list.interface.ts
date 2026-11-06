@@ -139,10 +139,15 @@ export interface MeetingRsvpChoice {
   tone: UiBadgeTone;
 }
 
+/** Where a meetings dialog was opened; from the details drawer the dialog hides the meeting context block. */
+export type MeetingDialogOrigin = 'drawer' | 'page';
+
 /** What the recurring RSVP dialog opens with. */
 export interface MeetingRsvpScopeDialogData {
   row: MeetingHomeRow;
   response: RsvpResponse;
+  /** Defaults to `page`. */
+  origin?: MeetingDialogOrigin;
 }
 
 /** One choice of the recurring RSVP dialog. */
@@ -166,6 +171,8 @@ export interface MeetingEditScopeDialogData {
   meeting: Meeting;
   /** The date the dialog opens on. */
   occurrence: MeetingOccurrence;
+  /** Defaults to `page`. */
+  origin?: MeetingDialogOrigin;
 }
 
 /** What the meetings home delete dialogs open with: the recurring scope picker, and the delete or cancel confirmation. */
@@ -173,6 +180,8 @@ export interface MeetingDeleteDialogData {
   row: MeetingHomeRow;
   /** Picker: the date it opens on. Confirmation: the date to cancel; null deletes the whole meeting. */
   occurrence: MeetingOccurrence | null;
+  /** Defaults to `page`. */
+  origin?: MeetingDialogOrigin;
 }
 
 /** A past meeting artifact a meetings home row loads on click, named for its error copy. */
