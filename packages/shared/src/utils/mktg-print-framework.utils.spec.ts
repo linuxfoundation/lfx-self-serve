@@ -4,9 +4,15 @@
 import { describe, expect, it } from 'vitest';
 import { FOUNDATION_MESSAGE_PRINT_TITLE } from '../constants/mktg-print.constants';
 import { MKTG_PRINT_FRAMEWORK_NUMBERS_PER_PAGE, MKTG_PRINT_FRAMEWORK_SECTIONS } from '../constants/mktg-print-framework.constants';
-import { MKTG_PRINT_PAGE_AREA, MKTG_PRINT_PAGE_LEFT, MKTG_PRINT_PAGE_RIGHT } from '../constants/mktg-print-page.constants';
+import {
+  MKTG_PRINT_PAGE_AREA,
+  MKTG_PRINT_PAGE_INSET,
+  MKTG_PRINT_PAGE_LEFT,
+  MKTG_PRINT_PAGE_RIGHT,
+  MKTG_PRINT_PAGE_ROW_GAP,
+} from '../constants/mktg-print-page.constants';
 import type { FoundationMessageContent } from '../interfaces/foundation-message.interface';
-import type { MktgPrintPage, MktgPrintPageShapeEl } from '../interfaces/mktg-print-page.interface';
+import type { MktgPrintPage, MktgPrintPageShapeEl, MktgPrintRich } from '../interfaces/mktg-print-page.interface';
 import type { FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import { buildFoundationMessagePrintView } from './mktg-print.utils';
 import {
@@ -16,7 +22,8 @@ import {
   mktgPrintFrameworkSectionOf,
   mktgPrintFrameworkSections,
 } from './mktg-print-framework.utils';
-import { mktgPrintMixHex, mktgPrintPageLook } from './mktg-print-page.utils';
+import { mktgPrintCharsPerLine, mktgPrintWrapLines } from './mktg-print-fit.utils';
+import { mktgPrintEyebrowPara, mktgPrintMixHex, mktgPrintPageLook, mktgPrintRich, mktgPrintRowHeight } from './mktg-print-page.utils';
 
 /** A synthetic framework with every part filled once: the deck's slides, one each. */
 function content(over: Partial<FoundationMessageContent> = {}): FoundationMessageContent {
@@ -355,6 +362,35 @@ describe('the framework’s pages', () => {
         .filter((el) => el.text?.paras[0]?.caps && el.box.x === MKTG_PRINT_PAGE_RIGHT.x)
         .map((el) => el.text?.paras[0].text)
     ).toEqual(['Need', 'Value', 'Lead', 'Call to action', 'Objection']);
+  });
+
+  it('makes an ICP row as tall as its label when the label wraps under a short value, so the next rule stays below the label', () => {
+    const base = content();
+    const [teams, ...rest] = base.icp;
+    const v = view({ icp: [{ ...teams, cta: 'Join.' }, ...rest] });
+    const look = mktgPrintPageLook(v.brand);
+    const page = buildFrameworkPrintPages(v).find((p) => p.title === 'ICPs') as MktgPrintPage;
+    const labelW = 92;
+    const label = shapes(page).find((el) => el.box.x === MKTG_PRINT_PAGE_RIGHT.x && el.text?.paras[0]?.text === 'Call to action') as MktgPrintPageShapeEl;
+    const value = shapes(page).find((el) => el.box.x === MKTG_PRINT_PAGE_RIGHT.x + labelW && el.text?.paras[0]?.text === 'Join.') as MktgPrintPageShapeEl;
+    // The label needs two lines in its column; the value one. The row takes the label's height, the value's would be shorter.
+    const labelRich = mktgPrintRich(look, [mktgPrintEyebrowPara(look, 'Call to action', { above: 1.5 })]);
+    expect(mktgPrintWrapLines('Call to action', mktgPrintCharsPerLine(labelW, labelRich.paras[0].size, { caps: true }))).toBe(2);
+    const labelH = mktgPrintRowHeight(labelRich, labelW);
+    expect(labelH).toBeGreaterThan(mktgPrintRowHeight(value.text as MktgPrintRich, MKTG_PRINT_PAGE_RIGHT.w - labelW));
+    // The row's rule sits at its top (the label box starts inset − half the row gap above it); the next rule is the row's height below.
+    const rowTop = label.box.y + MKTG_PRINT_PAGE_INSET - MKTG_PRINT_PAGE_ROW_GAP / 2;
+    const rules = shapes(page)
+      .filter((el) => el.fill === look.rule)
+      .map((el) => el.box.y)
+      .sort((a, b) => a - b);
+    expect(rules).toContain(rowTop);
+    const next = rules.find((y) => y > rowTop) as number;
+    expect(next - rowTop).toBeCloseTo(labelH, 5);
+    // The label is drawn from the same rich the row was measured with.
+    expect(label.text?.paras[0]).toMatchObject({ text: 'Call to action', caps: true, above: 1.5 });
+    // The fixture's page count does not move: every row there was already taller than its label.
+    expect(buildFrameworkPrintPages(v)).toHaveLength(buildFrameworkPrintPages(view()).length);
   });
 
   it('sets the message house: the umbrella on the dark, the pillars side by side under accent bars, the foundation tinted; the audiences as rows on their own page', () => {

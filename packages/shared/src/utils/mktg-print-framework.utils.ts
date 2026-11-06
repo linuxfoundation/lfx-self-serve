@@ -373,7 +373,10 @@ function icpPages(ctx: Ctx): MktgPrintPage[] {
       AREA.h
     ).map((scaled, i) => {
       const value = mktgPrintClampRow(scaled, valueW, AREA.h);
-      return { label: base[i].label, value, h: mktgPrintRowHeight(value, valueW) };
+      // The row is as tall as the taller of its value and its label (the label as the renderer draws it, so a label that
+      // wraps under a short value keeps the next rule below it; the deck sizes the row from the value alone).
+      const label = mktgPrintRich(look, [mktgPrintEyebrowPara(look, base[i].label, { above: 1.5 })]);
+      return { label, value, h: Math.max(mktgPrintRowHeight(value, valueW), mktgPrintRowHeight(label, labelW)) };
     });
     const rowPages = mktgPrintPaginate(rows, (page) => page.reduce((h, r) => h + r.h, 0) <= AREA.h);
     rowPages.forEach((page) => {
@@ -381,7 +384,7 @@ function icpPages(ctx: Ctx): MktgPrintPage[] {
       let y = AREA.y;
       for (const r of page) {
         els.push(mktgPrintHairline(look, RIGHT.x, y, RIGHT.w));
-        els.push(mktgPrintRowEl(RIGHT.x, y, labelW, mktgPrintRich(look, [mktgPrintEyebrowPara(look, r.label, { above: 1.5 })])));
+        els.push(mktgPrintRowEl(RIGHT.x, y, labelW, r.label));
         els.push(mktgPrintRowEl(RIGHT.x + labelW, y, valueW, r.value));
         y += r.h;
       }
