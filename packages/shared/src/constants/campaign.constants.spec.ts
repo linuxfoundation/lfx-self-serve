@@ -756,14 +756,12 @@ describe('Google bidding catalogue', () => {
 
 describe('Google conversion actions', () => {
   /**
-   * Not a Search-versus-the-rest split: `campaign.selective_optimization` is defined for SEARCH,
-   * DISPLAY and VIDEO. Demand Gen has no such field and Performance Max selects conversions through
-   * a resource that cannot be addressed until the campaign exists, so both REFUSE a list rather
-   * than dropping it — the section has to be withheld there, not offered and discarded.
+   * campaign-service v1.0.31 applies the list as a campaign-level custom conversion goal
+   * (`applyCampaignConversionGoal`) on every channel. Demand Gen is offered it (#5262); Performance
+   * Max is left out by choice, since its live reference campaign uses the account's goals.
    */
-  it('admits exactly the three channels upstream accepts a list on', () => {
-    expect([...GOOGLE_CONVERSION_ACTION_CHANNELS]).toEqual(['search', 'video', 'display']);
-    expect(GOOGLE_CONVERSION_ACTION_CHANNELS).not.toContain('demand-gen');
+  it('admits every channel but performance max', () => {
+    expect([...GOOGLE_CONVERSION_ACTION_CHANNELS]).toEqual(['search', 'demand-gen', 'video', 'display']);
     expect(GOOGLE_CONVERSION_ACTION_CHANNELS).not.toContain('performance-max');
   });
 
@@ -1355,7 +1353,7 @@ describe('Google Ads campaign criteria vocabularies', () => {
   });
 
   it('fences sitelinks apart from the other extensions, which differ on demand gen', () => {
-    // `validateAssetPlan` (v1.0.31) takes sitelinks alone on Demand Gen (#474) and refuses every
+    // `validateAssetPlan` (v1.0.31) takes sitelinks alone on Demand Gen (linuxfoundation/lfx-v2-campaign-service#474) and refuses every
     // other extension list there. Performance Max is not opened by this client for either.
     expect([...GOOGLE_CHANNELS_WITH_SITELINKS]).toEqual(['search', 'demand-gen']);
     expect([...GOOGLE_CHANNELS_WITH_AD_EXTENSIONS]).toEqual(['search']);

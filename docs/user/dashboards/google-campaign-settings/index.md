@@ -94,6 +94,8 @@ The campaign does not serve in the places listed here.
 
 A Demand Gen campaign can bid with **Maximize Clicks**, the default, or with **Maximize Conversions**, **Target CPA** or **Maximize Conversion Value**. Target CPA needs a **Target CPA** in the account currency, and Maximize Conversions takes one optionally. Target ROAS is not offered on Demand Gen, and neither is the **Target ROAS** box under Maximize Conversion Value: LFX One's campaign service does not send a target ROAS on Demand Gen. A target ROAS you entered on another campaign type is kept but not sent.
 
+Under a conversion strategy, a Demand Gen campaign bids toward the [conversion actions](#conversion-actions) you pick, or toward the account's own conversion goals if you leave them blank.
+
 You can also pick the languages a Demand Gen campaign serves in, as on the other campaign types. With none picked, it serves in every language.
 
 ## Sitelinks and other ad extensions
@@ -119,7 +121,9 @@ On a Demand Gen campaign, **Google Sitelinks** is the only ad extension section 
 
 ## Conversion actions
 
-On Search and Display campaigns, the bidding settings include **Conversion Actions**: the conversions the campaign counts. Leave it blank to use the Google Ads account's own conversion goals.
+On Search, Display and Demand Gen campaigns, the bidding settings include **Conversion Actions**: the conversions the campaign counts. Under a conversion bidding strategy, such as **Maximize Conversions**, the campaign also bids toward them. Leave it blank to use the Google Ads account's own conversion goals.
+
+Performance Max campaigns do not offer **Conversion Actions** here, and use the account's own conversion goals.
 
 - **Pick conversion actions** lists the account's enabled conversion actions, each with its category. **Primary** marks one that counts toward the account's conversions by default. Picking one adds its id to the **Conversion Actions** box.
 - Only the LF marketing team sees the list. Every foundation shares one Google Ads account, so the list names every foundation's conversion actions. Everyone else types ids into the box.
@@ -202,4 +206,4 @@ While the campaign is split, the single image ad or video ad you entered is kept
 
 If a window, adjustment, exclusion, excluded place, display path, ad, video ad, ad group, negative keyword or Performance Max description would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
-If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to a campaign type that does not take them, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Sitelinks are sent on Search and Demand Gen, and the other ad extensions on Search only; each is kept the same way on the other campaign types, with a notice.
+If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Sitelinks are sent on Search and Demand Gen, and the other ad extensions on Search only; each is kept the same way on the other campaign types, with a notice.

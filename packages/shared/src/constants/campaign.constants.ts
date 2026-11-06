@@ -4814,7 +4814,7 @@ export const GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS: Readonly<Record<string, readonl
  * Search only. Upstream's `validateAssetPlan` (`internal/platform/googleads/assets.go`, campaign-service
  * v1.0.31) refuses every one of them on Demand Gen ("ad extensions other than sitelinks ... are not
  * supported on DEMAND_GEN") and on Display and Video, and refuses calls, promotions and prices on
- * Performance Max. It does take callouts and structured snippets on Performance Max (#461), but this
+ * Performance Max. It does take callouts and structured snippets on Performance Max (linuxfoundation/lfx-v2-campaign-service#461), but this
  * application has not opened that pairing, so this list stays narrower than upstream there rather
  * than wider. Every refusal happens at preflight, before the budget mutate, so sending a callout on a
  * Demand Gen create does not produce a campaign without callouts — it produces no campaign.
@@ -4827,17 +4827,17 @@ export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
  * The Google channels this application sends sitelink extensions on: Search and Demand Gen.
  *
  * Upstream's `validateAssetPlan` (`internal/platform/googleads/assets.go`, campaign-service v1.0.31)
- * accepts sitelinks alone on Demand Gen (#474): the live KubeCon NA 2026 Demand Gen campaigns carry
+ * accepts sitelinks alone on Demand Gen (linuxfoundation/lfx-v2-campaign-service#474): the live KubeCon NA 2026 Demand Gen campaigns carry
  * them, and a `validateOnly` probe accepted the asset and its SITELINK campaign link. Demand Gen
  * sitelinks go through the same `validateSitelinks` rules as Search (cap, text and description
  * widths, both description lines or neither, final URL) and the same `createCampaignAssets` link;
  * the only difference is upstream tags the destination with Demand Gen's `utm_medium=display`
- * rather than Search's (#479). This application sends the raw URL on both channels.
+ * rather than Search's (linuxfoundation/lfx-v2-campaign-service#479). This application sends the raw URL on both channels.
  *
  * A separate list from {@link GOOGLE_CHANNELS_WITH_AD_EXTENSIONS} because upstream fences the two for
  * different reasons — sitelinks were probed on Demand Gen and the other kinds were not — and either
  * could move without the other. Performance Max is left out although upstream takes sitelinks
- * there too (#461): this application has not opened extensions on that channel.
+ * there too (linuxfoundation/lfx-v2-campaign-service#461): this application has not opened extensions on that channel.
  */
 export const GOOGLE_CHANNELS_WITH_SITELINKS = ['search', 'demand-gen'] as const;
 
@@ -5518,15 +5518,20 @@ export const GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES = [
 ] as const satisfies readonly (typeof GOOGLE_BIDDING_STRATEGIES)[number][];
 
 /**
- * The channels that accept a conversion-action list at create time.
+ * The channels LFX One sends a conversion-action list on at create time.
  *
- * Not a Search-versus-the-rest split: `campaign.selective_optimization` is defined for SEARCH,
- * DISPLAY and VIDEO, and campaign-service admits all three. Demand Gen has no such field, and
- * Performance Max selects conversions through a campaign-conversion-goal resource that cannot be
- * addressed until the campaign exists — so both REFUSE the list rather than dropping it, and the
- * section is withheld there rather than offered and discarded.
+ * campaign-service v1.0.31 applies the list as a campaign-level custom conversion goal after the
+ * campaign exists (`applyCampaignConversionGoal`, `internal/platform/googleads/conversion_goal.go`),
+ * on every channel, under any strategy: under a conversion strategy the campaign bids toward it,
+ * and under Manual CPC or Maximize Clicks it decides what the campaign counts as a conversion
+ * (`biddingOptimizesConversions`). With no list the campaign uses the account's own conversion
+ * goals.
+ *
+ * Performance Max is left out by choice, not by an upstream refusal: its live reference campaign
+ * uses the account's goals, and offering the list there is a separate decision. The section is
+ * withheld on it, and a list entered on another channel is held with a notice rather than sent.
  */
-export const GOOGLE_CONVERSION_ACTION_CHANNELS = ['search', 'video', 'display'] as const;
+export const GOOGLE_CONVERSION_ACTION_CHANNELS = ['search', 'demand-gen', 'video', 'display'] as const;
 
 /** `maxConversionActions` in `internal/platform/googleads/bidding.go`. */
 export const GOOGLE_ADS_MAX_CONVERSION_ACTIONS = 100;

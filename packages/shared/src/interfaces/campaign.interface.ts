@@ -3923,9 +3923,11 @@ export interface CampaignCreateRequest {
    *
    * All five are optional and all five are OMITTED when unset rather than sent as zero. Absent
    * `biddingStrategy` means the channel's own default (`GOOGLE_BIDDING_DEFAULT_BY_CHANNEL`), and
-   * campaign-service — not this request — is what applies it. The three numbers and the
-   * conversion list are refused upstream when they do not belong to the named strategy or
-   * channel, so sending a zero to mean "none" would be sending a value, not omitting one.
+   * campaign-service — not this request — is what applies it. The three numbers are refused
+   * upstream when they do not belong to the named strategy or channel, so sending a zero to mean
+   * "none" would be sending a value, not omitting one. The conversion list is accepted on every
+   * channel and under every strategy (`validateConversionActions`, `applyCampaignConversionGoal`);
+   * the tab sends it only where `GOOGLE_CONVERSION_ACTION_CHANNELS` says.
    *
    * `targetRoas` is a RATIO, not a percentage: 4 is 400% return on ad spend. `cpcBid` and
    * `targetCpa` are in whole units of the ad ACCOUNT's currency.
