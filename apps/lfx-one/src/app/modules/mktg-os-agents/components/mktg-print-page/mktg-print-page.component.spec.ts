@@ -4,6 +4,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Component } from '@angular/core';
 import {
+  MKTG_PRINT_DECK_PAGE_NAME,
   MKTG_PRINT_LANDSCAPE_CLASS,
   MKTG_PRINT_PAGE_AREA,
   MKTG_PRINT_PAGE_BACK_TITLE_BOX,
@@ -184,6 +185,8 @@ describe('MktgPrintPageComponent', () => {
     expect(rule?.[1]).toMatch(/(?:^|;)\s*font:\s*inherit\s*(?:;|$)/);
     expect(rule?.[1]).toMatch(/(?:^|;)\s*line-height:\s*inherit\s*(?:;|$)/);
     expect(sheets).toMatch(/\.pp-para--strike(?:\[[^\]]*\])?\s*\{[^}]*text-decoration:\s*line-through/);
+    // The frame names the deck's page: the sheet's `page:` is the constant the service writes the named rule for.
+    expect(sheets).toMatch(new RegExp(`\\.lfx-print-page(?:\\[[^\\]]*\\])?\\s*\\{[^}]*page:\\s*${MKTG_PRINT_DECK_PAGE_NAME}\\s*(?:;|\\})`));
   });
 
   it('builds a title override by the layout: the band’s grammar on a content page, the cover’s and the back cover’s on the dark ground', async () => {

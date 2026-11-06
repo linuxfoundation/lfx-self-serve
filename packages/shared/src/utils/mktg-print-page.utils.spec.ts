@@ -159,7 +159,7 @@ describe('the fit', () => {
     expect(mktgPrintSentences('A. B.  C')).toEqual(['A.', 'B.', 'C']);
     expect(mktgPrintSentences('One.\tTwo.')).toEqual(['One.', 'Two.']);
     expect(mktgPrintCutText(`Word, trail${'\t'.repeat(40)}and more words after the tabs`, 14)).toBe('Word, trail…');
-    expect(mktgPrintCutText(`Lead word.${'\t'.repeat(2000)}X`.repeat(1), 11)).toBe('Lead word.');
+    expect(mktgPrintCutText(`Lead word.${'\t'.repeat(2000)}X`, 11)).toBe('Lead word.');
     expect(mktgPrintCutText('A tabbed\t\tphrase, — more words follow here', 18)).toBe('A tabbed phrase…');
     expect(mktgPrintOneLine('A short line', 200, 11)).toBe('A short line');
     expect(mktgPrintOneLine(sentence.repeat(3), 100, 11).endsWith('…')).toBe(true);

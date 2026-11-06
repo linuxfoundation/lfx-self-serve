@@ -49,4 +49,18 @@ describe('MeetingDateTileComponent', () => {
 
     expect(part(fixture, 'tile-visibility-private')?.getAttribute('aria-label')).toBe('Private');
   });
+
+  it('stacks Restricted over Private as two 8px dots with no icons', async () => {
+    const restricted: MeetingVisibilityInfo = { kind: MeetingVisibilityKind.RESTRICTED, title: 'Restricted', description: null, icon: 'fa-solid fa-lock' };
+    const privateBadge: MeetingVisibilityInfo = { kind: MeetingVisibilityKind.PRIVATE, title: 'Private', description: null, icon: 'fa-solid fa-shield-halved' };
+    const fixture = await render({ badges: [restricted, privateBadge] });
+
+    const dots = [part(fixture, 'tile-visibility-restricted'), part(fixture, 'tile-visibility-private')];
+    expect(dots[0]?.parentElement?.className).toContain('flex-col');
+    for (const dot of dots) {
+      expect(dot?.className).toContain('h-[8px]');
+      expect(dot?.querySelector('i')).toBeNull();
+    }
+    expect(dots.map((dot) => dot?.getAttribute('aria-label'))).toEqual(['Restricted', 'Private']);
+  });
 });

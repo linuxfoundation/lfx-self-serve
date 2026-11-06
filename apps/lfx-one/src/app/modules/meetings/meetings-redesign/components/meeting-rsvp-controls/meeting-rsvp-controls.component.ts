@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkMenuTrigger } from '@angular/cdk/menu';
+import { ConnectedPosition } from '@angular/cdk/overlay';
 import { DOCUMENT } from '@angular/common';
 import {
   afterNextRender,
@@ -72,7 +73,14 @@ export class MeetingRsvpControlsComponent {
   /** The answer being saved; the BFF holds the request until the new answer is indexed (up to 5s). */
   protected readonly saving = signal<RsvpResponse | null>(null);
   protected readonly choices = MEETINGS_HOME_RSVP_CHOICES;
-  protected readonly iconColor: Record<RsvpResponse, string> = { accepted: 'text-blue-600', declined: 'text-red-600', maybe: 'text-amber-600' };
+  // The badge sits at the row's end, so its menu opens from the badge's end edge.
+  protected readonly menuPositions: ConnectedPosition[] = [
+    { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' },
+    { originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom' },
+    { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' },
+    { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom' },
+  ];
+  protected readonly iconColor: Record<RsvpResponse, string> = { accepted: 'text-emerald-600', declined: 'text-red-600', maybe: 'text-amber-600' };
   /** This row is saving, or another date of the same series is: a second write could be confirmed out of order. */
   protected readonly busy: Signal<boolean> = computed(() => !!this.saving() || this.rsvpService.submittingMeetingIds().has(this.row().meeting.id));
   protected readonly visible: Signal<boolean> = this.initVisible();

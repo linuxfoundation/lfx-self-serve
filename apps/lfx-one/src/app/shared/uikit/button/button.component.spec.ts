@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CdkMenuTrigger } from '@angular/cdk/menu';
 import { OverlayContainer } from '@angular/cdk/overlay';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -594,6 +596,18 @@ describe('UiButtonComponent menu', () => {
     expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
     expect(inner.getAttribute('aria-expanded')).toBeNull();
     expect(document.activeElement).toBe(inner);
+  });
+
+  it('opens the menu from the start edge by default', async () => {
+    const host = await mount(MENU_HOST_TEMPLATE);
+    const trigger = host.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
+    expect(trigger.menuPosition[0]).toEqual({ originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' });
+  });
+
+  it('opens the menu from the end edge with menuAlign="end"', async () => {
+    const host = await mount(MENU_HOST_TEMPLATE.replace('<lfx-ui-button ', '<lfx-ui-button menuAlign="end" '));
+    const trigger = host.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
+    expect(trigger.menuPosition[0]).toEqual({ originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' });
   });
 
   it('adds no popup semantics without a menu', async () => {
