@@ -39,6 +39,7 @@ vi.mock('./logger.service', () => ({
 import type { Request } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { readNewsletterInviteToken } from '../utils/newsletter-guest-token.util';
 import { NewsletterInviteService } from './newsletter-invite.service';
 
 const req = {} as unknown as Request;
@@ -118,6 +119,7 @@ describe('NewsletterInviteService', () => {
     vi.clearAllMocks();
     NewsletterInviteService.resetRecentInvites();
     process.env['PCC_BASE_URL'] = 'https://app.lfx.example';
+    process.env['PCC_AUTH0_SECRET'] = 'test-session-secret';
     committees = [NEWSLETTER_GROUP, BOARD];
 
     generateM2MToken.mockResolvedValue('m2m');
@@ -273,7 +275,7 @@ describe('NewsletterInviteService', () => {
       deps.emailService.sendEmail.mockResolvedValue({ email_id: 'e-1' });
     });
 
-    it('emails a member-company coworker a link to the foundation drill-down', async () => {
+    it('emails a member-company coworker a signed guest-landing link bound to their address', async () => {
       const result = await service.sendInvite(req, 'f-1', '  Coworker@Acme-Motors.example ');
 
       expect(result).toEqual({ email: 'coworker@acme-motors.example', foundation_name: 'Acme Foundation' });
@@ -281,9 +283,8 @@ describe('NewsletterInviteService', () => {
       expect(sent.to).toBe('coworker@acme-motors.example');
       expect(sent.subject).toBe("You're invited to the Acme Foundation newsletter");
       expect(sent.html).toContain('<strong>Jane Doe</strong>');
-      expect(sent.html).toContain(
-        `https://app.lfx.example/login?returnTo=${encodeURIComponent('/newsletters/my/acme-foundation?invite=c-news')}`.replace(/&/g, '&amp;')
-      );
+      const token = decodeURIComponent(/newsletters\/invite#token=([^"\s]+)/.exec(sent.text)?.[1] ?? '');
+      expect(readNewsletterInviteToken(token)).toMatchObject({ status: 'valid', payload: { c: 'c-news', e: 'coworker@acme-motors.example' } });
       expect(sent.text).toContain('Acme Motors');
     });
 
