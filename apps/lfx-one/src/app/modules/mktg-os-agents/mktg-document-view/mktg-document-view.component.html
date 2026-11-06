@@ -373,20 +373,24 @@
         <!-- Reuse the asset pages' print-only CSS and browser-print service; never download Markdown. The report flows
              through one sheet row: the sheet repeats the page's top and bottom room on every page it runs over, and its
              head group carries the running head the other Marketing OS prints wear (Chromium repeats it per page; WebKit
-             prints a table's head once). The title opens the report, then the score card, then the typed report without
-             its own headline. No page numbers: the zero-margin Chromium page setup leaves no margin area for a counter. -->
+             prints a table's head once). A typed report opens with its title, then the score card, then the report without
+             its own headline; a legacy Markdown report keeps the heading its Markdown carries. No page numbers: the
+             zero-margin Chromium page setup leaves no margin area for a counter. -->
         <div [class]="aeoPrintOnlyClass" data-testid="mktg-document-view-print">
           <article class="lfx-framework-print bg-white text-gray-900 print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact]">
             <lfx-mktg-print-sheet [head]="auditRunningHead">
               <lfx-mktg-print-sheet-row [flows]="true">
                 <div class="flex flex-col gap-5">
-                  <div class="flex flex-col break-inside-avoid">
-                    <ng-container [ngTemplateOutlet]="auditTitle" [ngTemplateOutletContext]="{ print: true }" />
-                  </div>
-                  <ng-container [ngTemplateOutlet]="auditHero" [ngTemplateOutletContext]="{ print: true }" />
                   @if (report.report; as typed) {
+                    <!-- The typed report: its title and facts open the print, then the score card, then the report without its own headline. -->
+                    <div class="flex flex-col break-inside-avoid">
+                      <ng-container [ngTemplateOutlet]="auditTitle" [ngTemplateOutletContext]="{ print: true }" />
+                    </div>
+                    <ng-container [ngTemplateOutlet]="auditHero" [ngTemplateOutletContext]="{ print: true }" />
                     <lfx-aeo-geo-report [report]="typed" [showHeadline]="false" />
                   } @else {
+                    <!-- A legacy report without a typed sidecar: the score card, then its Markdown, which carries its own title. -->
+                    <ng-container [ngTemplateOutlet]="auditHero" [ngTemplateOutletContext]="{ print: true }" />
                     <lfx-markdown-renderer [content]="view()?.markdown ?? ''" />
                   }
                 </div>

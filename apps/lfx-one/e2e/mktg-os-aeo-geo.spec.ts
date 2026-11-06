@@ -172,9 +172,17 @@ test.describe('AEO/GEO audit content', () => {
     await expect(runningHead).toHaveText(`${AUDIT_PROJECT.name} AEO/GEO report · 15 Oct 2026`);
     await expect(runningHead).not.toContainText(/version|v1/i);
     await expect(printArticle.getByTestId('mktg-print-sheet-foot')).toHaveCount(0);
-    // The code span prints as code, and the article's text carries no literal backtick.
-    await expect(printArticle.getByTestId('mktg-aeo-typed-finding-detail-0').locator('code')).toHaveText('User-agent: *');
+    // The code span prints as code, and the article's text carries no literal backtick: neither in the text nor drawn by the
+    // typography plugin's `code::before`/`code::after` pseudo-content, which the report's stylesheet switches off.
+    const printedCode = printArticle.getByTestId('mktg-aeo-typed-finding-detail-0').locator('code');
+    await expect(printedCode).toHaveText('User-agent: *');
     await expect(printArticle).not.toContainText('`');
+    expect(
+      await printedCode.evaluate((code) => ({
+        before: getComputedStyle(code, '::before').content,
+        after: getComputedStyle(code, '::after').content,
+      }))
+    ).toEqual({ before: 'none', after: 'none' });
     // A space between the source link and its role, and the finding and recommendation blocks are kept whole on a page.
     await expect(printArticle.getByTestId('mktg-aeo-typed-sources').locator('li').first()).toHaveText(
       `${recorded.sources[0].url} (${recorded.sources[0].role})`

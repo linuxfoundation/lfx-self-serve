@@ -81,7 +81,14 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
     },
   };
 
+  /** The same revision as a legacy Markdown-only report: no typed `report`, its Markdown carries the title. */
+  const legacyResponse: MktgRevisionResponse = {
+    ...response,
+    aeoGeoReport: response.aeoGeoReport && { ...response.aeoGeoReport, report: undefined },
+  };
+
   let harness: RouterTestingHarness;
+  let served: MktgRevisionResponse = response;
   const resolveBrandKit = vi.fn();
 
   function query(testId: string): HTMLElement | null {
@@ -96,6 +103,7 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
 
   beforeEach(async () => {
     resolveBrandKit.mockReset().mockReturnValue(of(null));
+    served = response;
     const detail = { project: PROJECT.uid, type: TYPE, documentId: response.documentId, revisions: [revision], approvedCurrent: null };
     await TestBed.configureTestingModule({
       providers: [
@@ -112,7 +120,7 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
           useValue: {
             listDocuments: vi.fn(() => of({ project: PROJECT.uid, groups: [] })),
             getDocument: vi.fn(() => of(detail)),
-            getRevision: vi.fn(() => of(response)),
+            getRevision: vi.fn(() => of(served)),
             getApprovedRevision: vi.fn(() => of(null)),
             restoreRevision: vi.fn(),
             approveRevision: vi.fn(),
@@ -169,7 +177,10 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
     expect(report.querySelector('h2')).toBeNull();
     expect(article.querySelectorAll('h2')).toHaveLength(1);
     // The facts under the title, without the web summary's storage note.
-    expect(subline.textContent?.replace(/\s+/g, ' ').trim()).toBe('AEO/GEO report — 15 Oct 2026 · 2 key pages named, 5 audited');
+    // The recorded fixture audits six pages (aeo-geo-project.fixture.ts, `pages_audited`): the count the view prints is the fixture's.
+    const audited = envelope.inputs.pages_audited.length;
+    expect(audited).toBe(6);
+    expect(subline.textContent?.replace(/\s+/g, ' ').trim()).toBe(`AEO/GEO report — 15 Oct 2026 · 2 key pages named, ${audited} audited`);
     expect(query('mktg-document-view-audit-subline')?.textContent).toContain('stored under AEO/GEO reports');
     // The web summary's own order does not move: its title, then its score card, then the typed report.
     const summary = query('mktg-document-view-report-summary');
@@ -198,6 +209,24 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
     // The report reads the project's kit for its brand, as the other prints do; none stored here, so the LF look.
     expect(resolveBrandKit).toHaveBeenCalledWith(PROJECT.uid);
     expect(article.querySelectorAll('[data-testid="mktg-print-running-head"]')).toHaveLength(1);
+  });
+
+  it('prints a legacy Markdown-only report with the one title its Markdown carries, after the score card', async () => {
+    served = legacyResponse;
+    await render();
+    const article = printArticle();
+    const overall = query('mktg-document-view-print-overall');
+    const markdown = article.querySelector('lfx-markdown-renderer');
+    if (!overall || !markdown) throw new Error('Missing synthetic legacy report print blocks');
+    // No typed title block: the Markdown's own H1 is the only heading, so the report never prints two titles.
+    expect(query('mktg-document-view-print-headline')).toBeNull();
+    expect(query('mktg-document-view-print-subline')).toBeNull();
+    expect(article.querySelector('lfx-aeo-geo-report')).toBeNull();
+    const headings = Array.from(article.querySelectorAll('h1, h2'), (heading) => heading.textContent?.trim());
+    expect(headings).toEqual(['AEO/GEO Analysis: project.example']);
+    expect(overall.compareDocumentPosition(markdown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The running head still rides in the sheet's head group.
+    expect(article.querySelector('[data-testid="mktg-print-sheet-head"] [data-testid="mktg-print-running-head"]')?.textContent).toContain('AEO/GEO report');
   });
 
   it('wears the project kit brand on the running head once the kit resolves', async () => {

@@ -85,7 +85,20 @@ priority-ordered recommendations, caveats and typed sources. The shared
 scores, overall and verdict agree, with sources covering the audited pages.
 The server projects it through the existing optional `aeoGeoReport` field;
 no browser input becomes a report sidecar. The guard mirrors the frozen min-length/HTTP-regex gates; link safety is separately enforced by the renderer. The Document view uses
-`AeoGeoReportComponent` for both web and print. A 1.0 report without that field
+`AeoGeoReportComponent` for both web and print. A finding's or recommendation's
+detail renders through the shared `MarkdownRendererComponent` in restricted mode,
+so the agent's inline code spans render as code (not as literal backticks) on both
+surfaces, in the report's own type; caveats and scorecard summaries stay plain
+text. The print of a typed report opens with the report's title and facts, then
+the score card, then the report without a second headline, and its headings,
+scorecard rows, findings, recommendations and list items carry CSS Fragmentation
+`break-after: avoid` / `break-inside: avoid` so no heading is orphaned and no
+block splits across pages (no page numbers: the zero-margin page setup has no
+margin area for a counter). The shared `MktgPrintSheetComponent` takes an optional
+`head` template, rendered as a row of its table head group under the page room,
+which the report uses for the shared `MktgPrintRunningHeadComponent` (project,
+"AEO/GEO report", date; no version) in the project's kit brand or the LF look —
+Chromium repeats it on every page, WebKit prints it once. A 1.0 report without that field
 uses the original Markdown renderer without a special legacy label; a malformed
 typed report is not silently treated as legacy. Download PDF renders only while the
 `mktg-os-pdf-download-enabled` flag is on (#5302, default off; the report row keeps
