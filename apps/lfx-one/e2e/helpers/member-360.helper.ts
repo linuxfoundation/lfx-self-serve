@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
   LENS_COOKIE_KEY,
   MEMBER_360_WORKBOOK_CONTENT_TYPE,
   MKTG_DOCUMENT_TYPES,
@@ -18,6 +17,7 @@ export { MEMBER_360_DOCUMENT_ID } from '../fixtures/mock-data/member-360.mock';
 import { buildMember360Workbook } from '../../src/server/utils/member-360-workbook.util';
 import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
+import { pinMktgOsFlags } from './mktg-os-flags.helper';
 
 export function json(route: Route, body: unknown): Promise<void> {
   return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
@@ -88,10 +88,7 @@ export async function setupMember360(page: Page, options: { writer?: boolean; st
       })),
     });
   });
-  await page.addInitScript(
-    ([key, value]) => localStorage.setItem(key, value),
-    [FEATURE_FLAG_OVERRIDE_STORAGE_KEY, JSON.stringify({ 'mktg-os-agents-enabled': true })]
-  );
+  await pinMktgOsFlags(page);
   await page.context().addCookies([
     {
       name: PERSONA_COOKIE_KEY,

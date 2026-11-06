@@ -79,13 +79,13 @@ export interface MktgBoilerplatesPrintPage extends Omit<MktgPrintCardPage, 'rows
   rows: { cards: MktgBoilerplatesPrintCard[] }[];
 }
 
-/** A line of an answer's restricted Markdown: its text and its list marker ('' for a paragraph, `-` for a bullet, `1.` for a numbered item). */
+/** A line of an answer's restricted Markdown: its text and its marker ('' for a paragraph, `-` for a list item of any kind). */
 export interface MktgPrintFaqLine {
   text: string;
   marker: string;
 }
 
-/** One question and its answer as the FAQ grid binds them: the field path (the track key), the answer as restricted Markdown rebuilt from its lines (a list item `- ` or `1. ` by its kind; '' when unanswered), the source label ('' when none), the sizes (question, answer, source line) and the fixed gaps (under the question, between items, over the source), pt at the entry's scale, and whether the answer was cut. */
+/** One question and its answer as the FAQ grid binds them: the field path (the track key), the answer as restricted Markdown rebuilt from its lines (every list line a bullet `- `, as the deck draws it; '' when unanswered), the source label ('' when none), the sizes (question, answer, source line) and the fixed gaps (under the question, between items, over the source), pt at the entry's scale, and whether the answer was cut. */
 export interface MktgPrintFaqEntry {
   path: string;
   question: string;

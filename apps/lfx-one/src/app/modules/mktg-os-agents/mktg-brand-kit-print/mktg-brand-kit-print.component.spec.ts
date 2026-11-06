@@ -63,6 +63,8 @@ describe('MktgBrandKitPrintComponent', () => {
     const heads = Array.from(pages[1].querySelectorAll('[data-testid="mktg-print-page-head"]'), (el) => el.textContent?.trim());
     expect(heads).toEqual(['01 Logo', 'Synthetic project Brand Kit']);
     expect(pages[0].textContent).toContain('03   Logo system');
+    // The contents list every book page, the back cover's row among them (kit-book.ts builds the rows over all of them).
+    expect(pages[0].textContent).toContain('16   Back cover');
   });
 
   it('sets the cover as the deck does and the back cover with the brand line, the host and the notice, on the kit’s dark', async () => {
@@ -114,6 +116,7 @@ describe('MktgBrandKitPrintComponent', () => {
     expect(root.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-pages')).toBe('15');
     expect(root.querySelector('[data-testid="kit-print-page"]')?.getAttribute('data-page')).toBe('06');
     expect(root.querySelector('[data-testid="kit-print-page"]')?.textContent).toContain('07   Logo system');
+    expect(root.querySelector('[data-testid="kit-print-page"]')?.textContent).not.toContain('Back cover');
     // The family's chapter number is accepted and not drawn: the deck's pages carry none.
     expect(root.textContent).not.toContain('02.');
   });

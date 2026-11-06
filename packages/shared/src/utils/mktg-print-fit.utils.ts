@@ -125,7 +125,7 @@ export function mktgPrintCutText(text: string, max: number): string {
     if (next.length + 1 > max) break;
     out = next;
   }
-  return `${trimTrailing(out || text.slice(0, Math.max(1, max - 1)), CUT_TAIL_CHARS)}…`;
+  return `${mktgPrintTrimTrailing(out || text.slice(0, Math.max(1, max - 1)), CUT_TAIL_CHARS)}…`;
 }
 
 /** The punctuation a cut sheds before its ellipsis (the deck's); a run's tail sheds the middle dot too. */
@@ -138,7 +138,7 @@ const RUN_TAIL_CHARS = `${CUT_TAIL_CHARS}·`;
  * character on a long run of tabs or spaces, which CodeQL flags as polynomial
  * on library input; the scan is linear).
  */
-function trimTrailing(text: string, chars: string): string {
+export function mktgPrintTrimTrailing(text: string, chars: string): string {
   let end = text.length;
   while (end > 0) {
     const c = text[end - 1];
@@ -178,7 +178,7 @@ export function mktgPrintCutPara(p: MktgPrintPara, max: number): MktgPrintPara {
   while (runs.length > 0 && runs[runs.length - 1].text.trim() === '') runs.pop();
   if (runs.length === 0) return { ...p, text: cut, runs: undefined };
   const last = runs[runs.length - 1];
-  runs[runs.length - 1] = { ...last, text: tail ? `${trimTrailing(last.text, RUN_TAIL_CHARS)}${tail}` : last.text };
+  runs[runs.length - 1] = { ...last, text: tail ? `${mktgPrintTrimTrailing(last.text, RUN_TAIL_CHARS)}${tail}` : last.text };
   return { ...p, text: runs.map((r) => r.text).join(''), runs };
 }
 

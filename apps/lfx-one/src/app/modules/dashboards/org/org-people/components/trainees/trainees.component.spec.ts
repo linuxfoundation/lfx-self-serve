@@ -151,6 +151,8 @@ describe('TraineesComponent', () => {
 
   const el = (): HTMLElement => fixture.nativeElement;
   const router = (): Router => TestBed.inject(Router);
+  const outsideToggle = (): HTMLElement | null => el().querySelector('[data-testid="org-people-trainees-outside-toggle"]');
+  const outsideNote = (): HTMLElement | null => el().querySelector('[data-testid="org-people-trainees-outside-note"]');
   const stat = (name: string): string => el().querySelector(`[data-testid="org-training-stat-${name}-value"]`)?.textContent?.trim() ?? '';
   const listed = (): string[] =>
     [...el().querySelectorAll<HTMLElement>('tbody tr[role="button"]')].map((tr) => tr.getAttribute('data-testid')!.replace('org-people-trainees-row-', ''));
@@ -190,6 +192,12 @@ describe('TraineesComponent', () => {
     await settle();
   }
 
+  // The list of learners not on the people list starts collapsed; its toggle opens or closes it.
+  async function openOutside(): Promise<void> {
+    el().querySelector<HTMLElement>('[data-testid="org-people-trainees-outside-toggle"]')!.click();
+    await settle();
+  }
+
   beforeEach(() => {
     getTrainees = vi.fn((_orgUid: string, range: OrgLensTimeRange) => of(responseFor(range)));
     getTrainingStats = vi.fn((_orgUid: string, query: OrgTrainingStatsQuery) => of(statsFor(query)));
@@ -225,6 +233,29 @@ describe('TraineesComponent', () => {
       expect(stat('courses-in-progress')).toBe('2');
       expect(stat('completion-rate')).toBe('50%');
       expect(el().querySelector('[data-testid="org-training-stat-courses-taken-caption"]')?.textContent).toContain('all time');
+    });
+
+    it('shows the people-list tiles first and reveals the other stats on the link', async () => {
+      await mount('/?tab=training&range=all');
+      const visibleTiles = (): string[] =>
+        [...el().querySelectorAll<HTMLElement>('[data-testid^="org-training-stat-"][role="note"]')]
+          .filter((node) => !node.classList.contains('hidden'))
+          .map((node) => node.getAttribute('data-testid')!);
+      const toggle = (): HTMLElement => el().querySelector<HTMLElement>('[data-testid="org-training-stats-toggle"]')!;
+
+      expect(visibleTiles()).toEqual([
+        'org-training-stat-people-with-training-activity',
+        'org-training-stat-courses-taken',
+        'org-training-stat-certified-people',
+      ]);
+      expect(toggle().textContent).toContain('Show 7 more stats');
+      // A hidden tile still carries its number, so opening the strip never changes a value.
+      expect(stat('courses-in-progress')).toBe('2');
+
+      toggle().click();
+      await settle();
+      expect(visibleTiles()).toHaveLength(10);
+      expect(toggle().textContent).toContain('Show fewer stats');
     });
 
     it('refetches the rows and the stats when the range in the URL changes, without another navigation', async () => {
@@ -523,11 +554,34 @@ describe('TraineesComponent', () => {
       );
     });
 
-    it('lists them apart from the table, by name, with a name and a status and nothing to expand', async () => {
+    it('keeps them collapsed behind a header with the count, and opens the list with its review note on click', async () => {
       await mount('/?tab=training');
 
       expect(listed()).toEqual(['p-1']);
       expect(outsideList()?.querySelector('h3')?.textContent).toContain('Learners not on the people list (3)');
+      expect(outsideToggle()?.getAttribute('aria-expanded')).toBe('false');
+      expect(outsideNames()).toEqual([]);
+      expect(outsideNote()).toBeNull();
+      expect(outsideList()!.querySelector('[data-testid="org-people-trainees-outside-paginator"]')).toBeNull();
+
+      await openOutside();
+      expect(outsideToggle()?.getAttribute('aria-expanded')).toBe('true');
+      expect(outsideNote()?.textContent).toContain('not on its people list');
+      expect(outsideNote()?.textContent).toContain('can appear more than once');
+      expect(outsideNote()?.textContent).toContain('org admin');
+      expect(outsideNames()).toEqual(['Bea Outside', 'Zoe Outside', 'Name not available']);
+
+      await openOutside();
+      expect(outsideToggle()?.getAttribute('aria-expanded')).toBe('false');
+      expect(outsideNames()).toEqual([]);
+      expect(outsideNote()).toBeNull();
+    });
+
+    it('lists them apart from the table, by name, with a name and a status and nothing to expand', async () => {
+      await mount('/?tab=training');
+      await openOutside();
+
+      expect(listed()).toEqual(['p-1']);
       expect(outsideNames()).toEqual(['Bea Outside', 'Zoe Outside', 'Name not available']);
       const items = [...outsideList()!.querySelectorAll('li')].map((li) => li.textContent ?? '');
       expect(items[1]).toContain('Certified');
@@ -543,11 +597,13 @@ describe('TraineesComponent', () => {
       expect(filteredNote()?.textContent).toContain('follow the time range and the name search');
     });
 
-    it('narrows them by the name search', async () => {
+    it('narrows them by the name search, in the header count and in the open list', async () => {
       await mount('/?tab=training');
       await search('bea');
 
       expect(listed()).toEqual([]);
+      expect(outsideList()?.querySelector('h3')?.textContent).toContain('(1)');
+      await openOutside();
       expect(outsideNames()).toEqual(['Bea Outside']);
       expect(emptyText()).toBe('No one on the people list matches the search.');
     });
@@ -555,6 +611,7 @@ describe('TraineesComponent', () => {
     it('keeps the generic filter copy for a search nobody matches, and says so plainly in the list', async () => {
       await mount('/?tab=training');
       await search('nobody-matches');
+      await openOutside();
 
       expect(emptyText()).toBe('No trainees match the current filters.');
       expect(el().querySelector('[data-testid="org-people-trainees-outside-empty"]')?.textContent?.trim()).toBe('No one in this list matches the search.');
@@ -800,6 +857,7 @@ describe('TraineesComponent', () => {
       it('pages them on their own, with the heading keeping the full count', async () => {
         respondWith(3, 35);
         await mount('/?tab=training');
+        await openOutside();
 
         expect(outsideList()?.querySelector('h3')?.textContent).toContain('(35)');
         expect(outsideCount()).toBe(10);
@@ -817,6 +875,7 @@ describe('TraineesComponent', () => {
       it('changes its own rows per page without touching the table', async () => {
         respondWith(30, 60);
         await mount('/?tab=training');
+        await openOutside();
         await pickOutsidePageSize(50);
 
         expect(outsideCount()).toBe(50);
@@ -827,6 +886,7 @@ describe('TraineesComponent', () => {
       it('goes back to its first page on a search and on a range change, keeping its rows per page', async () => {
         respondWith(3, 60);
         await mount('/?tab=training');
+        await openOutside();
         await pickOutsidePageSize(25);
         await nextOutside();
         expect(outsideReport()).toBe('Showing 26 to 50 of 60');
@@ -846,16 +906,21 @@ describe('TraineesComponent', () => {
       it('goes back to its first page when the organization changes', async () => {
         respondWith(3, 35);
         await mount('/?tab=training');
+        await openOutside();
         await nextOutside();
 
         account.set({ uid: 'another-org', accountName: 'Another' });
         await settle();
+        // A new organization starts collapsed again, on its first page.
+        expect(outsideNames()).toEqual([]);
+        await openOutside();
         expect(outsideReport()).toBe('Showing 1 to 10 of 35');
       });
 
       it('shows names and statuses only, with no identifier beyond the opaque key', async () => {
         respondWith(3, 12);
         await mount('/?tab=training');
+        await openOutside();
 
         const items = [...outsideList()!.querySelectorAll('li')];
         expect(items.every((li) => /^Learner\d+(Enrolled|Certified)$/.test((li.textContent ?? '').replace(/\s+/g, '')))).toBe(true);

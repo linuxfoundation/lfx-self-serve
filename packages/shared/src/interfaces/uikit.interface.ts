@@ -251,6 +251,9 @@ export type UiButtonVariant = 'primary' | 'secondary' | 'secondary-accent' | 'te
 /** Size of a uikit button: `tiny` 24px, `small` 28px, `default` 32px or `large` 40px tall. */
 export type UiButtonSize = 'tiny' | 'small' | 'default' | 'large';
 
+/** Which trigger edge a uikit menu lines up with: `start` extends toward the end, `end` extends back toward the start. */
+export type UiMenuAlign = 'start' | 'end';
+
 /** Size of a uikit switch (segmented control): `tiny` 24px, `small` 32px or `medium` 40px tall. */
 export type UiSwitchSize = UiControlSize;
 

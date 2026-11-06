@@ -8,7 +8,9 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MKTG_FAQ_PRINT_UNANSWERED } from '../constants/mktg-print.constants';
+import { MKTG_FAMILY_EXPORT_VERSION_LABELS } from '../constants/mktg-family-export.constants';
+import { FOUNDATION_MESSAGE_PRINT_TITLE, MKTG_FAQ_PRINT_UNANSWERED } from '../constants/mktg-print.constants';
+import { BOILERPLATES_INTAKE, BRAND_KIT_INTAKE, FAQ_INTAKE } from '../constants/mktg-run.constants';
 import {
   MKTG_PRINT_PAGE_AREA,
   MKTG_PRINT_PAGE_CAPS_TRACKING_EM,
@@ -29,7 +31,7 @@ import type { FaqGroupView } from '../interfaces/faq.interface';
 import type { FoundationMessageContent } from '../interfaces/foundation-message.interface';
 import type { MktgFamilyPrintView } from '../interfaces/mktg-family-export.interface';
 import type { FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
-import type { MktgPrintPara, MktgPrintPageShapeEl } from '../interfaces/mktg-print-page.interface';
+import type { MktgPrintPage, MktgPrintPageShapeEl, MktgPrintPara } from '../interfaces/mktg-print-page.interface';
 import type { MktgPrintCardRow, MktgPrintFaqEntry } from '../interfaces/mktg-print-pages.interface';
 import boilerplatesEnvelope from './__fixtures__/boilerplates.envelope.json';
 import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
@@ -133,6 +135,11 @@ function faqEntryHeight(entry: MktgPrintFaqEntry): number {
 }
 
 /** A framework print built by its builder from a synthetic content with the brand line and tagline given. */
+/** The page's shape elements, in order, with their kind checked rather than asserted. */
+function shapeEls(page: MktgPrintPage): MktgPrintPageShapeEl[] {
+  return page.els.filter((el): el is MktgPrintPageShapeEl => el.t === 'shape');
+}
+
 function frameworkView(line: string, tagline: string): FoundationMessagePrintView {
   const content: FoundationMessageContent = {
     mf: {
@@ -219,7 +226,7 @@ describe("the family's grammar", () => {
     expect(page.title).toBe('');
     expect(page.head).toBeUndefined();
     expect(page.footer).toBeUndefined();
-    const [eyebrow, title, count] = page.els as MktgPrintPageShapeEl[];
+    const [eyebrow, title, count] = shapeEls(page);
     expect(eyebrow.box).toEqual(MKTG_PRINT_DIVIDER_LAYOUT.eyebrow);
     expect(eyebrow.text?.paras[0]).toEqual(expect.objectContaining({ text: '03 · POSITIONING & BRAND', caps: true, color: '#2563EB' }));
     expect(title.box).toEqual(MKTG_PRINT_DIVIDER_LAYOUT.title);
@@ -234,7 +241,7 @@ describe("the family's grammar", () => {
   it("sets the divider's eyebrow in the on-dark ink when the accent does not read 3:1 on the dark", () => {
     const eyebrowColor = (dark: string, accent: string) => {
       const look = mktgPrintPageLook({ ...mktgPrintBrand(null), dark, accent });
-      const [eyebrow] = mktgPrintDividerPage(look, mktgPrintDivider('faq', '04', 2, 'Positioning & brand'), null).els as MktgPrintPageShapeEl[];
+      const [eyebrow] = shapeEls(mktgPrintDividerPage(look, mktgPrintDivider('faq', '04', 2, 'Positioning & brand'), null));
       return { color: eyebrow.text?.paras[0].color, look };
     };
     const coral = eyebrowColor('#000000', '#FF702D');
@@ -266,6 +273,14 @@ describe("the family's grammar", () => {
     expect(cover.subtitle).toBe('Open mesh for everyone');
     expect(cover.date).toBe('November 2026');
     expect(cover.footerRight).toBe('Messaging Framework v3 · Brand Kit V1.0 · Boilerplates v2');
+    // The names are the catalog's documents (the framework's its print title, the spec's casing), so D1 §4's line is theirs.
+    expect(MKTG_FAMILY_EXPORT_VERSION_LABELS).toEqual({
+      'foundation-message': FOUNDATION_MESSAGE_PRINT_TITLE,
+      'brand-kit': BRAND_KIT_INTAKE.documentName,
+      boilerplates: BOILERPLATES_INTAKE.documentName,
+      faq: FAQ_INTAKE.documentName,
+    });
+    expect(Object.values(MKTG_FAMILY_EXPORT_VERSION_LABELS)).toEqual(['Messaging Framework', 'Brand Kit', 'Boilerplates', 'FAQ']);
     expect(mktgPrintFamilyCover(printView({ framework: frameworkView('', 'Tagline') }), 'Positioning & brand').subtitle).toBe('Tagline');
   });
 });
@@ -407,13 +422,13 @@ describe('paginateFaqPairs', () => {
     expect(page.rows[0].height).toBeCloseTo(faqEntryHeight(bullet), 6);
   });
 
-  it("reads the deck's list markers ('-', '*', '•', '1.', '1)'), keeps each item's kind for the renderer, and measures the paragraphs with the deck's gaps", () => {
+  it("reads the deck's list markers ('-', '*', '•', '1.', '1)'), hands the renderer every item as a bullet as the deck draws them, and measures the paragraphs with the deck's gaps", () => {
     const answer = 'Lead-in:\n• One\n* Two\n- Three\n1) First\n2. Second\n\n+ Not a marker\n\nClosing line.';
     const [page] = paginateFaqPairs([
       { name: 'Lists', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Which steps?', answer, source: '', answered: true }], unanswered: 0 },
     ]);
     const [entry] = page.rows[0].entries;
-    expect(entry.answer).toBe('Lead-in:\n\n- One\n- Two\n- Three\n1. First\n2. Second\n\n+ Not a marker\n\nClosing line.');
+    expect(entry.answer).toBe('Lead-in:\n\n- One\n- Two\n- Three\n- First\n- Second\n\n+ Not a marker\n\nClosing line.');
     expect(entry.cut).toBe(false);
     const size = layout.faqAnswerSize;
     const item = (text: string, above: number) => mktgPrintPara(text, size, { bullet: true, above });
@@ -468,37 +483,33 @@ describe('paginateFaqPairs', () => {
     );
   });
 
-  it('sets an entry a little too tall for the area smaller as a whole, the question and the gaps with the answer, before anything is cut', () => {
-    const answer = Array.from({ length: 34 }, (_, i) => `Sentence number ${i + 1} of a long answer.`).join(' ');
-    const pages = paginateFaqPairs([
-      { name: 'Tall', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Why so tall?', answer, source: 'Docs', answered: true }], unanswered: 0 },
-    ]);
-    const [entry] = pages[0].rows[0].entries;
-    expect(entry.cut).toBe(false);
-    expect(entry.answer).toBe(answer);
-    expect(entry.answerSize).toBeLessThan(layout.faqAnswerSize);
-    expect(entry.answerSize).toBeGreaterThan(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
-    expect(entry.questionSize).toBeLessThan(layout.faqQuestionSize);
-    expect(entry.sourceSize).toBeLessThan(MKTG_PRINT_PAGE_SIZE.eyebrow);
-    expect(entry.answerGap).toBeLessThan(layout.faqAnswerGap);
-    expect(pages[0].rows[0].height).toBeLessThanOrEqual(area.h - lineOf(layout.faqAnswerSize) + 0.01);
-  });
-
-  it('fits a pair whose answer is longer than the area: set smaller to the floor, then the answer cut at a sentence, the question intact', () => {
-    const answer = Array.from({ length: 120 }, (_, i) => `Sentence number ${i + 1} of a very long answer.`).join(' ');
-    const pages = paginateFaqPairs([
-      { name: 'Long', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Why so long?', answer, source: 'Docs', answered: true }], unanswered: 0 },
-    ]);
-    expect(pages).toHaveLength(1);
-    const [entry] = pages[0].rows[0].entries;
-    expect(entry.cut).toBe(true);
-    expect(entry.question).toBe('Why so long?');
-    expect(entry.answerSize).toBe(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
-    expect(entry.questionSize).toBe(scaledSize(layout.faqQuestionSize, MKTG_PRINT_PAGE_MIN_SCALE));
-    expect(entry.answer.length).toBeLessThan(answer.length);
-    expect(entry.answer.endsWith('.')).toBe(true);
-    expect(answer.startsWith(entry.answer)).toBe(true);
-    expect(pages[0].rows[0].height).toBeLessThanOrEqual(area.h - lineOf(layout.faqAnswerSize) + 0.01);
+  it("composes the scales as the deck's gridPages does: an entry fitted to the floor alone, on a page set to 0.9, draws at 0.9 of its fitted sizes (0.648 of the base)", () => {
+    const items = Array.from({ length: 80 }, (_, i) => `- Step ${i + 1}`);
+    const tall = { path: 'faq[0][1][0]', question: 'Which steps, in order?', answer: ['Steps:', ...items].join('\n'), source: 'Docs', answered: true };
+    const filler = Array.from({ length: 3 }, (_, q) => ({
+      path: `faq[0][1][${q + 1}]`,
+      question: `Question ${q + 1}?`,
+      answer: Array.from({ length: 16 }, () => 'Answer').join(' ') + '.',
+      source: 'Docs',
+      answered: true,
+    }));
+    // On the deck's area a fitted entry fills its page alone; a taller area leaves the room for a second row at 0.9 only.
+    const tallArea = { ...area, h: 600 };
+    const pages = paginateFaqPairs([{ name: 'Mixed', path: 'faq[0]', questions: [tall, ...filler], unanswered: 0 }], layout, tallArea);
+    const first = pages[0];
+    expect(first.rows.length).toBeGreaterThan(1);
+    const [entry] = first.rows[0].entries;
+    expect(entry.path).toBe(tall.path);
+    expect(first.scale).toBe(0.9);
+    // The sizes the entry was fitted to alone (the floor), then the page's scale on top, each step rounded as the shell rounds.
+    expect(entry.answerSize).toBe(scaledSize(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE), first.scale));
+    expect(entry.questionSize).toBe(scaledSize(scaledSize(layout.faqQuestionSize, MKTG_PRINT_PAGE_MIN_SCALE), first.scale));
+    expect(entry.answerSize).toBeLessThan(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
+    // The full-size entries sharing the page take the page's scale once.
+    first.rows
+      .flatMap((row) => row.entries)
+      .filter((e) => e.path !== tall.path)
+      .forEach((e) => expect(e.answerSize).toBe(scaledSize(layout.faqAnswerSize, first.scale)));
   });
 
   it('fits a pair of many short list items as the deck does: the question whole, the answer at the floor, the items too short to cut, the trailing ones dropped and the last kept marked', () => {

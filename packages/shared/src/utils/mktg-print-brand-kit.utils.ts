@@ -4,11 +4,13 @@
 // The Brand Kit as landscape print pages: a port of the deck's kit book
 // (marketing-os-agents agents/slides-export src/kit-book.ts at 7839d985)
 // over LFX One's own book view, one page per slide, in the deck's order, with
-// its headings and numbers: the cover, the contents ("What's inside"), the
-// fourteen BOOK_PAGES (six logo pages, the palette, the contrast pairs, the
-// typography, the iconography, the imagery, the example usage, the voice, the
-// back cover). A list that does not fit its page continues on a numbered
-// page; the contents list the page each starts on. Every content page
+// its headings and numbers. The builder emits the content pages: the contents
+// ("What's inside", every BOOK_PAGES row, the back cover's among them) and the
+// thirteen chapter pages (six logo pages, the palette, the contrast pairs, the
+// typography, the iconography, the imagery, the example usage, the voice); the
+// document mounts the cover and the back cover around them as pages of their
+// own. A list that does not fit its page continues on a numbered page; the
+// contents list the page each starts on. Every content page
 // carries the footer "<project> · a Linux Foundation project" and its number;
 // no inner page shows the version. Where the deck draws a PNG of a logo
 // variant, the pages draw the kit's own SVG (the view's logos and colorway
@@ -20,13 +22,11 @@ import { BRAND_KIT_BOOK_PAGES, BRAND_KIT_CHAPTERS, BRAND_KIT_TYPE_SPECIMEN } fro
 import {
   MKTG_PRINT_BRAND_KIT_ATTRIBUTE_GRIDS,
   MKTG_PRINT_BRAND_KIT_CONTRAST_ROWS_PER_PAGE,
-  MKTG_PRINT_BRAND_KIT_DEFAULT_WEIGHTS,
   MKTG_PRINT_BRAND_KIT_ICON_GRID,
   MKTG_PRINT_BRAND_KIT_ICON_SLOT,
   MKTG_PRINT_BRAND_KIT_PILL,
   MKTG_PRINT_BRAND_KIT_RETYPED_FONT,
   MKTG_PRINT_BRAND_KIT_SOURCE_LINES,
-  MKTG_PRINT_BRAND_KIT_WEIGHT_NAMES,
 } from '../constants/mktg-print-brand-kit.constants';
 import { MKTG_PRINT_INK_ON_DARK } from '../constants/mktg-print.constants';
 import {
@@ -45,9 +45,10 @@ import type {
   MktgPrintPara,
   MktgPrintRich,
 } from '../interfaces/mktg-print-page.interface';
+import type { MktgPrintBrandKitContext, MktgPrintBrandKitLogoVariant, MktgPrintBrandKitOptions } from '../interfaces/mktg-print-brand-kit.interface';
 import type { MktgPrintBrand, MktgPrintLogo } from '../interfaces/mktg-print.interface';
 import { brandKitInkOnAccent, brandKitIsLight, brandKitLabelInk } from './brand-kit-book.utils';
-import { mktgPrintCharEm, mktgPrintCharsPerLine, mktgPrintFits, mktgPrintOneLine, mktgPrintPaginate } from './mktg-print-fit.utils';
+import { mktgPrintCharEm, mktgPrintFits, mktgPrintOneLine, mktgPrintPaginate, mktgPrintTrimTrailing } from './mktg-print-fit.utils';
 import {
   mktgPrintBulletParas,
   mktgPrintContentPage,
@@ -72,25 +73,6 @@ import {
 const RIGHT = MKTG_PRINT_PAGE_RIGHT;
 const WHITE = MKTG_PRINT_INK_ON_DARK;
 
-/** The logo variants the deck draws, and what the book view holds for each. */
-export type MktgPrintBrandKitLogoVariant = 'primary' | 'reversed' | 'one_color' | 'symbol' | 'symbol_reversed';
-
-/** What a page of the kit book needs to be laid out. */
-export interface MktgPrintBrandKitContext {
-  view: BrandKitBookView;
-  brand: MktgPrintBrand;
-  look: MktgPrintPageLook;
-  projectName: string;
-  /** The project logo in every variant the kit's artwork gives (its SVG under the colorway filters); a variant with no drawable artwork is null and its slot is dropped. */
-  logos: Record<MktgPrintBrandKitLogoVariant, MktgPrintLogo | null>;
-}
-
-/** Options of the kit book's assembly: the number of its first page (the cover), and whether the back cover is included. */
-export interface MktgPrintBrandKitOptions {
-  firstPage?: number;
-  backCover?: boolean;
-}
-
 type ChapterId = (typeof BRAND_KIT_CHAPTERS)[number]['id'];
 
 /**
@@ -114,7 +96,7 @@ export function mktgPrintBrandKitLogos(view: BrandKitBookView): MktgPrintBrandKi
     reversed: reversedTile ? image(reversedTile.logo, reversedTile.logoFilter) : null,
     one_color: oneColorTile ? image(oneColorTile.logo, oneColorTile.logoFilter) : null,
     symbol: image(view.symbol),
-    symbol_reversed: image(view.symbol, reversedTile?.symbolFilter ?? ''),
+    symbol_reversed: reversedTile ? image(view.symbol, reversedTile.symbolFilter) : null,
   };
 }
 
@@ -476,7 +458,10 @@ function palettePage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
 function contrastPages(ctx: MktgPrintBrandKitContext): MktgPrintPage[] {
   const { look, view } = ctx;
   const hexOf = new Map(view.color.palette.map((p) => [p.name, p.hex]));
-  const pages = mktgPrintPaginate(view.color.contrast.pairs, (rows) => rows.length <= MKTG_PRINT_BRAND_KIT_CONTRAST_ROWS_PER_PAGE);
+  // A kit with no pairs still gets its one page, the rule alone, so the contents' row for it points at a page (the deck's
+  // paginate yields no slide for an empty list and its contents still list one: a departure, named).
+  const paginated = mktgPrintPaginate(view.color.contrast.pairs, (rows) => rows.length <= MKTG_PRINT_BRAND_KIT_CONTRAST_ROWS_PER_PAGE);
+  const pages = paginated.length ? paginated : [[]];
   return pages.map((rows, pi) => {
     const els: MktgPrintPageEl[] = [mktgPrintProseColumn(look, mktgPrintProseParas([view.color.contrast.rule]))];
     rows.forEach((r, j) => {
@@ -533,16 +518,11 @@ function typographyPage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
       { ...mktgPrintRich(look, [mktgPrintPara(mktgPrintOneLine(BRAND_KIT_TYPE_SPECIMEN, RIGHT.w, 9.5), 9.5)]), font }
     )
   );
-  const weights = (type.weights.length ? [...new Set(type.weights)].sort((a, b) => a - b) : [...MKTG_PRINT_BRAND_KIT_DEFAULT_WEIGHTS]).slice(0, 6);
-  weights.forEach((wgt, i) => {
+  // The view's weights (the kit's, unique and sorted, or the shared defaults), the first six, each with its label.
+  view.weights.slice(0, 6).forEach((wgt, i) => {
     const x = RIGHT.x + i * 74;
-    els.push(mktgPrintTextEl({ x, y: 157, w: 72, h: 40 }, { ...mktgPrintRich(look, [mktgPrintPara('Aa', 20, { weight: wgt })]), font }));
-    els.push(
-      mktgPrintTextEl(
-        { x, y: 192, w: 74, h: 24 },
-        mktgPrintRich(look, [mktgPrintPara(`${MKTG_PRINT_BRAND_KIT_WEIGHT_NAMES[wgt] ?? 'Weight'} ${wgt}`, 7.5, { color: look.muted })])
-      )
-    );
+    els.push(mktgPrintTextEl({ x, y: 157, w: 72, h: 40 }, { ...mktgPrintRich(look, [mktgPrintPara('Aa', 20, { weight: wgt.weight })]), font }));
+    els.push(mktgPrintTextEl({ x, y: 192, w: 74, h: 24 }, mktgPrintRich(look, [mktgPrintPara(wgt.label, 7.5, { color: look.muted })])));
   });
   const scale = type.scale.slice(0, 6);
   if (scale.length) {
@@ -641,7 +621,7 @@ function imageryPage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
     eyebrowEl(ctx, { x: RIGHT.x, y: 247, w: 216, h: 24 }, 'Buttons'),
     mktgPrintTextEl(
       { x: RIGHT.x, y: 272, w: 124, h: 28 },
-      mktgPrintRich(look, [mktgPrintPara('Primary button', 10, { weight: 500, color: WHITE })], { align: 'CENTER', anchor: 'MIDDLE' }),
+      mktgPrintRich(look, [mktgPrintPara('Primary button', 10, { weight: 500, color: look.onDark })], { align: 'CENTER', anchor: 'MIDDLE' }),
       {
         shape: 'ROUND_RECTANGLE',
         fill: look.dark,
@@ -675,12 +655,12 @@ export function mktgPrintBrandKitUsageGround(look: MktgPrintPageLook, ground: st
   return look.dark;
 }
 
-/** The host as the Social card's pill: a small rounded rectangle in the kit's dark with the host in white, as wide as the host needs (capped at `maxW`). */
+/** The host as the Social card's pill: a small rounded rectangle in the kit's dark with the host in the ink that reads on it, as wide as the host needs (capped at `maxW`). */
 function hostPill(look: MktgPrintPageLook, host: string, x: number, y: number, maxW: number): MktgPrintPageEl {
   const w = Math.min(maxW, Math.ceil(host.length * MKTG_PRINT_PAGE_SIZE.caption * mktgPrintCharEm({ weight: 600 }) + 2 * MKTG_PRINT_PAGE_INSET));
   return mktgPrintTextEl(
     { x, y, w, h: MKTG_PRINT_BRAND_KIT_PILL.h },
-    mktgPrintRich(look, [mktgPrintPara(host, MKTG_PRINT_PAGE_SIZE.caption, { weight: 600, color: WHITE })], { align: 'CENTER', anchor: 'MIDDLE' }),
+    mktgPrintRich(look, [mktgPrintPara(host, MKTG_PRINT_PAGE_SIZE.caption, { weight: 600, color: look.onDark })], { align: 'CENTER', anchor: 'MIDDLE' }),
     {
       shape: 'ROUND_RECTANGLE',
       fill: look.dark,
@@ -704,7 +684,7 @@ function usagePage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
     const fill = mktgPrintBrandKitUsageGround(look, ex.ground);
     const white = fill === WHITE;
     const onAccent = /accent/i.test(ex.ground) && !white;
-    const ink = white ? look.ink : onAccent ? inkOnAccent : look.onDark;
+    const ink = usageInk(look, white, onAccent, inkOnAccent);
     const soft = white ? look.muted : ink;
     let paras: MktgPrintPara[];
     let bar = false;
@@ -808,6 +788,13 @@ function voicePages(ctx: MktgPrintBrandKitContext): MktgPrintPage[] {
   ];
 }
 
+/** The ink of an example's text: the look's on white, the accent's contrast-safe ink on the accent, the on-dark ink elsewhere. */
+function usageInk(look: MktgPrintPageLook, white: boolean, onAccent: boolean, inkOnAccent: string): string {
+  if (white) return look.ink;
+  if (onAccent) return inkOnAccent;
+  return look.onDark;
+}
+
 /** The content pages each book page id builds (the back cover is a page of its own, lfx-mktg-print-back-cover). */
 const PAGE_BUILDERS: Record<string, (ctx: MktgPrintBrandKitContext) => MktgPrintPage[]> = {
   'logo-system': (c) => [logoSystemPage(c)],
@@ -836,7 +823,9 @@ export function mktgPrintBrandKitContext(view: BrandKitBookView, brand: MktgPrin
  * the assembly with the cover counted: the cover is `firstPage`, the contents
  * `firstPage + 1`, the pages from `firstPage + 2`. The cover and the back
  * cover are not in the list: the document mounts them as pages of their own
- * (lfx-mktg-print-cover, lfx-mktg-print-back-cover) around these.
+ * (lfx-mktg-print-cover, lfx-mktg-print-back-cover) around these; the
+ * contents list the back cover's row when it is included (kit-book.ts builds
+ * the rows over every BOOK_PAGES id).
  */
 export function buildBrandKitPrintPages(
   view: BrandKitBookView,
@@ -846,7 +835,8 @@ export function buildBrandKitPrintPages(
 ): MktgPrintPage[] {
   const first = options.firstPage ?? 1;
   const ctx = mktgPrintBrandKitContext(view, brand, projectName);
-  const ids = BRAND_KIT_BOOK_PAGES.filter((p) => p.id !== 'back-cover');
+  const backCover = options.backCover !== false;
+  const ids = BRAND_KIT_BOOK_PAGES.filter((p) => p.id !== 'back-cover' || backCover);
   const pages = ids.map((p) => ({ id: p.id, title: p.title, pages: PAGE_BUILDERS[p.id]?.(ctx) ?? [] }));
   const rows: Array<{ number: string; title: string }> = [];
   let n = first + 2;
@@ -869,7 +859,7 @@ export function mktgPrintBrandKitCover(
   view: BrandKitBookView,
   projectName: string
 ): { title: string; subtitle: string; eyebrow: string; topRight: string; footerLeft: string; footerRight: string } {
-  const line = view.voice.line.replace(/[.\s]+$/, '');
+  const line = mktgPrintTrimTrailing(view.voice.line, '.');
   return {
     title: 'Brand Kit',
     subtitle: `${line ? `${line}. ` : ''}Logos, color, type and usage on one reference, for members, partners and the press.`,
@@ -879,6 +869,3 @@ export function mktgPrintBrandKitCover(
     footerRight: [view.host, view.versionLabel, view.monthYear].filter(Boolean).join(' · '),
   };
 }
-
-/** Characters per line of the book's text column at its prose size (what the cuts are measured against). */
-export const MKTG_PRINT_BRAND_KIT_LEFT_CHARS = mktgPrintCharsPerLine(MKTG_PRINT_PAGE_LEFT.w, MKTG_PRINT_PAGE_SIZE.prose);

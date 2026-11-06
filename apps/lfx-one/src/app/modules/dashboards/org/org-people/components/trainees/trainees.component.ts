@@ -36,6 +36,7 @@ import {
   ORG_TRAINEES_DEFAULT_PAGE_SIZE,
   ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE,
   ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING,
+  ORG_TRAINEES_OUTSIDE_LEARNERS_REVIEW_NOTE,
   ORG_TRAINEES_PAGE_SIZE_OPTIONS,
   TRAINING_PRODUCT_TYPE,
 } from '@lfx-one/shared/constants';
@@ -85,6 +86,7 @@ export class TraineesComponent {
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly outsideLearnersHeading = ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING;
   protected readonly outsideLearnersFilteredNote = ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE;
+  protected readonly outsideLearnersReviewNote = ORG_TRAINEES_OUTSIDE_LEARNERS_REVIEW_NOTE;
 
   /** Only the name/title search is page-local; the range and filters live in the URL, written by the shared filter bar. */
   public readonly filterForm = new FormGroup({
@@ -100,6 +102,8 @@ export class TraineesComponent {
   protected readonly outsideFirst = signal<number>(0);
   protected readonly outsidePageSize = signal<number>(ORG_TRAINEES_DEFAULT_PAGE_SIZE);
   protected readonly expansion = signal<Record<string, boolean>>({});
+  // The list of learners not on the people list starts collapsed: its count is in the header, its rows and the review note open on click.
+  protected readonly outsideExpanded = signal<boolean>(false);
   // Separate triggers: Retry on the stats card re-reads the stats only and leaves the loaded table alone.
   protected readonly retryTrigger = signal<number>(0);
   protected readonly statsRetryTrigger = signal<number>(0);
@@ -252,6 +256,10 @@ export class TraineesComponent {
   protected onOutsidePageChange(event: PaginatorState): void {
     this.outsidePageSize.set(event.rows ?? this.outsidePageSize());
     this.outsideFirst.set(event.first ?? 0);
+  }
+
+  protected toggleOutside(): void {
+    this.outsideExpanded.update((open) => !open);
   }
 
   protected retry(): void {
@@ -541,6 +549,7 @@ export class TraineesComponent {
     this.first.set(0);
     this.outsideFirst.set(0);
     this.expansion.set({});
+    this.outsideExpanded.set(false);
   }
 }
 

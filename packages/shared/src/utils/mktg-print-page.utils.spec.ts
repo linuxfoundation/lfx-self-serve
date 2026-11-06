@@ -54,6 +54,7 @@ import {
   mktgPrintContinued,
   mktgPrintCoverPage,
   mktgPrintCoverTitleRich,
+  mktgPrintElView,
   mktgPrintFooterEls,
   mktgPrintFooterLine,
   mktgPrintHeadEls,
@@ -65,13 +66,14 @@ import {
   mktgPrintProseParas,
   mktgPrintRowHeight,
   mktgPrintScaleRows,
+  mktgPrintShapeEl,
   mktgPrintStack,
   mktgPrintTextEl,
   mktgPrintTitleRich,
   mktgPrintWithFooter,
-  mktgPrintWithSentence,
   mktgPrintWithoutNote,
   mktgPrintWithoutSourceSentences,
+  mktgPrintWithSentence,
 } from './mktg-print-page.utils';
 import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
 import { mktgPrintBrand } from './mktg-print.utils';
@@ -159,7 +161,7 @@ describe('the fit', () => {
     expect(mktgPrintSentences('A. B.  C')).toEqual(['A.', 'B.', 'C']);
     expect(mktgPrintSentences('One.\tTwo.')).toEqual(['One.', 'Two.']);
     expect(mktgPrintCutText(`Word, trail${'\t'.repeat(40)}and more words after the tabs`, 14)).toBe('Word, trail…');
-    expect(mktgPrintCutText(`Lead word.${'\t'.repeat(2000)}X`.repeat(1), 11)).toBe('Lead word.');
+    expect(mktgPrintCutText(`Lead word.${'\t'.repeat(2000)}X`, 11)).toBe('Lead word.');
     expect(mktgPrintCutText('A tabbed\t\tphrase, — more words follow here', 18)).toBe('A tabbed phrase…');
     expect(mktgPrintOneLine('A short line', 200, 11)).toBe('A short line');
     expect(mktgPrintOneLine(sentence.repeat(3), 100, 11).endsWith('…')).toBe(true);
@@ -329,5 +331,25 @@ describe('the page grammar', () => {
     expect(mktgPrintWithoutSourceSentences('The palette is calm. Values were found on the site. It pairs well.')).toBe('The palette is calm. It pairs well.');
     expect(mktgPrintInWords(['a'])).toBe('a');
     expect(mktgPrintInWords(['a', 'b', 'c'])).toBe('a, b and c');
+  });
+
+  it('renders a solid outline as an inset shadow and a dashed one as a border, and carries an image’s transform and a slot’s context through', () => {
+    const box = { x: 10, y: 20, w: 100, h: 50 };
+    const solid = mktgPrintElView(mktgPrintShapeEl('RECTANGLE', box, look.tint, { color: look.dark, weight: 1 }));
+    expect(solid.style).toMatchObject({ 'background-color': look.tint, 'box-shadow': `inset 0 0 0 ${mktgPagePt(1)} ${look.dark}` });
+    expect(solid.style['border']).toBeUndefined();
+    // The clear-space frame and a partner's slot: dashed, which a shadow cannot draw, so a border, and no shadow.
+    const dashed = mktgPrintElView(mktgPrintShapeEl('RECTANGLE', box, null, { color: look.muted, weight: 0.75, dash: true }));
+    expect(dashed.style['border']).toBe(`${mktgPagePt(0.75)} dashed ${look.muted}`);
+    expect(dashed.style['box-shadow']).toBeUndefined();
+    expect(dashed.style['background-color']).toBeUndefined();
+    // An image keeps its distortion (the watchouts) and a slot its context (an icon's index and ink) on the element itself; neither has text.
+    const image = mktgPrintElView({ t: 'image', box, src: 'data:image/svg+xml,x', alt: 'Lockup', filter: '', transform: 'scaleX(1.45)' });
+    expect(image.text).toBeNull();
+    expect(image.el).toMatchObject({ t: 'image', transform: 'scaleX(1.45)' });
+    const slot = mktgPrintElView({ t: 'slot', box, slot: 'icon', context: { index: 2, color: look.dark } });
+    expect(slot.text).toBeNull();
+    expect(slot.el).toMatchObject({ t: 'slot', slot: 'icon', context: { index: 2, color: look.dark } });
+    expect(slot.style).toMatchObject({ left: mktgPagePt(10), top: mktgPagePt(20), width: mktgPagePt(100), height: mktgPagePt(50) });
   });
 });

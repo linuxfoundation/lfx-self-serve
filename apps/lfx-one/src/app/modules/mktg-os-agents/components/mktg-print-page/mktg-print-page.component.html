@@ -72,7 +72,7 @@
       </div>
     }
     @case ('image') {
-      <div class="pp-box pp-image" [style]="view.style" [attr.data-testid]="testid">
+      <div class="pp-box pp-image" [class.pp-image--transformed]="!!view.el.transform" [style]="view.style" [attr.data-testid]="testid">
         <img [src]="view.el.src" [alt]="view.el.alt" [style.filter]="view.el.filter ?? ''" [style.transform]="view.el.transform ?? ''" />
       </div>
     }

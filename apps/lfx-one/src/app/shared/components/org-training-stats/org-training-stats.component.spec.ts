@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ORG_TRAINING_NO_ROSTER_NOTE, ORG_TRAINING_STAT_DEFINITIONS, ORG_TRAINING_STAT_TILES } from '@lfx-one/shared/constants';
+import { ORG_TRAINING_NO_ROSTER_NOTE, ORG_TRAINING_STAT_DEFINITIONS, ORG_TRAINING_STAT_PRIMARY_KEYS, ORG_TRAINING_STAT_TILES } from '@lfx-one/shared/constants';
 import type { OrgLensTimeRange, OrgTrainingStats } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -106,5 +106,58 @@ describe('OrgTrainingStatsComponent', () => {
 
     expect(text('org-training-stat-roster-members', 'value')).toBe('—');
     expect(text('org-training-stat-roster-members', 'caption')).toBe(ORG_TRAINING_NO_ROSTER_NOTE);
+  });
+
+  describe('collapsible strip', () => {
+    const primaryIds = ORG_TRAINING_STAT_TILES.filter((layout) => ORG_TRAINING_STAT_PRIMARY_KEYS.includes(layout.key)).map((layout) => layout.testId);
+    const otherIds = ORG_TRAINING_STAT_TILES.filter((layout) => !ORG_TRAINING_STAT_PRIMARY_KEYS.includes(layout.key)).map((layout) => layout.testId);
+    const shown = (): string[] => ORG_TRAINING_STAT_TILES.map((layout) => layout.testId).filter((testId) => !tile(testId).classList.contains('hidden'));
+    const toggle = (): HTMLButtonElement | null => el().querySelector<HTMLButtonElement>('[data-testid="org-training-stats-toggle"]');
+
+    function renderCollapsible(stats: OrgTrainingStats | null = STATS): void {
+      fixture.componentRef.setInput('collapsible', true);
+      render(stats, '730d');
+    }
+
+    it('shows every tile and no link when the strip is not collapsible', () => {
+      render(STATS, '730d');
+
+      expect(shown()).toEqual(ORG_TRAINING_STAT_TILES.map((layout) => layout.testId));
+      expect(toggle()).toBeNull();
+    });
+
+    it('starts with the people-list tiles only and offers the others', () => {
+      renderCollapsible();
+
+      expect(shown()).toEqual(primaryIds);
+      expect(primaryIds).toEqual(['org-training-stat-people-with-training-activity', 'org-training-stat-courses-taken', 'org-training-stat-certified-people']);
+      expect(toggle()?.textContent?.trim()).toBe(`Show ${otherIds.length} more stats`);
+      expect(toggle()?.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('reveals every tile on the link and hides the others again on the second press', () => {
+      renderCollapsible();
+
+      toggle()!.click();
+      fixture.detectChanges();
+      expect(shown()).toEqual(ORG_TRAINING_STAT_TILES.map((layout) => layout.testId));
+      expect(toggle()?.textContent?.trim()).toBe('Show fewer stats');
+      expect(toggle()?.getAttribute('aria-expanded')).toBe('true');
+
+      toggle()!.click();
+      fixture.detectChanges();
+      expect(shown()).toEqual(primaryIds);
+    });
+
+    it('keeps the values of the hidden tiles identical to the open strip', () => {
+      renderCollapsible();
+      const collapsedValues = otherIds.map((testId) => text(testId, 'value'));
+
+      toggle()!.click();
+      fixture.detectChanges();
+
+      expect(otherIds.map((testId) => text(testId, 'value'))).toEqual(collapsedValues);
+      expect(text('org-training-stat-roster-members', 'value')).toBe('17,000');
+    });
   });
 });

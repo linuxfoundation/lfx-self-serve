@@ -14,9 +14,8 @@ import { BrandKitIconSample } from '@lfx-one/shared/interfaces';
  * One of the Brand Kit's sample icons: the shared shapes on the 24-unit grid
  * (`BRAND_KIT_ICON_SAMPLES`), one stroke in the current colour, no fill,
  * drawn inline as SVG primitives (no markup string, no `innerHTML`). The one
- * drawing of an icon, for the samples card and strip (web and portrait sheet)
- * and for the landscape print's Iconography page, which places each icon in
- * its own box. Decorative: the label beside it is the text. The host is
+ * drawing of an icon, for the web view's samples card and strip and for the
+ * PDF's Iconography page, which places each icon in its own box. Decorative: the label beside it is the text. The host is
  * `display: contents`, so the SVG lays out as its parent's own child.
  */
 @Component({
