@@ -295,22 +295,22 @@ export function formatMeetingDateTime(start: string | Date, durationMinutes?: nu
   return `${day} · ${time}`;
 }
 
-/** Parts of the meetings home date line: day, start time with its zone, minutes; empty for an invalid start. `timeZone` defaults to the viewer's own. */
+/** Parts of the meetings home date line: day, start time, minutes; empty for an invalid start. `timeZone` defaults to the viewer's own. */
 export function getMeetingWhenParts(start: string | Date, durationMinutes: number, timeZone?: string): string[] {
   const startDate = new Date(start);
   if (Number.isNaN(startDate.getTime())) return [];
 
   const day = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone }).format(startDate);
-  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone, timeZoneName: 'short' }).format(startDate);
+  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone }).format(startDate);
   return [day, time, `${durationMinutes} min`];
 }
 
-/** Date line of the meetings home, e.g. "Thu, Nov 5 · 9:00 AM PST · 60 min"; `timeZone` defaults to the viewer's own. */
+/** Date line of the meetings home, e.g. "Thu, Nov 5 · 9:00 AM · 60 min"; `timeZone` defaults to the viewer's own. */
 export function formatMeetingWhen(start: string | Date, durationMinutes: number, timeZone?: string): string {
   return getMeetingWhenParts(start, durationMinutes, timeZone).join(' · ');
 }
 
-/** The date line of a row's date plus its recurrence, e.g. "Thu, Nov 5 · 9:00 AM PST · 60 min · Weekly on Thursday". */
+/** The date line of a row's date plus its recurrence, e.g. "Thu, Nov 5 · 9:00 AM · 60 min · Weekly on Thursday". */
 export function formatMeetingWhenFull(row: Pick<MeetingHomeRow, 'meeting' | 'occurrence' | 'startTime' | 'durationMinutes'>): string {
   const when = formatMeetingWhen(row.startTime, row.durationMinutes);
   const recurrence = getMeetingRecurrenceLabel(row.meeting, row.occurrence);
@@ -327,11 +327,11 @@ export function getMeetingStartsInLabel(start: string | Date, now: Date = new Da
   return `Meeting starts in ${Math.max(1, Math.floor(diffMs / HOUR_MS))} h`;
 }
 
-/** Visibility badges for a row: Private and Restricted can both show, Public only when neither applies. */
+/** Visibility badges for a row: Restricted then Private can both show, Public only when neither applies. */
 export function getMeetingVisibilityBadges(meeting: Pick<Meeting, 'visibility' | 'restricted'>): MeetingVisibilityInfo[] {
   const badges: MeetingVisibilityInfo[] = [];
-  if (meeting.visibility === MeetingVisibility.PRIVATE) badges.push(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PRIVATE]);
   if (meeting.restricted) badges.push(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.RESTRICTED]);
+  if (meeting.visibility === MeetingVisibility.PRIVATE) badges.push(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PRIVATE]);
   return badges.length > 0 ? badges : [MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PUBLIC]];
 }
 

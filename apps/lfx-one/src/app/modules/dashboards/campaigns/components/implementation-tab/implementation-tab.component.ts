@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, isPlatformBrowser, LowerCasePipe, SlicePipe } from '@angular/common';
+import { DecimalPipe, isPlatformBrowser, LowerCasePipe, NgTemplateOutlet, SlicePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   afterNextRender,
@@ -157,6 +157,8 @@ import {
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
+  GOOGLE_CHANNELS_WITH_SITELINKS,
+  GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CONVERSION_ACTION_PICKER_EMPTY,
   GOOGLE_CONVERSION_ACTION_PICKER_LOADING,
@@ -169,6 +171,7 @@ import {
   GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
   GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY,
   GOOGLE_DEMAND_GEN_MAX_AD_GROUPS,
+  GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP,
   GOOGLE_CREATIVE_SHARED_CAPS,
   GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
@@ -290,6 +293,10 @@ import type {
   GoogleCreativeFieldSpec,
   GoogleCreativeGroup,
   GoogleDemandGenAdFormat,
+  GoogleDemandGenAd,
+  GoogleDemandGenAdControls,
+  GoogleDemandGenAdDraft,
+  GoogleDemandGenAdForm,
   GoogleDemandGenAdGroup,
   GoogleDemandGenAdGroupControls,
   GoogleDemandGenAdGroupDraft,
@@ -328,10 +335,15 @@ import {
   describeCampaignDispatchFailure,
   googleAdditionalSearchAdsRefusal,
   googleAdScheduleRefusal,
+  googleAdsDevicesOn,
   googleAdsTextWeight,
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
+  googleChannelDeviceAdjustmentRefusedSentence,
   googleChannelOffersManualCpc,
+  googleChannelRefusesScheduleAdjustments,
+  googleChannelScheduleAdjustmentRefusedSentence,
+  googleChannelTakesDeviceExclusionsOnly,
   googleConversionActionLabel,
   googleConversionActionsTextWithPicked,
   googleCreateNegativeKeywords,
@@ -341,6 +353,8 @@ import {
   googleCreativeImageFit,
   googleDemandGenVideoCreativeRefusal,
   googleDemandGenAdGroupsRefusal,
+  googleDemandGenAdsRefusal,
+  googleDemandGenSingleAdGroupName,
   googleCreativeImageRequirement,
   googleDeviceAdjustmentNotSentSentence,
   googleDeviceBidModifierRefusal,
@@ -378,6 +392,7 @@ import { CampaignGoogleTargetingPanelComponent } from '../campaign-google-target
 import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
 import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
+import { DemandGenAdListContextDirective } from './demand-gen-ad-list-context.directive';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -427,6 +442,8 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     TextareaComponent,
     DecimalPipe,
     LowerCasePipe,
+    NgTemplateOutlet,
+    DemandGenAdListContextDirective,
     SlicePipe,
     CampaignBiddingControlComponent,
     CampaignGoogleExclusionsPanelComponent,
@@ -1179,6 +1196,11 @@ export class ImplementationTabComponent implements OnInit {
     // (`demandGenAdGroupsActive`).
     demandGenAdGroupsSplit: this.fb.nonNullable.control(false),
     demandGenAdGroups: new FormArray<FormGroup<GoogleDemandGenAdGroupControls>>([]),
+    // The single ad group's second and later ads, and the first ad's name, which they make required
+    // (#5226). Empty by default, which sends the single ad above exactly as before; with any, the ad
+    // above becomes ad 1 of `demandGenAds` (`googleDemandGenAdsPayload`).
+    demandGenAdName: this.fb.nonNullable.control(''),
+    demandGenAds: new FormArray<FormGroup<GoogleDemandGenAdControls>>([]),
     // The Google bidding plan. All five are STRINGS, including the three money/ratio fields, so
     // that "" can mean "not supplied" — which is a different answer from a typed 0, and the one
     // the wire needs, since upstream reads 0 as absent on all three.
@@ -1873,7 +1895,7 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleCalloutDraft = signal('');
   /**
-   * Google's sitelink extensions — extra links rendered under the Search ad.
+   * Google's sitelink extensions — extra links rendered with the ad, on Search and Demand Gen.
    *
    * Four fields rather than the callout's one, so the draft is an OBJECT and the add guard has more
    * to say. An entry arrives through {@link addGoogleSitelink} or a restored draft; the BFF guard
@@ -3403,6 +3425,8 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.googleCreativeError() !== null) return false;
     // The named Demand Gen ad groups campaign-service would refuse (#5226).
     if (googleSelected && this.demandGenAdGroupsError() !== null) return false;
+    // The single ad group's several ads campaign-service would refuse (#5226).
+    if (googleSelected && this.demandGenAdsError() !== null) return false;
     // Postal-code or radius targets the request cannot carry yet. Withholding them would not shrink
     // the campaign but WIDEN it to the event country, so Create waits — see the block's own doc.
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
@@ -3653,6 +3677,14 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly creativeFieldErrors: Signal<Record<string, string>> = this.initCreativeFieldErrors();
   protected readonly googleBiddingChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleBiddingChannel();
   protected readonly googleCalloutsAvailable: Signal<boolean> = this.initGoogleCalloutsAvailable();
+  /**
+   * Whether the campaign this form will dispatch takes sitelinks: Search or Demand Gen
+   * (`GOOGLE_CHANNELS_WITH_SITELINKS`), on the campaign-service road. The sitelink twin of
+   * {@link googleCalloutsAvailable}, on its own list because upstream fences sitelinks apart from
+   * the other extensions (`validateAssetPlan` takes sitelinks alone on Demand Gen, v1.0.31). The
+   * sitelink section renders on it and {@link googleSitelinksPayload} sends on it, so the two agree.
+   */
+  protected readonly googleSitelinksAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_SITELINKS));
   protected readonly googleCalloutsWithheldWarning: Signal<string | null> = this.initGoogleCalloutsWithheldWarning();
   protected readonly googleSitelinksWithheldWarning: Signal<string | null> = this.initGoogleSitelinksWithheldWarning();
   protected readonly googleStructuredSnippetsWithheldWarning: Signal<string | null> = this.initGoogleStructuredSnippetsWithheldWarning();
@@ -3664,8 +3696,9 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googlePricesWithheldWarning: Signal<string | null> = this.initGoogleAssetWithheldWarning(this.googlePrices, 'price extensions');
   /**
    * Why generated callouts and sitelinks are being withheld because the CAPABILITY is not an
-   * explicit yes, or `null`. The two warnings above cover the other reason — the channel takes no
-   * extensions — and the two readers partition every withholding between them, so none is silent.
+   * explicit yes, or `null`. The warnings above cover the other reason — the channel takes no
+   * extension of that kind — and the readers partition every withholding between them, so none is
+   * silent.
    *
    * Without this one the capability case had no reader at all: the section hides, both payload
    * helpers return `{}`, and `canSubmit` does not ask for the answer, so the create succeeded,
@@ -3680,19 +3713,6 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleTakesTargetCpa: Signal<boolean> = this.initGoogleTakesTargetCpa();
   protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
   protected readonly googleLanguagesChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleLanguagesChannel();
-  protected readonly googleLanguagesWithheldOn: Signal<string | null> = this.initGoogleLanguagesWithheldOn();
-  /**
-   * The held-languages sentence, or `''` when nothing is held. ONE string feeds the visible notice and
-   * the always-mounted live region at the top of the template, as {@link googleProximityWithheldMessage}
-   * does: the notice is created by the channel switch that gives it its text, so a region mounted with
-   * it would not reliably announce (#3568).
-   */
-  protected readonly googleLanguagesWithheldMessage = computed(() => {
-    const channelLabel = this.googleLanguagesWithheldOn();
-    if (channelLabel === null) return '';
-    const count = this.googleLanguages().length;
-    return `${channelLabel} campaigns do not take campaign languages, so the ${count} you picked will not be sent and this campaign will serve in every language. Switch the channel back to keep them.`;
-  });
   /**
    * Whether the targeting panel offers ad schedules / device adjustments, and so whether the request
    * carries them: `googleBiddingChannel` (a Google channel on the campaign-service road) fenced by the
@@ -3700,6 +3720,23 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleAdSchedulesAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_AD_SCHEDULES));
   protected readonly googleDeviceBidModifiersAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS));
+  /**
+   * The devices the dispatched channel takes (`googleAdsDevicesOn`): the device control's rows. Demand
+   * Gen adds TV screens; every other channel gets the three. Empty while no channel is dispatched.
+   */
+  protected readonly googleDeviceVocabulary = computed(() => {
+    const channel = this.googleBiddingChannel();
+    return channel === null ? [] : googleAdsDevicesOn(channel);
+  });
+  /**
+   * The device entries the request carries: those in {@link googleDeviceVocabulary}. A TV screens
+   * exclusion set on Demand Gen is held, not sent, after a switch to a channel without it, and
+   * `googleTargetingWithheldMessage` says so; the judge, the payload and the held notice all read this list.
+   */
+  protected readonly googleDeviceBidModifiersSent = computed(() => {
+    const vocabulary: readonly string[] = this.googleDeviceVocabulary();
+    return this.googleDeviceBidModifiers().filter((d) => vocabulary.includes(d.device));
+  });
   /**
    * The shared refusal the BFF would answer the create with, or `null`; `canSubmit` blocks on it.
    * Judged under the EFFECTIVE strategy, as for devices, so a window adjusted under a strategy Google
@@ -3847,7 +3884,16 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly demandGenAdGroupsError: Signal<string | null> = this.initDemandGenAdGroupsError();
   /** What the split leaves unsent, the single ad or the groups, when it holds anything (#5226); `''` otherwise. */
   protected readonly demandGenAdGroupsHeldMessage: Signal<string> = this.initDemandGenAdGroupsHeldMessage();
-  /** Each ad group field's error, keyed `<group index>.<format>.<control>`, on the creative sections' terms. */
+  /** Whether the single Demand Gen ad group's ads are on screen: Demand Gen's section is, and not split (#5226). */
+  protected readonly demandGenAdsShown: Signal<boolean> = this.initDemandGenAdsShown();
+  /** Why campaign-service would refuse the single ad group's several ads, holding Create, or `null` (#5226). */
+  protected readonly demandGenAdsError: Signal<string | null> = this.initDemandGenAdsError();
+  protected readonly demandGenMaxAds = GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP;
+  /**
+   * Each ad group and ad field's error, on the creative sections' terms, keyed `<group index>.<format>.<control>`
+   * for a group's first ad, `<group index>.ad-<n>.<format>.<control>` for its ad n, and `ad-<n>.<format>.<control>`
+   * for the single ad group's ad n.
+   */
   protected readonly demandGenAdGroupFieldErrors: Signal<Record<string, string>> = this.initDemandGenAdGroupFieldErrors();
   /** The fields an ad group renders for each format, resolved once as the sections resolve theirs. */
   protected readonly demandGenAdGroupFields: Readonly<Record<GoogleDemandGenAdFormat, GoogleCreativeSectionField[]>> = {
@@ -4074,11 +4120,16 @@ export class ImplementationTabComponent implements OnInit {
     effect(() => {
       const active = this.demandGenAdGroupsActive();
       void this.campaignFormRevision();
+      // Each group's ads and the single group's second and later ads (#5226) on the same terms.
+      const ads: [GoogleDemandGenAdForm, boolean][] = this.campaignForm.controls.demandGenAds.controls.map((ad) => [ad, this.demandGenAdsShown()]);
       for (const group of this.campaignForm.controls.demandGenAdGroups.controls) {
-        const format = group.controls.format.value;
+        ads.push([group, active], ...group.controls.ads.controls.map((ad): [GoogleDemandGenAdForm, boolean] => [ad, active]));
+      }
+      for (const [ad, sent] of ads) {
+        const format = ad.controls.format.value;
         for (const [creative, shouldBeEnabled] of [
-          [group.controls.creative, active && format === 'image'],
-          [group.controls.videoCreative, active && format === 'video'],
+          [ad.controls.creative, sent && format === 'image'],
+          [ad.controls.videoCreative, sent && format === 'video'],
         ] as const) {
           if (shouldBeEnabled === creative.enabled) continue;
           if (shouldBeEnabled) creative.enable({ emitEvent: false });
@@ -5610,7 +5661,8 @@ export class ImplementationTabComponent implements OnInit {
       // only when something was actually typed into it. Google-gated for the same reason the
       // section is: a LinkedIn-only create must not carry a Google creative the operator left
       // behind from an earlier selection.
-      ...(platforms.includes('google-ads') ? this.googleCreativePayload() : {}),
+      // With several Demand Gen ads, the single ad rides as the first of `demandGenAds` instead (#5226).
+      ...(platforms.includes('google-ads') ? this.googleCreativeWirePayload() : {}),
       // The named Demand Gen ad groups (#5226), on the same gate; absent unless the split is active,
       // when the payload above carries no Demand Gen creative.
       ...(platforms.includes('google-ads') ? this.googleDemandGenAdGroupsPayload() : {}),
@@ -5630,11 +5682,11 @@ export class ImplementationTabComponent implements OnInit {
       // dispatched channel is Search, the one channel upstream attaches audience criteria on.
       ...(platforms.includes('google-ads') ? this.googleAudienceSegmentsPayload() : {}),
       // The callout extensions, Google-gated for the same reason the creative and the bidding plan
-      // are, and already narrowed by `googleCalloutsAvailable` to the one channel upstream accepts
-      // extensions on.
+      // are, and already narrowed by `googleCalloutsAvailable` to Search, the one channel this
+      // application sends them on.
       ...(platforms.includes('google-ads') ? this.googleCalloutsPayload() : {}),
-      // The sitelink extensions, on the same gate as the callouts — both are ad extensions, and
-      // upstream refuses the whole create when any extension list reaches a non-Search campaign.
+      // The sitelink extensions, on the same Google gate, and already narrowed by
+      // `googleSitelinksAvailable` to Search and Demand Gen, where upstream accepts them.
       ...(platforms.includes('google-ads') ? this.googleSitelinksPayload() : {}),
       ...(platforms.includes('google-ads') ? this.googleStructuredSnippetsPayload() : {}),
       // The call, promotion and price extensions, on the same gate as the three above.
@@ -5887,6 +5939,37 @@ export class ImplementationTabComponent implements OnInit {
     const groups = this.campaignForm.controls.demandGenAdGroups;
     groups.removeAt(index);
     this.focusDemandGenAdGroupAfterRender(Math.min(index, groups.length - 1));
+  }
+
+  /** The second and later ads of ad group `group`, or of the single ad group for `null` (#5226). */
+  protected demandGenAdList(group: number | null): FormArray<FormGroup<GoogleDemandGenAdControls>> {
+    return group === null ? this.campaignForm.controls.demandGenAds : this.campaignForm.controls.demandGenAdGroups.at(group).controls.ads;
+  }
+
+  /** The id and test id stem of ad group `group`'s ads, or the single ad group's for `null`; ad n appends `-<n>`. */
+  protected demandGenAdIdPrefix(group: number | null): string {
+    return group === null ? 'demand-gen-ad' : `demand-gen-ad-group-${group}-ad`;
+  }
+
+  /**
+   * Add an empty ad to an ad group, up to {@link GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP} with its first (#5226),
+   * and move focus to its name. The group's own ad becomes ad 1, which then needs a name too.
+   */
+  protected addDemandGenAd(group: number | null): void {
+    const ads = this.demandGenAdList(group);
+    if (ads.length + 1 >= GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP) return;
+    ads.push(new FormGroup(this.demandGenAdControls()));
+    this.focusDemandGenAdAfterRender(group, ads.length - 1);
+  }
+
+  /**
+   * Remove an ad group's ad `index` of its second and later ads (#5226). Focus moves to the name of the ad
+   * now in its place, or the last one, or the group's Add another ad when none is left.
+   */
+  protected removeDemandGenAd(group: number | null, index: number): void {
+    const ads = this.demandGenAdList(group);
+    ads.removeAt(index);
+    this.focusDemandGenAdAfterRender(group, Math.min(index, ads.length - 1));
   }
 
   /** A creative's nested form group by its name, the Demand Gen video ad's included (#5226). */
@@ -7115,6 +7198,9 @@ export class ImplementationTabComponent implements OnInit {
       }
       groups.updateValueAndValidity();
     }
+    // The single ad group's several ads (#5226), on the groups' terms.
+    if (typeof draft.demandGenAdName === 'string') this.campaignForm.controls.demandGenAdName.setValue(draft.demandGenAdName);
+    if (Array.isArray(draft.demandGenAds)) this.restoreDemandGenAds(this.campaignForm.controls.demandGenAds, draft.demandGenAds);
     if (typeof draft.demandGenAdGroupsSplit === 'boolean') {
       this.campaignForm.controls.demandGenAdGroupsSplit.setValue(draft.demandGenAdGroupsSplit);
     }
@@ -7520,11 +7606,13 @@ export class ImplementationTabComponent implements OnInit {
       // The split and every group, both formats raw, on the same terms (#5226).
       demandGenAdGroupsSplit: this.campaignForm.controls.demandGenAdGroupsSplit.value,
       demandGenAdGroups: this.campaignForm.controls.demandGenAdGroups.controls.map((group) => ({
-        name: group.controls.name.value,
-        format: group.controls.format.value,
-        creative: { ...group.controls.creative.getRawValue() },
-        videoCreative: { ...group.controls.videoCreative.getRawValue() },
+        ...this.demandGenAdDraft(group),
+        adName: group.controls.adName.value,
+        ads: group.controls.ads.controls.map((ad) => this.demandGenAdDraft(ad)),
       })),
+      // The single ad group's several ads (#5226), on the same terms.
+      demandGenAdName: this.campaignForm.controls.demandGenAdName.value,
+      demandGenAds: this.campaignForm.controls.demandGenAds.controls.map((ad) => this.demandGenAdDraft(ad)),
       // Copied per slot, so the parent holds a snapshot rather than this component's arrays.
       googleImageAssets: Object.fromEntries(
         Object.entries(this.googleHeldImages()).map(([slotKey, images]) => [slotKey, images.map((image) => ({ ...image }))])
@@ -7787,9 +7875,9 @@ export class ImplementationTabComponent implements OnInit {
     // line against everything the operator does after this point.
     //
     // Seeded regardless of the selected Google channel, deliberately, exactly as the draft restore
-    // below does: `googleCalloutsPayload` and `googleSitelinksPayload` both gate on
-    // `googleCalloutsAvailable`, so a list seeded under Performance Max is HELD and not sent, and
-    // is still there if the operator switches to Search. `googleCalloutsWithheldWarning` is what
+    // below does: `googleCalloutsPayload` gates on `googleCalloutsAvailable` and
+    // `googleSitelinksPayload` on `googleSitelinksAvailable`, so a list seeded under Performance Max
+    // is HELD and not sent, and is still there if the operator switches to a channel that takes it. `googleCalloutsWithheldWarning` is what
     // tells them that is happening — or `googleExtensionsCapabilityBlock`, when what withheld the
     // list is the unanswered capability rather than the channel.
     if (brief.googleCallouts !== undefined) {
@@ -8002,6 +8090,8 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.demandGenAdFormat.reset();
     this.campaignForm.controls.demandGenAdGroupsSplit.reset();
     this.campaignForm.controls.demandGenAdGroups.clear();
+    this.campaignForm.controls.demandGenAdName.reset();
+    this.campaignForm.controls.demandGenAds.clear();
     this.googleGeoTargets.set([]);
     this.googlePostalGeoTargets.set([]);
     this.googlePostalGeoLabels.set({});
@@ -8948,9 +9038,10 @@ export class ImplementationTabComponent implements OnInit {
    *    the same reason. Languages ride on the `googleAdsConfig` envelope and the in-process creator
    *    reads none of it, so a language picked there would be collected, dropped, and the campaign
    *    created serving in every language while the operator believes they narrowed it.
-   * 3. {@link GOOGLE_CHANNELS_WITH_LANGUAGES} — Demand Gen. `validateCriteriaPlan` REFUSES the whole
-   *    non-location criteria set there rather than dropping it, so offering the control on that
-   *    channel would not produce a wider campaign, it would produce a failed create.
+   * 3. {@link GOOGLE_CHANNELS_WITH_LANGUAGES} — every channel since campaign-service v1.0.31, which
+   *    takes Demand Gen languages on the ad group (#459), so today this gate passes whenever the first
+   *    two do. A channel taken out of that constant would withhold a picked list with no notice, so
+   *    fencing one again needs a held-list notice too.
    *
    * Video is in that constant and still never reaches here: `GOOGLE_VIDEO_CREATE_SUPPORTED` is
    * false, so `selectedGoogleChannels` drops it and there is no Video create for a language to ride
@@ -8968,24 +9059,6 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * The label of the channel a picked language list is being WITHHELD on, or null when nothing is.
-   *
-   * Non-null only when the Google section is live on a dispatched channel (`googleBiddingChannel`)
-   * that takes no languages, and the operator has picked some — in practice languages chosen under
-   * Search and then left behind by a switch to Demand Gen. The list is held for a switch back, not
-   * sent, so the campaign serves in every language; the template says so rather than letting the
-   * section simply vanish. Off on the legacy road and with no Google channel, where
-   * `googleBiddingChannel` is null and nothing about languages is on screen to explain.
-   */
-  private initGoogleLanguagesWithheldOn(): Signal<string | null> {
-    return computed(() => {
-      const channel = this.googleBiddingChannel();
-      if (!channel || this.googleLanguagesChannel() || this.googleLanguages().length === 0) return null;
-      return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
-    });
-  }
-
-  /**
    * The shared device refusal the BFF would answer the create with, judged under the EFFECTIVE
    * strategy — the one `googleBiddingPayload` sends, or the channel default it leaves upstream to
    * pick — so an adjustment the strategy refuses blocks Create here rather than failing the create.
@@ -8995,7 +9068,7 @@ export class ImplementationTabComponent implements OnInit {
       const channel = this.googleBiddingChannel();
       const strategy = this.googleBiddingStrategy();
       if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null) return null;
-      return googleDeviceBidModifierRefusal(this.googleDeviceBidModifiers(), strategy, channel);
+      return googleDeviceBidModifierRefusal(this.googleDeviceBidModifiersSent(), strategy, channel);
     });
   }
 
@@ -9072,13 +9145,19 @@ export class ImplementationTabComponent implements OnInit {
    * adjustment only under Manual CPC and Maximize Clicks and ignores it under Smart Bidding, so the
    * shared judge refuses one there. The windows themselves still apply. The way back names only the
    * strategies the channel offers (`googleScheduleAdjustmentStrategiesOn`) — Search both, Display
-   * Maximize Clicks, Performance Max and Video neither. `null` while the schedule section is not shown.
+   * Maximize Clicks, Performance Max and Video neither. On Demand Gen the reason is the channel, not the
+   * strategy: it takes a window only without an adjustment, whatever the strategy
+   * (`googleChannelRefusesScheduleAdjustments`). `null` while the schedule section is not shown.
    */
   private initGoogleScheduleAdjustBlockedReason(): Signal<string | null> {
     return computed(() => {
       const channel = this.googleBiddingChannel();
       const strategy = this.googleBiddingStrategy();
-      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null || googleStrategyTakesScheduleAdjustments(strategy)) return null;
+      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null) return null;
+      if (googleChannelRefusesScheduleAdjustments(channel)) {
+        return `${googleChannelScheduleAdjustmentRefusedSentence(channel)} The windows still decide when the campaign serves.`;
+      }
+      if (googleStrategyTakesScheduleAdjustments(strategy)) return null;
       const lead = `${googleScheduleAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The windows still decide when the campaign serves.`;
       const offered = googleScheduleAdjustmentStrategiesOn(channel).map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]);
       const takes = GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES.map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]).join(' or ');
@@ -9092,11 +9171,16 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => {
       const channel = this.googleBiddingChannel();
       const strategy = this.googleBiddingStrategy();
-      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null || googleStrategyTakesScheduleAdjustments(strategy)) return '';
+      if (!this.googleAdSchedulesAvailable() || !channel || strategy === null) return '';
+      const byChannel = googleChannelRefusesScheduleAdjustments(channel);
+      if (!byChannel && googleStrategyTakesScheduleAdjustments(strategy)) return '';
       const adjusted = this.googleAdSchedules().filter((s) => s.bidModifier !== undefined).length;
       if (adjusted === 0) return '';
       const one = adjusted === 1;
       const pronoun = one ? 'it' : 'them';
+      if (byChannel) {
+        return `${googleChannelScheduleAdjustmentRefusedSentence(channel)} The bid ${one ? 'adjustment' : 'adjustments'} on ${adjusted} ad schedule ${one ? 'window is' : 'windows are'} kept for a switch back, and Create Campaign waits until you clear ${pronoun}.`;
+      }
       const offered = googleScheduleAdjustmentStrategiesOn(channel).map((s) => GOOGLE_BIDDING_STRATEGY_LABELS[s]);
       const way = offered.length > 0 ? `clear ${pronoun}, or choose ${offered.join(' or ')}` : `clear ${pronoun}`;
       return `${googleScheduleAdjustmentIgnoredSentence(GOOGLE_BIDDING_STRATEGY_LABELS[strategy])} The bid ${one ? 'adjustment' : 'adjustments'} on ${adjusted} ad schedule ${one ? 'window is' : 'windows are'} kept for a switch back, and Create Campaign waits until you ${way}.`;
@@ -9110,13 +9194,18 @@ export class ImplementationTabComponent implements OnInit {
    * Maximize Clicks and Target CPA it would, so the shared
    * `googleDeviceAdjustmentNotSentSentence` gives whichever reason is true. The way back differs by channel — Search can switch to Manual CPC,
    * Display and Video offer no Manual CPC here — so the sentence says which. `null` while the device
-   * section is not shown, as for {@link initGoogleDeviceAdjustmentsHeldMessage}.
+   * section is not shown, as for {@link initGoogleDeviceAdjustmentsHeldMessage}. On Demand Gen the reason
+   * is the channel, which takes a device only as an exclusion whatever the strategy
+   * (`googleChannelTakesDeviceExclusionsOnly`).
    */
   private initGoogleDeviceAdjustBlockedReason(): Signal<string | null> {
     return computed(() => {
       const channel = this.googleBiddingChannel();
       const strategy = this.googleBiddingStrategy();
-      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null || strategy === 'manual-cpc') return null;
+      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null) return null;
+      if (googleChannelTakesDeviceExclusionsOnly(channel))
+        return `${googleChannelDeviceAdjustmentRefusedSentence(channel)} You can keep the default bid or exclude a device.`;
+      if (strategy === 'manual-cpc') return null;
       const manual = GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc'];
       const lead = `${googleDeviceAdjustmentNotSentSentence(strategy)} You can keep the default bid or exclude a device.`;
       return googleChannelOffersManualCpc(channel)
@@ -9129,11 +9218,16 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => {
       const channel = this.googleBiddingChannel();
       const strategy = this.googleBiddingStrategy();
-      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null || strategy === 'manual-cpc') return '';
-      const adjusted = this.googleDeviceBidModifiers().filter((d) => d.bidModifier !== 0);
+      if (!this.googleDeviceBidModifiersAvailable() || !channel || strategy === null) return '';
+      const byChannel = googleChannelTakesDeviceExclusionsOnly(channel);
+      if (!byChannel && strategy === 'manual-cpc') return '';
+      const adjusted = this.googleDeviceBidModifiersSent().filter((d) => d.bidModifier !== 0);
       if (adjusted.length === 0) return '';
       const one = adjusted.length === 1;
       const names = joinAsSentenceList(adjusted.map((d) => GOOGLE_ADS_DEVICE_LABELS[d.device]));
+      if (byChannel) {
+        return `${googleChannelDeviceAdjustmentRefusedSentence(channel)} The ${one ? 'adjustment' : 'adjustments'} on ${names} ${one ? 'is' : 'are'} kept for a switch back, and Create Campaign waits until you set ${one ? 'it' : 'them'} to Default bid or Exclude.`;
+      }
       const way = googleChannelOffersManualCpc(channel)
         ? `Default bid or Exclude, or choose ${GOOGLE_BIDDING_STRATEGY_LABELS['manual-cpc']} again`
         : 'Default bid or Exclude';
@@ -9156,6 +9250,10 @@ export class ImplementationTabComponent implements OnInit {
       const held: string[] = [];
       const schedules = this.googleAdSchedulesAvailable() ? 0 : this.googleAdSchedules().length;
       const devices = this.googleDeviceBidModifiersAvailable() ? 0 : this.googleDeviceBidModifiers().length;
+      // On a channel that takes devices, an entry outside its vocabulary — TV screens, set on Demand
+      // Gen — is held rather than sent; `googleDeviceBidModifiersSent` leaves it out.
+      const sentDevices: readonly string[] = this.googleDeviceVocabulary();
+      const unsentDevices = this.googleDeviceBidModifiersAvailable() ? this.googleDeviceBidModifiers().filter((d) => !sentDevices.includes(d.device)) : [];
       const demographics = this.googleDemographicExclusionsAvailable() ? 0 : this.googleExcludedAgeRanges().length + this.googleExcludedGenders().length;
       if (schedules > 0) {
         kinds.push('ad schedules');
@@ -9164,6 +9262,10 @@ export class ImplementationTabComponent implements OnInit {
       if (devices > 0) {
         kinds.push('device bid adjustments');
         held.push(`${devices} device ${devices === 1 ? 'setting' : 'settings'}`);
+      }
+      if (unsentDevices.length > 0) {
+        kinds.push(joinAsSentenceList(unsentDevices.map((d) => GOOGLE_ADS_DEVICE_LABELS[d.device])));
+        held.push(`${unsentDevices.length} device ${unsentDevices.length === 1 ? 'setting' : 'settings'}`);
       }
       if (demographics > 0) {
         kinds.push('demographic exclusions');
@@ -9442,13 +9544,17 @@ export class ImplementationTabComponent implements OnInit {
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take callouts, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
     });
   }
-  /** The sitelink twin of {@link initGoogleCalloutsWithheldWarning}, on the same channel gate. */
+  /**
+   * The sitelink twin of {@link initGoogleCalloutsWithheldWarning}, on the same terms but its own
+   * channel list: sitelinks are sent on Demand Gen as well as Search (`GOOGLE_CHANNELS_WITH_SITELINKS`),
+   * so this speaks only on Display and Performance Max, and names both channels that keep them.
+   */
   private initGoogleSitelinksWithheldWarning(): Signal<string | null> {
     return computed(() => {
       const channel = this.resolveGoogleChannel();
       const count = this.googleSitelinks().length;
-      if (!channel || (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel) || count === 0) return null;
-      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take sitelinks, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+      if (!channel || (GOOGLE_CHANNELS_WITH_SITELINKS as readonly string[]).includes(channel) || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take sitelinks, so the ${count} you added will not be sent. Switch to Search or Demand Gen to keep them.`;
     });
   }
   /** The structured-snippet twin of {@link initGoogleCalloutsWithheldWarning}, on the same gate. */
@@ -9488,10 +9594,11 @@ export class ImplementationTabComponent implements OnInit {
    * hostage to a stalled capability read is worse than creating and saying what was left out.
    *
    * Says nothing about the CHANNEL reason — {@link initGoogleCalloutsWithheldWarning} and its
-   * sitelink twin own that, on every channel that takes no extensions and whatever the capability
-   * says. The two divide the ground exactly: this block speaks only where an answer could change
-   * the outcome, which is only on a channel that takes extensions, and those warnings speak
-   * everywhere else. Nothing is withheld in silence and nothing is explained twice.
+   * twins own that, for each kind on every channel that does not take it, whatever the capability
+   * says. They divide the ground exactly: this block counts a kind only where an answer could change
+   * its outcome, which is only on a channel that takes that kind (sitelinks on Search and Demand
+   * Gen, the rest on Search), and those warnings speak everywhere else. Nothing is withheld in
+   * silence and nothing is explained twice.
    */
   private initGoogleExtensionsCapabilityBlock(): Signal<CampaignGoogleExtensionsCapabilityBlock | null> {
     return computed(() => {
@@ -9501,26 +9608,29 @@ export class ImplementationTabComponent implements OnInit {
       // thing being reported on here, so reading it would always give null.
       //
       // The channel matters because the capability is not the only reason a list is withheld. On a
-      // channel that takes no extensions the list is not going anywhere whatever the capability
-      // answers, so "Retry the check to send them" would be a promise this code cannot keep. Stay
-      // silent there instead: nothing is lost that the answer could recover, and
-      // `googleCalloutsWithheldWarning` is already saying the true reason — it reads the same
-      // resolved channel, so it does not wait for the capability either.
+      // channel that does not take a kind, that list is not going anywhere whatever the capability
+      // answers, so "Retry the check to send them" would be a promise this code cannot keep. Each
+      // kind is counted only on a channel that takes it: nothing is lost that the answer could
+      // recover, and the kind's own withheld warning is already saying the true reason — it reads the
+      // same resolved channel, so it does not wait for the capability either. On Demand Gen that
+      // leaves the sitelinks alone; on Display and Performance Max, nothing.
       const channel = this.resolveGoogleChannel();
-      if (channel === null || !(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel)) return null;
+      if (channel === null) return null;
+      const takesExtensions = (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel);
+      const takesSitelinks = (GOOGLE_CHANNELS_WITH_SITELINKS as readonly string[]).includes(channel);
 
-      // "N callouts, M sitelinks and K structured snippets", dropping whichever parts are empty. The
-      // counts are the point: they are what the operator is about to lose, and they are the only way
-      // to tell this notice from a generic capability warning.
-      const counted: [number, string][] = [
-        [this.googleCallouts().length, 'callout'],
-        [this.googleSitelinks().length, 'sitelink'],
-        [this.googleStructuredSnippets().length, 'structured snippet'],
-        [this.googleCallExtensions().length, 'call extension'],
-        [this.googlePromotions().length, 'promotion'],
-        [this.googlePrices().length, 'price extension'],
+      // "N callouts, M sitelinks and K structured snippets", dropping whichever parts are empty or
+      // not taken on this channel. The counts are the point: they are what the operator is about to
+      // lose, and they are the only way to tell this notice from a generic capability warning.
+      const counted: [number, string, boolean][] = [
+        [this.googleCallouts().length, 'callout', takesExtensions],
+        [this.googleSitelinks().length, 'sitelink', takesSitelinks],
+        [this.googleStructuredSnippets().length, 'structured snippet', takesExtensions],
+        [this.googleCallExtensions().length, 'call extension', takesExtensions],
+        [this.googlePromotions().length, 'promotion', takesExtensions],
+        [this.googlePrices().length, 'price extension', takesExtensions],
       ];
-      const parts = counted.filter(([count]) => count > 0).map(([count, noun]) => `${count} ${noun}${count === 1 ? '' : 's'}`);
+      const parts = counted.filter(([count, , taken]) => taken && count > 0).map(([count, noun]) => `${count} ${noun}${count === 1 ? '' : 's'}`);
       if (parts.length === 0) return null;
       // Oxford-free list: "a", "a and b", "a, b and c" — the same shape the two-part version read as.
       const lost = parts.length > 2 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts.join(' and ');
@@ -9560,27 +9670,30 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Whether the campaign this form will dispatch can carry ad extensions at all.
+   * Whether the campaign this form will dispatch can carry the ad extensions other than sitelinks:
+   * callouts, structured snippets, calls, promotions and prices. Sitelinks have their own gate,
+   * {@link googleSitelinksAvailable}, because upstream takes them on Demand Gen too.
    *
    * Built on {@link googleBiddingChannel} rather than re-deriving the channel, because the question
    * is about the channel the REQUEST will carry and that signal is already exactly that — the same
    * `buildGoogleAdsConfig` mirror, including its Search-wins asymmetry and its null on the legacy
    * road. Re-deriving it here would be a second copy of one upstream contract, free to drift.
    *
-   * False is a withholding, not a refusal. Upstream's `validateAssetPlan` refuses the whole
-   * extension set on any channel but Search ("supported on Search campaigns only, not on %s") at
-   * preflight, BEFORE the budget mutate — so a callout sent on a Performance Max create yields no
-   * campaign at all. The section hides and the payload holds the list rather than forwarding it;
+   * False is a withholding, not a refusal. Upstream's `validateAssetPlan` refuses these kinds on
+   * Demand Gen ("ad extensions other than sitelinks ... are not supported on %s"), Display and
+   * Video at preflight, BEFORE the budget mutate — so a callout sent on a Demand Gen create yields no
+   * campaign at all. (It takes callouts and snippets on Performance Max, a pairing this application
+   * has not opened, so they are withheld there too.) The section hides and the payload holds the list rather than forwarding it;
    * the operator's typed callouts survive in the draft and come back if they re-tick Search.
    *
    * False for TWO reasons, not one: the channel takes no extensions, or `googleBiddingChannel` is
    * null because the create capability is not an explicit yes. Because this signal cannot tell which,
    * nothing that has to NAME the reason may read it. Each reason has its own reader, and each asks
-   * the question it can answer: {@link initGoogleCalloutsWithheldWarning} and its sitelink twin read
-   * the resolved channel and speak for the channel reason;
+   * the question it can answer: {@link initGoogleCalloutsWithheldWarning} and its twins read the
+   * resolved channel and speak for the channel reason;
    * {@link initGoogleExtensionsCapabilityBlock} reads the capability and speaks for that one. The
-   * two are mutually exclusive by construction — the block stays silent on a channel that takes no
-   * extensions — so exactly one of them speaks whenever a list is withheld.
+   * two are mutually exclusive by construction — the block leaves out every kind the channel does
+   * not take — so exactly one of them speaks whenever a list is withheld.
    */
   private initGoogleCalloutsAvailable(): Signal<boolean> {
     return computed(() => {
@@ -9650,9 +9763,16 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  /**
+   * A target ROAS is never offered on a channel in {@link GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS} —
+   * Demand Gen, where `validateBiddingPlan` refuses one even under Maximize Conversion Value — so the
+   * field cannot express that refusal and the payload withholds a value typed on another channel.
+   */
   private initGoogleTakesTargetRoas(): Signal<boolean> {
     return computed(() => {
       const strategy = this.googleBiddingStrategy();
+      const channel = this.googleBiddingChannel();
+      if (channel === null || (GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS as readonly string[]).includes(channel)) return false;
       return strategy !== null && (GOOGLE_BIDDING_ROAS_STRATEGIES as readonly string[]).includes(strategy);
     });
   }
@@ -9771,10 +9891,9 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Whether this channel can name its conversion actions at create time.
    *
-   * A CHANNEL question, not a strategy one: `campaign.selective_optimization` is defined for
-   * Search, Display and Video, so those three accept the list under any strategy. Demand Gen and
-   * Performance Max select conversions through a resource that cannot be written until the
-   * campaign exists, and campaign-service refuses the list there rather than dropping it.
+   * A CHANNEL question, not a strategy one: campaign-service applies the list as a campaign-level
+   * custom conversion goal (`applyCampaignConversionGoal`) under any strategy. Read from
+   * {@link GOOGLE_CONVERSION_ACTION_CHANNELS}, which leaves out Performance Max by choice.
    */
   private initGoogleTakesConversionActions(): Signal<boolean> {
     return computed(() => {
@@ -9842,8 +9961,9 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Ids entered under a channel that takes conversion actions, held when the dispatched channel takes
-   * none: `googleBiddingPayload` sends them only while `googleTakesConversionActions`. Counted as the
+   * Ids entered under a channel that takes conversion actions, held when the dispatched channel is one
+   * LFX One sends none on (Performance Max, see {@link GOOGLE_CONVERSION_ACTION_CHANNELS}):
+   * `googleBiddingPayload` sends them only while `googleTakesConversionActions`. Counted as the
    * request would count them — trimmed, blank lines dropped. Read through `campaignFormRevision`.
    */
   private initGoogleConversionActionsWithheldMessage(): Signal<string> {
@@ -9853,7 +9973,7 @@ export class ImplementationTabComponent implements OnInit {
       void this.campaignFormRevision();
       const count = this.splitCreativeLines(this.campaignForm.getRawValue().googleConversionActions).length;
       if (count === 0) return '';
-      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take conversion actions, so the ${count} you entered will not be sent. Switch the channel back to keep them.`;
+      return `LFX One creates ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns on the Google Ads account's own conversion goals, so the ${count} conversion ${count === 1 ? 'action' : 'actions'} you entered will not be sent. Switch the channel back to keep ${count === 1 ? 'it' : 'them'}.`;
     });
   }
 
@@ -10093,8 +10213,12 @@ export class ImplementationTabComponent implements OnInit {
       void this.campaignFormRevision();
       const payload = this.googleCreativePayload();
       // A section with no fields is Demand Gen split into ad groups (#5226), whose groups each need an
-      // ad: `demandGenAdGroupsError` holds Create on an empty one rather than warning.
-      const empty = this.googleCreativeSections().filter((section) => section.fields.length > 0 && payload[section.groupName] === undefined);
+      // ad: `demandGenAdGroupsError` holds Create on an empty one rather than warning. So does
+      // `demandGenAdsError` on an empty first ad of several.
+      const several = this.googleDemandGenAdsPayload().demandGenAds !== undefined;
+      const empty = this.googleCreativeSections().filter(
+        (section) => section.fields.length > 0 && payload[section.groupName] === undefined && !(several && section.channel === 'demand-gen')
+      );
       if (empty.length === 0) return null;
       const names = empty.map((section) => section.label).join(' and ');
       const verb = empty.length === 1 ? 'has' : 'have';
@@ -10225,7 +10349,7 @@ export class ImplementationTabComponent implements OnInit {
     const payload: Partial<CampaignCreateRequest> = {};
     const schedules = this.googleAdSchedules();
     if (this.googleAdSchedulesAvailable() && schedules.length > 0) payload.adSchedules = schedules.map((s) => ({ ...s }));
-    const devices = this.googleDeviceBidModifiers();
+    const devices = this.googleDeviceBidModifiersSent();
     if (this.googleDeviceBidModifiersAvailable() && devices.length > 0) payload.deviceBidModifiers = devices.map((d) => ({ ...d }));
     if (this.googleDemographicExclusionsAvailable()) {
       const ageRanges = this.googleExcludedAgeRanges();
@@ -10374,12 +10498,12 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The sitelink extensions as the request carries them, or `{}` when there is nothing to send.
    *
-   * Gate, withholding and omit-when-empty are {@link googleCalloutsPayload}'s exactly. The entries
-   * are COPIED rather than passed by reference, so a later chip edit cannot reach a request that
-   * has already been built.
+   * Withholding and omit-when-empty are {@link googleCalloutsPayload}'s exactly; the gate is
+   * {@link googleSitelinksAvailable}, which adds Demand Gen. The entries are COPIED rather than
+   * passed by reference, so a later chip edit cannot reach a request that has already been built.
    */
   private googleSitelinksPayload(): Partial<CampaignCreateRequest> {
-    if (!this.googleCalloutsAvailable()) return {};
+    if (!this.googleSitelinksAvailable()) return {};
     const sitelinks = this.googleSitelinks();
     return sitelinks.length > 0 ? { sitelinks: sitelinks.map((s) => ({ ...s })) } : {};
   }
@@ -10842,26 +10966,101 @@ export class ImplementationTabComponent implements OnInit {
    * The named Demand Gen ad groups as the create sends them (#5226), or `{}` while the split is not
    * active, so a create without the split is byte-identical to one made before it existed. Each group
    * sends its name and the creative of its chosen format, built as the sections' creatives are; a
-   * creative that empties out is omitted, which {@link demandGenAdGroupsError} then refuses.
+   * creative that empties out is omitted, which {@link demandGenAdGroupsError} then refuses. A group with
+   * a second ad sends `ads` instead: its own ad first, under its ad name, then the others.
    */
   private googleDemandGenAdGroupsPayload(): { demandGenAdGroups?: GoogleDemandGenAdGroup[] } {
     if (!this.demandGenAdGroupsActive()) return {};
     const groups = this.campaignForm.controls.demandGenAdGroups.controls.map((group): GoogleDemandGenAdGroup => {
-      const name = group.controls.name.value.trim();
-      if (group.controls.format.value === 'video') {
-        const videoCreative = this.creativeFrom(this.demandGenAdGroupFields.video, group.controls.videoCreative.getRawValue(), null);
-        return videoCreative === null ? { name } : { name, videoCreative: videoCreative as GoogleDemandGenAdGroup['videoCreative'] };
-      }
-      const creative = this.creativeFrom(this.demandGenAdGroupFields.image, group.controls.creative.getRawValue(), null);
-      return creative === null ? { name } : { name, creative: creative as GoogleDemandGenAdGroup['creative'] };
+      if (group.controls.ads.length === 0) return this.demandGenAdEntry(group.controls.name.value, group);
+      return {
+        name: group.controls.name.value.trim(),
+        ads: [
+          this.demandGenAdEntry(group.controls.adName.value, group),
+          ...group.controls.ads.controls.map((ad) => this.demandGenAdEntry(ad.controls.name.value, ad)),
+        ],
+      };
     });
     return { demandGenAdGroups: groups };
+  }
+
+  /** One ad's wire entry: `name` trimmed and the creative of the ad's chosen format, omitted when it empties out. */
+  private demandGenAdEntry(name: string, ad: GoogleDemandGenAdForm): GoogleDemandGenAd {
+    const trimmed = name.trim();
+    if (ad.controls.format.value === 'video') {
+      const videoCreative = this.creativeFrom(this.demandGenAdGroupFields.video, ad.controls.videoCreative.getRawValue(), null);
+      return videoCreative === null ? { name: trimmed } : { name: trimmed, videoCreative: videoCreative as GoogleDemandGenAd['videoCreative'] };
+    }
+    const creative = this.creativeFrom(this.demandGenAdGroupFields.image, ad.controls.creative.getRawValue(), null);
+    return creative === null ? { name: trimmed } : { name: trimmed, creative: creative as GoogleDemandGenAd['creative'] };
+  }
+
+  /** {@link demandGenAdsShown}: Demand Gen's creative section is on screen and not split into ad groups. */
+  private initDemandGenAdsShown(): Signal<boolean> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      return !this.campaignForm.controls.demandGenAdGroupsSplit.value && this.googleCreativeSections().some((section) => section.channel === 'demand-gen');
+    });
+  }
+
+  /**
+   * The single Demand Gen ad group's several ads as the create sends them (#5226), or `{}` while it has one
+   * ad, so a create with one ad is byte-identical to one made before several existed. Ad 1 is the
+   * section's own creative, stored images included, under {@link demandGenAdName}; an empty one is sent
+   * with no creative, which {@link demandGenAdsError} then refuses.
+   */
+  private googleDemandGenAdsPayload(): { demandGenAds?: GoogleDemandGenAd[] } {
+    const extra = this.campaignForm.controls.demandGenAds.controls;
+    if (!this.demandGenAdsShown() || extra.length === 0) return {};
+    const { groupName, format } = this.googleCreativeGroupFor('demand-gen');
+    const creative = this.googleCreativePayload()[groupName];
+    const first: GoogleDemandGenAd = { name: this.campaignForm.controls.demandGenAdName.value.trim() };
+    if (creative !== undefined && format === 'video') first.videoCreative = creative as GoogleDemandGenAd['videoCreative'];
+    else if (creative !== undefined) first.creative = creative as GoogleDemandGenAd['creative'];
+    return { demandGenAds: [first, ...extra.map((ad) => this.demandGenAdEntry(ad.controls.name.value, ad))] };
+  }
+
+  /** {@link googleCreativePayload} as the request carries it: with several Demand Gen ads, `demandGenAds` replaces the single ad. */
+  private googleCreativeWirePayload(): Record<string, unknown> {
+    const payload: Record<string, unknown> = this.googleCreativePayload();
+    const ads = this.googleDemandGenAdsPayload();
+    if (ads.demandGenAds === undefined) return payload;
+    for (const group of GOOGLE_CREATIVE_GROUPS) {
+      if (group.channel === 'demand-gen') delete payload[group.groupName];
+    }
+    return { ...payload, ...ads };
+  }
+
+  /**
+   * {@link demandGenAdsError}: the shared judge the BFF refuses `demandGenAds` on, over what the create sends.
+   *
+   * Judged on the editable Event Name, not the stored brief's event name the names are composed from
+   * upstream (`decodeBriefFields`), which the BFF judges on: this tab cannot know that name reliably.
+   * `briefData` is the brief handed over from Planning, which may not be saved yet, and
+   * `fromBriefResponse` keeps only `event_details.name` of it, not the `eventName` key upstream
+   * prefers. Where the two names differ, the BFF's refusal is the one that decides.
+   */
+  private initDemandGenAdsError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const ads = this.googleDemandGenAdsPayload().demandGenAds;
+      if (ads === undefined) return null;
+      const groupName = googleDemandGenSingleAdGroupName(this.campaignForm.controls.eventName.value);
+      return googleDemandGenAdsRefusal('the Demand Gen ad group', groupName, ads, (creative) => this.demandGenImageAdRefusal(creative));
+    });
+  }
+
+  /** A Demand Gen image ad held to the minimums a single one is held to ({@link googleCreativeShortfall}), as a clause. */
+  private demandGenImageAdRefusal(creative: unknown): string | null {
+    const missing = this.googleCreativeShortfall('demand-gen', creative as Record<string, string | GoogleCreativeImageRef[]>);
+    return missing === null ? null : `the image ad ${missing}`;
   }
 
   /**
    * {@link demandGenAdGroupsError}: the shared judge the BFF refuses the create on, over exactly what
    * {@link googleDemandGenAdGroupsPayload} sends, with a group's image ad held to the minimums a single
-   * Demand Gen image ad is held to ({@link googleCreativeShortfall}).
+   * Demand Gen image ad is held to ({@link googleCreativeShortfall}). Judged on the editable Event Name,
+   * for the reason {@link initDemandGenAdsError} gives.
    */
   private initDemandGenAdGroupsError(): Signal<string | null> {
     return computed(() => {
@@ -10871,10 +11070,7 @@ export class ImplementationTabComponent implements OnInit {
       // Upstream reads an empty list as no split and would create the campaign with no ad at all, so the
       // tab holds Create instead: every group removed, or a draft restored split with none.
       if (groups.length === 0) return GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY;
-      return googleDemandGenAdGroupsRefusal(this.campaignForm.controls.eventName.value, groups, (creative) => {
-        const missing = this.googleCreativeShortfall('demand-gen', creative as Record<string, string | GoogleCreativeImageRef[]>);
-        return missing === null ? null : `the image ad ${missing}`;
-      });
+      return googleDemandGenAdGroupsRefusal(this.campaignForm.controls.eventName.value, groups, (creative) => this.demandGenImageAdRefusal(creative));
     });
   }
 
@@ -10891,13 +11087,20 @@ export class ImplementationTabComponent implements OnInit {
       if (this.campaignForm.controls.demandGenAdGroupsSplit.value) {
         const single = GOOGLE_CREATIVE_GROUPS.filter((group) => group.channel === 'demand-gen').map((group) => group.groupName);
         const held = Object.entries(this.googleHeldImages()).some(([key, images]) => single.includes(key.split('.')[0]) && images.length > 0);
+        if (this.campaignForm.controls.demandGenAds.length > 0) {
+          return 'The Demand Gen ads you entered are kept but not sent while the campaign is split into ad groups. Turn the split off to send them instead.';
+        }
         if (!held && !single.some((groupName) => typed(this.creativeGroup(groupName).getRawValue()))) return '';
         return 'The single Demand Gen ad you entered is kept but not sent while the campaign is split into ad groups. Turn the split off to send it instead.';
       }
       // A group's own `format` is always set, so it is the name and the two creatives that say whether
       // anything was entered, not the group's top-level values.
       const groups = this.campaignForm.controls.demandGenAdGroups.controls.filter(
-        (group) => group.controls.name.value.trim() !== '' || typed(group.controls.creative.getRawValue()) || typed(group.controls.videoCreative.getRawValue())
+        (group) =>
+          group.controls.name.value.trim() !== '' ||
+          group.controls.ads.length > 0 ||
+          typed(group.controls.creative.getRawValue()) ||
+          typed(group.controls.videoCreative.getRawValue())
       );
       if (groups.length === 0) return '';
       const subject = groups.length === 1 ? 'ad group you entered is' : 'ad groups you entered are';
@@ -10911,14 +11114,21 @@ export class ImplementationTabComponent implements OnInit {
       void this.campaignFormRevision();
       void this.campaignFormTouchRevision();
       const errors: Record<string, string> = {};
-      if (!this.demandGenAdGroupsActive()) return errors;
-      for (const [index, group] of this.campaignForm.controls.demandGenAdGroups.controls.entries()) {
-        const format = group.controls.format.value;
-        const creative = group.controls[format === 'video' ? 'videoCreative' : 'creative'];
+      const collect = (prefix: string, ad: GoogleDemandGenAdForm): void => {
+        const format = ad.controls.format.value;
+        const creative = ad.controls[format === 'video' ? 'videoCreative' : 'creative'];
         for (const field of this.demandGenAdGroupFields[format]) {
           const message = this.creativeControlError(creative.get(field.control));
-          if (message !== null) errors[`${index}.${format}.${field.control}`] = message;
+          if (message !== null) errors[`${prefix}${format}.${field.control}`] = message;
         }
+      };
+      if (this.demandGenAdsShown()) {
+        for (const [index, ad] of this.campaignForm.controls.demandGenAds.controls.entries()) collect(`ad-${index + 2}.`, ad);
+      }
+      if (!this.demandGenAdGroupsActive()) return errors;
+      for (const [index, group] of this.campaignForm.controls.demandGenAdGroups.controls.entries()) {
+        collect(`${index}.`, group);
+        for (const [adIndex, ad] of group.controls.ads.controls.entries()) collect(`${index}.ad-${adIndex + 2}.`, ad);
       }
       return errors;
     });
@@ -10939,24 +11149,76 @@ export class ImplementationTabComponent implements OnInit {
     );
   }
 
-  /** One named Demand Gen ad group's controls, filled from a saved draft entry when one is given. */
+  /** Focus ad `index + 2`'s name in ad group `group` (the single one for `null`) once rendered, or its Add another ad for `-1` (#5226). */
+  private focusDemandGenAdAfterRender(group: number | null, index: number): void {
+    const prefix = this.demandGenAdIdPrefix(group);
+    afterNextRender(
+      () => {
+        const host = this.host.nativeElement;
+        const target =
+          index < 0
+            ? host.querySelector<HTMLElement>(`[data-testid="implementation-${prefix}-add"] button`)
+            : host.querySelector<HTMLElement>(`#${prefix}-${index + 2}-name`);
+        target?.focus();
+      },
+      { injector: this.injector }
+    );
+  }
+
+  /**
+   * One named Demand Gen ad group's controls, filled from a saved draft entry when one is given: its name
+   * and first ad, its first ad's name, and its second and later ads (#5226).
+   */
   private buildDemandGenAdGroup(saved?: GoogleDemandGenAdGroupDraft): FormGroup<GoogleDemandGenAdGroupControls> {
     const group = new FormGroup<GoogleDemandGenAdGroupControls>({
+      ...this.demandGenAdControls(saved),
+      adName: this.fb.nonNullable.control(typeof saved?.adName === 'string' ? saved.adName : ''),
+      ads: new FormArray<FormGroup<GoogleDemandGenAdControls>>([]),
+    });
+    if (Array.isArray(saved?.ads)) this.restoreDemandGenAds(group.controls.ads, saved.ads);
+    return group;
+  }
+
+  /**
+   * One Demand Gen ad's controls, filled from a saved draft entry when one is given: a name that is not a
+   * string restores blank, a format other than `video` restores `image`, and only string values restore.
+   */
+  private demandGenAdControls(saved?: GoogleDemandGenAdDraft): GoogleDemandGenAdControls {
+    const controls: GoogleDemandGenAdControls = {
       name: this.fb.nonNullable.control(typeof saved?.name === 'string' ? saved.name : ''),
       format: this.fb.nonNullable.control<GoogleDemandGenAdFormat>(saved?.format === 'video' ? 'video' : 'image'),
       creative: this.buildCreativeGroup('demand-gen'),
       videoCreative: this.buildCreativeGroupFrom(GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS),
-    });
+    };
     // Field by field, as `restoreGoogleCreatives` replays a draft: persisted JSON can name a field
     // the catalogue no longer has.
     for (const key of ['creative', 'videoCreative'] as const) {
       const values = saved?.[key];
       if (values === null || typeof values !== 'object') continue;
       for (const [control, value] of Object.entries(values)) {
-        if (typeof value === 'string') group.controls[key].get(control)?.setValue(value);
+        if (typeof value === 'string') controls[key].get(control)?.setValue(value);
       }
     }
-    return group;
+    return controls;
+  }
+
+  /** Rebuild an ad group's second and later ads from a draft (#5226), capped so the group holds at most {@link GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP}. */
+  private restoreDemandGenAds(ads: FormArray<FormGroup<GoogleDemandGenAdControls>>, saved: unknown[]): void {
+    ads.clear({ emitEvent: false });
+    for (const entry of saved.slice(0, GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP - 1)) {
+      if (entry !== null && typeof entry === 'object') ads.push(new FormGroup(this.demandGenAdControls(entry as GoogleDemandGenAdDraft)), { emitEvent: false });
+    }
+    ads.updateValueAndValidity();
+  }
+
+  /** One ad's draft: its name, chosen format and both formats' raw text. */
+  private demandGenAdDraft(ad: GoogleDemandGenAdForm): GoogleDemandGenAdDraft {
+    return {
+      name: ad.controls.name.value,
+      format: ad.controls.format.value,
+      creative: { ...ad.controls.creative.getRawValue() },
+      videoCreative: { ...ad.controls.videoCreative.getRawValue() },
+    };
   }
 
   /**

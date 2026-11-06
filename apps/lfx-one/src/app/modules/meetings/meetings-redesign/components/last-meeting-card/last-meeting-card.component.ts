@@ -26,6 +26,7 @@ import {
   MeetingHomeRowLink,
   MeetingHomeRowProject,
   MeetingHomeRowType,
+  MeetingHomeSummaryChange,
   MeetingVisibilityInfo,
   PastMeetingSummary,
 } from '@lfx-one/shared/interfaces';
@@ -89,7 +90,7 @@ export class LastMeetingCardComponent {
   public readonly summary = input<PastMeetingSummary | null | undefined>(undefined);
   public readonly recordingUrl = input<string | null | undefined>(undefined);
   /** The summary after an organizer edited or approved it in the dialog. */
-  public readonly summaryChange = output<PastMeetingSummary>();
+  public readonly summaryChange = output<MeetingHomeSummaryChange>();
 
   protected readonly projectTruncated = signal(false);
   protected readonly link: Signal<MeetingHomeRowLink | null> = computed(() => {
@@ -160,7 +161,7 @@ export class LastMeetingCardComponent {
     const row = this.row();
     const summary = this.summary();
     if (!row || !summary || !this.summaryContent()) return;
-    this.dialogs.openSummary(row, summary, (change) => this.summaryChange.emit(change));
+    this.dialogs.openSummary(row, summary, (change) => this.summaryChange.emit({ key: row.key, summary: change }));
   }
 
   protected openRecording(shareUrl: string): void {

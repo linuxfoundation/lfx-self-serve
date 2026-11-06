@@ -73,11 +73,12 @@ describe('UiSearchInputComponent', () => {
     expect(input().disabled).toBe(true);
   });
 
-  it('is a 32px pill', () => {
+  it('is a 32px small input with 10px corners, not a pill', () => {
     const wrapper = host.querySelector('[data-testid="ui-input-wrapper"]') as HTMLElement;
 
     expect(wrapper.className).toContain('h-ui-small');
-    expect(wrapper.className).toContain('rounded-ui-full');
+    expect(wrapper.className).toContain('rounded-[10px]');
+    expect(wrapper.className).not.toContain('rounded-ui-full');
   });
 
   it('keeps a 300px minimum width on the host', () => {

@@ -163,7 +163,7 @@ describe('NextMeetingCardComponent', () => {
     const other = await render(buildRow(buildMeeting()));
 
     expect(text(organized, 'meetings-home-attendance-label')).toBe('4 of 10 attending · 40%');
-    expect(query(organized, 'meetings-home-attendance-legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Yes 4 Maybe 3 No 1');
+    expect(query(organized, 'meetings-home-attendance-legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Yes 4 Maybe 3 No 1 No response 2');
     expect(query(other, 'meetings-home-next-card-attendance')).toBeNull();
   });
 
@@ -178,6 +178,10 @@ describe('NextMeetingCardComponent', () => {
     expect(await badges({ visibility: MeetingVisibility.PUBLIC, restricted: false })).toEqual([]);
     expect(await badges({ visibility: MeetingVisibility.PRIVATE, restricted: false })).toEqual(['meetings-home-next-card-visibility-private']);
     expect(await badges({ visibility: MeetingVisibility.PUBLIC, restricted: true })).toEqual(['meetings-home-next-card-visibility-restricted']);
+    expect(await badges({ visibility: MeetingVisibility.PRIVATE, restricted: true })).toEqual([
+      'meetings-home-next-card-visibility-restricted',
+      'meetings-home-next-card-visibility-private',
+    ]);
   });
 
   it('shows no recurring tag for a one-off meeting', async () => {

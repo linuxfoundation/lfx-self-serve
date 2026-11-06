@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkMenuTrigger } from '@angular/cdk/menu';
+import { ConnectedPosition } from '@angular/cdk/overlay';
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   afterRenderEffect,
@@ -19,7 +20,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { UiButtonSize, UiButtonVariant, UiPopoverContext, UiPopoverPadding, UiTooltipSide } from '@lfx-one/shared/interfaces';
+import { UiButtonSize, UiButtonVariant, UiMenuAlign, UiPopoverContext, UiPopoverPadding, UiTooltipSide } from '@lfx-one/shared/interfaces';
 
 import { UiPopoverDirective } from '../popover/popover.directive';
 import { UiSpinnerComponent } from '../spinner/spinner.component';
@@ -35,10 +36,10 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * A disabled button takes no clicks or focus and drops its forwarded tooltip, so a tooltip that explains why it is off needs a wrapper element that carries the directive.
  *
  * Menu: pass an `lfx-ui-menu` template to `menu` and the inner `<button>` becomes its trigger (`aria-haspopup`, `aria-expanded`, focus returns
- * to the button on close). A button rendered as a link (`link`) does not open a menu.
+ * to the button on close). `menuAlign="end"` lines the menu up with the button's end edge, for a trigger at a row's end. A button rendered as a link (`link`) does not open a menu.
  *
  * Popover: pass an `<ng-template>` to `popover` and the inner `<button>` opens it as a non-modal dialog (`aria-haspopup="dialog"`, `aria-expanded`,
- * `aria-controls`, focus returns to the button on close). `popoverLabel` names the dialog, `popoverWidth` fixes its width in px and `popoverPadding="none"` drops its 16px padding; see `lfxUiPopover`.
+ * `aria-controls`, focus returns to the button on close). `popoverLabel` names the dialog, `popoverWidth` fixes its width in px, `popoverPadding="none"` drops its 16px padding and `popoverAlign="end"` opens it from the end edge; see `lfxUiPopover`.
  * A link does not open one, and `menu` wins when both are set.
  */
 @Component({
@@ -82,6 +83,8 @@ export class UiButtonComponent {
   public readonly type = input<'button' | 'submit' | 'reset'>('button');
   /** Template reference of an `lfx-ui-menu` to open from the button, such as `#actions`. Ignored when `link` is set. */
   public readonly menu = input<TemplateRef<unknown> | null>(null);
+  /** `start` (default) opens the menu from the button's start edge; `end` lines it up with the end edge so it extends back toward the start. */
+  public readonly menuAlign = input<UiMenuAlign>('start');
   /** Template reference of the content to open from the button as a popover, such as `#filters`. Ignored when `link` or `menu` is set. */
   public readonly popover = input<TemplateRef<UiPopoverContext> | null>(null);
   /** Accessible name of the popover dialog. Without one the button names it. */
@@ -90,6 +93,8 @@ export class UiButtonComponent {
   public readonly popoverWidth = input<number | null>(null);
   /** `none` removes the popover panel's 16px padding for content that runs edge to edge. */
   public readonly popoverPadding = input<UiPopoverPadding>('default');
+  /** `end` opens the popover lined up with the button's end edge, toward the start side. */
+  public readonly popoverAlign = input<UiMenuAlign>('start');
   /** When set, renders a router link instead of a button. Accepts a path or a commands array. */
   public readonly link = input<string | unknown[] | null>(null);
   /* eslint-disable @angular-eslint/no-input-rename -- the aliases are the public input names of UiTooltipDirective, which this button forwards to its inner element. */
@@ -113,6 +118,7 @@ export class UiButtonComponent {
   protected readonly classes: Signal<string> = this.initClasses();
   /** A disabled link leaves the tab order; a loading link stays focusable because it has no href while busy. */
   protected readonly linkTabIndex: Signal<number | null> = this.initLinkTabIndex();
+  protected readonly menuPositions: Signal<ConnectedPosition[]> = this.initMenuPositions();
 
   private readonly menuTrigger = viewChild(CdkMenuTrigger);
   private readonly menuButton = viewChild(CdkMenuTrigger, { read: ElementRef });
@@ -154,6 +160,21 @@ export class UiButtonComponent {
 
   private initIconSize(): Signal<number> {
     return computed(() => ({ tiny: 12, small: 13, default: 14, large: 18 })[this.size()]);
+  }
+
+  // Below the trigger first, flipping above it, then trying the other edge when the preferred one does not fit.
+  private initMenuPositions(): Signal<ConnectedPosition[]> {
+    return computed(() => {
+      const start: ConnectedPosition[] = [
+        { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' },
+        { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom' },
+      ];
+      const end: ConnectedPosition[] = [
+        { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' },
+        { originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom' },
+      ];
+      return this.menuAlign() === 'end' ? [...end, ...start] : [...start, ...end];
+    });
   }
 
   private initLinkTabIndex(): Signal<number | null> {

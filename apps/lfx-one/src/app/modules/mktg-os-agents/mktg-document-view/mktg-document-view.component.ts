@@ -51,6 +51,7 @@ import {
   MKTG_AGENT_INTAKES,
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_DOCUMENT_COMMENT_LIMITS,
+  MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
   MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
 import {
@@ -102,6 +103,7 @@ import { MktgDocumentCommentsService } from '@services/mktg-document-comments.se
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MktgPendingDocumentService, MktgRunRefusalError } from '@services/mktg-pending-document.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { Member360Service } from '@services/member-360.service';
 import { UserService } from '@services/user.service';
@@ -154,6 +156,8 @@ import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-downstream.component';
+import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/mktg-print-sheet-row.component';
+import { MktgPrintSheetComponent } from '../components/mktg-print-sheet/mktg-print-sheet.component';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
@@ -187,6 +191,8 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
     RouterLink,
     BrandKitWebViewComponent,
     MarkdownRendererComponent,
+    MktgPrintSheetComponent,
+    MktgPrintSheetRowComponent,
     MessageComponent,
     MktgSkeletonComponent,
     MktgBoilerplatesViewComponent,
@@ -567,6 +573,8 @@ export class MktgDocumentViewComponent {
   protected readonly generating = signal(false);
   private readonly pendingDocuments = inject(MktgPendingDocumentService);
   private readonly printService = inject(MktgPrintService);
+  /** Download PDF renders only while the flag is on (#5302); the print rendering and the print path stay. */
+  protected readonly pdfEnabled = inject(FeatureFlagService).getBooleanFlag(MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, false);
   private aeoPrintRequested = false;
   protected readonly aeoPrintOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   protected readonly activity = signal<MktgRunActivity[]>([]);

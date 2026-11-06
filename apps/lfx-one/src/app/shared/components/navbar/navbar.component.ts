@@ -44,6 +44,7 @@ import {
   SidebarMenuItem,
 } from '@lfx-one/shared/interfaces';
 import { buildInsightsUrl, isDocsPath, toTitleCase } from '@lfx-one/shared/utils';
+import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { AppService } from '@services/app.service';
 import { ChangelogService } from '@services/changelog.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
@@ -139,6 +140,8 @@ export class NavbarComponent extends NavMenuBase {
 
   protected readonly user = this.userService.user;
   protected readonly userInitials = this.userService.userInitials;
+  /** The LFID shown in the account menu: the effective user's, so the impersonation target's while impersonating. */
+  protected readonly lfid: Signal<string | null> = computed(() => stripAuthPrefixOrNull(this.userService.viewerUsername()));
   // Hide the role marks when the user is a root-writer — executive-director is spoofed, not naturally detected.
   protected readonly showPersonaBadge: Signal<boolean> = computed(() => !this.personaService.isRootWriter());
 

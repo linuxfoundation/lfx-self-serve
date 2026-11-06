@@ -76,7 +76,7 @@ describe('MeetingRsvpScopeModalComponent', () => {
 
     expect(query(fixture, 'meeting-dialog-context-block')?.className).toContain('border-y');
     expect(query(fixture, 'meeting-dialog-context-when')?.textContent?.trim()).toBe(formatMeetingWhenFull(row));
-    expect(query(fixture, 'meeting-dialog-context-when')?.textContent).toMatch(/^Thu, Oct 1 · 9:00 AM \S+ · 60 min/);
+    expect(query(fixture, 'meeting-dialog-context-when')?.textContent).toMatch(/^Thu, Oct 1 · 9:00 AM · 60 min/);
     expect(fixture.nativeElement.querySelector('[data-testid$="-description"]')).toBeNull();
   });
 

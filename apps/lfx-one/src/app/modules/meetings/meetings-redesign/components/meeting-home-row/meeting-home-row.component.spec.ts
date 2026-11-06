@@ -108,7 +108,7 @@ describe('MeetingHomeRowComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl, navigate } },
-        { provide: MeetingsHomeStore, useValue: { lastMeeting: signal(null), now: signal(new Date()) } },
+        { provide: MeetingsHomeStore, useValue: { lastMeeting: signal(null), approvedSummaries: signal(new Map()), now: signal(new Date()) } },
         { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()), getPublicMeetingJoinUrl } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
@@ -138,7 +138,7 @@ describe('MeetingHomeRowComponent', () => {
       expect(texts(fixture, 'meetings-home-row-when').join(' · ')).toBe(formatMeetingWhen(START, 60));
       expect(texts(fixture, 'meetings-home-row-when')).toEqual([
         expect.stringMatching(/^\w{3}, \w{3} \d{1,2}$/),
-        expect.stringMatching(/^\d{1,2}:\d{2} [AP]M \S+$/),
+        expect.stringMatching(/^\d{1,2}:\d{2} [AP]M$/),
         '60 min',
       ]);
       expect(text(fixture, 'meetings-home-row-type').replace('·', '').trim()).toBe('Technical');
@@ -200,7 +200,7 @@ describe('MeetingHomeRowComponent', () => {
       [{ visibility: MeetingVisibility.PUBLIC, restricted: false }, []],
       [{ visibility: MeetingVisibility.PRIVATE, restricted: false }, ['private']],
       [{ visibility: MeetingVisibility.PUBLIC, restricted: true }, ['restricted']],
-      [{ visibility: MeetingVisibility.PRIVATE, restricted: true }, ['private', 'restricted']],
+      [{ visibility: MeetingVisibility.PRIVATE, restricted: true }, ['restricted', 'private']],
     ])('shows the visibility badges for %j', async (overrides, kinds) => {
       const fixture = await render(buildRow(buildMeeting(overrides)));
       const badges = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid^="meetings-home-row-visibility-"]'));

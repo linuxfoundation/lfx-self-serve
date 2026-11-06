@@ -63,7 +63,8 @@ describe('MeetingsDayGroupComponent', () => {
     const element = await render({ label: 'Today', count: 1, rows: [row('a', 'Board Review')] }, 132);
 
     const separator = element.querySelector<HTMLElement>('[data-testid="meetings-home-day-group-separator"]');
-    expect(separator?.className).toContain('sticky z-[1] flex h-[24px]');
+    expect(separator?.className).toContain('sticky z-[1] -mt-[20px] flex h-[44px]');
+    expect(separator?.className).toContain('pt-[20px]');
     expect(separator?.className).toContain('bg-white');
     expect(separator?.style.top).toBe('132px');
   });

@@ -2,11 +2,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root; host rem margins cancel main-layout padding. -->
-<div class="flex bg-white min-[1025px]:overflow-hidden" [style.height.px]="columnHeight()" data-testid="meetings-redesign">
+<div
+  class="flex bg-white min-[1025px]:overflow-hidden"
+  [style.height.px]="columnHeight()"
+  [style.min-height.px]="pageMinHeight()"
+  data-testid="meetings-redesign">
   <!-- Centre column -->
   <div
     #centre
-    class="min-w-0 flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    class="flex min-w-0 flex-1 flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     [attr.tabindex]="columnHeight() !== null ? 0 : null"
     (scroll)="updateScroll()"
     data-testid="meetings-redesign-centre">
@@ -60,51 +64,55 @@
       </div>
 
       <!-- Sticky tabs bar; the fade moves here from the header once it is stuck, then below a stuck day heading -->
-      <div
-        #tabsBar
-        class="sticky z-[5] -mt-[4px] flex flex-wrap items-end justify-between gap-x-[16px] gap-y-[12px] bg-white pt-[4px] min-[1025px]:@[440px]:flex-nowrap"
-        [style.top.px]="stickyTop() + headerHeight()"
-        data-testid="meetings-redesign-tabs-bar">
+      <div #tabsBar class="sticky z-[5] -mt-[4px] bg-white pt-[4px]" [style.top.px]="stickyTop() + headerHeight()" data-testid="meetings-redesign-tabs-bar">
         <span
           class="pointer-events-none absolute inset-x-0 top-full h-[32px] bg-gradient-to-b from-white via-white/85 to-white/0 transition-opacity duration-200 motion-reduce:transition-none"
           [class.opacity-0]="!tabsStuck()"
-          [class.mt-[24px]]="dayHeadingStuck()"
+          [class.mt-[44px]]="dayHeadingStuck()"
           aria-hidden="true"
           data-testid="meetings-redesign-tabs-fade"></span>
+        <!-- Search and Filters sit inside the tabs, on their rule. -->
         <lfx-ui-tabs
-          class="flex-1"
+          class="min-[1025px]:@[440px]:flex-nowrap"
+          size="small"
           ariaLabel="Meetings"
           [idPrefix]="idPrefix"
           [tabs]="tabs()"
           [value]="store.tab()"
           (valueChange)="onTabChange($event)"
-          data-testid="meetings-redesign-tabs" />
-        @if (!tabEmpty()) {
-          <!-- Above 1024px, in a centre of 440px or more, the bar stays on one line and search narrows from 300px. -->
-          <div class="flex w-full flex-wrap items-center gap-[8px] pb-[12px] min-[641px]:w-auto min-[1025px]:min-w-0 min-[1025px]:flex-nowrap">
-            <!-- A fixed min width at 641-1024px: the library's min(300px, 100%) sizes the row too narrow and wraps Filters. -->
-            <lfx-ui-search-input
-              class="w-full min-[641px]:w-auto min-[641px]:min-w-[300px] min-[1025px]:w-[300px] min-[1025px]:min-w-0"
-              placeholder="Search meetings"
-              ariaLabel="Search meetings"
-              [value]="store.search()"
-              (valueChange)="store.setSearch($event)"
-              data-testid="meetings-redesign-search" />
-            <lfx-meetings-filters
-              class="w-full min-[641px]:w-auto"
-              [tab]="store.tab()"
-              [rows]="store.tabRows()"
-              [filters]="store.filters()"
-              (filtersChange)="store.setFilters($event)" />
-          </div>
-        }
+          data-testid="meetings-redesign-tabs">
+          @if (!tabEmpty()) {
+            <!-- Above 1024px, in a centre of 440px or more, the bar stays on one line and search narrows from 280px. -->
+            <div class="flex w-full flex-wrap items-center gap-[8px] pb-[12px] min-[641px]:w-auto min-[1025px]:min-w-0 min-[1025px]:flex-nowrap">
+              <!-- A fixed min width at 641-1024px: the library's min(300px, 100%) sizes the row too narrow and wraps Filters. -->
+              <lfx-ui-search-input
+                class="w-full min-[641px]:w-auto min-[641px]:min-w-[280px] min-[1025px]:w-[280px] min-[1025px]:min-w-0"
+                placeholder="Search meetings"
+                ariaLabel="Search meetings"
+                [value]="store.search()"
+                (valueChange)="store.setSearch($event)"
+                data-testid="meetings-redesign-search" />
+              <lfx-meetings-filters
+                class="w-full min-[641px]:w-auto"
+                [tab]="store.tab()"
+                [rows]="store.tabRows()"
+                [filters]="store.filters()"
+                (filtersChange)="store.setFilters($event)" />
+            </div>
+          }
+        </lfx-ui-tabs>
       </div>
 
       @if (!tabEmpty() && store.filterChips().length) {
         <!-- -6px pulls the chips toward the tabs bar, per the design -->
         <lfx-ui-chip-group class="-mt-[6px]" ariaLabel="Applied filters" [fallbackFocus]="filtersControl() ?? null" data-testid="meetings-home-filters-chips">
           @for (chip of store.filterChips(); track chip.key) {
-            <lfx-ui-chip [prefix]="chip.prefix ?? ''" [label]="chip.label" (dismissed)="store.clearFilter(chip.key)" data-testid="meetings-home-filters-chip" />
+            <lfx-ui-chip
+              size="md"
+              [prefix]="chip.prefix ?? ''"
+              [label]="chip.label"
+              (dismissed)="store.clearFilter(chip.key)"
+              data-testid="meetings-home-filters-chip" />
           }
         </lfx-ui-chip-group>
       }
@@ -125,6 +133,9 @@
         </div>
       }
     </div>
+
+    <!-- App footer: end of the centre column only; mt-auto pushes it down on a short page -->
+    <lfx-app-footer class="mt-auto block shrink-0 px-[32px]" data-testid="meetings-redesign-footer" />
   </div>
 
   <!-- Right column: fixed 360px, 24px padding -->
@@ -156,7 +167,7 @@
               (click)="store.stepNextCard(-1)"
               [attr.data-testid]="'meetings-redesign-' + scope + '-next-pager-previous'" />
             <span
-              class="min-w-[40px] whitespace-nowrap text-center text-label-12 tabular-nums text-gray-600"
+              class="min-w-[40px] whitespace-nowrap text-center text-label-12 text-gray-600"
               aria-live="polite"
               [attr.data-testid]="'meetings-redesign-' + scope + '-next-pager-position'"
               >{{ store.nextCardIndex() + 1 }} of {{ store.concurrentNextRows().length }}</span
@@ -195,7 +206,7 @@
         [loading]="store.lastMeetingLoading()"
         [summary]="store.lastMeetingSummary()"
         [recordingUrl]="store.lastMeetingRecordingUrl()"
-        (summaryChange)="store.setLastMeetingSummary($event)">
+        (summaryChange)="store.applySummaryChange($event.key, $event.summary)">
         <!-- Keyed by row, so a new Last meeting gets a fresh menu. -->
         @for (lastRow of lastRows(); track lastRow.key) {
           <lfx-meeting-home-actions last-meeting-card-menu [row]="lastRow" view="past" />
@@ -304,10 +315,5 @@
         }
       }
     </div>
-    @if (allLoaded()) {
-      <span class="flex justify-center pb-[4px] pt-[8px] text-[12px] text-gray-400" data-testid="meetings-home-all-loaded">
-        All {{ store.filteredRows().length }} meetings loaded
-      </span>
-    }
   }
 </ng-template>

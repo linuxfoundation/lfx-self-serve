@@ -25,6 +25,7 @@ import {
   BRAND_KIT_TYPE_STEPS,
   BRAND_KIT_WEB_VIEW_TABS,
 } from '../constants/brand-kit.constants';
+import type { BrandKitIconColours } from './brand-kit-icons.interface';
 import type { MktgArtifactPersistReceipt, MktgArtifactStoredResponse } from './mktg-artifact.interface';
 import type { MktgAssetReport } from './mktg-asset.interface';
 import type {
@@ -788,6 +789,8 @@ export interface BrandKitBookView {
   /** The alphabet line. */
   specimen: string;
   visual: BrandKitVisualChapter;
+  /** The colours the Visual chapter's iconography samples take from the kit (`brandKitIconColours`). */
+  iconColours: BrandKitIconColours;
   usage: BrandKitUsageChapter;
   usageTiles: BrandKitUsageView[];
   voice: BrandKitVoiceChapter;

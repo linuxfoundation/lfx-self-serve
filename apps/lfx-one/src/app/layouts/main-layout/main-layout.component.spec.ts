@@ -357,3 +357,24 @@ describe('MainLayoutComponent mobile drawer', () => {
     fixture.nativeElement.remove();
   });
 });
+
+describe('MainLayoutComponent footer', () => {
+  it('skips its footer while any page renders its own', async () => {
+    const { fixture, appService } = await createLayout();
+    const footer = (): Element | null => fixture.nativeElement.querySelector('[data-testid="main-layout-footer"]');
+    expect(footer()).not.toBeNull();
+
+    const releaseFirst = appService.claimFooter();
+    const releaseSecond = appService.claimFooter();
+    await fixture.whenStable();
+    expect(footer()).toBeNull();
+
+    releaseFirst();
+    await fixture.whenStable();
+    expect(footer()).toBeNull();
+
+    releaseSecond();
+    await fixture.whenStable();
+    expect(footer()).not.toBeNull();
+  });
+});

@@ -46,27 +46,29 @@
         <lfx-button
           label="Export to Google Slides"
           icon="fa-light fa-presentation-screen"
-          [outlined]="true"
+          [outlined]="pdfEnabled()"
           [loading]="slidesExport.busy()"
           [disabled]="!slidesExport.canExport()"
           ariaLabel="Export the brand kit to Google Slides"
           data-testid="brand-kit-web-view-export-slides"
           (onClick)="slidesExport.onExport()" />
       </span>
-      <span
-        [pTooltip]="pdfTooltip()"
-        tooltipPosition="bottom"
-        tooltipEvent="both"
-        [attr.aria-label]="pdfTooltip() || null"
-        [attr.tabindex]="pdfTooltip() ? 0 : null">
-        <lfx-button
-          label="Download PDF"
-          icon="fa-light fa-file-pdf"
-          [disabled]="!printView()"
-          ariaLabel="Download the approved current brand kit as a PDF"
-          data-testid="brand-kit-web-view-download-pdf"
-          (onClick)="onDownloadPdf()" />
-      </span>
+      @if (pdfEnabled()) {
+        <span
+          [pTooltip]="pdfTooltip()"
+          tooltipPosition="bottom"
+          tooltipEvent="both"
+          [attr.aria-label]="pdfTooltip() || null"
+          [attr.tabindex]="pdfTooltip() ? 0 : null">
+          <lfx-button
+            label="Download PDF"
+            icon="fa-light fa-file-pdf"
+            [disabled]="!printView()"
+            ariaLabel="Download the approved current brand kit as a PDF"
+            data-testid="brand-kit-web-view-download-pdf"
+            (onClick)="onDownloadPdf()" />
+        </span>
+      }
     }
   </ng-template>
 
@@ -575,9 +577,21 @@
         <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2">
           <div [class]="card" data-testid="brand-kit-web-view-icons">
             <h3 [class]="cardTitle">Iconography</h3>
-            <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800">
+            <!-- The board's sample icons in the kit's colours; the rules and the recommended set stay under them. -->
+            <lfx-mktg-brand-kit-icon-samples [colours]="v.iconColours" />
+            <!--
+              The tester's hand test (round 1): a clear gap between the strip and the first rule (the card's 8 px gap + mt-3), and
+              the rules close together: each rule's comment affordance (a block under the text until now, so every rule was two
+              rows tall) floats at the right end of the rule's first line with the text flowing beside it, so it never adds a
+              row (a rule is as tall as its text, or the 28 px button); its empty count takes no room until a thread exists;
+              while its composer is open it goes back to a block under the text (edit mode). The ::after clearfix keeps the
+              float inside its list item without losing the list marker.
+            -->
+            <ul class="mt-3 flex list-disc flex-col gap-0.5 pl-5 text-sm leading-snug text-gray-800">
               @for (rule of v.visual.icons.rules; track $index) {
-                <li class="group/commentfield" data-mktg-comment-group>
+                <li
+                  class="group/commentfield after:block after:clear-both after:content-[''] [&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:float-none [&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:block [&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:ml-0 [&>lfx-mktg-field-comments]:float-right [&>lfx-mktg-field-comments]:ml-2 [&_[data-testid=mktg-field-comment-count].invisible]:hidden"
+                  data-mktg-comment-group>
                   {{ rule }}<ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.visual.icons.rules[' + $index + ']' }" />
                 </li>
               }
@@ -909,10 +923,12 @@
     }
   }
 
-  <!-- Footer: what Download PDF and the Google Slides export give you -->
+  <!-- Footer: what Download PDF (while its flag is on) and the Google Slides export give you. The PDF sentence carries the space that joins the two. -->
   <p class="px-1 text-xs text-gray-500" data-testid="brand-kit-web-view-footer">
-    PDF in portrait pages: logo, colour, typography, visual and voice. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours,
-    typeface and logo.
+    @if (pdfEnabled()) {
+      <span data-testid="brand-kit-web-view-footer-pdf">PDF in portrait pages: logo, colour, typography, visual and voice. </span>
+    }
+    Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.
   </p>
 
   <!-- The same native portrait chapters as the family PDF; the screen view stays unchanged. -->

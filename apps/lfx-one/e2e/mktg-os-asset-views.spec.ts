@@ -16,6 +16,8 @@ import {
   layoutMktgPrintFrame,
   PRINT_FRAME_LETTER,
   stubMktgPrintFrame,
+  expectMktgPrintPageSetup,
+  mktgPrintComputedPx,
 } from './helpers/mktg-print.helper';
 
 import {
@@ -212,7 +214,7 @@ test.describe('Native FAQ document approval and header', () => {
 });
 
 for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
-  test(`${key} isolated print frame preserves paper-sized layout without content-column containment`, async ({ page }, info) => {
+  test(`${key} isolated print frame preserves paper-sized layout without content-column containment`, async ({ page, browserName }, info) => {
     await page.setViewportSize({ width: 1280, height: 1000 });
     await stubMktgPrintFrame(page);
     await openAssetDocument(page, key, 200, true, false, columnAssetRevisionResponse(key));
@@ -239,15 +241,39 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     const box = await print.boundingBox();
     if (!box) throw new Error('The approved print document must be rendered');
     expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: PRINT_FRAME_LETTER.width });
+    await expectMktgPrintPageSetup(frame, print, browserName);
     if (key === 'brand-kit') {
       await expect(print.locator('.kit-chapter')).toHaveCount(5);
       await expect(print.locator('lfx-mktg-print-chapter-header h2 > span')).toHaveText(['1', '2', '3', '4', '5']);
       await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
       await expect(print).toHaveCSS('page', 'mktg-framework');
       await expect(print.getByTestId('kit-print-type')).toContainText('Typography');
+      // No footer group (Chromium prints an empty page per table for one): the bottom room is the last row's.
+      await expect(print.locator('.kit-chapter > tfoot')).toHaveCount(0);
+      await expect(print.locator('.kit-chapter > tbody > tr:last-child > td')).toHaveCount(5);
+      // calc(10pt + 0.55in) = 66.13px, or the 10pt alone on the page margins; to a tenth (mktgPrintComputedPx).
+      expect(await mktgPrintComputedPx(print.locator('.kit-chapter > tbody > tr:last-child > td').first(), 'padding-bottom')).toBeCloseTo(
+        browserName === 'webkit' ? 13.333 : 66.133,
+        1
+      );
     } else {
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
       await expectMktgPrintCover(frame.getByTestId('mktg-framework-print-cover'));
+      // Each section prints in a sheet whose head repeats the page's top room in Chromium (the @page margin is 0: no
+      // browser header or footer; in WebKit the margins give it and the row is empty) and whose last row carries the
+      // bottom room — no footer group, for which Chromium prints an empty page per sheet —, one row per block, so a
+      // page breaks only between blocks: 1 (cover) + 5 (framework) + 3 (key numbers).
+      await expect(print.getByTestId('mktg-print-sheet-head')).toHaveCount(3);
+      await expect(print.getByTestId('mktg-print-sheet-head').first()).toHaveCSS('display', 'table-header-group');
+      await expect(print.getByTestId('mktg-print-sheet-foot')).toHaveCount(0);
+      // 0.55in = 52.8px, head row and last cell, or 0 on the page margins; to a tenth (mktgPrintComputedPx).
+      expect(await mktgPrintComputedPx(print.locator('.lfx-print-sheet-room').first(), 'height')).toBeCloseTo(browserName === 'webkit' ? 0 : 52.8, 1);
+      expect(await mktgPrintComputedPx(print.locator('lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell').first(), 'padding-bottom')).toBeCloseTo(
+        browserName === 'webkit' ? 0 : 52.8,
+        1
+      );
+      await expect(print.locator('lfx-mktg-print-sheet-row')).toHaveCount(9);
+      await expect(print.locator('lfx-mktg-print-sheet-row').first()).toHaveCSS('display', 'table-row');
       await expect(print).toHaveCSS('position', 'static');
       await expect(print).toHaveCSS('display', 'block');
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);

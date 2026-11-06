@@ -19,6 +19,8 @@ import {
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP,
+  HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR,
+  HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP,
   HEALTH_METRICS_MEMBERS_NPS_LEADING_AUDIENCES,
   HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
@@ -58,6 +60,9 @@ import type {
   HealthMetricsMembersDirectoryTiers,
   HealthMetricsMembersDirectoryTiersQuery,
   HealthMetricsMembersEngagementLevel,
+  HealthMetricsMembersGrowth,
+  HealthMetricsMembersGrowthMonth,
+  HealthMetricsMembersGrowthQuery,
   HealthMetricsMembersNps,
   HealthMetricsMembersNpsAudience,
   HealthMetricsMembersNpsCategory,
@@ -74,6 +79,7 @@ import type {
 import type { Request } from 'express';
 
 const MEMBERSHIP_TIER_YEAR_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_TIER_YEAR';
+const MEMBERSHIP_GROWTH_MONTHLY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_GROWTH_MONTHLY';
 const MEMBERSHIP_MOVEMENT_DETAIL_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_MOVEMENT_DETAIL';
 const MEMBERSHIP_DIRECTORY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY';
 const MEMBERSHIP_AT_RISK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_AT_RISK';
@@ -96,6 +102,12 @@ const RENEWALS_WINDOW_COLUMNS: Record<HealthMetricsMembersRenewalsWindow, { flag
   '180_days': { flag: 'is_renewing_within_180_days', totals: 'foundation_within_180_days' },
   this_year: { flag: 'is_renewing_this_year', totals: 'foundation_this_year' },
 };
+
+interface GrowthMonthRow {
+  YEAR: number | null;
+  MONTH: number | null;
+  CUMULATIVE_NEW_MEMBERS: number | null;
+}
 
 interface TierYearRow {
   YEAR: number;
@@ -256,6 +268,45 @@ export class HealthMetricsMembersService {
 
   public constructor() {
     this.snowflakeService = SnowflakeService.getInstance();
+  }
+
+  /** Every month's running total of new members, from the first year drawn; one read serves both chart views. */
+  public async getGrowth(req: Request, query: HealthMetricsMembersGrowthQuery): Promise<HealthMetricsMembersGrowth> {
+    const sql = `
+      SELECT
+        year,
+        month,
+        cumulative_new_members
+      FROM ${MEMBERSHIP_GROWTH_MONTHLY_VIEW}
+      WHERE foundation_slug = ?
+        AND year >= ?
+        AND month IS NOT NULL
+      ORDER BY year DESC, month ASC
+      LIMIT ${HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<GrowthMonthRow>(
+      this.snowflakeService,
+      req,
+      sql,
+      [query.foundationSlug, HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR],
+      {
+        view: MEMBERSHIP_GROWTH_MONTHLY_VIEW,
+        operation: 'get_members_growth',
+        clientMessage: 'Member growth is unavailable right now.',
+      }
+    );
+
+    let rows = result.rows;
+    if (rows.length > HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP) {
+      logger.warning(req, 'get_members_growth', 'Member growth rows hit the read cap', {
+        foundation_slug: query.foundationSlug,
+        row_cap: HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP,
+      });
+      rows = capWholeYears(rows, HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP);
+    }
+
+    return { months: rows.map(mapGrowthMonth).filter((row): row is HealthMetricsMembersGrowthMonth => row !== null) };
   }
 
   /** Every year's members and revenue per tier; all years come back at once, so a period change never re-reads. */
@@ -940,6 +991,14 @@ function boardMeetingsSql(range: HealthMetricsL2Range): string {
       -- The view has no per-row period flags, so the period is read off the meeting date.
       AND ${healthMetricsL2PeriodPredicate('meeting_date', range)}
   `;
+}
+
+function mapGrowthMonth(row: GrowthMonthRow): HealthMetricsMembersGrowthMonth | null {
+  const year = toNullableNumber(row.YEAR);
+  const month = toNullableNumber(row.MONTH);
+  if (year === null || month === null) return null;
+
+  return { year, month, cumulative: toNullableNumber(row.CUMULATIVE_NEW_MEMBERS) };
 }
 
 function mapTierYear(row: TierYearRow): HealthMetricsMembersTierYear | null {

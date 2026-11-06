@@ -32,7 +32,11 @@
   </main>
 } @else {
   <div data-testid="newsletter-share-guest">
-    <lfx-newsletter-guest-reader [issue]="guest().issue ?? null" [foundation]="prompt()?.foundation ?? null" [signInHref]="loginHref" />
+    <lfx-newsletter-guest-reader
+      [issue]="guest().issue ?? null"
+      [teaser]="prompt()?.teaser ?? null"
+      [foundation]="prompt()?.foundation ?? null"
+      [signInHref]="loginHref" />
 
     @if (guest().status === 'prompt') {
       <lfx-newsletter-guest-modal

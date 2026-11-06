@@ -33,6 +33,7 @@ import {
   BRAND_KIT_WEB_VIEW_TABS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
   MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS,
 } from '@lfx-one/shared/constants';
 import {
@@ -57,6 +58,7 @@ import {
   mktgPrintBrand,
   mktgPrintDocumentTitle,
 } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -64,6 +66,7 @@ import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgBrandKitPrintComponent } from '../mktg-brand-kit-print/mktg-brand-kit-print.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
 import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
+import { MktgBrandKitIconSamplesComponent } from '../components/mktg-brand-kit-icon-samples/mktg-brand-kit-icon-samples.component';
 
 // The Brand Kit on screen, as an app page in the Messaging Framework view's
 // look (hand test, 18 Oct: "more like a website — a proper app — not a
@@ -90,6 +93,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
     MktgBrandKitPrintComponent,
     MktgSlidesExportComponent,
     MktgFieldCommentsComponent,
+    MktgBrandKitIconSamplesComponent,
   ],
   templateUrl: './brand-kit-web-view.component.html',
 })
@@ -172,6 +176,8 @@ export class BrandKitWebViewComponent {
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
   /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
   protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
+  /** Download PDF and the footer's PDF sentence render only while the flag is on (#5302); off, Export to Google Slides is the row's one action and takes its solid style. */
+  protected readonly pdfEnabled = inject(FeatureFlagService).getBooleanFlag(MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, false);
   protected readonly versionNumber = computed(() => this.version() ?? this.kit().version);
   protected readonly modeLabel = computed(() => (this.kit().mode === 'draft' ? '' : BRAND_KIT_MODE_LABELS[this.kit().mode]));
   /** What the reviewer should look at: the gaps and the sources that failed (the findings' list when the report has one). */

@@ -29,6 +29,7 @@ import {
   getRsvpTimestampMs,
   groupMeetingsByDayBucket,
   isMeetingHomeRowPendingRsvp,
+  isPastMeetingSummaryAwaitingApproval,
   selectApplicableRsvp,
   sortPastMeetingsDescending,
   toPastMeetingHomeRow,
@@ -170,8 +171,18 @@ export class MeetingsHomeStore {
     this.meetingService.getPastMeetingSummary(id)
   );
   private readonly lastMeetingSummaryState: WritableSignal<PastMeetingSummary | null | undefined> = linkedSignal(() => this.fetchedLastMeetingSummary());
+  private readonly approvedSummariesState: WritableSignal<ReadonlyMap<string, string>> = signal(new Map());
+  /** Summary uid an organizer approved this session, by row key; the feed and index lag until re-indexed. */
+  public readonly approvedSummaries: Signal<ReadonlyMap<string, string>> = this.approvedSummariesState.asReadonly();
   /** Last meeting's AI summary: undefined while loading, null when there is none or the lookup failed. */
-  public readonly lastMeetingSummary: Signal<PastMeetingSummary | null | undefined> = this.lastMeetingSummaryState.asReadonly();
+  public readonly lastMeetingSummary: Signal<PastMeetingSummary | null | undefined> = computed(() => {
+    const summary = this.lastMeetingSummaryState();
+    const key = this.lastMeeting()?.key;
+    // An approval confirmed this session outranks an index that has not caught up yet.
+    if (summary && key && this.approvedSummaries().get(key) === summary.uid && isPastMeetingSummaryAwaitingApproval(summary))
+      return { ...summary, approved: true };
+    return summary;
+  });
   /** Share URL of the last meeting's recording: undefined while loading, null when there is none or the lookup failed. */
   public readonly lastMeetingRecordingUrl: Signal<string | null | undefined> = this.initLastMeetingArtifact((id) =>
     this.meetingService.getPastMeetingRecording(id).pipe(map((recording) => getLargestSessionShareUrl(recording)))
@@ -228,9 +239,10 @@ export class MeetingsHomeStore {
     this.cancelledOccurrenceIds.update((ids) => new Map(ids).set(meetingId, [...(ids.get(meetingId) ?? []), occurrenceId]));
   }
 
-  /** Keeps the Last meeting card in step after an organizer edits or approves the summary. */
-  public setLastMeetingSummary(summary: PastMeetingSummary): void {
-    this.lastMeetingSummaryState.set(summary);
+  /** Records an organizer's edit or approval of the summary opened from row `key`; the Last card takes it only while that row is last. */
+  public applySummaryChange(key: string, summary: PastMeetingSummary): void {
+    if (this.lastMeeting()?.key === key) this.lastMeetingSummaryState.set(summary);
+    if (!isPastMeetingSummaryAwaitingApproval(summary)) this.approvedSummariesState.update((approved) => new Map(approved).set(key, summary.uid));
   }
 
   /** Shows the previous (-1) or the next (1) concurrent date on the Next meeting card. */

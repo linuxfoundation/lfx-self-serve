@@ -12,7 +12,7 @@ import type {
   CAMPAIGN_METRICS_WINDOWS,
   CREATIVE_ASSET_MIME_TYPES,
   GOOGLE_ADS_AGE_RANGE_MAP,
-  GOOGLE_ADS_DEVICES,
+  GOOGLE_ADS_DEMAND_GEN_DEVICES,
   GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_ADS_SCHEDULE_DAYS,
@@ -853,8 +853,9 @@ export interface CampaignBriefOutput {
    *
    * The URLs are UNTAGGED here, and deliberately. campaign-service tags every sitelink
    * destination itself (`googleads/assets.go` calls the same `buildTaggedFinalURL` the ad's own
-   * final URL goes through), so a click on one attributes to google/cpc under this campaign's
-   * `utm_campaign` with no help from this app. Tagging here as well would hand that builder a
+   * final URL goes through, with the channel's own `utm_medium`: `paid-search` on Search,
+   * `display` on Demand Gen), so a click on one attributes under this campaign's `utm_campaign`
+   * with no help from this app. Tagging here as well would hand that builder a
    * pre-tagged URL whose `utm_campaign` it preserves rather than sets, which is how a sitelink
    * would end up attributed to a campaign other than the one that bought the click.
    */
@@ -1456,6 +1457,10 @@ export interface CampaignImplementationDraft {
    * on, so turning it off and on again restores them. Absent leaves the form's groups alone.
    */
   demandGenAdGroups?: GoogleDemandGenAdGroupDraft[];
+  /** The single Demand Gen ad group's first ad's name, used once it has more than one ad. Absent leaves it alone. */
+  demandGenAdName?: string;
+  /** The single Demand Gen ad group's second and later ads, both formats raw. Absent leaves the form's alone. */
+  demandGenAds?: GoogleDemandGenAdDraft[];
   /**
    * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
    * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
@@ -1571,7 +1576,8 @@ export interface CampaignImplementationDraft {
    * Google's sitelink extensions, as the operator typed them.
    *
    * Held and restored on exactly the same rule as {@link googleCallouts}: absent and empty agree,
-   * and a list saved under a non-Search channel is kept rather than discarded.
+   * and a list saved under a channel that takes no sitelinks is kept rather than discarded. Unlike
+   * the callouts, it is SENT on Demand Gen as well as Search (`GOOGLE_CHANNELS_WITH_SITELINKS`).
    */
   googleSitelinks?: CampaignSitelink[];
   /**
@@ -1689,6 +1695,12 @@ export interface CampaignBriefLoadResult {
    * to assume approval.
    */
   approved: boolean;
+  /**
+   * The event name campaign-service will compose this brief's create names from, read off the stored
+   * row the way its dispatcher reads it (`briefDispatchEventName`). Set on `loaded` only; the server's
+   * pre-dispatch name checks read it, and the UI does not.
+   */
+  storedEventName?: string;
 }
 
 /**
@@ -3069,10 +3081,11 @@ export interface GoogleDemandGenVideoCreative {
 /**
  * One named Demand Gen ad group (#5226), typed to an entry of `googleAdsConfig.demandGenAdGroups`
  * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenAdGroupConfig`, #460). campaign-service names
- * the group `<event name> - Display | <name>` and gives it exactly one of the two creatives.
+ * the group `<event name> - Display | <name>` and gives it one ad from exactly one of the two creatives,
+ * or several from {@link ads} instead.
  *
- * Upstream also takes `audience` (one Audience per group) and `ads` (several ads per group). Neither is
- * sent yet; each is a field added here, beside the two creatives, when the Implement tab collects it.
+ * Upstream also takes `audience` (one Audience per group). It is not sent yet; it is a field added here
+ * when the Implement tab collects it.
  */
 export interface GoogleDemandGenAdGroup {
   name: string;
@@ -3080,22 +3093,65 @@ export interface GoogleDemandGenAdGroup {
   creative?: GoogleDemandGenCreative;
   /** The group's video ad, the same shape as {@link CampaignCreateRequest.demandGenVideoCreative}. */
   videoCreative?: GoogleDemandGenVideoCreative;
+  /** The group's several named ads (#474 upstream), sent INSTEAD of both creatives above. At most 5. */
+  ads?: GoogleDemandGenAd[];
 }
 
-/** One Demand Gen ad group as the Implement tab's draft keeps it: the raw text of both formats, and which is chosen. */
-export interface GoogleDemandGenAdGroupDraft {
+/**
+ * One of several named ads of a Demand Gen ad group, typed to an entry of `googleAdsConfig.demandGenAds`
+ * or of a group's `ads` (`googleAdsDemandGenAdConfig`, lfx-v2-campaign-service#482): a name and exactly
+ * one of the two creatives. campaign-service names a video ad `<ad group name> - <name>`; an image ad's
+ * name is not sent to Google.
+ */
+export interface GoogleDemandGenAd {
+  name: string;
+  creative?: GoogleDemandGenCreative;
+  videoCreative?: GoogleDemandGenVideoCreative;
+}
+
+/** One Demand Gen ad as the Implement tab's draft keeps it: its name, the raw text of both formats, and which is chosen. */
+export interface GoogleDemandGenAdDraft {
   name: string;
   format: GoogleDemandGenAdFormat;
   creative: Record<string, string>;
   videoCreative: Record<string, string>;
 }
 
-/** The form controls of one Demand Gen ad group on the Implement tab: {@link GoogleDemandGenAdGroupDraft}, live. */
-export interface GoogleDemandGenAdGroupControls {
+/**
+ * One Demand Gen ad group as the Implement tab's draft keeps it: its name, its first ad's raw text in
+ * both formats and which is chosen, and, when it has several ads, the first ad's name and the others.
+ */
+export interface GoogleDemandGenAdGroupDraft extends GoogleDemandGenAdDraft {
+  /** The first ad's name, used once the group has more than one ad. Absent restores blank. */
+  adName?: string;
+  /** The group's second and later ads. Absent restores none. */
+  ads?: GoogleDemandGenAdDraft[];
+}
+
+/** The form controls of one Demand Gen ad on the Implement tab: {@link GoogleDemandGenAdDraft}, live. */
+export interface GoogleDemandGenAdControls {
   name: import('@angular/forms').FormControl<string>;
   format: import('@angular/forms').FormControl<GoogleDemandGenAdFormat>;
   creative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
   videoCreative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
+}
+
+/**
+ * A form holding one Demand Gen ad's controls: an ad's own form group, or a named group's, whose
+ * first ad it holds. Structural, because a `FormGroup` of the group's wider controls is not assignable
+ * to a `FormGroup` of the ad's.
+ */
+export interface GoogleDemandGenAdForm {
+  controls: GoogleDemandGenAdControls;
+}
+
+/**
+ * The form controls of one Demand Gen ad group on the Implement tab: {@link GoogleDemandGenAdGroupDraft},
+ * live. `name` is the group's name; `format` and the two creatives are its first ad.
+ */
+export interface GoogleDemandGenAdGroupControls extends GoogleDemandGenAdControls {
+  adName: import('@angular/forms').FormControl<string>;
+  ads: import('@angular/forms').FormArray<import('@angular/forms').FormGroup<GoogleDemandGenAdControls>>;
 }
 
 /**
@@ -3436,7 +3492,8 @@ export type GoogleAdsScheduleMinute = (typeof GOOGLE_ADS_SCHEDULE_MINUTES)[numbe
  * create. Upstream carries the field as a pointer so absence stays distinguishable from 0, so an
  * absent modifier must be OMITTED on the wire rather than sent as a zero. A present value must be between
  * {@link GOOGLE_ADS_MIN_BID_MODIFIER} and {@link GOOGLE_ADS_MAX_BID_MODIFIER}, and is sent only under
- * a strategy in {@link GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES}.
+ * a strategy in {@link GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES}, and never on a channel in
+ * {@link GOOGLE_CHANNELS_WITHOUT_SCHEDULE_BID_MODIFIERS}.
  */
 export interface CampaignAdSchedule {
   dayOfWeek: GoogleAdsScheduleDay;
@@ -3448,12 +3505,13 @@ export interface CampaignAdSchedule {
 }
 
 /**
- * A device a campaign may adjust its bid on.
+ * A device a campaign may adjust its bid on, or exclude.
  *
- * Derived from {@link GOOGLE_ADS_DEVICES} rather than written out again, so a device added to the
- * accepted vocabulary cannot leave this type behind.
+ * Derived from {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}, the widest channel vocabulary, rather than
+ * written out again, so a device added to it cannot leave this type behind. Which of these a channel
+ * takes is `googleAdsDevicesOn`'s answer: `CONNECTED_TV` is Demand Gen's alone.
  */
-export type GoogleAdsDevice = (typeof GOOGLE_ADS_DEVICES)[number];
+export type GoogleAdsDevice = (typeof GOOGLE_ADS_DEMAND_GEN_DEVICES)[number];
 
 /**
  * An age range a campaign may exclude, in either spelling upstream accepts — the friendly `18-24`
@@ -3702,6 +3760,12 @@ export interface CampaignCreateRequest {
    * campaign-service refuses the list beside either of them. At most `GOOGLE_DEMAND_GEN_MAX_AD_GROUPS`.
    */
   demandGenAdGroups?: GoogleDemandGenAdGroup[];
+  /**
+   * Several named ads for the single Demand Gen ad group (lfx-v2-campaign-service#482), sent INSTEAD
+   * of both creatives above and never beside {@link demandGenAdGroups}. At most
+   * `GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP`.
+   */
+  demandGenAds?: GoogleDemandGenAd[];
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
   /**
@@ -3752,8 +3816,8 @@ export interface CampaignCreateRequest {
    * Google's own default, which is to serve in EVERY language. So this is a narrowing, and an empty
    * array and an absent key mean the same thing, exactly as they do for `geoTargets`.
    *
-   * Accepted on every Google channel except Demand Gen — see
-   * {@link GOOGLE_CHANNELS_WITH_LANGUAGES}. Bounded by {@link GOOGLE_ADS_MAX_LANGUAGES}. Upstream
+   * Accepted on every Google channel — see {@link GOOGLE_CHANNELS_WITH_LANGUAGES}; on Demand Gen
+   * campaign-service attaches it to the ad group. Bounded by {@link GOOGLE_ADS_MAX_LANGUAGES}. Upstream
    * resolves each ISO code against its own `languageConstants` table — which
    * {@link GOOGLE_ADS_LANGUAGE_MAP} mirrors — and refuses an unknown one rather than dropping it; a
    * numeric id skips that table and is resolved by Google.
@@ -3764,8 +3828,8 @@ export interface CampaignCreateRequest {
    * runs around the clock, which is Google's own default — so this list is a narrowing and an
    * absent key means the same as an empty one, exactly as {@link languages} does.
    *
-   * Accepted on every Google channel except Demand Gen — see
-   * {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}. Bounded by {@link GOOGLE_ADS_MAX_AD_SCHEDULES}
+   * Accepted on every Google channel — see {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES} — but on Demand
+   * Gen only without a bid modifier ({@link GOOGLE_CHANNELS_WITHOUT_SCHEDULE_BID_MODIFIERS}). Bounded by {@link GOOGLE_ADS_MAX_AD_SCHEDULES}
    * overall and {@link GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} on any one day; both are Google's own
    * limits rather than local opinions.
    *
@@ -3782,17 +3846,18 @@ export interface CampaignCreateRequest {
    * everywhere, which is Google's own default — so this list is an adjustment and an absent key
    * means the same as an empty one, exactly as {@link adSchedules} does.
    *
-   * Accepted on THREE channels — see {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS} — one fewer
-   * than {@link adSchedules}: Demand Gen takes no campaign-level criteria at all, and Performance
-   * Max's automated bidding owns the bid and sets no device adjustment. Upstream refuses both rather
-   * than dropping the list, so the BFF refuses such a create by name.
+   * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, which leaves out
+   * Performance Max, where this client does not offer devices yet; the BFF refuses a list there by
+   * name. Demand Gen takes a device only as an exclusion, a modifier of `0`
+   * ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}), and is the one channel that takes
+   * `CONNECTED_TV`.
    *
    * A NON-ZERO modifier also needs the effective bidding strategy to be `manual-cpc`: Google would
    * ignore it under any other, so campaign-service refuses it (see `googleDeviceBidModifierRefusal`).
    * `0`, the exclusion, is accepted under every strategy.
    *
-   * Bounded by {@link GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS}, which is the size of the accepted device
-   * vocabulary: a longer list necessarily REPEATS a device, and a repeat is refused rather than
+   * Bounded by the size of the channel's device vocabulary (`googleAdsDevicesOn`), as upstream's
+   * `validateDeviceBidModifiers` bounds it: a longer list necessarily REPEATS a device, and a repeat is refused rather than
    * collapsed, because Google accepts one criterion per device and the second value would be the one
    * silently dropped. That is the same rule {@link adSchedules} applies to a repeated interval with
    * a different modifier — here every repeat qualifies, since a device has nothing else to agree on.
@@ -3861,15 +3926,19 @@ export interface CampaignCreateRequest {
    * campaign has no extensions", which is what every create on this path did before the field
    * existed, so an absent key and an empty list agree — the same rule as {@link geoTargets}.
    *
-   * SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`). On any other channel upstream refuses the
-   * create outright rather than dropping the list, so the UI withholds it there and the BFF refuses
-   * it by name.
+   * SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`). On Demand Gen, Display and Video upstream
+   * refuses the create outright rather than dropping the list, so the UI withholds it off Search and
+   * the BFF refuses it by name. (Upstream also takes callouts on Performance Max; this application
+   * has not opened that pairing, so it withholds and refuses them there too.)
    */
   callouts?: string[];
   /**
-   * The Google campaign's sitelink extensions — extra links rendered under the text ad.
+   * The Google campaign's sitelink extensions — extra links rendered with the ad.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   * Omitted when empty, on the same rule as {@link callouts}. SEARCH AND DEMAND GEN
+   * (`GOOGLE_CHANNELS_WITH_SITELINKS`): campaign-service v1.0.31 accepts sitelinks alone on Demand
+   * Gen, under the same per-entry rules as Search. On every other channel the UI withholds them and
+   * the BFF refuses them by name.
    */
   sitelinks?: CampaignSitelink[];
   /**
@@ -3914,9 +3983,11 @@ export interface CampaignCreateRequest {
    *
    * All five are optional and all five are OMITTED when unset rather than sent as zero. Absent
    * `biddingStrategy` means the channel's own default (`GOOGLE_BIDDING_DEFAULT_BY_CHANNEL`), and
-   * campaign-service — not this request — is what applies it. The three numbers and the
-   * conversion list are refused upstream when they do not belong to the named strategy or
-   * channel, so sending a zero to mean "none" would be sending a value, not omitting one.
+   * campaign-service — not this request — is what applies it. The three numbers are refused
+   * upstream when they do not belong to the named strategy or channel, so sending a zero to mean
+   * "none" would be sending a value, not omitting one. The conversion list is accepted on every
+   * channel and under every strategy (`validateConversionActions`, `applyCampaignConversionGoal`);
+   * the tab sends it only where `GOOGLE_CONVERSION_ACTION_CHANNELS` says.
    *
    * `targetRoas` is a RATIO, not a percentage: 4 is 400% return on ad spend. `cpcBid` and
    * `targetCpa` are in whole units of the ad ACCOUNT's currency.

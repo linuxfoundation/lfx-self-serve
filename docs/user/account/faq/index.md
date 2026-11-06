@@ -3,14 +3,18 @@ title: Account FAQ
 description: Frequently asked questions about account settings, affiliations, identities, CLAs, transactions, and billing in LFX Self Serve.
 audience: [all]
 product_area: Account
-tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github]
-last_updated: 2026-11-05
+tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid]
+last_updated: 2026-11-06
 intercom_collection: Account
 ---
 
 ## What is the difference between Account and Profile?
 
 **Profile** is your personal identity — your name, photo, About Me, primary email, and location, edited in the Edit Profile drawer. **Account** covers everything else tied to your Linux Foundation account: work history and affiliations, connected identities, individual enrollment, CLAs, transactions, and settings (email, password, and developer API token). Both live under the **Profile & Account** hub.
+
+## Is my LFID on the Identities tab?
+
+No. The **Identities** tab lists the accounts and email addresses linked to your profile. Your LFID (Linux Foundation ID) is your LFX username, shown under your name in your account menu and in the profile panel on [**Profile & Account**](/profile). See [What is my LFID, and where do I find it?](../../profile/faq/#what-is-my-lfid-and-where-do-i-find-it).
 
 ## How do I change my email address?
 

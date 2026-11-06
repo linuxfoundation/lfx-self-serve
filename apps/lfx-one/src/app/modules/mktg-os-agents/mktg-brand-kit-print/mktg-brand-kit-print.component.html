@@ -266,14 +266,21 @@
 </ng-template>
 
 <ng-template #visualBody>
-  <tr class="kit-block">
+  <!-- Iconography has the chapter's first page to itself (the board's proportions need it); the page ends after this block. -->
+  <tr class="kit-block kit-icon-block" data-testid="kit-print-icon-block">
     <td>
       <h3>Iconography · {{ v.visual.icons.recommended }}</h3>
-      <ul>
-        @for (rule of v.visual.icons.rules; track $index) {
-          <li>{{ rule }}</li>
-        }
-      </ul>
+      <!-- The rules across the sheet, then the samples at the board's proportions across its full width (block flow; the samples one fragment). -->
+      <div class="kit-icon-rules" data-testid="kit-print-icon-rules">
+        <ul>
+          @for (rule of v.visual.icons.rules; track $index) {
+            <li>{{ rule }}</li>
+          }
+        </ul>
+      </div>
+      <div class="kit-icon-samples-block" data-testid="kit-print-icon-samples">
+        <lfx-mktg-brand-kit-icon-samples class="kit-icon-samples" [colours]="v.iconColours" [print]="true" />
+      </div>
     </td>
   </tr>
   <tr class="kit-block">

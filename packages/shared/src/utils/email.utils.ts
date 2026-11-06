@@ -82,6 +82,44 @@ export function maskEmailForLogs(email: string | null | undefined): string {
 }
 
 /**
+ * Mask an address for display to someone who may not own it, e.g. on a page opened from a forwarded
+ * invite link: enough to recognise your own address, not enough to read someone else's
+ * (`jane.doe+news@example.org` → `ja***@exam***.org`). The local part keeps two characters (one
+ * when it is two or three long); the host before the last dot keeps four (one when it is two to six
+ * long); a one-character part shows nothing, so `***` never stands in front of a complete part. The
+ * top-level domain stays. Anything that is not a single-`@` address with a dotted domain collapses
+ * to `***`.
+ */
+export function maskEmailForDisplay(email: string | null | undefined): string {
+  const trimmed = (email ?? '').trim();
+  const at = trimmed.indexOf('@');
+  if (at <= 0 || at !== trimmed.lastIndexOf('@')) {
+    return '***';
+  }
+
+  const local = trimmed.slice(0, at);
+  const domain = trimmed.slice(at + 1).toLowerCase();
+  const dot = domain.lastIndexOf('.');
+  if (dot <= 0 || dot === domain.length - 1) {
+    return '***';
+  }
+
+  const host = domain.slice(0, dot);
+  const tld = domain.slice(dot + 1);
+  const shownLocal = local.slice(0, visiblePrefixLength(local.length, 3, 2));
+  const shownHost = host.slice(0, visiblePrefixLength(host.length, 6, 4));
+  return `${shownLocal}***@${shownHost}***.${tld}`;
+}
+
+/** How many leading characters of a `length`-long address part to show: `longKeep` above `shortMax`, one for a short part, none for a single character. */
+function visiblePrefixLength(length: number, shortMax: number, longKeep: number): number {
+  if (length <= 1) {
+    return 0;
+  }
+  return length > shortMax ? longKeep : 1;
+}
+
+/**
  * Mask a directory identifier for a structured-log field. An identifier is normally a username,
  * which is not sensitive and stays readable — the whole point of logging it. It can also *be* the
  * address: the NATS sub/username equals the email for some accounts (see the note at

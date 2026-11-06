@@ -565,16 +565,16 @@ describe('formatMeetingDateTime', () => {
 });
 
 describe('formatMeetingWhen', () => {
-  it('shows the day, the start time with its zone and the minutes', () => {
-    expect(formatMeetingWhen('2026-11-05T17:00:00Z', 60, 'America/Los_Angeles')).toBe('Thu, Nov 5 · 9:00 AM PST · 60 min');
-    expect(formatMeetingWhen('2026-10-01T13:30:00Z', 90, 'UTC')).toBe('Thu, Oct 1 · 1:30 PM UTC · 90 min');
+  it('shows the day, the start time without a zone and the minutes', () => {
+    expect(formatMeetingWhen('2026-11-05T17:00:00Z', 60, 'America/Los_Angeles')).toBe('Thu, Nov 5 · 9:00 AM · 60 min');
+    expect(formatMeetingWhen('2026-10-01T13:30:00Z', 90, 'UTC')).toBe('Thu, Oct 1 · 1:30 PM · 90 min');
     expect(formatMeetingWhen('not-a-date', 60)).toBe('');
   });
 });
 
 describe('getMeetingWhenParts', () => {
-  it('returns the day, the start time with its zone and the minutes, and nothing for an invalid start', () => {
-    expect(getMeetingWhenParts('2026-11-05T17:00:00Z', 60, 'America/Los_Angeles')).toEqual(['Thu, Nov 5', '9:00 AM PST', '60 min']);
+  it('returns the day, the start time without a zone and the minutes, and nothing for an invalid start', () => {
+    expect(getMeetingWhenParts('2026-11-05T17:00:00Z', 60, 'America/Los_Angeles')).toEqual(['Thu, Nov 5', '9:00 AM', '60 min']);
     expect(getMeetingWhenParts('not-a-date', 60)).toEqual([]);
   });
 });
@@ -626,7 +626,7 @@ describe('getMeetingVisibilityBadges', () => {
     [null, null, [MeetingVisibilityKind.PUBLIC]],
     [MeetingVisibility.PRIVATE, null, [MeetingVisibilityKind.PRIVATE]],
     [MeetingVisibility.PUBLIC, true, [MeetingVisibilityKind.RESTRICTED]],
-    [MeetingVisibility.PRIVATE, true, [MeetingVisibilityKind.PRIVATE, MeetingVisibilityKind.RESTRICTED]],
+    [MeetingVisibility.PRIVATE, true, [MeetingVisibilityKind.RESTRICTED, MeetingVisibilityKind.PRIVATE]],
   ])('%s, restricted %s → %j', (visibility, restricted, kinds) => {
     expect(getMeetingVisibilityBadges({ visibility, restricted })).toEqual(kinds.map((kind) => MEETING_VISIBILITY_INFO[kind]));
   });

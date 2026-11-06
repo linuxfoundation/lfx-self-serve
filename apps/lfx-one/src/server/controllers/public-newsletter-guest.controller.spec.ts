@@ -16,7 +16,12 @@ import { createNewsletterGuestSessionValue, readNewsletterGuestSessionValue } fr
 import { PublicNewsletterGuestController } from './public-newsletter-guest.controller';
 
 const session = { e: 'jane@acme-motors.example', c: 'c-news', f: 'f-1', v: true };
-const issue = { foundation: { uid: 'f-1', slug: 'acme', name: 'Acme', logo_url: null }, email: session.e, newsletter: null, confirmation_sent: false };
+const issue = {
+  foundation: { uid: 'f-1', slug: 'acme', name: 'Acme', logo_url: null },
+  masked_email: 'ja***@acme***.example',
+  newsletter: null,
+  confirmation_sent: false,
+};
 
 function makeRes() {
   const res = { cookie: vi.fn(), json: vi.fn(), set: vi.fn() };

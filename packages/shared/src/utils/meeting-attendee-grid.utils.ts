@@ -10,10 +10,12 @@ import type {
   MeetingRegistrant,
   PastMeetingParticipant,
 } from '../interfaces';
+import { getRegistrantAttendanceStatus } from './rsvp-calculator.util';
 
 /**
  * Orders a meeting's invitees for the attendee avatar grid and counts them per status.
- * @description Upcoming people take their status from the registrant's RSVP, past people from the participant's attendance.
+ * @description Upcoming people take their status from the registrant's RSVP, else the calendar invite answer; past people
+ * from the participant's attendance.
  * People are ordered by status, then by name A–Z.
  */
 export function buildMeetingAttendeeGrid(people: readonly (MeetingRegistrant | PastMeetingParticipant)[], past: boolean): MeetingAttendeeGrid {
@@ -41,6 +43,6 @@ export function getMeetingAttendeeGridOverflow(total: number, columns: number): 
 
 function getMeetingAttendeeStatus(person: MeetingRegistrant | PastMeetingParticipant, past: boolean): MeetingAttendeeStatus {
   if (past) return 'is_attended' in person && person.is_attended ? 'attended' : 'absent';
-  const response = 'rsvp' in person ? person.rsvp?.response_type : undefined;
-  return response ? MEETING_ATTENDEE_RSVP_STATUS[response] : 'no_response';
+  const status = 'is_attended' in person ? 'pending' : getRegistrantAttendanceStatus(person);
+  return status === 'pending' ? 'no_response' : MEETING_ATTENDEE_RSVP_STATUS[status];
 }

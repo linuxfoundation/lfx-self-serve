@@ -4,7 +4,7 @@ description: Foundation-level health metrics — the health cards on the Foundat
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, foundation, health-metrics, organization-dependency]
-last_updated: 2026-10-29
+last_updated: 2026-11-06
 intercom_collection: Dashboards
 ---
 
@@ -31,7 +31,15 @@ If a headline metric is available but its supporting data is missing, fails to l
 
 The Foundation overview includes an **Organization Dependency** card among its health metrics. It shows how concentrated contributions are across organizations: the group of organizations whose contributors performed 51% or more of all contributions, compared with all other organizations.
 
-Select the card to open a drawer with the top-organization count, a chart comparing that group's contribution share against all other organizations, and a link to detailed contribution metrics in LFX Insights.
+The card's number is how many organizations are in that group, with **Contribution concentration across organizations** under it. A smaller number means the foundation depends on fewer organizations.
+
+Select the card to open the **Organization Dependency** drawer:
+
+1. The same count, next to a description of the group of organizations whose contributors performed 51% or more of all contributions.
+2. A bar chart of **Contribution Share (%)** with two bars: the group, labelled with its size and share, such as **3 Orgs (54%)**, and everyone else, such as **120 Other Orgs**.
+3. **Looking for detailed contribution metrics?**, which links to the foundation's contribution patterns, activity breakdowns and participation trends in LFX Insights.
+
+This card is about the foundation's contributors as a whole. For one organization's involvement in the foundation, see [Organization involvement in a foundation](../organization-involvement/).
 
 The card is visible to board members, executive directors, LF Staff, users with a writer role on the foundation (including root writers), and users with tenant-wide auditor access.
 
@@ -52,4 +60,5 @@ The **Health Metrics** page (`/foundation/health-metrics`) is available to execu
 
 - [Dashboard overview](../) — lens and persona concepts
 - [Navigate Your Dashboard](../navigate-dashboards/) — switch lenses and project context
+- [Organization involvement in a foundation](../organization-involvement/) — one organization's contributors, maintainers, events and training in the foundation
 - [Social Listening](../../social-listening/) — foundation social sentiment and mentions

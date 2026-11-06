@@ -3761,6 +3761,23 @@ export class AnalyticsController {
     }
   }
 
+  /** `GET /api/analytics/members-growth` — every month's running total of new members. */
+  public async getMembersGrowth(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_growth');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_growth');
+
+      const response = await this.healthMetricsMembersService.getGrowth(req, { foundationSlug });
+
+      logger.success(req, 'get_members_growth', startTime, { foundation_slug: foundationSlug, month_count: response.months.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** `GET /api/analytics/members-tiers` — every year's members and revenue per tier. */
   public async getMembersTiers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_members_tiers');

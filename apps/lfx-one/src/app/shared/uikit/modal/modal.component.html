@@ -3,14 +3,15 @@
 
 <!-- Exact px, not rem; 14px root. Header, body and inset share a 24px gutter. -->
 @if (sticky()) {
-  <div class="flex flex-col gap-[8px] px-[24px] pb-[16px] pt-[24px]" data-testid="ui-modal-header">
+  <!-- With a header extra, it sits flush on the body, which starts 20px below it. -->
+  <div class="flex flex-col gap-[16px] px-[24px] pb-[16px] pt-[24px] has-[>[data-testid=ui-modal-header-extra]:not(:empty)]:pb-0" data-testid="ui-modal-header">
     <ng-container [ngTemplateOutlet]="titleBlock" />
   </div>
 }
 <!-- cdkScrollable lets overlays opened from the body (Select, Menu) follow its scrolling. -->
-<div [class]="bodyClasses()" cdkScrollable data-testid="ui-modal-body">
+<div #body [class]="bodyClasses()" [style.--fade-top.px]="fadeTop()" [style.--fade-bottom.px]="fadeBottom()" cdkScrollable data-testid="ui-modal-body">
   @if (!sticky()) {
-    <div class="flex flex-col gap-[8px]" data-testid="ui-modal-header">
+    <div class="flex flex-col gap-[16px]" data-testid="ui-modal-header">
       <ng-container [ngTemplateOutlet]="titleBlock" />
     </div>
   }
@@ -26,9 +27,29 @@
 </div>
 
 <ng-template #titleBlock>
-  <!-- Roboto Slab 300 20/28: heading-24 at the library's smaller modal size. -->
-  <h2 class="heading-24 text-[20px] leading-[28px] text-ui-neutral-900" [id]="titleId" data-testid="ui-modal-title">{{ heading() }}</h2>
-  @if (subtitle()) {
-    <p class="copy-14 text-ui-neutral-600" [id]="subtitleId" data-testid="ui-modal-subtitle">{{ subtitle() }}</p>
-  }
+  <div class="flex items-start gap-[12px]">
+    <div class="flex min-w-0 flex-1 flex-col gap-[8px]">
+      <div class="flex flex-wrap items-center gap-[8px]">
+        <!-- Roboto Slab 300 20/28: heading-24 at the library's smaller modal size. -->
+        <h2 class="heading-24 text-[20px] leading-[28px] text-ui-neutral-900" [id]="titleId" data-testid="ui-modal-title">{{ heading() }}</h2>
+        <div class="flex items-center empty:hidden" data-testid="ui-modal-title-suffix">
+          <ng-content select="[modalTitleSuffix]" />
+        </div>
+      </div>
+      @if (subtitle()) {
+        <p class="copy-14 text-ui-neutral-600" [id]="subtitleId" data-testid="ui-modal-subtitle">{{ subtitle() }}</p>
+      }
+    </div>
+    <!-- Pulled up and right so the icon buttons' glyphs line up with the title and the 24px gutter. -->
+    <div class="-mr-[8px] -mt-[4px] flex shrink-0 items-center gap-[4px] empty:hidden" data-testid="ui-modal-header-actions">
+      <ng-content select="[modalHeaderActions]" />
+      @if (closable()) {
+        <lfx-ui-button variant="tertiary" [iconOnly]="true" icon="fa-light fa-xmark" ariaLabel="Close" (click)="close()" data-testid="ui-modal-close" />
+      }
+    </div>
+  </div>
+  <!-- Full bleed, for tabs or a context block that stay above the scrolling body when sticky. -->
+  <div class="-mx-[24px] empty:hidden" data-testid="ui-modal-header-extra">
+    <ng-content select="[modalHeaderExtra]" />
+  </div>
 </ng-template>

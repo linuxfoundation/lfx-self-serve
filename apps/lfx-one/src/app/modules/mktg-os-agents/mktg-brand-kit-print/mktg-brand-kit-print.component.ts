@@ -10,11 +10,12 @@ import { brandKitInkOnAccent, brandKitIsLight, brandKitLabelInk } from '@lfx-one
 import { distinctUntilChanged, filter } from 'rxjs';
 import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 import { MktgPrintChapterHeaderComponent } from '../components/mktg-print-chapter-header/mktg-print-chapter-header.component';
+import { MktgBrandKitIconSamplesComponent } from '../components/mktg-brand-kit-icon-samples/mktg-brand-kit-icon-samples.component';
 
 /** Native portrait text, shared by family and standalone PDFs; never a scaled book plate. */
 @Component({
   selector: 'lfx-mktg-brand-kit-print',
-  imports: [NgTemplateOutlet, MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent],
+  imports: [NgTemplateOutlet, MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent, MktgBrandKitIconSamplesComponent],
   templateUrl: './mktg-brand-kit-print.component.html',
   styleUrls: ['../mktg-framework-print/mktg-framework-print.component.scss', './mktg-brand-kit-print.component.scss'],
 })
