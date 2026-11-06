@@ -9813,6 +9813,20 @@ describe('ImplementationTabComponent display placement exclusions', () => {
     restoreGoogleDraft(fixture, c, { googleExcludedPlacements: ['bad'] as unknown as string });
     expect(c['campaignForm'].controls.googleExcludedPlacements.value).toBe('news.example.org');
   });
+
+  it('re-judges a restored box: a refused entry from the draft holds Create', () => {
+    const c = seedPlacements('spam.example\n');
+    expect(c['googleExcludedPlacementsError']()).toBeNull();
+    restoreGoogleDraft(fixture, c, { includeDisplay: true, googleExcludedPlacements: 'https://spam.example/page' });
+    expect(c['googleExcludedPlacementsError']()).not.toBeNull();
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  it('ignores a line that holds only whitespace Go trims, as the shared judge does', () => {
+    const c = seedPlacements('spam.example\n\u0085\n');
+    expect(c['googleExcludedPlacementsError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
 });
 
 /**

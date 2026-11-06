@@ -3843,8 +3843,9 @@ export class ImplementationTabComponent implements OnInit {
    * compares for the clash. `canSubmit` blocks on it.
    */
   protected readonly googleExcludedGeoTargetsError: Signal<string | null> = this.initGoogleExcludedGeoTargetsError();
-  /** Whether the placement exclusions box shows and is sent: Display on the campaign-service road (#462). */
+  /** The most placement exclusions one Display campaign takes (#462), upstream's own cap. */
   protected readonly googleMaxExcludedPlacements = GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS;
+  /** Whether the placement exclusions box shows and is sent: Display on the campaign-service road (#462). */
   protected readonly googleExcludedPlacementsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS));
   /** The shared placement refusal over the lines the request sends, or `null`; `canSubmit` blocks on it. */
   protected readonly googleExcludedPlacementsError: Signal<string | null> = this.initGoogleExcludedPlacementsError();
@@ -4249,14 +4250,11 @@ export class ImplementationTabComponent implements OnInit {
           else creative.disable({ emitEvent: false });
         }
       }
-    });
-    // The same for each named Display ad group (#475): its ad is enabled only while the split is active.
-    effect(() => {
-      const active = this.displayAdGroupsActive();
-      void this.campaignFormRevision();
+      // The same for each named Display ad group (#475): its ad is enabled only while the split is active.
+      const displayActive = this.displayAdGroupsActive();
       for (const { controls } of this.campaignForm.controls.displayAdGroups.controls) {
-        if (active === controls.creative.enabled) continue;
-        if (active) controls.creative.enable({ emitEvent: false });
+        if (displayActive === controls.creative.enabled) continue;
+        if (displayActive) controls.creative.enable({ emitEvent: false });
         else controls.creative.disable({ emitEvent: false });
       }
     });
@@ -7377,12 +7375,15 @@ export class ImplementationTabComponent implements OnInit {
     // Emitting, not silent: the format decides which creative group `googleCreativeSections` renders,
     // and that memo re-reads the control only when `campaignFormRevision` moves. A silent write was
     // correct only while nothing read the sections between the patch above and this line.
-    // The placement exclusions box (#462), restored only as a string, as the bidding text is.
-    if (typeof draft.googleExcludedPlacements === 'string') {
-      this.campaignForm.controls.googleExcludedPlacements.setValue(draft.googleExcludedPlacements, { emitEvent: false });
-    }
     if (draft.demandGenAdFormat === 'image' || draft.demandGenAdFormat === 'video') {
       this.campaignForm.controls.demandGenAdFormat.setValue(draft.demandGenAdFormat);
+    }
+    // The placement exclusions box (#462), restored only as a string. Emitting, not silent, for the
+    // format's reason: `googleExcludedPlacementsError` and the held message re-read the control only
+    // when `campaignFormRevision` moves, so the revision must move AFTER the box holds its restored
+    // value, not only at the patch above, in case either memo is read in between.
+    if (typeof draft.googleExcludedPlacements === 'string') {
+      this.campaignForm.controls.googleExcludedPlacements.setValue(draft.googleExcludedPlacements);
     }
     // The named Demand Gen ad groups (#5226), present-only and emitting, for the format's reasons. The
     // groups are rebuilt rather than patched, because a FormArray patch cannot add the groups a fresh
@@ -10192,7 +10193,7 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => {
       void this.campaignFormRevision();
       if (!this.googleExcludedPlacementsAvailable()) return null;
-      const placements = this.splitCreativeLines(this.campaignForm.controls.googleExcludedPlacements.value);
+      const placements = this.googlePlacementLines(this.campaignForm.controls.googleExcludedPlacements.value);
       return placements.length === 0 ? null : googleExcludedPlacementsRefusal(placements);
     });
   }
@@ -10206,7 +10207,7 @@ export class ImplementationTabComponent implements OnInit {
       const channel = this.googleBiddingChannel();
       if (!channel || this.googleExcludedPlacementsAvailable()) return '';
       void this.campaignFormRevision();
-      const count = this.splitCreativeLines(this.campaignForm.controls.googleExcludedPlacements.value).length;
+      const count = this.googlePlacementLines(this.campaignForm.controls.googleExcludedPlacements.value).length;
       if (count === 0) return '';
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take placement exclusions, so the ${count} you entered will not be sent. Switch the channel back to Display to send them.`;
     });
@@ -10612,7 +10613,7 @@ export class ImplementationTabComponent implements OnInit {
     const excluded = this.googleExcludedGeoTargets();
     if (this.googleExcludedGeoTargetsAvailable() && excluded.length > 0) payload.excludedGeoTargets = [...excluded];
     // Display placement exclusions (#462), one per non-blank line, trimmed; repeats are left for upstream to fold.
-    const placements = this.splitCreativeLines(this.campaignForm.controls.googleExcludedPlacements.value);
+    const placements = this.googlePlacementLines(this.campaignForm.controls.googleExcludedPlacements.value);
     if (this.googleExcludedPlacementsAvailable() && placements.length > 0) payload.excludedPlacements = placements;
     return payload;
   }
@@ -12041,6 +12042,19 @@ export class ImplementationTabComponent implements OnInit {
    * Shared by the creative list fields and the conversion-action list, which have the same shape
    * on screen and the same shape on the wire.
    */
+  /**
+   * The placement exclusions box split one per line, each trimmed with Go's rules (`googleAdsTrimSpace`,
+   * as upstream and the shared judge trim), blanks dropped. `String.prototype.trim` keeps U+0085, so a
+   * line holding only that would otherwise be judged blank rather than ignored, as the user doc says.
+   */
+  private googlePlacementLines(value: string | null | undefined): string[] {
+    if (typeof value !== 'string') return [];
+    return value
+      .split(/\r?\n/)
+      .map((line) => googleAdsTrimSpace(line))
+      .filter((line) => line !== '');
+  }
+
   private splitCreativeLines(value: string | null | undefined): string[] {
     if (typeof value !== 'string') return [];
     return value
