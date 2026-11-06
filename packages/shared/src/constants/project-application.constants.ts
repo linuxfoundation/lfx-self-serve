@@ -69,6 +69,15 @@ export const PROJECT_APPLICATION_FORMATION_LIST_MAX = 25;
 /** Query-string key carrying the foundation a proposal was started from, on `/formations/propose` (#5187). */
 export const PROJECT_APPLICATION_PARENT_QUERY_PARAM = 'parent';
 
+/** Query-string key carrying one proposal's uid on the Formations queue (`?tab=proposals&application=<uid>`), which opens its drawer (#5229). */
+export const PROJECT_APPLICATION_DEEP_LINK_QUERY_PARAM = 'application';
+
+/** Copy for the pending count on the Project proposals tab (#5229). */
+export const PROJECT_APPLICATION_PENDING_COUNT_COPY = {
+  /** Appended to the tab label after the count, for the tab's accessible name: "Project proposals, 3 awaiting review". */
+  ariaSuffix: 'awaiting review',
+};
+
 /** Copy for starting a proposal from a foundation's Formations page, and for reviewing where one started (#5187). */
 export const PROJECT_APPLICATION_FROM_FOUNDATION_COPY = {
   proposeButton: 'Propose a project',

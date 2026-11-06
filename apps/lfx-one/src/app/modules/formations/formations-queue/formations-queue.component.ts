@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
@@ -25,7 +25,8 @@ import {
   PROJECT_APPLICATION_PARENT_QUERY_PARAM,
   PROJECT_APPLICATION_TABS,
 } from '@lfx-one/shared/constants';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, switchMap } from 'rxjs';
+import { withProposalsPendingCount } from '@lfx-one/shared/utils';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, filter, finalize, map, of, switchMap } from 'rxjs';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { FormationPageTabsComponent } from '../components/formation-page-tabs/formation-page-tabs.component';
@@ -58,7 +59,6 @@ export class FormationsQueueComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
-  protected readonly pageTabOptions: FilterPillOption[] = FORMATIONS_QUEUE_PAGE_TAB_OPTIONS;
   protected readonly tabs = PROJECT_APPLICATION_TABS;
   protected readonly proposeLabel = PROJECT_APPLICATION_FROM_FOUNDATION_COPY.proposeButton;
 
@@ -75,6 +75,13 @@ export class FormationsQueueComponent {
   /** The proposals tab exists only on The Linux Foundation, and only for formation-team members. */
   protected readonly showProposalsTab = computed(
     () => this.projectContextService.selectedFoundation()?.slug === LF_FOUNDATION_ROOT_SLUG && this.isFormationTeam() === true
+  );
+  /**
+   * The page tabs, with the pending-proposals count (#5229) on the Project proposals tab once the shared staff read
+   * has landed. No count while it is unread, failed or zero — never a guessed "(0)".
+   */
+  protected readonly pageTabOptions: Signal<FilterPillOption[]> = computed(() =>
+    withProposalsPendingCount(FORMATIONS_QUEUE_PAGE_TAB_OPTIONS, this.projectApplicationService.pendingStaffCount())
   );
   /** A `?tab=proposals` link the caller can't use falls back to the formations list. */
   protected readonly pageTab: Signal<ProjectApplicationTab> = computed(() =>
@@ -118,6 +125,14 @@ export class FormationsQueueComponent {
       ? `${foundation.name}'s formations between Prospect and Active.`
       : 'Every foundation, project, and child project between Prospect and Active.';
   });
+
+  public constructor() {
+    // The count needs the staff queue even while the Formations tab is showing. The read is shared with the
+    // proposals panel (joined while in flight), and is made only for callers who can see the tab at all.
+    toObservable(this.showProposalsTab)
+      .pipe(filter(Boolean), takeUntilDestroyed())
+      .subscribe(() => this.projectApplicationService.refreshStaff());
+  }
 
   protected onPageTabChange(tab: string): void {
     // Returning to Formations recreates the table with its default pill and search, so reset the filters to

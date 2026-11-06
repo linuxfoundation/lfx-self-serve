@@ -171,7 +171,8 @@ test.describe('Project proposals — formation team queue (#3037)', () => {
   async function gotoLfFormations(
     page: Page,
     isFormationTeam: boolean,
-    proposal = buildProposal({ revision: 5 })
+    proposal = buildProposal({ revision: 5 }),
+    search = 'tab=proposals'
   ): Promise<Awaited<ReturnType<typeof mockProjectApplicationApis>>> {
     await stubFormationFlag(page, true);
     await stubPersona(page, true);
@@ -220,7 +221,7 @@ test.describe('Project proposals — formation team queue (#3037)', () => {
     const state = await mockProjectApplicationApis(page, [proposal], isFormationTeam);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    await page.goto('/foundation/formations?project=tlf&tab=proposals', { waitUntil: 'domcontentloaded' });
+    await page.goto(`/foundation/formations?project=tlf&${search}`, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
     await waitForHydration(page);
     return state;
@@ -254,6 +255,24 @@ test.describe('Project proposals — formation team queue (#3037)', () => {
     await page.getByTestId('project-application-drawer-deny').click();
     await confirmDialog(page, 'Deny');
     await expect(page.getByTestId(`project-applications-state-${PROPOSAL_UID}`)).toContainText('Denied', { timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('shows the pending count on the tab, and drops it after a deny (#5229)', async ({ page }) => {
+    await gotoLfFormations(page, true);
+    const tab = page.getByTestId('formations-queue-page-tabs-proposals');
+    await expect(tab).toHaveAttribute('aria-label', 'Project proposals, 1 awaiting review', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('formations-queue-page-tabs-proposals-count')).toHaveText('1');
+
+    await page.getByTestId(`project-applications-open-${PROPOSAL_UID}`).click();
+    await page.getByTestId('project-application-drawer-deny').click();
+    await confirmDialog(page, 'Deny');
+    await expect(page.getByTestId('formations-queue-page-tabs-proposals-count')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('?application=<uid> opens that proposal once and leaves the URL clean (#5229)', async ({ page }) => {
+    await gotoLfFormations(page, true, buildProposal({ revision: 5 }), `tab=proposals&application=${PROPOSAL_UID}`);
+    await expect(page.getByTestId('project-application-drawer-submitter')).toContainText('Casey Example', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page).not.toHaveURL(/application=/);
   });
 
   test('an empty queue shows the staff empty state', async ({ page }) => {
