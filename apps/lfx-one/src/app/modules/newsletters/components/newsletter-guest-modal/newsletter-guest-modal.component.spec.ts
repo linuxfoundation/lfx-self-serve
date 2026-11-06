@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TranscendService } from '@app/shared/services/transcend.service';
+import { NEWSLETTER_GUEST_LEGAL_LINKS } from '@lfx-one/shared/constants';
 import { NewsletterFoundationSummary } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -53,6 +55,36 @@ describe('NewsletterGuestModalComponent', () => {
       'This newsletter is a member benefit for employees of Acme Foundation member companies. Enter your work email to read it.'
     );
     expect(text('newsletter-guest-modal-heading')).toBe('Be the first to hear about new stories from Acme Foundation');
+    expect(text('newsletter-guest-modal-confirm-copy')).toBe(
+      "After you continue, we'll email you a confirmation link. Confirm it, and future issues will arrive in your inbox automatically."
+    );
+  });
+
+  it('does not promise a confirmation email in invite mode, where Continue subscribes directly', () => {
+    fixture.componentRef.setInput('mode', 'invite');
+    expect(el().querySelector('[data-testid="newsletter-guest-modal-confirm-copy"]')).toBeNull();
+  });
+
+  it('shows the invited address as given (masked by the server) in a disabled field', () => {
+    fixture.componentRef.setInput('mode', 'invite');
+    fixture.componentRef.setInput('email', 'ja***@acme***.example');
+    const input = el().querySelector<HTMLInputElement>('[data-testid="newsletter-guest-modal-email"] input');
+    expect(input?.value).toBe('ja***@acme***.example');
+    expect(input?.disabled).toBe(true);
+  });
+
+  it('carries the consent line with privacy, terms and cookie settings, and drops it when blocked', () => {
+    const showPreferences = vi.spyOn(TestBed.inject(TranscendService), 'showPreferences').mockImplementation(() => undefined);
+
+    expect(text('newsletter-guest-modal-consent')).toContain('By continuing, you agree to the use of your email in accordance with our');
+    expect(el().querySelector('[data-testid="newsletter-guest-modal-privacy"]')?.getAttribute('href')).toBe(NEWSLETTER_GUEST_LEGAL_LINKS.privacyPolicy);
+    expect(el().querySelector('[data-testid="newsletter-guest-modal-terms"]')?.getAttribute('href')).toBe(NEWSLETTER_GUEST_LEGAL_LINKS.termsOfUse);
+
+    el().querySelector<HTMLButtonElement>('[data-testid="newsletter-guest-modal-cookie-settings"]')!.click();
+    expect(showPreferences).toHaveBeenCalledTimes(1);
+
+    fixture.componentRef.setInput('blocked', true);
+    expect(el().querySelector('[data-testid="newsletter-guest-modal-consent"]')).toBeNull();
   });
 
   it('shows the logo when there is one, else the first letter', () => {

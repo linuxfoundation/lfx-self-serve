@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, Signal, s
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
+import { TranscendService } from '@app/shared/services/transcend.service';
 import { extractFieldOrEnvelopeMessage } from '@app/shared/utils/http-error.utils';
 import { NEWSLETTER_SHARE_PREVIEW_FALLBACK_TITLE } from '@lfx-one/shared/constants';
 import { NewsletterGuestIssueResponse, NewsletterGuestPageState, NewsletterSharePreviewState } from '@lfx-one/shared/interfaces';
@@ -24,7 +25,7 @@ import { NewsletterGuestReaderComponent } from '../components/newsletter-guest-r
  *   page. The preview endpoint returns the subject of a sent issue only; an unknown or unsent issue gets
  *   a neutral card. The page body is a placeholder article: nothing of the issue is rendered.
  * - Browser (#5235): a signed-out reader of a member-benefit issue gets the guest modal over that
- *   blurred placeholder. A work email at a member company reads the issue (and is emailed a link that
+ *   blurred teaser of the issue (subject, first image, a short opening; else a placeholder). A work email at a member company reads the issue (and is emailed a link that
  *   subscribes it); a guest session already open for the issue's foundation skips the modal. An issue
  *   the member benefit does not open keeps the plain sign-in card.
  */
@@ -41,6 +42,7 @@ export class NewsletterSharePreviewComponent implements OnInit {
   private readonly title = inject(Title);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly transcendService = inject(TranscendService);
 
   // === Route Params ===
   private readonly projectSlug = this.route.snapshot.paramMap.get('projectSlug') ?? '';
@@ -72,6 +74,9 @@ export class NewsletterSharePreviewComponent implements OnInit {
 
   // === Lifecycle ===
   public ngOnInit(): void {
+    // The guest modal carries its own consent line; set on the server too so the prompt never flashes.
+    this.transcendService.suppressPrompt();
+    this.destroyRef.onDestroy(() => this.transcendService.restorePrompt());
     if (!isPlatformBrowser(this.platformId) || !this.projectSlug || !this.newsletterId) return;
     this.loadGuestAccess();
   }
@@ -79,6 +84,7 @@ export class NewsletterSharePreviewComponent implements OnInit {
   // === Protected Methods ===
   protected onRetry(): void {
     this.guest.set({ status: 'loading' });
+    this.transcendService.suppressPrompt();
     this.loadGuestAccess();
   }
 
@@ -138,10 +144,19 @@ export class NewsletterSharePreviewComponent implements OnInit {
           }
           // No foundation: not an issue the member benefit opens — keep the sign-in card.
           this.prompt.set(response);
-          this.guest.set({ status: response.foundation ? 'prompt' : 'unavailable' });
+          if (response.foundation) {
+            this.guest.set({ status: 'prompt' });
+            return;
+          }
+          this.guest.set({ status: 'unavailable' });
+          // The plain sign-in card has no consent line of its own: let the standard prompt show.
+          this.transcendService.restorePrompt();
         },
         // The service already logged it.
-        error: () => this.guest.set({ status: 'error' }),
+        error: () => {
+          this.guest.set({ status: 'error' });
+          this.transcendService.restorePrompt();
+        },
       });
   }
 

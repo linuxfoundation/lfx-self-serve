@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Router } from '@angular/router';
 import { UserService } from '@app/shared/services/user.service';
+import { CONSENT_PROMPT_HIDDEN_CLASS } from '@lfx-one/shared/constants';
 import { NewsletterService } from '@services/newsletter.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,12 +20,13 @@ const validInvite = {
   foundation,
   membership_name: 'Acme Foundation',
   committee_uid: 'c-news',
-  email: 'jane@acme-motors.example',
+  masked_email: 'ja***@acme***.example',
   company_name: 'Acme Motors',
+  teaser: { subject: 'October update', image_url: null, excerpt: 'Latest member news' },
 };
 const issue = {
   foundation,
-  email: 'jane@acme-motors.example',
+  masked_email: 'ja***@acme***.example',
   newsletter: { id: 'n-1', subject: 'October update', sent_at: '2026-10-01T00:00:00Z', body_html: '<p>Latest member news</p>' },
   confirmation_sent: false,
 };
@@ -75,11 +77,27 @@ describe('NewsletterInviteGuestComponent', () => {
       'Acme Motors is a member of Acme Foundation, so as an employee of Acme Motors you get its newsletter as a member benefit'
     );
     expect(modal()!.mode()).toBe('invite');
-    expect(modal()!.email()).toBe('jane@acme-motors.example');
+    expect(modal()!.email()).toBe('ja***@acme***.example');
+    expect(el.querySelector('[data-testid="newsletter-guest-reader-teaser-subject"]')?.textContent?.trim()).toBe('October update');
+    expect(el.querySelector('[data-testid="newsletter-guest-reader-teaser-excerpt"]')?.textContent?.trim()).toBe('Latest member news');
+    expect(document.documentElement.classList.contains(CONSENT_PROMPT_HIDDEN_CLASS)).toBe(true);
+
     expect(el.querySelector('[data-testid="newsletter-guest-modal-sign-in"]')?.getAttribute('href')).toBe(
       `/login?returnTo=${encodeURIComponent('/newsletters/my/acme-foundation?invite=c-news')}`
     );
+    // The teaser replaces the placeholder article behind the modal.
+    expect(el.querySelector('[data-testid="newsletter-guest-reader-placeholder"]')).toBeNull();
+
+    fixture.destroy();
+    expect(document.documentElement.classList.contains(CONSENT_PROMPT_HIDDEN_CLASS)).toBe(false);
+  });
+
+  it('keeps the placeholder article when the invite has no teaser', async () => {
+    newsletterService['inspectNewsletterGuestInvite'].mockReturnValue(of({ ...validInvite, teaser: undefined }));
+    const el = await render();
+
     expect(el.querySelector('[data-testid="newsletter-guest-reader-placeholder"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="newsletter-guest-reader-teaser"]')).toBeNull();
   });
 
   it('accepts on Continue, shows the latest issue, and drops the token from the URL', async () => {

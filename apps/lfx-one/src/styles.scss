@@ -634,3 +634,10 @@ html {
   -webkit-mask: url('/images/icons/akrites.svg') center / contain no-repeat;
   mask: url('/images/icons/akrites.svg') center / contain no-repeat;
 }
+
+// Pages that carry their own privacy/terms consent line and a "Cookie settings" link (the signed-out
+// newsletter pages) hide Transcend's automatic prompt. airgap.js still regulates scripts; only the
+// prompt UI is hidden, and TranscendService.showPreferences() lifts the class before reopening it.
+html.lfx-consent-prompt-hidden #transcend-consent-manager {
+  display: none !important;
+}

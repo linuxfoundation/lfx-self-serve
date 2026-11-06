@@ -3,6 +3,7 @@
 
 import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { CONSENT_PROMPT_HIDDEN_CLASS } from '@lfx-one/shared/constants';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TranscendService } from './transcend.service';
@@ -20,6 +21,7 @@ describe('TranscendService', () => {
 
   afterEach(() => {
     delete window.transcend;
+    document.documentElement.classList.remove(CONSENT_PROMPT_HIDDEN_CLASS);
     vi.restoreAllMocks();
   });
 
@@ -49,5 +51,27 @@ describe('TranscendService', () => {
 
     expect(showConsentManager).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('should hide and restore the automatic prompt with a class on <html>', () => {
+    const service = setup();
+
+    service.suppressPrompt();
+    expect(document.documentElement.classList.contains(CONSENT_PROMPT_HIDDEN_CLASS)).toBe(true);
+
+    service.restorePrompt();
+    expect(document.documentElement.classList.contains(CONSENT_PROMPT_HIDDEN_CLASS)).toBe(false);
+  });
+
+  it('should un-hide the prompt when the reader asks for cookie settings', () => {
+    const showConsentManager = vi.fn();
+    window.transcend = { showConsentManager };
+    const service = setup();
+    service.suppressPrompt();
+
+    service.showPreferences();
+
+    expect(document.documentElement.classList.contains(CONSENT_PROMPT_HIDDEN_CLASS)).toBe(false);
+    expect(showConsentManager).toHaveBeenCalledTimes(1);
   });
 });

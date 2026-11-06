@@ -3,6 +3,7 @@
 
 import {
   NEWSLETTER_GUEST_NOT_ELIGIBLE_ERROR_CODE,
+  NEWSLETTER_GUEST_TEASER_MAX_LENGTH,
   NEWSLETTER_GUEST_UNAVAILABLE_ERROR_CODE,
   NEWSLETTER_INVITE_EXPIRED_ERROR_CODE,
   NEWSLETTER_SHARE_PREVIEW_SLUG_PATTERN,
@@ -19,9 +20,12 @@ import {
   NewsletterGuestNewsletter,
   NewsletterGuestSession,
   NewsletterGuestSharedTarget,
+  NewsletterGuestTeaser,
   NewsletterMemberBenefitGroup,
   ResolvedNewsletterFoundation,
 } from '@lfx-one/shared/interfaces';
+import { maskEmailForDisplay } from '@lfx-one/shared/utils/email.utils';
+import { firstHtmlImageUrl, htmlTextExcerpt } from '@lfx-one/shared/utils/html-utils';
 import { isUuid } from '@lfx-one/shared/utils/string.utils';
 import { Request } from 'express';
 
@@ -88,8 +92,11 @@ export class NewsletterGuestService {
 
     const { foundation, membership } = target.resolved;
     const company = await this.memberBenefitService.findMemberCompanyForEmail(req, m2mToken, email, membership.slug);
-    const base = { foundation, membership_name: membership.name, committee_uid: committeeUid, email };
-    return company ? { ...base, status: 'valid', company_name: company.company_name } : { ...base, status: 'not_eligible' };
+    const base = { foundation, membership_name: membership.name, committee_uid: committeeUid, masked_email: maskEmailForDisplay(email) };
+    if (!company) return { ...base, status: 'not_eligible' };
+
+    const teaser = await this.findLatestIssueTeaser(req, m2mToken, target.committee);
+    return { ...base, status: 'valid', company_name: company.company_name, ...(teaser ? { teaser } : {}) };
   }
 
   /**
@@ -131,7 +138,7 @@ export class NewsletterGuestService {
 
     const newsletter = await this.findLatestIssue(req, m2mToken, committee);
     return {
-      issue: { foundation: resolved.foundation, email, newsletter, confirmation_sent: false },
+      issue: { foundation: resolved.foundation, masked_email: maskEmailForDisplay(email), newsletter, confirmation_sent: false },
       session: { e: email, c: committee.uid, f: resolved.foundation.uid, v: true },
     };
   }
@@ -174,7 +181,12 @@ export class NewsletterGuestService {
     // `confirmation_sent` is constant for every member-company address: answering with the real outcome
     // would tell an anonymous caller whether any typed address is already on the list.
     return {
-      issue: { foundation: resolved.foundation, email, newsletter: this.toGuestNewsletter(newsletter), confirmation_sent: true },
+      issue: {
+        foundation: resolved.foundation,
+        masked_email: maskEmailForDisplay(email),
+        newsletter: this.toGuestNewsletter(newsletter),
+        confirmation_sent: true,
+      },
       session: { e: email, c: group.uid, f: resolved.foundation.uid, v: false },
     };
   }
@@ -185,7 +197,7 @@ export class NewsletterGuestService {
     const target = await this.resolveInviteGroup(req, m2mToken, session.c);
     if (!target || target.resolved.foundation.uid !== session.f) return null;
     const newsletter = await this.findLatestIssue(req, m2mToken, target.committee);
-    return { foundation: target.resolved.foundation, email: session.e, newsletter, confirmation_sent: !session.v };
+    return { foundation: target.resolved.foundation, masked_email: maskEmailForDisplay(session.e), newsletter, confirmation_sent: !session.v };
   }
 
   /**
@@ -203,9 +215,14 @@ export class NewsletterGuestService {
     if (!target) return { issue: null };
     const { foundation, membership } = target.resolved;
     const prompt = { foundation, membership_name: membership.name };
-    if (!session || foundation.uid !== session.f) return { issue: null, ...prompt };
+    if (!session || foundation.uid !== session.f) return { issue: null, ...prompt, teaser: this.toTeaser(target.newsletter) };
     return {
-      issue: { foundation, email: session.e, newsletter: this.toGuestNewsletter(target.newsletter), confirmation_sent: !session.v },
+      issue: {
+        foundation,
+        masked_email: maskEmailForDisplay(session.e),
+        newsletter: this.toGuestNewsletter(target.newsletter),
+        confirmation_sent: !session.v,
+      },
       ...prompt,
     };
   }
@@ -303,6 +320,32 @@ export class NewsletterGuestService {
       logger.warning(req, operation, 'Subscription confirmation could not be sent — reading continues', { committee_uid: group.uid, err: error });
       return 'failed';
     }
+  }
+
+  /**
+   * Teaser of the group's latest issue for the invite prompt. Fail-soft: the prompt works without it,
+   * so an upstream failure only leaves the placeholder article behind the modal.
+   */
+  private async findLatestIssueTeaser(req: Request, m2mToken: string, committee: Committee): Promise<NewsletterGuestTeaser | null> {
+    try {
+      const latest = await this.findLatestIssue(req, m2mToken, committee);
+      return latest ? this.toTeaser(latest) : null;
+    } catch (error) {
+      logger.warning(req, 'inspect_newsletter_guest_invite', 'Latest issue teaser unavailable — prompt continues without it', {
+        committee_uid: committee.uid,
+        err: error,
+      });
+      return null;
+    }
+  }
+
+  /** What a not-yet-qualified reader may see of a sent issue: its subject, first image and a short plain-text opening — never the body. */
+  private toTeaser(newsletter: Pick<Newsletter, 'subject' | 'body_html'>): NewsletterGuestTeaser {
+    return {
+      subject: newsletter.subject,
+      image_url: firstHtmlImageUrl(newsletter.body_html),
+      excerpt: htmlTextExcerpt(newsletter.body_html, NEWSLETTER_GUEST_TEASER_MAX_LENGTH),
+    };
   }
 
   private toGuestNewsletter(newsletter: Newsletter): NewsletterGuestNewsletter {
