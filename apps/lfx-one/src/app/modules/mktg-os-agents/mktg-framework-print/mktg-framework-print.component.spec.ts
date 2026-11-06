@@ -173,6 +173,11 @@ describe('MktgFrameworkPrintComponent', () => {
     const sheets = Array.from(root?.children ?? []);
     expect(sheets.map((sheet) => sheet.tagName.toLowerCase())).toEqual(['lfx-mktg-print-sheet', 'lfx-mktg-print-sheet', 'lfx-mktg-print-sheet']);
     expect(sheets.map((sheet) => sheet.getAttribute('data-testid'))).toEqual([null, 'mktg-framework-print-framework', 'mktg-framework-print-numbers']);
+    // The three named regions stay (the cover's section, and the two sheets that replaced sections); a sheet carries no presentation role.
+    expect(sheets.map((sheet) => sheet.getAttribute('role'))).toEqual([null, 'region', 'region']);
+    expect(Array.from(root?.querySelectorAll('section[aria-label], [role="region"][aria-label]') ?? [], (region) => region.getAttribute('aria-label'))).toEqual(
+      ['Cover', 'Framework', 'Key numbers']
+    );
     expect(sheets[0].querySelector('lfx-mktg-print-sheet-row > * > section')?.getAttribute('data-testid')).toBe('mktg-framework-print-cover');
     expect(sheets.map((sheet) => sheet.classList.contains('break-after-page'))).toEqual([true, false, false]);
     expect(sheets.map((sheet) => sheet.classList.contains('break-before-page'))).toEqual([false, true, true]);

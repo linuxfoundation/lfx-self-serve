@@ -50,8 +50,8 @@ it('prints five native portrait chapters with branded heads, real SVG logo asset
   const headCell = root.querySelector<HTMLElement>('.kit-chapter > thead > tr > td');
   if (!foot || !footCell || !headCell) throw new Error('Missing synthetic kit chapter room');
   expect(getComputedStyle(foot).display).toBe('table-footer-group');
-  expect(getComputedStyle(footCell).height).toBe('52.8px');
-  expect(getComputedStyle(headCell).paddingTop).toBe('52.8px');
+  expect(getComputedStyle(footCell).height).toBe('0.55in');
+  expect(getComputedStyle(headCell).paddingTop).toBe('0.55in');
   expect(root.querySelectorAll('lfx-mktg-print-chapter-header')).toHaveLength(5);
   root.querySelectorAll<HTMLElement>('lfx-mktg-print-chapter-header').forEach((header) => {
     expect(header.style.getPropertyValue('--mfp-chapter-accent')).toBe(view.accent);

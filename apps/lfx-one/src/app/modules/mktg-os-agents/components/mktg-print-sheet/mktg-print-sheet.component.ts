@@ -19,6 +19,6 @@ import { Component } from '@angular/core';
   selector: 'lfx-mktg-print-sheet',
   templateUrl: './mktg-print-sheet.component.html',
   styleUrl: './mktg-print-sheet.component.scss',
-  host: { class: 'lfx-print-sheet', role: 'presentation' },
+  host: { class: 'lfx-print-sheet' },
 })
 export class MktgPrintSheetComponent {}
