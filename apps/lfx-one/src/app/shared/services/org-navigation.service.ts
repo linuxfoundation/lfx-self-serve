@@ -518,8 +518,8 @@ export class OrgNavigationService {
     // state as fact the one thing the server could not determine. Reported as an outage instead.
     const toast =
       page.upstreamFailed || this.orgRoleGrantsService.degraded()
-        ? { severity: 'error', summary: 'Unable to load', detail: 'We were unable to load your organizations. Please try again in a moment.' }
-        : { severity: 'info', summary: 'No access', detail: 'You do not have access to any organizations.' };
+        ? { severity: 'error', summary: 'Unable to load', detail: 'We were unable to load your companies. Please try again in a moment.' }
+        : { severity: 'info', summary: 'No access', detail: 'You do not have access to any companies.' };
 
     this.messageService.add(toast);
     this.accountContextService.clearAccount();
@@ -528,7 +528,7 @@ export class OrgNavigationService {
     // to /org/overview), keep them there so they see the empty state instead of bouncing back to /.
     // The redirect-to-/ still fires from other entry points (sidebar background refresh on /), where
     // staying put would be confusing.
-    if (this.router.url.startsWith('/org')) {
+    if (this.router.url.startsWith(LENS_DEFAULT_ROUTES.org)) {
       return;
     }
 

@@ -4,7 +4,7 @@ description: How to create a project meeting in LFX Self Serve, from a quick sta
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, create, recurring, zoom, recording, ai summary, agenda]
-last_updated: 2026-10-28
+last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 

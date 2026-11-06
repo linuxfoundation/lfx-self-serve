@@ -55,7 +55,7 @@ const parseInitiativesScope = (query: Request['query'], operation: string): Init
   }
   if (given(orgUid)) {
     if (typeof orgUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(orgUid)) {
-      throw ServiceValidationError.forField('orgUid', 'orgUid must be an organization account id', { operation });
+      throw ServiceValidationError.forField('orgUid', 'orgUid must be a company account id', { operation });
     }
     return { kind: 'organizations', uid: orgUid };
   }
@@ -81,7 +81,7 @@ const parseAttributionInput = (body: Record<string, unknown>, operation: string)
   }
   if (type === 'organization') {
     if (typeof entityUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(entityUid)) {
-      throw ServiceValidationError.forField('entityUid', 'entityUid must be an organization account id', { operation });
+      throw ServiceValidationError.forField('entityUid', 'entityUid must be a company account id', { operation });
     }
     return { type, entityUid };
   }
@@ -238,7 +238,7 @@ export class CrowdfundingController {
       const { orgUid, pageSize, offset } = req.query;
       // Interpolated into the CF path, so it must be an 18-char b2b_org SFID.
       if (typeof orgUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(orgUid)) {
-        throw ServiceValidationError.forField('orgUid', 'orgUid must be an organization account id', { operation: 'get_org_donations' });
+        throw ServiceValidationError.forField('orgUid', 'orgUid must be a company account id', { operation: 'get_org_donations' });
       }
 
       const donations = await this.crowdfundingService.getOrgDonations(req, orgUid, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));

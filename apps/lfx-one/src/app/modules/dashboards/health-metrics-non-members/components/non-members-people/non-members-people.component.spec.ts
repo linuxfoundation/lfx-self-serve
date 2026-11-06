@@ -143,15 +143,15 @@ describe('NonMembersPeopleComponent', () => {
     const input = fixture.nativeElement.querySelector('#non-members-people-search') as HTMLInputElement;
 
     expect(input.maxLength).toBe(100);
-    expect(input.placeholder).toBe('Search person or organization…');
-    expect(headers).toEqual(['Person', 'Organization', 'Meetings attended', 'Last attended']);
+    expect(input.placeholder).toBe('Search person or company…');
+    expect(headers).toEqual(['Person', 'Company', 'Meetings attended', 'Last attended']);
   });
 
   it("gives People its own plain note on each person's organization, plus the all-time caveat", async () => {
     await render();
     const note = query('non-members-people-provisional');
 
-    expect(text('non-members-people-provisional')).toContain("treat each person's organization as provisional too");
+    expect(text('non-members-people-provisional')).toContain("treat each person's company as provisional too");
     expect(text('non-members-people-provisional')).not.toContain('never send it to sales');
     expect(note?.querySelector('[data-testid="health-metrics-footnote-icon"]')).toBeNull();
     expect(text('non-members-people-all-time')).toBe('Last engaged / Last attended are all-time, not limited to the selected period.');
@@ -302,7 +302,7 @@ describe('NonMembersPeopleComponent', () => {
   it('keeps the controls and names the search when it matches nothing', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { nonPeopleSearch: 'zeta' });
 
-    expect(text('non-members-people-no-match')).toBe('No person or organization matches “zeta”.');
+    expect(text('non-members-people-no-match')).toBe('No person or company matches “zeta”.');
     expect(query('non-members-people-controls')).not.toBeNull();
   });
 

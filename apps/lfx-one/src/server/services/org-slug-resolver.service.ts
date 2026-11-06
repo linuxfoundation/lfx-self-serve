@@ -69,7 +69,7 @@ export class OrgSlugResolverService {
     const segment = normalizeOrgSegment(rawSegment);
     const segmentKind = this.classify(segment, req.path);
     if (prefer !== undefined && !ORG_ACCOUNT_ID_PATTERN.test(prefer)) {
-      throw ServiceValidationError.forField('prefer', 'Invalid organization identifier', {
+      throw ServiceValidationError.forField('prefer', 'Invalid company identifier', {
         operation: OPERATION,
         service: 'org_slug_resolver_service',
         path: req.path,
@@ -128,7 +128,7 @@ export class OrgSlugResolverService {
   private classify(segment: string, path: string): 'sfid' | 'slug' {
     if (isOrgAccountIdSegment(segment)) return 'sfid';
     if (isOrgSlugSegment(segment)) return 'slug';
-    throw ServiceValidationError.forField('segment', 'Invalid organization segment', {
+    throw ServiceValidationError.forField('segment', 'Invalid company segment', {
       operation: OPERATION,
       service: 'org_slug_resolver_service',
       path,

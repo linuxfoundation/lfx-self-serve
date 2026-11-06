@@ -145,7 +145,7 @@ describe('OrgIdentityController.uploadLogo', () => {
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: 'You no longer have permission to edit this organization.' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'You no longer have permission to edit this company.' });
   });
 
   it('maps a 404 upstream rejection to a 404', async () => {
@@ -156,7 +156,7 @@ describe('OrgIdentityController.uploadLogo', () => {
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Organization not found' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Company not found' });
   });
 
   it('maps a 500 upstream failure to a 502', async () => {
@@ -178,7 +178,7 @@ describe('OrgIdentityController.uploadLogo', () => {
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith({ error: 'This organization was updated elsewhere. Refresh the page and try again.' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'This company was updated elsewhere. Refresh the page and try again.' });
   });
 
   it('maps a 404 from the pre-upload ETag fetch to a 404, without attempting the upload', async () => {
@@ -190,7 +190,7 @@ describe('OrgIdentityController.uploadLogo', () => {
 
     expect(proxyRequest).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Organization not found' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Company not found' });
   });
 
   it('maps a 408 upstream timeout to a 502', async () => {
@@ -240,7 +240,7 @@ describe('OrgIdentityController.resolveSegment', () => {
     await new OrgIdentityController().resolveSegment(request('acme'), res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Organization not found' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Company not found' });
   });
 
   it('answers an unbroken tie with the fixed 409 envelope', async () => {
@@ -250,7 +250,7 @@ describe('OrgIdentityController.resolveSegment', () => {
     await new OrgIdentityController().resolveSegment(request('acme'), res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Organization address is ambiguous' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Company address is ambiguous' });
   });
 
   // Query-service answers "no rows" with an empty 200, so any upstream status is a transport failure:
@@ -269,7 +269,7 @@ describe('OrgIdentityController.resolveSegment', () => {
   });
 
   it('hands validation errors to the error handler (400 stays a local answer)', async () => {
-    const validation = ServiceValidationError.forField('segment', 'Invalid organization segment', { operation: 'op', service: 'svc', path: '/x' });
+    const validation = ServiceValidationError.forField('segment', 'Invalid company segment', { operation: 'op', service: 'svc', path: '/x' });
     resolveSegment.mockRejectedValueOnce(validation);
     const next = vi.fn();
     const res = buildRes();

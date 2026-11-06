@@ -4,14 +4,14 @@
 <div class="flex h-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5" data-testid="participating-orgs-card">
   <!-- Header -->
   <div class="flex items-center justify-between">
-    <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Participating Organizations</h3>
+    <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Participating Companies</h3>
     @if (hasData()) {
       <button
         class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 transition-colors"
         [disabled]="loading()"
         (click)="downloadCard()"
-        aria-label="Download participating organizations card"
-        title="Download participating organizations card"
+        aria-label="Download participating companies card"
+        title="Download participating companies card"
         data-testid="participating-orgs-download">
         <i class="fa-solid fa-arrow-down-to-bracket"></i>
       </button>
@@ -43,9 +43,9 @@
     <!-- Empty State -->
     <lfx-health-metrics-card-empty-state
       icon="fa-light fa-building"
-      title="No participating organizations yet"
-      description="Member organizations appear here once they join the foundation."
-      action="Add member organizations to start tracking engagement and growth."
+      title="No participating companies yet"
+      description="Member companies appear here once they join the foundation."
+      action="Add member companies to start tracking engagement and growth."
       data-testid="participating-orgs-empty-state" />
   } @else {
     <!-- Alert Banner -->

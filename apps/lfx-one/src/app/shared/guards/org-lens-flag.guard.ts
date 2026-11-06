@@ -11,8 +11,8 @@ import { FeatureFlagService } from '../services/feature-flag.service';
 import { OrgLensNavigationService } from '../services/org-lens-navigation.service';
 
 /**
- * Dark-launch CanMatch for an Org Lens page behind a browser-only LaunchDarkly flag. Fails closed to the addressed
- * organization's overview when the flag is off or LaunchDarkly never becomes ready.
+ * Dark-launch CanMatch for an Company Lens page behind a browser-only LaunchDarkly flag. Fails closed to the addressed
+ * company's overview when the flag is off or LaunchDarkly never becomes ready.
  */
 const orgLensFlagGuard =
   (flag: string, guard: string): CanMatchFn =>
@@ -28,16 +28,16 @@ const orgLensFlagGuard =
     const router = inject(Router);
     // Injected up front: the fallback also runs after the `await` below, outside the injection context.
     const orgLensNavigation = inject(OrgLensNavigationService);
-    // Spec 050: the fallback keeps the organization the address names. This CanMatch runs during
-    // recognition, before `orgPathParamGuard` has adopted `/org/{segment}/{page}`'s organization, so
+    // Spec 050: the fallback keeps the company the address names. This CanMatch runs during
+    // recognition, before `orgPathParamGuard` has adopted `/company/{segment}/{page}`'s company, so
     // the selection may still be the cookie's — the URL being recognized is the authority
-    // (`orgLensPagePath`, as `orgLensLfStaffOnlyGuard` does). Only the legacy `/org/{page}` names no
-    // organization; there the selected one is the best available (`/org/overview` while none is).
+    // (`orgLensPagePath`, as `orgLensLfStaffOnlyGuard` does). Only the legacy `/company/{page}` names no
+    // company; there the selected one is the best available (`/company/overview` while none is).
     const fallback = (): UrlTree => {
       const target = router.getCurrentNavigation()?.extractedUrl;
       const segments = target?.root.children['primary']?.segments.map((segment) => segment.path) ?? [];
       const addressed = orgLensPagePath(segments, 'overview');
-      return addressed === '/org/overview' ? router.createUrlTree(orgLensNavigation.orgLensLink('overview')) : router.parseUrl(addressed);
+      return addressed === '/company/overview' ? router.createUrlTree(orgLensNavigation.orgLensLink('overview')) : router.parseUrl(addressed);
     };
 
     // A locally pinned value decides on its own, before the provider is consulted at all — waiting

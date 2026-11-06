@@ -14,7 +14,7 @@ import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
-// Spec 050: the organization a `/org/{segment}/…` address names is adopted by the path-param guard
+// Spec 050: the organization a `/company/{segment}/…` address names is adopted by the path-param guard
 // before the persona refresh re-seeds organizations. That re-seed runs `initializeUserOrganizations`
 // again — with empty seeds for a staff viewer — and used to reset the selection to the placeholder
 // or a seed, i.e. the silent substitution deep links exist to remove (#2713 review).
@@ -311,7 +311,7 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.isAdoptedFromAddress()).toBe(true);
     });
 
-    // Deliberate (lfx-self-serve#2793): the default write produces `/org/A/…`, whose guard shortcut
+    // Deliberate (lfx-self-serve#2793): the default write produces `/company/A/…`, whose guard shortcut
     // pins 'address'. Keeping the default kind there would let a later org-items reload re-default
     // the selection to B while the address still names A — spec 050's silent substitution.
     it('the guard shortcut upgrades a default pin to an address pin, so an addressed page cannot drift', () => {

@@ -247,7 +247,7 @@ export function committeeJoinErrorMessage(err: HttpErrorResponse, committeeName:
   }
   const upstream = serverAuthoredMessage(err, '');
   if (upstream.includes('organization')) {
-    return 'This group requires a verified organization to join. Please contact an admin for access.';
+    return 'This group requires a verified company to join. Please contact an admin for access.';
   }
   if (upstream.includes('business email')) {
     return 'This group requires a business email address to join. Please contact an admin for access.';

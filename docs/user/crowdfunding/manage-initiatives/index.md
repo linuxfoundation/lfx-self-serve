@@ -27,7 +27,7 @@ Select **Back to Initiatives** above the header to return to your initiatives li
 - Description and industry tags
 - Initiative logo or fund-type icon
 - Current status badge
-- **On behalf of** and the organization or project name, for an attributed initiative
+- **On behalf of** and the company or project name, for an attributed initiative
 - Actions: **View Public Page** (opens the initiative on the public crowdfunding site in a new tab), **Edit attribution** (see [Change an initiative's attribution](#change-an-initiatives-attribution)), **Settings**, and the **More** menu (⋯)
 
 **Overview tab** — a financial summary with the current balance, amount raised against the goal, percent funded, and sponsor count, followed by the **Funding goals** for the initiative (when set), each showing its goal, amount donated, and amount spent. Below it, **About this Initiative** shows the full description with its formatting (headings, bold, lists, and links). A **Recent donations** sidebar lists the five most recent donations with the donor, date, and amount.
@@ -51,17 +51,17 @@ Select **Back to Initiatives** above the header to return to your initiatives li
 
 ## Change an initiative's attribution
 
-An initiative can be attributed to you personally, to an organization, or to a project or foundation. An attributed initiative shows that organization's or project's name and logo on its public page. In LFX Self Serve, the initiative header shows it as **On behalf of** followed by the name, and the initiatives list shows a building (organization) or folder (project) icon next to the initiative name; hover over either for details. Personal initiatives show neither.
+An initiative can be attributed to you personally, to a company, or to a project or foundation. An attributed initiative shows that company's or project's name and logo on its public page. In LFX Self Serve, the initiative header shows it as **On behalf of** followed by the name, and the initiatives list shows a building (company) or folder (project) icon next to the initiative name; hover over either for details. Personal initiatives show neither.
 
 Only the person who created the initiative can change its attribution, and only while the initiative is **Submitted**. Once it moves on, the attribution is fixed. **Edit attribution** appears only when you open the initiative from **Crowdfunding → Initiatives** in the **Me** lens, not from a [lens-scoped Initiatives](../lens-initiatives/) page.
 
 1. Open a **Submitted** initiative from the [View Initiatives](../view-initiatives/) page.
 1. Select **Edit attribution** in the initiative header.
-1. Choose **Personal**, **On behalf of an organization**, or **On behalf of a project or foundation**.
-1. If you chose an organization or a project, select it from the list. The list shows the organizations where you've been granted a role, and the projects and foundations where you've been granted access directly.
+1. Choose **Personal**, **On behalf of a company**, or **On behalf of a project or foundation**.
+1. If you chose a company or a project, select it from the list. The list shows the companies where you've been granted a role, and the projects and foundations where you've been granted access directly.
 1. Select **Save**.
 
-> **Note:** Changing the attribution is separate from the settings drawer and its Save button. The change takes effect as soon as you select **Save** in the Edit attribution dialog. If the save is rejected, the dialog explains why, for example when you aren't affiliated with the organization or project you chose.
+> **Note:** Changing the attribution is separate from the settings drawer and its Save button. The change takes effect as soon as you select **Save** in the Edit attribution dialog. If the save is rejected, the dialog explains why, for example when you aren't affiliated with the company or project you chose.
 
 ## Archive an initiative
 
@@ -110,5 +110,5 @@ The **More** menu for archiving and activating is only available for initiatives
 ## Related
 
 - [View Initiatives](../view-initiatives/) — browse and filter your full list of initiatives
-- [Lens-scoped Initiatives](../lens-initiatives/) — initiatives run on behalf of a project, foundation, or organization
+- [Lens-scoped Initiatives](../lens-initiatives/) — initiatives run on behalf of a project, foundation, or company
 - [Donations](../my-donations/) — view your donation history and manage payment methods

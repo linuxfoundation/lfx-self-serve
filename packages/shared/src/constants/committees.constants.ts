@@ -507,7 +507,7 @@ export const COMMITTEE_FORM_STEPS = {
  * Inline note shown on feature toggles that gate-keep the org-name/URL join requirement.
  * Extracted to avoid the two copies drifting if the wording ever changes.
  */
-const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide an organization name and URL.';
+const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide a company name and URL.';
 
 /**
  * Committee settings features for Step 2 form

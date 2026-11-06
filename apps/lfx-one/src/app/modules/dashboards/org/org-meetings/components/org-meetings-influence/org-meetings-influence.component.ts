@@ -75,7 +75,7 @@ export class OrgMeetingsInfluenceComponent {
 
   // Selected organization's display name, used in the attendance-contribution explanatory sentence
   // and interpolated into the genuine-empty state (the caller holds this organization, FR-019).
-  protected readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName || 'Your organization');
+  protected readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName || 'Your company');
 
   /** "the past 90 days" — reads naturally after "recorded for". */
   protected readonly periodLabel: Signal<string> = computed(() => `the ${ORG_MEETINGS_TIME_RANGE_LABELS[this.timeRange()].toLowerCase()}`);

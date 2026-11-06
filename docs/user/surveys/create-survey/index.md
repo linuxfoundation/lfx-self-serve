@@ -60,12 +60,12 @@ The survey is delivered by email. The form opens with a default subject and mess
 
 The **Custom Variables** panel on the right lists placeholders that are replaced with each person's own details when the email is sent. Select a variable to copy it, then paste it into the subject or body. A **Copied!** note confirms the copy.
 
-| Group            | Variables                                                                                                 |
-| ---------------- | --------------------------------------------------------------------------------------------------------- |
-| **Participant**  | `{{FirstName}}`, `{{LastName}}`, `{{EmailAddress}}`                                                       |
-| **Organization** | `{{OrganizationName}}`, `{{ProjectName}}`, `{{CommitteeName}}`, `{{CommitteeType}}`, `{{MembershipTier}}` |
-| **Survey**       | `{{SurveyTemplate}}`, `{{SurveyLink}}`, `{{SurveyButton}}`, `{{CutoffDate}}`, `{{Quarter}}`, `{{Year}}`   |
-| **Sender**       | `{{ExecutiveDirectorName}}`, `{{SenderTitle}}`, `{{SenderEmail}}`                                         |
+| Group           | Variables                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------- |
+| **Participant** | `{{FirstName}}`, `{{LastName}}`, `{{EmailAddress}}`                                                       |
+| **Company**     | `{{OrganizationName}}`, `{{ProjectName}}`, `{{CommitteeName}}`, `{{CommitteeType}}`, `{{MembershipTier}}` |
+| **Survey**      | `{{SurveyTemplate}}`, `{{SurveyLink}}`, `{{SurveyButton}}`, `{{CutoffDate}}`, `{{Quarter}}`, `{{Year}}`   |
+| **Sender**      | `{{ExecutiveDirectorName}}`, `{{SenderTitle}}`, `{{SenderEmail}}`                                         |
 
 Keep `{{SurveyButton}}` in the body. It becomes the **Take Survey** button that recipients select to open the survey. `{{SurveyLink}}` inserts the survey link as plain text.
 

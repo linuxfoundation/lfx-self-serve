@@ -86,7 +86,7 @@
   <!-- Contributing organization -->
   <section [class]="sectionClass()" aria-labelledby="pa-section-org" data-testid="project-application-form-section-organization">
     <div class="flex flex-col gap-0.5">
-      <h2 id="pa-section-org" class="text-base font-medium text-gray-900 m-0">Contributing organization</h2>
+      <h2 id="pa-section-org" class="text-base font-medium text-gray-900 m-0">Contributing company</h2>
       <p class="text-sm text-gray-500 m-0">Used to draft the contributor agreement and any IP or trademark assignment.</p>
     </div>
 
@@ -103,12 +103,12 @@
           [required]="true"
           [invalid]="invalid()['contributing_organization']"
           describedBy="pa-organization-error"
-          placeholder="Organization contributing the project"
+          placeholder="Company contributing the project"
           styleClass="w-full"
           dataTest="project-application-form-organization" />
         @if (invalid()['contributing_organization']) {
           <p id="pa-organization-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-organization-error">
-            Assigning organization is required.
+            Assigning company is required.
           </p>
         }
       </div>

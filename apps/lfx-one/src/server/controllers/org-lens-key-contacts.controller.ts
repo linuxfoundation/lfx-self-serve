@@ -203,7 +203,7 @@ export class OrgLensKeyContactsController {
   private async resolveSlugOrThrow(req: Request, orgUid: string, foundationId: string, operation: string): Promise<string> {
     const slug = await this.membershipsService.getFoundationSlug(orgUid, foundationId);
     if (!slug) {
-      throw ServiceValidationError.forField('foundationId', 'No membership found for this organization and foundation', { operation });
+      throw ServiceValidationError.forField('foundationId', 'No membership found for this company and foundation', { operation });
     }
     return slug;
   }

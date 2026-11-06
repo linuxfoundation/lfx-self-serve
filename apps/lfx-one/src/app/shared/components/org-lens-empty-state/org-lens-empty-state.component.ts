@@ -118,7 +118,7 @@ export class OrgLensEmptyStateComponent {
   private interpolate(template: string): string {
     const values = this.values();
     // FR-017: an unheld organization is never named, whatever the caller passed.
-    const orgName = UNHELD_ORG_STATES.has(this.state()) ? 'This organization' : values.orgName?.trim() || 'This organization';
+    const orgName = UNHELD_ORG_STATES.has(this.state()) ? 'This company' : values.orgName?.trim() || 'This company';
     return template
       .replace(/\{orgName\}/g, orgName)
       .replace(/\{noun\}/g, values.noun ?? 'records')

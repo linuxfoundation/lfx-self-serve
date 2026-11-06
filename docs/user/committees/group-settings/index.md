@@ -74,7 +74,7 @@ Toggle each feature, then **Save Changes**:
 - **Enable SSO Group**: syncs membership with a Single Sign-On provider.
 - **Show Meeting Attendees**: lets guests see who else is invited to the group's meetings. Board and restricted meetings never share their guest list.
 
-With **Business Email Required** or **Enable Voting** on, members who join must give an organization name and website.
+With **Business Email Required** or **Enable Voting** on, members who join must give a company name and website.
 
 ## Delete a group
 

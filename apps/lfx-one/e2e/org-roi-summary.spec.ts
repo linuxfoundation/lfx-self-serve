@@ -65,7 +65,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await page.getByTestId('org-roi-kpi-explanations-toggle').click();
     const investment = page.getByTestId('org-roi-kpi-explanation-total-expenditure');
     await expect(investment).toBeVisible();
-    await expect(investment).toContainText('same for every organization');
+    await expect(investment).toContainText('same for every company');
     await expect(investment).toContainText('No salary, payroll, or invoice data is used.');
   });
 
@@ -119,8 +119,8 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
 
     const scope = page.getByTestId('org-roi-assumptions-rates-scope');
     await expect(scope).toContainText('global constants');
-    await expect(scope).toContainText('applied identically to every organization');
-    await expect(scope).toContainText('not specific to your organization');
+    await expect(scope).toContainText('applied identically to every company');
+    await expect(scope).toContainText('not specific to your company');
 
     await expect(page.getByTestId('org-roi-assumptions-rates')).toContainText('$200,000');
     await expect(page.getByTestId('org-roi-assumptions-rates')).toContainText('$150,000');
@@ -333,7 +333,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     const forbidden = page.getByTestId('org-roi-forbidden-state');
     await expect(forbidden).toBeVisible();
     await expect(forbidden).toHaveAttribute('data-state', 'section-no-access');
-    await expect(page.getByTestId('org-roi-forbidden-title')).toHaveText('You do not have access to this organization');
+    await expect(page.getByTestId('org-roi-forbidden-title')).toHaveText('You do not have access to this company');
     await expect(page.getByTestId('org-roi-forbidden-contact-support')).toBeVisible();
     await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
 
@@ -508,7 +508,7 @@ test.describe('Org Lens ROI Metrics — investment by category', () => {
 
     const note = page.getByTestId('org-roi-category-donut-modelled-cost-note');
     await expect(note).toBeVisible();
-    await expect(note).toContainText('same for every organization');
+    await expect(note).toContainText('same for every company');
     await expect(note).toContainText('No salary, payroll, or invoice data is used.');
   });
 

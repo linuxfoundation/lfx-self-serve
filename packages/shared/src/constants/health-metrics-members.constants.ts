@@ -110,7 +110,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     heading: 'Renewals',
     description: 'The forward-looking view: what is up for renewal and what it is worth, while there is still time to act.',
     footnote: [
-      { text: 'Organization, tier, dues and renewal date', bold: true },
+      { text: 'Company, tier, dues and renewal date', bold: true },
       {
         text: ' come from the membership record — the term end date PCC shows as "Period". Renewal status (Confirmed / In discussion / Unconfirmed) is a CRM pipeline stage no system we read carries, so it is left out rather than every row reading Unconfirmed.',
       },
@@ -153,7 +153,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_MEMBERS_BLANK: HealthMetricsL2Blank = {
   icon: 'fa-light fa-building',
   noun: 'member',
-  lead: 'Member details appear once organizations hold an active membership with the foundation.',
+  lead: 'Member details appear once companies hold an active membership with the foundation.',
   reasons: ['The foundation may be newly launched', 'Memberships may not be linked to it yet', 'Your Program Manager can check membership records'],
   pastActivity: 'membership',
 };

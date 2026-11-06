@@ -248,13 +248,13 @@ describe('CommitteeSettingsComponent — org-requirement notes on voting and bus
   it('shows an org-requirement note on the business_email_required feature card', () => {
     const note = fixture.nativeElement.querySelector('[data-testid="feature-org-note-business_email_required"]');
     expect(note).not.toBeNull();
-    expect(note?.textContent?.trim()).toContain('organization name and URL');
+    expect(note?.textContent?.trim()).toContain('company name and URL');
   });
 
   it('shows an org-requirement note on the enable_voting feature card', () => {
     const note = fixture.nativeElement.querySelector('[data-testid="feature-org-note-enable_voting"]');
     expect(note).not.toBeNull();
-    expect(note?.textContent?.trim()).toContain('organization name and URL');
+    expect(note?.textContent?.trim()).toContain('company name and URL');
   });
 
   it('does not show an org-requirement note on features that have no note (e.g. is_audit_enabled, public)', () => {

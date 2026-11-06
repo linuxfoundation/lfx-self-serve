@@ -33,8 +33,8 @@ import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
-const DETAIL_URL_FOUNDATION = '/org/memberships/sample-foundation';
-const DOCS_URL_FOUNDATION = '/org/memberships/sample-foundation#docs';
+const DETAIL_URL_FOUNDATION = '/company/memberships/sample-foundation';
+const DOCS_URL_FOUNDATION = '/company/memberships/sample-foundation#docs';
 // SC-014 needs a foundation with zero agreements to exercise the disabled
 // download-all branch. Until a guaranteed-empty foundation is seeded in dev,
 // this aliases the sample foundation — the test will `skip()` when the list is non-empty.

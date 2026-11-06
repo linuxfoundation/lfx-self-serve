@@ -817,7 +817,7 @@ export class SidebarNavService {
 
   // --- Project — Participating Organizations (#2091) ---
   private readonly projectParticipatingOrgsNavItem: SidebarMenuItem = {
-    label: 'Participating organizations',
+    label: 'Participating companies',
     icon: 'fa-light fa-building',
     routerLink: '/project/participating-orgs',
     testId: 'sidebar-project-participating-orgs',
@@ -972,7 +972,7 @@ export class SidebarNavService {
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
       // top-level item or a section when re-enabled.
       {
-        label: 'Organization Engagement',
+        label: 'Company Engagement',
         isSection: true,
         expanded: true,
         items: [
@@ -1014,7 +1014,7 @@ export class SidebarNavService {
       },
       // Org admin — divider only (no section label); Profile sits under it, with EasyCLA above it.
       {
-        label: 'Organization Profile',
+        label: 'Company Profile',
         icon: 'fa-light fa-memo',
         routerLink: org('profile'),
         dividerBefore: true,

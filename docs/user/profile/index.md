@@ -18,7 +18,7 @@ The information below covers **your individual** LFX identity — the profile ti
 
 ### What you can do
 
-- Update your name, photo, About Me, job title, and organization
+- Update your name, photo, About Me, job title, and company
 - Set your primary email address and location details
 - Choose your t-shirt size for event swag
 - Publish a public profile and choose which sections it shows
@@ -38,9 +38,9 @@ Separate from your private details, you can publish a **public profile** — a p
 - [Your public profile](./public-profile/) — what visitors can see
 - [Public profile settings](./public-profile-settings/) — make it public and control its sections
 
-## Your organization's profile
+## Your company's profile
 
-Your organization's logo, description, website and addresses are on a separate page in the Organization lens. See [Organization Profile](../organization/org-profile/).
+Your company's logo, description, website and addresses are on a separate page in the Company lens. See [Company Profile](../company/company-profile/).
 
 ## Related sections
 

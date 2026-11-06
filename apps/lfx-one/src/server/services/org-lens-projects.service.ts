@@ -465,7 +465,7 @@ export class OrgLensProjectsService {
     return {
       response: {
         orgSlug: this.slugify(orgName) || accountId,
-        orgName: orgName || 'Your organization',
+        orgName: orgName || 'Your company',
         dataUpdatedAt: this.latestTimestamp(projectRows) ?? new Date().toISOString(),
         projects: [
           ...projectRows.map((row) => this.mapProject(row, people.value, maintainerRows ?? [])),

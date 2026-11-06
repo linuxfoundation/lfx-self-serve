@@ -3,12 +3,12 @@
 
 import type { OrgTrainingStatDefinition, OrgTrainingStatKey, OrgTrainingStatTileLayout } from '../interfaces/org-training-view.interface';
 
-// Org Lens learner and enrollment numbers (lfx-self-serve#4290). Training & Certification, People › Trainees and the
+// Company Lens learner and enrollment numbers (lfx-self-serve#4290). Training & Certification, People › Trainees and the
 // Overview tile all read their label, unit, window and tooltip definition from here, so one number carries one label
 // everywhere. Definitions: lfx-self-serve#4286.
 
-/** Caption and tooltip suffix of the roster stat for an organization with no LF Education training program (no roster row). */
-export const ORG_TRAINING_NO_ROSTER_NOTE = 'No LF Education training program on record for this organization';
+/** Caption and tooltip suffix of the roster stat for a company with no LF Education training program (no roster row). */
+export const ORG_TRAINING_NO_ROSTER_NOTE = 'No LF Education training program on record for this company';
 
 /** Caption and tooltip suffix of the outside-learners stat while a filter leaves it uncounted (a null count). */
 export const ORG_TRAINING_OUTSIDE_NOT_COUNTED_NOTE = 'Not counted while a foundation, project, course, level or format is selected';
@@ -17,7 +17,7 @@ export const ORG_TRAINING_OUTSIDE_NOT_COUNTED_NOTE = 'Not counted while a founda
 export const ORG_TRAINING_IN_PROGRESS_RULE = 'Enrolled in the selected range, no certificate in the range';
 
 const PAIR_SCOPE =
-  "for people on this organization's people list, in the selected range and matching the filters. A course retaken counts once; learners not on the people list are not counted.";
+  "for people on this company's people list, in the selected range and matching the filters. A course retaken counts once; learners not on the people list are not counted.";
 
 export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, OrgTrainingStatDefinition>> = {
   rosterMembers: {
@@ -25,19 +25,19 @@ export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, 
     unit: 'people',
     window: 'live, not filtered',
     definition:
-      "People LF Education's training program lists for this organization, including people who never enrolled in a course. Today's count: it does not follow the time range or the filters. Counted from the organization's own training program, not merged with related organizations.",
+      "People LF Education's training program lists for this company, including people who never enrolled in a course. Today's count: it does not follow the time range or the filters. Counted from the company's own training program, not merged with related companies.",
   },
   peopleWithTrainingActivity: {
     label: 'People with training activity',
     unit: 'people',
     definition:
-      "Distinct people on this organization's people list with at least one training or certification enrollment, or a certificate, dated in the selected range and matching the filters. Learners not on the people list are not counted here. Not a subset of the roster members.",
+      "Distinct people on this company's people list with at least one training or certification enrollment, or a certificate, dated in the selected range and matching the filters. Learners not on the people list are not counted here. Not a subset of the roster members.",
   },
   learnersOutsidePeopleList: {
     label: 'Learners not on the people list',
     unit: 'people',
     definition:
-      'Distinct people with a training or certification enrollment or certificate dated in the selected range who are linked to this organization but not on its people list. Shown as — and not counted while a foundation, project, course, level or format is selected, like their list. Not part of the people-list numbers.',
+      'Distinct people with a training or certification enrollment or certificate dated in the selected range who are linked to this company but not on its people list. Shown as — and not counted while a foundation, project, course, level or format is selected, like their list. Not part of the people-list numbers.',
   },
   coursesTaken: {
     label: 'Courses taken',
@@ -52,7 +52,7 @@ export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, 
   certifiedPeople: {
     label: 'Certified people',
     unit: 'people',
-    definition: "Distinct people on this organization's people list holding a certification certificate dated in the selected range, matching the filters.",
+    definition: "Distinct people on this company's people list holding a certification certificate dated in the selected range, matching the filters.",
   },
   trainingsCompleted: {
     label: 'Trainings completed',
@@ -74,7 +74,7 @@ export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, 
     label: 'People in training',
     unit: 'people',
     caption: ORG_TRAINING_IN_PROGRESS_RULE,
-    definition: `Distinct people with at least one course in progress: ${ORG_TRAINING_IN_PROGRESS_RULE.toLowerCase()}, on this organization's people list and matching the filters. Not a snapshot of today.`,
+    definition: `Distinct people with at least one course in progress: ${ORG_TRAINING_IN_PROGRESS_RULE.toLowerCase()}, on this company's people list and matching the filters. Not a snapshot of today.`,
   },
 };
 
@@ -105,7 +105,7 @@ export const ORG_TRAINING_STAT_TILES: readonly OrgTrainingStatTileLayout[] = [
 /** The tiles People › Trainees shows before "Show more stats": the ones about the people list its table lists (lfx-self-serve#5304). */
 export const ORG_TRAINING_STAT_PRIMARY_KEYS: readonly OrgTrainingStatKey[] = ['peopleWithTrainingActivity', 'coursesTaken', 'certifiedPeople'];
 
-/** Heading of the Trainees list of learners linked to the organization who are not on its people list (lfx-self-serve#4287). */
+/** Heading of the Trainees list of learners linked to the company who are not on its people list (lfx-self-serve#4287). */
 export const ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING = 'Learners not on the people list';
 
 /** Shown in place of that list while a course-level filter is picked: the list carries no course data to filter on. */
@@ -114,4 +114,4 @@ export const ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE =
 
 /** Note in the open Trainees list of learners not on the people list: one person can appear more than once, and who can recognize them (lfx-self-serve#5304). */
 export const ORG_TRAINEES_OUTSIDE_LEARNERS_REVIEW_NOTE =
-  'These learners have training linked to this organization but are not on its people list. One person can appear more than once, for example with several training accounts under different emails. An org admin can review this list if a name looks familiar.';
+  'These learners have training linked to this company but are not on its people list. One person can appear more than once, for example with several training accounts under different emails. An org admin can review this list if a name looks familiar.';

@@ -28,6 +28,7 @@ import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
 import { createBrowserAssetsMiddleware } from './middleware/browser-assets.middleware';
 import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
+import { redirectLegacyUrls } from './middleware/redirect-legacy-urls.middleware';
 import { endGatewazeSessionOnLogout } from './middleware/end-gatewaze-session-on-logout.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
@@ -242,6 +243,12 @@ app.use(sitemapRouter);
 
 // Bundle misses terminate here, before OIDC can redirect an unavailable asset to SSO.
 app.use(createBrowserAssetsMiddleware(browserDistFolder));
+
+// Company Lens moved from `/org/…` to `/company/…` (#5064). Old bookmarks and already-sent emails hit this as a
+// full page load, so answer with a permanent redirect here, ahead of auth and SSR (the address carries nothing
+// to protect, and a viewer who is not signed in should land on the new address, then sign in to it). The
+// docs portal has no redirect mechanism, so the moved `/docs/organization/…` pages are redirected here too.
+app.use(redirectLegacyUrls);
 
 const httpLogger = pinoHttp({
   logger: serverLogger,

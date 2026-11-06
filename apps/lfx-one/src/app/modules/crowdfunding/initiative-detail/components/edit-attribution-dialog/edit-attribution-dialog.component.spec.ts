@@ -153,6 +153,6 @@ describe('EditAttributionDialogComponent', () => {
     fixture.detectChanges();
 
     const empty = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="initiative-edit-attribution-empty"]');
-    expect(empty?.textContent).toContain('any organization');
+    expect(empty?.textContent).toContain('any company');
   });
 });

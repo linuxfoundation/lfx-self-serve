@@ -232,7 +232,7 @@ describe('isProfileHubPath', () => {
   });
 
   it('does not match unrelated routes', () => {
-    expect(isProfileHubPath('/org/profile')).toBe(false);
+    expect(isProfileHubPath('/company/profile')).toBe(false);
     expect(isProfileHubPath('/meetings')).toBe(false);
     expect(isProfileHubPath('/')).toBe(false);
   });

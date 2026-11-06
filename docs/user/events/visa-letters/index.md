@@ -4,7 +4,7 @@ description: Request a visa support letter to help international attendees obtai
 audience: [all]
 product_area: Events
 tags: [events, visa-letters, visa, travel, attendance]
-last_updated: 2026-10-02
+last_updated: 2026-11-05
 intercom_collection: Events
 ---
 
@@ -35,7 +35,7 @@ Enter your details exactly as they appear on your passport so the letter is issu
 - Attendee type
 - Who is paying for your accommodation
 - The city of the embassy or consulate where you will apply
-- Your company or organization
+- Your company
 - The mailing address to use on the invitation letter
 
 ## After you submit

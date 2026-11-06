@@ -146,13 +146,13 @@ describe('OrgNavigationService default selection', () => {
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
 
     // The first navigation is cancelled by a redirect that is already in flight: still not idle.
-    events.next(new NavigationCancel(1, '/org/roi', 'redirected'));
+    events.next(new NavigationCancel(1, '/company/roi', 'redirected'));
     await settle();
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
 
     // The router clears its current navigation only after emitting NavigationEnd (in the
     // transition's finalize) — the idle check must therefore run after the event, not during it.
-    events.next(new NavigationEnd(2, '/org/people', '/org/people'));
+    events.next(new NavigationEnd(2, '/company/people', '/company/people'));
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
     inFlight.mockReturnValue(null);
     await settle();
@@ -176,7 +176,7 @@ describe('OrgNavigationService default selection', () => {
 
     inFlight.mockReturnValue(null);
     // A skipped navigation is a settle event too.
-    events.next(new NavigationSkipped(3, '/org/people', 'same url'));
+    events.next(new NavigationSkipped(3, '/company/people', 'same url'));
     await settle();
 
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
@@ -459,7 +459,7 @@ describe('OrgNavigationService default selection', () => {
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
   });
 
-  // A restored selection on a legacy `/org/{page}` is the same uncopyable bar as a default's, so it is
+  // A restored selection on a legacy `/company/{page}` is the same uncopyable bar as a default's, so it is
   // written the same way — as a default, which is a no-op on an addressed page or the dead end.
   it('keeps a restored selection that is on the page and writes it into a legacy address as a default', () => {
     selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });

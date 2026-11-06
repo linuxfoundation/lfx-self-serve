@@ -76,7 +76,7 @@ export class OrgRoiValueDriversComponent {
 
   protected readonly chartSummaryLabel: Signal<string> = computed(
     () =>
-      `Diverging bar chart of return from each value driver relative to a typical organization-project pair: ${this.bars()
+      `Diverging bar chart of return from each value driver relative to a typical company-project pair: ${this.bars()
         .map((bar) => `${bar.category} ${bar.label}`)
         .join(', ')}.`
   );

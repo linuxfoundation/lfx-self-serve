@@ -65,6 +65,11 @@ jobs:
           node-version: "22"
           cache: "yarn"
 
+      # Needs only git and node. Blocks new user-facing "organization"/"Org Lens" copy (Company Lens, #5060);
+      # existing violations are tracked in check-company-copy.allowlist.txt.
+      - name: Check user-facing copy says "company", not "organization"
+        run: node check-company-copy.mjs
+
       - name: Install dependencies
         run: yarn install --immutable
 

@@ -27,6 +27,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,html,css,scss,md,mdx,json}\"",
     "lint:check": "turbo run lint:check",
     "check-types": "turbo run check-types",
+    "check:company-copy": "node check-company-copy.mjs",
     "commitlint": "commitlint",
     "prepare": "husky"
   },

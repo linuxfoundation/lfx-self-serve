@@ -67,7 +67,7 @@ async function render() {
         useValue: { snapshot: { fragment: null }, fragment: of(null), paramMap: of(convertToParamMap({ foundationSlug: 'cncf' })) },
       },
       { provide: AccountContextService, useValue: { selectedAccount } },
-      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/org', ...segments] } },
+      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/company', ...segments] } },
       { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
       { provide: OrgEditAccessService, useValue: { canEditSelected: signal(false) } },
       {

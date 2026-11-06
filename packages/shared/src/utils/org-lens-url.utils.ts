@@ -1,13 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_ACCOUNT_ID_PATTERN, ORG_EASYCLA_PATH, ORG_LENS_PAGE_SEGMENTS, ORG_SLUG_SEGMENT_PATTERN } from '../constants';
+import {
+  ORG_ACCOUNT_ID_PATTERN,
+  ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM,
+  ORG_EASYCLA_PATH,
+  ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_LENS_LEGACY_URL_ROOT,
+  ORG_LENS_PAGE_SEGMENTS,
+  ORG_LENS_URL_ROOT,
+  ORG_SLUG_SEGMENT_PATTERN,
+} from '../constants';
 import type { Account } from '../interfaces';
 
 /**
- * The `/org/{segment}/…` segment for an organization: its lowercase slug when it has one, else its
+ * The `/company/{segment}/…` segment for an organization: its lowercase slug when it has one, else its
  * 18-char SFID. Null when the selection carries neither (placeholder account) — callers then emit
- * the legacy `/org/{page}` form and let the redirect guard resolve it. The slug is the one the
+ * the legacy `/company/{page}` form and let the redirect guard resolve it. The slug is the one the
  * *index* carries for the organization (org-items row, resolver answer) — derived upstream by
  * member-service from the org name (DR-007), but taken here only as indexed, since that is what
  * addresses resolve against; never re-derived here, never the canonical record's. A slug equal to
@@ -48,8 +57,8 @@ export function isOrgSlugSegment(segment: string): boolean {
 
 /**
  * Path of an Org Lens page in the address scope of the URL being navigated to (`urlSegments` = its
- * primary segments): `/org/{segment}/{page}` when that address names an organization, else the
- * legacy `/org/{page}`. Feature fallbacks redirect through this so they never drop the organization
+ * primary segments): `/company/{segment}/{page}` when that address names an organization, else the
+ * legacy `/company/{page}`. Feature fallbacks redirect through this so they never drop the organization
  * a shared link named (FR-001) and hand the viewer back to the cookie selection. The segment is
  * passed through as addressed; the path-param guard canonicalizes it on the next navigation.
  *
@@ -60,25 +69,25 @@ export function isOrgSlugSegment(segment: string): boolean {
  */
 export function orgLensPagePath(urlSegments: readonly string[], page: string): string {
   const [root, second] = urlSegments;
-  if (root === 'org' && second) {
+  if (root === ORG_LENS_URL_ROOT && second) {
     const normalized = normalizeOrgSegment(second);
     if (isOrgSlugSegment(normalized) || isOrgAccountIdSegment(normalized)) {
-      return `/org/${second}/${page}`;
+      return `/${ORG_LENS_URL_ROOT}/${second}/${page}`;
     }
   }
-  return `/org/${page}`;
+  return `/${ORG_LENS_URL_ROOT}/${page}`;
 }
 
 /**
- * The organization-independent form of an Org Lens address: `/org/{segment}/{page}/…` becomes
- * `/org/{page}/…`; any other path is returned unchanged. For identity that must survive an
+ * The organization-independent form of an Org Lens address: `/company/{segment}/{page}/…` becomes
+ * `/company/{page}/…`; any other path is returned unchanged. For identity that must survive an
  * organization switch — the sidebar tracks its rows by destination, and a switch only re-addresses
  * them, it does not replace them.
  */
 export function orgLensDestinationKey(path: string): string {
   const [, root, second, ...rest] = path.split('/');
-  if (root === 'org' && second && ORG_LENS_PAGE_SEGMENTS[second.toLowerCase()] !== true && rest.length > 0) {
-    return `/org/${rest.join('/')}`;
+  if (root === ORG_LENS_URL_ROOT && second && ORG_LENS_PAGE_SEGMENTS[second.toLowerCase()] !== true && rest.length > 0) {
+    return `/${ORG_LENS_URL_ROOT}/${rest.join('/')}`;
   }
   return path;
 }
@@ -91,7 +100,7 @@ export function normalizeOrgSegment(raw: string): string {
 
 /**
  * The return address the BFF mints while the `ORG_EASYCLA_RETURN_IN_PATH` gate is off:
- * `/org/easycla/{claGroupId}`, with the organization carried in `?org=` (`ORG_EASYCLA_RETURN_ORG_PARAM`)
+ * `/company/easycla/{claGroupId}`, with the organization carried in `?company=` (`ORG_EASYCLA_RETURN_ORG_PARAM`)
  * rather than in the path. Every release routes and reads this shape, which is what makes it the
  * safe default across a rolling deploy or a rollback. Sibling of `orgEasyclaReturnPath`.
  */
@@ -101,9 +110,9 @@ export function legacyOrgEasyclaReturnPath(claGroupId: string): string {
 
 /**
  * Where EasyCLA returns a signatory after signing a corporate CLA (#1983, #2352): the CLA Group's
- * own address under the organization the signing was opened for — `/org/{orgUid}/easycla/{claGroupId}`
+ * own address under the organization the signing was opened for — `/company/{orgUid}/easycla/{claGroupId}`
  * (spec 050 address scheme, lfx-self-serve#2743). Mirrors the `easycla` child of the
- * `/org/:orgSegment` route in the org dashboard routes.
+ * `/company/:orgSegment` route in the org dashboard routes.
  *
  * `orgUid` is the 18-char SFID the grant check cleared; the path guard resolves it against the
  * viewer's own organizations and canonicalizes the segment to the slug on arrival, so the address
@@ -113,5 +122,97 @@ export function legacyOrgEasyclaReturnPath(claGroupId: string): string {
  * address from the request Host, and the two hand-offs must not disagree on where they land.
  */
 export function orgEasyclaReturnPath(orgUid: string, claGroupId: string): string {
-  return `/org/${encodeURIComponent(orgUid)}/easycla/${encodeURIComponent(claGroupId)}`;
+  return `/${ORG_LENS_URL_ROOT}/${encodeURIComponent(orgUid)}/easycla/${encodeURIComponent(claGroupId)}`;
+}
+
+/**
+ * The organization a corporate-signing return names on the leftover (un-addressed) EasyCLA mount: `?company=`, else
+ * the pre-rename `?org=` that trips opened before #5064 still return on. Takes the lookup function so it serves
+ * `ParamMap.get`, `URLSearchParams.get` and plain objects alike.
+ */
+export function easyclaReturnOrgParam(get: (name: string) => string | null | undefined): string | null {
+  return get(ORG_EASYCLA_RETURN_ORG_PARAM) ?? get(ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM) ?? null;
+}
+
+/**
+ * The permanent-redirect target for a pre-rename Company Lens address, or null when `pathAndQuery` is not one.
+ *
+ * Every old form maps by swapping the first segment, so the page and the organization selection travel with it:
+ * `/org` → `/company`, `/org/not-found`, the addressed `/org/{slug|SFID}/{page}/…`, and the legacy unaddressed
+ * `/org/{page}/…`. The query string is kept verbatim; on an EasyCLA address the pre-rename `?org=` return
+ * parameter is renamed to `?company=`. The fragment never reaches a server, and a browser re-applies it to a
+ * redirect target that carries none, so callers that see one (the Angular router) pass it through themselves.
+ *
+ * Only the exact segment `org` matches: `/organization`, `/orgs` and `/org-x` are other addresses. The result
+ * is always a same-origin path (it starts with a single `/company`), so it cannot be turned into an open redirect.
+ */
+export function companyLensRedirectTarget(pathAndQuery: string): string | null {
+  const queryStart = pathAndQuery.indexOf('?');
+  const path = queryStart === -1 ? pathAndQuery : pathAndQuery.slice(0, queryStart);
+  const query = queryStart === -1 ? '' : pathAndQuery.slice(queryStart);
+  const legacyRoot = `/${ORG_LENS_LEGACY_URL_ROOT}`;
+  if (path !== legacyRoot && !path.startsWith(`${legacyRoot}/`)) {
+    return null;
+  }
+  const rest = path.slice(legacyRoot.length);
+  return `/${ORG_LENS_URL_ROOT}${rest}${isEasyclaAddress(rest) ? renameLegacyEasyclaOrgParam(query) : query}`;
+}
+
+/** True for `/easycla…` (leftover mount) and `/{segment}/easycla…` (addressed mount) once the root is stripped. */
+function isEasyclaAddress(rest: string): boolean {
+  const [, first, second] = rest.split('/');
+  return first === 'easycla' || second === 'easycla';
+}
+
+/** Rename `org` → `company` in a raw query string, leaving every other pair and its encoding untouched; an existing `company` wins. */
+function renameLegacyEasyclaOrgParam(query: string): string {
+  if (!query) return query;
+  const pairs = query.slice(1).split('&');
+  const hasCompany = pairs.some((p) => p.split('=')[0] === ORG_EASYCLA_RETURN_ORG_PARAM);
+  const renamed = pairs
+    .filter((p) => !(hasCompany && p.split('=')[0] === ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM))
+    .map((p) =>
+      p.split('=')[0] === ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM ? ORG_EASYCLA_RETURN_ORG_PARAM + p.slice(ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM.length) : p
+    );
+  return renamed.length ? `?${renamed.join('&')}` : '';
+}
+
+/** Pages whose folder name carried the old wording when `docs/user/organization` became `docs/user/company` (#5066); every other page keeps its slug. */
+const LEGACY_DOCS_PAGE_RENAMES: Readonly<Record<string, string>> = {
+  'choose-an-organization': 'choose-a-company',
+  'org-overview': 'company-overview',
+  'manage-org-lens-access': 'manage-company-lens-access',
+  'org-events': 'company-events',
+  'org-profile': 'company-profile',
+};
+
+/** Single pages outside `docs/user/organization` whose folder carried the old wording; each maps to its renamed address. */
+const LEGACY_DOCS_SINGLE_PAGES: Readonly<Record<string, string>> = {
+  '/docs/dashboards/organization-involvement': '/docs/dashboards/company-involvement',
+};
+
+/**
+ * The permanent-redirect target for a pre-rename user-docs address, or null when `pathAndQuery` is not one.
+ * `/docs/organization[/{page}…]` → `/docs/company[/{page}…]`, with the three renamed pages mapped to their new
+ * slugs. The docs portal derives each URL from the article's folder path and has no redirect mechanism of its own,
+ * so this is that mechanism. Query string kept verbatim; the fragment is re-applied by the browser (or passed by the caller).
+ */
+export function legacyDocsRedirectTarget(pathAndQuery: string): string | null {
+  const queryStart = pathAndQuery.indexOf('?');
+  const path = queryStart === -1 ? pathAndQuery : pathAndQuery.slice(0, queryStart);
+  const query = queryStart === -1 ? '' : pathAndQuery.slice(queryStart);
+  const movedPage = LEGACY_DOCS_SINGLE_PAGES[path];
+  if (movedPage) {
+    return `${movedPage}${query}`;
+  }
+  const root = '/docs/organization';
+  if (path !== root && !path.startsWith(`${root}/`)) {
+    return null;
+  }
+  const tail = path
+    .slice(root.length)
+    .split('/')
+    .map((segment) => LEGACY_DOCS_PAGE_RENAMES[segment] ?? segment)
+    .join('/');
+  return `/docs/company${tail}${query}`;
 }

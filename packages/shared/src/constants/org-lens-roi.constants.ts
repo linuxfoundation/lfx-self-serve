@@ -256,14 +256,14 @@ export const ORG_LENS_ROI_VALUE_DRIVERS_COLORS = {
 /**
  * Wording is tied to the warehouse model (lf-dbt#3163, docs/lfx_roi/decomposition.md):
  * `PCT_DEVIATION_FROM_TYPICAL_MARKUP` is the percent by which a category moves the portfolio's
- * markup away from the typical organization-project pair. The UI says "return" for it, since that is
+ * markup away from the typical company-project pair. The UI says "return" for it, since that is
  * the page's own vocabulary. Keep these claims in step with that doc.
  */
 export const ORG_LENS_ROI_VALUE_DRIVERS_COPY = {
   howToRead:
-    'Each bar shows how much a value driver contributes to your portfolio’s return, relative to the typical organization-project pair. The middle line is the typical pair. A bar to the right (green) means that driver contributes more return than it does for a typical pair. A bar to the left (amber) means it contributes less. A bar of +14% means 14% more return than typical from that driver.',
+    'Each bar shows how much a value driver contributes to your portfolio’s return, relative to the typical company-project pair. The middle line is the typical pair. A bar to the right (green) means that driver contributes more return than it does for a typical pair. A bar to the left (amber) means it contributes less. A bar of +14% means 14% more return than typical from that driver.',
   typical:
-    'Typical is the average across all organization-project pairs LFX models. A bar at 0 means your portfolio is typical for that driver, not that the driver provides no value.',
+    'Typical is the average across all company-project pairs LFX models. A bar at 0 means your portfolio is typical for that driver, not that the driver provides no value.',
   association:
     'These are associations, not proven causes. Each category is built from measurable activity that tends to go with higher return, not from anything your organization reported.',
   fit: 'The model explains only part of the variation in return, and the bars show that explained part.',

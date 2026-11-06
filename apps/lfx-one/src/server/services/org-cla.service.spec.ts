@@ -283,7 +283,7 @@ describe('OrgClaService.listClaGroups — an EasyCLA refusal (#3631)', () => {
 
     expect(error).toBeInstanceOf(MicroserviceError);
     expect(error.errorBody).toBeUndefined();
-    expect(error.toResponse()).toMatchObject({ error: "You don't have an EasyCLA role at this organization.", code: 'EASYCLA_ROLE_MISSING' });
+    expect(error.toResponse()).toMatchObject({ error: "You don't have an EasyCLA role at this company.", code: 'EASYCLA_ROLE_MISSING' });
     expect(JSON.stringify(error.toResponse())).not.toContain('contributor@example.org');
   });
 
@@ -974,7 +974,7 @@ describe('OrgClaService.getSignOptions', () => {
 
 describe('OrgClaService.requestCorporateSignature', () => {
   // The return address is gated (spec 050 phase 2 rollout, #2743): this block runs with the gate ON —
-  // the target shape once every replica routes `/org/{org}/easycla`; the leftover shape is pinned
+  // the target shape once every replica routes `/company/{org}/easycla`; the leftover shape is pinned
   // separately below.
   beforeEach(() => {
     vi.stubEnv('ORG_EASYCLA_RETURN_IN_PATH', 'true');
@@ -1011,7 +1011,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
           project_sfid: PROJECT_SFID,
           company_sfid: ORG_UID,
           cla_group_id: CLA_GROUP_ID,
-          return_url: `https://app.lfx.dev/org/${ORG_UID}/easycla/${CLA_GROUP_ID}?signed=1`,
+          return_url: `https://app.lfx.dev/company/${ORG_UID}/easycla/${CLA_GROUP_ID}?signed=1`,
           authority_acked: true,
           embargo_acked: true,
         },
@@ -1043,7 +1043,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
       expect.anything(),
       expect.any(String),
       expect.objectContaining({
-        body: expect.objectContaining({ return_url: `https://app.lfx.dev/org/${ORG_UID}/easycla/${CLA_GROUP_ID}?signed=1` }),
+        body: expect.objectContaining({ return_url: `https://app.lfx.dev/company/${ORG_UID}/easycla/${CLA_GROUP_ID}?signed=1` }),
       })
     );
   });
@@ -1058,7 +1058,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
 
     const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
 
-    expect(new URL(body.return_url).pathname).toBe(`/org/${ORG_UID}/easycla/${CLA_GROUP_ID}`);
+    expect(new URL(body.return_url).pathname).toBe(`/company/${ORG_UID}/easycla/${CLA_GROUP_ID}`);
   });
 
   // The row is not on the organization's list the instant they arrive. Without the flag the page
@@ -1086,8 +1086,8 @@ describe('OrgClaService.requestCorporateSignature', () => {
     const returned = new URL(body.return_url);
 
     // The organization the grant check cleared and the request was made for, not a client value.
-    expect(returned.pathname).toBe(`/org/${ORG_UID}/easycla/${CLA_GROUP_ID}`);
-    expect(returned.searchParams.has('org')).toBe(false);
+    expect(returned.pathname).toBe(`/company/${ORG_UID}/easycla/${CLA_GROUP_ID}`);
+    expect(returned.searchParams.has('company')).toBe(false);
   });
 
   // Self-sign still omits the mail fields. `send_as_email` in particular changes what the response means.
@@ -1102,8 +1102,8 @@ describe('OrgClaService.requestCorporateSignature', () => {
 
     const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
     const returned = new URL(body.return_url);
-    expect(returned.pathname).toBe(`/org/easycla/${CLA_GROUP_ID}`);
-    expect(returned.searchParams.get('org')).toBe(ORG_UID);
+    expect(returned.pathname).toBe(`/company/easycla/${CLA_GROUP_ID}`);
+    expect(returned.searchParams.get('company')).toBe(ORG_UID);
     expect(returned.searchParams.get('signed')).toBe('1');
   });
 
@@ -1117,7 +1117,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
     await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
 
     const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
-    expect(new URL(body.return_url).pathname).toBe(`/org/${ORG_UID}/easycla/${CLA_GROUP_ID}`);
+    expect(new URL(body.return_url).pathname).toBe(`/company/${ORG_UID}/easycla/${CLA_GROUP_ID}`);
   });
 
   it('sends none of the designee or send-by-email fields', async () => {

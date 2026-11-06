@@ -4,7 +4,7 @@ description: How to invite guests, add a group, resend invitations, remove peopl
 audience: [all]
 product_area: Meetings
 tags: [meetings, participants, guests, invite, registrants, groups, resend invite]
-last_updated: 2026-11-03
+last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 
@@ -28,7 +28,7 @@ You can invite people one at a time, or invite a whole group.
 1. In **Search and add guests**, start typing a name or email address.
 2. Select the person from the results to add them to the **Invited** list.
 
-If you can't find the person, select **Add manually** and fill in the guest's details: name and email, and optionally a job title and organization. Select **Add guest** to add them.
+If you can't find the person, select **Add manually** and fill in the guest's details: name and email, and optionally a job title and company. Select **Add guest** to add them.
 
 If the person is already on the list, you'll see an **Already invited** message instead of a duplicate.
 

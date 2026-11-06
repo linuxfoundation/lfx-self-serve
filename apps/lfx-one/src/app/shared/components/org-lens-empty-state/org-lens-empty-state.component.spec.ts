@@ -84,7 +84,7 @@ describe('OrgLensEmptyStateComponent', () => {
     const picked: string[] = [];
     fixture.componentInstance.orgSelected.subscribe((uid) => picked.push(uid));
 
-    expect(byTestId(fixture, 'primary')?.textContent?.trim()).toBe('Your organizations');
+    expect(byTestId(fixture, 'primary')?.textContent?.trim()).toBe('Your companies');
     expect(byTestId(fixture, 'org-list')?.querySelectorAll('li')).toHaveLength(2);
     // #2533 mockup: the rows come first and the label follows; the label is not a control.
     const list = byTestId(fixture, 'org-list') as HTMLElement;
@@ -104,10 +104,10 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(byTestId(fixture, 'org-list')).toBeNull();
     const controls = (fixture.nativeElement as HTMLElement).querySelectorAll(`[data-testid="${TEST_ID}-contact-support"]`);
     expect(controls).toHaveLength(1);
-    expect(controls[0].textContent).toContain('Ask for access to the organization in this link');
+    expect(controls[0].textContent).toContain('Ask for access to the company in this link');
     expect(controls[0].tagName).toBe('LFX-BUTTON');
     // The reason must not introduce a list that is not there.
-    expect(byTestId(fixture, 'description')?.textContent?.trim()).toBe('This link points to an organization that is not on your list.');
+    expect(byTestId(fixture, 'description')?.textContent?.trim()).toBe('This link points to a company that is not on your list.');
     expect(byTestId(render('wrong-organization', { orgList: ORG_LIST }), 'description')?.textContent).toContain('Here is what you do have access to:');
   });
 
@@ -135,7 +135,7 @@ describe('OrgLensEmptyStateComponent', () => {
     const fixture = render('not-found-staff', { orgList: ORG_LIST });
 
     expect(byTestId(fixture, 'org-list')).toBeNull();
-    expect(byTestId(fixture, 'primary')?.textContent).toContain('Go to Organization Lens');
+    expect(byTestId(fixture, 'primary')?.textContent).toContain('Go to Company Lens');
   });
 
   it('ignores an organization list on states that do not render one', () => {
@@ -181,17 +181,17 @@ describe('OrgLensEmptyStateComponent', () => {
   // is asserted on its own sentence rather than the two older phrasings.
   it('opens the reason with the product sentence only on the first-visit states', () => {
     const firstVisit: OrgLensEmptyStateName[] = ['no-organization', 'no-access', 'contractor-no-grant', 'affiliated-no-grant'];
-    expect(byTestId(render('no-organization'), 'description')?.textContent).toContain('Organization Lens shows how a company shows up in open source');
-    expect(byTestId(render('no-access'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
-    expect(byTestId(render('contractor-no-grant'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
+    expect(byTestId(render('no-organization'), 'description')?.textContent).toContain('Company Lens shows how a company shows up in open source');
+    expect(byTestId(render('no-access'), 'description')?.textContent).toContain("Company Lens shows a company's open source footprint");
+    expect(byTestId(render('contractor-no-grant'), 'description')?.textContent).toContain("Company Lens shows a company's open source footprint");
     expect(byTestId(render('affiliated-no-grant'), 'description')?.textContent).toContain(
-      'The "Organization" section of LFX Self-Serve shows how your company is involved with LF projects'
+      'The "Company" section of LFX Self-Serve shows how your company is involved with LF projects'
     );
     const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => !firstVisit.includes(name));
     expect(others).toHaveLength(8);
     for (const name of others) {
       const fixture = render(name, { orgList: ORG_LIST, filterActive: true });
-      expect(byTestId(fixture, 'description')?.textContent, name).not.toContain('Organization Lens shows');
+      expect(byTestId(fixture, 'description')?.textContent, name).not.toContain('Company Lens shows');
       fixture.destroy();
     }
   });

@@ -3,6 +3,7 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, Signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { LENS_DEFAULT_ROUTES } from '@lfx-one/shared/constants';
 import { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { AccountContextService } from '@services/account-context.service';
@@ -133,7 +134,7 @@ export class OrgNotFoundComponent {
     // a no-op for a selection with no URL segment (no slug, non-SFID uid) — that row still has to leave
     // the dead end, on the legacy address that renders the selected organization.
     if (!this.accountContext.selectedUrlSegment()) {
-      void this.router.navigate(['/org', 'overview']);
+      void this.router.navigate([LENS_DEFAULT_ROUTES.org, 'overview']);
       return;
     }
     this.orgLensNavigation.navigateToSelectedOrg('switch');

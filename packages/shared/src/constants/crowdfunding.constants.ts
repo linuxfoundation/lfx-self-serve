@@ -139,7 +139,7 @@ export const CROWDFUNDING_DESCRIPTION_MAX_HTML_CHARS = 1500;
 // Choices in the Edit attribution dialog, in display order.
 export const CROWDFUNDING_ATTRIBUTION_TYPE_OPTIONS: { label: string; value: CrowdfundingAttributionType }[] = [
   { label: 'Personal', value: 'personal' },
-  { label: 'On behalf of an organization', value: 'organization' },
+  { label: 'On behalf of a company', value: 'organization' },
   { label: 'On behalf of a project or foundation', value: 'project' },
 ];
 

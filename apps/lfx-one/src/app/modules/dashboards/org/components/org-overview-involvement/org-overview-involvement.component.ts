@@ -94,7 +94,7 @@ export class OrgOverviewInvolvementComponent {
   private readonly trainingStats = this.initializeTrainingStats();
   private readonly eventAttendanceMonthlyData = this.initializeEventAttendanceMonthlyData();
 
-  public readonly accountName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Organization');
+  public readonly accountName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Company');
 
   public readonly subtitleText = computed<string>(() => this.initSubtitleText());
 

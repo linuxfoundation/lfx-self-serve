@@ -434,7 +434,7 @@ function asEasyClaRoleMissing(error: unknown): unknown {
   if (!(error instanceof MicroserviceError) || error.statusCode !== 403 || error.transportFailure) return error;
 
   return new MicroserviceError(
-    'Failed to fetch organization CLA groups: the viewer holds no EasyCLA role at this organization',
+    'Failed to fetch company CLA groups: the viewer holds no EasyCLA role at this company',
     403,
     ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
     {
@@ -471,7 +471,7 @@ export class OrgClaService {
         {
           operation: 'org_cla_list_cla_groups',
           service: SERVICE,
-          errorMessage: 'Failed to fetch organization CLA groups',
+          errorMessage: 'Failed to fetch company CLA groups',
           errorCode: 'UPSTREAM_ERROR',
           // This response carries CLA managers by id and LF username. The mapper drops them, but
           // that boundary only covers the browser: on a non-OK status or unparseable body the
@@ -493,7 +493,7 @@ export class OrgClaService {
     // through to an empty list and be rendered as "this organization has signed nothing" —
     // precisely the false claim the paragraph above refuses to make for a failed request.
     if (!upstream || !Array.isArray(upstream.list)) {
-      throw new MicroserviceError('Failed to fetch organization CLA groups: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      throw new MicroserviceError('Failed to fetch company CLA groups: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'org_cla_list_cla_groups',
         service: SERVICE,
       });
@@ -504,7 +504,7 @@ export class OrgClaService {
     // makes every such row share one key, which lets the view reuse one card's DOM for another
     // agreement — a worse outcome than the load failure this raises instead.
     if (!upstream.list.every((entry): entry is EasyClaCompanyClaGroup & { signatureID: string } => !!entry?.signatureID)) {
-      throw new MicroserviceError('Failed to fetch organization CLA groups: upstream row is missing its signature id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      throw new MicroserviceError('Failed to fetch company CLA groups: upstream row is missing its signature id', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'org_cla_list_cla_groups',
         service: SERVICE,
       });
@@ -1699,7 +1699,7 @@ export class OrgClaService {
       {
         operation: 'org_cla_list_cla_groups',
         service: SERVICE,
-        errorMessage: 'Failed to fetch organization CLA groups',
+        errorMessage: 'Failed to fetch company CLA groups',
         errorCode: 'UPSTREAM_ERROR',
         // This response carries CLA managers by id and LF username. The mapper drops them, but
         // that boundary only covers the browser: on a non-OK status or unparseable body the
@@ -1718,7 +1718,7 @@ export class OrgClaService {
     // through to an empty list and be rendered as "this organization has signed nothing" —
     // precisely the false claim the paragraph above refuses to make for a failed request.
     if (!upstream || !Array.isArray(upstream.list)) {
-      throw new MicroserviceError('Failed to fetch organization CLA groups: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      throw new MicroserviceError('Failed to fetch company CLA groups: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'org_cla_list_cla_groups',
         service: SERVICE,
       });
@@ -1729,7 +1729,7 @@ export class OrgClaService {
     // makes every such row share one key, which lets the view reuse one card's DOM for another
     // agreement — a worse outcome than the load failure this raises instead.
     if (!upstream.list.every((entry): entry is EasyClaCompanyClaGroup & { signatureID: string } => !!entry?.signatureID)) {
-      throw new MicroserviceError('Failed to fetch organization CLA groups: upstream row is missing its signature id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      throw new MicroserviceError('Failed to fetch company CLA groups: upstream row is missing its signature id', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'org_cla_list_cla_groups',
         service: SERVICE,
       });
@@ -1749,17 +1749,17 @@ export class OrgClaService {
       company = await gatewayFetch<EasyClaCompany>(req, `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(orgUid)}`, {
         operation,
         service: SERVICE,
-        errorMessage: 'Failed to resolve the organization in EasyCLA',
+        errorMessage: 'Failed to resolve the company in EasyCLA',
         errorCode: 'UPSTREAM_ERROR',
         redactResponseBody: true,
       });
     } catch (error) {
-      throw asDesigneeRefusal(error, operation, 'Failed to resolve the organization in EasyCLA');
+      throw asDesigneeRefusal(error, operation, 'Failed to resolve the company in EasyCLA');
     }
 
     const companyId = upstreamTrimmedString(company?.companyID);
     if (!companyId) {
-      throw new MicroserviceError('Failed to resolve the organization in EasyCLA: upstream returned no company id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      throw new MicroserviceError('Failed to resolve the company in EasyCLA: upstream returned no company id', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation,
         service: SERVICE,
         errorBody: { error: 'unknown' },

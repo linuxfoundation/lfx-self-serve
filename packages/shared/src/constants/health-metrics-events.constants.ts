@@ -103,10 +103,10 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   {
     key: 'orgs',
     empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
-    label: 'Organizations',
-    heading: 'Organizations at events',
+    label: 'Companies',
+    heading: 'Companies at events',
     description:
-      'Which organizations show up, sponsor and speak. This is the events view of an organization — the same company also has a membership, meeting and contribution record in Members.',
+      'Which companies show up, sponsor and speak. This is the events view of a company — the same company also has a membership, meeting and contribution record in Members.',
     footnote: [],
     footnoteCaution: false,
   },

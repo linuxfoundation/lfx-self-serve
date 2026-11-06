@@ -159,7 +159,7 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
 
     const note = page.getByTestId('org-roi-projects-donut-modelled-cost-note');
     await expect(note).toBeVisible();
-    await expect(note).toContainText('same for every organization');
+    await expect(note).toContainText('same for every company');
     await expect(note).toContainText('No salary, payroll, or invoice data is used.');
 
     // Net Return is totalReturn − totalExpenditure, so it is a direct function of the modelled
@@ -212,7 +212,7 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     const state = page.getByTestId('org-roi-projects-donut-empty-state');
     await expect(state).toBeVisible();
     await expect(state).toHaveAttribute('data-state', 'section-no-access');
-    await expect(state).toContainText('You do not have access to this organization');
+    await expect(state).toContainText('You do not have access to this company');
     await expect(page.getByTestId('org-roi-projects-donut-legend')).toHaveCount(0);
     await expect(page.getByTestId('org-roi-projects-donut-chart')).toHaveCount(0);
   });
@@ -412,7 +412,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     await expect(page.getByTestId('org-roi-projects-sankey-measure-investment')).toHaveAttribute('aria-pressed', 'true');
     const flows = page.getByTestId('org-roi-projects-sankey-table');
     // Investment fans out through its categories, so the org node reaches a category, not a project.
-    await expect(flows).toContainText('Your organization');
+    await expect(flows).toContainText('Your company');
     await expect(flows).toContainText('Code Contribution');
 
     await page.getByTestId('org-roi-projects-sankey-measure-return').click();
@@ -575,7 +575,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     const state = page.getByTestId('org-roi-projects-section-empty-state');
     await expect(state).toBeVisible();
     await expect(state).toHaveAttribute('data-state', 'section-no-access');
-    await expect(state).toContainText('You do not have access to this organization');
+    await expect(state).toContainText('You do not have access to this company');
     await expect(page.getByTestId('org-roi-project-picker')).toHaveCount(0);
     await expect(page.getByTestId('org-roi-projects-bar-chart')).toHaveCount(0);
   });

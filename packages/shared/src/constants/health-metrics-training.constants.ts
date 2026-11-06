@@ -41,7 +41,7 @@ export const HEALTH_METRICS_TRAINING_SECTIONS = [
     description: 'Individual courses and certifications by enrollment. Free courses show no revenue — that is reach, not a gap.',
     footnote: [
       {
-        text: 'Enrollment counts come from LF Education. Revenue is provisional and excludes corporate training agreements, which are tracked per member organization.',
+        text: 'Enrollment counts come from LF Education. Revenue is provisional and excludes corporate training agreements, which are tracked per member company.',
       },
     ],
     footnoteCaution: false,

@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings in LFX Self Serve, with
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-10-28
+last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 

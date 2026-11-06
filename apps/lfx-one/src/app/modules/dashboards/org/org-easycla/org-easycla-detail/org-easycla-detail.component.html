@@ -18,8 +18,8 @@
     <lfx-empty-state
       data-testid="org-easycla-no-company-empty-state"
       icon="fa-light fa-building"
-      title="Select an organization"
-      subtitle="Choose an organization to view its corporate CLAs." />
+      title="Select a company"
+      subtitle="Choose a company to view its corporate CLAs." />
   } @else if (claLoading() || cataloguePending()) {
     <section class="flex flex-col gap-3" data-testid="org-easycla-detail-list-loading">
       <p-skeleton height="1.5rem" width="12rem" />
@@ -54,7 +54,7 @@
       data-testid="org-easycla-detail-error-state"
       icon="fa-light fa-triangle-exclamation"
       title="We couldn't load your CLAs"
-      subtitle="Something went wrong fetching this organization's corporate CLAs. Refresh the page to try again." />
+      subtitle="Something went wrong fetching this company's corporate CLAs. Refresh the page to try again." />
   } @else if (signatureStillUnlisted() && !claGroup()) {
     <!--
       A flagged return whose wait ended with a list and no row. Distinct from cannot-preview: that
@@ -98,7 +98,7 @@
       data-testid="org-easycla-detail-cannot-preview-state"
       icon="fa-light fa-file-circle-question"
       title="This CLA Group can't be previewed here yet"
-      subtitle="Your organization hasn't signed a corporate CLA for this CLA Group. To review and sign it, start from your EasyCLA page."
+      subtitle="Your company hasn't signed a corporate CLA for this CLA Group. To review and sign it, start from your EasyCLA page."
       ctaLabel="Back to EasyCLA"
       [ctaRoute]="easyclaListLink()" />
   } @else if (notFound()) {
@@ -106,7 +106,7 @@
       data-testid="org-easycla-detail-not-found-state"
       icon="fa-light fa-file-slash"
       title="This CLA was not found"
-      subtitle="It may have been removed, or the link is for a different organization."
+      subtitle="It may have been removed, or the link is for a different company."
       ctaLabel="Back to EasyCLA"
       [ctaRoute]="easyclaListLink()" />
   } @else if (claGroup(); as group) {
@@ -368,7 +368,7 @@
                   <p class="text-xs text-gray-500" data-testid="org-easycla-detail-auto-ecla-locked-hint">{{ autoEclaLockedHint }}</p>
                 }
                 <a
-                  href="/docs/organization/easycla#what-does-auto-acknowledge-do"
+                  href="/docs/company/easycla#what-does-auto-acknowledge-do"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="text-xs text-blue-600 hover:underline"

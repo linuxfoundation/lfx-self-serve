@@ -150,7 +150,7 @@ const createNavbarFixture = async (
       },
       { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
       { provide: LensService, useValue: createLensServiceFake(lens, lenses) },
-      { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn((page: string) => ['/org', 'acme', page]) } },
+      { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn((page: string) => ['/company', 'acme', page]) } },
       {
         provide: UserService,
         useValue: {
@@ -404,7 +404,7 @@ describe('NavbarComponent', () => {
     // Off the foundation / project lenses the failed lookups don't shape the menu: no row on Home or Org.
     expect((await createNavbar([{ label: 'Dashboard', routerLink: '/' }], [], {}, { lens: 'me', lookupFailed: true })).showPartialLookupFailed()).toBe(false);
     expect(
-      (await createNavbar([{ label: 'Overview', routerLink: '/org/overview' }], [], {}, { lens: 'org', lookupFailed: true })).showPartialLookupFailed()
+      (await createNavbar([{ label: 'Overview', routerLink: '/company/overview' }], [], {}, { lens: 'org', lookupFailed: true })).showPartialLookupFailed()
     ).toBe(false);
 
     // Not announced before the visible panel shows the row.
@@ -524,7 +524,7 @@ describe('NavbarComponent', () => {
       navbar.onOrgSelected();
 
       expect(lensService.activeLens()).toBe('org');
-      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/org', 'acme', 'overview']);
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/company', 'acme', 'overview']);
     });
 
     it('only closes the drawer on an organization pick without a preview, leaving the address to the selector', async () => {
@@ -875,7 +875,7 @@ describe('NavbarComponent', () => {
         collapse.openPeek();
 
         move(100);
-        events.next(new NavigationEnd(1, '/org/acme/overview', '/org/acme/overview'));
+        events.next(new NavigationEnd(1, '/company/acme/overview', '/company/acme/overview'));
         vi.advanceTimersByTime(1000);
         expect(collapse.peek()).toBe(true);
 
@@ -1035,7 +1035,7 @@ describe('NavbarComponent', () => {
       const collapse = TestBed.inject(NavbarCollapseService);
       collapse.openPeek(true);
 
-      events.next(new NavigationEnd(1, '/org/overview', '/org/overview?org=acme'));
+      events.next(new NavigationEnd(1, '/company/overview', '/company/overview?org=acme'));
       expect(collapse.peek()).toBe(true);
 
       navigation.trigger = 'popstate';

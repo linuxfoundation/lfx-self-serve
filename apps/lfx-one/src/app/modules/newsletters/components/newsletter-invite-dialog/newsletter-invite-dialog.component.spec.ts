@@ -64,7 +64,7 @@ describe('NewsletterInviteDialogComponent', () => {
     expect(find('newsletter-invite-dialog')?.textContent).toContain('Acme Foundation newsletter');
     // The membership the invitee's company needs is the foundation's own, named in the subtitle and hint.
     expect(find('newsletter-invite-dialog')?.textContent).toContain('Member benefit of Agentic AI Foundation (AAIF)');
-    expect(find('newsletter-invite-hint')?.textContent).toContain('Must be a company email at a member organization of Agentic AI Foundation (AAIF).');
+    expect(find('newsletter-invite-hint')?.textContent).toContain('Must be a company email at a member company of Agentic AI Foundation (AAIF).');
     expect(sendButton().disabled).toBe(true);
 
     await type('not-an-email');
