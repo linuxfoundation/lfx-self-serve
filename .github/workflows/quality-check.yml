@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+# Lint (type-aware ESLint) and build both outgrow Node's default heap; shared by every job.
+env:
+  NODE_OPTIONS: --max-old-space-size=8192
+
 jobs:
   static-checks:
     name: Static Checks
@@ -122,10 +126,7 @@ jobs:
           restore-keys: ${{ steps.angular-cache-key.outputs.prefix }}
 
       - name: Build project
-        # Headroom for cold-cache CI builds. With specs out of tsconfig.app.json the build fits Node's
-        # default heap locally; the Angular compiler worker inherits this limit.
-        env:
-          NODE_OPTIONS: --max-old-space-size=8192
+        # The Angular compiler worker inherits the workflow-level NODE_OPTIONS heap limit.
         run: yarn build
 
       # Forks can restore public base caches, but only trusted, successful runs populate caches.
