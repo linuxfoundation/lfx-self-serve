@@ -78,6 +78,13 @@ class HostComponent {
 
 const pt = mktgPagePt;
 
+/** A colour as jsdom stores it on an inline style (`rgb(r, g, b)`), for comparing with a look's hex ink. */
+function cssColor(color: string): string {
+  const probe = document.createElement('span');
+  probe.style.color = color;
+  return probe.style.color;
+}
+
 describe('MktgPrintPageComponent', () => {
   it('draws a content page as one fixed landscape frame: title band, eyebrow head left and right, body boxes in pt, logo lockup and footer with page number', async () => {
     const fixture = TestBed.createComponent(HostComponent);
@@ -190,21 +197,21 @@ describe('MktgPrintPageComponent', () => {
     expect(root.querySelector('[data-testid="mktg-print-page"]')?.getAttribute('data-layout')).toBe('cover');
     expect(title()?.textContent).toBe('Brand Kit');
     expect(title()?.style.top).toBe(pt(MKTG_PRINT_PAGE_COVER_TITLE_BOX.y));
-    expect(title()?.querySelector<HTMLElement>('.pp-rich')?.style.color).toBe(look.onDark);
+    expect(title()?.querySelector<HTMLElement>('.pp-rich')?.style.color).toBe(cssColor(look.onDark));
     expect(title()?.querySelector('p')?.style.fontSize).toBe(pt(MKTG_PRINT_PAGE_SIZE.coverTitle));
 
     fixture.componentRef.setInput('layout', 'back');
     fixture.componentRef.setInput('title', 'Open standards for one computing');
     await fixture.whenStable();
     expect(title()?.style.top).toBe(pt(MKTG_PRINT_PAGE_BACK_TITLE_BOX.y));
-    expect(title()?.querySelector<HTMLElement>('.pp-rich')?.style.color).toBe(look.onDark);
+    expect(title()?.querySelector<HTMLElement>('.pp-rich')?.style.color).toBe(cssColor(look.onDark));
     expect(title()?.querySelector('.pp-rich--center.pp-rich--middle')).not.toBeNull();
     expect(title()?.querySelector('.pp-para--caps')?.textContent).toBe('Open standards for one computing');
 
     fixture.componentRef.setInput('layout', 'content');
     await fixture.whenStable();
     expect(title()?.style.top).toBe(pt(MKTG_PRINT_PAGE_TITLE_BOX.y));
-    expect(title()?.querySelector<HTMLElement>('.pp-rich')?.style.color).toBe(look.ink);
+    expect(title()?.querySelector<HTMLElement>('.pp-rich')?.style.color).toBe(cssColor(look.ink));
     expect(title()?.querySelector('p')?.style.fontSize).toBe(pt(MKTG_PRINT_PAGE_SIZE.title));
   });
 
