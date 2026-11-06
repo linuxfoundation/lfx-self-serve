@@ -14,8 +14,10 @@ import {
   expectMktgPrintFrame,
   finishMktgPrintFrame,
   layoutMktgPrintFrame,
+  PRINT_FRAME_LANDSCAPE,
   PRINT_FRAME_LETTER,
   stubMktgPrintFrame,
+  expectMktgPrintLandscapePageSetup,
   expectMktgPrintPageSetup,
   mktgPrintComputedPx,
 } from './helpers/mktg-print.helper';
@@ -232,7 +234,9 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     await expect(page.getByTestId('mktg-document-view-revisions')).toBeVisible();
     // Media emulation does not paginate or apply @page margins. Measure the frame's own layout
     // against a paper-sized initial containing block: that is the document the dialog prints.
-    const frame = await layoutMktgPrintFrame(page);
+    // The kit prints the deck's landscape pages (its own frame size); the framework the portrait sheets.
+    const paper = key === 'brand-kit' ? PRINT_FRAME_LANDSCAPE : PRINT_FRAME_LETTER;
+    const frame = await layoutMktgPrintFrame(page, paper);
     const print = frame.getByTestId(testId);
     await expect(print).toBeVisible();
     // Only the print-only wrapper was cloned: none of the screen shell travels into the frame.
@@ -240,23 +244,18 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     await expect(frame.getByTestId(prefix + '-download-pdf')).toHaveCount(0);
     const box = await print.boundingBox();
     if (!box) throw new Error('The approved print document must be rendered');
-    expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: PRINT_FRAME_LETTER.width });
-    await expectMktgPrintPageSetup(frame, print, browserName);
+    expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: paper.width });
     if (key === 'brand-kit') {
-      await expect(print.locator('.kit-chapter')).toHaveCount(5);
-      await expect(print.locator('lfx-mktg-print-chapter-header h2 > span')).toHaveText(['1', '2', '3', '4', '5']);
+      // The deck's pages: the landscape setup in both engines, sixteen fixed page frames (cover, contents, thirteen
+      // chapter pages, back cover), none of the portrait sheet's tables or named page.
+      await expectMktgPrintLandscapePageSetup(frame);
+      await expect(print).toHaveAttribute('data-pages', '16');
+      await expect(print.getByTestId('mktg-print-page')).toHaveCount(16);
+      await expect(print.locator('.kit-chapter')).toHaveCount(0);
       await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
-      await expect(print).toHaveCSS('page', 'mktg-framework');
-      await expect(print.getByTestId('kit-print-type')).toContainText('Typography');
-      // No footer group (Chromium prints an empty page per table for one): the bottom room is the last row's.
-      await expect(print.locator('.kit-chapter > tfoot')).toHaveCount(0);
-      await expect(print.locator('.kit-chapter > tbody > tr:last-child > td')).toHaveCount(5);
-      // calc(10pt + 0.55in) = 66.13px, or the 10pt alone on the page margins; to a tenth (mktgPrintComputedPx).
-      expect(await mktgPrintComputedPx(print.locator('.kit-chapter > tbody > tr:last-child > td').first(), 'padding-bottom')).toBeCloseTo(
-        browserName === 'webkit' ? 13.333 : 66.133,
-        1
-      );
+      await expect(print.getByTestId('kit-print-page').filter({ has: print.locator('[data-title="Typography"]') })).toContainText('Montserrat');
     } else {
+      await expectMktgPrintPageSetup(frame, print, browserName);
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
       await expectMktgPrintCover(frame.getByTestId('mktg-framework-print-cover'));
       // Each section prints in a sheet whose head repeats the page's top room in Chromium (the @page margin is 0: no

@@ -85,7 +85,9 @@ export function mktgPrintElView(el: MktgPrintPageEl): MktgPrintPageElView {
   const style = mktgPageBoxStyle(el.box);
   if (el.t !== 'shape') return { el, style, text: null };
   if (el.fill) style['background-color'] = el.fill;
-  if (el.line) style['box-shadow'] = `inset 0 0 0 ${mktgPagePt(el.line.weight)} ${el.line.color}`;
+  // A solid outline as an inset shadow (no box growth, no corner gap); a dashed one as a border, which a shadow cannot draw.
+  if (el.line?.dash) style['border'] = `${mktgPagePt(el.line.weight)} dashed ${el.line.color}`;
+  else if (el.line) style['box-shadow'] = `inset 0 0 0 ${mktgPagePt(el.line.weight)} ${el.line.color}`;
   return { el, style, text: el.text ? mktgPrintRichView(el.text) : null };
 }
 

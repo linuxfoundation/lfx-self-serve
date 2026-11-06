@@ -73,13 +73,13 @@
     }
     @case ('image') {
       <div class="pp-box pp-image" [style]="view.style" [attr.data-testid]="testid">
-        <img [src]="view.el.src" [alt]="view.el.alt" [style.filter]="view.el.filter ?? ''" />
+        <img [src]="view.el.src" [alt]="view.el.alt" [style.filter]="view.el.filter ?? ''" [style.transform]="view.el.transform ?? ''" />
       </div>
     }
     @case ('slot') {
       <div class="pp-box pp-slot" [style]="view.style" [attr.data-slot]="view.el.slot" [attr.data-testid]="testid">
         @if (slotTemplates().get(view.el.slot); as slot) {
-          <ng-container *ngTemplateOutlet="slot" />
+          <ng-container *ngTemplateOutlet="slot; context: { $implicit: view.el.context ?? {} }" />
         }
       </div>
     }

@@ -55,10 +55,11 @@ export interface MktgPrintRich {
 /** The shapes the page plan draws. */
 export type MktgPrintPageShape = 'TEXT_BOX' | 'RECTANGLE' | 'ROUND_RECTANGLE' | 'ELLIPSE';
 
-/** A shape's outline: its colour and weight (pt). */
+/** A shape's outline: its colour and weight (pt); `dash` draws it dashed (the clear-space frame, a partner logo's slot). */
 export interface MktgPrintPageLine {
   color: string;
   weight: number;
+  dash?: boolean;
 }
 
 /** A shape (a text box, a filled rectangle, a pill) in its box; `text` is fitted to the box before it is placed. */
@@ -80,6 +81,8 @@ export interface MktgPrintPageImageEl {
   alt: string;
   /** CSS filter on the image ('' to draw it as it is). */
   filter?: string;
+  /** A CSS transform on the image, for a distortion shown on purpose (the watchouts' stretched and rotated lockup). */
+  transform?: string;
 }
 
 /**
@@ -91,6 +94,8 @@ export interface MktgPrintPageSlotEl {
   t: 'slot';
   box: MktgPrintPageBox;
   slot: string;
+  /** What the document's template for the slot receives as its context (one template, many boxes: an icon's index and ink). */
+  context?: Record<string, string | number | boolean>;
 }
 
 export type MktgPrintPageEl = MktgPrintPageShapeEl | MktgPrintPageImageEl | MktgPrintPageSlotEl;

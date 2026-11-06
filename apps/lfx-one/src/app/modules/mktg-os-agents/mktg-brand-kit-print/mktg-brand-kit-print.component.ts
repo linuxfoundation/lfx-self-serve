@@ -1,64 +1,62 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, input } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { BrandKitBookView, MktgPrintBrand } from '@lfx-one/shared/interfaces';
+import { BRAND_KIT_ICON_SAMPLES, MKTG_PRINT_BRAND_KIT_ICON_SLOT } from '@lfx-one/shared/constants';
+import { BrandKitBookView, MktgPrintBrand, MktgPrintPage, MktgPrintPageLook } from '@lfx-one/shared/interfaces';
+import { buildBrandKitPrintPages, mktgPrintBrandKitCover, mktgPrintPageLook } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
-import { brandKitInkOnAccent, brandKitIsLight, brandKitLabelInk } from '@lfx-one/shared/utils';
 import { distinctUntilChanged, filter } from 'rxjs';
-import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
-import { MktgPrintChapterHeaderComponent } from '../components/mktg-print-chapter-header/mktg-print-chapter-header.component';
-import { MktgBrandKitIconSamplesComponent } from '../components/mktg-brand-kit-icon-samples/mktg-brand-kit-icon-samples.component';
+import { MktgBrandKitIconComponent } from '../components/mktg-brand-kit-icon/mktg-brand-kit-icon.component';
+import { MktgPrintBackCoverComponent } from '../components/mktg-print-back-cover/mktg-print-back-cover.component';
+import { MktgPrintCoverComponent } from '../components/mktg-print-cover/mktg-print-cover.component';
+import { MktgPrintPageSlotDirective } from '../components/mktg-print-page/mktg-print-page-slot.directive';
+import { MktgPrintPageComponent } from '../components/mktg-print-page/mktg-print-page.component';
 
-/** Native portrait text, shared by family and standalone PDFs; never a scaled book plate. */
+/**
+ * The Brand Kit as Download PDF prints it: the deck's pages (marketing-os-agents
+ * `agents/slides-export` kit-book.ts), one landscape page per slide, in the
+ * deck's order with its headings and numbers — the cover, the contents, the
+ * thirteen chapter pages (`buildBrandKitPrintPages`, the shared page plan the
+ * Slides export builds from) and the back cover, each on the page shell
+ * (`lfx-mktg-print-page`) in the kit's inks and typeface. Inside a larger
+ * document (the family PDF) `firstPage` numbers the cover and `backCover`
+ * drops the kit's own back cover. The kit's data path is unchanged: the view,
+ * the brand and the project name come in as before, and the kit's typeface
+ * is loaded through the print service.
+ */
 @Component({
   selector: 'lfx-mktg-brand-kit-print',
-  imports: [NgTemplateOutlet, MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent, MktgBrandKitIconSamplesComponent],
+  imports: [MktgBrandKitIconComponent, MktgPrintBackCoverComponent, MktgPrintCoverComponent, MktgPrintPageComponent, MktgPrintPageSlotDirective],
   templateUrl: './mktg-brand-kit-print.component.html',
-  styleUrls: ['../mktg-framework-print/mktg-framework-print.component.scss', './mktg-brand-kit-print.component.scss'],
+  styleUrl: './mktg-brand-kit-print.component.scss',
 })
 export class MktgBrandKitPrintComponent {
   private readonly print = inject(MktgPrintService);
 
+  // === Inputs ===
   public readonly view = input.required<BrandKitBookView>();
   public readonly brand = input.required<MktgPrintBrand>();
-  /** Project context, never the name embedded in kit content. */
   public readonly projectName = input.required<string>();
-  /** Only the family exporter supplies the document prefix. */
+  /** The family PDF's chapter number for this document; the deck's pages carry none, so it is accepted and not drawn. */
   public readonly number = input('');
-  protected readonly head = computed(() => `${this.projectName()} Brand kit`);
-  protected readonly typeNote = computed(() => {
-    const { summary, note } = this.view().type;
-    const normalize = (text: string) =>
-      text
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-    const intro = normalize(summary);
-    const detail = normalize(note);
-    // Minor editorial differences or a trailing fragment are not a second description.
-    const duplicate =
-      intro &&
-      detail &&
-      (intro.includes(detail) || detail.includes(intro) || (intro.length >= 80 && detail.length >= 80 && intro.slice(0, 80) === detail.slice(0, 80)));
-    return duplicate ? '' : note;
-  });
-  protected readonly typeSource = computed(() => {
-    const source = this.view().type.source.trim();
-    const url = source.match(/https?:\/\/[^\s<>"')]+/i)?.[0];
-    if (!url) return source;
-    try {
-      return `${new URL(url).hostname} site CSS`;
-    } catch {
-      return 'Site CSS';
-    }
-  });
-  protected readonly specimens = this.initSpecimens();
-  protected readonly colourways = this.initColourways();
-  protected readonly usageRows = this.initUsageRows();
-  protected readonly contrastGroups = this.initContrastGroups();
+  /** The page number of the cover in the document that holds the kit (1 when the kit prints alone). */
+  public readonly firstPage = input(1);
+  /** Whether the kit's own back cover prints (false inside a document with a back cover of its own). */
+  public readonly backCover = input(true);
+
+  // === The pages ===
+  protected readonly look = computed<MktgPrintPageLook>(() => mktgPrintPageLook(this.brand()));
+  protected readonly cover = computed(() => mktgPrintBrandKitCover(this.view(), this.projectName()));
+  protected readonly pages = computed<MktgPrintPage[]>(() =>
+    buildBrandKitPrintPages(this.view(), this.brand(), this.projectName(), { firstPage: this.firstPage() })
+  );
+  protected readonly pageCount = computed(() => 1 + this.pages().length + (this.backCover() ? 1 : 0));
+  /** The back cover's title: the brand line, else the project name (the deck's back cover). */
+  protected readonly backTitle = computed(() => this.view().voice.line || this.projectName());
+  protected readonly icons = BRAND_KIT_ICON_SAMPLES;
+  protected readonly iconSlot = MKTG_PRINT_BRAND_KIT_ICON_SLOT;
 
   public constructor() {
     toObservable(computed(() => this.view().fontUrl))
@@ -68,82 +66,5 @@ export class MktgBrandKitPrintComponent {
         takeUntilDestroyed()
       )
       .subscribe((url) => this.print.ensureFontStylesheet(url));
-  }
-
-  private initContrastGroups() {
-    return computed(() => {
-      const rows = this.view().contrast;
-      if (rows.length <= 12) return [rows];
-      // Each fragment has at least three rows; absorb a one/two-row remainder.
-      const groups = [];
-      for (let index = 0; index < rows.length; ) {
-        const size = rows.length - index <= 5 ? rows.length - index : 3;
-        groups.push(rows.slice(index, index + size));
-        index += size;
-      }
-      return groups;
-    });
-  }
-
-  private initColourways() {
-    return computed(() =>
-      this.view()
-        .colorways.map((row, index) => ({
-          ...row,
-          groundLabel: this.view().logo.colorways[index]?.ground ?? row.ground,
-          logoLabel: this.view().logo.colorways[index]?.logo ?? '',
-        }))
-        .filter((row) => !!row.logo?.src)
-    );
-  }
-
-  private initUsageRows() {
-    return computed(() => {
-      const view = this.view();
-      const brand = this.brand();
-      const samples = view.usageTiles.map((tile, index) => {
-        const example = view.usage.examples[index];
-        const label = example?.ground.trim().toLowerCase() ?? '';
-        let ground = view.palette.find((entry) => entry.name.toLowerCase() === label || entry.hex.toLowerCase() === label)?.hex;
-        if (/^#[0-9a-f]{6}$/i.test(label)) ground = label;
-        if (label === 'accent') ground = brand.accent;
-        if (label === 'tint') ground = brand.tint;
-        if (label === 'white' || label === 'light') ground = 'white';
-        ground ??= tile.dark ? brand.dark : 'white';
-        const hex = /^#[0-9a-f]{6}$/i.test(ground);
-        const light = ground === 'white' || ground === brand.tint || (hex && brandKitIsLight(ground));
-        // On the accent, the renderer's rule (one shared helper, the contrast table's functions): white ink and the
-        // reversed logo only when white reaches AA there, else the kit's dark and the full-colour lockup. A kit whose
-        // accent is its dark keeps its dark samples.
-        const onAccent = hex && ground.toLowerCase() === brand.accent.toLowerCase() && ground.toLowerCase() !== brand.dark.toLowerCase();
-        let ink = hex ? brandKitLabelInk(ground, brand.ink) : brand.ink;
-        let logo = light ? brand.logoOnLight : brand.logoOnDark;
-        if (onAccent) {
-          ink = brandKitInkOnAccent(ground, brand.dark);
-          logo = ink === 'white' ? brand.logoOnDark : brand.logoOnLight;
-        }
-        return {
-          ...tile,
-          ground,
-          ink,
-          logo,
-          name: example?.name ?? tile.caption,
-          format: example?.format ?? '',
-        };
-      });
-      return samples.filter((_, index) => index % 2 === 0).map((_, index) => samples.slice(index * 2, index * 2 + 2));
-    });
-  }
-
-  private initSpecimens() {
-    return computed(() =>
-      this.view().type.scale.map((step) => ({
-        ...step,
-        // Preserve source metrics in the caption, but fit the specimen to a portrait text column.
-        printSize: `${Math.min(step.size * 0.75, 32)}pt`,
-        printLeading: Math.max(step.line_height / step.size, 1.1),
-        transform: step.caps ? 'uppercase' : 'none',
-      }))
-    );
   }
 }
