@@ -38,7 +38,6 @@ import {
 } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
-import { readOrgEventsServedAttribution } from '../helpers/org-events-coverage.helper';
 import { distinctFoundationOptions, orgEventsAttendeePredicate, orgEventsRangeWindow, orgEventsSpeakerPredicate } from '../helpers/org-events-filters.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
@@ -64,20 +63,19 @@ export class OrgPeopleEventAttendeesService {
       return { ...EMPTY_ORG_EVENT_ATTENDEES_RESPONSE };
     }
 
-    const { range, participation } = filters;
-    const servedAttribution = await readOrgEventsServedAttribution(accountId, filters.attribution);
+    const { range, attribution, participation } = filters;
 
-    // Only the filters that select rows are in the key. `v5` (lfx-self-serve#5158): the rows are everyone the selection
-    // credits and no longer carry HAS_COMPANY_EMAIL; a `v4` entry holds a different shape and must miss.
+    // Only the filters that select rows are in the key. `v6` (lfx-self-serve#5315): Self-reported only reads the person-level
+    // rule from ORG_EVENT_PARTICIPATION_RANGED, so a `v5` self_reported entry may hold a different row set and must miss.
     const [{ detailRows, foundationRows, eventRows }, summary] = await Promise.all([
       withOrgCompactCache(
         accountId,
-        `people-event-attendees:v5:${range}:${servedAttribution}:${participation}`,
+        `people-event-attendees:v6:${range}:${attribution}:${participation}`,
         VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
-        () => this.fetchEventAttendeesRaw(accountId, range, servedAttribution, participation),
+        () => this.fetchEventAttendeesRaw(accountId, range, attribution, participation),
         { encode: encodeEventAttendeesRaw, decode: decodeEventAttendeesRaw, accept: isCompactEventAttendeesRaw }
       ),
-      this.readSummary(accountId, range, servedAttribution, participation),
+      this.readSummary(accountId, range, attribution, participation),
     ]);
 
     const details: OrgEventAttendeeDetailRow[] = detailRows.map((row) => ({
@@ -109,7 +107,7 @@ export class OrgPeopleEventAttendeesService {
       eventName: row.EVENT_NAME,
     }));
 
-    return { accountId, details, summary, servedAttribution, foundationOptions, eventOptions };
+    return { accountId, details, summary, foundationOptions, eventOptions };
   }
 
   /** The dbt summary row for (range, attribution, participation); zeros when the account has none. Read by the Event Attendees tab and the All Employees Event Attendees tile, so both show the same number. */
@@ -151,36 +149,54 @@ export class OrgPeopleEventAttendeesService {
     participation: OrgEventsFilters['participation']
   ): Promise<EventAttendeesRaw> {
     // One row set, three projections: the rows, and the dropdown options narrowed to what the rows hold. Everyone the
-    // attribution and participation credit (lfx-self-serve#5158), ended events only, inside the range window.
+    // attribution and participation credit (lfx-self-serve#5158), ended events only, inside the range window. Self-reported
+    // only is person-level, like its summary row (lfx-self-serve#5315): dbt decides it once per (range, person) in
+    // ORG_EVENT_PARTICIPATION_RANGED, which the summary counts too, and the rows of a person it does not credit are not listed.
+    // ORG_EVENT_PARTICIPATION_RANGED is a view over ORG_EVENT_PARTICIPATION, so the join reads one snapshot: PARTICIPANT_REF is
+    // build-local for email-keyed identities and must never be matched across separately built tables.
+    // The list is attendee-based: a self-reported speaker who is an Employee match attendee is in the summary's speaker
+    // count but not in these rows.
+    const selfReported = attribution === 'self_reported';
     const where = `
-      WHERE ACCOUNT_ID = ?
-        AND ${orgEventsAttendeePredicate(attribution, participation)}
-        AND EVENT_DATE < CURRENT_DATE()
-        ${orgEventsRangeWindow('EVENT_DATE', range)}
+      WHERE p.ACCOUNT_ID = ?
+        AND p.${orgEventsAttendeePredicate(attribution, participation)}
+        AND p.EVENT_DATE < CURRENT_DATE()
+        ${orgEventsRangeWindow('p.EVENT_DATE', range)}
+        ${selfReported ? `AND r.${orgEventsAttendeePredicate(attribution, participation)}` : ''}
     `;
-    const from = 'FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION';
-    const binds = [accountId];
+    const from = selfReported
+      ? `FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION p
+         INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_RANGED r
+           ON r.ACCOUNT_ID = p.ACCOUNT_ID AND r.PARTICIPANT_REF = p.PARTICIPANT_REF AND r.TIME_RANGE = ?`
+      : 'FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION p';
+    // Speakers follow the summary's speaker rule: under Self-reported only, someone who spoke with an Employee match anywhere
+    // in the range is not a self-reported speaker.
+    const speaker = selfReported
+      ? `p.${orgEventsSpeakerPredicate(attribution)} AND r.${orgEventsSpeakerPredicate(attribution)}`
+      : `p.${orgEventsSpeakerPredicate(attribution)}`;
+    // The join placeholder precedes the WHERE one.
+    const binds = selfReported ? [range, accountId] : [accountId];
 
     const [detail, foundations, events] = await Promise.all([
       this.snowflakeService.execute<OrgEventParticipationRow>(
-        `SELECT PARTICIPANT_REF, PERSON_KEY, DISPLAY_NAME, JOB_TITLE, EVENT_ID, EVENT_NAME, EVENT_LOCATION, EVENT_CITY, EVENT_COUNTRY,
-                EVENT_URL, EVENT_START_DATE, EVENT_END_DATE, FOUNDATION_ID, FOUNDATION_NAME,
-                CASE WHEN ${orgEventsSpeakerPredicate(attribution)} THEN TRUE ELSE FALSE END AS IS_SPEAKER
+        `SELECT p.PARTICIPANT_REF, p.PERSON_KEY, p.DISPLAY_NAME, p.JOB_TITLE, p.EVENT_ID, p.EVENT_NAME, p.EVENT_LOCATION, p.EVENT_CITY,
+                p.EVENT_COUNTRY, p.EVENT_URL, p.EVENT_START_DATE, p.EVENT_END_DATE, p.FOUNDATION_ID, p.FOUNDATION_NAME,
+                CASE WHEN ${speaker} THEN TRUE ELSE FALSE END AS IS_SPEAKER
          ${from} ${where}
-         ORDER BY PARTICIPANT_REF ASC, EVENT_DATE DESC NULLS LAST, EVENT_ID ASC`,
+         ORDER BY p.PARTICIPANT_REF ASC, p.EVENT_DATE DESC NULLS LAST, p.EVENT_ID ASC`,
         binds
       ),
       this.snowflakeService.execute<EventAttendeeFoundationOptionRow>(
-        `SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME ${from} ${where}
-           AND FOUNDATION_ID IS NOT NULL AND FOUNDATION_NAME IS NOT NULL
-         ORDER BY FOUNDATION_NAME ASC`,
+        `SELECT DISTINCT p.FOUNDATION_ID, p.FOUNDATION_NAME ${from} ${where}
+           AND p.FOUNDATION_ID IS NOT NULL AND p.FOUNDATION_NAME IS NOT NULL
+         ORDER BY p.FOUNDATION_NAME ASC`,
         binds
       ),
       // Most-recent-first, matching the prototype's flat list.
       this.snowflakeService.execute<EventAttendeeEventOptionRow>(
-        `SELECT DISTINCT EVENT_ID, EVENT_NAME, EVENT_DATE ${from} ${where}
-           AND EVENT_ID IS NOT NULL AND EVENT_NAME IS NOT NULL
-         ORDER BY EVENT_DATE DESC NULLS LAST, EVENT_NAME ASC`,
+        `SELECT DISTINCT p.EVENT_ID, p.EVENT_NAME, p.EVENT_DATE ${from} ${where}
+           AND p.EVENT_ID IS NOT NULL AND p.EVENT_NAME IS NOT NULL
+         ORDER BY p.EVENT_DATE DESC NULLS LAST, p.EVENT_NAME ASC`,
         binds
       ),
     ]);

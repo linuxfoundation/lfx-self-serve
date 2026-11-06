@@ -25,7 +25,6 @@ import type {
 import { effectiveOrgEventsParticipation, formatDateToUTC, isObjectRow, isObjectRowArray, normalizeToUrl } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
-import { readOrgEventsServedAttribution } from '../helpers/org-events-coverage.helper';
 import {
   distinctFoundationOptions,
   orgEventsAttendeePredicate,
@@ -78,16 +77,14 @@ export class OrgLensEventsService {
     // `false`, so an early return that never awaits this promise cannot reject unhandled.
     const includeGoal = this.callerIsLFStaff(req);
 
-    let servedAttribution: OrgEventsAttribution = attribution;
     let rows: OrgEventRow[];
     try {
-      servedAttribution = await readOrgEventsServedAttribution(accountId, attribution);
       // The Upcoming tab always counts registrations: nobody has attended an event that has not started.
       const servedParticipation = effectiveOrgEventsParticipation(participation, isPast);
-      const countColumn = orgEventsCountColumn(servedAttribution, servedParticipation);
-      const footprintColumn = orgEventsFootprintColumn(servedAttribution);
+      const countColumn = orgEventsCountColumn(attribution, servedParticipation);
+      const footprintColumn = orgEventsFootprintColumn(attribution);
       // The "Registered" status means the organization registered someone, whatever Count is showing.
-      const registeredColumn = orgEventsCountColumn(servedAttribution, 'registered');
+      const registeredColumn = orgEventsCountColumn(attribution, 'registered');
 
       const { sql, binds } = this.buildListQuery({
         accountId,
@@ -108,7 +105,7 @@ export class OrgLensEventsService {
 
       rows = await withOrgCache(
         accountId,
-        `events:v5:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder, servedAttribution, servedParticipation, eventScope, foundation, isPast ? range : null])}`,
+        `events:v5:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder, attribution, servedParticipation, eventScope, foundation, isPast ? range : null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventRow>(sql, binds)).rows,
         isEventRowArray
@@ -116,7 +113,7 @@ export class OrgLensEventsService {
     } catch (error) {
       // Every outage exit shapes the response identically; #4408 turns these into a labelled-unavailable surface.
       logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', { err: error, account_id: accountId });
-      return { data: [], total: 0, pageSize, offset, servedAttribution };
+      return { data: [], total: 0, pageSize, offset };
     }
 
     const total = rows.length > 0 ? rows[0].TOTAL_RECORDS : 0;
@@ -125,7 +122,7 @@ export class OrgLensEventsService {
 
     logger.debug(req, 'get_org_lens_events', 'Fetched org events', { count: data.length, total });
 
-    return { data, total, pageSize, offset, servedAttribution };
+    return { data, total, pageSize, offset };
   }
 
   /**
@@ -135,11 +132,9 @@ export class OrgLensEventsService {
   public async getOrgEventsSummary(req: Request, accountId: string, filters: OrgEventsFilters): Promise<OrgEventsSummary> {
     logger.debug(req, 'get_org_lens_events_summary', 'Building org events summary query', { account_id: accountId });
 
-    let servedAttribution: OrgEventsAttribution = filters.attribution;
     let row: OrgEventsSummaryRow | undefined;
     try {
-      servedAttribution = await readOrgEventsServedAttribution(accountId, filters.attribution);
-      const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn(servedAttribution)} = TRUE` : '';
+      const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn(filters.attribution)} = TRUE` : '';
       const foundationFilter = filters.foundation ? 'AND oe.FOUNDATION_ID = ?' : '';
       const sql = `
         SELECT
@@ -154,7 +149,7 @@ export class OrgLensEventsService {
 
       const rows = await withOrgCache(
         accountId,
-        `events-summary:v2:${paramSignature([servedAttribution, filters.scope, filters.foundation, filters.range])}`,
+        `events-summary:v2:${paramSignature([filters.attribution, filters.scope, filters.foundation, filters.range])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventsSummaryRow>(sql, binds)).rows,
         isObjectRowArray
@@ -165,12 +160,12 @@ export class OrgLensEventsService {
         err: error,
         account_id: accountId,
       });
-      return { totalEvents: 0, pastEvents: 0, upcomingEvents: 0, servedAttribution };
+      return { totalEvents: 0, pastEvents: 0, upcomingEvents: 0 };
     }
 
     const pastEvents = row?.PAST_EVENTS ?? 0;
     const upcomingEvents = row?.UPCOMING_EVENTS ?? 0;
-    const summary: OrgEventsSummary = { totalEvents: pastEvents + upcomingEvents, pastEvents, upcomingEvents, servedAttribution };
+    const summary: OrgEventsSummary = { totalEvents: pastEvents + upcomingEvents, pastEvents, upcomingEvents };
 
     logger.debug(req, 'get_org_lens_events_summary', 'Fetched org events summary', { ...summary });
 
@@ -184,8 +179,7 @@ export class OrgLensEventsService {
     filters: Pick<OrgEventsFilters, 'attribution' | 'scope'>
   ): Promise<OrgEventFoundationsResponse> {
     try {
-      const servedAttribution = await readOrgEventsServedAttribution(accountId, filters.attribution);
-      const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn(servedAttribution)} = TRUE` : '';
+      const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn(filters.attribution)} = TRUE` : '';
       const sql = `
         SELECT DISTINCT oe.FOUNDATION_ID, oe.FOUNDATION_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
@@ -197,7 +191,7 @@ export class OrgLensEventsService {
       `;
       const rows = await withOrgCache(
         accountId,
-        `events-foundations:v2:${paramSignature([servedAttribution, filters.scope])}`,
+        `events-foundations:v2:${paramSignature([filters.attribution, filters.scope])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<EventAttendeeFoundationOptionRow>(sql, [accountId])).rows,
         isObjectRowArray
@@ -222,10 +216,7 @@ export class OrgLensEventsService {
     const { searchQuery } = options;
     logger.debug(req, 'get_event_attendees', 'Fetching event attendees', { account_id: accountId, event_id: eventId });
 
-    let servedAttribution: OrgEventsAttribution = options.attribution;
     try {
-      servedAttribution = await readOrgEventsServedAttribution(accountId, options.attribution);
-
       const header = await this.readDrawerHeader(accountId, eventId);
       const servedParticipation = effectiveOrgEventsParticipation(options.participation, header?.IS_PAST_EVENT === true);
 
@@ -235,14 +226,14 @@ export class OrgLensEventsService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION
         WHERE ACCOUNT_ID = ?
           AND EVENT_ID = ?
-          AND ${orgEventsAttendeePredicate(servedAttribution, servedParticipation)}
+          AND ${orgEventsAttendeePredicate(options.attribution, servedParticipation)}
         ORDER BY DISPLAY_NAME ASC NULLS LAST, PARTICIPANT_REF ASC
       `;
 
       // `v6` (lfx-self-serve#5158): everyone the option credits, not only the listable; a `v5` entry is the narrower row set.
       const attendeeRows = await withOrgCache(
         accountId,
-        `event-attendees:v6:${paramSignature([eventId, servedAttribution, servedParticipation])}`,
+        `event-attendees:v6:${paramSignature([eventId, options.attribution, servedParticipation])}`,
         VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventAttendeesDrawerRow>(sql, [accountId, eventId])).rows,
         isObjectRowArray
@@ -265,7 +256,6 @@ export class OrgLensEventsService {
         eventId,
         eventName: header?.EVENT_NAME ?? '',
         total: data.length,
-        servedAttribution,
         data,
       };
     } catch (error) {

@@ -115,7 +115,7 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ totalEvents: 12, pastEvents: 3, upcomingEvents: 9, servedAttribution: 'verified' }),
+      body: JSON.stringify({ totalEvents: 12, pastEvents: 3, upcomingEvents: 9 }),
     })
   );
 
@@ -182,7 +182,6 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
         total: 12,
         pageSize: 10,
         offset,
-        servedAttribution: 'verified',
       }),
     });
   });
@@ -195,7 +194,6 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
         eventId: 'event-1',
         eventName: 'Open Source Summit',
         total: 3,
-        servedAttribution: 'verified',
         // Opaque positional ids, as the server sends them — the address never reaches the client. Everyone credited is listed.
         data: [
           { contactId: '0', name: 'Jane Doe', jobTitle: null },
@@ -401,12 +399,12 @@ test.describe('Org Events Dashboard', () => {
         url.searchParams.get('isPast') === 'true' &&
         url.searchParams.get('range') === '90d' &&
         url.searchParams.get('participation') === 'attended' &&
-        url.searchParams.get('attribution') === 'account' &&
+        url.searchParams.get('attribution') === 'self_reported' &&
         url.searchParams.get('eventScope') === 'all' &&
         url.searchParams.get('foundation') === 'foundation-cncf'
       );
     });
-    await page.goto(`${ORG_EVENTS_URL}?tab=past&range=90d&participation=attended&attribution=account&eventScope=all&foundation=foundation-cncf`, {
+    await page.goto(`${ORG_EVENTS_URL}?tab=past&range=90d&participation=attended&attribution=self_reported&eventScope=all&foundation=foundation-cncf`, {
       waitUntil: 'domcontentloaded',
     });
     skipWhenAuthMissing(page);
@@ -420,20 +418,24 @@ test.describe('Org Events Dashboard', () => {
     await expect(page).toHaveURL(/tab=past/);
   });
 
-  test('says so when Counted by fell back to the account', async ({ page }) => {
-    await gotoOrgEventsPage(page);
-    await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('org-events-attribution-unavailable')).toHaveCount(0);
+  // lfx-self-serve#5315 retired Company email and Account on registration: an old link reads with Employee match, the default.
+  for (const retired of ['company_email', 'account']) {
+    test(`falls back to Employee match for the retired ?attribution=${retired}`, async ({ page }) => {
+      await seedSelectedOrgCookie(page);
+      await stubOrgEventsRoutes(page);
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
 
-    // The notice follows the list response itself, not the tiles' summary read.
-    await page.route(`**/api/orgs/${MOCK_ACCOUNT_ID}/lens/events?**`, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ data: [], total: 0, pageSize: 10, offset: 0, servedAttribution: 'account' }),
-      })
-    );
-    await page.goto(`${ORG_EVENTS_URL}?tab=past&attribution=company_email`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('org-events-attribution-unavailable')).toContainText('No company-email data is available');
-  });
+      const pastRequest = page.waitForRequest((request) => {
+        const url = new URL(request.url());
+        return url.pathname.endsWith(`/api/orgs/${MOCK_ACCOUNT_ID}/lens/events`) && url.searchParams.get('isPast') === 'true';
+      });
+      await page.goto(`${ORG_EVENTS_URL}?tab=past&attribution=${retired}`, { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+      const request = await pastRequest;
+
+      expect(new URL(request.url()).searchParams.get('attribution')).toBe('verified');
+      await expect(page.getByTestId('org-events-more-filters-toggle')).not.toContainText('(1)');
+    });
+  }
 });

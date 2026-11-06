@@ -292,8 +292,9 @@ export const VALKEY_CACHE = {
     // carried over from `v2`. All-time, all attribution: the largest real org is about 10.7k rows (~0.9 MB by the same SQL
     // estimate); only the 'Individual - No Account' bucket (~81k rows) exceeds the cap, and an over-cap value skips the
     // cache and reads directly. `v5` drops the per-row HAS_COMPANY_EMAIL flag and adds the `verified` attribution (a
-    // subset of `all`), so no value is larger than `v4`; the cap carries over.
-    'org-lens-sf:v1:people-event-attendees:v5': 2 * 1_048_576,
+    // subset of `all`), so no value is larger than `v4`; the cap carries over. `v6` (lfx-self-serve#5315) reads Self-reported
+    // only through dbt's person-level ORG_EVENT_PARTICIPATION_RANGED (still a subset of `all`); same rows otherwise, the cap carries over.
+    'org-lens-sf:v1:people-event-attendees:v6': 2 * 1_048_576,
     // `v4` (lfx-self-serve#4159) is read per range over enrollments of any age (lf-dbt#3118 lifted the 12-month cap).
     // Measured 2026-10-27 on the dev build with the same SQL size estimate and × 1.06 calibration as `people-all:v4`:
     // largest value 6,782,106 bytes (largest org measured, All time; the next two 5.39 MB and 3.20 MB). Only All time on those three

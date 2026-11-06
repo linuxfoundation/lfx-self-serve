@@ -190,7 +190,7 @@ describe('OrgLensPeopleController All Employees Event Attendees tile (lfx-self-s
     readEventAttendeesSummary.mockResolvedValue({ attendeesCount: 486, speakersCount: 9, eventsCount: 12, foundationsCount: 3 });
   });
 
-  it('reads the summary row of the range at the Event Attendees defaults (company email or employee, registered or attended) and serves its Attendees count', async () => {
+  it('reads the summary row of the range at the Event Attendees defaults (Employee match, registered or attended) and serves its Attendees count', async () => {
     const stored = await respond({ range: '90d' });
     const live = await respond({ live: 'true', range: '730d' });
 

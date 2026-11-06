@@ -16,7 +16,6 @@ import {
   ORG_MAINTAINER_ROLES_LABEL,
   ORG_DEFAULT_PROJECT_SCOPE_LABEL,
   ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE,
-  ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE,
   ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
   ORG_EVENTS_SPEAKERS_CAPTION_PHRASE,
   ORG_LENS_DEFAULT_VIEW_PHRASE,
@@ -41,7 +40,6 @@ import type {
   OrgFoundationCoverageResponse,
   OrgInvolvementContributorsMonthlyResponse,
   OrgInvolvementEventAttendanceMonthlyResponse,
-  OrgEventsAttribution,
   OrgInvolvementMaintainersMonthlyResponse,
   OrgTrainingStats,
   OrgTrainingStatsQuery,
@@ -176,7 +174,6 @@ export class OrgOverviewInvolvementComponent {
         accountName: '',
         totalAttended: 0,
         totalSpeakers: 0,
-        servedAttribution: DEFAULT_ORG_EVENTS_ATTRIBUTION,
         attendeesMonthlyData: [],
         speakersMonthlyData: [],
         monthlyLabels: [],
@@ -330,10 +327,7 @@ export class OrgOverviewInvolvementComponent {
       value: data.totalAttended.toString(),
       subtitle: ORG_OVERVIEW_EVENT_ATTENDEES_SUBTITLE,
       chartCaption: OrgOverviewInvolvementComponent.eventsWindowCaption(data.monthlyLabels),
-      tooltipText: OrgOverviewInvolvementComponent.eventsTooltip(
-        ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[DEFAULT_ORG_EVENTS_PARTICIPATION],
-        data.servedAttribution
-      ),
+      tooltipText: OrgOverviewInvolvementComponent.eventsTooltip(ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[DEFAULT_ORG_EVENTS_PARTICIPATION]),
       chartOptions: this.createLineChartOptions('Event attendees'),
       chartData:
         data.attendeesMonthlyData.length > 0
@@ -362,7 +356,7 @@ export class OrgOverviewInvolvementComponent {
       value: data.totalSpeakers.toString(),
       subtitle: ORG_OVERVIEW_EVENT_SPEAKERS_SUBTITLE,
       chartCaption: OrgOverviewInvolvementComponent.eventsWindowCaption(data.monthlyLabels),
-      tooltipText: OrgOverviewInvolvementComponent.eventsTooltip(ORG_EVENTS_SPEAKERS_CAPTION_PHRASE, data.servedAttribution),
+      tooltipText: OrgOverviewInvolvementComponent.eventsTooltip(ORG_EVENTS_SPEAKERS_CAPTION_PHRASE),
       chartOptions: this.createLineChartOptions('Event speakers'),
       chartData:
         data.speakersMonthlyData.length > 0
@@ -443,10 +437,9 @@ export class OrgOverviewInvolvementComponent {
     return config;
   }
 
-  /** Overview Events tooltip: what is counted, by whom, the distinct-people rule, and the fallback note when Counted by was not available. */
-  private static eventsTooltip(countPhrase: string, served: OrgEventsAttribution): string {
-    const fallback = served === DEFAULT_ORG_EVENTS_ATTRIBUTION ? '' : ` ${ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE}`;
-    return `${countPhrase} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[served]} ${ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE}${fallback}`;
+  /** Overview Events tooltip: what is counted, by whom (the pinned Employee match default), and the distinct-people rule. */
+  private static eventsTooltip(countPhrase: string): string {
+    return `${countPhrase} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[DEFAULT_ORG_EVENTS_ATTRIBUTION]} ${ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE}`;
   }
 
   /** Events chart caption: the points are distinct people per month. */

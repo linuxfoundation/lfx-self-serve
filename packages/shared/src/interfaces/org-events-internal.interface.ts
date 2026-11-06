@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgEventsAttributionColumnSuffix } from './org-events-filters.interface';
-
 // Internal Snowflake query-row shapes for the Org Lens Events backend service.
 // These mirror raw column names returned by the queries in org-lens-events.service.ts.
 // They live in the shared package because AGENTS.md prohibits module-level interfaces
@@ -57,11 +55,6 @@ export interface OrgEventSpeakersDrawerRow {
   EVENT_NAME: string | null;
 }
 
-/** Row of the coverage read: one flag per account, repeated on every `ORG_EVENT_PARTICIPATION_SUMMARY` row. */
-export interface OrgEventsCoverageRow {
-  HAS_COMPANY_EMAIL_COVERAGE: boolean | null;
-}
-
 /** Person × event row from `ORG_EVENT_PARTICIPATION` (attendee predicate, ended events, range window); everyone credited is listed. */
 export interface OrgEventParticipationRow {
   PARTICIPANT_REF: number;
@@ -78,7 +71,7 @@ export interface OrgEventParticipationRow {
   EVENT_END_DATE: Date | string | null;
   FOUNDATION_ID: string | null;
   FOUNDATION_NAME: string | null;
-  /** `true` when the person has an accepted talk the served attribution credits (projected through the speaker predicate). */
+  /** `true` when the person has an accepted talk the picked attribution credits (the speaker predicate); under `self_reported`, `false` for anyone who is an Employee match speaker anywhere in the range. */
   IS_SPEAKER: boolean | null;
 }
 
@@ -110,19 +103,12 @@ export interface EventAttendeesRaw {
   eventRows: EventAttendeeEventOptionRow[];
 }
 
-/** A per-attribution metric column of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview reads. */
-export type OrgEventAttendanceMetricColumn =
-  | `ATTENDEES_REGISTERED_${OrgEventsAttributionColumnSuffix}`
-  | `ATTENDEES_ALL_${OrgEventsAttributionColumnSuffix}`
-  | `SPEAKERS_${OrgEventsAttributionColumnSuffix}`
-  | `TOTAL_ATTENDEES_REGISTERED_${OrgEventsAttributionColumnSuffix}`
-  | `TOTAL_ATTENDEES_ALL_${OrgEventsAttributionColumnSuffix}`
-  | `TOTAL_SPEAKERS_${OrgEventsAttributionColumnSuffix}`;
+/** A metric column of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview reads: the default (`VERIFIED`) attribution only. */
+export type OrgEventAttendanceMetricColumn = 'ATTENDEES_ALL_VERIFIED' | 'SPEAKERS_VERIFIED' | 'TOTAL_ATTENDEES_ALL_VERIFIED' | 'TOTAL_SPEAKERS_VERIFIED';
 
 /** Row of `ORG_EVENT_PARTICIPATION_MONTHLY` (Overview Event Attendees / Event Speakers cards). */
 export type OrgEventAttendanceMonthlyRow = Record<OrgEventAttendanceMetricColumn, number | null> & {
   ACCOUNT_ID: string;
   ACCOUNT_NAME: string;
   MONTH_START_DATE: Date;
-  HAS_COMPANY_EMAIL_COVERAGE: boolean | null;
 };

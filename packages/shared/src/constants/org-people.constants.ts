@@ -23,7 +23,6 @@ import type {
   PeopleTabConfig,
   PeopleTabId,
 } from '../interfaces';
-import { DEFAULT_ORG_EVENTS_ATTRIBUTION } from './org-events-filters.constants';
 import { ORG_LENS_DEFAULT_TIME_RANGE } from './org-lens-time-range.constants';
 
 /** Org People page tabs in visible order (`all` is the default). */
@@ -231,7 +230,6 @@ export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   accountId: '',
   details: [],
   summary: { attendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 },
-  servedAttribution: DEFAULT_ORG_EVENTS_ATTRIBUTION,
   foundationOptions: [],
   eventOptions: [],
 };

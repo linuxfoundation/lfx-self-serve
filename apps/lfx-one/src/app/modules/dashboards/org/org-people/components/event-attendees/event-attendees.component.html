@@ -87,10 +87,6 @@
     </div>
   </div>
 
-  @if (attributionUnavailable()) {
-    <p class="text-xs text-gray-500" role="status" data-testid="org-people-event-attendees-attribution-unavailable">{{ attributionUnavailableNote }}</p>
-  }
-
   @if (fetchError()) {
     <div role="alert" data-testid="org-people-event-attendees-error">
       <lfx-empty-state
