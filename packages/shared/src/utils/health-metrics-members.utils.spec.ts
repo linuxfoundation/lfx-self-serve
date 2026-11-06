@@ -501,6 +501,9 @@ describe('buildHealthMetricsMembersGrowthView', () => {
       expect(top + 16).toBeLessThanOrEqual(280);
       if (index) expect(top - tops[index - 1]).toBeGreaterThanOrEqual(18);
     });
+    // This year's total is never above the projection, so its label stays below the projection's.
+    const topOf = (key: string): number => view.labels.find((label) => label.key === key)!.topPct;
+    expect(topOf('current')).toBeGreaterThan(topOf('projected'));
   });
 
   it('says in December that the year ends at its total so far, with nothing left to project', () => {

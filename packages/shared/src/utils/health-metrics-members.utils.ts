@@ -1111,10 +1111,12 @@ function separateGrowthEndLabels(labels: HealthMetricsMembersGrowthEndLabel[]): 
   const box = HEALTH_METRICS_MEMBERS_GROWTH_LABEL_BOX;
   const height = HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height;
   const bottom = height - box.heightPx;
+  const placed = new Map(labels.map((label) => [label.key, (label.topPct / 100) * height + box.offsetPx[label.placement]]));
+  // Ordered before clamping, so two labels past the bottom keep the order of their points.
+  const stacked = labels.filter((label) => label.stacks).sort((a, b) => (placed.get(a.key) ?? 0) - (placed.get(b.key) ?? 0));
   // Every label stays inside the plot, so one near zero never sits on the month labels.
-  const tops = new Map(labels.map((label) => [label.key, Math.min(Math.max((label.topPct / 100) * height + box.offsetPx[label.placement], 0), bottom)]));
+  const tops = new Map([...placed].map(([key, value]) => [key, Math.min(Math.max(value, 0), bottom)]));
   const top = (label: HealthMetricsMembersGrowthEndLabel): number => tops.get(label.key) ?? 0;
-  const stacked = labels.filter((label) => label.stacks).sort((a, b) => top(a) - top(b));
   // Down from the top to part them, then back up from the plot's bottom edge for any pushed past it.
   stacked.forEach((label, index) => {
     if (index) tops.set(label.key, Math.max(top(label), top(stacked[index - 1]) + box.heightPx + box.gapPx));
