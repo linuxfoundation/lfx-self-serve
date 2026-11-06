@@ -44,7 +44,15 @@ describe('MktgPrintCoverComponent', () => {
     expect(els[1].querySelector('.pp-rich--end')).not.toBeNull();
     expect(els[4].querySelector('img')?.getAttribute('src')).toBe(brand.logoOnDark?.src);
     expect(els[4].style.top).toBe(mktgPagePt(MKTG_PRINT_PAGE_COVER_LOGO_BOX.y));
+    expect(els[4].style.width).toBe(mktgPagePt(MKTG_PRINT_PAGE_COVER_LOGO_BOX.w));
     expect(els[5].style.backgroundColor).not.toBe('');
+
+    // A document's own lockup frame (the kit's cover sets none: the deck's coverSlide carries no logo).
+    fixture.componentRef.setInput('logoBox', { x: 40, y: 20, w: 120, h: 30 });
+    await fixture.whenStable();
+    const moved = root.querySelectorAll<HTMLElement>('[data-testid="mktg-print-page-el"]')[4];
+    expect(moved.style.top).toBe(mktgPagePt(20));
+    expect(moved.style.width).toBe(mktgPagePt(120));
 
     fixture.componentRef.setInput('topRight', '');
     fixture.componentRef.setInput('footerRight', ' ');

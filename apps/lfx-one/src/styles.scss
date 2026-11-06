@@ -79,6 +79,13 @@
       visibility: visible;
     }
 
+    /* The kit's deck pages (lfx-mktg-print-page frames, named page `mktg-deck`: MKTG_PRINT_DECK_PAGE_NAME) print
+       under this body too; each frame names its own page, so the book's landscape page below never takes them. */
+    .lfx-print-page,
+    .lfx-print-page * {
+      visibility: visible;
+    }
+
     .lfx-brand-kit-book {
       position: absolute;
       inset: 0 auto auto 0;

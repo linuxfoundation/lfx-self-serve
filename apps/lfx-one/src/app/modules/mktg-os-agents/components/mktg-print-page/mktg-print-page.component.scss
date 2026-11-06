@@ -1,21 +1,28 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-/* One fixed frame per printed page (CSS Paged Media Level 3: `@page { size: 11in 8.5in; margin: 0 }` from the
-   print frame, fragmentation by `break-after: page`): fixed dimensions, relative, overflow hidden, absolute
-   children, never sized from the viewport, a percentage height or flex, so the frames paginate the same in
-   Chromium and WebKit, on Letter and on A4. The frame is Letter's width and a hair under A4's height
+/* One fixed frame per printed page (CSS Paged Media Level 3: `@page mktg-deck { size: 11in 8.5in; margin: 0 }`
+   from the print frame, fragmentation by `break-after: page`): fixed dimensions, relative, overflow hidden,
+   absolute children, never sized from the viewport, a percentage height or flex, so the frames paginate the
+   same in Chromium and WebKit, on Letter and on A4. The frame is Letter's width and a hair under A4's height
    (MKTG_PRINT_PAGE_FRAME_PT, 792 × 594pt): a PDF printed to A4 (wider, shorter) would spill a Letter-tall
-   frame onto a blank sheet per page; this one fits both papers whole. */
+   frame onto a blank sheet per page; this one fits both papers whole. Every size here is a custom property the
+   component sets from the shared constants (--pp-frame-w/-h, --pp-slide-h/-top, --pp-inset, --pp-line,
+   --pp-bullet-indent/-x, --pp-caps-tracking), so the CSS follows them.
+   `page: mktg-deck` is MKTG_PRINT_DECK_PAGE_NAME (shared constants), which this sheet cannot read: keep them in
+   step. An element's own page name beats its ancestors', so the frames print on the deck's landscape setup
+   under any print body class (the framework's, the family's and the kit's bodies name their own portrait or
+   book page on the whole document). */
 .lfx-print-page {
   position: relative;
   box-sizing: border-box;
-  width: 792pt;
-  height: 594pt;
+  width: var(--pp-frame-w);
+  height: var(--pp-frame-h);
   overflow: hidden;
   background: white;
-  color: var(--pp-dark);
+  color: var(--pp-ink);
   font-family: var(--pp-font, inherit);
+  page: mktg-deck;
   break-after: page;
   break-inside: avoid;
   print-color-adjust: exact;
@@ -37,8 +44,9 @@
 .lfx-print-page__slide {
   position: absolute;
   left: 0;
-  width: 792pt;
-  height: 445.5pt;
+  top: var(--pp-slide-top);
+  width: var(--pp-frame-w);
+  height: var(--pp-slide-h);
   overflow: hidden;
 }
 
@@ -106,30 +114,40 @@
   justify-content: flex-end;
 }
 
+/* A paragraph takes the block's face and line height: the app's global `p` rules (styles.scss: Inter, the
+   normal leading) match it too and would otherwise set the brand's type aside. */
 .pp-para {
   margin: 0;
+  font: inherit;
+  line-height: inherit;
   white-space: pre-wrap;
 }
 
-/* Capitals letter-spaced as the upstream prototype's eyebrow labels are (.12em). */
+/* Capitals letter-spaced as the upstream prototype's eyebrow labels are (MKTG_PRINT_PAGE_CAPS_TRACKING_EM, .12em;
+   the fit counts it). */
 .pp-para--caps {
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--pp-caps-tracking);
 }
 
 .pp-para--italic {
   font-style: italic;
 }
 
+/* A struck paragraph: the framework's "avoid" phrases, as the deck strikes them. */
+.pp-para--strike {
+  text-decoration: line-through;
+}
+
 /* A bulleted paragraph: the deck's indent (MKTG_PRINT_PAGE_BULLET_INDENT, 18pt on the canvas, scaled by the
-   shell's --mktg-page-scale), the bullet in the indent. */
+   shell's scale property), the bullet in the indent (MKTG_PRINT_PAGE_BULLET_GLYPH_X). */
 .pp-para--bullet {
   position: relative;
-  padding-left: calc(var(--mktg-page-scale) * 18pt);
+  padding-left: var(--pp-bullet-indent);
 
   &::before {
     content: '•';
     position: absolute;
-    left: calc(var(--mktg-page-scale) * 5pt);
+    left: var(--pp-bullet-x);
   }
 }

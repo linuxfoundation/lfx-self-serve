@@ -6,10 +6,14 @@ import { Component } from '@angular/core';
 import {
   MKTG_PRINT_LANDSCAPE_CLASS,
   MKTG_PRINT_PAGE_AREA,
+  MKTG_PRINT_PAGE_BACK_TITLE_BOX,
+  MKTG_PRINT_PAGE_COVER_TITLE_BOX,
   MKTG_PRINT_PAGE_LEFT,
   MKTG_PRINT_PAGE_LOGO_FRAME,
   MKTG_PRINT_PAGE_RIGHT,
   MKTG_PRINT_PAGE_SCALE,
+  MKTG_PRINT_PAGE_SCALE_PROPERTY,
+  MKTG_PRINT_PAGE_SIZE,
   MKTG_PRINT_PAGE_TITLE_BOX,
 } from '@lfx-one/shared/constants';
 import { MktgPrintPage, MktgPrintPageLook } from '@lfx-one/shared/interfaces';
@@ -53,6 +57,7 @@ function sampleContent(): MktgPrintPage {
   const column = mktgPrintProseColumn(look, [
     mktgPrintEyebrowPara(look, 'The lockup'),
     ...mktgPrintProseParas(['The primary lockup sets the symbol beside the wordmark.', 'Use it on white or on the dark; keep the clear space.']),
+    mktgPrintPara('Never stretch the lockup.', 11, { strike: true, above: 7.7 }),
   ]);
   const visual = mktgPrintShapeEl('ROUND_RECTANGLE', MKTG_PRINT_PAGE_RIGHT, look.tint);
   const slot = { t: 'slot' as const, box: { x: MKTG_PRINT_PAGE_RIGHT.x + 20, y: MKTG_PRINT_PAGE_RIGHT.y + 20, w: 200, h: 60 }, slot: 'sample-visual' };
@@ -86,14 +91,24 @@ describe('MktgPrintPageComponent', () => {
     expect(page?.style.getPropertyValue('--pp-dark')).toBe(brand.dark);
     const host = root.querySelector<HTMLElement>('lfx-mktg-print-page');
     expect(host?.classList.contains(MKTG_PRINT_LANDSCAPE_CLASS)).toBe(true);
-    expect(host?.style.getPropertyValue('--mktg-page-scale')).toBe(String(MKTG_PRINT_PAGE_SCALE));
+    // The scale and the frame's sizes come from the constants, as custom properties on the frame.
+    expect(page?.style.getPropertyValue(MKTG_PRINT_PAGE_SCALE_PROPERTY)).toBe(String(MKTG_PRINT_PAGE_SCALE));
+    expect(page?.style.getPropertyValue('--pp-frame-w')).toBe('792pt');
+    expect(page?.style.getPropertyValue('--pp-frame-h')).toBe('594pt');
+    expect(page?.style.getPropertyValue('--pp-slide-h')).toBe('445.5pt');
+    expect(page?.style.getPropertyValue('--pp-slide-top')).toBe('74.25pt');
+    expect(page?.style.getPropertyValue('--pp-bullet-indent')).toBe(pt(18));
+    expect(page?.style.getPropertyValue('--pp-caps-tracking')).toBe('0.12em');
+    expect(page?.style.getPropertyValue('--pp-ink')).toBe(brand.ink);
     const area = root.querySelector<HTMLElement>('[data-testid="mktg-print-page-area"]');
     expect(area?.style.left).toBe(pt(MKTG_PRINT_PAGE_AREA.x));
     expect(area?.style.height).toBe(pt(MKTG_PRINT_PAGE_AREA.h));
     expect(area?.querySelector('[data-testid="projected"]')?.textContent).toBe('Projected content');
 
     const title = root.querySelector<HTMLElement>('[data-testid="mktg-print-page-title"]');
-    expect(title?.textContent?.trim()).toBe('Logo system');
+    // Untrimmed: a paragraph's text sits in its own span, so the pre-wrap block draws no space around it.
+    expect(title?.textContent).toBe('Logo system');
+    expect(title?.querySelector<HTMLElement>('.pp-rich')?.style.color).not.toBe('');
     expect(title?.style.left).toBe(pt(MKTG_PRINT_PAGE_TITLE_BOX.x));
     expect(title?.style.width).toBe(pt(MKTG_PRINT_PAGE_TITLE_BOX.w));
 
@@ -119,8 +134,15 @@ describe('MktgPrintPageComponent', () => {
     expect(els[0].style.left).toBe(pt(MKTG_PRINT_PAGE_LEFT.x));
     expect(els[0].style.height).toBe(pt(MKTG_PRINT_PAGE_LEFT.h));
     expect(els[0].textContent).toContain('The primary lockup sets the symbol beside the wordmark.');
-    expect(els[0].querySelectorAll('p')[1].style.fontSize).toBe(pt(11));
-    expect(els[0].querySelectorAll('p')[1].style.marginTop).toBe(pt(11 * 0.7));
+    // The column is [eyebrow, prose, prose, struck]: the first prose paragraph has no space above, the second the book's.
+    const paras = els[0].querySelectorAll<HTMLElement>('p');
+    expect(paras).toHaveLength(4);
+    expect(paras[1].style.fontSize).toBe(pt(11));
+    expect(paras[1].style.marginTop).toBe('');
+    expect(paras[2].style.marginTop).toBe(pt(11 * 0.7));
+    expect(paras[2].textContent).toBe('Use it on white or on the dark; keep the clear space.');
+    expect(paras[3].classList.contains('pp-para--strike')).toBe(true);
+    expect(paras[2].classList.contains('pp-para--strike')).toBe(false);
     expect(els[1].style.backgroundColor).not.toBe('');
     expect(els[1].classList.contains('pp-shape--round')).toBe(true);
     expect(els[2].getAttribute('data-slot')).toBe('sample-visual');
@@ -144,6 +166,46 @@ describe('MktgPrintPageComponent', () => {
     expect(els).toHaveLength(3);
     expect(els[0].textContent?.trim()).toBe(`${PROJECT} · A Linux Foundation project`);
     expect(els[2].textContent?.trim()).toBe('V1.0 · November 2026');
+  });
+
+  it('sets the paragraphs in the block’s face and leading, ahead of the app’s global p rules', () => {
+    // jsdom does not cascade the component stylesheet into computed styles, so the declaration is asserted: the
+    // compiled `.pp-para` rule inherits the font and line height from `.pp-rich`, which sets the look's.
+    TestBed.createComponent(HostComponent).detectChanges();
+    const sheets = Array.from(document.head.querySelectorAll('style'), (style) => style.textContent ?? '').join('\n');
+    const rule = sheets.match(/\.pp-para(?:\[[^\]]*\])?\s*\{([^}]*)\}/);
+    expect(rule?.[1]).toMatch(/(?:^|;)\s*font:\s*inherit\s*(?:;|$)/);
+    expect(rule?.[1]).toMatch(/(?:^|;)\s*line-height:\s*inherit\s*(?:;|$)/);
+    expect(sheets).toMatch(/\.pp-para--strike(?:\[[^\]]*\])?\s*\{[^}]*text-decoration:\s*line-through/);
+  });
+
+  it('builds a title override by the layout: the band’s grammar on a content page, the cover’s and the back cover’s on the dark ground', async () => {
+    const fixture = TestBed.createComponent(MktgPrintPageComponent);
+    fixture.componentRef.setInput('look', look);
+    fixture.componentRef.setInput('title', 'Brand Kit');
+    fixture.componentRef.setInput('layout', 'cover');
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const title = () => root.querySelector<HTMLElement>('[data-testid="mktg-print-page-title"]');
+    expect(root.querySelector('[data-testid="mktg-print-page"]')?.getAttribute('data-layout')).toBe('cover');
+    expect(title()?.textContent).toBe('Brand Kit');
+    expect(title()?.style.top).toBe(pt(MKTG_PRINT_PAGE_COVER_TITLE_BOX.y));
+    expect(title()?.querySelector<HTMLElement>('.pp-rich')?.style.color).toBe(look.onDark);
+    expect(title()?.querySelector('p')?.style.fontSize).toBe(pt(MKTG_PRINT_PAGE_SIZE.coverTitle));
+
+    fixture.componentRef.setInput('layout', 'back');
+    fixture.componentRef.setInput('title', 'Open standards for one computing');
+    await fixture.whenStable();
+    expect(title()?.style.top).toBe(pt(MKTG_PRINT_PAGE_BACK_TITLE_BOX.y));
+    expect(title()?.querySelector<HTMLElement>('.pp-rich')?.style.color).toBe(look.onDark);
+    expect(title()?.querySelector('.pp-rich--center.pp-rich--middle')).not.toBeNull();
+    expect(title()?.querySelector('.pp-para--caps')?.textContent).toBe('Open standards for one computing');
+
+    fixture.componentRef.setInput('layout', 'content');
+    await fixture.whenStable();
+    expect(title()?.style.top).toBe(pt(MKTG_PRINT_PAGE_TITLE_BOX.y));
+    expect(title()?.querySelector<HTMLElement>('.pp-rich')?.style.color).toBe(look.ink);
+    expect(title()?.querySelector('p')?.style.fontSize).toBe(pt(MKTG_PRINT_PAGE_SIZE.title));
   });
 
   it('makes a content page from the plain inputs alone: eyebrows, title, footer line and the number the builder gave', async () => {

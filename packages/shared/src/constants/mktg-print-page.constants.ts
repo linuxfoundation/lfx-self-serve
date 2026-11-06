@@ -14,17 +14,17 @@ import { lfxColors } from './colors.constants';
 export const MKTG_PRINT_PAGE_CANVAS = { w: 720, h: 405 } as const;
 
 /**
- * The printed page: US Letter landscape, no margin (`@page { size: 11in 8.5in;
- * margin: 0 }`, 792 × 612 pt), so the browser's header and footer stay off
- * the saved PDF. A4 landscape (842 × 595 pt) is the other common paper, and a
- * PDF printed to it (the print dialog's paper, or Playwright's `format`)
- * ignores the CSS size: a frame as tall as Letter would spill a blank sheet
- * per page there. So every page frame is the narrower width (Letter's 11in)
- * and a hair under the shorter height (A4's 8.27in): 792 × 594 pt, which
- * fits both papers whole, the frame's own `break-after: page` turning the
- * page. On Letter the 18 pt left over is a white band under the frame.
+ * The printed page: US Letter landscape, no margin (`@page mktg-deck { size:
+ * 11in 8.5in; margin: 0 }`, 792 × 612 pt), so the browser's header and footer
+ * stay off the saved PDF. A4 landscape (842 × 595 pt) is the other common
+ * paper, and a PDF printed to it (the print dialog's paper, or Playwright's
+ * `format`) ignores the CSS size: a frame as tall as Letter would spill a
+ * blank sheet per page there. So every page frame is the narrower width
+ * (Letter's 11in) and a hair under the shorter height (A4's 8.27in): 792 ×
+ * 594 pt, which fits both papers whole, the frame's own `break-after: page`
+ * turning the page. On Letter the 18 pt left over is a white band under the
+ * frame.
  */
-export const MKTG_PRINT_LANDSCAPE_PAGE_PT = { w: 792, h: 612 } as const;
 export const MKTG_PRINT_PAGE_FRAME_PT = { w: 792, h: 594 } as const;
 
 /**
@@ -55,12 +55,26 @@ export const MKTG_PRINT_PAGE_SLIDE_TOP_PT = (MKTG_PRINT_PAGE_FRAME_PT.h - MKTG_P
 export const MKTG_PRINT_FRAME_LANDSCAPE_PAPER_IN = { width: 11, height: 8.4 } as const;
 
 /**
- * The landscape page setup the print frame writes as its unnamed `@page` rule
- * for the deck-page prints: Letter landscape with no margin (CSS Paged Media
+ * The named page of the deck's page frames (CSS Paged Media Level 3 `page`),
+ * set on every `.lfx-print-page` by mktg-print-page.component.scss, which
+ * cannot read this constant: keep the two in step. An element's own page name
+ * beats the one its ancestors carry, so the frames print on the landscape
+ * setup under any print body class — the framework's, the family's and the
+ * kit's bodies set `page: mktg-framework` or `page: brand-kit` on the whole
+ * document, and a named `@page` rule outranks an unnamed one in Chromium.
+ */
+export const MKTG_PRINT_DECK_PAGE_NAME = 'mktg-deck';
+
+/**
+ * The landscape page setup the print frame writes for the deck-page prints,
+ * as the deck's named `@page mktg-deck` rule (MKTG_PRINT_DECK_PAGE_NAME) and
+ * as the frame's unnamed `@page` rule for an engine that does not honour
+ * named pages (WebKit): Letter landscape with no margin (CSS Paged Media
  * Level 3 `size`; the margin keeps the browser's header and footer off the
  * PDF). One setup for every engine: the fixed page frames paginate by
  * `break-after: page` and need no table head or foot, so WebKit's bug 17205
- * (a table's head and foot printed once) does not reach them. Kept beside
+ * (a table's head and foot printed once) does not reach them, and the frame
+ * never restates the portrait documents' named page. Kept beside
  * MKTG_PRINT_PAGE_SETUPS, which the portrait documents choose from.
  */
 export const MKTG_PRINT_LANDSCAPE_PAGE_SETUP = 'size: 11in 8.5in; margin: 0;';
@@ -69,8 +83,17 @@ export const MKTG_PRINT_LANDSCAPE_PAGE_SETUP = 'size: 11in 8.5in; margin: 0;';
 export const MKTG_PRINT_PAGE_INSET = 7.2;
 /** Line height as a multiple of the font size, at the 100% line spacing the deck sets. */
 export const MKTG_PRINT_PAGE_LINE = 1.22;
-/** The indent of a bulleted paragraph (pt). */
+/** The indent of a bulleted paragraph (pt), and where its bullet sits in the indent (pt). */
 export const MKTG_PRINT_PAGE_BULLET_INDENT = 18;
+export const MKTG_PRINT_PAGE_BULLET_GLYPH_X = 5;
+/**
+ * The letter-spacing of a paragraph in capitals (em), the upstream prototype's
+ * eyebrow labels': the print draws it and the fit counts it in each
+ * character's width (the deck's model gives capitals 0.72 em untracked, so a
+ * running head the deck fits on one line can wrap here; counting the tracking
+ * keeps the print's fit honest to what it draws).
+ */
+export const MKTG_PRINT_PAGE_CAPS_TRACKING_EM = 0.12;
 /** The smallest share of its preferred size a text is set at before it is cut. */
 export const MKTG_PRINT_PAGE_MIN_SCALE = 0.72;
 /** The step the fit tries between 1 and the floor. */
@@ -110,16 +133,29 @@ export const MKTG_PRINT_PAGE_COVER_EYEBROW_BOX: MktgPrintPageBox = { x: 38, y: 1
 export const MKTG_PRINT_PAGE_COVER_TOP_RIGHT_BOX: MktgPrintPageBox = { x: 508, y: 12, w: 154, h: 26 };
 export const MKTG_PRINT_PAGE_COVER_FOOTER_LEFT_BOX: MktgPrintPageBox = { x: 38, y: 362, w: 330, h: 26 };
 export const MKTG_PRINT_PAGE_COVER_FOOTER_RIGHT_BOX: MktgPrintPageBox = { x: 368, y: 362, w: 294, h: 26 };
-/** The project lockup on the cover: above the title, left-aligned with it (the deck's cover layout carries the template's logo there). */
-export const MKTG_PRINT_PAGE_COVER_LOGO_BOX: MktgPrintPageBox = { x: 38, y: 96, w: 140, h: 44 };
+/**
+ * The project lockup on a cover, when a document draws one: the family cover's frame (D1 §4), above the title and
+ * left-aligned with it. The kit's cover draws none (the deck's coverSlide has no logo; the maintainer's ruling c6ece95f).
+ */
+export const MKTG_PRINT_PAGE_COVER_LOGO_BOX: MktgPrintPageBox = { x: 38, y: 44, w: 180, h: 50 };
 /** The back cover's lines (kit-book.ts backCoverSlide): the site's host under the title, the notice near the foot, both centred. */
 export const MKTG_PRINT_PAGE_BACK_HOST_BOX: MktgPrintPageBox = { x: 25, y: 238, w: 671, h: 26 };
 export const MKTG_PRINT_PAGE_BACK_NOTICE_BOX: MktgPrintPageBox = { x: 70, y: 312, w: 580, h: 40 };
 /** The back cover's title: the brand line, centred in the slide's upper half. */
 export const MKTG_PRINT_PAGE_BACK_TITLE_BOX: MktgPrintPageBox = { x: 60, y: 160, w: 600, h: 70 };
 
-/** The preferred sizes (pt): what the print sets, scaled to the slide. */
-export const MKTG_PRINT_PAGE_SIZE = { title: 22, prose: 11, eyebrow: 7.5, caption: 8, card: 9.5, head: 8, coverTitle: 44, coverSubtitle: 15 } as const;
+/** The preferred sizes (pt): what the print sets, scaled to the slide; `backHost` the back cover's host line. */
+export const MKTG_PRINT_PAGE_SIZE = {
+  title: 22,
+  prose: 11,
+  eyebrow: 7.5,
+  caption: 8,
+  card: 9.5,
+  head: 8,
+  coverTitle: 44,
+  coverSubtitle: 15,
+  backHost: 10,
+} as const;
 
 /** The space between table-like rows (pt). */
 export const MKTG_PRINT_PAGE_ROW_GAP = 7;

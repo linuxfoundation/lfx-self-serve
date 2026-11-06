@@ -5,79 +5,80 @@
 <section
   class="lfx-print-page"
   [class.lfx-print-page--dark]="!isContent()"
+  [style]="frameStyle"
   [style.--pp-font]="l.font"
   [style.--pp-dark]="l.dark"
+  [style.--pp-ink]="l.ink"
   [style.--pp-accent]="l.accent"
   [style.--pp-tint]="l.tint"
   [style.--pp-on-dark]="l.onDark"
   [style.--pp-rule]="l.rule"
-  [style.--pp-inset]="inset"
-  [style.--pp-line]="lineHeight"
   [attr.data-layout]="pageLayout()"
   [attr.data-title]="pageTitle()"
   data-testid="mktg-print-page">
-  <div class="lfx-print-page__slide" [style.top]="slideTop" data-testid="mktg-print-page-slide">
+  <div class="lfx-print-page__slide" data-testid="mktg-print-page-slide">
     @if (isContent()) {
-      <div class="pp-box pp-title" [style]="boxStyle(titleBox)" data-testid="mktg-print-page-title">
-        <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: titleRich() }" />
+      <div class="pp-box pp-title" [style]="titleStyle" data-testid="mktg-print-page-title">
+        <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: titleView() }" />
       </div>
-      @for (el of headEls(); track $index) {
-        <ng-container *ngTemplateOutlet="elTpl; context: { $implicit: el, testid: 'mktg-print-page-head' }" />
+      @for (view of headViews(); track $index) {
+        <ng-container *ngTemplateOutlet="elTpl; context: { $implicit: view, testid: 'mktg-print-page-head' }" />
       }
-      @for (el of footerEls(); track $index) {
-        <ng-container *ngTemplateOutlet="elTpl; context: { $implicit: el, testid: 'mktg-print-page-footer' }" />
+      @for (view of footerViews(); track $index) {
+        <ng-container *ngTemplateOutlet="elTpl; context: { $implicit: view, testid: 'mktg-print-page-footer' }" />
       }
       @if (logo(); as lockup) {
-        <div class="pp-logo" [style]="boxStyle(logoFrame)" data-testid="mktg-print-page-logo">
+        <div class="pp-logo" [style]="logoStyle" data-testid="mktg-print-page-logo">
           <img [src]="lockup.src" [alt]="lockup.alt" [style.filter]="lockup.filter" />
         </div>
       }
     } @else if (pageLayout() === 'cover') {
-      <div class="pp-box pp-title" [style]="boxStyle(coverTitleBox)" data-testid="mktg-print-page-title">
-        <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: titleRich() }" />
+      <div class="pp-box pp-title" [style]="coverTitleStyle" data-testid="mktg-print-page-title">
+        <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: titleView() }" />
       </div>
-      @if (page()?.subtitle; as subtitle) {
-        <div class="pp-box" [style]="boxStyle(coverSubtitleBox)" data-testid="mktg-print-page-subtitle">
+      @if (subtitleView(); as subtitle) {
+        <div class="pp-box" [style]="coverSubtitleStyle" data-testid="mktg-print-page-subtitle">
           <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: subtitle }" />
         </div>
       }
     } @else {
-      <div class="pp-box pp-title" [style]="boxStyle(backTitleBox)" data-testid="mktg-print-page-title">
-        <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: titleRich() }" />
+      <div class="pp-box pp-title" [style]="backTitleStyle" data-testid="mktg-print-page-title">
+        <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: titleView() }" />
       </div>
     }
-    @for (el of els(); track $index) {
-      <ng-container *ngTemplateOutlet="elTpl; context: { $implicit: el, testid: 'mktg-print-page-el' }" />
+    @for (view of elViews(); track $index) {
+      <ng-container *ngTemplateOutlet="elTpl; context: { $implicit: view, testid: 'mktg-print-page-el' }" />
     }
     <!-- A consumer's own content, at the deck's AREA (deck points, scaled by the shell). -->
-    <div class="pp-box pp-area" [style]="boxStyle(area)" data-testid="mktg-print-page-area">
+    <div class="pp-box pp-area" [style]="areaStyle" data-testid="mktg-print-page-area">
       <ng-content />
     </div>
   </div>
 </section>
 
-<ng-template #elTpl let-el let-testid="testid">
-  @switch (el.t) {
+<!-- One page element, from its render model: the box's CSS built once with the page, never per change detection. -->
+<ng-template #elTpl let-view let-testid="testid">
+  @switch (view.el.t) {
     @case ('shape') {
       <div
         class="pp-box pp-shape"
-        [class.pp-shape--round]="el.shape === 'ROUND_RECTANGLE'"
-        [class.pp-shape--ellipse]="el.shape === 'ELLIPSE'"
-        [style]="shapeStyle(el)"
+        [class.pp-shape--round]="view.el.shape === 'ROUND_RECTANGLE'"
+        [class.pp-shape--ellipse]="view.el.shape === 'ELLIPSE'"
+        [style]="view.style"
         [attr.data-testid]="testid">
-        @if (el.text; as text) {
+        @if (view.text; as text) {
           <ng-container *ngTemplateOutlet="richTpl; context: { $implicit: text }" />
         }
       </div>
     }
     @case ('image') {
-      <div class="pp-box pp-image" [style]="boxStyle(el.box)" [attr.data-testid]="testid">
-        <img [src]="el.src" [alt]="el.alt" [style.filter]="el.filter ?? ''" />
+      <div class="pp-box pp-image" [style]="view.style" [attr.data-testid]="testid">
+        <img [src]="view.el.src" [alt]="view.el.alt" [style.filter]="view.el.filter ?? ''" />
       </div>
     }
     @case ('slot') {
-      <div class="pp-box pp-slot" [style]="boxStyle(el.box)" [attr.data-slot]="el.slot" [attr.data-testid]="testid">
-        @if (slotTemplate(el.slot); as slot) {
+      <div class="pp-box pp-slot" [style]="view.style" [attr.data-slot]="view.el.slot" [attr.data-testid]="testid">
+        @if (slotTemplates().get(view.el.slot); as slot) {
           <ng-container *ngTemplateOutlet="slot" />
         }
       </div>
@@ -85,28 +86,30 @@
   }
 </ng-template>
 
-<ng-template #richTpl let-r>
+<!-- A text block from its render model; a paragraph's text sits in a span, so the pre-wrap block draws no stray space around it. -->
+<ng-template #richTpl let-view>
   <div
     class="pp-rich"
-    [class.pp-rich--center]="r.align === 'CENTER'"
-    [class.pp-rich--end]="r.align === 'END'"
-    [class.pp-rich--middle]="r.anchor === 'MIDDLE'"
-    [class.pp-rich--bottom]="r.anchor === 'BOTTOM'"
-    [style.color]="r.color"
-    [style.font-family]="r.font">
-    @for (para of r.paras; track $index) {
+    [class.pp-rich--center]="view.rich.align === 'CENTER'"
+    [class.pp-rich--end]="view.rich.align === 'END'"
+    [class.pp-rich--middle]="view.rich.anchor === 'MIDDLE'"
+    [class.pp-rich--bottom]="view.rich.anchor === 'BOTTOM'"
+    [style.color]="view.rich.color"
+    [style.font-family]="view.rich.font">
+    @for (p of view.paras; track $index) {
       <p
         class="pp-para"
-        [class.pp-para--bullet]="para.bullet"
-        [class.pp-para--caps]="para.caps"
-        [class.pp-para--italic]="para.italic"
-        [style]="paraStyle(para)">
-        @if (para.runs; as runs) {
+        [class.pp-para--bullet]="p.para.bullet"
+        [class.pp-para--caps]="p.para.caps"
+        [class.pp-para--italic]="p.para.italic"
+        [class.pp-para--strike]="p.para.strike"
+        [style]="p.style">
+        @if (p.para.runs; as runs) {
           @for (run of runs; track $index) {
             <span [style.color]="run.color" [style.font-weight]="run.weight">{{ run.text }}</span>
           }
         } @else {
-          {{ para.text }}
+          <span>{{ p.para.text }}</span>
         }
       </p>
     }
