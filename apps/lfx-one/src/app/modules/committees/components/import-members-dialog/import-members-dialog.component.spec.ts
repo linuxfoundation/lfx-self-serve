@@ -7,6 +7,7 @@ import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { MEMBER_IMPORT_CONCURRENCY } from '@lfx-one/shared/constants';
 import { Committee, CommitteeInvite, CommitteeMember, CreateCommitteeMemberRequest, MemberImportDialogData } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -371,17 +372,18 @@ describe('ImportMembersDialogComponent', () => {
     beforeEach(async () => setup());
 
     it('sends the native payload with notifications off by default and caps concurrency', async () => {
-      const others = Array.from({ length: 6 }, (_, i) => `person${i + 1}@example.com,`).join('\n');
+      expect(MEMBER_IMPORT_CONCURRENCY).toBe(10);
+      const others = Array.from({ length: MEMBER_IMPORT_CONCURRENCY + 1 }, (_, i) => `person${i + 1}@example.com,`).join('\n');
       await upload(`email,first_name\nperson0@example.com,Ada\n${others}`);
       component.startImport();
 
       expect(component.phase()).toBe('importing');
-      expect(pending).toHaveLength(5);
+      expect(pending).toHaveLength(MEMBER_IMPORT_CONCURRENCY);
       expect(pending[0].body).toEqual({ email: 'person0@example.com', first_name: 'Ada' });
       expect(pending[0].options).toEqual({ skipNotification: true });
 
       succeed(0);
-      expect(pending).toHaveLength(6);
+      expect(pending).toHaveLength(MEMBER_IMPORT_CONCURRENCY + 1);
     });
 
     it('sends notification emails when the user opts in', async () => {
@@ -438,25 +440,29 @@ describe('ImportMembersDialogComponent', () => {
       [404, 'This group could not be found.'],
       [429, 'Too many requests. Wait a minute, then retry.'],
     ])('stops sending after HTTP %i and keeps unsent rows retryable', async (status, reason) => {
-      await upload(`email\n${emails(7)}`);
+      await upload(`email\n${emails(MEMBER_IMPORT_CONCURRENCY + 2)}`);
       component.startImport();
       fail(0, status);
-      for (let i = 1; i < 5; i++) succeed(i);
+      for (let i = 1; i < MEMBER_IMPORT_CONCURRENCY; i++) succeed(i);
       await render();
 
-      expect(pending).toHaveLength(5);
+      expect(pending).toHaveLength(MEMBER_IMPORT_CONCURRENCY);
       expect(component.stopReason()).toBe(reason);
       expect(console.error).toHaveBeenCalledExactlyOnceWith('CSV member import failed', { status });
-      expect(component.rows().map((row) => row.status)).toEqual(['failed', 'added', 'added', 'added', 'added', 'failed', 'failed']);
-      expect(component.rows()[6].reason).toContain('Not sent');
+      expect(component.rows().map((row) => row.status)).toEqual(['failed', ...Array(MEMBER_IMPORT_CONCURRENCY - 1).fill('added'), 'failed', 'failed']);
+      expect(component.rows()[MEMBER_IMPORT_CONCURRENCY + 1].reason).toContain('Not sent');
       expect(query('import-members-stop-reason')).not.toBeNull();
       expect(component.canRetry()).toBe(true);
 
       component.retryFailed();
-      expect(pending.slice(5).map((call) => call.body.email)).toEqual(['person0@example.com', 'person5@example.com', 'person6@example.com']);
-      for (let i = 5; i < 8; i++) succeed(i);
+      expect(pending.slice(MEMBER_IMPORT_CONCURRENCY).map((call) => call.body.email)).toEqual([
+        'person0@example.com',
+        `person${MEMBER_IMPORT_CONCURRENCY}@example.com`,
+        `person${MEMBER_IMPORT_CONCURRENCY + 1}@example.com`,
+      ]);
+      for (let i = MEMBER_IMPORT_CONCURRENCY; i < MEMBER_IMPORT_CONCURRENCY + 3; i++) succeed(i);
       await render();
-      expect(component.addedCount()).toBe(7);
+      expect(component.addedCount()).toBe(MEMBER_IMPORT_CONCURRENCY + 2);
       expect(component.canRetry()).toBe(false);
     });
   });
@@ -492,19 +498,19 @@ describe('ImportMembersDialogComponent', () => {
 
     it.each([401, 403, 404, 429])('stops queued creates after cleanup HTTP %i while retaining the added member', async (status) => {
       await setup(OPEN_GROUP, [], [{ uid: 'invite-1', invitee_email: 'person0@example.com', status: 'pending' }]);
-      await upload(`email\n${emails(7)}`);
+      await upload(`email\n${emails(MEMBER_IMPORT_CONCURRENCY + 2)}`);
       component.startImport();
       succeed(0);
-      expect(pending).toHaveLength(5);
+      expect(pending).toHaveLength(MEMBER_IMPORT_CONCURRENCY);
 
       revokeResponses[0].error(new HttpErrorResponse({ status }));
-      for (let i = 1; i < 5; i++) succeed(i);
+      for (let i = 1; i < MEMBER_IMPORT_CONCURRENCY; i++) succeed(i);
       await render();
 
-      expect(pending).toHaveLength(5);
-      expect(component.rows().map((row) => row.status)).toEqual(['added', 'added', 'added', 'added', 'added', 'failed', 'failed']);
+      expect(pending).toHaveLength(MEMBER_IMPORT_CONCURRENCY);
+      expect(component.rows().map((row) => row.status)).toEqual([...Array(MEMBER_IMPORT_CONCURRENCY).fill('added'), 'failed', 'failed']);
       expect(component.rows()[0].cleanupWarning).toContain('pending invitation could not be revoked');
-      expect(component.rows()[5].reason).toContain('Not sent');
+      expect(component.rows()[MEMBER_IMPORT_CONCURRENCY].reason).toContain('Not sent');
       expect(component.stopReason()).toBeTruthy();
       if (status === 404) {
         expect(component.stopReason()).toContain('invitation');
@@ -516,11 +522,14 @@ describe('ImportMembersDialogComponent', () => {
 
       component.retryFailed();
       expect(component.stopReason()).toBeNull();
-      expect(pending.slice(5).map((call) => call.body.email)).toEqual(['person5@example.com', 'person6@example.com']);
-      succeed(5);
-      succeed(6);
+      expect(pending.slice(MEMBER_IMPORT_CONCURRENCY).map((call) => call.body.email)).toEqual([
+        `person${MEMBER_IMPORT_CONCURRENCY}@example.com`,
+        `person${MEMBER_IMPORT_CONCURRENCY + 1}@example.com`,
+      ]);
+      succeed(MEMBER_IMPORT_CONCURRENCY);
+      succeed(MEMBER_IMPORT_CONCURRENCY + 1);
       await render();
-      expect(component.addedCount()).toBe(7);
+      expect(component.addedCount()).toBe(MEMBER_IMPORT_CONCURRENCY + 2);
       expect(component.canRetry()).toBe(false);
       expect(committeeService.revokeCommitteeInvite).toHaveBeenCalledTimes(1);
     });

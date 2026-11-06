@@ -82,3 +82,6 @@ export const MEMBER_IMPORT_STATUS_DISPLAY: Readonly<Record<MemberImportRowStatus
 
 /** HTTP statuses after which an import sends no further rows: lost access, a missing group, or rate limiting. */
 export const MEMBER_IMPORT_FATAL_HTTP_STATUSES: ReadonlySet<number> = new Set([401, 403, 404, 429]);
+
+/** Max concurrent member creates in a Members-tab CSV import (GH-5110); independent of COMMITTEE_INVITE_CONCURRENCY so invite flows keep their cap. */
+export const MEMBER_IMPORT_CONCURRENCY = 10;
