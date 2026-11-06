@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { expect, it } from 'vitest';
 import { MktgPrintSheetComponent } from './mktg-print-sheet.component';
@@ -9,16 +9,15 @@ import { MktgPrintSheetRowComponent } from '../mktg-print-sheet-row/mktg-print-s
 
 @Component({
   imports: [MktgPrintSheetComponent, MktgPrintSheetRowComponent],
-  template: `
-    <lfx-mktg-print-sheet>
-      <lfx-mktg-print-sheet-row><section data-testid="first">Synthetic first block</section></lfx-mktg-print-sheet-row>
-      <lfx-mktg-print-sheet-row [flows]="true"><div class="grid grid-cols-2" data-testid="second">Synthetic long block</div></lfx-mktg-print-sheet-row>
-    </lfx-mktg-print-sheet>
-  `,
+  template: `<lfx-mktg-print-sheet>
+    <lfx-mktg-print-sheet-row [flows]="flows()"><section class="grid" data-testid="block">Synthetic block</section></lfx-mktg-print-sheet-row>
+  </lfx-mktg-print-sheet>`,
 })
-class HostComponent {}
+class HostComponent {
+  public readonly flows = signal(false);
+}
 
-it('is a table whose head and foot repeat the page room on every page, with one row per projected block', async () => {
+it('is a table whose head and foot repeat the page room on every page, with the projected rows as its body', async () => {
   const fixture = TestBed.createComponent(HostComponent);
   await fixture.whenStable();
   const root: HTMLElement = fixture.nativeElement;
@@ -40,14 +39,24 @@ it('is a table whose head and foot repeat the page room on every page, with one 
   expect(Math.round(head.getBoundingClientRect().height)).toBe(53);
   expect(Math.round(foot.getBoundingClientRect().height)).toBe(53);
   // The body holds the rows and nothing else: a page breaks only between them.
-  const rows = Array.from(body.children);
-  expect(rows.map((row) => row.tagName.toLowerCase())).toEqual(['lfx-mktg-print-sheet-row', 'lfx-mktg-print-sheet-row']);
-  expect(rows.map((row) => getComputedStyle(row).display)).toEqual(['table-row', 'table-row']);
-  expect(rows.map((row) => getComputedStyle(row).breakInside)).toEqual(['avoid', 'auto']);
-  const cells = rows.map((row) => row.querySelector<HTMLElement>('[data-testid="mktg-print-sheet-cell"]'));
-  expect(cells.map((cell) => (cell ? getComputedStyle(cell).display : null))).toEqual(['table-cell', 'table-cell']);
-  // The projected block keeps its own layout inside the row's cell.
-  expect(root.querySelector('[data-testid="mktg-print-sheet-cell"] > [data-testid="first"]')?.textContent).toBe('Synthetic first block');
-  const second = root.querySelector<HTMLElement>('[data-testid="second"]');
-  expect(second && getComputedStyle(second).display).toBe('grid');
+  expect(Array.from(body.children, (row) => row.tagName.toLowerCase())).toEqual(['lfx-mktg-print-sheet-row']);
+});
+
+it('keeps each row whole across a page break unless the caller lets it flow, and leaves the block its own layout', async () => {
+  const fixture = TestBed.createComponent(HostComponent);
+  await fixture.whenStable();
+  const root: HTMLElement = fixture.nativeElement;
+  const row = root.querySelector<HTMLElement>('lfx-mktg-print-sheet-row');
+  const cell = root.querySelector<HTMLElement>('[data-testid="mktg-print-sheet-cell"]');
+  const block = root.querySelector<HTMLElement>('[data-testid="block"]');
+  if (!row || !cell || !block) throw new Error('Missing synthetic print sheet row');
+  expect(getComputedStyle(row).display).toBe('table-row');
+  expect(getComputedStyle(row).breakInside).toBe('avoid');
+  expect(getComputedStyle(cell).display).toBe('table-cell');
+  expect(block.parentElement).toBe(cell);
+  expect(getComputedStyle(block).display).toBe('grid');
+  fixture.componentInstance.flows.set(true);
+  await fixture.whenStable();
+  expect(row.classList.contains('lfx-print-sheet-row-flows')).toBe(true);
+  expect(getComputedStyle(row).breakInside).toBe('auto');
 });
