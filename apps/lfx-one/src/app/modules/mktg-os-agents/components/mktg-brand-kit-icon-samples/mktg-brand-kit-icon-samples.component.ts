@@ -35,7 +35,8 @@ import { BrandKitIconColours, BrandKitIconStripItem } from '@lfx-one/shared/inte
   selector: 'lfx-mktg-brand-kit-icon-samples',
   imports: [NgTemplateOutlet],
   templateUrl: './mktg-brand-kit-icon-samples.component.html',
-  host: { class: 'block', 'data-testid': 'brand-kit-icon-samples' },
+  // `@container`: the web strip queries the host's width to choose one row of eight or 4 + 4.
+  host: { class: '@container block', 'data-testid': 'brand-kit-icon-samples' },
 })
 export class MktgBrandKitIconSamplesComponent {
   // === Inputs ===

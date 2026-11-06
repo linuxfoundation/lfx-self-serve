@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BRAND_KIT_ICON_HIGHLIGHT_INDEX, BRAND_KIT_ICON_SAMPLES } from '@lfx-one/shared/constants';
+import { BRAND_KIT_ICON_HIGHLIGHT_INDEX, BRAND_KIT_ICON_SAMPLES, BRAND_KIT_ICON_STRIP_ONE_ROW_MIN_PX } from '@lfx-one/shared/constants';
 import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { columnAssetRevisionResponse, openAssetDocument } from './helpers/mktg-os-asset-views.helper';
@@ -51,7 +51,7 @@ test.describe('Brand kit iconography samples structure', () => {
     await page.screenshot({ path: info.outputPath('iconography-structure.png'), fullPage: true });
   });
 
-  test('on a 390 px screen the tiles go two to a row with whole labels, and the strip’s icons wrap inside the strip', async ({ page }, info) => {
+  test('on a 390 px screen the tiles go two to a row with whole labels, and the strip holds one row of eight or 4 + 4', async ({ page }, info) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openAssetDocument(page, 'brand-kit', 200, true, false, columnAssetRevisionResponse('brand-kit'));
     await page.getByTestId('brand-kit-web-view-tab-visual').click();
@@ -70,9 +70,18 @@ test.describe('Brand kit iconography samples structure', () => {
       .locator('span')
       .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().height / parseFloat(getComputedStyle(node).lineHeight))));
     expect(labelLines).toEqual(BRAND_KIT_ICON_SAMPLES.map(() => 1));
-    // The strip's icons may wrap into rows here, but every one stays inside the strip's box.
+    // The strip: one row of eight from a 272 px strip up, else 4 + 4 (never 7 + 1 or 5 + 3), every icon inside the strip's box.
     const strip = await samples.getByTestId('brand-kit-icon-strip').boundingBox();
     if (!strip) throw new Error('The strip must be laid out');
+    const stripTops = await samples
+      .getByTestId(/^brand-kit-icon-strip-/)
+      .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)));
+    const rows = new Set(stripTops);
+    expect(rows.size).toBe(strip.width >= BRAND_KIT_ICON_STRIP_ONE_ROW_MIN_PX ? 1 : 2);
+    if (rows.size === 2) {
+      expect(new Set(stripTops.slice(0, 4)).size).toBe(1);
+      expect(new Set(stripTops.slice(4)).size).toBe(1);
+    }
     for (const icon of await samples.getByTestId(/^brand-kit-icon-strip-/).all()) {
       const box = await icon.boundingBox();
       if (!box) throw new Error('The strip icon must be laid out');

@@ -7,6 +7,7 @@ import {
   BRAND_KIT_ICON_HIGHLIGHT_INDEX,
   BRAND_KIT_ICON_SAMPLES,
   BRAND_KIT_ICON_STRIP_INK,
+  BRAND_KIT_ICON_STRIP_ONE_ROW_MIN_PX,
   BRAND_KIT_ICON_STRIP_SIZE_PX,
   BRAND_KIT_ICON_TILE_SIZE_PX,
 } from '@lfx-one/shared/constants';
@@ -75,15 +76,17 @@ describe('MktgBrandKitIconSamplesComponent', () => {
     const strip = root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]');
     expect(strip?.style.backgroundColor).toBe(cssColour(COLOURS.stripGround));
     expect(strip?.getAttribute('role')).toBe('img');
-    // In the half-width card the eight 28 px icons spread evenly with an 8 px minimum gap in 12 px of padding (one row from
-    // a 304 px strip up), wrapping inside the strip in a narrower one.
-    for (const cls of ['flex', 'flex-wrap', 'justify-between', 'gap-x-2', 'px-3']) {
+    // A grid of eight 24 px icons spread evenly (space-between) with an 8 px minimum gap in 12 px of padding, one row from a
+    // 272 px strip up (a container query on the host), and 4 + 4 below that: never a free wrap of 7 + 1 or 5 + 3.
+    expect(root.classList.contains('@container')).toBe(true);
+    for (const cls of ['grid', 'grid-cols-[repeat(4,max-content)]', '@[272px]:grid-cols-[repeat(8,max-content)]', 'justify-between', 'gap-x-2', 'px-3']) {
       expect(strip?.classList.contains(cls)).toBe(true);
     }
-    for (const cls of ['gap-x-3', 'gap-x-[26px]', 'px-4']) {
+    for (const cls of ['flex', 'flex-wrap', 'gap-x-3', 'gap-x-[26px]', 'px-4']) {
       expect(strip?.classList.contains(cls)).toBe(false);
     }
-    expect(BRAND_KIT_ICON_STRIP_SIZE_PX).toBe(28);
+    expect(BRAND_KIT_ICON_STRIP_SIZE_PX).toBe(24);
+    expect(BRAND_KIT_ICON_STRIP_ONE_ROW_MIN_PX).toBe(8 * BRAND_KIT_ICON_STRIP_SIZE_PX + 7 * 8 + 2 * 12);
     expect(strip?.getAttribute('aria-label')).toContain('Global in the highlight colour');
     const icons = Array.from(strip?.querySelectorAll<HTMLElement>('[data-testid^="brand-kit-icon-strip-"]') ?? []);
     expect(icons.map((icon) => icon.getAttribute('data-testid'))).toEqual(BRAND_KIT_ICON_SAMPLES.map((icon) => `brand-kit-icon-strip-${icon.id}`));
