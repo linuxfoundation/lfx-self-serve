@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { _IdGenerator, CdkTrapFocus } from '@angular/cdk/a11y';
-import { Component, computed, inject, input, linkedSignal, output, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, output, Signal, signal, WritableSignal } from '@angular/core';
+import { TranscendService } from '@app/shared/services/transcend.service';
 import { UiButtonComponent } from '@app/shared/uikit/button/button.component';
 import { UiInputComponent } from '@app/shared/uikit/input/input.component';
+import { NEWSLETTER_GUEST_LEGAL_LINKS } from '@lfx-one/shared/constants';
 import { NewsletterFoundationSummary } from '@lfx-one/shared/interfaces';
 
 /**
@@ -12,8 +14,13 @@ import { NewsletterFoundationSummary } from '@lfx-one/shared/interfaces';
  * actions: the email, Continue, and Sign in — no close button, so there is no way to the content
  * around it without one of them.
  *
- * - `invite`: an invite or confirmation link. The address is the invited one, shown read-only.
- * - `shared`: a shared issue link. The reader types a work email.
+ * - `invite`: an invite or confirmation link. The address is the invited one, shown read-only and masked
+ *   (the link may have been forwarded).
+ * - `shared`: a shared issue link. The reader types a work email, and is told Continue emails a
+ *   confirmation link that subscribes them.
+ *
+ * The pages using it hide Transcend's automatic consent prompt, so the modal carries the consent line
+ * (Privacy Policy, Terms of Use) and a Cookie settings link instead.
  */
 @Component({
   selector: 'lfx-newsletter-guest-modal',
@@ -23,6 +30,7 @@ import { NewsletterFoundationSummary } from '@lfx-one/shared/interfaces';
 export class NewsletterGuestModalComponent {
   // === Services ===
   private readonly headingId = inject(_IdGenerator).getId('lfx-newsletter-guest-modal-');
+  private readonly transcendService = inject(TranscendService);
 
   // === Inputs ===
   public readonly mode = input<'invite' | 'shared'>('shared');
@@ -31,7 +39,7 @@ export class NewsletterGuestModalComponent {
   public readonly membershipName = input<string>('');
   /** `invite` only: the matched member company. */
   public readonly companyName = input<string>('');
-  /** The invited address (`invite`), or a starting value (`shared`). */
+  /** The invited address, masked (`invite`), or a starting value (`shared`). */
   public readonly email = input<string>('');
   public readonly loading = input<boolean>(false);
   /** Shown under the email field. */
@@ -45,6 +53,12 @@ export class NewsletterGuestModalComponent {
 
   // === Writable Signals ===
   protected readonly emailValue: WritableSignal<string> = linkedSignal(() => this.email());
+  /**
+   * True while Transcend's consent manager (rendered outside this dialog) is open from Cookie settings:
+   * the focus trap and `aria-modal` are released so the manager is operable, and re-armed as soon as
+   * focus comes back into the dialog.
+   */
+  protected readonly preferencesOpen = signal(false);
 
   // === Computed Signals ===
   protected readonly foundationName: Signal<string> = computed(() => this.foundation()?.name || 'this foundation');
@@ -53,8 +67,18 @@ export class NewsletterGuestModalComponent {
   protected readonly description: Signal<string> = this.initDescription();
   protected readonly canContinue: Signal<boolean> = computed(() => !this.blocked() && !this.loading() && this.emailValue().trim().length > 0);
   protected readonly labelledBy = this.headingId;
+  protected readonly legalLinks = NEWSLETTER_GUEST_LEGAL_LINKS;
 
   // === Protected Methods ===
+  protected onCookieSettings(): void {
+    this.preferencesOpen.set(true);
+    this.transcendService.showPreferences();
+  }
+
+  protected onDialogFocusIn(): void {
+    if (this.preferencesOpen()) this.preferencesOpen.set(false);
+  }
+
   protected onSubmit(event: Event): void {
     event.preventDefault();
     if (!this.canContinue()) return;

@@ -8,9 +8,11 @@ import {
   decodeHtmlEntities,
   emailLinkDestinations,
   escapeHtml,
+  firstHtmlImageUrl,
   hasVisibleHtmlText,
   hasVisibleText,
   htmlClipboardToText,
+  htmlTextExcerpt,
   plainTextToHtml,
   stripHtml,
   stripResourceLoadingHtml,
@@ -1072,5 +1074,45 @@ describe('stripResourceLoadingHtml — review round 2 (#3306)', () => {
     const html = '<p><a href="https://events.linuxfoundation.org/kubecon/cfp" style="color: #0094ff">Submit a talk</a></p>';
 
     expect(stripResourceLoadingHtml(html, ['https://events.linuxfoundation.org/kubecon'])).toContain('style="color:#0094ff"');
+  });
+});
+
+describe('htmlTextExcerpt', () => {
+  it('returns the text of the document, dropping style and script contents', () => {
+    const html = '<html><head><title>T</title><style>p{color:red}</style></head><body><h1>Hello</h1><p>World &amp; more</p><script>x()</script></body></html>';
+
+    expect(htmlTextExcerpt(html, 100)).toBe('Hello World & more');
+  });
+
+  it('cuts a long text at a word boundary with an ellipsis', () => {
+    const excerpt = htmlTextExcerpt(`<p>${'word '.repeat(50)}</p>`, 23);
+
+    expect(excerpt).toBe('word word word word…');
+    expect(excerpt.length).toBeLessThanOrEqual(23);
+  });
+
+  it('returns an empty string for empty input', () => {
+    expect(htmlTextExcerpt(null, 10)).toBe('');
+    expect(htmlTextExcerpt('<p>x</p>', 0)).toBe('');
+  });
+});
+
+describe('firstHtmlImageUrl', () => {
+  it('returns the first public https image', () => {
+    const html = '<img src="http://cdn.example.com/a.png"><img src="https://cdn.example.com/b.png"><img src="https://cdn.example.com/c.png">';
+
+    expect(firstHtmlImageUrl(html)).toBe('https://cdn.example.com/b.png');
+  });
+
+  it('skips tracking pixels and non-http sources', () => {
+    const html =
+      '<img src="https://t.example.com/p.gif" width="1" height="1"><img src="data:image/png;base64,AAA"><img src="https://cdn.example.com/hero.png">';
+
+    expect(firstHtmlImageUrl(html)).toBe('https://cdn.example.com/hero.png');
+  });
+
+  it('returns null when there is no image', () => {
+    expect(firstHtmlImageUrl('<p>No images</p>')).toBeNull();
+    expect(firstHtmlImageUrl(undefined)).toBeNull();
   });
 });

@@ -902,10 +902,21 @@ export interface NewsletterGuestInviteInfo {
   membership_name?: string;
   /** The newsletter group the invite adds to — also where the signed-in confirm card is opened. */
   committee_uid?: string;
-  /** The invited address. */
-  email?: string;
+  /** The invited address, masked for display (`ja***@exam***.org`) — the link may have been forwarded. */
+  masked_email?: string;
   /** `valid` only: the member company the address matched. */
   company_name?: string;
+  /** `valid` only: a preview of the group's latest issue, shown behind the modal. Absent when it has sent none. */
+  teaser?: NewsletterGuestTeaser;
+}
+
+/** A preview of a sent issue shown, blurred, behind the signed-out reader's email prompt — never the issue body itself. */
+export interface NewsletterGuestTeaser {
+  subject: string;
+  /** The issue's first public `https:` image, or null. */
+  image_url: string | null;
+  /** Plain-text opening of the issue, at most `NEWSLETTER_GUEST_TEASER_MAX_LENGTH` characters. */
+  excerpt: string;
 }
 
 /** Body of POST /public/api/newsletters/invites/inspect and /accept. */
@@ -929,8 +940,8 @@ export interface NewsletterGuestNewsletter {
 /** A newsletter issue shown to a signed-out member-company reader. */
 export interface NewsletterGuestIssue {
   foundation: NewsletterFoundationSummary;
-  /** The address the reader is reading as. */
-  email: string;
+  /** The address the reader is reading as, masked for display (`ja***@exam***.org`). */
+  masked_email: string;
   /** Null when the newsletter group has not sent an issue yet. */
   newsletter: NewsletterGuestNewsletter | null;
   /** True after a shared-link read: a confirmation link was emailed, and the address joins the list only once it is opened. */
@@ -944,6 +955,8 @@ export interface NewsletterGuestIssueResponse {
   foundation?: NewsletterFoundationSummary;
   /** Shared-link read only: the organization whose member companies get this newsletter. */
   membership_name?: string;
+  /** Shared-link read without a guest session only: a preview of the issue, shown behind the email prompt. */
+  teaser?: NewsletterGuestTeaser;
 }
 
 /** Data the shared-link subscription confirmation email is rendered from. */
