@@ -668,9 +668,14 @@ export class OrgSelectorComponent {
       // unfocused when its row finally renders — the exact deferral this flag exists for. Focus it
       // provisionally and keep the retry armed until the selected row is here, or the list has
       // settled and there is nothing further to wait for (#4415, Copilot). A selected roll-up's row
-      // comes from the families answer, not the organization list, so while that answer is owed the
-      // list being loaded does not settle anything.
-      const selectedRowOwed = this.accountContextService.isRollUp() && this.accountContextService.rollUpFamiliesUnsettled();
+      // comes from the families answer, not the organization list, so while that answer is still on
+      // its way the list being loaded does not settle anything. An answer that landed incomplete
+      // renders no roll-up row at all, so nothing is owed then; waiting would let a later page of
+      // organizations pull focus back off wherever the caller has moved to.
+      const familiesAnswerOwed =
+        this.accountContextService.rollUpFamiliesLoading() ||
+        (this.accountContextService.rollUpFamiliesUnsettled() && !this.accountContextService.rollUpFamiliesIncomplete());
+      const selectedRowOwed = this.accountContextService.isRollUp() && familiesAnswerOwed;
       if (selectedIdx >= 0 || (this.orgNavigationService.loaded() && !selectedRowOwed)) {
         this.pendingInitialFocus = false;
       }

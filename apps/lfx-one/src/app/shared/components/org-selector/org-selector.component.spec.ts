@@ -647,6 +647,19 @@ describe('OrgSelectorComponent family roll-ups', () => {
       expect(await runInitialFocus(view)).toBe(true);
     });
 
+    // Bugbot on PR #5167: a partial or failed answer leaves the families unsettled but renders no
+    // roll-up row, so waiting on it let a later page of organizations pull focus back.
+    it('ends the retry when the families answer landed incomplete', async () => {
+      const view = await create({
+        families: [],
+        selectedRootUid: UID_A,
+        selected: orgRollUpAccount(UID_A, null),
+        familiesUnsettled: true,
+        familiesIncomplete: true,
+      });
+      expect(await runInitialFocus(view)).toBe(false);
+    });
+
     it('ends the retry once the families have settled', async () => {
       const view = await create({ families: [], selectedRootUid: UID_A, selected: orgRollUpAccount(UID_A, null) });
       expect(await runInitialFocus(view)).toBe(false);
