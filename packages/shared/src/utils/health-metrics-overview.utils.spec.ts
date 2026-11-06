@@ -512,6 +512,7 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       barClass: 'bg-amber-400',
       neutral: false,
       statusLabel: 'At risk',
+      gauge: { tone: 'level', level: 'mid', empty: false, unmeasured: false },
     });
     expect(noGoal.registrations).toEqual({
       countLabel: '328',
@@ -521,8 +522,9 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       barClass: '',
       neutral: true,
       statusLabel: null,
+      gauge: { tone: 'accent', level: null, empty: true, unmeasured: false },
     });
-    expect(onTrack.registrations).toMatchObject({ barClass: 'bg-emerald-500', statusLabel: 'On track' });
+    expect(onTrack.registrations).toMatchObject({ barClass: 'bg-emerald-500', statusLabel: 'On track', gauge: { level: 'high' } });
   });
 
   it('keeps an upcoming event with a goal but no pace blue', () => {
@@ -545,6 +547,7 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       widthPct: 0,
       barClass: 'bg-blue-500',
       neutral: false,
+      gauge: { tone: 'accent', level: null, empty: false, unmeasured: false },
       note: 'N/A',
     });
     expect(inReview.talks).toMatchObject({ hasProposals: false, note: 'CFP In Review' });
@@ -585,6 +588,7 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       barClass: 'bg-gray-300',
       neutral: false,
       statusLabel: null,
+      gauge: { tone: 'accent', level: null, empty: false, unmeasured: true },
     });
   });
 

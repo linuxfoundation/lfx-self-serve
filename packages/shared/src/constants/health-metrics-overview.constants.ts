@@ -369,9 +369,9 @@ export const HEALTH_METRICS_OVERVIEW_PROGRESS_TINT = `${lfxColors.blue[500]}1A`;
 
 /** The three event statuses: the label the legend shows and a screen reader hears, and the bar fill that shows it. */
 export const HEALTH_METRICS_OVERVIEW_EVENT_STATUS = {
-  onTrack: { label: 'On track', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high },
-  atRisk: { label: 'At risk', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium },
-  action: { label: 'Action required', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low },
+  onTrack: { label: 'On track', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high, level: 'high' },
+  atRisk: { label: 'At risk', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium, level: 'mid' },
+  action: { label: 'Action required', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low, level: 'low' },
 } as const;
 
 /** An upcoming event's `comp_score` → its status; an unknown or empty score keeps the neutral blue, with no status. */
@@ -405,6 +405,9 @@ export const HEALTH_METRICS_OVERVIEW_EVENTS_INFO = {
   talks:
     'Total number of speaking proposals for the event.\nCFP Not Yet Open, CFP Not Yet Closed and CFP In Review indicate the relevant status within the CFP (Call for Proposal) process.\n\n(Source: Sessionize)',
 } as const;
+
+/** Below this table width the events list drops its actions and the whole row opens the trend; the template's `@[912px]/evtbl`. */
+export const HEALTH_METRICS_OVERVIEW_EVENTS_ACTIONS_MIN_WIDTH_PX = 912;
 
 /** Events shown before "View all". */
 export const HEALTH_METRICS_OVERVIEW_EVENTS_PAGE_SIZE = 5;
