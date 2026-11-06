@@ -23,12 +23,14 @@ import {
   buildHealthMetricsOverviewCodeView,
   buildHealthMetricsOverviewNewsletterView,
   buildHealthMetricsOverviewEmptyCopy,
+  buildHealthMetricsOverviewEventDialogBadges,
   buildHealthMetricsOverviewEventMeta,
   buildHealthMetricsOverviewEventsView,
   buildHealthMetricsOverviewNpsView,
   buildHealthMetricsOverviewOrgsView,
   buildHealthMetricsOverviewTrainingView,
   buildHealthMetricsOverviewPastTrendView,
+  buildHealthMetricsOverviewSnapshotView,
   buildHealthMetricsOverviewTrendMeta,
   buildHealthMetricsOverviewTrendView,
   buildHealthMetricsYtdRangeLabel,
@@ -38,7 +40,13 @@ import {
   toHealthMetricsOverviewRange,
 } from './health-metrics-overview.utils';
 
-import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsSponsorship } from '../interfaces/health-metrics-events.interface';
+import type {
+  HealthMetricsEventsAtAGlance,
+  HealthMetricsEventsForecastEvent,
+  HealthMetricsEventsSnapshot,
+  HealthMetricsEventsSnapshotWeek,
+  HealthMetricsEventsSponsorship,
+} from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsOverviewBoard,
@@ -1012,9 +1020,8 @@ describe('buildHealthMetricsOverviewTrendView', () => {
       ['Same point last year', '300', null],
       ['Predicted', '620', { high: '680', low: '560' }],
     ]);
-    expect([view.goalLabel, view.daysTitle, view.daysLabel]).toEqual(['1,000', 'Days left', '46']);
     const fallback = buildHealthMetricsOverviewTrendView(row, null, null);
-    expect([...fallback.kpis.map((kpi) => kpi.value), fallback.goalLabel, fallback.daysLabel]).toEqual(['328', '—', '—', '1,000', '—']);
+    expect(fallback.kpis.map((kpi) => kpi.value)).toEqual(['328', '—', '—']);
     expect(fallback.kpis[2].range).toBeNull();
   });
 
@@ -1093,7 +1100,7 @@ describe('buildHealthMetricsOverviewPastTrendView', () => {
       ['Same point last year', '430'],
       ['Final', '512'],
     ]);
-    expect([view.goalLabel, view.daysTitle, view.daysLabel, view.todayPct]).toEqual(['500', 'Event held', '0', null]);
+    expect(view.todayPct).toBeNull();
   });
 
   it('draws the history and last year with no forecast or today line', () => {
@@ -1134,5 +1141,140 @@ describe('buildHealthMetricsYtdRangeLabel', () => {
 
   it('reads a single day on January 1', () => {
     expect(buildHealthMetricsYtdRangeLabel(new Date(2027, 0, 1))).toBe('Jan 1 – Jan 1, 2027');
+  });
+});
+
+describe('buildHealthMetricsOverviewEventDialogBadges', () => {
+  const row = {
+    eventId: 'e1',
+    eventName: 'Acme Summit',
+    startDate: '2026-12-08',
+    endDate: null,
+    city: 'Springfield',
+    registrations: 328,
+    registrationsGoal: 1000,
+    compScore: null,
+    acceptedTalks: null,
+    totalProposals: null,
+    cfpStatus: null,
+    ranges: [],
+  };
+
+  it('shows the goal as an outlined success badge and the days left once the forecast is read', () => {
+    const headline: HealthMetricsEventsForecastEvent = {
+      eventId: 'e1',
+      eventName: 'Acme Summit',
+      eventStartDate: '2026-12-08',
+      forecastAvg: 620,
+      forecastLow: 560,
+      forecastHigh: 680,
+      registrationsNow: 330,
+      priorYearSamePoint: 300,
+      goal: 1200,
+      daysLeft: 1,
+      isNewEvent: false,
+    };
+
+    expect(buildHealthMetricsOverviewEventDialogBadges(row, false, null)).toEqual({
+      goal: { label: 'Registration goal: 1,000', icon: 'fa-light fa-bullseye-arrow', variant: 'line', tone: 'success' },
+      days: null,
+    });
+    const read = buildHealthMetricsOverviewEventDialogBadges(row, false, headline);
+    expect([read.goal.label, read.days?.label]).toEqual(['Registration goal: 1,200', '1 day left']);
+  });
+
+  it('reads "No registration goal" quietly, and "Event held" for a past event', () => {
+    const view = buildHealthMetricsOverviewEventDialogBadges({ ...row, registrationsGoal: null }, true, null);
+
+    expect([view.goal.label, view.goal.variant, view.goal.tone]).toEqual(['No registration goal', 'subtle', 'neutral']);
+    expect([view.days?.label, view.days?.variant]).toEqual(['Event held', 'line']);
+  });
+});
+
+describe('buildHealthMetricsOverviewSnapshotView', () => {
+  const week = (start: string, end: string, registrations: number, delta: number, inPeriod: [boolean, boolean, boolean]): HealthMetricsEventsSnapshotWeek => ({
+    weekStartDate: start,
+    weekEndDate: end,
+    registrations,
+    registrationsDelta: delta,
+    registrationRevenueUsd: registrations * 100,
+    registrationRevenueDeltaUsd: delta * 100,
+    inPeriod: { '7d': inPeriod[0], '30d': inPeriod[1], '90d': inPeriod[2] },
+  });
+  // The newest week's level runs through yesterday, past the 713 its own week added.
+  const snapshot: HealthMetricsEventsSnapshot = {
+    today: '2026-11-05',
+    weeks: [
+      week('2026-09-28', '2026-10-04', 4019, 365, [false, false, true]),
+      week('2026-10-05', '2026-10-11', 4598, 579, [false, true, true]),
+      week('2026-10-19', '2026-10-25', 5759, 575, [false, true, true]),
+      week('2026-10-26', '2026-11-01', 6969, 713, [true, true, true]),
+    ],
+    packages: [
+      { tier: 'Diamond', sold: 10, soldInPeriod: { '7d': 0, '30d': 0, '90d': 1 }, revenueUsd: 2114350 },
+      { tier: 'Gold', sold: 37, soldInPeriod: { '7d': 0, '30d': 2, '90d': 5 }, revenueUsd: 2952895 },
+    ],
+    sponsorshipRevenueUsd: 5080534,
+    sponsorshipRevenueInPeriodUsd: { '7d': 0, '30d': 160000, '90d': 697537 },
+  };
+  const rowsOf = (section: { rows: { label: string; startLabel: string; endLabel: string; change: { label: string } }[] }) =>
+    section.rows.map((row) => [row.label, row.startLabel, row.endLabel, row.change.label]);
+
+  it('starts registrations at the level before the first week the period touches, and ends them yesterday, called today', () => {
+    const [registration] = buildHealthMetricsOverviewSnapshotView(snapshot, '7d');
+
+    expect([registration.startHeader, registration.endHeader]).toEqual(['Oct 25, 2026', 'Nov 4, 2026 (today)']);
+    expect(rowsOf(registration)).toEqual([
+      ['Registrations', '5,759', '6,969', '+1,210 (21%)'],
+      ['Registration revenue', '$575,900', '$696,900', '+$121,000 (21%)'],
+    ]);
+    expect(registration.rows[1].tip).toContain('Ticket revenue');
+  });
+
+  it('rebuilds the level before the oldest week from its own change when no earlier week was read', () => {
+    const [registration] = buildHealthMetricsOverviewSnapshotView(snapshot, '90d');
+
+    expect(registration.startHeader).toBe('Sep 27, 2026');
+    expect(rowsOf(registration)[0]).toEqual(['Registrations', '3,654', '6,969', '+3,315 (91%)']);
+  });
+
+  it('lists each package, then the totals and the revenue, over the rolling period', () => {
+    const [, sponsorship] = buildHealthMetricsOverviewSnapshotView(snapshot, '30d');
+
+    expect([sponsorship.startHeader, sponsorship.endHeader, sponsorship.emptyCopy]).toEqual(['Oct 6, 2026', 'Nov 4, 2026 (today)', null]);
+    expect(rowsOf(sponsorship)).toEqual([
+      ['Diamond', '10', '10', 'No change'],
+      ['Gold', '35', '37', '+2 (6%)'],
+      ['Totals', '45', '47', '+2 (4%)'],
+      ['Sponsorship revenue', '$4,920,534', '$5,080,534', '+$160,000 (3%)'],
+    ]);
+    expect(sponsorship.rows.map((row) => row.totals)).toEqual([false, false, true, false]);
+    expect(sponsorship.rows[0].change).toEqual({ label: 'No change', tone: 'neutral', icon: null });
+    expect(sponsorship.rows[1].change).toMatchObject({ tone: 'success', icon: 'fa-solid fa-circle-arrow-up' });
+  });
+
+  it('says no package has sold, keeps the revenue row, and drops the share of a change from zero', () => {
+    const [, sponsorship] = buildHealthMetricsOverviewSnapshotView(
+      { ...snapshot, packages: [], sponsorshipRevenueUsd: 5000, sponsorshipRevenueInPeriodUsd: { '7d': 5000, '30d': 5000, '90d': 5000 } },
+      '7d'
+    );
+
+    expect(sponsorship.emptyCopy).toBe('No sponsorship packages sold yet.');
+    expect(rowsOf(sponsorship)).toEqual([['Sponsorship revenue', '$0', '$5,000', '+$5,000']]);
+  });
+
+  it('starts from zero when the only week read is the newest, which runs past its own change', () => {
+    const [registration] = buildHealthMetricsOverviewSnapshotView({ ...snapshot, weeks: [week('2026-10-26', '2026-11-01', 40, 25, [true, true, true])] }, '7d');
+
+    expect(rowsOf(registration)[0]).toEqual(['Registrations', '0', '40', '+40']);
+  });
+
+  it('marks a fall in red with a down arrow', () => {
+    const [registration] = buildHealthMetricsOverviewSnapshotView(
+      { ...snapshot, weeks: [week('2026-10-19', '2026-10-25', 120, 10, [false, true, true]), week('2026-10-26', '2026-11-01', 100, 0, [true, true, true])] },
+      '7d'
+    );
+
+    expect(registration.rows[0].change).toEqual({ label: '−20 (17%)', tone: 'danger', icon: 'fa-solid fa-circle-arrow-down' });
   });
 });

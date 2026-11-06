@@ -3591,6 +3591,43 @@ export class AnalyticsController {
   }
 
   /**
+   * `GET /api/analytics/events-snapshot` — one event's registration weeks and sponsorship packages for the event dialog.
+   * The foundation is required alongside the event so an id alone cannot read another foundation's.
+   */
+  public async getEventsSnapshot(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_snapshot');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_snapshot');
+
+      const eventId = getStringQueryParam(req, 'eventId');
+      if (!eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId query parameter is required', {
+          operation: 'get_events_snapshot',
+        });
+      }
+      if (!EVENT_ID_PATTERN.test(eventId)) {
+        throw ServiceValidationError.forField('eventId', 'Invalid eventId format', {
+          operation: 'get_events_snapshot',
+        });
+      }
+
+      const response = await this.healthMetricsEventsService.getSnapshot(req, { foundationSlug, eventId });
+
+      logger.success(req, 'get_events_snapshot', startTime, {
+        foundation_slug: foundationSlug,
+        event_id: eventId,
+        week_count: response.weeks.length,
+        package_count: response.packages.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * `GET /api/analytics/events-past` — every closed event in the four periods, with each period's
    * header totals. The client picks the period, so no `range` param reaches the wire.
    */

@@ -159,7 +159,7 @@
                     class="inline-flex h-[30px] items-center gap-[6px] whitespace-nowrap rounded-[12px] border border-gray-200 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
                     [attr.aria-label]="'Show the registration trend for ' + row.name"
                     [attr.data-testid]="'overview-events-row-' + row.eventId + '-trend'"
-                    (click)="openTrend(row)">
+                    (click)="openEvent(row, 'trend')">
                     <i class="fa-light fa-chart-line text-[12px]" aria-hidden="true"></i><span class="max-[1200px]:hidden">Registration Trend</span
                     ><span class="hidden max-[1200px]:inline">Trend</span>
                   </button>

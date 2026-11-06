@@ -16,11 +16,13 @@ import {
   HEALTH_METRICS_OVERVIEW_NEWSLETTER_ENGAGEMENT,
   HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE,
   HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS,
+  HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY,
   HEALTH_METRICS_OVERVIEW_STROKES,
   HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS,
 } from '../constants/health-metrics-overview.constants';
+import { HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
-import { formatIsoDateLabel } from './date-time.utils';
+import { formatIsoDateLabel, parseIsoDateAsUtcMidnight } from './date-time.utils';
 import { getHealthMetricsTrainingDeliveryTypeLabel } from './health-metrics-training.utils';
 import { formatCurrency, formatNumber } from './number.utils';
 
@@ -30,6 +32,9 @@ import type {
   HealthMetricsEventsForecastCurve,
   HealthMetricsEventsForecastCurveSeries,
   HealthMetricsEventsForecastEvent,
+  HealthMetricsEventsSnapshot,
+  HealthMetricsEventsSnapshotPeriod,
+  HealthMetricsEventsSnapshotWeek,
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsBlankCopy, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
@@ -49,6 +54,8 @@ import type {
   HealthMetricsOverviewEmptyStateCopy,
   HealthMetricsOverviewEngagementSplit,
   HealthMetricsOverviewEvent,
+  HealthMetricsOverviewEventDialogBadgeView,
+  HealthMetricsOverviewEventDialogBadgesView,
   HealthMetricsOverviewEventRegistrationsView,
   HealthMetricsOverviewEventRowView,
   HealthMetricsOverviewEvents,
@@ -68,6 +75,9 @@ import type {
   HealthMetricsOverviewOutstandingBalance,
   HealthMetricsOverviewParticipatingOrgs,
   HealthMetricsOverviewParticipatingOrgsView,
+  HealthMetricsOverviewSnapshotChangeView,
+  HealthMetricsOverviewSnapshotRowView,
+  HealthMetricsOverviewSnapshotSectionView,
   HealthMetricsOverviewTrainingMetric,
   HealthMetricsOverviewTrainingView,
   HealthMetricsOverviewTrendKpiView,
@@ -506,9 +516,6 @@ export function buildHealthMetricsOverviewTrendView(
         range: high !== null && low !== null ? { high: formatCount(high), low: formatCount(low) } : null,
       },
     ],
-    goalLabel: formatCount(goal),
-    daysTitle: 'Days left',
-    daysLabel: formatCount(headline?.daysLeft),
     ...buildTrendChart(series, goal),
   };
 }
@@ -533,14 +540,108 @@ export function buildHealthMetricsOverviewPastTrendView(
       trendKpi('last-year', 'Same point last year', formatCount(lastYear)),
       trendKpi('final', 'Final', formatCount(row.registrations)),
     ],
-    goalLabel: formatCount(row.registrationsGoal),
-    daysTitle: 'Event held',
-    daysLabel: '0',
     ...buildTrendChart(series, row.registrationsGoal),
     // The event is over, so nothing marks today.
     todayX: null,
     todayPct: null,
   };
+}
+
+/**
+ * The event dialog's header badges: the goal as an outlined success badge, or a quiet one when no goal is set, and the
+ * days left, or "Event held". An upcoming event's days left wait for its forecast read.
+ */
+export function buildHealthMetricsOverviewEventDialogBadges(
+  row: HealthMetricsOverviewEvent,
+  isPast: boolean,
+  headline: HealthMetricsEventsForecastEvent | null
+): HealthMetricsOverviewEventDialogBadgesView {
+  const goal = headline?.goal ?? row.registrationsGoal;
+  const daysLeft = headline?.daysLeft ?? null;
+  const goalIcon = 'fa-light fa-bullseye-arrow';
+  const daysIcon = 'fa-light fa-calendar';
+
+  return {
+    goal: goal
+      ? { label: `Registration goal: ${formatCount(goal)}`, icon: goalIcon, variant: 'line', tone: 'success' }
+      : { label: 'No registration goal', icon: goalIcon, variant: 'subtle', tone: 'neutral' },
+    days: daysBadge(isPast, daysLeft, daysIcon),
+  };
+}
+
+/**
+ * The Snapshot tab's two tables for one period. Every figure runs through yesterday, which the end column dates and
+ * the design calls "today". Registrations come in ISO weeks, so their window starts on the Sunday before the first
+ * week the period touches; packages and sponsorship revenue are rolling, so theirs starts the period's days back.
+ */
+export function buildHealthMetricsOverviewSnapshotView(
+  snapshot: HealthMetricsEventsSnapshot,
+  period: HealthMetricsEventsSnapshotPeriod
+): HealthMetricsOverviewSnapshotSectionView[] {
+  const days = HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS.find((option) => option.value === period)?.days ?? 7;
+  const today = snapshot.today;
+  const endHeader = today ? `${formatIsoDateLabel(shiftIsoDate(today, -1))} (today)` : '';
+  const rollingStartHeader = today ? formatIsoDateLabel(shiftIsoDate(today, -days)) : '';
+
+  const { weeks } = snapshot;
+  const firstIndex = weeks.findIndex((week) => week.inPeriod[period]);
+  const first = firstIndex >= 0 ? weeks[firstIndex] : null;
+  const before = firstIndex > 0 ? weeks[firstIndex - 1] : null;
+  const latest = weeks.at(-1) ?? null;
+  const weekly = (level: (week: HealthMetricsEventsSnapshotWeek) => number, delta: (week: HealthMetricsEventsSnapshotWeek) => number) => {
+    const end = latest ? level(latest) : 0;
+    return { start: weeklyStart(first, before, latest, level, delta, end), end };
+  };
+  const registrations = weekly(
+    (week) => week.registrations,
+    (week) => week.registrationsDelta
+  );
+  const registrationRevenue = weekly(
+    (week) => week.registrationRevenueUsd,
+    (week) => week.registrationRevenueDeltaUsd
+  );
+
+  const packages = snapshot.packages.map((item) => ({ key: item.tier, start: item.sold - item.soldInPeriod[period], end: item.sold }));
+  const totals = packages.reduce((sum, item) => ({ start: sum.start + item.start, end: sum.end + item.end }), { start: 0, end: 0 });
+  const sponsorshipRevenue = { start: snapshot.sponsorshipRevenueUsd - snapshot.sponsorshipRevenueInPeriodUsd[period], end: snapshot.sponsorshipRevenueUsd };
+
+  return [
+    {
+      key: 'registration',
+      title: 'Registration',
+      startHeader: first ? formatIsoDateLabel(shiftIsoDate(first.weekStartDate, -1)) : rollingStartHeader,
+      endHeader,
+      rows: [
+        snapshotRow('registrations', 'Registrations', registrations, formatCount),
+        snapshotRow(
+          'registration-revenue',
+          'Registration revenue',
+          registrationRevenue,
+          formatDollars,
+          HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY.registrationRevenueTip
+        ),
+      ],
+      emptyCopy: null,
+    },
+    {
+      key: 'sponsorship',
+      title: 'Sponsorship',
+      startHeader: rollingStartHeader,
+      endHeader,
+      rows: [
+        ...packages.map((item) => snapshotRow(`package-${item.key}`, item.key, item, formatCount)),
+        ...(packages.length ? [{ ...snapshotRow('totals', 'Totals', totals, formatCount), totals: true }] : []),
+        snapshotRow(
+          'sponsorship-revenue',
+          'Sponsorship revenue',
+          sponsorshipRevenue,
+          formatDollars,
+          HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY.sponsorshipRevenueTip
+        ),
+      ],
+      emptyCopy: packages.length ? null : HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY.noPackages,
+    },
+  ];
 }
 
 /** "Springfield · Starts Dec 8, 2026", the dialog's line under the event name; either half drops out when missing. */
@@ -556,10 +657,7 @@ function trendKpi(key: string, label: string, value: string): HealthMetricsOverv
  * The trend chart: its lines, goal and today marker, on a scale rounded up to at most 5 even steps (1, 2, 2.5 or 5
  * times a power of ten), with ticks every 30 days. The forecast and its band start at the last measured day.
  */
-function buildTrendChart(
-  series: HealthMetricsEventsForecastCurveSeries | null,
-  goal: number | null
-): Omit<HealthMetricsOverviewTrendView, 'kpis' | 'goalLabel' | 'daysTitle' | 'daysLabel'> {
+function buildTrendChart(series: HealthMetricsEventsForecastCurveSeries | null, goal: number | null): Omit<HealthMetricsOverviewTrendView, 'kpis'> {
   const window = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
   const points = (series?.points ?? []).filter((point) => point.daysToEvent >= -window && point.daysToEvent <= 0);
   const peak = Math.max(goal ?? 0, ...points.flatMap((point) => [point.actual ?? 0, point.forecastHigh ?? 0, point.forecastAvg ?? 0, point.priorYear ?? 0]));
@@ -999,6 +1097,73 @@ function buildInitials(name: string): string {
     .slice(0, 2)
     .map((word) => word.charAt(0).toUpperCase())
     .join('');
+}
+
+function daysBadge(isPast: boolean, daysLeft: number | null, icon: string): HealthMetricsOverviewEventDialogBadgeView | null {
+  if (isPast) return { label: 'Event held', icon, variant: 'line', tone: 'neutral' };
+  if (daysLeft === null) return null;
+  return { label: daysLeft === 1 ? '1 day left' : `${formatCount(daysLeft)} days left`, icon, variant: 'line', tone: 'neutral' };
+}
+
+/**
+ * The level before the period's first week: the week before it when read, else that week's level less its change.
+ * The newest week runs past its own end, so with nothing read before it the view's spine starts at the event's first
+ * activity, and the level before is zero.
+ */
+function weeklyStart(
+  first: HealthMetricsEventsSnapshotWeek | null,
+  before: HealthMetricsEventsSnapshotWeek | null,
+  latest: HealthMetricsEventsSnapshotWeek | null,
+  level: (week: HealthMetricsEventsSnapshotWeek) => number,
+  delta: (week: HealthMetricsEventsSnapshotWeek) => number,
+  end: number
+): number {
+  if (before) return level(before);
+  if (!first) return end;
+  if (first === latest) return 0;
+  return level(first) - delta(first);
+}
+
+function snapshotRow(
+  key: string,
+  label: string,
+  levels: { start: number; end: number },
+  format: (value: number) => string,
+  tip: string | null = null
+): HealthMetricsOverviewSnapshotRowView {
+  return {
+    key,
+    label,
+    tip,
+    startLabel: format(levels.start),
+    endLabel: format(levels.end),
+    change: snapshotChange(levels.start, levels.end, format),
+    totals: false,
+  };
+}
+
+/** "+139 (74%)" against the start; no share when the start is zero. A change under one unit reads as none. */
+function snapshotChange(start: number, end: number, format: (value: number) => string): HealthMetricsOverviewSnapshotChangeView {
+  const change = Math.round(end - start);
+  if (change === 0) return { label: 'No change', tone: 'neutral', icon: null };
+
+  const share = start > 0 ? ` (${Math.abs(Math.round((change / start) * 100))}%)` : '';
+  return change > 0
+    ? { label: `+${format(change)}${share}`, tone: 'success', icon: 'fa-solid fa-circle-arrow-up' }
+    : { label: `−${format(-change)}${share}`, tone: 'danger', icon: 'fa-solid fa-circle-arrow-down' };
+}
+
+/** Whole dollars with separators, as the Snapshot shows money: `$4,575,877`. */
+function formatDollars(value: number): string {
+  return `$${Math.round(value).toLocaleString('en-US')}`;
+}
+
+/** `YYYY-MM-DD` moved by whole days, in UTC so no offset can slip it a day. */
+function shiftIsoDate(iso: string, days: number): string {
+  const date = parseIsoDateAsUtcMidnight(iso);
+  if (!date) return iso;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function formatCount(value: number | null | undefined): string {

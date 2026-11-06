@@ -34,6 +34,7 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_L2_RANGES,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
@@ -281,6 +282,97 @@ describe('HealthMetricsEventsService.getRegistrationHistory', () => {
     await expect(new HealthMetricsEventsService().getRegistrationHistory(req, { foundationSlug: 'acme', eventId: 'evt-9' })).resolves.toBe(
       HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED
     );
+  });
+});
+
+describe('HealthMetricsEventsService.getSnapshot', () => {
+  const weekRow = (overrides: Record<string, unknown> = {}) => ({
+    WEEK_START_DATE: '2026-10-26',
+    WEEK_END_DATE: '2026-11-01',
+    REGISTRATIONS: 6969,
+    REGISTRATIONS_DELTA: 713,
+    REGISTRATION_REVENUE_USD: 4575877.26,
+    REGISTRATION_REVENUE_DELTA_USD: 630511.58,
+    IN_7D: true,
+    IN_30D: true,
+    IN_90D: true,
+    TODAY: '2026-11-05',
+    ...overrides,
+  });
+  const tierRow = (overrides: Record<string, unknown> = {}) => ({
+    SPONSORSHIP_TIER: 'Gold',
+    SOLD: 37,
+    SOLD_7D: 0,
+    SOLD_30D: 1,
+    SOLD_90D: 5,
+    REVENUE_USD: 2952895,
+    REVENUE_7D_USD: 0,
+    REVENUE_30D_USD: 80000,
+    REVENUE_90D_USD: 446040,
+    TODAY: '2026-11-05',
+    ...overrides,
+  });
+  const read = () => new HealthMetricsEventsService().getSnapshot(req, { foundationSlug: 'acme', eventId: 'evt-1' });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('reads the event’s all-projects weeks and its USD tiers, scoping the tiers to the foundation through the week view', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await read();
+
+    const [weeksSql, weekBinds] = execute.mock.calls[0];
+    expect(weekBinds).toEqual(['acme', 'evt-1']);
+    expect(weeksSql).toContain('EVENT_REGISTRATIONS_WEEK_OVER_WEEK');
+    expect(weeksSql).toContain('is_all_projects = TRUE');
+
+    const [tiersSql, tierBinds] = execute.mock.calls[1];
+    expect(tierBinds).toEqual(['evt-1', 'acme']);
+    expect(tiersSql).toContain('MARKETING_EVENT_SPONSORSHIPS_BY_TIER');
+    expect(tiersSql).toContain("t.currency_code = 'USD'");
+    expect(tiersSql).toMatch(/EXISTS \(\s*SELECT 1\s*FROM ANALYTICS\.PLATINUM_LFX_ONE\.EVENT_REGISTRATIONS_WEEK_OVER_WEEK w\s*WHERE w\.foundation_slug = \?/);
+  });
+
+  it('maps the weeks and folds tiers into packages, priciest per package first, an unnamed tier as Other and fee lines in the revenue only', async () => {
+    execute
+      .mockResolvedValueOnce({ rows: [weekRow({ WEEK_START_DATE: '2026-10-19', WEEK_END_DATE: '2026-10-25', REGISTRATIONS: 5759, IN_7D: false }), weekRow()] })
+      .mockResolvedValueOnce({
+        rows: [
+          tierRow(),
+          tierRow({ SPONSORSHIP_TIER: 'Diamond', SOLD: 10, SOLD_90D: 1, REVENUE_USD: 2114350, REVENUE_90D_USD: 246600 }),
+          tierRow({ SPONSORSHIP_TIER: 'Gold ', SOLD: 1, SOLD_30D: 0, SOLD_90D: 0, REVENUE_USD: 80000, REVENUE_30D_USD: 0, REVENUE_90D_USD: 0 }),
+          tierRow({ SPONSORSHIP_TIER: 'Sales Tax', SOLD: 0, SOLD_30D: 0, SOLD_90D: 0, REVENUE_USD: 13289, REVENUE_30D_USD: 1732, REVENUE_90D_USD: 4897 }),
+          tierRow({ SPONSORSHIP_TIER: null, SOLD: 2, SOLD_30D: 0, SOLD_90D: 0, REVENUE_USD: 2000, REVENUE_30D_USD: 0, REVENUE_90D_USD: 0 }),
+        ],
+      });
+
+    const snapshot = await read();
+
+    expect(snapshot.today).toBe('2026-11-05');
+    expect(snapshot.weeks[0]).toEqual({
+      weekStartDate: '2026-10-19',
+      weekEndDate: '2026-10-25',
+      registrations: 5759,
+      registrationsDelta: 713,
+      registrationRevenueUsd: 4575877.26,
+      registrationRevenueDeltaUsd: 630511.58,
+      inPeriod: { '7d': false, '30d': true, '90d': true },
+    });
+    expect(snapshot.packages).toEqual([
+      { tier: 'Diamond', sold: 10, soldInPeriod: { '7d': 0, '30d': 1, '90d': 1 }, revenueUsd: 2114350 },
+      { tier: 'Gold', sold: 38, soldInPeriod: { '7d': 0, '30d': 1, '90d': 5 }, revenueUsd: 3032895 },
+      { tier: 'Other', sold: 2, soldInPeriod: { '7d': 0, '30d': 0, '90d': 0 }, revenueUsd: 2000 },
+    ]);
+    expect(snapshot.sponsorshipRevenueUsd).toBe(2952895 + 2114350 + 80000 + 13289 + 2000);
+    expect(snapshot.sponsorshipRevenueInPeriodUsd).toEqual({ '7d': 0, '30d': 80000 * 2 + 1732, '90d': 446040 + 246600 + 4897 });
+  });
+
+  it('returns the unmeasured snapshot for an event with no rows, or another foundation’s', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await expect(read()).resolves.toBe(HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED);
   });
 });
 

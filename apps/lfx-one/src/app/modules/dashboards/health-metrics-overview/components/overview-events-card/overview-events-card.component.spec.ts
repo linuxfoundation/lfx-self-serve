@@ -12,7 +12,7 @@ import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
-import { OverviewEventTrendDialogComponent } from '../overview-event-trend-dialog/overview-event-trend-dialog.component';
+import { OverviewEventDialogComponent } from '../overview-event-dialog/overview-event-dialog.component';
 
 import { OverviewEventsCardComponent } from './overview-events-card.component';
 
@@ -181,18 +181,19 @@ describe('OverviewEventsCardComponent', () => {
     expect(text('overview-events-row-u0-trend')).toBe('Registration TrendTrend');
   });
 
-  it("opens an upcoming event's registration trend from its button", async () => {
+  it("opens an upcoming event's dialog on its registration trend from its button, anchored to the top", async () => {
     await render();
 
     query('overview-events-row-u1-trend')?.click();
 
     expect(open).toHaveBeenCalledTimes(1);
-    expect(open.mock.calls[0][0]).toBe(OverviewEventTrendDialogComponent);
+    expect(open.mock.calls[0][0]).toBe(OverviewEventDialogComponent);
     expect(open.mock.calls[0][1]).toMatchObject({
       showHeader: false,
+      position: 'top',
       modal: true,
       dismissableMask: true,
-      data: { event: expect.objectContaining({ eventId: 'u1' }), isPast: false },
+      data: { event: expect.objectContaining({ eventId: 'u1' }), isPast: false, tab: 'trend' },
     });
   });
 
