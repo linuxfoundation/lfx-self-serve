@@ -83,6 +83,7 @@ import type {
   CampaignServiceAccessibleAccounts,
   CampaignServiceGoogleAdsConversionActions,
   CampaignServiceGoogleAdsGeoTargetSuggestions,
+  CampaignServiceGoogleAdsUserLists,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
   CampaignSendWorkflowRequest,
@@ -3407,6 +3408,28 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/google-ads/conversion-actions`,
+      'GET'
+    );
+  }
+
+  /**
+   * The user lists on the Google Ads account a create for this project uses (`list-google-ads-user-lists`,
+   * linuxfoundation/lfx-v2-campaign-service#508), for the Implement tab's audience segment picker (#5244).
+   * Upstream answers it on `global_marketing_ops` of the path project, the relation the BFF checks first;
+   * it returns up to 500 lists sorted by name, with `truncated` set when the account holds more.
+   * Failures are left to the caller, which falls back to the typed box.
+   */
+  public async listGoogleAdsUserLists(req: Request, projectSlug: string): Promise<CampaignServiceGoogleAdsUserLists> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A user list read requires the project it belongs to.', {
+        operation: 'list_google_ads_user_lists',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceGoogleAdsUserLists>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/user-lists`,
       'GET'
     );
   }

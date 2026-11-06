@@ -163,6 +163,10 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-action-picker-live">
   {{ googleConversionActionPickerAnnouncement() }}
 </div>
+<!-- The audience segment picker's loading line, reason, empty or partial-list note, announced on the same terms (#5244). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-user-list-picker-live">
+  {{ googleUserListPickerAnnouncement() }}
+</div>
 <!-- The Demand Gen format the create will not send, kept and announced on the same terms (#5226); empty off Demand Gen. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-format-held-live">
   {{ demandGenFormatHeldMessage() }}
@@ -1157,15 +1161,49 @@
 
         SEARCH ONLY, gated on `googleAudienceSegmentsAvailable` — upstream attaches audience criteria
         to the Search ad group and refuses them on every other channel rather than dropping them.
-        Each entry is an EXISTING user list's resource name: campaign-service creates no audiences
-        and lists none, so there is nothing to pick from. Empty sends no key, so an untouched
-        section changes nothing about the campaign.
+        Each entry is an EXISTING user list's resource name. The picker lists the account's user lists
+        (#5244) and adds the picked one's resource name exactly as typing it would; the typed box stays
+        for a list the picker does not show. Empty sends no key, so an untouched section changes
+        nothing about the campaign.
       -->
       @if (googleAudienceSegmentsAvailable()) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-audience-segments-section">
           <label class="mb-2 block text-xs font-medium text-gray-700" for="google-audience-segment-add">
             Google Audience Segments ({{ googleAudienceSegments().length }}/{{ googleMaxAudienceSegments }})
           </label>
+          @switch (googleUserListPicker().status) {
+            @case ('loaded') {
+              @if (googleUserListPickerOptions().length > 0 && !googleAudienceSegmentsFull()) {
+                <div class="mb-3">
+                  <lfx-ui-combobox
+                    label="Pick a user list"
+                    placeholder="Search this account's user lists"
+                    emptyText="No user list matches"
+                    size="small"
+                    [value]="googleUserListPick()"
+                    (valueChange)="onGoogleUserListPicked($event)"
+                    data-testid="implementation-google-user-list-picker">
+                    @for (list of googleUserListPickerOptions(); track list.resourceName) {
+                      <lfx-ui-option [value]="list.resourceName" [label]="list.label" />
+                    }
+                  </lfx-ui-combobox>
+                </div>
+              }
+              @if (googleUserListPicker().lists.length === 0) {
+                <p class="mb-2 text-xs text-gray-500" data-testid="implementation-google-user-list-picker-empty">{{ userListPickerEmpty }}</p>
+              } @else if (googleUserListPicker().truncated) {
+                <p class="mb-2 text-xs text-gray-500" data-testid="implementation-google-user-list-picker-truncated">{{ userListPickerTruncated }}</p>
+              }
+            }
+            @case ('loading') {
+              <p class="mb-2 text-xs text-gray-500" data-testid="implementation-google-user-list-picker-loading">{{ userListPickerLoading }}</p>
+            }
+            @case ('unavailable') {
+              <p class="mb-2 text-xs text-gray-500" data-testid="implementation-google-user-list-picker-unavailable">
+                {{ googleUserListPicker().reason }}
+              </p>
+            }
+          }
           <div class="flex flex-wrap items-center gap-2">
             @for (segment of googleAudienceSegments(); track segment; let i = $index) {
               <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">

@@ -155,6 +155,10 @@ import {
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
   GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
+  GOOGLE_USER_LIST_PICKER_EMPTY,
+  GOOGLE_USER_LIST_PICKER_LOADING,
+  GOOGLE_USER_LIST_PICKER_REASONS,
+  GOOGLE_USER_LIST_PICKER_TRUNCATED,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   DEFAULT_GOOGLE_DAILY_BUDGET_USD,
@@ -179,6 +183,7 @@ import {
   isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
+import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { UiMultiSelectComponent } from '@shared/uikit/multi-select/multi-select.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -272,6 +277,8 @@ import type {
   GoogleCreativeSection,
   GoogleCreativeSharedCap,
   GoogleTypedImageProbe,
+  GoogleUserListPickerOption,
+  GoogleUserListPickerState,
   LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
@@ -325,7 +332,9 @@ import {
   googleSearchAdPathsRefusal,
   googleStrategyTakesScheduleAdjustments,
   googleSuggestedNegativeKeywordsText,
+  googleUnpickedUserLists,
   googleUpperCodeList,
+  googleUserListLabel,
   isHttpUrl,
   isReversedCampaignFlight,
   joinAsSentenceList,
@@ -400,6 +409,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     CreativeLibraryUploadComponent,
     CreativeSlotGridComponent,
     GoogleCreativeImageLibraryComponent,
+    UiComboboxComponent,
     UiMultiSelectComponent,
     UiOptionComponent,
   ],
@@ -3743,6 +3753,24 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleAudienceSegmentsBlock: Signal<CampaignGoogleAudienceSegmentsBlock | null> = this.initGoogleAudienceSegmentsBlock();
   /** The always-mounted live region's text for `googleAudienceSegmentsBlock`; `''` when nothing blocks. */
   protected readonly googleAudienceSegmentsBlockMessage = computed(() => this.googleAudienceSegmentsBlock()?.message ?? '');
+  /**
+   * The audience segment picker's list (#5244), read only while the section is shown — which already
+   * means the caller holds `global_marketing_ops` on the project, the relation the route checks. A
+   * refusal after that, the route off on this deployment, or Google failing leaves the picker
+   * `unavailable` with a reason, and the typed box is the way in, exactly as before.
+   */
+  protected readonly googleUserListPicker: Signal<GoogleUserListPickerState> = this.initGoogleUserListPicker();
+  /** The listed user lists not yet among the segments: the rows the picker offers, so a list is never added twice. */
+  protected readonly googleUserListPickerOptions: Signal<GoogleUserListPickerOption[]> = computed(() =>
+    googleUnpickedUserLists(this.googleUserListPicker().lists, this.googleAudienceSegments())
+  );
+  /** The picker's loading line, reason, empty or partial-list note, for its always-mounted live region; `''` otherwise. */
+  protected readonly googleUserListPickerAnnouncement: Signal<string> = this.initGoogleUserListPickerAnnouncement();
+  /** The combobox's own value: cleared back to `null` as soon as a pick is added, so it stays ready for the next one. */
+  protected readonly googleUserListPick = signal<string | null>(null);
+  protected readonly userListPickerEmpty = GOOGLE_USER_LIST_PICKER_EMPTY;
+  protected readonly userListPickerLoading = GOOGLE_USER_LIST_PICKER_LOADING;
+  protected readonly userListPickerTruncated = GOOGLE_USER_LIST_PICKER_TRUNCATED;
   protected readonly googleTakesCpcBid: Signal<boolean> = this.initGoogleTakesCpcBid();
   private readonly googleStrategyNeedsTarget: Signal<boolean> = this.initGoogleStrategyNeedsTarget();
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
@@ -5053,6 +5081,17 @@ export class ImplementationTabComponent implements OnInit {
   protected onGoogleAudienceSegmentsRemoveAll(): void {
     this.googleAudienceSegments.set([]);
     this.emitDraft();
+  }
+  /**
+   * A list picked from the audience segment picker: its resource name is added exactly as typing it
+   * would add it, then the combobox is cleared for the next pick. A `null` (the field cleared) adds
+   * nothing.
+   */
+  protected onGoogleUserListPicked(resourceName: string | null): void {
+    this.googleUserListPick.set(resourceName);
+    if (resourceName === null) return;
+    this.addGoogleAudienceSegment(resourceName);
+    this.googleUserListPick.set(null);
   }
 
   /**
@@ -9112,6 +9151,60 @@ export class ImplementationTabComponent implements OnInit {
       if (this.googleAudienceSegmentsEnabled() !== true) return false;
       const channel = this.googleBiddingChannel();
       return channel !== null && (GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS as readonly string[]).includes(channel);
+    });
+  }
+  /**
+   * The audience segment picker's list, read only while the section is shown and the project is known.
+   * The section shows only for a caller the route admits (`googleAudienceSegmentsAvailable`, the same
+   * `global_marketing_ops` answer), so a 403 or 404 here is the deployment or the gateway, not the
+   * caller, and reads as unavailable. The project and the section are read INSIDE the trigger, so a
+   * change to either drops a read that no longer applies. Each list carries its label, built once.
+   */
+  private initGoogleUserListPicker(): Signal<GoogleUserListPickerState> {
+    const state = (status: GoogleUserListPickerState['status'], reason: string | null = null): GoogleUserListPickerState => ({
+      status,
+      lists: [],
+      truncated: false,
+      reason,
+    });
+    const trigger = computed(() => ({
+      projectSlug: this.activeFoundationSlug(),
+      shown: this.googleAudienceSegmentsAvailable(),
+    }));
+    return toSignal(
+      toObservable(trigger).pipe(
+        switchMap(({ projectSlug, shown }) => {
+          if (projectSlug === '' || !shown) return of(state('idle'));
+          return this.campaignService.getGoogleAdsUserLists(projectSlug).pipe(
+            map(
+              (result): GoogleUserListPickerState => ({
+                status: 'loaded',
+                lists: result.userLists.map((list) => ({ ...list, label: googleUserListLabel(list) })),
+                truncated: result.truncated,
+                reason: null,
+              })
+            ),
+            catchError((err: unknown) => {
+              const status = err instanceof HttpErrorResponse ? err.status : 0;
+              if (status === 403 || status === 404) return of(state('unavailable', GOOGLE_USER_LIST_PICKER_REASONS.unavailable));
+              return of(state('unavailable', GOOGLE_USER_LIST_PICKER_REASONS.failed));
+            }),
+            startWith(state('loading'))
+          );
+        })
+      ),
+      { initialValue: state('idle') }
+    );
+  }
+
+  private initGoogleUserListPickerAnnouncement(): Signal<string> {
+    return computed(() => {
+      const picker = this.googleUserListPicker();
+      if (picker.status === 'loading') return GOOGLE_USER_LIST_PICKER_LOADING;
+      if (picker.status === 'unavailable') return picker.reason ?? '';
+      if (picker.status === 'loaded' && picker.lists.length === 0) return GOOGLE_USER_LIST_PICKER_EMPTY;
+      if (picker.status === 'loaded' && picker.truncated) return GOOGLE_USER_LIST_PICKER_TRUNCATED;
+      return '';
     });
   }
 

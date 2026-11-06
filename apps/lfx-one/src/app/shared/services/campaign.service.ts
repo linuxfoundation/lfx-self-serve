@@ -87,6 +87,7 @@ import {
   GenerateEmailCopyResult,
   GoogleAdsAccountOption,
   GoogleAdsConversionActionsResult,
+  GoogleAdsUserListsResult,
   GoogleAdsGeoTargetSearchOptions,
   GoogleAdsGeoTargetSearchResult,
   HubSpotEmailMonitorResponse,
@@ -687,6 +688,16 @@ export class CampaignService {
    */
   public getGoogleAdsConversionActions(projectSlug: string): Observable<GoogleAdsConversionActionsResult> {
     return this.http.get<GoogleAdsConversionActionsResult>('/api/campaigns/google/conversion-actions', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The user lists on the Google Ads account a create for this project uses, for the Implement tab's
+   * audience segment picker (#5244). A coded 403 for a caller without `global_marketing_ops` on the
+   * project, a coded 503 when that check cannot be made, and a 404 while audience segments cannot be
+   * created on this deployment.
+   */
+  public getGoogleAdsUserLists(projectSlug: string): Observable<GoogleAdsUserListsResult> {
+    return this.http.get<GoogleAdsUserListsResult>('/api/campaigns/google/user-lists', { params: { project: projectSlug } });
   }
 
   /**

@@ -2498,6 +2498,46 @@ export interface GoogleConversionActionPickerState {
   reason: string | null;
 }
 
+/**
+ * One user list on the Google Ads account a create uses, as the Implement tab's audience segment
+ * picker offers it (campaign-service `list-google-ads-user-lists`, camel-cased). `resourceName` is the
+ * `customers/{customerId}/userLists/{id}` form `audienceSegments` accepts and the one the picker adds;
+ * the rest are labels only. `eligibleForSearch` is `null` when Google reported nothing.
+ */
+export interface GoogleAdsUserListOption {
+  resourceName: string;
+  id: string;
+  name: string;
+  /** Google's UserListType, verbatim (CRM_BASED, RULE_BASED, LOGICAL, SIMILAR, ...). */
+  type: string;
+  eligibleForSearch: boolean | null;
+}
+
+/** One user list as the picker lists it: the list, and the label it is shown with, built once when the list is read. */
+export interface GoogleUserListPickerOption extends GoogleAdsUserListOption {
+  label: string;
+}
+
+/** The user list read: the account it came from, its lists sorted by name, and whether more exist than were returned. */
+export interface GoogleAdsUserListsResult {
+  accountId: string;
+  userLists: GoogleAdsUserListOption[];
+  truncated: boolean;
+}
+
+/**
+ * Where the Implement tab's audience segment picker stands. `unavailable` is a list that could not
+ * load — the route is off or refused, or Google failed — and `reason` says which in one sentence; the
+ * typed box is the way in then, as it always was. `truncated` is upstream's word that the account
+ * holds more lists than were returned.
+ */
+export interface GoogleUserListPickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  lists: GoogleUserListPickerOption[];
+  truncated: boolean;
+  reason: string | null;
+}
+
 /** The optional narrowing a geo target search may carry beside its query text. */
 export interface GoogleAdsGeoTargetSearchOptions {
   countryCode?: string;
@@ -4605,6 +4645,27 @@ export interface CampaignServiceGoogleAdsConversionActions {
   account_id: string;
   conversion_actions: CampaignServiceGoogleAdsConversionAction[];
   conversion_action_count: number;
+}
+
+/** One element of campaign-service's user list read (`google-ads-user-list`, linuxfoundation/lfx-v2-campaign-service#508). */
+export interface CampaignServiceGoogleAdsUserList {
+  resource_name: string;
+  id: string;
+  name: string;
+  type: string;
+  membership_status?: string;
+  account_status?: string;
+  size_for_search?: number;
+  size_range_for_search?: string;
+  eligible_for_search?: boolean;
+}
+
+/** campaign-service `GET /projects/{project_id}/google-ads/user-lists` (`global_marketing_ops` on the project; linuxfoundation/lfx-v2-campaign-service#508). */
+export interface CampaignServiceGoogleAdsUserLists {
+  account_id: string;
+  user_lists: CampaignServiceGoogleAdsUserList[];
+  user_list_count: number;
+  truncated: boolean;
 }
 
 /**

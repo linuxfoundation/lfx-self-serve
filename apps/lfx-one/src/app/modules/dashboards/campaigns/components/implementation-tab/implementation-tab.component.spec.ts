@@ -64,6 +64,7 @@ import type {
   GoogleAdsConversionActionsResult,
   GoogleAdsGeoTargetSearchResult,
   GoogleAdsGeoTargetSuggestion,
+  GoogleAdsUserListsResult,
   GoogleCreativeChannel,
   GoogleCreativeFieldSpec,
   ProjectContext,
@@ -9246,6 +9247,152 @@ describe('ImplementationTabComponent google conversion action picker', () => {
  * upstream's `validateAudienceSegments` is mirrored on the add path — and each test below is one of
  * those branches, plus the accept-cases that keep the guards from refusing what upstream takes.
  */
+/**
+ * The audience segment picker (#5244): a searchable list of the account's user lists inside Google
+ * Audience Segments, which adds a picked list's resource name exactly as typing it would, and the
+ * typed box alone, with the reason, whenever the list cannot be read.
+ */
+describe('ImplementationTabComponent google user list picker', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  const LIST_A = 'customers/8666746580/userLists/111';
+  const LIST_B = 'customers/8666746580/userLists/222';
+  const LISTS: GoogleAdsUserListsResult = {
+    accountId: '8666746580',
+    userLists: [
+      { resourceName: LIST_A, id: '111', name: 'KubeCon NA 2025 registrants', type: 'CRM_BASED', eligibleForSearch: true },
+      { resourceName: LIST_B, id: '222', name: 'KubeCon site visitors', type: 'RULE_BASED', eligibleForSearch: false },
+    ],
+    truncated: false,
+  };
+  let read: ReturnType<typeof vi.fn>;
+
+  async function setup(answer: () => unknown): Promise<void> {
+    await configureGoogleTab();
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
+    read = vi.fn(answer);
+    vi.spyOn(TestBed.inject(CampaignService), 'getGoogleAdsUserLists').mockImplementation(read as never);
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  /** Search, with the per-caller audience segment capability. */
+  function seedSearch(enabled: boolean | null = true): Record<string, any> {
+    const c = seedChannel(fixture, { includeSearch: true });
+    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', enabled);
+    fixture.detectChanges();
+    return c;
+  }
+
+  it('reads nothing while the section is not shown, its live region already mounted and empty', async () => {
+    await setup(() => of(LISTS));
+    seedSearch(false);
+    expect(read).not.toHaveBeenCalled();
+    expect(query('implementation-google-user-list-picker-live')?.textContent?.trim()).toBe('');
+
+    seedSearch(null);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('offers the account lists by label and adds a pick exactly as typing would, then clears the field', async () => {
+    await setup(() => of(LISTS));
+    const c = seedSearch();
+
+    expect(read).toHaveBeenCalledWith('tlf');
+    expect(query('implementation-google-user-list-picker')).not.toBeNull();
+    expect(c['googleUserListPickerOptions']().map((l: { label: string }) => l.label)).toEqual([
+      'KubeCon NA 2025 registrants · Customer list',
+      'KubeCon site visitors · Website visitors · not eligible for Search',
+    ]);
+
+    c['onGoogleUserListPicked'](LIST_B);
+    fixture.detectChanges();
+    expect(c['googleAudienceSegments']()).toEqual([LIST_B]);
+    expect(c['googleUserListPick']()).toBeNull();
+    // A picked list is not offered again, and the typed box stays for one the picker does not show.
+    expect(c['googleUserListPickerOptions']().map((l: { resourceName: string }) => l.resourceName)).toEqual([LIST_A]);
+    expect(query('implementation-google-audience-segment-add')).not.toBeNull();
+  });
+
+  it('sends the same audienceSegments for a picked list as for the same list typed', async () => {
+    await setup(() => of(LISTS));
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedSearch();
+
+    c['onGoogleUserListPicked'](LIST_A);
+    c['addGoogleAudienceSegment'](LIST_B);
+    fixture.detectChanges();
+    c['submit']();
+    await fixture.whenStable();
+
+    const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(request['audienceSegments']).toEqual([LIST_A, LIST_B]);
+  });
+
+  it('adds nothing for a cleared field', async () => {
+    await setup(() => of(LISTS));
+    const c = seedSearch();
+
+    c['onGoogleUserListPicked'](null);
+    expect(c['googleAudienceSegments']()).toEqual([]);
+  });
+
+  it('hides the picker at the cap, as it hides the typed box', async () => {
+    await setup(() => of(LISTS));
+    const c = seedSearch();
+    c['googleAudienceSegments'].set(Array.from({ length: GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS }, (_, i) => `customers/1/userLists/${i + 1}`));
+    fixture.detectChanges();
+
+    expect(query('implementation-google-user-list-picker')).toBeNull();
+  });
+
+  it('says so when the account has no lists, and when it has more than were returned', async () => {
+    await setup(() => of({ ...LISTS, userLists: [] }));
+    seedSearch();
+    expect(query('implementation-google-user-list-picker')).toBeNull();
+    expect(query('implementation-google-user-list-picker-empty')?.textContent).toContain('no user lists to pick from');
+    expect(query('implementation-google-user-list-picker-live')?.textContent).toContain('no user lists to pick from');
+
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    await setup(() => of({ ...LISTS, truncated: true }));
+    seedSearch();
+    expect(query('implementation-google-user-list-picker-truncated')?.textContent).toContain('more user lists than the picker shows');
+    expect(query('implementation-google-user-list-picker-live')?.textContent).toContain('more user lists than the picker shows');
+  });
+
+  it.each([
+    [403, "isn't available here"],
+    [404, "isn't available here"],
+    [503, "couldn't be read"],
+    [0, "couldn't be read"],
+  ])('falls back to the typed box with a reason when the read answers %s', async (status, reason) => {
+    await setup(() => throwError(() => new HttpErrorResponse({ status })));
+    seedSearch();
+
+    expect(query('implementation-google-user-list-picker')).toBeNull();
+    expect(query('implementation-google-user-list-picker-unavailable')?.textContent).toContain(reason);
+    expect(query('implementation-google-user-list-picker-live')?.textContent).toContain(reason);
+    expect(query('implementation-google-audience-segment-add')).not.toBeNull();
+  });
+
+  it('shows the loading line while the read is in flight, and drops it when the section closes', async () => {
+    const pending = new Subject<GoogleAdsUserListsResult>();
+    await setup(() => pending.asObservable());
+    seedSearch();
+    expect(query('implementation-google-user-list-picker-loading')).not.toBeNull();
+    expect(query('implementation-google-user-list-picker-live')?.textContent).toContain('Loading');
+
+    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', false);
+    fixture.detectChanges();
+    expect(pending.observed).toBe(false);
+    expect(query('implementation-google-user-list-picker-live')?.textContent?.trim()).toBe('');
+  });
+});
+
 describe('ImplementationTabComponent google audience segments', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
   const LIST_A = 'customers/1234567890/userLists/111';

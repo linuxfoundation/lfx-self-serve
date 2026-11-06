@@ -9,7 +9,12 @@ import { CampaignController } from '../controllers/campaign.controller';
 import { CampaignOptimizeController } from '../controllers/campaign-optimize.controller';
 import { MicroserviceError } from '../errors';
 import { canonicalizeProjectQuery } from '../middleware/canonicalize-project-query.middleware';
-import { requireCampaignManager, requireGoogleConversionActionsAccess, requireGoogleMonitorAccess } from '../middleware/require-marketing-access.middleware';
+import {
+  requireCampaignManager,
+  requireGoogleConversionActionsAccess,
+  requireGoogleMonitorAccess,
+  requireGoogleUserListsAccess,
+} from '../middleware/require-marketing-access.middleware';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -67,6 +72,14 @@ router.get('/briefs', canonicalizeProjectQuery, requireCampaignManager, (req, re
 router.get('/google/conversion-actions', requireGoogleConversionActionsAccess, (req, res, next) =>
   campaignController.getGoogleAdsConversionActions(req, res, next)
 );
+
+// The user lists on the Google Ads account a create uses, for the Implement tab's audience segment
+// picker (#5244). The account is shared, so the list names every foundation's audiences: answered only
+// to `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#508).
+// 404 while audience segments cannot be created. Registered ahead of `router.use(requireCampaignManager)`
+// for the same reason as the conversion-action list above: an access-check outage must reach the
+// controller's coded 503, not that guard's uncoded 403.
+router.get('/google/user-lists', requireGoogleUserListsAccess, (req, res, next) => campaignController.getGoogleAdsUserLists(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
