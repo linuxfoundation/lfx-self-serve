@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, model, output, Signal } from '@angular/core';
-import { ButtonComponent } from '@components/button/button.component';
 import { VOTE_COMMENT_ANONYMOUS_NOTICES } from '@lfx-one/shared/constants';
 import { CommentResultView, PollCommentResult, VoteCommentAnonymityReason } from '@lfx-one/shared/interfaces';
 import { splitIntoParagraphs } from '@lfx-one/shared/utils';
@@ -12,7 +11,7 @@ import { VoteCommentItemComponent } from '../vote-comment-item/vote-comment-item
 /** Independent comment-question panels. The host retains expansion choices across tab switches and resets them for another vote. */
 @Component({
   selector: 'lfx-vote-comment-results',
-  imports: [ButtonComponent, VoteCommentItemComponent],
+  imports: [VoteCommentItemComponent],
   templateUrl: './vote-comment-results.component.html',
   host: { class: 'contents' },
 })
@@ -39,18 +38,11 @@ export class VoteCommentResultsComponent {
   protected readonly hasMultipleQuestions: Signal<boolean> = computed(() => this.commentResults().length > 1);
   protected readonly displayCommentResults: Signal<CommentResultView[]> = this.initDisplayCommentResults();
   protected readonly expandedPrompts: Signal<ReadonlySet<string>> = this.initExpandedPrompts();
-  protected readonly allExpanded: Signal<boolean> = computed(
-    () => this.commentResults().length > 0 && this.expandedPrompts().size === this.commentResults().length
-  );
 
   // === Protected Methods ===
   protected togglePrompt(promptId: string): void {
     const expanded = this.expandedPrompts().has(promptId);
     this.expansionState.update((state) => new Map(state).set(promptId, !expanded));
-  }
-
-  protected setAllExpanded(expanded: boolean): void {
-    this.expansionState.set(new Map(this.commentResults().map((result) => [result.prompt.prompt_id, expanded])));
   }
 
   // === Private Initializers ===
