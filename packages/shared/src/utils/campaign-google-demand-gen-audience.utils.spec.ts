@@ -4,7 +4,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { GOOGLE_DEMAND_GEN_AUDIENCE_BESIDE_AD_GROUPS } from '../constants/campaign.constants';
-import { googleDemandGenAudienceCarried, googleDemandGenAudienceRefusal, googleDemandGenAudiencesRefusal } from './campaign-google-demand-gen-audience.utils';
+import {
+  googleDemandGenAudienceCarried,
+  googleDemandGenAudienceRefusal,
+  googleDemandGenAudiencesRefusal,
+  googleDemandGenAudienceTypeRefusal,
+} from './campaign-google-demand-gen-audience.utils';
 
 const OWNER = 'The Demand Gen audience';
 const AUDIENCE = 'customers/1234567890/audiences/42';
@@ -76,5 +81,25 @@ describe('googleDemandGenAudienceCarried', () => {
     expect(googleDemandGenAudienceCarried(' ', undefined)).toBe(true);
     expect(googleDemandGenAudienceCarried(0, undefined)).toBe(true);
     expect(googleDemandGenAudienceCarried(undefined, [{ name: 'a' }, { audience: 'x' }])).toBe(true);
+  });
+});
+
+describe('googleDemandGenAudienceTypeRefusal', () => {
+  it('passes absent, null, an empty list and every string, blank and malformed included, to the checks after it', () => {
+    for (const value of [undefined, null, [], '', '  ', 'nope', AUDIENCE]) {
+      expect(googleDemandGenAudienceTypeRefusal(value, [{ name: 'a', audience: value }])).toBeNull();
+    }
+    expect(googleDemandGenAudienceTypeRefusal(undefined, 'not a list')).toBeNull();
+    expect(googleDemandGenAudienceTypeRefusal(undefined, [null, 7, { name: 'a' }])).toBeNull();
+  });
+
+  it.each([[42], [['x']], [{}], [false]])('refuses a single ad group audience of %j', (value) => {
+    expect(googleDemandGenAudienceTypeRefusal(value, undefined)).toBe('The Demand Gen audience must be a Google Ads Audience resource name.');
+  });
+
+  it("refuses the first group's audience that is not a string, naming the group", () => {
+    expect(googleDemandGenAudienceTypeRefusal(AUDIENCE, [{ audience: AUDIENCE }, { audience: 7 }, { audience: ['x'] }])).toBe(
+      'The audience of Demand Gen ad group 2 must be a Google Ads Audience resource name.'
+    );
   });
 });

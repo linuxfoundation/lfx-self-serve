@@ -124,6 +124,10 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-audience-segments-block-live">
   {{ googleAudienceSegmentsBlockMessage() }}
 </div>
+<!-- Retained Demand Gen audiences Create is held for (#5244): LF marketing only, the capability unanswered, or the cutover dark. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-audience-block-live">
+  {{ demandGenAudienceBlockMessage() }}
+</div>
 <!--
   The other reason extensions are withheld — the capability, not the channel. Same region shape and
   same politeness: the campaign is still created, it just carries no extensions.
@@ -1304,6 +1308,54 @@
               [text]="true"
               (onClick)="onGoogleAudienceSegmentsRemoveAll()"
               data-testid="implementation-google-audience-segments-block-remove" />
+          </div>
+        </div>
+      }
+
+      <!--
+        Retained Demand Gen audiences the request cannot carry (#5244), on the segments block's terms: it
+        sits outside Demand Gen's creative section, which is hidden while the cutover is dark or its answer
+        is still out, so the held audiences are listed here while that section is not on screen. Create is
+        held while it shows; Remove is offered in every state.
+      -->
+      @if (demandGenAudienceBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-demand-gen-audience-block-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (!demandGenAdsShown() && !demandGenAdGroupsActive()) {
+            <ul class="flex flex-col gap-0.5" data-testid="implementation-demand-gen-audience-block-list">
+              @for (held of demandGenAudienceRetained(); track $index) {
+                <li class="break-all">{{ held.owner }}: {{ held.audience }}</li>
+              }
+            </ul>
+          }
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryCreateCapabilities.emit()"
+                data-testid="implementation-demand-gen-audience-block-retry" />
+            }
+            <lfx-button
+              [label]="demandGenAudienceRetained().length === 1 ? 'Remove audience' : 'Remove audiences'"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="onDemandGenAudiencesRemoveAll()"
+              data-testid="implementation-demand-gen-audience-block-remove" />
           </div>
         </div>
       }

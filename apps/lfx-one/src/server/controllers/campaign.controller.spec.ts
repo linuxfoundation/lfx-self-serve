@@ -5587,6 +5587,68 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenAudience', message: expect.stringContaining(fragment) });
     });
 
+    describe('while the cutover is dark', () => {
+      beforeEach(() => {
+        isServerFeatureEnabled.mockReturnValue(false);
+        createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+        legacyCreate.mockResolvedValue({ jobId: 'job_legacy_5244' });
+      });
+
+      it.each([
+        ['an audience that is not a string', { demandGenAudience: 42 }, 'The Demand Gen audience must be a Google Ads Audience resource name.'],
+        [
+          "a group's audience that is not a string",
+          {
+            demandGenAdGroups: [
+              { name: 'a', creative: IMAGE },
+              { name: 'b', creative: IMAGE, audience: { id: 1 } },
+            ],
+          },
+          'The audience of Demand Gen ad group 2 must be a Google Ads Audience resource name.',
+        ],
+      ])('refuses %s by name, after the access check, rather than letting the normalizer drop it', async (_label, fields, message) => {
+        await create(fields);
+
+        expect(marketingOps).toHaveBeenCalledWith(expect.anything(), 'tlf');
+        expect(legacyCreate).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenAudience', message });
+      });
+
+      it('still refuses a malformed raw value from a caller without global_marketing_ops for who is asking, not its type', async () => {
+        marketingOps.mockResolvedValueOnce(false);
+
+        await create({ demandGenAudience: 42 });
+
+        expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
+        expect(legacyCreate).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['a malformed one', 'audiences/42'],
+        ['a valid one', AUDIENCE],
+      ])('refuses a non-blank audience string, %s, by name rather than dropping it', async (_label, value) => {
+        await create({ demandGenAudience: value });
+
+        expect(legacyCreate).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({
+          statusCode: 400,
+          field: 'demandGenAudience',
+          message: expect.stringContaining('Google Demand Gen audience cannot be applied'),
+        });
+      });
+
+      it.each([
+        ['absent', {}],
+        ['null', { demandGenAudience: null }],
+        ['blank', { demandGenAudience: '   ' }],
+      ])('creates through the legacy creator for an audience that is %s', async (_label, fields) => {
+        await create(fields);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(legacyCreate).toHaveBeenCalledTimes(1);
+      });
+    });
+
     it('refuses an audience by name while the cutover is dark, rather than letting the legacy creator drop it', async () => {
       isServerFeatureEnabled.mockReturnValue(false);
       createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
@@ -5598,14 +5660,23 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenAudience' });
     });
 
-    it('neither sends nor judges an audience left under another channel', async () => {
+    it('neither sends nor judges the shape of an audience string left under another channel', async () => {
       accepted();
 
-      await create({ demandGenAudience: 'nope', demandGenAdGroups: [{ name: ' ', audience: 7 }] }, ['display']);
+      await create({ demandGenAudience: 'nope', demandGenAdGroups: [{ name: ' ', audience: 'audiences/7' }] }, ['display']);
 
       expect(next).not.toHaveBeenCalled();
       expect(config()).not.toHaveProperty('demandGenAudience');
       expect(config()).not.toHaveProperty('demandGenAdGroups');
+    });
+
+    it('refuses a value that is not a string on any channel, as the access check counts it on any channel', async () => {
+      accepted();
+
+      await create({ demandGenAdGroups: [{ name: ' ', audience: 7 }] }, ['display']);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenAudience', message: expect.stringContaining('ad group 1 must be') });
     });
   });
 
@@ -9128,7 +9199,7 @@ describe('CampaignController.listBriefCampaigns', () => {
     );
   });
 
-  it('answers null (unverified, not denied) for audience segments and no for the conversion picker, rather than failing the list, when the global_marketing_ops check cannot be made', async () => {
+  it('answers null (unverified, not denied) for audience segments and the Demand Gen audience and no for the conversion picker, rather than failing the list, when the global_marketing_ops check cannot be made', async () => {
     listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, googleCreativeEnabled: true, googleAudienceSegmentsEnabled: false });
     isServerFeatureEnabled.mockReturnValue(true);
     vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockRejectedValueOnce(new Error('access check unavailable'));
@@ -9137,7 +9208,7 @@ describe('CampaignController.listBriefCampaigns', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ googleAudienceSegmentsEnabled: null, googleConversionActionsEnabled: false, googleDemandGenAudienceEnabled: false })
+      expect.objectContaining({ googleAudienceSegmentsEnabled: null, googleConversionActionsEnabled: false, googleDemandGenAudienceEnabled: null })
     );
   });
 

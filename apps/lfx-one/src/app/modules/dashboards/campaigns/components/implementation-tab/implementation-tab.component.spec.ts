@@ -18274,7 +18274,6 @@ describe('ImplementationTabComponent demand gen audience', () => {
   it.each([
     ['a malformed resource name', true, 'customers/1234567890/userLists/111', 'is not a Google Ads Audience resource name'],
     ["another account's Audience", true, 'customers/999/audiences/111', 'belongs to another Google Ads account'],
-    ['an audience this caller may not send', false, AUDIENCE_A, "can't be sent from here"],
   ])('holds Create, with the reason shown and announced, for %s', async (_label, enabled, value, reason) => {
     await setup();
     const c = seedDemandGen(enabled);
@@ -18292,6 +18291,206 @@ describe('ImplementationTabComponent demand gen audience', () => {
     c['removeDemandGenAudience'](null);
     fixture.detectChanges();
     expect(c['demandGenAudienceError']()).toBeNull();
+  });
+
+  /**
+   * A retained audience the request cannot carry (#5244), on the audience segments' terms: held with a
+   * pending line or a Retry while the per-caller answer is out, the restricted block only on an explicit
+   * no, and the deployment named while the cutover is dark. Never dropped, and Remove in every state.
+   */
+  function holdAudience(
+    enabled: boolean | null,
+    read: 'pending' | 'ready' | 'failed' | 'unknown',
+    briefId: string | null = 'brief-1',
+    creative: boolean | null = true
+  ): Record<string, any> {
+    const c = seedDemandGen(enabled);
+    restoreGoogleDraft(fixture, c, { includeDemandGen: true, demandGenAudience: AUDIENCE_A });
+    c['campaignForm'].controls.demandGenCreative.patchValue(IMAGE_COMPLETE);
+    fixture.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
+    fixture.componentRef.setInput('createCapabilityRead', read);
+    fixture.componentRef.setInput('googleDemandGenAudienceEnabled', enabled);
+    fixture.componentRef.setInput('googleCreativeEnabled', creative);
+    fixture.detectChanges();
+    return c;
+  }
+
+  const DENIAL = 'Only the LF marketing team can target a Google Ads Audience on Demand Gen';
+
+  it('holds Create with a pending line, not the denial, while the per-caller answer is being read', async () => {
+    await setup();
+    const c = holdAudience(null, 'pending');
+
+    expect(c['demandGenAudienceBlock']()?.kind).toBe('pending');
+    expect(query('implementation-demand-gen-audience-block-pending')?.textContent).toContain('Checking whether you can send Demand Gen audiences');
+    expect(query('implementation-demand-gen-audience-block-live')?.textContent?.trim()).toBe(c['demandGenAudienceBlockMessage']());
+    expect(fixture.nativeElement.textContent).not.toContain(DENIAL);
+    expect(c['demandGenAudienceError']()).toBeNull();
+    expect(query('implementation-demand-gen-audience-block-retry')).toBeNull();
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  it.each([['failed'], ['unknown'], ['ready']])('offers a Retry, not the denial, when the read is %s and the answer is still out', async (read) => {
+    await setup();
+    const retried = vi.fn();
+    fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
+    const c = holdAudience(null, read as 'failed' | 'unknown' | 'ready');
+
+    expect(c['demandGenAudienceBlock']()?.kind).toBe('failed');
+    expect(fixture.nativeElement.textContent).not.toContain(DENIAL);
+    expect(c['canSubmit']()).toBe(false);
+    (query('implementation-demand-gen-audience-block-retry')?.querySelector('button') as HTMLButtonElement).click();
+    expect(retried).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks for the brief to be saved when there is no brief to check against', async () => {
+    await setup();
+    const c = holdAudience(null, 'unknown', null);
+
+    expect(c['demandGenAudienceBlock']()?.kind).toBe('unsaved');
+    expect(query('implementation-demand-gen-audience-block-retry')).toBeNull();
+  });
+
+  it('holds Create with the restricted block on an explicit no, and Remove clears it', async () => {
+    await setup();
+    const c = holdAudience(false, 'ready');
+
+    expect(c['demandGenAudienceBlock']()?.kind).toBe('restricted');
+    expect(query('implementation-demand-gen-audience-block-restricted')?.textContent).toContain(DENIAL);
+    expect(query('implementation-demand-gen-audience-block-retry')).toBeNull();
+    // The section is on screen, so the held value shows there with its own Remove, not again in the block.
+    expect(query('implementation-demand-gen-audience-remove-single')).not.toBeNull();
+    expect(query('implementation-demand-gen-audience-block-list')).toBeNull();
+    expect(c['canSubmit']()).toBe(false);
+
+    (query('implementation-demand-gen-audience-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.demandGenAudience.value).toBe('');
+    expect(c['demandGenAudienceBlock']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('clears the block once the caller is answered yes on a deployment the cutover serves', async () => {
+    await setup();
+    const c = holdAudience(null, 'pending');
+    fixture.componentRef.setInput('createCapabilityRead', 'ready');
+    fixture.componentRef.setInput('googleDemandGenAudienceEnabled', true);
+    fixture.detectChanges();
+
+    expect(c['demandGenAudienceBlock']()).toBeNull();
+    expect(query('implementation-demand-gen-audience-block-live')?.textContent?.trim()).toBe('');
+    expect((await requestOf(c))['demandGenAudience']).toBe(AUDIENCE_A);
+  });
+
+  it('holds nothing off Demand Gen, where the channel is the reason', async () => {
+    await setup();
+    const c = holdAudience(false, 'ready');
+    c['campaignForm'].patchValue({ includeDemandGen: false, includeDisplay: true });
+    fixture.detectChanges();
+
+    expect(c['demandGenAudienceBlock']()).toBeNull();
+  });
+
+  /**
+   * The cutover dark: Demand Gen creates through the legacy creator, its creative section is hidden and
+   * both payload helpers answer `{}`, so the retained audience is read from the form itself.
+   */
+  it('holds Create naming the deployment while the cutover is dark, listing the single ad group audience with Remove', async () => {
+    await setup();
+    const c = holdAudience(false, 'ready', 'brief-1', false);
+
+    expect(c['googleDemandGenAudiencePayload']()).toEqual({});
+    expect(c['demandGenAudienceBlock']()?.kind).toBe('unsupported');
+    expect(query('implementation-demand-gen-audience-block-unsupported')?.textContent).toContain('not available on this deployment');
+    expect(query('implementation-demand-gen-audience-block-list')?.textContent).toContain(`Single ad group: ${AUDIENCE_A}`);
+    expect(c['canSubmit']()).toBe(false);
+
+    (query('implementation-demand-gen-audience-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(c['demandGenAudienceBlock']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it("holds Create while the cutover is dark for a named group's audience, naming its group, and leaves the single one held", async () => {
+    await setup();
+    const c = holdAudience(false, 'ready', 'brief-1', false);
+    restoreGoogleDraft(fixture, c, {
+      includeDemandGen: true,
+      demandGenAudience: AUDIENCE_A,
+      demandGenAdGroupsSplit: true,
+      demandGenAdGroups: [
+        { name: 'Retargeting', format: 'image', creative: {}, videoCreative: {} },
+        { name: 'Prospecting', format: 'image', creative: {}, videoCreative: {}, audience: AUDIENCE_B },
+      ],
+    });
+
+    expect(c['demandGenAudienceBlock']()?.kind).toBe('unsupported');
+    expect(c['demandGenAudienceBlock']()?.message).toContain('the Demand Gen audience on this brief');
+    expect(query('implementation-demand-gen-audience-block-list')?.textContent).toContain(`Prospecting: ${AUDIENCE_B}`);
+    expect(query('implementation-demand-gen-audience-block-list')?.textContent).not.toContain('Single ad group');
+    expect(c['canSubmit']()).toBe(false);
+
+    (query('implementation-demand-gen-audience-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.demandGenAdGroups.at(1).controls.audience.value).toBe('');
+    expect(c['campaignForm'].controls.demandGenAudience.value).toBe(AUDIENCE_A);
+    expect(c['demandGenAudienceBlock']()).toBeNull();
+  });
+
+  /** With no picker rendered, Remove would take the focused control away and leave focus nowhere. */
+  describe('focus after Remove with no picker to take it', () => {
+    let focused: HTMLElement[];
+    beforeEach(() => {
+      focused = [];
+      vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+        focused.push(this);
+      });
+    });
+
+    it('moves to the split checkbox for the single ad group when the caller has no picker access', async () => {
+      await setup();
+      const c = holdAudience(false, 'ready');
+
+      c['removeDemandGenAudience'](null);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('implementation-demand-gen-audience-picker-single')).toBeNull();
+      expect(focused.at(-1)?.id).toBe('implementation-demand-gen-ad-groups-split-input');
+    });
+
+    it("moves to the group's name for a named group when the list is unavailable", async () => {
+      await setup(() => throwError(() => new HttpErrorResponse({ status: 503 })));
+      const c = seedDemandGen();
+      split(c, ['Retargeting', 'Prospecting']);
+      c['onDemandGenAudiencePicked'](1, AUDIENCE_A);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      c['removeDemandGenAudience'](1);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('implementation-demand-gen-audience-picker-1')).toBeNull();
+      expect(focused.at(-1)?.id).toBe('demand-gen-ad-group-1-name');
+    });
+
+    it('moves to the split checkbox when the account has no Audiences', async () => {
+      await setup(() => of({ ...AUDIENCES, audiences: [] }));
+      const c = seedDemandGen();
+      c['onDemandGenAudiencePicked'](null, AUDIENCE_A);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      c['removeDemandGenAudience'](null);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(focused.at(-1)?.id).toBe('implementation-demand-gen-ad-groups-split-input');
+    });
   });
 
   it("holds Create for a group's audience on another account, naming the group", async () => {

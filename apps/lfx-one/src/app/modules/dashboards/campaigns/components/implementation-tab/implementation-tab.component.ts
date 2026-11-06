@@ -187,7 +187,6 @@ import {
   GOOGLE_AUDIENCE_PICKER_REASONS,
   GOOGLE_AUDIENCE_PICKER_TRUNCATED,
   GOOGLE_DEMAND_GEN_AUDIENCE_HELD_WHILE_SPLIT,
-  GOOGLE_DEMAND_GEN_AUDIENCE_NOT_ALLOWED,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   DEFAULT_GOOGLE_DAILY_BUDGET_USD,
@@ -236,6 +235,7 @@ import type {
   CampaignCreateRequest,
   CampaignCreateResult,
   CampaignGoogleAudienceSegmentsBlock,
+  CampaignGoogleDemandGenAudienceBlock,
   CampaignGoogleExtensionsCapabilityBlock,
   CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
@@ -751,7 +751,7 @@ export class ImplementationTabComponent implements OnInit {
    * Whether THIS caller may pick and send a Demand Gen audience (#5244) —
    * `CampaignListResult.googleDemandGenAudienceEnabled`, the two checks the Audience route and the create
    * gate make. Only an explicit yes shows the picker; a draft that still holds an audience otherwise holds
-   * Create (`demandGenAudienceError`) rather than dropping it.
+   * Create (`demandGenAudienceBlock`) rather than dropping it, and only an explicit no is a denial.
    */
   public readonly googleDemandGenAudienceEnabled = input<boolean | null>(null);
 
@@ -3447,8 +3447,11 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.demandGenAdGroupsError() !== null) return false;
     // The single ad group's several ads campaign-service would refuse (#5226).
     if (googleSelected && this.demandGenAdsError() !== null) return false;
-    // A Demand Gen audience campaign-service would refuse, or this caller may not send (#5244).
+    // A Demand Gen audience campaign-service would refuse (#5244).
     if (googleSelected && this.demandGenAudienceError() !== null) return false;
+    // A retained Demand Gen audience the request cannot carry (#5244), on the audience segments' terms:
+    // held, never dropped, whatever the cutover.
+    if (this.demandGenAudienceBlock() !== null) return false;
     // Postal-code or radius targets the request cannot carry yet. Withholding them would not shrink
     // the campaign but WIDEN it to the event country, so Create waits — see the block's own doc.
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
@@ -3926,6 +3929,18 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly demandGenAudiencePickerAnnouncement: Signal<string> = this.initDemandGenAudiencePickerAnnouncement();
   /** Why Create is held for a Demand Gen audience the create would carry, or `null` (#5244). */
   protected readonly demandGenAudienceError: Signal<string | null> = this.initDemandGenAudienceError();
+  /**
+   * The audiences {@link demandGenAudienceBlock} holds, each named by its ad group, listed in the block
+   * while Demand Gen's creative section is not on screen, so the selection stays visible there too.
+   */
+  protected readonly demandGenAudienceRetained: Signal<{ owner: string; audience: string }[]> = this.initDemandGenAudienceRetained();
+  /**
+   * Why Create is held for a Demand Gen audience the draft still holds but the request cannot carry, or
+   * `null` (#5244): `googleAudienceSegmentsBlock`'s kinds, on the same capability read.
+   */
+  protected readonly demandGenAudienceBlock: Signal<CampaignGoogleDemandGenAudienceBlock | null> = this.initDemandGenAudienceBlock();
+  /** The always-mounted live region's text for `demandGenAudienceBlock`; `''` when nothing blocks. */
+  protected readonly demandGenAudienceBlockMessage = computed(() => this.demandGenAudienceBlock()?.message ?? '');
   /** The note when the single ad group's Audience is kept but not sent because the campaign is split; `''` otherwise. */
   protected readonly demandGenAudienceHeldMessage: Signal<string> = this.initDemandGenAudienceHeldMessage();
   protected readonly audiencePickerEmpty = GOOGLE_AUDIENCE_PICKER_EMPTY;
@@ -5972,10 +5987,24 @@ export class ImplementationTabComponent implements OnInit {
     this.focusDemandGenAudienceAfterRender(group, 'remove');
   }
 
-  /** Remove ad group `group`'s Audience (the single one for `null`); focus moves to the picker that replaces it. */
+  /**
+   * Remove ad group `group`'s Audience (the single one for `null`); focus moves to the picker that replaces
+   * it, or, where none renders (no picker access, or the list unavailable or empty), to the group's name or,
+   * for the single ad group, the split checkbox.
+   */
   protected removeDemandGenAudience(group: number | null): void {
     this.demandGenAudienceControl(group).setValue('');
     this.focusDemandGenAudienceAfterRender(group, 'picker');
+  }
+
+  /** {@link demandGenAudienceBlock}'s way out: drop every audience it holds, the only action that never needs the read. */
+  protected onDemandGenAudiencesRemoveAll(): void {
+    const form = this.campaignForm.controls;
+    if (!form.demandGenAdGroupsSplit.value) {
+      form.demandGenAudience.setValue('');
+      return;
+    }
+    for (const group of form.demandGenAdGroups.controls) group.controls.audience.setValue('');
   }
 
   /**
@@ -11256,18 +11285,89 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * {@link demandGenAudienceError}: over exactly what the create sends, a caller who may not send an audience
-   * first (#501), then the shared judge the BFF refuses on, here with the account the picker read, so
-   * another account's Audience is refused too. The account is not judged until the list has loaded.
+   * {@link demandGenAudienceError}: over exactly what the create sends, the shared judge the BFF refuses
+   * on, here with the account the picker read, so another account's Audience is refused too. The account
+   * is not judged until the list has loaded. Only for a caller answered yes: any other answer, `null`
+   * included, is {@link demandGenAudienceBlock}'s, which tells a denial from a check still to be made.
    */
   private initDemandGenAudienceError(): Signal<string | null> {
     return computed(() => {
       void this.campaignFormRevision();
+      if (this.googleDemandGenAudienceEnabled() !== true) return null;
       const single = this.googleDemandGenAudiencePayload().demandGenAudience;
       const groups = this.googleDemandGenAdGroupsPayload().demandGenAdGroups;
       if (single === undefined && !(groups ?? []).some((group) => group.audience !== undefined)) return null;
-      if (this.googleDemandGenAudienceEnabled() !== true) return GOOGLE_DEMAND_GEN_AUDIENCE_NOT_ALLOWED;
       return googleDemandGenAudiencesRefusal(single, groups, this.demandGenAudiencePicker().accountId);
+    });
+  }
+
+  /**
+   * {@link demandGenAudienceRetained}: on a create whose channel resolves to Demand Gen, the audiences the
+   * split mode would send, read from the form itself rather than the payload helpers. Those return `{}`
+   * whenever Demand Gen's creative section is off screen (the cutover dark, or its answer still out), and
+   * reading them here would let a restored draft create without its audience.
+   */
+  private initDemandGenAudienceRetained(): Signal<{ owner: string; audience: string }[]> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (this.resolveGoogleChannel() !== 'demand-gen') return [];
+      const form = this.campaignForm.controls;
+      if (!form.demandGenAdGroupsSplit.value) {
+        const single = form.demandGenAudience.value.trim();
+        return single === '' ? [] : [{ owner: 'Single ad group', audience: single }];
+      }
+      return form.demandGenAdGroups.controls.flatMap((group, index) => {
+        const audience = group.controls.audience.value.trim();
+        return audience === '' ? [] : [{ owner: group.controls.name.value.trim() || `Ad group ${index + 1}`, audience }];
+      });
+    });
+  }
+
+  /**
+   * Why Create is held for Demand Gen audiences the draft still holds but the request cannot carry, or
+   * `null`: {@link initGoogleAudienceSegmentsBlock}'s kinds and order, on the same capability read. Clear
+   * only when the create path serves the create and the caller is answered yes, where the picker shows and
+   * {@link demandGenAudienceError} judges each value. `restricted` is an explicit no alone; an unanswered
+   * capability waits (`pending`) or offers a Retry (`failed`), never the denial. Remove is offered in
+   * every state.
+   */
+  private initDemandGenAudienceBlock(): Signal<CampaignGoogleDemandGenAudienceBlock | null> {
+    return computed(() => {
+      const count = this.demandGenAudienceRetained().length;
+      if (count === 0) return null;
+      if (this.googleCreativeAvailable() && this.googleDemandGenAudienceEnabled() === true) return null;
+      const held = count === 1 ? 'the Demand Gen audience' : `the ${count} Demand Gen audiences`;
+      const them = count === 1 ? 'it' : 'them';
+
+      if (this.googleCreativeEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Demand Gen audiences are not available on this deployment, so ${held} on this brief cannot be sent. Remove ${them} to create the campaign.`,
+        };
+      }
+      if (this.googleDemandGenAudienceEnabled() === false) {
+        return {
+          kind: 'restricted',
+          message: `Only the LF marketing team can target a Google Ads Audience on Demand Gen, because every foundation shares one Google Ads account. Remove ${held} on this brief to create the campaign, or ask the LF marketing team to add ${them}.`,
+        };
+      }
+      // `unknown` is treated like a failure, as the bidding block records: nothing else starts the read.
+      if (this.createCapabilityRead() === 'pending') {
+        return {
+          kind: 'pending',
+          message: `Checking whether you can send Demand Gen audiences. Create waits for the answer so ${held} on this brief ${count === 1 ? 'is' : 'are'} not dropped.`,
+        };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: `Demand Gen audience access can't be checked until this brief is saved. Save the brief, or remove ${held} on it.`,
+        };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that you can send Demand Gen audiences, so Create waits rather than dropping ${held} on this brief. Retry the check, or remove ${them}.`,
+      };
     });
   }
 
@@ -11306,7 +11406,11 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
-  /** Focus the audience Remove button or picker input of ad group `group` (the single one for `null`) once rendered. */
+  /**
+   * Focus the audience Remove button or picker input of ad group `group` (the single one for `null`) once
+   * rendered. With no picker rendered, the group's name, or the single ad group's split checkbox, takes it,
+   * as {@link focusDemandGenAdGroupAfterRender} addresses them.
+   */
   private focusDemandGenAudienceAfterRender(group: number | null, target: 'remove' | 'picker'): void {
     const key = group === null ? 'single' : `${group}`;
     afterNextRender(
@@ -11315,7 +11419,8 @@ export class ImplementationTabComponent implements OnInit {
         const element =
           target === 'remove'
             ? host.querySelector<HTMLElement>(`#demand-gen-audience-${key}-remove`)
-            : host.querySelector<HTMLElement>(`[data-testid="implementation-demand-gen-audience-picker-${key}"] input`);
+            : (host.querySelector<HTMLElement>(`[data-testid="implementation-demand-gen-audience-picker-${key}"] input`) ??
+              host.querySelector<HTMLElement>(group === null ? '#implementation-demand-gen-ad-groups-split-input' : `#demand-gen-ad-group-${group}-name`));
         element?.focus();
       },
       { injector: this.injector }

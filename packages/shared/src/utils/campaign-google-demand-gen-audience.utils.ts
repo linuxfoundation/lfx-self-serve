@@ -78,3 +78,25 @@ export function googleDemandGenAudienceCarried(single: unknown, groups: unknown)
   if (!Array.isArray(groups)) return false;
   return groups.some((group: unknown) => group !== null && typeof group === 'object' && set((group as Record<string, unknown>)['audience']));
 }
+
+/**
+ * Why a create body's RAW Demand Gen audiences are refused for their type, or `null`: the first of
+ * `demandGenAudience`, then each `demandGenAdGroups` entry's `audience` in order, that is not a string
+ * (campaign-service's JSON decode into a `string` field refuses it). Absent, `null` and an empty list ask
+ * for nothing, as the cutover-only create fields treat them (`GOOGLE_CUTOVER_ONLY_CREATE_FIELDS`), and
+ * every string passes, blank included: the normalizer omits a blank one, and a non-blank one is judged
+ * for its shape, or refused while the cutover is dark, by the checks after this. The BFF runs it right
+ * after the access check and before any check that depends on the cutover, because the normalizer drops
+ * a non-string, so nothing after it would see one.
+ */
+export function googleDemandGenAudienceTypeRefusal(single: unknown, groups: unknown): string | null {
+  const malformed = (value: unknown): boolean =>
+    value !== undefined && value !== null && typeof value !== 'string' && !(Array.isArray(value) && value.length === 0);
+  if (malformed(single)) return googleDemandGenAudienceRefusal('The Demand Gen audience', single);
+  if (!Array.isArray(groups)) return null;
+  for (const [index, group] of groups.entries()) {
+    const audience: unknown = group !== null && typeof group === 'object' ? (group as Record<string, unknown>)['audience'] : undefined;
+    if (malformed(audience)) return googleDemandGenAudienceRefusal(`The audience of Demand Gen ad group ${index + 1}`, audience);
+  }
+  return null;
+}

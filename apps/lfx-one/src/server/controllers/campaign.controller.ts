@@ -38,8 +38,8 @@ import {
 import { googleDemandGenVideoCreativeRefusal } from '@lfx-one/shared/utils/campaign-google-demand-gen-video.utils';
 import {
   googleDemandGenAudienceCarried,
-  googleDemandGenAudienceRefusal,
   googleDemandGenAudiencesRefusal,
+  googleDemandGenAudienceTypeRefusal,
 } from '@lfx-one/shared/utils/campaign-google-demand-gen-audience.utils';
 import {
   googleAdsToUpperCode,
@@ -777,6 +777,21 @@ export class CampaignController {
                   path: req.path,
                   clientMessage: GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_MESSAGE,
                 })
+          );
+          return;
+        }
+        // Then, for a caller who MAY send one, a raw value that is not a string is refused by name before
+        // any check that depends on the cutover. The normalizer drops it (`googleDemandGenAudience`), so
+        // with the cutover dark `unservedGoogleCriteriaField` would see nothing and the legacy creator
+        // would create without the audience asked for. Absent, `null` and blank strings still ask for
+        // nothing here; a non-blank string is refused by name there.
+        const malformedAudience = googleDemandGenAudienceTypeRefusal(body?.demandGenAudience, body?.demandGenAdGroups);
+        if (malformedAudience !== null) {
+          next(
+            ServiceValidationError.forField(GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY, malformedAudience, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
           );
           return;
         }
@@ -3209,7 +3224,12 @@ export class CampaignController {
       // The Demand Gen audience (#5244) on the same two checks as the conversion-action picker: the
       // create road (`canCreateWithGoogleCriteria`) its route and the create gate both need, and the
       // relation campaign-service checks before it reads the Audiences (#504) or creates with one (#501).
-      const googleDemandGenAudienceEnabled = conversionsDeployed && marketingOps === 'granted';
+      // A check that cannot be made answers `null`, as for audience segments: a retained audience is
+      // then held with a Retry, not refused as if the caller were denied.
+      let googleDemandGenAudienceEnabled: boolean | null = false;
+      if (conversionsDeployed) {
+        googleDemandGenAudienceEnabled = marketingOps === 'unverified' ? null : marketingOps === 'granted';
+      }
       const result: CampaignListResult = { ...listed, googleAudienceSegmentsEnabled, googleConversionActionsEnabled, googleDemandGenAudienceEnabled };
       logger.success(req, 'list_brief_campaigns', startTime, { count: result.campaigns.length, possiblyStale: result.possiblyStale });
       res.json(result);
@@ -6552,24 +6572,13 @@ export class CampaignController {
 
   /**
    * Why campaign-service would refuse this create's Demand Gen audiences (#5244), or `null`: on a Demand
-   * Gen create only, as the ad groups are. The RAW values first, so a value that is not a string is
-   * refused rather than dropped by the normalizer, then what {@link googleCreative} would SEND (the
-   * single ad group's beside the groups, then each value's shape) through `googleDemandGenAudiencesRefusal`.
+   * Gen create only, as the ad groups are. A RAW value that is not a string was refused before this runs,
+   * right after the access check (`googleDemandGenAudienceTypeRefusal`), so this judges what
+   * {@link googleCreative} would SEND (the single ad group's beside the groups, then each value's shape)
+   * through `googleDemandGenAudiencesRefusal`.
    */
   private googleDemandGenAudienceRefusal(body: CampaignCreateRequest, googleChannel: unknown): string | null {
     if (googleChannel !== 'demand-gen') return null;
-    const raw = body as unknown as Record<string, unknown>;
-    const single = raw[GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY];
-    if (single !== undefined && single !== null && typeof single !== 'string') return googleDemandGenAudienceRefusal('The Demand Gen audience', single);
-    const rawGroups = raw[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
-    if (Array.isArray(rawGroups)) {
-      for (const [index, group] of rawGroups.entries()) {
-        const audience: unknown = group !== null && typeof group === 'object' ? (group as Record<string, unknown>)['audience'] : undefined;
-        if (audience !== undefined && audience !== null && typeof audience !== 'string') {
-          return googleDemandGenAudienceRefusal(`The audience of Demand Gen ad group ${index + 1}`, audience);
-        }
-      }
-    }
     const sent = this.googleCreative(body, 'demand-gen');
     const groups = sent[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
     return googleDemandGenAudiencesRefusal(sent[GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY], Array.isArray(groups) ? groups : undefined);
@@ -7396,7 +7405,7 @@ export class CampaignController {
    * One Demand Gen Audience (#5244), `demandGenAudience` or a group's `audience`, under `key` and
    * spread-ready: a string trimmed as Go trims, or `{}` when it is absent, not a string or blank, so a
    * create without one is byte-identical to one made before it existed. A value that is not a string is
-   * refused before this runs (`googleDemandGenAudienceRefusal`), and the gate counts it (#501).
+   * refused before this runs (`googleDemandGenAudienceTypeRefusal`), and the gate counts it (#501).
    */
   private googleDemandGenAudience(key: string, value: unknown): Record<string, string> {
     if (typeof value !== 'string') return {};

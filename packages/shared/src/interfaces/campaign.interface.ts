@@ -6486,10 +6486,12 @@ export interface CampaignListResult {
    * `GET /api/campaigns/google/audiences`, and send it. Per caller: true only when the campaign-service
    * create path serves the create AND the caller holds `global_marketing_ops` on the listed project, the
    * two checks that route makes and the relation campaign-service checks both before it answers the read
-   * (#504) and before it creates with an Audience (#501). Optional, so a BFF that predates it reads as
-   * unanswered (`null` on the client) and the tab offers no picker.
+   * (#504) and before it creates with an Audience (#501). `null` when that check cannot be made, as
+   * {@link googleAudienceSegmentsEnabled} answers it: unverified, not denied, so the Implement tab holds a
+   * retained audience with a Retry rather than the restricted block. Optional, so a BFF that predates it
+   * reads as unanswered (`null` on the client) and the tab offers no picker.
    */
-  googleDemandGenAudienceEnabled?: boolean;
+  googleDemandGenAudienceEnabled?: boolean | null;
   /**
    * Whether the Implement tab may SEARCH Google's geo target table for postal-code targets, through
    * `GET /api/campaigns/google/geo-targets`, instead of asking for a typed constant id.
@@ -6718,6 +6720,17 @@ export interface CampaignGoogleLocationsCapabilityBlock {
  * `CampaignBiddingCapabilityBlock`: the same capability read answers all of them.
  */
 export interface CampaignGoogleAudienceSegmentsBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for Demand Gen audiences (#5244) the draft still holds but the request cannot
+ * carry. The kinds mean what they do on {@link CampaignGoogleAudienceSegmentsBlock}: `restricted` is an
+ * explicit no from `CampaignListResult.googleDemandGenAudienceEnabled`, and `unsupported` the
+ * campaign-service create path not serving this deployment.
+ */
+export interface CampaignGoogleDemandGenAudienceBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
   message: string;
 }

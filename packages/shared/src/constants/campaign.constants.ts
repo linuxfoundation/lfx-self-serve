@@ -5241,15 +5241,6 @@ export const GOOGLE_DEMAND_GEN_AUDIENCE_BESIDE_AD_GROUPS =
 export const GOOGLE_DEMAND_GEN_AUDIENCE_HELD_WHILE_SPLIT =
   'The audience you picked for the single ad group is kept but not sent while the campaign is split into ad groups. Pick an audience on each ad group, or turn the split off to send it.';
 
-/**
- * Why the Implement tab holds Create when the request would carry a Demand Gen audience this caller may
- * not send (#5244): the caller lacks `global_marketing_ops`, or the check could not be made, or the
- * deployment does not create through campaign-service, the one road that sends it. The BFF and
- * campaign-service refuse the first two (#501), and the BFF the third (`GOOGLE_CUTOVER_ONLY_CREATE_FIELDS`).
- */
-export const GOOGLE_DEMAND_GEN_AUDIENCE_NOT_ALLOWED =
-  "A Demand Gen audience can't be sent from here. Only the LF marketing team can target one, because every foundation shares one Google Ads account. Remove the audience to create the campaign.";
-
 /** Google's limit on an ad group's name, in characters: campaign-service's `maxAdGroupNameRunes` (`adgroup_ad.go`). */
 export const GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES = 255;
 
