@@ -263,18 +263,27 @@ function clearSpacePage(ctx: MktgPrintBrandKitContext): MktgPrintPage {
   if (has(ctx, 'primary') || has(ctx, 'symbol')) els.push(eyebrowEl(ctx, { x: RIGHT.x, y: 256, w: RIGHT.w, h: 24 }, 'Scaling'));
   let cx = RIGHT.x;
   const base = 322;
-  if (has(ctx, 'primary')) {
-    const sizes = [48, 40, m.screen_px].map((px) => ({ label: `${px} px`, h: px * 0.75, w: px * 0.75 * (10 / 3) }));
-    for (const s of sizes) {
-      els.push(...logoEl(ctx, 'primary', { x: cx, y: base - s.h, w: s.w, h: s.h }));
-      els.push(caption(ctx, { x: cx - 4, y: base + 2, w: Math.max(s.w + 8, 50), h: 26 }, s.label));
-      cx += s.w + 24;
-    }
+  // The row's natural width (the deck's geometry: the lockups 2.5 pt a pixel, the symbol 0.75, 24 pt gaps) can pass the
+  // column at a large screen or symbol size, so every drawn box shrinks by one factor k (the deck does not clamp; the
+  // gaps and the captions' one line keep their width) until the row fits with the last caption's 4 pt pad. The labels
+  // still state the pixel value, not the drawn size.
+  const sizes = has(ctx, 'primary') ? [48, 40, m.screen_px].map((px) => ({ label: `${px} px`, h: px * 0.75, w: px * 0.75 * (10 / 3) })) : [];
+  const sym = has(ctx, 'symbol') ? m.symbol_px * 0.75 : 0;
+  const symLabel = `Symbol ${m.symbol_px} px`;
+  const symNeed = sym ? symLabel.length * MKTG_PRINT_PAGE_SIZE.caption * mktgPrintCharEm({}) + 2 * MKTG_PRINT_PAGE_INSET - 4 : 0;
+  const lockups = sizes.reduce((sum, s) => sum + s.w, 0);
+  const budget = RIGHT.w - 4 - 24 * Math.max(0, sizes.length + (sym ? 1 : 0) - 1);
+  const k1 = Math.min(1, budget / (lockups + sym));
+  const k = sym && sym * k1 < symNeed && lockups ? Math.min(1, (budget - symNeed) / lockups) : k1;
+  for (const s of sizes) {
+    const w = s.w * k;
+    els.push(...logoEl(ctx, 'primary', { x: cx, y: base - s.h * k, w, h: s.h * k }));
+    els.push(caption(ctx, { x: cx - 4, y: base + 2, w: Math.max(w + 8, 50), h: 26 }, s.label));
+    cx += w + 24;
   }
-  if (has(ctx, 'symbol')) {
-    const sym = m.symbol_px * 0.75;
-    els.push(...logoEl(ctx, 'symbol', { x: cx, y: base - sym, w: sym, h: sym }));
-    els.push(caption(ctx, { x: cx - 4, y: base + 2, w: Math.min(90, RIGHT.x + RIGHT.w - cx + 4), h: 26 }, `Symbol ${m.symbol_px} px`));
+  if (sym) {
+    els.push(...logoEl(ctx, 'symbol', { x: cx, y: base - sym * k, w: sym * k, h: sym * k }));
+    els.push(caption(ctx, { x: cx - 4, y: base + 2, w: Math.min(90, RIGHT.x + RIGHT.w - cx + 4), h: 26 }, symLabel));
   }
   return mktgPrintContentPage(look, 'Clear space & minimum size', head(ctx, 'logo'), els);
 }
