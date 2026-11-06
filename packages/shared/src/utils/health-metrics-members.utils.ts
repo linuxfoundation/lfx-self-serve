@@ -22,6 +22,8 @@ import {
   HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP,
   HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
+  HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS,
+  HEALTH_METRICS_MEMBERS_RESERVED_TIERS,
   HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-members.constants';
 import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
@@ -747,15 +749,12 @@ interface BreakdownSeries {
   tiers: BreakdownTier[];
 }
 
-const RESERVED_TIER_LABELS: Record<HealthMetricsMembersReservedTier, string> = { platinum: 'Platinum', gold: 'Gold', silver: 'Silver' };
-
 /** The tier's name without a trailing "Membership" or "Member", so "Platinum Membership" reads as Platinum. */
 function breakdownTierLabel(raw: string): { label: string; reserved: HealthMetricsMembersReservedTier | null } {
   const trimmed = raw.trim();
   const label = trimmed.replace(/\s+(membership|member)$/i, '').trim() || trimmed;
-  const key = label.toLowerCase();
-  const reserved = key === 'platinum' || key === 'gold' || key === 'silver' ? key : null;
-  return { label: reserved ? RESERVED_TIER_LABELS[reserved] : label, reserved };
+  const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((key) => key === label.toLowerCase()) ?? null;
+  return { label: reserved ? HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS[reserved] : label, reserved };
 }
 
 /** Tiers with a member in any year shown, highest-paying first; rows with the same label merge. */
@@ -779,8 +778,8 @@ function buildBreakdownSeries(tiers: BreakdownTier[]): BreakdownSeries[] {
   const reserved = new Set(tiers.flatMap((tier) => (tier.reserved ? [tier.reserved] : [])));
   const single = (tier: BreakdownTier, color: string, grey = false): BreakdownSeries => ({ key: tier.label, label: tier.label, color, grey, tiers: [tier] });
 
-  if (reserved.size === 3) {
-    const main = (['platinum', 'gold', 'silver'] as const).map((key) => {
+  if (reserved.size === HEALTH_METRICS_MEMBERS_RESERVED_TIERS.length) {
+    const main = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.map((key) => {
       const tier = tiers.find((candidate) => candidate.reserved === key) as BreakdownTier;
       return single(tier, HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS[key]);
     });
@@ -837,7 +836,7 @@ function buildBreakdownKpis(
     {
       key: 'change',
       label: `vs ${year - 1}`,
-      value: difference === null ? '—' : `${difference < 0 ? '−' : '+'}${formatCount(Math.abs(difference))}`,
+      value: formatSignedDifference(difference),
       delta: breakdownDelta(members, prior),
       note: '',
     },
@@ -858,9 +857,16 @@ function buildBreakdownKpis(
   ];
 }
 
+function formatSignedDifference(difference: number | null): string {
+  if (difference === null) return '—';
+  if (difference === 0) return '0';
+  return `${difference < 0 ? '−' : '+'}${formatCount(Math.abs(difference))}`;
+}
+
+/** A change that rounds to zero draws no arrow. */
 function breakdownDelta(value: number | null, prior: number | null): HealthMetricsOverviewDelta | null {
   const change = breakdownChange(value, prior);
-  return change && { label: change.label, direction: change.tone, good: change.tone === 'up' };
+  return change?.tone ? { label: change.label, direction: change.tone, good: change.tone === 'up' } : null;
 }
 
 /** "Change vs. previous year" cells; the first year, and a year after one with nothing, have nothing to compare. */
@@ -868,10 +874,12 @@ function breakdownChanges(values: (number | null)[]): HealthMetricsMembersBreakd
   return values.map((value, index) => breakdownChange(value, index === 0 ? null : values[index - 1]) ?? { label: '—', tone: null });
 }
 
-function breakdownChange(value: number | null, prior: number | null): { label: string; tone: 'up' | 'down' } | null {
+/** A change on the year before; one that rounds to zero reads as no change, neither up nor down. */
+function breakdownChange(value: number | null, prior: number | null): HealthMetricsMembersBreakdownCellView | null {
   if (value === null || prior === null || prior === 0) return null;
 
   const pct = Number(formatPercent(((value - prior) / prior) * 100));
+  if (pct === 0) return { label: '0.0%', tone: null };
   return { label: `${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%`, tone: pct < 0 ? 'down' : 'up' };
 }
 

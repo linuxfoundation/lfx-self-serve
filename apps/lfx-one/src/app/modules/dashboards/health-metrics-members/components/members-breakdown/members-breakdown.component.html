@@ -119,7 +119,7 @@
                 @if (row.icon; as icon) {
                   <lfx-health-metrics-tier-icon [tier]="icon" />
                 }
-                <span class="truncate">{{ row.label }}</span>
+                <span class="truncate" [attr.title]="row.label">{{ row.label }}</span>
               </span>
               @for (cell of row.cells; track $index) {
                 <span [class]="cell.cellClass" role="cell">{{ cell.label }}</span>

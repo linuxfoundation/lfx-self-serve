@@ -166,6 +166,16 @@ export const HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP = 500;
 /** The first year the breakdown shows; a foundation that started later starts at its own first year. */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR = 2019;
 
+/** The tiers with a colour and an icon of their own, in the order they stack from the bottom. */
+export const HEALTH_METRICS_MEMBERS_RESERVED_TIERS = ['platinum', 'gold', 'silver'] as const;
+
+/** How a reserved tier reads, whatever the foundation's spelling of it. */
+export const HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS: Record<HealthMetricsMembersReservedTier, string> = {
+  platinum: 'Platinum',
+  gold: 'Gold',
+  silver: 'Silver',
+};
+
 /** Platinum, Gold and Silver keep these colours in every tier setup, and no other tier takes them. */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS: Record<HealthMetricsMembersReservedTier, string> = {
   platinum: lfxColors.blue[900],
@@ -224,6 +234,9 @@ export const HEALTH_METRICS_MEMBERS_TIER_ICONS: Record<HealthMetricsMembersReser
     radius: '9999px',
   },
 };
+
+/** Room a column's popup needs on its right before it opens on the left; the design caps the popup at 280px. */
+export const HEALTH_METRICS_MEMBERS_BREAKDOWN_TIP_ROOM_PX = 292;
 
 /** The view switch over the breakdown; the first is the default. */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_VIEW_OPTIONS: readonly HealthMetricsMembersBreakdownViewOption[] = [

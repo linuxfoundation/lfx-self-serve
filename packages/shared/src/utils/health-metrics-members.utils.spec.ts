@@ -188,7 +188,6 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
       sortRank,
       memberCount: count,
       revenueUsd: count * 1000,
-      isPartialYear: YEARS[index] === 2026,
     }));
   const build = (rows: HealthMetricsMembersTierYear[], range: HealthMetricsRange = 'YTD') => buildHealthMetricsMembersBreakdownView({ rows }, range);
   const PGS = [
@@ -333,13 +332,21 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
     expect(change?.cells[7]).toEqual({ label: '+20.8%', tone: 'up' });
   });
 
+  it('reads an unchanged year as no change, with no arrow and no sign', () => {
+    const flat = build(tier('Platinum Membership', 1, [4, 4, 4, 4, 4, 4, 4, 4]));
+
+    expect(flat.kpis[1]).toMatchObject({ value: '0', delta: null });
+    expect(flat.kpis[3].delta).toBeNull();
+    expect(flat.rows.find((row) => row.key === 'members-change')?.cells[7]).toEqual({ label: '0.0%', tone: null });
+  });
+
   it('starts at the first year with members after 2019, and reads as unmeasured with no year to show', () => {
     const late = build(tier('Platinum Membership', 1, [0, 0, 0, 0, 0, 0, 4, 6]).filter((row) => row.year >= 2025));
     expect(late.columns.map((column) => column.label)).toEqual(['2025', '2026 YTD']);
     expect(late.kpis[2]).toMatchObject({ label: 'Since 2025', value: '+50%' });
 
     expect(build([]).measured).toBe(false);
-    expect(build([{ year: 2018, tier: 'Gold', sortRank: 1, memberCount: 4, revenueUsd: 0, isPartialYear: false }]).measured).toBe(false);
+    expect(build([{ year: 2018, tier: 'Gold', sortRank: 1, memberCount: 4, revenueUsd: 0 }]).measured).toBe(false);
   });
 });
 

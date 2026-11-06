@@ -103,7 +103,6 @@ interface TierYearRow {
   TIER_SORT_RANK: number | null;
   MEMBER_COUNT: number | null;
   TIER_REVENUE_USD: number | null;
-  IS_PARTIAL_YEAR: boolean | null;
 }
 
 interface DirectoryRow {
@@ -231,22 +230,6 @@ interface ChurnRow {
   TIER_CHURN_RATE: number | null;
   SHARE_OF_LOSS_PCT: number | null;
   LOGO_CHURN_RATE: number | null;
-}
-
-interface MovementDetailPageRow {
-  TOTAL_RECORDS: number | null;
-  IS_PAGE_ROW: boolean | null;
-}
-
-/** One movement-detail page read. */
-interface MovementDetailPageRead {
-  foundationSlug: string;
-  year: number;
-  movementType: string;
-  pageSize: number;
-  offset: number;
-  operation: string;
-  clientMessage: string;
 }
 
 interface ChurnDepartureRow {
@@ -729,65 +712,6 @@ export class HealthMetricsMembersService {
     };
   }
 
-  /**
-   * One page of a year's `MEMBERSHIP_MOVEMENT_DETAIL` rows for a movement type, in `sort_rank` order. The total
-   * is a separate aggregate joined onto the page, so a page past the end still reports it.
-   */
-  private async readMovementDetailPage<T extends MovementDetailPageRow>(
-    req: Request,
-    read: MovementDetailPageRead
-  ): Promise<{ rows: T[]; totalRecords: number }> {
-    // The clamped `pageSize`/`offset` come from the callers, never the request, so interpolating them is safe.
-    const sql = `
-      WITH scoped AS (
-        SELECT *
-        FROM ${MEMBERSHIP_MOVEMENT_DETAIL_VIEW}
-        WHERE foundation_slug = ?
-          AND year = ?
-          AND movement_type = ?
-          -- Rows the mapper cannot show must not count, or the total and the page window drift apart.
-          AND account_id IS NOT NULL
-          AND account_id <> ''
-      ),
-      totals AS (
-        SELECT COUNT(*) AS total_records
-        FROM scoped
-      ),
-      page AS (
-        SELECT
-          account_id,
-          account_name,
-          membership_tier,
-          dues_impact_usd,
-          movement_date,
-          last_engaged_date,
-          sort_rank,
-          -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
-          TRUE AS is_page_row
-        FROM scoped
-        -- NULLS LAST pins null placement, so a pooled session's null ordering cannot drift rows between pages.
-        ORDER BY sort_rank ASC NULLS LAST, account_id ASC NULLS LAST
-        LIMIT ${read.pageSize} OFFSET ${read.offset}
-      )
-      -- ON TRUE keeps the single totals row when the page selected nothing.
-      SELECT totals.*, page.*
-      FROM totals
-      LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC NULLS LAST
-    `;
-
-    const result = await executeSnowflakeViewRead<T>(this.snowflakeService, req, sql, [read.foundationSlug, read.year, read.movementType], {
-      view: MEMBERSHIP_MOVEMENT_DETAIL_VIEW,
-      operation: read.operation,
-      clientMessage: read.clientMessage,
-    });
-
-    return {
-      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true),
-      totalRecords: Number(result.rows[0]?.TOTAL_RECORDS ?? 0),
-    };
-  }
-
   private async getTierYears(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersTierYear[]> {
     const sql = `
       SELECT
@@ -795,8 +719,7 @@ export class HealthMetricsMembersService {
         membership_tier,
         tier_sort_rank,
         member_count,
-        tier_revenue_usd,
-        is_partial_year
+        tier_revenue_usd
       FROM ${MEMBERSHIP_TIER_YEAR_VIEW}
       WHERE foundation_slug = ?
         AND year IS NOT NULL
@@ -1030,7 +953,6 @@ function mapTierYear(row: TierYearRow): HealthMetricsMembersTierYear | null {
     sortRank: toNullableNumber(row.TIER_SORT_RANK) ?? Number.MAX_SAFE_INTEGER,
     memberCount: toNullableNumber(row.MEMBER_COUNT),
     revenueUsd: toNullableNumber(row.TIER_REVENUE_USD),
-    isPartialYear: row.IS_PARTIAL_YEAR === true,
   };
 }
 

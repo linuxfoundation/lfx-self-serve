@@ -149,7 +149,6 @@ describe.each([
   ['/events-sponsorship', 'foundationSlug'],
   ['/events-geography', 'foundationSlug'],
   ['/members-tiers', 'foundationSlug'],
-  // The year and movement ride ahead of the slug so the handler past the gate has a valid query.
   ['/members-directory', 'foundationSlug'],
   ['/members-directory-tiers', 'foundationSlug'],
   ['/members-at-risk', 'foundationSlug'],

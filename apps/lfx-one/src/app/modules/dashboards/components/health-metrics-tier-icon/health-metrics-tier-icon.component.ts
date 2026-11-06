@@ -9,7 +9,7 @@ import type { HealthMetricsMembersReservedTier } from '@lfx-one/shared/interface
 /** The 14px Platinum, Gold or Silver tier icon: a metallic gradient cut to shape by a mask. Decorative; the tier's name sits beside it. */
 @Component({
   selector: 'lfx-health-metrics-tier-icon',
-  template: '<span class="block h-[14px] w-[14px]" [style]="style()"></span>',
+  templateUrl: './health-metrics-tier-icon.component.html',
   host: { class: 'inline-block flex-none', 'aria-hidden': 'true' },
 })
 export class HealthMetricsTierIconComponent {

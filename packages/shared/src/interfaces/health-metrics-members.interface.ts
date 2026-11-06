@@ -7,6 +7,7 @@ import type {
   HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
+  HEALTH_METRICS_MEMBERS_RESERVED_TIERS,
   HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS,
   HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-members.constants';
@@ -39,7 +40,6 @@ export interface HealthMetricsMembersTierYear {
   sortRank: number;
   memberCount: number | null;
   revenueUsd: number | null;
-  isPartialYear: boolean;
 }
 
 export interface HealthMetricsMembersTiers {
@@ -48,7 +48,7 @@ export interface HealthMetricsMembersTiers {
 }
 
 /** Platinum, Gold or Silver: the tiers with a colour and an icon of their own. */
-export type HealthMetricsMembersReservedTier = 'platinum' | 'gold' | 'silver';
+export type HealthMetricsMembersReservedTier = (typeof HEALTH_METRICS_MEMBERS_RESERVED_TIERS)[number];
 
 /** A tier icon's fill, and the CSS mask that cuts it to shape. */
 export interface HealthMetricsMembersTierIcon {

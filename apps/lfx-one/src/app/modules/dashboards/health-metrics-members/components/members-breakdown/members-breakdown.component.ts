@@ -5,7 +5,11 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { HEALTH_METRICS_MEMBERS_BREAKDOWN_VIEW_OPTIONS, HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_TIP_ROOM_PX,
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_VIEW_OPTIONS,
+  HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
+} from '@lfx-one/shared/constants';
 import { buildHealthMetricsMembersBreakdownView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -28,8 +32,7 @@ import type {
   HealthMetricsMembersTiersQuery,
 } from '@lfx-one/shared/interfaces';
 
-/** Room the popup needs to the right of a column before it flips to the left; the design caps it at 280px. */
-const TIP_ROOM_PX = 292;
+// Tailwind scans only the app's sources, so the table's class strings live here rather than in the shared package.
 
 /** The table's row labels: tiers medium, totals bold, change rows small and muted. */
 const LABEL_CLASSES: Record<HealthMetricsMembersBreakdownRowKind, string> = {
@@ -120,7 +123,7 @@ export class MembersBreakdownComponent {
   protected showTip(index: number, event: Event, plot: HTMLElement): void {
     const column = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const bounds = plot.getBoundingClientRect();
-    this.tip.set({ index, flip: column.left + column.width / 2 + TIP_ROOM_PX > bounds.right });
+    this.tip.set({ index, flip: column.left + column.width / 2 + HEALTH_METRICS_MEMBERS_BREAKDOWN_TIP_ROOM_PX > bounds.right });
   }
 
   protected hideTip(index: number): void {

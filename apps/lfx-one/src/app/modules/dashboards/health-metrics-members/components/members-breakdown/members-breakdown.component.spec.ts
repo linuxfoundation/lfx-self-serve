@@ -23,7 +23,6 @@ function tier(name: string, sortRank: number, counts: [number, number, number, n
     sortRank,
     memberCount: count,
     revenueUsd: count * 1000,
-    isPartialYear: index === 3,
   }));
 }
 
@@ -159,15 +158,11 @@ describe('MembersBreakdownComponent', () => {
     column.dispatchEvent(new Event('mouseenter'));
     await settle();
     expect(text('health-metrics-chart-tip-title', column)).toBe('2026 · 84 members');
-    expect([...column.querySelectorAll('[data-testid="health-metrics-chart-tip-row"]')].map((row) => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
-      'Platinum 7 · 8%',
-      'Gold 16 · 19%',
-      'Silver 44 · 52%',
-      'Others 17 · 20%',
-      'Associate 12',
-      'End User Supporter 5',
-      'Revenue $84K',
-    ]);
+    expect(
+      [...column.querySelectorAll('[data-testid="health-metrics-chart-tip-row"]')].map((row) =>
+        [...row.children].map((side) => side.textContent?.trim()).join(' ')
+      )
+    ).toEqual(['Platinum 7 · 8%', 'Gold 16 · 19%', 'Silver 44 · 52%', 'Others 17 · 20%', 'Associate 12', 'End User Supporter 5', 'Revenue $84K']);
     expect(query('health-metrics-chart-tip-rule', column)).not.toBeNull();
 
     column.dispatchEvent(new Event('mouseleave'));

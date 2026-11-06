@@ -45,7 +45,6 @@ function tierRow(overrides: Record<string, unknown> = {}) {
     TIER_SORT_RANK: 2,
     MEMBER_COUNT: 12,
     TIER_REVENUE_USD: 600000,
-    IS_PARTIAL_YEAR: false,
     ...overrides,
   };
 }
@@ -94,17 +93,16 @@ describe('HealthMetricsMembersService.getTiers', () => {
         sortRank: 2,
         memberCount: 12,
         revenueUsd: 600000,
-        isPartialYear: false,
       },
     ]);
   });
 
   it('keeps null counts null, sorts an unranked tier last and drops a row without a tier', async () => {
-    execute.mockResolvedValue({ rows: [tierRow({ MEMBER_COUNT: null, TIER_SORT_RANK: null, IS_PARTIAL_YEAR: null }), tierRow({ MEMBERSHIP_TIER: null })] });
+    execute.mockResolvedValue({ rows: [tierRow({ MEMBER_COUNT: null, TIER_SORT_RANK: null }), tierRow({ MEMBERSHIP_TIER: null })] });
 
     const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
 
-    expect(response.rows).toEqual([expect.objectContaining({ memberCount: null, sortRank: Number.MAX_SAFE_INTEGER, isPartialYear: false })]);
+    expect(response.rows).toEqual([expect.objectContaining({ memberCount: null, sortRank: Number.MAX_SAFE_INTEGER })]);
   });
 
   it('warns and drops the year the cap cuts through, so no year shows part of its tiers', async () => {
