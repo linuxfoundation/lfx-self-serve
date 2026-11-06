@@ -463,6 +463,30 @@ describe('BrandKitWebViewComponent', () => {
       const samples = icons?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-samples"]');
       expect(samples?.previousElementSibling?.tagName).toBe('H3');
       expect(samples?.nextElementSibling?.tagName).toBe('UL');
+      // Hand-test feedback 1: 16 px above the rules (the card's gap-2 + mt-2), the rules close together, each rule's text and
+      // comment affordance on one line (the affordance a flex item after the text, in a wrapping row inside the list item).
+      const rules = samples?.nextElementSibling;
+      for (const cls of ['mt-2', 'gap-0.5', 'leading-snug', 'list-disc']) {
+        expect(rules?.classList.contains(cls)).toBe(true);
+      }
+      expect(rules?.classList.contains('gap-1')).toBe(false);
+      const ruleItems = Array.from(rules?.querySelectorAll<HTMLElement>(':scope > li') ?? []);
+      expect(ruleItems).toHaveLength(brandKitTestRevision().chapters.visual.icons.rules.length);
+      for (const item of ruleItems) {
+        expect(item.classList.contains('group/commentfield')).toBe(true);
+        expect(item.hasAttribute('data-mktg-comment-group')).toBe(true);
+        const row = item.firstElementChild;
+        expect(row?.tagName).toBe('SPAN');
+        for (const cls of ['flex', 'flex-wrap', 'items-baseline', 'gap-x-2', '[&>lfx-mktg-field-comments]:flex-auto']) {
+          expect(row?.classList.contains(cls)).toBe(true);
+        }
+      }
+      // With comments on, the affordance is a direct flex item of that row, after the text.
+      fixture.componentRef.setInput('commentsEnabled', true);
+      await fixture.whenStable();
+      for (const item of ruleItems) {
+        expect(item.firstElementChild?.querySelector(':scope > lfx-mktg-field-comments')).not.toBeNull();
+      }
       expect(samples?.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(8);
       expect(samples?.querySelectorAll('[data-testid^="brand-kit-icon-strip-"]')).toHaveLength(8);
       expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tile-documents"]')?.textContent?.trim()).toBe('Documents');

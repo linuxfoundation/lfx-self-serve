@@ -577,10 +577,18 @@
             <h3 [class]="cardTitle">Iconography</h3>
             <!-- The board's sample icons in the kit's colours; the rules and the recommended set stay under them. -->
             <lfx-mktg-brand-kit-icon-samples [colours]="v.iconColours" />
-            <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800">
+            <!--
+              The tester's hand test (round 1): 16 px between the strip and the first rule (the card's 8 px gap + mt-2), and the
+              rules close together: each rule's comment affordance (a block under the text until now, so every rule was two
+              rows tall) sits on the text's own line after it, and wraps to a full-width line of its own only when it does not
+              fit, or when its composer is open.
+            -->
+            <ul class="mt-2 flex list-disc flex-col gap-0.5 pl-5 text-sm leading-snug text-gray-800">
               @for (rule of v.visual.icons.rules; track $index) {
                 <li class="group/commentfield" data-mktg-comment-group>
-                  {{ rule }}<ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.visual.icons.rules[' + $index + ']' }" />
+                  <span class="flex flex-wrap items-baseline gap-x-2 [&>lfx-mktg-field-comments]:flex-auto"
+                    >{{ rule }}<ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.visual.icons.rules[' + $index + ']' }"
+                  /></span>
                 </li>
               }
             </ul>
