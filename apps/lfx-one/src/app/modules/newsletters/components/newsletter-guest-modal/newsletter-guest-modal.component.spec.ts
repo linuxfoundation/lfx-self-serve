@@ -76,12 +76,21 @@ describe('NewsletterGuestModalComponent', () => {
   it('carries the consent line with privacy, terms and cookie settings, and drops it when blocked', () => {
     const showPreferences = vi.spyOn(TestBed.inject(TranscendService), 'showPreferences').mockImplementation(() => undefined);
 
-    expect(text('newsletter-guest-modal-consent')).toContain('By continuing, you agree to the use of your email in accordance with our');
+    expect(text('newsletter-guest-modal-consent')).toContain(
+      'This site uses cookies. By continuing, you agree to the use of your email in accordance with our'
+    );
     expect(el().querySelector('[data-testid="newsletter-guest-modal-privacy"]')?.getAttribute('href')).toBe(NEWSLETTER_GUEST_LEGAL_LINKS.privacyPolicy);
     expect(el().querySelector('[data-testid="newsletter-guest-modal-terms"]')?.getAttribute('href')).toBe(NEWSLETTER_GUEST_LEGAL_LINKS.termsOfUse);
 
+    const dialog = (): HTMLElement => el().querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog().getAttribute('aria-modal')).toBe('true');
     el().querySelector<HTMLButtonElement>('[data-testid="newsletter-guest-modal-cookie-settings"]')!.click();
     expect(showPreferences).toHaveBeenCalledTimes(1);
+    // The consent manager renders outside the dialog: the modal releases aria-modal (and its focus trap) while it is open,
+    expect(dialog().hasAttribute('aria-modal')).toBe(false);
+    // and re-arms both once focus comes back into the dialog.
+    dialog().dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    expect(dialog().getAttribute('aria-modal')).toBe('true');
 
     fixture.componentRef.setInput('blocked', true);
     expect(el().querySelector('[data-testid="newsletter-guest-modal-consent"]')).toBeNull();

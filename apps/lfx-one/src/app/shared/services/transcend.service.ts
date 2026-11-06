@@ -39,15 +39,50 @@ export class TranscendService {
 
   /**
    * Hides the automatic consent prompt (`#transcend-consent-manager`) for a page that shows its own
-   * privacy/terms consent line and a "Cookie settings" link. airgap.js keeps regulating scripts; only
-   * the prompt UI is hidden. Pair with {@link restorePrompt} when the page is destroyed.
+   * cookie notice, privacy/terms line and "Cookie settings" link — but only where hiding it cannot let
+   * tracking run unannounced. airgap.js keeps regulating scripts; only the prompt UI is hidden.
+   *
+   * The class is set on the server too, so the prompt never flashes; in the browser it is lifted again
+   * at once when any tracking purpose is on by default (`'Auto'`) or consented without a confirmed
+   * choice — a notice/opt-out regime, where the prompt is the notice that tracking is running. It stays
+   * hidden only when nothing tracks until the visitor agrees (opt-in regime, every purpose `false`) or
+   * the visitor already made a choice (the prompt would not show anyway). Pair with
+   * {@link restorePrompt} when the page is destroyed.
    */
   public suppressPrompt(): void {
     this.renderer.addClass(this.document.documentElement, CONSENT_PROMPT_HIDDEN_CLASS);
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    if (this.trackingRunsWithoutChoice()) {
+      this.restorePrompt();
+      return;
+    }
+    window.airgap?.addEventListener?.('consent-resolution', this.onConsentResolution);
   }
 
   /** Lets the automatic consent prompt show again (see {@link suppressPrompt}). */
   public restorePrompt(): void {
     this.renderer.removeClass(this.document.documentElement, CONSENT_PROMPT_HIDDEN_CLASS);
+    if (isPlatformBrowser(this.platformId)) {
+      window.airgap?.removeEventListener?.('consent-resolution', this.onConsentResolution);
+    }
+  }
+
+  /** Re-checks a suppressed prompt once airgap.js has resolved the page's consent (its regime may resolve late). */
+  private readonly onConsentResolution = (): void => {
+    if (this.trackingRunsWithoutChoice()) this.restorePrompt();
+  };
+
+  /**
+   * True when some tracking purpose is on although the visitor has not confirmed a choice. Without
+   * airgap.js (blocked or failed) there is no prompt to hide, so this is false.
+   */
+  private trackingRunsWithoutChoice(): boolean {
+    const consent = window.airgap?.getConsent?.();
+    if (!consent || consent.confirmed) {
+      return false;
+    }
+    return Object.values(consent.purposes ?? {}).some((value) => value === true || value === 'Auto');
   }
 }

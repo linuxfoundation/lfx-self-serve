@@ -85,9 +85,10 @@ export function maskEmailForLogs(email: string | null | undefined): string {
  * Mask an address for display to someone who may not own it, e.g. on a page opened from a forwarded
  * invite link: enough to recognise your own address, not enough to read someone else's
  * (`jane.doe+news@example.org` → `ja***@exam***.org`). The local part keeps two characters (one
- * when it is three or shorter); the host before the last dot keeps four (one when it is six or
- * shorter); the top-level domain stays. Anything that is not a single-`@` address with a dotted
- * domain collapses to `***`.
+ * when it is two or three long); the host before the last dot keeps four (one when it is two to six
+ * long); a one-character part shows nothing, so `***` never stands in front of a complete part. The
+ * top-level domain stays. Anything that is not a single-`@` address with a dotted domain collapses
+ * to `***`.
  */
 export function maskEmailForDisplay(email: string | null | undefined): string {
   const trimmed = (email ?? '').trim();
@@ -105,9 +106,17 @@ export function maskEmailForDisplay(email: string | null | undefined): string {
 
   const host = domain.slice(0, dot);
   const tld = domain.slice(dot + 1);
-  const shownLocal = local.slice(0, local.length > 3 ? 2 : 1);
-  const shownHost = host.slice(0, host.length > 6 ? 4 : 1);
+  const shownLocal = local.slice(0, visiblePrefixLength(local.length, 3, 2));
+  const shownHost = host.slice(0, visiblePrefixLength(host.length, 6, 4));
   return `${shownLocal}***@${shownHost}***.${tld}`;
+}
+
+/** How many leading characters of a `length`-long address part to show: `longKeep` above `shortMax`, one for a short part, none for a single character. */
+function visiblePrefixLength(length: number, shortMax: number, longKeep: number): number {
+  if (length <= 1) {
+    return 0;
+  }
+  return length > shortMax ? longKeep : 1;
 }
 
 /**

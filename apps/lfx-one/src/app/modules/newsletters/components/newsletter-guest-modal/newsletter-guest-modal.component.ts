@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { _IdGenerator, CdkTrapFocus } from '@angular/cdk/a11y';
-import { Component, computed, inject, input, linkedSignal, output, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, output, Signal, signal, WritableSignal } from '@angular/core';
 import { TranscendService } from '@app/shared/services/transcend.service';
 import { UiButtonComponent } from '@app/shared/uikit/button/button.component';
 import { UiInputComponent } from '@app/shared/uikit/input/input.component';
@@ -53,6 +53,12 @@ export class NewsletterGuestModalComponent {
 
   // === Writable Signals ===
   protected readonly emailValue: WritableSignal<string> = linkedSignal(() => this.email());
+  /**
+   * True while Transcend's consent manager (rendered outside this dialog) is open from Cookie settings:
+   * the focus trap and `aria-modal` are released so the manager is operable, and re-armed as soon as
+   * focus comes back into the dialog.
+   */
+  protected readonly preferencesOpen = signal(false);
 
   // === Computed Signals ===
   protected readonly foundationName: Signal<string> = computed(() => this.foundation()?.name || 'this foundation');
@@ -65,7 +71,12 @@ export class NewsletterGuestModalComponent {
 
   // === Protected Methods ===
   protected onCookieSettings(): void {
+    this.preferencesOpen.set(true);
     this.transcendService.showPreferences();
+  }
+
+  protected onDialogFocusIn(): void {
+    if (this.preferencesOpen()) this.preferencesOpen.set(false);
   }
 
   protected onSubmit(event: Event): void {

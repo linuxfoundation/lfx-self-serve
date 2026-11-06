@@ -181,12 +181,17 @@ describe('maskEmailForDisplay', () => {
   });
 
   it('shows less of a short mailbox or host', () => {
-    expect(maskEmailForDisplay('abc@acme.io')).toBe('a***@a***.io');
-    expect(maskEmailForDisplay('ab@x.io')).toBe('a***@x***.io');
+    expect(maskEmailForDisplay('abc@acme.test')).toBe('a***@a***.test');
+    expect(maskEmailForDisplay('ab@xy.test')).toBe('a***@x***.test');
+  });
+
+  it('shows nothing of a one-character mailbox or host', () => {
+    expect(maskEmailForDisplay('a@x.test')).toBe('***@***.test');
+    expect(maskEmailForDisplay('a@example.test')).toBe('***@exam***.test');
   });
 
   it('keeps only the last label of a multi-label domain', () => {
-    expect(maskEmailForDisplay('jane.doe@mail.example.co.uk')).toBe('ja***@mail***.uk');
+    expect(maskEmailForDisplay('jane.doe@mail.example.test')).toBe('ja***@mail***.test');
   });
 
   it('lowercases the domain and trims whitespace', () => {

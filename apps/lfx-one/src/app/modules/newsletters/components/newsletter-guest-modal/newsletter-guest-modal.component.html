@@ -5,15 +5,17 @@
   Deliberately not lfx-ui-modal / UiModalService: this modal is the page itself for a signed-out reader —
   it cannot be dismissed (no close, no Escape, no backdrop click), it blurs the page behind it, and it
   renders as part of the route template rather than a CDK overlay opened imperatively. Focus is trapped
-  with cdkTrapFocus and labelled by the heading, as the uikit modal does.
+  with cdkTrapFocus and labelled by the heading, as the uikit modal does; the trap and aria-modal are released
+  while Transcend's consent manager (outside this dialog) is open from Cookie settings.
 -->
 <div class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-gray-900/20 px-4 py-8 backdrop-blur-sm" data-testid="newsletter-guest-modal">
   <div
     role="dialog"
-    aria-modal="true"
+    [attr.aria-modal]="preferencesOpen() ? null : 'true'"
     [attr.aria-labelledby]="labelledBy"
-    cdkTrapFocus
+    [cdkTrapFocus]="!preferencesOpen()"
     [cdkTrapFocusAutoCapture]="true"
+    (focusin)="onDialogFocusIn()"
     class="my-auto flex w-full max-w-xl flex-col items-center gap-6 rounded-xl bg-white px-6 py-10 text-center shadow-xl sm:px-14 sm:py-12">
     @if (foundation()?.logo_url; as logoUrl) {
       <img
@@ -67,7 +69,7 @@
 
     @if (!blocked()) {
       <p class="max-w-sm text-xs text-gray-500" data-testid="newsletter-guest-modal-consent">
-        By continuing, you agree to the use of your email in accordance with our
+        This site uses cookies. By continuing, you agree to the use of your email in accordance with our
         <a
           [href]="legalLinks.privacyPolicy"
           target="_blank"
@@ -94,8 +96,9 @@
         </button>
       </p>
     } @else {
-      <!-- Nothing to agree to without Continue, but the page hides Transcend's prompt, so cookie preferences stay reachable. -->
+      <!-- Nothing to agree to without Continue, but the page may hide Transcend's prompt, so cookie preferences stay reachable. -->
       <p class="flex flex-wrap justify-center gap-x-3 text-xs text-gray-500" data-testid="newsletter-guest-modal-legal">
+        <span>This site uses cookies.</span>
         <a [href]="legalLinks.privacyPolicy" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-blue-600"
           >Privacy Policy</a
         >
