@@ -4,7 +4,7 @@ description: The LFX Self Serve dashboard provides a lens-based overview of your
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, overview, lens, access, me, foundation, project, org, organization, company, employer]
-last_updated: 2026-11-04
+last_updated: 2026-11-06
 intercom_collection: Dashboards
 ---
 
@@ -90,6 +90,7 @@ If you are a CLA Manager or an initial CLA Manager designee, see [Why can't I se
 
 ## Related sections
 
+- [Organization involvement in a foundation](./organization-involvement/) — one organization's membership tier, contributors, maintainers, events and training in the foundation you are viewing
 - [Committees](../committees/) — manage your project governance groups
 - [Meetings](../meetings/) — view upcoming and past meetings
 - [Votes](../votes/) — participate in and manage polls

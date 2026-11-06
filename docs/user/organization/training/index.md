@@ -117,6 +117,6 @@ An empty table also shows **Browse courses**, which opens the Linux Foundation t
 ## Related sections
 
 - [People](../people/) — the **Trainees** tab lists each trainee, with the same cards and filters
-- [Org Overview dashboard](../org-overview/) — the **People with training activity**, **Certified people** and **Courses taken** Education tiles
+- [Org Overview dashboard](../org-overview/) — the **People with training activity**, **Certified people** and **Courses taken** Education tiles, which open this page
 - [Choose and switch an organization](../choose-an-organization/) — pick the organization the page shows
 - [Organization FAQ](../faq/) — short answers about the Organization lens
