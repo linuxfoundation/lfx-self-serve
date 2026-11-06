@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and Performance Max search themes for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and Performance Max search themes, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -49,7 +49,7 @@ When you create a Google Ads campaign from the **Campaigns** page in the Foundat
 | --------------- | ---------------------------------------------- | ----------------------------- | ---------------------- | ------------------ |
 | Search          | Yes, adjust with Manual CPC or Maximize Clicks | Yes, adjust with Manual CPC   | Yes                    | Yes                |
 | Display         | Yes, adjust with Maximize Clicks               | Exclude only                  | Yes                    | Yes                |
-| Performance Max | Windows only                                   | No                            | No                     | Yes                |
+| Performance Max | Windows only                                   | Exclude only, with TV screens | No                     | Yes                |
 | Demand Gen      | Windows only                                   | Exclude only, with TV screens | No                     | Yes                |
 
 ## Ad schedule
@@ -68,7 +68,7 @@ If you set an adjustment and then switch to a strategy that ignores it, the adju
 
 ## Devices
 
-For **Mobile phones**, **Computers** and **Tablets**, and **TV screens** on Demand Gen, choose one of:
+For **Mobile phones**, **Computers** and **Tablets**, and **TV screens** on Demand Gen and Performance Max, choose one of:
 
 - **Default bid**: no change.
 - **Adjust bid**: enter a percentage from -90% to +900%. Only offered when the bidding strategy is **Manual CPC**.
@@ -76,9 +76,11 @@ For **Mobile phones**, **Computers** and **Tablets**, and **TV screens** on Dema
 
 LFX One sends device bid adjustments only with **Manual CPC**, and won't create the campaign with one under any other strategy, even at 0%. Under Maximize Conversions, Maximize Conversion Value or Target ROAS, Google Ads doesn't apply device bid adjustments, except excluding a device. Under Target CPA, Google Ads would apply one as an adjustment to that device's target CPA, and under Maximize Clicks it would apply one to the bid, but LFX One doesn't send them there. Search campaigns use Manual CPC unless you pick another strategy. Display campaigns cannot use Manual CPC here, so on Display you can only keep the default bid or exclude a device. The **Devices** section says which strategy is in force when **Adjust bid** is not offered.
 
-Demand Gen campaigns take a device only as an exclusion, under every strategy, so on Demand Gen you can only keep the default bid or exclude a device. Demand Gen is also the only campaign type that offers **TV screens**. If you exclude TV screens and then switch to another campaign type, the exclusion is kept for a switch back and a notice says it will not be sent.
+Demand Gen and Performance Max campaigns take a device only as an exclusion, under every strategy, so on those two you can only keep the default bid or exclude a device. They are also the only campaign types that offer **TV screens**. If you exclude TV screens and then switch to Search or Display, the exclusion is kept for a switch back and a notice says it will not be sent.
 
-If you set an adjustment under Manual CPC and then switch to another strategy, the adjustment is kept for a switch back and a notice says so. **Create Campaign** stays unavailable until you set that device to **Default bid** or **Exclude**, or choose Manual CPC again. If you switch to Demand Gen instead, the same happens, and only **Default bid** or **Exclude** lets you create the campaign there.
+On Performance Max, keep at least one device: a campaign that excludes all four could not serve anywhere, so a message appears under **Devices** and **Create Campaign** stays unavailable until you set one of them back to **Default bid**.
+
+If you set an adjustment under Manual CPC and then switch to another strategy, the adjustment is kept for a switch back and a notice says so. **Create Campaign** stays unavailable until you set that device to **Default bid** or **Exclude**, or choose Manual CPC again. If you switch to Demand Gen or Performance Max instead, the same happens, and only **Default bid** or **Exclude** lets you create the campaign there.
 
 ## Demographic exclusions
 
