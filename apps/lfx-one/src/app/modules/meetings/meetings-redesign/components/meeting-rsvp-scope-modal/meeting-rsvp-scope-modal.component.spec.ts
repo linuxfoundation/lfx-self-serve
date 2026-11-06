@@ -74,10 +74,17 @@ describe('MeetingRsvpScopeModalComponent', () => {
     const row = buildRow('1790845200');
     const fixture = await render({ row, response: 'declined' });
 
-    expect(query(fixture, 'meetings-home-rsvp-scope-info')?.className).toContain('border-y');
-    expect(query(fixture, 'meetings-home-rsvp-scope-when')?.textContent?.trim()).toBe(formatMeetingWhenFull(row));
-    expect(query(fixture, 'meetings-home-rsvp-scope-when')?.textContent).toMatch(/^Thu, Oct 1 · 9:00 AM \S+ · 60 min/);
+    expect(query(fixture, 'meeting-dialog-context-block')?.className).toContain('border-y');
+    expect(query(fixture, 'meeting-dialog-context-when')?.textContent?.trim()).toBe(formatMeetingWhenFull(row));
+    expect(query(fixture, 'meeting-dialog-context-when')?.textContent).toMatch(/^Thu, Oct 1 · 9:00 AM \S+ · 60 min/);
     expect(fixture.nativeElement.querySelector('[data-testid$="-description"]')).toBeNull();
+  });
+
+  it('swaps the meeting band for a single divider when opened from the drawer', async () => {
+    const fixture = await render({ row: buildRow('1790845200'), response: 'accepted', origin: 'drawer' });
+
+    expect(query(fixture, 'meeting-dialog-context-divider')).not.toBeNull();
+    expect(query(fixture, 'meeting-dialog-context-block')).toBeNull();
   });
 
   it('closes with nothing on Cancel', async () => {
