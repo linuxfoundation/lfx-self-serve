@@ -167,6 +167,13 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-format-held-live">
   {{ demandGenFormatHeldMessage() }}
 </div>
+<!-- The Performance Max search themes' refusal, and the themes a switch away holds back (#5262). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-search-themes-error-live">
+  {{ googleSearchThemesError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-search-themes-withheld-live">
+  {{ googleSearchThemesWithheldWarning() }}
+</div>
 <!-- The named Demand Gen ad groups' refusal and what the split leaves unsent (#5226); empty off Demand Gen. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ad-groups-error-live">
   {{ demandGenAdGroupsError() ?? '' }}
@@ -3231,6 +3238,45 @@
           }
         </div>
       </ng-template>
+
+      <!--
+        Google Ads: Performance Max search themes (#5262).
+
+        PERFORMANCE MAX ONLY, gated on `googleSearchThemesAvailable`: a theme is an asset group signal,
+        and `validatePerformanceMaxSignals` refuses it on every other channel before the budget mutate.
+        One theme per line in the LFX textarea wrapper. `googleSearchThemesError` holds Create on any
+        refusal the BFF would make, and says why under the box.
+      -->
+      @if (googleSearchThemesAvailable()) {
+        <div
+          class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-search-themes-section"
+          role="group"
+          aria-labelledby="google-search-themes-heading">
+          <label id="google-search-themes-heading" for="google-search-themes-input" class="block text-xs font-medium text-gray-700">
+            Google Search Themes ({{ googleSearchThemes().length }}/{{ googleMaxSearchThemes }})
+          </label>
+          <p id="google-search-themes-hint" class="text-xs text-gray-500">
+            One per line, up to {{ googleMaxSearchThemeRunes }} characters each. Search themes tell Google which searches this campaign is for; Google may still
+            serve beyond them.
+          </p>
+          <lfx-textarea
+            [form]="campaignForm"
+            control="googlePerformanceMaxSearchThemes"
+            inputId="google-search-themes-input"
+            [rows]="5"
+            ariaDescribedBy="google-search-themes-hint"
+            [describedBy]="googleSearchThemesError() ? 'google-search-themes-error' : undefined"
+            [invalid]="!!googleSearchThemesError()"
+            data-testid="implementation-google-search-themes-input" />
+          @if (googleSearchThemesError(); as error) {
+            <p id="google-search-themes-error" class="text-xs text-red-600" data-testid="implementation-google-search-themes-error">{{ error }}</p>
+          }
+        </div>
+      }
+      @if (googleSearchThemesWithheldWarning(); as warning) {
+        <p class="text-xs text-amber-700" data-testid="implementation-google-search-themes-withheld">{{ warning }}</p>
+      }
 
       <!--
         The two creative messages, one blocking and one not, placed after every section because

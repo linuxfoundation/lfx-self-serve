@@ -18,6 +18,7 @@ import {
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_CODE,
   GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_CODE,
+  GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
@@ -3824,6 +3825,7 @@ describe('CampaignController.createCampaign cutover', () => {
       demandGenAds: [{ name: 'Teaser', creative: { headlines: ['Build with open source'] } }],
       demandGenAudience: 'customers/1234567890/audiences/42',
       performanceMaxCreative: { businessName: 'Example Foundation' },
+      performanceMaxSearchThemes: ['kubernetes conference'],
       displayCreative: { headlines: ['Join us this spring'] },
       path1: 'kubecon',
       path2: 'na',
@@ -3906,6 +3908,22 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(legacyCreate).not.toHaveBeenCalled();
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'excludedPlacements' });
+    });
+
+    // Pinned outside the table, which iterates the constant and so cannot notice an entry going missing.
+    it('refuses Performance Max search themes by name while the cutover is dark (#5262)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['performance-max'], performanceMaxSearchThemes: ['kubernetes'] }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'performanceMaxSearchThemes' });
     });
 
     it('refuses a Demand Gen create split into ad groups by name while the cutover is dark (#5226)', async () => {
@@ -7362,6 +7380,148 @@ describe('CampaignController.createCampaign cutover', () => {
         { text: 'Register', finalUrl: 'https://events.example.org/register' },
         { text: 'Agenda', description1: 'Talks', description2: 'Workshops', finalUrl: 'https://events.example.org/agenda' },
       ],
+    });
+  });
+
+  describe('performance max search themes (#5262)', () => {
+    const PMAX_CREATIVE = { businessName: 'Example Foundation' };
+    const pmaxBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+      googleBody({ campaignTypes: ['performance-max'], budgetUsd: 500, performanceMaxCreative: PMAX_CREATIVE, ...overrides });
+    const create = (body: Record<string, unknown>): Promise<void> =>
+      controller.createCampaign(buildReq(body as never, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    /**
+     * `validatePerformanceMaxSignals` (v1.0.31) trims each theme with Go's rules and sends it as an
+     * asset group signal. Pinned whole, so a builder that leaked a Search-shaped field onto the
+     * Performance Max envelope beside them fails here, and the key rides after the creative.
+     */
+    it("dispatches the themes on a Performance Max create, trimmed with Go's rules, after the creative", async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005b1', error: null });
+
+      await create(pmaxBody({ performanceMaxSearchThemes: [' kubernetes conference ', 'cloud native\u0085'] }));
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config).toEqual({
+        budget: 500,
+        channel: 'performance-max',
+        startDate: '2026-04-01',
+        endDate: '2026-04-30',
+        performanceMaxCreative: PMAX_CREATIVE,
+        performanceMaxSearchThemes: ['kubernetes conference', 'cloud native'],
+      });
+      expect(Object.keys(config).slice(-2)).toEqual(['performanceMaxCreative', 'performanceMaxSearchThemes']);
+    });
+
+    it.each([
+      ['an absent theme list', {}],
+      ['an empty theme list', { performanceMaxSearchThemes: [] }],
+      ['a null theme list, which the Go decode reads as absent', { performanceMaxSearchThemes: null }],
+    ])('leaves a Performance Max request byte-identical for %s', async (_label, overrides) => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005b2', error: null });
+      await create(pmaxBody());
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      createCampaigns.mockClear();
+
+      await create(pmaxBody(overrides));
+
+      expect(next).not.toHaveBeenCalled();
+      expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+      expect(without).not.toContain('performanceMaxSearchThemes');
+    });
+
+    it.each([
+      ['search', 'Search'],
+      ['display', 'Display'],
+      ['demand-gen', 'Demand Gen'],
+    ])('refuses search themes on %s by name, because upstream refuses the whole create there', async (channel, channelLabel) => {
+      await create(googleBody({ campaignTypes: [channel], performanceMaxSearchThemes: ['kubernetes'] }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('performanceMaxSearchThemes');
+      expect(refusalFrom().message).toContain(`only accepts search themes on Performance Max campaigns, not on ${channelLabel} campaigns`);
+    });
+
+    it.each([['search'], ['display'], ['demand-gen']])('leaves a %s request byte-identical when it carries an empty theme list', async (channel) => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005b3', error: null });
+      await create(googleBody({ campaignTypes: [channel] }));
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      createCampaigns.mockClear();
+
+      await create(googleBody({ campaignTypes: [channel], performanceMaxSearchThemes: [] }));
+
+      expect(next).not.toHaveBeenCalled();
+      expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+    });
+
+    it.each([
+      ['no creative', { performanceMaxCreative: undefined }],
+      ['a creative that empties out, which creates no asset group', { performanceMaxCreative: { businessName: '   ' } }],
+    ])('refuses themes on a Performance Max create with %s, as they attach to the asset group', async (_label, overrides) => {
+      await create(pmaxBody({ performanceMaxSearchThemes: ['kubernetes'], ...overrides }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ field: 'performanceMaxSearchThemes', message: GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL });
+    });
+
+    it.each([
+      ['a bare string', 'kubernetes', 'must be a list of text'],
+      ['a non-string entry', ['kubernetes', 7], 'must be a list of text'],
+      ['a null entry', ['kubernetes', null], 'must be a list of text'],
+      ['a blank entry', ['kubernetes', ' \u0085 '], 'blank entry (search theme 2)'],
+      ['a theme over 80 runes', ['x'.repeat(81)], 'has 81'],
+      ['a repeat in a different case', ['Cloud Native', 'cloud native'], 'more than once'],
+      ['51 themes', Array.from({ length: 51 }, (_, i) => `theme ${i}`), 'at most 50 search themes'],
+    ])('refuses %s by name before any upstream call', async (_label, performanceMaxSearchThemes, expected) => {
+      await create(pmaxBody({ performanceMaxSearchThemes }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('performanceMaxSearchThemes');
+      expect(refusalFrom().message).toContain(expected);
+    });
+
+    it.each([
+      [
+        'the channel before the cap',
+        googleBody({ campaignTypes: ['display'], performanceMaxSearchThemes: Array.from({ length: 51 }, (_, i) => `t${i}`) }),
+        'Display',
+      ],
+      [
+        'the asset group before the cap',
+        pmaxBody({ performanceMaxCreative: undefined, performanceMaxSearchThemes: Array.from({ length: 51 }, (_, i) => `t${i}`) }),
+        'asset group',
+      ],
+      ['the extensions before the themes', pmaxBody({ promotions: [{}], performanceMaxSearchThemes: [''] }), 'promotion'],
+    ])("refuses for %s, in upstream's own order", async (_label, body, expected) => {
+      await create(body);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().message).toContain(expected);
+    });
+
+    it('accepts exactly 50 themes of 80 runes each', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005b4', error: null });
+      const themes = Array.from({ length: 50 }, (_, i) => `${String(i).padStart(2, '0')}${'x'.repeat(78)}`);
+
+      await create(pmaxBody({ performanceMaxSearchThemes: themes }));
+
+      expect(next).not.toHaveBeenCalled();
+      expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['performanceMaxSearchThemes']).toEqual(themes);
+    });
+
+    /** The builder's own channel gate, behind the by-name refusal: pinned on the helper. */
+    it.each([
+      ['search', false],
+      ['demand-gen', false],
+      ['display', false],
+      ['performance-max', true],
+      ['video', false],
+    ] as const)('builds search themes for %s only when the channel takes them', (channel, taken) => {
+      const build = (controller as unknown as { googleSearchThemes: (body: unknown, channel: string) => Record<string, unknown> }).googleSearchThemes.bind(
+        controller
+      );
+
+      expect(build({ performanceMaxSearchThemes: ['kubernetes'] }, channel)).toEqual(taken ? { performanceMaxSearchThemes: ['kubernetes'] } : {});
     });
   });
 

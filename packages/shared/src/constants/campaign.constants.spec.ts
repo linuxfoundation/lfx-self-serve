@@ -56,9 +56,12 @@ import {
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
+  GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES,
+  GOOGLE_ADS_MAX_SEARCH_THEME_RUNES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS,
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
@@ -1392,6 +1395,14 @@ describe('Google Ads campaign criteria vocabularies', () => {
     // other extension list there. Performance Max is not opened by this client for either.
     expect([...GOOGLE_CHANNELS_WITH_SITELINKS]).toEqual(['search', 'demand-gen']);
     expect([...GOOGLE_CHANNELS_WITH_AD_EXTENSIONS]).toEqual(['search']);
+  });
+
+  it('takes search themes on performance max alone, up to 50 of 80 runes each', () => {
+    // `validatePerformanceMaxSignals` (v1.0.31, #461): asset group signals, and only Performance Max
+    // has asset groups. `maxSearchThemes` and `maxSearchThemeRunes` in `pmax_signals.go`.
+    expect([...GOOGLE_CHANNELS_WITH_SEARCH_THEMES]).toEqual(['performance-max']);
+    expect(GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES).toBe(50);
+    expect(GOOGLE_ADS_MAX_SEARCH_THEME_RUNES).toBe(80);
   });
 
   it('caps each demographic exclusion list at 20, the per-list bound upstream checks twice', () => {

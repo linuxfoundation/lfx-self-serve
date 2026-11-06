@@ -10,7 +10,11 @@ import {
   GOOGLE_CREATIVE_RUNE_COUNTED_CONTROLS,
   GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
+  GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES,
+  GOOGLE_ADS_MAX_SEARCH_THEME_RUNES,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
+  googleAdsEchoed,
+  googleAdsToLower,
   googleAdsTrimSpace,
 } from '../constants/campaign.constants';
 import type { GoogleCreativeFieldSpec, GoogleCreativeImageShape, GoogleCreativeWireFields, StoredCreativeAsset } from '../interfaces/campaign.interface';
@@ -111,6 +115,40 @@ export function googlePerformanceMaxShortDescriptionMissing(descriptions: unknow
     .filter((line) => line !== '');
   if (lines.length === 0) return false;
   return !lines.some((line) => googleAdsTextWeight(line) <= GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH);
+}
+
+/**
+ * Why campaign-service would refuse a Performance Max search-theme list, or `null` when it would not.
+ * One judge for the Implement tab, which holds Create on it, and the BFF, which refuses with the same
+ * sentence.
+ *
+ * `validatePerformanceMaxSignals` (`pmax_signals.go`, v1.0.31) in its own order: the cap on the
+ * SUBMITTED list ({@link GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES}) before any entry, then each
+ * entry, first bad one wins — blank, over {@link GOOGLE_ADS_MAX_SEARCH_THEME_RUNES} runes, or a repeat
+ * keyed on Go's `strings.ToLower`. A repeat is REFUSED, not collapsed, as upstream refuses it.
+ *
+ * The entries are judged as given: the caller trims them with Go's rules first, as upstream does. The
+ * channel and the asset-group rule are the caller's, because they need the request around the list.
+ * `index` is reported from 1; upstream numbers from 0.
+ */
+export function googlePerformanceMaxSearchThemesRefusal(themes: readonly string[]): string | null {
+  if (themes.length > GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES) {
+    return `Google Ads accepts at most ${GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES} search themes on a Performance Max asset group, and this one has ${themes.length}. Remove some and create again.`;
+  }
+  const seen = new Set<string>();
+  for (const [index, theme] of themes.entries()) {
+    if (theme === '') return `Google Ads search themes cannot include a blank entry (search theme ${index + 1}). Remove it and create again.`;
+    const runes = [...theme].length;
+    if (runes > GOOGLE_ADS_MAX_SEARCH_THEME_RUNES) {
+      return `Google Ads accepts search themes of at most ${GOOGLE_ADS_MAX_SEARCH_THEME_RUNES} characters, and search theme ${index + 1} (${googleAdsEchoed(theme)}) has ${runes}. Shorten it and create again.`;
+    }
+    const key = googleAdsToLower(theme);
+    if (seen.has(key)) {
+      return `Google Ads refuses a Performance Max asset group that lists the search theme ${googleAdsEchoed(theme)} more than once. Remove the repeat and create again.`;
+    }
+    seen.add(key);
+  }
+  return null;
 }
 
 /** One creative catalogue, reduced to what the BFF's normalizer needs: its request key and each field's shape. */

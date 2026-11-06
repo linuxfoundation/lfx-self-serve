@@ -28,6 +28,7 @@ import {
 import {
   GOOGLE_CREATIVE_WIRE_FIELDS,
   GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS,
+  googlePerformanceMaxSearchThemesRefusal,
   googlePerformanceMaxShortDescriptionMissing,
 } from '@lfx-one/shared/utils/campaign-google-creative.utils';
 import {
@@ -192,6 +193,7 @@ import {
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
+  GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY,
@@ -205,6 +207,7 @@ import {
   GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY,
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
+  GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_SEARCH_AD_GROUP_NAME,
   GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_CODE,
@@ -1900,6 +1903,45 @@ export class CampaignController {
         if (assetRefusal) {
           next(ServiceValidationError.forField(assetRefusal.field, assetRefusal.message, { operation: 'campaign_create', service: 'campaign_controller' }));
           return;
+        }
+      }
+
+      // Performance Max search themes (#461), after the extensions and the creative, as
+      // `preflightCampaignKind` runs `validatePerformanceMaxSignals` after `validateAssetPlan` and
+      // `validatePerformanceMaxCreative`: JSON decode, the Performance-Max-only fence, the asset group
+      // the themes attach to, then the shared judge (the cap on the submitted list, then each entry).
+      // Each would otherwise fail in Go as the opaque "platform campaign creation failed".
+      const rawSearchThemes = (body as unknown as Record<string, unknown> | undefined)?.['performanceMaxSearchThemes'];
+      if (cutoverOn && platforms.includes('google-ads') && rawSearchThemes !== undefined && rawSearchThemes !== null) {
+        const refuse = (message: string): void =>
+          next(ServiceValidationError.forField('performanceMaxSearchThemes', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+        // Upstream decodes the field into a Go `[]string`, so a non-list or a non-string entry is
+        // refused there before any validator runs. Reading it as absent would drop the themes.
+        if (!Array.isArray(rawSearchThemes) || rawSearchThemes.some((t) => typeof t !== 'string')) {
+          refuse('Google Ads search themes must be a list of text.');
+          return;
+        }
+        const themes = this.googleSearchThemeList(rawSearchThemes);
+        if (themes.length > 0 && typeof googleChannel === 'string') {
+          // REFUSED by name, not withheld: upstream fails the whole create on any channel but
+          // Performance Max, the one channel with asset groups. The UI never sends this.
+          if (!(GOOGLE_CHANNELS_WITH_SEARCH_THEMES as readonly string[]).includes(googleChannel)) {
+            refuse(
+              `Google Ads only accepts search themes on Performance Max campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the search themes or pick Performance Max, then create again.`
+            );
+            return;
+          }
+          // The asset group is created only from the creative the built config carries, so the test
+          // is on that config: a creative that empties out under the normalizer creates no group.
+          if (!('performanceMaxCreative' in ((configEnvelope['googleAdsConfig'] as Record<string, unknown> | undefined) ?? {}))) {
+            refuse(GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL);
+            return;
+          }
+          const themesRefusal = googlePerformanceMaxSearchThemesRefusal(themes);
+          if (themesRefusal) {
+            refuse(themesRefusal);
+            return;
+          }
         }
       }
 
@@ -6445,6 +6487,9 @@ export class CampaignController {
         // elsewhere. Normalized only — `createCampaign` names every refusal first.
         ...this.googleExcludedPlacements(body, selectedChannels[0]),
         ...creative,
+        // After the creative they attach to. Performance Max only; normalized only — `createCampaign`
+        // names every search-theme refusal first.
+        ...this.googleSearchThemes(body, selectedChannels[0]),
       };
     }
 
@@ -6949,6 +6994,31 @@ export class CampaignController {
     if (seen.has(key)) return `Google Ads refuses a campaign that lists the callout ${shown} more than once. Remove the repeat and create again.`;
     seen.add(key);
     return null;
+  }
+
+  /**
+   * The Performance Max asset group's search themes, spread-ready, or `{}` when the request names none
+   * or the channel takes none.
+   *
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_SEARCH_THEMES}: Performance Max alone, the one channel
+   * with asset groups (`validatePerformanceMaxSignals`). For any other channel the `{}` is never
+   * dispatched either: `createCampaign` refuses search themes there by name, and every per-entry
+   * refusal, before this is dispatched.
+   */
+  private googleSearchThemes(body: CampaignCreateRequest, channel: GoogleCampaignChannel): { performanceMaxSearchThemes?: string[] } {
+    if (!(GOOGLE_CHANNELS_WITH_SEARCH_THEMES as readonly string[]).includes(channel)) return {};
+    const clean = this.googleSearchThemeList(body?.performanceMaxSearchThemes);
+    return clean.length > 0 ? { performanceMaxSearchThemes: clean } : {};
+  }
+
+  /**
+   * The search-theme list as dispatched: strings only (`createCampaign` refuses anything else first),
+   * each decoded and trimmed with Go's rules as `validatePerformanceMaxSignals` trims it. Blanks are
+   * KEPT so they are refused by name; upstream refuses them too ("search theme %d is empty").
+   */
+  private googleSearchThemeList(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((t): t is string => typeof t === 'string').map((t) => googleAdsDecodedText(t));
   }
 
   /**

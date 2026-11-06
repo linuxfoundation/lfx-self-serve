@@ -1650,6 +1650,13 @@ export interface CampaignImplementationDraft {
    * whichever channel is picked. Absent leaves the form alone.
    */
   googleExcludedPlacements?: string;
+  /**
+   * The Performance Max search themes box, as RAW text, one theme per line, unsplit and untrimmed, as
+   * {@link googleConversionActions} is. Restored whatever channel the draft was saved under: the
+   * section and the payload both gate on Performance Max, so text restored under another channel is
+   * held rather than sent. Optional and restored only when present.
+   */
+  googlePerformanceMaxSearchThemes?: string;
 }
 
 /**
@@ -3853,6 +3860,18 @@ export interface CampaignCreateRequest {
    */
   demandGenAudience?: string;
   performanceMaxCreative?: GooglePerformanceMaxCreative;
+  /**
+   * The Performance Max asset group's search themes (campaign-service v1.0.31, #461): free text naming
+   * the searches the campaign is for. A signal, not targeting, so Google may serve beyond them.
+   *
+   * Omitted when empty, on the same rule as {@link callouts}. PERFORMANCE MAX ONLY
+   * (`GOOGLE_CHANNELS_WITH_SEARCH_THEMES`), and only beside a {@link performanceMaxCreative}: a theme
+   * attaches to the asset group that creative creates. At most
+   * `GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES`, each non-blank, at most
+   * `GOOGLE_ADS_MAX_SEARCH_THEME_RUNES` runes and not repeated (case-folded). The UI withholds them on
+   * any other channel and the BFF refuses every breach by name.
+   */
+  performanceMaxSearchThemes?: string[];
   displayCreative?: GoogleDisplayCreative;
   /**
    * The Display campaign split into named ad groups (#475), sent INSTEAD of {@link displayCreative}:

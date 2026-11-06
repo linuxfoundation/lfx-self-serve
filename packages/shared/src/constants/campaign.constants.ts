@@ -4713,6 +4713,8 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'callExtensions', label: 'call extensions' },
   { field: 'promotions', label: 'promotions' },
   { field: 'prices', label: 'price extensions' },
+  // The Performance Max asset group's search themes (#461), judged after the extensions upstream.
+  { field: 'performanceMaxSearchThemes', label: 'Performance Max search themes' },
   // The Search ad group's further ads, every ad's display paths, the create-time negatives and the
   // Search partners opt-in (#4991): the legacy creator builds one ad from `headlines`/`descriptions`
   // on Google Search alone, and nothing else.
@@ -5491,6 +5493,39 @@ export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL = `needs at leas
 
 /** {@link GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL} as a whole sentence, the form the tab's creative error takes. */
 export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL = `Performance Max creative ${GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL}`;
+
+/**
+ * The Google channels that take search themes: Performance Max alone.
+ *
+ * A search theme is an asset group SIGNAL (campaign-service v1.0.31, #461): `validatePerformanceMaxSignals`
+ * (`internal/platform/googleads/pmax_signals.go`) refuses it on every other channel, because only
+ * Performance Max has asset groups. Refused there at preflight, before the budget mutate, so a theme
+ * sent on Search produces no campaign at all. Not behind a deployment flag: the themes are free text
+ * naming no account resource (`googleAdsPMaxAudienceSignalEnabled` gates the audience signal only).
+ */
+export const GOOGLE_CHANNELS_WITH_SEARCH_THEMES = ['performance-max'] as const;
+
+/**
+ * Upstream's per-asset-group search-theme ceiling (`pmax_signals.go`'s `maxSearchThemes`), checked on
+ * the SUBMITTED list before any entry, as `validatePerformanceMaxSignals` checks it. Google's help page
+ * still says 25; a `validateOnly` probe found 50.
+ */
+export const GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES = 50;
+
+/**
+ * Upstream's per-theme bound (`pmax_signals.go`'s `maxSearchThemeRunes`), counted in RUNES on the
+ * trimmed text, as {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} is.
+ */
+export const GOOGLE_ADS_MAX_SEARCH_THEME_RUNES = 80;
+
+/**
+ * Why search themes on a Performance Max create with no creative are held, worded once for the tab
+ * and the BFF. A theme attaches to the asset group, and campaign-service creates the asset group only
+ * from `performanceMaxCreative`, so `validatePerformanceMaxSignals` refuses themes without one before
+ * the budget.
+ */
+export const GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL =
+  'Performance Max search themes attach to the asset group, and Google creates the asset group only from the Performance Max creative. Fill in the creative or remove the search themes, then create again.';
 
 /**
  * Shown on the Performance Max creative while some of its copy is still what the brief prefilled

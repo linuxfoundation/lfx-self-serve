@@ -116,9 +116,11 @@ import {
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES,
   GOOGLE_ADS_MAX_PRICE_EXTENSIONS,
   GOOGLE_ADS_MAX_PRICE_OFFERINGS,
   GOOGLE_ADS_MAX_PROMOTIONS,
+  GOOGLE_ADS_MAX_SEARCH_THEME_RUNES,
   GOOGLE_ADS_MAX_PROXIMITY_TARGETS,
   GOOGLE_ADS_MAX_RADIUS,
   GOOGLE_ADS_MAX_SITELINKS,
@@ -159,6 +161,7 @@ import {
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
+  GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
@@ -168,6 +171,7 @@ import {
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_IMAGE_MAX_BYTES,
+  GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_GROUPS,
   GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
@@ -178,6 +182,7 @@ import {
   GOOGLE_DISPLAY_MAX_AD_GROUPS,
   GOOGLE_CREATIVE_SHARED_CAPS,
   GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
+  GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
@@ -379,6 +384,7 @@ import {
   googleExcludedAgeRangesRefusal,
   googleExcludedGendersRefusal,
   googleExcludedGeoListRefusal,
+  googlePerformanceMaxSearchThemesRefusal,
   googlePerformanceMaxShortDescriptionMissing,
   googlePickedConversionActionIds,
   googlePriceExtensionRefusal,
@@ -1254,6 +1260,10 @@ export class ImplementationTabComponent implements OnInit {
     // Display placement exclusions (#462), one domain per line, kept whichever channel is picked and
     // sent only on Display (`googleExcludedPlacementsAvailable`).
     googleExcludedPlacements: [''],
+    // The Performance Max asset group's search themes (#5262), one per line, as typed. Held whatever the
+    // channel; only Performance Max renders and sends them (`googleSearchThemesAvailable`). No
+    // validators, for the bidding reason above: `googleSearchThemesError` does the checking.
+    googlePerformanceMaxSearchThemes: [''],
     // The LinkedIn ad account, geo targets and targeting profile, on the FORM rather than in
     // signals (LFXV2-3230). All three are user-editable — a select, an add/remove chip list and a
     // two-button toggle — and all three used to be destroyed by a tab switch, then silently
@@ -3489,6 +3499,8 @@ export class ImplementationTabComponent implements OnInit {
     if (this.demandGenAudienceBlock() !== null) return false;
     // The named Display ad groups campaign-service would refuse (#475).
     if (googleSelected && this.displayAdGroupsError() !== null) return false;
+    // Performance Max search themes the BFF would refuse (#5262); the message is under the box.
+    if (googleSelected && this.googleSearchThemesError() !== null) return false;
     // Postal-code or radius targets the request cannot carry yet. Withholding them would not shrink
     // the campaign but WIDEN it to the event country, so Create waits — see the block's own doc.
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
@@ -3751,6 +3763,45 @@ export class ImplementationTabComponent implements OnInit {
    * sitelink section renders on it and {@link googleSitelinksPayload} sends on it, so the two agree.
    */
   protected readonly googleSitelinksAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_SITELINKS));
+  /**
+   * Whether the campaign this form will dispatch takes search themes: Performance Max
+   * (`GOOGLE_CHANNELS_WITH_SEARCH_THEMES`), on the campaign-service road. The section renders on it and
+   * {@link googleSearchThemesPayload} sends on it, so the two agree.
+   */
+  protected readonly googleSearchThemesAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_SEARCH_THEMES));
+  /** The search themes box as the request would carry them: one per line, trimmed with Go's rules, blanks dropped. */
+  protected readonly googleSearchThemes: Signal<string[]> = computed(() => {
+    void this.campaignFormRevision();
+    return this.googleSearchThemeLines(this.campaignForm.getRawValue().googlePerformanceMaxSearchThemes);
+  });
+  protected readonly googleMaxSearchThemes = GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES;
+  protected readonly googleMaxSearchThemeRunes = GOOGLE_ADS_MAX_SEARCH_THEME_RUNES;
+  /**
+   * Why the BFF would refuse the search themes on screen, or `null`: the asset group they attach to
+   * (no Performance Max creative creates none), then the shared judge. Holds Create; the message sits
+   * under the box and in its live region.
+   */
+  protected readonly googleSearchThemesError: Signal<string | null> = computed(() => {
+    if (!this.googleSearchThemesAvailable()) return null;
+    const themes = this.googleSearchThemes();
+    if (themes.length === 0) return null;
+    void this.campaignFormRevision();
+    if (this.googleCreativePayload()[GOOGLE_CREATIVE_REQUEST_KEYS['performance-max']] === undefined) {
+      return GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL;
+    }
+    return googlePerformanceMaxSearchThemesRefusal(themes);
+  });
+  /**
+   * The search themes held back after a switch away from Performance Max, or null. The twin of
+   * {@link initGoogleSitelinksWithheldWarning}: reads the resolved channel, not the capability, so it
+   * states the channel's truth only. One string feeds the visible notice and its live region.
+   */
+  protected readonly googleSearchThemesWithheldWarning: Signal<string | null> = computed(() => {
+    const channel = this.resolveGoogleChannel();
+    const count = this.googleSearchThemes().length;
+    if (!channel || (GOOGLE_CHANNELS_WITH_SEARCH_THEMES as readonly string[]).includes(channel) || count === 0) return null;
+    return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take search themes, so the ${count} you added will not be sent. Switch back to Performance Max to keep them.`;
+  });
   protected readonly googleCalloutsWithheldWarning: Signal<string | null> = this.initGoogleCalloutsWithheldWarning();
   protected readonly googleSitelinksWithheldWarning: Signal<string | null> = this.initGoogleSitelinksWithheldWarning();
   protected readonly googleStructuredSnippetsWithheldWarning: Signal<string | null> = this.initGoogleStructuredSnippetsWithheldWarning();
@@ -5795,6 +5846,9 @@ export class ImplementationTabComponent implements OnInit {
       ...(platforms.includes('google-ads') ? this.googleDemandGenAudiencePayload() : {}),
       // The named Display ad groups (#475), on the same terms.
       ...(platforms.includes('google-ads') ? this.googleDisplayAdGroupsPayload() : {}),
+      // The Performance Max search themes (#5262), on the same gate, and already withheld unless the
+      // dispatched channel is Performance Max.
+      ...(platforms.includes('google-ads') ? this.googleSearchThemesPayload() : {}),
       // The bidding plan, Google-gated for the same reason the creative is, and already narrowed
       // to the fields the effective strategy and channel actually take.
       ...(platforms.includes('google-ads') ? this.googleBiddingPayload() : {}),
@@ -7523,6 +7577,10 @@ export class ImplementationTabComponent implements OnInit {
     // not others only as the section grows — and a blanket patch of `undefined` would clear a
     // seeded value rather than leave it.
     this.restoreGoogleBidding(draft);
+    // The search themes box (#5262), on the same present-only, string-only rule as the bidding text.
+    if (typeof draft.googlePerformanceMaxSearchThemes === 'string') {
+      this.campaignForm.controls.googlePerformanceMaxSearchThemes.setValue(draft.googlePerformanceMaxSearchThemes, { emitEvent: false });
+    }
 
     // Restored only when PRESENT. A draft persisted before these fields shipped has none of them,
     // and absence there means "this draft predates Meta fields" — the seeded values must stand.
@@ -7882,6 +7940,8 @@ export class ImplementationTabComponent implements OnInit {
       googleCpcBid: form.googleCpcBid,
       googleConversionActions: form.googleConversionActions,
       googleExcludedPlacements: form.googleExcludedPlacements,
+      // Raw text, as the conversion actions are; held whatever the channel.
+      googlePerformanceMaxSearchThemes: form.googlePerformanceMaxSearchThemes,
       // Signal-backed, so `valueChanges` never carries them — they are snapshotted here and
       // emitted explicitly by each Meta handler. `placements` is spread rather than referenced so
       // the parent holds a value, not a live view of a signal this component is about to destroy.
@@ -8306,6 +8366,7 @@ export class ImplementationTabComponent implements OnInit {
       googleCpcBid: '',
       googleConversionActions: '',
       googleExcludedPlacements: '',
+      googlePerformanceMaxSearchThemes: '',
     });
     for (const { groupName } of GOOGLE_CREATIVE_GROUPS) {
       this.creativeGroup(groupName).reset();
@@ -10763,6 +10824,26 @@ export class ImplementationTabComponent implements OnInit {
    * {@link googleSitelinksAvailable}, which adds Demand Gen. The entries are COPIED rather than
    * passed by reference, so a later chip edit cannot reach a request that has already been built.
    */
+  /**
+   * The search themes as the request carries them, or `{}` when there is nothing to send. Gated on
+   * {@link googleSearchThemesAvailable}, the section's own gate, and omitted when empty, as
+   * {@link googleSitelinksPayload} is.
+   */
+  private googleSearchThemesPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleSearchThemesAvailable()) return {};
+    const themes = this.googleSearchThemes();
+    return themes.length > 0 ? { performanceMaxSearchThemes: [...themes] } : {};
+  }
+
+  /** The search themes box split one per line, each trimmed with Go's rules (as upstream trims), blanks dropped. */
+  private googleSearchThemeLines(value: string | null | undefined): string[] {
+    if (typeof value !== 'string') return [];
+    return value
+      .split(/\r?\n/)
+      .map((line) => googleAdsTrimSpace(line))
+      .filter((line) => line !== '');
+  }
+
   private googleSitelinksPayload(): Partial<CampaignCreateRequest> {
     if (!this.googleSitelinksAvailable()) return {};
     const sitelinks = this.googleSitelinks();

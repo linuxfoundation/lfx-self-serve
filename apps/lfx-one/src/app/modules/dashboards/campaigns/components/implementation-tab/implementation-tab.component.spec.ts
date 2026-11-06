@@ -49,6 +49,7 @@ import {
   GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP,
   GOOGLE_DISPLAY_AD_GROUPS_EMPTY,
   GOOGLE_DISPLAY_MAX_AD_GROUPS,
+  GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL,
   META_OBJECTIVE_LABELS,
@@ -19110,5 +19111,164 @@ describe('ImplementationTabComponent demand gen audience', () => {
     fixture.detectChanges();
     expect(pending.observed).toBe(false);
     expect(query('implementation-demand-gen-audience-picker-live')?.textContent?.trim()).toBe('');
+  });
+});
+
+/**
+ * Performance Max search themes (#5262): campaign-service v1.0.31 takes `performanceMaxSearchThemes`
+ * on the asset group (`validatePerformanceMaxSignals`, #461), Performance Max only, and only beside a
+ * creative that creates the asset group.
+ */
+describe('ImplementationTabComponent google performance max search themes', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const PMAX_COMPLETE = {
+    headlines: 'One headline\nTwo headline\nThree headline',
+    longHeadlines: 'A long headline',
+    descriptions: 'A short description\nAnother short description',
+    businessName: 'Acme',
+    marketingImages: 'https://example.com/a.png',
+    squareMarketingImages: 'https://example.com/square.png',
+    logoImages: 'https://example.com/logo.png',
+  };
+  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  const seedPmax = (themes: string): Record<string, any> => {
+    const c = seedChannel(fixture, { includePerformanceMax: true });
+    c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
+    c['campaignForm'].controls.googlePerformanceMaxSearchThemes.setValue(themes);
+    fixture.detectChanges();
+    return c;
+  };
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it.each([
+    ['Performance Max', { includePerformanceMax: true }, true],
+    ['Search', { includeSearch: true }, false],
+    ['Demand Gen', { includeDemandGen: true }, false],
+    ['Display', { includeDisplay: true }, false],
+  ])('shows the search themes box on %s only when the channel takes them', (_label, channel, shown) => {
+    const c = seedChannel(fixture, channel);
+
+    expect(c['googleSearchThemesAvailable']()).toBe(shown);
+    expect(find('implementation-google-search-themes-section') !== null).toBe(shown);
+  });
+
+  it('labels the box, points it at its hint, and counts the themes against the cap', () => {
+    seedPmax('kubernetes\n\n  cloud native  \n');
+    const box = fixture.nativeElement.querySelector('#google-search-themes-input') as HTMLTextAreaElement;
+
+    expect(fixture.nativeElement.querySelector('label[for="google-search-themes-input"]')?.textContent).toContain('Google Search Themes (2/50)');
+    expect(box.getAttribute('aria-describedby')).toBe('google-search-themes-hint');
+    expect(box.getAttribute('aria-invalid')).not.toBe('true');
+  });
+
+  it("sends the themes one per line, trimmed with Go's rules and blanks dropped, on a submitted Performance Max create", async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedPmax(' kubernetes conference \n\n cloud native\u0085\n');
+
+    expect(c['canSubmit']()).toBe(true);
+    c['submit']();
+    await fixture.whenStable();
+
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['performanceMaxSearchThemes']).toEqual([
+      'kubernetes conference',
+      'cloud native',
+    ]);
+  });
+
+  /** A Performance Max request with the box left alone is byte-identical to one built before it existed. */
+  it('builds a byte-identical Performance Max request when no theme is entered', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedPmax('');
+    c['submit']();
+    await fixture.whenStable();
+    const request = JSON.stringify(createCampaign.mock.calls[0][0]);
+
+    expect(request).not.toContain('performanceMaxSearchThemes');
+    c['campaignForm'].controls.googlePerformanceMaxSearchThemes.setValue('  \n \n');
+    fixture.detectChanges();
+    c['submit']();
+    await fixture.whenStable();
+    expect(JSON.stringify(createCampaign.mock.calls[1][0])).toBe(request);
+  });
+
+  it.each([
+    ['Search', { includeSearch: true }],
+    ['Demand Gen', { includeDemandGen: true }],
+    ['Display', { includeDisplay: true }],
+  ])('holds the themes after a switch to %s: not sent, kept, and said in the notice and its live region', (label, channel) => {
+    const c = seedPmax('kubernetes\ncloud native');
+    expect(find('implementation-google-search-themes-withheld-live')?.textContent?.trim()).toBe('');
+
+    c['campaignForm'].patchValue({ includePerformanceMax: false, ...channel });
+    fixture.detectChanges();
+
+    expect(c['googleSearchThemesPayload']()).toEqual({});
+    expect(c['googleSearchThemesError']()).toBeNull();
+    expect(c['campaignForm'].controls.googlePerformanceMaxSearchThemes.value).toBe('kubernetes\ncloud native');
+    const notice = find('implementation-google-search-themes-withheld')?.textContent ?? '';
+    expect(notice).toContain(`${label} campaigns do not take search themes, so the 2 you added will not be sent`);
+    expect(find('implementation-google-search-themes-withheld-live')?.textContent?.trim()).toBe(c['googleSearchThemesWithheldWarning']());
+  });
+
+  it.each([
+    ['a theme over 80 characters', `ok\n${'x'.repeat(81)}`, 'has 81'],
+    ['a repeat in a different case', 'Cloud Native\ncloud native', 'more than once'],
+    ['51 themes', Array.from({ length: 51 }, (_, i) => `theme ${i}`).join('\n'), 'at most 50 search themes'],
+  ])('holds Create on %s, with the reason under the box and in its live region', (_label, themes, expected) => {
+    const c = seedPmax(themes);
+
+    expect(c['googleSearchThemesError']()).toContain(expected);
+    expect(c['canSubmit']()).toBe(false);
+    expect(find('implementation-google-search-themes-error')?.textContent).toContain(expected);
+    expect(find('implementation-google-search-themes-error-live')?.textContent?.trim()).toBe(c['googleSearchThemesError']());
+    const box = fixture.nativeElement.querySelector('#google-search-themes-input') as HTMLTextAreaElement;
+    expect(box.getAttribute('aria-describedby')).toContain('google-search-themes-error');
+    expect(box.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('holds Create on themes with no Performance Max creative, which creates no asset group for them', () => {
+    const c = seedChannel(fixture, { includePerformanceMax: true });
+    c['campaignForm'].controls.googlePerformanceMaxSearchThemes.setValue('kubernetes');
+    fixture.detectChanges();
+
+    expect(c['googleSearchThemesError']()).toBe(GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL);
+    expect(c['canSubmit']()).toBe(false);
+
+    c['campaignForm'].controls.googlePerformanceMaxSearchThemes.setValue('');
+    fixture.detectChanges();
+    expect(c['googleSearchThemesError']()).toBeNull();
+  });
+
+  it('accepts exactly 50 themes of 80 characters', () => {
+    const c = seedPmax(Array.from({ length: 50 }, (_, i) => `${String(i).padStart(2, '0')}${'x'.repeat(78)}`).join('\n'));
+
+    expect(c['googleSearchThemesError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('carries the box through the draft as typed, restores it under any channel, and clears it on reset', () => {
+    const c = seedPmax('kubernetes\n cloud native ');
+    let captured: CampaignImplementationDraft | null = null;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    c['emitDraft']();
+
+    expect((captured as unknown as CampaignImplementationDraft).googlePerformanceMaxSearchThemes).toBe('kubernetes\n cloud native ');
+
+    c['campaignForm'].controls.googlePerformanceMaxSearchThemes.setValue('');
+    restoreGoogleDraft(fixture, c, { includeSearch: true, googlePerformanceMaxSearchThemes: 'restored theme' });
+    expect(c['campaignForm'].controls.googlePerformanceMaxSearchThemes.value).toBe('restored theme');
+
+    // A draft that predates the field leaves the box alone.
+    restoreGoogleDraft(fixture, c, { includeSearch: true });
+    expect(c['campaignForm'].controls.googlePerformanceMaxSearchThemes.value).toBe('restored theme');
+
+    c['resetGoogleFields']();
+    expect(c['campaignForm'].controls.googlePerformanceMaxSearchThemes.value).toBe('');
   });
 });
