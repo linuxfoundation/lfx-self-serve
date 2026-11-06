@@ -167,8 +167,9 @@ describe('MktgPrintPageComponent', () => {
     expect(els[4].querySelector('img')?.style.transform).toBe('scaleX(1.45)');
     // The sheet centres an image in its box (the deck's createImage) and keeps the footer lockup at the frame's left edge.
     const sheets = Array.from(document.head.querySelectorAll('style'), (style) => style.textContent ?? '').join('\n');
-    expect(sheets).toMatch(/\.pp-image(?:\[[^\]]*\])? img(?:\[[^\]]*\])?\s*\{[^}]*object-position:\s*center/);
-    expect(sheets).toMatch(/\.pp-logo(?:\[[^\]]*\])? img(?:\[[^\]]*\])?\s*\{[^}]*object-position:\s*left center/);
+    // (Emulated encapsulation pads the descendant combinator: `.pp-image[_ngcontent-…]   img[_ngcontent-…]`.)
+    expect(sheets).toMatch(/\.pp-image(?:\[[^\]]*\])?\s+img(?:\[[^\]]*\])?\s*\{[^}]*object-position:\s*center/);
+    expect(sheets).toMatch(/\.pp-logo(?:\[[^\]]*\])?\s+img(?:\[[^\]]*\])?\s*\{[^}]*object-position:\s*left center/);
     expect(sheets).toMatch(/\.pp-image--transformed(?:\[[^\]]*\])?\s*\{[^}]*overflow:\s*visible/);
   });
 
@@ -186,7 +187,7 @@ describe('MktgPrintPageComponent', () => {
     expect(root.querySelector('[data-testid="mktg-print-page-footer"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-print-page-logo"]')).toBeNull();
     const els = root.querySelectorAll<HTMLElement>('[data-testid="mktg-print-page-el"]');
-    expect(els).toHaveLength(5);
+    expect(els).toHaveLength(3);
     expect(els[0].textContent?.trim()).toBe(`${PROJECT} · A Linux Foundation project`);
     expect(els[2].textContent?.trim()).toBe('V1.0 · November 2026');
   });

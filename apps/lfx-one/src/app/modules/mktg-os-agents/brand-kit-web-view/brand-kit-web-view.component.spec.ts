@@ -250,7 +250,11 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v3');
       // Viewing a new Draft does not relabel the independently approved print target.
       expect(query('mktg-brand-kit-print')?.getAttribute('data-revision')).toBe('V1.0');
-      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V1.0');
+      // The approved revision shows on the cover alone (#5224): no inner page carries it.
+      expect(query('brand-kit-web-view-print')?.querySelector('[data-testid="kit-print-cover"]')?.textContent).toContain('V1.0');
+      for (const page of Array.from(query('brand-kit-web-view-print')?.querySelectorAll('[data-testid="kit-print-page"]') ?? [])) {
+        expect(page.textContent).not.toContain('V1.0');
+      }
     });
 
     it('prints approved kit bytes while the screen renders a different Draft', async () => {
