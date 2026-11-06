@@ -9,6 +9,9 @@ import {
   MKTG_PRINT_PAGE_AREA,
   MKTG_PRINT_PAGE_BACK_TITLE_BOX,
   MKTG_PRINT_PAGE_COVER_TITLE_BOX,
+  MKTG_PRINT_PAGE_FOOTER_LEFT_X,
+  MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX,
+  MKTG_PRINT_PAGE_HEAD_RULE_Y,
   MKTG_PRINT_PAGE_LEFT,
   MKTG_PRINT_PAGE_LOGO_FRAME,
   MKTG_PRINT_PAGE_RIGHT,
@@ -17,7 +20,7 @@ import {
   MKTG_PRINT_PAGE_SIZE,
   MKTG_PRINT_PAGE_TITLE_BOX,
 } from '@lfx-one/shared/constants';
-import { MktgPrintPage, MktgPrintPageLook } from '@lfx-one/shared/interfaces';
+import { MktgPrintLogo, MktgPrintPage, MktgPrintPageLook } from '@lfx-one/shared/interfaces';
 import {
   mktgPagePt,
   mktgPrintBrand,
@@ -77,7 +80,7 @@ function sampleContent(): MktgPrintPage {
 class HostComponent {
   public page = sampleContent();
   public look = look;
-  public logo = brand.logoOnLight;
+  public logo: MktgPrintLogo | null = brand.logoOnLight;
 }
 
 const pt = mktgPagePt;
@@ -111,6 +114,12 @@ describe('MktgPrintPageComponent', () => {
     expect(page?.style.getPropertyValue('--pp-bullet-indent')).toBe(pt(18));
     expect(page?.style.getPropertyValue('--pp-caps-tracking')).toBe('0.12em');
     expect(page?.style.getPropertyValue('--pp-ink')).toBe(brand.ink);
+    // The prototype's look: the hairline under the running head (its boxes' bottom, from the head's left to its right) and the covers' grid pitch.
+    expect(page?.style.getPropertyValue('--pp-hairline')).toBe('0.75pt');
+    expect(page?.style.getPropertyValue('--pp-grid')).toBe('24pt');
+    expect(page?.style.getPropertyValue('--pp-head-rule-top')).toBe(pt(MKTG_PRINT_PAGE_HEAD_RULE_Y));
+    expect(page?.style.getPropertyValue('--pp-head-rule-left')).toBe(pt(25));
+    expect(page?.style.getPropertyValue('--pp-head-rule-right')).toBe(pt(24));
     const area = root.querySelector<HTMLElement>('[data-testid="mktg-print-page-area"]');
     expect(area?.style.left).toBe(pt(MKTG_PRINT_PAGE_AREA.x));
     expect(area?.style.height).toBe(pt(MKTG_PRINT_PAGE_AREA.h));
@@ -133,6 +142,7 @@ describe('MktgPrintPageComponent', () => {
     const footers = root.querySelectorAll<HTMLElement>('[data-testid="mktg-print-page-footer"]');
     expect(footers).toHaveLength(2);
     expect(footers[0].textContent?.trim()).toBe(`${PROJECT} · a Linux Foundation project`);
+    expect(footers[0].style.left).toBe(pt(MKTG_PRINT_PAGE_FOOTER_LEFT_X));
     expect(footers[1].textContent?.trim()).toBe('03');
 
     const logo = root.querySelector<HTMLElement>('[data-testid="mktg-print-page-logo"]');
@@ -232,6 +242,35 @@ describe('MktgPrintPageComponent', () => {
     expect(title()?.style.top).toBe(pt(MKTG_PRINT_PAGE_TITLE_BOX.y));
     expect(title()?.querySelector<HTMLElement>('.pp-rich')?.style.color).toBe(cssColor(look.ink));
     expect(title()?.querySelector('p')?.style.fontSize).toBe(pt(MKTG_PRINT_PAGE_SIZE.title));
+  });
+
+  it('starts the footer line at the margin when the page’s footer names that box (a kit with no lockup)', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.page = { ...sampleContent(), footer: { left: 'line', number: '03', leftBox: MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX } };
+    fixture.componentInstance.logo = null;
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const footers = root.querySelectorAll<HTMLElement>('[data-testid="mktg-print-page-footer"]');
+    expect(footers[0].style.left).toBe(pt(MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX.x));
+    expect(footers[0].style.width).toBe(pt(MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX.w));
+    expect(root.querySelector('[data-testid="mktg-print-page-logo"]')).toBeNull();
+  });
+
+  it('draws a pill shape fully rounded and paints a marked grid ground with the covers’ CSS', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    const base = sampleContent();
+    const pill = mktgPrintShapeEl('PILL', { x: 400, y: 100, w: 40, h: 16 }, '#ECFDF5');
+    const hero = { ...mktgPrintShapeEl('ROUND_RECTANGLE', { x: 247, y: 91, w: 449, h: 150 }, look.dark), ground: 'grid' as const };
+    fixture.componentInstance.page = { ...base, els: [pill, hero] };
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const els = root.querySelectorAll<HTMLElement>('[data-testid="mktg-print-page-el"]');
+    expect(els).toHaveLength(2);
+    expect(els[0].classList.contains('pp-shape--pill')).toBe(true);
+    expect(els[0].classList.contains('pp-ground-grid')).toBe(false);
+    expect(els[1].classList.contains('pp-shape--round')).toBe(true);
+    expect(els[1].classList.contains('pp-ground-grid')).toBe(true);
+    expect(els[1].style.backgroundColor).toBe(cssColor(look.dark));
   });
 
   it('makes a content page from the plain inputs alone: eyebrows, title, footer line and the number the builder gave', async () => {

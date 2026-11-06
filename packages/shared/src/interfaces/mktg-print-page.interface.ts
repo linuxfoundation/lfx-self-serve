@@ -53,7 +53,10 @@ export interface MktgPrintRich {
 }
 
 /** The shapes the page plan draws. */
-export type MktgPrintPageShape = 'TEXT_BOX' | 'RECTANGLE' | 'ROUND_RECTANGLE' | 'ELLIPSE';
+export type MktgPrintPageShape = 'TEXT_BOX' | 'RECTANGLE' | 'ROUND_RECTANGLE' | 'ELLIPSE' | 'PILL';
+
+/** A ground the renderer paints by its own CSS: the covers' grid of the accent on the dark (the prototype's gridGround). */
+export type MktgPrintPageGround = 'grid';
 
 /** A shape's outline: its colour and weight (pt); `dash` draws it dashed (the clear-space frame, a partner logo's slot). */
 export interface MktgPrintPageLine {
@@ -71,6 +74,8 @@ export interface MktgPrintPageShapeEl {
   /** A CSS colour, null for no fill. */
   fill?: string | null;
   line?: MktgPrintPageLine | null;
+  /** A painted ground over the fill (the renderer's CSS; one source with the covers'). */
+  ground?: MktgPrintPageGround;
 }
 
 /** An image in its box (the kit's own SVG as a data URL, or an app image), kept inside the box. */
@@ -134,10 +139,14 @@ export interface MktgPrintPageHead {
   right: string;
 }
 
-/** A content page's footer: the line left of the logo frame, the page number right (two digits). */
+/**
+ * A content page's footer: the line left of the logo frame, the page number right (two digits). `leftBox` moves the
+ * line (MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX when the page draws no lockup, so the line starts at the margin).
+ */
 export interface MktgPrintPageFooter {
   left: string;
   number: string;
+  leftBox?: MktgPrintPageBox;
 }
 
 /** One printed page: its layout, its title (and a cover's subtitle), the running head, the footer and its body. */

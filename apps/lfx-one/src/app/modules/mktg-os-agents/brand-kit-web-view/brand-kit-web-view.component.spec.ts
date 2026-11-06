@@ -295,19 +295,19 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-mode')?.textContent?.trim()).toBe(label);
     });
 
-    it('prints the active project identity in the pages’ running heads and the pages’ own numbers, not kit-content identity or family prefixes', async () => {
+    it('prints the kit’s project name in the pages’ running heads, even when the active project differs, and the pages’ own numbers', async () => {
       const wrapper = query('brand-kit-web-view-print');
-      // The first content page's running head, right: the document.
+      // The first content page's running head, right: the document, named for the printed kit's project as the deck names it.
       const head = () => wrapper?.querySelectorAll('[data-testid="kit-print-page"] [data-testid="mktg-print-page-head"]')[1]?.textContent;
-      expect(head()).toContain('Synthetic project Brand Kit');
-      expect(head()).not.toContain('Project One');
+      expect(head()).toContain('Project One Brand Kit');
+      expect(head()).not.toContain('Synthetic project');
       // The pages number themselves from the cover, two digits, no family prefix.
       expect(Array.from(wrapper?.querySelectorAll('[data-testid="kit-print-page"]') ?? []).map((page) => page.getAttribute('data-page'))).toEqual(
         Array.from({ length: 14 }, (_, index) => String(index + 2).padStart(2, '0'))
       );
       activeContext.set({ slug: 'synthetic', name: 'Updated project context' });
       await fixture.whenStable();
-      expect(head()).toContain('Updated project context Brand Kit');
+      expect(head()).toContain('Project One Brand Kit');
       expect(wrapper?.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V1.0');
     });
 
@@ -717,10 +717,11 @@ describe('BrandKitWebViewComponent', () => {
       const frame = document.querySelector<HTMLIFrameElement>('[data-testid="lfx-print-frame"]');
       expect(frame?.contentDocument?.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
       expect(frame?.contentDocument?.querySelector('lfx-mktg-brand-kit-print')).not.toBeNull();
-      // The frame's title names the saved PDF like the deck: the project, the asset, the approved revision and that revision's own date.
+      // The frame's title names the saved PDF like the deck: the active project, the asset, the approved revision and that revision's
+      // own date; the pages inside name the printed kit's project.
       expect(frame?.contentDocument?.title).toBe('Synthetic project · Brand kit · v1 · 2026-10-20');
       expect(frame?.contentDocument?.querySelectorAll('[data-testid="kit-print-page"] [data-testid="mktg-print-page-head"]')[1]?.textContent).toContain(
-        'Synthetic project Brand Kit'
+        'Project One Brand Kit'
       );
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
       expect(print).not.toHaveBeenCalled();

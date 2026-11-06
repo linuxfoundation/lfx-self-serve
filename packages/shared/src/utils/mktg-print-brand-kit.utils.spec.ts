@@ -10,11 +10,16 @@
 import { describe, expect, it } from 'vitest';
 import { BRAND_KIT_ICON_SAMPLES } from '../constants/brand-kit-icons.constants';
 import { BRAND_KIT_BOOK_PAGES } from '../constants/brand-kit.constants';
-import { MKTG_PRINT_BRAND_KIT_CONTRAST_ROWS_PER_PAGE, MKTG_PRINT_BRAND_KIT_ICON_SLOT } from '../constants/mktg-print-brand-kit.constants';
-import { MKTG_PRINT_PAGE_RIGHT } from '../constants/mktg-print-page.constants';
+import {
+  MKTG_PRINT_BRAND_KIT_CONTRAST_PILLS,
+  MKTG_PRINT_BRAND_KIT_CONTRAST_PILL_H,
+  MKTG_PRINT_BRAND_KIT_CONTRAST_ROWS_PER_PAGE,
+  MKTG_PRINT_BRAND_KIT_ICON_SLOT,
+} from '../constants/mktg-print-brand-kit.constants';
+import { MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX, MKTG_PRINT_PAGE_RIGHT } from '../constants/mktg-print-page.constants';
 import { MKTG_PRINT_INK_ON_DARK } from '../constants/mktg-print.constants';
 import type { BrandKitContrastRow, BrandKitRevision } from '../interfaces/brand-kit.interface';
-import type { MktgPrintPage, MktgPrintPageEl, MktgPrintPageSlotEl } from '../interfaces/mktg-print-page.interface';
+import type { MktgPrintPage, MktgPrintPageEl, MktgPrintPageShapeEl, MktgPrintPageSlotEl } from '../interfaces/mktg-print-page.interface';
 import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
 import { buildBrandKitBookView } from './brand-kit-book.utils';
 import {
@@ -118,6 +123,12 @@ describe('buildBrandKitPrintPages', () => {
     expect(images(system)).toHaveLength(1);
     expect(texts(system)).toContain('Primary · horizontal lockup');
     expect(texts(system)).not.toContain('Symbol');
+    // With a primary lockup the footer line sits left of the logo frame; with none, it starts at the margin (the prototype's footer).
+    expect(pages.every((p) => p.footer?.leftBox === undefined)).toBe(true);
+    const noLogo = { ...kit.chapters.logo, files: { ...kit.chapters.logo.files, primary: null } };
+    const bare = pagesOf({ ...kit, chapters: { ...kit.chapters, logo: noLogo } });
+    expect(bare.length).toBe(pages.length);
+    expect(bare.every((p) => p.footer?.leftBox === MKTG_PRINT_PAGE_FOOTER_MARGIN_LEFT_BOX)).toBe(true);
   });
 
   it('keeps the Scaling row inside its column at a large screen or symbol size, the labels still naming the pixel value', () => {
@@ -258,6 +269,42 @@ describe('buildBrandKitPrintPages', () => {
     expect(onDark(lightUsage, 'one.example.org')).toBe(lightLook.onDark);
     const buttons = pagesOf(light).find((p) => p.title === 'Imagery & graphic elements') as MktgPrintPage;
     expect(onDark(buttons, 'Primary button')).toBe(lightLook.onDark);
+  });
+
+  it('takes the prototype’s look items: the verdict pills by grade, the solid accent call-out, the grid ground on the hero band and the keynote card', () => {
+    const kit = brandKitTestRevision();
+    kit.chapters.color.contrast.pairs = [
+      { foreground: 'Charcoal', background: 'White', ratio: 8.3, grade: 'AAA' },
+      { foreground: 'Coral', background: 'White', ratio: 3.2, grade: 'Large text only' },
+      { foreground: 'Coral', background: 'Charcoal', ratio: 2.1, grade: 'Fails' },
+    ];
+    const look = mktgPrintPageLook(mktgPrintBrand(kit));
+    const shapesWith = (page: MktgPrintPage, text: string) =>
+      page.els.filter((el): el is MktgPrintPageShapeEl => el.t === 'shape' && !!el.text?.paras.some((p) => p.text === text));
+    const contrast = pagesOf(kit).find((p) => p.title === 'Color contrast') as MktgPrintPage;
+    const pills = contrast.els.filter((el): el is MktgPrintPageShapeEl => el.t === 'shape' && el.shape === 'PILL');
+    expect(pills).toHaveLength(3);
+    (['AAA', 'Large text only', 'Fails'] as const).forEach((grade, i) => {
+      const spec = MKTG_PRINT_BRAND_KIT_CONTRAST_PILLS[grade];
+      const [label] = shapesWith(contrast, grade);
+      // The ground in the grade's colour, sized to its text, at the row's right end inside the column; the text whole, in the grade's ink.
+      expect(pills[i]).toMatchObject({ fill: spec.fill, box: { w: spec.w, h: MKTG_PRINT_BRAND_KIT_CONTRAST_PILL_H } });
+      expect(pills[i].box.x + pills[i].box.w).toBe(MKTG_PRINT_PAGE_RIGHT.x + MKTG_PRINT_PAGE_RIGHT.w);
+      expect(label.text?.paras[0]).toMatchObject({ text: grade, color: spec.ink, weight: 600, size: 9 });
+      expect(label.box.x + label.box.w / 2).toBe(pills[i].box.x + pills[i].box.w / 2);
+    });
+    const imagery = pagesOf(kit).find((p) => p.title === 'Imagery & graphic elements') as MktgPrintPage;
+    const [callout] = shapesWith(imagery, 'One per view, for the main call to action.');
+    expect(callout).toMatchObject({ shape: 'ROUND_RECTANGLE', fill: look.accent, line: null });
+    expect(callout.text?.paras[0].color).toBe(look.dark);
+    expect(imagery.els.filter((el) => el.t === 'shape' && el.fill === look.tint)).toHaveLength(0);
+    const [hero] = shapesWith(imagery, '— Eyebrow');
+    expect(hero).toMatchObject({ fill: look.dark, ground: 'grid' });
+    const usage = pagesOf(kit).find((p) => p.title === 'Example usage') as MktgPrintPage;
+    const grounds = usage.els.filter((el): el is MktgPrintPageShapeEl => el.t === 'shape' && el.ground === 'grid');
+    // The keynote alone: the social card, on the dark too, keeps the plain dark.
+    expect(grounds).toHaveLength(1);
+    expect(grounds[0].text?.paras[0].text).toBe(kit.chapters.voice.line);
   });
 
   it('sets the voice page: the umbrella and the brand line over a rule, the four attributes under them on the same page when they fit', () => {
