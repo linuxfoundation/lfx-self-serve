@@ -7,7 +7,7 @@
 // document passes.
 
 import type { FoundationMessagePrintView } from './mktg-print.interface';
-import type { MktgPrintPageEl, MktgPrintPageLook } from './mktg-print-page.interface';
+import type { MktgPrintPage, MktgPrintPageEl, MktgPrintPageLook } from './mktg-print-page.interface';
 
 /** The deck's four sections; two of them (the ICPs, the message house) have no tab on the framework's screen. */
 export type MktgPrintFrameworkSectionId = 'framework' | 'icps' | 'message-house' | 'numbers';
@@ -38,6 +38,12 @@ export interface MktgPrintFrameworkCover {
 export interface MktgPrintFrameworkOptions {
   /** The page number of the cover in the document that holds the framework (1 when it prints alone). */
   firstPage?: number;
+}
+
+/** A content page as the print component lists it: the page and the section its running head names, read once with the pages. */
+export interface MktgPrintFrameworkPageItem {
+  page: MktgPrintPage;
+  section: MktgPrintFrameworkSectionId | null;
 }
 
 /** What every page builder reads: the view and its look (the deck's PrintContext; the project's strings are the view's). */
