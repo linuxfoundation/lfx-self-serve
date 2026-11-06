@@ -643,7 +643,11 @@ export class UserService {
       return sortedMeetings.map((m) => ({ ...m, invited: true }));
     }
 
-    const enriched = await this.meetingService.getMeetingProjectName(req, sortedMeetings);
+    const [withProjects, committeeNames] = await Promise.all([
+      this.meetingService.getMeetingProjectName(req, sortedMeetings),
+      this.meetingService.getCommitteeNameMap(req, sortedMeetings),
+    ]);
+    const enriched = this.withCommitteeNames(withProjects, committeeNames);
 
     // `invited: true` — every row has a direct host/participant FGA tuple by virtue of
     // `filter_grants=direct`, so the user is invited by definition. Data-shape marker, not an
@@ -780,8 +784,9 @@ export class UserService {
 
     // No ids means the artifact lookups issue no requests.
     const pastMeetingIds = options?.includeArtifacts ? pastOnly.map((meeting) => meeting.id) : [];
-    const [enriched, recordingUrls, primarySummaries] = await Promise.all([
+    const [withProjects, committeeNames, recordingUrls, primarySummaries] = await Promise.all([
       this.meetingService.getMeetingProjectName(req, pastOnly),
+      this.meetingService.getCommitteeNameMap(req, pastOnly),
       this.fetchPastMeetingArtifacts<PastMeetingRecording, string | null>(req, 'v1_past_meeting_recording', pastMeetingIds, ([recording]) =>
         getLargestSessionShareUrl(recording ?? null)
       ),
@@ -790,6 +795,7 @@ export class UserService {
         selectPrimaryPastMeetingSummary(summaries.map((data) => ({ type: 'v1_past_meeting_summary', id: '', data })))
       ),
     ]);
+    const enriched = this.withCommitteeNames(withProjects, committeeNames);
 
     // Webhook-created past meetings carry a service-account created_by — join back to the live
     // v1_meeting index so the organizer chip resolves on Me-lens past cards.
@@ -921,7 +927,11 @@ export class UserService {
       return [];
     }
 
-    const enriched = await this.meetingService.getMeetingProjectName(req, filtered);
+    const [withProjects, committeeNames] = await Promise.all([
+      this.meetingService.getMeetingProjectName(req, filtered),
+      this.meetingService.getCommitteeNameMap(req, filtered),
+    ]);
+    const enriched = this.withCommitteeNames(withProjects, committeeNames);
     // Webhook-created past meetings carry a service-account created_by — join back to the live
     // v1_meeting index so the organizer chip resolves on Me-lens latest-past cards.
     const withCreatedBy = await enrichMeetingsWithCreatedBy(req, enriched, (m) => m.meeting_id);
@@ -1321,6 +1331,16 @@ export class UserService {
       await Promise.all(batches.slice(i, i + PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY).map(fetchBatch));
     }
     return values;
+  }
+
+  /** Fills committee names, which the indexed feed lacks; a missed committee keeps its uid. */
+  private withCommitteeNames<T extends Meeting>(meetings: T[], names: Map<string, string>): T[] {
+    if (names.size === 0) return meetings;
+    return meetings.map((meeting) =>
+      meeting.committees?.length
+        ? { ...meeting, committees: meeting.committees.map((committee) => ({ ...committee, name: names.get(committee.uid) || committee.name })) }
+        : meeting
+    );
   }
 
   /**
