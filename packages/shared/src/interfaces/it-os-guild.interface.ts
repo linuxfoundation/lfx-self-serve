@@ -4,7 +4,7 @@
 import type { MktgChatMessage } from './mktg-chat.interface';
 
 // Contract for the IT OS live agent route (#4257). Dev only: the server refuses every call unless
-// GUILD_IT_OS_WORKSPACE_NAME is set, and it is set only in the dev deployment.
+// GUILD_IT_OS_WORKSPACE_NAME and GUILD_IT_OS_API_KEY are set, and they are set only in the dev deployment.
 
 /** POST /api/it-os-agents/chat body. */
 export interface ItOsGuildChatRequest {

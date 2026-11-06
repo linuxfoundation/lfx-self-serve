@@ -705,16 +705,17 @@ as long as the twin route is deployed, which is why step 1 precedes it.
 
 Server-side credentials for the Marketing OS agents proxy. Consumed only by the SSR server — never exposed to the browser.
 
-| Parameter                                  | Description                                                                                                                                            | Required | Default                |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ---------------------- |
-| `environment.GUILD_API_URL`                | Guild API base URL                                                                                                                                     | No       | `https://app.guild.ai` |
-| `environment.GUILD_API_KEY`                | API key for Guild workspace operations                                                                                                                 | **Yes**  | -                      |
-| `environment.GUILD_WORKSPACE_OWNER`        | Guild workspace owner identifier. Defaults in code; override to target a different workspace                                                           | No       | `linux-foundation`     |
-| `environment.GUILD_WORKSPACE_NAME`         | Guild workspace name. Defaults in code; override to target a different workspace                                                                       | No       | `marketing-os`         |
-| `environment.GUILD_IT_OS_WORKSPACE_NAME`   | Guild workspace for the IT OS live agents. Set it only in dev; when empty, `/api/it-os-agents` refuses every call                                      | No       | -                      |
-| `environment.GUILD_STRUCTURED_AGENT_INPUT` | Send the Message Foundation intake as a structured Guild `agent_input` instead of BFF-rendered text                                                    | No       | `"false"`              |
-| `environment.MKTG_SLIDES_EXPORT_FOLDER_ID` | Google Drive folder new Slides export decks are created in. Defaults in code to the Marketing OS folder; set it outside production                     | No       | Marketing OS folder    |
-| `environment.GITHUB_API_TOKEN`             | Token for the server-side README fetch. Unset uses unauthenticated GitHub (60 req/hour **per egress IP**); a public-repo token raises it to 5,000/hour | No       | -                      |
+| Parameter                                  | Description                                                                                                                                             | Required | Default                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------- |
+| `environment.GUILD_API_URL`                | Guild API base URL                                                                                                                                      | No       | `https://app.guild.ai` |
+| `environment.GUILD_API_KEY`                | API key for Guild workspace operations                                                                                                                  | **Yes**  | -                      |
+| `environment.GUILD_WORKSPACE_OWNER`        | Guild workspace owner identifier. Defaults in code; override to target a different workspace                                                            | No       | `linux-foundation`     |
+| `environment.GUILD_WORKSPACE_NAME`         | Guild workspace name. Defaults in code; override to target a different workspace                                                                        | No       | `marketing-os`         |
+| `environment.GUILD_IT_OS_WORKSPACE_NAME`   | Guild workspace for the IT OS live agents. Set it only in dev; unless it and `GUILD_IT_OS_API_KEY` are both set, `/api/it-os-agents` refuses every call | No       | -                      |
+| `environment.GUILD_IT_OS_API_KEY`          | API trigger key for the IT OS workspace's Guild trigger. Set it only in dev; a trigger key works only for its own trigger                               | No       | -                      |
+| `environment.GUILD_STRUCTURED_AGENT_INPUT` | Send the Message Foundation intake as a structured Guild `agent_input` instead of BFF-rendered text                                                     | No       | `"false"`              |
+| `environment.MKTG_SLIDES_EXPORT_FOLDER_ID` | Google Drive folder new Slides export decks are created in. Defaults in code to the Marketing OS folder; set it outside production                      | No       | Marketing OS folder    |
+| `environment.GITHUB_API_TOKEN`             | Token for the server-side README fetch. Unset uses unauthenticated GitHub (60 req/hour **per egress IP**); a public-repo token raises it to 5,000/hour  | No       | -                      |
 
 #### Runtime Client Configuration
 

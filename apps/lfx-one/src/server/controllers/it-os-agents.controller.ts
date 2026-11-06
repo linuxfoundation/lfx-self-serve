@@ -25,7 +25,9 @@ const PROJECT_LINE_RE = /^Project slug: [^\n]*\n\n/;
 /**
  * IT OS live agents (#4257): a thin proxy from the IT OS chat to its agents on Guild.
  *
- * - Dev only. Every call is refused unless GUILD_IT_OS_WORKSPACE_NAME is set, and that is set only in dev.
+ * - Dev only. Every call is refused unless GUILD_IT_OS_WORKSPACE_NAME and GUILD_IT_OS_API_KEY are both set,
+ *   and they are set only in dev. The key is the API trigger key for the IT OS workspace's trigger; a trigger
+ *   key only works for its own trigger, so the Marketing OS GUILD_API_KEY can't start IT OS sessions.
  * - The caller must have write access to the project. The server looks up the project's slug and puts it
  *   in the first message itself, so the browser never chooses which project the agent works on.
  * - Sessions are bound to the user who started them and to the project and agent (owner token), and
@@ -41,7 +43,7 @@ export class ItOsAgentsController {
    */
   public status(req: Request, res: Response): void {
     const startTime = logger.startOperation(req, 'it_os_agents_status', {});
-    const response: ItOsGuildStatusResponse = { agents: process.env['GUILD_IT_OS_WORKSPACE_NAME']?.trim() ? Object.keys(IT_OS_GUILD_AGENTS) : [] };
+    const response: ItOsGuildStatusResponse = { agents: ItOsAgentsController.itOsWorkspace() ? Object.keys(IT_OS_GUILD_AGENTS) : [] };
     logger.success(req, 'it_os_agents_status', startTime, { live_agents: response.agents.length });
     res.json(response);
   }
@@ -140,7 +142,7 @@ export class ItOsAgentsController {
     project: unknown,
     context: Record<string, string>
   ): { guild: GuildService; handle: string; userId: string; projectUid: string } {
-    const workspace = process.env['GUILD_IT_OS_WORKSPACE_NAME']?.trim();
+    const workspace = ItOsAgentsController.itOsWorkspace();
     if (!workspace) {
       throw new MicroserviceError('IT OS agents are not available in this environment.', 503, 'IT_OS_NOT_CONFIGURED', context);
     }
@@ -160,7 +162,13 @@ export class ItOsAgentsController {
       throw new AuthenticationError('Could not identify the requesting user.', context);
     }
 
-    return { guild: new GuildService(workspace), handle, userId, projectUid };
+    return { guild: new GuildService(workspace, 'GUILD_IT_OS_API_KEY'), handle, userId, projectUid };
+  }
+
+  /** The IT OS workspace, or undefined when IT OS is off here: it needs both the workspace and its own trigger key. */
+  private static itOsWorkspace(): string | undefined {
+    const workspace = process.env['GUILD_IT_OS_WORKSPACE_NAME']?.trim();
+    return workspace && process.env['GUILD_IT_OS_API_KEY'] ? workspace : undefined;
   }
 
   /** Looks up the project with the caller's own token and requires write access. Returns its slug. */

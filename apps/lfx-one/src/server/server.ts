@@ -457,7 +457,7 @@ app.use('/api/ossprey', (req, res) => {
 });
 // Marketing OS Agents: Guild proxy, gated to authenticated users (LD flag controls UI visibility).
 app.use('/api/mktg-agents', mktgAgentsRouter);
-// IT OS live agents: Guild proxy, dev only (refuses every call unless GUILD_IT_OS_WORKSPACE_NAME is set).
+// IT OS live agents: Guild proxy, dev only (refuses every call unless the GUILD_IT_OS_* vars are set).
 app.use('/api/it-os-agents', itOsAgentsRouter);
 // Gatewaze host-session mode, the embed's only server surface: its session check and sign-out, and
 // its Supabase and API proxies (the latter forwards to GW_API_URL), answered with the session LFX

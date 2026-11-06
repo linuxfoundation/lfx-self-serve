@@ -6,7 +6,7 @@ import { Router } from 'express';
 import { ItOsAgentsController } from '../controllers/it-os-agents.controller';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 
-// IT OS live agents (#4257). Dev only: the controller refuses every call unless GUILD_IT_OS_WORKSPACE_NAME is set.
+// IT OS live agents (#4257). Dev only: the controller refuses every call unless GUILD_IT_OS_WORKSPACE_NAME and GUILD_IT_OS_API_KEY are set.
 const router = Router();
 const controller = new ItOsAgentsController();
 

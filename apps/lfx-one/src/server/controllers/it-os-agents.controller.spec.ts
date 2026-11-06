@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Shared runtime constants are re-exported from their Angular-free source module (as in mktg-agents.controller.spec.ts).
 const guildMocks = vi.hoisted(() => ({
   workspaces: [] as (string | undefined)[],
+  keyEnvVars: [] as (string | undefined)[],
   createSession: vi.fn(),
   sendFollowUp: vi.fn(),
   getHistory: vi.fn(),
@@ -27,8 +28,9 @@ vi.mock('../services/guild.service', () => ({
     public sendFollowUp = guildMocks.sendFollowUp;
     public getHistory = guildMocks.getHistory;
     public getRawEventPayloads = guildMocks.getRawEventPayloads;
-    public constructor(workspace?: string) {
+    public constructor(workspace?: string, keyEnvVar?: string) {
       guildMocks.workspaces.push(workspace);
+      guildMocks.keyEnvVars.push(keyEnvVar);
     }
   },
 }));
@@ -63,13 +65,28 @@ describe('ItOsAgentsController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     guildMocks.workspaces.length = 0;
+    guildMocks.keyEnvVars.length = 0;
     process.env['GUILD_IT_OS_WORKSPACE_NAME'] = 'it-os-sandbox';
+    process.env['GUILD_IT_OS_API_KEY'] = 'synthetic-trigger-key';
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, slug: 'test-project-group', writer: true });
     guildMocks.createSession.mockResolvedValue('session-1');
   });
 
   afterEach(() => {
     delete process.env['GUILD_IT_OS_WORKSPACE_NAME'];
+    delete process.env['GUILD_IT_OS_API_KEY'];
+  });
+
+  it('reports no live agents and refuses chat when the IT OS trigger key is not set', async () => {
+    delete process.env['GUILD_IT_OS_API_KEY'];
+    const json = vi.fn();
+    new ItOsAgentsController().status({} as Request, { json } as unknown as Response);
+    const { run, next } = call('chat', { agentId: 'domains', project: PROJECT, message: 'hi' });
+    await run();
+
+    expect(json).toHaveBeenCalledWith({ agents: [] });
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 503, code: 'IT_OS_NOT_CONFIGURED' });
+    expect(guildMocks.createSession).not.toHaveBeenCalled();
   });
 
   it('reports live agents only when the IT OS workspace is set', () => {
@@ -97,6 +114,7 @@ describe('ItOsAgentsController', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(guildMocks.workspaces).toEqual(['it-os-sandbox']);
+    expect(guildMocks.keyEnvVars).toEqual(['GUILD_IT_OS_API_KEY']);
     expect(projectMocks.getProjectById).toHaveBeenCalledWith(expect.anything(), PROJECT, true);
     expect(guildMocks.createSession).toHaveBeenCalledWith(expect.anything(), {
       message: 'Project slug: test-project-group\n\nWhat domains do we have?',

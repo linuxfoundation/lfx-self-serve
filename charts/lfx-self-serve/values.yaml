@@ -938,9 +938,12 @@ environment:
   GUILD_WORKSPACE_NAME:
     value:
 
-  # IT OS live agents (dev only). Leave empty everywhere except dev: when empty, /api/it-os-agents
-  # refuses every call. Uses the same owner and API key as above.
+  # IT OS live agents (dev only). Leave both empty everywhere except dev: unless both are set,
+  # /api/it-os-agents refuses every call. Uses the same owner as above, but its own key: the API
+  # trigger key for the IT OS workspace's trigger (a trigger key works only for its own trigger).
   GUILD_IT_OS_WORKSPACE_NAME:
+    value:
+  GUILD_IT_OS_API_KEY:
     value:
 
   # Transport for the Message Foundation batch intake payload. Default "false"
