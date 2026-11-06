@@ -254,12 +254,12 @@ export function mktgBoilerplatesPageCount(lengths: BoilerplatesLengthRow[]): num
 }
 
 /** A line that opens as a list item, as the deck reads one (its LIST_LINE): `- `, `* `, `• `, `1. ` or `1) `. */
-const LIST_LINE = /^\s*(?:([-*•])|(\d+)[.)])\s+/;
+const LIST_LINE = /^\s*(?:[-*•]|\d+[.)])\s+/;
 
 /** The punctuation a dropped tail sheds before its `…` (the deck's cut), scanned once from the end. */
 const TAIL_CHARS = ',;:.—-';
 
-/** An answer's lines, blank ones dropped, each with its marker by kind. */
+/** An answer's lines, blank ones dropped, every list line a bullet whatever its marker (the deck draws each as a bullet paragraph). */
 function faqLines(answer: string): MktgPrintFaqLine[] {
   return answer
     .split(/\r?\n/)
@@ -267,12 +267,11 @@ function faqLines(answer: string): MktgPrintFaqLine[] {
     .filter((line) => line !== '')
     .map((line): MktgPrintFaqLine => {
       const match = LIST_LINE.exec(line);
-      if (!match) return { text: line, marker: '' };
-      return { text: line.slice(match[0].length), marker: match[2] === undefined ? '-' : `${match[2]}.` };
+      return match ? { text: line.slice(match[0].length), marker: '-' } : { text: line, marker: '' };
     });
 }
 
-/** The lines back as restricted Markdown for the renderer: a list item by its kind, a run of items on consecutive lines, everything else a blank line apart. */
+/** The lines back as restricted Markdown for the renderer: a bullet item `- `, a run of items on consecutive lines, everything else a blank line apart. */
 function faqMarkdown(lines: MktgPrintFaqLine[]): string {
   return lines
     .map((line, i) => {
@@ -346,19 +345,26 @@ export function paginateFaqPairs(
       : [mktgPrintPara(MKTG_FAQ_PRINT_UNANSWERED, entry.answerSize, { above: entry.answerGap })];
   };
   const paras = (entry: MktgPrintFaqEntry): MktgPrintPara[] => [question(entry), ...answer(entry, faqLines(entry.answer)), ...source(entry)];
-  const sized = (entry: MktgPrintFaqEntry, s: number): MktgPrintFaqEntry => ({
-    ...entry,
-    questionSize: scaledSize(entry.questionSize, s),
-    answerSize: scaledSize(entry.answerSize, s),
-    sourceSize: scaledSize(entry.sourceSize, s),
-    answerGap: scaledGap(entry.answerGap, s),
-    listItemGap: scaledGap(entry.listItemGap, s),
-    sourceGap: scaledGap(entry.sourceGap, s),
-  });
+  // An entry's sizes never fall under the floor of the base sizes: an entry already set smaller to fit alone keeps the
+  // floor when its page is set smaller too (the scales do not stack below it).
+  const sized = (entry: MktgPrintFaqEntry, s: number): MktgPrintFaqEntry => {
+    const scale = Math.max(s, MKTG_PRINT_PAGE_MIN_SCALE / entry.scale);
+    if (scale >= 1 - 1e-9) return entry;
+    return {
+      ...entry,
+      scale: Math.round(entry.scale * scale * 100) / 100,
+      questionSize: scaledSize(entry.questionSize, scale),
+      answerSize: scaledSize(entry.answerSize, scale),
+      sourceSize: scaledSize(entry.sourceSize, scale),
+      answerGap: scaledGap(entry.answerGap, scale),
+      listItemGap: scaledGap(entry.listItemGap, scale),
+      sourceGap: scaledGap(entry.sourceGap, scale),
+    };
+  };
   const fitEntry = (base: MktgPrintFaqEntry, lines: MktgPrintFaqLine[]): MktgPrintFaqEntry => {
     const budget = budgetAt(1);
     for (let s = 1; s >= MKTG_PRINT_PAGE_MIN_SCALE - 1e-9; s -= MKTG_PRINT_PAGE_SCALE_STEP) {
-      const entry = sized(base, s);
+      const entry = sized(base, Math.round(s * 100) / 100);
       if (height(paras(entry)) <= budget + 0.01) return entry;
     }
     const floor = sized(base, MKTG_PRINT_PAGE_MIN_SCALE);
@@ -393,6 +399,7 @@ export function paginateFaqPairs(
         answerGap: layout.faqAnswerGap,
         listItemGap: layout.faqListItemGap,
         sourceGap: layout.faqSourceGap,
+        scale: 1,
         cut: false,
       };
       return height(paras(base)) <= budgetAt(1) + 0.01 ? base : fitEntry(base, lines);

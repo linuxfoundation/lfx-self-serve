@@ -66,7 +66,7 @@ export const MKTG_PRINT_DIVIDER_LAYOUT: MktgPrintDividerLayout = {
   softShare: 0.3,
 };
 
-/** The least contrast of the divider's eyebrow in the accent against the dark before it is set in the on-dark ink: 3:1 per the appendix spec v1.3 (the WCAG 2.1 SC 1.4.11 threshold). */
+/** The least contrast of the divider's eyebrow in the accent against the dark before it is set in the on-dark ink: 3:1 per the appendix spec v1.3 (WCAG 2.1 SC 1.4.3, large text). */
 export const MKTG_PRINT_DIVIDER_EYEBROW_MIN_CONTRAST = 3;
 
 /** The family cover's title size, pt (the appendix spec §4). */

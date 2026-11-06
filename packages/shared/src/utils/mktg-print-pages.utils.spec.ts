@@ -8,7 +8,9 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MKTG_FAQ_PRINT_UNANSWERED } from '../constants/mktg-print.constants';
+import { MKTG_FAMILY_EXPORT_VERSION_LABELS } from '../constants/mktg-family-export.constants';
+import { FOUNDATION_MESSAGE_PRINT_TITLE, MKTG_FAQ_PRINT_UNANSWERED } from '../constants/mktg-print.constants';
+import { BOILERPLATES_INTAKE, BRAND_KIT_INTAKE, FAQ_INTAKE } from '../constants/mktg-run.constants';
 import {
   MKTG_PRINT_PAGE_AREA,
   MKTG_PRINT_PAGE_CAPS_TRACKING_EM,
@@ -266,6 +268,14 @@ describe("the family's grammar", () => {
     expect(cover.subtitle).toBe('Open mesh for everyone');
     expect(cover.date).toBe('November 2026');
     expect(cover.footerRight).toBe('Messaging Framework v3 · Brand Kit V1.0 · Boilerplates v2');
+    // The names are the catalog's documents (the framework's its print title, the spec's casing), so D1 §4's line is theirs.
+    expect(MKTG_FAMILY_EXPORT_VERSION_LABELS).toEqual({
+      'foundation-message': FOUNDATION_MESSAGE_PRINT_TITLE,
+      'brand-kit': BRAND_KIT_INTAKE.documentName,
+      boilerplates: BOILERPLATES_INTAKE.documentName,
+      faq: FAQ_INTAKE.documentName,
+    });
+    expect(Object.values(MKTG_FAMILY_EXPORT_VERSION_LABELS)).toEqual(['Messaging Framework', 'Brand Kit', 'Boilerplates', 'FAQ']);
     expect(mktgPrintFamilyCover(printView({ framework: frameworkView('', 'Tagline') }), 'Positioning & brand').subtitle).toBe('Tagline');
   });
 });
@@ -407,13 +417,13 @@ describe('paginateFaqPairs', () => {
     expect(page.rows[0].height).toBeCloseTo(faqEntryHeight(bullet), 6);
   });
 
-  it("reads the deck's list markers ('-', '*', '•', '1.', '1)'), keeps each item's kind for the renderer, and measures the paragraphs with the deck's gaps", () => {
+  it("reads the deck's list markers ('-', '*', '•', '1.', '1)'), hands the renderer every item as a bullet as the deck draws them, and measures the paragraphs with the deck's gaps", () => {
     const answer = 'Lead-in:\n• One\n* Two\n- Three\n1) First\n2. Second\n\n+ Not a marker\n\nClosing line.';
     const [page] = paginateFaqPairs([
       { name: 'Lists', path: 'faq[0]', questions: [{ path: 'faq[0][1][0]', question: 'Which steps?', answer, source: '', answered: true }], unanswered: 0 },
     ]);
     const [entry] = page.rows[0].entries;
-    expect(entry.answer).toBe('Lead-in:\n\n- One\n- Two\n- Three\n1. First\n2. Second\n\n+ Not a marker\n\nClosing line.');
+    expect(entry.answer).toBe('Lead-in:\n\n- One\n- Two\n- Three\n- First\n- Second\n\n+ Not a marker\n\nClosing line.');
     expect(entry.cut).toBe(false);
     const size = layout.faqAnswerSize;
     const item = (text: string, above: number) => mktgPrintPara(text, size, { bullet: true, above });
@@ -464,8 +474,40 @@ describe('paginateFaqPairs', () => {
         expect(entry.questionSize).toBe(scaledSize(layout.faqQuestionSize, smaller.scale));
         expect(entry.answerGap).toBe(Math.round(layout.faqAnswerGap * smaller.scale * 10) / 10);
         expect(entry.sourceGap).toBe(Math.round(layout.faqSourceGap * smaller.scale * 10) / 10);
+        expect(entry.scale).toBe(smaller.scale);
       })
     );
+  });
+
+  it('never sets an entry under the floor: one fitted alone at the floor keeps it when its page is set smaller too', () => {
+    const items = Array.from({ length: 80 }, (_, i) => `- Step ${i + 1}`);
+    const tall = { path: 'faq[0][1][0]', question: 'Which steps, in order?', answer: ['Steps:', ...items].join('\n'), source: 'Docs', answered: true };
+    const filler = Array.from({ length: 9 }, (_, q) => ({
+      path: `faq[0][1][${q + 1}]`,
+      question: `Question number ${q + 1} of the synthetic set?`,
+      answer: Array.from({ length: 30 }, () => 'Answer').join(' ') + '.',
+      source: 'Docs',
+      answered: true,
+    }));
+    const pages = paginateFaqPairs([{ name: 'Mixed', path: 'faq[0]', questions: [tall, ...filler], unanswered: 0 }]);
+    const entries = pages.flatMap((page) => page.rows.flatMap((row) => row.entries.map((entry) => ({ entry, page }))));
+    const first = entries[0];
+    expect(first.entry.path).toBe(tall.path);
+    expect(first.entry.scale).toBe(MKTG_PRINT_PAGE_MIN_SCALE);
+    expect(first.entry.answerSize).toBe(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
+    expect(first.entry.questionSize).toBe(scaledSize(layout.faqQuestionSize, MKTG_PRINT_PAGE_MIN_SCALE));
+    entries.forEach(({ entry, page }) => {
+      expect(entry.scale).toBeGreaterThanOrEqual(MKTG_PRINT_PAGE_MIN_SCALE);
+      expect(entry.scale).toBeLessThanOrEqual(page.scale + 1e-9);
+      expect(entry.answerSize).toBeGreaterThanOrEqual(scaledSize(layout.faqAnswerSize, MKTG_PRINT_PAGE_MIN_SCALE));
+    });
+    // Some page of the set is set smaller, and its full-size entries take the page's scale.
+    const smaller = pages.find((page) => page.scale < 1);
+    expect(smaller).toBeDefined();
+    smaller?.rows
+      .flatMap((row) => row.entries)
+      .filter((entry) => entry.path !== tall.path)
+      .forEach((entry) => expect(entry.scale).toBe(smaller.scale));
   });
 
   it('sets an entry a little too tall for the area smaller as a whole, the question and the gaps with the answer, before anything is cut', () => {
