@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, ElementRef, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
@@ -20,6 +20,7 @@ import { InputTextComponent } from '../input-text/input-text.component';
 })
 export class OrganizationSearchComponent {
   private readonly organizationService = inject(OrganizationService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   public form = input.required<FormGroup>();
   public nameControl = input<string>();
@@ -49,6 +50,14 @@ export class OrganizationSearchComponent {
   /** Name of the parent form control that holds the resolved org id. Cleared when entering manual
    *  mode so a stale id from a prior selection does not survive as resolution evidence. */
   public idControl = input<string>();
+  /** When false the field is a plain name picker for forms that store the organization as a string:
+   *  a pick writes the name to the parent control, registers the session org and emits
+   *  `onOrganizationSelect`, then stops — no CDP find-or-create (`POST /api/organizations/resolve`),
+   *  no manual-mode switch for a missing domain, and `resolveCurrentEntry()` is a no-op. Typed text
+   *  that is never picked is mirrored into the parent name control as the user types and on blur,
+   *  so the control always holds what the box shows. Defaults to true, which leaves every existing
+   *  consumer's behavior unchanged. */
+  public resolveOnSelect = input<boolean>(true);
 
   public readonly onOrganizationSelect = output<OrganizationSuggestion>();
   public readonly onOrganizationResolved = output<OrganizationResolveResult>();
@@ -209,6 +218,21 @@ export class OrganizationSearchComponent {
     }
 
     this.organizationForm.get('organizationSearch')?.setValue(event.query);
+    this.mirrorTypedText(event.query);
+  }
+
+  /** Blur is the only signal that lands before the debounced search when the user types and tabs
+   *  away immediately, so it reads the live input rather than the (possibly still stale) search
+   *  control. Only wired for resolveOnSelect=false; a no-op otherwise. */
+  public onSearchBlur(): void {
+    if (this.resolveOnSelect()) {
+      return;
+    }
+    const liveValue = this.host.nativeElement.querySelector('input')?.value;
+    if (liveValue === undefined) {
+      return;
+    }
+    this.mirrorTypedText(liveValue);
   }
 
   public onOrganizationSelected(event: AutoCompleteSelectEvent): void {
@@ -254,6 +278,11 @@ export class OrganizationSearchComponent {
 
     this.onOrganizationSelect.emit(selectedOrganization);
 
+    // The name is already stored; this mode never resolves the pick against CDP.
+    if (!this.resolveOnSelect()) {
+      return;
+    }
+
     // A committee-service flow (e.g. add-member/invite) needs a website committee-service can
     // store — its payload strips the CDP id, so a domainless match has nothing to submit. Rather
     // than leaving organization_url silently empty until the user hits submit, treat it like a
@@ -286,7 +315,8 @@ export class OrganizationSearchComponent {
     const domainControlName = this.domainControl();
 
     if (nameControlName && parentForm.get(nameControlName)) {
-      parentForm.get(nameControlName)?.setValue(null);
+      // A string-valued consumer (resolveOnSelect=false) keeps its control a string.
+      parentForm.get(nameControlName)?.setValue(this.resolveOnSelect() ? null : '');
     }
 
     // Only clear domain control if it's specified (optional for forms that only need org name)
@@ -375,6 +405,11 @@ export class OrganizationSearchComponent {
    * Returns an Observable so the parent can subscribe and wait for the result
    */
   public resolveCurrentEntry(): Observable<OrganizationResolveResult | null> {
+    // A string-valued consumer never resolves, so there is nothing to look up or create.
+    if (!this.resolveOnSelect()) {
+      return of(null);
+    }
+
     const parentForm = this.form();
     const nameControlName = this.nameControl();
     const domainControlName = this.domainControl();
@@ -505,6 +540,27 @@ export class OrganizationSearchComponent {
     // Bumping this invalidates any resolveOrg() callback still in flight from a superseded
     // selection, manual-mode switch, or search-mode switch.
     this.selectionToken += 1;
+  }
+
+  /** resolveOnSelect=false only: keep the parent name control equal to the trimmed box text. Guarded
+   *  by syncingParentFromSelf so the parent-to-box mirror doesn't echo the trimmed value back over
+   *  what the user is still typing (a trailing space would otherwise vanish). */
+  private mirrorTypedText(text: string): void {
+    if (this.resolveOnSelect() || this.manualMode()) {
+      return;
+    }
+    const nameControlName = this.nameControl();
+    const ctrl = nameControlName ? this.form().get(nameControlName) : null;
+    const trimmed = text.trim();
+    if (!ctrl || ctrl.value === trimmed) {
+      return;
+    }
+    this.syncingParentFromSelf = true;
+    try {
+      ctrl.setValue(trimmed);
+    } finally {
+      this.syncingParentFromSelf = false;
+    }
   }
 
   private clearIdControl(): void {
