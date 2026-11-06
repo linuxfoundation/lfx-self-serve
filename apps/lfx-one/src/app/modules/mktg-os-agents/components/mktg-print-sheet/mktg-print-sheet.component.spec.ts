@@ -8,6 +8,7 @@ import { MktgPrintSheetComponent } from './mktg-print-sheet.component';
 import { MktgPrintSheetRowComponent } from '../mktg-print-sheet-row/mktg-print-sheet-row.component';
 
 @Component({
+  selector: 'lfx-print-sheet-test-host',
   imports: [MktgPrintSheetComponent, MktgPrintSheetRowComponent],
   template: `<lfx-mktg-print-sheet>
     <lfx-mktg-print-sheet-row [flows]="flows()"><section style="display: grid" data-testid="block">Synthetic block</section></lfx-mktg-print-sheet-row>
