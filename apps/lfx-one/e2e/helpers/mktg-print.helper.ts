@@ -107,6 +107,14 @@ export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locato
 }
 
 /** A viewport-height cover in the laid-out frame fills the page: the 1px frame left it at its content's height. */
+/**
+ * A table box's computed length in px, to compare to a tenth: Chromium reports a table row's laid-out height snapped to
+ * 1/64 px (52.7969px for 0.55in) and WebKit serialises 10pt with six decimals (13.333333px), so an exact string fails.
+ */
+export async function mktgPrintComputedPx(box: Locator, property: string): Promise<number> {
+  return parseFloat(await box.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property));
+}
+
 export async function expectMktgPrintCover(cover: Locator): Promise<void> {
   await expect(cover).toBeVisible();
   const box = await cover.boundingBox();

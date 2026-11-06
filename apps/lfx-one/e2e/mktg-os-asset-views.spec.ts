@@ -17,6 +17,7 @@ import {
   PRINT_FRAME_LETTER,
   stubMktgPrintFrame,
   expectMktgPrintPageSetup,
+  mktgPrintComputedPx,
 } from './helpers/mktg-print.helper';
 
 import {
@@ -250,9 +251,10 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       // No footer group (Chromium prints an empty page per table for one): the bottom room is the last row's.
       await expect(print.locator('.kit-chapter > tfoot')).toHaveCount(0);
       await expect(print.locator('.kit-chapter > tbody > tr:last-child > td')).toHaveCount(5);
-      await expect(print.locator('.kit-chapter > tbody > tr:last-child > td').first()).toHaveCSS(
-        'padding-bottom',
-        browserName === 'webkit' ? '13.3333px' : '66.1333px'
+      // calc(10pt + 0.55in) = 66.13px, or the 10pt alone on the page margins; to a tenth (mktgPrintComputedPx).
+      expect(await mktgPrintComputedPx(print.locator('.kit-chapter > tbody > tr:last-child > td').first(), 'padding-bottom')).toBeCloseTo(
+        browserName === 'webkit' ? 13.333 : 66.133,
+        1
       );
     } else {
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
@@ -264,18 +266,11 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.getByTestId('mktg-print-sheet-head')).toHaveCount(3);
       await expect(print.getByTestId('mktg-print-sheet-head').first()).toHaveCSS('display', 'table-header-group');
       await expect(print.getByTestId('mktg-print-sheet-foot')).toHaveCount(0);
-      // 0.55in = 52.8px; Chromium reports a table row's laid-out height snapped to 1/64 px (52.7969px), so to a tenth.
-      expect(
-        parseFloat(
-          await print
-            .locator('.lfx-print-sheet-room')
-            .first()
-            .evaluate((row) => getComputedStyle(row).height)
-        )
-      ).toBeCloseTo(browserName === 'webkit' ? 0 : 52.8, 1);
-      await expect(print.locator('lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell').first()).toHaveCSS(
-        'padding-bottom',
-        browserName === 'webkit' ? '0px' : '52.8px'
+      // 0.55in = 52.8px, head row and last cell, or 0 on the page margins; to a tenth (mktgPrintComputedPx).
+      expect(await mktgPrintComputedPx(print.locator('.lfx-print-sheet-room').first(), 'height')).toBeCloseTo(browserName === 'webkit' ? 0 : 52.8, 1);
+      expect(await mktgPrintComputedPx(print.locator('lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell').first(), 'padding-bottom')).toBeCloseTo(
+        browserName === 'webkit' ? 0 : 52.8,
+        1
       );
       await expect(print.locator('lfx-mktg-print-sheet-row')).toHaveCount(9);
       await expect(print.locator('lfx-mktg-print-sheet-row').first()).toHaveCSS('display', 'table-row');

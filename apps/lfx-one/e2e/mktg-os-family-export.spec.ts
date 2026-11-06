@@ -11,6 +11,7 @@ import {
   expectMktgPrintPageSetup,
   finishMktgPrintFrame,
   layoutMktgPrintFrame,
+  mktgPrintComputedPx,
   stubMktgPrintFrame,
 } from './helpers/mktg-print.helper';
 
@@ -235,14 +236,14 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printDocument.locator('lfx-mktg-print-sheet-row')).toHaveCount(1 + 9 + 4 + 5);
   // The engine's page setup: Chromium margin 0 with the room in the document; WebKit the margins, the room collapsed.
   await expectMktgPrintPageSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'), browserName);
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tbody > tr:last-child > td').first()).toHaveCSS(
-    'padding-bottom',
-    browserName === 'webkit' ? '13.3333px' : '66.1333px'
-  );
-  await expect(printDocument.locator('lfx-mktg-faq-print lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell')).toHaveCSS(
-    'padding-bottom',
-    browserName === 'webkit' ? '0px' : '52.8px'
-  );
+  // The last rows' bottom room, to a tenth (mktgPrintComputedPx): the kit's calc(10pt + 0.55in) = 66.13px or its 10pt
+  // alone on the page margins; a sheet's 0.55in = 52.8px or 0.
+  expect(
+    await mktgPrintComputedPx(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tbody > tr:last-child > td').first(), 'padding-bottom')
+  ).toBeCloseTo(browserName === 'webkit' ? 13.333 : 66.133, 1);
+  expect(
+    await mktgPrintComputedPx(printDocument.locator('lfx-mktg-faq-print lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell'), 'padding-bottom')
+  ).toBeCloseTo(browserName === 'webkit' ? 0 : 52.8, 1);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
   const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');
   // This fixture's short contrast table stays whole: no one/two-row Letter tail.
