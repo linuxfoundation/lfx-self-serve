@@ -27,40 +27,51 @@
   </svg>
 </ng-template>
 
-@if (compact()) {
+@if (print()) {
   <!--
-    The print sheet's compact rows: plain block flow only. Inside the sheet's paginated table, Chromium fragments a
-    grid or flex item's contents away from its box (QA round 1: empty tiles on one page, their icons on the next), so
-    the tiles are inline blocks, four to a line, and the strip is a line of inline blocks; no grid, no flex. Sized to
-    sit beside the rules in the Iconography row (≈ 98 px tall: 30 px tiles, 18 px icons, 8 px labels, a 30 px strip).
+    The print sheet's variant, the board's proportions on the sheet's own Iconography page: table and table-cell boxes
+    only. Inside the sheet's paginated table, Chromium fragments a grid or flex item's contents away from its box (QA
+    round 1: empty tiles on one page, their icons on the next). The tiles: a fixed 2 × 4 table, each tile 110 px tall
+    with a hairline border, 10 px radius, the 32 px icon above an 11 px label, 12 px gaps; then, 14 px below, the strip:
+    a 110 px dark table whose eight equal cells spread the 30 px icons across its full width, 30 px in from the edges.
   -->
-  <ul class="block" data-testid="brand-kit-icon-tiles">
-    @for (icon of icons; track icon.id) {
-      <li
-        class="inline-block h-[30px] w-[23%] rounded-[6px] border border-gray-200 pt-[1px] text-center align-top [&:not(:nth-child(4n))]:mr-[2.5%] [&:nth-child(-n+4)]:mb-1"
-        [style.color]="colours().tileInk"
-        [attr.data-testid]="'brand-kit-icon-tile-' + icon.id">
-        <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: icon, size: iconSize() }" />
-        <span class="block text-[8px] leading-[10px] text-gray-500">{{ icon.label }}</span>
-      </li>
+  <!-- Equal columns: each cell carries half the 12 px gap on both sides, and the table bleeds 6 px past the edges to keep the outer tiles flush. -->
+  <div class="-mx-[6px] table w-[calc(100%+12px)] table-fixed border-separate border-spacing-0" data-testid="brand-kit-icon-tiles">
+    @for (row of tileRows; track $index; let lastRow = $last) {
+      <div class="table-row">
+        @for (icon of row; track icon.id) {
+          <div class="table-cell px-[6px] align-top" [class.pb-[12px]]="!lastRow">
+            <div
+              class="table h-[110px] w-full border-separate border-spacing-0 rounded-[10px] border border-gray-200"
+              [style.color]="colours().tileInk"
+              [attr.data-testid]="'brand-kit-icon-tile-' + icon.id">
+              <div class="table-cell text-center align-middle">
+                <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: icon, size: tileIconSize }" />
+                <span class="mt-[10px] block text-[11px] leading-[1.4] text-gray-500">{{ icon.label }}</span>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
     }
-  </ul>
-  <!-- The strip: the eight icons on the kit's dark, white, the third in the highlight; the board's left-aligned row. -->
+  </div>
   <div
-    class="mt-1 block h-[30px] whitespace-nowrap rounded-[6px] px-3 py-[6px] [print-color-adjust:exact]"
+    class="mt-[14px] table h-[110px] w-full table-fixed border-separate border-spacing-0 rounded-[10px] px-[30px] [print-color-adjust:exact]"
     [style.background-color]="colours().stripGround"
     role="img"
     [attr.aria-label]="stripLabel"
     data-testid="brand-kit-icon-strip">
-    @for (item of strip(); track item.icon.id) {
-      <span
-        class="inline-block align-top [&:not(:last-child)]:mr-4"
-        [style.color]="item.ink"
-        [attr.data-highlight]="item.highlight ? 'true' : null"
-        [attr.data-testid]="'brand-kit-icon-strip-' + item.icon.id">
-        <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: item.icon, size: iconSize() }" />
-      </span>
-    }
+    <div class="table-row">
+      @for (item of strip(); track item.icon.id) {
+        <span
+          class="table-cell text-center align-middle"
+          [style.color]="item.ink"
+          [attr.data-highlight]="item.highlight ? 'true' : null"
+          [attr.data-testid]="'brand-kit-icon-strip-' + item.icon.id">
+          <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: item.icon, size: stripIconSize() }" />
+        </span>
+      }
+    </div>
   </div>
 } @else {
   <!--
@@ -73,7 +84,7 @@
         class="flex h-[110px] flex-col items-center justify-center gap-[10px] rounded-[10px] border border-gray-200"
         [style.color]="colours().tileInk"
         [attr.data-testid]="'brand-kit-icon-tile-' + icon.id">
-        <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: icon, size: iconSize() }" />
+        <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: icon, size: tileIconSize }" />
         <span class="text-[11px] leading-[1.4] text-gray-500">{{ icon.label }}</span>
       </li>
     }
@@ -96,7 +107,7 @@
         [style.color]="item.ink"
         [attr.data-highlight]="item.highlight ? 'true' : null"
         [attr.data-testid]="'brand-kit-icon-strip-' + item.icon.id">
-        <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: item.icon, size: stripIconSize }" />
+        <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: item.icon, size: stripIconSize() }" />
       </span>
     }
   </div>

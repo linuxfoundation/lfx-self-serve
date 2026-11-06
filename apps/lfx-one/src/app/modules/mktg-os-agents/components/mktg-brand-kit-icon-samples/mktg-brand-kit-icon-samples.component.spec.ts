@@ -3,12 +3,13 @@
 
 import { TestBed } from '@angular/core/testing';
 import {
-  BRAND_KIT_ICON_COMPACT_SIZE_PX,
   BRAND_KIT_ICON_HIGHLIGHT_INDEX,
+  BRAND_KIT_ICON_PRINT_STRIP_SIZE_PX,
   BRAND_KIT_ICON_SAMPLES,
   BRAND_KIT_ICON_STRIP_INK,
   BRAND_KIT_ICON_STRIP_ONE_ROW_MIN_PX,
   BRAND_KIT_ICON_STRIP_SIZE_PX,
+  BRAND_KIT_ICON_TILE_COLUMNS,
   BRAND_KIT_ICON_TILE_SIZE_PX,
 } from '@lfx-one/shared/constants';
 import { BrandKitIconColours } from '@lfx-one/shared/interfaces';
@@ -17,10 +18,10 @@ import { MktgBrandKitIconSamplesComponent } from './mktg-brand-kit-icon-samples.
 
 const COLOURS: BrandKitIconColours = { tileInk: '#003B5C', stripGround: '#003B5C', highlight: '#FF702D' };
 
-async function setup(colours: BrandKitIconColours = COLOURS, compact = false) {
+async function setup(colours: BrandKitIconColours = COLOURS, print = false) {
   const fixture = TestBed.createComponent(MktgBrandKitIconSamplesComponent);
   fixture.componentRef.setInput('colours', colours);
-  fixture.componentRef.setInput('compact', compact);
+  fixture.componentRef.setInput('print', print);
   await fixture.whenStable();
   const root: HTMLElement = fixture.nativeElement;
   return { fixture, root };
@@ -109,37 +110,54 @@ describe('MktgBrandKitIconSamplesComponent', () => {
     expect(root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip-code"]')?.style.color).toBe(cssColour('#FFFFFF'));
   });
 
-  it('draws the print sheet’s compact rows in plain block flow: 30 px inline-block tiles four to a line, 18 px icons, 8 px labels, a 30 px strip of inline blocks, no grid or flex', async () => {
+  it('draws the print sheet’s variant at the board’s proportions in table boxes: a 2 × 4 table of 110 px tiles with 32 px icons and 11 px labels, then a 110 px strip of eight equal cells with 30 px icons, no grid or flex', async () => {
     const { root } = await setup(COLOURS, true);
     expect(root.classList.contains('block')).toBe(true);
     // No grid or flex box anywhere: inside the sheet's paginated table Chromium fragments their contents away from their boxes.
     for (const node of Array.from(root.querySelectorAll<HTMLElement>('*'))) {
-      expect(Array.from(node.classList).filter((cls) => /^(grid|flex|inline-flex|grid-cols-\d|sm:grid-cols-\d)$/.test(cls))).toEqual([]);
+      expect(Array.from(node.classList).filter((cls) => /^(grid|flex|inline-flex|flex-wrap|grid-cols-.*)$/.test(cls))).toEqual([]);
     }
-    const tiles = Array.from(root.querySelectorAll<HTMLElement>('[data-testid^="brand-kit-icon-tile-"]'));
-    expect(tiles).toHaveLength(8);
-    expect(tiles.map((tile) => tile.querySelector('span')?.textContent)).toEqual(BRAND_KIT_ICON_SAMPLES.map((icon) => icon.label));
-    for (const tile of tiles) {
-      for (const cls of ['inline-block', 'h-[30px]', 'w-[23%]', 'align-top', 'text-center']) {
-        expect(tile.classList.contains(cls)).toBe(true);
-      }
-      expect(tile.classList.contains('h-[110px]')).toBe(false);
-      expect(tile.style.color).toBe(cssColour(COLOURS.tileInk));
-      expect(tile.querySelector('svg')?.getAttribute('width')).toBe(String(BRAND_KIT_ICON_COMPACT_SIZE_PX));
-      expect(tile.querySelector('svg')?.classList.contains('block')).toBe(true);
-      expect(tile.querySelector('span')?.classList.contains('text-[8px]')).toBe(true);
-      expect(tile.querySelector('span')?.classList.contains('block')).toBe(true);
+    const tiles = root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tiles"]');
+    for (const cls of ['table', 'table-fixed', 'w-[calc(100%+12px)]', '-mx-[6px]']) {
+      expect(tiles?.classList.contains(cls)).toBe(true);
     }
+    const rows = Array.from(tiles?.querySelectorAll<HTMLElement>(':scope > .table-row') ?? []);
+    expect(rows).toHaveLength(BRAND_KIT_ICON_SAMPLES.length / BRAND_KIT_ICON_TILE_COLUMNS);
+    const tileList = Array.from(root.querySelectorAll<HTMLElement>('[data-testid^="brand-kit-icon-tile-"]'));
+    expect(tileList).toHaveLength(8);
+    expect(tileList.map((tile) => tile.querySelector('span')?.textContent)).toEqual(BRAND_KIT_ICON_SAMPLES.map((icon) => icon.label));
+    rows.forEach((row, rowIndex) => {
+      const cells = Array.from(row.querySelectorAll<HTMLElement>(':scope > .table-cell'));
+      expect(cells).toHaveLength(BRAND_KIT_ICON_TILE_COLUMNS);
+      cells.forEach((cell, column) => {
+        // The board's 12 px gaps: half on each side of every equal column (the table bleeds 6 px past the edges to stay flush), under every row but the last.
+        expect(cell.classList.contains('px-[6px]')).toBe(true);
+        expect(cell.classList.contains('pb-[12px]')).toBe(rowIndex < rows.length - 1);
+        const tile = cell.firstElementChild as HTMLElement;
+        expect(tile.getAttribute('data-testid')).toBe('brand-kit-icon-tile-' + BRAND_KIT_ICON_SAMPLES[rowIndex * BRAND_KIT_ICON_TILE_COLUMNS + column].id);
+        for (const cls of ['table', 'h-[110px]', 'w-full', 'rounded-[10px]', 'border', 'border-gray-200']) {
+          expect(tile.classList.contains(cls)).toBe(true);
+        }
+        expect(tile.style.color).toBe(cssColour(COLOURS.tileInk));
+        expect(tile.firstElementChild?.classList.contains('table-cell')).toBe(true);
+        expect(tile.firstElementChild?.classList.contains('align-middle')).toBe(true);
+        expect(tile.querySelector('svg')?.getAttribute('width')).toBe(String(BRAND_KIT_ICON_TILE_SIZE_PX));
+        expect(tile.querySelector('span')?.classList.contains('text-[11px]')).toBe(true);
+      });
+    });
     const strip = root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]');
-    for (const cls of ['block', 'h-[30px]', 'whitespace-nowrap']) {
+    for (const cls of ['table', 'table-fixed', 'w-full', 'h-[110px]', 'mt-[14px]', 'px-[30px]', 'rounded-[10px]']) {
       expect(strip?.classList.contains(cls)).toBe(true);
     }
     expect(strip?.style.backgroundColor).toBe(cssColour(COLOURS.stripGround));
+    expect(strip?.getAttribute('role')).toBe('img');
     const icons = Array.from(strip?.querySelectorAll<HTMLElement>('[data-testid^="brand-kit-icon-strip-"]') ?? []);
     expect(icons).toHaveLength(8);
+    expect(strip?.querySelector(':scope > .table-row')?.children).toHaveLength(8);
     icons.forEach((icon, index) => {
-      expect(icon.classList.contains('inline-block')).toBe(true);
-      expect(icon.querySelector('svg')?.getAttribute('width')).toBe(String(BRAND_KIT_ICON_COMPACT_SIZE_PX));
+      expect(icon.classList.contains('table-cell')).toBe(true);
+      expect(icon.classList.contains('text-center')).toBe(true);
+      expect(icon.querySelector('svg')?.getAttribute('width')).toBe(String(BRAND_KIT_ICON_PRINT_STRIP_SIZE_PX));
       const highlighted = index === BRAND_KIT_ICON_HIGHLIGHT_INDEX;
       expect(icon.getAttribute('data-highlight')).toBe(highlighted ? 'true' : null);
       expect(icon.style.color).toBe(cssColour(highlighted ? COLOURS.highlight : BRAND_KIT_ICON_STRIP_INK));

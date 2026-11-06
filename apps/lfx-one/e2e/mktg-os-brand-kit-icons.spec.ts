@@ -56,7 +56,9 @@ test.describe('Brand kit iconography samples: the board’s icons in the kit’s
     await page.screenshot({ path: info.outputPath('visual-iconography.png'), fullPage: true });
   });
 
-  test('the PDF’s Visual chapter prints the same samples, compact, beside the rules in the Iconography block', async ({ page }, info) => {
+  test('the PDF gives Iconography the Visual chapter’s first page: the samples at the board’s proportions beside the rules, the page ending after them', async ({
+    page,
+  }, info) => {
     const kit = brandKitTestRevision();
     await page.setViewportSize({ width: 1280, height: 1000 });
     await stubMktgPrintFrame(page);
@@ -74,9 +76,12 @@ test.describe('Brand kit iconography samples: the board’s icons in the kit’s
       'color',
       rgb(brandKitIconColours(kit).highlight)
     );
-    // The board's print layout: the rules at the left, the samples beside them in one table row, so the Iconography row
-    // stays as short as the rules and the chapter keeps its page; the row and the samples hold together.
-    const row = visual.getByTestId('kit-print-icon-row');
+    // The board's print layout: the Iconography block has the chapter's first page to itself (the page ends after it,
+    // never before it), the rules at the left and the samples beside them in one table row; the block holds together.
+    const block = visual.getByTestId('kit-print-icon-block');
+    await expect(block).toHaveCSS('break-after', 'page');
+    await expect(block).not.toHaveCSS('break-before', 'page');
+    const row = block.getByTestId('kit-print-icon-row');
     await expect(row).toHaveCSS('display', 'table');
     await expect(row).toHaveCSS('break-inside', 'avoid');
     await expect(samples).toHaveCSS('break-inside', 'avoid');
@@ -85,22 +90,51 @@ test.describe('Brand kit iconography samples: the board’s icons in the kit’s
     if (!rules || !samplesBox) throw new Error('The rules and the samples must be laid out');
     expect(samplesBox.x).toBeGreaterThanOrEqual(rules.x + rules.width - 1);
     expect(Math.abs(samplesBox.y - rules.y)).toBeLessThanOrEqual(4);
-    expect(samplesBox.height).toBeLessThanOrEqual(102);
-    // Every tile printed whole: its icon and its label inside its own border, four to a line.
+    // The board's proportions, in table boxes: 110 px tiles with the icon above the label inside the border, four to a
+    // row with 12 px gaps, then the 110 px strip 14 px below with its eight icons spread across its full width.
     const tiles = samples.getByTestId(/^brand-kit-icon-tile-/);
+    await expect(samples.getByTestId('brand-kit-icon-tiles')).toHaveCSS('display', 'table');
     for (const tile of await tiles.all()) {
       const box = await tile.boundingBox();
       const icon = await tile.locator('svg').boundingBox();
       const label = await tile.locator('span').boundingBox();
       if (!box || !icon || !label) throw new Error('The print tile must be laid out');
-      expect(box.height).toBeLessThanOrEqual(32);
-      expect(icon.y).toBeGreaterThanOrEqual(box.y - 1);
-      expect(label.y + label.height).toBeLessThanOrEqual(box.y + box.height + 1);
+      expect(Math.round(box.height)).toBe(110);
+      expect(icon.y).toBeGreaterThanOrEqual(box.y);
+      expect(label.y).toBeGreaterThanOrEqual(icon.y + icon.height);
+      expect(label.y + label.height).toBeLessThanOrEqual(box.y + box.height);
     }
-    const tops = await tiles.evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)));
-    expect(new Set(tops.slice(0, 4)).size).toBe(1);
-    expect(new Set(tops.slice(4)).size).toBe(1);
-    expect(tops[4]).toBeGreaterThan(tops[0]);
+    const tileBoxes = await tiles.evaluateAll((nodes) =>
+      nodes
+        .map((node) => node.getBoundingClientRect())
+        .map(({ top, left, right }) => ({ top: Math.round(top), left: Math.round(left), right: Math.round(right) }))
+    );
+    expect(new Set(tileBoxes.slice(0, 4).map((box) => box.top)).size).toBe(1);
+    expect(new Set(tileBoxes.slice(4).map((box) => box.top)).size).toBe(1);
+    expect(tileBoxes[4].top - tileBoxes[0].top).toBe(110 + 12);
+    expect(tileBoxes[1].left - tileBoxes[0].right).toBe(12);
+    // The outer tiles sit flush with the samples' edges, and the four tiles of a row are the same width.
+    expect(Math.abs(tileBoxes[0].left - samplesBox.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(tileBoxes[3].right - (samplesBox.x + samplesBox.width))).toBeLessThanOrEqual(1);
+    const widths = tileBoxes.slice(0, 4).map((box) => box.right - box.left);
+    expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(1);
+    const strip = samples.getByTestId('brand-kit-icon-strip');
+    await expect(strip).toHaveCSS('display', 'table');
+    const stripBox = await strip.boundingBox();
+    const lastTile = await tiles.last().boundingBox();
+    if (!stripBox || !lastTile) throw new Error('The strip must be laid out');
+    expect(Math.round(stripBox.height)).toBe(110);
+    expect(Math.round(stripBox.y - (lastTile.y + lastTile.height))).toBe(14);
+    expect(Math.round(stripBox.width)).toBe(Math.round(samplesBox.width));
+    const stripIcons = await samples
+      .getByTestId(/^brand-kit-icon-strip-/)
+      .locator('svg')
+      .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect()).map(({ left, top }) => ({ left: Math.round(left), top: Math.round(top) })));
+    expect(new Set(stripIcons.map((icon) => icon.top)).size).toBe(1);
+    const steps = stripIcons.slice(1).map((icon, index) => icon.left - stripIcons[index].left);
+    expect(Math.max(...steps) - Math.min(...steps)).toBeLessThanOrEqual(1);
+    expect(stripIcons[0].left - stripBox.x).toBeGreaterThanOrEqual(30);
+    expect(stripBox.x + stripBox.width - (stripIcons[7].left + 30)).toBeGreaterThanOrEqual(30);
     await samples.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('print-iconography.png'), fullPage: true });
     await page.emulateMedia({ media: 'screen' });

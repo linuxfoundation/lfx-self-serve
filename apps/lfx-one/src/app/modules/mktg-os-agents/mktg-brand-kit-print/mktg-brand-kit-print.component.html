@@ -266,7 +266,8 @@
 </ng-template>
 
 <ng-template #visualBody>
-  <tr class="kit-block">
+  <!-- Iconography has the chapter's first page to itself (the board's proportions need it); the page ends after this block. -->
+  <tr class="kit-block kit-icon-block" data-testid="kit-print-icon-block">
     <td>
       <h3>Iconography · {{ v.visual.icons.recommended }}</h3>
       <!-- The board's print layout: the rules at the left, the samples beside them (a table row, the sheet's own layout model). -->
@@ -279,7 +280,7 @@
           </ul>
         </div>
         <div class="kit-icon-samples-cell">
-          <lfx-mktg-brand-kit-icon-samples class="kit-icon-samples" [colours]="v.iconColours" [compact]="true" />
+          <lfx-mktg-brand-kit-icon-samples class="kit-icon-samples" [colours]="v.iconColours" [print]="true" />
         </div>
       </div>
     </td>

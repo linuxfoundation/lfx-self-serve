@@ -31,8 +31,10 @@ export const BRAND_KIT_ICON_TILE_SIZE_PX = 32;
 export const BRAND_KIT_ICON_STRIP_SIZE_PX = 24;
 /** The strip's width from which its eight icons sit in one row (`8 × 24 + 7 × 8 + 2 × 12`); narrower, they go 4 + 4. */
 export const BRAND_KIT_ICON_STRIP_ONE_ROW_MIN_PX = 272;
-/** The icons' side in the print sheet's compact rows (tiles and strip alike), where the samples sit beside the rules. */
-export const BRAND_KIT_ICON_COMPACT_SIZE_PX = 18;
+/** The strip icons' side on the print sheet, in CSS pixels (the board's 30: the sheet's Iconography page keeps the board's proportions). */
+export const BRAND_KIT_ICON_PRINT_STRIP_SIZE_PX = 30;
+/** The tiles per row of the board's 4 × 2 grid, on the web and in print. */
+export const BRAND_KIT_ICON_TILE_COLUMNS = 4;
 
 /** The strip icon drawn in the highlight colour: the third (Global); the rest are white. */
 export const BRAND_KIT_ICON_HIGHLIGHT_INDEX = 2;
