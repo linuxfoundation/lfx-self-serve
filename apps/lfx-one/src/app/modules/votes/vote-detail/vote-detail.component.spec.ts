@@ -44,6 +44,8 @@ import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-c
 import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
+import { VoteParticipationCardComponent } from '../components/vote-participation-card/vote-participation-card.component';
+import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
 import { VoteVotersComponent } from '../components/vote-voters/vote-voters.component';
 import { VoteDetailComponent } from './vote-detail.component';
@@ -404,6 +406,47 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-results-ranked-method')).not.toBeNull();
       expect(element(fixture, 'lfx-vote-ranked-question-results')).not.toBeNull();
       expect(element(fixture, 'lfx-vote-option-results')).toBeNull();
+    });
+  });
+
+  describe.each([true, false])('ranked Results question positions (manager: %s)', (manager) => {
+    it.each([1, 2])('renders %i full question headings and keeps vote-level totals separate', async (questionCount) => {
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      projectService.getProjectStrict.mockReturnValue(of({ writer: manager } as Project));
+      voteService.fetchVote.mockReturnValue(
+        of(makeVote({ poll_type: PollType.CONDORCET_IRV, status: PollStatus.ENDED, allow_abstain: true, pseudo_anonymity: false }))
+      );
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const results = makeMethodResults();
+      results.num_abstained = 1;
+      results.poll_results = Array.from({ length: questionCount }, (_, index) => ({
+        ...results.poll_results[0],
+        question: { ...results.poll_results[0].question, question_id: `question-${index + 1}`, prompt: `Rank the synthetic proposals for group ${index + 1}` },
+      }));
+      voteService.getVoteResults.mockReturnValue(of(results));
+      const fixture = await setup('browser', [VoteRankedQuestionResultsComponent, VoteParticipationCardComponent, VoteAbstainResultComponent]);
+      await fixture.whenStable();
+
+      const questions = fixture.debugElement.queryAll(By.directive(VoteRankedQuestionResultsComponent));
+      expect(questions).toHaveLength(questionCount);
+      questions.forEach((question, index) => {
+        const prompt = results.poll_results[index].question.prompt;
+        const heading = question.nativeElement.querySelector('h4') as HTMLElement;
+        expect(heading.textContent?.replace(/\s+/g, ' ').trim()).toBe(`${questionCount > 1 ? `Q${index + 1}. ` : ''}${prompt}`);
+        expect((question.componentInstance as VoteRankedQuestionResultsComponent).question().prompt).toBe(prompt);
+        expect(question.nativeElement.querySelector('lfx-vote-abstain-result')).toBeNull();
+        expect(question.nativeElement.querySelector('lfx-vote-participation-card')).toBeNull();
+      });
+      const abstain = testId(fixture, 'vote-detail-option-abstain')!;
+      expect(fixture.debugElement.queryAll(By.directive(VoteAbstainResultComponent))).toHaveLength(1);
+      expect(abstain.textContent).toContain('1');
+      expect(questions.at(-1)!.nativeElement.compareDocumentPosition(abstain) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const participation = fixture.debugElement.queryAll(By.directive(VoteParticipationCardComponent));
+      expect(participation).toHaveLength(manager ? 1 : 0);
+      if (manager) {
+        expect(participation[0].nativeElement.compareDocumentPosition(questions[0].nativeElement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+      expect(read(fixture, 'participationStats')).toMatchObject({ totalResponses: 3, abstainedVoters: 1 });
     });
   });
 
