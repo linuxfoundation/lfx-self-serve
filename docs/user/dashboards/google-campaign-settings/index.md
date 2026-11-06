@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups and Demand Gen audiences for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and Performance Max search themes for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -29,6 +29,8 @@ tags:
     video ads,
     ad groups,
     audiences,
+    performance max,
+    search themes,
     implement,
   ]
 last_updated: 2026-11-07
@@ -188,6 +190,17 @@ Google Ads shows a short description on small placements, so a Performance Max c
 
 The descriptions filled in from the brief are often longer than that. If none of yours is short enough, a message appears under **Descriptions** and **Create Campaign** stays unavailable. Shorten one description, or add a short one, to continue.
 
+## Performance Max search themes
+
+Search themes tell Google which searches a Performance Max campaign is for, such as "kubernetes conference". They are a hint, not targeting: Google may still show the ads on other searches. The **Google Search Themes** box appears below the **Performance Max Creative** section when Performance Max is the campaign type.
+
+- Enter one search theme per line. Blank lines are ignored.
+- You can add up to 50 search themes, each up to 80 characters.
+- Two search themes cannot be the same, even in different capitals.
+- Search themes belong to the campaign's asset group, which Google Ads builds from the Performance Max creative. If you enter search themes and leave the creative empty, a message says so and **Create Campaign** stays unavailable. Fill in the creative or remove the search themes.
+
+If a search theme would be refused, a message appears under the box and **Create Campaign** stays unavailable until you fix it. If you switch to another campaign type, the box disappears and a notice says your search themes will not be sent. They are kept, so switching back to Performance Max restores them.
+
 ## Demand Gen video ads
 
 Each Demand Gen ad is an image ad or a YouTube video ad. Choose one under **Ad format** in the **Demand Gen Creative** section. **Image ad** is the default.
@@ -260,6 +273,6 @@ While the campaign is split, the single Display ad you entered is kept but not s
 
 ## If something is wrong
 
-If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword or Performance Max description would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
+If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword, Performance Max description or search theme would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
 If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Placement exclusions are sent on Display only, and kept with a notice on the other campaign types. Sitelinks are sent on Search and Demand Gen, and the other ad extensions on Search only; each is kept the same way on the other campaign types, with a notice.
