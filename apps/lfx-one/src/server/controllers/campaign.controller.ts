@@ -172,6 +172,7 @@ import {
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
+  GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY,
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
@@ -1578,8 +1579,13 @@ export class CampaignController {
       }
 
       // Sitelinks next, BEFORE callouts, as `validateAssetPlan` runs `validateSitelinks` first: JSON
-      // decode, the Search-only fence, the cap, then each entry in `validateSitelinks`' order, first
-      // bad one wins. Each would otherwise fail in Go as the opaque "platform campaign creation failed".
+      // decode, the Search-and-Demand-Gen fence, the cap, then each entry in `validateSitelinks`'
+      // order, first bad one wins. Each would otherwise fail in Go as the opaque "platform campaign
+      // creation failed". On Demand Gen the entries are judged exactly as on Search: upstream runs the
+      // same `validateSitelinks` on both. One order difference: on Demand Gen upstream refuses any
+      // other extension list BEFORE it judges a sitelink, so a request carrying both a bad sitelink
+      // and a callout is refused here for the sitelink and upstream for the callout. Either way it is
+      // refused before any upstream call, and the UI never sends a callout on Demand Gen.
       const rawSitelinks = body?.sitelinks;
       if (cutoverOn && platforms.includes('google-ads') && rawSitelinks !== undefined && rawSitelinks !== null) {
         const refuse = (message: string): void =>
@@ -1591,11 +1597,12 @@ export class CampaignController {
           return;
         }
         if (rawSitelinks.length > 0 && typeof googleChannel === 'string') {
-          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
-          // but Search, counting every entry. The UI never sends this.
-          if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
+          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on Display and
+          // Video, counting every entry, and this application does not send sitelinks on
+          // Performance Max. The UI never sends this — its section and payload gate on the same list.
+          if (!(GOOGLE_CHANNELS_WITH_SITELINKS as readonly string[]).includes(googleChannel)) {
             refuse(
-              `Google Ads only accepts sitelinks on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the sitelinks or pick Search, then create again.`
+              `Google Ads sitelinks are only sent on Search and Demand Gen campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the sitelinks or pick Search or Demand Gen, then create again.`
             );
             return;
           }
@@ -1632,8 +1639,9 @@ export class CampaignController {
         }
         const callouts = this.googleCalloutList(rawCallouts);
         if (callouts.length > 0 && typeof googleChannel === 'string') {
-          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
-          // but Search. The UI never sends this — its section and payload gate on the same list.
+          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on Demand Gen,
+          // Display and Video, and this application does not send callouts on Performance Max. The
+          // UI never sends this — its section and payload gate on the same list.
           if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
             refuse(
               `Google Ads only accepts callouts on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the callouts or pick Search, then create again.`
@@ -1674,8 +1682,9 @@ export class CampaignController {
           return;
         }
         if (rawSnippets.length > 0 && typeof googleChannel === 'string') {
-          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
-          // but Search, counting every entry. The UI never sends this.
+          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on Demand Gen,
+          // Display and Video, counting every entry, and this application does not send snippets on
+          // Performance Max. The UI never sends this.
           if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
             refuse(
               `Google Ads only accepts structured snippets on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the snippets or pick Search, then create again.`
@@ -6117,6 +6126,10 @@ export class CampaignController {
         ...this.googleDeviceBidModifiers(body, selectedChannels[0]),
         ...this.googleDemographicExclusions(body, selectedChannels[0]),
         ...languages,
+        // Sitelinks reach Demand Gen as well as Search (campaign-service v1.0.31); the gate inside the
+        // helper withholds them on every other channel. Normalized only — `createCampaign` names every
+        // sitelink refusal first.
+        ...this.googleSitelinks(body, selectedChannels[0]),
         ...creative,
       };
     }
@@ -6150,7 +6163,7 @@ export class CampaignController {
     // Normalized only — `createCampaign` names every callout refusal before this is dispatched.
     const callouts = this.googleCallouts(body);
     // Normalized only, as the callouts are — `createCampaign` names every sitelink refusal first.
-    const sitelinks = this.googleSitelinks(body);
+    const sitelinks = this.googleSitelinks(body, 'search');
     // Normalized only, as the extensions are — `createCampaign` names every segment refusal first.
     const audienceSegments = this.googleAudienceSegments(body);
     // Normalized only, as the two above are — `createCampaign` names every snippet refusal first.
@@ -6446,13 +6459,19 @@ export class CampaignController {
   }
 
   /**
-   * The Search campaign's sitelink extensions, spread-ready, or `{}` when the request names none.
+   * The campaign's sitelink extensions, spread-ready, or `{}` when the request names none or the
+   * channel cannot take them.
    *
-   * Search only, as {@link googleCallouts}: `createCampaign` refuses sitelinks on any other channel
-   * by name, and every per-entry refusal, before this is dispatched. An empty description pair is
-   * omitted rather than sent as two empty strings; both absent is one of upstream's two legal states.
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_SITELINKS}: Search and Demand Gen, where
+   * `validateAssetPlan` accepts them (Demand Gen since campaign-service v1.0.31, sitelinks alone).
+   * For a channel outside it the `{}` is never dispatched either: `createCampaign` refuses sitelinks
+   * there by name, and every per-entry refusal, before this is dispatched. An empty description pair
+   * is omitted rather than sent as two empty strings; both absent is one of upstream's two legal
+   * states. The final URL is sent untagged on both channels; upstream tags it with the channel's own
+   * `utm_medium`.
    */
-  private googleSitelinks(body: CampaignCreateRequest): { sitelinks?: CampaignSitelink[] } {
+  private googleSitelinks(body: CampaignCreateRequest, channel: GoogleCampaignChannel): { sitelinks?: CampaignSitelink[] } {
+    if (!(GOOGLE_CHANNELS_WITH_SITELINKS as readonly string[]).includes(channel)) return {};
     const clean = this.googleSitelinkList(body?.sitelinks).map(({ text, description1 = '', description2 = '', finalUrl }) => ({
       text,
       ...(description1 !== '' ? { description1, description2 } : {}),
@@ -6567,9 +6586,11 @@ export class CampaignController {
    *
    * The four steps the sitelink, callout and snippet guards each spell out, in their order: an
    * absent or null list is "none asked for"; anything the Go decode refuses is refused by shape; a
-   * non-empty list on a channel but Search is refused by name, because `validateAssetPlan` fails the
-   * whole create there; then the raw-slice cap, and only then the entries. `entryRefusal` returns the
-   * first bad entry's sentence already numbered.
+   * non-empty list on a channel outside the guard's list is refused by name, because
+   * `validateAssetPlan` fails the whole create there (Search for these three, callouts and snippets;
+   * Search and Demand Gen for sitelinks, the one extension Demand Gen takes); then the raw-slice cap,
+   * and only then the entries. `entryRefusal` returns the first bad entry's sentence already
+   * numbered.
    */
   private googleAssetListRefusal(
     raw: unknown,

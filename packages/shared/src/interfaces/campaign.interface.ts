@@ -853,8 +853,9 @@ export interface CampaignBriefOutput {
    *
    * The URLs are UNTAGGED here, and deliberately. campaign-service tags every sitelink
    * destination itself (`googleads/assets.go` calls the same `buildTaggedFinalURL` the ad's own
-   * final URL goes through), so a click on one attributes to google/cpc under this campaign's
-   * `utm_campaign` with no help from this app. Tagging here as well would hand that builder a
+   * final URL goes through, with the channel's own `utm_medium`: `paid-search` on Search,
+   * `display` on Demand Gen), so a click on one attributes under this campaign's `utm_campaign`
+   * with no help from this app. Tagging here as well would hand that builder a
    * pre-tagged URL whose `utm_campaign` it preserves rather than sets, which is how a sitelink
    * would end up attributed to a campaign other than the one that bought the click.
    */
@@ -1571,7 +1572,8 @@ export interface CampaignImplementationDraft {
    * Google's sitelink extensions, as the operator typed them.
    *
    * Held and restored on exactly the same rule as {@link googleCallouts}: absent and empty agree,
-   * and a list saved under a non-Search channel is kept rather than discarded.
+   * and a list saved under a channel that takes no sitelinks is kept rather than discarded. Unlike
+   * the callouts, it is SENT on Demand Gen as well as Search (`GOOGLE_CHANNELS_WITH_SITELINKS`).
    */
   googleSitelinks?: CampaignSitelink[];
   /**
@@ -3864,15 +3866,19 @@ export interface CampaignCreateRequest {
    * campaign has no extensions", which is what every create on this path did before the field
    * existed, so an absent key and an empty list agree — the same rule as {@link geoTargets}.
    *
-   * SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`). On any other channel upstream refuses the
-   * create outright rather than dropping the list, so the UI withholds it there and the BFF refuses
-   * it by name.
+   * SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`). On Demand Gen, Display and Video upstream
+   * refuses the create outright rather than dropping the list, so the UI withholds it off Search and
+   * the BFF refuses it by name. (Upstream also takes callouts on Performance Max; this application
+   * has not opened that pairing, so it withholds and refuses them there too.)
    */
   callouts?: string[];
   /**
-   * The Google campaign's sitelink extensions — extra links rendered under the text ad.
+   * The Google campaign's sitelink extensions — extra links rendered with the ad.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   * Omitted when empty, on the same rule as {@link callouts}. SEARCH AND DEMAND GEN
+   * (`GOOGLE_CHANNELS_WITH_SITELINKS`): campaign-service v1.0.31 accepts sitelinks alone on Demand
+   * Gen, under the same per-entry rules as Search. On every other channel the UI withholds them and
+   * the BFF refuses them by name.
    */
   sitelinks?: CampaignSitelink[];
   /**

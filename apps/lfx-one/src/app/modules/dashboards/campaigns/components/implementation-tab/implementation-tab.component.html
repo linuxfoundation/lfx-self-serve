@@ -1294,9 +1294,8 @@
       }
 
       <!--
-        Callouts and sitelinks withheld because the create capability is not an explicit yes — the
-        state in which the two channel warnings below cannot speak, because the channel they read is
-        itself null. Create is NOT blocked here (see `googleExtensionsCapabilityBlock`), so Retry is
+        Callouts and sitelinks withheld because the create capability is not an explicit yes, on a
+        channel that takes them — the state the channel warnings below leave to it. Create is NOT blocked here (see `googleExtensionsCapabilityBlock`), so Retry is
         the only action and only where a read could succeed.
       -->
       @if (googleExtensionsCapabilityBlock(); as block) {
@@ -1363,9 +1362,10 @@
         Google Ads: callout extensions.
 
         SEARCH ONLY, and the gate is `googleCalloutsAvailable` rather than `showGoogleSection` —
-        upstream's `validateAssetPlan` refuses the whole extension set on any other channel at
-        preflight, BEFORE the budget mutate, so a callout sent on a Performance Max create produces
-        no campaign at all rather than a campaign without callouts. Hiding the section there is the
+        upstream's `validateAssetPlan` refuses callouts on Demand Gen, Display and Video at
+        preflight, BEFORE the budget mutate, so a callout sent on a Demand Gen create produces no
+        campaign at all rather than a campaign without callouts. (Upstream takes them on Performance
+        Max; this application has not opened that pairing.) Hiding the section there is the
         same withholding the payload makes, in the one place the operator can see it.
       -->
       @if (googleCalloutsAvailable()) {
@@ -1443,13 +1443,14 @@
       <!--
         Google Ads: sitelink extensions.
 
-        Same gate as the callouts above, and for the same reason: `validateAssetPlan` counts EVERY
-        extension list together and refuses the whole create on any channel but Search, before the
-        budget mutate. Four fields per entry rather than one string, so this is a sub-form with its
-        own add button instead of an enter-to-add box — a sitelink is only addable once both of its
-        required fields are filled, which no single input can express.
+        Gated on `googleSitelinksAvailable`, not the callouts' gate: `validateAssetPlan` takes
+        sitelinks alone on Demand Gen as well as on Search (campaign-service v1.0.31), and refuses
+        them on Display and Video before the budget mutate. Four fields per entry rather than one
+        string, so this is a sub-form with its own add button instead of an enter-to-add box — a
+        sitelink is only addable once both of its required fields are filled, which no single input
+        can express.
       -->
-      @if (googleCalloutsAvailable()) {
+      @if (googleSitelinksAvailable()) {
         <div
           class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
           data-testid="implementation-google-sitelinks-section"
@@ -1597,7 +1598,7 @@
       <!--
         Google Ads: structured snippets.
 
-        Same gate and same reason as the two sections above. TYPED, not generated: there is no
+        Same gate and same reason as the callouts above. TYPED, not generated: there is no
         generator event for snippets, so this section is the only way one reaches the campaign — and
         the only way one survives a visit is the implementation draft.
 
@@ -1718,8 +1719,8 @@
       <!--
         Google Ads: call extensions.
 
-        Same gate and same reason as the three sections above — `validateAssetPlan` refuses every
-        extension list on a channel but Search. Typed, as the snippets are. Both boxes are required:
+        Same gate and same reason as the callouts and snippets above — `validateAssetPlan` refuses
+        call extensions on every channel but Search. Typed, as the snippets are. Both boxes are required:
         Google interprets a number against its country and has no default to pick.
 
         One message line for the sub-form rather than one per refusal: the refusals come from the

@@ -6370,20 +6370,132 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   it.each([
-    ['a sitelink', [link('Register')]],
-    ['an entry with every field blank, which upstream still counts as asked', [{ text: '', finalUrl: '' }]],
-  ])('refuses %s on a non-Search channel by name, because upstream refuses the whole create there', async (_label, sitelinks) => {
+    ['a sitelink on Display', 'display', 'Display', [link('Register')]],
+    ['a sitelink on Performance Max', 'performance-max', 'Performance Max', [link('Register')]],
+    ['an entry with every field blank, which upstream still counts as asked', 'display', 'Display', [{ text: '', finalUrl: '' }]],
+  ])('refuses %s by name, a channel sitelinks are not sent on', async (_label, channel, channelLabel, sitelinks) => {
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: [channel], sitelinks }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain(`only sent on Search and Demand Gen campaigns, not on ${channelLabel} campaigns`);
+  });
+
+  /**
+   * Demand Gen takes sitelinks alone (campaign-service v1.0.31, `validateAssetPlan`, #474): the
+   * same `validateSitelinks` as Search, linked by the same `createCampaignAssets`. Pinned whole, so a
+   * builder that leaked a Search-shaped field onto the Demand Gen envelope alongside them fails here.
+   */
+  it('dispatches sitelinks on a Demand Gen create, trimmed and untagged, beside nothing else new', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005a1', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          campaignTypes: ['demand-gen'],
+          budgetUsd: 500,
+          sitelinks: [link(' Register '), link('Agenda', { description1: 'Talks', description2: 'Workshops', finalUrl: 'https://events.example.org/agenda' })],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+      budget: 500,
+      channel: 'demand-gen',
+      startDate: '2026-04-01',
+      endDate: '2026-04-30',
+      sitelinks: [
+        { text: 'Register', finalUrl: 'https://events.example.org/register' },
+        { text: 'Agenda', description1: 'Talks', description2: 'Workshops', finalUrl: 'https://events.example.org/agenda' },
+      ],
+    });
+  });
+
+  /**
+   * The builder's own channel gate, behind the by-name refusal: unreachable through a create today,
+   * so pinned on the helper, which must never put sitelinks on a channel outside the list.
+   */
+  it.each([
+    ['search', true],
+    ['demand-gen', true],
+    ['display', false],
+    ['performance-max', false],
+    ['video', false],
+  ] as const)('builds sitelinks for %s only when the channel takes them', (channel, taken) => {
+    const build = (controller as unknown as { googleSitelinks: (body: unknown, channel: string) => Record<string, unknown> }).googleSitelinks.bind(controller);
+
+    expect(build({ sitelinks: [link('Register')] }, channel)).toEqual(
+      taken ? { sitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] } : {}
+    );
+  });
+
+  it.each([
+    ['an absent sitelink list', {}],
+    ['an empty sitelink list', { sitelinks: [] }],
+    ['a null sitelink list', { sitelinks: null }],
+  ])('leaves a Demand Gen request byte-identical for %s', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005a2', error: null });
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+    createCampaigns.mockClear();
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], ...overrides } as never), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+    expect(without).not.toContain('sitelinks');
+  });
+
+  /** The same per-entry rules as Search, because upstream runs the same `validateSitelinks` on both. */
+  it.each([
+    ['no link text', [link('  ')], 'sitelink 1 has no link text'],
+    ['link text over 25 runes', [link('A'.repeat(26))], 'has 26'],
+    ['a repeat in a different case', [link('Register Now'), link('register now')], 'more than once'],
+    ['one description line', [link('Register', { description1: 'Talks' })], 'both description lines'],
+    ['a description line over 35 runes', [link('Register', { description1: 'A'.repeat(36), description2: 'B' })], 'description lines of at most 35'],
+    ['no destination', [link('Register', { finalUrl: '  ' })], 'has no destination URL'],
+    ['a non-web destination', [link('Register', { finalUrl: 'javascript:alert(1)' })], 'not a web address Google accepts'],
+    ['a destination with credentials', [link('Register', { finalUrl: 'https://user:pw@events.example.org/' })], 'not a web address Google accepts'],
+    ['21 sitelinks', [...SITELINKS_20, link('Extra')], 'at most 20 sitelinks'],
+  ])('refuses a Demand Gen sitelink with %s, as on Search', async (_label, sitelinks, expected) => {
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], sitelinks }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(createCampaigns).not.toHaveBeenCalled();
     expect(refusalFrom().field).toBe('sitelinks');
-    expect(refusalFrom().message).toContain('Demand Gen');
+    expect(refusalFrom().message).toContain(expected);
+  });
+
+  /**
+   * Sitelinks open the Demand Gen fence for sitelinks ONLY: upstream refuses every other extension
+   * list there ("ad extensions other than sitelinks ... are not supported on DEMAND_GEN"), so a
+   * callout or snippet beside a valid sitelink is still refused by name before any upstream call.
+   */
+  it.each([
+    ['callouts', { callouts: ['Free to attend'] }, 'callouts'],
+    ['structured snippets', { structuredSnippets: [{ header: 'Types', values: ['Talks', 'Labs', 'Demos'] }] }, 'structured snippets'],
+  ])('still refuses %s on Demand Gen beside a valid sitelink', async (_label, overrides, noun) => {
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], sitelinks: [link('Register')], ...overrides }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain(`only accepts ${noun} on Search campaigns, not on Demand Gen`);
   });
 
   it.each([
     ['the language guard before the sitelink guard', { languages: ['ZU'], sitelinks: [link('')] }, 'languages', 'ZU'],
     ['the sitelink guard before the callout guard', { sitelinks: [link('')], callouts: [''] }, 'sitelinks', 'no link text'],
-    ['the channel before the cap', { campaignTypes: ['demand-gen'], sitelinks: [...SITELINKS_20, link('Extra')] }, 'sitelinks', 'Demand Gen'],
+    ['the channel before the cap', { campaignTypes: ['display'], sitelinks: [...SITELINKS_20, link('Extra')] }, 'sitelinks', 'Display'],
     ['the cap before a bad entry', { sitelinks: [...SITELINKS_20, link('')] }, 'sitelinks', '21'],
     [
       'the first bad entry, a repeat before a bad URL',

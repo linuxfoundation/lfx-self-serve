@@ -10790,19 +10790,43 @@ describe('ImplementationTabComponent google sitelinks', () => {
     expect(c['googleSitelinks']().map((s: CampaignSitelink) => s.text)).toEqual(['Second']);
   });
 
-  /** Search only, and WITHHELD elsewhere rather than refused — exactly as the callouts are. */
-  it('offers sitelinks on Search and withholds them on a non-Search channel', () => {
+  /**
+   * Search and Demand Gen (`GOOGLE_CHANNELS_WITH_SITELINKS`; `validateAssetPlan` takes sitelinks alone
+   * on Demand Gen since campaign-service v1.0.31), and WITHHELD elsewhere rather than refused.
+   */
+  it.each([
+    ['Demand Gen', { includeDemandGen: true }, true],
+    ['Display', { includeDisplay: true }, false],
+    ['Performance Max', { includePerformanceMax: true }, false],
+  ])('offers sitelinks on Search, and after a switch to %s sends them only where the channel takes them', (_label, channel, sent) => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink('Register'));
 
+    expect(c['googleSitelinksAvailable']()).toBe(true);
     expect(c['googleSitelinksPayload']()).toEqual({ sitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] });
 
-    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
     fixture.detectChanges();
 
-    expect(c['googleSitelinksPayload']()).toEqual({});
-    // Held, not discarded — the list is still there if Search is re-ticked.
+    expect(c['googleSitelinksAvailable']()).toBe(sent);
+    expect(c['googleSitelinksPayload']()).toEqual(sent ? { sitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] } : {});
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-sitelinks-section"]') !== null).toBe(sent);
+    // Held, not discarded — the list is still there if the operator switches back.
     expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /**
+   * Sitelinks ONLY: upstream refuses every other extension on Demand Gen, so the callout, snippet,
+   * call, promotion and price controls stay hidden there while the sitelink control shows.
+   */
+  it('shows the sitelink control on Demand Gen and none of the other extension controls', () => {
+    seedChannel(fixture, { includeDemandGen: true });
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    expect(find('implementation-google-sitelinks-section')).not.toBeNull();
+    for (const id of ['callouts', 'structured-snippets', 'call-extensions', 'promotions', 'prices']) {
+      expect(find(`implementation-google-${id}-section`)).toBeNull();
+    }
   });
 
   /** Omitted rather than sent empty, so the upstream default is reached by the absent-key route. */
@@ -10883,25 +10907,37 @@ describe('ImplementationTabComponent google sitelinks', () => {
     expect(c['addGoogleSitelink'](sitelink('Register', { finalUrl }))).toBe(false);
   });
 
-  it('says out loud that sitelinks are withheld after a switch away from Search, in the notice and its live region', () => {
+  it('says out loud that sitelinks are withheld after a switch to Display, in the notice and its live region', () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
     // Mounted, empty, before there is anything to say.
     expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe('');
 
     c['addGoogleSitelink'](sitelink('Register'));
-    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true });
     fixture.detectChanges();
 
     const notice = find('implementation-google-sitelinks-withheld')?.textContent ?? '';
-    expect(notice).toContain('Demand Gen campaigns do not take sitelinks');
+    expect(notice).toContain('Display campaigns do not take sitelinks');
     expect(notice).toContain('the 1 you added');
+    expect(notice).toContain('Switch to Search or Demand Gen to keep them');
     expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe(c['googleSitelinksWithheldWarning']());
     expect(find('implementation-google-sitelinks-withheld')?.getAttribute('role')).toBeNull();
   });
 
   it('shows no sitelinks notice when none were added', () => {
-    const c = seedChannel(fixture, { includeDemandGen: true });
+    const c = seedChannel(fixture, { includeDisplay: true });
+
+    expect(c['googleSitelinksWithheldWarning']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-sitelinks-withheld"]')).toBeNull();
+  });
+
+  /** Demand Gen takes them, so a list carried there is sent, not withheld, and nothing says otherwise. */
+  it('shows no sitelinks notice on Demand Gen, where they are sent', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
 
     expect(c['googleSitelinksWithheldWarning']()).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-sitelinks-withheld"]')).toBeNull();
@@ -10911,11 +10947,11 @@ describe('ImplementationTabComponent google sitelinks', () => {
   it('still names the channel while the capability answer has not come back', () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink('Register'));
-    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true });
     fixture.componentRef.setInput('googleCreativeEnabled', null);
     fixture.detectChanges();
 
-    expect(c['googleSitelinksWithheldWarning']()).toContain('Demand Gen campaigns do not take sitelinks');
+    expect(c['googleSitelinksWithheldWarning']()).toContain('Display campaigns do not take sitelinks');
     expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
   });
 
@@ -10932,7 +10968,8 @@ describe('ImplementationTabComponent google sitelinks', () => {
   /** Through `submit()`, so deleting the payload spread fails here and not only in a helper test. */
   it.each([
     ['Search', { includeSearch: true }, [{ text: 'Register', finalUrl: 'https://events.example.org/register' }]],
-    ['Demand Gen, after a switch from Search', { includeDemandGen: true }, undefined],
+    ['Demand Gen, after a switch from Search', { includeDemandGen: true }, [{ text: 'Register', finalUrl: 'https://events.example.org/register' }]],
+    ['Display, after a switch from Search', { includeDisplay: true }, undefined],
   ])('sends the sitelinks on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedChannel(fixture, { includeSearch: true });
@@ -10946,6 +10983,33 @@ describe('ImplementationTabComponent google sitelinks', () => {
 
     expect(createCampaign).toHaveBeenCalled();
     expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['sitelinks']).toEqual(expected);
+  });
+
+  /**
+   * A Demand Gen create with no sitelinks entered is byte-identical to one built before sitelinks
+   * reached Demand Gen — and lists Demand Gen does not take (here a callout and a snippet typed under
+   * Search) are held, not sent, so they leave it identical too.
+   */
+  it('builds a byte-identical Demand Gen request when no sitelinks are entered, whatever else is held', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const submitDemandGen = async (seed: (c: Record<string, any>) => void): Promise<string> => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      seed(c);
+      c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+      fixture.detectChanges();
+      c['submit']();
+      await fixture.whenStable();
+      return JSON.stringify(createCampaign.mock.calls[createCampaign.mock.calls.length - 1][0]);
+    };
+
+    const bare = await submitDemandGen(() => undefined);
+    const held = await submitDemandGen((c) => {
+      c['addGoogleCallout']('Free To Attend');
+      c['addGoogleStructuredSnippet']('Types', ['Talks', 'Labs', 'Demos']);
+    });
+
+    expect(bare).not.toContain('sitelinks');
+    expect(held).toBe(bare);
   });
 
   it('leaves the list alone when the draft carries no sitelinks key', () => {
@@ -11774,7 +11838,7 @@ describe('ImplementationTabComponent google extensions capability block', () => 
    * so the block holds its tongue. Silent, but not silence: the channel warning is already telling
    * the true reason, which is asserted here so the pair can never both go quiet.
    */
-  it.each([['includeDemandGen'], ['includePerformanceMax']])('says nothing on %s, where the answer would change nothing', (channel) => {
+  it.each([['includeDisplay'], ['includePerformanceMax']])('says nothing on %s, where the answer would change nothing', (channel) => {
     const c = seedWithheld(null, 'failed', 'brief-1');
     c['campaignForm'].patchValue({ includeSearch: false, [channel]: true });
     fixture.detectChanges();
@@ -11782,6 +11846,22 @@ describe('ImplementationTabComponent google extensions capability block', () => 
     expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
     expect(c['googleCalloutsWithheldWarning']()).toContain('do not take callouts');
     expect(c['googleSitelinksWithheldWarning']()).toContain('do not take sitelinks');
+  });
+
+  /**
+   * Demand Gen splits the two reasons by kind: the sitelinks would go out once the check passes, so
+   * the block counts them; the callout would not, so the block leaves it to the callout warning.
+   */
+  it('counts only the sitelinks on Demand Gen, and leaves the callout to its channel warning', () => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    const message = c['googleExtensionsCapabilityBlock']()?.message ?? '';
+    expect(message).toContain('the 1 sitelink on this brief');
+    expect(message).not.toContain('callout');
+    expect(c['googleCalloutsWithheldWarning']()).toContain('Demand Gen campaigns do not take callouts');
+    expect(c['googleSitelinksWithheldWarning']()).toBeNull();
   });
 
   it('says nothing while no Google channel is ticked', () => {
@@ -17574,7 +17654,7 @@ describe('ImplementationTabComponent create another campaign', () => {
 });
 
 /**
- * #5226 W1a opened Demand Gen bidding, languages, ad schedules and devices. A create that touches
+ * #5262 W1a opened Demand Gen bidding, languages, ad schedules and devices. A create that touches
  * none of them must send exactly the request it sent before, on Demand Gen and on every other
  * channel this screen can create. The literal was captured from the tab at the base commit and
  * matched byte for byte after the change.

@@ -54,7 +54,9 @@ import {
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
+  GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS,
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
@@ -1350,6 +1352,13 @@ describe('Google Ads campaign criteria vocabularies', () => {
     expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('performance-max');
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('demand-gen');
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('performance-max');
+  });
+
+  it('fences sitelinks apart from the other extensions, which differ on demand gen', () => {
+    // `validateAssetPlan` (v1.0.31) takes sitelinks alone on Demand Gen (#474) and refuses every
+    // other extension list there. Performance Max is not opened by this client for either.
+    expect([...GOOGLE_CHANNELS_WITH_SITELINKS]).toEqual(['search', 'demand-gen']);
+    expect([...GOOGLE_CHANNELS_WITH_AD_EXTENSIONS]).toEqual(['search']);
   });
 
   it('caps each demographic exclusion list at 20, the per-list bound upstream checks twice', () => {
