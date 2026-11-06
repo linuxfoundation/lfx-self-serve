@@ -109,6 +109,7 @@
           [form]="form"
           nameControl="contributing_organization"
           [resolveOnSelect]="false"
+          [required]="true"
           [resolveToCdpName]="false"
           inputId="pa-organization"
           [maxLength]="textMax"
@@ -126,7 +127,7 @@
         }
       </div>
 
-      <div class="flex flex-col gap-1.5">
+      <div class="flex flex-col gap-1.5" (focusout)="onLegalFocusOut($event)">
         <label for="pa-legal" class="text-sm text-gray-700">{{ labels['legal_contact_email'] }} <span class="text-red-600" aria-hidden="true">*</span></label>
         @if (legalMode() === 'search') {
           <lfx-user-search

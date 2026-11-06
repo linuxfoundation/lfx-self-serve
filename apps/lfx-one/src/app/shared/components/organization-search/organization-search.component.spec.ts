@@ -84,6 +84,19 @@ describe('OrganizationSearchComponent', () => {
     expect(searchInput().getAttribute('aria-invalid')).toBe('true');
   });
 
+  it('renders no aria-required unless the parent marks the field required', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(searchInput().hasAttribute('aria-required')).toBe(false);
+  });
+
+  it('sets aria-required on the search box when the parent marks the field required', async () => {
+    fixture.componentRef.setInput('required', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(searchInput().getAttribute('aria-required')).toBe('true');
+  });
+
   it('still invalidates the stale resolved id once the user types past the selection', async () => {
     searchInput().value = 'acme corp updated';
     searchInput().dispatchEvent(new Event('input'));

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, ElementRef, inject, input, output, signal, Signal } from '@angular/core';
+import { afterEveryRender, Component, ElementRef, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
@@ -38,6 +38,12 @@ export class OrganizationSearchComponent {
   public invalid = input<boolean>(false);
   /** Forwarded to the search box as its native `maxlength`. */
   public maxLength = input<number | null>(null);
+  /**
+   * Marks the search box mandatory for assistive tech (`aria-required`). Unset renders no attribute, so
+   * existing consumers are unchanged. Applied after render because `lfx-autocomplete` has no way to
+   * forward it without adding `aria-required="false"` to every other consumer.
+   */
+  public required = input<boolean>(false);
   public disabled = input<boolean>(false);
   /** When false, the field keeps the user-selected name instead of being overwritten with the
    *  CDP canonical name returned by /api/organizations/resolve. Defaults to true for backward
@@ -110,6 +116,15 @@ export class OrganizationSearchComponent {
   protected suggestions: Signal<OrganizationSuggestion[]>;
 
   public constructor() {
+    afterEveryRender(() => {
+      if (!this.required()) {
+        return;
+      }
+      const input = this.host.nativeElement.querySelector('input');
+      if (input && input.getAttribute('aria-required') !== 'true') {
+        input.setAttribute('aria-required', 'true');
+      }
+    });
     const searchControl = this.organizationForm.get('organizationSearch')!;
 
     // Track search term for footer display. Skip PrimeNG's per-keystroke `undefined` write (see

@@ -47,12 +47,12 @@ import {
   PROJECT_APPLICATION_TEXT_MAX,
   PROJECT_APPLICATION_TRADEMARK_OPTIONS,
 } from '@lfx-one/shared/constants';
-import type { ProjectApplicationAnswers, ProjectApplicationLegalContactMode } from '@lfx-one/shared/interfaces';
+import type { ProjectApplicationAnswers, ProjectApplicationFormMode, ProjectApplicationLegalContactMode } from '@lfx-one/shared/interfaces';
 import { isEmailShape, parseEmailList } from '@lfx-one/shared/utils';
 import { projectApplicationEmailListValidator, projectApplicationLegalEmailValidator, projectApplicationUrlValidator } from '@lfx-one/shared/validators';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
-import { catchError, debounceTime, distinctUntilChanged, filter, map, Observable, of, switchMap } from 'rxjs';
+import { catchError, concat, filter, map, Observable, of, switchMap, timer } from 'rxjs';
 
 /**
  * The "Propose a project" intake form (#3037), shared by the propose page (create) and the
@@ -87,6 +87,8 @@ export class ProjectApplicationFormComponent {
   private readonly legalPicker = viewChild(UserSearchComponent);
 
   // === Inputs ===
+  /** Set by the host: the propose page creates, the drawer revises. Only create prefills the organization. */
+  public readonly mode = input.required<ProjectApplicationFormMode>();
   public readonly initialAnswers = input<ProjectApplicationAnswers | null>(null);
   public readonly submitting = input<boolean>(false);
   public readonly submitLabel = input<string>('Submit to formation team');
@@ -182,7 +184,7 @@ export class ProjectApplicationFormComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((answers) => {
         this.patchFromAnswers(answers);
-        if (answers === null) {
+        if (this.mode() === 'create') {
           this.prefillOrganization();
         }
       });
@@ -192,6 +194,10 @@ export class ProjectApplicationFormComponent {
 
   protected onSubmit(): void {
     if (this.submitting()) {
+      return;
+    }
+    // A click on Save blurs the search first, so a typed address it dropped is recovered here and shown for confirmation.
+    if (this.adoptDiscardedLegalText()) {
       return;
     }
     this.form.markAllAsTouched();
@@ -230,6 +236,19 @@ export class ProjectApplicationFormComponent {
     this.focusLegalInput();
   }
 
+  /**
+   * Tabbing or clicking away from the directory search drops typed-but-unpicked text (GH-2694). If that
+   * text is a valid legal email, keep it: swap to the plain input holding it. Moves into the picker's own
+   * suggestion list are ignored, since a pick is about to follow.
+   */
+  protected onLegalFocusOut(event: FocusEvent): void {
+    const next = event.relatedTarget as Element | null;
+    if (!next || (event.currentTarget as Element).contains(next) || next.closest('.p-overlay, .p-autocomplete-overlay')) {
+      return;
+    }
+    this.adoptDiscardedLegalText();
+  }
+
   /** Back to the directory. A hand-typed address names nobody the directory vouched for, so it is dropped. */
   protected backToLegalSearch(): void {
     this.form.controls.legal_contact_email.setValue('');
@@ -243,7 +262,7 @@ export class ProjectApplicationFormComponent {
    * Best-effort duplicate check: once the user has stopped typing, look the name up among the projects
    * they can see and match it exactly, ignoring case and surrounding spaces. Only a name the user edited
    * is checked (a revise's stored name, loaded by a form reset, is left alone), and a failed search
-   * shows nothing. `switchMap` drops a late answer for a name that has since changed.
+   * shows nothing. The note clears as soon as the name changes, so none lingers while typing.
    */
   private initDuplicateProjectName(): Signal<string | null> {
     const control = this.form.controls.project_name;
@@ -251,15 +270,19 @@ export class ProjectApplicationFormComponent {
       control.valueChanges.pipe(
         filter(() => control.dirty),
         map((value) => (value ?? '').trim()),
-        debounceTime(PROJECT_APPLICATION_NAME_SEARCH_DEBOUNCE_MS),
-        distinctUntilChanged(),
+        // Every edit drops the previous note at once and cancels its timer and request; a note comes
+        // back only if the new name, once typing settles, matches a project.
         switchMap((name): Observable<string | null> => {
           if (name.length < PROJECT_APPLICATION_NAME_SEARCH_MIN_CHARS) {
             return of(null);
           }
-          return this.projectService.searchProjects(name).pipe(
-            map((projects) => projects.find((project) => project.name?.trim().toLowerCase() === name.toLowerCase())?.name ?? null),
-            catchError(() => of(null))
+          return concat(
+            of(null),
+            timer(PROJECT_APPLICATION_NAME_SEARCH_DEBOUNCE_MS).pipe(
+              switchMap(() => this.projectService.searchProjects(name)),
+              map((projects) => projects.find((project) => project.name?.trim().toLowerCase() === name.toLowerCase())?.name ?? null),
+              catchError(() => of(null))
+            )
           );
         })
       ),
@@ -282,11 +305,25 @@ export class ProjectApplicationFormComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((name) => {
         const organization = this.form.controls.contributing_organization;
-        if (!name || this.initialAnswers() !== null || organization.value.trim()) {
+        if (!name || this.mode() !== 'create' || organization.value.trim()) {
           return;
         }
         organization.setValue(name.slice(0, PROJECT_APPLICATION_TEXT_MAX));
       });
+  }
+
+  /** Returns true when text the search discarded was a valid legal email and the plain input now holds it. */
+  private adoptDiscardedLegalText(): boolean {
+    if (this.legalMode() !== 'search') {
+      return false;
+    }
+    const typed = this.legalPicker()?.consumeDiscardedText() ?? null;
+    if (!typed || projectApplicationLegalEmailValidator()(new FormControl(typed)) !== null) {
+      return false;
+    }
+    this.form.controls.legal_contact_email.setValue(typed);
+    this.legalMode.set('manual');
+    return true;
   }
 
   /** Keyboard users activate a link that removes itself; land them on the field that replaced it. */

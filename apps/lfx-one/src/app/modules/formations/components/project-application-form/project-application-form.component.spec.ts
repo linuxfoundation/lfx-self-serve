@@ -6,7 +6,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
-import type { ProjectApplicationAnswers } from '@lfx-one/shared/interfaces';
+import type { ProjectApplicationAnswers, ProjectApplicationFormMode } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import type { AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -35,7 +35,10 @@ describe('ProjectApplicationFormComponent (#3037)', () => {
 
   const access = (): FormAccess => component as unknown as FormAccess;
 
-  const render = async (initialAnswers: ProjectApplicationAnswers | null = null): Promise<void> => {
+  const render = async (
+    initialAnswers: ProjectApplicationAnswers | null = null,
+    mode: ProjectApplicationFormMode = initialAnswers === null ? 'create' : 'revise'
+  ): Promise<void> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [ProjectApplicationFormComponent],
@@ -43,6 +46,7 @@ describe('ProjectApplicationFormComponent (#3037)', () => {
     }).compileComponents();
     fixture = TestBed.createComponent(ProjectApplicationFormComponent);
     component = fixture.componentInstance;
+    fixture.componentRef.setInput('mode', mode);
     fixture.componentRef.setInput('initialAnswers', initialAnswers);
     emitted = [];
     component.submitted.subscribe((answers) => emitted.push(answers));
@@ -133,7 +137,10 @@ describe('ProjectApplicationFormComponent organization and legal contact pickers
   const access = (): FormAccess => component as unknown as FormAccess;
   const root = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
-  const render = async (initialAnswers: ProjectApplicationAnswers | null = null): Promise<void> => {
+  const render = async (
+    initialAnswers: ProjectApplicationAnswers | null = null,
+    mode: ProjectApplicationFormMode = initialAnswers === null ? 'create' : 'revise'
+  ): Promise<void> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [ProjectApplicationFormComponent],
@@ -142,6 +149,7 @@ describe('ProjectApplicationFormComponent organization and legal contact pickers
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(ProjectApplicationFormComponent);
     component = fixture.componentInstance;
+    fixture.componentRef.setInput('mode', mode);
     fixture.componentRef.setInput('initialAnswers', initialAnswers);
     emitted = [];
     component.submitted.subscribe((answers) => emitted.push(answers));
@@ -205,6 +213,10 @@ describe('ProjectApplicationFormComponent organization and legal contact pickers
       expect(emitted).toHaveLength(1);
       expect(emitted[0].contributing_organization).toBe('Acme Motors Ltd');
       http.expectNone(RESOLVE_URL);
+    });
+
+    it('marks the organization input aria-required, like the text inputs beside it', () => {
+      expect(orgInput().getAttribute('aria-required')).toBe('true');
     });
 
     it('still reports the organization as required when nothing was entered', () => {
@@ -311,6 +323,69 @@ describe('ProjectApplicationFormComponent organization and legal contact pickers
     });
   });
 
+  describe('legal contact text the search discarded', () => {
+    const typeIntoSearch = async (text: string): Promise<HTMLInputElement> => {
+      const input = legalSearchInput()!;
+      input.focus();
+      input.value = text;
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      // Blur snaps the box back and records the text; focusout then bubbles to the field.
+      input.dispatchEvent(new Event('blur'));
+      return input;
+    };
+    const focusOut = async (input: HTMLInputElement, relatedTarget: Element | null): Promise<void> => {
+      input.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+
+    beforeEach(async () => {
+      await render();
+    });
+
+    it('keeps a typed address that passes the legal-email check by switching to the plain input holding it', async () => {
+      const input = await typeIntoSearch('counsel@acme-motors.example');
+      await focusOut(input, root().querySelector('#pa-project-name'));
+
+      expect(legalSearchInput()).toBeNull();
+      expect(legalManualInput()?.value).toBe('counsel@acme-motors.example');
+      expect(access().form.controls.legal_contact_email.value).toBe('counsel@acme-motors.example');
+    });
+
+    it('leaves text that is not a valid address in the search, which snaps back as before', async () => {
+      const input = await typeIntoSearch('Pat Counsel');
+      await focusOut(input, root().querySelector('#pa-project-name'));
+
+      expect(legalSearchInput()).not.toBeNull();
+      expect(access().form.controls.legal_contact_email.value).toBe('');
+    });
+
+    it('does not swap while focus moves into the suggestion list, where a pick is about to follow', async () => {
+      const input = await typeIntoSearch('counsel@acme-motors.example');
+      const overlay = document.createElement('div');
+      overlay.className = 'p-overlay';
+      const option = document.createElement('li');
+      overlay.appendChild(option);
+      document.body.appendChild(overlay);
+      await focusOut(input, option);
+      overlay.remove();
+
+      expect(legalSearchInput()).not.toBeNull();
+    });
+
+    it('recovers the typed address when Save is clicked, shows it for confirmation, and does not submit yet', async () => {
+      access().form.patchValue({ ...VALID, legal_contact_email: '' });
+      await typeIntoSearch('counsel@acme-motors.example');
+      access().onSubmit();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(emitted).toHaveLength(0);
+      expect(legalManualInput()?.value).toBe('counsel@acme-motors.example');
+    });
+  });
+
   describe('legal contact on revise', () => {
     it('opens in the plain-input state showing the stored email, and an unchanged save sends it back', async () => {
       await render({ ...VALID, legal_contact_email: 'legal@example.org' });
@@ -336,7 +411,10 @@ describe('ProjectApplicationFormComponent organization prefill (#5251)', () => {
   const organization = (): string => access().form.controls.contributing_organization.value;
   const CURRENT = [{ organization: 'Acme Motors', organizationId: 'org-1', startDate: 'Jan 2020', endDate: null }];
 
-  const render = async (initialAnswers: ProjectApplicationAnswers | null = null): Promise<void> => {
+  const render = async (
+    initialAnswers: ProjectApplicationAnswers | null = null,
+    mode: ProjectApplicationFormMode = initialAnswers === null ? 'create' : 'revise'
+  ): Promise<void> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [ProjectApplicationFormComponent],
@@ -346,6 +424,7 @@ describe('ProjectApplicationFormComponent organization prefill (#5251)', () => {
     messages = TestBed.inject(MessageService);
     fixture = TestBed.createComponent(ProjectApplicationFormComponent);
     component = fixture.componentInstance;
+    fixture.componentRef.setInput('mode', mode);
     fixture.componentRef.setInput('initialAnswers', initialAnswers);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -413,6 +492,13 @@ describe('ProjectApplicationFormComponent organization prefill (#5251)', () => {
     expect(organization()).toBe('Stored Org');
   });
 
+  it('never prefills a revise, even when the held proposal has no payload', async () => {
+    await render(null, 'revise');
+
+    http.expectNone(WORK_EXPERIENCES_URL);
+    expect(organization()).toBe('');
+  });
+
   it('never prefills a revise whose stored organization is empty', async () => {
     await render({ project_name: 'Example Foundation' });
 
@@ -436,7 +522,10 @@ describe('ProjectApplicationFormComponent duplicate project name warning (#5251)
     return text ? text : null;
   };
 
-  const render = async (initialAnswers: ProjectApplicationAnswers | null = null): Promise<void> => {
+  const render = async (
+    initialAnswers: ProjectApplicationAnswers | null = null,
+    mode: ProjectApplicationFormMode = initialAnswers === null ? 'create' : 'revise'
+  ): Promise<void> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [ProjectApplicationFormComponent],
@@ -448,6 +537,7 @@ describe('ProjectApplicationFormComponent duplicate project name warning (#5251)
     vi.useFakeTimers();
     fixture = TestBed.createComponent(ProjectApplicationFormComponent);
     component = fixture.componentInstance;
+    fixture.componentRef.setInput('mode', mode);
     fixture.componentRef.setInput('initialAnswers', initialAnswers);
     emitted = [];
     component.submitted.subscribe((answers) => emitted.push(answers));
@@ -554,6 +644,33 @@ describe('ProjectApplicationFormComponent duplicate project name warning (#5251)
     expect(note()).toBeNull();
   });
 
+  it('clears the note the moment the name changes, before the new search runs', async () => {
+    await render();
+    typeName('Acme Widgets');
+    settle();
+    answer('Acme Widgets', ['Acme Widgets']);
+    expect(note()).not.toBeNull();
+
+    typeName('Acme Widgets 2');
+    fixture.detectChanges();
+
+    expect(note()).toBeNull();
+  });
+
+  it('shows the note again only when the new name matches, not while a stale answer is in flight', async () => {
+    await render();
+    typeName('Acme Widgets');
+    settle();
+    typeName('Acme Widgets 2');
+    fixture.detectChanges();
+    expect(note()).toBeNull();
+
+    settle();
+    answer('Acme Widgets 2', ['Acme Widgets 2']);
+
+    expect(note()).toBe('A project named Acme Widgets 2 already exists.');
+  });
+
   it('cancels the lookup for a name that has since changed, so a late answer cannot show', async () => {
     await render();
     typeName('Acme Widgets');
@@ -603,6 +720,7 @@ describe('ProjectApplicationFormComponent browser autofill hints (#5251)', () =>
       providers: [provideHttpClient(), provideHttpClientTesting(), MessageService],
     }).compileComponents();
     const fixture = TestBed.createComponent(ProjectApplicationFormComponent);
+    fixture.componentRef.setInput('mode', 'revise');
     fixture.componentRef.setInput('initialAnswers', { ...VALID, legal_contact_email: 'legal@example.org' });
     fixture.detectChanges();
     await fixture.whenStable();
