@@ -48,6 +48,8 @@ export class MktgCommentsPanelComponent {
   protected readonly runEnded = signal(false);
   protected readonly startedAt = signal(0);
   protected readonly message = signal('');
+  /** The open count frozen when Send was chosen: the label keeps it while the run is under way, as the comments flip open → sent beneath it. */
+  protected readonly sendingCount = signal<number | null>(null);
 
   protected readonly openCount = computed(
     () => this.comments.threads().filter((row) => row.status === 'open' && row.revisionId === this.scope().revisionId).length
@@ -76,6 +78,7 @@ export class MktgCommentsPanelComponent {
         this.activity.set([]);
         this.runEnded.set(false);
         this.runPending.set(false);
+        this.sendingCount.set(null);
         this.landingTab = undefined;
         this.syncRecovery();
         if (this.redrafts.hasAcceptedAttempt(this.scope())) this.observe(this.redrafts.resume(this.scope())); // Read-only: never auto-resubmit an unknown ACK.
@@ -104,6 +107,7 @@ export class MktgCommentsPanelComponent {
         .filter((row) => row.status === 'open' && row.revisionId === this.scope().revisionId)
         .at(-1);
       this.landingTab = pinned ? mktgDocumentCommentTab(this.scope().agentKey, pinned.anchor.key) : undefined;
+      this.sendingCount.set(this.openCount());
     }
     this.observe(this.redrafts.send(this.scope(), this.priorVersion() ?? 0));
   }
@@ -135,6 +139,12 @@ export class MktgCommentsPanelComponent {
   // Private initializers.
   private initSendLabel(): Signal<string> {
     return computed(() => {
+      if (this.runPending()) {
+        const sending = this.sendingCount();
+        if (sending !== null) return `Sending ${sending} comment${sending === 1 ? '' : 's'} to the agent…`;
+        // A restored accepted attempt is being observed, not retried: its intent is still saved, so retrySend alone would read as Retry.
+        if (!this.retrySend() || this.accepted()) return 'Sending comments to the agent…';
+      }
       if (this.retrySend()) return 'Retry the same redraft';
       if (!this.comments.loaded() || this.comments.loading() || this.comments.loadError()) return 'Send comments to the agent';
       const count = this.openCount();
@@ -175,7 +185,10 @@ export class MktgCommentsPanelComponent {
     this.work = stream
       .pipe(
         finalize(() => {
-          if (owner === this.comments.draftScopeKey()) this.runPending.set(false);
+          if (owner === this.comments.draftScopeKey()) {
+            this.runPending.set(false);
+            this.sendingCount.set(null);
+          }
         })
       )
       .subscribe({

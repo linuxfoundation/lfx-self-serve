@@ -28,7 +28,7 @@ test.describe('Marketing OS current revisions', () => {
     await page.screenshot({ path: testInfo.outputPath('final-state.png'), fullPage: true });
   });
 
-  async function setupStateBanner(page: Page, highest = 3) {
+  async function setupApprovedCurrent(page: Page, highest = 3) {
     await setupDocuments(page, { currentRevisionNumber: 3 });
     const approval = { approvedAt: '2026-11-02T16:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
     let metadata = documentFixture(3, 3);
@@ -46,7 +46,7 @@ test.describe('Marketing OS current revisions', () => {
     const path = `/api/mktg-agents/documents/${DOCUMENT_TYPE.agentKey}/living`;
     const move = (number: number) => {
       const selected = metadata.revisions.find((row) => row.number === number);
-      if (!selected) throw new Error('Missing synthetic banner current');
+      if (!selected) throw new Error('Missing synthetic approved current');
       metadata = {
         ...metadata,
         revisions: metadata.revisions.map((row) => ({ ...row, latest: row.id === selected.id })),
@@ -81,84 +81,27 @@ test.describe('Marketing OS current revisions', () => {
     return { move, polls: () => polls, revisionId: (number: number) => metadata.revisions.find((row) => row.number === number)?.id ?? '' };
   }
 
-  test('opening an older revision shows the state banner and opens the approved current', async ({ page }) => {
-    const state = await setupStateBanner(page);
+  test('opening an older revision shows only the Current pill for the approved current, and its Open link leads there', async ({ page }) => {
+    const state = await setupApprovedCurrent(page);
     await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(1)}`);
-    const banner = page.getByTestId('mktg-document-view-current-banner');
-    await expect(banner).toContainText('v3 is now the current version, approved by Synthetic reviewer. You are reading v1.');
-    const open = page.getByTestId('mktg-document-view-current-banner-open');
-    await expect(open).toHaveText('Open v3');
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 1');
+    await expect(page.getByTestId('mktg-document-view-current-3')).toHaveText('Current');
+    await expect(page.getByTestId('mktg-document-view-page')).not.toContainText('is now the current version');
+    await expect(page.getByTestId('mktg-document-view-page')).not.toContainText('Keep reading');
+    const open = page.getByTestId('mktg-document-view-open-3');
     await expect(open).toHaveAttribute('href', new RegExp(`revision=${state.revisionId(3)}`));
     await open.click();
-    await expect(banner).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
-    await expect(page.getByTestId('mktg-document-view-title')).toBeFocused();
-  });
-
-  test('Keep reading stays dismissed across two polls and returns when approved current changes', async ({ page }) => {
-    const state = await setupStateBanner(page);
-    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(1)}`);
-    await page.getByTestId('mktg-document-view-current-banner-dismiss').click();
-    await expect(page.getByTestId('mktg-document-view-title')).toBeFocused();
-    const before = state.polls();
-    await expect.poll(state.polls, { timeout: 20_000 }).toBeGreaterThanOrEqual(before + 2);
-    await expect(page.getByTestId('mktg-document-view-current-banner')).toHaveCount(0);
-    state.move(2);
-    await expect(page.getByTestId('mktg-document-view-current-banner')).toContainText('v2 is now the current version', { timeout: 20_000 });
-    state.move(3);
-    await expect(page.getByTestId('mktg-document-view-current-banner')).toContainText('v3 is now the current version', { timeout: 20_000 });
-    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 1');
-  });
-
-  for (const width of [360, 390]) {
-    test(`the phone state banner wraps v12 actions below the text without overflow at ${width}px`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 1000 });
-      const state = await setupStateBanner(page, 14);
-      await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(12)}`);
-      const banner = page.getByTestId('mktg-document-view-current-banner');
-      const open = page.getByTestId('mktg-document-view-current-banner-open');
-      const keep = page.getByTestId('mktg-document-view-current-banner-dismiss');
-      await expect(banner).toBeVisible();
-      await expect(keep).toHaveText('Keep reading v12');
-      const textBox = await banner.locator('span').first().boundingBox();
-      const openBox = await open.boundingBox();
-      const keepBox = await keep.boundingBox();
-      if (!textBox || !openBox || !keepBox) throw new Error('Missing synthetic phone banner controls');
-      expect(openBox.y).toBeGreaterThanOrEqual(textBox.y + textBox.height);
-      expect(keepBox.y).toBeCloseTo(openBox.y, 0);
-      expect(await banner.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-    });
-  }
-
-  test('the desktop state banner aligns its text and actions in one row at 1280px', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 1000 });
-    const state = await setupStateBanner(page, 14);
-    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(12)}`);
-    const banner = page.getByTestId('mktg-document-view-current-banner');
-    await expect(banner).toBeVisible();
-    const textBox = await banner.locator('span').first().boundingBox();
-    const openBox = await page.getByTestId('mktg-document-view-current-banner-open').boundingBox();
-    const keepBox = await page.getByTestId('mktg-document-view-current-banner-dismiss').boundingBox();
-    const titleBox = await page.getByTestId('mktg-document-view-title-card').boundingBox();
-    const bannerBox = await banner.boundingBox();
-    if (!textBox || !openBox || !keepBox || !titleBox || !bannerBox) throw new Error('Missing synthetic desktop banner geometry');
-    expect(openBox.x).toBeGreaterThanOrEqual(textBox.x + textBox.width);
-    expect(openBox.y + openBox.height / 2).toBeCloseTo(textBox.y + textBox.height / 2, 0);
-    expect(keepBox.y + keepBox.height / 2).toBeCloseTo(openBox.y + openBox.height / 2, 0);
-    expect(titleBox.y).toBeGreaterThanOrEqual(bannerBox.y + bannerBox.height);
-    expect(await banner.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   });
 
   test('the viewed non-current row keeps Make current beside here', async ({ page }) => {
-    const state = await setupStateBanner(page);
+    const state = await setupApprovedCurrent(page);
     await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(1)}`);
     const row = page.getByTestId('mktg-document-view-revision-1');
     await expect(row).toContainText('here');
     await expect(row.getByTestId('mktg-document-view-viewed-make-current')).toHaveText('Make current');
     await row.getByTestId('mktg-document-view-viewed-make-current').click();
     await expect(page.getByTestId('mktg-document-view-current-1')).toBeVisible();
-    await expect(page.getByTestId('mktg-document-view-current-banner')).toHaveCount(0);
     await expect(row.getByTestId('mktg-document-view-viewed-make-current')).toHaveCount(0);
   });
 

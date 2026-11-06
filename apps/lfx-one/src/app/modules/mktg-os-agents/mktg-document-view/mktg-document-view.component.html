@@ -5,44 +5,6 @@
   <span class="sr-only" role="status" aria-live="polite" [textContent]="savingStatus()" data-testid="mktg-document-view-saving-status"></span>
   <div class="flex flex-col gap-5 mt-3">
     <lfx-mktg-breadcrumb [page]="breadcrumbPage()" />
-    <span
-      class="sr-only"
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-      data-testid="mktg-document-view-current-banner-status"
-      [textContent]="currentBanner()?.sentence ?? ''"></span>
-    <!-- BannerPhone.dc.html: 12px padding / 14px type; Banner.dc.html: 16px x 12px / 15px type (the app root is 14px). -->
-    @if (currentBanner(); as banner) {
-      <div
-        data-testid="mktg-document-view-current-banner"
-        class="flex min-w-0 flex-col gap-3 rounded-lg border border-blue-600 bg-blue-50 p-[12px] text-[14px] leading-[1.45] text-gray-900 md:flex-row md:items-center md:px-[16px] md:text-[15px]">
-        <span class="min-w-0 flex-1">
-          <strong>v{{ banner.number }} is now the current version</strong>{{ banner.approverClause }}. You are reading v{{ banner.viewedNumber }}.
-        </span>
-        <div class="flex w-full shrink-0 gap-2 md:w-auto">
-          <a
-            [routerLink]="submittingGeneration() ? null : []"
-            [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
-            [attr.tabindex]="submittingGeneration() ? -1 : null"
-            [class.opacity-50]="submittingGeneration()"
-            [queryParams]="{ revision: banner.id }"
-            queryParamsHandling="merge"
-            data-testid="mktg-document-view-current-banner-open"
-            class="min-w-0 flex-1 whitespace-normal rounded-lg bg-blue-600 px-4 py-2 text-center font-semibold text-white hover:bg-blue-700 md:flex-none md:whitespace-nowrap"
-            (click)="onBannerOpen($event)"
-            >Open v{{ banner.number }}</a
-          >
-          <button
-            type="button"
-            data-testid="mktg-document-view-current-banner-dismiss"
-            class="min-w-0 flex-1 whitespace-normal rounded-lg border border-gray-200 bg-white px-4 py-2 text-center hover:bg-gray-50 md:flex-none md:whitespace-nowrap"
-            (click)="dismissCurrentBanner()">
-            Keep reading v{{ banner.viewedNumber }}
-          </button>
-        </div>
-      </div>
-    }
     <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-title-card">
       <div class="flex min-w-0 flex-col gap-1">
@@ -51,12 +13,7 @@
             <lfx-mktg-skeleton variant="header" />
           </div>
         } @else {
-          <h1
-            #documentTitle
-            tabindex="-1"
-            class="text-base font-semibold text-gray-900"
-            [class.break-words]="isLinkedinDocument()"
-            data-testid="mktg-document-view-title">
+          <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">
             {{ isAeoDocument() && title() ? aeoHeaderTitle() : title() || 'Document' }}
           </h1>
         }
