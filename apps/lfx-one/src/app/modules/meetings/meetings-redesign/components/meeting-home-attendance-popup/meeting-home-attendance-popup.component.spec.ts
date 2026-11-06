@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OverlayContainer } from '@angular/cdk/overlay';
+import { CdkConnectedOverlay, OverlayContainer } from '@angular/cdk/overlay';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { Meeting, MeetingHomeAttendance, MeetingHomeRow, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { Subject } from 'rxjs';
@@ -145,6 +146,22 @@ describe('MeetingHomeAttendancePopupComponent', () => {
     await fixture.whenStable();
 
     expect(popup()).not.toBeNull();
+  });
+
+  it('places the popup again when the people load and when any container scrolls', async () => {
+    const fixture = await render(buildRow({}));
+    await hover(fixture, 'pointerenter');
+    const overlayRef = fixture.debugElement.queryAllNodes(By.directive(CdkConnectedOverlay))[0].injector.get(CdkConnectedOverlay).overlayRef;
+    const update = vi.spyOn(overlayRef, 'updatePosition');
+
+    registrants$.next(REGISTRANTS);
+    await fixture.whenStable();
+    expect(update).toHaveBeenCalledTimes(1);
+
+    const column = document.body.appendChild(document.createElement('div'));
+    column.dispatchEvent(new Event('scroll'));
+    expect(update).toHaveBeenCalledTimes(2);
+    column.remove();
   });
 
   it("loads a past meeting's participants by its occurrence id", async () => {

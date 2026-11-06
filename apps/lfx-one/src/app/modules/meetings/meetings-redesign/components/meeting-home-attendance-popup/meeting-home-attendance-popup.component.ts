@@ -4,7 +4,20 @@
 import { _IdGenerator, InputModalityDetector } from '@angular/cdk/a11y';
 import { hasModifierKey } from '@angular/cdk/keycodes';
 import { CdkConnectedOverlay, CdkOverlayOrigin, ConnectedPosition } from '@angular/cdk/overlay';
-import { booleanAttribute, ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import {
+  afterRenderEffect,
+  booleanAttribute,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  inject,
+  input,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MeetingHomeAttendance, MeetingHomeRow, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
 import { getPastMeetingResourceId, resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
@@ -31,6 +44,7 @@ export class MeetingHomeAttendancePopupComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly inputModality = inject(InputModalityDetector);
   private readonly idGenerator = inject(_IdGenerator);
+  private readonly document = inject(DOCUMENT);
 
   public readonly row = input.required<MeetingHomeRow>();
   public readonly attendance = input.required<MeetingHomeAttendance>();
@@ -45,6 +59,7 @@ export class MeetingHomeAttendancePopupComponent {
   ];
   protected readonly open = signal(false);
   protected readonly loading = signal(false);
+  private readonly connectedOverlay = viewChild(CdkConnectedOverlay);
   private readonly cache = signal<Record<string, readonly (MeetingRegistrant | PastMeetingParticipant)[]>>({});
 
   protected readonly people: Signal<readonly (MeetingRegistrant | PastMeetingParticipant)[] | null> = computed(() => this.cache()[this.row().key] ?? null);
@@ -64,6 +79,15 @@ export class MeetingHomeAttendancePopupComponent {
   private keyboardFocused = false;
 
   public constructor() {
+    // Re-place the popup once the grid replaces the spinner, and on any scroll, as the list scrolls in its own column.
+    afterRenderEffect((onCleanup) => {
+      this.people();
+      if (!this.visible()) return;
+      const reposition = (): void => this.connectedOverlay()?.overlayRef?.updatePosition();
+      reposition();
+      this.document.addEventListener('scroll', reposition, true);
+      onCleanup(() => this.document.removeEventListener('scroll', reposition, true));
+    });
     this.destroyRef.onDestroy(() => {
       this.cancelShow();
       this.cancelHide();
