@@ -271,7 +271,7 @@ describe('buildBrandKitPrintPages', () => {
     expect(onDark(buttons, 'Primary button')).toBe(lightLook.onDark);
   });
 
-  it('takes the prototype’s look items: the verdict pills by grade, the solid accent call-out, the grid ground on the hero band and the keynote card', () => {
+  it('takes the prototype’s look items: the verdict pills by grade and the solid accent call-out; the hero band and the usage cards flat', () => {
     const kit = brandKitTestRevision();
     kit.chapters.color.contrast.pairs = [
       { foreground: 'Charcoal', background: 'White', ratio: 8.3, grade: 'AAA' },
@@ -298,13 +298,11 @@ describe('buildBrandKitPrintPages', () => {
     expect(callout).toMatchObject({ shape: 'ROUND_RECTANGLE', fill: look.accent, line: null });
     expect(callout.text?.paras[0].color).toBe(look.dark);
     expect(imagery.els.filter((el) => el.t === 'shape' && el.fill === look.tint)).toHaveLength(0);
+    // The hero band and the usage cards are flat (the grid ground printed coarse; the covers keep theirs): no element carries a ground.
     const [hero] = shapesWith(imagery, '— Eyebrow');
-    expect(hero).toMatchObject({ fill: look.dark, ground: 'grid' });
+    expect(hero).toMatchObject({ fill: look.dark });
     const usage = pagesOf(kit).find((p) => p.title === 'Example usage') as MktgPrintPage;
-    const grounds = usage.els.filter((el): el is MktgPrintPageShapeEl => el.t === 'shape' && el.ground === 'grid');
-    // The keynote alone: the social card, on the dark too, keeps the plain dark.
-    expect(grounds).toHaveLength(1);
-    expect(grounds[0].text?.paras[0].text).toBe(kit.chapters.voice.line);
+    expect([...imagery.els, ...usage.els].filter((el) => el.t === 'shape' && el.ground !== undefined)).toHaveLength(0);
   });
 
   it('sets the voice page: the umbrella and the brand line over a rule, the four attributes under them on the same page when they fit', () => {
