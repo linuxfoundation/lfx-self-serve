@@ -222,18 +222,23 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
   // The page's room is in the document, not the @page margin (none, so no browser header or footer): every kit chapter
-  // repeats a 0.55in foot per page, and the other sections print in sheets that repeat a head and a foot, one row per
-  // block: the family cover 1; the framework 1 + 5 + 3 (its cover sheet is in the DOM, hidden above, and counted here);
+  // repeats its head's 0.55in per page and pads its last row, and the other sections print in sheets that repeat a head
+  // and pad their last row, one row per block — no footer group anywhere, for which Chromium prints an empty page per
+  // table: the family cover 1; the framework 1 + 5 + 3 (its cover sheet is in the DOM, hidden above, and counted here);
   // the boilerplates 4 lengths; the FAQ its header + 4 pairs. toHaveCount counts hidden elements: 6 sheets, 5 shown.
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tfoot')).toHaveCount(5);
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tfoot').first()).toHaveCSS('display', 'table-footer-group');
-  await expect(printDocument.getByTestId('mktg-print-sheet-foot')).toHaveCount(6);
-  await expect(printDocument.getByTestId('mktg-print-sheet-foot').locator('visible=true')).toHaveCount(5);
+  await expect(printDocument.locator('tfoot, [data-testid="mktg-print-sheet-foot"]')).toHaveCount(0);
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
+  await expect(printDocument.getByTestId('mktg-print-sheet-head')).toHaveCount(6);
+  await expect(printDocument.getByTestId('mktg-print-sheet-head').locator('visible=true')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-print-sheet-row')).toHaveCount(1 + 9 + 4 + 5);
   // The engine's page setup: Chromium margin 0 with the room in the document; WebKit the margins, the room collapsed.
   await expectMktgPrintPageSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'), browserName);
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tfoot > tr > td').first()).toHaveCSS(
-    'height',
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tbody > tr:last-child > td').first()).toHaveCSS(
+    'padding-bottom',
+    browserName === 'webkit' ? '13.3333px' : '66.1333px'
+  );
+  await expect(printDocument.locator('lfx-mktg-faq-print lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell')).toHaveCSS(
+    'padding-bottom',
     browserName === 'webkit' ? '0px' : '52.8px'
   );
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);

@@ -110,13 +110,14 @@ test.describe('AEO/GEO audit content', () => {
     expect(frameCreatedSynchronously).toContain(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
     await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, '[data-testid="mktg-document-view-print"]');
     await expect(page.getByTestId('mktg-document-view-print')).toContainText('Add a detailed FAQ');
-    // The report prints through one flowing sheet row: the sheet's head and foot give every page its room (Chromium), or
-    // the page margins do (WebKit), as for the asset prints.
+    // The report prints through one flowing sheet row: the sheet's head gives every page its top room and the row its
+    // bottom room (Chromium), or the page margins do (WebKit), as for the asset prints.
     const printArticle = mktgPrintFrame(page).locator('[data-testid="mktg-document-view-print"] article.lfx-framework-print');
     await expect(
       printArticle.locator(':scope > lfx-mktg-print-sheet > .lfx-print-sheet-body > lfx-mktg-print-sheet-row.lfx-print-sheet-row-flows')
     ).toHaveCount(1);
-    await expect(printArticle.getByTestId('mktg-print-sheet-foot')).toHaveCount(1);
+    await expect(printArticle.getByTestId('mktg-print-sheet-head')).toHaveCount(1);
+    await expect(printArticle.getByTestId('mktg-print-sheet-foot')).toHaveCount(0);
     await expect(printArticle.locator('lfx-mktg-print-sheet-row lfx-aeo-geo-report')).toHaveCount(1);
     expect(downloads).toHaveLength(0);
     await finishMktgPrintFrame(page);

@@ -437,7 +437,7 @@ describe('Family export slot', () => {
       'lfx-mktg-faq-print',
     ]);
     const cover = document?.querySelector<HTMLElement>('[data-testid="family-export-print-cover"]');
-    // The cover prints in a sheet whose head and foot repeat the page room, as its one row; its sides are its own margin.
+    // The cover prints in a sheet whose head gives the page's top room, as its one row (the bottom room is that row's); its sides are its own margin.
     expect(cover?.closest('lfx-mktg-print-sheet')?.classList.contains('break-after-page')).toBe(true);
     expect(cover?.closest('lfx-mktg-print-sheet')?.querySelectorAll('lfx-mktg-print-sheet-row')).toHaveLength(1);
     expect(cover?.parentElement?.getAttribute('data-testid')).toBe('mktg-print-sheet-cell');

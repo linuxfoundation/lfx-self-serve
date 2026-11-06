@@ -44,21 +44,20 @@ it('prints five native portrait chapters with branded heads, real SVG logo asset
   expect(root.textContent).not.toContain('V3.0');
   expect(root.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V3.0');
   expect(root.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
-  // The page's room, repeated per page by the chapter's head (its padding) and an empty foot: no @page margin remains.
-  expect(root.querySelectorAll('.kit-chapter > tfoot > tr > td')).toHaveLength(5);
-  const foot = root.querySelector<HTMLElement>('.kit-chapter > tfoot');
-  const footCell = root.querySelector<HTMLElement>('.kit-chapter > tfoot > tr > td');
+  // The page's room: the top repeated per page by the chapter's head (its padding), the bottom once per chapter on its
+  // last row — never a footer group, for which Chromium prints an empty page per table. No @page margin remains.
+  expect(root.querySelectorAll('.kit-chapter > tfoot')).toHaveLength(0);
+  const lastCells = root.querySelectorAll<HTMLElement>('.kit-chapter > tbody > tr:last-child > td');
   const headCell = root.querySelector<HTMLElement>('.kit-chapter > thead > tr > td');
-  if (!foot || !footCell || !headCell) throw new Error('Missing synthetic kit chapter room');
-  expect(getComputedStyle(foot).display).toBe('table-footer-group');
-  // 0.55in (52.8px at 96dpi, jsdom's computed value).
-  expect(getComputedStyle(footCell).height).toBe('52.8px');
+  if (lastCells.length !== 5 || !headCell) throw new Error('Missing synthetic kit chapter room');
+  // 0.55in (52.8px at 96dpi, jsdom's computed value); the last row keeps its 10pt (13.33px) under it.
   expect(getComputedStyle(headCell).paddingTop).toBe('52.8px');
-  // On the page margins (WebKit prints a table's head and foot once) the margin is the room and the chapters give none.
+  lastCells.forEach((cell) => expect(getComputedStyle(cell).paddingBottom).toBe('66.1333px'));
+  // On the page margins (WebKit prints a table's head once) the margin is the room and the chapters give none.
   document.body.classList.add(MKTG_PRINT_PAGE_MARGINS_CLASS);
   try {
-    expect(getComputedStyle(footCell).height).toBe('0px');
     expect(getComputedStyle(headCell).paddingTop).toBe('0px');
+    expect(getComputedStyle(lastCells[0]).paddingBottom).toBe('13.3333px');
   } finally {
     document.body.classList.remove(MKTG_PRINT_PAGE_MARGINS_CLASS);
   }

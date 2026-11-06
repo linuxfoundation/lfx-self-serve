@@ -26,27 +26,27 @@ it('is a table whose head and foot repeat the page room on every page, with the 
   const sheet = root.querySelector<HTMLElement>('lfx-mktg-print-sheet');
   const head = root.querySelector<HTMLElement>('[data-testid="mktg-print-sheet-head"]');
   const body = root.querySelector<HTMLElement>('[data-testid="mktg-print-sheet-body"]');
-  const foot = root.querySelector<HTMLElement>('[data-testid="mktg-print-sheet-foot"]');
-  if (!sheet || !head || !body || !foot) throw new Error('Missing synthetic print sheet');
-  expect(Array.from(sheet.children, (group) => group.getAttribute('data-testid'))).toEqual([
-    'mktg-print-sheet-head',
-    'mktg-print-sheet-body',
-    'mktg-print-sheet-foot',
-  ]);
+  const cell = root.querySelector<HTMLElement>('[data-testid="mktg-print-sheet-cell"]');
+  if (!sheet || !head || !body || !cell) throw new Error('Missing synthetic print sheet');
+  // A head group and the body: no footer group (Chromium prints an empty page per table for any repeating footer).
+  expect(Array.from(sheet.children, (group) => group.getAttribute('data-testid'))).toEqual(['mktg-print-sheet-head', 'mktg-print-sheet-body']);
+  expect(root.querySelector('[data-testid="mktg-print-sheet-foot"], tfoot')).toBeNull();
   expect(getComputedStyle(sheet).display).toBe('table');
   expect(getComputedStyle(head).display).toBe('table-header-group');
   expect(getComputedStyle(body).display).toBe('table-row-group');
-  expect(getComputedStyle(foot).display).toBe('table-footer-group');
-  // 0.55in each (52.8px at 96dpi, jsdom's computed value): the room the portrait page margin used to give.
-  const rooms = [head, foot].map((group) => group.querySelector<HTMLElement>('.lfx-print-sheet-room'));
-  expect(rooms.map((room) => room && getComputedStyle(room).display)).toEqual(['table-row', 'table-row']);
-  expect(rooms.map((room) => room && getComputedStyle(room).height)).toEqual(['52.8px', '52.8px']);
+  // 0.55in (52.8px at 96dpi, jsdom's computed value): the top room the portrait page margin used to give, repeated per
+  // page by the head; the bottom room, once per sheet, is the last row's cell padding.
+  const room = head.querySelector<HTMLElement>('.lfx-print-sheet-room');
+  expect(room && getComputedStyle(room).display).toBe('table-row');
+  expect(room && getComputedStyle(room).height).toBe('52.8px');
+  expect(getComputedStyle(cell).paddingBottom).toBe('52.8px');
   // The body holds the rows and nothing else: a page breaks only between them.
   expect(Array.from(body.children, (row) => row.tagName.toLowerCase())).toEqual(['lfx-mktg-print-sheet-row']);
-  // On the page margins (WebKit prints a table's head and foot once) the margin is the room and the rows give none.
+  // On the page margins (WebKit prints a table's head once) the margin is the room and the sheet gives none.
   document.body.classList.add(MKTG_PRINT_PAGE_MARGINS_CLASS);
   try {
-    expect(rooms.map((room) => room && getComputedStyle(room).height)).toEqual(['0px', '0px']);
+    expect(room && getComputedStyle(room).height).toBe('0px');
+    expect(getComputedStyle(cell).paddingBottom).toBe('0px');
   } finally {
     document.body.classList.remove(MKTG_PRINT_PAGE_MARGINS_CLASS);
   }

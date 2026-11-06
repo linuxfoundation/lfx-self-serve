@@ -1,9 +1,12 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-/* A CSS table, so the head and foot groups repeat on every page (CSS 2.1 §17.2) as
-   the kit's chapter tables do, and the body's rows (lfx-mktg-print-sheet-row, one
-   per block) are the only places a page may break. */
+/* A CSS table, so the head group repeats on every page (CSS 2.1 §17.2) as the kit's
+   chapter tables do, and the body's rows (lfx-mktg-print-sheet-row, one per block)
+   are the only places a page may break. No footer group: Chromium emits one extra,
+   empty page fragment per table for any repeating footer, even an empty one of
+   height 0 (QA round 1: every PDF doubled its pages), so the bottom room is the last
+   row's cell padding (lfx-mktg-print-sheet-row), once per sheet, not per page. */
 :host {
   display: table;
   width: 100%;
@@ -23,20 +26,24 @@
   break-inside: auto;
 }
 
-.lfx-print-sheet-foot {
-  display: table-footer-group;
-  break-inside: avoid;
-}
-
-/* 0.55in each, the room the portrait page margin used to give; the kit's chapter
-   tables carry the same two values (mktg-brand-kit-print.component.scss). */
+/* 0.55in, the top room the portrait page margin used to give, on every page; the last row's cell
+   carries the same value at the bottom (lfx-mktg-print-sheet-row), and so do the kit's chapter tables
+   (mktg-brand-kit-print.component.scss). */
 .lfx-print-sheet-room {
   display: table-row;
   height: 0.55in;
 }
 
-/* On the page margins (WebKit, which prints a table's head and foot once: MKTG_PRINT_PAGE_MARGINS_CLASS
-   on the frame's body) the margin gives the room again, and the rows give none. */
+/* The sheet and its rows paint white under print, as the section chain they replaced did:
+   the screen's canvas must never show through the unused part of a page. */
+@media print {
+  :host {
+    background: white;
+  }
+}
+
+/* On the page margins (WebKit, which prints a table's head once: MKTG_PRINT_PAGE_MARGINS_CLASS on the
+   frame's body) the margin gives the room again, and the sheet gives none. */
 :host-context(.lfx-print-page-margins) .lfx-print-sheet-room {
   height: 0;
 }

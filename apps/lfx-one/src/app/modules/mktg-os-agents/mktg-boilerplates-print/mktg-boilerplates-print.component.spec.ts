@@ -20,7 +20,7 @@ it('prints all four labelled lengths intact, with the title kept beside the firs
   expect(root.querySelector('section')?.classList.contains('break-before-page')).toBe(true);
   const blocks = root.querySelectorAll('article');
   expect(blocks).toHaveLength(4);
-  // One sheet, whose head and foot repeat the page room on every page; one row per length, so a page breaks only between lengths.
+  // One sheet, whose head repeats the page's top room on every page; one row per length, so a page breaks only between lengths.
   expect(root.querySelectorAll('section > lfx-mktg-print-sheet [data-testid="mktg-print-sheet-body"] > lfx-mktg-print-sheet-row')).toHaveLength(4);
   expect(root.querySelectorAll('lfx-mktg-print-sheet-row > * > article')).toHaveLength(4);
   blocks.forEach((block, index) => {

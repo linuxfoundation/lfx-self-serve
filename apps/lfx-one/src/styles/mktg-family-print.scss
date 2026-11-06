@@ -125,6 +125,8 @@
       page: mktg-framework;
       width: 100%;
       break-before: page;
+      /* The whole ancestor chain of a print root paints white: the screen's canvas never shows through a page. */
+      background: white;
     }
 
     /* The legacy standalone book uses hidden visibility on the shell. Its

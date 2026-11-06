@@ -247,16 +247,28 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
       await expect(print).toHaveCSS('page', 'mktg-framework');
       await expect(print.getByTestId('kit-print-type')).toContainText('Typography');
-      await expect(print.locator('.kit-chapter > tfoot')).toHaveCount(5);
+      // No footer group (Chromium prints an empty page per table for one): the bottom room is the last row's.
+      await expect(print.locator('.kit-chapter > tfoot')).toHaveCount(0);
+      await expect(print.locator('.kit-chapter > tbody > tr:last-child > td')).toHaveCount(5);
+      await expect(print.locator('.kit-chapter > tbody > tr:last-child > td').first()).toHaveCSS(
+        'padding-bottom',
+        browserName === 'webkit' ? '13.3333px' : '66.1333px'
+      );
     } else {
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
       await expectMktgPrintCover(frame.getByTestId('mktg-framework-print-cover'));
-      // Each section prints in a sheet whose head and foot repeat the page room in Chromium (the @page margin is 0: no
-      // browser header or footer; in WebKit the margins give it and the rows are empty), one row per block, so a page
-      // breaks only between blocks: 1 (cover) + 5 (framework) + 3 (key numbers).
-      await expect(print.getByTestId('mktg-print-sheet-foot')).toHaveCount(3);
-      await expect(print.getByTestId('mktg-print-sheet-foot').first()).toHaveCSS('display', 'table-footer-group');
+      // Each section prints in a sheet whose head repeats the page's top room in Chromium (the @page margin is 0: no
+      // browser header or footer; in WebKit the margins give it and the row is empty) and whose last row carries the
+      // bottom room — no footer group, for which Chromium prints an empty page per sheet —, one row per block, so a
+      // page breaks only between blocks: 1 (cover) + 5 (framework) + 3 (key numbers).
+      await expect(print.getByTestId('mktg-print-sheet-head')).toHaveCount(3);
+      await expect(print.getByTestId('mktg-print-sheet-head').first()).toHaveCSS('display', 'table-header-group');
+      await expect(print.getByTestId('mktg-print-sheet-foot')).toHaveCount(0);
       await expect(print.locator('.lfx-print-sheet-room').first()).toHaveCSS('height', browserName === 'webkit' ? '0px' : '52.8px');
+      await expect(print.locator('lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell').first()).toHaveCSS(
+        'padding-bottom',
+        browserName === 'webkit' ? '0px' : '52.8px'
+      );
       await expect(print.locator('lfx-mktg-print-sheet-row')).toHaveCount(9);
       await expect(print.locator('lfx-mktg-print-sheet-row').first()).toHaveCSS('display', 'table-row');
       await expect(print).toHaveCSS('position', 'static');
