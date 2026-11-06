@@ -269,6 +269,25 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print).toHaveCSS('position', 'static');
       await expect(print).toHaveCSS('display', 'block');
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
+      // Visibility-only hiding leaves screen canvas height behind: every element holding the frames, up to the body
+      // (whose own print rules clip the sheet), must be white, content-sized and unclipped, so no screen canvas bleeds
+      // through between the pages.
+      const ancestors = await print.evaluate((root) => {
+        const out = [];
+        let parent = root.parentElement;
+        while (parent && parent !== root.ownerDocument.body) {
+          const css = getComputedStyle(parent);
+          out.push({ background: css.backgroundColor, minHeight: css.minHeight, overflow: css.overflow });
+          parent = parent.parentElement;
+        }
+        return out;
+      });
+      expect(ancestors.length).toBeGreaterThan(0);
+      for (const ancestor of ancestors) {
+        expect(ancestor.background).toBe('rgb(255, 255, 255)');
+        expect(ancestor.minHeight).toBe('0px');
+        expect(ancestor.overflow).toBe('visible');
+      }
     }
     // page.pdf prints the app window, not the frame, so there is no PDF artifact; the screenshot
     // shows the laid-out frame over the page.

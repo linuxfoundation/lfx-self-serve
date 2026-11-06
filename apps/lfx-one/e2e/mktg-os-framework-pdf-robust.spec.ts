@@ -41,7 +41,8 @@ test.describe('Messaging framework PDF structure', () => {
       new Set([`${Math.round((MKTG_PRINT_PAGE_FRAME_PT.w * 96) / 72)}x${Math.round((MKTG_PRINT_PAGE_FRAME_PT.h * 96) / 72)}`])
     );
     await expect(print.locator(`lfx-mktg-print-page.${MKTG_PRINT_LANDSCAPE_CLASS}`)).toHaveCount(CONTENT_PAGE_COUNT + 1);
-    await expect(print.locator('.lfx-framework-print')).toHaveCount(0);
+    // The legacy portrait print's testids are gone from the framework's print: every frame is the shell's.
+    await expect(print.locator('[data-testid^="mktg-framework-print-"]')).toHaveCount(0);
     const children = await print.evaluateAll((nodes) =>
       nodes.flatMap((node) => Array.from(node.children, (child) => [child.tagName.toLowerCase(), getComputedStyle(child).display]))
     );

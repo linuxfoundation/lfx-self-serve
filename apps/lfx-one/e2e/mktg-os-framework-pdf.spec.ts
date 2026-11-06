@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS, MKTG_PRINT_LF_LOOK } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS, MKTG_PRINT_LF_LOOK, MKTG_PRINT_PAGE_FRAME_PT } from '@lfx-one/shared/constants';
+import type { MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { expect, FrameLocator, Page, test } from '@playwright/test';
 import { columnAssetRevisionResponse, draftFrameworkAsset, openAssetDocument } from './helpers/mktg-os-asset-views.helper';
 import {
@@ -20,11 +21,21 @@ function rgb(hex: string): string {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+/** The synthetic draft framework with one phrase to avoid, so the Say and avoid page has a struck row. */
+function frameworkWithAvoid(): MktgRevisionResponse {
+  const { content } = draftFrameworkAsset();
+  const response = columnAssetRevisionResponse('foundation-message');
+  return { ...response, markdown: JSON.stringify({ ...content, mf: { ...content.mf, avoid: [['closed by default', 'open by default']] } }) };
+}
+
 /** Open the approved framework, click Download PDF and lay the landscape print frame out; the framework print's root inside it. */
-async function openFrameworkPdf(page: Page): Promise<{ frame: FrameLocator; print: ReturnType<FrameLocator['getByTestId']> }> {
+async function openFrameworkPdf(
+  page: Page,
+  response: MktgRevisionResponse = columnAssetRevisionResponse('foundation-message')
+): Promise<{ frame: FrameLocator; print: ReturnType<FrameLocator['getByTestId']> }> {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await stubMktgPrintFrame(page);
-  await openAssetDocument(page, 'foundation-message', 200, true, false, columnAssetRevisionResponse('foundation-message'));
+  await openAssetDocument(page, 'foundation-message', 200, true, false, response);
   await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
   await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
   const frame = await layoutMktgPrintFrame(page, PRINT_FRAME_LANDSCAPE);
@@ -109,10 +120,39 @@ test.describe('Messaging framework PDF: the deck’s pages', () => {
     await expect(sayAvoid).toContainText(content.mf.say[0]);
     await expect(sayAvoid).toContainText('Avoid');
     await expect(sayAvoid).toContainText('Nothing to avoid was stated.');
-    await expect(sayAvoid.locator('.pp-para--strike')).toHaveCount(0);
     const anchor = print.locator('[data-testid="framework-print-page"]:has([data-title="Every piece of content answers"])');
     await expect(anchor).toContainText(`1.  ${content.mf.anchor[0]}`);
     await sayAvoid.screenshot({ path: info.outputPath('framework-pdf-say-avoid.png') });
+  });
+
+  test('a phrase to avoid is struck through beside what to say instead, as the deck strikes it', async ({ page }, info) => {
+    const { print } = await openFrameworkPdf(page, frameworkWithAvoid());
+    const sayAvoid = print.locator('[data-testid="framework-print-page"]:has([data-title="Say and avoid"])');
+    // The paragraph that holds each phrase (the text sits in a span inside it): the avoided one struck, the replacement not.
+    const avoided = sayAvoid.locator('p', { hasText: /^closed by default$/ });
+    await expect(avoided).toHaveCSS('text-decoration-line', 'line-through');
+    const instead = sayAvoid.locator('p', { hasText: /^open by default$/ });
+    await expect(instead).toHaveCSS('text-decoration-line', 'none');
+    await expect(sayAvoid).not.toContainText('Nothing to avoid was stated.');
+    await sayAvoid.screenshot({ path: info.outputPath('framework-pdf-say-avoid-strike.png') });
+  });
+
+  test('every page frame fits Letter and A4 landscape whole, so the saved PDF turns one sheet per page on either paper', async ({ page }) => {
+    const { print } = await openFrameworkPdf(page);
+    const frames = print.getByTestId('mktg-print-page');
+    await expect(frames).toHaveCount(CONTENT_TITLES.length + 1);
+    const sizes = await frames.evaluateAll((nodes) => nodes.map((node) => [node.getBoundingClientRect().width, node.getBoundingClientRect().height]));
+    const px = (pt: number) => (pt * 96) / 72;
+    const letter = { w: px(792), h: px(612) };
+    const a4 = { w: px(842), h: px(595) };
+    for (const [w, h] of sizes) {
+      expect(Math.round(w)).toBe(Math.round(px(MKTG_PRINT_PAGE_FRAME_PT.w)));
+      expect(Math.round(h)).toBe(Math.round(px(MKTG_PRINT_PAGE_FRAME_PT.h)));
+      expect(w).toBeLessThanOrEqual(letter.w);
+      expect(h).toBeLessThanOrEqual(letter.h);
+      expect(w).toBeLessThanOrEqual(a4.w);
+      expect(h).toBeLessThanOrEqual(a4.h);
+    }
   });
 
   test('the ICP page sets the segment left and its label-and-value rows right; the message house the umbrella on the dark, the pillar and the foundation; the key numbers as tiles', async ({
