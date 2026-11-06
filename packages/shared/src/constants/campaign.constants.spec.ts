@@ -39,13 +39,14 @@ import {
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_DEMAND_GEN_DEVICES,
+  GOOGLE_ADS_DEVICE_LABELS,
   GOOGLE_ADS_DEVICES,
   GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_LANGUAGE_LABELS,
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
-  GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
@@ -58,6 +59,8 @@ import {
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
+  GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY,
+  GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
@@ -662,7 +665,7 @@ describe('Google bidding catalogue', () => {
    */
   it.each([
     ['search', ['manual-cpc', 'maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas']],
-    ['demand-gen', ['maximize-clicks']],
+    ['demand-gen', ['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value']],
     ['performance-max', ['maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas']],
     ['video', ['maximize-conversions', 'target-cpa']],
     ['display', ['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas']],
@@ -671,12 +674,13 @@ describe('Google bidding catalogue', () => {
   });
 
   /**
-   * Demand Gen is the one set a reader is most likely to "fix": every other automated strategy
-   * looks like it should work there. A live `validateOnly` mutate returned
-   * `BIDDING_STRATEGY_TYPE_INCOMPATIBLE_WITH_SHARED_BUDGET` for all of them.
+   * Demand Gen is the one set a reader is most likely to "complete": `demandGenBiddingStrategies`
+   * (campaign-service v1.0.31) leaves out Target ROAS because it was not probed, and
+   * `validateBiddingPlan` refuses a target ROAS there under Maximize Conversion Value too.
    */
-  it('keeps demand gen at maximize-clicks alone', () => {
-    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL['demand-gen']).toHaveLength(1);
+  it('keeps target roas off demand gen, as a strategy and as a target', () => {
+    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL['demand-gen']).not.toContain('target-roas');
+    expect([...GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS]).toEqual(['demand-gen']);
   });
 
   /**
@@ -1307,11 +1311,11 @@ describe('MONITOR_PLATFORM_BUTTON_COLORS', () => {
 });
 
 describe('Google Ads campaign criteria vocabularies', () => {
-  it('caps the device bid modifier list at the number of devices it accepts, as upstream does', () => {
-    // The cap's whole claim is "a longer list must repeat a device", and `maxDeviceBidModifiers`
-    // upstream tracks `len(deviceTypes)` with a test of its own saying so. A device added to the
-    // vocabulary without raising the cap would refuse a list that repeats nothing.
-    expect(GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS).toBe(GOOGLE_ADS_DEVICES.length);
+  it('mirrors the two device vocabularies upstream accepts, and labels every device', () => {
+    // `deviceTypes` and `demandGenDeviceTypes`: the same three, and Demand Gen adds CONNECTED_TV.
+    expect([...GOOGLE_ADS_DEVICES]).toEqual(['MOBILE', 'DESKTOP', 'TABLET']);
+    expect([...GOOGLE_ADS_DEMAND_GEN_DEVICES]).toEqual([...GOOGLE_ADS_DEVICES, 'CONNECTED_TV']);
+    expect(Object.keys(GOOGLE_ADS_DEVICE_LABELS)).toEqual([...GOOGLE_ADS_DEMAND_GEN_DEVICES]);
   });
 
   it('accepts both spellings of every age range, since upstream resolves them to the same enum', () => {
@@ -1337,11 +1341,12 @@ describe('Google Ads campaign criteria vocabularies', () => {
     expect(GOOGLE_ADS_GENDERS).toContain('UNDETERMINED');
   });
 
-  it('fences both criteria off the same two channels today, from two separate lists', () => {
-    // Separate constants because `validateCriteriaPlan` fences them in separate branches for
-    // separate reasons — a bid Performance Max does not set, against demographics it takes as
-    // asset-group signals — so either could move without the other.
-    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('demand-gen');
+  it('fences devices and demographics from two separate lists, which differ on demand gen', () => {
+    // Separate constants because `validateCriteriaPlan` fences them in separate branches. Demand
+    // Gen takes device exclusions (#474) and refuses demographic exclusions; Performance Max devices
+    // are not offered by this client.
+    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).toContain('demand-gen');
+    expect([...GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY]).toEqual(['demand-gen']);
     expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('performance-max');
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('demand-gen');
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('performance-max');

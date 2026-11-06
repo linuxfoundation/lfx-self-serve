@@ -8289,8 +8289,9 @@ describe('ImplementationTabComponent google location targets held by the capabil
  *
  * The control is a `<select>` over the supported table's own keys, so the guards left are the ones
  * a select cannot express — the cap, not adding a code twice — plus the CHANNEL gate, which the geo
- * sibling has no equivalent of: upstream's `validateCriteriaPlan` refuses the whole non-location
- * criteria set on Demand Gen, so the section and the payload both close there.
+ * sibling has no equivalent of. Every channel takes languages since campaign-service v1.0.31 (Demand
+ * Gen attaches them to its ad group, #459), so the gate is open everywhere and the section and the
+ * payload follow `GOOGLE_CHANNELS_WITH_LANGUAGES` if upstream fences a channel again.
  */
 describe('ImplementationTabComponent google languages', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
@@ -8370,6 +8371,7 @@ describe('ImplementationTabComponent google languages', () => {
 
   it.each([
     ['search', { includeSearch: true }],
+    ['demand-gen', { includeDemandGen: true }],
     ['performance-max', { includePerformanceMax: true }],
     ['display', { includeDisplay: true }],
   ])('opens the section on %s, which upstream accepts campaign languages on', (channel, patch) => {
@@ -8391,76 +8393,18 @@ describe('ImplementationTabComponent google languages', () => {
   });
 
   /**
-   * The one closed channel, and the reason the gate exists at all. `validateCriteriaPlan` refuses
-   * languages, device bid modifiers, demographics and ad schedules together on Demand Gen, so a
-   * control offered here would be offering a refusal.
+   * Demand Gen takes languages since campaign-service v1.0.31 (`validateCriteriaPlan`, #459: on the ad
+   * group), so a list picked on Search survives a switch to Demand Gen and is sent there.
    */
-  it('closes the section on demand-gen', () => {
-    const c = seedChannel(fixture, { includeDemandGen: true });
-
-    expect(c['googleLanguagesChannel']()).toBeNull();
-  });
-
-  it('withholds a list picked under one channel once the selection moves to demand-gen', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
-    c['addGoogleLanguage'](c['googleLanguageOptions'][0].code);
-    expect(c['googleLanguagesPayload']()).toHaveProperty('languages');
-
-    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
-    fixture.detectChanges();
-
-    // HELD, not cleared: the chips survive so switching back restores the operator's choice, but
-    // the payload carries nothing a Demand Gen create would be refused for.
-    expect(c['googleLanguages']()).toHaveLength(1);
-    expect(c['googleLanguagesPayload']()).toEqual({});
-  });
-
-  /**
-   * Held is not silent. The section disappears on Demand Gen, so without this notice the operator
-   * would read nothing about the campaign now serving in every language; switching back clears it.
-   */
-  it('says the held list will not be sent on demand-gen, and clears the notice on a switch back', () => {
+  it('keeps sending a list picked under one channel once the selection moves to demand-gen', () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleLanguage']('DE');
-    const notice = () => fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-withheld"]');
-    fixture.detectChanges();
-    expect(notice()).toBeNull();
 
     c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
     fixture.detectChanges();
-    expect(c['googleLanguagesWithheldOn']()).toBe('Demand Gen');
-    expect(notice()?.textContent).toContain('serve in every language');
 
-    c['campaignForm'].patchValue({ includeSearch: true, includeDemandGen: false });
-    fixture.detectChanges();
-    expect(notice()).toBeNull();
     expect(c['googleLanguagesPayload']()).toEqual({ languages: ['DE'] });
-  });
-
-  /**
-   * The announcement half of the notice above (#3568). The live region is mounted BEFORE the notice
-   * text exists, so a screen reader sees its content change rather than a region inserted with its
-   * text, which is not reliably announced. The visible `<p>` carries no role, so the sentence is not
-   * read twice.
-   */
-  it('announces the held list through a region mounted before the notice appears', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
-    c['addGoogleLanguage']('DE');
-    fixture.detectChanges();
-    const live = () => fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-withheld-live"]');
-    const region = live();
-    expect(region?.getAttribute('role')).toBe('status');
-    expect(region?.getAttribute('aria-live')).toBe('polite');
-    expect(region?.textContent?.trim()).toBe('');
-
-    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
-    fixture.detectChanges();
-
-    expect(live()).toBe(region);
-    expect(region?.textContent).toContain('serve in every language');
-    const notice = fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-withheld"]');
-    expect(notice?.hasAttribute('role')).toBe(false);
-    expect(notice?.textContent?.trim()).toBe(c['googleLanguagesWithheldMessage']());
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-section"]')).not.toBeNull();
   });
 
   /**
@@ -8482,26 +8426,17 @@ describe('ImplementationTabComponent google languages', () => {
     expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['languages']).toEqual(['DE']);
   });
 
-  it('submits no languages on demand-gen, holding the picked list', async () => {
+  it('submits a picked language on demand-gen', async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
-    const c = seedChannel(fixture, { includeSearch: true });
-    c['addGoogleLanguage']('DE');
-    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['addGoogleLanguage']('EN');
     fixture.detectChanges();
     expect(c['canSubmit']()).toBe(true);
 
     c['submit']();
     await fixture.whenStable();
 
-    expect(createCampaign).toHaveBeenCalled();
-    expect(createCampaign.mock.calls[0][0]).not.toHaveProperty('languages');
-    expect(c['googleLanguages']()).toEqual(['DE']);
-  });
-
-  it('shows no withheld notice on demand-gen when no language was picked', () => {
-    const c = seedChannel(fixture, { includeDemandGen: true });
-
-    expect(c['googleLanguagesWithheldOn']()).toBeNull();
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['languages']).toEqual(['EN']);
   });
 
   /**
@@ -8603,12 +8538,13 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
   }
 
   // Display and Performance Max default to Maximize Conversions, under which the window's -20% is
-  // refused (Google would not bid it), so their payload is built but Create waits on it.
+  // refused (Google would not bid it), so their payload is built but Create waits on it. Demand Gen
+  // refuses it on the channel (`validateCriteriaPlan`), whatever the strategy.
   it.each([
     ['search', { includeSearch: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, false],
     ['display', { includeDisplay: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, true],
     ['performance-max', { includePerformanceMax: true }, { adSchedules: [MONDAY_EVENINGS] }, true],
-    ['demand-gen', { includeDemandGen: true }, {}, false],
+    ['demand-gen', { includeDemandGen: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, true],
   ])(
     'builds the payload %s accepts, holds the rest, and holds Create on an adjustment its default strategy ignores',
     (_channel, patch, expected, heldByStrategy) => {
@@ -8646,21 +8582,95 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
     expect(c['googleTargetingPayload']()).toEqual({});
   });
 
-  it('renders the panel on Search and not on Demand Gen, where it says what is held', () => {
-    seedTargeting({ includeSearch: true });
+  it('renders the panel on Demand Gen, with TV screens and no Adjust bid, and holds nothing', async () => {
+    seedTargeting({ includeDemandGen: true });
     const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
     expect(query('implementation-google-ad-schedule')).not.toBeNull();
-    expect(query('implementation-google-devices')).not.toBeNull();
+    expect(query('implementation-google-device-CONNECTED_TV')?.textContent).toContain('TV screens');
+    expect(query('implementation-google-devices-hint')?.textContent).toContain('Demand Gen campaigns take a device only as an exclusion');
+    expect(query('implementation-google-ad-schedule-hint')?.textContent).toContain('Demand Gen campaigns take an ad schedule only without a bid adjustment');
     expect(query('implementation-google-targeting-withheld')).toBeNull();
+  });
 
-    (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
-    fixture.detectChanges();
+  /**
+   * `validateCriteriaPlan`'s Demand Gen arm (campaign-service v1.0.31): a window only without a bid
+   * modifier, and a device only as an exclusion, under every strategy — Maximize Clicks included,
+   * which takes a schedule adjustment on Search and Display. Both are held with a reason, in the live
+   * region too, and Create waits.
+   */
+  describe('on demand gen', () => {
+    const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
 
-    expect(query('implementation-google-targeting-panel')).toBeNull();
-    expect(query('implementation-google-targeting-withheld')?.textContent).toContain(
-      'Demand Gen campaigns do not take ad schedules or device bid adjustments, so the 1 ad schedule window and 1 device setting you set will not be sent.'
-    );
-    expect(query('implementation-google-targeting-withheld-live')?.textContent).toContain('Demand Gen campaigns do not take ad schedules');
+    it('holds a window adjustment set on Search, says why, and lets Create go once it is cleared', () => {
+      const c = seedChannel(fixture, { includeDemandGen: true });
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-clicks');
+      c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS]);
+      fixture.detectChanges();
+
+      expect(c['googleAdSchedulesError']()).toContain('Demand Gen campaigns take an ad schedule only without a bid adjustment');
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-google-schedule-adjustments-held')?.textContent).toContain(
+        "Demand Gen campaigns take an ad schedule only without a bid adjustment, so LFX One doesn't send one. The bid adjustment on 1 ad schedule window is kept for a switch back, and Create Campaign waits until you clear it."
+      );
+      expect(query('implementation-google-schedule-adjustments-held-live')?.textContent).toContain('kept for a switch back');
+
+      const unadjusted: CampaignAdSchedule = { ...MONDAY_EVENINGS };
+      delete unadjusted.bidModifier;
+      c['onGoogleAdSchedulesChange']([unadjusted]);
+      fixture.detectChanges();
+      expect(c['googleAdSchedulesError']()).toBeNull();
+      expect(c['googleTargetingPayload']()).toEqual({ adSchedules: [unadjusted] });
+    });
+
+    it('holds a device adjustment set under Manual CPC on Search, says why, and sends exclusions', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['onGoogleDeviceBidModifiersChange']([{ device: 'MOBILE', bidModifier: 1.25 }]);
+      c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+      fixture.detectChanges();
+
+      expect(c['googleDeviceBidModifiersError']()).toContain('Demand Gen campaigns take a device only as an exclusion');
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-google-device-adjustments-held')?.textContent).toContain(
+        "Demand Gen campaigns take a device only as an exclusion, so LFX One doesn't send a device bid adjustment there. The adjustment on Mobile phones is kept for a switch back, and Create Campaign waits until you set it to Default bid or Exclude."
+      );
+
+      c['onGoogleDeviceBidModifiersChange']([NO_TABLETS, { device: 'CONNECTED_TV', bidModifier: 0 }]);
+      fixture.detectChanges();
+      expect(c['googleDeviceBidModifiersError']()).toBeNull();
+      expect(c['googleDeviceAdjustmentsHeldMessage']()).toBe('');
+      expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [NO_TABLETS, { device: 'CONNECTED_TV', bidModifier: 0 }] });
+    });
+
+    it('holds a TV screens exclusion after a switch to Search, says so, and sends the rest', () => {
+      const c = seedChannel(fixture, { includeDemandGen: true });
+      c['onGoogleDeviceBidModifiersChange']([NO_TABLETS, { device: 'CONNECTED_TV', bidModifier: 0 }]);
+      c['campaignForm'].patchValue({ includeDemandGen: false, includeSearch: true });
+      fixture.detectChanges();
+
+      expect(query('implementation-google-device-CONNECTED_TV')).toBeNull();
+      expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [NO_TABLETS] });
+      expect(c['googleDeviceBidModifiersError']()).toBeNull();
+      expect(query('implementation-google-targeting-withheld')?.textContent).toContain(
+        'Search campaigns do not take TV screens, so the 1 device setting you set will not be sent.'
+      );
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+      fixture.detectChanges();
+      expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [NO_TABLETS, { device: 'CONNECTED_TV', bidModifier: 0 }] });
+    });
+
+    it('round-trips a TV screens exclusion through a draft', () => {
+      const c = seedChannel(fixture, { includeDemandGen: true });
+      let emitted: CampaignImplementationDraft | undefined;
+      fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+      c['onGoogleDeviceBidModifiersChange']([{ device: 'CONNECTED_TV', bidModifier: 0 }]);
+      expect(emitted?.googleDeviceBidModifiers).toEqual([{ device: 'CONNECTED_TV', bidModifier: 0 }]);
+
+      c['googleDeviceBidModifiers'].set([]);
+      restoreGoogleDraft(fixture, c, { googleDeviceBidModifiers: [{ device: 'CONNECTED_TV', bidModifier: 0 }] });
+      expect(c['googleDeviceBidModifiers']()).toEqual([{ device: 'CONNECTED_TV', bidModifier: 0 }]);
+    });
   });
 
   it('holds Create on the shared refusal and shows it under the panel', () => {
@@ -11918,6 +11928,35 @@ describe('ImplementationTabComponent google bidding', () => {
 
     expect(c['googleTakesTargetRoas']()).toBe(true);
     expect(c['googleTakesTargetCpa']()).toBe(false);
+  });
+
+  /**
+   * `demandGenBiddingStrategies` (campaign-service v1.0.31, #474): conversion bidding on Demand Gen,
+   * with a target CPA sent in the same `targetCpa` field (campaign-service builds the standalone
+   * strategy from it), and never a target ROAS — `validateBiddingPlan` refuses one there even under
+   * Maximize Conversion Value, so the field is not offered and a value typed on Display is withheld.
+   */
+  it('offers demand gen conversion bidding and a target CPA, never a target ROAS', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversion-value');
+    c['campaignForm'].controls.googleTargetRoas.setValue('4');
+    expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'maximize-conversion-value', targetRoas: 4 });
+
+    c['campaignForm'].patchValue({ includeDisplay: false, includeDemandGen: true });
+    fixture.detectChanges();
+    expect(c['googleBiddingOptions']().map((o: { value: string }) => o.value)).toEqual([
+      'maximize-clicks',
+      'maximize-conversions',
+      'target-cpa',
+      'maximize-conversion-value',
+    ]);
+    expect(c['googleTakesTargetRoas']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-target-roas"]')).toBeNull();
+    expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'maximize-conversion-value' });
+
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
+    c['campaignForm'].controls.googleTargetCpa.setValue('25');
+    expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'target-cpa', targetCpa: 25 });
   });
 
   /** The CPC bid is manual CPC's alone, and manual CPC is Search's alone. */
@@ -17531,5 +17570,54 @@ describe('ImplementationTabComponent create another campaign', () => {
     fixture.detectChanges();
 
     expect(q('implementation-platform-result-reused')?.textContent?.trim()).toBe('Existing mid-funnel campaign returned; nothing new was created.');
+  });
+});
+
+/**
+ * #5226 W1a opened Demand Gen bidding, languages, ad schedules and devices. A create that touches
+ * none of them must send exactly the request it sent before, on Demand Gen and on every other
+ * channel this screen can create. The literal was captured from the tab at the base commit and
+ * matched byte for byte after the change.
+ */
+describe('ImplementationTabComponent google request with no targeting touched', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it.each([
+    ['search', { includeSearch: true }],
+    ['display', { includeDisplay: true }],
+    ['performance-max', { includePerformanceMax: true }],
+    ['demand-gen', { includeDemandGen: true }],
+  ])('sends the same %s request it sent before', async (channel, patch) => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, patch);
+    fixture.detectChanges();
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(JSON.stringify(createCampaign.mock.calls[0][0])).toBe(
+      JSON.stringify({
+        eventName: 'KubeCon EU 2026',
+        eventSlug: 'kubecon-eu-2026',
+        countryCode: 'US',
+        registrationUrl: 'https://example.com',
+        campaignTypes: [channel],
+        budgetUsd: 500,
+        startDate: '2026-09-01',
+        endDate: '2026-09-30',
+        keywords: [{ term: 'cloud native conference', matchType: 'Phrase', intentLevel: 'High', notes: '' }],
+        headlines: ['Join us at KubeCon'],
+        descriptions: ['Register today for KubeCon EU 2026.'],
+        geoTargets: ['US'],
+        platforms: ['google-ads'],
+      })
+    );
   });
 });

@@ -12,7 +12,7 @@ import type {
   CAMPAIGN_METRICS_WINDOWS,
   CREATIVE_ASSET_MIME_TYPES,
   GOOGLE_ADS_AGE_RANGE_MAP,
-  GOOGLE_ADS_DEVICES,
+  GOOGLE_ADS_DEMAND_GEN_DEVICES,
   GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_ADS_SCHEDULE_DAYS,
@@ -3436,7 +3436,8 @@ export type GoogleAdsScheduleMinute = (typeof GOOGLE_ADS_SCHEDULE_MINUTES)[numbe
  * create. Upstream carries the field as a pointer so absence stays distinguishable from 0, so an
  * absent modifier must be OMITTED on the wire rather than sent as a zero. A present value must be between
  * {@link GOOGLE_ADS_MIN_BID_MODIFIER} and {@link GOOGLE_ADS_MAX_BID_MODIFIER}, and is sent only under
- * a strategy in {@link GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES}.
+ * a strategy in {@link GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES}, and never on a channel in
+ * {@link GOOGLE_CHANNELS_WITHOUT_SCHEDULE_BID_MODIFIERS}.
  */
 export interface CampaignAdSchedule {
   dayOfWeek: GoogleAdsScheduleDay;
@@ -3448,12 +3449,13 @@ export interface CampaignAdSchedule {
 }
 
 /**
- * A device a campaign may adjust its bid on.
+ * A device a campaign may adjust its bid on, or exclude.
  *
- * Derived from {@link GOOGLE_ADS_DEVICES} rather than written out again, so a device added to the
- * accepted vocabulary cannot leave this type behind.
+ * Derived from {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}, the widest channel vocabulary, rather than
+ * written out again, so a device added to it cannot leave this type behind. Which of these a channel
+ * takes is `googleAdsDevicesOn`'s answer: `CONNECTED_TV` is Demand Gen's alone.
  */
-export type GoogleAdsDevice = (typeof GOOGLE_ADS_DEVICES)[number];
+export type GoogleAdsDevice = (typeof GOOGLE_ADS_DEMAND_GEN_DEVICES)[number];
 
 /**
  * An age range a campaign may exclude, in either spelling upstream accepts — the friendly `18-24`
@@ -3752,8 +3754,8 @@ export interface CampaignCreateRequest {
    * Google's own default, which is to serve in EVERY language. So this is a narrowing, and an empty
    * array and an absent key mean the same thing, exactly as they do for `geoTargets`.
    *
-   * Accepted on every Google channel except Demand Gen — see
-   * {@link GOOGLE_CHANNELS_WITH_LANGUAGES}. Bounded by {@link GOOGLE_ADS_MAX_LANGUAGES}. Upstream
+   * Accepted on every Google channel — see {@link GOOGLE_CHANNELS_WITH_LANGUAGES}; on Demand Gen
+   * campaign-service attaches it to the ad group. Bounded by {@link GOOGLE_ADS_MAX_LANGUAGES}. Upstream
    * resolves each ISO code against its own `languageConstants` table — which
    * {@link GOOGLE_ADS_LANGUAGE_MAP} mirrors — and refuses an unknown one rather than dropping it; a
    * numeric id skips that table and is resolved by Google.
@@ -3764,8 +3766,8 @@ export interface CampaignCreateRequest {
    * runs around the clock, which is Google's own default — so this list is a narrowing and an
    * absent key means the same as an empty one, exactly as {@link languages} does.
    *
-   * Accepted on every Google channel except Demand Gen — see
-   * {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}. Bounded by {@link GOOGLE_ADS_MAX_AD_SCHEDULES}
+   * Accepted on every Google channel — see {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES} — but on Demand
+   * Gen only without a bid modifier ({@link GOOGLE_CHANNELS_WITHOUT_SCHEDULE_BID_MODIFIERS}). Bounded by {@link GOOGLE_ADS_MAX_AD_SCHEDULES}
    * overall and {@link GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} on any one day; both are Google's own
    * limits rather than local opinions.
    *
@@ -3782,17 +3784,18 @@ export interface CampaignCreateRequest {
    * everywhere, which is Google's own default — so this list is an adjustment and an absent key
    * means the same as an empty one, exactly as {@link adSchedules} does.
    *
-   * Accepted on THREE channels — see {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS} — one fewer
-   * than {@link adSchedules}: Demand Gen takes no campaign-level criteria at all, and Performance
-   * Max's automated bidding owns the bid and sets no device adjustment. Upstream refuses both rather
-   * than dropping the list, so the BFF refuses such a create by name.
+   * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, which leaves out
+   * Performance Max, where this client does not offer devices yet; the BFF refuses a list there by
+   * name. Demand Gen takes a device only as an exclusion, a modifier of `0`
+   * ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}), and is the one channel that takes
+   * `CONNECTED_TV`.
    *
    * A NON-ZERO modifier also needs the effective bidding strategy to be `manual-cpc`: Google would
    * ignore it under any other, so campaign-service refuses it (see `googleDeviceBidModifierRefusal`).
    * `0`, the exclusion, is accepted under every strategy.
    *
-   * Bounded by {@link GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS}, which is the size of the accepted device
-   * vocabulary: a longer list necessarily REPEATS a device, and a repeat is refused rather than
+   * Bounded by the size of the channel's device vocabulary (`googleAdsDevicesOn`), as upstream's
+   * `validateDeviceBidModifiers` bounds it: a longer list necessarily REPEATS a device, and a repeat is refused rather than
    * collapsed, because Google accepts one criterion per device and the second value would be the one
    * silently dropped. That is the same rule {@link adSchedules} applies to a repeated interval with
    * a different modifier — here every repeat qualifies, since a device has nothing else to agree on.

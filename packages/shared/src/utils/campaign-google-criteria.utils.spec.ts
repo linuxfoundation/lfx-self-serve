@@ -11,11 +11,14 @@ import {
 } from '../constants/campaign.constants';
 import type { NormalizedGoogleAdSchedule } from '../interfaces/campaign.interface';
 import {
+  googleAdsDevicesOn,
   googleAdScheduleBidModifierRefusal,
   googleAdScheduleRefusal,
   googleBidModifierRefusal,
   googleChannelOffersManualCpc,
   googleBidAdjustmentRangeText,
+  googleChannelRefusesScheduleAdjustments,
+  googleChannelTakesDeviceExclusionsOnly,
   googleDemographicExclusionRefusal,
   googleDeviceAdjustmentNotSentSentence,
   googleDeviceBidModifierRefusal,
@@ -170,6 +173,30 @@ describe('googleAdScheduleRefusal', () => {
   });
 });
 
+/**
+ * `validateCriteriaPlan`'s Demand Gen arm (campaign-service v1.0.31): a schedule is taken only
+ * without a bid modifier, under every strategy, and the arm runs before `validateAdSchedules`.
+ */
+describe('googleAdScheduleRefusal on Demand Gen', () => {
+  it('accepts a window with no bid modifier', () => {
+    expect(googleAdScheduleRefusal([adSchedule()], 'maximize-clicks', 'demand-gen')).toBeNull();
+  });
+
+  it('refuses any bid modifier, even under Maximize Clicks, which takes one elsewhere', () => {
+    const refusal = googleAdScheduleRefusal([adSchedule(), adSchedule({ dayOfWeek: 'TUESDAY', bidModifier: 1.2 })], 'maximize-clicks', 'demand-gen');
+    expect(refusal).toBe(
+      "The Google Ads ad schedule 2 has a bid modifier of 1.2. Demand Gen campaigns take an ad schedule only without a bid adjustment, so LFX One doesn't send one. Clear its bid adjustment, then create again."
+    );
+    expect(googleAdScheduleRefusal([adSchedule({ bidModifier: 1.2 })], 'maximize-clicks', 'display')).toBeNull();
+  });
+
+  it('names the channel rule before any per-entry refusal, as upstream orders them', () => {
+    expect(googleAdScheduleRefusal([adSchedule({ dayOfWeek: 'FUNDAY' }), adSchedule({ bidModifier: 0 })], 'maximize-clicks', 'demand-gen')).toContain(
+      'ad schedule 2 has a bid modifier of 0. Demand Gen campaigns'
+    );
+  });
+});
+
 describe('googleBidAdjustmentRangeText', () => {
   it("prints Google's range from the modifier bounds", () => {
     expect(googleBidAdjustmentRangeText()).toBe('-90% to +900%');
@@ -182,8 +209,10 @@ describe('googleScheduleAdjustmentStrategiesOn / googleStrategyTakesScheduleAdju
     expect(googleScheduleAdjustmentStrategiesOn('display')).toEqual(['maximize-clicks']);
     expect(googleScheduleAdjustmentStrategiesOn('performance-max')).toEqual([]);
     expect(googleScheduleAdjustmentStrategiesOn('video')).toEqual([]);
-    // Demand Gen offers Maximize Clicks but takes no ad schedules, and upstream refuses its schedule modifiers.
+    // Demand Gen offers Maximize Clicks, but `validateCriteriaPlan` refuses its schedule modifiers under every strategy.
     expect(googleScheduleAdjustmentStrategiesOn('demand-gen')).toEqual([]);
+    expect(googleChannelRefusesScheduleAdjustments('demand-gen')).toBe(true);
+    expect(googleChannelRefusesScheduleAdjustments('search')).toBe(false);
   });
 
   it('is true only for Manual CPC and Maximize Clicks', () => {
@@ -297,6 +326,51 @@ describe('googleDeviceBidModifierRefusal', () => {
 // other Smart Bidding strategies (except a -100% exclusion):
 // https://support.google.com/google-ads/answer/2732132. The sentence must not say Google ignores it
 // under Maximize Clicks or Target CPA, where the refusal is campaign-service's Manual-CPC-only rule.
+/**
+ * `validateCriteriaPlan`'s Demand Gen arm and `demandGenDeviceTypes` (campaign-service v1.0.31): a
+ * device only as an exclusion, CONNECTED_TV in the vocabulary, the cap at the vocabulary's size.
+ */
+describe('googleDeviceBidModifierRefusal on Demand Gen', () => {
+  it('takes CONNECTED_TV there and nowhere else', () => {
+    expect(googleAdsDevicesOn('demand-gen')).toEqual(['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV']);
+    expect(googleAdsDevicesOn('search')).toEqual(['MOBILE', 'DESKTOP', 'TABLET']);
+    expect(googleAdsDevicesOn('display')).toEqual(['MOBILE', 'DESKTOP', 'TABLET']);
+    expect(googleDeviceBidModifierRefusal([{ device: 'CONNECTED_TV', bidModifier: 0 }], 'maximize-clicks', 'demand-gen')).toBeNull();
+    expect(googleDeviceBidModifierRefusal([{ device: 'CONNECTED_TV', bidModifier: 0 }], 'maximize-conversions', 'display')).toContain(
+      'which is not one of MOBILE, DESKTOP, TABLET on Display campaigns'
+    );
+  });
+
+  it('accepts every device excluded, which upstream does not refuse on Demand Gen', () => {
+    const all = googleAdsDevicesOn('demand-gen').map((device) => ({ device, bidModifier: 0 }));
+    expect(googleDeviceBidModifierRefusal(all, 'maximize-conversions', 'demand-gen')).toBeNull();
+  });
+
+  it('echoes a device it has not yet checked against the vocabulary at most 32 characters long', () => {
+    const refusal = googleDeviceBidModifierRefusal([{ device: 'x'.repeat(200), bidModifier: 1.2 }], 'manual-cpc', 'demand-gen');
+    expect(refusal).toContain(`gives ${'X'.repeat(32)}… a bid modifier of 1.2.`);
+    expect(refusal).not.toContain('X'.repeat(33));
+  });
+
+  it('refuses any modifier but 0, under every strategy, before the vocabulary', () => {
+    expect(googleChannelTakesDeviceExclusionsOnly('demand-gen')).toBe(true);
+    expect(googleChannelTakesDeviceExclusionsOnly('search')).toBe(false);
+    expect(googleDeviceBidModifierRefusal([{ device: 'TABLET', bidModifier: 1.2 }], 'manual-cpc', 'demand-gen')).toBe(
+      "The Google Ads device bid modifier 1 gives TABLET a bid modifier of 1.2. Demand Gen campaigns take a device only as an exclusion, so LFX One doesn't send a device bid adjustment there. Set it to 0 to exclude the device or remove it, then create again."
+    );
+    expect(
+      googleDeviceBidModifierRefusal(
+        [
+          { device: 'TV', bidModifier: 0 },
+          { device: 'MOBILE', bidModifier: 1 },
+        ],
+        'maximize-clicks',
+        'demand-gen'
+      )
+    ).toContain('device bid modifier 2 gives MOBILE a bid modifier of 1. Demand Gen campaigns');
+  });
+});
+
 describe('googleDeviceAdjustmentNotSentSentence', () => {
   it.each(['maximize-conversions', 'maximize-conversion-value', 'target-roas'])("gives Google's reason where Google ignores it (%s)", (strategy) => {
     expect(googleDeviceAdjustmentNotSentSentence(strategy)).toBe(
