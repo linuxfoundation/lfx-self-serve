@@ -243,7 +243,7 @@ What the leaderboards rank depends on the metric you choose:
 
 Each board has the columns **#**, **Organization**, and the score. Type in **Search** above a board to find an organization by name. The boards show 10, 25, or 50 rows per page.
 
-With **Calculated Influence**, select a row to open that organization's score breakdown, with its **Total score** and **How this score is calculated**. **Activity Count** rows do not open a breakdown. See [What does a leaderboard score breakdown show?](#what-does-a-leaderboard-score-breakdown-show). See [What does a leaderboard score breakdown show?](#what-does-a-leaderboard-score-breakdown-show).
+With **Calculated Influence**, select a row to open that organization's score breakdown, with its **Total score** and **How this score is calculated**. **Activity Count** rows do not open a breakdown. See [What does a leaderboard score breakdown show?](#what-does-a-leaderboard-score-breakdown-show).
 
 When a board has no rows, it says **No ranked organizations for this project yet.** When a search matches nothing, it says **No organizations match your search.** For a project outside the Linux Foundation, the ecosystem board is marked **Non-LF**.
 

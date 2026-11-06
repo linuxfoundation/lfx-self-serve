@@ -4,7 +4,7 @@ description: The LFX Self Serve dashboard provides a lens-based overview of your
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, overview, lens, access, me, foundation, project, org, organization, company, employer]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Dashboards
 ---
 

@@ -71,7 +71,7 @@ Yes. The time range you pick on People or Code Contributions carries to the othe
 
 ## What does the Events page show?
 
-The Events page in the Organization lens lists the foundation events where the selected organization has registrants, a submitted speaker or a sponsorship, on an **Upcoming** tab and a **Past** tab. Three tiles count **Upcoming Events**, **Past Events** and **Total Events**. By default the page counts everyone who registered or attended (**All**), credits people by **All relations**, and on the **Past** tab covers the last 2 years. **Show** set to **All foundation events** also lists events with no activity from the organization. Select an attendee or speaker count to open the people behind it. The page is under **Organization Engagement** in the Organization lens sidebar. See [Events page](../org-events/#events-page).
+The Events page in the Organization lens lists the foundation events where the selected organization has registrants, a submitted speaker or a sponsorship, on an **Upcoming** tab and a **Past** tab. Three tiles count **Upcoming Events**, **Past Events** and **Total Events**. By default the page counts everyone who registered or attended (**All**), credits people by **Company email or employee** (a company email address on record, or a current employee on the roster), and on the **Past** tab covers the last 2 years. **Show** set to **All foundation events** also lists events with no activity from the organization. Select an attendee or speaker count to open the people behind it. The page is under **Organization Engagement** in the Organization lens sidebar. See [Events page](../org-events/#events-page).
 
 ## What does the Training & Certification page show?
 
@@ -91,7 +91,7 @@ The Organization Profile page shows the selected organization's logo, name, desc
 
 ## Why don't I see Crowdfunding Initiatives in the Organization lens?
 
-You see **Crowdfunding Initiatives** in the Organization lens only if you are an Admin granted directly on that organization. It appears in the sidebar, below **Projects**, only for an **Admin** (Org Admin – Editor) added on the organization's own **Org Lens Access** tab. A **Viewer** role does not show it, and neither does Admin access to a parent or other related organization, or Linux Foundation staff access on its own. To get it, ask one of the organization's Admins to make you an Admin. See [Lens-scoped Initiatives](../../crowdfunding/lens-initiatives/#who-sees-it).
+You see **Crowdfunding Initiatives** in the Organization lens only if you are an Admin granted directly on that organization. It appears in the sidebar, below **Projects**, only for an **Admin** (Org Admin – Editor) added on the organization's own **Org Lens Access** tab. A **Viewer** role does not show it, and neither does Admin access to a parent or other related organization. To get it, ask one of the organization's Admins to make you an Admin. See [Lens-scoped Initiatives](../../crowdfunding/lens-initiatives/#who-sees-it).
 
 ## Why can't I edit this corporate CLA?
 

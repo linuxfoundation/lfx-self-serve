@@ -4,7 +4,7 @@ description: View the crowdfunding initiatives run on behalf of a project, found
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, project, foundation, organization, attribution, lens]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Crowdfunding
 ---
 
@@ -13,7 +13,7 @@ A crowdfunding initiative can be run on behalf of a project, foundation, or orga
 ## Who sees it
 
 - **Projects and Foundation lenses** — users who can write to the selected project or foundation.
-- **Organization lens** — users who are an **Admin** (Org Admin – Editor) of the selected organization, granted directly on that organization on its [Org Lens Access](../../organization/manage-org-lens-access/) tab. Admin access to a parent or other related organization does not carry over, and neither does a **Viewer** role or Linux Foundation staff access on its own.
+- **Organization lens** — users who are an **Admin** (Org Admin – Editor) of the selected organization, granted directly on that organization on its [Org Lens Access](../../organization/manage-org-lens-access/) tab. Admin access to a parent or other related organization does not carry over, and neither does a **Viewer** role.
 
 Other users don't see the navigation item. If they open the page's address anyway, it says **You don't have access to these initiatives**.
 

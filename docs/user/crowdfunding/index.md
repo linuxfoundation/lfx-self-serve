@@ -4,7 +4,7 @@ description: Manage your crowdfunding initiatives and track your donations in LF
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, donations, funding, sponsors]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Crowdfunding
 ---
 
