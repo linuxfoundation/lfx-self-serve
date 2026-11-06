@@ -11551,7 +11551,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
   it.each([
     ['Demand Gen', { includeDemandGen: true }, true],
     ['Display', { includeDisplay: true }, false],
-    ['Performance Max', { includePerformanceMax: true }, false],
+    ['Performance Max', { includePerformanceMax: true }, true],
   ])('offers sitelinks on Search, and after a switch to %s sends them only where the channel takes them', (_label, channel, sent) => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink('Register'));
@@ -11674,7 +11674,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
     const notice = find('implementation-google-sitelinks-withheld')?.textContent ?? '';
     expect(notice).toContain('Display campaigns do not take sitelinks');
     expect(notice).toContain('the 1 you added');
-    expect(notice).toContain('Switch to Search or Demand Gen to keep them');
+    expect(notice).toContain('Switch to Search, Demand Gen or Performance Max to keep them');
     expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe(c['googleSitelinksWithheldWarning']());
     expect(find('implementation-google-sitelinks-withheld')?.getAttribute('role')).toBeNull();
   });
@@ -12592,7 +12592,7 @@ describe('ImplementationTabComponent google extensions capability block', () => 
    * so the block holds its tongue. Silent, but not silence: the channel warning is already telling
    * the true reason, which is asserted here so the pair can never both go quiet.
    */
-  it.each([['includeDisplay'], ['includePerformanceMax']])('says nothing on %s, where the answer would change nothing', (channel) => {
+  it.each([['includeDisplay']])('says nothing on %s, where the answer would change nothing', (channel) => {
     const c = seedWithheld(null, 'failed', 'brief-1');
     c['campaignForm'].patchValue({ includeSearch: false, [channel]: true });
     fixture.detectChanges();
@@ -12615,6 +12615,17 @@ describe('ImplementationTabComponent google extensions capability block', () => 
     expect(message).toContain('the 1 sitelink on this brief');
     expect(message).not.toContain('callout');
     expect(c['googleCalloutsWithheldWarning']()).toContain('Demand Gen campaigns do not take callouts');
+    expect(c['googleSitelinksWithheldWarning']()).toBeNull();
+  });
+
+  /** Performance Max takes sitelinks and callouts (#5262), so the block counts both there. */
+  it('counts the sitelinks and the callout on Performance Max, where the answer would send them', () => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+    c['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()?.message).toContain('1 callout and 1 sitelink');
+    expect(c['googleCalloutsWithheldWarning']()).toBeNull();
     expect(c['googleSitelinksWithheldWarning']()).toBeNull();
   });
 
@@ -19272,3 +19283,129 @@ describe('ImplementationTabComponent google performance max search themes', () =
     expect(c['campaignForm'].controls.googlePerformanceMaxSearchThemes.value).toBe('');
   });
 });
+
+/**
+ * Ad extensions on Performance Max (#5262): campaign-service v1.0.31's `validateAssetPlan` takes
+ * sitelinks, callouts and structured snippets there (#461), linked to the campaign, and still refuses
+ * call extensions, promotions and prices.
+ */
+describe('ImplementationTabComponent google extensions on performance max', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const SITELINK = { text: 'Register', description1: '', description2: '', finalUrl: 'https://events.example.org/register' };
+  const PMAX_COMPLETE = {
+    headlines: 'One headline\nTwo headline\nThree headline',
+    longHeadlines: 'A long headline',
+    descriptions: 'A short description\nAnother short description',
+    businessName: 'Acme',
+    marketingImages: 'https://example.com/a.png',
+    squareMarketingImages: 'https://example.com/square.png',
+    logoImages: 'https://example.com/logo.png',
+  };
+  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  /** Every extension kind entered under Search, where all six are taken. */
+  const seedAllOnSearch = (): Record<string, any> => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Hands-On Labs');
+    c['addGoogleSitelink'](SITELINK);
+    c['addGoogleStructuredSnippet']('Types', ['Talks', 'Labs', 'Demos']);
+    c['addGoogleCallExtension']({ countryCode: 'US', phoneNumber: '+1 (415) 555-0100' });
+    fixture.detectChanges();
+    return c;
+  };
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('shows the sitelink, callout and snippet controls on Performance Max and none of the other three', () => {
+    seedChannel(fixture, { includePerformanceMax: true });
+
+    for (const id of ['sitelinks', 'callouts', 'structured-snippets']) {
+      expect(find(`implementation-google-${id}-section`)).not.toBeNull();
+    }
+    for (const id of ['call-extensions', 'promotions', 'prices']) {
+      expect(find(`implementation-google-${id}-section`)).toBeNull();
+    }
+  });
+
+  it('still shows all six on Search, and only sitelinks on Demand Gen', () => {
+    seedChannel(fixture, { includeSearch: true });
+    for (const id of ['sitelinks', 'callouts', 'structured-snippets', 'call-extensions', 'promotions', 'prices']) {
+      expect(find(`implementation-google-${id}-section`)).not.toBeNull();
+    }
+
+    seedChannel(fixture, { includeDemandGen: true });
+    expect(find('implementation-google-sitelinks-section')).not.toBeNull();
+    for (const id of ['callouts', 'structured-snippets', 'call-extensions', 'promotions', 'prices']) {
+      expect(find(`implementation-google-${id}-section`)).toBeNull();
+    }
+  });
+
+  it('sends the sitelinks, callouts and snippets after a switch to Performance Max, and holds the call extension with a notice', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedAllOnSearch();
+    c['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
+    c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
+    fixture.detectChanges();
+
+    expect(c['googleCalloutsWithheldWarning']()).toBeNull();
+    expect(c['googleSitelinksWithheldWarning']()).toBeNull();
+    expect(c['googleStructuredSnippetsWithheldWarning']()).toBeNull();
+    const notice = find('implementation-google-call-extensions-withheld')?.textContent ?? '';
+    expect(notice).toContain('Performance Max campaigns do not take call extensions');
+    expect(notice).toContain('Switch back to Search to keep them');
+    expect(find('implementation-google-call-extensions-withheld-live')?.textContent?.trim()).toBe(c['googleCallExtensionsWithheldWarning']());
+
+    c['submit']();
+    await fixture.whenStable();
+    const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(request['callouts']).toEqual(['Hands-On Labs']);
+    expect(request['sitelinks']).toEqual([{ text: 'Register', finalUrl: 'https://events.example.org/register' }]);
+    expect(request['structuredSnippets']).toEqual([{ header: 'Types', values: ['Talks', 'Labs', 'Demos'] }]);
+    expect(request['callExtensions']).toBeUndefined();
+    // Held, not discarded.
+    expect(c['googleCallExtensions']()).toHaveLength(1);
+  });
+
+  it.each([
+    ['Demand Gen', { includeDemandGen: true }],
+    ['Display', { includeDisplay: true }],
+  ])('names Search and Performance Max as the way back for callouts and snippets held on %s', (label, channel) => {
+    const c = seedAllOnSearch();
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
+    fixture.detectChanges();
+
+    for (const [testId, noun] of [
+      ['callouts', 'callouts'],
+      ['structured-snippets', 'structured snippets'],
+    ]) {
+      const notice = find(`implementation-google-${testId}-withheld`)?.textContent ?? '';
+      expect(notice).toContain(`${label} campaigns do not take ${noun}`);
+      expect(notice).toContain('Switch to Search or Performance Max to keep them');
+    }
+    expect(c['googleCalloutsPayload']()).toEqual({});
+    expect(c['googleStructuredSnippetsPayload']()).toEqual({});
+  });
+
+  /** A Performance Max create with no extension entered is byte-identical to one built before they reached it. */
+  it('builds a byte-identical Performance Max request when no extension is entered, with a call extension held', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includePerformanceMax: true });
+    c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
+    fixture.detectChanges();
+    c['submit']();
+    await fixture.whenStable();
+    const before = JSON.stringify(createCampaign.mock.calls[0][0]);
+    for (const key of ['sitelinks', 'callouts', 'structuredSnippets', 'callExtensions', 'promotions', 'prices']) expect(before).not.toContain(`"${key}"`);
+
+    c['googleCallExtensions'].set([{ countryCode: 'US', phoneNumber: '+1 (415) 555-0100' }]);
+    fixture.detectChanges();
+    c['submit']();
+    await fixture.whenStable();
+    expect(JSON.stringify(createCampaign.mock.calls[1][0])).toBe(before);
+  });
+});
+

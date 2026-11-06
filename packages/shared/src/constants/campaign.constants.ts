@@ -4867,39 +4867,51 @@ export const GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS: Readonly<Record<string, readonl
 };
 
 /**
- * The Google channels this application sends campaign ad extensions OTHER THAN SITELINKS on — the
- * callouts, structured snippets, calls, promotions and prices it collects. Sitelinks have their own
- * fence, {@link GOOGLE_CHANNELS_WITH_SITELINKS}.
+ * The Google channels this application sends call extensions, promotions and prices on — the three
+ * extensions upstream takes on Search alone. Sitelinks, callouts and structured snippets have their
+ * own fences, {@link GOOGLE_CHANNELS_WITH_SITELINKS} and {@link GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS}.
  *
  * Search only. Upstream's `validateAssetPlan` (`internal/platform/googleads/assets.go`, campaign-service
- * v1.0.31) refuses every one of them on Demand Gen ("ad extensions other than sitelinks ... are not
- * supported on DEMAND_GEN") and on Display and Video, and refuses calls, promotions and prices on
- * Performance Max. It does take callouts and structured snippets on Performance Max (linuxfoundation/lfx-v2-campaign-service#461), but this
- * application has not opened that pairing, so this list stays narrower than upstream there rather
- * than wider. Every refusal happens at preflight, before the budget mutate, so sending a callout on a
- * Demand Gen create does not produce a campaign without callouts — it produces no campaign.
+ * v1.0.31) refuses all three on Demand Gen ("ad extensions other than sitelinks ... are not supported on
+ * DEMAND_GEN"), on Display and Video, and on Performance Max ("call extensions, promotions, prices and
+ * lead forms are supported on Search campaigns only"), because no probe has confirmed their campaign
+ * link there. Every refusal happens at preflight, before the budget mutate, so sending a call extension
+ * on a Performance Max create does not produce a campaign without it — it produces no campaign.
  *
  * This is the opposite shape from {@link GOOGLE_CHANNELS_WITH_CREATIVE}, which excludes `search`.
  */
 export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
 
 /**
- * The Google channels this application sends sitelink extensions on: Search and Demand Gen.
+ * The Google channels this application sends callouts and structured snippets on: Search and
+ * Performance Max.
+ *
+ * Upstream's `validateAssetPlan` (campaign-service v1.0.31) takes both on Performance Max (#461),
+ * through the same `validateCallouts` and `validateStructuredSnippets` rules as Search and the same
+ * `createCampaignAssets` link, which attaches each asset to the CAMPAIGN (a `campaignAsset`), not to
+ * the asset group. It refuses both on Demand Gen, Display and Video.
+ *
+ * Its own list because upstream fences these two apart from calls, promotions and prices
+ * ({@link GOOGLE_CHANNELS_WITH_AD_EXTENSIONS}), which it still refuses on Performance Max.
+ */
+export const GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS = ['search', 'performance-max'] as const;
+
+/**
+ * The Google channels this application sends sitelink extensions on: Search, Demand Gen and
+ * Performance Max.
  *
  * Upstream's `validateAssetPlan` (`internal/platform/googleads/assets.go`, campaign-service v1.0.31)
  * accepts sitelinks alone on Demand Gen (linuxfoundation/lfx-v2-campaign-service#474): the live KubeCon NA 2026 Demand Gen campaigns carry
- * them, and a `validateOnly` probe accepted the asset and its SITELINK campaign link. Demand Gen
- * sitelinks go through the same `validateSitelinks` rules as Search (cap, text and description
- * widths, both description lines or neither, final URL) and the same `createCampaignAssets` link;
- * the only difference is upstream tags the destination with Demand Gen's `utm_medium=display`
- * rather than Search's (linuxfoundation/lfx-v2-campaign-service#479). This application sends the raw URL on both channels.
+ * them, and a `validateOnly` probe accepted the asset and its SITELINK campaign link. It accepts them
+ * on Performance Max beside callouts and structured snippets (linuxfoundation/lfx-v2-campaign-service#461). Every channel's sitelinks go
+ * through the same `validateSitelinks` rules (cap, text and description widths, both description
+ * lines or neither, final URL) and the same `createCampaignAssets` campaign link; the only difference
+ * is the `utm_medium` upstream tags the destination with (linuxfoundation/lfx-v2-campaign-service#479). This application sends the raw URL.
  *
- * A separate list from {@link GOOGLE_CHANNELS_WITH_AD_EXTENSIONS} because upstream fences the two for
- * different reasons — sitelinks were probed on Demand Gen and the other kinds were not — and either
- * could move without the other. Performance Max is left out although upstream takes sitelinks
- * there too (linuxfoundation/lfx-v2-campaign-service#461): this application has not opened extensions on that channel.
+ * A separate list from {@link GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS} because upstream fences the
+ * two differently on Demand Gen, which takes sitelinks alone.
  */
-export const GOOGLE_CHANNELS_WITH_SITELINKS = ['search', 'demand-gen'] as const;
+export const GOOGLE_CHANNELS_WITH_SITELINKS = ['search', 'demand-gen', 'performance-max'] as const;
 
 /**
  * The Google channels this application sends placement exclusions on: Display alone. campaign-service

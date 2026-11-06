@@ -1574,8 +1574,9 @@ export interface CampaignImplementationDraft {
    *
    * Empty means "no callouts", which is what this path sent before the list existed, so an absent
    * field and an empty list agree. Restored whatever channel the draft was saved under: the section
-   * and the payload both gate on the dispatched channel, so a list restored under Performance Max
-   * is held rather than sent, and is still there if the operator switches back to Search.
+   * and the payload both gate on the dispatched channel, so a list restored under Demand Gen or
+   * Display is held rather than sent, and is still there if the operator switches back to Search or
+   * Performance Max (`GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS`).
    */
   googleCallouts?: string[];
   /**
@@ -1583,14 +1584,16 @@ export interface CampaignImplementationDraft {
    *
    * Held and restored on exactly the same rule as {@link googleCallouts}: absent and empty agree,
    * and a list saved under a channel that takes no sitelinks is kept rather than discarded. Unlike
-   * the callouts, it is SENT on Demand Gen as well as Search (`GOOGLE_CHANNELS_WITH_SITELINKS`).
+   * the callouts, it is SENT on Demand Gen too (`GOOGLE_CHANNELS_WITH_SITELINKS`: Search, Demand Gen
+   * and Performance Max).
    */
   googleSitelinks?: CampaignSitelink[];
   /**
    * Google's structured snippets, as the operator typed them.
    *
    * Held and restored on the same rule as {@link googleCallouts} and {@link googleSitelinks}: absent
-   * and empty agree, and a list saved under a non-Search channel is kept rather than discarded.
+   * and empty agree, and a list saved under a channel that takes no snippets is kept rather than
+   * discarded.
    *
    * Its LIFETIME is shorter than theirs, and deliberately so. This draft is in-memory scratch on the
    * campaigns page: it survives switching away from the Implement tab and back, and nothing else. It
@@ -4045,26 +4048,26 @@ export interface CampaignCreateRequest {
    * campaign has no extensions", which is what every create on this path did before the field
    * existed, so an absent key and an empty list agree — the same rule as {@link geoTargets}.
    *
-   * SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`). On Demand Gen, Display and Video upstream
-   * refuses the create outright rather than dropping the list, so the UI withholds it off Search and
-   * the BFF refuses it by name. (Upstream also takes callouts on Performance Max; this application
-   * has not opened that pairing, so it withholds and refuses them there too.)
+   * SEARCH AND PERFORMANCE MAX (`GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS`; campaign-service
+   * v1.0.31 takes them on Performance Max, #461, linked to the campaign). On Demand Gen, Display and
+   * Video upstream refuses the create outright rather than dropping the list, so the UI withholds it
+   * there and the BFF refuses it by name.
    */
   callouts?: string[];
   /**
    * The Google campaign's sitelink extensions — extra links rendered with the ad.
    *
-   * Omitted when empty, on the same rule as {@link callouts}. SEARCH AND DEMAND GEN
+   * Omitted when empty, on the same rule as {@link callouts}. SEARCH, DEMAND GEN AND PERFORMANCE MAX
    * (`GOOGLE_CHANNELS_WITH_SITELINKS`): campaign-service v1.0.31 accepts sitelinks alone on Demand
-   * Gen, under the same per-entry rules as Search. On every other channel the UI withholds them and
-   * the BFF refuses them by name.
+   * Gen and beside callouts and snippets on Performance Max, under the same per-entry rules as
+   * Search. On Display and Video the UI withholds them and the BFF refuses them by name.
    */
   sitelinks?: CampaignSitelink[];
   /**
    * The Google campaign's structured snippets — one "Header: value, value, value" line each,
    * enumerating what the campaign offers rather than claiming anything about it.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   * Omitted when empty, and Search and Performance Max only, on the same rule as {@link callouts}.
    */
   structuredSnippets?: CampaignStructuredSnippet[];
   /**
@@ -4096,20 +4099,23 @@ export interface CampaignCreateRequest {
   /**
    * The Google campaign's call extensions — a phone number shown with the text ad.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}. The key is
+   * Omitted when empty, on the same rule as {@link callouts}, and SEARCH ONLY
+   * (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`): upstream refuses it on Performance Max too. The key is
    * campaign-service's own (`googleAdsConfig.callExtensions`), forwarded unrenamed.
    */
   callExtensions?: CampaignCallExtension[];
   /**
    * The Google campaign's promotion extensions — a discount shown with the text ad.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   * Omitted when empty, on the same rule as {@link callouts}, and SEARCH ONLY
+   * (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`): upstream refuses it on Performance Max too.
    */
   promotions?: CampaignPromotion[];
   /**
    * The Google campaign's price extensions — a table of priced rows shown with the text ad.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   * Omitted when empty, on the same rule as {@link callouts}, and SEARCH ONLY
+   * (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`): upstream refuses it on Performance Max too.
    */
   prices?: CampaignPriceExtension[];
   /**

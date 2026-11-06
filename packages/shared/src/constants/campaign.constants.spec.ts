@@ -60,6 +60,7 @@ import {
   GOOGLE_ADS_MAX_SEARCH_THEME_RUNES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
+  GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
@@ -1390,10 +1391,13 @@ describe('Google Ads campaign criteria vocabularies', () => {
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('performance-max');
   });
 
-  it('fences sitelinks apart from the other extensions, which differ on demand gen', () => {
+  it('fences sitelinks, callouts and snippets, and the other extensions apart, as upstream does', () => {
     // `validateAssetPlan` (v1.0.31) takes sitelinks alone on Demand Gen (linuxfoundation/lfx-v2-campaign-service#474) and refuses every
-    // other extension list there. Performance Max is not opened by this client for either.
-    expect([...GOOGLE_CHANNELS_WITH_SITELINKS]).toEqual(['search', 'demand-gen']);
+    // other extension list there.
+    expect([...GOOGLE_CHANNELS_WITH_SITELINKS]).toEqual(['search', 'demand-gen', 'performance-max']);
+    // Performance Max takes sitelinks, callouts and structured snippets (linuxfoundation/lfx-v2-campaign-service#461) and refuses calls,
+    // promotions, prices and lead forms ("supported on Search campaigns only").
+    expect([...GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS]).toEqual(['search', 'performance-max']);
     expect([...GOOGLE_CHANNELS_WITH_AD_EXTENSIONS]).toEqual(['search']);
   });
 

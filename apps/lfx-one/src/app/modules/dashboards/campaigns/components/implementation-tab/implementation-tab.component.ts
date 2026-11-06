@@ -152,6 +152,7 @@ import {
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
+  GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS,
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
   GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS,
@@ -3756,7 +3757,14 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleBiddingChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleBiddingChannel();
   protected readonly googleCalloutsAvailable: Signal<boolean> = this.initGoogleCalloutsAvailable();
   /**
-   * Whether the campaign this form will dispatch takes sitelinks: Search or Demand Gen
+   * Whether the campaign this form will dispatch takes call extensions, promotions and prices: Search
+   * alone (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`). Narrower than {@link googleCalloutsAvailable}, because
+   * upstream's `validateAssetPlan` refuses these three on Performance Max, where it takes callouts and
+   * snippets. Their sections render on it and {@link googleAssetExtensionsPayload} sends on it.
+   */
+  protected readonly googleAssetExtensionsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS));
+  /**
+   * Whether the campaign this form will dispatch takes sitelinks: Search, Demand Gen or Performance Max
    * (`GOOGLE_CHANNELS_WITH_SITELINKS`), on the campaign-service road. The sitelink twin of
    * {@link googleCalloutsAvailable}, on its own list because upstream fences sitelinks apart from
    * the other extensions (`validateAssetPlan` takes sitelinks alone on Demand Gen, v1.0.31). The
@@ -5865,14 +5873,15 @@ export class ImplementationTabComponent implements OnInit {
       // dispatched channel is Search, the one channel upstream attaches audience criteria on.
       ...(platforms.includes('google-ads') ? this.googleAudienceSegmentsPayload() : {}),
       // The callout extensions, Google-gated for the same reason the creative and the bidding plan
-      // are, and already narrowed by `googleCalloutsAvailable` to Search, the one channel this
-      // application sends them on.
+      // are, and already narrowed by `googleCalloutsAvailable` to Search and Performance Max, where
+      // upstream accepts them.
       ...(platforms.includes('google-ads') ? this.googleCalloutsPayload() : {}),
       // The sitelink extensions, on the same Google gate, and already narrowed by
-      // `googleSitelinksAvailable` to Search and Demand Gen, where upstream accepts them.
+      // `googleSitelinksAvailable` to Search, Demand Gen and Performance Max, where upstream accepts them.
       ...(platforms.includes('google-ads') ? this.googleSitelinksPayload() : {}),
       ...(platforms.includes('google-ads') ? this.googleStructuredSnippetsPayload() : {}),
-      // The call, promotion and price extensions, on the same gate as the three above.
+      // The call, promotion and price extensions, on the same Google gate, and already narrowed by
+      // `googleAssetExtensionsAvailable` to Search: upstream refuses them on Performance Max.
       ...(platforms.includes('google-ads') ? this.googleAssetExtensionsPayload() : {}),
       driveFolderUrl: this.briefDriveFolderUrl() || undefined,
       platforms,
@@ -8158,8 +8167,9 @@ export class ImplementationTabComponent implements OnInit {
     //
     // Seeded regardless of the selected Google channel, deliberately, exactly as the draft restore
     // below does: `googleCalloutsPayload` gates on `googleCalloutsAvailable` and
-    // `googleSitelinksPayload` on `googleSitelinksAvailable`, so a list seeded under Performance Max
-    // is HELD and not sent, and is still there if the operator switches to a channel that takes it. `googleCalloutsWithheldWarning` is what
+    // `googleSitelinksPayload` on `googleSitelinksAvailable`, so a list seeded under Display is HELD
+    // and not sent, and is still there if the operator switches to a channel that takes it. (On
+    // Performance Max both are sent since campaign-service v1.0.31, #461, as on Search.) `googleCalloutsWithheldWarning` is what
     // tells them that is happening — or `googleExtensionsCapabilityBlock`, when what withheld the
     // list is the unanswered capability rather than the channel.
     if (brief.googleCallouts !== undefined) {
@@ -9829,36 +9839,36 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => {
       const channel = this.resolveGoogleChannel();
       const count = this.googleCallouts().length;
-      if (!channel || (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel) || count === 0) return null;
-      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take callouts, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+      if (!channel || (GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS as readonly string[]).includes(channel) || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take callouts, so the ${count} you added will not be sent. Switch to Search or Performance Max to keep them.`;
     });
   }
   /**
    * The sitelink twin of {@link initGoogleCalloutsWithheldWarning}, on the same terms but its own
-   * channel list: sitelinks are sent on Demand Gen as well as Search (`GOOGLE_CHANNELS_WITH_SITELINKS`),
-   * so this speaks only on Display and Performance Max, and names both channels that keep them.
+   * channel list: sitelinks are sent on Search, Demand Gen and Performance Max
+   * (`GOOGLE_CHANNELS_WITH_SITELINKS`), so this speaks only on Display, and names the channels that keep them.
    */
   private initGoogleSitelinksWithheldWarning(): Signal<string | null> {
     return computed(() => {
       const channel = this.resolveGoogleChannel();
       const count = this.googleSitelinks().length;
       if (!channel || (GOOGLE_CHANNELS_WITH_SITELINKS as readonly string[]).includes(channel) || count === 0) return null;
-      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take sitelinks, so the ${count} you added will not be sent. Switch to Search or Demand Gen to keep them.`;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take sitelinks, so the ${count} you added will not be sent. Switch to Search, Demand Gen or Performance Max to keep them.`;
     });
   }
-  /** The structured-snippet twin of {@link initGoogleCalloutsWithheldWarning}, on the same gate. */
+  /** The structured-snippet twin of {@link initGoogleCalloutsWithheldWarning}, on the same gate and in the same words. */
   private initGoogleStructuredSnippetsWithheldWarning(): Signal<string | null> {
     return computed(() => {
       const channel = this.resolveGoogleChannel();
       const count = this.googleStructuredSnippets().length;
-      if (!channel || (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel) || count === 0) return null;
-      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take structured snippets, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+      if (!channel || (GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS as readonly string[]).includes(channel) || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take structured snippets, so the ${count} you added will not be sent. Switch to Search or Performance Max to keep them.`;
     });
   }
   /**
-   * The call, promotion and price twins of {@link initGoogleCalloutsWithheldWarning}, on the same
-   * channel gate and in the same words. One initializer for the three because they differ only in
-   * the list they count and the noun they name.
+   * The call, promotion and price twins of {@link initGoogleCalloutsWithheldWarning}, on their own
+   * Search-only gate (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`; upstream refuses them on Performance Max).
+   * One initializer for the three because they differ only in the list they count and the noun they name.
    */
   private initGoogleAssetWithheldWarning(list: Signal<readonly unknown[]>, noun: string): Signal<string | null> {
     return computed(() => {
@@ -9885,8 +9895,9 @@ export class ImplementationTabComponent implements OnInit {
    * Says nothing about the CHANNEL reason — {@link initGoogleCalloutsWithheldWarning} and its
    * twins own that, for each kind on every channel that does not take it, whatever the capability
    * says. They divide the ground exactly: this block counts a kind only where an answer could change
-   * its outcome, which is only on a channel that takes that kind (sitelinks on Search and Demand
-   * Gen, the rest on Search), and those warnings speak everywhere else. Nothing is withheld in
+   * its outcome, which is only on a channel that takes that kind (sitelinks on Search, Demand Gen
+   * and Performance Max, callouts and snippets on Search and Performance Max, the rest on Search),
+   * and those warnings speak everywhere else. Nothing is withheld in
    * silence and nothing is explained twice.
    */
   private initGoogleExtensionsCapabilityBlock(): Signal<CampaignGoogleExtensionsCapabilityBlock | null> {
@@ -9902,19 +9913,21 @@ export class ImplementationTabComponent implements OnInit {
       // kind is counted only on a channel that takes it: nothing is lost that the answer could
       // recover, and the kind's own withheld warning is already saying the true reason — it reads the
       // same resolved channel, so it does not wait for the capability either. On Demand Gen that
-      // leaves the sitelinks alone; on Display and Performance Max, nothing.
+      // leaves the sitelinks alone; on Performance Max the sitelinks, callouts and snippets; on
+      // Display, nothing.
       const channel = this.resolveGoogleChannel();
       if (channel === null) return null;
       const takesExtensions = (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel);
+      const takesCalloutsAndSnippets = (GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS as readonly string[]).includes(channel);
       const takesSitelinks = (GOOGLE_CHANNELS_WITH_SITELINKS as readonly string[]).includes(channel);
 
       // "N callouts, M sitelinks and K structured snippets", dropping whichever parts are empty or
       // not taken on this channel. The counts are the point: they are what the operator is about to
       // lose, and they are the only way to tell this notice from a generic capability warning.
       const counted: [number, string, boolean][] = [
-        [this.googleCallouts().length, 'callout', takesExtensions],
+        [this.googleCallouts().length, 'callout', takesCalloutsAndSnippets],
         [this.googleSitelinks().length, 'sitelink', takesSitelinks],
-        [this.googleStructuredSnippets().length, 'structured snippet', takesExtensions],
+        [this.googleStructuredSnippets().length, 'structured snippet', takesCalloutsAndSnippets],
         [this.googleCallExtensions().length, 'call extension', takesExtensions],
         [this.googlePromotions().length, 'promotion', takesExtensions],
         [this.googlePrices().length, 'price extension', takesExtensions],
@@ -9959,9 +9972,11 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Whether the campaign this form will dispatch can carry the ad extensions other than sitelinks:
-   * callouts, structured snippets, calls, promotions and prices. Sitelinks have their own gate,
-   * {@link googleSitelinksAvailable}, because upstream takes them on Demand Gen too.
+   * Whether the campaign this form will dispatch can carry callouts and structured snippets: Search
+   * and Performance Max (`GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS`). Sitelinks have their own gate,
+   * {@link googleSitelinksAvailable}, because upstream takes them on Demand Gen too, and calls,
+   * promotions and prices theirs, {@link googleAssetExtensionsAvailable}, because upstream refuses
+   * them on Performance Max.
    *
    * Built on {@link googleBiddingChannel} rather than re-deriving the channel, because the question
    * is about the channel the REQUEST will carry and that signal is already exactly that — the same
@@ -9971,9 +9986,9 @@ export class ImplementationTabComponent implements OnInit {
    * False is a withholding, not a refusal. Upstream's `validateAssetPlan` refuses these kinds on
    * Demand Gen ("ad extensions other than sitelinks ... are not supported on %s"), Display and
    * Video at preflight, BEFORE the budget mutate — so a callout sent on a Demand Gen create yields no
-   * campaign at all. (It takes callouts and snippets on Performance Max, a pairing this application
-   * has not opened, so they are withheld there too.) The section hides and the payload holds the list rather than forwarding it;
-   * the operator's typed callouts survive in the draft and come back if they re-tick Search.
+   * campaign at all. The section hides and the payload holds the list rather than forwarding it; the
+   * operator's typed callouts survive in the draft and come back if they switch to Search or
+   * Performance Max.
    *
    * False for TWO reasons, not one: the channel takes no extensions, or `googleBiddingChannel` is
    * null because the create capability is not an explicit yes. Because this signal cannot tell which,
@@ -9987,7 +10002,7 @@ export class ImplementationTabComponent implements OnInit {
   private initGoogleCalloutsAvailable(): Signal<boolean> {
     return computed(() => {
       const channel = this.googleBiddingChannel();
-      return channel !== null && (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel);
+      return channel !== null && (GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS as readonly string[]).includes(channel);
     });
   }
 
@@ -10867,12 +10882,12 @@ export class ImplementationTabComponent implements OnInit {
    * The call, promotion and price extensions as the request carries them, each key omitted when its
    * list is empty.
    *
-   * Gate, withholding and omit-when-empty are {@link googleCalloutsPayload}'s exactly. Every entry is
-   * COPIED, and a price table's rows with it — the rows are an array inside the entry, as a
+   * Withholding and omit-when-empty are {@link googleCalloutsPayload}'s; the gate is
+   * {@link googleAssetExtensionsAvailable}, Search alone. Every entry is COPIED, and a price table's rows with it — the rows are an array inside the entry, as a
    * snippet's values are.
    */
   private googleAssetExtensionsPayload(): Partial<CampaignCreateRequest> {
-    if (!this.googleCalloutsAvailable()) return {};
+    if (!this.googleAssetExtensionsAvailable()) return {};
     const calls = this.googleCallExtensions();
     const promotions = this.googlePromotions();
     const prices = this.googlePrices();

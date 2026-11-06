@@ -187,6 +187,7 @@ import {
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
+  GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
@@ -1732,13 +1733,14 @@ export class CampaignController {
       }
 
       // Sitelinks next, BEFORE callouts, as `validateAssetPlan` runs `validateSitelinks` first: JSON
-      // decode, the Search-and-Demand-Gen fence, the cap, then each entry in `validateSitelinks`'
-      // order, first bad one wins. Each would otherwise fail in Go as the opaque "platform campaign
-      // creation failed". On Demand Gen the entries are judged exactly as on Search: upstream runs the
-      // same `validateSitelinks` on both. One order difference: on Demand Gen upstream refuses any
-      // other extension list BEFORE it judges a sitelink, so a request carrying both a bad sitelink
-      // and a callout is refused here for the sitelink and upstream for the callout. Either way it is
-      // refused before any upstream call, and the UI never sends a callout on Demand Gen.
+      // decode, the sitelink fence (Search, Demand Gen, Performance Max), the cap, then each entry in
+      // `validateSitelinks`' order, first bad one wins. Each would otherwise fail in Go as the opaque
+      // "platform campaign creation failed". On Demand Gen and Performance Max the entries are judged
+      // exactly as on Search: upstream runs the same `validateSitelinks` on all three. One order
+      // difference: on Demand Gen upstream refuses any other extension list, and on Performance Max a
+      // call, promotion or price, BEFORE it judges a sitelink, so a request carrying both a bad
+      // sitelink and one of those is refused here for the sitelink and upstream for the other. Either
+      // way it is refused before any upstream call, and the UI never sends the other there.
       const rawSitelinks = body?.sitelinks;
       if (cutoverOn && platforms.includes('google-ads') && rawSitelinks !== undefined && rawSitelinks !== null) {
         const refuse = (message: string): void =>
@@ -1751,11 +1753,11 @@ export class CampaignController {
         }
         if (rawSitelinks.length > 0 && typeof googleChannel === 'string') {
           // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on Display and
-          // Video, counting every entry, and this application does not send sitelinks on
-          // Performance Max. The UI never sends this — its section and payload gate on the same list.
+          // Video, counting every entry. The UI never sends this — its section and payload gate on the
+          // same list.
           if (!(GOOGLE_CHANNELS_WITH_SITELINKS as readonly string[]).includes(googleChannel)) {
             refuse(
-              `Google Ads sitelinks are only sent on Search and Demand Gen campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the sitelinks or pick Search or Demand Gen, then create again.`
+              `Google Ads sitelinks are only sent on Search, Demand Gen and Performance Max campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the sitelinks or pick Search, Demand Gen or Performance Max, then create again.`
             );
             return;
           }
@@ -1777,7 +1779,7 @@ export class CampaignController {
       }
 
       // The callout twin of the language guard above, in UPSTREAM'S OWN ORDER and after it, as
-      // `validateAssetPlan` runs after `validateCriteriaPlan`: JSON decode, the Search-only fence,
+      // `validateAssetPlan` runs after `validateCriteriaPlan`: JSON decode, the Search-and-Performance-Max fence,
       // `validateCallouts`' cap, then each entry (blank, rune bound, case-folded repeat), first bad
       // one wins. Each would otherwise fail in Go as the opaque "platform campaign creation failed".
       const rawCallouts = body?.callouts;
@@ -1793,11 +1795,10 @@ export class CampaignController {
         const callouts = this.googleCalloutList(rawCallouts);
         if (callouts.length > 0 && typeof googleChannel === 'string') {
           // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on Demand Gen,
-          // Display and Video, and this application does not send callouts on Performance Max. The
-          // UI never sends this — its section and payload gate on the same list.
-          if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
+          // Display and Video. The UI never sends this — its section and payload gate on the same list.
+          if (!(GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS as readonly string[]).includes(googleChannel)) {
             refuse(
-              `Google Ads only accepts callouts on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the callouts or pick Search, then create again.`
+              `Google Ads only accepts callouts on Search and Performance Max campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the callouts or pick Search or Performance Max, then create again.`
             );
             return;
           }
@@ -1819,7 +1820,7 @@ export class CampaignController {
       }
 
       // Structured snippets LAST of the three, as `validateAssetPlan` runs `validateStructuredSnippets`
-      // after `validateCallouts`: JSON decode, the Search-only fence, the cap, then each entry in
+      // after `validateCallouts`: JSON decode, the Search-and-Performance-Max fence, the cap, then each entry in
       // `validateStructuredSnippets`' order, first bad one wins. Each would otherwise fail in Go as
       // the opaque "platform campaign creation failed".
       const rawSnippets = body?.structuredSnippets;
@@ -1836,11 +1837,10 @@ export class CampaignController {
         }
         if (rawSnippets.length > 0 && typeof googleChannel === 'string') {
           // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on Demand Gen,
-          // Display and Video, counting every entry, and this application does not send snippets on
-          // Performance Max. The UI never sends this.
-          if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
+          // Display and Video, counting every entry. The UI never sends this.
+          if (!(GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS as readonly string[]).includes(googleChannel)) {
             refuse(
-              `Google Ads only accepts structured snippets on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the snippets or pick Search, then create again.`
+              `Google Ads only accepts structured snippets on Search and Performance Max campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the snippets or pick Search or Performance Max, then create again.`
             );
             return;
           }
@@ -6479,10 +6479,12 @@ export class CampaignController {
         ...this.googleDeviceBidModifiers(body, selectedChannels[0]),
         ...this.googleDemographicExclusions(body, selectedChannels[0]),
         ...languages,
-        // Sitelinks reach Demand Gen as well as Search (campaign-service v1.0.31); the gate inside the
-        // helper withholds them on every other channel. Normalized only — `createCampaign` names every
-        // sitelink refusal first.
+        // Sitelinks reach Demand Gen and Performance Max as well as Search, and callouts and snippets
+        // Performance Max (campaign-service v1.0.31); the gate inside each helper withholds them on
+        // every other channel. Normalized only — `createCampaign` names every refusal first.
         ...this.googleSitelinks(body, selectedChannels[0]),
+        ...this.googleCallouts(body, selectedChannels[0]),
+        ...this.googleStructuredSnippets(body, selectedChannels[0]),
         // Display alone takes placement exclusions (#462); the gate inside the helper withholds them
         // elsewhere. Normalized only — `createCampaign` names every refusal first.
         ...this.googleExcludedPlacements(body, selectedChannels[0]),
@@ -6520,7 +6522,7 @@ export class CampaignController {
     const searchLanguages = this.googleLanguages(body, 'search');
 
     // Normalized only — `createCampaign` names every callout refusal before this is dispatched.
-    const callouts = this.googleCallouts(body);
+    const callouts = this.googleCallouts(body, 'search');
     // Normalized only, as the callouts are — `createCampaign` names every sitelink refusal first.
     const sitelinks = this.googleSitelinks(body, 'search');
     // Normalized only, as the extensions are — `createCampaign` names every segment refusal first.
@@ -6528,7 +6530,7 @@ export class CampaignController {
     // Normalized only, likewise — `createCampaign` names every campaign-level list refusal first.
     const campaignAudienceSegments = this.googleCampaignAudienceSegments(body);
     // Normalized only, as the two above are — `createCampaign` names every snippet refusal first.
-    const structuredSnippets = this.googleStructuredSnippets(body);
+    const structuredSnippets = this.googleStructuredSnippets(body, 'search');
     // Normalized only, as the three above are — `createCampaign` names every call, promotion and
     // price refusal first.
     const assetExtensions = this.googleAssetExtensions(body);
@@ -6954,13 +6956,16 @@ export class CampaignController {
   }
 
   /**
-   * The Search campaign's callout extensions, spread-ready, or `{}` when the request names none.
+   * The campaign's callout extensions, spread-ready, or `{}` when the request names none or the
+   * channel cannot take them.
    *
-   * Search only, so only the Search branch calls it: `createCampaign` refuses callouts on any other
-   * channel by name, because `validateAssetPlan` fails the whole create there. Omitted rather than
-   * sent empty, the absent-key route every caller predating the field takes.
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS}: Search and Performance Max,
+   * where `validateAssetPlan` accepts them. For any other channel `createCampaign` refuses callouts by
+   * name first, because `validateAssetPlan` fails the whole create there. Omitted rather than sent
+   * empty, the absent-key route every caller predating the field takes.
    */
-  private googleCallouts(body: CampaignCreateRequest): { callouts?: string[] } {
+  private googleCallouts(body: CampaignCreateRequest, channel: GoogleCampaignChannel): { callouts?: string[] } {
+    if (!(GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS as readonly string[]).includes(channel)) return {};
     const clean = this.googleCalloutList(body?.callouts);
     return clean.length > 0 ? { callouts: clean } : {};
   }
@@ -7025,12 +7030,13 @@ export class CampaignController {
    * The campaign's sitelink extensions, spread-ready, or `{}` when the request names none or the
    * channel cannot take them.
    *
-   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_SITELINKS}: Search and Demand Gen, where
-   * `validateAssetPlan` accepts them (Demand Gen since campaign-service v1.0.31, sitelinks alone).
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_SITELINKS}: Search, Demand Gen and Performance Max,
+   * where `validateAssetPlan` accepts them (since campaign-service v1.0.31; sitelinks alone on Demand
+   * Gen).
    * For a channel outside it the `{}` is never dispatched either: `createCampaign` refuses sitelinks
    * there by name, and every per-entry refusal, before this is dispatched. An empty description pair
    * is omitted rather than sent as two empty strings; both absent is one of upstream's two legal
-   * states. The final URL is sent untagged on both channels; upstream tags it with the channel's own
+   * states. The final URL is sent untagged on every channel; upstream tags it with the channel's own
    * `utm_medium`.
    */
   private googleSitelinks(body: CampaignCreateRequest, channel: GoogleCampaignChannel): { sitelinks?: CampaignSitelink[] } {
@@ -7044,15 +7050,17 @@ export class CampaignController {
   }
 
   /**
-   * The Search campaign's structured snippets, spread-ready, or `{}` when the request names none.
+   * The campaign's structured snippets, spread-ready, or `{}` when the request names none or the
+   * channel cannot take them.
    *
-   * Search only, as {@link googleCallouts}: `createCampaign` refuses snippets on any other channel by
+   * Gated as {@link googleCallouts} is: `createCampaign` refuses snippets on any other channel by
    * name, and every per-entry refusal, before this is dispatched. Sent as trimmed — blanks and
    * case-folded repeats among the values are left in place for upstream to collapse, as it would
    * collapse them anyway and dropping them here would make the dispatched list disagree with the one
    * this app judged.
    */
-  private googleStructuredSnippets(body: CampaignCreateRequest): { structuredSnippets?: CampaignStructuredSnippet[] } {
+  private googleStructuredSnippets(body: CampaignCreateRequest, channel: GoogleCampaignChannel): { structuredSnippets?: CampaignStructuredSnippet[] } {
+    if (!(GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS as readonly string[]).includes(channel)) return {};
     const clean = this.googleStructuredSnippetList(body?.structuredSnippets);
     return clean.length > 0 ? { structuredSnippets: clean } : {};
   }
@@ -7150,8 +7158,9 @@ export class CampaignController {
    * The four steps the sitelink, callout and snippet guards each spell out, in their order: an
    * absent or null list is "none asked for"; anything the Go decode refuses is refused by shape; a
    * non-empty list on a channel outside the guard's list is refused by name, because
-   * `validateAssetPlan` fails the whole create there (Search for these three, callouts and snippets;
-   * Search and Demand Gen for sitelinks, the one extension Demand Gen takes); then the raw-slice cap,
+   * `validateAssetPlan` fails the whole create there (Search alone for these three, which upstream
+   * still refuses on Performance Max; Search and Performance Max for callouts and snippets; those two
+   * and Demand Gen for sitelinks); then the raw-slice cap,
    * and only then the entries. `entryRefusal` returns the first bad entry's sentence already
    * numbered.
    */

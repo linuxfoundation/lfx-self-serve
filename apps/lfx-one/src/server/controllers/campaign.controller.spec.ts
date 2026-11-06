@@ -7339,14 +7339,13 @@ describe('CampaignController.createCampaign cutover', () => {
 
   it.each([
     ['a sitelink on Display', 'display', 'Display', [link('Register')]],
-    ['a sitelink on Performance Max', 'performance-max', 'Performance Max', [link('Register')]],
     ['an entry with every field blank, which upstream still counts as asked', 'display', 'Display', [{ text: '', finalUrl: '' }]],
   ])('refuses %s by name, a channel sitelinks are not sent on', async (_label, channel, channelLabel, sitelinks) => {
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: [channel], sitelinks }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(createCampaigns).not.toHaveBeenCalled();
     expect(refusalFrom().field).toBe('sitelinks');
-    expect(refusalFrom().message).toContain(`only sent on Search and Demand Gen campaigns, not on ${channelLabel} campaigns`);
+    expect(refusalFrom().message).toContain(`only sent on Search, Demand Gen and Performance Max campaigns, not on ${channelLabel} campaigns`);
   });
 
   /**
@@ -7533,7 +7532,7 @@ describe('CampaignController.createCampaign cutover', () => {
     ['search', true],
     ['demand-gen', true],
     ['display', false],
-    ['performance-max', false],
+    ['performance-max', true],
     ['video', false],
   ] as const)('builds sitelinks for %s only when the channel takes them', (channel, taken) => {
     const build = (controller as unknown as { googleSitelinks: (body: unknown, channel: string) => Record<string, unknown> }).googleSitelinks.bind(controller);
@@ -7599,7 +7598,115 @@ describe('CampaignController.createCampaign cutover', () => {
     );
 
     expect(createCampaigns).not.toHaveBeenCalled();
-    expect(refusalFrom().message).toContain(`only accepts ${noun} on Search campaigns, not on Demand Gen`);
+    expect(refusalFrom().message).toContain(`only accepts ${noun} on Search and Performance Max campaigns, not on Demand Gen`);
+  });
+
+  describe('extensions on performance max (#5262)', () => {
+    const PMAX_CREATIVE = { businessName: 'Example Foundation' };
+    const SNIPPET = { header: 'Types', values: ['Talks', 'Labs', 'Demos'] };
+    const pmaxBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+      googleBody({ campaignTypes: ['performance-max'], budgetUsd: 500, performanceMaxCreative: PMAX_CREATIVE, ...overrides });
+    const create = (body: Record<string, unknown>): Promise<void> =>
+      controller.createCampaign(buildReq(body as never, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    /**
+     * `validateAssetPlan` (v1.0.31, #461) takes sitelinks, callouts and structured snippets on
+     * Performance Max and links each to the campaign. Pinned whole, trimmed with Go's rules.
+     */
+    it('dispatches sitelinks, callouts and snippets on a Performance Max create, trimmed', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005c1', error: null });
+
+      await create(
+        pmaxBody({
+          sitelinks: [link(' Register ')],
+          callouts: [' Free to attend '],
+          structuredSnippets: [{ header: ' Types ', values: [' Talks', 'Labs', 'Demos'] }],
+        })
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+        budget: 500,
+        channel: 'performance-max',
+        startDate: '2026-04-01',
+        endDate: '2026-04-30',
+        sitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }],
+        callouts: ['Free to attend'],
+        structuredSnippets: [SNIPPET],
+        performanceMaxCreative: PMAX_CREATIVE,
+      });
+    });
+
+    it.each([
+      ['absent lists', {}],
+      ['empty lists', { sitelinks: [], callouts: [], structuredSnippets: [] }],
+      ['null lists', { sitelinks: null, callouts: null, structuredSnippets: null }],
+    ])('leaves a Performance Max request byte-identical for %s', async (_label, overrides) => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005c2', error: null });
+      await create(pmaxBody());
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      createCampaigns.mockClear();
+
+      await create(pmaxBody(overrides));
+
+      expect(next).not.toHaveBeenCalled();
+      expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+    });
+
+    /** Upstream still refuses these three on Performance Max ("supported on Search campaigns only"). */
+    it.each([
+      ['call extensions', { callExtensions: [{ countryCode: 'US', phoneNumber: '+1 415 555 0100' }] }],
+      ['promotions', { promotions: [{ promotionTarget: 'Conference passes', discountPercent: 25 }] }],
+      ['price extensions', { prices: [{ type: 'EVENTS', offerings: [{ header: 'Standard', description: 'Two days', amount: 499, currencyCode: 'USD' }] }] }],
+    ])('still refuses %s on Performance Max by name', async (noun, overrides) => {
+      await create(pmaxBody(overrides));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().message).toContain(`only accepts ${noun} on Search campaigns, not on Performance Max`);
+    });
+
+    it.each([
+      ['callouts', 'display', { callouts: ['Free to attend'] }, 'Display'],
+      ['structured snippets', 'demand-gen', { structuredSnippets: [SNIPPET] }, 'Demand Gen'],
+    ])('still refuses %s on %s by name', async (noun, channel, overrides, label) => {
+      await create(googleBody({ campaignTypes: [channel], ...overrides }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().message).toContain(`only accepts ${noun} on Search and Performance Max campaigns, not on ${label} campaigns`);
+    });
+
+    /** The same per-entry rules as Search, because upstream runs the same validators on both. */
+    it.each([
+      ['a callout over 25 runes', { callouts: ['A'.repeat(26)] }, 'callouts', 'has 26'],
+      ['a repeated callout', { callouts: ['Labs', 'labs'] }, 'callouts', 'more than once'],
+      ['21 callouts', { callouts: Array.from({ length: 21 }, (_, i) => `C${i}`) }, 'callouts', 'at most 20 callouts'],
+      ['a snippet with two values', { structuredSnippets: [{ header: 'Types', values: ['Talks', 'Labs'] }] }, 'structuredSnippets', 'Types'],
+      ['a sitelink with no link text', { sitelinks: [link('  ')] }, 'sitelinks', 'no link text'],
+    ])('refuses %s on Performance Max, as on Search', async (_label, overrides, field, expected) => {
+      await create(pmaxBody(overrides));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe(field);
+      expect(refusalFrom().message).toContain(expected);
+    });
+
+    it.each([
+      ['search', true],
+      ['performance-max', true],
+      ['demand-gen', false],
+      ['display', false],
+      ['video', false],
+    ] as const)('builds callouts and snippets for %s only when the channel takes them', (channel, taken) => {
+      const helpers = controller as unknown as Record<
+        'googleCallouts' | 'googleStructuredSnippets',
+        (body: unknown, channel: string) => Record<string, unknown>
+      >;
+
+      expect(helpers.googleCallouts.call(controller, { callouts: ['Labs'] }, channel)).toEqual(taken ? { callouts: ['Labs'] } : {});
+      expect(helpers.googleStructuredSnippets.call(controller, { structuredSnippets: [SNIPPET] }, channel)).toEqual(
+        taken ? { structuredSnippets: [SNIPPET] } : {}
+      );
+    });
   });
 
   it.each([
