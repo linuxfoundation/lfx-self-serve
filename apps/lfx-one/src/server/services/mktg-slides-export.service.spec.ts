@@ -3,6 +3,8 @@
 
 import { createHash } from 'node:crypto';
 
+import { Resvg } from '@resvg/resvg-js';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The export runs end to end against the REAL document store over an
@@ -182,6 +184,14 @@ function pngSize(bytes: Buffer): { width: number; height: number } | null {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 }
 
+/** The alpha of one pixel of a published PNG, read back through an SVG that only places it (as the logo-variants spec reads its pixels). */
+function pngAlphaAt(bytes: Buffer, x: number, y: number): number {
+  const size = pngSize(bytes) as { width: number; height: number };
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size.width} ${size.height}"><image href="data:image/png;base64,${bytes.toString('base64')}" width="${size.width}" height="${size.height}"/></svg>`;
+  const image = new Resvg(svg, { logLevel: 'off', font: { loadSystemFonts: false }, fitTo: { mode: 'width', value: size.width } }).render();
+  return image.pixels[(y * image.width + x) * 4 + 3];
+}
+
 /** Store a Brand Kit revision as the brand-kit run does: its Markdown, the rest of the envelope as the sidecar. */
 async function approveNewest(documentStore: MktgDocumentStoreService, type: MktgDocumentType): Promise<void> {
   const revision = (await documentStore.getDocument(req, PROJECT, type, 'living'))?.revisions[0];
@@ -189,9 +199,11 @@ async function approveNewest(documentStore: MktgDocumentStoreService, type: Mktg
   await documentStore.approveRevision(req, PROJECT, type, 'living', revision.id);
 }
 
-/** A synthetic lockup with content to recolour: a filled mark on the left half, a stroke-only rule on the right. */
+/** A synthetic lockup in one ink, with content to recolour: a filled mark on the left half, a stroke-only rule on the right. */
 const LOCKUP_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><path d="M1 1h8v8H1z" fill="#1f6feb"/><path d="M11 5h8" stroke="#d62" stroke-width="2" fill="none"/></svg>';
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><path d="M1 1h8v8H1z" fill="#1f6feb"/><path d="M11 5h8" stroke="#1f6feb" stroke-width="2" fill="none"/></svg>';
+/** The same lockup with its rule in a second ink: multi-colour artwork, from which no variant is derived. */
+const TWO_INK_LOCKUP_SVG = LOCKUP_SVG.replace('stroke="#1f6feb"', 'stroke="#d62"');
 /** The crop of LOCKUP_SVG that is its mark alone. */
 const SYMBOL_VIEWBOX = '0 0 10 10';
 const LOGO_URL = new RegExp(`^https://cdn\\.example\\.test/mktg-slides-logos/${PROJECT}/[0-9a-f]{64}\\.png$`);
@@ -770,6 +782,100 @@ describe('MktgSlidesExportService', () => {
       expect(Object.keys(started).sort()).toEqual(['logoNote', 'mode', 'revision', 'sessionId']);
     });
 
+    it('sends the primary and the symbol crop alone, with no reversed, one-colour or reversed-symbol variant, when the primary is multi-colour', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // Two inks flatten to one shape under the recolouring filter, so nothing is derived from them; the deck reads the absent lines as not supplied.
+      await seedKit(documentStore, { svg: TWO_INK_LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO REVERSED URL']).toBe('none');
+      expect(lines['LOGO ONE-COLOR URL']).toBe('none');
+      expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
+      expect(started.logoNote).toBeNull();
+      expect(store.publicImages.size).toBe(2 + ICON_IMAGES);
+      expect(loggerMocks.info).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_start',
+        expect.any(String),
+        expect.objectContaining({ has_logo: true, logo_variants: ['symbol'] })
+      );
+      // Not deriving is not a failure: nothing is logged for the variants that were never sources.
+      expect(loggerMocks.warning).not.toHaveBeenCalled();
+    });
+
+    it('derives every variant from a black-on-transparent lockup with curved, anti-aliased edges: one painted colour is single-colour artwork', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // A mark in SVG’s default black with no background, as AAIF’s is; its round shapes draw anti-aliased edges, which are alpha, not a second colour.
+      await seedKit(documentStore, {
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><circle cx="5" cy="5" r="4"/><path d="M11 5a4 4 0 0 1 8 0" stroke="black" stroke-width="2" fill="none"/></svg>',
+        symbolViewBox: SYMBOL_VIEWBOX,
+      });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(Object.keys(lines)).toEqual(['LOGO URL', 'LOGO SYMBOL URL', 'LOGO REVERSED URL', 'LOGO ONE-COLOR URL', 'LOGO SYMBOL REVERSED URL']);
+      for (const url of Object.values(lines)) {
+        expect(url).toMatch(LOGO_URL);
+      }
+      expect(started.logoNote).toBeNull();
+      // A black lockup recoloured black is the same picture: the one-colour URL is the primary's content-addressed key, so four images, not five.
+      expect(lines['LOGO ONE-COLOR URL']).toBe(lines['LOGO URL']);
+      expect(store.publicImages.size).toBe(4 + ICON_IMAGES);
+      expect(loggerMocks.warning).not.toHaveBeenCalled();
+      // The derived PNGs keep a transparent background: the recolouring matrix keeps every pixel's alpha, so the corners and the gap between the shapes stay clear.
+      const published = (label: string): Buffer => store.publicImages.get(lines[label].replace('https://cdn.example.test/', '')) as Buffer;
+      const oneColour = published('LOGO ONE-COLOR URL');
+      for (const [x, y] of [
+        [0, 0],
+        [1199, 0],
+        [0, 599],
+        [1199, 599],
+        [600, 300],
+      ]) {
+        expect(pngAlphaAt(oneColour, x, y), `one-colour alpha at ${x},${y}`).toBe(0);
+      }
+      expect(pngAlphaAt(oneColour, 300, 300)).toBe(255);
+      const symbolReversed = published('LOGO SYMBOL REVERSED URL');
+      for (const [x, y] of [
+        [0, 0],
+        [1199, 0],
+        [0, 1199],
+        [1199, 1199],
+        [1190, 600],
+      ]) {
+        expect(pngAlphaAt(symbolReversed, x, y), `reversed-symbol alpha at ${x},${y}`).toBe(0);
+      }
+      expect(pngAlphaAt(symbolReversed, 600, 600)).toBe(255);
+    });
+
+    it('derives no variant from a lockup painted over a white full-canvas rect: a box no filter can remove, so the slots go absent, not boxed', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // A black mark over a white rect the size of the viewBox: the ground is a second ink by the one shared rule, so nothing is recoloured from it.
+      await seedKit(documentStore, {
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><rect width="20" height="10" fill="#fff"/><circle cx="5" cy="5" r="4"/><path d="M11 1h8v8h-8z" fill="black"/></svg>',
+        symbolViewBox: SYMBOL_VIEWBOX,
+      });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO REVERSED URL']).toBe('none');
+      expect(lines['LOGO ONE-COLOR URL']).toBe('none');
+      expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
+      expect(started.logoNote).toBeNull();
+      expect(store.publicImages.size).toBe(2 + ICON_IMAGES);
+      expect(loggerMocks.warning).not.toHaveBeenCalled();
+      // The primary is sent as it came, white ground and all.
+      expect(pngAlphaAt(store.publicImages.get(lines['LOGO URL'].replace('https://cdn.example.test/', '')) as Buffer, 0, 0)).toBe(255);
+    });
+
     it('sends no symbol lines when the kit has neither a symbol file nor a symbol viewBox, and still the reversed and one-colour lockups', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
       await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: null });
@@ -917,9 +1023,10 @@ describe('MktgSlidesExportService', () => {
       );
     });
 
-    it('drops the symbol and the reversed symbol, with one warning, when the rasterizer aborts on the crop, and still sends the lockups', async () => {
+    it('drops the symbol and the reversed symbol, with one warning, when the rasterizer aborts on the crop, and still sends the primary', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
       // A lockup whose own user-space filter region lies far outside the symbol crop: the rasterizer's native code aborts on the crop.
+      // Its filter also makes it artwork no recolour is derived from, so the reversed and one-colour lockups are absent, not failed.
       await seedKit(documentStore, {
         svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><defs><filter id="s" filterUnits="userSpaceOnUse" x="140" y="20" width="60" height="60"><feDropShadow dx="1" dy="1" stdDeviation="1"/></filter></defs><rect x="10" y="10" width="30" height="30" fill="#1f6feb"/><rect x="150" y="30" width="40" height="40" fill="#d62" filter="url(#s)"/></svg>',
         symbolViewBox: '0 0 50 50',
@@ -929,12 +1036,12 @@ describe('MktgSlidesExportService', () => {
 
       const lines = sentLogoLines();
       expect(lines['LOGO URL']).toMatch(LOGO_URL);
-      expect(lines['LOGO REVERSED URL']).toMatch(LOGO_URL);
-      expect(lines['LOGO ONE-COLOR URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO REVERSED URL']).toBe('none');
+      expect(lines['LOGO ONE-COLOR URL']).toBe('none');
       expect(lines['LOGO SYMBOL URL']).toBe('none');
       expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
       expect(started.logoNote).toBeNull();
-      expect(store.publicImages.size).toBe(3 + ICON_IMAGES);
+      expect(store.publicImages.size).toBe(1 + ICON_IMAGES);
       expect(loggerMocks.warning).toHaveBeenCalledTimes(1);
       expect(loggerMocks.warning).toHaveBeenCalledWith(
         req,
