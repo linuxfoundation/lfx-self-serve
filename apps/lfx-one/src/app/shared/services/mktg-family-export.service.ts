@@ -210,6 +210,8 @@ export class MktgFamilyExportService {
         return {
           framework,
           kit: book,
+          // The kit inside the family prints what the standalone print prints: its approval reaches the kit renderer unchanged.
+          kitApproval: kitResponse?.approval ?? null,
           boilerplates: boilerplatesView,
           faq: faqView,
           brand,

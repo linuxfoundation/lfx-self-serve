@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_FAMILY_EXPORT_KINDS } from '../constants/mktg-family-export.constants';
-import type { MktgDocumentType, MktgStoredRevision } from './mktg-document-store.interface';
+import type { MktgDocumentType, MktgRevisionApproval, MktgStoredRevision } from './mktg-document-store.interface';
 import type { BrandKitBookView } from './brand-kit.interface';
 import type { MktgFamilyPrintConflict, MktgFamilyPrintDocument } from './mktg-family-print.interface';
 import type { BoilerplatesPrintView, FaqPrintView, FoundationMessagePrintView, MktgPrintBrand } from './mktg-print.interface';
@@ -87,6 +87,8 @@ export interface MktgFamilyExportRunUpdate {
 export interface MktgFamilyPrintView {
   framework: FoundationMessagePrintView | null;
   kit: BrandKitBookView | null;
+  /** The kit revision's recorded approval, as the standalone kit print receives it (its Sources page's acceptance card and the usage page's report year); null when the family has no kit or the store records none. */
+  kitApproval: MktgRevisionApproval | null;
   boilerplates: BoilerplatesPrintView | null;
   faq: FaqPrintView | null;
   brand: MktgPrintBrand;

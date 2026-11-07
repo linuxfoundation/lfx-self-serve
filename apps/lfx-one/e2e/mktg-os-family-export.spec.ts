@@ -300,6 +300,8 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(kitPrint.getByTestId('brand-kit-type-source')).toContainText('Named on one.example.org');
   await expect(kitPrint.getByTestId('brand-kit-type-source')).not.toContainText('https://');
   await expect(kitPrint.getByTestId('brand-kit-voice-messages').locator('.pp-lab')).toHaveText(['Umbrella message', 'Brand line']);
+  // The kit's recorded approval prints inside the family as it does standalone (the Sources page's acceptance card).
+  await expect(kitPrint.getByTestId('brand-kit-sources-accepted')).toContainText('Approved 20 Oct 2026');
   // One break per sheet, owned by the frame that starts it (the family's own break before the kit folds into it).
   await expect(kitFrames.first()).toHaveCSS('break-before', 'page');
   await expect(kitFrames.last()).toHaveCSS('break-after', 'auto');

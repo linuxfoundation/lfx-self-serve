@@ -27,6 +27,7 @@ function view(): MktgFamilyPrintView {
   return {
     framework: null,
     kit: null,
+    kitApproval: null,
     boilerplates: buildBoilerplatesPrintView(boilerplates, brand),
     faq: buildFaqPrintView(faq, brand),
     brand,

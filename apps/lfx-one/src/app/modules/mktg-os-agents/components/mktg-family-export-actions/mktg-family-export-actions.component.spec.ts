@@ -71,6 +71,7 @@ describe('Family export slot', () => {
       of({
         framework: null,
         kit: null,
+        kitApproval: null,
         boilerplates: null,
         faq: null,
         brand: mktgPrintBrand(null),
@@ -443,6 +444,7 @@ describe('Family export slot', () => {
       of({
         framework,
         kit: kitView,
+        kitApproval: { approvedAt: '2026-11-06T09:00:00Z', approvedBy: null },
         boilerplates: buildBoilerplatesPrintView(boilerplates, brand),
         faq: faqView,
         brand,
@@ -591,6 +593,11 @@ describe('Family export slot', () => {
       Array.from(boilerplatesPage?.querySelectorAll('[data-testid="mktg-portrait-page-head"] > span') ?? []).map((span) => span.textContent?.trim())
     ).toEqual(['Boilerplates', 'Synthetic project positioning & brand']);
     expect(book.querySelectorAll('[data-testid="family-print-boilerplate-card"]')).toHaveLength(4);
+    // The kit's pages inside the family print what the standalone kit print prints from the same record: its recorded
+    // approval reaches the kit renderer (the Sources page's acceptance card; the usage page's report year).
+    expect(book.querySelector('[data-testid="brand-kit-sources-accepted"]')?.textContent).toContain('Accepted when V1.0 was approved.');
+    expect(book.querySelector('[data-testid="brand-kit-sources-accepted"]')?.textContent).toContain('6 Nov 2026');
+    expect(book.querySelector('[data-testid="brand-kit-sources-intro"]')?.textContent).toContain('what was accepted when V1.0 was approved');
     // What the run was built from, each source as a short readable name; the run's notes never print.
     expect(Array.from(book.querySelectorAll('[data-testid="family-print-boilerplate-sources"] li')).map((item) => item.textContent)).toEqual(
       boilerplates.report.sources_read.map(mktgFamilyPrintSourceLabel)
@@ -644,6 +651,7 @@ describe('Family export slot', () => {
     pending.next({
       framework: null,
       kit: null,
+      kitApproval: null,
       boilerplates: null,
       faq: null,
       brand: mktgPrintBrand(null),

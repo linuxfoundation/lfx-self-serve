@@ -170,6 +170,8 @@ describe('Family export client', () => {
     expect(view?.boilerplates?.brand.fontStack).toBe(view?.brand.fontStack);
     expect(view?.faq?.brand.source).toBe('kit');
     expect(view?.kit?.projectName).toBe('Project One');
+    // The kit's recorded approval reaches the kit renderer as the standalone print's does (its acceptance card, the usage page's report year).
+    expect(view?.kitApproval).toEqual({ approvedAt: '2026-10-20T00:00:00Z', approvedBy: null });
     expect(view?.framework).toBeNull();
     expect(view?.fontFamily).toBe('Montserrat');
     // The newest dated member revision names the family PDF; a member without a date is passed over.
