@@ -174,7 +174,23 @@ describe('MktgFamilyPrintComponent', () => {
   });
 
   it('fits the cover strip through the grammar: a long name drops the LF suffix and stays on one line; only one word each that still does not fit wraps and lifts the strip', async () => {
-    // The editor's p01: `CLOUD NATIVE COMPUTING FOUNDATION (CNCF) · A LINUX FOUNDATION PROJECT` beside the site and date wrapped the strip.
+    // The face's capitals decide first (M10b): the e2e fixture's line in Montserrat fits the inset by them where the grammar's
+    // lowercase measure called it full and dropped "a Linux Foundation project". The suffix stays, on one line.
+    const base = view();
+    const montserrat = await render({
+      ...base,
+      brand: { ...base.brand, fontStack: "'Montserrat', sans-serif" },
+      projectName: 'Synthetic Documents Project',
+      websiteLabel: 'one.example.org',
+    });
+    const kept = page(montserrat, 'cover')?.querySelector<HTMLElement>('[data-testid="family-print-cover-strip"]');
+    expect(Array.from(kept?.querySelectorAll('span') ?? []).map((span) => span.textContent)).toEqual([
+      `Synthetic Documents Project${MKTG_PORTRAIT_COVER_STRIP.separator}a Linux Foundation project`,
+      `one.example.org${MKTG_PORTRAIT_COVER_STRIP.separator}7 Nov 2026`,
+    ]);
+    expect(kept?.classList.contains('pp-cover-strip--wrapped')).toBe(false);
+    // The editor's p01: `CLOUD NATIVE COMPUTING FOUNDATION (CNCF) · A LINUX FOUNDATION PROJECT` beside the site and date wrapped the strip;
+    // too wide with its suffix by the capitals too, so the grammar's fit answers.
     const long = await render({ ...view(), projectName: 'Cloud Native Computing Foundation (CNCF)', websiteLabel: 'synthetic.example' });
     const strip = page(long, 'cover')?.querySelector<HTMLElement>('[data-testid="family-print-cover-strip"]');
     expect(Array.from(strip?.querySelectorAll('span') ?? []).map((span) => span.textContent)).toEqual([

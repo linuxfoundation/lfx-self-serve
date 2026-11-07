@@ -10,6 +10,13 @@ import { MKTG_FAMILY_PRINT_PAGE_KINDS } from '../constants/mktg-family-print.con
 import type { MktgFamilyExportAgentKey } from './mktg-family-export.interface';
 import type { MktgPortraitBook, MktgPortraitPlanPage } from './mktg-portrait-print.interface';
 
+/** How a line of the family's capitals is read for its width: its size in px, its weight and its tracking in em. */
+export interface MktgFamilyPrintCapsMeasure {
+  size: number;
+  weight: number;
+  tracking: number;
+}
+
 /** What a frame of the family book holds. */
 export type MktgFamilyPrintPageKind = (typeof MKTG_FAMILY_PRINT_PAGE_KINDS)[number];
 
