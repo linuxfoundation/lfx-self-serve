@@ -14,6 +14,7 @@ import {
   MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS,
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_FAMILY_PRINT_LABEL_STOP_WORDS,
+  MKTG_FAMILY_PRINT_RERUN_ON_COLOR,
   MKTG_FAMILY_PRINT_ROUNDING_WORDS,
   MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT,
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
@@ -519,7 +520,7 @@ export function mktgFamilyPrintConflicts(
         Chosen: conflict.chosen.toUpperCase(),
       }),
       // Every row names its action: the kit is re-run once the sources it read agree (the brand-line row's is the framework).
-      rerun: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.rerunOnColor, { Document: mktgFamilyPrintInSentence(kitTitle), Name: conflict.name }),
+      rerun: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_RERUN_ON_COLOR, { Document: mktgFamilyPrintInSentence(kitTitle), Name: conflict.name }),
     });
   }
   return conflicts;

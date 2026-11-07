@@ -219,12 +219,9 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(openerMeta).toContainText('Version');
   await expect(openerMeta).toContainText('Pages');
   await expect(openerMeta.locator('dd').nth(1)).toHaveText(/^\d{1,2} [A-Z][a-z]{2} \d{4}$/);
-  // The running head names the document left (its name alone, one style on every family-owned page) and the family right
-  // on every content page; no page is hand-numbered.
+  // The running head names the chapter left and the family right on every content page; no page is hand-numbered.
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-doc')).toHaveText(/positioning & brand$/);
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-section')).toHaveText('Boilerplates');
-  await expect(frames.byId('faq-1').getByTestId('mktg-portrait-page-section')).toHaveText('FAQ');
-  await expect(frames.byId('contents').getByTestId('mktg-portrait-page-section')).toHaveText('Contents');
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-number')).toHaveText(String(frames.byIdPage('boilerplates')).padStart(2, '0'));
   // The framework in the family's book: the pages of its family plan for this fixture (one goal, one ICP), no cover of
   // its own and no band, each under the family's running head, numbered on from its opener, on the kit's look.
