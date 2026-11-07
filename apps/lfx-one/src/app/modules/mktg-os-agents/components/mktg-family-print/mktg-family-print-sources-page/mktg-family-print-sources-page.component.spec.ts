@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_KIT_POSITIONING_FAMILY_ID } from '@lfx-one/shared/constants';
+import { MKTG_FAMILY_PRINT_COPY, MKTG_KIT_POSITIONING_FAMILY_ID } from '@lfx-one/shared/constants';
 import { MktgFamilyPrintChapter } from '@lfx-one/shared/interfaces';
 import { mktgFamilyPrintDocument } from '@lfx-one/shared/utils';
 import { describe, expect, it } from 'vitest';
@@ -51,6 +51,9 @@ describe('MktgFamilyPrintSourcesPageComponent', () => {
     expect(open?.style.top).toBe('');
     expect(open?.classList.contains('fps-block')).toBe(true);
     expect(conflicts?.classList.contains('fps-block')).toBe(true);
+    // A page with something to list keeps the standing intro and says nothing about agreement.
+    expect(root.querySelector('[data-testid="family-print-sources-intro"]')?.textContent).toBe(MKTG_FAMILY_PRINT_COPY.sourcesIntro);
+    expect(root.querySelector('[data-testid="family-print-sources-quiet"]')).toBeNull();
   });
 
   it('omits the conflicts block when the store names none, and the open list moves up', async () => {
@@ -62,6 +65,8 @@ describe('MktgFamilyPrintSourcesPageComponent', () => {
     const open = root.querySelector<HTMLElement>('[data-testid="family-print-sources-open"]');
     expect(open?.previousElementSibling).toBeNull();
     expect(open?.parentElement?.style.top).toBe('410px');
+    expect(root.querySelector('[data-testid="family-print-sources-intro"]')?.textContent).toBe(MKTG_FAMILY_PRINT_COPY.sourcesIntro);
+    expect(root.querySelector('[data-testid="family-print-sources-quiet"]')).toBeNull();
   });
 
   it('omits the open list when every run closed clean', async () => {
@@ -69,6 +74,24 @@ describe('MktgFamilyPrintSourcesPageComponent', () => {
     fixture.componentRef.setInput('chapters', [chapters[1]]);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="family-print-sources-open"]')).toBeNull();
+    expect(root.querySelectorAll('[data-testid="family-print-sources-row"]')).toHaveLength(1);
+  });
+
+  it('says the documents agree and nothing is left open when both lists are empty, with the intro’s two-lists clause dropped', async () => {
+    // The product owner's decision (D-27): a quiet cross-check is said in one line where the lists would start, never left blank.
+    const fixture = TestBed.createComponent(MktgFamilyPrintSourcesPageComponent);
+    fixture.componentRef.setInput('chapters', [chapters[1]]);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="family-print-sources-intro"]')?.textContent).toBe(MKTG_FAMILY_PRINT_COPY.sourcesIntroQuiet);
+    expect(root.querySelector('[data-testid="family-print-sources-intro"]')?.textContent).not.toContain('disagree');
+    const quiet = root.querySelector<HTMLElement>('[data-testid="family-print-sources-quiet"]');
+    expect(quiet?.textContent).toBe('The documents agree, and nothing is left open.');
+    expect(quiet?.classList.contains('pp-body')).toBe(true);
+    expect(quiet?.parentElement?.getAttribute('data-testid')).toBe('family-print-sources-lists');
+    expect(quiet?.parentElement?.style.top).toBe('410px');
+    expect(root.querySelector('[data-testid="family-print-sources-conflicts"]')).toBeNull();
     expect(root.querySelector('[data-testid="family-print-sources-open"]')).toBeNull();
     expect(root.querySelectorAll('[data-testid="family-print-sources-row"]')).toHaveLength(1);
   });
