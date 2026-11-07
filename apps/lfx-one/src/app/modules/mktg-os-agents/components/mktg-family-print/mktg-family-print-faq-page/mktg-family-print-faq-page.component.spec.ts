@@ -63,8 +63,10 @@ describe('MktgFamilyPrintFaqPageComponent', () => {
     expect(entries.map((entry) => entry.querySelector('.fpq-entry__question')?.textContent)).toEqual(['What is it?', 'How do I join?']);
     expect(entries[0].querySelector('.fpq-entry__answer')?.textContent).toBe('A synthetic project.');
     expect(entries[0].querySelector('.pp-chip')?.textContent).toBe('Framework');
-    // The run's `Notes` source is the project's notes to a reader of the book.
-    expect(entries[1].querySelector('.pp-chip')?.textContent).toBe('Project notes');
+    // The run's `Notes` is an internal source label: no chip, and no label in its place.
+    expect(entries[1].querySelector('.pp-chip')).toBeNull();
+    expect(entries[1].querySelector('.fpq-entry__source')).toBeNull();
+    expect(root.textContent).not.toMatch(/notes/i);
     expect(root.textContent).not.toContain('Who runs it?');
     expect(root.textContent).not.toContain('Open');
   });

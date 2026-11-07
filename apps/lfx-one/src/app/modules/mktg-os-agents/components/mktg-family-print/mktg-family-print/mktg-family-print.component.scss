@@ -3,7 +3,10 @@
 
 /* The family's own pages on the portrait grammar's frames: the cover's tiles (fpc-) and the contents page (fpt-),
    the design board's exact px (styling.md's accepted deviation for a print design). The frame's custom
-   properties (--pp-dark, --pp-accent, --pp-on-dark, --pp-font, --pp-ink, --pp-muted) are the grammar's. */
+   properties (--pp-dark, --pp-accent, --pp-on-dark, --pp-font, --pp-ink, --pp-muted) are the grammar's.
+   The cover's secondary inks are mixed from --pp-on-dark (the ink the grammar selected for contrast on the
+   cover ground: white on a dark, the dark ink on a light one), never a fixed translucent white, so a kit
+   with a light cover ground keeps its purpose, tiles and rules readable (CSS Color 5 color-mix()). */
 
 /* ---------- cover ---------- */
 .fpc-logo {
@@ -33,7 +36,7 @@
   margin-top: 20px;
   max-width: 560px;
   font: 400 17px/1.5 var(--pp-font);
-  color: rgba(255, 255, 255, 0.75);
+  color: color-mix(in srgb, var(--pp-on-dark) 75%, transparent);
 }
 
 .fpc-docs {
@@ -45,7 +48,7 @@
 
 .fpc-doc {
   padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  border-top: 1px solid color-mix(in srgb, var(--pp-on-dark) 30%, transparent);
 
   &__title {
     margin-top: 6px;
@@ -56,7 +59,7 @@
   &__meta {
     margin-top: 4px;
     font: 400 10.5px/1.5 var(--pp-font);
-    color: rgba(255, 255, 255, 0.6);
+    color: color-mix(in srgb, var(--pp-on-dark) 60%, transparent);
   }
 }
 
@@ -122,4 +125,10 @@
 .fpt-note {
   margin-top: 28px;
   line-height: 1.6;
+}
+
+/* The cut note under the last block (`+3 more in LFX One`): an entry row's type in the muted ink. */
+.fpt-cut {
+  margin: 0;
+  color: var(--pp-muted);
 }

@@ -49,26 +49,30 @@
         <p class="pp-body pp-body--wide" [lfxPpRect]="[column[0], geometry.bodyTop, column[1]]" data-testid="family-print-contents-intro">
           {{ contentsIntro() }}
         </p>
-        <div class="fpt-columns" [lfxPpRect]="[column[0], 210, column[1]]">
-          @for (chapters of contentsColumns(); track $index; let lastColumn = $last) {
+        <!-- Two columns filled by height: a chapter the first cannot finish continues under a repeated row; a cut is a note, never a clip. -->
+        <div class="fpt-columns" [lfxPpRect]="[column[0], contentsLayout.top, column[1]]">
+          @for (blocks of contents().columns; track $index; let lastColumn = $last) {
             <div class="fpt-column">
-              @for (chapter of chapters; track chapter.document.agentKey) {
-                <div class="fpt-chapter" data-testid="family-print-contents-chapter">
+              @for (block of blocks; track block.chapter.document.agentKey + (block.continued ? '+' : '')) {
+                <div class="fpt-chapter" [attr.data-continued]="block.continued || null" data-testid="family-print-contents-chapter">
                   <div class="fpt-chapter__row">
                     <span>
-                      <span class="fpt-chapter__number">{{ chapter.document.number }}</span>
-                      <span class="fpt-chapter__title">{{ chapter.document.title }}</span>
-                      @if (chapter.document.versionLabel) {
-                        <span class="fpt-chapter__version">{{ chapter.document.versionLabel }}</span>
+                      <span class="fpt-chapter__number">{{ block.chapter.document.number }}</span>
+                      <span class="fpt-chapter__title">{{ block.chapter.document.title }}</span>
+                      @if (block.chapter.document.versionLabel) {
+                        <span class="fpt-chapter__version">{{ block.chapter.document.versionLabel }}</span>
                       }
                     </span>
-                    <span class="fpt-chapter__page" data-testid="family-print-contents-opener-page">{{ chapter.openerPage }}</span>
+                    <span class="fpt-chapter__page" data-testid="family-print-contents-opener-page">{{ block.chapter.openerPage }}</span>
                   </div>
-                  @for (entry of chapter.entries; track entry.n) {
+                  @for (entry of block.entries; track entry.n) {
                     <div class="fpt-entry" data-testid="family-print-contents-entry">
                       <span>{{ entry.title }}</span>
                       <span class="fpt-entry__page">{{ entry.n }}</span>
                     </div>
+                  }
+                  @if (block.cut) {
+                    <p class="fpt-entry fpt-cut" data-testid="family-print-contents-cut">{{ contentsCutNote() }}</p>
                   }
                 </div>
               }

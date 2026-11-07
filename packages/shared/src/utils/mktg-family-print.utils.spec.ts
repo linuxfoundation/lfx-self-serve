@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { MKTG_KIT_POSITIONING_FAMILY_ID } from '../constants/mktg-kit.constants';
 import {
   MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES,
+  MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
 } from '../constants/mktg-family-print.constants';
@@ -19,13 +20,18 @@ import type {
 import {
   mktgFamilyPrintBuiltFromLabel,
   mktgFamilyPrintConflicts,
+  mktgFamilyPrintContentsChapterHeight,
+  mktgFamilyPrintContentsEntryHeight,
+  mktgFamilyPrintContentsLayout,
   mktgFamilyPrintCutFromEnd,
   mktgFamilyPrintCutNote,
   mktgFamilyPrintDate,
   mktgFamilyPrintDocument,
+  mktgFamilyPrintFaqBalancedPages,
   mktgFamilyPrintFaqEntryHeight,
   mktgFamilyPrintFaqGroups,
   mktgFamilyPrintFaqPages,
+  mktgFamilyPrintFaqSourceLabel,
   mktgFamilyPrintFill,
   mktgFamilyPrintFitBoilerplateCards,
   mktgFamilyPrintFitRows,
@@ -154,31 +160,113 @@ describe('mktgFamilyPrintFaqPages', () => {
     );
   }
 
-  it('fills the two columns by height, in order, a group split where its column ends with its heading repeated', () => {
+  it('deals the two columns by height, in order, a group split where its column ends with its heading repeated', () => {
     expect(shape(mktgFamilyPrintFaqPages(faqGroups([2, 3, 3, 2])))).toEqual([
       [
-        ['0.0H', '0.1', '1.0H', '1.1', '1.2', '2.0H'],
-        ['2.1H', '2.2', '3.0H', '3.1'],
+        ['0.0H', '0.1', '1.0H', '1.1', '1.2'],
+        ['2.0H', '2.1', '2.2', '3.0H', '3.1'],
       ],
     ]);
+    // Twenty questions need two pages (the first is full at fourteen); once split, the pages and their columns are balanced.
     const groups = faqGroups([5, 5, 5, 5]);
     const pages = mktgFamilyPrintFaqPages(groups);
     expect(shape(pages)).toEqual([
       [
-        ['0.0H', '0.1', '0.2', '0.3', '0.4', '1.0H'],
-        ['1.1H', '1.2', '1.3', '1.4', '2.0H', '2.1'],
+        ['0.0H', '0.1', '0.2', '0.3', '0.4'],
+        ['1.0H', '1.1', '1.2', '1.3', '1.4'],
       ],
       [
-        ['2.2H', '2.3', '2.4', '3.0H', '3.1', '3.2'],
-        ['3.3H', '3.4'],
+        ['2.0H', '2.1', '2.2', '2.3', '2.4'],
+        ['3.0H', '3.1', '3.2', '3.3', '3.4'],
       ],
     ]);
     for (const page of pages) for (const column of page.columns) expect(columnHeight(groups, column)).toBeLessThanOrEqual(budget);
     expect(pages.flatMap((page) => page.columns.flat())).toHaveLength(20);
   });
 
+  it('opens a second page only when the first is full, then balances the pages and their columns by height: eight and one become five and four', () => {
+    // Nine six-line answers in two groups, four to a column: the greedy fill leaves one on the second page; the deal gives 3/2 and 2/2.
+    const groups = faqGroups([5, 4], 'A longer answer that runs on. '.repeat(10));
+    const pages = mktgFamilyPrintFaqPages(groups);
+    expect(shape(pages)).toEqual([
+      [
+        ['0.0H', '0.1', '0.2'],
+        ['0.3H', '0.4'],
+      ],
+      [
+        ['1.0H', '1.1'],
+        ['1.2H', '1.3'],
+      ],
+    ]);
+    const heights = pages.map((page) => page.columns.reduce((sum, column) => sum + columnHeight(groups, column), 0));
+    expect(Math.abs(heights[0] - heights[1])).toBeLessThan(mktgFamilyPrintFaqEntryHeight(groups[0].questions[0], width) + MKTG_FAMILY_PRINT_FAQ_LAYOUT.heading);
+    // Eight fill one page: no second page, no deal.
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([5, 3], 'A longer answer that runs on. '.repeat(10))))).toEqual([
+      [
+        ['0.0H', '0.1', '0.2', '0.3'],
+        ['0.4H', '1.0H', '1.1', '1.2'],
+      ],
+    ]);
+    // Every question once, in order, whatever the deal.
+    const dealt = pages.flatMap((page) => page.columns.flat()).map((item) => `${item.group}.${item.question}`);
+    expect(dealt).toEqual(groups.flatMap((group, g) => group.questions.map((_, q) => `${g}.${q}`)));
+    expect(mktgFamilyPrintFaqBalancedPages(groups, 2)).toEqual(pages);
+    expect(mktgFamilyPrintFaqBalancedPages([], 2)).toEqual([]);
+  });
+
+  it('keeps every balanced column within its budget and carries what a page cannot hold to the next, so nothing is cut', () => {
+    // Mixed heights: long answers among short ones, forty questions.
+    const groups = faqGroups([10, 10, 10, 10]).map((group, g) => ({
+      ...group,
+      questions: group.questions.map((entry, q) => ({ ...entry, answer: (g + q) % 3 === 0 ? 'A much longer answer. '.repeat(14) : entry.answer })),
+    }));
+    const pages = mktgFamilyPrintFaqPages(groups);
+    expect(pages.length).toBeGreaterThan(1);
+    for (const page of pages) for (const column of page.columns) expect(columnHeight(groups, column)).toBeLessThanOrEqual(budget);
+    expect(pages.flatMap((page) => page.columns.flat()).map((item) => `${item.group}.${item.question}`)).toEqual(
+      groups.flatMap((group, g) => group.questions.map((_, q) => `${g}.${q}`))
+    );
+    // Every column but the last holds something; a group split by a column repeats its heading.
+    expect(
+      pages
+        .flatMap((page) => page.columns)
+        .slice(0, -1)
+        .every((column) => column.length > 0)
+    ).toBe(true);
+    for (const page of pages) for (const column of page.columns) if (column.length) expect(column[0].heading).toBe(true);
+  });
+
+  it('balances few questions across both columns of a single page, a group heading staying with its first question', () => {
+    // The minimal fixture's four and the logo-less fixture's seven: never the left column alone.
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([4])))).toEqual([
+      [
+        ['0.0H', '0.1'],
+        ['0.2H', '0.3'],
+      ],
+    ]);
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([3, 4])))).toEqual([
+      [
+        ['0.0H', '0.1', '0.2', '1.0H'],
+        ['1.1H', '1.2', '1.3'],
+      ],
+    ]);
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([2, 2])))).toEqual([
+      [
+        ['0.0H', '0.1'],
+        ['1.0H', '1.1'],
+      ],
+    ]);
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([1])))).toEqual([[['0.0H'], []]]);
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([2])))).toEqual([[['0.0H'], ['0.1H']]]);
+  });
+
   it('skips empty groups, prints no page with no questions, and sets an entry taller than a column alone', () => {
-    expect(shape(mktgFamilyPrintFaqPages(faqGroups([2, 0, 3])))).toEqual([[['0.0H', '0.1', '2.0H', '2.1', '2.2'], []]]);
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([2, 0, 3])))).toEqual([
+      [
+        ['0.0H', '0.1', '2.0H'],
+        ['2.1H', '2.2'],
+      ],
+    ]);
     expect(mktgFamilyPrintFaqPages(faqGroups([0, 0]))).toEqual([]);
     expect(mktgFamilyPrintFaqPages([])).toEqual([]);
     const tall = faqGroups([3], 'A long answer. '.repeat(400));
@@ -306,6 +394,18 @@ describe('mktgFamilyPrintPlan', () => {
     expect(plan.faqPages).toHaveLength(2);
     expect(plan.faqPages[0].columns[0][0]).toEqual({ group: 0, question: 0, heading: true });
     expect(plan.pages.find((page) => page.kind === 'opener')?.section).toBe('01 Messaging framework');
+    // The family's own content pages carry the document's name alone in the running head, like Contents and Sources: one style.
+    expect(plan.pages.filter((page) => page.kind !== 'opener').map((page) => page.section)).toEqual([
+      'Cover',
+      'Contents',
+      'Messaging framework',
+      'Brand kit',
+      'Boilerplates',
+      'FAQ',
+      'FAQ',
+      'Sources',
+      'Back cover',
+    ]);
     // The pages are the portrait grammar's plan pages, by id, so the inner documents' plans concatenate in.
     expect(plan.pages.map((page) => page.id)).toEqual([
       'cover',
@@ -437,7 +537,8 @@ describe('mktgFamilyPrintConflicts', () => {
         id: 'Coral · Brand kit',
         topic: 'Coral',
         text: 'The brand kit reads Coral as #FF702D from the brand page and #FF7D2D from the site buttons; it keeps #FF702D.',
-        rerun: '',
+        // The colour row carries its action like the brand-line row does: the kit, once its sources agree.
+        rerun: 'Re-run the brand kit once its sources agree on Coral.',
       },
     ]);
   });
@@ -607,5 +708,146 @@ describe('mktgFamilyPrintNumberConflicts', () => {
         [{ title: 'FAQ', texts: ['There were 9,500 published MCP servers at launch.'] }]
       )
     ).toHaveLength(1);
+  });
+});
+
+describe('mktgFamilyPrintContentsLayout', () => {
+  const width = (MKTG_PORTRAIT_PAGE.contentWidth - MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.columnGap) / 2;
+  const room = MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.bottom - MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.top;
+
+  /** The dev project's four chapters with `framework` and `kit` inner pages of the titles given. */
+  function chaptersOf(framework: string[], kit: string[]) {
+    return mktgFamilyPrintPlan([
+      { document: doc('foundation-message', 1), innerPageTitles: framework },
+      { document: doc('brand-kit', 2, 4), innerPageTitles: kit },
+      { document: doc('boilerplates', 3, 2), boilerplateCount: 4 },
+      { document: doc('faq', 4, 16), faqGroups: faqGroups([5, 4]) },
+    ]).chapters;
+  }
+
+  /** A column's height as the page draws it: each block's row, its entries and the cut note's line when it has one. */
+  function height(blocks: ReturnType<typeof mktgFamilyPrintContentsLayout>['columns'][number]): number {
+    const note = MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.entry.padding + MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.entry.size * MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.entry.line;
+    return blocks.reduce(
+      (sum, block) =>
+        sum +
+        mktgFamilyPrintContentsChapterHeight(block.chapter, width) +
+        block.entries.reduce((entries, entry) => entries + mktgFamilyPrintContentsEntryHeight(entry, width), 0) +
+        (block.cut ? note : 0),
+      0
+    );
+  }
+
+  const describeBlocks = (layout: ReturnType<typeof mktgFamilyPrintContentsLayout>) =>
+    layout.columns.map((blocks) => blocks.map((block) => `${block.chapter.document.number}${block.continued ? '+' : ''}:${block.entries.length}`));
+
+  it('keeps the board\u2019s split for a book the page holds: the first two chapters in the first column, whole, nothing continued or cut', () => {
+    // The mock's book: 12 framework pages, 14 kit pages, the boilerplates, two FAQ pages.
+    const framework = [
+      'Framework',
+      'Goal 1 · Events',
+      'Goal 2 · Adoption',
+      'Goal 3 · Community',
+      'Goal 4 · Membership',
+      'Say and avoid · anchor questions',
+      'Ideal customer profiles',
+      'Ideal customer profiles (2)',
+      'Ideal customer profiles (3)',
+      'Message house',
+      'Key numbers',
+      'Sources & gaps',
+    ];
+    const kit = [
+      'Logo system',
+      'Colorways',
+      'Clear space & minimum size',
+      'Symbol & symbol in shape',
+      'Partnership lockup',
+      'Watchouts',
+      'Color palette',
+      'Color contrast',
+      'Typography',
+      'Iconography',
+      'Imagery & graphic elements',
+      'Example usage',
+      'Voice in brief',
+      'Sources & decisions',
+    ];
+    const chapters = chaptersOf(framework, kit);
+    const layout = mktgFamilyPrintContentsLayout(chapters);
+    expect(describeBlocks(layout)).toEqual([
+      ['01:12', '02:14'],
+      [`03:${chapters[2].entries.length}`, `04:${chapters[3].entries.length}`],
+    ]);
+    expect(layout.cut).toBe(0);
+    expect(height(layout.columns[0])).toBeLessThanOrEqual(room);
+    expect(height(layout.columns[1])).toBeLessThanOrEqual(room - MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.tail);
+    // Every entry of every chapter is on the page, in order, once.
+    expect(layout.columns.flat().flatMap((block) => block.entries.map((entry) => entry.n))).toEqual(
+      chapters.flatMap((chapter) => chapter.entries.map((entry) => entry.n))
+    );
+  });
+
+  it('continues a chapter the first column cannot finish under a repeated row at the top of the second, by measured height', () => {
+    // Eight goals and ten ICPs: 22 framework entries, then the kit's 14; the first column holds the framework and the kit's first rows.
+    const framework = [
+      'Framework',
+      ...Array.from({ length: 8 }, (_, index) => `Goal ${index + 1} · A goal title long enough to wrap onto a second line in the column`),
+      'Say and avoid · anchor questions',
+      ...Array.from({ length: 10 }, (_, index) => `Ideal customer profiles${index ? ` (${index + 1})` : ''}`),
+      'Message house',
+      'Key numbers',
+      'Sources & gaps',
+    ];
+    const kit = Array.from({ length: 14 }, (_, index) => `Kit page ${index + 1}`);
+    const layout = mktgFamilyPrintContentsLayout(chaptersOf(framework, kit));
+    const [first, second] = layout.columns;
+    expect(first.map((block) => block.chapter.document.number)).toEqual(['01', '02']);
+    expect(first[1].continued).toBe(false);
+    expect(first[1].entries.length).toBeGreaterThan(0);
+    expect(first[1].entries.length).toBeLessThan(14);
+    expect(second[0]).toMatchObject({ continued: true, cut: 0 });
+    expect(second[0].chapter.document.number).toBe('02');
+    expect(first[1].entries.length + second[0].entries.length).toBe(14);
+    expect(second.slice(1).map((block) => block.chapter.document.number)).toEqual(['03', '04']);
+    expect(layout.cut).toBe(0);
+    expect(height(first)).toBeLessThanOrEqual(room);
+    expect(height(second)).toBeLessThanOrEqual(room - MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.tail);
+  });
+
+  it('never clips: when the entries exceed the page, the last block keeps one line for the cut note and counts every entry it stands for', () => {
+    const framework = Array.from({ length: 40 }, (_, index) => `Framework page ${index + 1}`);
+    const kit = Array.from({ length: 40 }, (_, index) => `Kit page ${index + 1}`);
+    const chapters = chaptersOf(framework, kit);
+    const layout = mktgFamilyPrintContentsLayout(chapters);
+    const shown = layout.columns.flat().reduce((count, block) => count + block.entries.length, 0);
+    const total = chapters.reduce((count, chapter) => count + chapter.entries.length, 0);
+    expect(layout.cut).toBeGreaterThan(0);
+    expect(shown + layout.cut).toBe(total);
+    const blocks = layout.columns.flat();
+    expect(blocks[blocks.length - 1].cut).toBe(layout.cut);
+    expect(blocks.slice(0, -1).every((block) => block.cut === 0)).toBe(true);
+    expect(mktgFamilyPrintCutNote(layout.cut)).toBe(`+${layout.cut} more in LFX One`);
+    expect(height(layout.columns[0])).toBeLessThanOrEqual(room);
+    expect(height(layout.columns[1])).toBeLessThanOrEqual(room - MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.tail);
+  });
+
+  it('lays an empty book out as two empty columns', () => {
+    expect(mktgFamilyPrintContentsLayout([])).toEqual({ columns: [[], []], cut: 0 });
+  });
+});
+
+describe('mktgFamilyPrintFaqSourceLabel', () => {
+  it('prints a stored source as its chip, none for the run\u2019s internal Notes label, and measures the entry without the chip\u2019s line then', () => {
+    expect(mktgFamilyPrintFaqSourceLabel('Framework')).toBe('Framework');
+    expect(mktgFamilyPrintFaqSourceLabel(' website ')).toBe('website');
+    expect(mktgFamilyPrintFaqSourceLabel('Notes')).toBe('');
+    expect(mktgFamilyPrintFaqSourceLabel('notes')).toBe('');
+    expect(mktgFamilyPrintFaqSourceLabel('')).toBe('');
+    const width = (MKTG_PORTRAIT_PAGE.contentWidth - MKTG_FAMILY_PRINT_FAQ_LAYOUT.columnGap) / 2;
+    const entry = faqGroups([1])[0].questions[0];
+    const withChip = mktgFamilyPrintFaqEntryHeight(entry, width);
+    expect(mktgFamilyPrintFaqEntryHeight({ ...entry, source: 'Notes' }, width)).toBe(withChip - MKTG_FAMILY_PRINT_FAQ_LAYOUT.source);
+    expect(mktgFamilyPrintFaqEntryHeight({ ...entry, source: '' }, width)).toBe(withChip - MKTG_FAMILY_PRINT_FAQ_LAYOUT.source);
   });
 });

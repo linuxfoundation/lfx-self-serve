@@ -8,12 +8,15 @@
 
 import { MKTG_FAMILY_EXPORT_KINDS } from '../constants/mktg-family-export.constants';
 import {
+  MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
+  MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS,
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_FAMILY_PRINT_LABEL_STOP_WORDS,
   MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
   MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS,
+  MKTG_FAMILY_PRINT_RERUN_ON_COLOR,
   MKTG_FAMILY_PRINT_ROUNDING_WORDS,
   MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT,
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
@@ -28,7 +31,9 @@ import type { MktgFamilyExportAgentKey } from '../interfaces/mktg-family-export.
 import type {
   MktgFamilyPrintChapter,
   MktgFamilyPrintConflict,
+  MktgFamilyPrintContentsBlock,
   MktgFamilyPrintContentsEntry,
+  MktgFamilyPrintContentsLayout,
   MktgFamilyPrintDocument,
   MktgFamilyPrintFaqItem,
   MktgFamilyPrintFaqPage,
@@ -107,7 +112,7 @@ export function mktgFamilyPrintFaqGroups(groups: readonly FaqGroupView[]): MktgF
   }));
 }
 
-/** The height one FAQ entry takes in a column `width` px wide: its padding, the question, the answer and the source chip's line. */
+/** The height one FAQ entry takes in a column `width` px wide: its padding, the question, the answer and the source chip's line when it prints one. */
 export function mktgFamilyPrintFaqEntryHeight(entry: MktgFamilyPrintFaqPlanGroup['questions'][number], width: number): number {
   const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
   const paras: MktgPortraitFitPara[] = [
@@ -115,7 +120,7 @@ export function mktgFamilyPrintFaqEntryHeight(entry: MktgFamilyPrintFaqPlanGroup
     { text: entry.answer, ...layout.answer },
   ];
   const text = paras.reduce((height, para) => height + mktgPortraitParaHeight(para, width), 0);
-  return layout.entryPadding + text + (entry.source.trim() ? layout.source : 0);
+  return layout.entryPadding + text + (mktgFamilyPrintFaqSourceLabel(entry.source) ? layout.source : 0);
 }
 
 /**
@@ -124,6 +129,8 @@ export function mktgFamilyPrintFaqEntryHeight(entry: MktgFamilyPrintFaqPlanGroup
  * other; when both are full the next page opens, a group split where its
  * column ended (its heading repeats). An entry taller than a column stands
  * alone in one. Empty groups are not printed. No page with no questions.
+ * A second page opens only when the first is full; the columns of every
+ * page, and the pages, are then balanced (mktgFamilyPrintFaqBalancedPages).
  */
 export function mktgFamilyPrintFaqPages(groups: MktgFamilyPrintFaqPlanGroup[]): MktgFamilyPrintFaqPage[] {
   const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
@@ -162,7 +169,10 @@ export function mktgFamilyPrintFaqPages(groups: MktgFamilyPrintFaqPlanGroup[]): 
     });
   });
   open();
-  return pages;
+  // The fill sets the page count (a second page only when the first is full); the entries are then re-dealt so the pages,
+  // and each page's two columns, hold about the same height (8 + 1 → 5 + 4; four questions → 2 + 2, never the left alone).
+  const dealt = mktgFamilyPrintFaqBalancedPages(groups, pages.length);
+  return dealt.length === pages.length ? dealt : pages;
 }
 
 /**
@@ -339,7 +349,9 @@ export function mktgFamilyPrintOpenItemText(text: string): string {
  * its pages (a mounted inner print counts its page titles, the boilerplates
  * one page of cards, the FAQ its paginated grid), the Sources page and the
  * back cover (the Sources page only when a conflict or an open item exists).
- * A document with nothing to print is dropped with its opener.
+ * A document with nothing to print is dropped with its opener. The
+ * running head of the family's own content pages is the document's name
+ * alone, one style with the Contents and Sources pages.
  * Page numbers are 1-based and the only numbering the pages print.
  */
 export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[], conflictCount = 0): MktgFamilyPrintPlan {
@@ -366,7 +378,10 @@ export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[], confli
   for (const member of members) {
     const { document } = member;
     const kind = MKTG_FAMILY_EXPORT_KINDS[document.agentKey];
+    // The opener's section names the numbered chapter; the family's own content pages print the document's name alone in
+    // the running head, one style with the Contents and Sources pages (a mounted print's pages print their own heads).
     const section = `${document.number} ${document.title}`;
+    const headSection = document.title;
     const entries: MktgFamilyPrintContentsEntry[] = [];
     const openerPage = n + 1;
     const first = openerPage + 1;
@@ -374,18 +389,18 @@ export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[], confli
     if (kind === 'framework' || kind === 'kit') {
       const titles = member.innerPageTitles?.filter((title) => title.trim()) ?? [];
       const span = Math.max(titles.length, 1);
-      content.push({ id: kind, kind, section, title: document.title, agentKey: document.agentKey, index: 0, span });
+      content.push({ id: kind, kind, section: headSection, title: document.title, agentKey: document.agentKey, index: 0, span });
       (titles.length ? titles : [document.title]).forEach((title, index) => entries.push({ title, n: first + index }));
     } else if (kind === 'boilerplates') {
       if ((member.boilerplateCount ?? 0) > 0) {
-        content.push({ id: kind, kind, section, title: MKTG_FAMILY_PRINT_LABELS.boilerplates, agentKey: document.agentKey, index: 0, span: 1 });
+        content.push({ id: kind, kind, section: headSection, title: MKTG_FAMILY_PRINT_LABELS.boilerplates, agentKey: document.agentKey, index: 0, span: 1 });
         entries.push({ title: MKTG_FAMILY_PRINT_LABELS.boilerplates, n: first });
       }
     } else {
       faqPages = mktgFamilyPrintFaqPages(member.faqGroups ?? []);
       faqPages.forEach((_, index) => {
         const title = index === 0 ? MKTG_FAMILY_PRINT_LABELS.faq : `${MKTG_FAMILY_PRINT_LABELS.faq} (${index + 1})`;
-        content.push({ id: `${kind}-${index + 1}`, kind, section, title, agentKey: document.agentKey, index, span: 1 });
+        content.push({ id: `${kind}-${index + 1}`, kind, section: headSection, title, agentKey: document.agentKey, index, span: 1 });
         entries.push({ title, n: first + index });
       });
     }
@@ -576,8 +591,9 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
  * The Sources page's "Where the documents disagree", as the store names it:
  * the kit's brand line against the framework's tagline when both exist and
  * differ, and the kit report's colour conflicts (one colour read with two
- * values). The key numbers' rows are mktgFamilyPrintNumberConflicts. Nothing
- * else is a conflict the book may claim.
+ * values). Each row names the document to re-run. The key numbers' rows are
+ * mktgFamilyPrintNumberConflicts. Nothing else is a conflict the book may
+ * claim.
  */
 export function mktgFamilyPrintConflicts(
   tagline: string,
@@ -614,8 +630,155 @@ export function mktgFamilyPrintConflicts(
         Values: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.lastOfList, { Items: readings.slice(0, -1).join(', '), Last: readings[readings.length - 1] }),
         Chosen: conflict.chosen.toUpperCase(),
       }),
-      rerun: '',
+      // Every row names its action: the kit is re-run once the sources it read agree (the brand-line row's is the framework).
+      rerun: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_RERUN_ON_COLOR, { Document: mktgFamilyPrintInSentence(kitTitle), Name: conflict.name }),
     });
   }
   return conflicts;
+}
+
+/** The height of a contents chapter row in a column `width` px wide: its padding and its title's lines beside the number, version and page cells. */
+export function mktgFamilyPrintContentsChapterHeight(chapter: MktgFamilyPrintChapter, width: number): number {
+  const layout = MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.chapter;
+  return (
+    layout.padding + mktgPortraitParaHeight({ text: chapter.document.title, size: layout.size, line: layout.line, weight: layout.weight }, width - layout.aside)
+  );
+}
+
+/** The height of a contents entry row in a column `width` px wide: its padding and its title's lines past the indent and the page number's cell. */
+export function mktgFamilyPrintContentsEntryHeight(entry: MktgFamilyPrintContentsEntry, width: number): number {
+  const layout = MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.entry;
+  return layout.padding + mktgPortraitParaHeight({ text: entry.title, size: layout.size, line: layout.line }, width - layout.indent - layout.numberWidth);
+}
+
+/**
+ * The contents page laid out by height: the chapters in order into the
+ * page's two columns, the board's split (the first half of the chapters in
+ * the first column) kept while it fits, each row measured by its lines; a
+ * chapter the first column cannot finish continues at the top of the second
+ * under a repeated row. The last column keeps the Sources row's and the
+ * note's room. What the one page cannot hold is never clipped: the last
+ * block gives up rows for one line of cut note, and `cut` counts every entry
+ * the note stands for, the later chapters' included. A book of four
+ * documents fits one page.
+ */
+export function mktgFamilyPrintContentsLayout(chapters: MktgFamilyPrintChapter[]): MktgFamilyPrintContentsLayout {
+  const layout = MKTG_FAMILY_PRINT_CONTENTS_LAYOUT;
+  const width = (MKTG_PORTRAIT_PAGE.contentWidth - layout.columnGap) / 2;
+  const columns: MktgFamilyPrintContentsBlock[][] = [[], []];
+  const last = columns.length - 1;
+  const roomOf = (column: number): number => layout.bottom - layout.top - (column === last ? layout.tail : 0);
+  const entryHeights = chapters.map((chapter) => chapter.entries.map((entry) => mktgFamilyPrintContentsEntryHeight(entry, width)));
+  const remaining = (index: number, next: number): number => chapters.slice(index).reduce((count, chapter) => count + chapter.entries.length, 0) - next;
+  const preferred = Math.ceil(chapters.length / columns.length);
+  let column = 0;
+  let used = 0;
+  // Past the last column: the last block gives rows back until one line is free for the cut note, which counts them too.
+  const close = (shown: number): MktgFamilyPrintContentsLayout => {
+    const noteLine = layout.entry.padding + layout.entry.size * layout.entry.line;
+    const block = columns[last][columns[last].length - 1];
+    let cut = shown;
+    while (block && block.entries.length && used + noteLine > roomOf(last)) {
+      const heights = entryHeights[chapters.indexOf(block.chapter)];
+      used -= heights[block.entries.length - 1];
+      block.entries.pop();
+      cut++;
+    }
+    if (block) block.cut = cut;
+    return { columns, cut };
+  };
+  for (let index = 0; index < chapters.length; index++) {
+    const chapter = chapters[index];
+    const rowHeight = mktgFamilyPrintContentsChapterHeight(chapter, width);
+    const heights = entryHeights[index];
+    let next = 0;
+    // The board's split: the first column holds the first half of the chapters whole, as long as they fit it.
+    if (column === 0 && used > 0 && index >= preferred) {
+      column++;
+      used = 0;
+    }
+    for (;;) {
+      // A row that would stand alone at a column's foot opens the next column; past the last, the rest is counted.
+      if (used > 0 && used + rowHeight + (heights[next] ?? 0) > roomOf(column)) {
+        if (column === last) return close(remaining(index, next));
+        column++;
+        used = 0;
+      }
+      const block: MktgFamilyPrintContentsBlock = { chapter, continued: next > 0, entries: [], cut: 0 };
+      used += rowHeight;
+      while (next < heights.length && used + heights[next] <= roomOf(column)) {
+        block.entries.push(chapter.entries[next]);
+        used += heights[next];
+        next++;
+      }
+      columns[column].push(block);
+      if (next >= heights.length) break;
+      if (column === last) return close(remaining(index, next));
+      column++;
+      used = 0;
+    }
+  }
+  return { columns, cut: 0 };
+}
+
+/** An answered question as the FAQ deal measures it: its place in the groups and its height in a column. */
+interface MktgFamilyPrintFaqDealItem {
+  group: number;
+  question: number;
+  height: number;
+}
+
+/**
+ * The FAQ's pages re-dealt by height: the entries, in order, shared across
+ * `pageCount` pages so each holds about the same height, and across each
+ * page's two columns the same way (eight and one become five and four, laid
+ * three/two and two/two; four on one page lie two and two). A column never
+ * exceeds its budget, except for one entry taller than a column, which
+ * stands alone; what a page cannot hold goes on to the next, so nothing is
+ * cut. A group split by a page or a column repeats its heading.
+ */
+export function mktgFamilyPrintFaqBalancedPages(groups: MktgFamilyPrintFaqPlanGroup[], pageCount: number): MktgFamilyPrintFaqPage[] {
+  const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
+  const budget = layout.bottom - layout.top;
+  const width = (MKTG_PORTRAIT_PAGE.contentWidth - layout.columnGap) / 2;
+  const items: MktgFamilyPrintFaqDealItem[] = groups.flatMap((group, groupIndex) =>
+    group.questions.map((entry, question) => ({ group: groupIndex, question, height: mktgFamilyPrintFaqEntryHeight(entry, width) }))
+  );
+  // An item's cost in a run: its height, and the heading when it opens the run or its group.
+  const cost = (item: MktgFamilyPrintFaqDealItem, previous: MktgFamilyPrintFaqDealItem | undefined): number =>
+    item.height + (!previous || previous.group !== item.group ? layout.heading : 0);
+  const runHeight = (run: MktgFamilyPrintFaqDealItem[]): number => run.reduce((sum, item, index) => sum + cost(item, run[index - 1]), 0);
+  // Items from `from` while the run stays under `target` and within `room`; the first item always goes in.
+  const take = (run: MktgFamilyPrintFaqDealItem[], from: number, target: number, room: number): MktgFamilyPrintFaqDealItem[] => {
+    const taken: MktgFamilyPrintFaqDealItem[] = [];
+    let used = 0;
+    for (let index = from; index < run.length; index++) {
+      const next = cost(run[index], taken[taken.length - 1]);
+      if (used > 0 && (used >= target - 0.01 || used + next > room)) break;
+      taken.push(run[index]);
+      used += next;
+    }
+    return taken;
+  };
+  const toItems = (column: MktgFamilyPrintFaqDealItem[]): MktgFamilyPrintFaqItem[] =>
+    column.map((item, index) => ({ group: item.group, question: item.question, heading: index === 0 || column[index - 1].group !== item.group }));
+  const pages: MktgFamilyPrintFaqPage[] = [];
+  let rest = items;
+  for (let page = 0; rest.length > 0; page++) {
+    // The page's share of what is left; the last planned page, and any page after it, takes all it can hold.
+    const share = runHeight(rest) / Math.max(1, pageCount - page);
+    const run = take(rest, 0, share, Number.POSITIVE_INFINITY);
+    // The columns: the first to half the page's height, the second the rest; what the second cannot hold waits for the next page.
+    const first = take(run, 0, runHeight(run) / 2, budget);
+    const second = take(run, first.length, Number.POSITIVE_INFINITY, budget);
+    pages.push({ columns: [toItems(first), toItems(second)] });
+    rest = rest.slice(first.length + second.length);
+  }
+  return pages;
+}
+
+/** A FAQ answer's source as its chip prints it: the book's word for a stored source (MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS), else the source as stored; '' prints no chip. */
+export function mktgFamilyPrintFaqSourceLabel(source: string): string {
+  const trimmed = source.trim();
+  return MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS[trimmed.toLocaleLowerCase()] ?? trimmed;
 }

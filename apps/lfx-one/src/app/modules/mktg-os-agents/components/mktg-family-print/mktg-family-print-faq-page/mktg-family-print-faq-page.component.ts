@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, Signal } from '@angular/core';
-import { MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_FAQ_LAYOUT, MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
+import { MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_FAQ_LAYOUT, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
 import { MktgFamilyPrintFaqEntry, MktgFamilyPrintFaqItem, MktgFamilyPrintFaqPlanGroup } from '@lfx-one/shared/interfaces';
-import { mktgFamilyPrintFill } from '@lfx-one/shared/utils';
+import { mktgFamilyPrintFaqSourceLabel, mktgFamilyPrintFill } from '@lfx-one/shared/utils';
 import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 
 /**
@@ -12,7 +12,7 @@ import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rec
  * height, each a run of question, answer and source chip under its group's
  * heading (a group split across columns or pages repeats its heading). The
  * first page's intro counts the whole FAQ; a later page's names its groups.
- * Unanswered questions do not print.
+ * Unanswered questions do not print; an internal source label prints no chip.
  */
 @Component({
   selector: 'lfx-mktg-family-print-faq-page',
@@ -43,15 +43,8 @@ export class MktgFamilyPrintFaqPageComponent {
           const group = groups[item.group];
           const entry = group?.questions[item.question];
           if (!group || !entry) return [];
-          const source = entry.source.trim();
-          return [
-            {
-              key: entry.path,
-              heading: item.heading ? group.name : null,
-              entry,
-              source: MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS[source.toLocaleLowerCase()] ?? source,
-            },
-          ];
+          // The chip's word for the source, as the plan measured it; '' (the run's internal `Notes`) prints no chip.
+          return [{ key: entry.path, heading: item.heading ? group.name : null, entry, source: mktgFamilyPrintFaqSourceLabel(entry.source) }];
         })
       );
     });

@@ -5,6 +5,7 @@ import { Component, computed, input, Signal } from '@angular/core';
 import {
   BRAND_KIT_BACK_COVER_NOTICE,
   MKTG_FAMILY_EXPORT_KINDS,
+  MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_HEAD_KIND,
   MKTG_FAMILY_PRINT_LABELS,
@@ -12,7 +13,7 @@ import {
   MKTG_PORTRAIT_PRINT_CLASS,
 } from '@lfx-one/shared/constants';
 import {
-  MktgFamilyPrintChapter,
+  MktgFamilyPrintContentsLayout,
   MktgFamilyPrintCoverTile,
   MktgFamilyPrintFaqPlanGroup,
   MktgFamilyPrintFrame,
@@ -25,6 +26,8 @@ import {
 import {
   brandKitPortraitPlan,
   frameworkPortraitPlan,
+  mktgFamilyPrintContentsLayout,
+  mktgFamilyPrintCutNote,
   mktgFamilyPrintDate,
   mktgFamilyPrintFaqGroups,
   mktgFamilyPrintFill,
@@ -78,6 +81,7 @@ export class MktgFamilyPrintComponent {
 
   public readonly labels = MKTG_FAMILY_PRINT_LABELS;
   public readonly geometry = MKTG_PORTRAIT_PAGE;
+  public readonly contentsLayout = MKTG_FAMILY_PRINT_CONTENTS_LAYOUT;
   /** The cover's and the back cover's inset column: x 72, 672 wide. */
   public readonly inset: readonly [number, number] = [MKTG_PORTRAIT_PAGE.coverInset, MKTG_PORTRAIT_PAGE.width - 2 * MKTG_PORTRAIT_PAGE.coverInset];
   /** The content column: x 56, 704 wide. */
@@ -95,7 +99,10 @@ export class MktgFamilyPrintComponent {
   public readonly coverPurpose: Signal<string> = this.initCoverPurpose();
   public readonly contentsIntro: Signal<string> = this.initContentsIntro();
   public readonly contentsNote: Signal<string> = this.initContentsNote();
-  public readonly contentsColumns: Signal<MktgFamilyPrintChapter[][]> = this.initContentsColumns();
+  /** The contents page's two columns, filled by height (a chapter continues under a repeated row; a cut is counted, never clipped). */
+  public readonly contents: Signal<MktgFamilyPrintContentsLayout> = computed(() => mktgFamilyPrintContentsLayout(this.plan().chapters));
+  /** The note under the last contents block when the page could not hold every entry: `+3 more in LFX One`; '' when all fit. */
+  public readonly contentsCutNote: Signal<string> = computed(() => mktgFamilyPrintCutNote(this.contents().cut));
   public readonly backCoverNotice: Signal<string> = this.initBackCoverNotice();
 
   private initPlan(): Signal<MktgFamilyPrintPlan> {
@@ -178,14 +185,6 @@ export class MktgFamilyPrintComponent {
 
   private initContentsNote(): Signal<string> {
     return computed(() => mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.contentsNote, { Date: this.printedLabel() }));
-  }
-
-  private initContentsColumns(): Signal<MktgFamilyPrintChapter[][]> {
-    return computed(() => {
-      const chapters = this.plan().chapters;
-      const half = Math.ceil(chapters.length / 2);
-      return [chapters.slice(0, half), chapters.slice(half)];
-    });
   }
 
   private initBackCoverNotice(): Signal<string> {
