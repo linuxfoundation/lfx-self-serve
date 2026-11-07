@@ -73,7 +73,10 @@
     line-height: 1;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--pp-accent); /* on the cover's dark band: the accent itself, not the text accent */
+    color: var(
+      --pp-accent-on-dark,
+      var(--pp-accent)
+    ); /* accent TEXT on the cover's dark band: the grammar's accent where it reads there, else the ink on the dark */
   }
 
   .fwp-cover-umbrella {
@@ -332,7 +335,10 @@
     line-height: 1;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--pp-accent); /* on the key message's dark bar: the accent itself, not the text accent */
+    color: var(
+      --pp-accent-on-dark,
+      var(--pp-accent)
+    ); /* accent TEXT on the key message's dark bar: the grammar's accent where it reads there, else the ink on the dark */
   }
 
   .fwp-goal-key-text {

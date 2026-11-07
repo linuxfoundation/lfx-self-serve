@@ -25,7 +25,7 @@ import {
 } from './helpers/mktg-print.helper';
 
 import { brandKitLogolessFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
-import { mktgPortraitAccentText } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
+import { mktgPortraitAccentOnDark, mktgPortraitAccentText } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
 import {
   columnAssetRevisionResponse,
   cssRgb,
@@ -676,13 +676,23 @@ test('the framework print set in the project’s kit: accent text darkened to re
   await expect(print.getByTestId('mktg-framework-print-cover')).toHaveCSS('background-color', cssRgb(kit.kit.dark));
   expect(await print.getByTestId('mktg-framework-print-cover').boundingBox()).toMatchObject({ x: 0, y: 0, width: 816, height: 420 });
   // Accent TEXT on the page white reads through the grammar's darkened text accent (--pp-accent-text): the goal numerals and the anchor numbers;
-  // the accent itself stays on fills and on text over a dark ground (the key message bar's label, the cover's eyebrow).
+  // accent TEXT over a dark ground (the key message bar's label, the cover's eyebrow) through --pp-accent-on-dark: the accent where it reads
+  // there at AA, else the ink on the dark — on this kit's mid-gray the coral fails, so both print in the ink; the accent itself stays on fills.
   const textAccent = cssRgb(mktgPortraitAccentText(accent));
   expect(textAccent).not.toBe(cssRgb(accent));
   await expect(print.locator('.fwp-goal-number').first()).toHaveCSS('color', textAccent);
   await expect(print.locator('.fwp-anchor-number').first()).toHaveCSS('color', textAccent);
-  await expect(print.locator('.fwp-goal-key-label').first()).toHaveCSS('color', cssRgb(accent));
-  await expect(print.getByTestId('mktg-framework-print-tagline')).toHaveCSS('color', cssRgb(accent));
+  const onDark = await print
+    .locator('[data-testid="lfx-mktg-portrait-page"]')
+    .first()
+    .evaluate((frame) => ({
+      accentOnDark: getComputedStyle(frame).getPropertyValue('--pp-accent-on-dark').trim(),
+      ink: getComputedStyle(frame).getPropertyValue('--pp-on-dark').trim(),
+    }));
+  expect(onDark.accentOnDark).toBe(mktgPortraitAccentOnDark({ accent, dark: kit.kit.dark, onDark: onDark.ink }));
+  expect(onDark.accentOnDark).not.toBe(accent);
+  await expect(print.locator('.fwp-goal-key-label').first()).toHaveCSS('color', cssRgb(onDark.accentOnDark));
+  await expect(print.getByTestId('mktg-framework-print-tagline')).toHaveCSS('color', cssRgb(onDark.accentOnDark));
   await expect(print.locator('.fwp-number-tile-lead')).toHaveCSS('border-top-color', cssRgb(accent));
   // Four figures in two rows of two: the lead tile's accent bar does not push its figure below its neighbor's.
   const figureTops = await print
