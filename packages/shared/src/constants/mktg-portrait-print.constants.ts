@@ -40,6 +40,8 @@ export const MKTG_PORTRAIT_PAGE = {
  */
 export const MKTG_PORTRAIT_PLATE = {
   paddingOfHeight: 0.5,
+  /** The plate's corner radius as a share of its shorter side (its padded height): a sixth, no cap. */
+  radiusOfSide: 1 / 6,
 } as const;
 
 /**

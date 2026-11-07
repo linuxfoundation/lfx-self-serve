@@ -25,7 +25,7 @@ import {
 } from '../constants/mktg-family-print.constants';
 import { MKTG_KIT_FAMILIES } from '../constants/mktg-kit.constants';
 import { MKTG_PORTRAIT_CAPS_TRACKING_EM, MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
-import type { BrandKitReportColorConflict } from '../interfaces/brand-kit.interface';
+import type { BrandKitBookView, BrandKitReportColorConflict } from '../interfaces/brand-kit.interface';
 import type { FaqGroupView } from '../interfaces/faq.interface';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
 import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.interface';
@@ -50,6 +50,8 @@ import type {
   MktgFamilyPrintFittedText,
 } from '../interfaces/mktg-family-print.interface';
 import type { MktgPortraitFitPara } from '../interfaces/mktg-portrait-print.interface';
+import type { MktgPrintBrand } from '../interfaces/mktg-print.interface';
+import { brandKitPortraitArtwork } from './brand-kit-portrait.utils';
 import { mktgPortraitLineFits, mktgPortraitPageNumber, mktgPortraitParaHeight, mktgPortraitTextWidth } from './mktg-portrait-print.utils';
 
 /** One version format across the book, the kit cover's: `V4.0`; '' when the revision carries no number. */
@@ -233,6 +235,20 @@ export function mktgFamilyPrintCutFromEnd(text: string): string {
   if (sentence !== undefined) return trimmed.slice(0, sentence).trim();
   const word = trimmed.lastIndexOf(' ');
   return word > 0 ? trimmed.slice(0, word).trim() : '';
+}
+
+/**
+ * The family's brand with the lockup its dark covers draw, as the kit's own
+ * cover draws it: the brand builder's logo on the dark (none for a kit
+ * without artwork or with the placeholder), redrawn by the kit book's one
+ * precedence (brandKitPortraitArtwork: the supplied reversed file, else a
+ * one-ink primary filtered to white, else the full-colour primary on the
+ * white plate, `plate`) and named by the brand's alt.
+ */
+export function mktgFamilyPrintBrand(brand: MktgPrintBrand, book: BrandKitBookView | null): MktgPrintBrand {
+  if (!book || !brand.logoOnDark) return brand;
+  const lockup = brandKitPortraitArtwork(book, 'lockup', 'reversed');
+  return { ...brand, logoOnDark: lockup ? { ...lockup, alt: brand.logoOnDark.alt } : brand.logoOnDark };
 }
 
 /**

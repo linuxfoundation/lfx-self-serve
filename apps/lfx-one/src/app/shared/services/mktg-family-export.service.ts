@@ -31,6 +31,7 @@ import {
   mktgFamilyExportAgentKeys,
   mktgFamilyPrintConflicts,
   mktgFamilyPrintDocument,
+  mktgFamilyPrintBrand,
   mktgFamilyPrintNumberConflicts,
   mktgPrintBrand,
   readBrandKitRevision,
@@ -158,7 +159,9 @@ export class MktgFamilyExportService {
                 frameworkAsset.dateRead ?? null
               )
             : null;
-        const brand = mktgPrintBrand(kit);
+        // The family's covers draw the lockup the kit's own book decides (reversed file, filtered one-ink primary, or the
+        // full-colour primary on the white plate), so the family and the kit never disagree on a dark ground.
+        const brand = mktgFamilyPrintBrand(mktgPrintBrand(kit), book);
         const boilerplatesResponse = ofKind('boilerplates');
         const boilerplates = boilerplatesResponse ? boilerplatesAssetOfRevision(boilerplatesResponse.markdown, boilerplatesResponse.sidecar) : null;
         if (boilerplatesResponse && !boilerplates) throw new Error('The approved boilerplates could not be read.');

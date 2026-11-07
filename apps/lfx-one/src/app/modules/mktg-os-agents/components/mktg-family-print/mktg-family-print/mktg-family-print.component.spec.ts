@@ -4,6 +4,7 @@
 import { TestBed } from '@angular/core/testing';
 import {
   MKTG_FAMILY_PRINT_BOOK_CLASS,
+  MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT,
   MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
   MKTG_KIT_POSITIONING_FAMILY_ID,
   MKTG_PRINT_INK_ON_LIGHT,
@@ -15,6 +16,8 @@ import {
   buildFaqPrintView,
   faqAssetOfRevision,
   mktgFamilyPrintDocument,
+  mktgPortraitPlatePadding,
+  mktgPortraitPlateRadius,
   mktgPrintBrand,
 } from '@lfx-one/shared/utils';
 import boilerplatesEnvelope from '@lfx-one/shared/utils/__fixtures__/boilerplates.envelope.json';
@@ -146,6 +149,9 @@ describe('MktgFamilyPrintComponent', () => {
     const root = await render(view());
     expect(root.querySelector('[data-testid="family-print-cover-tagline"]')).toBeNull();
     expect(root.querySelector('[data-testid="family-print-cover-logo"]')?.getAttribute('src')).toBe(mktgPrintBrand(null).logoOnDark?.src);
+    // The Linux Foundation's reversed lockup needs no plate: the span around it is bare.
+    expect(root.querySelector('[data-testid="mktg-portrait-plate"]')).toBeNull();
+    expect(root.querySelector('[data-testid="family-print-cover-logo"]')?.parentElement?.classList.contains('pp-plate')).toBe(false);
     expect(page(root, 'cover')?.querySelector('[data-testid="family-print-cover-strip"]')?.textContent?.trim()).toBe(
       'Synthetic project · a Linux Foundation project7 Nov 2026'
     );
@@ -164,6 +170,21 @@ describe('MktgFamilyPrintComponent', () => {
     expect(pages(root).map((frame) => frame.dataset['pageId'])).toEqual(['cover', 'contents', 'back-cover']);
     expect(root.querySelector('[data-testid="family-print-contents-intro"]')?.textContent).toContain('0 documents, 3 pages.');
     expect(root.querySelector('[data-testid="family-print-contents-sources"]')).toBeNull();
+  });
+
+  it('sets a lockup the kit cannot reverse on the grammar’s white plate, padded by half its height and rounded by a sixth of its side', async () => {
+    // The export service hands the family the kit book's own decision (`mktgFamilyPrintBrand`): a full-colour primary without a reversed
+    // file arrives with `plate`, and the cover draws it unfiltered on the plate, the img still 84 px so the plate never spills.
+    const lf = mktgPrintBrand(null);
+    const brand = { ...lf, logoOnDark: { src: 'data:image/svg+xml,synthetic-two-colour', alt: 'Synthetic project logo', filter: '', plate: true } };
+    const root = await render({ ...view(), brand });
+    const plate = root.querySelector<HTMLElement>('[data-testid="mktg-portrait-plate"]');
+    expect(plate?.classList.contains('pp-plate')).toBe(true);
+    expect(plate?.style.padding).toBe(`${mktgPortraitPlatePadding(MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT)}px`);
+    expect(plate?.style.borderRadius).toBe(`${mktgPortraitPlateRadius(MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT)}px`);
+    const logo = plate?.querySelector<HTMLImageElement>('[data-testid="family-print-cover-logo"]');
+    expect(logo?.getAttribute('src')).toBe('data:image/svg+xml,synthetic-two-colour');
+    expect(logo?.style.filter).toBe('');
   });
 
   it('mixes the cover’s purpose, tile meta and rules from the ink the grammar selected for the cover ground, so a light ground gets dark ink', async () => {

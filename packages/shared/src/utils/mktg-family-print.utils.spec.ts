@@ -17,7 +17,10 @@ import type {
   MktgFamilyPrintFaqPlanGroup,
   MktgFamilyPrintPlanMember,
 } from '../interfaces/mktg-family-print.interface';
+import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
+import { buildBrandKitBookView } from './brand-kit-book.utils';
 import {
+  mktgFamilyPrintBrand,
   mktgFamilyPrintBuiltFromLabel,
   mktgFamilyPrintConflicts,
   mktgFamilyPrintContentsChapterHeight,
@@ -51,6 +54,7 @@ import {
   mktgFamilyPrintVersionLabel,
 } from './mktg-family-print.utils';
 import { mktgPortraitParaHeight } from './mktg-portrait-print.utils';
+import { mktgPrintBrand } from './mktg-print.utils';
 
 const approval = { approvedAt: '2026-11-06T18:26:00Z', approvedBy: { name: 'A. Reviewer' } };
 
@@ -972,5 +976,38 @@ describe('mktgFamilyPrintFaqSourceLabel', () => {
     const withChip = mktgFamilyPrintFaqEntryHeight(entry, width);
     expect(mktgFamilyPrintFaqEntryHeight({ ...entry, source: 'Notes' }, width)).toBe(withChip - MKTG_FAMILY_PRINT_FAQ_LAYOUT.source);
     expect(mktgFamilyPrintFaqEntryHeight({ ...entry, source: '' }, width)).toBe(withChip - MKTG_FAMILY_PRINT_FAQ_LAYOUT.source);
+  });
+});
+
+describe('mktgFamilyPrintBrand', () => {
+  const kit = brandKitTestRevision();
+  const book = buildBrandKitBookView(kit, 4);
+  const brand = mktgPrintBrand(kit);
+  const reversedFile = { ref: 'r.svg', name: 'r.svg', src: 'data:image/svg+xml,reversed' };
+
+  it('draws the kit\u2019s multi-colour primary, which no filter reverses, on the white plate, named by the brand\u2019s alt', () => {
+    expect(brand.logoOnDark?.filter).toBe('');
+    expect(mktgFamilyPrintBrand(brand, book).logoOnDark).toEqual({ src: book.logos.primary?.src, alt: brand.logoOnDark?.alt, filter: '', plate: true });
+  });
+
+  it('draws the supplied reversed file as it is, with no plate', () => {
+    const withReversed = { ...book, logos: { ...book.logos, reversed: reversedFile } };
+    expect(mktgFamilyPrintBrand(brand, withReversed).logoOnDark).toEqual({ src: reversedFile.src, alt: brand.logoOnDark?.alt, filter: '' });
+  });
+
+  it('reverses a one-ink primary by filter, with no plate', () => {
+    const mono = { ...book, derivable: { lockup: true, symbol: false } };
+    expect(mktgFamilyPrintBrand(brand, mono).logoOnDark).toEqual({
+      src: book.logos.primary?.src,
+      alt: brand.logoOnDark?.alt,
+      filter: 'brightness(0) invert(1)',
+    });
+  });
+
+  it('keeps the brand as built without a kit book (the Linux Foundation\u2019s), or when the brand draws no logo on the dark', () => {
+    const lfBrand = mktgPrintBrand(null);
+    expect(mktgFamilyPrintBrand(lfBrand, null)).toBe(lfBrand);
+    const logoless = { ...brand, logoOnDark: null };
+    expect(mktgFamilyPrintBrand(logoless, book)).toBe(logoless);
   });
 });

@@ -9,6 +9,7 @@
    with a light cover ground keeps its purpose, tiles and rules readable (CSS Color 5 color-mix()). */
 
 /* ---------- cover ---------- */
+/* 84 px: MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT, the plate's measure (the grammar's `.pp-plate` is inline-block; the img inside it stays a block of this height). */
 .fpc-logo {
   display: block;
   height: 84px;

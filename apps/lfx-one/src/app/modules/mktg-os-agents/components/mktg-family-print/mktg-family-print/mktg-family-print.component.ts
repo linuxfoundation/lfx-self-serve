@@ -8,6 +8,7 @@ import {
   MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_BOOK_CLASS,
+  MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT,
   MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
   MKTG_FAMILY_PRINT_HEAD_KIND,
   MKTG_FAMILY_PRINT_LABELS,
@@ -41,6 +42,8 @@ import {
   mktgPortraitDocumentName,
   mktgPortraitFootLeft,
   mktgPortraitLook,
+  mktgPortraitPlatePadding,
+  mktgPortraitPlateRadius,
   mktgPortraitSectionLabel,
 } from '@lfx-one/shared/utils';
 import { MktgBrandKitPrintComponent } from '../../../mktg-brand-kit-print/mktg-brand-kit-print.component';
@@ -95,6 +98,10 @@ export class MktgFamilyPrintComponent {
   public readonly inset: readonly [number, number] = [MKTG_PORTRAIT_PAGE.coverInset, MKTG_PORTRAIT_PAGE.width - 2 * MKTG_PORTRAIT_PAGE.coverInset];
   /** The content column: x 56, 704 wide. */
   public readonly column: readonly [number, number] = [MKTG_PORTRAIT_PAGE.margin, MKTG_PORTRAIT_PAGE.contentWidth];
+  /** The cover lockup's drawn height (`.fpc-logo`), and the white plate's padding and corner radius for it (the grammar's geometry). */
+  public readonly lockupHeight = MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT;
+  public readonly platePadding = mktgPortraitPlatePadding(this.lockupHeight);
+  public readonly plateRadius = mktgPortraitPlateRadius(this.lockupHeight);
 
   /** The FAQ as the book prints it: the answered questions the plan paginates and the FAQ pages print, one index space. */
   public readonly faqGroups: Signal<MktgFamilyPrintFaqPlanGroup[]> = computed(() => mktgFamilyPrintFaqGroups(this.view().faq?.groups ?? []));

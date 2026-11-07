@@ -40,6 +40,7 @@ import {
   mktgNoBreak,
   mktgPortraitPlateFit,
   mktgPortraitPlatePadding,
+  mktgPortraitPlateRadius,
   mktgNoWidow,
   mktgPortraitLargestFitting,
   mktgPortraitMoreLine,
@@ -217,6 +218,11 @@ describe('mktgPortraitPlatePadding', () => {
   it('pads the white plate by half the drawn height: 42 under the cover lockup, 36 under the back cover lockup', () => {
     expect(mktgPortraitPlatePadding(84)).toBe(42);
     expect(mktgPortraitPlatePadding(72)).toBe(36);
+  });
+
+  it('rounds the plate by a sixth of its padded side: 28 on the cover lockup\u2019s 168 px plate, 24 on the back cover\u2019s 144', () => {
+    expect(mktgPortraitPlateRadius(84)).toBe(28);
+    expect(mktgPortraitPlateRadius(72)).toBe(24);
   });
 
   it('fits a plated artwork to its box: the mark drawn at half the box, the padding a quarter, nothing spilling', () => {

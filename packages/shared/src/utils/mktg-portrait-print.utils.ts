@@ -79,6 +79,16 @@ export function mktgPortraitPlatePadding(height: number): number {
 }
 
 /**
+ * The white plate's corner radius for artwork drawn at `height` px: a sixth
+ * of the plate's shorter side, the drawn height plus its padding on both
+ * sides (`MKTG_PORTRAIT_PLATE.radiusOfSide`), so a cover's 84 px lockup sits
+ * on a 168 px plate rounded by 28 px.
+ */
+export function mktgPortraitPlateRadius(height: number): number {
+  return (height + 2 * mktgPortraitPlatePadding(height)) * MKTG_PORTRAIT_PLATE.radiusOfSide;
+}
+
+/**
  * Plated artwork fitted to a box of `box` px (a tile, a sample circle, a
  * stage): the drawn height and the padding such that drawn + 2 × padding =
  * box, the padding still half the drawn height. A 40 px tile draws the mark

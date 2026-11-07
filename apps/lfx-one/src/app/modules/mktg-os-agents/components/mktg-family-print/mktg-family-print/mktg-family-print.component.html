@@ -13,7 +13,15 @@
         <div class="pp-grid-ground" [lfxPpRect]="[0, 0, geometry.width, geometry.height]" aria-hidden="true"></div>
         @if (document.brand.logoOnDark; as logo) {
           <div [lfxPpRect]="[inset[0], 240, 600]">
-            <img class="fpc-logo" [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" data-testid="family-print-cover-logo" />
+            <!-- The lockup as the kit's cover draws it: on the white plate (the grammar's, padded by half its height, rounded by a sixth
+                 of the plate's side) when the kit's full-colour primary cannot be reversed; the img keeps its 84 px, so the plate never spills. -->
+            <span
+              [class.pp-plate]="logo.plate"
+              [style.padding.px]="logo.plate ? platePadding : null"
+              [style.border-radius.px]="logo.plate ? plateRadius : null"
+              [attr.data-testid]="logo.plate ? 'mktg-portrait-plate' : null">
+              <img class="fpc-logo" [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" data-testid="family-print-cover-logo" />
+            </span>
           </div>
         }
         <div [lfxPpRect]="[inset[0], 500, inset[1]]">
