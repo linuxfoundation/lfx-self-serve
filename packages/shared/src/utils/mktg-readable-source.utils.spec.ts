@@ -73,6 +73,21 @@ describe('mktgReadableSourceText', () => {
       'Read one.example.org/brand, then one.example.org; both answered.'
     );
     expect(mktgReadableSourceText('Is https://one.example.org/brand.pdf the guide?')).toBe('Is one.example.org/brand.pdf the guide?');
+    expect(mktgReadableSourceText('A bare https:// is not an address; neither is (https://!!).')).toBe(
+      'A bare https:// is not an address; neither is (https://!!).'
+    );
+  });
+
+  it('reads a hostile run record in linear time: many addresses, many marks, many query signs', () => {
+    const started = performance.now();
+    const addresses = mktgReadableSourceText('http://'.repeat(2000));
+    const marks = mktgReadableSourceText(`http://${'!'.repeat(10000)}`);
+    const signs = mktgReadableSourceName(`https://one.example.org/${'#'.repeat(10000)}\n#`);
+    expect(performance.now() - started).toBeLessThan(250);
+    // One address, as recorded: its scheme read off and its trailing slash dropped, as any page's address is.
+    expect(addresses).toBe(`${'http://'.repeat(1998)}http:/`);
+    expect(marks).toBe(`http://${'!'.repeat(10000)}`);
+    expect(signs).toBe('one.example.org');
   });
 
   it('drops a parenthetical left holding only a source’s words, the sentence already naming the thing', () => {

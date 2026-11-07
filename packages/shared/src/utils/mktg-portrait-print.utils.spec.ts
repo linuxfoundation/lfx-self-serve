@@ -136,6 +136,18 @@ describe('the fit model', () => {
     expect(mktgPortraitCutText('One sentence. Another one here.', 14)).toBe('One sentence.');
     expect(mktgPortraitCutText('No stop in this long line of words', 12)).toBe('No stop in…');
     expect(mktgPortraitCutText('short', 12)).toBe('short');
+    expect(mktgPortraitCutText('A word, —  and more words after it', 9)).toBe('A word…');
+  });
+
+  it('cuts a hostile text of ten thousand tabs in linear time', () => {
+    // A first word longer than the room, after ten thousand tabs: the cut falls back to the raw slice and trims its tail.
+    const tabs = '\t'.repeat(10000);
+    const started = performance.now();
+    const slice = mktgPortraitCutText(`${tabs}x${'y'.repeat(20000)}`, 15000);
+    const words = mktgPortraitCutText(`${tabs}x`, 20);
+    expect(performance.now() - started).toBeLessThan(250);
+    expect(slice).toBe(`${tabs}x${'y'.repeat(4998)}…`);
+    expect(words).toBe('x');
   });
 
   it('keeps a block that fits as written, shrinks one that does not, and cuts the longest paragraph as the last resort', () => {

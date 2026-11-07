@@ -178,7 +178,17 @@ export function mktgPortraitCutText(text: string, max: number): string {
     if (next.length + 1 > max) break;
     out = next;
   }
-  return `${(out || text.slice(0, Math.max(1, max - 1))).replace(/[\s,;:.—-]+$/, '')}…`;
+  return `${mktgPortraitTrimTail(out || text.slice(0, Math.max(1, max - 1)))}…`;
+}
+
+/** The characters an ellipsis replaces at the end of a cut: spaces and the punctuation a cut sentence or word leaves behind. */
+const CUT_TAIL = new Set([' ', '\t', '\n', '\r', '\f', '\v', '\u00a0', ',', ';', ':', '.', '—', '-']);
+
+/** A cut's text without its trailing spaces and punctuation, read from the end one character at a time (linear, whatever the text). */
+function mktgPortraitTrimTail(text: string): string {
+  let end = text.length;
+  while (end > 0 && CUT_TAIL.has(text[end - 1])) end -= 1;
+  return text.slice(0, end);
 }
 
 /**

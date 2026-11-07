@@ -5,11 +5,12 @@ import { BRAND_KIT_OPAQUE_FILE_STEM_REGEX } from '../constants/brand-kit.constan
 import { MKTG_READABLE_SOURCE } from '../constants/mktg-readable-source.constants';
 import { brandKitWebsiteHost } from './brand-kit.utils';
 
-/**
- * A URL, up to whitespace or a closing bracket or quote (the record's prose wraps them in parentheses); the sentence's
- * own punctuation after it (`…logo.svg.`, `…/brand,`) is a second group, kept out of the address and put back after it.
- */
-const URL_REGEX = /(https?:\/\/[^\s)\]}>"'”’]+?)([.,;:!?]*)(?=[\s)\]}>"'”’]|$)/gi;
+/** Where a URL starts in the record's prose. */
+const URL_START_REGEX = /https?:\/\//gi;
+/** What ends a URL in prose: whitespace, or the closing bracket or quote the record wraps it in. */
+const URL_END = new Set([' ', '\t', '\n', '\r', '\f', '\v', '\u00a0', ')', ']', '}', '>', '"', "'", '”', '’']);
+/** The sentence's own punctuation after a URL (`…logo.svg.`, `…/brand,`): kept out of the address and put back after it. */
+const URL_TRAIL = new Set(['.', ',', ';', ':', '!', '?']);
 /** `(a logo image linked from the site)`: a parenthetical left holding only a source's words once its file name is rewritten. */
 const REPEATED_PARENTHETICAL_REGEX = new RegExp(
   ` \\((?:${Object.values(MKTG_READABLE_SOURCE)
@@ -68,7 +69,8 @@ export function mktgReadableSourceName(source: string, count: 'one' | 'many' = '
     }
     return text;
   }
-  const path = text.replace(/[?#].*$/, '');
+  const query = text.search(/[?#]/);
+  const path = query === -1 ? text : text.slice(0, query);
   const host = brandKitWebsiteHost(text);
   if (ARCHIVE_REGEX.test(path)) return MKTG_READABLE_SOURCE.linkedPackage;
   if (IMAGE_REGEX.test(path)) return MKTG_READABLE_SOURCE.linkedImage;
@@ -86,8 +88,29 @@ export function mktgReadableSourceName(source: string, count: 'one' | 'many' = '
  * is dropped, the sentence already naming the thing.
  */
 export function mktgReadableSourceText(text: string): string {
-  return text
-    .replace(URL_REGEX, (_match, url: string, punctuation: string) => `${mktgReadableSourceName(url, 'one')}${punctuation}`)
+  return mktgReplaceUrls(text, (url) => mktgReadableSourceName(url, 'one'))
     .replace(FILE_NAME_REGEX, (name) => (isOpaque(name) ? MKTG_READABLE_SOURCE.linkedImage : mktgReadableSourceName(name, 'one')))
     .replace(REPEATED_PARENTHETICAL_REGEX, '');
+}
+
+/**
+ * Every URL in a text replaced by `rewrite`'s words, the sentence's own punctuation after it kept: each address is read
+ * once, forward to what ends it and back over its trailing punctuation, so the pass is linear in the text (a run record
+ * is library input; no backtracking pattern runs over it).
+ */
+function mktgReplaceUrls(text: string, rewrite: (url: string) => string): string {
+  let out = '';
+  let from = 0;
+  for (const start of text.matchAll(URL_START_REGEX)) {
+    const begin = start.index;
+    if (begin < from) continue;
+    let end = begin + start[0].length;
+    while (end < text.length && !URL_END.has(text[end])) end += 1;
+    let address = end;
+    while (address > begin + start[0].length && URL_TRAIL.has(text[address - 1])) address -= 1;
+    if (address === begin + start[0].length) continue;
+    out += text.slice(from, begin) + rewrite(text.slice(begin, address)) + text.slice(address, end);
+    from = end;
+  }
+  return out + text.slice(from);
 }
