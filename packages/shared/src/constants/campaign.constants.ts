@@ -1609,7 +1609,8 @@ export const GOOGLE_ADS_GEO_TARGET_MAP: Record<string, string> = {
 };
 
 /**
- * Upstream's bound on the TARGETED Google Ads geo list (`geo.go`'s `maxGeoTargets`, 60).
+ * Upstream's bound on the TARGETED Google Ads geo list (`geo.go`'s `maxGeoTargets`, 500 since
+ * campaign-service v1.0.32).
  *
  * The list holds country codes AND raw geo target constant ids together — the Implementation tab
  * puts the countries picked from {@link GOOGLE_ADS_GEO_TARGET_MAP} and the postal-code ids typed
@@ -1617,7 +1618,10 @@ export const GOOGLE_ADS_GEO_TARGET_MAP: Record<string, string> = {
  * `resolveGeoList` reads both spellings from. So the bound is the combined count, and it is
  * upstream's own number rather than the 30 it used to be: that 30 dated from when every entry had
  * to be a key of the 30-entry country map, and a list longer than it could only repeat a country.
- * Once postal ids ride in the same list, keeping 30 would refuse creates upstream accepts.
+ * Once postal ids ride in the same list, keeping 30 would refuse creates upstream accepts. The same
+ * reason moved it from 60 to 500 (campaign-service #515): a live Demand Gen campaign targets 63
+ * locations (the US states and the Canadian provinces), and a US campaign by metro area needs about
+ * 210, so 60 refused creates Google accepts.
  *
  * Checked BEFORE de-duplication upstream, so the guard that mirrors it counts the submitted
  * entries, not the surviving ones.
@@ -1625,20 +1629,21 @@ export const GOOGLE_ADS_GEO_TARGET_MAP: Record<string, string> = {
  * {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} is the same number for the exclusion list, which
  * upstream counts separately.
  */
-export const GOOGLE_ADS_MAX_GEO_TARGETS = 60;
+export const GOOGLE_ADS_MAX_GEO_TARGETS = 500;
 
 /**
- * Upstream's own bound on ONE Google Ads geo target list (`geo.go`'s `maxGeoTargets`, 60).
+ * Upstream's own bound on ONE Google Ads geo target list (`geo.go`'s `maxGeoTargets`, 500 since
+ * campaign-service v1.0.32).
  *
  * PER LIST, not per campaign: `validateGeoPlan` calls `resolveGeoList` once for the targeted list
- * and once for the excluded one, each with its own counter, so 60 targeted alongside 60 excluded is
- * accepted and must not be refused here.
+ * and once for the excluded one, each with its own counter, so 500 targeted alongside 500 excluded
+ * is accepted and must not be refused here.
  *
  * Checked BEFORE de-duplication upstream — a list that is only over the cap because it repeats an
  * entry is still refused — so the guard that mirrors it counts the submitted entries, not the
  * surviving ones.
  */
-export const GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS = 60;
+export const GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS = 500;
 
 /**
  * A Google Ads geo target entry that is a raw geo target constant id rather than a country code.
@@ -4558,14 +4563,30 @@ export const AUDIENCE_STANDARD_SUPPRESSION_GROUP_KEY = 'group:standard';
  *
  * Deliberately FAR above anything legitimate, because these are resource bounds and not content
  * rules — every width and count in `GOOGLE_CREATIVE_FIELD_SPECS` is the upstream client's preflight
- * to enforce, and this layer stays shape-only. The widest list this bounds holds 60 entries (an
- * excluded geo plan, {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS}; the widest creative list holds
- * 20) and the widest text field 256 characters (`assetGroupName`), so nothing a real operator can
- * produce comes near either ceiling; refusing here can therefore never refuse a create upstream
- * would have accepted.
+ * to enforce, and this layer stays shape-only. Neither Google geo list is bounded here: their caps
+ * are 500 each, so they take their own {@link MAX_GOOGLE_GEO_LIST_ENTRIES}. Every list this one does bound
+ * has an upstream cap of at most 100 (the widest is `conversionActions`,
+ * {@link GOOGLE_ADS_MAX_CONVERSION_ACTIONS}; the widest creative list holds 20), and the widest text
+ * field is 256 characters (`assetGroupName`), so a list at its cap or a field at its width is never
+ * refused here.
  */
 export const MAX_GOOGLE_CREATIVE_LIST_ENTRIES = 100;
 export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
+
+/**
+ * The same resource bound for the targeted and excluded Google geo lists, the two lists on the
+ * create route whose upstream caps ({@link GOOGLE_ADS_MAX_GEO_TARGETS} and
+ * {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS}, 500 each) are wider than
+ * {@link MAX_GOOGLE_CREATIVE_LIST_ENTRIES}.
+ *
+ * Its own constant rather than a raised shared one, so the hundred-entry ceiling on every creative,
+ * extension and criteria list stays where it is. Four times the wider cap, so a list at or a little past
+ * it reaches the named cap refusal an operator can act on ("accepts at most 500 excluded
+ * locations") instead of this generic one, while a pathological body is still stopped before
+ * `createConfigEnvelope` walks it. Upstream counts the list BEFORE de-duplication, so no list longer
+ * than the cap is one upstream accepts, and this bound can never refuse a create upstream would take.
+ */
+export const MAX_GOOGLE_GEO_LIST_ENTRIES = 4 * Math.max(GOOGLE_ADS_MAX_GEO_TARGETS, GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS);
 
 /**
  * The same resource bound for a list nested INSIDE a list entry, where the widest legitimate list
@@ -4578,7 +4599,7 @@ export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
  * lines of `Alpha` / `Beta` / `Gamma` is a valid three-value snippet. The Implementation tab
  * stores what the operator typed rather than the collapsed list, so a duplicate-heavy paste
  * reaches the BFF at its raw length — which is why the 100 above, sized against lists whose caps
- * are 20 and 60, would refuse a create upstream would have accepted.
+ * are at most 100, would refuse a create upstream would have accepted.
  *
  * Far above any paste an operator produces, so the invariant the bound above states — a resource
  * ceiling never refuses what upstream accepts — holds here too, while a pathological body is still

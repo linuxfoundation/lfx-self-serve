@@ -8480,30 +8480,31 @@ describe('ImplementationTabComponent google location targets held by the capabil
 
   /**
    * Postal ids held while the capability is unanswered do not count against the cap, so countries
-   * can still be added; a late yes then releases a list over 60. Create waits, and says why.
+   * can still be added; a late yes then releases a list over the cap. Create waits, and says why.
    */
   it('blocks Create when a late capability yes releases more than the cap allows', () => {
     const c = seedChannel(fixture, { includeSearch: true });
     fixture.componentRef.setInput('googleCreativeEnabled', null);
     fixture.detectChanges();
+    // Ten more held ids than the countries leave room for, so the released list is ten over the cap.
+    const held = GOOGLE_ADS_MAX_GEO_TARGETS - c['googleGeoOptions'].length + 10;
     // `includeSearch` kept on: the base draft unticks every channel, which would close the section.
-    restoreGoogleDraft(fixture, c, { includeSearch: true, googlePostalGeoTargets: Array.from({ length: 40 }, (_, i) => String(9031900 + i)) });
+    restoreGoogleDraft(fixture, c, { includeSearch: true, googlePostalGeoTargets: Array.from({ length: held }, (_, i) => String(9031900 + i)) });
     for (const code of c['googleGeoOptions']) c['addGoogleGeoTarget'](code);
     expect(c['googleGeoTargets']()).toHaveLength(c['googleGeoOptions'].length);
 
     fixture.componentRef.setInput('googleCreativeEnabled', true);
     fixture.detectChanges();
 
-    expect(c['googleGeoTargetCount']()).toBe(40 + c['googleGeoOptions'].length);
+    expect(c['googleGeoTargetCount']()).toBe(GOOGLE_ADS_MAX_GEO_TARGETS + 10);
     expect(c['googleGeoTargetsOverCap']()).toBe(true);
     expect(c['canSubmit']()).toBe(false);
-    expect(find('implementation-google-geo-over-cap')?.textContent).toContain('at most 60');
+    expect(find('implementation-google-geo-over-cap')?.textContent).toContain(`at most ${GOOGLE_ADS_MAX_GEO_TARGETS}`);
 
-    c['removeGooglePostalGeoTarget'](0);
-    for (let i = 0; i < 9; i++) c['removeGooglePostalGeoTarget'](0);
+    for (let i = 0; i < 10; i++) c['removeGooglePostalGeoTarget'](0);
     fixture.detectChanges();
 
-    expect(c['googleGeoTargetCount']()).toBe(60);
+    expect(c['googleGeoTargetCount']()).toBe(GOOGLE_ADS_MAX_GEO_TARGETS);
     expect(c['googleGeoTargetsOverCap']()).toBe(false);
     expect(c['canSubmit']()).toBe(true);
     expect(find('implementation-google-geo-over-cap')).toBeNull();

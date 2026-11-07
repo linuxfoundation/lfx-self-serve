@@ -47,6 +47,9 @@ import {
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
+  GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MAX_PROXIMITY_TARGETS,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
@@ -69,7 +72,10 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_CREATIVE_SHARED_CAPS,
+  MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
+  MAX_GOOGLE_GEO_LIST_ENTRIES,
   MAX_REDDIT_HEADLINE_LENGTH,
+  MICROSOFT_MAX_GEO_TARGETS,
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
   META_SELECTABLE_OBJECTIVES,
@@ -800,6 +806,35 @@ describe('Google conversion actions', () => {
     expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.global).toBe(false);
     expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test('12345')).toBe(true);
     expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test('12345')).toBe(true);
+  });
+});
+
+describe('Google location caps', () => {
+  /**
+   * `maxGeoTargets` in `internal/platform/googleads/geo.go`, 500 since campaign-service v1.0.32
+   * (#515), applied to the targeted and excluded lists SEPARATELY. Written as literals so a drift
+   * in the constant fails here rather than moving every spec that reads it.
+   */
+  it('caps each geo list at 500, as upstream does', () => {
+    expect(GOOGLE_ADS_MAX_GEO_TARGETS).toBe(500);
+    expect(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS).toBe(500);
+  });
+
+  /** Upstream raised only `maxGeoTargets`; `maxProximityTargets` and Microsoft's own cap are unchanged. */
+  it('leaves the radius and Microsoft location caps where they were', () => {
+    expect(GOOGLE_ADS_MAX_PROXIMITY_TARGETS).toBe(20);
+    expect(MICROSOFT_MAX_GEO_TARGETS).toBe(30);
+  });
+
+  /**
+   * The resource bound on both geo lists must sit ABOVE both caps, or a list at its cap would be
+   * refused by the generic bound before the named refusal; the shared creative bound stays at 100.
+   */
+  it('bounds the geo lists above their caps without widening the shared list bound', () => {
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBeGreaterThan(GOOGLE_ADS_MAX_GEO_TARGETS);
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBeGreaterThan(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS);
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBe(2000);
+    expect(MAX_GOOGLE_CREATIVE_LIST_ENTRIES).toBe(100);
   });
 });
 

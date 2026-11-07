@@ -10,6 +10,8 @@ import {
   CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
   CAMPAIGN_RESUME_REFUSED_CODE,
   GOOGLE_ADS_LANGUAGE_MAP,
+  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
+  GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
   GOOGLE_AUDIENCE_SEGMENTS_ACCESS_UNAVAILABLE_CODE,
   GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
@@ -22,6 +24,7 @@ import {
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
   MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
   MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES,
+  MAX_GOOGLE_GEO_LIST_ENTRIES,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
   MAX_KEYWORD_TARGETING_REVISION_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
@@ -3405,15 +3408,15 @@ describe('CampaignController.createCampaign cutover', () => {
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['geoTargets']).toHaveLength(30);
   });
 
-  /** Thirty canonical postal-code constant ids — with `ALL_MAPPED_GEOS`, the targeted cap exactly. */
-  const THIRTY_POSTAL_IDS = Array.from({ length: 30 }, (_, i) => String(9031900 + i));
+  /** Canonical postal-code constant ids that, with `ALL_MAPPED_GEOS`, fill the targeted cap exactly. */
+  const FILLING_POSTAL_IDS = Array.from({ length: GOOGLE_ADS_MAX_GEO_TARGETS - ALL_MAPPED_GEOS.length }, (_, i) => String(9031900 + i));
 
   it('refuses a list over the cap even when the extra entry is a repeat, because upstream caps before it de-duplicates', async () => {
     // `validateGeoTargets` checks `len(geoTargets) > maxGeoTargets` on the raw slice, so a list
     // that is only over the cap because it repeats an entry is still refused there. Judging the
     // de-duplicated length here would accept a create Go then kills.
     await controller.createCampaign(
-      buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, ...THIRTY_POSTAL_IDS, 'US'] }), { project: 'tlf', brief_id: 'b-1' }),
+      buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, ...FILLING_POSTAL_IDS, 'US'] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );
@@ -3422,7 +3425,8 @@ describe('CampaignController.createCampaign cutover', () => {
     const error = refusalFrom();
     expect(error.statusCode).toBe(400);
     expect(error.field).toBe('geoTargets');
-    expect(error.message).toContain('61');
+    expect(error.message).toContain(`at most ${GOOGLE_ADS_MAX_GEO_TARGETS} countries and postal codes`);
+    expect(error.message).toContain(`has ${GOOGLE_ADS_MAX_GEO_TARGETS + 1}`);
   });
 
   /**
@@ -3434,15 +3438,15 @@ describe('CampaignController.createCampaign cutover', () => {
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000b', error: null });
 
     await controller.createCampaign(
-      buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, ...THIRTY_POSTAL_IDS] }), { project: 'tlf', brief_id: 'b-1' }),
+      buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, ...FILLING_POSTAL_IDS] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );
 
     expect(next).not.toHaveBeenCalled();
     const sent = (envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['geoTargets'] as string[];
-    expect(sent).toHaveLength(60);
-    expect(sent.slice(30)).toEqual(THIRTY_POSTAL_IDS);
+    expect(sent).toHaveLength(GOOGLE_ADS_MAX_GEO_TARGETS);
+    expect(sent.slice(ALL_MAPPED_GEOS.length)).toEqual(FILLING_POSTAL_IDS);
   });
 
   it('dispatches a postal-only list, trimmed, with no country beside it', async () => {
@@ -3488,26 +3492,29 @@ describe('CampaignController.createCampaign cutover', () => {
    * over-refusing. All of it runs inside `preflightCampaignKind`, before the first mutate.
    */
 
-  /** Sixty canonical city/region constant ids — the exclusion cap exactly, and none of them a country. */
-  const SIXTY_GEO_IDS = Array.from({ length: 60 }, (_, i) => String(1000000 + i));
+  /** Canonical city/region constant ids — the exclusion cap exactly, none a country or a targeted id. */
+  const FULL_EXCLUDED_GEO_IDS = Array.from({ length: GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS }, (_, i) => String(1000000 + i));
 
-  it('dispatches 60 exclusions alongside a full targeted list, because upstream caps each list separately', async () => {
+  it('dispatches a full exclusion list alongside a full targeted list, because upstream caps each list separately', async () => {
     // The contrast for every exclusion refusal below, and the one that pins the cap as PER LIST:
-    // `validateGeoPlan` calls `resolveGeoList` once per list, each with its own counter, so 30
-    // targeted countries and 60 exclusions is a create Google takes. Summing the two here would
-    // refuse it.
+    // `validateGeoPlan` calls `resolveGeoList` once per list, each with its own counter, so 500
+    // targeted locations and 500 exclusions is a create Google takes. Summing the two here would
+    // refuse it — and so would the shared resource bound of 100, which the exclusions must clear.
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000c', error: null });
 
     await controller.createCampaign(
-      buildReq(googleBody({ geoTargets: ALL_MAPPED_GEOS, excludedGeoTargets: SIXTY_GEO_IDS }), { project: 'tlf', brief_id: 'b-1' }),
+      buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, ...FILLING_POSTAL_IDS], excludedGeoTargets: FULL_EXCLUDED_GEO_IDS }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
       res,
       next
     );
 
     expect(next).not.toHaveBeenCalled();
     const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
-    expect(sent['geoTargets']).toHaveLength(30);
-    expect(sent['excludedGeoTargets']).toHaveLength(60);
+    expect(sent['geoTargets']).toHaveLength(GOOGLE_ADS_MAX_GEO_TARGETS);
+    expect(sent['excludedGeoTargets']).toHaveLength(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS);
   });
 
   it("trims an excluded code with Go's whitespace set, not JS's, so a code upstream accepts is not refused here", async () => {
@@ -3536,14 +3543,13 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   it.each([
-    ['excludedGeoTargets', Array.from({ length: 101 }, () => 'US')],
     ['proximityTargets', Array.from({ length: 101 }, () => ({ latitude: -33.8688, longitude: 151.2093, radius: 25, radiusUnit: 'KILOMETERS' }))],
     ['adSchedules', Array.from({ length: 101 }, () => ({ dayOfWeek: 'MONDAY', startHour: 9, startMinute: 0, endHour: 17, endMinute: 0 }))],
     ['deviceBidModifiers', Array.from({ length: 101 }, () => ({ device: 'MOBILE', bidModifier: 1.2 }))],
     ['excludedAgeRanges', Array.from({ length: 101 }, () => '18-24')],
     ['excludedGenders', Array.from({ length: 101 }, () => 'MALE')],
   ])('bounds a %s list before the envelope normalizes it, since that runs ahead of the named cap', async (field, list) => {
-    // The named caps (60, 20, 42, 3 and 20) are the operator-facing refusal and still fire first for any
+    // The named caps (20, 42, 3 and 20) are the operator-facing refusal and still fire first for any
     // plausible list. This ceiling only stops `createConfigEnvelope` — which runs BEFORE them and
     // allocates per entry — from walking a 15mb body.
     await controller.createCampaign(buildReq(googleBody({ [field]: list } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
@@ -3601,13 +3607,52 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.field).toBe('excludedGeoTargets');
   });
 
-  it('refuses a 61st exclusion, matching the cap `resolveGeoList` checks before it reads a single entry', async () => {
-    await controller.createCampaign(buildReq(googleBody({ excludedGeoTargets: [...SIXTY_GEO_IDS, 'US'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+  it('refuses a 501st exclusion with the named cap, matching the cap `resolveGeoList` checks before it reads a single entry', async () => {
+    // 501 is past the cap but far inside the excluded list's own resource bound, so the refusal is
+    // the one an operator can act on, not the generic "the list exceeds the maximum" one.
+    await controller.createCampaign(
+      buildReq(googleBody({ excludedGeoTargets: [...FULL_EXCLUDED_GEO_IDS, 'US'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
 
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
     expect(error.field).toBe('excludedGeoTargets');
-    expect(error.message).toContain('61');
+    expect(error.message).toBe(
+      `Google Ads accepts at most ${GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} excluded locations on one campaign, and this one has ${GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS + 1}. Remove some and create again.`
+    );
+    expect(error.message).not.toContain('exceeds the maximum');
+  });
+
+  it('bounds the excluded list at its own resource bound, above the cap, before the envelope normalizes it', async () => {
+    // The excluded list's ceiling is MAX_GOOGLE_GEO_LIST_ENTRIES, not the shared 100: one past it is
+    // the generic resource refusal, which the named cap above never reaches.
+    await controller.createCampaign(
+      buildReq(googleBody({ excludedGeoTargets: Array.from({ length: MAX_GOOGLE_GEO_LIST_ENTRIES + 1 }, () => 'US') }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('excludedGeoTargets');
+    expect(error.message).toBe(`the list exceeds the maximum of ${MAX_GOOGLE_GEO_LIST_ENTRIES} entries`);
+  });
+
+  it('bounds the targeted geo list before the envelope walks it, at the geo bound rather than the shared 100', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: Array.from({ length: MAX_GOOGLE_GEO_LIST_ENTRIES + 1 }, () => 'US') }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('geoTargets');
+    expect(error.message).toBe(`the list exceeds the maximum of ${MAX_GOOGLE_GEO_LIST_ENTRIES} entries`);
   });
 
   it('refuses a blank exclusion, which upstream refuses after trimming rather than skipping', async () => {
