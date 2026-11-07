@@ -75,7 +75,12 @@ const TOPS = FRAMEWORK_PORTRAIT_TOPS;
 const PAGE = MKTG_PORTRAIT_PAGE;
 const FIT = MKTG_PORTRAIT_FIT;
 
-/** The line under a cut list: `+3 more on the framework's Sources and gaps tab in LFX One` (the design reader's form, 7 Nov 2026), the tab named as the screen labels it. */
+/**
+ * The line under a cut list: `+3 more on the framework's Sources and gaps tab in LFX One` (the design reader's form,
+ * 7 Nov 2026), the tab named as the screen labels it. TODO (one question, asked of the design reader 7 Nov 2026): whether
+ * this line takes the grammar's shared form, `mktgPortraitMoreLine` (`+N more <noun>, in LFX One`), which cannot carry
+ * this wording; until the answer the framework's line stays its own.
+ */
 export function foundationMessagePrintCutNote(cut: number, tab: FoundationMessagePrintCutTab): string {
   const label = FOUNDATION_MESSAGE_VIEW_TABS.find((entry) => entry.id === tab)?.label ?? tab;
   return `+${cut} more on the framework's ${label} tab in LFX One`;

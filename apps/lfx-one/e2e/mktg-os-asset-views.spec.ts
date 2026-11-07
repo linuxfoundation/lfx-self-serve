@@ -6,6 +6,7 @@ import {
   BRAND_KIT_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
+  MKTG_PORTRAIT_PAPERS,
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
   MKTG_SLIDES_EXPORT_API_PATH,
 } from '@lfx-one/shared/constants';
@@ -759,11 +760,22 @@ for (const [name, response, planned] of [
     const frame = await layoutMktgPrintFrame(page);
     await expect(frame.getByTestId('mktg-framework-print').getByTestId('lfx-mktg-portrait-page')).toHaveCount(planned);
     // Google Chrome's own Page.printToPDF on the frame document (the editor's engine: the bundled Chromium does not reproduce the blank sheet an
-    // inline host cost in Chrome 156), headers on and off, Letter and A4: the planned count, no blank page.
+    // inline host cost in Chrome 156), headers on and off, background on and off, Letter and A4: the paper is the page box, the
+    // planned count, no blank page, no browser header or footer on the sheet.
     const prints = await printMktgFrameWithChrome(frame);
     test.skip(prints.length === 0, 'Google Chrome is not installed here; the bundled Chromium does not reproduce the blank sheet');
+    expect(prints).toHaveLength(8);
     for (const print of prints) {
-      expect(print, print.setup).toEqual({ setup: print.setup, pages: planned, blank: [] });
+      const label = `${print.paper} headers ${print.headers} background ${print.background}`;
+      // The paper is the page box (the grammar's `size: auto`), never a Letter box scaled onto A4.
+      const paper = MKTG_PORTRAIT_PAPERS[print.paper === 'A4' ? 'a4' : 'letter'];
+      expect(print.box.width, label).toBeCloseTo(paper.width, 0);
+      expect(print.box.height, label).toBeCloseTo(paper.height, 0);
+      expect(print.pages, label).toBe(planned);
+      expect(print.blank, label).toEqual([]);
+      // The browser's header and footer never reach the sheet: a page's text with them on is its text with them off.
+      const off = prints.find((other) => other.paper === print.paper && other.background === print.background && !other.headers);
+      expect(print.text, label).toEqual(off?.text);
     }
     await page.emulateMedia({ media: 'screen' });
     await finishMktgPrintFrame(page);
