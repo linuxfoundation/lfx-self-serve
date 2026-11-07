@@ -356,10 +356,15 @@ const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exc
 const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u201c`]/i;
 // Failure evidence: only an error status (4xx or 5xx) counts, never a successful one (HTTP 200) or a number in a title ("Top 100",
 // "Fortune 500"). Inside the quotes it counts only where a status belongs: leading the quoted message ("502 Bad Gateway") or after
-// HTTP, status or code; outside them only after HTTP or status, with an optional "code" and colon ("the first 60 KB" is no status).
+// HTTP, with or without a version (HTTP 404, HTTP/1.1 404, HTTP/2 429), status or code; outside them only after HTTP (same forms) or
+// status, with an optional "code" and colon ("the first 60 KB" is no status).
 const CAVEAT_FAILURE_WORDS = 'unavailable|error|denied|unauthori[sz]ed|forbidden|exceeded|limit|timeout|timed out|quota|credits?|rate[- ]limited';
-const CAVEAT_FAILURE_IN_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS})\\b|(?:^|['"\\u2018\\u201c\`]|\\b(?:HTTP|status|code)\\s*:?)\\s*[45]\\d{2}\\b`, 'i');
-const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:HTTP|status)(?:\\s+code)?\\s*:?\\s*[45]\\d{2})\\b`, 'i');
+const CAVEAT_HTTP_WORD = 'HTTP(?:\\/\\d(?:\\.\\d)?)?';
+const CAVEAT_FAILURE_IN_QUOTES = new RegExp(
+  `\\b(?:${CAVEAT_FAILURE_WORDS})\\b|(?:^|['"\\u2018\\u201c\`]|\\b(?:${CAVEAT_HTTP_WORD}|status|code)\\s*:?)\\s*[45]\\d{2}\\b`,
+  'i'
+);
+const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:${CAVEAT_HTTP_WORD}|status)(?:\\s+code)?\\s*:?\\s*[45]\\d{2})\\b`, 'i');
 const CAVEAT_RESULT_TITLE = [
   /['"\u2018\u201c`][^'"\u2019\u201d`]*['"\u2019\u201d`]\s+as (?:its|the) (?:top|first|best|second|leading)\b[^.]*\bresult/i,
   /\b(?:titled|entitled|called|named)\s*['"\u2018\u201c`]/i,
@@ -409,10 +414,15 @@ export function aeoGeoReaderCaveat(caveat: string): string {
 
 /**
  * The report's caveats as reader sentences, in order, each distinct caveat once: two agent caveats that map to
- * the same sentence (two plumbing-only caveats, say, both falling back to the fixed one) print one bullet.
+ * the same sentence (two plumbing-only caveats, say, both falling back to the fixed one) print one bullet. A caveat
+ * that is exactly one of the fixed sentences is left out when another kept caveat already carries that sentence
+ * (the composite "Third-party search was not available for this run. robots.txt allows all crawlers." already
+ * tells the reader); on its own, it stays.
  */
 export function aeoGeoReaderCaveats(caveats: readonly string[]): string[] {
-  return Array.from(new Set(caveats.map(aeoGeoReaderCaveat)));
+  const distinct = Array.from(new Set(caveats.map(aeoGeoReaderCaveat)));
+  const fixed: readonly string[] = Object.values(AEO_GEO_READER_CAVEATS);
+  return distinct.filter((sentence) => !fixed.includes(sentence) || !distinct.some((other) => other !== sentence && other.includes(sentence)));
 }
 
 function readerSentence(sentence: string): string {
@@ -440,8 +450,8 @@ function carriesPlumbing(text: string): boolean {
 /**
  * A credits/quota phrase (outside a quoted result title), or a provider subject quoting its message with evidence
  * of failure in or around the quotes: a failure word, or a 4xx/5xx status where a status belongs (leading the quoted
- * message, or after HTTP, status or code); a quoted successful result ("Example Foundation", with HTTP 200 or a
- * number in its title) is audit content.
+ * message, or after HTTP, with or without a version, status or code); a quoted successful result ("Example Foundation", with
+ * HTTP 200 or a number in its title) is audit content.
  */
 function carriesProviderFailure(sentence: string): boolean {
   const title = CAVEAT_RESULT_TITLE.some((pattern) => pattern.test(sentence));

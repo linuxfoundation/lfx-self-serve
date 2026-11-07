@@ -414,6 +414,11 @@ describe('AEO/GEO reader caveats', () => {
     // Outside the quotes a status may carry "code" and a colon.
     expect(aeoGeoReaderCaveat('The search returned "Not found" with status: 404.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     expect(aeoGeoReaderCaveat('The search returned "Not found" with status code 404.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    // A quoted status line with an HTTP version is a failure when its status is an error, and a result when it is not.
+    expect(aeoGeoReaderCaveat('The search provider responded with "HTTP/1.1 404 Not Found".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('The search returned "HTTP/2 429 Too Many Requests".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('The search returned "Example Foundation" with HTTP/1.1 503.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('The search returned "HTTP/2 200 OK" for the project name.')).toBe('The search returned "HTTP/2 200 OK" for the project name.');
   });
 
   it('never splits a sentence inside its quotes, so a quoted title stays whole and a multi-sentence provider error maps as one', () => {
@@ -560,6 +565,26 @@ describe('AEO/GEO reader caveats', () => {
       aeoGeoReaderCaveats(['(project_uid unavailable)', 'No live AI-engine tests were run.', 'Record 3f2504e0-4f89-11d3-9a0c-0305e82c3301 was unavailable.'])
     ).toEqual([AEO_GEO_READER_CAVEATS.inputs_unavailable, 'No live AI-engine tests were run.']);
     expect(aeoGeoReaderCaveats(['robots.txt allows all crawlers.', 'robots.txt allows all crawlers.'])).toEqual(['robots.txt allows all crawlers.']);
+    // A bare fixed sentence is left out when a kept composite already carries it; alone, or beside other sentences, it stays in first position.
+    const composite = `${AEO_GEO_READER_CAVEATS.search_unavailable} llms-full.txt was fetched in full.`;
+    expect(
+      aeoGeoReaderCaveats([
+        'Web search returned "Quota exceeded." llms-full.txt was fetched in full.',
+        'No live AI-engine tests were run.',
+        "Web search returned 'Service unavailable'.",
+      ])
+    ).toEqual([composite, 'No live AI-engine tests were run.']);
+    expect(
+      aeoGeoReaderCaveats(["Web search returned 'Service unavailable'.", 'No live AI-engine tests were run.', 'Search failed with "Unauthorized".'])
+    ).toEqual([AEO_GEO_READER_CAVEATS.search_unavailable, 'No live AI-engine tests were run.']);
+    expect(aeoGeoReaderCaveats(["Web search returned 'Service unavailable'."])).toEqual([AEO_GEO_READER_CAVEATS.search_unavailable]);
+    // The same for the other fixed sentence: a composite LFX-record caveat absorbs a bare one.
+    expect(
+      aeoGeoReaderCaveats([
+        "The LFX record could not be read by the form's project_uid (access error). No LFX metrics were queried.",
+        'The LFX record could not be read.',
+      ])
+    ).toEqual([`${AEO_GEO_READER_CAVEATS.lfx_record_unread} No LFX metrics were queried.`]);
     // Distinct sentences all stay, in order; an empty report stays empty.
     const distinct = aeoGeoEnvelopeFixture('project').report?.caveats ?? [];
     expect(aeoGeoReaderCaveats(distinct)).toEqual(distinct.map(aeoGeoReaderCaveat));
