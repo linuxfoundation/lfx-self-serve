@@ -294,7 +294,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(query('mktg-framework-print-tagline-accent')?.textContent?.trim()).toBe(view.mf.tagline);
     // The cards share the row by FRAMEWORK_PORTRAIT_STATEMENT_SHARES: the tagline's widened from the design's 0.7 so it holds two words a line,
     // at the design's 18 px when its longest pair of words fits that line, smaller otherwise.
-    expect(Array.from(statements?.querySelectorAll<HTMLElement>('.fwp-card') ?? []).map((card) => card.style.flex)).toEqual(['0.7', '1', '1.25', '1.05']);
+    expect(Array.from(statements?.querySelectorAll<HTMLElement>('.fwp-card') ?? []).map((card) => card.style.flexGrow)).toEqual(['0.7', '1', '1.25', '1.05']);
     expect(query('mktg-framework-print-tagline-accent')?.style.fontSize).toBe(
       `${frameworkPortraitTaglineSize(view.mf.tagline, frameworkPortraitStatementWidth(1.05, true))}px`
     );
@@ -847,7 +847,8 @@ describe('MktgFrameworkPrintComponent', () => {
       true,
       true,
     ]);
-    expect(read[0].textContent?.trim()).toBe('https://orbit.example.org/page-0');
+    // The read list prints each source in a reader's words (mktgReadableSourceName): a URL as its host and path.
+    expect(read[0].textContent?.trim()).toBe('orbit.example.org/page-0');
     expect(gaps[gaps.length - 1].textContent?.trim()).toBe(`Gap ${gaps.length - 1}: ${long.trim()}`);
     const room = tops.sourcesApproval - tops.sourcesLists;
     expect(
