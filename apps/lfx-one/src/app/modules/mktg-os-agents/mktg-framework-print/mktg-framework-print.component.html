@@ -236,54 +236,68 @@
 
         <!-- 03 MESSAGE HOUSE: the umbrella, the brand line, the pillars with their proofs, why now, the audiences -->
         @case (ids.messageHouse) {
-          <div [lfxPpRect]="[page.margin, 140, page.contentWidth]" data-testid="mktg-framework-print-house">
+          <div [lfxPpRect]="[page.margin, tops.house, page.contentWidth]" data-testid="mktg-framework-print-house">
             @if (houseUmbrella().text) {
               <p class="fwp-house-umbrella" [style.font-size.px]="houseUmbrella().size">{{ houseUmbrella().text }}</p>
             }
             @if (v.mh.line) {
               <p class="fwp-house-line">Brand line · {{ v.mh.line }}</p>
             }
+            <!-- Each pillar's proofs cut to the room that leaves Why now and the audiences theirs (frameworkPortraitHouse). -->
             <div class="fwp-pillars" [style.--fwp-pillar-count]="v.pillars.length" data-testid="mktg-framework-print-pillars">
-              @for (pillar of v.pillars; track pillar.t) {
+              @for (pillar of v.pillars; track pillar.t; let index = $index) {
                 <div class="fwp-pillar" [class.fwp-pillar-spark]="$first">
                   <span class="fwp-pillar-title">{{ pillar.t }}</span>
                   @if (pillar.m) {
                     <p class="fwp-pillar-message">{{ pillar.m }}</p>
                   }
-                  <ul class="fwp-pillar-proofs">
-                    @for (proof of pillar.proofRows; track $index) {
-                      <li>
-                        {{ proof.fact }}
-                        <span class="fwp-pillar-source"
-                          ><span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span></span
-                        >
-                      </li>
+                  @if (frame.housePage?.pillars?.[index]; as proofs) {
+                    @if (proofs.rows.length > 0) {
+                      <ul class="fwp-pillar-proofs">
+                        @for (proof of proofs.rows; track $index) {
+                          <li>
+                            {{ proof.fact }}
+                            <span class="fwp-pillar-source"
+                              ><span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span></span
+                            >
+                          </li>
+                        }
+                      </ul>
                     }
-                  </ul>
+                    @if (proofs.cut > 0) {
+                      <p class="fwp-cut-note" data-testid="mktg-framework-print-pillar-proofs-cut">{{ proofs.note }}</p>
+                    }
+                  }
                 </div>
               }
             </div>
           </div>
-          @if (v.mh.found) {
-            <div [lfxPpRect]="[page.margin, 780, 300]" data-testid="mktg-framework-print-why-now">
-              <span class="pp-lab pp-lab--dark">Why now</span>
-              <p class="fwp-why-now-text">{{ v.mh.found }}</p>
-            </div>
-          }
-          @if (v.audiences.length > 0) {
-            <div [lfxPpRect]="[page.margin + 344, 780, 360]">
-              <span class="pp-lab pp-lab--dark">Audiences</span>
-              <ul class="fwp-audience-list" data-testid="mktg-framework-print-audiences">
-                @for (audience of v.audiences; track audience.name) {
-                  <li class="fwp-audience-row">
-                    <strong>{{ audience.name }}.</strong>
-                    @if (audience.lead) {
-                      {{ audience.lead }}
-                    }
-                  </li>
+          <!-- Why now and the audiences sit a gap under the measured pillars (frameworkPortraitHouse), the text fitted and the rows cut to the room. -->
+          @if (frame.housePage; as house) {
+            @if (house.whyNow; as whyNow) {
+              <div [lfxPpRect]="[page.margin, house.lowerTop, room.whyNowColumn]" data-testid="mktg-framework-print-why-now">
+                <span class="pp-lab pp-lab--dark">Why now</span>
+                <p class="fwp-why-now-text" [style.font-size.px]="whyNow.size">{{ whyNow.text }}</p>
+              </div>
+            }
+            @if (v.audiences.length > 0) {
+              <div [lfxPpRect]="[page.margin + room.audiencesLeft, house.lowerTop, room.audiencesColumn]">
+                <span class="pp-lab pp-lab--dark">Audiences</span>
+                <ul class="fwp-audience-list" [class.fwp-audience-list--tight]="house.audiences.tight" data-testid="mktg-framework-print-audiences">
+                  @for (audience of house.audiences.rows; track audience.name) {
+                    <li class="fwp-audience-row">
+                      <strong>{{ audience.name }}.</strong>
+                      @if (audience.lead) {
+                        {{ audience.lead }}
+                      }
+                    </li>
+                  }
+                </ul>
+                @if (house.audiences.cut > 0) {
+                  <p class="fwp-cut-note" data-testid="mktg-framework-print-audiences-cut">{{ house.audiences.note }}</p>
                 }
-              </ul>
-            </div>
+              </div>
+            }
           }
         }
 

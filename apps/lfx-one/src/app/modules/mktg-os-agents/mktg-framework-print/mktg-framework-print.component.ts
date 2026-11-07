@@ -39,6 +39,7 @@ import {
   frameworkPortraitAvoidList,
   frameworkPortraitBodyTop,
   frameworkPortraitCutList,
+  frameworkPortraitHouse,
   frameworkPortraitIcpPages,
   frameworkPortraitMatrix,
   frameworkPortraitNumbersPages,
@@ -239,6 +240,7 @@ export class MktgFrameworkPrintComponent {
           icpPage: icpIndex ? this.icpPage(icpIndex, icpPages, view) : null,
           numbersPage: numbersIndex ? (numbersPages[numbersIndex - 1] ?? null) : null,
           sourcesPage: page.id === this.ids.sources ? this.sourcesPage(view) : null,
+          housePage: page.id === this.ids.messageHouse ? frameworkPortraitHouse(view, this.houseUmbrella()) : null,
         };
       });
     });

@@ -564,6 +564,26 @@ test('the framework print lists every figure past six as a table, continued on a
   await expect(sayAvoid.getByTestId('mktg-framework-print-say-cut')).toHaveText("+3 more on the framework's Framework tab in LFX One");
   await expect(sayAvoid.getByTestId('mktg-framework-print-avoid').locator('li')).toHaveCount(3);
   await expect(sayAvoid.getByTestId('mktg-framework-print-avoid-cut')).toHaveText("+2 more on the framework's Framework tab in LFX One");
+  // The message house: Why now and the audiences sit a gap under the measured pillars, not at a fixed top that leaves a band; the two blocks share
+  // one top. The key numbers: the lead tile's accent bar does not push its figure below the row's others.
+  const house = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="message-house"]');
+  const houseLayout = await house.evaluate((frame) => {
+    const rect = (selector: string): DOMRect | undefined => frame.querySelector(selector)?.getBoundingClientRect();
+    const pillars = rect('[data-testid="mktg-framework-print-pillars"]');
+    const whyNow = rect('[data-testid="mktg-framework-print-why-now"]');
+    const audiences = frame.querySelector('[data-testid="mktg-framework-print-audiences"]')?.parentElement?.getBoundingClientRect();
+    return {
+      gapUnderPillars: pillars && whyNow ? Math.round(whyNow.top - pillars.bottom) : Number.NaN,
+      sameTop: !!whyNow && !!audiences && Math.abs(whyNow.top - audiences.top) < 1,
+    };
+  });
+  expect(houseLayout.gapUnderPillars).toBeGreaterThanOrEqual(28);
+  expect(houseLayout.gapUnderPillars).toBeLessThanOrEqual(36);
+  expect(houseLayout.sameTop).toBe(true);
+  const figureTops = await print
+    .locator('[data-testid^="mktg-framework-print-number-tile-"] .fwp-number')
+    .evaluateAll((figures) => figures.map((figure) => Math.round(figure.getBoundingClientRect().top)));
+  expect(figureTops[0]).toBe(figureTops[1]);
   await page.screenshot({ path: info.outputPath('foundation-message-print-overfull.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);

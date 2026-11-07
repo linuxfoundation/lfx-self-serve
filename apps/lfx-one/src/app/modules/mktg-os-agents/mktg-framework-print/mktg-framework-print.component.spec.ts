@@ -20,6 +20,7 @@ import { BrandKitRevision, FoundationMessageContent, FoundationMessagePrintView,
 import {
   buildFoundationMessagePrintView,
   foundationMessagePrintCutNote,
+  frameworkPortraitHouse,
   frameworkPortraitPlan,
   frameworkPortraitStatementWidth,
   frameworkPortraitTaglineSize,
@@ -437,6 +438,11 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(query('mktg-framework-print-pillars')?.querySelector('.fwp-pillar')?.classList.contains('fwp-pillar-spark')).toBe(true);
     expect(frame('message-house')?.querySelector('.fwp-why-now-text')?.textContent?.trim()).toBe('A Linux Foundation project.');
     expect(text(query('mktg-framework-print-audiences'))).toBe('End users. Ship with confidence.');
+    // Why now and the audiences sit a gap under the measured pillars (one short pillar here: well above the design's 780), side by side.
+    const whyNowTop = top(query('mktg-framework-print-why-now'));
+    expect(whyNowTop).toBe(frameworkPortraitHouse(printView(null), { text: 'Umbrella.', size: 19 }).lowerTop);
+    expect(whyNowTop).toBeLessThan(500);
+    expect(top(query('mktg-framework-print-audiences')?.parentElement)).toBe(whyNowTop);
     const numbers = query('mktg-framework-print-numbers');
     expect(numbers?.querySelector('.fwp-number')?.textContent?.trim()).toBe('1,200');
     expect(numbers?.querySelector('.fwp-number-label')?.textContent?.trim()).toBe('members');

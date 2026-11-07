@@ -25,14 +25,21 @@ import {
 } from '../constants/mktg-print.constants';
 import { MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
-import type { FoundationMessageAvoidRow } from '../interfaces/foundation-message.interface';
+import type {
+  FoundationMessageAudienceRow,
+  FoundationMessageAvoidRow,
+  FoundationMessagePillarView,
+  FoundationMessageProofView,
+} from '../interfaces/foundation-message.interface';
 import type {
   FoundationMessagePrintAnchorRow,
   FoundationMessagePrintCutList,
   FoundationMessagePrintCutTab,
+  FoundationMessagePrintFittedText,
   FoundationMessagePrintFittedTitle,
   FoundationMessagePrintGoal,
   FoundationMessagePrintGoalProof,
+  FoundationMessagePrintHousePage,
   FoundationMessagePrintMatrix,
   FoundationMessagePrintNumber,
   FoundationMessagePrintFactRow,
@@ -344,6 +351,70 @@ export function frameworkPortraitAnchors(questions: readonly string[], crosscut:
     Math.max(0, room - chrome)
   );
   return finish(fitted.block.paras.map((para, rank) => ({ numberLabel: mktgPortraitPageNumber(rank + 1), question: para.text, size: para.size })));
+}
+
+/** The height a pillar's fixed part takes in a column `width` px wide: its rule and padding, title and message. */
+export function frameworkPortraitPillarHeadHeight(pillar: FoundationMessagePillarView, width: number): number {
+  const message = pillar.m ? ROOM.pillarMessageTop + frameworkPortraitTextHeight(pillar.m, TYPE.pillarMessage, width) : 0;
+  return ROOM.pillarTop + frameworkPortraitTextHeight(pillar.t, TYPE.pillarTitle, width) + message;
+}
+
+/** The height a pillar's proof row takes: its hairline and padding, the fact's lines and the source chip's line. */
+export function frameworkPortraitPillarProofHeight(proof: FoundationMessageProofView, width: number): number {
+  return ROOM.pillarProofRow + frameworkPortraitTextHeight(proof.fact, TYPE.pillarProof, width) + ROOM.pillarProofChip;
+}
+
+/** The height a pillar takes with the proof rows it prints: its head, then the list's margin and the rows (and the cut's line). */
+function pillarHeight(pillar: FoundationMessagePillarView, proofs: FoundationMessagePrintCutList<FoundationMessageProofView>, width: number): number {
+  const rows = proofs.rows.reduce((sum, proof) => sum + frameworkPortraitPillarProofHeight(proof, width), 0);
+  const note = proofs.cut > 0 ? frameworkPortraitCutNoteHeightIn(proofs.cut, 'Framework', width) : 0;
+  return frameworkPortraitPillarHeadHeight(pillar, width) + (pillar.proofRows.length ? ROOM.pillarProofsTop + rows + note : 0);
+}
+
+/**
+ * The message house page, bounded: each pillar's proofs cut to whole rows in the room that leaves the lower blocks their
+ * least (the design reader's rule; a pillar's proofs have no tight measure, so the cut is to whole rows and the muted
+ * line); then Why now and the audiences a gap under the tallest pillar, where the umbrella, the brand line and the pillars
+ * end (the editor's read, 7 Nov 2026: no empty band at the design's fixed 780), the Why now text fitted and the audiences
+ * cut to the whole rows that end above the footer.
+ */
+export function frameworkPortraitHouse(view: FoundationMessagePrintView, umbrella: FoundationMessagePrintFittedText): FoundationMessagePrintHousePage {
+  const width = PAGE.contentWidth;
+  const umbrellaHeight = umbrella.text
+    ? ROOM.houseUmbrellaPadding +
+      frameworkPortraitTextHeight(umbrella.text, { ...TYPE.houseUmbrella, size: umbrella.size }, width - ROOM.houseUmbrellaPaddingAcross)
+    : 0;
+  const line = view.mh.line ? ROOM.houseLineMargins + TYPE.houseLine.size * TYPE.houseLine.line : 0;
+  const count = Math.max(1, view.pillars.length);
+  const column = (width - (count - 1) * ROOM.pillarGap) / count;
+  const pillarsTop = TOPS.house + umbrellaHeight + line;
+  const pillarsRoom = TOPS.footer - ROOM.houseLowerMin - ROOM.houseLowerGap - pillarsTop;
+  const pillars = view.pillars.map((pillar) => {
+    const measure = (proof: FoundationMessageProofView): number => frameworkPortraitPillarProofHeight(proof, column);
+    const room = pillarsRoom - frameworkPortraitPillarHeadHeight(pillar, column) - ROOM.pillarProofsTop;
+    return frameworkPortraitCutList(pillar.proofRows, room, 'Framework', measure, measure, frameworkPortraitCutNoteHeightIn(1, 'Framework', column));
+  });
+  const tallest = view.pillars.reduce((max, pillar, index) => Math.max(max, pillarHeight(pillar, pillars[index], column)), 0);
+  const top = pillarsTop + tallest + ROOM.houseLowerGap;
+  const room = TOPS.footer - top - ROOM.label;
+  const whyNow = view.mh.found
+    ? mktgPortraitFitBlock({ paras: [{ text: view.mh.found, ...TYPE.whyNow }] }, ROOM.whyNowColumn, room - ROOM.whyNowTextTop).block.paras[0]
+    : null;
+  const audienceRow = (audience: FoundationMessageAudienceRow, type: FoundationMessagePrintType, chrome: number): number =>
+    frameworkPortraitTextHeight(`${audience.name}. ${audience.lead}`, type, ROOM.audiencesColumn) + chrome;
+  return {
+    pillars,
+    lowerTop: top,
+    whyNow: whyNow ? { text: whyNow.text, size: whyNow.size } : null,
+    audiences: frameworkPortraitCutList(
+      view.audiences,
+      room - ROOM.audienceListTop,
+      'Framework',
+      (audience) => audienceRow(audience, TYPE.audienceRow, ROOM.audienceRow),
+      (audience) => audienceRow(audience, TYPE.audienceRowTight, ROOM.audienceRowTight),
+      frameworkPortraitCutNoteHeightIn(1, 'Framework', ROOM.audiencesColumn)
+    ),
+  };
 }
 
 /** The width a chip takes, px: its text in the grammar's capitals at `.pp-chip`'s size, plus its padding and border. */

@@ -29,16 +29,20 @@ import {
   frameworkPortraitAvoidList,
   frameworkPortraitBodyTop,
   frameworkPortraitCutNoteHeightIn,
+  frameworkPortraitHouse,
   frameworkPortraitMatrix,
   frameworkPortraitMatrixColumn,
   frameworkPortraitPillList,
+  frameworkPortraitPillarHeadHeight,
+  frameworkPortraitPillarProofHeight,
   frameworkPortraitPillsHeight,
   frameworkPortraitSayRoom,
   frameworkPortraitStatementWidth,
   frameworkPortraitTaglineSize,
   frameworkPortraitTitle,
 } from './mktg-framework-portrait-layout.utils';
-import type { FoundationMessagePrintGoal } from '../interfaces/mktg-print.interface';
+import type { FoundationMessagePrintGoal, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
+import type { FoundationMessagePillarView } from '../interfaces/foundation-message.interface';
 import { mktgPortraitCharsPerLine } from './mktg-portrait-print.utils';
 import { buildFoundationMessagePrintView } from './mktg-print.utils';
 
@@ -208,6 +212,60 @@ describe('the framework portrait book’s bounded blocks', () => {
     function question(index: number): string {
       return five[index];
     }
+  });
+});
+
+describe('the framework portrait book’s message house', () => {
+  const view = (pillars: FoundationMessagePillarView[], audiences: number, found = 'Why now.'): FoundationMessagePrintView =>
+    ({
+      mh: { umbrella: 'Umbrella.', line: 'Brand line.', pillars, found, aud: [] },
+      pillars,
+      audiences: Array.from({ length: audiences }, (_, index) => ({ name: `Audience ${index}`, lead: 'A lead sentence for the audience row.' })),
+    }) as unknown as FoundationMessagePrintView;
+  const pillar = (proofs: number, message = 'A message.'): FoundationMessagePillarView => ({
+    t: 'Open',
+    m: message,
+    p: [],
+    proofRows: Array.from({ length: proofs }, () => ({ fact: 'A fact about the project that runs to a second line in a column.', source: 'Web' })),
+  });
+
+  it('measures a pillar: its rule, title and message, and each proof row with its chip', () => {
+    expect(frameworkPortraitPillarHeadHeight(pillar(0, ''), 221)).toBe(15 + 16 * 1.25);
+    expect(frameworkPortraitPillarHeadHeight(pillar(1), 221)).toBe(15 + 16 * 1.25 + 8 + 12.5 * 1.5);
+    expect(frameworkPortraitPillarProofHeight(pillar(1).proofRows[0], 221)).toBe(17 + 2 * 11.5 * 1.45 + 20.5);
+  });
+
+  it('sets Why now and the audiences a gap under the measured pillars, the text fitted and the rows cut to the footer', () => {
+    const short = frameworkPortraitHouse(view([pillar(1)], 2), { text: 'Umbrella.', size: 19 });
+    const umbrella = 48 + 19 * 1.4;
+    const line = 36 + 13 * 1.3;
+    expect(short.pillars).toEqual([{ rows: pillar(1).proofRows, cut: 0, tight: false, note: '' }]);
+    expect(short.lowerTop).toBe(
+      140 + umbrella + line + frameworkPortraitPillarHeadHeight(pillar(1), 704) + 12 + frameworkPortraitPillarProofHeight(pillar(1).proofRows[0], 704) + 32
+    );
+    expect(short.lowerTop).toBeLessThan(500);
+    expect(short.whyNow).toEqual({ text: 'Why now.', size: 13 });
+    expect(short.audiences).toEqual({ rows: short.audiences.rows, cut: 0, tight: false, note: '' });
+    expect(short.audiences.rows).toHaveLength(2);
+    // Five pillars (the record's cap) of four long proofs under long messages would run past the footer: each pillar's proofs are cut to whole rows
+    // that leave the lower blocks their least room (80 px above the footer), the lower blocks follow the cut pillars down, the long Why now text is
+    // fitted smaller and six audiences are cut to what ends above the footer, the cut said under each list.
+    const long = pillar(4, 'A message that runs on for several lines in a five-column pillar, saying what the pillar stands for.');
+    const tall = frameworkPortraitHouse(view([long, long, long, long, long], 6, 'Why now. '.repeat(40).trim()), {
+      text: 'An umbrella statement that runs to three lines of the dark bar, saying what the project is and whom it is the home for.',
+      size: 19,
+    });
+    expect(tall.pillars).toHaveLength(5);
+    expect(tall.pillars[0].rows.length).toBeLessThan(4);
+    expect(tall.pillars[0].rows.length).toBeGreaterThan(0);
+    expect(tall.pillars[0].note).toBe(`+${4 - tall.pillars[0].rows.length} more on the framework's Framework tab in LFX One`);
+    expect(tall.lowerTop).toBeLessThanOrEqual(1000 - 80);
+    expect(tall.lowerTop).toBeGreaterThan(780);
+    expect(tall.whyNow?.size).toBeLessThan(13);
+    expect(tall.audiences.rows.length).toBeLessThan(6);
+    expect(tall.audiences.rows.length).toBeGreaterThan(0);
+    expect(tall.audiences.note).toBe(`+${6 - tall.audiences.rows.length} more on the framework's Framework tab in LFX One`);
+    expect(frameworkPortraitHouse(view([pillar(1)], 0, ''), { text: '', size: 19 }).whyNow).toBeNull();
   });
 });
 

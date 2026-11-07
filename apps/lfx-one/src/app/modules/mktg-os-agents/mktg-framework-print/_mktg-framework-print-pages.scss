@@ -746,8 +746,8 @@
   }
 
   .fwp-why-now-text {
-    margin-top: 8px;
-    font-size: 13px;
+    margin-top: 8px; /* FRAMEWORK_PORTRAIT_ROOM.whyNowTextTop */
+    font-size: 13px; /* FRAMEWORK_PORTRAIT_TYPE.whyNow; the component sets the fitted size */
     line-height: 1.55;
     color: var(--pp-ink);
   }
@@ -760,8 +760,8 @@
 
   .fwp-audience-row {
     border-top: 1px solid var(--pp-hairline);
-    padding: 7px 0;
-    font-size: 11.5px;
+    padding: 7px 0; /* FRAMEWORK_PORTRAIT_ROOM.audienceRow */
+    font-size: 11.5px; /* FRAMEWORK_PORTRAIT_TYPE.audienceRow */
     line-height: 1.45;
     color: var(--pp-ink);
 
@@ -769,6 +769,13 @@
       font-weight: 600;
       color: var(--pp-dark);
     }
+  }
+
+  /* The rows tightened before a cut (FRAMEWORK_PORTRAIT_TYPE.audienceRowTight, ROOM.audienceRowTight). */
+  .fwp-audience-list--tight .fwp-audience-row {
+    padding: 5px 0;
+    font-size: 11px;
+    line-height: 1.4;
   }
 
   /* ---------- 04 key numbers ---------- */
@@ -791,8 +798,11 @@
     padding: 22px 24px; /* FRAMEWORK_PORTRAIT_NUMBER_TILE.paddingTop / .paddingSide */
   }
 
+  /* The lead tile's accent bar takes 2 px more than the hairline; its padding gives them back, so the figures sit on one line
+     across the row (the editor's read, 7 Nov 2026: the lead tile's text sat 3 px low). */
   .fwp-number-tile-lead {
     border-top: 3px solid var(--pp-accent);
+    padding-top: 20px;
   }
 
   /* The figure and the label are fitted to the tile (FRAMEWORK_PORTRAIT_TYPE.tileFigure / .tileLabel): the template sets the fitted size inline. */

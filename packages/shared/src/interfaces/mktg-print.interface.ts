@@ -16,6 +16,7 @@ import type {
   FoundationMessageMh,
   FoundationMessageNumberRow,
   FoundationMessagePillarView,
+  FoundationMessageProofView,
   FoundationMessageReport,
   FoundationMessageViewTab,
 } from './foundation-message.interface';
@@ -272,6 +273,17 @@ export interface FoundationMessagePrintMatrix {
   proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>[];
 }
 
+/** The message house page's lower blocks as the print lays them out (frameworkPortraitHouse): their top under the measured pillars, the Why now text fitted, the audiences cut to whole rows. */
+export interface FoundationMessagePrintHousePage {
+  /** Each pillar's proof rows, cut to the room that leaves the lower blocks theirs, in the pillars' order. */
+  pillars: FoundationMessagePrintCutList<FoundationMessageProofView>[];
+  /** The top of Why now and the audiences: a gap under the measured pillars. */
+  lowerTop: number;
+  /** The Why now text fitted to its column's room; null when the record has none. */
+  whyNow: FoundationMessagePrintFittedText | null;
+  audiences: FoundationMessagePrintCutList<FoundationMessageAudienceRow>;
+}
+
 /** The say-and-avoid page's two lists, each a cut list in its column (frameworkPortraitPillList, frameworkPortraitAvoidList). */
 export interface FoundationMessagePrintSayAvoid {
   say: FoundationMessagePrintCutList<string>;
@@ -305,6 +317,8 @@ export interface FoundationMessagePrintFrame extends MktgPortraitPlanPage {
   anchors: FoundationMessagePrintAnchorRow[];
   /** The crosscut box's top on the say-and-avoid page: the design's, or under the anchors when they run longer (0 elsewhere). */
   crosscutTop: number;
+  /** The message house's lower blocks, laid out under the measured pillars. */
+  housePage: FoundationMessagePrintHousePage | null;
   goalPage: FoundationMessagePrintGoalPage | null;
   icpPage: FoundationMessagePrintIcpPage | null;
   numbersPage: FoundationMessagePrintNumbersPage | null;
