@@ -359,9 +359,9 @@ describe('AEO/GEO reader caveats', () => {
   });
 
   it('decides by the subject: a provider quoting its message maps, a result title and the audited site pass verbatim', () => {
-    // The provider is the subject and the quoted text is its message: no failure word is needed.
+    // The provider is the subject and the quoted text is its message: a failure word anywhere is the evidence.
     expect(aeoGeoReaderCaveat("Web search returned 'Service unavailable'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
-    expect(aeoGeoReaderCaveat('The search provider responded with "502 Bad Gateway" for every query. Coverage was not verified.')).toBe(
+    expect(aeoGeoReaderCaveat('The search provider responded with "503 Service Unavailable" for every query. Coverage was not verified.')).toBe(
       `${AEO_GEO_READER_CAVEATS.search_unavailable} Coverage was not verified.`
     );
     expect(aeoGeoReaderCaveat("The API responded 'Service unavailable'. Metrics were not read.")).toBe('Metrics were not read.');
@@ -388,8 +388,11 @@ describe('AEO/GEO reader caveats', () => {
     expect(aeoGeoReaderCaveat('Web search for "aaif" returned "Agentic AI Foundation" first.')).toBe(
       'Web search for "aaif" returned "Agentic AI Foundation" first.'
     );
-    // A failure word or an HTTP status inside the quotes, or a failure word outside them, is the evidence.
-    expect(aeoGeoReaderCaveat('The search provider responded with "502 Bad Gateway" for every query.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    // A failure word inside or outside the quotes, or an HTTP status outside them, is the evidence; a number inside the quotes is never read.
+    expect(aeoGeoReaderCaveat('The search provider responded with "503 Service Unavailable" for every query.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('The search provider responded with "502 Bad Gateway" for every query.')).toBe(
+      'The search provider responded with "502 Bad Gateway" for every query.'
+    );
     expect(aeoGeoReaderCaveat("Search failed with 'Unauthorized'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     expect(aeoGeoReaderCaveat("Web search returned 'Service unavailable'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     expect(aeoGeoReaderCaveat('The search returned "nothing useful" with HTTP 500 for both queries.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
@@ -402,41 +405,62 @@ describe('AEO/GEO reader caveats', () => {
     expect(aeoGeoReaderCaveat('The search returned "Top 100 open source foundations" for the project name.')).toBe(
       'The search returned "Top 100 open source foundations" for the project name.'
     );
-    // Inside the quotes an error status counts only where a status belongs: after HTTP, status or code, or leading the message with a
-    // status-like tail (the closing quote, or a standard reason phrase). A title that merely opens with such a number is a result.
+    // Inside the quotes a number is never read, wherever it stands: a title that opens with one, carries one after an apostrophe or
+    // in a nested quotation, or a quoted status line without a failure word, is audit content.
     expect(aeoGeoReaderCaveat('The search returned "Fortune 500 open source companies" for the project name.')).toBe(
       'The search returned "Fortune 500 open source companies" for the project name.'
     );
     expect(aeoGeoReaderCaveat('The search returned "Top 400 projects" for the project name.')).toBe(
       'The search returned "Top 400 projects" for the project name.'
     );
-    for (const title of ['500 Startups', '404 Media', '503 Club']) {
-      expect(aeoGeoReaderCaveat(`The search returned "${title}" for the project name.`)).toBe(`The search returned "${title}" for the project name.`);
-    }
-    // An apostrophe or a nested quote inside a title never opens the leading branch: each span is tested at its own quote.
-    for (const title of ["Women's 500 fastest-growing companies", "O'Reilly 404 page design", "Don't miss the 503 Club"]) {
+    for (const title of [
+      '500 Startups',
+      '404 Media',
+      '503 Club',
+      "Women's 500 fastest-growing companies",
+      "O'Reilly 404 page design",
+      "Don't miss the 503 Club",
+      "Investors' 500",
+      "Founders' 404 Not Found stories",
+      "500's best",
+      "Rock 'n' 500",
+      "Top 'Bad' 404",
+      "A guide to '404' pages",
+    ]) {
       expect(aeoGeoReaderCaveat(`The search returned "${title}" for the project name.`)).toBe(`The search returned "${title}" for the project name.`);
     }
     expect(aeoGeoReaderCaveat('The search returned "O\'Reilly" and "404 page design" for the project name.')).toBe(
       'The search returned "O\'Reilly" and "404 page design" for the project name.'
     );
-    // A second span that is a status line still counts on its own.
+    // A failure word in a second span still counts; a status line in it, without one, does not.
     expect(aeoGeoReaderCaveat('The search returned "Example Foundation" and then "503 Service Unavailable".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
-    expect(aeoGeoReaderCaveat('The search provider responded with "404 Not Found".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
-    expect(aeoGeoReaderCaveat('The search returned "429 Too Many Requests".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
-    expect(aeoGeoReaderCaveat("Web search returned '404 not found'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('The search returned "Example Foundation" and then "502 Bad Gateway".')).toBe(
+      'The search returned "Example Foundation" and then "502 Bad Gateway".'
+    );
+    expect(aeoGeoReaderCaveat('The search provider responded with "404 Not Found".')).toBe('The search provider responded with "404 Not Found".');
+    expect(aeoGeoReaderCaveat('The search returned "429 Too Many Requests".')).toBe('The search returned "429 Too Many Requests".');
+    expect(aeoGeoReaderCaveat("Web search returned '404 not found'.")).toBe("Web search returned '404 not found'.");
     expect(aeoGeoReaderCaveat('Web search returned \u201c503 Service Unavailable\u201d.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    // The word failed is the evidence here, not the quoted number.
     expect(aeoGeoReaderCaveat('Web search failed with "404".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
-    expect(aeoGeoReaderCaveat('Web search returned `404` for both queries.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
-    expect(aeoGeoReaderCaveat('Web search returned "status 404" for both queries.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('Web search returned `404` for both queries.')).toBe('Web search returned `404` for both queries.');
+    expect(aeoGeoReaderCaveat('Web search returned "status 404" for both queries.')).toBe('Web search returned "status 404" for both queries.');
     // Outside the quotes a status may carry "code" and a colon.
     expect(aeoGeoReaderCaveat('The search returned "Not found" with status: 404.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     expect(aeoGeoReaderCaveat('The search returned "Not found" with status code 404.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
-    // A quoted status line with an HTTP version is a failure when its status is an error, and a result when it is not.
-    expect(aeoGeoReaderCaveat('The search provider responded with "HTTP/1.1 404 Not Found".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
-    expect(aeoGeoReaderCaveat('The search returned "HTTP/2 429 Too Many Requests".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    // A quoted status line, with or without an HTTP version, is a quotation; the same status outside the quotes is a failure.
+    expect(aeoGeoReaderCaveat('The search provider responded with "HTTP/1.1 404 Not Found".')).toBe(
+      'The search provider responded with "HTTP/1.1 404 Not Found".'
+    );
+    expect(aeoGeoReaderCaveat('The search returned "HTTP/2 429 Too Many Requests".')).toBe('The search returned "HTTP/2 429 Too Many Requests".');
     expect(aeoGeoReaderCaveat('The search returned "Example Foundation" with HTTP/1.1 503.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     expect(aeoGeoReaderCaveat('The search returned "HTTP/2 200 OK" for the project name.')).toBe('The search returned "HTTP/2 200 OK" for the project name.');
+    // A caveat that is nothing but a status line is a provider failure on its own, with no subject; a sentence around it is not.
+    for (const line of ['HTTP/1.1 404 Not Found', '404 Not Found', '502 Bad Gateway', '503', 'HTTP 503 Service Unavailable.']) {
+      expect(aeoGeoReaderCaveat(line)).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    }
+    expect(aeoGeoReaderCaveat('HTTP 200 OK')).toBe('HTTP 200 OK');
+    expect(aeoGeoReaderCaveat('The homepage returned 404 Not Found.')).toBe('The homepage returned 404 Not Found.');
   });
 
   it('never splits a sentence inside its quotes, so a quoted title stays whole and a multi-sentence provider error maps as one', () => {
@@ -575,6 +599,83 @@ describe('AEO/GEO reader caveats', () => {
     ],
   ])('maps the editor fixture %s exactly', (_name, caveats, expected) => {
     expect(aeoGeoReaderCaveats(caveats)).toEqual(expected);
+  });
+
+  // The stop rule, shape by shape: a number is never read inside quotes; a bare status line maps; a fixed sentence is dropped
+  // only beside a caveat that starts with it. Each row is a report's caveats and the reader's list.
+  it.each<[string, string[], string[]]>([
+    [
+      'HTTP forms: a quoted status line is a quotation, a bare one is a failure, a successful one is content',
+      ['The search provider responded with "HTTP/1.1 404 Not Found".', 'HTTP/1.1 404 Not Found', 'The search returned "HTTP/2 200 OK" for the project name.'],
+      [
+        'The search provider responded with "HTTP/1.1 404 Not Found".',
+        AEO_GEO_READER_CAVEATS.search_unavailable,
+        'The search returned "HTTP/2 200 OK" for the project name.',
+      ],
+    ],
+    ['a bare "404" in a sentence maps by the word failed, not by the number', ['Search failed with "404".'], [AEO_GEO_READER_CAVEATS.search_unavailable]],
+    [
+      'a leading number with a reason phrase: quoted it is a quotation, bare it is a failure',
+      ['Web search returned "502 Bad Gateway" for both queries.', '502 Bad Gateway'],
+      ['Web search returned "502 Bad Gateway" for both queries.', AEO_GEO_READER_CAVEATS.search_unavailable],
+    ],
+    [
+      'a title that opens with a 4xx/5xx number',
+      ['500 Startups', '404 Media', '503 Club'].map((title) => `The search returned "${title}" for the project name.`),
+      ['500 Startups', '404 Media', '503 Club'].map((title) => `The search returned "${title}" for the project name.`),
+    ],
+    [
+      'a title with an apostrophe beside the number',
+      ["Investors' 500", "500's best", "Rock 'n' 500"].map((title) => `The search returned "${title}" for the project name.`),
+      ["Investors' 500", "500's best", "Rock 'n' 500"].map((title) => `The search returned "${title}" for the project name.`),
+    ],
+    [
+      'a title with a nested quotation around the number',
+      ['The search returned "A guide to \'404\' pages" for the project name.'],
+      ['The search returned "A guide to \'404\' pages" for the project name.'],
+    ],
+    [
+      'the genuine fallback kept beside a caveat quoting it in single quotes, apostrophe inside',
+      [`One caveat quoted '${AEO_GEO_READER_CAVEATS.inputs_unavailable}' as an example.`, '(project_uid unavailable)'],
+      [`One caveat quoted '${AEO_GEO_READER_CAVEATS.inputs_unavailable}' as an example.`, AEO_GEO_READER_CAVEATS.inputs_unavailable],
+    ],
+    [
+      'the genuine fallback kept beside a caveat quoting it in double quotes',
+      [`One caveat quoted "${AEO_GEO_READER_CAVEATS.search_unavailable}" as an example.`, "Web search returned 'Service unavailable'."],
+      [`One caveat quoted "${AEO_GEO_READER_CAVEATS.search_unavailable}" as an example.`, AEO_GEO_READER_CAVEATS.search_unavailable],
+    ],
+    [
+      'the duplicate fallback dropped beside a composite that starts with it',
+      [`${AEO_GEO_READER_CAVEATS.search_unavailable} llms-full.txt was fetched in full.`, "Web search returned 'Service unavailable'."],
+      [`${AEO_GEO_READER_CAVEATS.search_unavailable} llms-full.txt was fetched in full.`],
+    ],
+    [
+      'plumbing: a field and a UUID, a slug, a credits limit',
+      [
+        "The LFX record could not be read by the form's project_uid 3f2504e0-4f89-11d3-9a0c-0305e82c3301 (access error).",
+        'A name search returned an entitled record (slug example-project).',
+        "Web search (Example Search Service) returned 'You have exceeded your credits limit' for both planned queries.",
+      ],
+      [AEO_GEO_READER_CAVEATS.lfx_record_unread, 'A name search returned an entitled record.', AEO_GEO_READER_CAVEATS.search_unavailable],
+    ],
+    [
+      'a status outside the quotes: an error maps, a success is content',
+      ['The search returned "Not found" with status code 404.', 'The search returned "Example Foundation" with HTTP 200.'],
+      [AEO_GEO_READER_CAVEATS.search_unavailable, 'The search returned "Example Foundation" with HTTP 200.'],
+    ],
+    [
+      'a raw provider blob, quoted or not: a JSON brace pair, a long hex id or a requestId is plumbing; a short hex colour is not',
+      [
+        'API error "429 Too Many Requests" {"requestId":"9f3c2a7b1d4e5f60718293a4b5c6d7e8"}.',
+        'The provider answered with request_id 9f3c2a7b1d4e5f60718293a4b5c6d7e8.',
+        'Trace 9f3c2a7b1d4e5f60718293a4b5c6d7e8 was logged.',
+        'The brand colour is #1a2b3c.',
+        'The health check returned {"ok":true} as expected.',
+      ],
+      [AEO_GEO_READER_CAVEATS.inputs_unavailable, 'The brand colour is #1a2b3c.'],
+    ],
+  ])('reads %s', (_shape, caveats, reader) => {
+    expect(aeoGeoReaderCaveats(caveats)).toEqual(reader);
   });
 
   it('prints each distinct reader sentence once, in order of first occurrence', () => {
