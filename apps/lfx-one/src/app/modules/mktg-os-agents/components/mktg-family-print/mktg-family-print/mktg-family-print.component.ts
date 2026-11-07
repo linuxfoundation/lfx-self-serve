@@ -7,6 +7,7 @@ import {
   MKTG_FAMILY_EXPORT_KINDS,
   MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COPY,
+  MKTG_FAMILY_PRINT_BOOK_CLASS,
   MKTG_FAMILY_PRINT_HEAD_KIND,
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_PORTRAIT_PAGE,
@@ -73,8 +74,9 @@ import { MktgFamilyPrintSourcesPageComponent } from '../mktg-family-print-source
   templateUrl: './mktg-family-print.component.html',
   styleUrl: './mktg-family-print.component.scss',
   styles: [MKTG_PORTRAIT_BLOCK_HOST],
-  // The portrait grammar's root: a plain block of frames; the print service picks the US Letter setup by its class.
-  host: { class: `block ${MKTG_PORTRAIT_PRINT_CLASS}`, 'data-testid': 'family-print-book' },
+  // The portrait grammar's root: a plain block of frames; the print service picks the page setup by its class. The
+  // family's own class carries the one rule it lays over every running head in its book (styles/mktg-family-print.scss).
+  host: { class: `block ${MKTG_PORTRAIT_PRINT_CLASS} ${MKTG_FAMILY_PRINT_BOOK_CLASS}`, 'data-testid': 'family-print-book' },
 })
 export class MktgFamilyPrintComponent {
   public readonly view = input.required<MktgFamilyPrintView>();

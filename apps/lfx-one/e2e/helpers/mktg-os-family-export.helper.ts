@@ -167,6 +167,9 @@ export async function openFamilyExports(
 }
 
 /** One frame of the family book as the e2e reads it: the grammar's plan id and the book's page number. */
+/** The tallest one-line running head (`.pp-head`: 10 px type at 1.2, 8 px padding, 1 px rule = 21 px; two lines read 33). */
+const FAMILY_HEAD_ONE_LINE_MAX = 24;
+
 export interface FamilyBookFrame {
   id: string;
   page: number;
@@ -211,7 +214,14 @@ export async function expectFamilyBookFrames(book: Locator) {
         if (rect.width === 0 || rect.height === 0) return false;
         return rect.left < box.left - 0.5 || rect.top < box.top - 0.5 || rect.right > box.right + 0.5 || rect.bottom > box.bottom + 0.5;
       });
-      return { width: Math.round(box.width), height: Math.round(box.height), overflowing: overflowing.map((child) => child.className) };
+      // The running head's box, when the page has one (the cover and the openers print none).
+      const head = element.querySelector('[data-testid="mktg-portrait-page-head"]')?.getBoundingClientRect() ?? null;
+      return {
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+        overflowing: overflowing.map((child) => child.className),
+        head: head ? Math.round(head.height) : null,
+      };
     })
   );
   geometry.forEach((frame, index) => {
@@ -221,6 +231,9 @@ export async function expectFamilyBookFrames(book: Locator) {
       height: MKTG_PORTRAIT_PAGE.height,
     });
     expect({ id: frames[index].id, overflowing: frame.overflowing }).toEqual({ id: frames[index].id, overflowing: [] });
+    // The running head is one line on every page of the book (the family's one rule over the grammar's head: a label
+    // of 10 px type at 1.2 over 8 px of padding and a 1 px rule is 21 px; a second line would make it 33).
+    if (frame.head !== null) expect(frame.head, `${frames[index].id}: running head on one line`).toBeLessThanOrEqual(FAMILY_HEAD_ONE_LINE_MAX);
   });
   // The family's own pages are the book's direct children or sit in the grammar's own wrappers (an opener, the back cover);
   // the framework's and the kit's frames sit in their prints (their plan ids, `sources` among them, may repeat the family's).

@@ -6,6 +6,31 @@
   display: none;
 }
 
+/* The running head on every page of the family's book (its own pages', the framework's and the kit's; the root class is
+   `MKTG_FAMILY_PRINT_BOOK_CLASS`): one line, always. A long project name ("Cloud Native Computing Foundation (CNCF)
+   positioning & brand") wrapped both labels to two lines on the framework's pages (the editor's F4). The section label
+   keeps its whole text and the document name on the right yields, clipped with an ellipsis (CSS Overflow 3
+   `text-overflow`), so a page always says where in the book it is; a document's standalone print keeps the grammar's
+   heads untouched. */
+.lfx-mktg-family-book .pp-head {
+  flex-wrap: nowrap;
+  column-gap: 24px;
+
+  .pp-head-section {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .pp-head-doc {
+    flex: 0 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+  }
+}
+
 @media print {
   /* Match the standalone framework reset: neither shell containers nor filters
      may anchor the native document to the app's narrow content column. */

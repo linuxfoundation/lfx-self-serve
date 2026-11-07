@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_PRINT_INK_ON_LIGHT } from '@lfx-one/shared/constants';
+import { MKTG_FAMILY_PRINT_BOOK_CLASS, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_PRINT_INK_ON_LIGHT } from '@lfx-one/shared/constants';
 import { MktgFamilyPrintView } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
@@ -78,6 +78,8 @@ describe('MktgFamilyPrintComponent', () => {
     // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
     expect(getComputedStyle(root).display).toBe('block');
     expect(root.classList.contains('lfx-mktg-portrait')).toBe(true);
+    // The family's own root class beside the grammar's: the one rule over every running head in the book hangs on it.
+    expect(root.classList.contains(MKTG_FAMILY_PRINT_BOOK_CLASS)).toBe(true);
     // 1 cover · 2 contents · 3 opener · 4 boilerplates · 5 opener · 6 FAQ · 7 Sources · 8 back cover, every one a frame of the grammar.
     expect(pages(root).map((frame) => [frame.dataset['pageId'], frame.dataset['page']])).toEqual([
       ['cover', '1'],

@@ -14,6 +14,13 @@ export const MKTG_FAMILY_PRINT_WARN_INK = lfxColors.amber[700];
 /** The family book's running head names the project and the family as the grammar names a document (`<project> positioning & brand`): the grammar's own kind for it, so the compiler checks the name. */
 export const MKTG_FAMILY_PRINT_HEAD_KIND: MktgPortraitDocumentKind = 'positioning & brand';
 
+/**
+ * The family book's root class beside the grammar's: the one rule the family lays over every running head in its
+ * book (its own pages', the framework's and the kit's) hangs on it — `styles/mktg-family-print.scss`, which cannot
+ * read this — so a document's standalone print keeps the grammar's heads as they are.
+ */
+export const MKTG_FAMILY_PRINT_BOOK_CLASS = 'lfx-mktg-family-book';
+
 /** What a frame of the book holds; `framework` and `kit` are the inner prints' own portrait pages in the family's book. */
 export const MKTG_FAMILY_PRINT_PAGE_KINDS = ['cover', 'contents', 'opener', 'framework', 'kit', 'boilerplates', 'faq', 'sources', 'back'] as const;
 
