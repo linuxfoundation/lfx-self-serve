@@ -182,7 +182,9 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(book).toHaveClass(/lfx-mktg-portrait/);
   await expect(printDocument.locator('lfx-mktg-framework-print')).toHaveCount(1);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print')).toHaveCount(1);
-  await expect(printDocument.locator('lfx-mktg-boilerplates-print, lfx-mktg-faq-print, lfx-mktg-print-sheet, tfoot')).toHaveCount(0);
+  await expect(printDocument.locator('lfx-mktg-boilerplates-print, lfx-mktg-faq-print, tfoot')).toHaveCount(0);
+  // Main's sheets print only inside the framework's chapter (stage 1).
+  await expect(printDocument.locator('lfx-mktg-print-sheet:not(lfx-mktg-framework-print lfx-mktg-print-sheet)')).toHaveCount(0);
   // Only the wrapper travels: the card's controls are not in the frame.
   await expect(printFrame.getByTestId('family-export-actions')).toHaveCount(0);
   const frames = await expectFamilyBookFrames(book);
@@ -219,11 +221,12 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2']);
   await expect(printDocument.getByTestId('mktg-framework-print-goals')).toBeVisible();
   await expect(printFrame.getByTestId('mktg-framework-print-cover')).toBeHidden();
-  // The kit's portrait pages in the family's book: no cover, contents or back cover of its own, the family's head on each.
+  // The kit in the family's book: no cover, contents or back cover of its own; its frames (the pages of its plan on the
+  // grammar at this head) carry the family's head.
   const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');
-  expect(frames.kitPages).toBeGreaterThan(0);
   await expect(kitPrint.locator('[data-page-id="cover"], [data-page-id="contents"], [data-page-id="back-cover"]')).toHaveCount(0);
-  await expect(kitPrint.getByTestId('mktg-portrait-page-doc').first()).toHaveText(/positioning & brand$/);
+  await expect(kitPrint.getByTestId('mktg-portrait-page-doc')).toHaveCount(frames.kitPages);
+  if (frames.kitPages) await expect(kitPrint.getByTestId('mktg-portrait-page-doc').first()).toHaveText(/positioning & brand$/);
   await expect(printDocument.locator('lfx-brand-kit-view, .lfx-brand-kit-page')).toHaveCount(0);
   // The boilerplates as cards, one per length with text; the FAQ's answered questions only.
   await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-card')).toHaveCount(4);

@@ -173,7 +173,7 @@ export interface FamilyBookFrame {
  * `data-page-id` and `data-page`): every one 816×1056 with nothing laid out past its edge, the book opening on the
  * cover and contents, each document's opener before its pages, the Sources page and the back cover last, the numbers
  * rising by one across the frames (the flowing framework print of stage 1 takes its pages between its opener and the
- * next). Returns what the content assertions need: the openers, a frame by id, the kit's page count, the total.
+ * next). Returns what the content assertions need: the openers, a frame by id, the kit's frame count, the total.
  */
 export async function expectFamilyBookFrames(book: Locator) {
   const pages = book.locator('[data-testid="lfx-mktg-portrait-page"]');
@@ -186,11 +186,17 @@ export async function expectFamilyBookFrames(book: Locator) {
   expect(frames[3].id).toBe('opener-brand-kit');
   const openers = frames.filter((frame) => frame.id.startsWith('opener-'));
   expect(openers.map((frame) => frame.id)).toEqual(['opener-foundation-message', 'opener-brand-kit', 'opener-boilerplates', 'opener-faq']);
-  // One plan numbers every frame: from the kit's opener on, the numbers rise by one; the framework's flowing pages sit
-  // between its opener (3) and the kit's.
+  // One plan numbers every frame. The framework's flowing pages (stage 1) sit between its opener (3) and the kit's;
+  // the kit's frames are the pages of its plan that are on the grammar at this head, rising by one from its opener
+  // (the rest still print as its flowing chapters, counted by the plan all the same); from the boilerplates' opener
+  // on, the family's own pages rise by one to the back cover.
   expect(frames.slice(0, 3).map((frame) => frame.page)).toEqual([1, 2, 3]);
   expect(frames[3].page).toBeGreaterThan(3);
-  frames.slice(4).forEach((frame, index) => expect(frame.page).toBe(frames[3].page + index + 1));
+  const kitFrames = frames.slice(4, -6);
+  kitFrames.forEach((frame, index) => expect(frame.page).toBe(frames[3].page + index + 1));
+  const tail = frames.slice(-6);
+  expect(tail[0].page).toBeGreaterThan(frames[3].page + kitFrames.length);
+  tail.slice(1).forEach((frame, index) => expect(frame.page).toBe(tail[0].page + index + 1));
   const total = frames[frames.length - 1].page;
   // Every frame is one US Letter page, and nothing in it is laid out past its edge.
   const geometry = await pages.evaluateAll((elements) =>

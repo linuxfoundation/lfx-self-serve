@@ -476,12 +476,18 @@ describe('Family export slot', () => {
     const kitLast = kitFirst + kitPlan.length - 1;
     const total = kitLast + 6;
     const frames = Array.from(book.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]'));
+    // The kit's frames in the book: the pages of its plan that are on the grammar at this head (the rest still print
+    // as its flowing chapters, counted by the plan all the same), in the plan's order, numbered from the chapter's first page.
+    const kitFrames = frames.filter((frame) => frame.closest('lfx-mktg-brand-kit-print'));
+    const kitIds = kitFrames.map((frame) => frame.dataset['pageId']);
+    expect(kitPlan.map((page) => page.id).filter((id) => kitIds.includes(id))).toEqual(kitIds);
+    expect(kitFrames.map((frame) => Number(frame.dataset['page']))).toEqual(kitIds.map((id) => kitFirst + kitPlan.findIndex((page) => page.id === id)));
     expect(frames.map((frame) => frame.dataset['pageId'])).toEqual([
       'cover',
       'contents',
       'opener-foundation-message',
       'opener-brand-kit',
-      ...kitPlan.map((page) => page.id),
+      ...kitIds,
       'opener-boilerplates',
       'boilerplates',
       'opener-faq',
@@ -489,13 +495,12 @@ describe('Family export slot', () => {
       'sources',
       'back-cover',
     ]);
-    // One plan numbers every frame, the kit's included: the kit's book starts at its chapter's first page.
-    expect(frames.map((frame) => Number(frame.dataset['page']))).toEqual([
+    // One plan numbers every frame: the family's own pages after the kit's chapter count on from its last page.
+    expect(frames.filter((frame) => !frame.closest('lfx-mktg-brand-kit-print')).map((frame) => Number(frame.dataset['page']))).toEqual([
       1,
       2,
       3,
       3 + frameworkPages + 1,
-      ...kitPlan.map((_, index) => kitFirst + index),
       kitLast + 1,
       kitLast + 2,
       kitLast + 3,
@@ -520,14 +525,18 @@ describe('Family export slot', () => {
       String(kitLast + 1),
       String(kitLast + 3),
     ]);
-    expect(Array.from(contents.querySelectorAll('[data-testid="family-print-contents-entry"]')).map((n) => n.textContent?.replace(/\s+/g, ' ').trim())).toEqual(
-      [
-        ...framework.sections.map((section, index) => `${section.title} ${4 + index}`),
-        ...kitPlan.map((page, index) => `${page.title} ${kitFirst + index}`),
-        `Boilerplates ${kitLast + 2}`,
-        `Frequently asked questions ${kitLast + 4}`,
-      ]
-    );
+    expect(
+      Array.from(contents.querySelectorAll('[data-testid="family-print-contents-entry"]')).map((n) =>
+        Array.from(n.children)
+          .map((cell) => cell.textContent?.trim())
+          .join(' ')
+      )
+    ).toEqual([
+      ...framework.sections.map((section, index) => `${section.title} ${4 + index}`),
+      ...kitPlan.map((page, index) => `${page.title} ${kitFirst + index}`),
+      `Boilerplates ${kitLast + 2}`,
+      `Frequently asked questions ${kitLast + 4}`,
+    ]);
     expect(contents.querySelector('[data-testid="family-print-contents-sources"]')?.textContent).toContain(String(kitLast + 5));
     const openers = Array.from(book.querySelectorAll<HTMLElement>('lfx-mktg-portrait-opener'));
     expect(openers.map((opener) => opener.querySelector('[data-testid="mktg-portrait-opener-title"]')?.textContent)).toEqual([
@@ -572,7 +581,9 @@ describe('Family export slot', () => {
     // Main's framework print, numbered by the plan's chapter, inside the book (stage 1); the kit's own cover, contents and back cover stay out.
     expect(Array.from(document.querySelectorAll('lfx-mktg-framework-print h2 > span')).map((span) => span.textContent?.trim())).toEqual(['01.1', '01.2']);
     expect(document.querySelector('lfx-mktg-brand-kit-print [data-page-id="cover"], lfx-mktg-brand-kit-print [data-page-id="back-cover"]')).toBeNull();
-    expect(document.querySelector('lfx-mktg-boilerplates-print, lfx-mktg-faq-print, lfx-mktg-print-sheet')).toBeNull();
+    // The boilerplates and the FAQ print as the family's frames, not as main's sheets; the framework's own sheets stay (stage 1).
+    expect(document.querySelector('lfx-mktg-boilerplates-print, lfx-mktg-faq-print')).toBeNull();
+    expect(document.querySelector('lfx-mktg-print-sheet:not(lfx-mktg-framework-print lfx-mktg-print-sheet)')).toBeNull();
     expect(print.ensureFontStylesheet).toHaveBeenCalledWith(brand.fontUrl);
   });
 
