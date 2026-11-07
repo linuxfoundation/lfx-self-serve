@@ -35,6 +35,7 @@ import {
   brandKitPortraitPlan,
   frameworkPortraitPlan,
   mktgFamilyPrintContentsLayout,
+  mktgFamilyPrintCoverStrip,
   mktgFamilyPrintCutNote,
   mktgFamilyPrintDate,
   mktgFamilyPrintFaqGroups,
@@ -42,7 +43,6 @@ import {
   mktgFamilyPrintHeadTight,
   mktgFamilyPrintPageRange,
   mktgFamilyPrintPlan,
-  mktgPortraitCoverStrip,
   mktgPortraitDocumentName,
   mktgPortraitFootLeft,
   mktgPortraitLook,
@@ -130,12 +130,13 @@ export class MktgFamilyPrintComponent {
   public readonly printedLabel: Signal<string> = this.initPrintedLabel();
   public readonly coverFootRight: Signal<string> = this.initCoverFootRight();
   /**
-   * The cover strip's halves as the grammar fits them on one line (mktgPortraitCoverStrip, as the kit's cover does): the
+   * The cover strip's halves on one line: as written when the family's measure of the face's capitals fits them
+   * (mktgFamilyPrintCoverStrip), else as the grammar fits them (mktgPortraitCoverStrip, as the kit's cover does): the
    * project line drops its LF suffix before a long name, then words go with an ellipsis; only when one word each still
    * does not fit does the strip wrap, moved up one line so it ends where the one line did.
    */
   public readonly coverStrip: Signal<MktgPortraitCoverStrip> = computed(() =>
-    mktgPortraitCoverStrip(this.book().footLeft, this.coverFootRight(), this.inset[1], this.look().fontStack)
+    mktgFamilyPrintCoverStrip(this.book().footLeft, this.coverFootRight(), this.inset[1], this.look().fontStack)
   );
   public readonly coverStripRect: Signal<readonly [number, number, number]> = computed(() => [
     this.inset[0],
