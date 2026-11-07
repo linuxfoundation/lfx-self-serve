@@ -64,9 +64,10 @@ import {
   mktgPortraitCharsPerLine,
   mktgPortraitCutText,
   mktgPortraitFitBlock,
-  mktgPortraitOneLine,
   mktgPortraitPageNumber,
   mktgPortraitParaHeight,
+  mktgPortraitTrimStopWords,
+  mktgPortraitTrimTail,
   mktgPortraitWrapLines,
 } from './mktg-portrait-print.utils';
 
@@ -369,9 +370,29 @@ function contentsRunOf(id: string): string | null {
 }
 
 /**
+ * A text cut to one line `width` px wide at `size` px, at a word, always ending in an ellipsis when it drops anything
+ * (never a sentence cut: a contents title is a name, and its reader must see that it goes on). The kept words lose
+ * the function word they would end on and the punctuation before the mark (the grammar's rules). Unchanged when it fits.
+ */
+export function frameworkPortraitWordCut(text: string, width: number, size: number, weight?: number): string {
+  const max = mktgPortraitCharsPerLine(width, size, { weight });
+  if (text.length <= max) return text;
+  const words: string[] = [];
+  let length = 0;
+  for (const word of text.split(/\s+/)) {
+    const next = length === 0 ? word.length : length + 1 + word.length;
+    if (next + 1 > max) break;
+    words.push(word);
+    length = next;
+  }
+  const kept = mktgPortraitTrimStopWords(words).join(' ');
+  return `${mktgPortraitTrimTail(kept || text.slice(0, Math.max(1, max - 1)))}…`;
+}
+
+/**
  * The cover's contents, bounded in the room above the cover strip (the design reader's list rule): every page after the
  * cover, one row each, its title set on one line (the board's row; a title longer than the row's measure is cut at a
- * word with an ellipsis, `mktgPortraitOneLine`) at the design's measure where the rows fit; tightened where they do not;
+ * word with an ellipsis, `frameworkPortraitWordCut`) at the design's measure where the rows fit; tightened where they do not;
  * and where the tight rows still run past the strip, each run of repeated pages (the goals, the profiles, a continued
  * key-numbers table) collapsed to ONE row with its page range (`Goals 1–8 · 03–10`), so every page stays listed and
  * nothing is dropped. A provisional call: the design's board shows the short book only.
@@ -384,7 +405,7 @@ export function frameworkPortraitContents(plan: readonly MktgPortraitPlanPage[],
   const width = frameworkPortraitContentsTitleWidth();
   const oneLine = (list: readonly FoundationMessagePrintContentsEntry[], tight: boolean): FoundationMessagePrintContentsEntry[] => {
     const type = tight ? TYPE.contentsRowTight : TYPE.contentsRow;
-    return list.map((entry) => ({ ...entry, title: mktgPortraitOneLine(entry.title, width, type.size, { weight: type.weight }) }));
+    return list.map((entry) => ({ ...entry, title: frameworkPortraitWordCut(entry.title, width, type.size, type.weight) }));
   };
   if (frameworkPortraitContentsHeight(entries.length, false) <= room) return { rows: oneLine(entries, false), tight: false, collapsed: false };
   if (frameworkPortraitContentsHeight(entries.length, true) <= room) return { rows: oneLine(entries, true), tight: true, collapsed: false };

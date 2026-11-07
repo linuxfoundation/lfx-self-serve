@@ -525,12 +525,16 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-download-pdf')).toBeNull();
     expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual(['Export to Google Slides']);
     expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(false);
-    // The print rendering is gated with the button: off, no print root is in the document (nothing is built for a PDF no one can ask for).
+    // The print rendering is gated with the button: off, no print root is in the document and nothing of the book is built: no
+    // font stylesheet injected, the print service not prepared (nothing for a PDF no one can ask for).
     expect(query('mktg-framework-view-print')).toBeNull();
     expect(query('mktg-framework-print')).toBeNull();
+    expect(printer.ensureFontStylesheet).not.toHaveBeenCalled();
+    expect(printer.prepare).not.toHaveBeenCalled();
     pdfFlag.set(true);
     await fixture.whenStable();
     expect(query('mktg-framework-view-print')).not.toBeNull();
+    expect(printer.prepare).toHaveBeenCalledWith(null);
     expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual([
       'Export to Google Slides',
       'Download PDF',

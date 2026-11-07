@@ -223,7 +223,9 @@ export class MktgFrameworkViewComponent {
   public constructor() {
     // The print mark never outlives the view (a print dialog still up when the page goes).
     this.destroyRef.onDestroy(() => this.printService.clear());
-    toObservable(this.printView)
+    // The print's typeface and page setup are prepared only while the PDF flag is on, as the print root is mounted: off,
+    // nothing of the book is built, no font stylesheet is injected and the print service is not touched.
+    toObservable(computed(() => (this.pdfEnabled() ? this.printView() : null)))
       .pipe(takeUntilDestroyed())
       .subscribe((view) => {
         if (!view) return;

@@ -27,6 +27,7 @@ import {
   frameworkPortraitNumberTiles,
   frameworkPortraitNumbersPages,
   frameworkPortraitNumbersRowIn,
+  frameworkPortraitWordCut,
   frameworkPortraitChipWidth,
   frameworkPortraitIcpWhoWidth,
   frameworkPortraitAnchors,
@@ -427,6 +428,13 @@ describe('the framework portrait book’s cover contents', () => {
     );
     expect(tight.tight).toBe(true);
     expect(tight.rows.find((row) => row.id === 'goal-4')?.title).toBe('Goal 4 · Events where the roadmap is decided…');
+    // A title with a sentence inside the measure is still cut at a word with the mark, never at the sentence with none
+    // (the provisional call: a reader sees the title goes on); the function word it would end on goes (the grammar's rule).
+    const sentences = 'Goal 3 · Grow adoption. Then grow the number of maintainers who stay a second year';
+    expect(frameworkPortraitWordCut(sentences, frameworkPortraitContentsTitleWidth(), 13)).toBe('Goal 3 · Grow adoption. Then grow…');
+    expect(frameworkPortraitWordCut('Goal 3 · Title', frameworkPortraitContentsTitleWidth(), 13)).toBe('Goal 3 · Title');
+    const probe = plan(8, 2).map((page) => (page.id === 'goal-3' ? { ...page, title: sentences } : page));
+    expect(frameworkPortraitContents(probe, 1).rows.find((row) => row.id === 'goal-3')?.title).toBe('Goal 3 · Grow adoption. Then grow…');
   });
 
   it('collapses each run of repeated pages to one row with its page range when the tight rows still pass the strip, dropping no page', () => {

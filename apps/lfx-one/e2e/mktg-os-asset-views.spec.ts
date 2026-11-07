@@ -757,7 +757,7 @@ test('a goal served by six profiles: four cards, the note for the other two, the
   const frame = await layoutMktgPrintFrame(page);
   const goalPage = frame.getByTestId('mktg-framework-print').locator('[data-page-id="goal-1"]');
   // The row holds the board's four cards; the two it does not hold are counted in the note under it.
-  await expect(goalPage.locator('.fwp-served-card')).toHaveCount(4);
+  await expect(goalPage.getByTestId('mktg-framework-print-served-card')).toHaveCount(4);
   await expect(goalPage.getByTestId('mktg-framework-print-served-cut')).toHaveText("+2 more on the framework's Framework tab in LFX One");
   // The cards' long lines are fitted into the room the note leaves: the whole block (label, cards, note) ends above the footer rule (1000).
   const servedBottom = await goalPage.evaluate((page) => {

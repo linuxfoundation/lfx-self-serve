@@ -513,7 +513,7 @@
                 <span class="pp-lab pp-lab--dark">Who it's for</span>
                 <div class="fwp-served-cards">
                   @for (card of goalPage.served.rows; track card.id) {
-                    <div class="fwp-card fwp-served-card">
+                    <div class="fwp-card fwp-served-card" data-testid="mktg-framework-print-served-card">
                       <span class="fwp-served-name" [style.font-size.px]="card.name.size">{{ card.name.text }}</span>
                       @if (card.need.text) {
                         <p class="fwp-served-line" [style.font-size.px]="card.need.size"><strong>Needs</strong> {{ card.need.text }}</p>

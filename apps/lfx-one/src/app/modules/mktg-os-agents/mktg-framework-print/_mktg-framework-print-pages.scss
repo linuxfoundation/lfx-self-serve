@@ -109,7 +109,7 @@
     column-gap: 24px;
   }
 
-  /* One line a row (the board's): the title is set one line by the layout (`mktgPortraitOneLine`, cut at a word with an ellipsis past the row's measure), so the list's height is its count's. */
+  /* One line a row (the board's): the title is set one line by the layout (`frameworkPortraitWordCut`, cut at a word with an ellipsis past the row's measure), so the list's height is its count's. */
   .fwp-contents-row {
     display: flex;
     border-top: 1px solid var(--pp-hairline);
