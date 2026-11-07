@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input } from '@angular/core';
+import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { AeoGeoReport } from '@lfx-one/shared/interfaces';
 import { aeoGeoHttpLink } from '@lfx-one/shared/utils';
 
 /** The validated structured report, shared by the web view and browser-print PDF. */
 @Component({
   selector: 'lfx-aeo-geo-report',
+  imports: [MarkdownRendererComponent],
   templateUrl: './aeo-geo-report.component.html',
   styleUrl: './aeo-geo-report.component.scss',
 })

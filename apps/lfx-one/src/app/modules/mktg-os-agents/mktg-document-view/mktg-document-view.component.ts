@@ -85,6 +85,7 @@ import {
   mktgAssetHeaderMetadata,
   mktgKitAssetLabel,
   mktgKitRootPath,
+  mktgPrintBrand,
   mktgPrintDocumentTitle,
   mktgReportHasOpenGaps,
   mktgReportNeedsApprovalReview,
@@ -158,6 +159,7 @@ import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity
 import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-downstream.component';
 import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/mktg-print-sheet-row.component';
 import { MktgPrintSheetComponent } from '../components/mktg-print-sheet/mktg-print-sheet.component';
+import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
@@ -193,6 +195,7 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
     MarkdownRendererComponent,
     MktgPrintSheetComponent,
     MktgPrintSheetRowComponent,
+    MktgPrintRunningHeadComponent,
     MessageComponent,
     MktgSkeletonComponent,
     MktgBoilerplatesViewComponent,
@@ -413,8 +416,10 @@ export class MktgDocumentViewComponent {
     const approved = this.approvedView().revision;
     return approved?.type.agentKey === 'brand-kit' ? readBrandKitRevision(approved.sidecar) : null;
   });
-  /** The project's stored Brand Kit, which a framework revision's print (Download PDF) is set in; null for the LF look. */
+  /** The project's stored Brand Kit, which a framework revision's or an AEO/GEO report's print (Download PDF) is set in; null for the LF look. */
   protected readonly printKit: Signal<BrandKitRevision | null> = this.initPrintKit();
+  /** The brand the other Marketing OS prints wear on their running head: the project's kit, or the LF look without one. */
+  protected readonly printBrand = computed(() => mktgPrintBrand(this.printKit()));
   /** Read-only deck lookup belongs to the viewed document, not its approved bytes. */
   protected readonly exportLookupTarget: Signal<MktgSlidesExportTarget | null> = computed(() => {
     const view = this.view();
@@ -1591,12 +1596,15 @@ export class MktgDocumentViewComponent {
   }
 
   /**
-   * The project's Brand Kit, read only while a framework revision is on
-   * screen (a kit or a Markdown document prints nothing of this) and only in
-   * the browser. Any failed read is the LF look, not an error.
+   * The project's Brand Kit, which the print's running head wears: read only
+   * while a framework revision or an AEO/GEO report is on screen (a kit or a
+   * plain Markdown document prints nothing of this), only in the browser, and
+   * never on the server. Any failed read is null, the LF look, not an error.
    */
   private initPrintKit(): Signal<BrandKitRevision | null> {
-    const projectUid = computed(() => (isPlatformBrowser(this.platformId) && this.asset() !== null ? this.projectContext.activeContextUid() : ''));
+    const projectUid = computed(() =>
+      isPlatformBrowser(this.platformId) && (this.asset() !== null || !!this.view()?.aeoGeoReport) ? this.projectContext.activeContextUid() : ''
+    );
     return toSignal(
       toObservable(projectUid).pipe(
         distinctUntilChanged(),

@@ -4,3 +4,42 @@
 :host {
   display: block;
 }
+
+// Pagination of the printed report (CSS Fragmentation Level 3, with the page-break-* aliases older WebKit reads):
+// a heading keeps with the block under it, and a scorecard row, a finding, a recommendation or a list item never
+// splits across pages. The sections and their lists flow, so Sources starts wherever it fits. Inert on screen.
+h2,
+h3,
+h4 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.lfx-aeo-report-block,
+li {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+// The details are the agent's restricted Markdown (lfx-markdown-renderer). Its paragraphs and list items keep the
+// report's size, leading and ink (the renderer's own rules would give them prose-sm's size and a relaxed leading, and
+// styles.scss's base rule gives a bare p its own), the list markers the text's colour, and a code span is the
+// renderer's pill alone. The backticks the report used to show were the raw text of a plain interpolation of the
+// detail; now that the renderer turns them into a code element, the typography plugin's `prose` would draw its own
+// backtick before and after that element, so that pseudo-content is switched off here.
+:host ::ng-deep .lfx-aeo-report-detail .prose,
+:host ::ng-deep .lfx-aeo-report-detail .prose p,
+:host ::ng-deep .lfx-aeo-report-detail .prose li {
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+:host ::ng-deep .lfx-aeo-report-detail .prose li::marker {
+  color: inherit;
+}
+
+:host ::ng-deep .lfx-aeo-report-detail .prose code::before,
+:host ::ng-deep .lfx-aeo-report-detail .prose code::after {
+  content: none;
+}

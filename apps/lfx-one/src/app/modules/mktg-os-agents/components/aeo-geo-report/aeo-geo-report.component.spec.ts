@@ -42,3 +42,50 @@ describe('AeoGeoReportComponent', () => {
     fixture.destroy();
   });
 });
+
+describe('AeoGeoReportComponent print and Markdown details', () => {
+  it('renders the details through the restricted Markdown renderer, keeps headings and blocks whole across pages, and spaces the source role', async () => {
+    await TestBed.configureTestingModule({ imports: [AeoGeoReportComponent] }).compileComponents();
+    const fixture = TestBed.createComponent(AeoGeoReportComponent);
+    const report = aeoGeoEnvelopeFixture().report;
+    if (!report) {
+      throw new Error('Recorded typed report is missing.');
+    }
+    // The live agent quotes evidence in Markdown code spans; a single newline is a line break, as the plain text's was.
+    report.findings[0].detail = 'robots.txt contains `User-agent: *` and an empty `Disallow:` line.\nIt names no crawler.';
+    report.recommendations[0].detail = 'Replace the `{"@graph":[]}` placeholder with an Organization node.';
+    fixture.componentRef.setInput('report', report);
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    const findingDetail = element.querySelector<HTMLElement>('[data-testid="mktg-aeo-typed-finding-detail-0"]');
+    expect(findingDetail?.tagName.toLowerCase()).toBe('lfx-markdown-renderer');
+    expect(Array.from(findingDetail?.querySelectorAll('code') ?? [], (code) => code.textContent)).toEqual(['User-agent: *', 'Disallow:']);
+    expect(findingDetail?.textContent).not.toContain('`');
+    expect(findingDetail?.querySelector('br')).not.toBeNull();
+    expect(findingDetail?.textContent).toContain('It names no crawler.');
+    expect(element.querySelector('[data-testid="mktg-aeo-typed-recommendation-detail-0"] code')?.textContent).toBe('{"@graph":[]}');
+    expect(element.querySelector('[data-testid="mktg-aeo-typed-findings"] p.whitespace-pre-line')).toBeNull();
+    // Every detail renders restricted: no raw HTML, no image, from the agent's text.
+    report.findings[1].detail = 'Unsafe <img src="https://tracker.example/pixel.gif"> <b>markup</b>.';
+    fixture.componentRef.setInput('report', { ...report });
+    fixture.detectChanges();
+    const unsafe = element.querySelector<HTMLElement>('[data-testid="mktg-aeo-typed-finding-detail-1"]');
+    expect(unsafe?.querySelector('img, b')).toBeNull();
+    expect(unsafe?.textContent).toContain('markup');
+    // "https://site.example/ (audited)": a real space between the link and the role, on screen and in copied text.
+    const source = element.querySelector('[data-testid="mktg-aeo-typed-source-link-0"]')?.parentElement;
+    expect(source?.textContent?.replace(/\s+/g, ' ').trim()).toBe(`${report.sources[0].url} (${report.sources[0].role})`);
+    expect(element.querySelector('[data-testid="mktg-aeo-typed-source-role-0"]')?.textContent).toBe(` (${report.sources[0].role})`);
+    // Pagination (computed in jsdom from the component stylesheet): a heading keeps with its block; a scorecard row, a finding,
+    // a recommendation and a list item never split; the sections and lists flow.
+    for (const heading of element.querySelectorAll('h2, h3, h4')) expect(getComputedStyle(heading).breakAfter).toBe('avoid');
+    expect(element.querySelectorAll('h4').length).toBe(report.scorecard.length + report.findings.length + report.recommendations.length);
+    const blocks = element.querySelectorAll<HTMLElement>('.lfx-aeo-report-block');
+    expect(blocks).toHaveLength(report.scorecard.length + report.findings.length + report.recommendations.length);
+    for (const block of blocks) expect(getComputedStyle(block).breakInside).toBe('avoid');
+    expect(element.querySelector('[data-testid="mktg-aeo-typed-score-ai_crawler_access"]')?.classList.contains('lfx-aeo-report-block')).toBe(true);
+    for (const item of element.querySelectorAll('li')) expect(getComputedStyle(item).breakInside).toBe('avoid');
+    for (const section of element.querySelectorAll('section')) expect(getComputedStyle(section).breakInside).not.toBe('avoid');
+    fixture.destroy();
+  });
+});
