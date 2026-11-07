@@ -21,8 +21,14 @@ describe('the Typography page', () => {
     // so it is set at the largest step that fits (38 px), whole; a line that fits stays at 48 (the shared spec).
     expect(h1?.style.fontSize).toBe('38px');
     expect(Array.from(specimen?.querySelectorAll('.kp-type-weight-name') ?? [], (name) => name.textContent)).toEqual(['Regular 400', 'Bold 700']);
-    const scale = frame.querySelector('[data-testid="brand-kit-type-scale"]');
-    expect(rectOf(scale)).toEqual({ left: '56px', top: '436px', width: '704px' });
+    // The scale and the two lower blocks are one placed block in flow: the scale at least the room above the mock's
+    // y 830 less the 16 px gap (830 − 16 − 436), the lower blocks right after it, so they sit at 830 while the scale is
+    // short and follow the engine's own end when it is not — never a computed y.
+    expect(rectOf(frame.querySelector('[data-testid="brand-kit-type-flow"]'))).toEqual({ left: '56px', top: '436px', width: '704px' });
+    const scale = frame.querySelector<HTMLElement>('[data-testid="brand-kit-type-scale"]');
+    expect(scale?.style.minHeight).toBe('378px');
+    expect(scale?.style.top).toBe('');
+    expect(scale?.nextElementSibling?.classList.contains('kp-type-lower')).toBe(true);
     const steps = Array.from(scale?.querySelectorAll<HTMLElement>('[data-step]') ?? []);
     expect(steps.map((step) => step.getAttribute('data-step'))).toEqual(['display', 'h2', 'h3', 'eyebrow', 'body', 'caption']);
     // The display step shows the project's name at its real size on its own line; a step whose sample would not fit its
@@ -34,21 +40,26 @@ describe('the Typography page', () => {
     expect(steps[0].querySelector('.kp-scale-meta')?.textContent).toContain('500 · 64/72');
     expect(steps[1].querySelector<HTMLElement>('.kp-scale-sample')?.style.fontSize).toBe('26.5px');
     expect(steps[1].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.voice.line);
-    expect(steps[1].querySelector('.kp-scale-spec')?.textContent).toBe('500 · 32/40');
+    // The spec column names what is printed: the smaller size here, the step's own where the sample is at it.
+    expect(steps[1].querySelector('.kp-scale-spec')?.textContent).toBe('500 · 26.5/40');
+    expect(steps[2].querySelector('.kp-scale-spec')?.textContent).toBe('500 · 24/32');
     expect(steps[3].querySelector('.kp-scale-sample')?.classList.contains('kp-scale-sample--caps')).toBe(true);
     expect(steps[3].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.voice.line);
     expect(steps[4].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.voice.umbrella);
     expect(steps[4].querySelector('.kp-scale-spec')?.textContent).toBe('400 · 18/30');
     expect(steps[4].querySelector<HTMLElement>('.kp-scale-sample')?.style.fontSize).toBe('18px');
     expect(steps[5].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.footer);
-    const source = frame.querySelector('[data-testid="brand-kit-type-source"]');
-    expect(rectOf(source)).toEqual({ left: '56px', top: '830px', width: '340px' });
+    const source = frame.querySelector<HTMLElement>('[data-testid="brand-kit-type-source"]');
+    expect(source?.parentElement).toBe(scale?.nextElementSibling);
+    expect(source?.classList.contains('kp-type-lower-block')).toBe(true);
+    expect(source?.style.top).toBe('');
     expect(wordsOf(source)).toContain('Montserrat · Google Fonts · weights 400, 700');
     expect(source?.textContent).toContain('Fallback: none');
     expect(source?.textContent).toContain('Named on one.example.org');
     expect(source?.textContent).not.toContain('https://');
-    const rules = frame.querySelector('[data-testid="brand-kit-type-rules"]');
-    expect(rectOf(rules)).toEqual({ left: '420px', top: '830px', width: '340px' });
+    const rules = frame.querySelector<HTMLElement>('[data-testid="brand-kit-type-rules"]');
+    expect(rules?.previousElementSibling).toBe(source);
+    expect(rules?.classList.contains('kp-type-lower-block')).toBe(true);
     expect(Array.from(rules?.querySelectorAll('li') ?? [], (li) => li.textContent)).toEqual(view.type.rules);
   });
 
@@ -64,7 +75,7 @@ describe('the Typography page', () => {
     expect(mktgPortraitLineFits(long, 704, size, { weight: 500, family: 'Montserrat' })).toBe(true);
   });
 
-  it('sets the body step at its real size and lets the paragraph wrap, and moves the lower blocks under the scale when three lines run past y 830', async () => {
+  it('sets the body step at its real size and lets the paragraph wrap, the lower blocks following the scale in flow when three lines run past y 830', async () => {
     const umbrella =
       'The Synthetic Foundation is the neutral home at the Linux Foundation where the open protocols and tools for agents are governed in the open.';
     const { frame } = await mountBrandKitPage(MktgBrandKitPageTypeComponent, 'type', (view) => ({ ...view, voice: { ...view.voice, umbrella } }));
@@ -72,16 +83,14 @@ describe('the Typography page', () => {
     expect(body?.style.fontSize).toBe('18px');
     expect(body?.style.lineHeight).toBe('30px');
     expect(body?.textContent?.trim()).toBe(umbrella);
-    // Three lines at 18/30 take the caption row past the mock's y 830: both blocks follow the scale's real end instead of
-    // printing over it, side by side at the same y, and still end above the footer.
-    const source = rectOf(frame.querySelector('[data-testid="brand-kit-type-source"]'));
-    const rules = rectOf(frame.querySelector('[data-testid="brand-kit-type-rules"]'));
-    const top = parseFloat(source.top);
-    expect(top).toBeGreaterThan(830);
-    expect(top).toBeLessThan(930);
-    expect(rules.top).toBe(source.top);
-    expect(source).toMatchObject({ left: '56px', width: '340px' });
-    expect(rules).toMatchObject({ left: '420px', width: '340px' });
+    // Three lines at 18/30 take the caption row past the mock's y 830: the blocks are in flow after the scale (no inline y
+    // on either), so they follow the engine's own end; the model agrees the stack still fits without shrinking the body
+    // (the shared spec reads its numbers), which is why the body is still at 18/30 above.
+    const scale = frame.querySelector<HTMLElement>('[data-testid="brand-kit-type-scale"]');
+    const lower = scale?.nextElementSibling;
+    expect(lower?.classList.contains('kp-type-lower')).toBe(true);
+    expect(Array.from(lower?.children ?? [], (block) => block.getAttribute('data-testid'))).toEqual(['brand-kit-type-source', 'brand-kit-type-rules']);
+    expect(Array.from(lower?.children ?? [], (block) => (block as HTMLElement).style.top)).toEqual(['', '']);
   });
 
   it('sets the body step smaller, never below 14 px, when even the moved blocks would cross the footer', async () => {
@@ -93,7 +102,7 @@ describe('the Typography page', () => {
     expect(size).toBeLessThan(18);
     expect(size).toBeGreaterThanOrEqual(14);
     expect(body?.textContent?.trim()).toBe(umbrella);
-    expect(frame.querySelector('[data-step="body"] .kp-scale-spec')?.textContent).toBe('400 · 18/30');
-    expect(parseFloat(rectOf(frame.querySelector('[data-testid="brand-kit-type-source"]')).top)).toBeLessThan(990);
+    // The label agrees with the sample: the shrunk size and leading, not the step's nominal 18/30.
+    expect(frame.querySelector('[data-step="body"] .kp-scale-spec')?.textContent).toBe(`400 · ${size}/${parseFloat(body?.style.lineHeight ?? '0')}`);
   });
 });

@@ -4,7 +4,11 @@
 import { describe, expect, it } from 'vitest';
 import { brandKitReportV2Fixture } from './__fixtures__/brand-kit-report-v2.fixture';
 import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
-import { BRAND_KIT_PORTRAIT_FIT_MIN_PX, BRAND_KIT_PORTRAIT_TYPE_PAGE } from '../constants/brand-kit-portrait.constants';
+import {
+  BRAND_KIT_PORTRAIT_FIT_MIN_PX,
+  BRAND_KIT_PORTRAIT_TYPE_PAGE,
+  BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM,
+} from '../constants/brand-kit-portrait.constants';
 import { lfxColors } from '../constants/colors.constants';
 import { buildBrandKitBookView } from './brand-kit-book.utils';
 import {
@@ -33,6 +37,7 @@ import {
   brandKitPortraitWeightName,
   brandKitPortraitWhiteContrast,
 } from './brand-kit-portrait.utils';
+import { mktgPortraitLineFits } from './mktg-portrait-print.utils';
 
 const SVG = 'data:image/svg+xml,synthetic';
 const view = buildBrandKitBookView(brandKitTestRevision(), 4);
@@ -183,12 +188,16 @@ describe('the type page’s strings', () => {
     const samples = view.type.scale.map((step) => brandKitPortraitTypeSample(view, step));
     expect(samples).toEqual(['Project One', view.voice.line, view.voice.line, view.voice.line, view.voice.umbrella, view.footer]);
     expect(brandKitPortraitTypeSample({ ...view, voice: { ...view.voice, umbrella: '' } }, view.type.scale[4])).toBe(view.voice.line);
-    // A sample is set at its step's size when its measured line fits (the kit's face, its weight), smaller (never cut)
-    // when it would not: a live foundation's lines in a face of ordinary width are at real size, 64, 48 and 32 …
+    // A sample is set at its step's size when its measured line fits (the kit's face, its weight, its tracking), smaller
+    // (never cut) when it would not — as the served AAIF book shows (QA round 1, p11): the display line at 64 fits 704,
+    // the tracked specimen (-0.015em) at 48 fits 704 (≈696 px drawn), the untracked H2 line at 32 wraps the 480 px
+    // column (so it is set at 30.5, one line), the H3 at 24 fits …
     const sans = { weight: 500, family: 'Instrument Sans' };
     expect(brandKitPortraitFitSize('Agentic AI Foundation', 704, 64, sans)).toBe(64);
-    expect(brandKitPortraitFitSize('Open foundations for agentic AI.', 704, 48, sans)).toBe(48);
-    expect(brandKitPortraitFitSize('Open foundations for agentic AI.', 480, 32, sans)).toBe(32);
+    expect(brandKitPortraitFitSize('Open foundations for agentic AI.', 704, 48, { ...sans, tracking: BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM })).toBe(48);
+    expect(mktgPortraitLineFits('Open foundations for agentic AI.', 480, 32, sans)).toBe(false);
+    expect(brandKitPortraitFitSize('Open foundations for agentic AI.', 480, 32, sans)).toBe(30.5);
+    expect(brandKitPortraitFitSize('Open foundations for agentic AI.', 480, 24, sans)).toBe(24);
     // … while the synthetic line in Montserrat, a wide face, is set smaller in the 480 px H2 column.
     expect(brandKitPortraitFitSize('Project One', 704, 64, { weight: 500, family: view.type.family })).toBe(64);
     expect(brandKitPortraitFitSize(view.voice.line, 480, 32, { weight: 500, family: view.type.family })).toBe(26.5);
@@ -229,6 +238,26 @@ describe('the type page’s strings', () => {
     expect(three.lowerTop).toBeGreaterThan(830);
     expect(three.lowerTop).toBeLessThan(c.bottom - 60);
     expect(three).toMatchObject({ bodyScale: 1, cut: false });
+    // The served AAIF book (QA round 1b): Instrument Sans, the H2 line set at 30.5 in one line (its label saying so), the
+    // display, H3 and eyebrow at size, and the three-line umbrella leaving the body step at 18/30 under "400 · 18/30".
+    const aaif = brandKitPortraitTypeLayout(
+      {
+        ...view,
+        type: { ...view.type, family: 'Instrument Sans' },
+        voice: { ...view.voice, line: 'Open foundations for agentic AI.', umbrella },
+      },
+      704
+    );
+    expect(aaif.steps.map((step) => [step.step, step.size, step.spec])).toEqual([
+      ['display', 64, '500 · 64/72'],
+      ['h2', 30.5, '500 · 30.5/40'],
+      ['h3', 24, '500 · 24/32'],
+      ['eyebrow', 14, '500 · 14/20'],
+      ['body', 18, '400 · 18/30'],
+      ['caption', 12, '500 · 12/16'],
+    ]);
+    expect(aaif).toMatchObject({ bodyScale: 1, cut: false });
+    expect(aaif.lowerTop).toBeLessThan(c.bottom - 60);
   });
 
   it('gives the body step size, never below 14 px, before anything is cut when the stack would cross the footer', () => {
@@ -240,6 +269,7 @@ describe('the type page’s strings', () => {
     expect(long.bodyScale).toBeLessThan(1);
     expect(long.steps[4].size).toBeGreaterThanOrEqual(c.bodyMinPx);
     expect(long.steps[4].size).toBeLessThan(18);
+    expect(long.steps[4].spec).toBe(`400 · ${long.steps[4].size}/${long.steps[4].line_height}`);
     expect(long.steps[4].sample).toBe(`${sentence} ${sentence}`);
     expect(long.cut).toBe(false);
     expect(long.lowerTop).toBeLessThan(c.bottom);

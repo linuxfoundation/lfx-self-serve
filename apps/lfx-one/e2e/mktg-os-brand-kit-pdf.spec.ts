@@ -12,7 +12,7 @@ import { MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { expect, FrameLocator, Locator, Page, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { columnAssetRevisionResponse, openAssetDocument } from './helpers/mktg-os-asset-views.helper';
+import { ASSET_PROJECT, columnAssetRevisionResponse, openAssetDocument } from './helpers/mktg-os-asset-views.helper';
 import { pinMktgOsFlags } from './helpers/mktg-os-flags.helper';
 import { expectMktgPortraitPageSetup, expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
@@ -109,6 +109,10 @@ test.describe('Brand kit PDF: the portrait book', () => {
       nodes.filter((node) => node.querySelector('[data-testid="mktg-portrait-page-band"]')).map((node) => node.getAttribute('data-page-id'))
     );
     expect(banded).toEqual(['logo-system', 'color-palette', 'type', 'visual-iconography', 'usage', 'voice', 'sources']);
+    // The running head's section label: the accent under the band (p03), the kit's dark without it (p04).
+    const kit = brandKitTestRevision();
+    await expect(pages.nth(2).getByTestId('mktg-portrait-page-section')).toHaveCSS('color', rgb(kit.kit.accent));
+    await expect(pages.nth(3).getByTestId('mktg-portrait-page-section')).toHaveCSS('color', rgb(kit.kit.dark));
     const heads = pages.getByTestId('mktg-portrait-page-doc');
     await expect(heads).toHaveCount(14);
     await expect(heads.first()).toHaveText('Asset Example brand kit');
@@ -129,8 +133,9 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const cover = pages.first();
     await expect(cover.getByTestId('mktg-portrait-cover-title')).toHaveText('Brand Kit');
     await expect(cover.getByTestId('mktg-portrait-cover-lede')).toContainText(`${kit.chapters.voice.line}.`);
-    // The strip: the footer line, then host · version · month of the run.
-    await expect(cover.getByTestId('mktg-portrait-cover-strip')).toContainText(`${kit.projectName} · a Linux Foundation project`);
+    // The strip: the footer line (the project's name is the context's, not the fixture's sidecar), then host · version ·
+    // month of the run.
+    await expect(cover.getByTestId('mktg-portrait-cover-strip')).toContainText(`${ASSET_PROJECT.name} · a Linux Foundation project`);
     await expect(cover.getByTestId('mktg-portrait-cover-strip')).toContainText('one.example.org · V1.0 · October 2026');
     // Every text of the book is set in the kit's own face, the app's Inter nowhere: the lede, an intro, the back cover.
     const face = new RegExp(`^"?${kit.chapters.type.family}"?`);
@@ -189,7 +194,11 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(charcoal.first().locator('.kp-pill')).toHaveText('AAA');
     const pairs = contrast.getByTestId('brand-kit-contrast-pairs');
     expect(await placement(contrast, pairs)).toEqual({ x: 56, y: 610, width: 704 });
-    await expect(pairs.locator('.kp-pair')).toHaveText([/Charcoal on White\s+8\.3:1\s+AAA/]);
+    // One pair, cell by cell (the cells abut in textContent).
+    await expect(pairs.locator('.kp-pair')).toHaveCount(1);
+    await expect(pairs.locator('.kp-pair-names')).toHaveText('Charcoal on White');
+    await expect(pairs.locator('.kp-pair-ratio')).toHaveText('8.3:1');
+    await expect(pairs.locator('.kp-pair .kp-pill')).toHaveText('AAA');
     await contrast.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('color-contrast.png'), fullPage: false });
   });

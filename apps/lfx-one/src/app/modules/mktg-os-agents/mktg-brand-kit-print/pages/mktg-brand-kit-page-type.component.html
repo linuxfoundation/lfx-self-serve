@@ -24,62 +24,68 @@
       <div class="kp-type-weights-note">{{ weights().length }} weights available; the rules below cap what one page uses.</div>
     </div>
   </div>
-  <div [lfxPpRect]="[x, 436, w]" data-testid="brand-kit-type-scale">
-    <div class="pp-lab pp-lab--dark">Scale · at real size</div>
-    <div class="kp-scale">
-      @for (step of layout().steps; track step.step) {
-        @if (step.display) {
-          <div class="kp-scale-display" [attr.data-step]="step.step">
-            <div class="kp-scale-meta">
-              <span class="kp-scale-label">{{ step.label }}</span
-              ><span>{{ step.spec }}</span>
+  <!-- The scale, then the two lower blocks, in flow: the blocks start 16 px under the scale as the engine laid it out
+       (at the mock's y 830 while the scale is short), so a line the model misjudged can never be overprinted. -->
+  <div [lfxPpRect]="[x, scaleTop, w]" data-testid="brand-kit-type-flow">
+    <div class="kp-type-scale" [style.min-height.px]="scaleMinHeight" data-testid="brand-kit-type-scale">
+      <div class="pp-lab pp-lab--dark">Scale · at real size</div>
+      <div class="kp-scale">
+        @for (step of layout().steps; track step.step) {
+          @if (step.display) {
+            <div class="kp-scale-display" [attr.data-step]="step.step">
+              <div class="kp-scale-meta">
+                <span class="kp-scale-label">{{ step.label }}</span
+                ><span>{{ step.spec }}</span>
+              </div>
+              <div
+                class="kp-scale-sample kp-scale-sample--display"
+                [style.font-weight]="step.weight"
+                [style.font-size.px]="step.size"
+                [style.line-height.px]="step.line_height">
+                {{ step.sample }}
+              </div>
             </div>
-            <div
-              class="kp-scale-sample kp-scale-sample--display"
-              [style.font-weight]="step.weight"
-              [style.font-size.px]="step.size"
-              [style.line-height.px]="step.line_height">
-              {{ step.sample }}
+          } @else {
+            <div class="kp-scale-row" [attr.data-step]="step.step">
+              <span class="kp-scale-label">{{ step.label }}</span>
+              <span class="kp-scale-spec">{{ step.spec }}</span>
+              <span
+                class="kp-scale-sample"
+                [class.kp-scale-sample--caps]="step.caps"
+                [style.font-weight]="step.weight"
+                [style.font-size.px]="step.size"
+                [style.line-height.px]="step.line_height">
+                {{ step.sample }}
+              </span>
             </div>
-          </div>
-        } @else {
-          <div class="kp-scale-row" [attr.data-step]="step.step">
-            <span class="kp-scale-label">{{ step.label }}</span>
-            <span class="kp-scale-spec">{{ step.spec }}</span>
-            <span
-              class="kp-scale-sample"
-              [class.kp-scale-sample--caps]="step.caps"
-              [style.font-weight]="step.weight"
-              [style.font-size.px]="step.size"
-              [style.line-height.px]="step.line_height">
-              {{ step.sample }}
-            </span>
-          </div>
+          }
         }
-      }
+      </div>
     </div>
-  </div>
-  <div [lfxPpRect]="[x, layout().lowerTop, lowerWidth]" data-testid="brand-kit-type-source">
-    <div class="pp-lab pp-lab--dark">Where to get the font</div>
-    <div class="kp-text kp-text--tight">
-      @for (line of layout().sourceLines; track $index) {
-        @if ($index) {
-          <br />
-        }
-        @if (line.muted) {
-          <span class="kp-muted">{{ line.text }}</span>
-        } @else {
-          {{ line.text }}
-        }
-      }
+    <div class="kp-type-lower">
+      <div class="kp-type-lower-block" data-testid="brand-kit-type-source">
+        <div class="pp-lab pp-lab--dark">Where to get the font</div>
+        <div class="kp-text kp-text--tight">
+          @for (line of layout().sourceLines; track $index) {
+            @if ($index) {
+              <br />
+            }
+            @if (line.muted) {
+              <span class="kp-muted">{{ line.text }}</span>
+            } @else {
+              {{ line.text }}
+            }
+          }
+        </div>
+      </div>
+      <div class="kp-type-lower-block" data-testid="brand-kit-type-rules">
+        <div class="pp-lab pp-lab--dark">Rules</div>
+        <ul class="kp-list">
+          @for (rule of v.type.rules; track $index) {
+            <li>{{ rule }}</li>
+          }
+        </ul>
+      </div>
     </div>
-  </div>
-  <div [lfxPpRect]="[x + rulesLeft, layout().lowerTop, lowerWidth]" data-testid="brand-kit-type-rules">
-    <div class="pp-lab pp-lab--dark">Rules</div>
-    <ul class="kp-list">
-      @for (rule of v.type.rules; track $index) {
-        <li>{{ rule }}</li>
-      }
-    </ul>
   </div>
 </lfx-mktg-portrait-page>

@@ -706,7 +706,7 @@
 .kp-type-h1 {
   font-weight: 500;
   line-height: 1.08;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.015em; /* = BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM, the measure's tracking for the sample */
   white-space: nowrap;
   color: var(--pp-dark);
 }
@@ -749,6 +749,19 @@
 /* The scale: a row per step over a hairline, label and spec 96 px each, the sample at its real size; the display step on its own line. */
 .kp-scale {
   margin-top: 6px;
+}
+
+/* The scale and the two lower blocks in one flow: the scale at least the room above the mock's y 830 (its min-height is
+   set from the page's constants), the blocks 16 px under it, side by side, 340 px each with the 24 px gutter. */
+.kp-type-lower {
+  display: flex;
+  gap: 24px;
+  margin-top: 16px;
+}
+
+.kp-type-lower-block {
+  flex: none;
+  width: 340px;
 }
 
 .kp-scale-row {

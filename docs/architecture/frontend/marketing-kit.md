@@ -225,7 +225,11 @@ stylesheet `_mktg-portrait.scss` with the `pp-` class prefix; tokens and types i
   `MKTG_PORTRAIT_GLYPH_WIDTHS` widened by `MKTG_PORTRAIT_FAMILY_WIDTH` and the weight)
   and shrinks in the grammar's steps only when it does not, never cut; a paragraph block
   wraps by the flat average (`MKTG_PORTRAIT_FIT.charEm`), shrinks in the grammar's steps
-  and then cuts at a sentence. Nothing may leave its frame.
+  and then cuts at a sentence. Nothing may leave its frame. Where a block's height depends
+  on the record (the Type page's scale and the two blocks under it), the blocks are laid in
+  normal flow inside one placed block, with a `min-height` for the mock's drawn position, so
+  the engine's own layout places them and a line the model misjudges can move them, never be
+  drawn on.
 - **The kit's face everywhere.** The frame hands `font-family`, `font-size` and
   `line-height` back to itself on every element the app's layers set by tag (`p`,
   headings, `label`, `button`, `input`, `table`): an unlayered `:where()` rule in

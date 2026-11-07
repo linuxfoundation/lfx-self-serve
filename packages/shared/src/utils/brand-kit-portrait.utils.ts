@@ -317,7 +317,12 @@ export function brandKitPortraitMessageCard(view: BrandKitBookView): { text: str
  * does with it is the caller's: the type page's H1 keeps it on one line,
  * which clips past about 142 characters (open, with item 2's sweep).
  */
-export function brandKitPortraitFitSize(text: string, width: number, size: number, para: { weight?: number; caps?: boolean; family?: string } = {}): number {
+export function brandKitPortraitFitSize(
+  text: string,
+  width: number,
+  size: number,
+  para: Pick<MktgPortraitFitPara, 'weight' | 'caps' | 'family' | 'tracking'> = {}
+): number {
   for (let scale = 1; scale > 0; scale -= MKTG_PORTRAIT_FIT.scaleStep) {
     const fitted = Math.floor(size * scale * 2) / 2;
     if (fitted < BRAND_KIT_PORTRAIT_FIT_MIN_PX) break;
@@ -354,7 +359,8 @@ function typeSteps(view: BrandKitBookView, width: number, bodyScale: number, bod
     const para = { weight: step.weight, caps: step.caps, family: view.type.family };
     const size = body ? halfPx(step.size, bodyScale) : brandKitPortraitFitSize(sample, room, step.size, para);
     const line_height = body ? Math.round(step.line_height * bodyScale) : step.line_height;
-    return { ...step, sample, spec: `${step.weight} · ${step.size}/${step.line_height}`, display, size, line_height };
+    // The spec column names what is printed: the step's own size while the sample is at it, the smaller size when it is not.
+    return { ...step, sample, spec: `${step.weight} · ${size}/${line_height}`, display, size, line_height };
   });
 }
 
@@ -407,13 +413,15 @@ function typeLowerHeight(view: BrandKitBookView, sourceLines: readonly BrandKitP
 }
 
 /**
- * The Typography page laid out from its data. The scale's rows take the
+ * The Typography page sized from its data. The scale's rows take the
  * height their samples need (the body step, the umbrella message, wraps to
- * two or three lines), so the two blocks under it are placed from where it
- * really ends: at the mock's y 830 when the scale ends above that, else
- * 16 px under it. When the stack would then run past y 990 the body step is
- * set smaller in the grammar's steps, down to 14 px, and only when no size
- * holds it is its sample cut at a sentence. Nothing is drawn on anything.
+ * two or three lines), so the two blocks under it follow where it really
+ * ends: the page lays them in flow, 16 px under the scale and never above
+ * the mock's y 830, and this model predicts that y (`lowerTop`) to decide
+ * the body step's size: when the stack would run past y 990 the body step
+ * is set smaller in the grammar's steps, down to 14 px, and only when no
+ * size holds it is its sample cut at a sentence. A line the model misjudges
+ * by a few px moves the blocks down in flow; it is never drawn on.
  */
 export function brandKitPortraitTypeLayout(view: BrandKitBookView, width: number): BrandKitPortraitTypeLayout {
   const c = BRAND_KIT_PORTRAIT_TYPE_PAGE;

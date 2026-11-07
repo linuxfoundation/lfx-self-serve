@@ -259,9 +259,13 @@ export const MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT = 556;
  * Montserrat and Poppins are wide geometric faces, Source Sans narrow; a
  * family not here takes `MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT`, a little wide
  * so an unknown face still fits. Weight widens too: `MKTG_PORTRAIT_WEIGHT_WIDTH`.
+ * Instrument Sans is read from the served AAIF book (QA round 1, p11): its
+ * display line at 64/500 measures ≈649 px, its H2 line at 32/500 wraps a
+ * 480 px column, its tracked specimen at 48/500 fits 704 — 1.02 holds all
+ * three.
  */
 export const MKTG_PORTRAIT_FAMILY_WIDTH: Readonly<Record<string, number>> = {
-  'instrument sans': 0.985,
+  'instrument sans': 1.02,
   inter: 1.05,
   montserrat: 1.14,
   poppins: 1.12,
@@ -282,5 +286,5 @@ export const MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT = 1.08;
 /** A heavier weight's width against the regular, by the hundred (400 → 1, 500 → 1.03, 600 → 1.07, 700 and up → 1.1). */
 export const MKTG_PORTRAIT_WEIGHT_WIDTH: Readonly<Record<number, number>> = { 400: 1, 500: 1.03, 600: 1.07, 700: 1.1 };
 
-/** The eyebrow's tracking, in em per character, when a line is set in capitals. */
+/** The eyebrow's tracking, in em per character, when a line is set in capitals (a `tracking` of its own wins). */
 export const MKTG_PORTRAIT_CAPS_TRACKING_EM = 0.12;

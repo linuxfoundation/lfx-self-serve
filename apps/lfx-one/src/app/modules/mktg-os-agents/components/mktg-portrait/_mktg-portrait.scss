@@ -122,14 +122,15 @@ $pp-band-height: 4px;
 }
 
 /* The section label is a `.pp-lab` in the kit's dark, not the label's muted: the head's selector outweighs the label's
-   (the two classes alone tie, and the label's rule comes later in this sheet). */
+   (the two classes alone tie, and the label's rule comes later in this sheet). Under the chapter band (the modifier is
+   on the head itself) and on a dark page it is the accent. */
 .pp-head .pp-head-section {
   color: var(--pp-dark);
+}
 
-  .pp-head--band &,
-  .pp-page--dark & {
-    color: var(--pp-accent);
-  }
+.pp-head.pp-head--band .pp-head-section,
+.pp-page--dark .pp-head .pp-head-section {
+  color: var(--pp-accent);
 }
 
 .pp-head-doc {

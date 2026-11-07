@@ -76,16 +76,22 @@ function weightWidth(weight: number): number {
  * It is not the paragraph model's flat average, which wraps safely but
  * would shrink a line that fits.
  */
-export function mktgPortraitTextWidth(text: string, size: number, para: Pick<MktgPortraitFitPara, 'weight' | 'caps' | 'family'> = {}): number {
+export function mktgPortraitTextWidth(text: string, size: number, para: Pick<MktgPortraitFitPara, 'weight' | 'caps' | 'family' | 'tracking'> = {}): number {
   const shown = para.caps ? text.toUpperCase() : text;
   const glyphs = Array.from(shown).reduce((sum, char) => sum + (MKTG_PORTRAIT_GLYPH_WIDTHS[char] ?? MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT), 0) / 1000;
-  const tracking = para.caps ? Math.max(0, Array.from(shown).length - 1) * MKTG_PORTRAIT_CAPS_TRACKING_EM : 0;
+  const trackingEm = para.tracking ?? (para.caps ? MKTG_PORTRAIT_CAPS_TRACKING_EM : 0);
+  const tracking = Math.max(0, Array.from(shown).length - 1) * trackingEm;
   const family = MKTG_PORTRAIT_FAMILY_WIDTH[firstFamily(para.family)] ?? MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT;
   return (glyphs * family * weightWidth(para.weight ?? 400) + tracking) * size;
 }
 
 /** Whether one line of `text` fits `width` px at `size` px, by the measured width. */
-export function mktgPortraitLineFits(text: string, width: number, size: number, para: Pick<MktgPortraitFitPara, 'weight' | 'caps' | 'family'> = {}): boolean {
+export function mktgPortraitLineFits(
+  text: string,
+  width: number,
+  size: number,
+  para: Pick<MktgPortraitFitPara, 'weight' | 'caps' | 'family' | 'tracking'> = {}
+): boolean {
   return mktgPortraitTextWidth(text, size, para) <= width + 0.01;
 }
 

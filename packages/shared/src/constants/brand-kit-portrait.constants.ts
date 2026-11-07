@@ -27,6 +27,8 @@ export const BRAND_KIT_PORTRAIT_CONTENTS = { listTop: 148, rowHeight: 34, gap: 2
 
 /** The Typography page's H1 sample size in the mock (48 px); it shrinks until the brand line fits the column whole. */
 export const BRAND_KIT_PORTRAIT_TYPE_SAMPLE_PX = 48;
+/** The specimen's letter-spacing in the mock (-0.015em), the measure's tracking for it; `.kp-type-h1` sets the same. */
+export const BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM = -0.015;
 
 /** The scale rows' label and spec columns (96 px each) and their two 16 px gaps, left of a row's sample. */
 export const BRAND_KIT_PORTRAIT_SCALE_META_PX = 96 + 96 + 16 + 16;

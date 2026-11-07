@@ -114,9 +114,10 @@ export interface BrandKitPortraitTypeSourceLine {
 }
 
 /**
- * The Typography page laid out from its data: the scale's steps as printed, where the scale ends, the y of the two blocks
- * under it (the mock's 830, or lower when the scale runs past it), the lines of the font-source block, the share of its
- * size the body step is set at (1 when the stack fit as written) and whether its sample had to be cut.
+ * The Typography page sized from its data: the scale's steps as printed, where the model says the scale ends and the two
+ * blocks under it start (the mock's 830, or 16 px under the scale when it runs past that — the page lays them in flow, so
+ * the engine's own end is what places them; the model's y decides the body step's size), the lines of the font-source
+ * block, the share of its size the body step is set at (1 when the stack fit as written) and whether its sample was cut.
  */
 export interface BrandKitPortraitTypeLayout {
   steps: BrandKitPortraitTypeStep[];
