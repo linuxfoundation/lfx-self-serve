@@ -38,6 +38,7 @@ import type {
 } from '../interfaces/mktg-print.interface';
 import { brandKitContrastRatio, brandKitLuminance, brandKitTint, buildBrandKitBookView } from './brand-kit-book.utils';
 import { brandKitPortraitArtwork } from './brand-kit-portrait.utils';
+import { mktgReadableSourceName, mktgReadableSourceText } from './mktg-readable-source.utils';
 import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitWebsiteHost, brandKitWeights } from './brand-kit.utils';
 import { frameworkPortraitIcpWhoWidth } from './mktg-framework-portrait-layout.utils';
 import {
@@ -205,14 +206,31 @@ export function mktgPrintApprovedDate(approvedAt: string | null): string {
 }
 
 /**
- * A source as the Sources & gaps page prints it: as the run stored it, with
- * only its type prefix (`Website: `, `Link: `, `Press release: `) taken off.
- * Nothing is renamed or invented: a URL prints as the URL.
+ * A source as the Sources & gaps page prints it, in words a reader knows (the
+ * editor's rule, 7 November 2026, through the grammar's shared
+ * `mktgReadableSourceName`): its type prefix (`Website: `, `Link: `,
+ * `Press release: `) taken off; a press release named as the design's mock
+ * names it, "The press release" with the site's press address; any other URL
+ * as its address without scheme, `www.` or query, a remark after it kept
+ * (`aaif.io (home)`); the LFX record by name, never its slug.
  */
 export function foundationMessagePrintSourceLabel(source: string): string {
   const trimmed = source.trim();
   const type = FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES.find((prefix) => trimmed.startsWith(`${prefix}: `));
-  return type ? trimmed.slice(type.length + 2).trim() : trimmed;
+  const rest = type ? trimmed.slice(type.length + 2).trim() : trimmed;
+  const url = rest.match(/^(https?:\/\/\S+)(.*)$/);
+  if (!url) return mktgReadableSourceName(rest);
+  const [, address, remark] = url;
+  if (type === 'Press release') {
+    const [host, section] = mktgReadableSourceName(address).split('/');
+    return `The press release (${section ? `${host}/${section}` : host})${remark}`;
+  }
+  return `${mktgReadableSourceName(address)}${remark}`;
+}
+
+/** A sentence of the report (a failed source's reason, a gap) with every URL and file name in it in a reader's words (the grammar's rule). */
+export function foundationMessagePrintReportText(text: string): string {
+  return mktgReadableSourceText(text.trim());
 }
 
 /** The say-and-avoid page's intro, counting the anchor questions as the mock's sentence does ("the three questions every piece of content answers"). */

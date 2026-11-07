@@ -542,6 +542,12 @@ test('the framework print lists every figure past six as a table, continued on a
   expect(readKept).toBeGreaterThan(0);
   expect(readKept).toBeLessThan(60);
   await expect(print.getByTestId('mktg-framework-print-sources-read-cut')).toHaveText(`+${60 - readKept} more on the framework's Sources tab in LFX One`);
+  // The failed source in a reader's words: the sign-in-walled recordings page as its address, no scheme or www., the reason after the dash.
+  await expect(print.getByTestId('mktg-framework-print-sources-failed').locator('li').first()).toContainText(
+    'example.org/summit/2026/roadmap-sessions/recordings — '
+  );
+  await expect(print.getByTestId('mktg-framework-print-sources-failed')).not.toContainText('https://');
+  await expect(print.getByTestId('mktg-framework-print-sources-read')).not.toContainText('https://');
   const gaps = print.getByTestId('mktg-framework-print-gaps').locator('li');
   const gapsKept = await gaps.count();
   expect(gapsKept).toBeLessThan(40);

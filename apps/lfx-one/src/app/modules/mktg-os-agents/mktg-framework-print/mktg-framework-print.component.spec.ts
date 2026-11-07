@@ -618,11 +618,11 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(query('mktg-framework-print-sources-intro')?.textContent?.trim()).toBe(
       'What the framework was built from on 4 Nov 2026, what could not be read, and what is still open.'
     );
-    // Each source as the run stored it, with only its type prefix taken off: a URL prints as the URL, nothing is renamed.
+    // Each source in a reader's words (foundationMessagePrintSourceLabel): its type prefix off, a URL as its address, a press release named.
     expect(Array.from(query('mktg-framework-print-sources-read')?.querySelectorAll('li') ?? []).map((item) => item.textContent?.trim())).toEqual([
-      'https://orbit.example.org',
-      'https://orbit.example.org/about',
-      'https://www.linuxfoundation.org/press/orbit',
+      'orbit.example.org',
+      'orbit.example.org/about',
+      'The press release (linuxfoundation.org/press)',
     ]);
     expect(query('mktg-framework-print-sources-failed')?.textContent?.trim()).toBe('Members page — timed out');
     expect(query('mktg-framework-print-gaps')?.textContent?.trim()).toBe('No 2027 figures yet.');

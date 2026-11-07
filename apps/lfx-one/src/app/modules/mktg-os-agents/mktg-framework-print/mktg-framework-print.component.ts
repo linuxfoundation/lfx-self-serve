@@ -34,6 +34,7 @@ import {
 import {
   foundationMessagePrintAnchorIntro,
   foundationMessagePrintMatrix,
+  foundationMessagePrintReportText,
   foundationMessagePrintSourceLabel,
   frameworkPortraitAnchors,
   frameworkPortraitAvoidList,
@@ -334,7 +335,9 @@ export class MktgFrameworkPrintComponent {
     const list = (rows: readonly string[], room: number) => frameworkPortraitCutList(rows, room, 'Sources', rowHeight, tightHeight);
     let lists: FoundationMessagePrintSourcesPage['report'] = null;
     if (report) {
-      const failedAll = report.sources_failed.map((source) => `${source.name} — ${source.reason}`);
+      const failedAll = report.sources_failed.map(
+        (source) => `${foundationMessagePrintSourceLabel(source.name)} — ${foundationMessagePrintReportText(source.reason)}`
+      );
       // The left column holds Read, then Could not be read: the failed list keeps its rows first (it is the shorter, and the gap it fills is the editor's), the read list takes what is left.
       const failedHeight =
         ROOM.blockAfter + ROOM.label + (failedAll.length ? failedAll.reduce((sum, row) => sum + rowHeight(row), 0) : rowHeight(this.noSourceFailed));
@@ -345,7 +348,7 @@ export class MktgFrameworkPrintComponent {
         read: list(report.sources_read.map(foundationMessagePrintSourceLabel), columnRoom - ROOM.label - Math.min(failedHeight, columnRoom / 2)),
         failed: list(failedAll, columnRoom / 2 - ROOM.blockAfter - ROOM.label),
         failedCount: report.sources_failed.length,
-        gaps: list(report.gaps, columnRoom - ROOM.label),
+        gaps: list(report.gaps.map(foundationMessagePrintReportText), columnRoom - ROOM.label),
         gapsCount: report.gaps.length,
       };
     }

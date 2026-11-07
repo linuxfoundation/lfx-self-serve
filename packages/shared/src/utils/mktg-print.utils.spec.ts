@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { MKTG_PRINT_INK_ON_DARK, MKTG_PRINT_INK_ON_LIGHT, MKTG_PRINT_LF_LOOK, MKTG_PRINT_REVERSED_FILTER } from '../constants/mktg-print.constants';
+import { MKTG_READABLE_SOURCE } from '../constants/mktg-readable-source.constants';
 import { BrandKitLogoRef, BrandKitRevision } from '../interfaces/brand-kit.interface';
 import { FoundationMessageContent, FoundationMessageReport } from '../interfaces/foundation-message.interface';
 import {
@@ -19,6 +20,7 @@ import {
   foundationMessagePrintMatrix,
   foundationMessagePrintNumbers,
   foundationMessagePrintSections,
+  foundationMessagePrintReportText,
   foundationMessagePrintSourceLabel,
   mktgPrintApprovedDate,
   mktgPrintBrand,
@@ -297,13 +299,27 @@ describe('the framework’s print', () => {
   });
 
   it('names a read source as the run stored it, with only its type prefix taken off', () => {
-    expect(foundationMessagePrintSourceLabel('Website: https://orbit.example.org')).toBe('https://orbit.example.org');
-    expect(foundationMessagePrintSourceLabel('Link: https://orbit.example.org/about')).toBe('https://orbit.example.org/about');
-    expect(foundationMessagePrintSourceLabel('Press release: https://www.linuxfoundation.org/press/orbit')).toBe('https://www.linuxfoundation.org/press/orbit');
-    // No known prefix, or a prefix inside the text: untouched.
+    // A URL as its address (the grammar's readable name: no scheme, no www., no query), a remark after it kept.
+    expect(foundationMessagePrintSourceLabel('Website: https://orbit.example.org')).toBe('orbit.example.org');
+    expect(foundationMessagePrintSourceLabel('Website: https://www.orbit.example.org/ (home)')).toBe('orbit.example.org (home)');
+    expect(foundationMessagePrintSourceLabel('Link: https://orbit.example.org/about?utm=x')).toBe('orbit.example.org/about');
+    expect(foundationMessagePrintSourceLabel('Link: https://github.com/orbit (org page and repos API)')).toBe('github.com/orbit (org page and repos API)');
+    // A press release as the mock names it: "The press release" with the site's press address, never the headline's slug.
+    expect(foundationMessagePrintSourceLabel('Press release: https://www.linuxfoundation.org/press/linux-foundation-announces-orbit')).toBe(
+      'The press release (linuxfoundation.org/press)'
+    );
+    expect(foundationMessagePrintSourceLabel('Press release: https://orbit.example.org')).toBe('The press release (orbit.example.org)');
+    // The LFX record by the grammar's name, never its slug; an image URL as the grammar's words.
+    expect(foundationMessagePrintSourceLabel('LFX record agentic-ai-foundation and standard metrics')).toBe(MKTG_READABLE_SOURCE.lfxRecord);
+    expect(foundationMessagePrintSourceLabel('Link: https://cdn.example.org/a1b2c3d4e5f6a7b8.svg')).toBe(MKTG_READABLE_SOURCE.linkedImage);
+    // No known prefix, or a prefix inside the text: the text itself.
     expect(foundationMessagePrintSourceLabel('LFX Insights: members')).toBe('LFX Insights: members');
     expect(foundationMessagePrintSourceLabel('The Website: page')).toBe('The Website: page');
     expect(foundationMessagePrintSourceLabel('  Link:   spaced  ')).toBe('spaced');
+    // A report sentence: the URL in it rewritten, the sentence's punctuation kept.
+    expect(foundationMessagePrintReportText('The members page https://www.orbit.example.org/members?x=1 answered with a sign-in wall.')).toBe(
+      'The members page orbit.example.org/members answered with a sign-in wall.'
+    );
   });
 
   it('crosses the goals with the profiles: one row per profile, true where the goal’s messaging is written for it', () => {
