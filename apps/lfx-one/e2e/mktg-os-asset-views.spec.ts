@@ -902,6 +902,9 @@ const OVERFULL_GOAL_FACTS = [
   'Over 200 Kubernetes community days were held in 60 countries over the last twelve months',
 ];
 
+/** The calibration window's first key message: the overfull record's, one clause and one line of its column longer. */
+const WINDOW_FIRST_KEY = 'The cloud native stack is open, governed in the open and run everywhere, by everyone who ships it.';
+
 function matrixTitleOverlaps(matrix: Element): { overlapping: number; overflowing: number; titles: number } {
   const titles = Array.from(matrix.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-title"]'));
   const boxes = titles.map((title) => title.getBoundingClientRect());
@@ -1000,31 +1003,19 @@ test('eight goals with the overfull record’s titles: the matrix prints as two 
   await finishMktgPrintFrame(page);
 });
 
-/** The long-name shape's goal titles (the layout spec's): three to four lines a head cell, so the bands' room is the matrix's narrowest. */
-const LONG_GOAL_TITLES = [
-  'Adoption across every cloud and vendor',
-  'Contributors and maintainers of the projects',
-  'Certification for the engineers employers hire',
-  'End users who shape the roadmap they depend on',
-  'Events in every region of the world',
-  'Security as a shared industry practice',
-  'Membership that funds the neutral home',
-  'Education from the first container onward',
-];
-
-test('the long-name shape (the calibration window): the bands fold the cells’ lines into the caption and the matrix ends clear of the footer in the real render', async ({
-  page,
-}, info) => {
+test('the calibration window: a band record the model lays 15 px over the footer gap ends clear of the footer in the real render', async ({ page }, info) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await stubMktgPrintFrame(page);
-  // The maintainer's calibration fixture (7 Nov 2026): the overfull record's key messages and facts under the long-name titles, in the
-  // LF look's face. The model lays it folded at 648.65 px, 15.35 px over the footer gap: inside the 12–20 px window where a model a
-  // few px optimistic would print into the footer. The real render in Chromium and WebKit must end clear of the footer's room.
-  const cap = capGoalsFrameworkRevisionResponse(LONG_GOAL_TITLES);
+  // The maintainer's calibration fixture (7 Nov 2026): the band record above with the first goal's key message one line longer (six
+  // lines of its column in the LF look's face). The model, calibrated on the served print, lays it at 649.2 px, 14.8 px over the
+  // footer gap: inside the 12–20 px window where a model a few px optimistic would print into the footer. The real render in
+  // Chromium and WebKit must end clear of the footer's room, with every row the model kept.
+  const cap = capGoalsFrameworkRevisionResponse(OVERFULL_GOAL_TITLES);
   const content = JSON.parse(cap.markdown) as FoundationMessageContent;
+  const keys = [WINDOW_FIRST_KEY, ...OVERFULL_GOAL_KEYS.slice(1)];
   const goals = content.mf.goals.map((goal, index) => ({
     ...goal,
-    key: OVERFULL_GOAL_KEYS[index],
+    key: keys[index],
     proof: Array.from({ length: 4 }, (_, n): [string, string] => [OVERFULL_GOAL_FACTS[(index + n) % OVERFULL_GOAL_FACTS.length], 'Report']),
   }));
   const record = { ...cap, markdown: JSON.stringify({ ...content, mf: { ...content.mf, goals } }) };
@@ -1037,10 +1028,10 @@ test('the long-name shape (the calibration window): the bands fold the cells’ 
   // Two bands of four, every long title whole at one size, none overlapping.
   await expect(matrix.getByTestId('mktg-framework-print-goals-band-0').getByTestId('mktg-framework-print-matrix-title')).toHaveCount(4);
   await expect(matrix.getByTestId('mktg-framework-print-goals-band-1').getByTestId('mktg-framework-print-matrix-title')).toHaveCount(4);
-  await expect(matrix.getByTestId('mktg-framework-print-matrix-title')).toHaveText(LONG_GOAL_TITLES);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-title')).toHaveText(OVERFULL_GOAL_TITLES);
   expect(await matrix.evaluate(matrixTitleOverlaps)).toEqual({ overlapping: 0, overflowing: 0, titles: 8 });
-  // The ladder's fold step: the value propositions and sound bites on the goal pages, every cell one whole first proof at the tight type
-  // with no line of its own, the one caption under the bands naming both.
+  // The ladder's second step: the value propositions and sound bites on the goal pages, every cell one whole first proof at the tight
+  // type with its own "+3 more" line, the plain caption under the bands; the key messages whole, the long one too.
   for (const band of [0, 1]) {
     await expect(matrix.getByTestId(`mktg-framework-print-goals-band-${band}`).getByTestId('mktg-framework-print-goals-label')).toHaveText([
       'Key message',
@@ -1050,8 +1041,9 @@ test('the long-name shape (the calibration window): the bands fold the cells’ 
   const cells = matrix.getByTestId('mktg-framework-print-matrix-proof-cell');
   await expect(cells).toHaveCount(8);
   for (const cell of await cells.all()) await expect(cell.getByTestId('mktg-framework-print-matrix-proof')).toHaveCount(1);
-  await expect(matrix.getByTestId('mktg-framework-print-matrix-proofs-cut')).toHaveCount(0);
-  await expect(matrix.getByTestId('mktg-framework-print-matrix-row-note')).toHaveText([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold]);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-proofs-cut')).toHaveText(Array.from({ length: 8 }, () => '+3 more in LFX One'));
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-row-note')).toHaveText([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+  await expect(matrix.locator('.fwp-matrix-key')).toHaveText(keys);
   const facts = await matrix
     .getByTestId('mktg-framework-print-matrix-proof')
     .evaluateAll((proofs) => proofs.map((proof) => proof.childNodes[0]?.textContent?.trim() ?? ''));
@@ -1072,15 +1064,24 @@ test('the long-name shape (the calibration window): the bands fold the cells’ 
       caption: at(block.querySelector('[data-testid="mktg-framework-print-matrix-row-note"]')),
       footerTop:
         Math.round(((page.querySelector('[data-testid="mktg-portrait-page-foot"]')?.getBoundingClientRect().top ?? Number.NaN) - frameTop) * 100) / 100,
+      // Each cell's rendered lines (its box over its line height), the face's loading: the model's wrap counts read against the engine's.
+      keyLines: Array.from(block.querySelectorAll<HTMLElement>('.fwp-matrix-key')).map((key) =>
+        Math.round(key.getBoundingClientRect().height / parseFloat(getComputedStyle(key).lineHeight))
+      ),
+      proofLines: Array.from(block.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-proof"]')).map((proof) =>
+        Math.round(proof.getBoundingClientRect().height / parseFloat(getComputedStyle(proof).lineHeight))
+      ),
+      face: getComputedStyle(block).fontFamily,
+      interLoaded: document.fonts.check('600 11px Inter'),
     };
   });
   info.annotations.push({
     type: 'calibration',
-    description: `${info.project.name}: ${JSON.stringify(bottoms)}; model bottom 984.65 (648.65 under the matrix top, 15.35 over the footer gap)`,
+    description: `${info.project.name}: ${JSON.stringify(bottoms)}; model bottom 985.2 (649.2 under the matrix top, 14.8 over the footer gap); model lines keys 6,3,4,5,4,3,4,3 proofs 6,5,5,5,5,6,5,5`,
   });
   expect(bottoms.matrix).toBeLessThanOrEqual(FRAMEWORK_PORTRAIT_TOPS.footer);
   expect(bottoms.matrix).toBeLessThan(bottoms.footerTop);
-  await page.screenshot({ path: info.outputPath('foundation-message-print-long-names-fold.png'), fullPage: true });
+  await page.screenshot({ path: info.outputPath('foundation-message-print-calibration-window.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);
 });
