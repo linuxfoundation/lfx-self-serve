@@ -105,6 +105,18 @@
     }
   }
 
+  body.lfx-print-family {
+    /* Every host between the family's book and a portrait frame prints as a block. Angular leaves a component's host
+       inline (lfx-mktg-portrait-opener, lfx-mktg-portrait-back-cover, lfx-mktg-brand-kit-print and the kit's page
+       hosts), so the frames' `break-after: page` sat inside anonymous block boxes; Chrome 156 puts a second break at
+       each such boundary and printed a blank page after every opener and after the back cover (40 pages for 36),
+       while Chromium 1208 did not. Blocks around the frames keep the break count to one per frame in both. */
+    lfx-mktg-family-print > *,
+    lfx-mktg-brand-kit-print > div > * {
+      display: block;
+    }
+  }
+
   body.lfx-print-framework {
     lfx-mktg-framework-print {
       break-before: auto;
