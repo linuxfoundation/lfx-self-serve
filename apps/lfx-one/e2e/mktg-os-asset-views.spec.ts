@@ -651,6 +651,8 @@ test('the framework print set in the project’s kit: accent text darkened to re
   const frame = await layoutMktgPrintFrame(page);
   const print = frame.getByTestId('mktg-framework-print');
   await expect(print).toHaveAttribute('data-brand', 'kit');
+  // The logo-less record plans the AAIF record's twelve frames (four goals, four profiles two a page, four figures): the kit changes no page.
+  await expect(print.getByTestId('lfx-mktg-portrait-page')).toHaveCount(12);
   // No drawable artwork: the cover keeps its band, tagline and title, and prints no logo block (K's gating rule through mktgPrintBrand).
   await expect(print.getByTestId('mktg-framework-print-cover-logo')).toHaveCount(0);
   await expect(print.getByTestId('mktg-framework-print-cover')).toHaveCSS('background-color', cssRgb(kit.kit.dark));
