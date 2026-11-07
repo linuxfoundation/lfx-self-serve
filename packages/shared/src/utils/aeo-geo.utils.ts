@@ -336,14 +336,15 @@ const CAVEAT_SENTENCE_BOUNDARY = /([.!?]['"\u2018\u2019\u201c\u201d`)\]]*)\s+(?=
 const CAVEAT_SENTENCE_MARK = '\u0000';
 const CAVEAT_QUOTE_SPACE_MARK = '\u0002';
 // A stop inside a closing quote followed by a lowercase WORD continues the sentence ("What is AEO?" as its first result).
-// A word ends at whitespace, sentence punctuation, an apostrophe or hyphen, or a dot not followed by a letter or digit, so a
-// file name (robots.txt, llms.txt, sitemap.xml) or a property (og:site_name) after the quote opens its own sentence.
-const CAVEAT_QUOTE_CONTINUATION = /([.!?]['"\u2019\u201d`]+)(\s+)(?=\p{Ll}+(?:$|[\s,;!?)\]'\u2019-]|\.(?![\p{L}\p{N}])))/gu;
+// A word is lowercase letters with hyphens or apostrophes within or after them (well-known, isn't, users'), and it ends at
+// whitespace, sentence punctuation or a dot not followed by a letter or digit, so a file name (robots.txt, llms-full.txt,
+// sitemap.xml) or a property (og:site_name) after the quote opens its own sentence.
+const CAVEAT_QUOTE_CONTINUATION = /([.!?]['"\u2019\u201d`]+)(\s+)(?=\p{Ll}[\p{Ll}'\u2019-]*(?:$|[\s,;!?)\]]|\.(?![\p{L}\p{N}])))/gu;
 const CAVEAT_PARENTHETICAL = /\(([^()]*)\)/g;
 const CAVEAT_WORD_CHARACTER = /[\p{L}\p{N}]/u;
 // The classifier decides by the sentence's SUBJECT. A provider subject (a search, the provider, the API, a lookup)
 // that names a credits or quota limit, or quotes a message after returned/responded/failed/error/message with
-// evidence of failure (a failure word or an HTTP status, inside the quotes or outside them), is a provider
+// evidence of failure (a failure word or an error status, inside the quotes or outside them), is a provider
 // failure: a search subject maps to one fixed sentence, another provider subject is left out. A quoted successful
 // result or result title is never a failure, and a sentence about the audited site (its pages, fetches,
 // statuses, rate limiting) passes verbatim.
@@ -353,10 +354,33 @@ const CAVEAT_PROVIDER_SUBJECT = /^(?:(?:the|our|a|an)\s+)?(?:provider|API|lookup
 const CAVEAT_LFX_RECORD = /LFX record could not be read/i;
 const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exceeded|exhausted)/i;
 const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u201c`]/i;
-// Failure evidence: inside the quotes a bare three-digit status counts; outside them only after HTTP or status ("the first 60 KB" is no status).
+// Failure evidence: only an error status (4xx or 5xx) counts, never a successful one (HTTP 200) or a number in a title ("Top 100",
+// "Fortune 500"). Inside the quotes it counts only where a status belongs: after HTTP, with or without a version (HTTP 404,
+// HTTP/1.1 404, HTTP/2 429), status or code; or leading the quoted message, where it needs a status-like tail: the closing quote
+// ("404") or a standard reason phrase ("502 Bad Gateway", "429 Too Many Requests"), so a quoted title that opens with such a
+// number ("500 Startups", "404 Media") is a result, not a status. Outside the quotes it counts only after HTTP (same forms) or
+// status, with an optional "code" and colon ("the first 60 KB" is no status). The whitespace before the number depends on the
+// colon, `(?:\s*:)?\s*`, so a failed match never splits one whitespace run between two `\s*`.
 const CAVEAT_FAILURE_WORDS = 'unavailable|error|denied|unauthori[sz]ed|forbidden|exceeded|limit|timeout|timed out|quota|credits?|rate[- ]limited';
-const CAVEAT_FAILURE_IN_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|\\d{3})\\b`, 'i');
-const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:HTTP|status)\\s*\\d{3})\\b`, 'i');
+const CAVEAT_HTTP_WORD = 'HTTP(?:\\/\\d(?:\\.\\d)?)?';
+// The 4xx and 5xx reason phrases of the IANA HTTP Status Code Registry (RFC 9110 §15.5 and §15.6, RFC 6585, RFC 7725, RFC 8470,
+// RFC 4918, RFC 2295, RFC 2774, RFC 5842), with the RFC 7231 names servers still send (Payload Too Large, Request Entity Too
+// Large, Request-URI Too Long, Requested Range Not Satisfiable, Unprocessable Entity). Matched case-insensitively.
+const CAVEAT_HTTP_REASON_PHRASES = [
+  'Bad Request|Unauthorized|Payment Required|Forbidden|Not Found|Method Not Allowed|Not Acceptable|Proxy Authentication Required',
+  'Request Timeout|Conflict|Gone|Length Required|Precondition Failed|Content Too Large|Payload Too Large|Request Entity Too Large',
+  'URI Too Long|Request-URI Too Long|Unsupported Media Type|Range Not Satisfiable|Requested Range Not Satisfiable|Expectation Failed',
+  'Misdirected Request|Unprocessable Content|Unprocessable Entity|Locked|Failed Dependency|Too Early|Upgrade Required',
+  'Precondition Required|Too Many Requests|Request Header Fields Too Large|Unavailable For Legal Reasons',
+  'Internal Server Error|Not Implemented|Bad Gateway|Service Unavailable|Gateway Timeout|HTTP Version Not Supported',
+  'Variant Also Negotiates|Insufficient Storage|Loop Detected|Not Extended|Network Authentication Required',
+].join('|');
+const CAVEAT_FAILURE_IN_QUOTES = new RegExp(
+  `\\b(?:${CAVEAT_FAILURE_WORDS})\\b|\\b(?:${CAVEAT_HTTP_WORD}|status|code)(?:\\s*:)?\\s*[45]\\d{2}\\b` +
+    `|(?:^|['"\\u2018\\u201c\`])\\s*[45]\\d{2}\\b(?=\\s*['"\\u2019\\u201d\`]|\\s+(?:${CAVEAT_HTTP_REASON_PHRASES})\\b)`,
+  'i'
+);
+const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:${CAVEAT_HTTP_WORD}|status)(?:\\s+code)?(?:\\s*:)?\\s*[45]\\d{2})\\b`, 'i');
 const CAVEAT_RESULT_TITLE = [
   /['"\u2018\u201c`][^'"\u2019\u201d`]*['"\u2019\u201d`]\s+as (?:its|the) (?:top|first|best|second|leading)\b[^.]*\bresult/i,
   /\b(?:titled|entitled|called|named)\s*['"\u2018\u201c`]/i,
@@ -406,10 +430,15 @@ export function aeoGeoReaderCaveat(caveat: string): string {
 
 /**
  * The report's caveats as reader sentences, in order, each distinct caveat once: two agent caveats that map to
- * the same sentence (two plumbing-only caveats, say, both falling back to the fixed one) print one bullet.
+ * the same sentence (two plumbing-only caveats, say, both falling back to the fixed one) print one bullet. A caveat
+ * that is exactly one of the fixed sentences is left out when another kept caveat already carries that sentence
+ * (the composite "Third-party search was not available for this run. robots.txt allows all crawlers." already
+ * tells the reader); on its own, it stays.
  */
 export function aeoGeoReaderCaveats(caveats: readonly string[]): string[] {
-  return Array.from(new Set(caveats.map(aeoGeoReaderCaveat)));
+  const distinct = Array.from(new Set(caveats.map(aeoGeoReaderCaveat)));
+  const fixed: readonly string[] = Object.values(AEO_GEO_READER_CAVEATS);
+  return distinct.filter((sentence) => !fixed.includes(sentence) || !distinct.some((other) => other !== sentence && other.includes(sentence)));
 }
 
 function readerSentence(sentence: string): string {
@@ -436,7 +465,10 @@ function carriesPlumbing(text: string): boolean {
 
 /**
  * A credits/quota phrase (outside a quoted result title), or a provider subject quoting its message with evidence
- * of failure in or around the quotes; a quoted successful result ("Example Foundation") is audit content.
+ * of failure in or around the quotes: a failure word, or a 4xx/5xx status where a status belongs (after HTTP, with or
+ * without a version, status or code; or leading the quoted message with a status-like tail, the closing quote or a standard
+ * reason phrase); a quoted successful result ("Example Foundation", with HTTP 200 or a number in its title, even its first
+ * word: "500 Startups") is audit content.
  */
 function carriesProviderFailure(sentence: string): boolean {
   const title = CAVEAT_RESULT_TITLE.some((pattern) => pattern.test(sentence));
