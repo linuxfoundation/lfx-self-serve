@@ -14,13 +14,13 @@
   }
   <div class="kp-voice-messages" [style.--kp-fit]="messages().scale" [lfxPpRect]="[x, 212, w]" data-testid="brand-kit-voice-messages">
     @if (messages().umbrella) {
-      <div class="pp-lab">Umbrella message</div>
-      <div class="kp-voice-umbrella">{{ messages().umbrella }}</div>
+      <div class="pp-lab" data-testid="brand-kit-voice-message-label">Umbrella message</div>
+      <div class="kp-voice-umbrella" data-testid="brand-kit-voice-umbrella">{{ messages().umbrella }}</div>
     }
     @if (messages().line) {
       <div class="kp-voice-line-block">
-        <div class="pp-lab">Brand line</div>
-        <div class="kp-voice-line">{{ messages().line }}</div>
+        <div class="pp-lab" data-testid="brand-kit-voice-message-label">Brand line</div>
+        <div class="kp-voice-line" data-testid="brand-kit-voice-line">{{ messages().line }}</div>
       </div>
     }
   </div>
@@ -29,7 +29,7 @@
       <div class="kp-attributes" data-testid="brand-kit-voice-attributes">
         @for (attribute of attributes().attributes; track $index; let first = $first) {
           <div class="kp-attribute" [style.border-top-color]="first ? look().spark : look().accent">
-            <div class="kp-attribute-name">{{ attribute.name }}</div>
+            <div class="kp-attribute-name" data-testid="brand-kit-voice-attribute-name">{{ attribute.name }}</div>
             <div class="kp-attribute-line">{{ attribute.line }}</div>
           </div>
         }

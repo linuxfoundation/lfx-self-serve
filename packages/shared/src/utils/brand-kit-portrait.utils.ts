@@ -26,9 +26,15 @@ import {
   BRAND_KIT_PORTRAIT_WEIGHT_NAMES,
 } from '../constants/brand-kit-portrait.constants';
 import { lfxColors } from '../constants/colors.constants';
-import { BRAND_KIT_FOUND_IN_LABELS, BRAND_KIT_REPORT_ASSET_LABELS } from '../constants/brand-kit.constants';
+import {
+  BRAND_KIT_CONTRAST_AA,
+  BRAND_KIT_CONTRAST_AAA,
+  BRAND_KIT_CONTRAST_LARGE_TEXT,
+  BRAND_KIT_FOUND_IN_LABELS,
+  BRAND_KIT_REPORT_ASSET_LABELS,
+} from '../constants/brand-kit.constants';
 import { MKTG_PRINT_REVERSED_FILTER } from '../constants/mktg-print.constants';
-import { MKTG_PORTRAIT_FIT } from '../constants/mktg-portrait-print.constants';
+import { MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_MORE_LINE } from '../constants/mktg-portrait-print.constants';
 import type {
   BrandKitBookView,
   BrandKitContrastGrade,
@@ -69,10 +75,13 @@ import {
   mktgPortraitCutText,
   mktgPortraitFitBlock,
   mktgPortraitFits,
+  mktgPortraitLargestFitting,
   mktgPortraitLineFits,
+  mktgPortraitMoreLine,
   mktgPortraitParaHeight,
   mktgPortraitScaleBlock,
   mktgPortraitSentences,
+  mktgPortraitTrimStopWords,
   mktgPortraitTrimTail,
   mktgPortraitWrapLines,
 } from './mktg-portrait-print.utils';
@@ -136,7 +145,7 @@ export function brandKitPortraitFiles(view: BrandKitBookView): BrandKitPortraitF
  * but no artwork the print can draw (every supplied file is a PNG or a ZIP
  * member without bytes): the supplied slots by the files table's own words
  * (slot and format, never a file name: the page prints none), and the fact
- * that this book draws SVG artwork only. Empty when a tile can draw
+ * that this book draws inline SVG artwork only. Empty when a tile can draw
  * something, or when nothing was uploaded.
  */
 export function brandKitPortraitUndrawableFilesLine(view: BrandKitBookView): string {
@@ -146,7 +155,8 @@ export function brandKitPortraitUndrawableFilesLine(view: BrandKitBookView): str
     .filter((row) => row.source === 'Supplied')
     .map((row) => `${row.name.toLowerCase()} (${row.format})`);
   const one = supplied.length === 1;
-  return `This book draws SVG artwork only. The supplied ${brandKitInWords(supplied)} ${one ? 'is' : 'are'} listed below and not drawn here.`;
+  // "Inline artwork": an SVG the record names without its bytes (a package member, a rejected upload) is as undrawable as a PNG.
+  return `This book draws inline SVG artwork only. The supplied ${brandKitInWords(supplied)} ${one ? 'is' : 'are'} listed below and not drawn here.`;
 }
 
 /** A slot's format column: the file's format, or a dash without a file. */
@@ -238,9 +248,9 @@ export function brandKitPortraitWhiteContrast(hex: string): number {
 
 /** The grade of an unrounded contrast ratio, in the kit's own words: AAA from 7, AA from 4.5, large text only from 3, else a fail. */
 export function brandKitPortraitContrastGrade(ratio: number): BrandKitContrastGrade {
-  if (ratio >= 7) return 'AAA';
-  if (ratio >= 4.5) return 'AA';
-  if (ratio >= 3) return 'Large text only';
+  if (ratio >= BRAND_KIT_CONTRAST_AAA) return 'AAA';
+  if (ratio >= BRAND_KIT_CONTRAST_AA) return 'AA';
+  if (ratio >= BRAND_KIT_CONTRAST_LARGE_TEXT) return 'Large text only';
   return 'Fails';
 }
 
@@ -296,11 +306,14 @@ export function brandKitPortraitWeightName(weight: number): string {
 }
 
 /**
- * The line a type step is shown in, whole and from the kit's own data (the
- * mock takes the framework's pillars and boilerplate, which the kit does not
- * hold): the project's name for the display step (the brand line would wrap
- * at 64 px), the umbrella message for the body, the footer line for the
- * caption, the brand line for every other step. Never cut, never an ellipsis.
+ * The line a type step is shown in, from the kit's own data (the mock takes
+ * the framework's pillars and boilerplate, which the kit does not hold): the
+ * project's name for the display step (the brand line would wrap at 64 px),
+ * the umbrella message for the body, the footer line for the caption, the
+ * brand line for every other step. Printed at the step's own size always;
+ * when its measured line does not fit the column it is shortened word by
+ * word (a body step to its lines, with an ellipsis), never shrunk
+ * (`brandKitPortraitShortenLine`, `brandKitPortraitShortenParagraph`).
  */
 export function brandKitPortraitTypeSample(view: BrandKitBookView, step: BrandKitTypeStep): string {
   switch (step.step) {
@@ -349,9 +362,9 @@ export function brandKitPortraitMessageCard(view: BrandKitBookView): { text: str
 /**
  * A one-line sample shortened to its measure: `text` when it fits `width` in
  * one line at `size` (measured in the kit's face, `para.family`), else its
- * first words, as many as fit, cut at a word with no ellipsis (a type
- * specimen shows letterforms, not a sentence); at least the first word, which
- * the measure may then clip. The size is never changed: the editor's rule for
+ * first words, as many as fit, cut at a word (never on a function word) with
+ * no ellipsis (a type specimen shows letterforms, not a sentence); at least
+ * the first word, which the measure may then clip. The size is never changed: the editor's rule for
  * the Typography page is "shorten the sample instead of shrinking".
  */
 export function brandKitPortraitShortenLine(
@@ -361,18 +374,20 @@ export function brandKitPortraitShortenLine(
   para: Pick<MktgPortraitFitPara, 'weight' | 'caps' | 'family' | 'tracking'> = {}
 ): string {
   const words = text.trim().split(/\s+/).filter(Boolean);
-  for (let count = words.length; count > 1; count--) {
-    const line = words.slice(0, count).join(' ');
-    if (mktgPortraitLineFits(line, width, size, para)) return line;
-  }
-  return words[0] ?? '';
+  if (words.length === 0) return '';
+  const fits = (count: number): boolean => mktgPortraitLineFits(words.slice(0, count).join(' '), width, size, para);
+  if (fits(words.length)) return words.join(' ');
+  // The longest prefix that fits, found by bisection (a 30k-character line measures a dozen prefixes, not thousands),
+  // then without the function word it would end on.
+  const count = mktgPortraitLargestFitting(words.length - 1, fits);
+  return mktgPortraitTrimStopWords(words.slice(0, count)).join(' ');
 }
 
 /**
  * A paragraph sample shortened to at most `maxLines` lines of `width` at
  * `size` (the paragraph model's wrap): the text when it fits, else its first
- * words, cut at a word, with an ellipsis after the last (a sentence shown
- * short reads as cut); at least the first word.
+ * words, cut at a word (never on a function word), with an ellipsis after
+ * the last (a sentence shown short reads as cut); at least the first word.
  */
 export function brandKitPortraitShortenParagraph(
   text: string,
@@ -385,11 +400,10 @@ export function brandKitPortraitShortenParagraph(
   const whole = text.trim();
   if (mktgPortraitWrapLines(whole, perLine) <= maxLines) return whole;
   const words = whole.split(/\s+/).filter(Boolean);
-  for (let count = words.length - 1; count > 1; count--) {
-    const shorter = `${mktgPortraitTrimTail(words.slice(0, count).join(' '))}…`;
-    if (mktgPortraitWrapLines(shorter, perLine) <= maxLines) return shorter;
-  }
-  return `${mktgPortraitTrimTail(words[0] ?? '')}…`;
+  if (words.length === 0) return '';
+  const shortened = (count: number): string => `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(words.slice(0, count)).join(' '))}…`;
+  const count = mktgPortraitLargestFitting(words.length - 1, (prefix) => mktgPortraitWrapLines(shortened(prefix), perLine) <= maxLines);
+  return shortened(count);
 }
 
 /** The type source as the page names it: the host of a URL (`one.example.org`), or the text as written. */
@@ -465,7 +479,7 @@ function typeLowerHeight(rules: BrandKitPortraitRulesFit, sourceLines: readonly 
         paras: [
           label,
           ...rules.rules.map((rule, index) => ({ text: rule, size: c.list.size, line: c.list.line, above: index === 0 ? c.list.above : 0 })),
-          ...(rules.more > 0 ? [{ text: `+${rules.more} more rules, in LFX One`, ...BRAND_KIT_PORTRAIT_RULE_LISTS.more }] : []),
+          ...(rules.more > 0 ? [{ text: rules.moreLine, ...BRAND_KIT_PORTRAIT_RULE_LISTS.more }] : []),
         ],
       },
       rules.scale
@@ -593,8 +607,10 @@ export function brandKitPortraitVoiceMessagesFit(view: Pick<BrandKitBookView, 'v
   ];
   if (paras.length === 0) return { scale: 1, cut: false, umbrella, line };
   const fit = mktgPortraitFitBlock({ paras }, c.width, c.bottom - c.top);
+  // The fitted texts in the paragraphs' order: the umbrella first when the kit has one, then the brand line.
   const texts = fit.block.paras.filter((_, index) => index % 2 === 1).map((para) => para.text);
-  return { scale: fit.scale, cut: fit.cut, umbrella: umbrella ? texts[0] : '', line: line ? (texts[umbrella ? 1 : 0] ?? '') : '' };
+  const lineIndex = umbrella ? 1 : 0;
+  return { scale: fit.scale, cut: fit.cut, umbrella: umbrella ? texts[0] : '', line: line ? (texts[lineIndex] ?? '') : '' };
 }
 
 // ---------- The chapters' rule lists ----------
@@ -604,8 +620,8 @@ export function brandKitPortraitVoiceMessagesFit(view: Pick<BrandKitBookView, 'v
  * columns are: as written when its columns hold it, set smaller together in
  * the grammar's steps when they do not, its longest lines cut at a sentence
  * when no step holds it, and when even that runs past the room, its last
- * rules given up to a `+N more rules, in LFX One` line, one at a time, the
- * first rule always kept. Items fill the columns in turn (a two-column grid's
+ * rules given up to a `+N more rules, in LFX One` line (the room's noun,
+ * singular at one), one at a time, the first rule always kept. Items fill the columns in turn (a two-column grid's
  * order); the room is the taller column's.
  */
 export function brandKitPortraitRulesFit(rules: readonly string[], room: BrandKitPortraitRuleListRoom): BrandKitPortraitRulesFit {
@@ -620,7 +636,7 @@ export function brandKitPortraitRulesFit(rules: readonly string[], room: BrandKi
         ...kept
           .filter((_, index) => index % room.columns === column)
           .map((text, index) => ({ text, size: room.size, line: room.line, above: index === 0 ? room.listAbove : room.above })),
-        ...(more > 0 && column === (kept.length - 1) % room.columns ? [{ text: `+${more} more rules, in LFX One`, ...c.more }] : []),
+        ...(more > 0 && column === (kept.length - 1) % room.columns ? [{ text: mktgPortraitMoreLine(more, room.noun), ...c.more }] : []),
       ],
     }));
   const fitsAt = (scale: number): boolean => columns().every((block) => mktgPortraitFits(mktgPortraitScaleBlock(block, scale), room.width, height));
@@ -628,7 +644,7 @@ export function brandKitPortraitRulesFit(rules: readonly string[], room: BrandKi
   for (let step = 0; ; step += 1) {
     const scale = Math.round((1 - step * MKTG_PORTRAIT_FIT.scaleStep) * 100) / 100;
     if (scale < MKTG_PORTRAIT_FIT.minScale - 1e-9) break;
-    if (fitsAt(scale)) return { scale, cut: false, rules: kept, more: 0 };
+    if (fitsAt(scale)) return { scale, cut: false, rules: kept, more: 0, moreLine: '' };
   }
   const scale = MKTG_PORTRAIT_FIT.minScale;
   // 2. Cut the longest rule at a sentence (a rule of one sentence is left whole), until the columns hold the list.
@@ -656,7 +672,7 @@ export function brandKitPortraitRulesFit(rules: readonly string[], room: BrandKi
     kept[0] = text;
     cut = true;
   }
-  return { scale, cut, rules: kept, more };
+  return { scale, cut, rules: kept, more, moreLine: mktgPortraitMoreLine(more, room.noun) };
 }
 
 // ---------- Color contrast (page 10): the layout ----------
@@ -673,9 +689,10 @@ export function brandKitPortraitContrastLayout(colors: number, pairs: number): B
   const matrixMinHeight = c.pairsTop - c.matrixTop;
   const pairsTop = c.matrixTop + Math.max(matrixMinHeight, matrixHeight);
   const room = c.bottom - pairsTop - c.pairsLabel;
-  if (pairs * c.pair <= room) return { matrixHeight, matrixMinHeight, pairsTop, pairsKept: pairs, more: 0 };
-  const pairsKept = Math.max(1, Math.floor((room - c.more) / c.pair));
-  return { matrixHeight, matrixMinHeight, pairsTop, pairsKept: Math.min(pairs, pairsKept), more: pairs - Math.min(pairs, pairsKept) };
+  if (pairs * c.pair <= room) return { matrixHeight, matrixMinHeight, pairsTop, pairsKept: pairs, more: 0, moreLine: '' };
+  const pairsKept = Math.min(pairs, Math.max(1, Math.floor((room - c.more) / c.pair)));
+  const more = pairs - pairsKept;
+  return { matrixHeight, matrixMinHeight, pairsTop, pairsKept, more, moreLine: mktgPortraitMoreLine(more, MKTG_PORTRAIT_MORE_LINE.nouns.pair) };
 }
 
 // ---------- Watchouts (page 08) ----------
@@ -725,14 +742,17 @@ export function brandKitPortraitAttributesFit(attributes: readonly { name: strin
   const scale = MKTG_PORTRAIT_FIT.minScale;
   const perLine = mktgPortraitCharsPerLine(c.columnWidth, c.line.size * scale);
   const cut = cells.map((cell) => ({ ...cell, line: mktgPortraitCutText(cell.line, perLine * c.lineMaxLines) }));
+  const changed = cut.some((cell, index) => cell.line !== cells[index].line);
   let kept = cut.length;
   let height = attributesHeight(cut, scale);
+  // The cut grid that fits keeps every attribute: the `+N more` line is charged only once a row has to go.
+  if (height <= room) return { scale, cut: changed, attributes: cut, more: 0, height };
   while (kept > c.columns && height + moreHeight(scale) > room) {
     kept -= c.columns;
     height = attributesHeight(cut.slice(0, kept), scale);
   }
   const more = cut.length - kept;
-  return { scale, cut: true, attributes: cut.slice(0, kept), more, height: more > 0 ? height + moreHeight(scale) : height };
+  return { scale, cut: changed, attributes: cut.slice(0, kept), more, height: more > 0 ? height + moreHeight(scale) : height };
 }
 
 /** The height of the attributes grid at a scale: rows of `columns` cells, each row as tall as its taller cell. */
@@ -808,25 +828,37 @@ export function brandKitPortraitSources(view: BrandKitBookView): BrandKitPortrai
   };
 }
 
-/** One measured line of a Sources column: its paragraph for the fit model and where its text, once cut, goes back. */
+/**
+ * One measured line of a Sources column: its paragraph for the fit model
+ * and, when part of it is prose the fit may cut at a sentence (a reason, a
+ * warning, a gap, a note), that prose and where a shorter one goes back. A
+ * source name or a colour value has no prose and is never cut.
+ */
 interface SourcesLine {
   para: MktgPortraitFitPara;
-  write: (text: string) => void;
+  prose?: { text: string; write: (text: string) => void };
+}
+
+/** One item of a Sources block: what it prints and, when it has any, the prose the fit may cut. */
+interface SourcesItem {
+  text: string;
+  prose?: SourcesLine['prose'];
 }
 
 /**
  * A column's lines as the fit model measures them: each block a label (10 px
  * caps, 26 px under the block before) over its items (12.5/1.6, the first
- * 8 px under the label). `write` puts a cut text back where it came from.
+ * 8 px under the label), then the block's `+N more` line when it has one.
  */
-function sourcesColumn(blocks: { label: string; items: { text: string; write: (text: string) => void }[] }[]): SourcesLine[] {
+function sourcesColumn(blocks: { label: string; items: SourcesItem[]; more?: string }[]): SourcesLine[] {
   const c = BRAND_KIT_PORTRAIT_SOURCES;
   const lines: SourcesLine[] = [];
   blocks
-    .filter((block) => block.items.length > 0)
+    .filter((block) => block.items.length > 0 || block.more)
     .forEach((block, blockIndex) => {
-      lines.push({ para: { text: block.label, ...c.label, above: blockIndex === 0 ? 0 : c.blockGap }, write: () => undefined });
-      block.items.forEach((item, index) => lines.push({ para: { text: item.text, ...c.item, above: index === 0 ? c.listAbove : 0 }, write: item.write }));
+      lines.push({ para: { text: block.label, ...c.label, above: blockIndex === 0 ? 0 : c.blockGap } });
+      block.items.forEach((item, index) => lines.push({ para: { text: item.text, ...c.item, above: index === 0 ? c.listAbove : 0 }, prose: item.prose }));
+      if (block.more) lines.push({ para: { text: block.more, ...c.item, above: block.items.length === 0 ? c.listAbove : 0 } });
     });
   return lines;
 }
@@ -835,15 +867,17 @@ function sourcesColumn(blocks: { label: string; items: { text: string; write: (t
  * The Sources page's lists fitted to their two columns: measured with the
  * fit model against the room above the accepted box (or the footer, without
  * one), set smaller in the grammar's steps when they would overrun, both
- * columns at the one smaller size; a column no step holds has its longest
- * lines cut at a sentence, which the result says. A column that still runs
- * past its room (many short items: twenty sources read, six conflicts)
- * gives up its last sources read, or its last conflicts, to a `+N more`
- * line the page prints in their place: nothing past the footer, nothing
- * dropped in silence.
+ * columns at the one smaller size. A column no step holds gives up its last
+ * items, one at a time and list by list (the left its sources read down to
+ * one, then its gaps; the right its conflicts down to one), to a `+N more`
+ * line the page prints in their place. Only when nothing is left to give up
+ * is prose cut, at a sentence, the longest first (a reason, a warning, a
+ * gap, a note: never a source name or a colour value), which the result
+ * says. Nothing past the footer, nothing dropped in silence.
  */
 export function brandKitPortraitSourcesFit(sources: BrandKitPortraitSources, approved: boolean): BrandKitPortraitSourcesFit {
   const c = BRAND_KIT_PORTRAIT_SOURCES;
+  const nouns = MKTG_PORTRAIT_MORE_LINE.nouns;
   const height = (approved ? c.acceptedTop - c.gap : c.bottom) - c.top;
   const width = c.width - c.indent;
   const fitted: BrandKitPortraitSources = {
@@ -855,14 +889,15 @@ export function brandKitPortraitSourcesFit(sources: BrandKitPortraitSources, app
     gaps: [...sources.gaps],
     conflicts: sources.conflicts.map((conflict) => ({ ...conflict, values: conflict.values.map((value) => ({ ...value })) })),
   };
+  const more = { read: 0, gaps: 0, conflicts: 0 };
   const leftLines = (): SourcesLine[] =>
     sourcesColumn([
-      { label: 'Read', items: fitted.read.map((text, index) => ({ text, write: (next) => (fitted.read[index] = next) })) },
+      { label: 'Read', items: fitted.read.map((text) => ({ text })), more: mktgPortraitMoreLine(more.read, nouns.sourceRead) },
       {
         label: 'Could not be read',
         items: fitted.failed.map((entry) => ({
           text: entry.reason ? `${entry.source} — ${entry.reason}` : entry.source,
-          write: (next) => (entry.reason = next.startsWith(`${entry.source} — `) ? next.slice(entry.source.length + 3) : next),
+          prose: entry.reason ? { text: entry.reason, write: (next) => (entry.reason = next) } : undefined,
         })),
       },
       {
@@ -870,11 +905,12 @@ export function brandKitPortraitSourcesFit(sources: BrandKitPortraitSources, app
         items: [
           ...fitted.warnings.map((entry) => ({
             text: entry.source ? `${entry.text} (${entry.source})` : entry.text,
-            write: (next: string) => (entry.text = next),
+            prose: { text: entry.text, write: (next: string) => (entry.text = next) },
           })),
-          ...fitted.gaps.map((text, index) => ({ text, write: (next: string) => (fitted.gaps[index] = next) })),
-          ...(fitted.notes ? [{ text: fitted.notes, write: (next: string) => (fitted.notes = next) }] : []),
+          ...fitted.gaps.map((text, index) => ({ text, prose: { text, write: (next: string) => (fitted.gaps[index] = next) } })),
+          ...(fitted.notes ? [{ text: fitted.notes, prose: { text: fitted.notes, write: (next: string) => (fitted.notes = next) } }] : []),
         ],
+        more: mktgPortraitMoreLine(more.gaps, nouns.gap),
       },
     ]);
   const rightLines = (): SourcesLine[] =>
@@ -884,65 +920,92 @@ export function brandKitPortraitSourcesFit(sources: BrandKitPortraitSources, app
         items: [
           ...fitted.missing.map((entry) => ({
             text: [`${entry.asset} — ${entry.reason}`, entry.fix ? `Fix: ${entry.fix}` : ''].filter((part) => part !== '').join(' '),
-            write: (next: string) => {
-              const prefix = `${entry.asset} — `;
-              const body = next.startsWith(prefix) ? next.slice(prefix.length) : next;
-              const fix = body.indexOf(' Fix: ');
-              entry.reason = fix >= 0 ? body.slice(0, fix) : body;
-              entry.fix = fix >= 0 ? body.slice(fix + ' Fix: '.length) : '';
-            },
+            prose: { text: entry.reason, write: (next: string) => (entry.reason = next) },
           })),
           ...(fitted.sharedFix
-            ? [{ text: `Fix, for all ${fitted.missing.length}: ${fitted.sharedFix}`, write: (next: string) => (fitted.sharedFix = next) }]
+            ? [
+                {
+                  text: `Fix, for all ${fitted.missing.length}: ${fitted.sharedFix}`,
+                  prose: { text: fitted.sharedFix, write: (next: string) => (fitted.sharedFix = next) },
+                },
+              ]
             : []),
         ],
       },
       {
         label: 'Color conflicts',
         items: fitted.conflicts.flatMap((conflict) => [
-          { text: conflict.name, write: () => undefined },
-          ...conflict.values.map((value) => ({
-            text: `${value.label} ${value.source}`,
-            write: (next: string) => (value.source = next.startsWith(`${value.label} `) ? next.slice(value.label.length + 1) : next),
-          })),
+          { text: conflict.name },
+          ...conflict.values.map((value) => ({ text: `${value.label} ${value.source}` })),
         ]),
+        more: mktgPortraitMoreLine(more.conflicts, nouns.colorConflict),
       },
     ]);
-  const columns = [leftLines(), rightLines()];
-  const fits = columns.map((lines) => mktgPortraitFitBlock({ paras: lines.map((line) => line.para) }, width, height));
-  const scale = Math.min(...fits.map((fit) => fit.scale));
-  const cut = fits.some((fit) => fit.cut);
-  if (cut) {
-    columns.forEach((lines, column) => {
-      if (!fits[column].cut) return;
-      fits[column].block.paras.forEach((para, index) => {
-        if (para.text !== lines[index].para.text) lines[index].write(para.text);
-      });
-    });
+  const columns = [leftLines, rightLines];
+  const fitsAt = (scale: number): boolean =>
+    columns.every((lines) => mktgPortraitFits(mktgPortraitScaleBlock({ paras: lines().map((line) => line.para) }, scale), width, height));
+  const result = (scale: number, cut: boolean): BrandKitPortraitSourcesFit => ({
+    scale,
+    cut,
+    sources: fitted,
+    moreRead: more.read,
+    moreGaps: more.gaps,
+    moreConflicts: more.conflicts,
+    moreReadLine: mktgPortraitMoreLine(more.read, nouns.sourceRead),
+    moreGapsLine: mktgPortraitMoreLine(more.gaps, nouns.gap),
+    moreConflictsLine: mktgPortraitMoreLine(more.conflicts, nouns.colorConflict),
+  });
+  // 1. Set smaller, in the grammar's steps, both columns at the one size, down to its smallest.
+  for (let step = 0; ; step += 1) {
+    const scale = Math.round((1 - step * MKTG_PORTRAIT_FIT.scaleStep) * 100) / 100;
+    if (scale < MKTG_PORTRAIT_FIT.minScale - 1e-9) break;
+    if (fitsAt(scale)) return result(scale, false);
   }
-  // A column still past its room after the cut (many short items: twenty sources read, six conflicts) gives up its
-  // last items, one at a time and list by list (the left column its sources read down to one, then its gaps; the
-  // right its conflicts down to one), until the column with a `+N more` line under each shortened list fits; the
-  // counts are the page's lines. Nothing is dropped in silence.
-  const overflow = (lines: () => SourcesLine[], lists: { canDrop: () => boolean; drop: () => unknown }[]): number[] => {
-    const more = lists.map(() => 0);
-    const block = () =>
-      mktgPortraitScaleBlock(
-        { paras: [...lines().map((line) => line.para), ...more.filter((count) => count > 0).map((count) => ({ text: `+${count} more`, ...c.item }))] },
-        scale
-      );
-    for (let list = 0; list < lists.length; list += 1) {
-      while (!mktgPortraitFits(block(), width, height) && lists[list].canDrop()) {
-        lists[list].drop();
-        more[list] += 1;
-      }
+  const scale = MKTG_PORTRAIT_FIT.minScale;
+  // 2. Give up a column's last items, list by list, to its `+N more` line, until the column fits or nothing is left to give.
+  const overflow = (lines: () => SourcesLine[], lists: { canDrop: () => boolean; drop: () => void }[]): void => {
+    const fits = (): boolean => mktgPortraitFits(mktgPortraitScaleBlock({ paras: lines().map((line) => line.para) }, scale), width, height);
+    for (const list of lists) {
+      while (!fits() && list.canDrop()) list.drop();
     }
-    return more;
   };
-  const [moreRead, moreGaps] = overflow(leftLines, [
-    { canDrop: () => fitted.read.length > 1, drop: () => fitted.read.pop() },
-    { canDrop: () => fitted.gaps.length > 0, drop: () => fitted.gaps.pop() },
+  overflow(leftLines, [
+    {
+      canDrop: () => fitted.read.length > 1,
+      drop: () => {
+        fitted.read.pop();
+        more.read += 1;
+      },
+    },
+    {
+      canDrop: () => fitted.gaps.length > 0,
+      drop: () => {
+        fitted.gaps.pop();
+        more.gaps += 1;
+      },
+    },
   ]);
-  const [moreConflicts] = overflow(rightLines, [{ canDrop: () => fitted.conflicts.length > 1, drop: () => fitted.conflicts.pop() }]);
-  return { scale, cut, sources: fitted, moreRead, moreGaps, moreConflicts };
+  overflow(rightLines, [
+    {
+      canDrop: () => fitted.conflicts.length > 1,
+      drop: () => {
+        fitted.conflicts.pop();
+        more.conflicts += 1;
+      },
+    },
+  ]);
+  // 3. Cut the longest prose of more than one sentence at a sentence, in the column that still overruns, until it fits.
+  let cut = false;
+  for (let guard = 0; guard < MKTG_PORTRAIT_FIT.maxCuts && !fitsAt(scale); guard++) {
+    const overrun = columns.filter((lines) => !mktgPortraitFits(mktgPortraitScaleBlock({ paras: lines().map((line) => line.para) }, scale), width, height));
+    const prose = overrun
+      .flatMap((lines) => lines())
+      .map((line) => line.prose)
+      .filter((entry): entry is NonNullable<SourcesLine['prose']> => !!entry && mktgPortraitSentences(entry.text).length > 1)
+      .sort((a, b) => b.text.length - a.text.length)[0];
+    if (!prose) break;
+    prose.write(mktgPortraitSentences(prose.text).slice(0, -1).join(' '));
+    cut = true;
+  }
+  return result(scale, cut);
 }

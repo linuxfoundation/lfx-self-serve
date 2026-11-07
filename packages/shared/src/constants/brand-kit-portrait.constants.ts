@@ -9,6 +9,7 @@
 
 import type { BrandKitContrastGrade, BrandKitUsageView } from '../interfaces/brand-kit.interface';
 import { lfxColors } from './colors.constants';
+import { MKTG_PORTRAIT_MORE_LINE } from './mktg-portrait-print.constants';
 
 /** The cover's title. */
 export const BRAND_KIT_PORTRAIT_COVER_TITLE = 'Brand Kit';
@@ -152,10 +153,10 @@ export const BRAND_KIT_PORTRAIT_RULE_LISTS = {
   bottom: 990,
   label: { size: 10, line: 1.2, weight: 600, caps: true },
   more: { size: 12.5, line: 1.6, above: 6 },
-  partnership: { top: 806, bottom: 990, columns: 2, width: 340, size: 12, line: 1.5, above: 18, listAbove: 10 },
-  iconography: { top: 680, bottom: 854, columns: 1, width: 404, size: 12.5, line: 1.7, above: 0, listAbove: 10 },
-  imageryAvoid: { top: 900, bottom: 990, columns: 2, width: 324, size: 12.5, line: 1.7, above: 0, listAbove: 10 },
-  typeRules: { top: 830, bottom: 990, columns: 1, width: 324, size: 12.5, line: 1.6, above: 0, listAbove: 8 },
+  partnership: { top: 806, bottom: 990, columns: 2, width: 340, size: 12, line: 1.5, above: 18, listAbove: 10, noun: MKTG_PORTRAIT_MORE_LINE.nouns.rule },
+  iconography: { top: 680, bottom: 854, columns: 1, width: 404, size: 12.5, line: 1.7, above: 0, listAbove: 10, noun: MKTG_PORTRAIT_MORE_LINE.nouns.rule },
+  imageryAvoid: { top: 900, bottom: 990, columns: 2, width: 324, size: 12.5, line: 1.7, above: 0, listAbove: 10, noun: MKTG_PORTRAIT_MORE_LINE.nouns.avoid },
+  typeRules: { top: 830, bottom: 990, columns: 1, width: 324, size: 12.5, line: 1.6, above: 0, listAbove: 8, noun: MKTG_PORTRAIT_MORE_LINE.nouns.rule },
 } as const;
 
 /**

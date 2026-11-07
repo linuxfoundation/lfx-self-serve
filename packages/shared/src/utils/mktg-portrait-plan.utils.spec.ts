@@ -113,7 +113,10 @@ describe('brandKitPortraitPlan', () => {
       expect(plan.map((page) => page.id)).toEqual(brandKitPortraitPlan(view, { inFamily: false }).map((page) => page.id));
     }
     expect(brandKitOverfullFixture().chapters.color.palette).toHaveLength(5);
-    expect(brandKitOverfullFixture().chapters.voice.line).toHaveLength(300);
+    // The longest line the agent may write, ended at a word and a full stop (never mid-word, so a print cut reads as one).
+    expect(brandKitOverfullFixture().chapters.voice.line.length).toBeLessThanOrEqual(300);
+    expect(brandKitOverfullFixture().chapters.voice.line.length).toBeGreaterThan(280);
+    expect(brandKitOverfullFixture().chapters.voice.line).toMatch(/[a-z]\.$/);
     expect(brandKitMinimalFixture().chapters.color.palette).toHaveLength(4);
     expect(brandKitMinimalFixture().report.sources_read).toEqual([]);
   });

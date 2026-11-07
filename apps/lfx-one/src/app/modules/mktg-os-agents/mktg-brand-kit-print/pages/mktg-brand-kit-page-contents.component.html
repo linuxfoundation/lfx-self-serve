@@ -13,7 +13,7 @@
   <div [lfxPpRect]="[x, 148, w]" class="kp-contents-list" [class.kp-contents-list--columns]="layout().columns === 2" data-testid="brand-kit-contents-list">
     @for (entry of entries(); track entry.id) {
       <!-- The page number once, in the right column (the editor's ruling; the mock numbered the left index too). -->
-      <div class="kp-contents-row" [attr.data-page-ref]="entry.id">
+      <div class="kp-contents-row" [attr.data-page-ref]="entry.id" data-testid="brand-kit-contents-row">
         <span>{{ entry.title }}</span>
         <span class="kp-contents-page">{{ entry.number }}</span>
       </div>
@@ -30,8 +30,8 @@
   <div [lfxPpRect]="[x + 364, layout().blocksTop, 340]">
     <div class="kp-glance" data-testid="brand-kit-contents-glance">
       <div class="pp-lab">At a glance</div>
-      <div class="mt-[14px]"><lfx-mktg-brand-kit-artwork [view]="v" [height]="28" /></div>
-      <div class="mt-[16px] flex">
+      <div class="kp-glance-logo"><lfx-mktg-brand-kit-artwork [view]="v" [height]="28" /></div>
+      <div class="kp-glance-dots">
         @for (color of v.palette; track color.hex) {
           <span class="kp-glance-dot">
             <span class="kp-glance-dot-swatch" [style.background]="color.hex"></span>
@@ -39,14 +39,14 @@
           </span>
         }
       </div>
-      <div class="kp-glance-family mt-[14px]">
+      <div class="kp-glance-family">
         {{ v.type.family }}
         @if (v.type.weights.length) {
           <span class="kp-glance-weights">· weights {{ weights() }}</span>
         }
       </div>
       @if (approvalLine()) {
-        <div class="kp-glance-meta mt-[12px]" data-testid="brand-kit-contents-approval">{{ approvalLine() }}</div>
+        <div class="kp-glance-meta" data-testid="brand-kit-contents-approval">{{ approvalLine() }}</div>
       }
     </div>
   </div>

@@ -197,7 +197,9 @@ export async function printMktgFrameWithChrome(frame: FrameLocator): Promise<Mkt
             await page.pdf({
               format: paper,
               preferCSSPageSize: false,
-              margin: { top: 0, right: 0, bottom: 0, left: 0 },
+              // No margin option: the page's own CSS (`@page mktg-portrait { margin: 0 }`) decides, as the dialog does. With the
+              // option at 0 the browser's header and footer would have no room whatever the CSS said, and the
+              // "headers-on prints the same text as headers-off" check could not fail.
               printBackground: background,
               displayHeaderFooter: headers,
             })

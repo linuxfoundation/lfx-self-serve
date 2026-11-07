@@ -13,7 +13,7 @@
   <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-logo-system-intro">{{ intro() }}</p>
   @if (v.logos.primary?.src) {
     <div [lfxPpRect]="[x, 232, w]">
-      <div class="kp-hero h-[240px]" data-testid="brand-kit-logo-system-hero"><lfx-mktg-brand-kit-artwork [view]="v" [height]="84" /></div>
+      <div class="kp-hero kp-hero--system" data-testid="brand-kit-logo-system-hero"><lfx-mktg-brand-kit-artwork [view]="v" [height]="84" /></div>
       <div class="pp-cap">Primary · horizontal lockup</div>
     </div>
   }
@@ -44,8 +44,9 @@
       }
     </div>
   } @else if (hasUploads()) {
-    <!-- Uploads the print cannot draw (a PNG, a ZIP member without bytes): the record's names and formats, and the
-         files table below; never "no logo files uploaded yet", which is only true of an empty record. -->
+    <!-- Uploads the print cannot draw (a PNG, a ZIP member without bytes): one line naming the supplied slots and their
+         formats (never a file name), and the files table below; never "no logo files uploaded yet", which is only true
+         of an empty record. -->
     <p class="pp-body" [lfxPpRect]="[x, 232, w]" data-testid="brand-kit-logo-system-undrawable">{{ undrawable() }}</p>
   }
   @if (hasUploads()) {
@@ -54,9 +55,9 @@
       <table class="kp-table" data-testid="brand-kit-logo-system-files">
         <thead>
           <tr>
-            <th class="w-[150px]">Name</th>
-            <th class="w-[70px]">Format</th>
-            <th class="w-[120px]">Color variant</th>
+            <th class="kp-table-col--name">Name</th>
+            <th class="kp-table-col--format">Format</th>
+            <th class="kp-table-col--variant">Color variant</th>
             <th>Source</th>
           </tr>
         </thead>

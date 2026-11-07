@@ -217,11 +217,11 @@ export function brandKitUsageTiles(kit: BrandKitRevision): BrandKitUsageView[] {
 }
 
 /** Items in words: `a`, `a and b`, `a, b and c`. */
-/** Items in words: `a`, `a and b`, `a, b and c`. */
 export function brandKitInWords(items: readonly string[]): string {
   return inWords([...items]);
 }
 
+/** The items joined for reading, the last with "and" (an empty list is ''). */
 function inWords(items: string[]): string {
   if (items.length <= 1) {
     return items.join('');

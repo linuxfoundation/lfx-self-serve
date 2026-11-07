@@ -140,6 +140,29 @@ export const MKTG_PORTRAIT_HEX_REGEX = /^#[0-9a-f]{6}$/i;
  * `minScale` of its preferred size in steps of `scaleStep`, and one that
  * still does not fit is cut at a sentence.
  */
+/**
+ * The `+N more <noun>, in LFX One` line a bounded list prints for the items
+ * its room does not hold: the nouns, singular at one.
+ */
+export const MKTG_PORTRAIT_MORE_LINE = {
+  /** After the noun: where the rest is read. */
+  suffix: ', in LFX One',
+  nouns: {
+    rule: { one: 'rule', many: 'rules' },
+    avoid: { one: 'item to avoid', many: 'items to avoid' },
+    pair: { one: 'pair', many: 'pairs' },
+    sourceRead: { one: 'source read', many: 'sources read' },
+    gap: { one: 'gap', many: 'gaps' },
+    colorConflict: { one: 'color conflict', many: 'color conflicts' },
+  },
+} as const;
+
+/**
+ * The function words a cut never ends on ("… goes first and", "… so"): after
+ * a cut at a word the trailing ones are dropped, at least one word kept.
+ */
+export const MKTG_PORTRAIT_CUT_STOP_WORDS = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'so', 'for', 'of', 'to', 'in', 'on', 'with', 'at', 'by']);
+
 export const MKTG_PORTRAIT_FIT = {
   charEm: 0.55,
   charEmBold: 0.6,

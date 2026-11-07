@@ -103,7 +103,7 @@ describe('the Logo system page', () => {
     expect(frame.querySelector('[data-testid="brand-kit-logo-system-none"]')).toBeNull();
     const line = frame.querySelector('[data-testid="brand-kit-logo-system-undrawable"]');
     expect(line?.textContent).toBe(
-      'This book draws SVG artwork only. The supplied horizontal lockup (PNG) and symbol (PNG) are listed below and not drawn here.'
+      'This book draws inline SVG artwork only. The supplied horizontal lockup (PNG) and symbol (PNG) are listed below and not drawn here.'
     );
     expect(rectOf(line)).toEqual({ left: '56px', top: '232px', width: '704px' });
     expect(frame.textContent).not.toContain('.png');

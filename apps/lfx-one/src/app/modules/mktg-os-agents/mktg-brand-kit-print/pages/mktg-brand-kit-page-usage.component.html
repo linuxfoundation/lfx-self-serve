@@ -14,10 +14,10 @@
   @if (cards().length) {
     <div class="kp-usage" [lfxPpRect]="[x, 220, w]" data-testid="brand-kit-usage-cards">
       @for (card of cards(); track card.layout) {
-        <div class="kp-usage-card" [attr.data-layout]="card.layout">
+        <div class="kp-usage-card" [attr.data-layout]="card.layout" data-testid="brand-kit-usage-card">
           @switch (card.layout) {
             @case ('keynote') {
-              <div class="kp-usage-frame pp-grid-ground kp-usage-frame--keynote">
+              <div class="kp-usage-frame pp-grid-ground kp-usage-frame--keynote" data-testid="brand-kit-usage-frame">
                 <div class="kp-usage-lockup"><lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="18" /></div>
                 <div class="kp-usage-keynote-text">{{ card.text }}</div>
               </div>
@@ -25,7 +25,11 @@
             @case ('social') {
               <!-- The accent carries no logo (the Symbol page's rule: accent colors are not logo colors), so the card says so
                    where the lockup would sit and keeps the brand line and the host. -->
-              <div class="kp-usage-frame kp-usage-frame--social" [style.background]="look().accent" [style.color]="look().onAccent">
+              <div
+                class="kp-usage-frame kp-usage-frame--social"
+                [style.background]="look().accent"
+                [style.color]="look().onAccent"
+                data-testid="brand-kit-usage-frame">
                 <div class="pp-lab kp-usage-social-note" data-testid="brand-kit-usage-social-note">No logo on the accent</div>
                 <div class="kp-usage-social-text">{{ card.text }}</div>
                 @if (v.host) {
@@ -34,7 +38,7 @@
               </div>
             }
             @case ('report') {
-              <div class="kp-usage-frame kp-usage-frame--report">
+              <div class="kp-usage-frame kp-usage-frame--report" data-testid="brand-kit-usage-frame">
                 <lfx-mktg-brand-kit-artwork [view]="v" [height]="16" />
                 <div>
                   <div class="pp-lab pp-lab--dark">Report</div>
@@ -43,7 +47,7 @@
               </div>
             }
             @default {
-              <div class="kp-usage-frame kp-usage-frame--announcement">
+              <div class="kp-usage-frame kp-usage-frame--announcement" data-testid="brand-kit-usage-frame">
                 <lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="16" />
                 <div class="kp-usage-announcement-text">{{ card.text }}</div>
               </div>

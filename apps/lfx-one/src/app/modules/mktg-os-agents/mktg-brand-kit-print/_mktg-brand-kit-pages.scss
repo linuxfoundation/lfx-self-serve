@@ -38,11 +38,21 @@
   color: var(--pp-muted);
 }
 
-/* The "At a glance" card: hairline, 12 px radius, 18 px padding, 270 px tall. */
+/* The "At a glance" card: hairline, 12 px radius, 18 px padding, sized to its content (the logo 14 px under the
+   label, the palette dots 16 px under it, the family 14 px, the approval 12 px). */
 .kp-glance {
   padding: 18px;
   border: 1px solid var(--pp-hairline);
   border-radius: 12px;
+}
+
+.kp-glance-logo {
+  margin-top: 14px;
+}
+
+.kp-glance-dots {
+  display: flex;
+  margin-top: 16px;
 }
 
 .kp-glance-dot {
@@ -63,6 +73,7 @@
 }
 
 .kp-glance-family {
+  margin-top: 14px;
   font-size: 15px;
   font-weight: 500;
   color: var(--pp-dark);
@@ -75,6 +86,7 @@
 }
 
 .kp-glance-meta {
+  margin-top: 12px;
   font-size: 11px;
   line-height: 1.6;
   color: var(--pp-muted);
@@ -116,10 +128,37 @@
   background: var(--pp-mist);
 }
 
+/* The Logo system page's hero, 240 px tall. */
+.kp-hero--system {
+  height: 240px;
+}
+
+/* The Partnership page's two tiles: the lockup, a 96 px bar and the partner's name 44 px apart; 300 px tall on light,
+   280 on dark. */
+.kp-hero--partnership {
+  gap: 44px;
+  height: 300px;
+}
+
+.kp-hero--partnership-dark {
+  height: 280px;
+}
+
 /* A row of tiles, 16 px apart; a tile is 224 × 150 unless the page says otherwise. */
 .kp-tiles {
   display: flex;
   gap: 16px;
+}
+
+/* A tile row 10 px under its label. */
+.kp-tiles--under-label {
+  margin-top: 10px;
+}
+
+/* The Colorways tiles' lockup, 44 px tall. */
+.kp-colorway-logo {
+  width: auto;
+  height: 44px;
 }
 
 .kp-tiles--wrap {
@@ -298,7 +337,18 @@
   color: var(--pp-muted);
 }
 
-/* Symbol in shape: a 158 px stage, the shape inside (a circle or a 24 px rounded square), with a hairline. */
+/* Symbol in shape: 158 px columns 24 px apart, 14 px under the label; each a stage with the shape inside (a circle or a
+   24 px rounded square), with a hairline. */
+.kp-shapes {
+  display: flex;
+  gap: 24px;
+  margin-top: 14px;
+}
+
+.kp-shape-column {
+  width: 158px;
+}
+
 .kp-shape-stage {
   display: flex;
   align-items: center;
@@ -317,6 +367,13 @@
   align-items: center;
   justify-content: center;
   border: 1px solid var(--pp-hairline);
+}
+
+/* The padding demo and its rule side by side, 24 px apart, centred on each other. */
+.kp-padding-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
 }
 
 .kp-padding-demo {
@@ -359,6 +416,10 @@
 .kp-bar {
   width: 2px;
   background: var(--pp-dark);
+}
+
+.kp-bar--partnership {
+  height: 96px;
 }
 
 .kp-bar--white {
@@ -1058,6 +1119,19 @@
   font-weight: 500;
   line-height: 1.25;
   color: var(--pp-white);
+}
+
+/* The files table's fixed columns: name 150, format 70, color variant 120; the source takes the rest. */
+.kp-table-col--name {
+  width: 150px;
+}
+
+.kp-table-col--format {
+  width: 70px;
+}
+
+.kp-table-col--variant {
+  width: 120px;
 }
 
 .kp-table--usage {

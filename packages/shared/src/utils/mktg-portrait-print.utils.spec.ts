@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_INKS, MKTG_PORTRAIT_PAGE, MKTG_PORTRAIT_PAGE_SETUP } from '../constants/mktg-portrait-print.constants';
+import {
+  MKTG_PORTRAIT_FIT,
+  MKTG_PORTRAIT_INKS,
+  MKTG_PORTRAIT_MORE_LINE,
+  MKTG_PORTRAIT_PAGE,
+  MKTG_PORTRAIT_PAGE_SETUP,
+} from '../constants/mktg-portrait-print.constants';
 import { MKTG_PRINT_PAGE_SETUPS } from '../constants/mktg-print.constants';
 import { lfxColors } from '../constants/colors.constants';
 import type { MktgPortraitFitBlock } from '../interfaces/mktg-portrait-print.interface';
@@ -25,6 +31,9 @@ import {
   mktgPortraitTextWidth,
   mktgPortraitWrapLines,
   mktgNoWidow,
+  mktgPortraitLargestFitting,
+  mktgPortraitMoreLine,
+  mktgPortraitTrimStopWords,
 } from './mktg-portrait-print.utils';
 import { mktgPrintBrand } from './mktg-print.utils';
 
@@ -137,7 +146,14 @@ describe('the fit model', () => {
   it('splits sentences and cuts at a sentence, else at a word with an ellipsis', () => {
     expect(mktgPortraitSentences('One. Two! Three? (Four)')).toEqual(['One.', 'Two!', 'Three?', '(Four)']);
     expect(mktgPortraitCutText('One sentence. Another one here.', 14)).toBe('One sentence.');
-    expect(mktgPortraitCutText('No stop in this long line of words', 12)).toBe('No stop in…');
+    // A word cut never ends on a function word ('No stop in…' reads as a dangling cut).
+    expect(mktgPortraitCutText('No stop in this long line of words', 12)).toBe('No stop…');
+    expect(mktgPortraitCutText('No stop here this long line of words', 13)).toBe('No stop here…');
+    expect(mktgPortraitTrimStopWords(['The', 'name', 'goes', 'first', 'and'])).toEqual(['The', 'name', 'goes', 'first']);
+    expect(mktgPortraitTrimStopWords(['so,', 'with'])).toEqual(['so,']);
+    expect(mktgPortraitLargestFitting(10, (count) => count <= 7)).toBe(7);
+    expect(mktgPortraitLargestFitting(10, () => false)).toBe(1);
+    expect(mktgPortraitLargestFitting(10, () => true)).toBe(10);
     expect(mktgPortraitCutText('short', 12)).toBe('short');
     expect(mktgPortraitCutText('A word, —  and more words after it', 9)).toBe('A word…');
   });
@@ -202,6 +218,18 @@ describe('mktgPortraitAccentText', () => {
   it('leaves anything that is not a six-digit hex alone', () => {
     expect(mktgPortraitAccentText('coral')).toBe('coral');
     expect(mktgPortraitAccentText('#FFF')).toBe('#FFF');
+  });
+});
+
+describe('mktgPortraitMoreLine', () => {
+  it('prints the count with the noun, singular at one, and nothing at none', () => {
+    const nouns = MKTG_PORTRAIT_MORE_LINE.nouns;
+    expect(mktgPortraitMoreLine(0, nouns.rule)).toBe('');
+    expect(mktgPortraitMoreLine(1, nouns.rule)).toBe('+1 more rule, in LFX One');
+    expect(mktgPortraitMoreLine(3, nouns.rule)).toBe('+3 more rules, in LFX One');
+    expect(mktgPortraitMoreLine(1, nouns.avoid)).toBe('+1 more item to avoid, in LFX One');
+    expect(mktgPortraitMoreLine(2, nouns.sourceRead)).toBe('+2 more sources read, in LFX One');
+    expect(mktgPortraitMoreLine(1, nouns.colorConflict)).toBe('+1 more color conflict, in LFX One');
   });
 });
 

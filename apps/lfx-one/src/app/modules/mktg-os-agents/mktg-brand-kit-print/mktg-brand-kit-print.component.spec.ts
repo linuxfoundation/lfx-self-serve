@@ -104,13 +104,19 @@ describe('the portrait book', () => {
   });
 
   it('opens on the cover with the version and date on the strip and closes on the back cover with the brand line, the host, the version and the notice', async () => {
-    const { root, view } = await setup();
+    const { root, view, fixture } = await setup();
     const frames = root.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]');
     const cover = frames[0];
     expect(cover.querySelector('[data-testid="mktg-portrait-cover-title"]')?.textContent).toBe('Brand Kit');
     expect(cover.querySelector('[data-testid="mktg-portrait-cover-lede"]')?.textContent).toContain(
       'Open standards for one computing. Logos, color, type and usage'
     );
+    // A brand line that already ends a sentence ("Build together!") takes no second stop.
+    fixture.componentRef.setInput('view', { ...view, voice: { ...view.voice, line: 'Build together!' } });
+    await fixture.whenStable();
+    expect(cover.querySelector('[data-testid="mktg-portrait-cover-lede"]')?.textContent).toContain('Build together! Logos, color, type and usage');
+    fixture.componentRef.setInput('view', view);
+    await fixture.whenStable();
     expect(cover.querySelector('[data-testid="mktg-portrait-cover-strip"]')?.textContent).toContain('one.example.org · V3.0 · October 2026');
     expect(cover.querySelector('[data-testid="mktg-portrait-cover-logo"]')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
     const back = frames[15];

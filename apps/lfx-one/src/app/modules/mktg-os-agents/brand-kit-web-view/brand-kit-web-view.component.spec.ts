@@ -730,11 +730,13 @@ describe('BrandKitWebViewComponent', () => {
       fixture.componentRef.setInput('version', 2);
       fixture.componentRef.setInput('approval', null);
       fixture.componentRef.setInput('approvedVersion', 1);
-      fixture.componentRef.setInput('approvedApproval', { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Dana Reviewer' } });
+      fixture.componentRef.setInput('approvedApproval', { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Synthetic Approver' } });
       await fixture.whenStable();
       button('brand-kit-web-view-download-pdf')?.click();
       const frame = document.querySelector<HTMLIFrameElement>('[data-testid="lfx-print-frame"]');
-      expect(frame?.contentDocument?.querySelector('[data-testid="brand-kit-contents-approval"]')?.textContent).toBe('Approved 19 Oct 2026 by Dana Reviewer');
+      expect(frame?.contentDocument?.querySelector('[data-testid="brand-kit-contents-approval"]')?.textContent).toBe(
+        'Approved 19 Oct 2026 by Synthetic Approver'
+      );
       frame?.contentWindow?.dispatchEvent(new Event('afterprint'));
     });
 

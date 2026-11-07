@@ -696,10 +696,10 @@ export interface BrandKitTypeScaleView {
   letterSpacing: string;
 }
 
-/** One watchout tile: the rule and the illustrative distortion the tile draws. */
 /** The distortion a watchout tile shows, in the mock's order: the print keys its own draw by it, never by the screen's CSS. */
 export type BrandKitWatchoutKind = 'stretched' | 'recolored' | 'rotated' | 'shadowed' | 'busy' | 'retyped';
 
+/** One watchout tile: the rule and the illustrative distortion the tile draws. */
 export interface BrandKitWatchoutView {
   label: string;
   /** The distortion the tile shows. */

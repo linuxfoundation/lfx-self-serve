@@ -195,7 +195,8 @@ stylesheet `_mktg-portrait.scss` with the `pp-` class prefix; tokens and types i
   covers inset 72 px), `position: relative; overflow: hidden`, a block in normal flow;
   nothing fragments inside a frame and no wrapper between the body and a frame is padded
   or positioned. Content is placed absolutely with the `[lfxPpRect]="[x, y, w, h?]"`
-  directive (the mock's `R(x, y, w, h)`).
+  directive (the mock's `R(x, y, w, h)`), whose host carries `data-pp-rect`: the e2e
+  specs' handle on every placed box (the bounded-page check reads their bottoms).
 - **One break per sheet, owned by the frame that starts it.** Every frame carries
   `break-before: page` and no frame carries a `break-after`. The engine suppresses a
   forced break at the very start of the print and merges two forced breaks at one boundary
@@ -333,7 +334,9 @@ derives the head `<Project> brand kit`, the footer, first page 1, the band on); 
 family the section label reads `Brand kit · <section>`, the head right is the family's
 document name, no band, no cover, contents or back cover, and the footer numbers run from
 `firstPage`. The frame's e2e contract: `data-testid="lfx-mktg-portrait-page"`,
-`data-page-id`, `data-page`, `data-section`. The hidden print frame builds its title as
+`data-page-id`, `data-page`, `data-section`; inside a page the specs read the
+`brand-kit-*` test ids (a row, a cell, a card, a sample, a `+N more` line), never a
+grammar class. The hidden print frame builds its title as
 before (#5224).
 
 ## Routing and verification

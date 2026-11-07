@@ -118,11 +118,11 @@ describe('brandKitPortraitFiles', () => {
       ['—', 'Not supplied'],
     ]);
     expect(brandKitPortraitUndrawableFilesLine(pngOnly)).toBe(
-      'This book draws SVG artwork only. The supplied horizontal lockup (PNG) and symbol (PNG) are listed below and not drawn here.'
+      'This book draws inline SVG artwork only. The supplied horizontal lockup (PNG) and symbol (PNG) are listed below and not drawn here.'
     );
     const one = { ...pngOnly, logos: { ...pngOnly.logos, symbol: null } };
     expect(brandKitPortraitUndrawableFilesLine(one)).toBe(
-      'This book draws SVG artwork only. The supplied horizontal lockup (PNG) is listed below and not drawn here.'
+      'This book draws inline SVG artwork only. The supplied horizontal lockup (PNG) is listed below and not drawn here.'
     );
     // Nothing uploaded, or something drawable: no line.
     const none = { ...view, logos: { primary: null, stacked: null, symbol: null, reversed: null }, symbol: null };
@@ -258,6 +258,19 @@ describe('the type page’s strings', () => {
     // At least the first word, whatever the measure; spaces never count.
     expect(brandKitPortraitShortenLine('  Interoperability   everywhere ', 40, 64, { weight: 500 })).toBe('Interoperability');
     expect(brandKitPortraitShortenLine('', 400, 64, {})).toBe('');
+    // A shortened sample never ends on a function word: the overfull H3 loses "and" with the word after it.
+    const clause = 'The name of the project goes first and the rest of the sentence follows at the same weight.';
+    const h3 = brandKitPortraitShortenLine(clause, 340, 24, montserrat);
+    expect(h3.length).toBeLessThan(clause.length);
+    expect(/\b(and|the|of|so|for|to|in|on|with|at|by|a|an|or|but)$/i.test(h3)).toBe(false);
+    // A 30k-character line is shortened by bisection: a dozen measures, well under a tenth of a second.
+    const started = performance.now();
+    const huge = brandKitPortraitShortenLine(Array.from({ length: 5000 }, (_, index) => `word${index}`).join(' '), 704, 48, montserrat);
+    expect(huge.split(' ').length).toBeLessThan(20);
+    expect(
+      brandKitPortraitShortenParagraph(Array.from({ length: 5000 }, (_, index) => `word${index}`).join(' '), 480, 18, { weight: 400 }, 3).endsWith('…')
+    ).toBe(true);
+    expect(performance.now() - started).toBeLessThan(100);
     // A paragraph sample is shortened to its lines, cut at a word with an ellipsis, trailing punctuation dropped first.
     const sentence = 'Where organizations fund the open computing standards every member builds on, together and in the open, every year.';
     expect(brandKitPortraitShortenParagraph(view.voice.umbrella, 480, 18, { weight: 400 }, 3)).toBe(view.voice.umbrella);
@@ -266,6 +279,7 @@ describe('the type page’s strings', () => {
     expect(three.length).toBeLessThan(sentence.length * 2);
     expect(mktgPortraitWrapLines(three, mktgPortraitCharsPerLine(480, 18, { weight: 400 }))).toBeLessThanOrEqual(3);
     expect(/[,;:.—-]…$/.test(three)).toBe(false);
+    expect(/\b(and|the|of|so|for|to|in|on|with|at|by|a|an|or|but)…$/i.test(three)).toBe(false);
     expect(brandKitPortraitShortenParagraph(`${sentence} ${sentence}`, 480, 18, { weight: 400 }, 1).split(' ').length).toBeLessThan(12);
     expect(brandKitPortraitTypeSource('https://one.example.org/brand')).toBe('one.example.org');
     expect(brandKitPortraitTypeSource('Named in the brand guide')).toBe('Named in the brand guide');
@@ -376,11 +390,16 @@ describe('the Voice page’s messages', () => {
   it('prints the umbrella and the brand line as written when they fit, and sets a long pair smaller together, cut at a sentence, above the attributes', () => {
     expect(brandKitPortraitVoiceMessagesFit(view)).toEqual({ scale: 1, cut: false, umbrella: view.voice.umbrella, line: view.voice.line });
     expect(brandKitPortraitVoiceMessagesFit({ voice: { ...view.voice, umbrella: '' } })).toMatchObject({ umbrella: '', line: view.voice.line, scale: 1 });
+    // The overfull record's pair (two 295-character lines) holds whole at the smallest step; a pair twice as long is
+    // cut at a sentence, the umbrella first (the longer paragraph), and the block still ends above the attributes.
     const long = buildBrandKitBookView(brandKitOverfullFixture(), 4);
-    const fit = brandKitPortraitVoiceMessagesFit(long);
+    expect(brandKitPortraitVoiceMessagesFit(long)).toMatchObject({ scale: 0.72, cut: false, umbrella: long.voice.umbrella, line: long.voice.line });
+    const doubled = { voice: { ...long.voice, umbrella: `${long.voice.umbrella} ${long.voice.umbrella}`, line: `${long.voice.line} ${long.voice.line}` } };
+    const fit = brandKitPortraitVoiceMessagesFit(doubled);
     expect(fit.scale).toBe(0.72);
     expect(fit.cut).toBe(true);
-    expect(fit.umbrella.length).toBeLessThan(long.voice.umbrella.length);
+    expect(fit.umbrella.length).toBeLessThan(doubled.voice.umbrella.length);
+    expect(doubled.voice.umbrella.startsWith(fit.umbrella)).toBe(true);
     const c = BRAND_KIT_PORTRAIT_VOICE_MESSAGES;
     const height = mktgPortraitBlockHeight(
       mktgPortraitScaleBlock(
@@ -403,7 +422,13 @@ describe('the Voice page’s messages', () => {
 describe('the chapters’ rule lists', () => {
   it('prints a list as written when its columns hold it, smaller and cut at a sentence for 300-character rules, and counts the rules a room cannot hold', () => {
     const r = BRAND_KIT_PORTRAIT_RULE_LISTS;
-    expect(brandKitPortraitRulesFit(view.logo.partnership, r.partnership)).toEqual({ scale: 1, cut: false, rules: view.logo.partnership, more: 0 });
+    expect(brandKitPortraitRulesFit(view.logo.partnership, r.partnership)).toEqual({
+      scale: 1,
+      cut: false,
+      rules: view.logo.partnership,
+      more: 0,
+      moreLine: '',
+    });
     const long = buildBrandKitBookView(brandKitOverfullFixture(), 4);
     for (const [rules, room] of [
       [long.logo.partnership, r.partnership],
@@ -421,8 +446,9 @@ describe('the chapters’ rule lists', () => {
     // The Partnership and Type lists hold every rule cut at a sentence; the Iconography and Imagery rooms count some.
     expect(brandKitPortraitRulesFit(long.logo.partnership, r.partnership).more).toBe(0);
     expect(brandKitPortraitRulesFit(long.type.rules, r.typeRules).more).toBe(0);
-    expect(brandKitPortraitRulesFit(long.visual.icons.rules, r.iconography).more).toBe(2);
-    expect(brandKitPortraitRulesFit(long.visual.imagery.avoid, r.imageryAvoid).more).toBe(1);
+    expect(brandKitPortraitRulesFit(long.visual.icons.rules, r.iconography)).toMatchObject({ more: 2, moreLine: '+2 more rules, in LFX One' });
+    // The Avoid list counts items to avoid, not rules, and one is singular.
+    expect(brandKitPortraitRulesFit(long.visual.imagery.avoid, r.imageryAvoid)).toMatchObject({ more: 1, moreLine: '+1 more item to avoid, in LFX One' });
     // Twelve short rules in the Imagery page's 70 px: the first few print, the rest are counted, the first always kept.
     const many = brandKitPortraitRulesFit(
       Array.from({ length: 12 }, (_, index) => `Avoid the ${index + 1}th thing.`),
@@ -439,13 +465,20 @@ describe('the chapters’ rule lists', () => {
 
 describe('the Color contrast page’s layout', () => {
   it('keeps the pairs at the mock’s y 610 under four colours, lets a bigger matrix push them down, and counts the pairs the footer cannot hold', () => {
-    expect(brandKitPortraitContrastLayout(4, 1)).toEqual({ matrixHeight: 362, matrixMinHeight: 390, pairsTop: 610, pairsKept: 1, more: 0 });
+    expect(brandKitPortraitContrastLayout(4, 1)).toEqual({ matrixHeight: 362, matrixMinHeight: 390, pairsTop: 610, pairsKept: 1, more: 0, moreLine: '' });
     // Seven pairs fill the room under four colours (990 − 610 − 20 = 360 ≥ 7 × 51); the eighth needs the line.
     expect(brandKitPortraitContrastLayout(4, 7)).toMatchObject({ pairsKept: 7, more: 0 });
     expect(brandKitPortraitContrastLayout(4, 8)).toMatchObject({ pairsKept: 6, more: 2 });
     // Six colours: the matrix is 534 px, the pairs start at 754 and three of eight fit with the line; one always prints.
-    expect(brandKitPortraitContrastLayout(6, 8)).toEqual({ matrixHeight: 534, matrixMinHeight: 390, pairsTop: 754, pairsKept: 3, more: 5 });
-    expect(brandKitPortraitContrastLayout(9, 2)).toMatchObject({ pairsKept: 1, more: 1 });
+    expect(brandKitPortraitContrastLayout(6, 8)).toEqual({
+      matrixHeight: 534,
+      matrixMinHeight: 390,
+      pairsTop: 754,
+      pairsKept: 3,
+      more: 5,
+      moreLine: '+5 more pairs, in LFX One',
+    });
+    expect(brandKitPortraitContrastLayout(9, 2)).toMatchObject({ pairsKept: 1, more: 1, moreLine: '+1 more pair, in LFX One' });
   });
 });
 
@@ -495,6 +528,12 @@ describe('the Voice page’s attributes', () => {
     expect(cut.attributes.every((attribute) => attribute.line.length < `${line} ${line}`.length)).toBe(true);
     expect(cut.attributes[0].line).toBe(line);
     expect(cut.attributes.map((attribute) => attribute.name)).toEqual(twenty.slice(0, cut.attributes.length).map((attribute) => attribute.name));
+    // The boundary: eight two-sentence attributes hold at no step as written, but the cut grid fits the room, so every
+    // attribute is kept and no "+N more" line is charged (rv4: it lost a row to a line nothing needed).
+    const eightLong = brandKitPortraitAttributesFit(Array.from({ length: 8 }, (_, index) => ({ name: `Attribute ${index + 1}`, line: `${line} ${line}` })));
+    expect(eightLong).toMatchObject({ scale: 0.72, cut: true, more: 0 });
+    expect(eightLong.attributes).toHaveLength(8);
+    expect(eightLong.height).toBeLessThanOrEqual(room);
     // Ten long attributes (rv2's probe: 535 px as written): cut, three rows kept, four counted in the line.
     const ten = brandKitPortraitAttributesFit(Array.from({ length: 10 }, (_, index) => ({ name: `Attribute ${index + 1}`, line: `${line} ${line}` })));
     expect(ten.height).toBeLessThanOrEqual(room);
@@ -584,9 +623,19 @@ describe('the Sources page’s lists', () => {
     expect(sources.warnings).toEqual([{ text: 'Font weights unverified.', source: 'one.example.org' }]);
   });
 
-  it('fits the two columns to their room: as written when they fit, smaller together for a long record, cut at a sentence when no size holds it', () => {
+  it('fits the two columns to their room: as written when they fit, smaller together for a long record, its last items given up when no size holds it', () => {
     const short = brandKitPortraitSourcesFit(brandKitPortraitSources(view), true);
-    expect(short).toEqual({ scale: 1, cut: false, sources: brandKitPortraitSources(view), moreRead: 0, moreGaps: 0, moreConflicts: 0 });
+    expect(short).toEqual({
+      scale: 1,
+      cut: false,
+      sources: brandKitPortraitSources(view),
+      moreRead: 0,
+      moreGaps: 0,
+      moreConflicts: 0,
+      moreReadLine: '',
+      moreGapsLine: '',
+      moreConflictsLine: '',
+    });
     // Forty read sources at 20 px a line overrun the 636 px above the accepted box; the columns shrink in the grammar's steps.
     const sentence = 'The page names the typeface and its weights, and links the logo package the site offers to the press.';
     const long = brandKitPortraitSources({
@@ -597,22 +646,42 @@ describe('the Sources page’s lists', () => {
     expect(fitted.scale).toBeLessThan(1);
     expect(fitted.scale).toBeGreaterThanOrEqual(0.72);
     expect(fitted.cut).toBe(false);
+    // Every name whole and unique, the failed line's source once, kept + counted = the record's.
     expect(fitted.sources.read).toEqual(long.read);
+    expect(new Set(fitted.sources.read).size).toBe(fitted.sources.read.length);
+    expect(fitted.sources.read.length + fitted.moreRead).toBe(40);
+    expect(fitted.sources.failed).toEqual(long.failed);
     expect(fitted.moreRead).toBe(0);
     // Without the accepted box the same record has the room down to y 990: it fits at a larger size.
     expect(brandKitPortraitSourcesFit(long, false).scale).toBeGreaterThan(fitted.scale);
-    // Eighty gap sentences hold at no step: the longest lines are cut at a sentence, marked, and the record's lists stay in order.
+    // Eighty gap sentences hold at no step: the column gives up its last items first (the sources read down to one, then
+    // the gaps), to `+N more` lines; what stays prints whole, in the record's order, and nothing is cut.
     const essay = brandKitPortraitSources({ ...view, report: { ...view.report, gaps: Array.from({ length: 80 }, () => `${sentence} ${sentence}`) } });
-    const cut = brandKitPortraitSourcesFit(essay, true);
-    expect(cut.scale).toBe(0.72);
+    const dropped = brandKitPortraitSourcesFit(essay, true);
+    expect(dropped.scale).toBe(0.72);
+    expect(dropped.cut).toBe(false);
+    expect(dropped.sources.gaps.every((gap) => gap === `${sentence} ${sentence}`)).toBe(true);
+    expect(dropped.sources.read).toEqual(essay.read.slice(0, 1));
+    expect(dropped.moreRead).toBe(essay.read.length - 1);
+    expect(dropped.moreGaps).toBeGreaterThan(0);
+    expect(dropped.sources.gaps.length + dropped.moreGaps).toBe(80);
+    expect(dropped.moreGapsLine).toBe(`+${dropped.moreGaps} more gaps, in LFX One`);
+    expect(dropped.moreConflicts).toBe(0);
+    // Only when nothing is left to give up is prose cut, at a sentence: one failed source with a sixty-sentence reason
+    // keeps its name whole and once, and loses its last sentences.
+    const reason = Array.from({ length: 60 }, () => sentence).join(' ');
+    const verbose = brandKitPortraitSources({
+      ...view,
+      report: { ...view.report, sources_read: [], gaps: [], sources_failed: [{ name: 'https://one.example.org/press', reason }] },
+    });
+    const cut = brandKitPortraitSourcesFit(verbose, true);
     expect(cut.cut).toBe(true);
-    expect(cut.sources.gaps.some((gap) => gap.length < `${sentence} ${sentence}`.length)).toBe(true);
-    expect(cut.sources.read).toEqual(essay.read);
-    // Eighty cut gaps still hold at no step: the column keeps what fits and counts the rest, never past the room.
-    expect(cut.moreGaps).toBeGreaterThan(0);
-    expect(cut.sources.gaps.length + cut.moreGaps).toBe(80);
-    expect(cut.moreRead).toBe(0);
-    expect(cut.moreConflicts).toBe(0);
+    expect(cut.sources.failed).toHaveLength(1);
+    expect(cut.sources.failed[0].source).toBe(verbose.failed[0].source);
+    expect(cut.sources.failed[0].reason.length).toBeLessThan(reason.length);
+    expect(reason.startsWith(cut.sources.failed[0].reason)).toBe(true);
+    expect(cut.sources.failed[0].reason.endsWith('.')).toBe(true);
+    expect(cut.moreRead + cut.moreGaps + cut.moreConflicts).toBe(0);
   });
 
   it('counts the items a column cannot hold even cut in "+N more" lines: sources read (left) and color conflicts (right), one kept at least', () => {
@@ -636,6 +705,11 @@ describe('the Sources page’s lists', () => {
     expect(fit.moreRead).toBeGreaterThan(0);
     expect(fit.sources.read.length + fit.moreRead).toBe(120);
     expect(fit.sources.read.length).toBeGreaterThanOrEqual(1);
+    // The names printed are the record's first, whole and unique; nothing is cut.
+    expect(fit.sources.read).toEqual(crowded.read.slice(0, fit.sources.read.length));
+    expect(new Set(fit.sources.read).size).toBe(fit.sources.read.length);
+    expect(fit.cut).toBe(false);
+    expect(fit.moreReadLine).toBe(`+${fit.moreRead} more sources read, in LFX One`);
     expect(fit.moreConflicts).toBeGreaterThan(0);
     expect(fit.sources.conflicts.length + fit.moreConflicts).toBe(30);
     expect(fit.sources.conflicts.length).toBeGreaterThanOrEqual(1);
@@ -646,7 +720,7 @@ describe('the Sources page’s lists', () => {
     const left = [
       { text: 'Read', ...BRAND_KIT_PORTRAIT_SOURCES.label },
       ...fit.sources.read.map((text, index) => ({ text, ...item, above: index === 0 ? BRAND_KIT_PORTRAIT_SOURCES.listAbove : 0 })),
-      { text: `+${fit.moreRead} more`, ...item },
+      { text: fit.moreReadLine, ...item },
     ];
     expect(column(left)).toBeLessThanOrEqual(room);
   });

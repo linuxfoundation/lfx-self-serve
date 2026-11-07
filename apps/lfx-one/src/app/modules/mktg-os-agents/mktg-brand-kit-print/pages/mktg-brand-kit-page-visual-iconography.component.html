@@ -23,8 +23,8 @@
         <li>{{ rule }}</li>
       }
     </ul>
-    @if (rules().more; as more) {
-      <div class="kp-list-more" data-testid="brand-kit-iconography-rules-more">+{{ more }} more rules, in LFX One</div>
+    @if (rules().more) {
+      <div class="kp-list-more" data-testid="brand-kit-iconography-rules-more">{{ rules().moreLine }}</div>
     }
   </div>
   <div [lfxPpRect]="[x + 444, 680, 260]" data-testid="brand-kit-iconography-set">

@@ -28,7 +28,7 @@
     @for (tile of tiles(); track tile.name) {
       <div>
         <div class="pp-tile kp-tile kp-tile--wide" [class.pp-tile--dark]="!tile.light" [style.background]="tile.ground">
-          <img class="h-[44px] w-auto" [src]="tile.logo.src" [alt]="tile.name" [style.filter]="tile.logoFilter || null" />
+          <img class="kp-colorway-logo" [src]="tile.logo.src" [alt]="tile.name" [style.filter]="tile.logoFilter || null" />
         </div>
         <div class="pp-cap">{{ tile.caption }}</div>
       </div>

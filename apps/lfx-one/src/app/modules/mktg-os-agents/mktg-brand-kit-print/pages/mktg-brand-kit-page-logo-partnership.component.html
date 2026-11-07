@@ -12,9 +12,9 @@
   [band]="page().band">
   @if (v.logos.primary?.src) {
     <div [lfxPpRect]="[x, 148, w]">
-      <div class="kp-hero h-[300px] gap-[44px]" data-testid="brand-kit-partnership-light">
+      <div class="kp-hero kp-hero--partnership" data-testid="brand-kit-partnership-light">
         <lfx-mktg-brand-kit-artwork [view]="v" [height]="64" />
-        <span class="kp-bar h-[96px]"></span>
+        <span class="kp-bar kp-bar--partnership"></span>
         <span class="kp-partner">Partner logo</span>
       </div>
       <div class="pp-cap">On light grounds · {{ v.darkName }} bar</div>
@@ -22,9 +22,9 @@
     <!-- The dark tile draws the lockup and the bar at the light tile's sizes (64 and 96; the mock's 58 and 88 read as a
          smaller logo — the editor's ruling), the same clear space either side. -->
     <div [lfxPpRect]="[x, 486, w]">
-      <div class="kp-hero kp-hero--dark h-[280px] gap-[44px]" data-testid="brand-kit-partnership-dark">
+      <div class="kp-hero kp-hero--dark kp-hero--partnership kp-hero--partnership-dark" data-testid="brand-kit-partnership-dark">
         <lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="64" />
-        <span class="kp-bar kp-bar--white h-[96px]"></span>
+        <span class="kp-bar kp-bar--white kp-bar--partnership"></span>
         <span class="kp-partner kp-partner--dark">Partner logo</span>
       </div>
       <div class="pp-cap">On dark grounds · white bar</div>
@@ -41,8 +41,8 @@
           </li>
         }
       </ol>
-      @if (fit().more; as more) {
-        <div class="kp-list-more" data-testid="brand-kit-partnership-rules-more">+{{ more }} more rules, in LFX One</div>
+      @if (fit().more) {
+        <div class="kp-list-more" data-testid="brand-kit-partnership-rules-more">{{ fit().moreLine }}</div>
       }
     </div>
   }

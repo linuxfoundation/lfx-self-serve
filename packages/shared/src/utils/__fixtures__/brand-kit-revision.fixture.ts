@@ -144,7 +144,7 @@ export function brandKitLogolessFixture(): BrandKitRevision {
 /**
  * The same kit with raster uploads only: a PNG lockup and a PNG symbol, files the record holds (`svg: null`, the
  * envelope carries no drawable bytes) and the print cannot draw. The Logo system page lists them in its files table
- * and says the book draws SVG artwork only; the pages whose content is artwork tiles drop from the plan.
+ * and says the book draws inline SVG artwork only; the pages whose content is artwork tiles drop from the plan.
  */
 export function brandKitPngOnlyFixture(): BrandKitRevision {
   const revision = brandKitTestRevision();
@@ -170,7 +170,9 @@ export function brandKitOverfullFixture(): BrandKitRevision {
   const revision = brandKitTestRevision();
   const clause =
     'The name of the project goes first and the rest of the sentence follows at the same weight, so the reader finds the fact before the reasons and the reasons before any aside.';
-  const long = `${clause} ${clause.slice(0, 300 - clause.length - 1)}`;
+  // Two clauses, the second ended at a word and a full stop inside 300 characters, so no uncut line ends mid-word.
+  const second = clause.slice(0, 300 - clause.length - 1);
+  const long = `${clause} ${second.slice(0, second.lastIndexOf(' '))}.`;
   const attributes = revision.chapters.voice.attributes.map((attribute) => ({ ...attribute, line: long }));
   const teal = {
     name: 'Teal',
@@ -241,7 +243,7 @@ export function brandKitOverfullFixture(): BrandKitRevision {
 export function brandKitMinimalFixture(): BrandKitRevision {
   const revision = brandKitTestRevision();
   revision.kit.attrs = revision.kit.attrs.map(([name]) => [name, 'Yes.'] as [string, string]);
-  revision.chapters.color.summary = 'Two colors.';
+  revision.chapters.color.summary = 'Four colors.';
   revision.chapters.color.contrast = { rule: 'AA.', pairs: [] };
   revision.chapters.logo.system = 'One logo.';
   revision.chapters.logo.clear_space = 'X.';

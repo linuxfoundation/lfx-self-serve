@@ -38,6 +38,7 @@
               </div>
               <div
                 class="kp-scale-sample kp-scale-sample--display"
+                data-testid="brand-kit-type-scale-sample"
                 [style.font-weight]="step.weight"
                 [style.font-size.px]="step.size"
                 [style.line-height.px]="step.line_height">
@@ -47,9 +48,10 @@
           } @else {
             <div class="kp-scale-row" [attr.data-step]="step.step">
               <span class="kp-scale-label">{{ step.label }}</span>
-              <span class="kp-scale-spec">{{ step.spec }}</span>
+              <span class="kp-scale-spec" data-testid="brand-kit-type-scale-spec">{{ step.spec }}</span>
               <span
                 class="kp-scale-sample"
+                data-testid="brand-kit-type-scale-sample"
                 [class.kp-scale-sample--caps]="step.caps"
                 [style.font-weight]="step.weight"
                 [style.font-size.px]="step.size"
@@ -84,8 +86,8 @@
             <li>{{ rule }}</li>
           }
         </ul>
-        @if (layout().rules.more; as more) {
-          <div class="kp-list-more" data-testid="brand-kit-type-rules-more">+{{ more }} more rules, in LFX One</div>
+        @if (layout().rules.more) {
+          <div class="kp-list-more" data-testid="brand-kit-type-rules-more">{{ layout().rules.moreLine }}</div>
         }
       </div>
     </div>

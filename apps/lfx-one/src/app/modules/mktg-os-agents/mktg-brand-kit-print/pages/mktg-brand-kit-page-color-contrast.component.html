@@ -32,13 +32,23 @@
               @for (cell of row.cells; track cell.background) {
                 <td>
                   @if (cell.ratio === null) {
-                    <div class="kp-matrix-same"></div>
+                    <div class="kp-matrix-same" data-testid="brand-kit-contrast-matrix-same"></div>
                   } @else {
-                    <div class="kp-matrix-cell" [style.background]="cell.background" [attr.data-ratio]="cell.label">
+                    <div
+                      class="kp-matrix-cell"
+                      [style.background]="cell.background"
+                      [attr.data-ratio]="cell.label"
+                      data-testid="brand-kit-contrast-matrix-cell">
                       <span class="kp-matrix-aa" [style.color]="cell.foreground">Aa</span>
                       <div class="kp-matrix-meta">
                         <span class="kp-matrix-ratio" [class.kp-matrix-ratio--tinted]="cell.tinted">{{ cell.label }}:1</span>
-                        <span class="kp-pill" [style.background]="cell.grade?.background" [style.color]="cell.grade?.color">{{ cell.grade?.label }}</span>
+                        <span
+                          class="kp-pill"
+                          [style.background]="cell.grade?.background"
+                          [style.color]="cell.grade?.color"
+                          data-testid="brand-kit-contrast-grade"
+                          >{{ cell.grade?.label }}</span
+                        >
                       </div>
                     </div>
                   }
@@ -54,16 +64,18 @@
         <div class="pp-lab pp-lab--dark">The kit's pairs</div>
         <div class="kp-pairs">
           @for (pair of pairs(); track $index) {
-            <div class="kp-pair">
+            <div class="kp-pair" data-testid="brand-kit-contrast-pair">
               <span class="kp-pair-sample" [style.background]="pair.backgroundHex" [style.color]="pair.foregroundHex">Aa</span>
-              <span class="kp-pair-names">{{ pair.foreground }} on {{ pair.background }}</span>
-              <span class="kp-pair-ratio">{{ pair.ratio }}</span>
-              <span class="kp-pill" [style.background]="pair.pill.background" [style.color]="pair.pill.color">{{ pair.pill.label }}</span>
+              <span class="kp-pair-names" data-testid="brand-kit-contrast-pair-names">{{ pair.foreground }} on {{ pair.background }}</span>
+              <span class="kp-pair-ratio" data-testid="brand-kit-contrast-pair-ratio">{{ pair.ratio }}</span>
+              <span class="kp-pill" [style.background]="pair.pill.background" [style.color]="pair.pill.color" data-testid="brand-kit-contrast-grade">{{
+                pair.pill.label
+              }}</span>
             </div>
           }
         </div>
-        @if (layout().more; as more) {
-          <div class="kp-pairs-more" data-testid="brand-kit-contrast-pairs-more">+{{ more }} more pairs, in LFX One</div>
+        @if (layout().more) {
+          <div class="kp-pairs-more" data-testid="brand-kit-contrast-pairs-more">{{ layout().moreLine }}</div>
         }
       </div>
     }

@@ -33,9 +33,9 @@ export class MktgBrandKitPageVisualIconographyComponent extends MktgBrandKitPage
   protected readonly sizedIcon = BRAND_KIT_ICON_SAMPLES[BRAND_KIT_ICON_HIGHLIGHT_INDEX];
   /** The recommended set's labelled sample: the verified mark when the set has one, else the first icon. */
   protected readonly labelledIcon = BRAND_KIT_ICON_SAMPLES.find((icon) => icon.id === 'verified') ?? BRAND_KIT_ICON_SAMPLES[0];
-  /** The highlight colour's name in the palette, for the strip's caption; the accent's name when the palette does not hold it. */
   /** The four rules fitted to the room above the Sizes block (set smaller, cut at a sentence, the last ones counted when even that runs past). */
   protected readonly rules = computed(() => brandKitPortraitRulesFit(this.view().visual.icons.rules, BRAND_KIT_PORTRAIT_RULE_LISTS.iconography));
+  /** The highlight colour's name in the palette, for the strip's caption; the accent's name when the palette does not hold it. */
   protected readonly highlightName = computed(() => {
     const view = this.view();
     const highlight = view.iconColours.highlight.toLowerCase();

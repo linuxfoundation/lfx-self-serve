@@ -65,6 +65,8 @@ describe('the Imagery & graphic elements page', () => {
     expect(avoid?.style.getPropertyValue('--kp-fit')).toBe('0.72');
     const items = avoid?.querySelectorAll('li') ?? [];
     expect(items.length).toBeGreaterThan(0);
-    expect(avoid?.querySelector('[data-testid="brand-kit-imagery-avoid-more"]')?.textContent).toBe(`+${3 - items.length} more rules, in LFX One`);
+    // The Avoid list counts items to avoid, singular at one.
+    expect(items).toHaveLength(2);
+    expect(avoid?.querySelector('[data-testid="brand-kit-imagery-avoid-more"]')?.textContent).toBe('+1 more item to avoid, in LFX One');
   });
 });
