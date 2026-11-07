@@ -319,11 +319,19 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-sources')).toContainText('acme-mesh.example');
   await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-sources')).not.toContainText('https://');
   await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-notes')).toHaveCount(0);
-  // The Sources page (the fixture's run left a gap): the four documents' version, approval and data date; the open
-  // item under its document's chip; no placeholder, note or bracketed template text anywhere.
+  // The Sources page (the fixture's run left a gap): the four documents' version, approval and data date; the one place
+  // the fixture's documents disagree (the kit's brand line against the framework's tagline, as the data holds them), with the
+  // document to re-run; the open item under its document's chip; no placeholder, note or bracketed template text anywhere.
   const sources = frames.byId('sources');
   await expect(sources.getByTestId('family-print-sources-row')).toHaveCount(4);
   await expect(sources.getByTestId('family-print-sources-row').first().locator('td').nth(3)).toContainText('figures as of');
+  const conflicts = sources.getByTestId('family-print-sources-conflicts');
+  await expect(conflicts.locator('.fps-row')).toHaveCount(1);
+  await expect(conflicts.locator('.fps-row__topic')).toHaveText('Brand line');
+  await expect(conflicts.locator('.fps-row')).toContainText(
+    'The brand kit carries “Open standards for one computing”; the framework’s tagline is “Build openly.”.'
+  );
+  await expect(conflicts.locator('.fps-rerun')).toHaveText('→ Re-run the brand kit so it reads the approved framework.');
   await expect(sources.getByTestId('family-print-sources-open')).toContainText('The launch year is not stated.');
   await expect(book).not.toContainText(/\[[A-Z][a-z]+\]/);
   await expect(book).not.toContainText('SVG supplied');

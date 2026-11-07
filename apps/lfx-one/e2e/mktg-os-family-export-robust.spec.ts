@@ -9,12 +9,13 @@ import { finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from '
 test.use({ viewport: { width: 1440, height: 1000 } });
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 for (const width of [1440, 1280, 390]) {
-  test(`Family export structure at ${width}px`, async ({ page }, info) => {
+  test(`Family export structure at ${width}px`, async ({ page, isMobile }, info) => {
     await openFamilyExports(page, { existing: true, stale: true });
     await page.setViewportSize({ width, height: 1000 });
     if (width === 390) {
-      // #4443: wait for the non-touch shell's rail transition, not the pre-resize desktop gutter.
-      await expect(page.getByTestId('main-content')).toHaveCSS('margin-left', '56px');
+      // #4443: the shell settles before any geometry is read: the non-touch rail collapses to 56px, and a touch shell has no
+      // rail, only the hamburger (0px), not the pre-resize desktop gutter either way.
+      await expect(page.getByTestId('main-content')).toHaveCSS('margin-left', isMobile ? '0px' : '56px');
     }
     const slot = page.getByTestId('family-export-actions');
     await expect(slot).toBeVisible();
@@ -69,7 +70,7 @@ test('Family PDF book structure: the portrait grammar’s frames with the family
   await expect(frames.byId('sources').getByTestId('family-print-sources-table')).toHaveCount(1);
   await expect(frames.byId('sources').getByTestId('family-print-sources-row')).toHaveCount(4);
   await expect(frames.byId('sources').getByTestId('family-print-sources-open')).toHaveCount(1);
-  await expect(frames.byId('sources').getByTestId('family-print-sources-conflicts')).toHaveCount(0);
+  await expect(frames.byId('sources').getByTestId('family-print-sources-conflicts')).toHaveCount(1);
   // Every content frame has the grammar's head, title and numbered footer; the cover, openers and back cover none.
   const bare = ['cover', 'back-cover', ...frames.openers.map((opener) => opener.id)];
   const pages = book.locator('[data-testid="lfx-mktg-portrait-page"]');

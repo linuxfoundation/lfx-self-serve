@@ -88,7 +88,9 @@ export async function openFamilyExports(
       )
     : [member];
   if (options.allAssets) {
-    for (const current of members) {
+    // The framework's route is the one above (the fixture's `approval`, the one `family-export-last` and the book's openers
+    // print); a second handler here would shadow it, since Playwright tries the last registered route first.
+    for (const current of members.filter((entry) => entry.agentKey !== member.agentKey)) {
       const asset = columnAssetRevisionResponse(current.agentKey);
       const markdown = current.agentKey === 'faq' && options.faqContent ? JSON.stringify(options.faqContent) : asset.markdown;
       const revision = { ...asset.revision, id: current.revisionId, contentSha256: current.contentSha256 };
