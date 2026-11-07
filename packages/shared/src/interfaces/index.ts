@@ -408,6 +408,7 @@ export * from './org-lens-roi.internal.interface';
 // Brand Kit generation contract interfaces
 export * from './boilerplates.interface';
 export * from './brand-kit-icons.interface';
+export * from './brand-kit-portrait.interface';
 export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces

@@ -29,6 +29,7 @@ import {
   buildBoilerplatesPrintView,
   brandKitPortraitPlan,
   frameworkPortraitPlan,
+  mktgPortraitSectionLabel,
   buildBrandKitBookView,
   buildFaqPrintView,
   buildFoundationMessagePrintView,
@@ -478,12 +479,18 @@ describe('Family export slot', () => {
     const kitLast = kitFirst + kitPlan.length - 1;
     const total = kitLast + 6;
     const frames = Array.from(book.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]'));
-    // The kit's frames in the book: the pages of its plan that are on the grammar at this head (the rest still print
-    // as its flowing chapters, counted by the plan all the same), in the plan's order, numbered from the chapter's first page.
+    // The kit's frames in the book: every page of its family plan, in order, numbered from the chapter's first page,
+    // under the family's running head, no band; nothing of it flows as a chapter.
     const kitFrames = frames.filter((frame) => frame.closest('lfx-mktg-brand-kit-print'));
     const kitIds = kitFrames.map((frame) => frame.dataset['pageId']);
-    expect(kitPlan.map((page) => page.id).filter((id) => kitIds.includes(id))).toEqual(kitIds);
-    expect(kitFrames.map((frame) => Number(frame.dataset['page']))).toEqual(kitIds.map((id) => kitFirst + kitPlan.findIndex((page) => page.id === id)));
+    expect(kitIds).toEqual(kitPlan.map((page) => page.id));
+    expect(kitFrames.map((frame) => Number(frame.dataset['page']))).toEqual(kitPlan.map((_, index) => kitFirst + index));
+    expect(kitFrames.map((frame) => frame.dataset['section'])).toEqual(kitPlan.map((page) => mktgPortraitSectionLabel(page.section, true, 'Brand kit')));
+    expect(
+      document.querySelector(
+        'lfx-mktg-brand-kit-print [data-testid="mktg-portrait-page-band"], .kit-chapter, lfx-mktg-print-chapter-header, .lfx-brand-kit-page'
+      )
+    ).toBeNull();
     // The framework's frames in the book: every page of its family plan (no cover), in order, numbered from its
     // chapter's first page, under the family's running head and on the kit's look; no band inside the family.
     const frameworkFrames = frames.filter((frame) => frame.closest('lfx-mktg-framework-print'));
@@ -491,7 +498,7 @@ describe('Family export slot', () => {
     expect(frameworkIds).toEqual(frameworkPlan.map((page) => page.id));
     expect(frameworkFrames.map((frame) => Number(frame.dataset['page']))).toEqual(frameworkPlan.map((_, index) => 4 + index));
     expect(frameworkFrames.map((frame) => frame.dataset['section'])).toEqual(
-      frameworkPlan.map((page) => `Messaging framework · ${page.section.replace(/^\d\d /, '')}`)
+      frameworkPlan.map((page) => mktgPortraitSectionLabel(page.section, true, 'Messaging framework'))
     );
     expect(frameworkFrames.every((frame) => frame.style.getPropertyValue('--pp-spark') === kitView.spark)).toBe(true);
     expect(document.querySelector('lfx-mktg-framework-print [data-testid="mktg-portrait-page-band"], [data-testid="mktg-framework-print-cover"]')).toBeNull();
@@ -519,6 +526,9 @@ describe('Family export slot', () => {
     ).toBe(true);
     expect(
       frameworkFrames.every((frame) => frame.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent === 'Synthetic project positioning & brand')
+    ).toBe(true);
+    expect(
+      kitFrames.every((frame) => frame.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent === 'Synthetic project positioning & brand')
     ).toBe(true);
     const cover = frames[0];
     expect(cover.querySelector('[data-testid="family-print-cover-title"]')?.textContent).toBe('Positioning & brand');

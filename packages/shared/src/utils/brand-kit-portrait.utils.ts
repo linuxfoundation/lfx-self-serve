@@ -6,9 +6,16 @@
 // approval line and the few derived strings. A fact the view does not hold
 // is left out (null, '' or no row), never written here.
 
-import { BRAND_KIT_FOUND_IN_LABELS } from '../constants/brand-kit.constants';
+import { BRAND_KIT_FOUND_IN_LABELS, BRAND_KIT_REPORT_ASSET_LABELS } from '../constants/brand-kit.constants';
 import { MKTG_PRINT_REVERSED_FILTER } from '../constants/mktg-print.constants';
-import type { BrandKitBookView, BrandKitLogoImage, BrandKitLogoSlot, BrandKitPaletteEntry } from '../interfaces/brand-kit.interface';
+import type { BrandKitBookView, BrandKitLogoImage, BrandKitPaletteEntry, BrandKitTypeStep, BrandKitUsageView } from '../interfaces/brand-kit.interface';
+import type {
+  BrandKitPortraitContrastGrade,
+  BrandKitPortraitContrastRow,
+  BrandKitPortraitFileRow,
+  BrandKitPortraitSources,
+  BrandKitPortraitUsageCard,
+} from '../interfaces/brand-kit-portrait.interface';
 import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.interface';
 import type { MktgPrintLogo } from '../interfaces/mktg-print.interface';
 import { brandKitContrastRatio, brandKitLuminance } from './brand-kit-book.utils';
@@ -38,17 +45,6 @@ export function brandKitPortraitArtwork(
   if (kind === 'lockup' && mode === 'reversed' && view.logos.reversed?.src) return { src: view.logos.reversed.src, alt: 'Reversed lockup', filter: '' };
   const image: BrandKitLogoImage | null = kind === 'lockup' ? view.logos.primary : kind === 'symbol' ? view.symbol : view.logos.stacked;
   return image?.src ? { src: image.src, alt, filter } : null;
-}
-
-/** One row of the logo files table. */
-export interface BrandKitPortraitFileRow {
-  slot: BrandKitLogoSlot;
-  name: string;
-  /** `SVG`, `PNG`, `SVG (crop)` or `—`. */
-  format: string;
-  variant: string;
-  /** `Supplied`, or the mock's plain line for a missing file; never a file name. */
-  source: string;
 }
 
 /** A file's format from its reference: `SVG`, `PNG`, …, or `File`. */
@@ -152,4 +148,153 @@ export function brandKitPortraitBuiltFrom(view: BrandKitBookView): string {
 /** The WCAG contrast of white on a colour, one decimal (`2.8`), for the symbol page's rule. */
 export function brandKitPortraitWhiteContrast(hex: string): number {
   return Math.round(brandKitContrastRatio(brandKitLuminance('#FFFFFF'), brandKitLuminance(hex)) * 10) / 10;
+}
+
+// ---------- Color contrast (page 10) ----------
+
+/** The grade of a contrast ratio: AAA from 7, AA from 4.5, large text only from 3, else a fail. */
+export function brandKitPortraitContrastGrade(ratio: number): BrandKitPortraitContrastGrade {
+  if (ratio >= 7) return { label: 'AAA', background: '#ECFDF5', color: '#047857' };
+  if (ratio >= 4.5) return { label: 'AA', background: '#ECFDF5', color: '#047857' };
+  if (ratio >= 3) return { label: 'Large only', background: '#FFFBEB', color: '#B45309' };
+  return { label: 'Fails', background: '#FEF2F2', color: '#DC2626' };
+}
+
+/** The WCAG contrast of two hex colours, two decimals. */
+export function brandKitPortraitContrast(first: string, second: string): number {
+  return Math.round(brandKitContrastRatio(brandKitLuminance(first), brandKitLuminance(second)) * 100) / 100;
+}
+
+/** Every pairing of the palette, computed here from the hex values: the matrix the contrast page draws. */
+export function brandKitPortraitContrastMatrix(view: BrandKitBookView): BrandKitPortraitContrastRow[] {
+  const colors = view.color.palette;
+  return colors.map((text) => ({
+    name: text.name,
+    hex: text.hex,
+    cells: colors.map((ground) => ({
+      foreground: text.hex,
+      background: ground.hex,
+      ratio: ground.hex.toLowerCase() === text.hex.toLowerCase() ? null : brandKitPortraitContrast(text.hex, ground.hex),
+    })),
+  }));
+}
+
+// ---------- Typography (page 11) ----------
+
+const WEIGHT_NAMES: Record<number, string> = { 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'SemiBold', 700: 'Bold' };
+
+/** A weight's name, `Medium 500`, or the number alone for one without a common name. */
+export function brandKitPortraitWeightName(weight: number): string {
+  const name = WEIGHT_NAMES[weight];
+  return name ? `${name} ${weight}` : String(weight);
+}
+
+/**
+ * The line a type step is shown in, whole and from the kit's own data (the
+ * mock takes the framework's pillars and boilerplate, which the kit does not
+ * hold): the brand line for the display step, the umbrella message for the
+ * body, the footer line for the caption, the first voice attribute's name for
+ * the eyebrow, the brand line otherwise. Never cut, never an ellipsis.
+ */
+export function brandKitPortraitTypeSample(view: BrandKitBookView, step: BrandKitTypeStep): string {
+  switch (step.step) {
+    case 'body':
+      return view.voice.umbrella || view.voice.line;
+    case 'caption':
+      return view.footer;
+    case 'eyebrow':
+      return view.voice.attributes[0]?.name || view.voice.line;
+    default:
+      return view.voice.line;
+  }
+}
+
+/** The type source as the page names it: the host of a URL (`one.example.org`), or the text as written. */
+export function brandKitPortraitTypeSource(source: string): string {
+  const text = source.trim();
+  const url = text.match(/https?:\/\/[^\s<>"')]+/i)?.[0];
+  if (!url) return text;
+  return brandKitWebsiteHost(url) || text.replace(/^https?:\/\//i, '');
+}
+
+// ---------- Example usage (page 14) ----------
+
+const USAGE_ACCENT_MOMENTS: Record<BrandKitUsageView['layout'], string> = {
+  keynote: 'none (grid ground)',
+  social: 'the card itself',
+  report: 'none',
+  announcement: 'the top rule',
+};
+
+/**
+ * The usage page's four cards from the kit's examples, each with the line it
+ * shows: the umbrella message on the keynote slide, the brand line on the
+ * social card and the report cover, and on the announcement header the
+ * membership headline (`New members join <Project>`), the kit holding no
+ * headline of its own.
+ */
+export function brandKitPortraitUsageCards(view: BrandKitBookView): BrandKitPortraitUsageCard[] {
+  const lines: Record<BrandKitUsageView['layout'], string> = {
+    keynote: view.voice.umbrella || view.voice.line,
+    social: view.voice.line,
+    report: view.voice.line,
+    announcement: `New members join ${view.projectName}`,
+  };
+  return view.usageTiles.map((tile, index) => {
+    const example = view.usage.examples[index];
+    return {
+      layout: tile.layout,
+      text: lines[tile.layout],
+      name: example?.name ?? '',
+      format: example?.format ?? '',
+      ground: example?.ground ?? '',
+      accentMoment: USAGE_ACCENT_MOMENTS[tile.layout],
+    };
+  });
+}
+
+// ---------- Sources & decisions (page 16) ----------
+
+/** How the Sources page names the uploaded logo files, never by file name. */
+export const BRAND_KIT_PORTRAIT_LOGO_FILES_SOURCE = 'the uploaded logo files';
+
+/** A source string in words: the LFX record by name, an uploaded file as the logo files, a stylesheet chunk as the site's stylesheets, a URL without its scheme or query. */
+export function brandKitPortraitReadableSource(source: string): string {
+  const text = source.trim();
+  if (/^LFX record/i.test(text)) return 'The LFX project record';
+  if (!/^https?:\/\//i.test(text) && /\.(svg|png|jpe?g|webp|gif|pdf|eps|ai)$/i.test(text)) return BRAND_KIT_PORTRAIT_LOGO_FILES_SOURCE;
+  const host = brandKitWebsiteHost(/^https?:\/\//i.test(text) ? text : null);
+  if (host && /\/_next\/static\/|\.css(\?|$)/i.test(text)) return `${host} stylesheets`;
+  return text.replace(/^https?:\/\//i, '').replace(/\?.*$/, '');
+}
+
+/** The Sources page's lists from the revision's report: only what the record holds, each source made readable, duplicates folded. */
+export function brandKitPortraitSources(view: BrandKitBookView): BrandKitPortraitSources {
+  const report = view.report;
+  const findings = report.findings;
+  const failed = (findings?.sources_failed ?? report.sources_failed.map((entry) => ({ source: entry.name, reason: entry.reason }))).map((entry) => ({
+    source: brandKitPortraitReadableSource(entry.source),
+    reason: entry.reason.trim(),
+  }));
+  const missing = (findings?.missing_assets ?? []).map((entry) => ({
+    asset: BRAND_KIT_REPORT_ASSET_LABELS[entry.asset],
+    reason: entry.reason.trim(),
+    fix: entry.fix?.trim() ?? '',
+  }));
+  const fixes = new Set(missing.map((entry) => entry.fix.replace(/^Upload the \w+ file/, '')));
+  const sharedFix = missing.length > 1 && fixes.size === 1 && missing[0].fix ? missing[0].fix.replace(/^Upload the \w+ file/, 'Upload each file') : '';
+  return {
+    read: [...new Set(report.sources_read.map(brandKitPortraitReadableSource))],
+    failed,
+    warnings: (findings?.warnings ?? [])
+      .filter((warning) => warning.code !== 'color_conflict' && warning.text.trim() !== '')
+      .map((warning) => ({ text: warning.text.trim(), source: warning.source ? brandKitPortraitReadableSource(warning.source) : '' })),
+    missing: sharedFix ? missing.map((entry) => ({ ...entry, fix: '' })) : missing,
+    sharedFix,
+    gaps: report.gaps.map((gap) => gap.trim()).filter((gap) => gap !== ''),
+    notes: report.notes.trim(),
+    conflicts: (report.color_conflicts ?? [])
+      .filter((conflict) => conflict.values.length > 1)
+      .map((conflict) => ({ ...conflict, values: conflict.values.map((value) => ({ ...value, source: brandKitPortraitReadableSource(value.source) })) })),
+  };
 }
