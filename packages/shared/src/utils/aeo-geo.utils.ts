@@ -335,8 +335,10 @@ const CAVEAT_ABBREVIATION_MARK = '\u0001';
 const CAVEAT_SENTENCE_BOUNDARY = /([.!?]['"\u2018\u2019\u201c\u201d`)\]]*)\s+(?=\S)/g;
 const CAVEAT_SENTENCE_MARK = '\u0000';
 const CAVEAT_QUOTE_SPACE_MARK = '\u0002';
-// A stop inside a closing quote followed by a lowercase word continues the sentence ("What is AEO?" as its first result).
-const CAVEAT_QUOTE_CONTINUATION = /([.!?]['"\u2019\u201d`]+)(\s+)(?=\p{Ll})/gu;
+// A stop inside a closing quote followed by a lowercase WORD continues the sentence ("What is AEO?" as its first result).
+// A word ends at whitespace, sentence punctuation, an apostrophe or hyphen, or a dot not followed by a letter or digit, so a
+// file name (robots.txt, llms.txt, sitemap.xml) or a property (og:site_name) after the quote opens its own sentence.
+const CAVEAT_QUOTE_CONTINUATION = /([.!?]['"\u2019\u201d`]+)(\s+)(?=\p{Ll}+(?:$|[\s,;!?)\]'\u2019-]|\.(?![\p{L}\p{N}])))/gu;
 const CAVEAT_PARENTHETICAL = /\(([^()]*)\)/g;
 const CAVEAT_WORD_CHARACTER = /[\p{L}\p{N}]/u;
 // The classifier decides by the sentence's SUBJECT. A provider subject (a search, the provider, the API, a lookup)

@@ -414,8 +414,20 @@ describe('AEO/GEO reader caveats', () => {
     expect(aeoGeoReaderCaveat("Web search returned 'Quota exceeded. Try again later.' for both queries. No coverage was verified.")).toBe(
       `${AEO_GEO_READER_CAVEATS.search_unavailable} No coverage was verified.`
     );
-    // A quotation that closes a sentence is still a boundary when the next sentence starts in uppercase.
+    // A quotation that closes a sentence is still a boundary when the next sentence starts in uppercase, or with a file
+    // name or a property: the audit sentence after a quoted failure is kept, never glued into the failure.
     expect(aeoGeoReaderCaveat('The page says "Welcome." The project_uid was not read.')).toBe('The page says "Welcome."');
+    expect(aeoGeoReaderCaveat('Web search returned "Quota exceeded." robots.txt allows all crawlers.')).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} robots.txt allows all crawlers.`
+    );
+    expect(aeoGeoReaderCaveat('Web search failed with "Rate limit reached?" llms.txt was fetched in full.')).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} llms.txt was fetched in full.`
+    );
+    expect(aeoGeoReaderCaveat('Web search returned "Quota exceeded." sitemap.xml lists 40 URLs. og:site_name is set.')).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} sitemap.xml lists 40 URLs. og:site_name is set.`
+    );
+    // A page's quoted text followed by a file name: both sentences stay, untouched.
+    expect(aeoGeoReaderCaveat('The title said "Welcome." robots.txt allows all crawlers.')).toBe('The title said "Welcome." robots.txt allows all crawlers.');
   });
 
   it('names no field, slug, uid or access error for an LFX record that could not be read, and keeps the clean sentences', () => {
