@@ -30,6 +30,10 @@ import {
   frameworkPortraitBodyTop,
   frameworkPortraitCutNoteHeightIn,
   frameworkPortraitHouse,
+  frameworkPortraitIcpHeight,
+  frameworkPortraitIcpMatrixHeight,
+  frameworkPortraitIcpPages,
+  frameworkPortraitIcpRoom,
   frameworkPortraitMatrix,
   frameworkPortraitMatrixColumn,
   frameworkPortraitPillList,
@@ -39,9 +43,10 @@ import {
   frameworkPortraitSayRoom,
   frameworkPortraitStatementWidth,
   frameworkPortraitTaglineSize,
+  frameworkPortraitTextHeight,
   frameworkPortraitTitle,
 } from './mktg-framework-portrait-layout.utils';
-import type { FoundationMessagePrintGoal, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
+import type { FoundationMessagePrintGoal, FoundationMessagePrintIcp, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import type { FoundationMessagePillarView } from '../interfaces/foundation-message.interface';
 import { mktgPortraitCharsPerLine } from './mktg-portrait-print.utils';
 import { buildFoundationMessagePrintView } from './mktg-print.utils';
@@ -266,6 +271,72 @@ describe('the framework portrait book’s message house', () => {
     expect(tall.audiences.rows.length).toBeGreaterThan(0);
     expect(tall.audiences.note).toBe(`+${6 - tall.audiences.rows.length} more on the framework's Framework tab in LFX One`);
     expect(frameworkPortraitHouse(view([pillar(1)], 0, ''), { text: '', size: 19 }).whyNow).toBeNull();
+  });
+});
+
+describe('the framework portrait book’s profile pages', () => {
+  const sentence = 'A sentence of the profile that runs on for a while to take a second line in its column. ';
+  const icp = (id: string, repeat: number, personas = 1): FoundationMessagePrintIcp =>
+    ({
+      id,
+      name: `Profile ${id}`,
+      kind: 'Segment',
+      who: sentence.repeat(repeat).trim(),
+      need: sentence.repeat(repeat).trim(),
+      value: sentence.repeat(repeat).trim(),
+      lead: sentence.repeat(repeat).trim(),
+      cta: sentence.repeat(repeat).trim(),
+      objectionText: 'Too early?',
+      objectionResponse: sentence.repeat(repeat).trim(),
+      channelsLabel: 'Docs · Slack',
+      proofRows: [{ fact: 'A fact.', source: 'Docs' }],
+      personaRows: Array.from({ length: personas }, (_, index) => ({ role: `Role ${index}`, cares: sentence.trim() })),
+      goalChips: ['Goal 1'],
+      whoWidth: 190,
+    }) as unknown as FoundationMessagePrintIcp;
+
+  it('measures a card: its chrome and the taller of the name column and the fields grid, the fields three a row', () => {
+    const short = icp('a', 1);
+    const column = (704 - 190 - 24 - 40) / 3;
+    const field = (text: string, tight = false) =>
+      frameworkPortraitTextHeight(text, tight ? FRAMEWORK_PORTRAIT_TYPE.icpFieldTight : FRAMEWORK_PORTRAIT_TYPE.icpField, column);
+    const eyebrow = 9.5 * 1.2 + 4;
+    const row1 = eyebrow + Math.max(field(short.need), field(short.value), field(short.lead));
+    const row2 = eyebrow + Math.max(field(short.cta), field(`“Too early?” — ${short.objectionResponse}`), field('Docs · Slack') + 4 + field('A fact. Docs'));
+    const grid = row1 + 18 + row2;
+    const whoColumn =
+      frameworkPortraitTextHeight(short.name, FRAMEWORK_PORTRAIT_TYPE.icpName, 190) +
+      8 +
+      16.5 +
+      10 +
+      frameworkPortraitTextHeight(short.who, FRAMEWORK_PORTRAIT_TYPE.icpWho, 190) +
+      8 +
+      frameworkPortraitTextHeight(`Role 0 · ${sentence.trim()}`, FRAMEWORK_PORTRAIT_TYPE.icpPersona, 190);
+    expect(frameworkPortraitIcpHeight(short)).toBe(49 + Math.max(whoColumn, grid));
+    expect(frameworkPortraitIcpHeight(short, true)).toBeLessThan(frameworkPortraitIcpHeight(short));
+  });
+
+  it('packs the cards two a page while the measured pair ends above the footer, one when it would not, tight when one alone outruns it', () => {
+    // Four short cards: two a page, the design's.
+    expect(frameworkPortraitIcpPages([icp('a', 1), icp('b', 1), icp('c', 1), icp('d', 1)]).map((page) => page.icps.map((row) => row.id))).toEqual([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+    // Two long cards would end past the first page's footer together: the second moves whole to the next page, at the normal measure.
+    const long = frameworkPortraitIcpPages([icp('a', 3), icp('b', 3)]);
+    expect(frameworkPortraitIcpHeight(icp('a', 3))).toBeLessThanOrEqual(frameworkPortraitIcpRoom(1));
+    expect(frameworkPortraitIcpHeight(icp('a', 3)) * 2).toBeGreaterThan(frameworkPortraitIcpRoom(1));
+    expect(long.map((page) => [page.icps.map((row) => row.id), page.tight])).toEqual([
+      [['a'], false],
+      [['b'], false],
+    ]);
+    expect(long.every((page) => page.height <= frameworkPortraitIcpRoom(1))).toBe(true);
+    // One card alone past the room: its fields set tight; the page still holds the one card.
+    const tall = frameworkPortraitIcpPages([icp('a', 14, 3)]);
+    expect(frameworkPortraitIcpHeight(icp('a', 14, 3))).toBeGreaterThan(frameworkPortraitIcpRoom(1));
+    expect(tall).toEqual([{ icps: [icp('a', 14, 3)], tight: true, height: frameworkPortraitIcpHeight(icp('a', 14, 3), true) }]);
+    // The matrix under a lone card: label, note, head row and one row per profile.
+    expect(frameworkPortraitIcpMatrixHeight(4)).toBe(26 + 4 + 11.5 * 1.5 + 12 + 13 + 2 * 9.5 * 1.4 + 4 * (19 + 12 * 1.4));
   });
 });
 

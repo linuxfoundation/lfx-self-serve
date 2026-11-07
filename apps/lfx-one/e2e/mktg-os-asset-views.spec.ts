@@ -596,6 +596,25 @@ test('the framework print lists every figure past six as a table, continued on a
   await expect(sayAvoid.getByTestId('mktg-framework-print-say-cut')).toHaveText("+3 more on the framework's Framework tab in LFX One");
   await expect(sayAvoid.getByTestId('mktg-framework-print-avoid').locator('li')).toHaveCount(3);
   await expect(sayAvoid.getByTestId('mktg-framework-print-avoid-cut')).toHaveText("+2 more on the framework's Framework tab in LFX One");
+  // Every profile card ends at least 4 px above the footer rule (the harness's A4 finding: at a 0.974 scale a card that touched the rule crossed it),
+  // and no profile page's cards are set tight (the record's cards fit at the normal measure).
+  const icpBottoms = await print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id^="icps-"]').evaluateAll((pages) =>
+    pages.map((frame) => {
+      const frameTop = frame.getBoundingClientRect().top;
+      const cards = Array.from(frame.querySelectorAll('.fwp-icp-row'));
+      const footer = frame.querySelector('[data-testid="mktg-portrait-page-foot"]')?.getBoundingClientRect();
+      return {
+        cards: cards.map((card) => Math.round(card.getBoundingClientRect().bottom - frameTop)),
+        footer: footer ? Math.round(footer.top - frameTop) : null,
+      };
+    })
+  );
+  expect(icpBottoms.length).toBeGreaterThan(0);
+  for (const page of icpBottoms) {
+    expect(page.footer).not.toBeNull();
+    for (const bottom of page.cards) expect(bottom).toBeLessThanOrEqual((page.footer ?? 0) - 4);
+  }
+  await expect(print.locator('.fwp-icp-rows--tight')).toHaveCount(0);
   // The message house: Why now and the audiences sit a gap under the measured pillars, not at a fixed top that leaves a band; the two blocks share
   // one top.
   const house = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="message-house"]');

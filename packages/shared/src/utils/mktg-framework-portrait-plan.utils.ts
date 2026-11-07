@@ -8,25 +8,10 @@
 // the kit's plan (`brandKitPortraitPlan`, mktg-portrait-plan.utils.ts), on
 // the same page type.
 
-import {
-  FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE,
-  FRAMEWORK_PORTRAIT_PAGE_IDS,
-  FRAMEWORK_PORTRAIT_SECTIONS,
-  FRAMEWORK_PORTRAIT_TITLES,
-  mktgPrintJoin,
-} from '../constants/mktg-print.constants';
-import type { FoundationMessagePrintIcp, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
+import { FRAMEWORK_PORTRAIT_PAGE_IDS, FRAMEWORK_PORTRAIT_SECTIONS, FRAMEWORK_PORTRAIT_TITLES, mktgPrintJoin } from '../constants/mktg-print.constants';
+import type { FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
-import { frameworkPortraitNumbersPages } from './mktg-framework-portrait-layout.utils';
-
-/** The profiles two a page, in data order; the last page may hold one. */
-export function frameworkPortraitIcpPages(icps: readonly FoundationMessagePrintIcp[]): FoundationMessagePrintIcp[][] {
-  const pages: FoundationMessagePrintIcp[][] = [];
-  for (let start = 0; start < icps.length; start += FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE) {
-    pages.push(icps.slice(start, start + FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE));
-  }
-  return pages;
-}
+import { frameworkPortraitIcpPages, frameworkPortraitNumbersPages } from './mktg-framework-portrait-layout.utils';
 
 /**
  * The pages of the Messaging Framework's portrait book, in the mock's order:

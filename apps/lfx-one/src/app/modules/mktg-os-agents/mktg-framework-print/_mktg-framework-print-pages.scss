@@ -592,11 +592,16 @@
     }
 
     dd {
-      margin: 4px 0 0;
-      font-size: 12.5px;
+      margin: 4px 0 0; /* FRAMEWORK_PORTRAIT_ROOM.icpFieldGap */
+      font-size: 12.5px; /* FRAMEWORK_PORTRAIT_TYPE.icpField */
       line-height: 1.5;
       color: var(--pp-ink);
     }
+  }
+  /* A lone card that outran its page at the normal measure: its fields at FRAMEWORK_PORTRAIT_TYPE.icpFieldTight. */
+  .fwp-icp-rows--tight .fwp-icp-fields dd {
+    font-size: 11.5px;
+    line-height: 1.45;
   }
 
   .fwp-icp-lead {

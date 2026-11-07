@@ -21,6 +21,7 @@ import {
   buildFoundationMessagePrintView,
   foundationMessagePrintCutNote,
   frameworkPortraitHouse,
+  frameworkPortraitIcpPages,
   frameworkPortraitPlan,
   frameworkPortraitStatementWidth,
   frameworkPortraitTaglineSize,
@@ -746,7 +747,8 @@ describe('MktgFrameworkPrintComponent', () => {
       gaps: Array.from({ length: 60 }, (_, index) => `Gap ${index}: ${long.trim()}`),
       notes: '',
     };
-    await configure('browser', buildFoundationMessagePrintView(content, 'TestOrbit', 2, null, '2026-11-06T09:00:00Z', report, '2026-11-04'));
+    const printed = buildFoundationMessagePrintView(content, 'TestOrbit', 2, null, '2026-11-06T09:00:00Z', report, '2026-11-04');
+    await configure('browser', printed);
     const tops = FRAMEWORK_PORTRAIT_TOPS;
     // The statements: four cards of one height from 136, each text fitted smaller or cut to its card, so every card closes 16 px above the goal band at 336.
     const statements = query('mktg-framework-print-statements');
@@ -853,9 +855,17 @@ describe('MktgFrameworkPrintComponent', () => {
     ).toBeLessThanOrEqual(room);
     expect(26 + gaps.reduce((sum, item) => sum + rowHeight(item.textContent), 0)).toBeLessThanOrEqual(room);
     expect(top(query('mktg-framework-print-approval'))).toBe(tops.sourcesApproval);
-    // Four profiles, two a page: the second page's rows start at the short intro's top.
+    // Four profiles, two a page (their measured pairs end above the footer): the second page's rows start at the short intro's top; no page's cards
+    // are set tight; the pages hold the cards the layout packed, in order.
     expect(top(frame('icps-1')?.querySelector('.fwp-icp-row')?.parentElement)).toBe(tops.icpRowsFirst);
     expect(top(frame('icps-2')?.querySelector('.fwp-icp-row')?.parentElement)).toBe(tops.icpRows);
+    const icpPages = frameworkPortraitIcpPages(printed.icps);
+    expect(icpPages.map((page) => page.icps.length)).toEqual([2, 2]);
+    expect(host().querySelectorAll('.fwp-icp-rows--tight')).toHaveLength(0);
+    expect(Array.from(frame('icps-2')?.querySelectorAll('.fwp-icp-row') ?? []).map((row) => row.getAttribute('data-testid'))).toEqual([
+      'mktg-framework-print-icp-c',
+      'mktg-framework-print-icp-d',
+    ]);
     // Say and avoid: the pills and the rows cut to their columns above the anchors (tight first), each cut said; the anchors at their top, the five
     // questions set smaller so they and the crosscut box end above the footer; the box under the anchors, no higher than the design's top.
     const sayAvoid = frame('say-avoid');

@@ -13,6 +13,7 @@
 // page when a page is full, never cut.
 
 import {
+  FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE,
   FRAMEWORK_PORTRAIT_FACT_COLUMNS,
   FRAMEWORK_PORTRAIT_MAX_TILES,
   FRAMEWORK_PORTRAIT_NUMBER_COLUMNS,
@@ -22,6 +23,7 @@ import {
   FRAMEWORK_PORTRAIT_TILE_SHARES,
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
+  mktgPrintJoin,
 } from '../constants/mktg-print.constants';
 import { MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
@@ -40,6 +42,8 @@ import type {
   FoundationMessagePrintGoal,
   FoundationMessagePrintGoalProof,
   FoundationMessagePrintHousePage,
+  FoundationMessagePrintIcp,
+  FoundationMessagePrintIcpPageRows,
   FoundationMessagePrintMatrix,
   FoundationMessagePrintNumber,
   FoundationMessagePrintFactRow,
@@ -415,6 +419,85 @@ export function frameworkPortraitHouse(view: FoundationMessagePrintView, umbrell
       frameworkPortraitCutNoteHeightIn(1, 'Framework', ROOM.audiencesColumn)
     ),
   };
+}
+
+/**
+ * The height a profile card takes across the page, px: its hairline and padding, then the taller of its two columns, the
+ * name-and-tags column (the name, the chips line, the who text, the persona rows, at the card's own who width) and the
+ * fields grid (the fields the profile has, three a row, each its eyebrow and text, the channels field holding the proof
+ * rows), at the fields' normal or tight measure.
+ */
+export function frameworkPortraitIcpHeight(icp: FoundationMessagePrintIcp, tight = false): number {
+  const field = tight ? TYPE.icpFieldTight : TYPE.icpField;
+  const who = icp.whoWidth;
+  const whoColumn =
+    frameworkPortraitTextHeight(icp.name, TYPE.icpName, who) +
+    ROOM.icpChipsTop +
+    ROOM.icpChipLine +
+    (icp.who ? ROOM.icpWhoTextTop + frameworkPortraitTextHeight(icp.who, TYPE.icpWho, who) : 0) +
+    (icp.personaRows.length
+      ? ROOM.icpPersonasTop +
+        icp.personaRows.reduce((sum, persona) => sum + frameworkPortraitTextHeight(mktgPrintJoin([persona.role, persona.cares]), TYPE.icpPersona, who), 0)
+      : 0);
+  const column = (PAGE.contentWidth - who - ROOM.icpColumnGap - 2 * ROOM.icpGridColumnGap) / 3;
+  const texts: string[] = [];
+  if (icp.need) texts.push(icp.need);
+  if (icp.value) texts.push(icp.value);
+  if (icp.lead) texts.push(icp.lead);
+  if (icp.cta) texts.push(icp.cta);
+  if (icp.objectionText) texts.push(icp.objectionResponse ? `“${icp.objectionText}” — ${icp.objectionResponse}` : `“${icp.objectionText}”`);
+  const fields = texts.map((text) => frameworkPortraitTextHeight(text, field, column));
+  if (icp.channelsLabel || icp.proofRows.length > 0) {
+    const proofs = icp.proofRows.reduce((sum, proof) => sum + frameworkPortraitTextHeight(`${proof.fact} ${proof.source}`, field, column), 0);
+    fields.push(
+      (icp.channelsLabel ? frameworkPortraitTextHeight(icp.channelsLabel, field, column) : 0) + (icp.proofRows.length ? ROOM.icpProofsTop + proofs : 0)
+    );
+  }
+  const eyebrow = TYPE.icpEyebrow.size * TYPE.icpEyebrow.line + ROOM.icpFieldGap;
+  let grid = 0;
+  for (let row = 0; row < fields.length; row += 3) {
+    grid += (row > 0 ? ROOM.icpGridRowGap : 0) + eyebrow + Math.max(...fields.slice(row, row + 3));
+  }
+  return ROOM.icpRow + Math.max(whoColumn, grid);
+}
+
+/** The room an ICP page's cards have: from the rows' top (under the long intro on the first page) to the footer rule, less the card's least room above it. */
+export function frameworkPortraitIcpRoom(pageIndex: number): number {
+  return TOPS.footer - ROOM.icpFooterRoom - (pageIndex === 1 ? TOPS.icpRowsFirst : TOPS.icpRows);
+}
+
+/**
+ * The profiles paged in data order, two a page at most (the design), fewer where two measured cards would end past the
+ * footer: a card never crosses the footer rule, so a profile that would moves whole to the next page (the harness's A4
+ * finding: the last line crossed it). A card alone that outruns its page sets its fields at the tight measure.
+ */
+export function frameworkPortraitIcpPages(icps: readonly FoundationMessagePrintIcp[]): FoundationMessagePrintIcpPageRows[] {
+  const pages: FoundationMessagePrintIcpPageRows[] = [];
+  for (const icp of icps) {
+    const height = frameworkPortraitIcpHeight(icp);
+    const last = pages[pages.length - 1];
+    if (last && !last.tight && last.icps.length < FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE && last.height + height <= frameworkPortraitIcpRoom(pages.length)) {
+      last.icps.push(icp);
+      last.height += height;
+      continue;
+    }
+    const tight = height > frameworkPortraitIcpRoom(pages.length + 1);
+    pages.push({ icps: [icp], tight, height: tight ? frameworkPortraitIcpHeight(icp, true) : height });
+  }
+  return pages;
+}
+
+/** The height the goals × profiles matrix takes under a lone card: its label, note, head row and one cell row per profile. */
+export function frameworkPortraitIcpMatrixHeight(rows: number): number {
+  return (
+    ROOM.label +
+    ROOM.matrixNoteTop +
+    TYPE.matrixNote.size * TYPE.matrixNote.line +
+    ROOM.matrixTableTop +
+    ROOM.matrixHeadRow +
+    2 * TYPE.matrixHead.size * TYPE.matrixHead.line +
+    rows * (ROOM.matrixCellRow + TYPE.matrixCellText.size * TYPE.matrixCellText.line)
+  );
 }
 
 /** The width a chip takes, px: its text in the grammar's capitals at `.pp-chip`'s size, plus its padding and border. */

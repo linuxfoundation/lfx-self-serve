@@ -8,7 +8,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { FoundationMessageContent } from '../interfaces/foundation-message.interface';
-import { frameworkPortraitIcpPages, frameworkPortraitPlan } from './mktg-framework-portrait-plan.utils';
+import { frameworkPortraitIcpPages } from './mktg-framework-portrait-layout.utils';
+import { frameworkPortraitPlan } from './mktg-framework-portrait-plan.utils';
 import { buildFoundationMessagePrintView } from './mktg-print.utils';
 import { mktgPortraitOpensChapter } from './mktg-portrait-plan.utils';
 
@@ -129,9 +130,10 @@ describe('the framework’s portrait plan', () => {
     ).toEqual(['key-numbers', 'key-numbers-2', 'sources']);
   });
 
-  it('slices the profiles two a page in data order, the last page taking one when the count is odd', () => {
+  it('pages the profiles two a page in data order, the last page taking one when the count is odd', () => {
     const view = buildFoundationMessagePrintView(content(1, 5), 'TestOrbit', 1, null);
-    expect(frameworkPortraitIcpPages(view.icps).map((page) => page.map((row) => row.id))).toEqual([['i1', 'i2'], ['i3', 'i4'], ['i5']]);
+    expect(frameworkPortraitIcpPages(view.icps).map((page) => page.icps.map((row) => row.id))).toEqual([['i1', 'i2'], ['i3', 'i4'], ['i5']]);
+    expect(frameworkPortraitIcpPages(view.icps).map((page) => page.tight)).toEqual([false, false, false]);
     expect(frameworkPortraitIcpPages([])).toEqual([]);
   });
 });

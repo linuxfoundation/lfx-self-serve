@@ -178,8 +178,12 @@ export interface FoundationMessagePrintIcpPage {
   /** The top of the profile rows, px: under the long intro on the first page, the short one after. */
   rowsTop: number;
   icps: FoundationMessagePrintIcp[];
-  /** Goals × profiles, on a page that holds one profile; empty elsewhere. */
+  /** The profile fields set at the tight measure: one card alone outran the page at the normal one. */
+  tight: boolean;
+  /** Goals × profiles, on a page that holds one profile and has the room for it under the card; empty elsewhere. */
   matrix: FoundationMessagePrintMatrixRow[];
+  /** The matrix's top, px: the design's, or under the card when it runs lower. */
+  matrixTop: number;
 }
 
 /**
@@ -271,6 +275,15 @@ export interface FoundationMessagePrintAnchorRow {
 /** The framework page's goal matrix, bounded: each goal's proof cell as a cut list, in the goals' order (frameworkPortraitMatrix). */
 export interface FoundationMessagePrintMatrix {
   proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>[];
+}
+
+/** One ICP page's profiles as the layout packs them (frameworkPortraitIcpPages): the cards that end above the footer with their room, at the tight measure when one card alone needed it. */
+export interface FoundationMessagePrintIcpPageRows {
+  icps: FoundationMessagePrintIcp[];
+  /** The fields set at FRAMEWORK_PORTRAIT_TYPE.icpFieldTight: a lone card outran the page at the normal measure. */
+  tight: boolean;
+  /** The measured height of the page's cards, px. */
+  height: number;
 }
 
 /** The message house page's lower blocks as the print lays them out (frameworkPortraitHouse): their top under the measured pillars, the Why now text fitted, the audiences cut to whole rows. */

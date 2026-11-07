@@ -511,7 +511,11 @@
           } @else if (frame.icpPage; as icpPage) {
             <!-- 02 IDEAL CUSTOMER PROFILES, two a page; the goals × profiles matrix where a page holds one -->
             <p class="pp-body fwp-intro-icps" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">{{ icpPage.intro }}</p>
-            <div [lfxPpRect]="[page.margin, icpPage.rowsTop, page.contentWidth]">
+            <!-- The cards packed to the page by their measured height (frameworkPortraitIcpPages): never across the footer rule; a lone card that outruns the page sets its fields tight. -->
+            <div
+              [lfxPpRect]="[page.margin, icpPage.rowsTop, page.contentWidth]"
+              [class.fwp-icp-rows--tight]="icpPage.tight"
+              data-testid="mktg-framework-print-icp-rows">
               @for (icp of icpPage.icps; track icp.id) {
                 <article class="fwp-icp-row" [attr.data-testid]="'mktg-framework-print-icp-' + icp.id">
                   <!-- The name-and-tags column: the board's 190 px, grown so the kind and goal tags hold one line (the editor's rule). -->
@@ -595,7 +599,7 @@
               }
             </div>
             @if (icpPage.matrix.length > 0) {
-              <div [lfxPpRect]="[page.margin, tops.icpMatrix, page.contentWidth]" data-testid="mktg-framework-print-matrix">
+              <div [lfxPpRect]="[page.margin, icpPage.matrixTop, page.contentWidth]" data-testid="mktg-framework-print-matrix">
                 <span class="pp-lab pp-lab--dark">Goals × profiles</span>
                 <p class="fwp-matrix-note">Which profiles each goal's messaging is written for, as the framework assigns them.</p>
                 <!-- A table of one frame: no head or foot group, which Chromium would paginate on. -->

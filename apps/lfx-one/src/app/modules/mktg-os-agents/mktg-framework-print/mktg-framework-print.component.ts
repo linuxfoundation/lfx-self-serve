@@ -26,6 +26,7 @@ import {
   FoundationMessagePrintGoalPage,
   FoundationMessagePrintIcp,
   FoundationMessagePrintIcpPage,
+  FoundationMessagePrintIcpPageRows,
   FoundationMessagePrintSourcesPage,
   FoundationMessagePrintType,
   FoundationMessagePrintView,
@@ -43,6 +44,7 @@ import {
   frameworkPortraitBodyTop,
   frameworkPortraitCutList,
   frameworkPortraitHouse,
+  frameworkPortraitIcpMatrixHeight,
   frameworkPortraitIcpPages,
   frameworkPortraitMatrix,
   frameworkPortraitNumbersPages,
@@ -309,20 +311,26 @@ export class MktgFrameworkPrintComponent {
   }
 
   /** An ICP page: its profiles, its intro, the rows' top (under the long intro on the first page), the matrix when it holds one profile. */
-  private icpPage(index: number, pages: FoundationMessagePrintIcp[][], view: FoundationMessagePrintView): FoundationMessagePrintIcpPage {
-    const icps = pages[index - 1] ?? [];
+  private icpPage(index: number, pages: FoundationMessagePrintIcpPageRows[], view: FoundationMessagePrintView): FoundationMessagePrintIcpPage {
+    const rows = pages[index - 1] ?? { icps: [], tight: false, height: 0 };
     const total = view.icps.length;
     const project = view.projectName || 'the project';
-    const start = pages.slice(0, index - 1).reduce((count, page) => count + page.length, 0);
+    const start = pages.slice(0, index - 1).reduce((count, page) => count + page.icps.length, 0);
+    const rowsTop = index === 1 ? this.tops.icpRowsFirst : this.tops.icpRows;
+    // The goals × profiles matrix under a lone card: at the design's top, or under the card when it runs lower, and only where it ends above the footer.
+    const matrixTop = Math.max(this.tops.icpMatrix, rowsTop + rows.height + ROOM.gap);
+    const matrixFits = rows.icps.length === 1 && matrixTop + frameworkPortraitIcpMatrixHeight(view.icps.length) <= this.tops.footer - ROOM.icpFooterRoom;
     return {
       index,
       intro:
         index === 1
           ? `${total} ${total === 1 ? 'profile' : 'profiles'}. Each names who they are, what they need, what ${project} gives them, the lead message, the call to action, the objection to expect and where to reach them. Goal numbers refer to the goal pages.`
-          : `Profiles ${start + 1}–${start + icps.length} of ${total}.`,
-      rowsTop: index === 1 ? this.tops.icpRowsFirst : this.tops.icpRows,
-      icps,
-      matrix: icps.length === 1 ? foundationMessagePrintMatrix(view.goals, view.icps) : [],
+          : `Profiles ${start + 1}–${start + rows.icps.length} of ${total}.`,
+      rowsTop,
+      icps: rows.icps,
+      tight: rows.tight,
+      matrix: matrixFits ? foundationMessagePrintMatrix(view.goals, view.icps) : [],
+      matrixTop,
     };
   }
 
