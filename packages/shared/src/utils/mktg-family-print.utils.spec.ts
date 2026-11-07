@@ -521,11 +521,13 @@ describe('mktgFamilyPrintPlan', () => {
     expect(plan.total).toBe(3);
   });
 
-  it('prints the Sources page only when a conflict or an open item gives it something to check', () => {
+  it('prints the Sources page whenever the book has a document, a clean family included, before the back cover', () => {
+    // A clean family (no conflict, no open item) plans the page all the same: the page says what was checked, and
+    // its lists stay out only when they have no rows (the page's template).
     const quiet = [{ document: doc('boilerplates', 1, 2), boilerplateCount: 4 }];
-    expect(mktgFamilyPrintPlan(quiet).pages.map((page) => page.kind)).toEqual(['cover', 'contents', 'opener', 'boilerplates', 'back']);
-    expect(mktgFamilyPrintPlan(quiet).sourcesPage).toBe(0);
-    expect(mktgFamilyPrintPlan(quiet, 1).sourcesPage).toBe(5);
+    expect(mktgFamilyPrintPlan(quiet).pages.map((page) => page.kind)).toEqual(['cover', 'contents', 'opener', 'boilerplates', 'sources', 'back']);
+    expect(mktgFamilyPrintPlan(quiet).sourcesPage).toBe(5);
+    expect(mktgFamilyPrintPlan(quiet).total).toBe(6);
     expect(mktgFamilyPrintPlan([{ document: doc('boilerplates', 1, 2, ['A gap.']), boilerplateCount: 4 }]).sourcesPage).toBe(5);
   });
 });

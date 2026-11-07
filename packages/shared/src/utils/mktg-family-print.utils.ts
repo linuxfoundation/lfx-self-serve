@@ -497,7 +497,8 @@ export function mktgFamilyPrintOpenItemText(text: string): string {
  * The book's plan: cover, contents, then per member document an opener and
  * its pages (a mounted inner print counts its page titles, the boilerplates
  * one page of cards, the FAQ its paginated grid), the Sources page and the
- * back cover (the Sources page only when a conflict or an open item exists).
+ * back cover (the Sources page whenever the book has a chapter; its lists
+ * only when they have rows, which the page's template decides).
  * A document with nothing to print is dropped with its opener. The
  * running heads are the board's (mock/family/family.html): a mounted
  * print's pages print `Document · Section` themselves (`Brand kit · Logo`);
@@ -506,7 +507,7 @@ export function mktgFamilyPrintOpenItemText(text: string): string {
  * Sources pages their name.
  * Page numbers are 1-based and the only numbering the pages print.
  */
-export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[], conflictCount = 0): MktgFamilyPrintPlan {
+export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[]): MktgFamilyPrintPlan {
   const pages: MktgFamilyPrintPage[] = [];
   const chapters: MktgFamilyPrintChapter[] = [];
   let faqPages: MktgFamilyPrintFaqPage[] = [];
@@ -577,9 +578,10 @@ export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[], confli
     content.forEach(push);
     chapters.push({ document, openerPage, first, last: n, entries });
   }
-  // The cross-check prints when there is something to check: a real conflict, or an item a run left open.
+  // The cross-check prints whenever the book has documents (the product owner's decision, D-17): what it checked and
+  // what it found, a clean family included; a list with no rows is the one thing its page leaves out.
   let sourcesPage = 0;
-  if (chapters.length && (conflictCount > 0 || chapters.some((chapter) => chapter.document.openItems.length > 0))) {
+  if (chapters.length) {
     sourcesPage = push({
       id: 'sources',
       kind: 'sources',
