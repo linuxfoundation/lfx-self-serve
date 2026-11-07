@@ -94,6 +94,16 @@ describe('MktgFamilyPrintComponent', () => {
     );
     expect(root.querySelector('[data-testid="family-print-contents-intro"]')?.textContent).toContain('2 documents, 8 pages.');
     expect(Array.from(root.querySelectorAll('[data-testid="family-print-contents-opener-page"]')).map((n) => n.textContent)).toEqual(['3', '5']);
+    // The contents' blocks are the layout's: one per chapter here, by the board's split, every entry shown, nothing continued or cut.
+    expect(Array.from(root.querySelectorAll('[data-testid="family-print-contents-chapter"]')).map((block) => block.getAttribute('data-continued'))).toEqual([
+      null,
+      null,
+    ]);
+    expect(Array.from(root.querySelectorAll('[data-testid="family-print-contents-entry"]')).map((entry) => entry.textContent)).toEqual([
+      'Boilerplates4',
+      'Frequently asked questions6',
+    ]);
+    expect(root.querySelector('[data-testid="family-print-contents-cut"]')).toBeNull();
     const openerMeta = Array.from(root.querySelectorAll('[data-testid="mktg-portrait-opener-meta"]')).map((meta) =>
       Array.from(meta.querySelectorAll('dt, dd'))
         .map((cell) => cell.textContent?.trim())

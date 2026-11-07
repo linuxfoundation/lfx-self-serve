@@ -125,3 +125,9 @@
   margin-top: 28px;
   line-height: 1.6;
 }
+
+/* The cut note under the last block (`+3 more in LFX One`): an entry row's type in the muted ink. */
+.fpt-cut {
+  margin: 0;
+  color: var(--pp-muted);
+}

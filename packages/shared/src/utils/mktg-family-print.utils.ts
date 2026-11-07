@@ -8,6 +8,7 @@
 
 import { MKTG_FAMILY_EXPORT_KINDS } from '../constants/mktg-family-export.constants';
 import {
+  MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_LABELS,
@@ -26,7 +27,9 @@ import type { MktgFamilyExportAgentKey } from '../interfaces/mktg-family-export.
 import type {
   MktgFamilyPrintChapter,
   MktgFamilyPrintConflict,
+  MktgFamilyPrintContentsBlock,
   MktgFamilyPrintContentsEntry,
+  MktgFamilyPrintContentsLayout,
   MktgFamilyPrintDocument,
   MktgFamilyPrintFaqItem,
   MktgFamilyPrintFaqPage,
@@ -509,4 +512,88 @@ export function mktgFamilyPrintConflicts(
     });
   }
   return conflicts;
+}
+
+/** The height of a contents chapter row in a column `width` px wide: its padding and its title's lines beside the number, version and page cells. */
+export function mktgFamilyPrintContentsChapterHeight(chapter: MktgFamilyPrintChapter, width: number): number {
+  const layout = MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.chapter;
+  return (
+    layout.padding + mktgPortraitParaHeight({ text: chapter.document.title, size: layout.size, line: layout.line, weight: layout.weight }, width - layout.aside)
+  );
+}
+
+/** The height of a contents entry row in a column `width` px wide: its padding and its title's lines past the indent and the page number's cell. */
+export function mktgFamilyPrintContentsEntryHeight(entry: MktgFamilyPrintContentsEntry, width: number): number {
+  const layout = MKTG_FAMILY_PRINT_CONTENTS_LAYOUT.entry;
+  return layout.padding + mktgPortraitParaHeight({ text: entry.title, size: layout.size, line: layout.line }, width - layout.indent - layout.numberWidth);
+}
+
+/**
+ * The contents page laid out by height: the chapters in order into the
+ * page's two columns, the board's split (the first half of the chapters in
+ * the first column) kept while it fits, each row measured by its lines; a
+ * chapter the first column cannot finish continues at the top of the second
+ * under a repeated row. The last column keeps the Sources row's and the
+ * note's room. What the one page cannot hold is never clipped: the last
+ * block gives up rows for one line of cut note, and `cut` counts every entry
+ * the note stands for, the later chapters' included. A book of four
+ * documents fits one page.
+ */
+export function mktgFamilyPrintContentsLayout(chapters: MktgFamilyPrintChapter[]): MktgFamilyPrintContentsLayout {
+  const layout = MKTG_FAMILY_PRINT_CONTENTS_LAYOUT;
+  const width = (MKTG_PORTRAIT_PAGE.contentWidth - layout.columnGap) / 2;
+  const columns: MktgFamilyPrintContentsBlock[][] = [[], []];
+  const last = columns.length - 1;
+  const roomOf = (column: number): number => layout.bottom - layout.top - (column === last ? layout.tail : 0);
+  const entryHeights = chapters.map((chapter) => chapter.entries.map((entry) => mktgFamilyPrintContentsEntryHeight(entry, width)));
+  const remaining = (index: number, next: number): number => chapters.slice(index).reduce((count, chapter) => count + chapter.entries.length, 0) - next;
+  const preferred = Math.ceil(chapters.length / columns.length);
+  let column = 0;
+  let used = 0;
+  // Past the last column: the last block gives rows back until one line is free for the cut note, which counts them too.
+  const close = (shown: number): MktgFamilyPrintContentsLayout => {
+    const noteLine = layout.entry.padding + layout.entry.size * layout.entry.line;
+    const block = columns[last][columns[last].length - 1];
+    let cut = shown;
+    while (block && block.entries.length && used + noteLine > roomOf(last)) {
+      const heights = entryHeights[chapters.indexOf(block.chapter)];
+      used -= heights[block.entries.length - 1];
+      block.entries.pop();
+      cut++;
+    }
+    if (block) block.cut = cut;
+    return { columns, cut };
+  };
+  for (let index = 0; index < chapters.length; index++) {
+    const chapter = chapters[index];
+    const rowHeight = mktgFamilyPrintContentsChapterHeight(chapter, width);
+    const heights = entryHeights[index];
+    let next = 0;
+    // The board's split: the first column holds the first half of the chapters whole, as long as they fit it.
+    if (column === 0 && used > 0 && index >= preferred) {
+      column++;
+      used = 0;
+    }
+    for (;;) {
+      // A row that would stand alone at a column's foot opens the next column; past the last, the rest is counted.
+      if (used > 0 && used + rowHeight + (heights[next] ?? 0) > roomOf(column)) {
+        if (column === last) return close(remaining(index, next));
+        column++;
+        used = 0;
+      }
+      const block: MktgFamilyPrintContentsBlock = { chapter, continued: next > 0, entries: [], cut: 0 };
+      used += rowHeight;
+      while (next < heights.length && used + heights[next] <= roomOf(column)) {
+        block.entries.push(chapter.entries[next]);
+        used += heights[next];
+        next++;
+      }
+      columns[column].push(block);
+      if (next >= heights.length) break;
+      if (column === last) return close(remaining(index, next));
+      column++;
+      used = 0;
+    }
+  }
+  return { columns, cut: 0 };
 }

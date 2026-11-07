@@ -171,3 +171,22 @@ export const MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES = [
   { fontSize: 14, minHeight: 130 },
   { fontSize: 12.5, minHeight: 150 },
 ] as const;
+
+/**
+ * The contents page's two columns (px of the frame): from `top` to `bottom`,
+ * the chapter row's and an entry's type for the fit model, and the room the
+ * last column keeps for the Sources row and the note under it. The plan
+ * fills the columns by measured height, a chapter continuing under a repeated
+ * row; what one page cannot hold is counted in a cut note, never clipped.
+ */
+export const MKTG_FAMILY_PRINT_CONTENTS_LAYOUT = {
+  top: 210,
+  bottom: 1000,
+  columnGap: 32,
+  /** The chapter row: 14 px above and 6 below its 20 px title; the number, version and page cells take `aside` of its width. */
+  chapter: { size: 20, line: 1.2, padding: 20, weight: 500, aside: 110 },
+  /** An entry row: 4 px above and below its 12 px title, indented 36, the page number's cell at the right. */
+  entry: { size: 12, line: 1.3, padding: 8, indent: 36, numberWidth: 28 },
+  /** The Sources row (a chapter row without entries) and the note under it, kept free on the last column. */
+  tail: 124,
+} as const;

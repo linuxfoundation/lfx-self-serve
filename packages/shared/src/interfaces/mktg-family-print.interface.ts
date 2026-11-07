@@ -211,3 +211,22 @@ export interface MktgFamilyPrintBoilerplateCard {
   fontSize: number;
   minHeight: number;
 }
+
+/**
+ * One block of the contents page: a chapter's row and the entries that fit
+ * under it in one column. A chapter the column could not finish continues in
+ * the next under a repeated row (`continued`); `cut` counts the entries the
+ * one page could not hold, named by the note under the block (0 when all fit).
+ */
+export interface MktgFamilyPrintContentsBlock {
+  chapter: MktgFamilyPrintChapter;
+  continued: boolean;
+  entries: MktgFamilyPrintContentsEntry[];
+  cut: number;
+}
+
+/** The contents page's two columns, filled by height; `cut` is the entries of every chapter the page could not hold. */
+export interface MktgFamilyPrintContentsLayout {
+  columns: MktgFamilyPrintContentsBlock[][];
+  cut: number;
+}
