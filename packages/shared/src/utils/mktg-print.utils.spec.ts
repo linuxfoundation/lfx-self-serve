@@ -460,6 +460,9 @@ describe('the framework’s print', () => {
     ]);
     expect(foundationMessagePrintNumbers([{ number: '10000+', label: 'servers' }], facts)[0]).toMatchObject({ number: '10,000+', source: 'Press release' });
     expect(foundationMessagePrintNumbers([{ number: '96%', label: 'a share' }], [])[0].number).toBe('96%');
+    // The label decides a four-digit figure's reading: a year under a year label, a separated count under any other (editor S1).
+    expect(foundationMessagePrintNumbers([{ number: '2000', label: 'research groups run the toolchain' }], [])[0].number).toBe('2,000');
+    expect(foundationMessagePrintNumbers([{ number: '2000', label: 'the year the project was founded' }], [])[0].number).toBe('2000');
     // The stored record's key numbers carry no source of their own: the view's come from the facts, never from the pair.
     expect(buildFoundationMessagePrintView({ ...CONTENT, nums: [['7', 'wonders']] }, 'TestOrbit', 1, null).numbers).toEqual([
       { number: '7', label: 'wonders', source: '' },

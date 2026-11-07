@@ -283,7 +283,7 @@ export function foundationMessagePrintFacts(goals: FoundationMessagePrintGoal[])
 export function foundationMessagePrintNumbers(numbers: FoundationMessageNumberRow[], facts: FoundationMessagePrintFactRow[]): FoundationMessagePrintNumber[] {
   return numbers.map((row) => {
     // The figure prints with its thousands separators (the editor's rule); a fact states it in either form.
-    const number = mktgPrintFigure(row.number);
+    const number = mktgPrintFigure(row.number, row.label);
     const figures = [...new Set([row.number.trim(), number].map((figure) => figure.replace(/\+$/, '')).filter((figure) => figure !== ''))];
     const tokens = figures.map((figure) => new RegExp(`(?:^|[^\\d,.])${figure.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d|[,.]\\d)`));
     const sources = new Set(facts.filter((fact) => tokens.some((token) => token.test(fact.fact))).map((fact) => fact.source));

@@ -18,7 +18,7 @@ describe('the marketing prints’ joined lines', () => {
     expect(mktgPrintJoin([])).toBe('');
   });
 
-  it('prints a figure with thousands separators, and leaves a percentage, a year, a separated or a non-numeric one as stored', () => {
+  it('prints a figure with thousands separators, and leaves a percentage, a separated or a non-numeric one as stored; a year only under a year label', () => {
     expect(mktgPrintFigure('1000')).toBe('1,000');
     expect(mktgPrintFigure('$8000')).toBe('$8,000');
     expect(mktgPrintFigure('10000+')).toBe('10,000+');
@@ -27,8 +27,14 @@ describe('the marketing prints’ joined lines', () => {
     expect(mktgPrintFigure('900')).toBe('900');
     expect(mktgPrintFigure('96%')).toBe('96%');
     expect(mktgPrintFigure('1000%')).toBe('1000%');
-    expect(mktgPrintFigure('2026')).toBe('2026');
-    expect(mktgPrintFigure('$2026')).toBe('$2,026');
+    // A bare 1900–2099 integer is a year only when its label says so; a count of 2,000 is separated (editor S1).
+    expect(mktgPrintFigure('2026', 'the year the foundation was founded')).toBe('2026');
+    expect(mktgPrintFigure('1999', 'Open source since')).toBe('1999');
+    expect(mktgPrintFigure('2026')).toBe('2,026');
+    expect(mktgPrintFigure('2000', 'research groups run the toolchain')).toBe('2,000');
+    expect(mktgPrintFigure('2024', 'audits published every year since')).toBe('2024');
+    expect(mktgPrintFigure('$2026', 'Founded')).toBe('$2,026');
+    expect(mktgPrintFigure('2026+', 'Founded')).toBe('2,026+');
     expect(mktgPrintFigure('12,000')).toBe('12,000');
     expect(mktgPrintFigure('1.2M')).toBe('1.2M');
     expect(mktgPrintFigure('No. 1')).toBe('No. 1');

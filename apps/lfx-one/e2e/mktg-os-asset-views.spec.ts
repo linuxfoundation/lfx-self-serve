@@ -865,11 +865,11 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   const noteCount = await notes.count();
   expect(noteCount).toBeGreaterThan(0);
   for (const note of await notes.all()) await expect(note).toHaveText(/^\+[1-3] more in LFX One$/);
-  // Eight figures print as the table, each with its thousands separators (the editor's rule); the fixture's bare "2000" is in the year range
-  // and prints as stored.
+  // Eight figures print as the table, each with its thousands separators (the editor's rule); the fixture's bare "2000" is a count
+  // under a count's label, so it is separated too — the year rule holds only under a year label (editor S1).
   await expect(page.getByTestId('mktg-framework-print-numbers-table').getByTestId('mktg-framework-print-number-figure')).toHaveText([
     '1,000',
-    '2000',
+    '2,000',
     '3,000',
     '4,000',
     '5,000',

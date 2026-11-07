@@ -20,20 +20,26 @@ export function mktgPrintJoin(parts: readonly string[], dot: string = MKTG_PRINT
     .join(dot);
 }
 
+/** A key number's label that names a year: the figure beside it is a date, not a count (`Founded`, `since`, `the year …`). */
+const YEAR_LABEL_REGEX = /\byear\b|\bsince\b|\bfounded\b/i;
+
 /**
  * A key number's figure as it prints: a purely numeric one gets thousands separators ("1000" → "1,000", "$8000" → "$8,000",
- * "10000+" → "10,000+", "1234.5" → "1,234.5"); one already separated, a percentage, and a bare four-digit year (1900–2099) print as
- * stored, as does anything that is not a plain number (the editor's rule, 7 Nov 2026: separators on figures, the rest untouched).
- * US grouping: the printed strings are US English (the editor's spelling rule), and `Intl` is not reached for, so the server and
- * the browser print the same string.
+ * "10000+" → "10,000+", "1234.5" → "1,234.5"); one already separated, a percentage, and anything that is not a plain number
+ * print as stored (the editor's rule, 7 Nov 2026: separators on figures, the rest untouched). A year prints as stored only
+ * when it is one: a bare four-digit 1900–2099 integer as the whole value AND a label that says so (`year`, `since`,
+ * `founded`); a count of 2,000 under any other label is separated (the editor's S1 read of 33584d0ea, where the year rule
+ * took the overfull record's "2000" for a date). US grouping: the printed strings are US English (the editor's spelling
+ * rule), and `Intl` is not reached for, so the server and the browser print the same string.
  */
-export function mktgPrintFigure(figure: string): string {
+export function mktgPrintFigure(figure: string, label = ''): string {
   const trimmed = figure.trim();
   const match = /^([$€£]?)(\d+)(\.\d+)?([+%]?)$/.exec(trimmed);
   if (!match) return trimmed;
   const [, currency, integer, fraction = '', suffix] = match;
   if (suffix === '%' || integer.length < 4) return trimmed;
-  if (currency === '' && fraction === '' && suffix === '' && integer.length === 4 && /^(19|20)\d\d$/.test(integer)) return trimmed;
+  const bareYear = currency === '' && fraction === '' && suffix === '' && /^(19|20)\d\d$/.test(integer);
+  if (bareYear && YEAR_LABEL_REGEX.test(label)) return trimmed;
   const grouped: string[] = [];
   for (let end = integer.length; end > 0; end -= 3) grouped.unshift(integer.slice(Math.max(0, end - 3), end));
   return `${currency}${grouped.join(',')}${fraction}${suffix}`;
