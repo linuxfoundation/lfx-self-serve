@@ -31,7 +31,13 @@ describe('the Sources & decisions page', () => {
       ...view,
       report: {
         ...view.report,
-        sources_read: ['https://one.example.org', 'https://one.example.org/_next/static/chunks/app.css', 'LFX record: Project One (project-one)'],
+        sources_read: [
+          'https://one.example.org',
+          'https://one.example.org/_next/static/chunks/app.css',
+          'LFX record: Project One (project-one)',
+          'logo.svg',
+          'logo-reversed.svg',
+        ],
         sources_failed: [],
         gaps: ['No symbol file.'],
         notes: '',
@@ -62,6 +68,7 @@ describe('the Sources & decisions page', () => {
       'one.example.org',
       'one.example.org stylesheets',
       'The LFX project record',
+      'the uploaded logo files',
     ]);
     expect(text('brand-kit-sources-failed')).toBe('Could not be read one.example.org/brand.pdf — HTTP 404');
     // A `color_conflict` warning is the conflicts block's, not a warning line.
@@ -75,7 +82,7 @@ describe('the Sources & decisions page', () => {
     expect(rows[0].classList.contains('kp-conflict-kept')).toBe(true);
     expect(wordsOf(rows[0])).toBe('#4D4E4E · kept one.example.org stylesheets');
     expect(rows[1].classList.contains('kp-conflict-kept')).toBe(false);
-    expect(rows[1].textContent).not.toContain('logo.svg');
+    expect(wordsOf(rows[1])).toBe('#4A4A4A the uploaded logo files');
     const accepted = frame.querySelector('[data-testid="brand-kit-sources-accepted"]');
     expect(rectOf(accepted)).toEqual({ left: '56px', top: '880px', width: '704px' });
     expect(wordsOf(accepted)).toContain('Accepted when V4.0 was approved. Approved 6 Nov 2026 by Synthetic Approver.');

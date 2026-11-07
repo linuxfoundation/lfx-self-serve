@@ -18,7 +18,9 @@ import type {
 } from '../interfaces/brand-kit-portrait.interface';
 import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.interface';
 import type { MktgPrintLogo } from '../interfaces/mktg-print.interface';
+import { MKTG_PORTRAIT_FIT } from '../constants/mktg-portrait-print.constants';
 import { brandKitContrastRatio, brandKitLuminance } from './brand-kit-book.utils';
+import { mktgPortraitCharsPerLine } from './mktg-portrait-print.utils';
 import { brandKitLogoFileName, brandKitWebsiteHost } from './brand-kit.utils';
 
 /** How a page draws the artwork: as supplied, reversed to white, or one-colour black. */
@@ -192,21 +194,34 @@ export function brandKitPortraitWeightName(weight: number): string {
 /**
  * The line a type step is shown in, whole and from the kit's own data (the
  * mock takes the framework's pillars and boilerplate, which the kit does not
- * hold): the brand line for the display step, the umbrella message for the
- * body, the footer line for the caption, the first voice attribute's name for
- * the eyebrow, the brand line otherwise. Never cut, never an ellipsis.
+ * hold): the project's name for the display step (the brand line would wrap
+ * at 64 px), the umbrella message for the body, the footer line for the
+ * caption, the brand line for every other step. Never cut, never an ellipsis.
  */
 export function brandKitPortraitTypeSample(view: BrandKitBookView, step: BrandKitTypeStep): string {
   switch (step.step) {
+    case 'display':
+      return view.projectName || view.voice.line;
     case 'body':
       return view.voice.umbrella || view.voice.line;
     case 'caption':
       return view.footer;
-    case 'eyebrow':
-      return view.voice.attributes[0]?.name || view.voice.line;
     default:
       return view.voice.line;
   }
+}
+
+/**
+ * The size a one-line sample is set at so it fits `width`: `size` when it
+ * does, else the largest size (in the grammar's steps, down to `floor`) at
+ * which it does. The sample is never cut.
+ */
+export function brandKitPortraitFitSize(text: string, width: number, size: number, para: { weight?: number; caps?: boolean } = {}, floor = 0.5): number {
+  for (let scale = 1; scale >= floor - 1e-9; scale -= MKTG_PORTRAIT_FIT.scaleStep) {
+    const fitted = Math.floor(size * scale * 2) / 2;
+    if (text.length <= mktgPortraitCharsPerLine(width, fitted, para)) return fitted;
+  }
+  return Math.floor(size * floor * 2) / 2;
 }
 
 /** The type source as the page names it: the host of a URL (`one.example.org`), or the text as written. */
@@ -228,16 +243,18 @@ const USAGE_ACCENT_MOMENTS: Record<BrandKitUsageView['layout'], string> = {
 
 /**
  * The usage page's four cards from the kit's examples, each with the line it
- * shows: the umbrella message on the keynote slide, the brand line on the
- * social card and the report cover, and on the announcement header the
- * membership headline (`New members join <Project>`), the kit holding no
- * headline of its own.
+ * shows, the kit's own copy: the brand line on the keynote slide and the
+ * social card, `<Project> annual report <year>` on the report cover (the
+ * year of the recorded approval, left out without one), and the membership
+ * headline `New members join <Project>` on the announcement header, the kit
+ * holding no headline of its own.
  */
-export function brandKitPortraitUsageCards(view: BrandKitBookView): BrandKitPortraitUsageCard[] {
+export function brandKitPortraitUsageCards(view: BrandKitBookView, approval: MktgRevisionApproval | null = null): BrandKitPortraitUsageCard[] {
+  const year = approval?.approvedAt ? new Date(approval.approvedAt).getUTCFullYear() : null;
   const lines: Record<BrandKitUsageView['layout'], string> = {
-    keynote: view.voice.umbrella || view.voice.line,
+    keynote: view.voice.line,
     social: view.voice.line,
-    report: view.voice.line,
+    report: [view.projectName, 'annual report', year === null || Number.isNaN(year) ? '' : String(year)].filter((part) => part !== '').join(' '),
     announcement: `New members join ${view.projectName}`,
   };
   return view.usageTiles.map((tile, index) => {

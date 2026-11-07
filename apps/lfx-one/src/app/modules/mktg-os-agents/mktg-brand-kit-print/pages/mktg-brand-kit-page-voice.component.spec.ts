@@ -17,7 +17,7 @@ describe('the Voice in brief page', () => {
     expect(messages?.querySelector('.kp-voice-umbrella')?.textContent).toBe(view.voice.umbrella);
     expect(messages?.querySelector('.kp-voice-line')?.textContent).toBe(view.voice.line);
     const attributes = frame.querySelector('[data-testid="brand-kit-voice-attributes"]');
-    expect(rectOf(attributes)).toEqual({ left: '56px', top: '486px', width: '704px' });
+    expect(rectOf(attributes)).toEqual({ left: '56px', top: '540px', width: '704px' });
     const names = Array.from(attributes?.querySelectorAll('.kp-attribute-name') ?? [], (name) => name.textContent);
     expect(names).toEqual(['Plain', 'Specific', 'Neutral', 'Welcoming']);
     expect(attributes?.querySelector('.kp-attribute-line')?.textContent).toBe('One sentence.');

@@ -25,12 +25,18 @@ describe('the Typography page', () => {
     expect(rectOf(scale)).toEqual({ left: '56px', top: '436px', width: '704px' });
     const steps = Array.from(scale?.querySelectorAll<HTMLElement>('[data-step]') ?? []);
     expect(steps.map((step) => step.getAttribute('data-step'))).toEqual(['display', 'h2', 'h3', 'eyebrow', 'body', 'caption']);
+    // The display step shows the project's name at its real size on its own line; a step whose sample would not fit its
+    // line (the brand line at 32 px here) is set smaller, never cut; the spec column still names the step's real size.
     const display = steps[0].querySelector<HTMLElement>('.kp-scale-sample');
     expect(display?.style.fontSize).toBe('64px');
     expect(display?.style.lineHeight).toBe('72px');
-    expect(display?.textContent?.trim()).toBe(view.voice.line);
+    expect(display?.textContent?.trim()).toBe('Project One');
+    expect(steps[0].querySelector('.kp-scale-meta')?.textContent).toContain('500 · 64/72');
+    expect(steps[1].querySelector<HTMLElement>('.kp-scale-sample')?.style.fontSize).toBe('26.5px');
+    expect(steps[1].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.voice.line);
+    expect(steps[1].querySelector('.kp-scale-spec')?.textContent).toBe('500 · 32/40');
     expect(steps[3].querySelector('.kp-scale-sample')?.classList.contains('kp-scale-sample--caps')).toBe(true);
-    expect(steps[3].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe('Plain');
+    expect(steps[3].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.voice.line);
     expect(steps[4].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.voice.umbrella);
     expect(steps[4].querySelector('.kp-scale-spec')?.textContent).toBe('400 · 18/30');
     expect(steps[5].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.footer);

@@ -7,7 +7,7 @@ import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
 
 describe('the Example usage page', () => {
   it('opens the Usage chapter with the four cards in the mock’s layouts, the kit’s words on them, and the table under them', async () => {
-    const { frame, view } = await mountBrandKitPage(MktgBrandKitPageUsageComponent, 'usage');
+    const { frame, view, fixture } = await mountBrandKitPage(MktgBrandKitPageUsageComponent, 'usage');
     expect(frame.getAttribute('data-page')).toBe('13');
     expect(frame.getAttribute('data-section')).toBe('05 Usage');
     expect(frame.querySelector('[data-testid="mktg-portrait-page-band"]')).not.toBeNull();
@@ -22,11 +22,15 @@ describe('the Example usage page', () => {
       'Report cover · letter',
       'Announcement header · 1600×900',
     ]);
-    expect(layouts[0].querySelector('.kp-usage-keynote-text')?.textContent).toBe(view.voice.umbrella);
+    expect(layouts[0].querySelector('.kp-usage-keynote-text')?.textContent).toBe(view.voice.line);
     expect(layouts[1].querySelector('.kp-usage-social-text')?.textContent).toBe(view.voice.line);
     expect(layouts[1].querySelector('.kp-button--tiny')?.textContent).toBe('one.example.org');
-    expect(layouts[2].querySelector('.kp-usage-report-text')?.textContent).toBe(view.voice.line);
+    // The report cover's year is the recorded approval's; without one the line carries no year.
+    expect(layouts[2].querySelector('.kp-usage-report-text')?.textContent).toBe('Project One annual report');
     expect(layouts[3].querySelector('.kp-usage-announcement-text')?.textContent).toBe('New members join Project One');
+    fixture.componentRef.setInput('approval', { approvedAt: '2026-11-06T10:00:00Z', approvedBy: null });
+    await fixture.whenStable();
+    expect(layouts[2].querySelector('.kp-usage-report-text')?.textContent).toBe('Project One annual report 2026');
     // The reversed lockup on the dark grounds, the full-colour one on the report; every card carries one.
     expect(layouts.map((card) => card.querySelectorAll('img').length)).toEqual([1, 1, 1, 1]);
     const table = frame.querySelector('[data-testid="brand-kit-usage-table"]');
