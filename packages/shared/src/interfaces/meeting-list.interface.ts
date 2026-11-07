@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Injector } from '@angular/core';
+
 import type { MeetingVisibilityKind } from '../enums';
 import type { Meeting, MeetingOccurrence, MeetingResponseFilter, MeetingRsvp, PastMeetingSummary, RsvpResponse, RsvpScope } from './meeting.interface';
 import type { UiBadgeTone } from './uikit.interface';
@@ -162,6 +164,10 @@ export interface MeetingSummaryDialogData {
   summary: PastMeetingSummary;
   /** Gets the summary after each saved edit or approval. */
   onChange?: (summary: PastMeetingSummary) => void;
+  /** Defaults to `page`. */
+  origin?: MeetingDialogOrigin;
+  /** Shows a summary still awaiting approval to any reader, marked Pending Review, as the meeting page does. */
+  showPending?: boolean;
 }
 
 /** What the meetings home edit scope dialog opens with. */
@@ -278,4 +284,55 @@ export interface MeetingHomeSummaryChange {
   /** Key of the row the summary dialog was opened from. */
   key: string;
   summary: PastMeetingSummary;
+}
+
+/** What the meeting details drawer shows for its date: before the join window, inside it before the start, under way, or over. */
+export type MeetingDetailsState = 'far' | 'soon' | 'live' | 'ended';
+
+/** Tab of the meeting details drawer. */
+export type MeetingDetailsTab = 'agenda' | 'guests';
+
+/** How the meeting details drawer opens. */
+export interface MeetingDetailsOpenOptions {
+  /** Tab to open on; Agenda & Materials by default. */
+  tab?: MeetingDetailsTab;
+}
+
+/** What the meeting details drawer opens with. */
+export interface MeetingDetailsDrawerData {
+  row: MeetingHomeRow;
+  tab: MeetingDetailsTab;
+  /** The meetings home page's injector, so the drawer reaches the page's store and edit flow. */
+  injector: Injector;
+}
+
+/** A meeting feature badge in the meeting details drawer, such as Recording, shown when its setting is on. */
+export interface MeetingDetailsFeature {
+  setting: 'recording_enabled' | 'transcript_enabled' | 'youtube_upload_enabled' | 'ai_summary_enabled';
+  label: string;
+  icon: string;
+  /** Text colour class of the icon. */
+  iconClass: string;
+}
+
+/** Which artifacts of an ended meeting exist, for its feature badges. */
+export interface MeetingDetailsArtifacts {
+  recording: boolean;
+  transcript: boolean;
+  summary: boolean;
+}
+
+/** One person in the "Organized by" line of the meeting details drawer. */
+export interface MeetingDetailsOrganizer extends MeetingHomeRowOrganizer {
+  /** Pre-filled `mailto:` about the meeting; null for the viewer or without a valid email. */
+  mailto: string | null;
+}
+
+/** The artifacts of an ended date in the meeting details drawer; each is null when it does not exist or its lookup failed. */
+export interface MeetingDetailsArtifactData {
+  /** Share link of the largest recording session. */
+  recordingUrl: string | null;
+  /** Download link of the transcript file; only its presence is used. */
+  transcriptUrl: string | null;
+  summary: PastMeetingSummary | null;
 }

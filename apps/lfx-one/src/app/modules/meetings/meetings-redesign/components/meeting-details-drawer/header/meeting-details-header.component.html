@@ -1,0 +1,41 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<div class="flex items-center justify-between gap-[16px]" data-testid="meeting-details-header">
+  <!-- Inert until the big title scrolls under this row, so it is neither seen nor focused twice. -->
+  <div
+    class="flex h-[32px] min-w-0 flex-auto flex-col justify-center transition duration-200 motion-reduce:transition-none"
+    [class]="compact() ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-[6px] opacity-0'"
+    [attr.aria-hidden]="compact() ? null : 'true'"
+    [attr.inert]="compact() ? null : ''"
+    data-testid="meeting-details-header-compact">
+    @if (project(); as project) {
+      <lfx-meeting-details-project-link class="flex-none" [project]="project" size="small" />
+    }
+    <!-- Focusable so keyboard users can open the tooltip with the full title. -->
+    <span
+      class="flex-none truncate text-[16px] font-medium leading-[20px] text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+      role="img"
+      tabindex="0"
+      [attr.aria-label]="context.shownRow().title"
+      [lfxUiTooltip]="context.shownRow().title"
+      data-testid="meeting-details-header-title"
+      >{{ context.shownRow().title }}</span
+    >
+  </div>
+  <div class="flex flex-none items-center gap-[8px]">
+    <lfx-ui-button variant="secondary" icon="fa-light fa-copy" (click)="copyLink()" data-testid="meeting-details-copy-link">Copy Link</lfx-ui-button>
+    @if (canEdit()) {
+      <lfx-ui-button variant="secondary" icon="fa-light fa-ellipsis" ariaLabel="More actions" iconOnly [menu]="moreMenu" data-testid="meeting-details-more" />
+    }
+    <span class="mx-[6px] h-[20px] w-px bg-gray-200" aria-hidden="true"></span>
+    <lfx-ui-button variant="tertiary" icon="fa-light fa-xmark" ariaLabel="Close" iconOnly (click)="close()" data-testid="meeting-details-close" />
+  </div>
+</div>
+
+<ng-template #moreMenu>
+  <lfx-ui-menu ariaLabel="Meeting actions" data-testid="meeting-details-more-menu">
+    <lfx-ui-menu-item icon="fa-light fa-pen" (triggered)="editMeeting()" data-testid="meeting-details-edit">Edit Meeting</lfx-ui-menu-item>
+  </lfx-ui-menu>
+</ng-template>
