@@ -192,7 +192,7 @@ describe('BrandKitWebViewComponent', () => {
       );
     });
 
-    it('hides Download PDF and the footer’s PDF sentence while its flag is off, Export to Google Slides solid and alone, restoring today’s row when it turns on (#5302)', async () => {
+    it('hides Download PDF, the footer’s PDF sentence and the whole book while its flag is off, Export to Google Slides solid and alone, restoring today’s row when it turns on (#5302)', async () => {
       pdfFlag.set(false);
       await fixture.whenStable();
       const actions = query('brand-kit-web-view-actions');
@@ -203,10 +203,12 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-footer')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
         'Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.'
       );
-      // The book stays in its print-only wrapper: only the entry button is gated.
-      expect(query('brand-kit-web-view-print')).not.toBeNull();
+      // Nothing of the book is in the page without the flag: neither the button nor the print-only wrapper and its frames.
+      expect(query('brand-kit-web-view-print')).toBeNull();
+      expect(fixture.nativeElement.querySelectorAll('[data-testid="lfx-mktg-portrait-page"]')).toHaveLength(0);
       pdfFlag.set(true);
       await fixture.whenStable();
+      expect(query('brand-kit-web-view-print')).not.toBeNull();
       expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual([
         'Export to Google Slides',
         'Download PDF',
@@ -250,7 +252,9 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v3');
       // Viewing a new Draft does not relabel the independently approved print target.
       expect(query('mktg-brand-kit-print')?.getAttribute('data-revision')).toBe('V1.0');
-      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V1.0');
+      // The book's cover names the approved revision it prints, not the Draft on screen.
+      expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
+      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V3.0');
     });
 
     it('prints approved kit bytes while the screen renders a different Draft', async () => {
@@ -293,23 +297,26 @@ describe('BrandKitWebViewComponent', () => {
 
     it('prints the active project identity and local chapter numbers, not kit-content identity or family prefixes', async () => {
       const wrapper = query('brand-kit-web-view-print');
-      const head = () => wrapper?.querySelector('[data-testid="mktg-print-running-head"]')?.textContent;
-      expect(head()).toContain('Synthetic project Brand kit');
+      const head = () => wrapper?.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent;
+      expect(head()).toContain('Synthetic project brand kit');
       expect(head()).not.toContain('Project One');
-      expect(Array.from(wrapper?.querySelectorAll('h2 > span') ?? []).map((span) => span.textContent?.trim())).toEqual(['1', '2', '3', '4', '5']);
+      // The running heads number the kit's own chapters from 01, with no family prefix.
+      const sections = Array.from(wrapper?.querySelectorAll('[data-testid="mktg-portrait-page-section"]') ?? [], (span) => span.textContent?.trim());
+      expect([...new Set(sections)]).toEqual(['Contents', '01 Logo', '02 Color', '03 Type', '04 Visual', '05 Usage', '06 Voice', '07 Sources']);
       activeContext.set({ slug: 'synthetic', name: 'Updated project context' });
       await fixture.whenStable();
-      expect(head()).toContain('Updated project context Brand kit');
+      expect(head()).toContain('Updated project context brand kit');
       expect(wrapper?.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V1.0');
     });
 
-    it('keeps the shared native portrait chapters in the print-only wrapper without changing screen content', () => {
+    it('keeps the portrait book in the print-only wrapper without changing screen content', () => {
       const wrapper = query('brand-kit-web-view-print');
       expect(wrapper?.classList.contains(BRAND_KIT_PRINT_ONLY_CLASS)).toBe(true);
       expect(wrapper?.classList.contains(FOUNDATION_MESSAGE_PRINT_ONLY_CLASS)).toBe(true);
-      expect(wrapper?.querySelector('.lfx-framework-print.lfx-brand-kit-portrait')).not.toBeNull();
-      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
-      expect(wrapper?.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
+      // The kit's portrait book: one frame per plan page (the synthetic kit has no symbol, so sixteen), on the portrait root.
+      expect(wrapper?.querySelector('.lfx-brand-kit-portrait.lfx-mktg-portrait')).not.toBeNull();
+      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]')).toHaveLength(16);
+      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="mktg-portrait-page-head"]')).toHaveLength(14);
       expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(0);
       expect(host().querySelector(`.${BRAND_KIT_PRINT_ONLY_CLASS}`)?.contains(query('mktg-brand-kit-print'))).toBe(true);
       // The book brings no toolbar of its own: the actions are the web view's.
@@ -709,7 +716,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(frame?.contentDocument?.querySelector('lfx-mktg-brand-kit-print')).not.toBeNull();
       // The frame's title names the saved PDF like the deck: the project, the asset, the approved revision and that revision's own date.
       expect(frame?.contentDocument?.title).toBe('Synthetic project · Brand kit · v1 · 2026-10-20');
-      expect(frame?.contentDocument?.querySelector('[data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project Brand kit');
+      expect(frame?.contentDocument?.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent).toContain('Synthetic project brand kit');
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
       expect(print).not.toHaveBeenCalled();
 
@@ -750,9 +757,9 @@ describe('BrandKitWebViewComponent', () => {
   describe('on the server', () => {
     beforeEach(async () => configure('server'));
 
-    it('renders the page and hidden portrait chapters, and never prints on the server', async () => {
+    it('renders the page and the hidden portrait book, and never prints on the server', async () => {
       expect(query('brand-kit-web-view-panel-overview')).not.toBeNull();
-      expect(query('brand-kit-web-view-print')?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
+      expect(query('brand-kit-web-view-print')?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]')).toHaveLength(16);
 
       button('brand-kit-web-view-download-pdf')?.click();
       await fixture.whenStable();

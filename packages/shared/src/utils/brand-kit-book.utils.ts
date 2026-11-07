@@ -294,6 +294,7 @@ export function buildBrandKitBookView(kit: BrandKitRevision, version?: number | 
     footer: `${kit.projectName} · a Linux Foundation project`,
     dark,
     accent,
+    spark: kit.kit.spark,
     tint,
     lightGray,
     darkName,

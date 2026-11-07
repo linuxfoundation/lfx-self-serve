@@ -1,0 +1,1182 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The Brand Kit's portrait pages on the portrait grammar (`components/mktg-portrait/_mktg-portrait.scss`):
+   the kit's own blocks, under the `kp-` prefix, global for the same reason as the grammar's `pp-` classes
+   (they are set on content projected into the page frame). Every measurement is the mock's, in px, and the
+   neutral inks are the grammar's custom properties (`--pp-ink`, `--pp-muted`, `--pp-hairline`, `--pp-mist`);
+   the kit's colours are its own (`--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`). */
+
+/* ---- Contents ---- */
+
+/* The contents list: one column, or two (24 px apart) when one cannot hold the rows above the lower blocks
+   (BRAND_KIT_PORTRAIT_CONTENTS, brandKitPortraitContentsLayout). */
+.kp-contents-list--columns {
+  columns: 2;
+  column-gap: 24px;
+}
+
+/* One row of the contents list: number (34 px, muted, 11 px) and title, the page number right, over a hairline.
+   34 px a row (the design reader's answer: type 15/1.3, 7 px of padding, the hairline), so fifteen rows end at
+   y 658 and clear the two blocks at y 690; the mock's 36 px rows collided with the "what this kit is built from" label. */
+.kp-contents-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  height: 34px;
+  padding: 7px 0;
+  border-top: 1px solid var(--pp-hairline);
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--pp-ink);
+  break-inside: avoid;
+}
+
+.kp-contents-number {
+  display: inline-block;
+  width: 34px;
+  font-size: 11px;
+  color: var(--pp-muted);
+}
+
+.kp-contents-page {
+  font-size: 13px;
+  color: var(--pp-muted);
+}
+
+/* The "At a glance" card: hairline, 12 px radius, 18 px padding, 270 px tall. */
+.kp-glance {
+  height: 270px;
+  padding: 18px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 12px;
+}
+
+.kp-glance-dot {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  margin-right: 12px;
+  font-size: 9.5px;
+  color: var(--pp-muted);
+}
+
+.kp-glance-dot-swatch {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 50%;
+}
+
+.kp-glance-family {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--pp-dark);
+}
+
+.kp-glance-weights {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--pp-muted);
+}
+
+.kp-glance-meta {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--pp-muted);
+}
+
+/* The 12.5/1.6 text under a label, and its 11/1.5 muted note. */
+.kp-text {
+  margin-top: 10px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--pp-ink);
+}
+
+.kp-note {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pp-muted);
+}
+
+/* ---- Logo ---- */
+
+/* The hero: a hairline box, 12 px radius, the artwork centred. */
+.kp-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 12px;
+}
+
+.kp-hero--dark {
+  border: 0;
+  background: var(--pp-dark);
+}
+
+.kp-hero--mist {
+  border: 0;
+  background: var(--pp-mist);
+}
+
+/* A row of tiles, 16 px apart; a tile is 224 × 150 unless the page says otherwise. */
+.kp-tiles {
+  display: flex;
+  gap: 16px;
+}
+
+.kp-tiles--wrap {
+  flex-wrap: wrap;
+  gap: 24px 16px;
+}
+
+.kp-tile {
+  width: 224px;
+  height: 150px;
+}
+
+.kp-tile--wide {
+  width: 344px;
+  height: 250px;
+}
+
+/* The logo files table: caps heads over a 1 px ink rule, 11.5/1.4 rows over hairlines, the source muted. */
+.kp-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--pp-ink);
+
+  th {
+    padding: 6px 10px 6px 0;
+    border-bottom: 1px solid var(--pp-ink);
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-align: left;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--pp-muted);
+  }
+
+  td {
+    padding: 5px 10px 5px 0;
+    border-bottom: 1px solid var(--pp-hairline);
+    vertical-align: top;
+  }
+
+  td:first-child {
+    font-weight: 600;
+  }
+
+  td:last-child {
+    color: var(--pp-muted);
+  }
+}
+
+/* The two-column rules list under a label: hairline above each, 12/1.5 (colorways) or 12.5/1.6 (partnership). */
+.kp-rules {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 24px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kp-rule {
+  padding-top: 8px;
+  border-top: 1px solid var(--pp-hairline);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pp-ink);
+
+  b {
+    color: var(--pp-dark);
+  }
+}
+
+.kp-rule--numbered {
+  display: flex;
+  gap: 12px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.kp-rule-number {
+  min-width: 28px;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--pp-accent);
+}
+
+/* Clear space: the dashed X box on the mist stage, the X badges on the spark in the ink on the accent. */
+.kp-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 330px;
+  border-radius: 12px;
+  background: var(--pp-mist);
+}
+
+.kp-clear {
+  position: relative;
+  padding: 60px;
+  border: 1.5px dashed var(--pp-spark);
+}
+
+.kp-x {
+  position: absolute;
+  padding: 4px 7px;
+  border-radius: 4px;
+  background: var(--pp-spark);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--pp-on-accent);
+}
+
+.kp-x--top {
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.kp-x--bottom {
+  bottom: 0;
+  left: 50%;
+  transform: translate(-50%, 50%);
+}
+
+.kp-x--left {
+  top: 50%;
+  left: 0;
+  transform: translate(-50%, -50%);
+}
+
+.kp-x--right {
+  top: 50%;
+  right: 0;
+  transform: translate(50%, -50%);
+}
+
+.kp-scaling {
+  display: flex;
+  align-items: flex-end;
+  gap: 40px;
+  margin-top: 16px;
+}
+
+.kp-scaling-label {
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--pp-muted);
+}
+
+/* The three minimum-size cards: 34/1 figure in the dark, 11/1.4 muted label. */
+.kp-figure-card {
+  flex: 1;
+  padding: 18px 20px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 10px;
+}
+
+.kp-figure {
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--pp-dark);
+}
+
+.kp-figure-label {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--pp-muted);
+}
+
+/* Symbol in shape: a 158 px stage, the shape inside (a circle or a 24 px rounded square), with a hairline. */
+.kp-shape-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 158px;
+  height: 158px;
+  border-radius: 12px;
+}
+
+.kp-shape-stage--mist {
+  background: var(--pp-mist);
+}
+
+.kp-shape {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pp-hairline);
+}
+
+.kp-padding-demo {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 200px;
+  height: 200px;
+  border-radius: 24px;
+  background: var(--pp-dark);
+}
+
+.kp-padding-demo-inset {
+  position: absolute;
+  inset: 40px;
+  border: 1.5px dashed var(--pp-spark);
+  border-radius: 12px;
+}
+
+/* Partnership: the partner's slot (a dashed 220 × 72 box) and the bar between the marks. */
+.kp-partner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 220px;
+  height: 72px;
+  border: 1.5px dashed var(--pp-muted);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--pp-muted);
+}
+
+.kp-partner--dark {
+  border-color: rgb(255 255 255 / 60%);
+  color: rgb(255 255 255 / 70%);
+}
+
+.kp-bar {
+  width: 2px;
+  background: var(--pp-dark);
+}
+
+.kp-bar--white {
+  background: var(--pp-white);
+}
+
+/* Watchouts: a 3-column grid of 190 px tiles with the red cross, the label 12/1.4 under each. */
+.kp-watchouts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 28px 16px;
+}
+
+.kp-watchout {
+  height: 190px;
+}
+
+.kp-watchout-label {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--pp-ink);
+}
+
+.kp-no {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--pp-fail);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  color: var(--pp-white);
+}
+
+/* The retyped sample: the project's name in a serif italic, centred in its tile with 12 px of side padding (a name
+   longer than the tile wraps, centred, at a 1.15 leading). */
+.kp-retyped {
+  padding: 0 12px;
+  font-family: Georgia, serif;
+  font-size: 30px;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  color: var(--pp-dark);
+}
+
+/* The mist call-out: 12 px radius, 20 × 24 padding, the artwork and a 12.5/1.6 line. */
+.kp-callout {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 20px 24px;
+  border-radius: 12px;
+  background: var(--pp-mist);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--pp-ink);
+
+  /* The lockup keeps its drawn width beside the text: never shrunk as a flex item. */
+  > lfx-mktg-brand-kit-artwork {
+    flex: none;
+  }
+}
+
+/* ---- Color ---- */
+
+/* A swatch: 344 wide, the colour 180 tall (110 with five colours) with its name bottom left, the values under it. */
+.kp-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px 16px;
+}
+
+.kp-swatch {
+  width: 344px;
+}
+
+.kp-swatch-color {
+  position: relative;
+  height: 180px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 10px;
+}
+
+.kp-swatch-color--short {
+  height: 110px;
+}
+
+.kp-swatch-name {
+  position: absolute;
+  bottom: 12px;
+  left: 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.kp-swatch-values {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--pp-ink);
+}
+
+.kp-swatch-codes {
+  width: 150px;
+}
+
+.kp-swatch-role {
+  flex: 1;
+}
+
+.kp-swatch-source {
+  color: var(--pp-muted);
+}
+
+/* The proportion bar and its legend. */
+.kp-proportion {
+  display: flex;
+  height: 28px;
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 6px;
+}
+
+.kp-legend {
+  display: flex;
+  gap: 18px;
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--pp-muted);
+}
+
+.kp-legend-swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+/* ---- Shared by the later pages ---- */
+
+/* A labelled block of the two-column pages, 26 px under the one before. */
+.kp-block {
+  margin-bottom: 26px;
+}
+
+.kp-muted {
+  color: var(--pp-muted);
+}
+
+.kp-text--tight {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.kp-text--loose {
+  line-height: 1.6;
+}
+
+/* A plain list under a label: 12.5/1.6, 16 px indent with the browser's bullet markers in it (the mock's plain
+   `<ul>`; the app's preflight removes them, so they are asked for), the same on every page; `--loose` 12.5/1.7 with
+   10 px above; `--columns` in two. An item's words break anywhere rather than leave the column (a record's address
+   can be one long token). */
+.kp-list {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--pp-ink);
+  list-style: disc;
+  overflow-wrap: anywhere;
+
+  b {
+    color: var(--pp-dark);
+  }
+}
+
+.kp-list--loose {
+  margin-top: 10px;
+  line-height: 1.7;
+}
+
+.kp-list--columns {
+  columns: 2;
+  column-gap: 24px;
+}
+
+/* A WCAG grade pill: 9 px semibold on its grade's tint. */
+.kp-pill {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* ---- Color contrast ---- */
+
+/* The matrix: a row per text colour over every ground, 78 px cells with the Aa sample and the ratio and grade bottom left. */
+.kp-matrix {
+  width: 100%;
+  border-collapse: collapse;
+
+  thead th {
+    padding: 0 4px 6px;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-align: left;
+    text-transform: uppercase;
+    color: var(--pp-muted);
+  }
+
+  tbody th {
+    padding-right: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: left;
+    vertical-align: middle;
+    color: var(--pp-dark);
+  }
+
+  td {
+    padding: 4px;
+  }
+}
+
+.kp-matrix-corner {
+  width: 104px;
+}
+
+.kp-matrix-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+
+.kp-matrix-same {
+  height: 78px;
+  border-radius: 6px;
+  background: var(--pp-mist);
+}
+
+.kp-matrix-cell {
+  position: relative;
+  height: 78px;
+  padding: 8px 10px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 6px;
+}
+
+.kp-matrix-aa {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.kp-matrix-meta {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kp-matrix-ratio {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--pp-white);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--pp-ink);
+}
+
+.kp-matrix-ratio--tinted {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+/* The kit's pairs: a 110 × 36 sample, the names, the ratio and the grade, over a hairline. */
+.kp-pairs {
+  margin-top: 6px;
+}
+
+.kp-pair {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 0;
+  border-top: 1px solid var(--pp-hairline);
+}
+
+.kp-pair-sample {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 110px;
+  height: 36px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.kp-pair-names {
+  flex: 1;
+  font-size: 12px;
+  color: var(--pp-ink);
+}
+
+.kp-pair-ratio {
+  width: 56px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pp-dark);
+}
+
+/* ---- Typography ---- */
+
+/* The H1 sample: 48 px medium in one line (the component shrinks the size until the brand line fits), the character set under it, the weights beside their names. */
+.kp-type-h1 {
+  font-weight: 500;
+  line-height: 1.08;
+  letter-spacing: -0.015em; /* = BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM, the measure's tracking for the sample */
+  white-space: nowrap;
+  color: var(--pp-dark);
+}
+
+.kp-type-characters {
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--pp-ink);
+}
+
+.kp-type-weights {
+  display: flex;
+  gap: 28px;
+  margin-top: 18px;
+}
+
+.kp-type-weight {
+  font-size: 30px;
+  line-height: 1;
+  color: var(--pp-dark);
+}
+
+.kp-type-weight-name {
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--pp-muted);
+}
+
+.kp-type-weights-note {
+  align-self: flex-end;
+  max-width: 260px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--pp-muted);
+}
+
+/* The scale: a row per step over a hairline, label and spec 96 px each, the sample at its real size; the display step on its own line. */
+.kp-scale {
+  margin-top: 6px;
+}
+
+/* The scale and the two lower blocks in one flow: the scale at least the room above the mock's y 830 (its min-height is
+   set from the page's constants), the blocks 16 px under it, side by side, 340 px each with the 24 px gutter. */
+.kp-type-lower {
+  display: flex;
+  gap: 24px;
+  margin-top: 16px;
+}
+
+.kp-type-lower-block {
+  flex: none;
+  width: 340px;
+}
+
+.kp-scale-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 8px 0;
+  border-top: 1px solid var(--pp-hairline);
+}
+
+.kp-scale-display {
+  padding: 8px 0 10px;
+  border-top: 1px solid var(--pp-hairline);
+}
+
+.kp-scale-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 10.5px;
+  color: var(--pp-muted);
+}
+
+.kp-scale-label,
+.kp-scale-spec {
+  width: 96px;
+  flex: none;
+  font-size: 10.5px;
+  color: var(--pp-muted);
+}
+
+.kp-scale-sample {
+  flex: 1;
+  color: var(--pp-dark);
+}
+
+.kp-scale-sample--display {
+  margin-top: 4px;
+  letter-spacing: -0.01em;
+}
+
+.kp-scale-sample--caps {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ---- Iconography ---- */
+
+/* The recommended set's labelled icon: the icon, then its label 14 px after it. The shared icon centres itself with
+   auto margins (the web view's tiles); in this flex row an auto margin would take the row's free space and push the
+   label to the far edge, so the margins are zeroed here. */
+.kp-icon-labelled {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--pp-ink);
+
+  svg {
+    margin: 0;
+    color: var(--pp-dark);
+  }
+}
+
+.kp-icon-sizes {
+  display: flex;
+  align-items: flex-end;
+  gap: 36px;
+  margin-top: 12px;
+}
+
+.kp-icon-size {
+  text-align: center;
+}
+
+.kp-icon-size-label {
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--pp-muted);
+}
+
+.kp-icon-sizes-note {
+  max-width: 300px;
+  margin-left: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pp-muted);
+}
+
+/* ---- Imagery & graphic elements ---- */
+
+/* The default ground, 330 tall, 12 px radius. */
+.kp-ground {
+  height: 330px;
+  border-radius: 12px;
+}
+
+/* The three element cards, 220 tall, in a 3-column grid with 16 px gaps; their captions under them. */
+.kp-elements {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+
+.kp-element {
+  box-sizing: border-box;
+  height: 220px;
+  padding: 20px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 10px;
+}
+
+.kp-element-message {
+  margin-top: 12px;
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--pp-dark);
+}
+
+.kp-element--buttons {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+}
+
+.kp-element--callout {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 0;
+}
+
+.kp-element-callout-text {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.kp-element-captions {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--pp-muted);
+
+  span {
+    flex: 1;
+  }
+}
+
+/* The pill buttons: primary on the kit's dark, secondary outlined, the small and tiny ones the URL chips. */
+.kp-button {
+  align-self: flex-start;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.kp-button--primary {
+  padding: 12px 22px;
+  background: var(--pp-dark);
+  color: var(--pp-white);
+}
+
+.kp-button--secondary {
+  padding: 11px 21px;
+  border: 1.5px solid var(--pp-dark);
+  color: var(--pp-dark);
+}
+
+.kp-button--small {
+  padding: 8px 14px;
+  background: var(--pp-dark);
+  font-size: 11px;
+  color: var(--pp-white);
+}
+
+.kp-button--tiny {
+  padding: 6px 12px;
+  background: var(--pp-dark);
+  font-size: 10px;
+  color: var(--pp-white);
+}
+
+/* ---- Example usage ---- */
+
+/* The four cards, 344 wide and 210 tall, two to a row with 24 × 16 px gaps. */
+.kp-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px 16px;
+}
+
+.kp-usage-card {
+  width: 344px;
+}
+
+.kp-usage-frame {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 210px;
+  padding: 18px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.kp-usage-frame--keynote {
+  display: block;
+  padding: 0;
+}
+
+.kp-usage-lockup {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 1;
+}
+
+.kp-usage-keynote-text {
+  position: absolute;
+  right: 18px;
+  bottom: 20px;
+  left: 18px;
+  z-index: 1;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--pp-white);
+}
+
+.kp-usage-social-text {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+.kp-usage-frame--report {
+  border: 1px solid var(--pp-hairline);
+}
+
+.kp-usage-report-text {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--pp-dark);
+}
+
+.kp-usage-frame--announcement {
+  border-top: 6px solid var(--pp-spark);
+  background: var(--pp-dark);
+}
+
+.kp-usage-announcement-text {
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--pp-white);
+}
+
+.kp-table--usage {
+  margin-top: 0;
+
+  td {
+    padding: 7px 10px 7px 0;
+  }
+}
+
+/* ---- Voice ---- */
+
+.kp-voice-umbrella {
+  margin-top: 10px;
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--pp-dark);
+}
+
+.kp-voice-line-block {
+  margin-top: 26px;
+}
+
+.kp-voice-line {
+  margin-top: 8px;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--pp-dark);
+}
+
+/* The attributes in two columns from y 540, each under a 3 px rule (the first in the spark, the rest in the accent); set
+   large (name 20 px, line 15/1.6, 28 px row gap) so four run to about y 900. The grid is set at the fit model's scale
+   (--kp-fit, 1 when it fits as written; BRAND_KIT_PORTRAIT_ATTRIBUTES, brandKitPortraitAttributesFit), so more
+   attributes, or longer lines, never run under the footer. */
+.kp-attributes {
+  --kp-fit: 1;
+
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(28px * var(--kp-fit)) 16px;
+}
+
+.kp-attribute {
+  padding-top: calc(14px * var(--kp-fit));
+  border-top: 3px solid var(--pp-accent);
+}
+
+.kp-attribute-name {
+  font-size: calc(20px * var(--kp-fit));
+  font-weight: 600;
+  color: var(--pp-dark);
+}
+
+.kp-attribute-line {
+  margin-top: calc(8px * var(--kp-fit));
+  font-size: calc(15px * var(--kp-fit));
+  line-height: 1.6;
+  color: var(--pp-ink);
+}
+
+/* ---- Sources & decisions ---- */
+
+/* A Sources column set at the fit model's scale (--kp-fit, 1 when the lists fit as written): its labels, lists,
+   gaps and conflict tables scale together, as the model measured them (brandKitPortraitSourcesFit). */
+.kp-sources-column {
+  --kp-fit: 1;
+
+  .pp-lab {
+    font-size: calc(10px * var(--kp-fit));
+  }
+
+  .kp-block {
+    margin-bottom: calc(26px * var(--kp-fit));
+  }
+
+  .kp-list {
+    margin-top: calc(8px * var(--kp-fit));
+    font-size: calc(12.5px * var(--kp-fit));
+  }
+
+  .kp-text {
+    margin-top: calc(10px * var(--kp-fit));
+    font-size: calc(12.5px * var(--kp-fit));
+  }
+
+  .kp-conflict {
+    margin-top: calc(8px * var(--kp-fit));
+    font-size: calc(12.5px * var(--kp-fit));
+  }
+}
+
+.kp-sources-intro {
+  max-width: 640px;
+}
+
+/* A colour conflict: its name, then a row per value with its swatch, the kept one bold. */
+.kp-conflict {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--pp-ink);
+  overflow-wrap: anywhere;
+
+  th {
+    padding-bottom: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    color: var(--pp-dark);
+  }
+
+  td {
+    padding: 5px 8px 5px 0;
+    border-top: 1px solid var(--pp-hairline);
+  }
+
+  td:first-child {
+    width: 22px;
+  }
+
+  td:last-child {
+    padding-right: 0;
+  }
+}
+
+.kp-conflict-kept td:nth-child(2) {
+  font-weight: 600;
+}
+
+.kp-conflict-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+.kp-callout--approval {
+  display: block;
+  padding: 16px 20px;
+  font-size: 12px;
+
+  b {
+    color: var(--pp-dark);
+  }
+}

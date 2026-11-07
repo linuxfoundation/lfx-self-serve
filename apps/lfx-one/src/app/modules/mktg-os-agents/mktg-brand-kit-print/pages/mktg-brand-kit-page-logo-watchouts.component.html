@@ -1,0 +1,41 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-watchouts-intro">
+    Consistency is what makes the mark recognizable. When in doubt: full color on white, or reversed on {{ v.darkName }}, with X of clear space.
+  </p>
+  @if (v.logos.primary?.src && tiles().length) {
+    <div class="kp-watchouts" [lfxPpRect]="[x, 220, w]" data-testid="brand-kit-watchouts-tiles">
+      @for (tile of tiles(); track tile.label) {
+        <div>
+          <div class="pp-tile kp-watchout" [style.background]="tile.ground">
+            @if (tile.retyped) {
+              <span class="kp-retyped">{{ v.projectName }}</span>
+            } @else {
+              <span class="inline-block" [style.transform]="tile.transform || null" [style.filter]="tile.filter || null">
+                <lfx-mktg-brand-kit-artwork [view]="v" [height]="30" />
+              </span>
+            }
+            <span class="kp-no" aria-hidden="true">✕</span>
+          </div>
+          <div class="kp-watchout-label">{{ tile.label }}</div>
+        </div>
+      }
+    </div>
+    <div [lfxPpRect]="[x, 760, w]">
+      <div class="kp-callout" data-testid="brand-kit-watchouts-default">
+        <lfx-mktg-brand-kit-artwork [view]="v" [height]="36" />
+        <div>The one safe default: the full-color horizontal lockup on white, X of clear space, never smaller than {{ minimum() }} px tall.</div>
+      </div>
+    </div>
+  }
+</lfx-mktg-portrait-page>

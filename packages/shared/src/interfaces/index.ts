@@ -268,6 +268,7 @@ export * from './mktg-document-comments.interface';
 export * from './mktg-document-redraft.interface';
 export * from './mktg-document-run.interface';
 export * from './mktg-print.interface';
+export * from './mktg-portrait-print.interface';
 export * from './mktg-run.interface';
 export * from './mktg-slides-export.interface';
 
@@ -407,6 +408,7 @@ export * from './org-lens-roi.internal.interface';
 // Brand Kit generation contract interfaces
 export * from './boilerplates.interface';
 export * from './brand-kit-icons.interface';
+export * from './brand-kit-portrait.interface';
 export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces

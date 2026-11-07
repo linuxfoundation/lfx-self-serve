@@ -1,0 +1,439 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The portrait print grammar (`lfx-mktg-portrait-*`): one fixed US Letter frame per page, 816×1056 px at
+   96 dpi, children placed by absolute measurements, so Chromium and WebKit paginate one frame per sheet
+   and nothing flows across a page edge (CSS Paged Media: `@page { size: 8.5in 11in; margin: 0 }`,
+   `break-after: page` on every frame). Global, under the `pp-` prefix, because the pages' type helpers
+   (`pp-lab`, `pp-body`, `pp-cap`, `pp-chip`) are set on content a document projects INTO the
+   frame, which a component's own emulated stylesheet would not reach. Every value mirrors the shared
+   constants (MKTG_PORTRAIT_PAGE, MKTG_PORTRAIT_INKS, MKTG_PRINT_PAGE_SETUPS['mktg-portrait']), which a
+   stylesheet cannot read: keep them in step. The kit's dark, accent, spark and typeface are the frame's
+   custom properties (`--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`, `--pp-font`), bound by
+   `lfx-mktg-portrait-page` from the document's look. */
+
+$pp-width: 816px;
+$pp-height: 1056px;
+$pp-margin: 56px;
+$pp-inset: 72px;
+$pp-head-top: 36px;
+$pp-title-top: 84px;
+$pp-foot-bottom: 28px;
+$pp-band-top: 24px;
+$pp-band-height: 4px;
+
+/* The print root of a document made of frames: a plain block at the page's edge, never padded or positioned
+   (a positioned or padded wrapper between the body and a frame shifts or clips the sheet). The frames paint their own
+   grounds edge to edge, so the root paints none. */
+.lfx-mktg-portrait {
+  display: block;
+  width: $pp-width;
+  margin: 0;
+  padding: 0;
+}
+
+.pp-page {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: $pp-width;
+  height: $pp-height;
+  margin: 0;
+  overflow: hidden;
+  background: var(--pp-white);
+  color: var(--pp-ink);
+  font-family: var(--pp-font, inherit);
+  font-size: 12.5px;
+  line-height: 1.6;
+  break-after: page;
+  page-break-after: always;
+  break-inside: avoid;
+  page: mktg-portrait;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+
+  /* The neutral inks (--pp-ink, --pp-muted, --pp-hairline, --pp-mist, --pp-white, --pp-fail) and the look's
+     (--pp-dark, --pp-accent, --pp-spark, --pp-on-accent, --pp-font) are set on the frame by the page component
+     from MKTG_PORTRAIT_INKS and MktgPortraitLook; every rule below reads them. */
+
+  * {
+    box-sizing: border-box;
+  }
+
+  /* The browser's element margins go, at no specificity (:where), so a class on the element (`.pp-cover-lede`'s
+     margin-top, say) still sets its own. */
+  :where(p, ul, ol, h1, h2, h3, figure) {
+    margin: 0;
+  }
+
+  /* Every text in the frame is set in the kit's own face (the mock: "Instrument Sans carries every communication")
+     at the size and leading of the block it sits in. The app's layers put Inter on p, headings, labels, buttons and
+     inputs by element (and a layer's 1rem/1.5 on a paragraph), which would beat the frame's inherited `--pp-font`
+     and a block's 12.5/1.6; this unlayered rule, at no specificity, hands them back to the frame, and a class on the
+     element (`.pp-cover-lede`, say) still sets its own. */
+  :where(p, h1, h2, h3, h4, h5, h6, label, button, input, table) {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  img {
+    display: block;
+  }
+}
+
+.pp-page--dark {
+  background: var(--pp-dark);
+  color: var(--pp-white);
+}
+
+/* Absolute placement, the `R(x, y, w, h)` convention: the directive `[lfxPpRect]` sets the coordinates. */
+.pp-r {
+  position: absolute;
+}
+
+/* The chapter band: a 4 px accent rule above the running head on a chapter's first page. */
+.pp-band {
+  position: absolute;
+  left: $pp-margin;
+  right: $pp-margin;
+  top: $pp-band-top;
+  height: $pp-band-height;
+  border-radius: 2px;
+  background: var(--pp-accent);
+}
+
+/* The running head: section label left (kit dark; the accent on a band page), document name right (muted),
+   over a 1 px ink rule, 8 px of padding. */
+.pp-head {
+  position: absolute;
+  left: $pp-margin;
+  right: $pp-margin;
+  top: $pp-head-top;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--pp-ink);
+  padding-bottom: 8px;
+
+  .pp-page--dark & {
+    border-bottom-color: rgba(255, 255, 255, 0.25);
+  }
+}
+
+/* The section label is a `.pp-lab` in the kit's dark, not the label's muted: the head's selector outweighs the label's
+   (the two classes alone tie, and the label's rule comes later in this sheet). Under the chapter band (the modifier is
+   on the head itself) and on a dark page it is the accent. */
+.pp-head .pp-head-section {
+  color: var(--pp-dark);
+}
+
+.pp-head.pp-head--band .pp-head-section,
+.pp-page--dark .pp-head .pp-head-section {
+  color: var(--pp-accent);
+}
+
+.pp-head-doc {
+  color: var(--pp-muted);
+
+  .pp-page--dark & {
+    color: rgba(255, 255, 255, 0.6);
+  }
+}
+
+/* The page title, 34/1.1 medium, at top 84. */
+.pp-title {
+  position: absolute;
+  left: $pp-margin;
+  top: $pp-title-top;
+  width: $pp-width - 2 * $pp-margin;
+  margin: 0;
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--pp-dark);
+
+  .pp-page--dark & {
+    color: var(--pp-white);
+  }
+}
+
+/* The footer, 28 px from the bottom: project left, two-digit page number right. */
+.pp-foot {
+  position: absolute;
+  left: $pp-margin;
+  right: $pp-margin;
+  bottom: $pp-foot-bottom;
+  display: flex;
+  justify-content: space-between;
+  font-size: 9.5px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--pp-muted);
+
+  .pp-page--dark & {
+    color: rgba(255, 255, 255, 0.55);
+  }
+}
+
+/* ---------- type helpers ---------- */
+
+/* Eyebrow / label: 10/1.2 semibold caps, +0.12em, muted; the dark on a section label, the accent on dark grounds. */
+.pp-lab {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pp-muted);
+}
+
+.pp-lab--dark {
+  color: var(--pp-dark);
+}
+
+.pp-lab--accent {
+  color: var(--pp-accent);
+}
+
+/* Intro / body: 12.5/1.6 regular, the body ink, 460 px wide by default, 600 for a page intro. */
+.pp-body {
+  max-width: 460px;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--pp-ink);
+}
+
+.pp-body--wide {
+  max-width: 600px;
+}
+
+/* A second paragraph of a body block, a blank line (20 px) under the first (the mock's <br><br>); a class of the
+   grammar's because a Tailwind margin utility sits in a layer the frame's unlayered margin reset beats. */
+.pp-body-gap {
+  margin-top: 20px;
+}
+
+/* Caption: 11/1.4 regular, muted, 6 px under its figure. */
+.pp-cap {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--pp-muted);
+}
+
+/* Source chip: 8.5/1 semibold caps, +0.1em, muted, in a 1 px hairline pill. */
+.pp-chip {
+  display: inline-block;
+  padding: 3px 7px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 999px;
+  font-size: 8.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  vertical-align: middle;
+  color: var(--pp-muted);
+}
+
+/* A tile: 1 px hairline, 10 px radius, its content centred. */
+.pp-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 10px;
+  background: var(--pp-white);
+}
+
+.pp-tile--dark {
+  border: 0;
+  background: var(--pp-dark);
+}
+
+.pp-tile--mist {
+  border: 0;
+  background: var(--pp-mist);
+}
+
+/* The grid ground: kit dark, a radial accent glow from the top right, and a 32 px accent grid at low alpha
+   (`--pp-glow` and `--pp-grid` are the accent with its alpha, bound by the component). */
+.pp-grid-ground {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 78% 22%, var(--pp-glow), transparent 55%), var(--pp-dark);
+  background-color: var(--pp-dark);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(var(--pp-grid) 1px, transparent 1px), linear-gradient(90deg, var(--pp-grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+}
+
+/* ---------- the cover ---------- */
+
+.pp-cover-title {
+  font-size: 76px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--pp-white);
+}
+
+.pp-cover-lede {
+  max-width: 560px;
+  margin-top: 18px;
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.pp-cover-strip {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  padding-top: 10px;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ---------- the chapter opener (the family's) ---------- */
+
+.pp-opener-number {
+  font-size: 200px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--pp-accent);
+}
+
+.pp-opener-title {
+  font-size: 60px;
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--pp-white);
+}
+
+.pp-opener-purpose {
+  max-width: 560px;
+  margin-top: 22px;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.pp-opener-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 32px;
+  border-top: 2px solid rgba(255, 255, 255, 0.35);
+  padding-top: 20px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.pp-opener-meta-value {
+  margin-top: 8px;
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--pp-white);
+}
+
+/* The approver's name under the Approved date: the row's body size (12/1.6), 4 px under the date. */
+.pp-opener-meta-note {
+  margin-top: 4px;
+}
+
+/* ---------- the back cover ---------- */
+
+.pp-back-lockup {
+  display: flex;
+  justify-content: center;
+}
+
+.pp-back-line {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pp-accent);
+}
+
+.pp-back-url {
+  /* The url, and the version line under it. */
+  margin-top: 12px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.pp-back-notice {
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  padding-top: 10px;
+  font-size: 9.5px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+@media print {
+  /* The frames' own page: US Letter, no margin, in Chromium, where the print body's named page
+     (`mktg-framework`) would otherwise win; the print frame writes the same values unnamed for WebKit
+     (MKTG_PRINT_PAGE_SETUPS['mktg-portrait']). */
+  @page mktg-portrait {
+    size: 8.5in 11in;
+    margin: 0;
+  }
+
+  /* A frame document's root sits at the sheet's edge, in flow and unpadded, whichever print body class is on
+     (the kit's standalone print positions its legacy root absolutely and the flowing documents pad their
+     sides: neither applies to frames). */
+  body.lfx-print-brand-kit .lfx-mktg-portrait,
+  body.lfx-print-framework .lfx-mktg-portrait,
+  body.lfx-print-family .lfx-mktg-portrait,
+  .lfx-brand-kit-portrait.lfx-mktg-portrait {
+    position: static !important;
+    inset: auto !important;
+    width: $pp-width !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* The legacy print body classes hide everything but their own document (`visibility: hidden` on `*`):
+     a frame document under any of them is visible whole. */
+  body.lfx-print-brand-kit .lfx-mktg-portrait,
+  body.lfx-print-framework .lfx-mktg-portrait,
+  body.lfx-print-family .lfx-mktg-portrait,
+  .lfx-mktg-portrait .pp-page,
+  .lfx-mktg-portrait .pp-page * {
+    visibility: visible !important;
+  }
+
+  .pp-page {
+    margin: 0;
+    box-shadow: none;
+  }
+}

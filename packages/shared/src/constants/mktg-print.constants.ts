@@ -106,13 +106,20 @@ export const MKTG_PRINT_FRAME_PAPER_IN = { width: 8.5, height: 10.9 } as const;
  * `mktg-framework-page-margins`, exactly the margins they had before, with
  * that in-document room collapsed under `MKTG_PRINT_PAGE_MARGINS_CLASS`: the
  * browser's header and footer stay, as before, and the user unticks them in
- * Safari's print dialog. Keep these in step with styles.scss, which cannot
- * read them.
+ * Safari's print dialog. `mktg-portrait` is the fixed-frame portrait book
+ * (`MKTG_PORTRAIT_PRINT_CLASS`: the kit's 17 pages, and every document built
+ * of `lfx-mktg-portrait-page` frames): US Letter with no margin in BOTH
+ * engines, since each frame is the whole sheet and carries its own room;
+ * the print frame writes it unnamed (WebKit) and as `@page mktg-portrait`
+ * (Chromium, where the body's inherited named page would otherwise win).
+ * Keep these in step with styles.scss and `_mktg-portrait.scss`, which
+ * cannot read them.
  */
 export const MKTG_PRINT_PAGE_SETUPS = {
   'brand-kit': 'size: letter landscape; margin: 0;',
   'mktg-framework': 'size: portrait; margin: 0;',
   'mktg-framework-page-margins': 'size: portrait; margin: 0.55in 0.6in;',
+  'mktg-portrait': 'size: 8.5in 11in; margin: 0;',
 } as const;
 
 /**
