@@ -10,9 +10,11 @@ import {
   MKTG_PRINT_PAGE_SETUPS,
 } from '../../../packages/shared/src/constants';
 import { buildBrandKitBookView } from '@lfx-one/shared/utils/brand-kit-book.utils';
+import { brandKitPortraitApprovalLine } from '@lfx-one/shared/utils/brand-kit-portrait.utils';
 import { brandKitPortraitPlan, mktgPortraitSectionLabel } from '@lfx-one/shared/utils/mktg-portrait-plan.utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { columnAssetRevisionResponse } from './helpers/mktg-os-asset-views.helper';
 import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
 import { expectFamilyBookFrames, openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import { expectMktgPortraitPageSetup, expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
@@ -309,8 +311,11 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(kitPrint.getByTestId('brand-kit-type-source')).toContainText('Named on one.example.org');
   await expect(kitPrint.getByTestId('brand-kit-type-source')).not.toContainText('https://');
   await expect(kitPrint.getByTestId('brand-kit-voice-messages').locator('.pp-lab')).toHaveText(['Umbrella message', 'Brand line']);
-  // The kit's recorded approval prints inside the family as it does standalone (the Sources page's acceptance card).
-  await expect(kitPrint.getByTestId('brand-kit-sources-accepted')).toContainText('Approved 20 Oct 2026');
+  // The kit's own recorded approval (its record's, not the framework's) prints inside the family as it does standalone:
+  // the Sources page's acceptance card, with the kit's version.
+  const kitAccepted = kitPrint.getByTestId('brand-kit-sources-accepted');
+  await expect(kitAccepted).toContainText('Accepted when V1.0 was approved.');
+  await expect(kitAccepted).toContainText(brandKitPortraitApprovalLine(columnAssetRevisionResponse('brand-kit').approval));
   // One break per sheet, owned by the frame that starts it (the family's own break before the kit folds into it).
   await expect(kitFrames.first()).toHaveCSS('break-before', 'page');
   await expect(kitFrames.last()).toHaveCSS('break-after', 'auto');
@@ -321,7 +326,10 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
     expect({ x: Math.round(box.x), width: Math.round(box.width), height: Math.round(box.height) }).toEqual({ x: 0, width: 816, height: 1056 });
   }
   await expect(kitPrint).not.toContainText('SVG supplied');
-  await expect(kitPrint).not.toContainText('V1.0');
+  // The kit's cover and back cover, where its version strip prints standalone, do not print inside the family: the
+  // version appears in the acceptance card only.
+  await expect(kitPrint.locator('lfx-mktg-portrait-cover, lfx-mktg-portrait-back-cover')).toHaveCount(0);
+  await expect(kitPrint.locator('[data-testid="mktg-portrait-page-head"]').filter({ hasText: 'V1.0' })).toHaveCount(0);
   await expect(printDocument.locator('lfx-brand-kit-view, .lfx-brand-kit-page')).toHaveCount(0);
   // The boilerplates as cards, one per length with text; the FAQ's answered questions only.
   await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-card')).toHaveCount(4);
@@ -347,9 +355,11 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   const conflicts = sources.getByTestId('family-print-sources-conflicts');
   await expect(conflicts.locator('.fps-row')).toHaveCount(1);
   await expect(conflicts.locator('.fps-row__topic')).toHaveText('Brand line');
+  // One stop: the tagline's own full stop closes the sentence, with none after the closing quote.
   await expect(conflicts.locator('.fps-row')).toContainText(
-    'The brand kit carries “Open standards for one computing”; the framework’s tagline is “Build openly.”.'
+    'The brand kit carries “Open standards for one computing”; the framework’s tagline is “Build openly.”'
   );
+  await expect(conflicts.locator('.fps-row')).not.toContainText('.”.');
   await expect(conflicts.locator('.fps-rerun')).toHaveText('→ Re-run the brand kit so it reads the approved framework.');
   await expect(sources.getByTestId('family-print-sources-open')).toContainText('The launch year is not stated.');
   await expect(book).not.toContainText(/\[[A-Z][a-z]+\]/);
