@@ -5,6 +5,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS, MKTG_PRINT_FONT_WEIGHTS } from '@lfx-one/shared/constants';
 import {
+  MktgFamilyExportAgentKey,
   MktgFamilyExportLastResponse,
   MktgFamilyExportMember,
   MktgFamilyExportRecord,
@@ -26,6 +27,7 @@ import {
   isFoundationMessageReport,
   mktgFamilyExportAgentKeys,
   mktgFamilyPrintConflicts,
+  mktgFamilyPrintNumberConflicts,
   mktgFamilyPrintDocument,
   mktgPrintBrand,
   readBrandKitRevision,
@@ -170,11 +172,23 @@ export class MktgFamilyExportService {
               openItems[agentKey] ?? []
             )
           );
+        const boilerplatesView = boilerplates ? buildBoilerplatesPrintView(boilerplates, brand) : null;
+        const faqView = faq ? buildFaqPrintView(faq, brand) : null;
+        // Where the documents disagree: the framework's key numbers against the FAQ's answers and the boilerplates'
+        // text, the kit's line against the framework's tagline, the kit's colour conflicts; nothing the texts do not say.
+        const titleOf = (agentKey: MktgFamilyExportAgentKey): string => documents.find((document) => document.agentKey === agentKey)?.title ?? '';
+        const numberSources = [
+          {
+            title: titleOf('faq'),
+            texts: faqView?.groups.flatMap((group) => group.questions.filter((entry) => entry.answered).map((entry) => entry.answer)) ?? [],
+          },
+          { title: titleOf('boilerplates'), texts: boilerplatesView?.lengths.map((row) => row.text) ?? [] },
+        ].filter((source) => source.title && source.texts.length);
         return {
           framework,
           kit: book,
-          boilerplates: boilerplates ? buildBoilerplatesPrintView(boilerplates, brand) : null,
-          faq: faq ? buildFaqPrintView(faq, brand) : null,
+          boilerplates: boilerplatesView,
+          faq: faqView,
           brand,
           projectName,
           printedAt: new Date().toISOString(),
@@ -189,7 +203,10 @@ export class MktgFamilyExportService {
             .map((line) => line.trim())
             .filter(Boolean),
           boilerplatesSources: boilerplates?.report.sources_read.map((source) => source.trim()).filter(Boolean) ?? [],
-          conflicts: mktgFamilyPrintConflicts(content?.mf.tagline ?? '', kit?.chapters.voice.line ?? '', kit?.report.color_conflicts ?? []),
+          conflicts: [
+            ...mktgFamilyPrintNumberConflicts(framework?.numbers ?? [], numberSources),
+            ...mktgFamilyPrintConflicts(content?.mf.tagline ?? '', kit?.chapters.voice.line ?? '', kit?.report.color_conflicts ?? []),
+          ],
         };
       })
     );

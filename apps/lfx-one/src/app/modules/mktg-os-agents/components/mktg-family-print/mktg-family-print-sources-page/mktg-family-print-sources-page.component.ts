@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, Signal } from '@angular/core';
-import { MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_LABELS } from '@lfx-one/shared/constants';
+import { MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_LABELS, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
 import { MktgFamilyPrintChapter, MktgFamilyPrintConflict, MktgFamilyPrintOpenItem } from '@lfx-one/shared/interfaces';
 import { mktgFamilyPrintOpenItems } from '@lfx-one/shared/utils';
+import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 
 /**
  * The family book's one cross-document Sources page: the version and
@@ -14,6 +15,7 @@ import { mktgFamilyPrintOpenItems } from '@lfx-one/shared/utils';
  */
 @Component({
   selector: 'lfx-mktg-family-print-sources-page',
+  imports: [MktgPortraitRectDirective],
   templateUrl: './mktg-family-print-sources-page.component.html',
   styleUrl: './mktg-family-print-sources-page.component.scss',
 })
@@ -23,6 +25,8 @@ export class MktgFamilyPrintSourcesPageComponent {
 
   public readonly labels = MKTG_FAMILY_PRINT_LABELS;
   public readonly intro = MKTG_FAMILY_PRINT_COPY.sourcesIntro;
+  public readonly geometry = MKTG_PORTRAIT_PAGE;
+  public readonly column: readonly [number, number] = [MKTG_PORTRAIT_PAGE.margin, MKTG_PORTRAIT_PAGE.contentWidth];
 
   public readonly openItems: Signal<MktgFamilyPrintOpenItem[]> = this.initOpenItems();
 

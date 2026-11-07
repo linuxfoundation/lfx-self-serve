@@ -191,6 +191,8 @@ describe('Family export client', () => {
     expect(view?.tagline).toBe('');
     expect(view?.websiteLabel).toBe('one.example.org');
     expect(view?.boilerplatesSources).toEqual(boilerplatesEnvelope.report.sources_read);
+    // No framework, no kit line, no colour conflict: nothing for the Sources page to call a disagreement.
+    expect(view?.conflicts).toEqual([]);
   });
 
   it.each(['boilerplates', 'faq'] as const)('rejects unreadable approved %s instead of silently omitting it', (agentKey) => {

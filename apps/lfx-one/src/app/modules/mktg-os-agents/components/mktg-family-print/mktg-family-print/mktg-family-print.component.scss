@@ -1,37 +1,38 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-/* The family's own pages: cover (fpc-), contents (fpt-), openers (fpo-) and back cover (fpk-), the design board's
-   exact px on the 816 × 1056 frame. The frame's brand and neutral vars come from lfx-mktg-family-print-frame. */
+/* The family's own pages on the portrait grammar's frames: the cover's tiles (fpc-) and the contents page (fpt-),
+   the design board's exact px (styling.md's accepted deviation for a print design). The frame's custom
+   properties (--pp-dark, --pp-accent, --pp-on-dark, --pp-font, --pp-ink, --pp-muted) are the grammar's. */
 
 /* ---------- cover ---------- */
 .fpc-logo {
   display: block;
   height: 84px;
+  width: auto;
   max-width: 600px;
-  object-fit: contain;
-  object-position: left;
 }
 
 .fpc-tagline {
-  font: 500 11.5px/1 var(--fp-font);
+  font: 500 11.5px/1 var(--pp-font);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--fp-accent);
+  color: var(--pp-accent);
 }
 
 .fpc-title {
   margin-top: 18px;
-  font: 500 68px/1.02 var(--fp-font);
+  font: 500 68px/1.02 var(--pp-font);
   letter-spacing: -0.02em;
-  color: var(--fp-on-dark);
+  color: var(--pp-on-dark);
   text-wrap: balance;
 }
 
 .fpc-purpose {
   margin-top: 20px;
   max-width: 560px;
-  font: 400 17px/1.5 var(--fp-font);
+  font: 400 17px/1.5 var(--pp-font);
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .fpc-docs {
@@ -43,28 +44,19 @@
 
 .fpc-doc {
   padding-top: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--fp-on-dark) 30%, transparent);
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
 
   &__title {
     margin-top: 6px;
-    font: 500 14px/1.3 var(--fp-font);
-    color: var(--fp-on-dark);
+    font: 500 14px/1.3 var(--pp-font);
+    color: var(--pp-on-dark);
   }
 
   &__meta {
     margin-top: 4px;
-    font: 400 10.5px/1.5 var(--fp-font);
+    font: 400 10.5px/1.5 var(--pp-font);
+    color: rgba(255, 255, 255, 0.6);
   }
-}
-
-.fpc-foot {
-  display: flex;
-  justify-content: space-between;
-  padding-top: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--fp-on-dark) 25%, transparent);
-  font: 400 10px/1 var(--fp-font);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 
 /* ---------- contents ---------- */
@@ -86,30 +78,30 @@
     justify-content: space-between;
     align-items: baseline;
     padding: 14px 0 6px;
-    border-top: 1px solid var(--fp-ink);
+    border-top: 1px solid var(--pp-ink);
   }
 
   &__number {
     margin-right: 12px;
-    font: 500 11px/1.2 var(--fp-font);
+    font: 500 11px/1.2 var(--pp-font);
     letter-spacing: 0.12em;
-    color: var(--fp-accent);
+    color: var(--pp-accent);
   }
 
   &__title {
-    font: 500 20px/1.2 var(--fp-font);
-    color: var(--fp-dark);
+    font: 500 20px/1.2 var(--pp-font);
+    color: var(--pp-dark);
   }
 
   &__version {
     margin-left: 8px;
-    font: 400 11px/1.2 var(--fp-font);
-    color: var(--fp-muted);
+    font: 400 11px/1.2 var(--pp-font);
+    color: var(--pp-muted);
   }
 
   &__page {
-    font: 400 13px/1.2 var(--fp-font);
-    color: var(--fp-muted);
+    font: 400 13px/1.2 var(--pp-font);
+    color: var(--pp-muted);
   }
 }
 
@@ -117,89 +109,16 @@
   display: flex;
   justify-content: space-between;
   padding: 4px 0 4px 36px;
-  font: 400 12px/1.3 var(--fp-font);
-  color: var(--fp-ink);
+  font: 400 12px/1.3 var(--pp-font);
+  color: var(--pp-ink);
 
   &__page {
     font-size: 11px;
-    color: var(--fp-muted);
+    color: var(--pp-muted);
   }
 }
 
 .fpt-note {
   margin-top: 28px;
   line-height: 1.6;
-}
-
-/* ---------- opener ---------- */
-.fpo-number {
-  font: 500 200px/1 var(--fp-font);
-  letter-spacing: -0.04em;
-  color: var(--fp-accent);
-}
-
-.fpo-title {
-  font: 500 60px/1.05 var(--fp-font);
-  letter-spacing: -0.02em;
-  color: var(--fp-on-dark);
-}
-
-.fpo-summary {
-  margin-top: 22px;
-  max-width: 560px;
-  font: 400 18px/1.5 var(--fp-font);
-}
-
-.fpo-facts {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 32px;
-  margin: 0;
-  padding-top: 20px;
-  border-top: 2px solid color-mix(in srgb, var(--fp-on-dark) 35%, transparent);
-
-  dd {
-    margin: 0;
-  }
-
-  &__value {
-    margin-top: 8px;
-    font: 500 30px/1.1 var(--fp-font);
-    letter-spacing: -0.01em;
-    color: var(--fp-on-dark);
-  }
-
-  &__by {
-    margin-top: 6px;
-    font: 400 12px/1.4 var(--fp-font);
-  }
-}
-
-/* ---------- back cover ---------- */
-.fpk-centre {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-
-.fpk-logo {
-  display: block;
-  height: 64px;
-  max-width: 480px;
-  object-fit: contain;
-}
-
-.fpk-tagline {
-  margin-top: 36px;
-}
-
-.fpk-site {
-  margin-top: 12px;
-  font: 400 13px/1.5 var(--fp-font);
-}
-
-.fpk-notice {
-  font: 400 9.5px/1.6 var(--fp-font);
 }

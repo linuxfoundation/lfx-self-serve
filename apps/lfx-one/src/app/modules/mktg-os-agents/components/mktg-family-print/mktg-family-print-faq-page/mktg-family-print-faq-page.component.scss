@@ -18,19 +18,19 @@
 
 .fpq-entry {
   break-inside: avoid;
-  border-top: 1px solid var(--fp-hair);
+  border-top: 1px solid var(--pp-hairline);
   padding: 12px 0 14px;
 
   &__question {
     margin: 0;
-    font: 600 13.5px/1.35 var(--fp-font);
-    color: var(--fp-dark);
+    font: 600 13.5px/1.35 var(--pp-font);
+    color: var(--pp-dark);
   }
 
   &__answer {
     margin-top: 6px;
-    font: 400 12px/1.55 var(--fp-font);
-    color: var(--fp-ink);
+    font: 400 12px/1.55 var(--pp-font);
+    color: var(--pp-ink);
     white-space: pre-line;
   }
 

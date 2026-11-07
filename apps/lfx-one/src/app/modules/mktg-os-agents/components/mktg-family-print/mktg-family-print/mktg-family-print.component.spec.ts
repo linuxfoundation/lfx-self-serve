@@ -55,35 +55,42 @@ async function render(value: MktgFamilyPrintView) {
   return fixture.nativeElement as HTMLElement;
 }
 
+/** The book's frames, by the portrait grammar's contract. */
+function pages(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]'));
+}
+
+function page(root: HTMLElement, id: string): HTMLElement | null {
+  return root.querySelector<HTMLElement>(`[data-testid="lfx-mktg-portrait-page"][data-page-id="${id}"]`);
+}
+
 describe('MktgFamilyPrintComponent', () => {
   it('prints the plan’s frames in order for the members the view holds, and nothing for the ones it lacks', async () => {
     const root = await render(view());
-    expect(Array.from(root.children).map((child) => child.getAttribute('data-testid'))).toEqual([
-      'family-print-cover',
-      'family-print-contents',
-      'family-print-opener',
-      'family-print-boilerplates',
-      'family-print-opener',
-      'family-print-faq',
-      'family-print-sources',
-      'family-print-back-cover',
+    expect(root.classList.contains('lfx-mktg-portrait')).toBe(true);
+    // 1 cover · 2 contents · 3 opener · 4 boilerplates · 5 opener · 6 FAQ · 7 Sources · 8 back cover, every one a frame of the grammar.
+    expect(pages(root).map((frame) => [frame.dataset['pageId'], frame.dataset['page']])).toEqual([
+      ['cover', '1'],
+      ['contents', '2'],
+      ['opener-boilerplates', '3'],
+      ['boilerplates', '4'],
+      ['opener-faq', '5'],
+      ['faq-1', '6'],
+      ['sources', '7'],
+      ['back-cover', '8'],
     ]);
     expect(root.querySelector('lfx-mktg-framework-print, lfx-mktg-brand-kit-print')).toBeNull();
-    // 1 cover · 2 contents · 3 opener · 4 boilerplates · 5 opener · 6 FAQ · 7 Sources · 8 back cover
-    expect(Array.from(root.querySelectorAll('[data-testid="family-print-frame"]')).map((frame) => frame.getAttribute('data-page'))).toEqual([
-      '1',
-      '2',
-      '3',
-      '4',
-      '5',
-      '6',
-      '7',
-      '8',
-    ]);
-    expect(Array.from(root.querySelectorAll('[data-testid="family-print-page-number"]')).map((n) => n.textContent)).toEqual(['02', '04', '06', '07']);
+    // The frames' footers number the pages the grammar's way; the openers, cover and back cover are bare.
+    expect(Array.from(root.querySelectorAll('[data-testid="mktg-portrait-page-number"]')).map((n) => n.textContent?.trim())).toEqual(['02', '04', '06', '07']);
+    expect(pages(root).map((frame) => frame.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent)).toContain(
+      'Synthetic project positioning & brand'
+    );
     expect(root.querySelector('[data-testid="family-print-contents-intro"]')?.textContent).toContain('2 documents, 8 pages.');
     expect(Array.from(root.querySelectorAll('[data-testid="family-print-contents-opener-page"]')).map((n) => n.textContent)).toEqual(['3', '5']);
-    expect(Array.from(root.querySelectorAll('[data-testid="family-print-opener-pages"]')).map((n) => n.textContent)).toEqual(['4', '6']);
+    const openerMeta = Array.from(root.querySelectorAll('[data-testid="mktg-portrait-opener-meta"]')).map((meta) =>
+      meta.textContent?.replace(/\s+/g, ' ').trim()
+    );
+    expect(openerMeta).toEqual(['Version V2.0 Approved 6 Nov 2026 · Synthetic Approver Pages 4', 'Version V16.0 Approved 6 Nov 2026 Pages 6']);
     expect(root.querySelector('[data-testid="family-print-contents-sources"]')?.textContent).toContain('7');
   });
 
@@ -91,14 +98,14 @@ describe('MktgFamilyPrintComponent', () => {
     const root = await render(view());
     expect(root.querySelector('[data-testid="family-print-cover-tagline"]')).toBeNull();
     expect(root.querySelector('[data-testid="family-print-cover-logo"]')?.getAttribute('src')).toBe(mktgPrintBrand(null).logoOnDark?.src);
-    expect(root.querySelector('[data-testid="family-print-cover"]')?.textContent).toContain('7 Nov 2026');
-    expect(root.querySelector('[data-testid="family-print-cover"]')?.textContent).not.toContain('·  7 Nov');
-    const openers = Array.from(root.querySelectorAll('[data-testid="family-print-opener"]'));
-    expect(openers[0].querySelector('[data-testid="family-print-opener-approver"]')?.textContent).toBe('Synthetic Approver');
-    expect(openers[1].querySelector('[data-testid="family-print-opener-approver"]')).toBeNull();
+    expect(page(root, 'cover')?.querySelector('[data-testid="family-print-cover-strip"]')?.textContent?.trim()).toBe(
+      'Synthetic project · a Linux Foundation project7 Nov 2026'
+    );
+    expect(page(root, 'cover')?.classList.contains('pp-page--dark')).toBe(true);
+    expect(page(root, 'back-cover')?.classList.contains('pp-page--dark')).toBe(true);
     expect(root.querySelector('[data-testid="family-print-sources-conflicts"]')).toBeNull();
     expect(root.querySelector('[data-testid="family-print-sources-open"]')?.textContent).toContain('The launch year is not stated.');
-    expect(root.querySelector('[data-testid="family-print-back-cover-notice"]')?.textContent).toContain(
+    expect(root.querySelector('[data-testid="mktg-portrait-back-cover-notice"]')?.textContent).toContain(
       'Synthetic project and its logo are trademarks of the Linux Foundation.'
     );
     expect(root.textContent).not.toMatch(/\[[A-Z][a-z]+\]/);
@@ -106,11 +113,7 @@ describe('MktgFamilyPrintComponent', () => {
 
   it('prints a cover, a contents page and a back cover alone when no member has an approved current', async () => {
     const root = await render({ ...view(), boilerplates: null, faq: null, documents: [] });
-    expect(Array.from(root.children).map((child) => child.getAttribute('data-testid'))).toEqual([
-      'family-print-cover',
-      'family-print-contents',
-      'family-print-back-cover',
-    ]);
+    expect(pages(root).map((frame) => frame.dataset['pageId'])).toEqual(['cover', 'contents', 'back-cover']);
     expect(root.querySelector('[data-testid="family-print-contents-intro"]')?.textContent).toContain('0 documents, 3 pages.');
     expect(root.querySelector('[data-testid="family-print-contents-sources"]')).toBeNull();
   });

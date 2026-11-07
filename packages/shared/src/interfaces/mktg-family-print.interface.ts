@@ -8,6 +8,7 @@
 
 import { MKTG_FAMILY_PRINT_PAGE_KINDS } from '../constants/mktg-family-print.constants';
 import type { MktgFamilyExportAgentKey } from './mktg-family-export.interface';
+import type { MktgPortraitPlanPage } from './mktg-portrait-print.interface';
 
 /** What a frame of the family book holds. */
 export type MktgFamilyPrintPageKind = (typeof MKTG_FAMILY_PRINT_PAGE_KINDS)[number];
@@ -35,18 +36,19 @@ export interface MktgFamilyPrintDocument {
   openItems: string[];
 }
 
-/** One frame of the book. */
-export interface MktgFamilyPrintPage {
+/**
+ * One frame of the book: the portrait grammar's plan page (`id`, the
+ * running head's `section`, the `title`), with the book's page number and
+ * what the frame holds. The framework's and the kit's portrait plans
+ * concatenate into the book as pages of the same shape.
+ */
+export interface MktgFamilyPrintPage extends MktgPortraitPlanPage {
   /** The book's page number, 1-based: the footer's number and the contents page's. */
   n: number;
   kind: MktgFamilyPrintPageKind;
-  /** The running head's left label (`03 Boilerplates`, `Contents`, `Sources`); '' on a bare page. */
-  section: string;
-  /** The page title, '' on a bare page (cover, openers, back cover). */
-  title: string;
   /** The chapter the page belongs to, null for the cover, contents, Sources page and back cover. */
   agentKey: MktgFamilyExportAgentKey | null;
-  /** The FAQ page's index among the FAQ pages (0-based), the inner document's page index; 0 elsewhere. */
+  /** The FAQ page's index among the FAQ pages (0-based); 0 elsewhere. */
   index: number;
   /** How many printed pages this entry stands for: 1 for a frame, the document's page count for a mounted inner print. */
   span: number;

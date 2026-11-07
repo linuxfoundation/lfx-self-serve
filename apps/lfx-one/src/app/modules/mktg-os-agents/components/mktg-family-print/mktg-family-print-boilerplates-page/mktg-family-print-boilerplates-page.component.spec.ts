@@ -40,12 +40,17 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     expect(root.querySelector('[data-testid="family-print-boilerplate-sources"]')?.textContent).toContain('https://acme-mesh.example');
   });
 
-  it('omits the notes and sources blocks when the run left none', async () => {
+  it('prints the notes and sources blocks both or neither: none when the run left none, none when it left only one', async () => {
     const fixture = TestBed.createComponent(MktgFamilyPrintBoilerplatesPageComponent);
     fixture.componentRef.setInput('lengths', [row(0, 'One-liner', 14, 15)]);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="family-print-boilerplate-notes"]')).toBeNull();
     expect(root.querySelector('[data-testid="family-print-boilerplate-sources"]')).toBeNull();
+    fixture.componentRef.setInput('sources', ['https://acme-mesh.example']);
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="family-print-boilerplate-notes"]')).toBeNull();
+    expect(root.querySelector('[data-testid="family-print-boilerplate-sources"]')).toBeNull();
+    expect(root.querySelectorAll('[data-testid="family-print-boilerplate-card"]')).toHaveLength(1);
   });
 });

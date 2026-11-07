@@ -2,20 +2,30 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, Signal } from '@angular/core';
-import { MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES, MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_LABELS } from '@lfx-one/shared/constants';
+import {
+  MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES,
+  MKTG_FAMILY_PRINT_COPY,
+  MKTG_FAMILY_PRINT_LABELS,
+  MKTG_FAMILY_PRINT_WARN_INK,
+  MKTG_PORTRAIT_COLUMNS,
+  MKTG_PORTRAIT_PAGE,
+} from '@lfx-one/shared/constants';
 import { BoilerplatesLengthRow, MktgFamilyPrintBoilerplateCard } from '@lfx-one/shared/interfaces';
 import { mktgFamilyPrintFill } from '@lfx-one/shared/utils';
+import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 
 /**
  * The boilerplates as the family book prints them: one card per approved
  * length, longest last, each with its label, word count against the limit
- * and a fill bar; under them the run's notes and the sources it read, when
- * the revision carries them. A length with no text is not a card.
+ * and a fill bar; under them the run's notes and the sources it read, both
+ * or neither (the cards keep the page). A length with no text is not a card.
  */
 @Component({
   selector: 'lfx-mktg-family-print-boilerplates-page',
+  imports: [MktgPortraitRectDirective],
   templateUrl: './mktg-family-print-boilerplates-page.component.html',
   styleUrl: './mktg-family-print-boilerplates-page.component.scss',
+  host: { '[style.--fp-warn]': 'warnInk' },
 })
 export class MktgFamilyPrintBoilerplatesPageComponent {
   public readonly lengths = input.required<BoilerplatesLengthRow[]>();
@@ -26,8 +36,18 @@ export class MktgFamilyPrintBoilerplatesPageComponent {
 
   public readonly labels = MKTG_FAMILY_PRINT_LABELS;
   public readonly intro = MKTG_FAMILY_PRINT_COPY.boilerplatesIntro;
+  public readonly geometry = MKTG_PORTRAIT_PAGE;
+  public readonly columns = MKTG_PORTRAIT_COLUMNS;
+  public readonly column: readonly [number, number] = [MKTG_PORTRAIT_PAGE.margin, MKTG_PORTRAIT_PAGE.contentWidth];
+  public readonly warnInk = MKTG_FAMILY_PRINT_WARN_INK;
 
   public readonly cards: Signal<MktgFamilyPrintBoilerplateCard[]> = this.initCards();
+  /** Both run blocks print, or neither: a record with only one of them prints the cards alone. */
+  public readonly runBlocks: Signal<boolean> = this.initRunBlocks();
+
+  private initRunBlocks(): Signal<boolean> {
+    return computed(() => this.notes().length > 0 && this.sources().length > 0);
+  }
 
   private initCards(): Signal<MktgFamilyPrintBoilerplateCard[]> {
     return computed(() =>

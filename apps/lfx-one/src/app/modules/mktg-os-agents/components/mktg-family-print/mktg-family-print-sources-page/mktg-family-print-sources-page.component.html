@@ -1,9 +1,9 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<p class="fp-col fp-intro fp-body">{{ intro }}</p>
-<section class="fp-col fp-block" style="top: 210px" data-testid="family-print-sources-table">
-  <h2 class="fp-block__label">{{ labels.inThisBook }}</h2>
+<p class="pp-body pp-body--wide" [lfxPpRect]="[column[0], geometry.bodyTop, column[1]]">{{ intro }}</p>
+<section [lfxPpRect]="[column[0], 210, column[1]]" data-testid="family-print-sources-table">
+  <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.inThisBook }}</h2>
   <table class="fps-table">
     <thead>
       <tr>
@@ -26,12 +26,12 @@
   </table>
 </section>
 @if (conflicts().length) {
-  <section class="fp-col fp-block" style="top: 410px" data-testid="family-print-sources-conflicts">
-    <h2 class="fp-block__label">{{ labels.disagree }}</h2>
+  <section [lfxPpRect]="[column[0], 410, column[1]]" data-testid="family-print-sources-conflicts">
+    <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.disagree }}</h2>
     <div class="fps-rows">
       @for (conflict of conflicts(); track conflict.topic) {
-        <div class="fp-row">
-          <span class="fp-row__topic">{{ conflict.topic }}</span>
+        <div class="fps-row">
+          <span class="fps-row__topic">{{ conflict.topic }}</span>
           <span>
             {{ conflict.text }}
             @if (conflict.rerun) {
@@ -44,13 +44,13 @@
   </section>
 }
 @if (openItems().length) {
-  <section class="fp-col fp-block" [style.top.px]="conflicts().length ? 690 : 410" data-testid="family-print-sources-open">
-    <h2 class="fp-block__label">{{ labels.stillOpen }}</h2>
+  <section [lfxPpRect]="[column[0], conflicts().length ? 690 : 410, column[1]]" data-testid="family-print-sources-open">
+    <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.stillOpen }}</h2>
     <div class="fps-rows">
       @for (item of openItems(); track $index) {
-        <div class="fp-row fp-row--open">
-          <span class="fp-row__chip"
-            ><span class="fp-chip">{{ item.document }}</span></span
+        <div class="fps-row fps-row--open">
+          <span class="fps-row__chip"
+            ><span class="pp-chip">{{ item.document }}</span></span
           >
           <span>{{ item.text }}</span>
         </div>

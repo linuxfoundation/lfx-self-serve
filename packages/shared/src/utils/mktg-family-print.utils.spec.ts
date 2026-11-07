@@ -10,8 +10,8 @@ import {
   mktgFamilyPrintDocument,
   mktgFamilyPrintFaqPages,
   mktgFamilyPrintFill,
+  mktgFamilyPrintNumberConflicts,
   mktgFamilyPrintOpenItems,
-  mktgFamilyPrintPad,
   mktgFamilyPrintPageRange,
   mktgFamilyPrintPlan,
   mktgFamilyPrintVersionLabel,
@@ -61,9 +61,7 @@ describe('mktgFamilyPrintDocument', () => {
 });
 
 describe('the small helpers', () => {
-  it('pads, labels versions, formats dates in UTC and ranges pages', () => {
-    expect(mktgFamilyPrintPad(2)).toBe('02');
-    expect(mktgFamilyPrintPad(37)).toBe('37');
+  it('labels versions, formats dates in UTC and ranges pages', () => {
     expect(mktgFamilyPrintVersionLabel(16)).toBe('V16.0');
     expect(mktgFamilyPrintVersionLabel(null)).toBe('');
     expect(mktgFamilyPrintVersionLabel(Number.NaN)).toBe('');
@@ -132,6 +130,22 @@ describe('mktgFamilyPrintPlan', () => {
     expect(plan.sourcesPage).toBe(17);
     expect(plan.faqPages).toEqual([{ groups: [0, 1] }, { groups: [2, 3] }]);
     expect(plan.pages.find((page) => page.kind === 'opener')?.section).toBe('01 Messaging framework');
+    // The pages are the portrait grammar's plan pages, by id, so the inner documents' plans concatenate in.
+    expect(plan.pages.map((page) => page.id)).toEqual([
+      'cover',
+      'contents',
+      'opener-foundation-message',
+      'framework',
+      'opener-brand-kit',
+      'kit',
+      'opener-boilerplates',
+      'boilerplates',
+      'opener-faq',
+      'faq-1',
+      'faq-2',
+      'sources',
+      'back-cover',
+    ]);
     expect(plan.pages.find((page) => page.kind === 'back')?.n).toBe(plan.total);
   });
 
@@ -205,5 +219,41 @@ describe('mktgFamilyPrintConflicts', () => {
         { name: 'Ink', values: [{ hex: '#111111', source: 'brand page' }], chosen: '#111111' },
       ])
     ).toEqual([{ topic: 'Coral', text: 'brand page #FF702D; site buttons #FF7D2D. The kit keeps #FF702D.', rerun: '' }]);
+  });
+
+  it('reads the framework’s key numbers against the other documents’ text and names a figure that differs, with the document to re-run', () => {
+    const numbers = [
+      { number: '299', label: 'members' },
+      { number: '$10,000', label: 'Silver membership' },
+      { number: '2023', label: 'founded' },
+      { number: '7,459', label: 'contributors' },
+    ];
+    const conflicts = mktgFamilyPrintNumberConflicts(numbers, [
+      { title: 'FAQ', texts: ['The foundation has 308 members. It was founded in 2023.', 'Silver membership costs $5,000–$75,000 a year.'] },
+      { title: 'Boilerplates', texts: ['A community of 299 members and 7,459 contributors.'] },
+    ]);
+    expect(conflicts).toEqual([
+      {
+        topic: 'Members',
+        text: "The framework's key numbers say 299 members; the FAQ says “The foundation has 308 members.”",
+        rerun: 'Re-run the FAQ so it reads the approved framework.',
+      },
+      {
+        topic: 'Silver membership',
+        text: "The framework's key numbers say $10,000 Silver membership; the FAQ says “Silver membership costs $5,000–$75,000 a year.”",
+        rerun: 'Re-run the FAQ so it reads the approved framework.',
+      },
+    ]);
+    // No figure, no counting word, or no sentence that names the thing with another figure: no row.
+    expect(
+      mktgFamilyPrintNumberConflicts(
+        [
+          { number: 'many', label: 'members' },
+          { number: '12', label: 'of' },
+        ],
+        [{ title: 'FAQ', texts: ['308 members.'] }]
+      )
+    ).toEqual([]);
+    expect(mktgFamilyPrintNumberConflicts(numbers, [{ title: 'FAQ', texts: ['Members join every month.'] }])).toEqual([]);
   });
 });

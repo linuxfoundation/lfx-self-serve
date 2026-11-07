@@ -39,7 +39,7 @@ describe('MktgFamilyPrintSourcesPageComponent', () => {
     expect(conflicts?.querySelector('.fps-rerun')?.textContent).toBe('→ Re-run the brand kit.');
     const open = root.querySelector<HTMLElement>('[data-testid="family-print-sources-open"]');
     expect(open?.textContent).toContain('No stacked lockup.');
-    expect(open?.querySelector('.fp-chip')?.textContent).toBe('Brand kit');
+    expect(open?.querySelector('.pp-chip')?.textContent).toBe('Brand kit');
     expect(open?.style.top).toBe('690px');
   });
 

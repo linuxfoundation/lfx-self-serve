@@ -1,51 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// The family's Download PDF as a portrait book (mktg-family-print): the
-// frame's geometry, the neutral inks, the copy the family's own pages print
-// and the pagination rules. The brand (dark, accent, typeface, logo) is the
-// print brand of mktg-print.constants.ts; every measurement here is the
-// design board's, in CSS px at 96 dpi on a US Letter frame.
+// The family's Download PDF as a portrait book (mktg-family-print): the copy
+// the family's own pages print, their pagination rules and sizes. The frame,
+// its tokens and inks are the portrait grammar's (mktg-portrait-print.constants.ts).
 
 import { lfxColors } from './colors.constants';
 
-/**
- * One fixed frame per page: US Letter at 96 dpi (8.5 × 11 in), 56 px margins,
- * so the content column is 704 px wide (x 56–760). Covers and openers inset
- * 72 px. Nothing flows across a frame: where the data's size varies, the
- * number of frames varies (MKTG_FAMILY_PRINT_FAQ_SINGLE_PAGE_MAX).
- */
-export const MKTG_FAMILY_PRINT_FRAME = {
-  width: 816,
-  height: 1056,
-  margin: 56,
-  /** The inset of the cover, the openers and the back cover. */
-  coverInset: 72,
-  /** Content column width: the frame less both margins. */
-  contentWidth: 704,
-  /** The running head's top, the title's top, the body's top and the footer's bottom offset. */
-  headTop: 36,
-  titleTop: 84,
-  bodyTop: 136,
-  footBottom: 28,
-} as const;
-
-/**
- * The named page of the family book, written both named (styles/mktg-family-print.scss, on the print
- * body) and unnamed (the print frame's own rule, MKTG_PRINT_PAGE_SETUPS): Chromium honours a body's
- * inherited page name over an unnamed rule, and WebKit ignores names.
- */
-export const MKTG_FAMILY_PRINT_PAGE_NAME = 'mktg-family-portrait';
-
-/** The neutral inks of the white pages: body ink, muted labels and captions, hairlines, the light tint ground. */
-export const MKTG_FAMILY_PRINT_NEUTRALS = {
-  ink: lfxColors.gray[800],
-  muted: lfxColors.gray[500],
-  hairline: lfxColors.gray[200],
-  mist: lfxColors.gray[100],
-  /** The one warning ink: a boilerplate over its limit. */
-  warn: lfxColors.amber[700],
-} as const;
+/** The one ink the portrait grammar's tokens have not got: a boilerplate over its limit. */
+export const MKTG_FAMILY_PRINT_WARN_INK = lfxColors.amber[700];
 
 /** What a frame of the book holds; `framework` and `kit` are the mounted inner prints (stage 1) or their portrait pages. */
 export const MKTG_FAMILY_PRINT_PAGE_KINDS = ['cover', 'contents', 'opener', 'framework', 'kit', 'boilerplates', 'faq', 'sources', 'back'] as const;
@@ -101,14 +64,6 @@ export const MKTG_FAMILY_PRINT_COPY = {
   /** The back cover's provenance line, after the trademark notice. */
   backCoverProvenance: 'Generated from the approved documents listed on the Sources page; versions and dates are on each opener.',
 } as const;
-
-/**
- * Stage 1: the brand kit print on main mounts inside the family as its five
- * chapter tables, one page each as a count; these are their titles, in the
- * print's order, for the contents page. The portrait kit pages replace both
- * the print and this list with their own exported plan.
- */
-export const MKTG_FAMILY_PRINT_STAGE1_KIT_PAGE_TITLES = ['Logo system', 'Colour', 'Typography', 'Visual', 'Voice in brief'] as const;
 
 /** The body text sizes of the four boilerplate cards, longest last, and the cards' minimum heights (px). */
 export const MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES = [
