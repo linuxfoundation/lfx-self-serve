@@ -247,6 +247,14 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(frameworkPrint.getByTestId('mktg-framework-print-goals')).toBeVisible();
   await expect(frameworkPrint.getByTestId('mktg-framework-print-pillars')).toHaveCount(1);
   await expect(frameworkPrint.locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(1);
+  // The family passes the framework no report, approval or read date today (its follow-up), so its Sources & gaps page prints
+  // the approval card alone: no intro, no lists, no empty-state line, and a card without a version or approval lead.
+  await expect(frameworkFrames.last()).toHaveAttribute('data-page-id', 'sources');
+  await expect(printDocument.getByTestId('mktg-framework-print-sources-intro')).toHaveCount(0);
+  await expect(printDocument.getByTestId('mktg-framework-print-sources-read')).toHaveCount(0);
+  await expect(printDocument.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveCount(0);
+  await expect(printDocument.getByTestId('mktg-framework-print-gaps-empty')).toHaveCount(0);
+  await expect(printDocument.getByTestId('mktg-framework-print-approval')).toHaveText('A later run re-reads the sources and refreshes the LFX figures.');
   // The kit in the family's book: every page of its family plan for this kit (the synthetic kit's record decides the
   // plan: no cover, contents or back cover of its own), in order, numbered on from its opener, under the family's
   // running head, no band; nothing of it flows as a chapter.
