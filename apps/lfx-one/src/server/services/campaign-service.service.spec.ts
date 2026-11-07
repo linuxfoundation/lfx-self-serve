@@ -6196,6 +6196,37 @@ describe('CampaignServiceClient.listGoogleAdsUserLists', () => {
   });
 });
 
+describe('CampaignServiceClient.listGoogleAdsAudiences', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's Audience resources, type=audience, with the project encoded", async () => {
+    const audiences = { account_id: '1234567890', type: 'audience', audiences: [], audience_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(audiences);
+
+    const result = await new CampaignServiceClient().listGoogleAdsAudiences(req, 'lf/ai');
+
+    expect(result).toBe(audiences);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/google-ads/audiences', 'GET', { type: 'audience' });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listGoogleAdsAudiences(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().listGoogleAdsAudiences(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
 describe('CampaignServiceClient.suggestGoogleAdsGeoTargets', () => {
   beforeEach(() => {
     vi.clearAllMocks();

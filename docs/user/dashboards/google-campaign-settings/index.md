@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads and named Demand Gen ad groups for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen ad groups and Demand Gen audiences for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -27,6 +27,7 @@ tags:
     youtube,
     video ads,
     ad groups,
+    audiences,
     implement,
   ]
 last_updated: 2026-11-07
@@ -218,6 +219,19 @@ For each ad:
 Every ad needs a complete creative. Until every ad has a name and a complete creative, a message under the ads (or, in named ad groups, under the ad groups) explains what to fix and **Create Campaign** stays unavailable.
 
 Several video ads in one ad group is the arrangement Google Ads has been checked to accept. Several image ads, or image and video ads mixed, in one ad group are sent the same way but have not been checked against Google Ads. If Google Ads refuses one of them, the campaign and its ad group may already exist when that ad fails.
+
+## Audiences (Demand Gen)
+
+A Demand Gen ad group can target one Google Ads Audience, such as an Audience built from your customer lists, website visitors and custom segments. The Audience itself is built in Google Ads; here you pick one the account already has. Only the LF marketing team sees the **Audience** picker, because every foundation shares one Google Ads account.
+
+- **Pick an Audience** lists the account's Audiences by name. Type part of a name to narrow the list, then choose one. The picked Audience is shown by name with a remove button; remove it to pick another.
+- The campaign's single ad group has one picker, under its ad in the **Demand Gen Creative** section. When the campaign is split into named ad groups, each ad group has its own picker.
+- While the campaign is split, an Audience picked for the single ad group is kept but not sent, and a note under **Split into named ad groups** says so. Untick the checkbox to send it. An ad group's Audience is likewise kept but not sent while the checkbox is unticked.
+- If the Audiences cannot be listed, a note says why: the picker is not available here, or the Audiences could not be read for this project's Google Ads account. If the account has no Audiences, or more than the picker shows, a note says that too. The picker lists the first 500 by name.
+- If an Audience would be refused by Google Ads, for example one from another Google Ads account, a message at the end of the **Demand Gen Creative** section says why and **Create Campaign** stays unavailable until you remove it.
+- If a saved campaign holds an Audience that cannot be sent, a notice under the targeting settings says why and lists the Audience when the **Demand Gen Creative** section is not shown. This includes a Demand Gen campaign selected together with a Search campaign. **Create Campaign** stays unavailable until it is sent or removed, so the Audience is never dropped. The notice says you are not on the LF marketing team, that Audiences are not available on this deployment, that your access is still being checked, that it can be checked once the brief is saved, or that it could not be checked, with **Retry**. Choose **Remove audience** (**Remove audiences** for several) to create without them.
+
+Leave the picker alone and the campaign is created exactly as before, with no Audience.
 
 ## If something is wrong
 

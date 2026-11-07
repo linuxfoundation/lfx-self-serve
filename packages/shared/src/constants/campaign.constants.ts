@@ -1503,6 +1503,37 @@ export const GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_USER_LISTS_ACCE
 export const GOOGLE_USER_LISTS_ACCESS_UNAVAILABLE_MESSAGE =
   'Your access to the Google Ads user lists could not be verified. Try again in a few minutes, or enter user list resource names instead.';
 
+/**
+ * The error `code` (HTTP 403) of a Google Ads Audience read refused because the caller does not hold
+ * `global_marketing_ops` on the project. The read names every foundation's Audiences on the shared LF
+ * Google Ads account, so campaign-service answers it on that relation of the path project
+ * (linuxfoundation/lfx-v2-campaign-service#486, #504), as it does the Demand Gen audience a create sends (#501).
+ */
+export const GOOGLE_AUDIENCES_RESTRICTED_CODE = 'GOOGLE_AUDIENCES_RESTRICTED';
+/** The user-facing message of that refusal. */
+export const GOOGLE_AUDIENCES_RESTRICTED_MESSAGE =
+  "This Google Ads account's Audiences can only be listed by the LF marketing team, because every foundation shares one Google Ads account.";
+/** The error `code` (HTTP 503) of an Audience read refused because the caller's access could not be verified. */
+export const GOOGLE_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_AUDIENCES_ACCESS_UNAVAILABLE';
+/** The user-facing message of that refusal. Nothing was read. */
+export const GOOGLE_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to the Google Ads Audiences could not be verified. Try again in a few minutes.';
+
+/**
+ * The error `code` (HTTP 403) of a Google create refused because it names a Demand Gen audience
+ * (`demandGenAudience`, or an ad group's `audience`) and the caller does not hold `global_marketing_ops`
+ * on the project. campaign-service refuses the same create on the same relation
+ * (`GoogleAdsMarketingOpsInputs`, linuxfoundation/lfx-v2-campaign-service#501).
+ */
+export const GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_CODE = 'GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED';
+/** The user-facing message of that refusal. Nothing was created. */
+export const GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_MESSAGE =
+  'Only the LF marketing team can target a Google Ads Audience on Demand Gen, because every foundation shares one Google Ads account. Remove the audience and create again.';
+/** The error `code` (HTTP 503) of that create refused because the caller's access could not be verified. */
+export const GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE';
+/** The user-facing message of that refusal. Nothing was created. */
+export const GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_MESSAGE =
+  'Your access to Demand Gen audiences could not be verified, so nothing was created. Try again in a few minutes, or remove the audience.';
+
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
 
@@ -4684,6 +4715,7 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'demandGenVideoCreative', label: 'Demand Gen video ad', normalized: true },
   { field: 'demandGenAds', label: 'Demand Gen ads', normalized: true },
   { field: 'demandGenAdGroups', label: 'Demand Gen ad groups', normalized: true },
+  { field: 'demandGenAudience', label: 'Demand Gen audience', normalized: true },
   { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
   { field: 'displayCreative', label: 'Display creative', normalized: true },
 ] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string; normalized?: true }[];
@@ -5204,6 +5236,29 @@ export const GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP = 5;
  */
 export const GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY = 'Add at least one ad group, or turn the split off to send the single ad instead.';
 
+/**
+ * The `googleAdsConfig` key the single Demand Gen ad group's Audience rides under (#5244): one Google Ads
+ * Audience resource name. A named group's Audience rides under its own `audience` instead, and
+ * campaign-service refuses this key beside {@link GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY}.
+ */
+export const GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY = 'demandGenAudience' satisfies keyof CampaignCreateRequest;
+
+/**
+ * The one spelling campaign-service takes for a Demand Gen audience: a full Audience resource name,
+ * `customers/{customerId}/audiences/{id}` (`demandGenAudienceRE` in `demandgen_targeting.go`). The id must
+ * also be a canonical positive int64 and the customer the campaign's own account, which
+ * `googleDemandGenAudienceRefusal` checks after the match.
+ */
+export const GOOGLE_DEMAND_GEN_AUDIENCE_RESOURCE_PATTERN = /^customers\/([0-9]+)\/audiences\/([0-9]+)$/;
+
+/** Why the single ad group's Audience is refused beside named ad groups, as campaign-service refuses it. */
+export const GOOGLE_DEMAND_GEN_AUDIENCE_BESIDE_AD_GROUPS =
+  'The Demand Gen audience for the single ad group cannot be sent with named ad groups. Pick an audience on each ad group instead.';
+
+/** The note under the split when the single ad group's Audience is kept but not sent because the campaign is split (#5244). */
+export const GOOGLE_DEMAND_GEN_AUDIENCE_HELD_WHILE_SPLIT =
+  'The audience you picked for the single ad group is kept but not sent while the campaign is split into ad groups. Pick an audience on each ad group, or turn the split off to send it.';
+
 /** Google's limit on an ad group's name, in characters: campaign-service's `maxAdGroupNameRunes` (`adgroup_ad.go`). */
 export const GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES = 255;
 
@@ -5639,6 +5694,25 @@ export const GOOGLE_USER_LIST_PICKER_EMPTY = 'This Google Ads account has no use
 
 /** What the audience segment picker says when upstream returned only part of the account's lists. */
 export const GOOGLE_USER_LIST_PICKER_TRUNCATED = "This account has more user lists than the picker shows. If one isn't listed, enter its resource name below.";
+
+/**
+ * Why the Implement tab's Demand Gen audience picker has no list, one sentence each. The picker shows
+ * only for a caller the route admits, so a 403 or 404 after that is the deployment or the gateway, not
+ * the caller.
+ */
+export const GOOGLE_AUDIENCE_PICKER_REASONS = {
+  unavailable: "The Audience picker isn't available here, so no Audience can be picked.",
+  failed: "The Audiences couldn't be read for this project's Google Ads account, so no Audience can be picked.",
+} as const;
+
+/** What the Demand Gen audience picker says while its list is being read. */
+export const GOOGLE_AUDIENCE_PICKER_LOADING = "Loading this account's Audiences…";
+
+/** What the Demand Gen audience picker says when the account has no Audience to offer. */
+export const GOOGLE_AUDIENCE_PICKER_EMPTY = 'This Google Ads account has no Audiences to pick from. Build one in Google Ads first.';
+
+/** What the Demand Gen audience picker says when upstream returned only part of the account's Audiences. */
+export const GOOGLE_AUDIENCE_PICKER_TRUNCATED = 'This account has more Audiences than the picker shows: only the first 500 by name are listed.';
 
 /** Google's UserListType values in the words the Google Ads UI uses for them; the picker shows any other value in sentence case. */
 export const GOOGLE_USER_LIST_TYPE_LABELS: Readonly<Record<string, string>> = {

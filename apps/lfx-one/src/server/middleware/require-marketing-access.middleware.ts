@@ -272,3 +272,11 @@ export async function requireGoogleConversionActionsAccess(req: Request, res: Re
 export async function requireGoogleUserListsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   await deferToControllerMarketingOpsCheck(req, res, next);
 }
+
+/**
+ * Google Ads Audience read only (#5244; lfx-v2-campaign-service#504): `deferToControllerMarketingOpsCheck`.
+ * Never use for any other route.
+ */
+export async function requireGoogleAudiencesAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await deferToControllerMarketingOpsCheck(req, res, next);
+}

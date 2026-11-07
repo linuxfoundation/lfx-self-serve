@@ -1136,6 +1136,8 @@ export class CampaignsComponent {
    * BFF reads as `null`.
    */
   protected readonly briefCampaignsGoogleConversionActionsEnabled = signal<boolean | null>(null);
+  /** `CampaignListResult.googleDemandGenAudienceEnabled` (#5244), read and cleared like the conversion-action answer above. */
+  protected readonly briefCampaignsGoogleDemandGenAudienceEnabled = signal<boolean | null>(null);
   /**
    * Where `loadCreateCapabilitiesFor`'s read stands, so the Implementation tab can tell "still
    * checking" from "the check failed" while any capability it set is still `null`. ONE read fills
@@ -3083,6 +3085,7 @@ export class CampaignsComponent {
         this.briefCampaignsMetaInstagramDsaEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
         this.briefCampaignsGoogleConversionActionsEnabled.set(null);
+        this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
         this.briefCampaignsGoogleGeoSearchEnabled.set(null);
         this.briefCampaignsMultiCampaignPlatforms.set(null);
         this.briefCampaignsCapabilityRead.set('unknown');
@@ -5899,6 +5902,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
           this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
+          this.briefCampaignsGoogleDemandGenAudienceEnabled.set(result.googleDemandGenAudienceEnabled ?? null);
           this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
           this.briefCampaignsMultiCampaignPlatforms.set(result.multiCampaignPlatforms ?? []);
           this.briefCampaignsCapabilityRead.set('ready');
@@ -5931,6 +5935,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaInstagramDsaEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
           this.briefCampaignsGoogleConversionActionsEnabled.set(null);
+          this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
           this.briefCampaignsGoogleGeoSearchEnabled.set(null);
           this.briefCampaignsMultiCampaignPlatforms.set(null);
           this.briefCampaignsCapabilityRead.set('failed');
@@ -6008,6 +6013,7 @@ export class CampaignsComponent {
       this.briefCampaignsMetaInstagramDsaEnabled.set(null);
       this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
       this.briefCampaignsGoogleConversionActionsEnabled.set(null);
+      this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
       this.briefCampaignsGoogleGeoSearchEnabled.set(null);
       this.briefCampaignsMultiCampaignPlatforms.set(null);
       // `unknown` until a read is actually dispatched below — the early return starts none.
@@ -6055,6 +6061,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
             this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
+            this.briefCampaignsGoogleDemandGenAudienceEnabled.set(result.googleDemandGenAudienceEnabled ?? null);
             this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
             this.briefCampaignsMultiCampaignPlatforms.set(result.multiCampaignPlatforms ?? []);
             this.briefCampaignsCapabilityRead.set('ready');
@@ -6085,6 +6092,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaInstagramDsaEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
             this.briefCampaignsGoogleConversionActionsEnabled.set(null);
+            this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
             this.briefCampaignsGoogleGeoSearchEnabled.set(null);
             this.briefCampaignsMultiCampaignPlatforms.set(null);
             this.briefCampaignsCapabilityRead.set('failed');

@@ -1461,6 +1461,8 @@ export interface CampaignImplementationDraft {
   demandGenAdName?: string;
   /** The single Demand Gen ad group's second and later ads, both formats raw. Absent leaves the form's alone. */
   demandGenAds?: GoogleDemandGenAdDraft[];
+  /** The single Demand Gen ad group's picked Audience resource name (#5244). Absent leaves it alone. */
+  demandGenAudience?: string;
   /**
    * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
    * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
@@ -2563,6 +2565,40 @@ export interface GoogleUserListPickerState {
   reason: string | null;
 }
 
+/**
+ * One Google Ads Audience on the account a create uses, as the Implement tab's Demand Gen audience picker
+ * offers it (campaign-service `list-google-ads-audiences` with `type=audience`, camel-cased).
+ * `resourceName` is the `customers/{customerId}/audiences/{id}` form `demandGenAudience` accepts and the
+ * one the picker sets; `name` and `description` are labels only.
+ */
+export interface GoogleAdsAudienceOption {
+  resourceName: string;
+  id: string;
+  name: string;
+  description: string | null;
+}
+
+/** The Audience read: the account it came from, its Audiences sorted by name, and whether more exist than were returned. */
+export interface GoogleAdsAudiencesResult {
+  accountId: string;
+  audiences: GoogleAdsAudienceOption[];
+  truncated: boolean;
+}
+
+/**
+ * Where the Implement tab's Demand Gen audience picker stands. `unavailable` is a list that could not
+ * load (the route is off or refused, or Google failed) and `reason` says which in one sentence.
+ * `accountId` is the customer the Audiences were read from, which a picked or restored Audience must
+ * name; `''` until the list has loaded.
+ */
+export interface GoogleAudiencePickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  audiences: GoogleAdsAudienceOption[];
+  accountId: string;
+  truncated: boolean;
+  reason: string | null;
+}
+
 /** The optional narrowing a geo target search may carry beside its query text. */
 export interface GoogleAdsGeoTargetSearchOptions {
   countryCode?: string;
@@ -3087,11 +3123,12 @@ export interface GoogleDemandGenVideoCreative {
  * the group `<event name> - Display | <name>` and gives it one ad from exactly one of the two creatives,
  * or several from {@link ads} instead.
  *
- * Upstream also takes `audience` (one Audience per group). It is not sent yet; it is a field added here
- * when the Implement tab collects it.
+ * `audience` is the group's one Google Ads Audience (#5244), sent only when one was picked.
  */
 export interface GoogleDemandGenAdGroup {
   name: string;
+  /** The group's Audience resource name, `customers/{customerId}/audiences/{id}`, under the same rules as {@link CampaignCreateRequest.demandGenAudience}. */
+  audience?: string;
   /** The group's image ad, the same shape as {@link CampaignCreateRequest.demandGenCreative}. */
   creative?: GoogleDemandGenCreative;
   /** The group's video ad, the same shape as {@link CampaignCreateRequest.demandGenVideoCreative}. */
@@ -3125,6 +3162,8 @@ export interface GoogleDemandGenAdDraft {
  * both formats and which is chosen, and, when it has several ads, the first ad's name and the others.
  */
 export interface GoogleDemandGenAdGroupDraft extends GoogleDemandGenAdDraft {
+  /** The group's picked Audience resource name (#5244). Absent restores none. */
+  audience?: string;
   /** The first ad's name, used once the group has more than one ad. Absent restores blank. */
   adName?: string;
   /** The group's second and later ads. Absent restores none. */
@@ -3154,6 +3193,7 @@ export interface GoogleDemandGenAdForm {
  */
 export interface GoogleDemandGenAdGroupControls extends GoogleDemandGenAdControls {
   adName: import('@angular/forms').FormControl<string>;
+  audience: import('@angular/forms').FormControl<string>;
   ads: import('@angular/forms').FormArray<import('@angular/forms').FormGroup<GoogleDemandGenAdControls>>;
 }
 
@@ -3769,6 +3809,13 @@ export interface CampaignCreateRequest {
    * `GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP`.
    */
   demandGenAds?: GoogleDemandGenAd[];
+  /**
+   * The single Demand Gen ad group's one Google Ads Audience (#5244), a full
+   * `customers/{customerId}/audiences/{id}` resource name on the campaign's own account. Never beside
+   * {@link demandGenAdGroups}, whose groups each carry their own `audience`; campaign-service refuses the
+   * pair. campaign-service also requires `global_marketing_ops` on the project to send one (#501).
+   */
+  demandGenAudience?: string;
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
   /**
@@ -4794,6 +4841,30 @@ export interface CampaignServiceGoogleAdsUserList {
   size_for_search?: number;
   size_range_for_search?: string;
   eligible_for_search?: boolean;
+}
+
+/** One element of campaign-service's Audience read (`google-ads-audience-resource`, linuxfoundation/lfx-v2-campaign-service#504). */
+export interface CampaignServiceGoogleAdsAudience {
+  resource_name: string;
+  id: string;
+  name: string;
+  type: string;
+  subtype?: string;
+  status?: string;
+  description?: string;
+}
+
+/**
+ * campaign-service `GET /projects/{project_id}/google-ads/audiences?type=` (`global_marketing_ops` on the
+ * project; linuxfoundation/lfx-v2-campaign-service#504): at most 500 entries sorted by name, `truncated`
+ * when more matched.
+ */
+export interface CampaignServiceGoogleAdsAudiences {
+  account_id: string;
+  type: string;
+  audiences: CampaignServiceGoogleAdsAudience[];
+  audience_count: number;
+  truncated: boolean;
 }
 
 /** campaign-service `GET /projects/{project_id}/google-ads/user-lists` (`global_marketing_ops` on the project; linuxfoundation/lfx-v2-campaign-service#508). */
@@ -6430,6 +6501,17 @@ export interface CampaignListResult {
    */
   googleConversionActionsEnabled?: boolean;
   /**
+   * Whether THIS caller may pick a Demand Gen audience on the Implement tab (#5244), through
+   * `GET /api/campaigns/google/audiences`, and send it. Per caller: true only when the campaign-service
+   * create path serves the create AND the caller holds `global_marketing_ops` on the listed project, the
+   * two checks that route makes and the relation campaign-service checks both before it answers the read
+   * (#504) and before it creates with an Audience (#501). `null` when that check cannot be made, as
+   * {@link googleAudienceSegmentsEnabled} answers it: unverified, not denied, so the Implement tab holds a
+   * retained audience with a Retry rather than the restricted block. Optional, so a BFF that predates it
+   * reads as unanswered (`null` on the client) and the tab offers no picker.
+   */
+  googleDemandGenAudienceEnabled?: boolean | null;
+  /**
    * Whether the Implement tab may SEARCH Google's geo target table for postal-code targets, through
    * `GET /api/campaigns/google/geo-targets`, instead of asking for a typed constant id.
    *
@@ -6678,6 +6760,17 @@ export type GoogleCampaignAudienceSegmentsRefusal =
  * `CampaignBiddingCapabilityBlock`: the same capability read answers all of them.
  */
 export interface CampaignGoogleAudienceSegmentsBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for Demand Gen audiences (#5244) the draft still holds but the request cannot
+ * carry. The kinds mean what they do on {@link CampaignGoogleAudienceSegmentsBlock}: `restricted` is an
+ * explicit no from `CampaignListResult.googleDemandGenAudienceEnabled`, and `unsupported` the
+ * campaign-service create path not serving this deployment.
+ */
+export interface CampaignGoogleDemandGenAudienceBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
   message: string;
 }
