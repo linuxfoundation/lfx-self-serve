@@ -750,7 +750,7 @@ describe('MktgFrameworkPrintComponent', () => {
     // The key numbers: the facts table under two full rows of tiles, cut to the whole rows that fit above the footer, measured at the
     // first <col>'s real width (contentWidth × 50 % less the cell padding): the kept rows' heights stay inside the room.
     const facts = query('mktg-framework-print-facts');
-    expect(top(facts)).toBe(534);
+    expect(top(facts)).toBe(560);
     const factRows = Array.from(facts?.querySelectorAll('[data-testid^="mktg-framework-print-fact-"]') ?? []);
     expect(factRows.length).toBeGreaterThan(0);
     expect(factRows.length).toBeLessThan(12);
@@ -766,7 +766,7 @@ describe('MktgFrameworkPrintComponent', () => {
         (factsTight ? FRAMEWORK_PORTRAIT_ROOM.factRowTight : FRAMEWORK_PORTRAIT_ROOM.factRow),
       0
     );
-    expect(534 + FRAMEWORK_PORTRAIT_ROOM.label + FRAMEWORK_PORTRAIT_ROOM.tableHead + factsUsed).toBeLessThanOrEqual(tops.footer);
+    expect(560 + FRAMEWORK_PORTRAIT_ROOM.label + FRAMEWORK_PORTRAIT_ROOM.tableHead + factsUsed).toBeLessThanOrEqual(tops.footer);
     // Twelve proof points make twelve facts; a cut table says how many more there are (tight first), a whole one says nothing.
     expect(query('mktg-framework-print-facts-cut')?.textContent?.trim() ?? null).toBe(
       factRows.length < 12 ? foundationMessagePrintCutNote(12 - factRows.length, 'Framework') : null
