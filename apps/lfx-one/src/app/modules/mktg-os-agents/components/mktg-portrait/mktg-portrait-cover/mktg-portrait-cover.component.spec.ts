@@ -54,8 +54,10 @@ describe('lfx-mktg-portrait-cover', () => {
     const logo = page.querySelector<HTMLImageElement>('[data-testid="mktg-portrait-cover-logo"]');
     expect(logo?.getAttribute('src')).toBe(brand.logoOnDark?.src);
     expect(logo?.getAttribute('alt')).toBe(brand.logoOnDark?.alt);
-    expect(logo?.parentElement?.style.left).toBe('72px');
-    expect(logo?.parentElement?.style.top).toBe('300px');
+    // The img sits in the plate span (bare here) inside the placed block.
+    const lockup = logo?.parentElement?.parentElement;
+    expect(lockup?.style.left).toBe('72px');
+    expect(lockup?.style.top).toBe('300px');
     const title = page.querySelector<HTMLElement>('[data-testid="mktg-portrait-cover-title"]');
     expect(title?.textContent).toBe('Brand Kit');
     expect(title?.parentElement?.style.top).toBe('560px');

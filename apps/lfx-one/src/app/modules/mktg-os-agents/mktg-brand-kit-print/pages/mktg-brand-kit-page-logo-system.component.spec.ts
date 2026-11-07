@@ -5,6 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { MktgBrandKitPageLogoSystemComponent } from './mktg-brand-kit-page-logo-system.component';
 import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
+/** A supplied reversed file: an inline SVG the tile draws as it is. */
+const SVG = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"/>')}`;
+
 describe('the Logo system page', () => {
   it('opens the Logo chapter with the band, the intro, the lockup hero, the tiles the kit has files for, and the files table without names', async () => {
     const { frame, view } = await mountBrandKitPage(MktgBrandKitPageLogoSystemComponent, 'logo-system');
@@ -37,11 +40,10 @@ describe('the Logo system page', () => {
   });
 
   it('draws the symbol tiles and names a supplied file when the kit has them', async () => {
-    const svg = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"/>')}`;
     const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSystemComponent, 'logo-system', (view) => ({
       ...view,
-      logos: { ...view.logos, symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: svg }, reversed: { ref: 'reversed.svg', name: 'reversed.svg', src: svg } },
-      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: svg },
+      logos: { ...view.logos, symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG }, reversed: { ref: 'reversed.svg', name: 'reversed.svg', src: SVG } },
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
     }));
     const tiles = frame.querySelector('[data-testid="brand-kit-logo-system-tiles"]');
     expect(tiles?.querySelectorAll('.pp-tile')).toHaveLength(3);

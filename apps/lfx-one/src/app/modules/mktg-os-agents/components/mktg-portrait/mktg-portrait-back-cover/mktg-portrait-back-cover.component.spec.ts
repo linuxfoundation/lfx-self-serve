@@ -44,9 +44,11 @@ describe('lfx-mktg-portrait-back-cover', () => {
     expect(page.querySelector('[data-testid="mktg-portrait-page-foot"]')).toBeNull();
     const logo = page.querySelector<HTMLImageElement>('[data-testid="mktg-portrait-back-cover-logo"]');
     expect(logo?.getAttribute('src')).toBe(brand.logoOnDark?.src);
-    expect(logo?.parentElement?.classList.contains('pp-back-lockup')).toBe(true);
-    expect(logo?.parentElement?.style.top).toBe('420px');
-    expect(logo?.parentElement?.style.width).toBe('816px');
+    // The img sits in the plate span (bare here) inside the centred block.
+    const lockup = logo?.closest<HTMLElement>('.pp-back-lockup');
+    expect(lockup).not.toBeNull();
+    expect(lockup?.style.top).toBe('420px');
+    expect(lockup?.style.width).toBe('816px');
     const line = page.querySelector<HTMLElement>('[data-testid="mktg-portrait-back-cover-line"]');
     expect(line?.textContent).toBe('Open standards for agents');
     expect(line?.classList.contains('pp-back-line')).toBe(true);
