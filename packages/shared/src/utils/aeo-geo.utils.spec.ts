@@ -357,6 +357,30 @@ describe('AEO/GEO reader caveats', () => {
     expect(aeoGeoReaderCaveat("Search failed with 'Unauthorized'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
   });
 
+  it('decides by the subject: a provider quoting its message maps, a result title and the audited site pass verbatim', () => {
+    // The provider is the subject and the quoted text is its message: no failure word is needed.
+    expect(aeoGeoReaderCaveat("Web search returned 'Service unavailable'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('The search provider responded with "502 Bad Gateway" for every query. Coverage was not verified.')).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} Coverage was not verified.`
+    );
+    expect(aeoGeoReaderCaveat("The API responded 'Service unavailable'. Metrics were not read.")).toBe('Metrics were not read.');
+    // A quoted result title is never a failure, whatever its words.
+    expect(aeoGeoReaderCaveat('Search returned "Rate-limited API guide" as its first result.')).toBe(
+      'Search returned "Rate-limited API guide" as its first result.'
+    );
+    expect(aeoGeoReaderCaveat('The search returned "Quota exceeded: what it means" as the top result.')).toBe(
+      'The search returned "Quota exceeded: what it means" as the top result.'
+    );
+    // The audited site is the subject: its statuses and rate limiting are audit evidence.
+    expect(aeoGeoReaderCaveat('The homepage rate-limited the crawler with HTTP 429.')).toBe('The homepage rate-limited the crawler with HTTP 429.');
+    expect(aeoGeoReaderCaveat("The homepage returned 'Service unavailable' on the second fetch.")).toBe(
+      "The homepage returned 'Service unavailable' on the second fetch."
+    );
+    expect(aeoGeoReaderCaveat('The rate limit was reached on the third fetch of the sitemap.')).toBe(
+      'The rate limit was reached on the third fetch of the sitemap.'
+    );
+  });
+
   it('names no field, slug, uid or access error for an LFX record that could not be read, and keeps the clean sentences', () => {
     const caveat =
       "The LFX record could not be read by the form's project_uid (access error). " +
@@ -411,7 +435,8 @@ describe('AEO/GEO reader caveats', () => {
     }
   });
 
-  // The editor's fixtures 1–3 (synthetic domains), byte for byte: quoted titles and site responses pass through, emptied caveats fall back, zero caveats stay zero.
+  // The editor's fixtures 1–3 (synthetic domains), byte for byte: quoted titles, site responses and the site's own rate limiting pass through,
+  // a provider's quoted message maps, emptied caveats fall back, zero caveats stay zero.
   it.each([
     [
       'fixture1-quoted-titles',
@@ -420,12 +445,18 @@ describe('AEO/GEO reader caveats', () => {
         'The best-ranked explainer is titled "Search errors explained" and dates from 2025.',
         'The homepage returned "403 Forbidden" to our second fetch, so its metadata is unverified.',
         'The website enforces a rate limit on crawlers; two fetches were slowed, none refused.',
+        'The homepage rate-limited the crawler with HTTP 429.',
+        'Search returned "Rate-limited API guide" as its first result.',
+        "Web search returned 'Service unavailable'.",
       ],
       [
         'The search returned "Why builds fail without open standards" as its top result.',
         'The best-ranked explainer is titled "Search errors explained" and dates from 2025.',
         'The homepage returned "403 Forbidden" to our second fetch, so its metadata is unverified.',
         'The website enforces a rate limit on crawlers; two fetches were slowed, none refused.',
+        'The homepage rate-limited the crawler with HTTP 429.',
+        'Search returned "Rate-limited API guide" as its first result.',
+        'Third-party search was not available for this run.',
       ],
     ],
     [

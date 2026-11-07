@@ -92,9 +92,10 @@ surfaces, in the report's own type; scorecard summaries stay plain text, and
 each caveat renders as the reader sentences of `aeoGeoReaderCaveat` (shared
 utils): a failed third-party search and an LFX record the agent could not read
 map to fixed wording, and the known plumbing shapes (a snake_case field name, a
-slug, a uid, a quoted or well-known provider error) are left out of the sentence
-that carries them; other text passes through unchanged — the stored
-report is unchanged. The print of a typed report opens with the report's title and facts, then
+slug, a uid, a credits or quota phrase, a provider subject quoting its message)
+are left out of the sentence that carries them; a quoted result title and any
+sentence about the audited site pass through unchanged — the stored report is
+unchanged, and a report with no caveats prints no Caveats section. The print of a typed report opens with the report's title and facts, then
 the score card, then the report without a second headline, and its headings,
 scorecard rows, findings, recommendations and list items carry CSS Fragmentation
 `break-after: avoid` / `break-inside: avoid` so no heading is orphaned and no

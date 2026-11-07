@@ -334,15 +334,23 @@ const CAVEAT_SENTENCE_BOUNDARY = /([.!?]['"\u2018\u2019\u201c\u201d`)\]]*)\s+(?=
 const CAVEAT_SENTENCE_MARK = '\u0000';
 const CAVEAT_PARENTHETICAL = /\(([^()]*)\)/g;
 const CAVEAT_WORD_CHARACTER = /[\p{L}\p{N}]/u;
-const CAVEAT_SEARCH = /\bsearch(?:es)?\b/i;
+// The classifier decides by the sentence's SUBJECT. A provider subject (a search, the provider, the API, a lookup)
+// that quotes a message after returned/responded/failed/error/message, or names a credits or quota limit, is a
+// provider failure: a search subject maps to one fixed sentence, another provider subject is left out. A quoted
+// result title is never a failure, and a sentence about the audited site (its pages, fetches, statuses, rate
+// limiting) passes verbatim.
 const CAVEAT_NAME_SEARCH = /\bname search\b/i;
+const CAVEAT_SEARCH_SUBJECT = /^(?:(?:the|our|a|an)\s+)?(?:(?:web|third[- ]party)[\s-]+)?search(?:es)?(?:\s+(?:provider|service|API|engine))?\b/i;
+const CAVEAT_PROVIDER_SUBJECT = /^(?:(?:the|our|a|an)\s+)?(?:provider|API|lookup)\b/i;
 const CAVEAT_LFX_RECORD = /LFX record could not be read/i;
-const CAVEAT_FAILURE_WORD = /\b(?:exceeded|credits?|quota|limit|unavailable|failed|error|denied|unauthori[sz]ed|forbidden)\b/i;
-const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exceeded|exhausted)|rate limit (?:exceeded|reached|hit)|rate-limited\b/i;
-// Quoted spans are blanked before the failure-word test: a failure word inside a quoted title or response is audit content.
+const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exceeded|exhausted)/i;
+const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u201c`]/i;
+const CAVEAT_RESULT_TITLE = [
+  /['"\u2018\u201c`][^'"\u2019\u201d`]*['"\u2019\u201d`]\s+as (?:its|the) (?:top|first|best|second|leading)\b[^.]*\bresult/i,
+  /\b(?:titled|entitled|called|named)\s*['"\u2018\u201c`]/i,
+];
+// Quoted spans are blanked before the credits/quota test on a result-title sentence: the words belong to the title.
 const CAVEAT_QUOTED_SPANS = [/"[^"]*"/g, /`[^`]*`/g, /\u201c[^\u201d]*\u201d/g, /\u2018[^\u2019]*\u2019/g, /(^|[\s(])'[^']*'(?=$|[\s).,;:!?])/g];
-// A provider's message quoted raw after a verb; it counts only beside a failure word outside the quotes (a quoted search result is audit content).
-const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u2019\u201c\u201d`]/i;
 const CAVEAT_IDENTIFIERS = [
   // a snake_case field name as a standalone token: not part of a file name, a path, an og: property or a code span
   /(?:^|[^:/.\-`\w])[a-z]+(?:_[a-z0-9]+)+(?![./\-`\w])/,
@@ -355,9 +363,10 @@ const CAVEAT_IDENTIFIERS = [
  * The agent's caveats as reader sentences (web view and print). Sentence by sentence: a failed third-party
  * search and an LFX record that could not be read map to fixed wording; a parenthetical that carries plumbing
  * is removed; a sentence that still carries plumbing is left out. Plumbing is the known shapes: a snake_case
- * field name, a slug, a uid, a quoted or well-known provider error. Other text passes through unchanged (a
- * caveat with nothing to map is returned as is); an emptied caveat, or one above 4,000 characters, becomes
- * one fixed sentence.
+ * field name, a slug, a uid, a credits or quota phrase, or a provider subject (a search, the provider, the API,
+ * a lookup) quoting its message. A quoted result title and any sentence about the audited site pass through
+ * unchanged, as does a caveat with nothing to map (returned as is); an emptied caveat, or one above 4,000
+ * characters, becomes one fixed sentence.
  */
 export function aeoGeoReaderCaveat(caveat: string): string {
   if (caveat.length > CAVEAT_MAX_CHARS) {
@@ -379,7 +388,7 @@ export function aeoGeoReaderCaveat(caveat: string): string {
 }
 
 function readerSentence(sentence: string): string {
-  if (CAVEAT_SEARCH.test(sentence) && !CAVEAT_NAME_SEARCH.test(sentence) && carriesProviderFailure(sentence)) {
+  if (providerSubject(sentence) === 'search' && carriesProviderFailure(sentence)) {
     return AEO_GEO_READER_CAVEATS.search_unavailable;
   }
   if (CAVEAT_LFX_RECORD.test(sentence)) {
@@ -400,9 +409,23 @@ function carriesPlumbing(text: string): boolean {
   return CAVEAT_IDENTIFIERS.some((pattern) => pattern.test(text)) || carriesProviderFailure(text);
 }
 
-/** Well-known provider words anywhere, or a message quoted after a verb with a failure word outside the quotes. */
-function carriesProviderFailure(text: string): boolean {
-  return CAVEAT_PROVIDER_WORDS.test(text) || (CAVEAT_QUOTED_MESSAGE.test(text) && CAVEAT_FAILURE_WORD.test(outsideQuotes(text)));
+/** A credits/quota phrase (outside a quoted result title), or a provider subject quoting its message. */
+function carriesProviderFailure(sentence: string): boolean {
+  const title = CAVEAT_RESULT_TITLE.some((pattern) => pattern.test(sentence));
+  if (CAVEAT_PROVIDER_WORDS.test(title ? outsideQuotes(sentence) : sentence)) {
+    return true;
+  }
+  return !title && providerSubject(sentence) !== null && CAVEAT_QUOTED_MESSAGE.test(sentence);
+}
+
+function providerSubject(sentence: string): 'search' | 'provider' | null {
+  if (CAVEAT_NAME_SEARCH.test(sentence)) {
+    return null;
+  }
+  if (CAVEAT_SEARCH_SUBJECT.test(sentence)) {
+    return 'search';
+  }
+  return CAVEAT_PROVIDER_SUBJECT.test(sentence) ? 'provider' : null;
 }
 
 function outsideQuotes(text: string): string {
