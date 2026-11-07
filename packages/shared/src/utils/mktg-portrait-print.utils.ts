@@ -9,17 +9,18 @@
 
 import {
   MKTG_PORTRAIT_CAPS_TRACKING_EM,
+  MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_CUT_STOP_WORDS,
   MKTG_PORTRAIT_FAMILY_WIDTH,
   MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT,
   MKTG_PORTRAIT_FIT,
-  MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
   MKTG_PORTRAIT_GLYPH_WIDTHS,
+  MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
   MKTG_PORTRAIT_HEX_REGEX,
   MKTG_PORTRAIT_INKS,
-  MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_MORE_LINE,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
+  MKTG_PORTRAIT_PLATE,
   MKTG_PORTRAIT_WEIGHT_WIDTH,
 } from '../constants/mktg-portrait-print.constants';
 import type { MktgPrintBrand } from '../interfaces/mktg-print.interface';
@@ -69,6 +70,26 @@ export function mktgNoWidow(text: string): string {
 }
 
 /**
+ * The white plate's padding for artwork drawn at `height` px: half the
+ * drawn height (`MKTG_PORTRAIT_PLATE.paddingOfHeight`), so a cover's 84 px
+ * lockup sits in 42 px of white.
+ */
+export function mktgPortraitPlatePadding(height: number): number {
+  return height * MKTG_PORTRAIT_PLATE.paddingOfHeight;
+}
+
+/**
+ * Plated artwork fitted to a box of `box` px (a tile, a sample circle, a
+ * stage): the drawn height and the padding such that drawn + 2 × padding =
+ * box, the padding still half the drawn height. A 40 px tile draws the mark
+ * at 20 px in 10 px of white; nothing spills out of its container.
+ */
+export function mktgPortraitPlateFit(box: number): { height: number; padding: number } {
+  const height = box / (1 + 2 * MKTG_PORTRAIT_PLATE.paddingOfHeight);
+  return { height, padding: mktgPortraitPlatePadding(height) };
+}
+
+/**
  * A name kept on one line: each run of spaces inside `text` set as one
  * no-break space ("Agentic AI Foundation" never breaks after "Agentic").
  * `mktgNoWidow` reads the no-break spaces as gaps too, so a headline ending
@@ -90,10 +111,17 @@ export function mktgNoBreak(text: string): string {
   return out;
 }
 
-/** `text` with every occurrence of `name` kept on one line (`mktgNoBreak`); as it is when the name has no space. */
-export function mktgKeepName(text: string, name: string): string {
+/**
+ * `text` with every occurrence of `name` kept on one line (`mktgNoBreak`); as
+ * it is when the name has no space, or, given the `line` it is set on, when
+ * the name alone does not fit one line of it (a name kept together there
+ * would overflow the card, "Cloud Native Computing Foundatio": it wraps as
+ * plain words instead).
+ */
+export function mktgKeepName(text: string, name: string, line?: { width: number; size: number } & Pick<MktgPortraitFitPara, 'weight' | 'family'>): string {
   const trimmedName = name.trim();
   if (!trimmedName || !/\s/.test(trimmedName) || !text.includes(trimmedName)) return text;
+  if (line && !mktgPortraitLineFits(trimmedName, line.width, line.size, { weight: line.weight, family: line.family })) return text;
   return text.split(trimmedName).join(mktgNoBreak(trimmedName));
 }
 
@@ -358,13 +386,33 @@ export function mktgPortraitFitBlock(block: MktgPortraitFitBlock, width: number,
 
 /**
  * The cover strip's halves on one line: as written when both fit the width
- * with the gap between them; else the longer half loses words from its first
- * segment (the project name, or the host) with an ellipsis until both fit,
- * then the other half the same way; when one word each still does not fit,
- * both halves print whole and the strip wraps (`wraps`), the cover moving it
- * up one line. The size never changes.
+ * with the gap between them; else the left half first drops its segments
+ * after the project's name, last first ("· A Linux Foundation project" goes,
+ * the name keeps whole; the right half's host, version and date are data and
+ * stay); then the longer half loses words from its first segment (the
+ * project name, or the host) with an ellipsis until both fit, then the other
+ * half the same way; when one word each still does not fit, both halves print
+ * whole and the strip wraps (`wraps`), the cover moving it up one line. The
+ * size never changes.
  */
 export function mktgPortraitCoverStrip(left: string, right: string, width: number, family?: string): MktgPortraitCoverStrip {
+  const c = MKTG_PORTRAIT_COVER_STRIP;
+  const para = { caps: true, tracking: c.tracking, family };
+  const fits = (first: string, second: string): boolean =>
+    mktgPortraitTextWidth(first, c.size, para) + c.gap + mktgPortraitTextWidth(second, c.size, para) <= width + 0.01;
+  if (fits(left, right)) return { left, right, wraps: false };
+  // The left half gives up its segments after the name, last first, before a word of the name or the host is touched.
+  const segments = left.split(c.separator);
+  for (let keep = segments.length - 1; keep >= 1; keep--) {
+    const fewer = segments.slice(0, keep).join(c.separator);
+    if (fits(fewer, right)) return { left: fewer, right, wraps: false };
+  }
+  const shortened = mktgPortraitCoverStripShortened(segments[0], right, width, family);
+  return shortened.wraps ? { left, right, wraps: true } : shortened;
+}
+
+/** The strip once a half is down to its first segment: words come off the longer half, then the other, else it wraps. */
+function mktgPortraitCoverStripShortened(left: string, right: string, width: number, family?: string): MktgPortraitCoverStrip {
   const c = MKTG_PORTRAIT_COVER_STRIP;
   const para = { caps: true, tracking: c.tracking, family };
   const fits = (first: string, second: string): boolean =>

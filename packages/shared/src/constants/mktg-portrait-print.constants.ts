@@ -34,6 +34,15 @@ export const MKTG_PORTRAIT_PAGE = {
 } as const;
 
 /**
+ * The white plate under artwork a dark ground cannot reverse (no reversed
+ * file, more than one ink): its padding is this fraction of the lockup's
+ * drawn height (the editor's rule, book and deck alike).
+ */
+export const MKTG_PORTRAIT_PLATE = {
+  paddingOfHeight: 0.5,
+} as const;
+
+/**
  * The columns of the 704 px content column: halves 340 + 24 + 340, thirds
  * 224 + 16 + 224 + 16 + 224, quarters 164 + 16 … (the icon tiles).
  */

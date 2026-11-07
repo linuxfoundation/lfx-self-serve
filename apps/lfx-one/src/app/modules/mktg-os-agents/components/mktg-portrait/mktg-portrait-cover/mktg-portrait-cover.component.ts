@@ -3,7 +3,7 @@
 
 import { Component, computed, input } from '@angular/core';
 import { MKTG_PORTRAIT_COVER_STRIP, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
-import { mktgPortraitCoverStrip } from '@lfx-one/shared/utils';
+import { mktgPortraitCoverStrip, mktgPortraitPlatePadding } from '@lfx-one/shared/utils';
 import { MktgPortraitLogo, MktgPortraitLook, MktgPortraitBook } from '@lfx-one/shared/interfaces';
 import { MktgPortraitPageComponent } from '../mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../mktg-portrait-rect.directive';
@@ -44,7 +44,15 @@ export class MktgPortraitCoverComponent {
   public readonly stripRight = input('');
   protected readonly geometry = MKTG_PORTRAIT_PAGE;
   protected readonly ground = computed((): readonly [number, number, number, number] => [0, 0, this.geometry.width, this.geometry.height]);
-  protected readonly lockup = computed((): readonly [number, number, number] => [this.geometry.coverInset, 300, 600]);
+  /** The lockup's drawn height, and the white plate's padding under a lockup the kit cannot reverse: half of it. */
+  protected readonly lockupHeight = 84;
+  protected readonly platePadding = mktgPortraitPlatePadding(this.lockupHeight);
+  /** The lockup's block at y 300; a plated lockup's block starts a padding higher, so the artwork itself stays at y 300. */
+  protected readonly lockup = computed((): readonly [number, number, number] => [
+    this.geometry.coverInset,
+    300 - (this.logo()?.plate ? this.platePadding : 0),
+    600,
+  ]);
   protected readonly text = computed((): readonly [number, number, number] => [
     this.geometry.coverInset,
     560,

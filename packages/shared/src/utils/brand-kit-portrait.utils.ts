@@ -108,9 +108,10 @@ const ARTWORK_FILTERS: Readonly<Record<BrandKitPortraitArtworkMode, string>> = {
  * filtered to white; one-colour, the primary filtered to black. The symbol
  * is the symbol file or the primary cropped to it, filtered the same way;
  * the stacked lockup is only ever its own file. A filter is applied only to
- * one-colour artwork (`view.derivable`): a multi-colour primary would flatten
- * to one shape under it, so the slot draws it in full colour instead (the
- * Colorways tiles, which name their colorway, say "Not supplied" there).
+ * a slot whose own artwork is one ink (`view.derivable`, per slot): other
+ * artwork would flatten to one shape under it, so, reversed, the slot draws
+ * it in full colour on a white plate (`plate`, `brandKitPortraitPlate`; the
+ * tiles that name their colorway say "Not supplied" instead).
  */
 export function brandKitPortraitArtwork(
   view: BrandKitBookView,
@@ -118,11 +119,13 @@ export function brandKitPortraitArtwork(
   mode: BrandKitPortraitArtworkMode = 'full'
 ): MktgPrintLogo | null {
   const alt = { lockup: 'Horizontal lockup', symbol: 'Symbol', stacked: 'Stacked lockup' }[kind];
-  const filter = view.derivable ? ARTWORK_FILTERS[mode] : '';
+  const derivable = kind === 'symbol' ? view.derivable.symbol : view.derivable.lockup;
+  const filter = derivable ? ARTWORK_FILTERS[mode] : '';
   if (kind === 'lockup' && mode === 'reversed' && view.logos.reversed?.src) return { src: view.logos.reversed.src, alt: 'Reversed lockup', filter: '' };
   const images: Record<typeof kind, BrandKitLogoImage | null> = { lockup: view.logos.primary, symbol: view.symbol, stacked: view.logos.stacked };
   const image = images[kind];
-  return image?.src ? { src: image.src, alt, filter } : null;
+  if (!image?.src) return null;
+  return mode === 'reversed' && !derivable ? { src: image.src, alt, filter, plate: true } : { src: image.src, alt, filter };
 }
 
 /** A file's format from its reference: `SVG`, `PNG`, …, or `File`. */
@@ -173,6 +176,17 @@ function formatOf(image: BrandKitLogoImage | null): string {
   return image ? brandKitPortraitFormat(image) : '—';
 }
 
+/**
+ * Whether the lockup on a dark ground needs the white plate: the kit
+ * supplied no reversed file and the primary cannot be derived from by
+ * filter, so it is drawn in full colour, which the kit's own watch-out
+ * forbids bare on a dark ground. The covers read this for the logo the
+ * family print hands them (`MktgPrintBrand.logoOnDark`).
+ */
+export function brandKitPortraitPlate(view: BrandKitBookView): boolean {
+  return !!view.logos.primary?.src && !view.logos.reversed?.src && !view.derivable.lockup;
+}
+
 /** A slot's source column: `Supplied` with a file, else the line the book says in its place. */
 function suppliedOr(image: BrandKitLogoImage | null, otherwise: string): string {
   return image ? 'Supplied' : otherwise;
@@ -180,7 +194,7 @@ function suppliedOr(image: BrandKitLogoImage | null, otherwise: string): string 
 
 /** What the book does for a missing reversed file: derives it from the horizontal file when there is one. */
 function reversedFallback(view: BrandKitBookView): string {
-  return view.logos.primary && view.derivable ? 'Not supplied: this book derives it from the horizontal file' : BRAND_KIT_NOT_SUPPLIED;
+  return view.logos.primary && view.derivable.lockup ? 'Not supplied: this book derives it from the horizontal file' : BRAND_KIT_NOT_SUPPLIED;
 }
 
 /** The symbol's format: its file's, `SVG (crop)` when the book crops it out of the lockup, else a dash. */
@@ -464,11 +478,21 @@ export function brandKitPortraitRetypedName(name: string): string {
   const para = { weight: c.weight, family: 'Georgia' };
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return '';
+  const fitsLine = (word: string): boolean => mktgPortraitLineFits(word, c.width, c.size, para);
   const linesOf = (line: string): number => measuredLines(line.split(' '), c.width, c.size, para);
-  if (linesOf(words.join(' ')) <= c.maxLines) return words.join(' ');
-  const shortened = (count: number): string => `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(words.slice(0, count)).join(' '))}…`;
-  const count = mktgPortraitLargestFitting(words.length - 1, (prefix) => linesOf(shortened(prefix)) <= c.maxLines);
-  return shortened(count);
+  // The tile's three columns are fixed: a word wider than the clear width would widen its column, so the sample
+  // stops before the first such word (and a first word too wide for the line is cut to the characters that fit).
+  const wholeWords = words.findIndex((word) => !fitsLine(word));
+  const kept = wholeWords === -1 ? words : words.slice(0, wholeWords);
+  if (kept.length === 0) {
+    const first = Array.from(words[0]);
+    const chars = mktgPortraitLargestFitting(first.length - 1, (count) => fitsLine(`${first.slice(0, count).join('')}…`));
+    return `${first.slice(0, Math.max(1, chars)).join('')}…`;
+  }
+  if (kept.length === words.length && linesOf(kept.join(' ')) <= c.maxLines) return kept.join(' ');
+  const shortened = (count: number): string => `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(kept.slice(0, count)).join(' '))}…`;
+  const count = mktgPortraitLargestFitting(kept.length, (prefix) => linesOf(shortened(prefix)) <= c.maxLines);
+  return shortened(Math.max(1, count));
 }
 
 /** The type source as the page names it: the host of a URL (`one.example.org`), or the text as written. */
@@ -654,14 +678,16 @@ export function brandKitPortraitUsageCards(view: BrandKitBookView, approval: Mkt
   const u = BRAND_KIT_PORTRAIT_USAGE_LINES;
   const shorten = (card: { size: number; weight: number; maxLines: number }) =>
     brandKitPortraitShortenParagraph(view.voice.line, u.width, card.size, { weight: card.weight }, card.maxLines);
-  // The project's name stays on one line in every card ("Agentic AI Foundation" once broke after "Agentic"), and a
-  // headline keeps its last two words together.
-  const keepName = (text: string): string => mktgKeepName(text, view.projectName);
+  // The project's name stays on one line in every card ("Agentic AI Foundation" once broke after "Agentic") when it
+  // fits one line of that card at its size (a longer name wraps as plain words), and a headline keeps its last two
+  // words together.
+  const keepName = (text: string, card: { size: number; weight: number }): string =>
+    mktgKeepName(text, view.projectName, { width: u.width, size: card.size, weight: card.weight, family: view.type.family });
   const lines: Record<BrandKitUsageView['layout'], string> = {
-    keynote: mktgNoWidow(keepName(shorten(u.keynote))),
-    social: mktgNoWidow(keepName(shorten(u.social))),
-    report: keepName([view.projectName, 'annual report', brandKitPortraitApprovalYear(approval)].filter((part) => part !== '').join(' ')),
-    announcement: mktgNoWidow(keepName(`New members join ${view.projectName}`)),
+    keynote: mktgNoWidow(keepName(shorten(u.keynote), u.keynote)),
+    social: mktgNoWidow(keepName(shorten(u.social), u.social)),
+    report: keepName([view.projectName, 'annual report', brandKitPortraitApprovalYear(approval)].filter((part) => part !== '').join(' '), u.report),
+    announcement: mktgNoWidow(keepName(`New members join ${view.projectName}`, u.announcement)),
   };
   const moment = brandKitPortraitAccentMoment(view);
   return view.usageTiles.map((tile, index) => {

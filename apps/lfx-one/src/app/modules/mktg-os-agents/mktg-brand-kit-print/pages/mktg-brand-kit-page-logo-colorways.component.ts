@@ -38,7 +38,7 @@ export class MktgBrandKitPageLogoColorwaysComponent extends MktgBrandKitPageBase
       .map((tile, index) => ({ ...tile, caption: (captions[index] ?? captions[2])(tile.name) }))
       .filter((tile) => !!tile.logo?.src || !!tile.missing);
   });
-  /** The rules as `name — logo on ground.`, the dash and its clause left out when the name already says them. */
+  /** The rules as `name — logo on ground.`, the dash and its clause left out when the name already says them (the ground printed once). */
   protected readonly rules = computed(() =>
     this.view().logo.colorways.map((rule) => ({ name: rule.name, tail: mktgPortraitTailFor(rule.name, ' — ', `${rule.logo} on ${rule.ground}`) }))
   );

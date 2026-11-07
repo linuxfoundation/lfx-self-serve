@@ -38,8 +38,7 @@ describe('the Watchouts page', () => {
       projectName: 'The Synthetic Foundation for Interoperable Agentic Computing Standards and Open Governance',
     }));
     const retyped = frame.querySelector('[data-testid="brand-kit-watchout-retyped"]')?.textContent ?? '';
-    expect(retyped.startsWith('The Synthetic Foundation')).toBe(true);
-    expect(retyped.endsWith('…')).toBe(true);
-    expect(retyped.split(' ').length).toBeLessThan(12);
+    // K4: the sample stops before the first word wider than the tile's clear 156 px ("Foundation" at 30 px Georgia 700).
+    expect(retyped).toBe('The Synthetic…');
   });
 });

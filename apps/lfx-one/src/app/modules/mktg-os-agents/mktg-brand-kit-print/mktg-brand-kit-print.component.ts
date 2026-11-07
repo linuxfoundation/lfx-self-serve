@@ -4,11 +4,12 @@
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { BRAND_KIT_PORTRAIT_COVER_PURPOSE, BRAND_KIT_PORTRAIT_COVER_TITLE } from '@lfx-one/shared/constants';
-import { BrandKitBookView, MktgPortraitBook, MktgPortraitPlacedPage, MktgPrintBrand, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
+import { BrandKitBookView, MktgPortraitBook, MktgPortraitPlacedPage, MktgPrintBrand, MktgPrintLogo, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
 import { MktgPrintService } from '@services/mktg-print.service';
 import {
   brandKitPortraitBackCoverLine,
   brandKitPortraitPlan,
+  brandKitPortraitPlate,
   mktgPortraitDocumentName,
   mktgPortraitFootLeft,
   mktgPortraitLook,
@@ -102,6 +103,11 @@ export class MktgBrandKitPrintComponent {
   protected readonly versionLine = computed(() => [this.view().versionLabel, this.view().monthYear].filter((part) => part !== '').join(' · '));
   /** The back cover's brand line at most two lines inside the margins, shortened at a word when longer (`brandKitPortraitBackCoverLine`). */
   protected readonly backCoverLine = computed(() => brandKitPortraitBackCoverLine(this.view().voice.line, this.brand().fontStack));
+  /** The covers' lockup: the family print's logo on the dark, on the white plate when the kit's full-colour lockup needs one. */
+  protected readonly coverLogo = computed((): MktgPrintLogo | null => {
+    const logo = this.brand().logoOnDark;
+    return logo && brandKitPortraitPlate(this.view()) ? { ...logo, plate: true } : logo;
+  });
   /** `aaif.io · V4.0 · November 2026`, less any part the kit lacks: the cover's strip. */
   protected readonly coverStripRight = computed(() => [this.view().host, this.versionLine()].filter((part) => part !== '').join(' · '));
   public constructor() {

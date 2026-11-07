@@ -146,6 +146,9 @@ export const BRAND_KIT_PORTRAIT_USAGE_LINES = {
   width: 308,
   keynote: { size: 20, weight: 500, maxLines: 4 },
   social: { size: 22, weight: 500, maxLines: 3 },
+  /** The report cover's and the announcement header's lines, as the grammar sets them (no shortening: the name is the copy). */
+  report: { size: 18, weight: 500 },
+  announcement: { size: 17, weight: 500 },
 } as const;
 
 /**

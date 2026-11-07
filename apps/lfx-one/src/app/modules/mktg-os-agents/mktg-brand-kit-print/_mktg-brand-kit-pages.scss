@@ -441,7 +441,8 @@
 /* Watchouts: a 3-column grid of 190 px tiles with the red cross, the label 12/1.4 under each. */
 .kp-watchouts {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Three equal tracks whatever a tile holds: a retyped name never widens its column (minmax(0, 1fr), not 1fr). */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 28px 16px;
 }
 
@@ -475,6 +476,8 @@
    × badge's box, its inset and the grammar's gap), so a wrapping name never runs under the badge; longer names are
    shortened to the tile's four lines (BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED), at a 1.15 leading. */
 .kp-retyped {
+  box-sizing: border-box;
+  max-width: 100%;
   padding: 0 34px;
   font-family: Georgia, serif;
   font-size: 30px;

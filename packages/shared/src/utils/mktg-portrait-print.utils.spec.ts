@@ -38,6 +38,8 @@ import {
   mktgPortraitWrapLines,
   mktgKeepName,
   mktgNoBreak,
+  mktgPortraitPlateFit,
+  mktgPortraitPlatePadding,
   mktgNoWidow,
   mktgPortraitLargestFitting,
   mktgPortraitMoreLine,
@@ -211,6 +213,20 @@ describe('the fit model', () => {
   });
 });
 
+describe('mktgPortraitPlatePadding', () => {
+  it('pads the white plate by half the drawn height: 42 under the cover lockup, 36 under the back cover lockup', () => {
+    expect(mktgPortraitPlatePadding(84)).toBe(42);
+    expect(mktgPortraitPlatePadding(72)).toBe(36);
+  });
+
+  it('fits a plated artwork to its box: the mark drawn at half the box, the padding a quarter, nothing spilling', () => {
+    expect(mktgPortraitPlateFit(40)).toEqual({ height: 20, padding: 10 });
+    expect(mktgPortraitPlateFit(64)).toEqual({ height: 32, padding: 16 });
+    const { height, padding } = mktgPortraitPlateFit(76);
+    expect(height + 2 * padding).toBe(76);
+  });
+});
+
 describe('mktgNoBreak and mktgKeepName', () => {
   it('keeps a multi-word name on one line, so a headline breaks before the whole name, never inside it', () => {
     expect(mktgNoBreak('Agentic  AI Foundation')).toBe('Agentic\u00a0AI\u00a0Foundation');
@@ -314,18 +330,27 @@ describe('the cover strip', () => {
     const left = 'Project One · a Linux Foundation project';
     const right = 'one.example.org · V1.0 · October 2026';
     expect(mktgPortraitCoverStrip(left, right, width)).toEqual({ left, right, wraps: false });
+    // A name the line cannot hold whole beside its tail keeps whole: "· a Linux Foundation project" goes first.
+    const cncf = 'Cloud Native Computing Foundation · a Linux Foundation project';
+    expect(mktgPortraitCoverStrip(cncf, right, width)).toEqual({ left: 'Cloud Native Computing Foundation', right, wraps: false });
+    // Only a name too long even bare is shortened, word by word, with an ellipsis.
     const long = 'Cloud Native Computing Foundation for Synthetic Everything (CNCFSE) · a Linux Foundation project';
     const shortened = mktgPortraitCoverStrip(long, right, width);
     expect(shortened.wraps).toBe(false);
     expect(shortened.right).toBe(right);
-    expect(shortened.left).toMatch(/^Cloud Native.*… · a Linux Foundation project$/);
+    expect(shortened.left).toMatch(/^Cloud Native.*…$/);
+    expect(shortened.left).not.toContain('Linux Foundation');
     expect(shortened.left.length).toBeLessThan(long.length);
-    // The other half loses words too when the name alone cannot make room; one word each still too wide → the strip
-    // wraps whole (a single long token, a host, has no words to give up).
+    // The shorter half stays whole while the longer can give; it loses words too only when the name alone cannot make
+    // room; one word each still too wide → the strip wraps whole (a single long token, a host, has no words to give up).
     const wordy = 'Synthetic Host Name Of The Strip Example Site · V1.0 · October 2026';
-    const both = mktgPortraitCoverStrip(long, wordy, width);
+    const given = mktgPortraitCoverStrip(long, wordy, width);
+    expect(given).toMatchObject({ right: wordy, wraps: false });
+    expect(given.left).toMatch(/^Cloud Native.*…$/);
+    const wordier = 'Synthetic Host Name Of The Strip Example Site With Many More Words Than One Line Of The Strip Holds · V1.0 · October 2026';
+    const both = mktgPortraitCoverStrip(long, wordier, width);
     expect(both.wraps).toBe(false);
-    expect(both.left.endsWith('… · a Linux Foundation project')).toBe(true);
+    expect(both.left).toMatch(/^Cloud.*…$/);
     expect(both.right).toMatch(/^Synthetic.*… · V1.0 · October 2026$/);
     const hopeless = mktgPortraitCoverStrip(`${'Synthetic'.repeat(12)} · a Linux Foundation project`, `${'host'.repeat(20)}.org · V1.0 · October 2026`, width);
     expect(hopeless).toEqual({

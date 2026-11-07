@@ -19,12 +19,26 @@
           <div class="pp-tile kp-tile"><lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" [height]="80" /></div>
           <div class="pp-cap">Full color</div>
         </div>
+        <!-- The reversed and one-colour variants are derived by filter only from a one-ink symbol; a multi-colour symbol
+             would flatten, and a full-colour symbol under these labels would be a false label, so the tiles say so. -->
         <div>
-          <div class="pp-tile pp-tile--dark kp-tile"><lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" mode="reversed" [height]="80" /></div>
+          <div class="pp-tile pp-tile--dark kp-tile">
+            @if (v.derivable.symbol) {
+              <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" mode="reversed" [height]="80" />
+            } @else {
+              <span class="kp-tile-missing" data-testid="brand-kit-symbol-variant-missing">Not supplied</span>
+            }
+          </div>
           <div class="pp-cap">Reversed</div>
         </div>
         <div>
-          <div class="pp-tile kp-tile"><lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" mode="mono" [height]="80" /></div>
+          <div class="pp-tile kp-tile">
+            @if (v.derivable.symbol) {
+              <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" mode="mono" [height]="80" />
+            } @else {
+              <span class="kp-tile-missing" data-testid="brand-kit-symbol-variant-missing">Not supplied</span>
+            }
+          </div>
           <div class="pp-cap">One-color black</div>
         </div>
       </div>

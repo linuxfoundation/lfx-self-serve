@@ -3,6 +3,7 @@
 
 import { Component, computed, input } from '@angular/core';
 import { MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
+import { mktgPortraitPlatePadding } from '@lfx-one/shared/utils';
 import { MktgPortraitLogo, MktgPortraitLook, MktgPortraitBook } from '@lfx-one/shared/interfaces';
 import { MktgPortraitPageComponent } from '../mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../mktg-portrait-rect.directive';
@@ -28,6 +29,9 @@ export class MktgPortraitBackCoverComponent {
   public readonly book = input.required<MktgPortraitBook>();
   public readonly page = input.required<number>();
   public readonly logo = input<MktgPortraitLogo | null>(null);
+  /** The lockup's drawn height, and the white plate's padding under a lockup the kit cannot reverse: half of it. */
+  protected readonly lockupHeight = 72;
+  protected readonly platePadding = mktgPortraitPlatePadding(this.lockupHeight);
   /** The brand line; '' draws none. */
   public readonly line = input('');
   /** `aaif.io`; '' draws none. */
@@ -37,7 +41,12 @@ export class MktgPortraitBackCoverComponent {
   /** The copyright and trademark notice. */
   public readonly notice = input('');
   protected readonly geometry = MKTG_PORTRAIT_PAGE;
-  protected readonly lockupRect = computed((): readonly [number, number, number] => [0, 420, this.geometry.width]);
+  /** The lockup's block at y 420; a plated lockup's block starts a padding higher, so the artwork stays at y 420 and the plate ends at 528, clear of the brand line at 560. */
+  protected readonly lockupRect = computed((): readonly [number, number, number] => [
+    0,
+    420 - (this.logo()?.plate ? this.platePadding : 0),
+    this.geometry.width,
+  ]);
   /** The brand line, url and version inside the frame's margins: a long line wraps within the content width, never to the edges. */
   protected readonly lineRect = computed((): readonly [number, number, number] => [this.geometry.margin, 560, this.geometry.contentWidth]);
   protected readonly noticeRect = computed((): readonly [number, number, number] => [

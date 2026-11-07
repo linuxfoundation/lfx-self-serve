@@ -129,6 +129,14 @@ function pageById(pages: Locator, id: (typeof PAGES)[number]): Locator {
   return pages.and(pages.page().locator(`[data-page-id="${id}"]`));
 }
 
+/** The Watch-outs' tiles are three equal fixed columns: every tile the width of the first, within a pixel. */
+async function expectEqualWatchoutColumns(watchouts: Locator): Promise<void> {
+  const tiles = await watchouts.getByTestId('brand-kit-watchout').all();
+  expect(tiles.length).toBeGreaterThanOrEqual(3);
+  const widths = await Promise.all(tiles.map(async (tile) => (await tile.boundingBox())?.width ?? 0));
+  for (const width of widths) expect(Math.abs(width - widths[0])).toBeLessThan(1);
+}
+
 /** A frame's child placed on it: its offset from the frame's top-left corner and its width, rounded. */
 async function placement(frame: Locator, child: Locator): Promise<{ x: number; y: number; width: number }> {
   const [outer, inner] = await Promise.all([frame.boundingBox(), child.boundingBox()]);
@@ -215,6 +223,8 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(back.getByTestId('mktg-portrait-back-cover-line')).toHaveCSS('font-family', face);
     await expect(back.getByTestId('mktg-portrait-back-cover-notice')).toHaveCSS('font-family', face);
     await expect(back.getByTestId('mktg-portrait-page-foot')).toHaveCount(0);
+    // The Watch-outs' six tiles sit in three equal columns.
+    await expectEqualWatchoutColumns(pageById(pages, 'logo-watchouts'));
     await back.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('back-cover.png'), fullPage: true });
   });
@@ -320,9 +330,17 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const imagery = pageById(pages, 'visual-imagery');
     expect(await placement(imagery, imagery.getByTestId('brand-kit-imagery-ground'))).toEqual({ x: 56, y: 220, width: 704 });
     await expect(imagery.getByTestId('brand-kit-imagery-elements').getByTestId('brand-kit-imagery-element')).toHaveCount(3);
-    await expect(imagery.locator('[data-testid="brand-kit-imagery-element"][data-element="callout"]')).toHaveCSS('background-color', rgb(kit.kit.accent));
-    await expect(imagery.locator('[data-testid="brand-kit-imagery-element"][data-element="callout"]')).toHaveCSS('color', rgb(kit.kit.dark));
-    await expect(imagery.getByTestId('brand-kit-imagery-callout-caption')).toContainText('text in Charcoal (white on Orange fails AA, 2.8:1)');
+    // The call-out is inked by the shared rule: no palette colour reaches AA on this kit's Orange (Charcoal 2.9:1,
+    // White 2.8:1, Mid gray 1.6:1), so the card keeps a white ground, Charcoal text and the accent as its 6 px top
+    // rule, and the caption says why.
+    const callout = imagery.locator('[data-testid="brand-kit-imagery-element"][data-element="callout"]');
+    await expect(callout).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await expect(callout).toHaveCSS('color', rgb(kit.kit.dark));
+    await expect(callout).toHaveCSS('border-top-color', rgb(kit.kit.accent));
+    await expect(callout).toHaveCSS('border-top-width', '6px');
+    await expect(imagery.getByTestId('brand-kit-imagery-callout-caption')).toContainText(
+      'the accent as a top rule; no palette color reaches AA on Orange (Charcoal 2.9:1 at best)'
+    );
     await expect(imagery.getByTestId('brand-kit-imagery-avoid').locator('li')).toHaveText(kit.chapters.visual.imagery.avoid);
     // On paper the ground's glow prints at the stronger alpha (the editor's p13): the print token, not the screen's.
     // (0x88 = 0.533 alpha on the kit's accent, as the engine serializes the gradient.)
@@ -466,10 +484,11 @@ test.describe('Brand kit PDF: the portrait book', () => {
       const label = `${print.paper} headers ${print.headers} background ${print.background}`;
       // The paper is the page box (the grammar's `size: auto`), never a Letter box scaled onto A4.
       const paper = MKTG_PORTRAIT_PAPERS[print.paper === 'A4' ? 'a4' : 'letter'];
-      // Chrome's A4 page box is 794.56 CSS px against 210 mm's 793.70: within 1 px of the paper, a Letter box scaled
-      // onto A4 would be 22 px off.
-      expect(Math.abs(print.box.width - paper.width), label).toBeLessThan(1);
-      expect(Math.abs(print.box.height - paper.height), label).toBeLessThan(1);
+      // Chrome reports its A4 page box as 794.56 × 1122.5 CSS px against 210 × 297 mm's 793.70 × 1122.52, and Letter
+      // as 816 × 1056 exactly: within 2 px of the paper's own box on both axes; a Letter box scaled onto A4 would be
+      // 22 px off in width and 70 px in height, so the tolerance still proves the paper.
+      expect(Math.abs(print.box.width - paper.width), label).toBeLessThan(2);
+      expect(Math.abs(print.box.height - paper.height), label).toBeLessThan(2);
       expect(print.pages, label).toBe(planned);
       expect(print.blank, label).toEqual([]);
       // The browser's header (date · title) and footer (url · n/N) never reach the sheet: a page's text with them on is
@@ -555,16 +574,37 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(colorways.getByTestId('brand-kit-colorway-missing')).toHaveCount(2);
     await expect(colorways.getByTestId('brand-kit-colorways-tiles').locator('img')).toHaveCount(2);
     expect(await colorways.getByTestId('brand-kit-colorways-tiles').locator('img[style*="filter"]').count()).toBe(0);
-    // The dark grounds draw the lockup in full colour, unfiltered: the cover and the dark partnership tile.
+    // The dark grounds draw the lockup in full colour, unfiltered, on the white plate padded by half its drawn height:
+    // the cover (84 px lockup, 42 px of white) and the back cover (72, 36), their blocks a padding higher so the lockup
+    // stays where the design draws it; a tile's plate is fitted to the tile's box (the partnership tile's 64 px box:
+    // 32 drawn, 16 of white), so no plate spills out of its container.
     for (const img of await pageById(pages, 'cover').locator('img').all()) await expect(img).toHaveCSS('filter', 'none');
+    await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '42px');
+    await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-plate')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     const partnershipDark = pageById(pages, 'logo-partnership').getByTestId('brand-kit-partnership-dark').locator('img');
     await expect(partnershipDark).toHaveCSS('filter', 'none');
-    // The cover strip's halves share one line: a long project name loses words with an ellipsis, never wraps at 10 px.
+    await expect(pageById(pages, 'logo-partnership').getByTestId('brand-kit-partnership-dark').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '16px');
+    await expect(pageById(pages, 'back-cover').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '36px');
+    // The back cover's plate ends above the brand line's block: no text is drawn over the white.
+    const backPlate = await pageById(pages, 'back-cover').getByTestId('mktg-portrait-plate').boundingBox();
+    const backLine = await pageById(pages, 'back-cover').getByTestId('mktg-portrait-back-cover-line').boundingBox();
+    expect(backPlate && backLine && backPlate.y + backPlate.height <= backLine.y).toBe(true);
+    // The Logo system's dark tile says what it draws.
+    await expect(pageById(pages, 'logo-system').getByTestId('brand-kit-logo-system-tiles')).toContainText(
+      'On the dark · full color on a white plate (no reversed file)'
+    );
+    // The cover strip's halves share one line: "· a Linux Foundation project" goes before a word of the name, the
+    // name whole, never wrapped at 10 px.
     const strip = pageById(pages, 'cover').getByTestId('mktg-portrait-cover-strip');
+    await expect(strip).toContainText(ASSET_PROJECT.name);
+    await expect(strip).not.toContainText('Linux Foundation project');
     const halves = await strip.locator('span').all();
     const boxes = await Promise.all(halves.map((half) => half.boundingBox()));
     expect(boxes.every((box) => box !== null && box.height < 20)).toBe(true);
     expect(await strip.evaluate((node) => node.classList.contains('pp-cover-strip--wrapped'))).toBe(false);
+    // The Watch-outs' three columns stay equal under the long retyped name, which ends inside its tile with an ellipsis.
+    await expectEqualWatchoutColumns(pageById(pages, 'logo-watchouts'));
+    await expect(pageById(pages, 'logo-watchouts').getByTestId('brand-kit-watchout-retyped')).toHaveText(/…$/);
     await contrast.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('overfull-contrast.png'), fullPage: false });
     await page.emulateMedia({ media: 'screen' });
