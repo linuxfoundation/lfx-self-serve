@@ -48,9 +48,18 @@ export function mktgPortraitLook(brand: MktgPrintBrand, spark: string | null = n
  */
 export function mktgNoWidow(text: string): string {
   const trimmed = text.trim();
-  const at = trimmed.search(/\s+\S+$/);
-  if (at <= 0) return trimmed;
-  return `${trimmed.slice(0, at)}\u00a0${trimmed.slice(at).trimStart()}`;
+  // One backward walk (no regex over the input): past the last word, then past the gap before it.
+  let wordStart = trimmed.length;
+  while (wordStart > 0 && !isWhitespace(trimmed[wordStart - 1])) wordStart -= 1;
+  let gapStart = wordStart;
+  while (gapStart > 0 && isWhitespace(trimmed[gapStart - 1])) gapStart -= 1;
+  if (gapStart === 0) return trimmed;
+  return `${trimmed.slice(0, gapStart)}\u00a0${trimmed.slice(wordStart)}`;
+}
+
+/** One character's whitespace test, as `\s` reads it (a trimmed string has none at its ends). */
+function isWhitespace(char: string): boolean {
+  return char.trim() === '';
 }
 
 /** The footer's page number: `03`. */

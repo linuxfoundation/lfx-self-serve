@@ -213,4 +213,12 @@ describe('mktgNoWidow', () => {
     expect(mktgNoWidow('Interoperability')).toBe('Interoperability');
     expect(mktgNoWidow('   ')).toBe('');
   });
+
+  it('reads a hostile headline in linear time (no regex scan over the input)', () => {
+    const hostile = `${'\t'.repeat(100_000)}x`;
+    const started = performance.now();
+    expect(mktgNoWidow(hostile)).toBe('x');
+    expect(mktgNoWidow(`a${' '.repeat(100_000)}b`)).toBe('a\u00a0b');
+    expect(performance.now() - started).toBeLessThan(50);
+  });
 });
