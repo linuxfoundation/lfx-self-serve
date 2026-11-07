@@ -101,13 +101,15 @@ export class MeetingDetailsContext {
   private initShownRow(): Signal<MeetingHomeRow> {
     return computed(() => {
       const row = this.row();
-      const occurrence = this.occurrence();
-      if (!occurrence || occurrence.occurrence_id === row.occurrenceId) return row;
+      const occurrence = this.occurrence() ?? row.occurrence;
+      // The title follows the refreshed meeting, unless the date has its own.
+      const title = occurrence?.title || this.meeting().title;
+      if (!occurrence || occurrence.occurrence_id === row.occurrenceId) return title === row.title ? row : { ...row, title };
       return {
         ...row,
         key: `${row.meeting.id}:${occurrence.occurrence_id}`,
         occurrence,
-        title: occurrence.title || row.meeting.title,
+        title,
         occurrenceId: occurrence.occurrence_id,
         startTime: occurrence.start_time,
         durationMinutes: occurrence.duration || row.meeting.duration,
