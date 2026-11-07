@@ -458,6 +458,7 @@ export function frameworkPortraitMatrix(
   };
   const fits = (matrix: FoundationMessagePrintMatrix): boolean =>
     matrix.height <= laid + 0.01 &&
+    (!matrix.rows.proof || goals.every((goal, index) => goal.proofRows.length === 0 || matrix.proofs[index].rows.length > 0)) &&
     bands.every((band) => frameworkPortraitMatrixProofRowSize(matrix.proofs.slice(band.offset, band.offset + band.count)) >= TYPE.matrixProofTight.size);
   let matrix = lay(ladder[0]);
   for (let step = 1; step < ladder.length && !fits(matrix); step += 1) matrix = lay(ladder[step]);
@@ -606,24 +607,10 @@ function frameworkPortraitMatrixBand(
       (proof) => proofRow(proof, TYPE.matrixProofTight),
       noteLine
     );
+    // A cell none of whose rows fit at the tight type prints nothing here (never only its note, the editor's F3, and never a proof
+    // under the floor): the matrix's ladder sees the empty cell and drops the proof row to the goal pages.
     if (list.rows.length > 0 || goal.proofRows.length === 0) return fold ? { ...list, note: '' } : list;
-    // Every row would be cut: the first proof stays, set smaller in the fit model's steps to the room above the note, then cut at a sentence.
-    const [first] = goal.proofRows;
-    const cut = goal.proofRows.length - 1;
-    const firstRoom = proofsRoom - noteIn(cut);
-    const fits = (proof: FoundationMessagePrintGoalProof): boolean => proofRow(proof, TYPE.matrixProofTight) <= firstRoom;
-    let kept: FoundationMessagePrintGoalProof = { ...first, size: TYPE.matrixProofTight.size };
-    for (let step = 1; !fits(kept); step += 1) {
-      const scale = Math.round((1 - step * FIT.scaleStep) * 100) / 100;
-      if (scale < FIT.minScale - 1e-9) break;
-      kept = { ...first, size: TYPE.matrixProofTight.size * scale };
-    }
-    for (let guard = 0; guard < FIT.maxCuts && !fits(kept); guard++) {
-      const fact = mktgPortraitCutText(kept.fact, Math.floor(kept.fact.length * FIT.cutShare));
-      if (fact === kept.fact || fact.length >= kept.fact.length) break;
-      kept = { ...kept, fact };
-    }
-    return { rows: [kept], cut, tight: true, note: fold ? '' : foundationMessagePrintCutNote(cut) };
+    return { rows: [], cut: goal.proofRows.length, tight: true, note: fold ? '' : foundationMessagePrintCutNote(goal.proofRows.length) };
   });
   // One size across the proof row (the editor's W4, as the titles): the smallest any cell needed, every cell then re-cut at it, so
   // no cell prints smaller than its neighbors; a cell re-cut smaller keeps at least the rows it had.
