@@ -48,7 +48,7 @@ export class MeetingDetailsContext {
   public readonly organizer: Signal<boolean> = computed(() => this.meeting().organizer === true);
   /** Invited, and not just removed from the meeting on this page. */
   public readonly invited: Signal<boolean> = computed(
-    () => !!this.row().meeting.invited && !this.meetingService.removedRegistrationMeetingIds().has(this.row().meeting.id)
+    () => !!this.meeting().invited && !this.meetingService.removedRegistrationMeetingIds().has(this.row().meeting.id)
   );
   /** Invited, or on a past row: the past feed lists only meetings the viewer is a member of. */
   private readonly member: Signal<boolean> = computed(() => this.invited() || isPastMeetingCalendarRow(this.row().meeting));

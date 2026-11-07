@@ -113,9 +113,9 @@ export function getMeetingDetailsOrganizers(
     const key = normalizeUsername(entry);
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    // Entries are usernames on read but emails on create; an email shows only its local part.
+    // Entries are usernames on read but emails on create; an email shows its local part but is never the viewer's username.
     const isEmail = key.includes('@');
-    people.push({ name: '', username: isEmail ? key.split('@')[0] : key, email: isEmail ? key : '' });
+    people.push(isEmail ? { name: key.split('@')[0], username: '', email: key } : { name: '', username: key, email: '' });
   }
   return people.map((person, index) => {
     const name = getMeetingOrganizerDisplayName(person);

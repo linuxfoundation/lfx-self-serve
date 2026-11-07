@@ -151,6 +151,13 @@ describe('getMeetingDetailsOrganizers', () => {
     expect(owner.label).toBe('You');
     expect(owner.mailto).toBeNull();
   });
+
+  it('never names an email-only organizer You from its local part', () => {
+    const helper = getMeetingDetailsOrganizers(meeting, [], 'helper', mailto).find((person) => person.name === 'helper');
+
+    expect(helper?.label).toBe('helper');
+    expect(helper?.mailto).toContain('mailto:helper@acme.example');
+  });
 });
 
 describe('getMeetingShareUrl', () => {
