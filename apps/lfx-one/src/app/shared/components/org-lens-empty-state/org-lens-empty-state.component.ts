@@ -119,10 +119,22 @@ export class OrgLensEmptyStateComponent {
     const values = this.values();
     // FR-017: an unheld organization is never named, whatever the caller passed.
     const orgName = UNHELD_ORG_STATES.has(this.state()) ? 'This organization' : values.orgName?.trim() || 'This organization';
-    return template
-      .replace(/\{orgName\}/g, orgName)
-      .replace(/\{noun\}/g, values.noun ?? 'records')
-      .replace(/\{period\}/g, values.period ?? 'this period')
-      .replace(/\{correlationId\}/g, values.correlationId ?? '—');
+    // #4314 — the caller's own employer. Falls back to the generic noun rather than leaving the token
+    // visible, so a profile that answers late or blank still renders a sentence.
+    const employerName = values.employerName?.trim() || 'your employer';
+    const resolved: Record<string, string> = {
+      orgName,
+      employerName,
+      noun: values.noun ?? 'records',
+      period: values.period ?? 'this period',
+      correlationId: values.correlationId ?? '—',
+    };
+    // One pass over the template, through a callback. Two properties matter and both are about values
+    // that come from outside this component — an employer name is free text from a profile:
+    // - a callback, not a replacement string, so `String.replace` does not read `$&`, `` $` ``, `$'`
+    //   or `$1` out of it ("Acme $& Partners");
+    // - a single pass, so a token inside an inserted value is not itself replaced by a later pass
+    //   ("Example {noun} Labs" would otherwise render as "Example records Labs").
+    return template.replace(/\{(orgName|employerName|noun|period|correlationId)\}/g, (match, token: string) => resolved[token] ?? match);
   }
 }

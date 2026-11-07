@@ -98,6 +98,7 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
         useValue: {
           pageState: signal(pageState),
           hasPageState: signal(pageState !== null),
+          employerName: signal(null),
           settled: signal(true),
           pageReady: signal(orgNavigationLoaded),
           retrying: signal(false),
@@ -988,6 +989,7 @@ describe('OrgGroupsComponent stat strip', () => {
           useValue: {
             pageState: signal(null),
             hasPageState: signal(false),
+            employerName: signal(null),
             settled: signal(orgLoaded),
             pageReady: signal(orgLoaded),
             retrying: signal(false),

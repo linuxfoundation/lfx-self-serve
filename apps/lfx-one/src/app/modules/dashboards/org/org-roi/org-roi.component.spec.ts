@@ -72,6 +72,7 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
         useValue: {
           pageState,
           hasPageState: computed(() => pageState() !== null),
+          employerName: signal(null),
           pageReady: signal(options.pageReady ?? true),
           settled: signal(true),
           retrying: signal(false),

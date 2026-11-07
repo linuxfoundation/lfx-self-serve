@@ -12,7 +12,7 @@
     <lfx-org-lens-empty-state
       [state]="pageStateName"
       [testId]="'org-profile-no-access'"
-      [values]="{ correlationId: correlationId() }"
+      [values]="{ correlationId: correlationId(), employerName: emptyState.employerName() }"
       [retrying]="emptyState.retrying()"
       (retry)="emptyState.retry()" />
   } @else if (!emptyState.settled() || state() === 'loading') {

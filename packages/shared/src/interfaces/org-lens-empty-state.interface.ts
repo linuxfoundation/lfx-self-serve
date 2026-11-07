@@ -4,6 +4,7 @@
 /** Names of the Org Lens empty states shipped in spec 053 phase 1 (`ORG_LENS_EMPTY_STATE_COPY` keys), plus `affiliated-no-grant` (#4225). */
 export type OrgLensEmptyStateName =
   | 'no-organization'
+  | 'affiliated-non-member'
   | 'no-access'
   | 'wrong-organization'
   | 'not-found-staff'
@@ -71,6 +72,12 @@ export interface OrgLensEmptyStateCopy {
 /** Resolved values an empty state may interpolate. `orgName` is honoured only for states rendered to a caller who holds the org (FR-019). */
 export interface OrgLensEmptyStateValues {
   orgName?: string | null;
+  /**
+   * #4314 — the caller's *own* affiliated employer, read from their profile. Interpolated by
+   * `affiliated-non-member` only. Unlike `orgName` it never names an organization the caller
+   * addressed but does not hold, so the FR-017 withholding rule does not apply to it.
+   */
+  employerName?: string | null;
   /** FR-013 — the section's plural noun ("meetings", "commits"). */
   noun?: string;
   /** FR-013 — human-readable selected period; absent ⇒ the `noPeriod` wording. */
@@ -80,4 +87,43 @@ export interface OrgLensEmptyStateValues {
   orgList?: { uid: string; name: string }[];
   /** FR-013 — false when no caller-set filter narrows the query, so `section-empty` renders reason-only. Defaults true. */
   filterActive?: boolean;
+}
+
+/** #4314 — what the employer-membership lookup established; see `OrgLensEmployerAffiliation.membership`. */
+export type OrgLensEmployerMembership = 'member' | 'non-member' | 'unresolved';
+
+/**
+ * #4314 — the caller's own employer affiliation as the Org Lens empty states need it:
+ * who their profile says they work for, and whether that company holds any active membership
+ * in an LF-hosted foundation. Answered by `GET /api/profile/employer-affiliation`, which is
+ * deliberately *not* behind the Org Lens read gate — a caller with no grant must be able to
+ * learn why they have none.
+ */
+export interface OrgLensEmployerAffiliation {
+  /**
+   * Display name of a job the caller holds *now* (a work-history entry with no end date); `null` when
+   * they have none, a profile of only past jobs included — someone between jobs is not affiliated.
+   * With several concurrent jobs it is the LF-member one where there is one, else the first.
+   *
+   * Always as the caller's own profile spells it, never as the matched Salesforce account spells it:
+   * it is read back to them in their own sentence, and the match is deliberately looser than equality.
+   */
+  employerName: string | null;
+  /**
+   * What the lookup established about the caller's current employers:
+   *
+   * - `member` — at least one of them holds an active membership in an LF-hosted foundation.
+   * - `non-member` — every one of them resolved to a Salesforce account, and none of those accounts
+   *   has an active membership. This is the only value that may render "is not a member": it is a
+   *   checked negative.
+   * - `unresolved` — the lookup succeeded but settled nothing. Two cases produce it: the caller has no
+   *   current employer at all (`employerName` is then `null`), or at least one of their current employers
+   *   could not be matched to an account. An unmatched name is not proof of no membership: the match is
+   *   by name, and a member company whose account name differs from the profile's wording lands here.
+   *
+   * `unresolved` is a successful answer of "unknown", not an outage: callers keep whatever they would show
+   * without an employer answer — today the `no-organization` empty state — and reserve `could-not-load` for
+   * a request that actually failed. Neither an unknown nor a failure may ever render as `non-member`.
+   */
+  membership: OrgLensEmployerMembership;
 }

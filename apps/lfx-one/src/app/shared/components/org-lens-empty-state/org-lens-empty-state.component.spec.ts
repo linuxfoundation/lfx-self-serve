@@ -153,6 +153,39 @@ describe('OrgLensEmptyStateComponent', () => {
     }
   });
 
+  // #4314 — the caller's own employer, which is not an addressed organization and so is named.
+  it("interpolates the caller's employer into the non-member state and offers only the affiliation CTA", () => {
+    const fixture = render('affiliated-non-member', { employerName: 'Delta Harbour' });
+
+    expect(byTestId(fixture, 'title')?.textContent?.trim()).toBe('Your affiliated employer is not a member of the Linux Foundation');
+    expect(byTestId(fixture, 'description')?.textContent).toContain('You are affiliated with Delta Harbour');
+    expect(byTestId(fixture, 'primary')?.textContent).toContain('Update employer affiliation');
+    expect(byTestId(fixture, 'contact-support')).toBeNull();
+  });
+
+  it('falls back to a generic noun when the employer name is missing, rather than leaving the token visible', () => {
+    const text = (render('affiliated-non-member', {}).nativeElement as HTMLElement).textContent ?? '';
+
+    expect(text).toContain('You are affiliated with your employer');
+    expect(text).not.toContain('{employerName}');
+  });
+
+  // `String.replace` reads `$&`, `` $` ``, `$'` and `$1` out of a replacement *string*, and these
+  // values come from outside the component. A callback inserts them verbatim.
+  it('inserts a value containing a dollar sequence literally', () => {
+    const fixture = render('affiliated-non-member', { employerName: "Acme $& $' $1 Partners" });
+
+    expect(byTestId(fixture, 'description')?.textContent).toContain("You are affiliated with Acme $& $' $1 Partners");
+  });
+
+  // One pass over the template: a token inside an inserted value is part of the value, not a token.
+  it('does not reinterpret a brace token inside the employer name', () => {
+    const fixture = render('affiliated-non-member', { employerName: 'Example {noun} Labs' });
+
+    expect(byTestId(fixture, 'description')?.textContent).toContain('You are affiliated with Example {noun} Labs');
+    expect(byTestId(fixture, 'description')?.textContent).not.toContain('Example records Labs');
+  });
+
   it('interpolates the organization name, noun and period for a held section', () => {
     const fixture = render('section-empty', { orgName: 'Acme Corp', noun: 'meetings', period: 'the last 30 days' });
 
@@ -187,8 +220,10 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(byTestId(render('affiliated-no-grant'), 'description')?.textContent).toContain(
       'The "Organization" section of LFX Self-Serve shows how your company is involved with LF projects'
     );
+    // #4314 `affiliated-non-member` is also a first-visit state, but its approved copy opens on the
+    // "Organization" section of LFX Self-Serve rather than the FR-002 sentence, so it sits with the rest.
     const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => !firstVisit.includes(name));
-    expect(others).toHaveLength(8);
+    expect(others).toHaveLength(9);
     for (const name of others) {
       const fixture = render(name, { orgList: ORG_LIST, filterActive: true });
       expect(byTestId(fixture, 'description')?.textContent, name).not.toContain('Organization Lens shows');
