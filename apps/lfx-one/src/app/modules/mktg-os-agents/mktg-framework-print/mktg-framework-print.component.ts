@@ -266,6 +266,7 @@ export class MktgFrameworkPrintComponent {
     return computed((): FoundationMessagePrintFrame[] => {
       const view = this.view();
       const book = this.resolvedBook();
+      const look = this.resolvedLook();
       const plan = frameworkPortraitPlan(view, { inFamily: book.inFamily });
       const icpPages = frameworkPortraitIcpPages(view.icps);
       const numbersPages = frameworkPortraitNumbersPages(view);
@@ -281,7 +282,8 @@ export class MktgFrameworkPrintComponent {
         // The anchors never move; their questions are set smaller, then cut, until they and the crosscut box end above the footer.
         const anchors = sayAvoid ? frameworkPortraitAnchors(view.mf.anchor, view.mf.crosscut) : { anchors: [], crosscutTop: 0 };
         const titleFit = goalTitles.get(page.id) ?? frameworkPortraitTitle(page.title);
-        const matrix = page.id === this.ids.framework ? frameworkPortraitMatrix(view.goals, view.mf.crosscut, this.tops.footer - this.tops.matrix) : null;
+        const matrix =
+          page.id === this.ids.framework ? frameworkPortraitMatrix(view.goals, view.mf.crosscut, this.tops.footer - this.tops.matrix, look.fontStack) : null;
         return {
           ...page,
           number: book.firstPage + index,

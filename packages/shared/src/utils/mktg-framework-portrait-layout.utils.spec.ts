@@ -28,6 +28,7 @@ import {
   frameworkPortraitCutNoteHeight,
   frameworkPortraitFactRowHeight,
   frameworkPortraitFigureSize,
+  frameworkPortraitGlyphTextHeight,
   frameworkPortraitNumberTiles,
   frameworkPortraitLfxSourced,
   frameworkPortraitNumbersPages,
@@ -1261,6 +1262,49 @@ describe('the framework portrait book’s "Who it’s for" cards (editor S-a)', 
   });
 });
 
+describe('the framework portrait book’s goal matrix measured on the glyph table (the editor’s read of the dropped proof row)', () => {
+  const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
+  const type = FRAMEWORK_PORTRAIT_TYPE;
+  const key = 'The cloud native stack is open, governed in the open and run everywhere.';
+
+  it('wraps a band cell word by word on the glyph measure, a line under the flat average in the band’s column, never cutting', () => {
+    // The family seeds' key message in a 130 px column: the flat average counts five lines, the glyph table four, as the page prints it.
+    const flat = frameworkPortraitTextHeight(key, type.matrixKey, column);
+    const glyph = frameworkPortraitGlyphTextHeight(key, type.matrixKey, column);
+    expect(flat).toBeCloseTo(5 * type.matrixKey.size * type.matrixKey.line, 6);
+    expect(glyph).toBeCloseTo(4 * type.matrixKey.size * type.matrixKey.line, 6);
+    // A short text is one line; an empty one keeps its line; a hard break adds one.
+    expect(frameworkPortraitGlyphTextHeight('Open.', type.matrixKey, column)).toBeCloseTo(type.matrixKey.size * type.matrixKey.line, 6);
+    expect(frameworkPortraitGlyphTextHeight('', type.matrixKey, column)).toBeCloseTo(type.matrixKey.size * type.matrixKey.line, 6);
+    expect(frameworkPortraitGlyphTextHeight('Open.\nEverywhere.', type.matrixKey, column)).toBeCloseTo(2 * type.matrixKey.size * type.matrixKey.line, 6);
+    // A word wider than the column breaks inside it (the cells' overflow-wrap), counted by the pieces it needs.
+    const wide = 'Supercalifragilisticexpialidocious-interoperability';
+    expect(frameworkPortraitGlyphTextHeight(wide, type.matrixKey, column)).toBeGreaterThan(type.matrixKey.size * type.matrixKey.line);
+    expect(frameworkPortraitGlyphTextHeight(`${wide} ok`, type.matrixKey, column)).toBeCloseTo(
+      frameworkPortraitGlyphTextHeight(wide, type.matrixKey, column),
+      6
+    );
+    // The book's family widens or narrows the measure as the grammar's table says: a wide face takes more room than the default, a narrow one less.
+    expect(frameworkPortraitGlyphTextHeight(key, type.matrixProofTight, column, "'Montserrat', sans-serif")).toBeGreaterThanOrEqual(
+      frameworkPortraitGlyphTextHeight(key, type.matrixProofTight, column, "'Instrument Sans', sans-serif")
+    );
+  });
+
+  it('lays the bands on the glyph measure for the book’s family, and a strip on the flat one', () => {
+    // The overfull record in bands: the matrix is shorter for a narrow face than for a wide one, and the proof row is kept either way.
+    const narrow = frameworkPortraitMatrix(goals(overfull), crosscut, room, "'Instrument Sans', sans-serif");
+    const wide = frameworkPortraitMatrix(goals(overfull), crosscut, room, "'Montserrat', sans-serif");
+    expect(narrow.bands).toHaveLength(2);
+    expect(narrow.height).toBeLessThan(wide.height);
+    expect([narrow.rows.proof, wide.rows.proof]).toEqual([true, true]);
+    expect(Math.max(narrow.height, wide.height)).toBeLessThanOrEqual(room);
+    // A strip (four goals) is the fit model's: the family changes nothing.
+    const strip = frameworkPortraitMatrix(goals(overfull.slice(0, 4)), crosscut, room);
+    expect(strip.bands).toHaveLength(1);
+    expect(frameworkPortraitMatrix(goals(overfull.slice(0, 4)), crosscut, room, "'Montserrat', sans-serif")).toEqual(strip);
+  });
+});
+
 describe('the framework portrait book’s goal matrix head row (editor FA1)', () => {
   // The family seeds' shape: goal names of forty characters and more, on the overfull record's keys and proofs.
   const longTitles = [
@@ -1288,8 +1332,9 @@ describe('the framework portrait book’s goal matrix head row (editor FA1)', ()
     const wide = frameworkPortraitMatrix(named, '', 2000);
     const wideShort = frameworkPortraitMatrix(goals(overfull), '', 2000);
     const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
+    // A band's cells are measured on the glyph table (the editor's read of 7 Nov 2026: the flat average dropped a proof row over an empty page).
     const tallest = (titles: readonly string[]) =>
-      Math.max(...titles.map((title) => frameworkPortraitTextHeight(title, { ...type.matrixGoal, size: wide.cells[0].title.size }, column)));
+      Math.max(...titles.map((title) => frameworkPortraitGlyphTextHeight(title, { ...type.matrixGoal, size: wide.cells[0].title.size }, column)));
     const grown =
       tallest(longTitles.slice(0, 4)) -
       tallest(overfull.slice(0, 4).map((goal) => goal[0])) +

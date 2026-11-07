@@ -69,6 +69,7 @@ import {
   mktgPortraitFitBlock,
   mktgPortraitPageNumber,
   mktgPortraitParaHeight,
+  mktgPortraitTextWidth,
   mktgPortraitScaleBlock,
   mktgPortraitTrimStopWords,
   mktgPortraitTrimTail,
@@ -98,6 +99,45 @@ export function frameworkPortraitChipHeight(text: string, width: number): number
 /** The height a text takes at a type in a column, px. */
 export function frameworkPortraitTextHeight(text: string, type: FoundationMessagePrintType, width: number): number {
   return mktgPortraitParaHeight({ text, size: type.size, line: type.line, weight: type.weight }, width);
+}
+
+/**
+ * The height a text takes at a type in a NARROW column, px, wrapped word by word on the grammar's glyph measure
+ * (`mktgPortraitTextWidth`, the weight widening it) rather than the fit model's flat character average: in a goal
+ * matrix band's 130 px columns the average counts about one line too many per cell, and the editor read the band's
+ * proof row dropped over a page two-fifths empty (7 Nov 2026). A word wider than the column breaks inside it, as the
+ * cells' `overflow-wrap` lets it. The measure for the bands only; a strip and every other block keep the flat model.
+ */
+export function frameworkPortraitGlyphTextHeight(text: string, type: FoundationMessagePrintType, width: number, family?: string): number {
+  const para = { weight: type.weight, family };
+  const widthOf = (line: string): number => mktgPortraitTextWidth(line, type.size, para);
+  let lines = 0;
+  for (const hard of text.split('\n')) {
+    const words = hard.split(/\s+/).filter((word) => word !== '');
+    if (words.length === 0) {
+      lines += 1;
+      continue;
+    }
+    lines += 1;
+    let line = '';
+    for (const word of words) {
+      if (widthOf(word) > width) {
+        // The word fills whole lines and ends part way along the last; what follows may share that last line.
+        if (line !== '') lines += 1;
+        lines += Math.ceil(widthOf(word) / width) - 1;
+        line = '';
+        continue;
+      }
+      const next = line === '' ? word : `${line} ${word}`;
+      if (widthOf(next) <= width) {
+        line = next;
+      } else {
+        lines += 1;
+        line = word;
+      }
+    }
+  }
+  return lines * type.size * type.line;
 }
 
 /** The room the muted line under a cut list takes: its gap above and one line. */
@@ -323,9 +363,15 @@ export function frameworkPortraitMatrixColumns(goals: readonly Pick<FoundationMe
  * counting the rest, and a cell whose rows would all be cut keeps its first proof, set smaller in the fit model's
  * steps to the room above its note, then cut at a sentence, carrying its own size. The bands share the room equally,
  * less the crosscut, the notes and the gaps between them. `cells` and `proofs` are in the goals' order across the
- * bands; `bands` says where each starts and how many columns it is laid in; `rows` and `notes` say what was dropped.
+ * bands; `bands` says where each starts and how many columns it is laid in; `rows` and `notes` say what was dropped. A band's
+ * cells are measured on the glyph table for the book's `family` (the look's font stack; the table's default width without it).
  */
-export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGoal[], crosscut: string, room: number): FoundationMessagePrintMatrix {
+export function frameworkPortraitMatrix(
+  goals: readonly FoundationMessagePrintGoal[],
+  crosscut: string,
+  room: number,
+  family?: string
+): FoundationMessagePrintMatrix {
   const columns = frameworkPortraitMatrixColumns(goals);
   const column = frameworkPortraitMatrixColumn(columns);
   const titleSize = Math.max(
@@ -341,7 +387,13 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
   for (let offset = 0; offset < goals.length; offset += columns) bands.push({ offset, columns, count: Math.min(columns, goals.length - offset) });
   const banded = bands.length > 1;
   const frames = bands.map((band) =>
-    frameworkPortraitMatrixBandFrame(goals.slice(band.offset, band.offset + band.count), titles.slice(band.offset, band.offset + band.count), column, banded)
+    frameworkPortraitMatrixBandFrame(
+      goals.slice(band.offset, band.offset + band.count),
+      titles.slice(band.offset, band.offset + band.count),
+      column,
+      banded,
+      family
+    )
   );
   // The rows the bands print (the editor's W1b): the value-proposition and sound-bite rows dropped from every band, each goal page
   // printing both in full, the key messages whole, the one caption line under the bands saying so; a strip prints every row. When
@@ -411,16 +463,21 @@ function frameworkPortraitMatrixBandFrame(
   goals: readonly FoundationMessagePrintGoal[],
   titles: readonly FoundationMessagePrintFittedText[],
   column: number,
-  banded: boolean
+  banded: boolean,
+  family?: string
 ): FrameworkPortraitMatrixBandFrame {
   const biteWidth = column - ROOM.matrixBiteInset;
+  // A band's cells are measured on the glyph table (`frameworkPortraitGlyphTextHeight`): the flat average would drop a proof row the
+  // page has room for. A strip keeps the fit model's measure.
+  const textHeight = (text: string, type: FoundationMessagePrintType, width: number): number =>
+    banded ? frameworkPortraitGlyphTextHeight(text, type, width, family) : frameworkPortraitTextHeight(text, type, width);
   const head =
     ROOM.matrixRow +
     TYPE.cutNote.size * TYPE.cutNote.line +
     3 +
-    tallest(titles.map((title) => frameworkPortraitTextHeight(title.text, { ...TYPE.matrixGoal, size: title.size }, column)));
+    tallest(titles.map((title) => textHeight(title.text, { ...TYPE.matrixGoal, size: title.size }, column)));
   const proofRow = (proof: FoundationMessagePrintGoalProof, type: FoundationMessagePrintType): number =>
-    frameworkPortraitTextHeight(`${proof.fact} ${proof.source}`, { ...type, size: proof.size ?? type.size }, column) + ROOM.matrixProofGap;
+    textHeight(`${proof.fact} ${proof.source}`, { ...type, size: proof.size ?? type.size }, column) + ROOM.matrixProofGap;
   const noteIn = (cut: number): number => (cut > 0 ? frameworkPortraitCutNoteHeightIn(cut, column) : 0);
   // The proofs row keeps at least its chrome, every goal's first proof at the fit model's floor and the note counting the rest
   // (never only the note, the editor's rule): never less, whatever the text rows run to.
@@ -429,15 +486,11 @@ function frameworkPortraitMatrixBandFrame(
     ROOM.matrixRow + tallest(goals.map((goal) => (goal.proofRows.length ? proofRow(goal.proofRows[0], floorType) + noteIn(goal.proofRows.length - 1) : 0)));
   const quoted = (bite: string): string => `“${bite}”`;
   const measure = (cells: readonly FoundationMessagePrintMatrixCell[], printed: FoundationMessagePrintMatrixRows): FrameworkPortraitMatrixRowHeights => ({
-    value: printed.value
-      ? ROOM.matrixRow + tallest(cells.map((cell) => frameworkPortraitTextHeight(cell.vp.text, { ...TYPE.matrixCell, size: cell.vp.size }, column)))
-      : 0,
-    key: ROOM.matrixRow + tallest(cells.map((cell) => frameworkPortraitTextHeight(cell.key.text, { ...TYPE.matrixKey, size: cell.key.size }, column))),
+    value: printed.value ? ROOM.matrixRow + tallest(cells.map((cell) => textHeight(cell.vp.text, { ...TYPE.matrixCell, size: cell.vp.size }, column))) : 0,
+    key: ROOM.matrixRow + tallest(cells.map((cell) => textHeight(cell.key.text, { ...TYPE.matrixKey, size: cell.key.size }, column))),
     bite: printed.bite
       ? ROOM.matrixRow +
-        tallest(
-          cells.map((cell) => (cell.bite ? frameworkPortraitTextHeight(quoted(cell.bite.text), { ...TYPE.matrixBite, size: cell.bite.size }, biteWidth) : 0))
-        )
+        tallest(cells.map((cell) => (cell.bite ? textHeight(quoted(cell.bite.text), { ...TYPE.matrixBite, size: cell.bite.size }, biteWidth) : 0)))
       : 0,
   });
   // The value and the key message at their type, whole: in a band the key message prints as set (the editor's W1b: never clamped, never
