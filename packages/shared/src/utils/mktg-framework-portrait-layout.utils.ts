@@ -614,10 +614,31 @@ export function frameworkPortraitIcpRoom(pageIndex: number): number {
   return TOPS.footer - ROOM.icpFooterRoom - (pageIndex === 1 ? TOPS.icpRowsFirst : TOPS.icpRows);
 }
 
+/** The texts of a profile card that may be cut when a lone card outruns its page at the tight measure, longest first. */
+const ICP_CUT_FIELDS = ['who', 'need', 'value', 'lead', 'cta', 'objectionResponse'] as const;
+
+/**
+ * A lone profile that still outruns its page at the tight measure: its longest text cut at a sentence (then a word) in the
+ * fit model's steps, again and again, until the card ends in the room. No stored record reaches this (the longest live card
+ * is 533 px against 782 of room), but the bound holds for any.
+ */
+export function frameworkPortraitIcpIn(icp: FoundationMessagePrintIcp, room: number): FoundationMessagePrintIcp {
+  let current = icp;
+  for (let guard = 0; guard < FIT.maxCuts && frameworkPortraitIcpHeight(current, true) > room; guard++) {
+    const field = ICP_CUT_FIELDS.filter((name) => current[name].length >= FIT.minCutLength).sort((a, b) => current[b].length - current[a].length)[0];
+    if (!field) break;
+    const text = mktgPortraitCutText(current[field], Math.floor(current[field].length * FIT.cutShare));
+    if (text === current[field] || text.length >= current[field].length) break;
+    current = { ...current, [field]: text };
+  }
+  return current;
+}
+
 /**
  * The profiles paged in data order, two a page at most (the design), fewer where two measured cards would end past the
  * footer: a card never crosses the footer rule, so a profile that would moves whole to the next page (the harness's A4
- * finding: the last line crossed it). A card alone that outruns its page sets its fields at the tight measure.
+ * finding: the last line crossed it). A card alone that outruns its page sets its fields at the tight measure, and past
+ * that has its longest texts cut until it ends in the room (frameworkPortraitIcpIn).
  */
 export function frameworkPortraitIcpPages(icps: readonly FoundationMessagePrintIcp[]): FoundationMessagePrintIcpPageRows[] {
   const pages: FoundationMessagePrintIcpPageRows[] = [];
@@ -629,10 +650,17 @@ export function frameworkPortraitIcpPages(icps: readonly FoundationMessagePrintI
       last.height += height;
       continue;
     }
-    const tight = height > frameworkPortraitIcpRoom(pages.length + 1);
-    pages.push({ icps: [icp], tight, height: tight ? frameworkPortraitIcpHeight(icp, true) : height });
+    const room = frameworkPortraitIcpRoom(pages.length + 1);
+    const tight = height > room;
+    const fitted = tight ? frameworkPortraitIcpIn(icp, room) : icp;
+    pages.push({ icps: [fitted], tight, cut: fitted !== icp, height: tight ? frameworkPortraitIcpHeight(fitted, true) : height });
   }
   return pages;
+}
+
+/** How many "Who it's for" cards a goal page's row holds at the board's narrowest card (ROOM.servedCardMin) with the row's gaps: four across the page. */
+export function frameworkPortraitServedCount(width: number = PAGE.contentWidth): number {
+  return Math.max(1, Math.floor((width + ROOM.servedGap) / (ROOM.servedCardMin + ROOM.servedGap)));
 }
 
 /** The height the goals × profiles matrix takes under a lone card: its label, note, head row and one cell row per profile. */

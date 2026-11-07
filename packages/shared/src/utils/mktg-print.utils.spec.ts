@@ -24,6 +24,7 @@ import {
   buildFaqPrintView,
   buildFoundationMessagePrintView,
   foundationMessagePrintAnchorIntro,
+  foundationMessagePrintIcpPageIntro,
   foundationMessagePrintMatrix,
   foundationMessagePrintNumbers,
   foundationMessagePrintReportText,
@@ -261,6 +262,9 @@ describe('the framework’s print', () => {
     expect(view.icps[0].goalTitles).toEqual(['Adoption']);
     expect(view.icps[0].goalChips).toEqual(['Goal 1']);
     expect([view.goals[0].segmentLabel, view.icps[0].goalLabel, view.icps[0].channelsLabel]).toEqual(['End users', 'Adoption', 'Docs']);
+    // A continuation page's intro counts its cards: one card is "Profile N of M", a pair "Profiles N–M of T".
+    expect(foundationMessagePrintIcpPageIntro(3, 2, 10)).toBe('Profiles 3–4 of 10.');
+    expect(foundationMessagePrintIcpPageIntro(2, 1, 10)).toBe('Profile 2 of 10.');
     // A persona prints as one joined line, so an empty part leaves no trailing dot.
     expect(view.icps[0].personaLines).toEqual(['SRE · uptime']);
     const bare = buildFoundationMessagePrintView({ ...CONTENT, icp: [{ ...CONTENT.icp[0], personas: [['SRE', ' ']] }] }, 'TestOrbit', 1, null);

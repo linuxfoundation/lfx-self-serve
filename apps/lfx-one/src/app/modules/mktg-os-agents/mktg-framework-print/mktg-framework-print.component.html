@@ -502,13 +502,13 @@
                 <p class="fwp-goal-bite-text" [style.font-size.px]="bite.size">{{ bite.text }}</p>
               </div>
             }
-            @if (goalPage.served.length > 0) {
+            @if (goalPage.served.rows.length > 0) {
               <div [lfxPpRect]="[page.margin, tops.goalServed, page.contentWidth]">
                 <span class="pp-lab pp-lab--dark">Who it's for</span>
                 <div class="fwp-served-cards">
-                  @for (card of goalPage.served; track card.id) {
+                  @for (card of goalPage.served.rows; track card.id) {
                     <div class="fwp-card fwp-served-card">
-                      <span class="fwp-served-name">{{ card.name }}</span>
+                      <span class="fwp-served-name" [style.font-size.px]="card.name.size">{{ card.name.text }}</span>
                       @if (card.need.text) {
                         <p class="fwp-served-line" [style.font-size.px]="card.need.size"><strong>Needs</strong> {{ card.need.text }}</p>
                       }
@@ -518,6 +518,9 @@
                     </div>
                   }
                 </div>
+                @if (goalPage.served.cut > 0) {
+                  <p class="fwp-cut-note" data-testid="mktg-framework-print-served-cut">{{ goalPage.served.note }}</p>
+                }
               </div>
             }
           } @else if (frame.icpPage; as icpPage) {

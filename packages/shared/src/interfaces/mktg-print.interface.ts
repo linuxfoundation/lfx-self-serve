@@ -125,10 +125,10 @@ export interface FoundationMessagePrintGoalProof {
   source: string;
 }
 
-/** One "Who it's for" card of a goal page: the profile's name, its need and its call to action, fitted to the card. */
+/** One "Who it's for" card of a goal page: the profile's name, its need and its call to action, fitted to the card together. */
 export interface FoundationMessagePrintServedCard {
   id: string;
-  name: string;
+  name: FoundationMessagePrintFittedText;
   need: FoundationMessagePrintFittedText;
   cta: FoundationMessagePrintFittedText;
 }
@@ -160,8 +160,8 @@ export interface FoundationMessagePrintGoalPage {
   proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>;
   /** The sound bite in quotes, fitted; null when the goal has none. */
   bite: FoundationMessagePrintFittedText | null;
-  /** The profiles the goal's messaging is written for, in the goal's order. */
-  served: FoundationMessagePrintServedCard[];
+  /** The profiles the goal's messaging is written for, in the goal's order, as many as hold at the board's narrowest card (frameworkPortraitServedCount); the rest in the note. */
+  served: FoundationMessagePrintCutList<FoundationMessagePrintServedCard>;
 }
 
 /** An ICP page as the print lays it out: the profiles it holds, its intro, the rows' top, and the goals × profiles matrix when it has room. */
@@ -292,9 +292,12 @@ export interface FoundationMessagePrintMatrixCell {
 
 /** One ICP page's profiles as the layout packs them (frameworkPortraitIcpPages): the cards that end above the footer with their room, at the tight measure when one card alone needed it. */
 export interface FoundationMessagePrintIcpPageRows {
+  /** The page's profiles; a lone card that outran the page at the tight measure carries its longest texts cut (frameworkPortraitIcpIn). */
   icps: FoundationMessagePrintIcp[];
   /** The fields set at FRAMEWORK_PORTRAIT_TYPE.icpFieldTight: a lone card outran the page at the normal measure. */
   tight: boolean;
+  /** True when the lone card's texts had to be cut past the tight measure. */
+  cut: boolean;
   /** The measured height of the page's cards, px. */
   height: number;
 }

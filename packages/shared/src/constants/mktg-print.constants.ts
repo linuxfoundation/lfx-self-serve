@@ -147,6 +147,8 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   /** A goal's proof rows when they must be tightened before a cut (the design reader's rule). */
   goalProofTight: { size: 14, line: 1.45, weight: 400 },
   goalBite: { size: 34, line: 1.2, weight: 500 },
+  /** A "Who it's for" card's name and its two lines, fitted to the card together. */
+  servedName: { size: 13, line: 1.3, weight: 600 },
   servedLine: { size: 11.5, line: 1.5, weight: 400 },
   fact: { size: 11, line: 1.3, weight: 400 },
   source: { size: 12, line: 1.6, weight: 400 },
@@ -215,8 +217,15 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   contentsRowTight: 11,
   contentsColumns: 2,
   contentsColumnGap: 24,
-  /** `.fwp-card` padding, top and bottom together (14 + 14). */
+  /** `.fwp-card` padding, top and bottom together (14 + 14), and across (16 + 16). */
   cardPadding: 28,
+  cardPaddingSide: 32,
+  /** The "Who it's for" row: `.fwp-served-cards`' margin above and gap between cards, the name's margin to its first line and between the lines, and the narrowest card the board draws (four across 704 px): more profiles than hold at it are cut, the note under the row. */
+  servedTop: 8,
+  servedGap: 16,
+  servedLineTop: 6,
+  servedLineGap: 4,
+  servedCardMin: 164,
   /** `.fwp-proof-row` padding (13 + 13) and its hairline. */
   proofRow: 27,
   /** `.fwp-proof-list-tight .fwp-proof-row` padding (9 + 9) and its hairline. */

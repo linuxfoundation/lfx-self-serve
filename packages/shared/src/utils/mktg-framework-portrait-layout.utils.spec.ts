@@ -38,6 +38,7 @@ import {
   frameworkPortraitCutNoteHeightIn,
   frameworkPortraitHouse,
   frameworkPortraitIcpHeight,
+  frameworkPortraitIcpIn,
   frameworkPortraitIcpMatrixHeight,
   frameworkPortraitIcpPages,
   frameworkPortraitIcpRoom,
@@ -48,6 +49,7 @@ import {
   frameworkPortraitPillarProofHeight,
   frameworkPortraitPillsHeight,
   frameworkPortraitSayRoom,
+  frameworkPortraitServedCount,
   frameworkPortraitStatementWidth,
   frameworkPortraitTaglineSize,
   frameworkPortraitTextHeight,
@@ -460,12 +462,58 @@ describe('the framework portrait book’s profile pages', () => {
       [['b'], false],
     ]);
     expect(long.every((page) => page.height <= frameworkPortraitIcpRoom(1))).toBe(true);
-    // One card alone past the room: its fields set tight; the page still holds the one card.
+    // One card alone past the room: its fields set tight, and, this one outrunning the page even so, its longest texts cut until it ends
+    // in the room (frameworkPortraitIcpIn); the page still holds the one card.
     const tall = frameworkPortraitIcpPages([icp('a', 14, 3)]);
     expect(frameworkPortraitIcpHeight(icp('a', 14, 3))).toBeGreaterThan(frameworkPortraitIcpRoom(1));
-    expect(tall).toEqual([{ icps: [icp('a', 14, 3)], tight: true, height: frameworkPortraitIcpHeight(icp('a', 14, 3), true) }]);
+    expect(frameworkPortraitIcpHeight(icp('a', 14, 3), true)).toBeGreaterThan(frameworkPortraitIcpRoom(1));
+    const fitted = frameworkPortraitIcpIn(icp('a', 14, 3), frameworkPortraitIcpRoom(1));
+    expect(tall).toEqual([{ icps: [fitted], tight: true, cut: true, height: frameworkPortraitIcpHeight(fitted, true) }]);
+    expect(tall[0].height).toBeLessThanOrEqual(frameworkPortraitIcpRoom(1));
+    // A card the tight measure alone brings inside the room is not cut.
+    const tightOnly = frameworkPortraitIcpPages([icp('a', 4, 3)]);
+    expect(frameworkPortraitIcpHeight(icp('a', 4, 3))).toBeGreaterThan(frameworkPortraitIcpRoom(1));
+    expect(tightOnly).toEqual([{ icps: [icp('a', 4, 3)], tight: true, cut: false, height: frameworkPortraitIcpHeight(icp('a', 4, 3), true) }]);
     // The matrix under a lone card: label, note, head row and one row per profile.
     expect(frameworkPortraitIcpMatrixHeight(4)).toBe(26 + 4 + 11.5 * 1.5 + 12 + 13 + 2 * 9.5 * 1.4 + 4 * (19 + 12 * 1.4));
+  });
+});
+
+describe('the framework portrait book’s lone overlong profile', () => {
+  const sentence = 'A sentence of the profile that runs on for a while to take a second line in its column. ';
+  const huge = icpWith({
+    id: 'huge',
+    who: sentence.repeat(30).trim(),
+    need: sentence.repeat(30).trim(),
+    value: sentence.repeat(30).trim(),
+    lead: sentence.repeat(30).trim(),
+    cta: sentence.repeat(30).trim(),
+    objectionResponse: sentence.repeat(30).trim(),
+  });
+
+  it('cuts a lone card’s longest texts at a sentence until it ends in the room when the tight measure is not enough, and leaves a card that fits alone', () => {
+    const room = frameworkPortraitIcpRoom(1);
+    expect(frameworkPortraitIcpHeight(huge, true)).toBeGreaterThan(room);
+    const cut = frameworkPortraitIcpIn(huge, room);
+    expect(frameworkPortraitIcpHeight(cut, true)).toBeLessThanOrEqual(room);
+    expect(cut.need.length).toBeLessThan(huge.need.length);
+    expect(huge.need.startsWith(cut.need.replace(/…$/, ''))).toBe(true);
+    expect([cut.id, cut.name, cut.kind]).toEqual([huge.id, huge.name, huge.kind]);
+    const pages = frameworkPortraitIcpPages([huge]);
+    expect(pages).toHaveLength(1);
+    expect(pages[0]).toMatchObject({ tight: true, cut: true });
+    expect(pages[0].height).toBeLessThanOrEqual(room);
+    expect(pages[0].icps[0]).toEqual(cut);
+    // A card that fits is the same object, untouched.
+    const small = icpWith({ id: 'small' });
+    expect(frameworkPortraitIcpIn(small, room)).toBe(small);
+    expect(frameworkPortraitIcpPages([small])[0]).toMatchObject({ tight: false, cut: false, icps: [small] });
+  });
+
+  it('holds four "Who it’s for" cards across the page at the board’s narrowest card', () => {
+    // (704 + 16) / (164 + 16) = 4; a half-width row holds one.
+    expect(frameworkPortraitServedCount()).toBe(4);
+    expect(frameworkPortraitServedCount(340)).toBe(1);
   });
 });
 

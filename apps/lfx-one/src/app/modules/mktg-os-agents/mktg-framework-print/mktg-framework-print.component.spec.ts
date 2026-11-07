@@ -22,6 +22,7 @@ import {
   foundationMessagePrintCutNote,
   frameworkPortraitHouse,
   frameworkPortraitIcpPages,
+  frameworkPortraitServedCount,
   frameworkPortraitPlan,
   frameworkPortraitStatementWidth,
   frameworkPortraitTaglineSize,
@@ -713,6 +714,38 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(frame('say-avoid')?.textContent).not.toContain('Every piece of content answers');
     expect(frame('message-house')?.textContent).not.toContain('Audiences');
     expect(frame('message-house')?.querySelector('.fwp-pillar-message')).toBeNull();
+  });
+
+  it('holds four "Who it’s for" cards at most, the board’s narrowest, and says the rest under the row; a long name is fitted with its lines', async () => {
+    const ids = ['users', 'maintainers', 'c', 'd', 'e', 'f'];
+    const many: FoundationMessageContent = {
+      ...CONTENT,
+      mf: { ...CONTENT.mf, goals: [{ ...CONTENT.mf.goals[0], icps: ids }] },
+      icp: ids.map((id, index) => ({
+        ...CONTENT.icp[index % 2],
+        id,
+        name: index === 0 ? 'A profile name long enough to wrap inside a narrow card' : `Profile ${id}`,
+      })),
+    };
+    await setView(buildFoundationMessagePrintView(many, 'TestOrbit', 2, null));
+    const goalPage = frame('goal-1');
+    const cards = Array.from(goalPage?.querySelectorAll<HTMLElement>('.fwp-served-card') ?? []);
+    expect(cards).toHaveLength(frameworkPortraitServedCount());
+    expect(cards).toHaveLength(4);
+    expect(cards.map((card) => card.querySelector('.fwp-served-name')?.textContent?.trim())).toEqual([
+      'A profile name long enough to wrap inside a narrow card',
+      'Profile maintainers',
+      'Profile c',
+      'Profile d',
+    ]);
+    expect(goalPage?.querySelector('[data-testid="mktg-framework-print-served-cut"]')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(2, 'framework'));
+    // The name is part of the fitted block: it prints at the size the fit model gave it, never past the type's.
+    const names = cards.map((card) => parseFloat(card.querySelector<HTMLElement>('.fwp-served-name')?.style.fontSize ?? '0'));
+    expect(names.every((size) => size > 0 && size <= FRAMEWORK_PORTRAIT_TYPE.servedName.size)).toBe(true);
+    // The two served by the goal on the approved record print without a note.
+    await setView(buildFoundationMessagePrintView(CONTENT, 'TestOrbit', 2, null));
+    expect(frame('goal-1')?.querySelectorAll('.fwp-served-card')).toHaveLength(2);
+    expect(frame('goal-1')?.querySelector('[data-testid="mktg-framework-print-served-cut"]')).toBeNull();
   });
 
   it('bounds every variable-length block on a fixed-top page so none passes the next block’s top or the footer: text fitted, lists cut to whole rows, nothing added', async () => {

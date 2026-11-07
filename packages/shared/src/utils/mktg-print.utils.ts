@@ -219,6 +219,11 @@ export function foundationMessagePrintAnchorIntro(count: number): string {
   return `The words the framework uses, the ones it replaces, and the ${words} question${count === 1 ? '' : 's'} every piece of content answers.`;
 }
 
+/** A profile continuation page's intro: `Profile 3 of 10.` for one card, `Profiles 3–4 of 10.` for a pair. */
+export function foundationMessagePrintIcpPageIntro(start: number, count: number, total: number): string {
+  return count === 1 ? `Profile ${start} of ${total}.` : `Profiles ${start}–${start + count - 1} of ${total}.`;
+}
+
 /** Every goal's proof points with their sources and the goal that uses each, in the framework's order. */
 export function foundationMessagePrintFacts(goals: FoundationMessagePrintGoal[]): FoundationMessagePrintFactRow[] {
   return goals.flatMap((goal) =>

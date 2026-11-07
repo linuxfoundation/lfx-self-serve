@@ -37,6 +37,8 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   foundationMessagePrintAnchorIntro,
+  foundationMessagePrintCutNote,
+  foundationMessagePrintIcpPageIntro,
   foundationMessagePrintMatrix,
   foundationMessagePrintReportText,
   foundationMessagePrintSourceLabel,
@@ -51,6 +53,7 @@ import {
   frameworkPortraitIcpPages,
   frameworkPortraitMatrix,
   frameworkPortraitNumbersPages,
+  frameworkPortraitServedCount,
   frameworkPortraitPillList,
   frameworkPortraitPlan,
   frameworkPortraitSayRoom,
@@ -294,9 +297,12 @@ export class MktgFrameworkPrintComponent {
       (proof) => proofRow(proof, TYPE.goalProof) + ROOM.proofRow,
       (proof) => proofRow(proof, TYPE.goalProofTight) + ROOM.proofRowTight
     );
-    const served = goal.icps.map((id) => view.icps.find((icp) => icp.id === id)).filter((icp): icp is FoundationMessagePrintIcp => !!icp);
-    const cardWidth = served.length ? (width - (served.length - 1) * 16) / served.length - 32 : width;
-    const cardRoom = tops.footer - tops.goalServed - ROOM.label - 8 - ROOM.cardPadding - 17 - 6;
+    // The "Who it's for" row holds as many cards as the board's narrowest card allows (four across); the rest are said under the row.
+    const servedAll = goal.icps.map((id) => view.icps.find((icp) => icp.id === id)).filter((icp): icp is FoundationMessagePrintIcp => !!icp);
+    const served = servedAll.slice(0, frameworkPortraitServedCount(width));
+    const servedCut = servedAll.length - served.length;
+    const cardWidth = served.length ? (width - (served.length - 1) * ROOM.servedGap) / served.length - ROOM.cardPaddingSide : width;
+    const cardRoom = tops.footer - tops.goalServed - ROOM.label - ROOM.servedTop - ROOM.cardPadding;
     return {
       goal,
       numberLabel: mktgPortraitPageNumber(goal.n),
@@ -305,26 +311,38 @@ export class MktgFrameworkPrintComponent {
       key: this.fit(goal.key, TYPE.goalKey, width - 56 - 22 - 90, tops.goalProofs - tops.goalKey - 48 - ROOM.gap),
       proofs,
       bite: goal.bite ? this.fit(`“${goal.bite}”`, TYPE.goalBite, width, tops.goalServed - tops.goalBite - ROOM.label - 10 - ROOM.gap) : null,
-      served: served.map((icp) => {
-        const lines = mktgPortraitFitBlock(
-          { paras: [this.para(`Needs ${icp.need}`, TYPE.servedLine), this.para(`Ask them to ${icp.cta}`, TYPE.servedLine, 4)] },
-          cardWidth,
-          cardRoom
-        );
-        const [need, cta] = lines.block.paras;
-        return {
-          id: icp.id,
-          name: icp.name,
-          need: { text: need.text.replace(/^Needs /, ''), size: need.size },
-          cta: { text: cta.text.replace(/^Ask them to /, ''), size: cta.size },
-        };
-      }),
+      served: {
+        rows: served.map((icp) => {
+          // The name and the two lines fitted to the card together, so a long name is measured with them.
+          const lines = mktgPortraitFitBlock(
+            {
+              paras: [
+                this.para(icp.name, TYPE.servedName),
+                this.para(`Needs ${icp.need}`, TYPE.servedLine, ROOM.servedLineTop),
+                this.para(`Ask them to ${icp.cta}`, TYPE.servedLine, ROOM.servedLineGap),
+              ],
+            },
+            cardWidth,
+            cardRoom
+          );
+          const [name, need, cta] = lines.block.paras;
+          return {
+            id: icp.id,
+            name: { text: name.text, size: name.size },
+            need: { text: need.text.replace(/^Needs /, ''), size: need.size },
+            cta: { text: cta.text.replace(/^Ask them to /, ''), size: cta.size },
+          };
+        }),
+        cut: servedCut,
+        tight: false,
+        note: servedCut > 0 ? foundationMessagePrintCutNote(servedCut, 'framework') : '',
+      },
     };
   }
 
   /** An ICP page: its profiles, its intro, the rows' top (under the long intro on the first page), the matrix when it holds one profile. */
   private icpPage(index: number, pages: FoundationMessagePrintIcpPageRows[], view: FoundationMessagePrintView): FoundationMessagePrintIcpPage {
-    const rows = pages[index - 1] ?? { icps: [], tight: false, height: 0 };
+    const rows = pages[index - 1] ?? { icps: [], tight: false, cut: false, height: 0 };
     const total = view.icps.length;
     const project = view.projectName || 'the project';
     const start = pages.slice(0, index - 1).reduce((count, page) => count + page.icps.length, 0);
@@ -337,7 +355,7 @@ export class MktgFrameworkPrintComponent {
       intro:
         index === 1
           ? `${total} ${total === 1 ? 'profile' : 'profiles'}. Each names who they are, what they need, what ${project} gives them, the lead message, the call to action, the objection to expect and where to reach them. Goal numbers refer to the goal pages.`
-          : `Profiles ${start + 1}–${start + rows.icps.length} of ${total}.`,
+          : foundationMessagePrintIcpPageIntro(start + 1, rows.icps.length, total),
       rowsTop,
       icps: rows.icps,
       tight: rows.tight,
