@@ -1341,9 +1341,6 @@ function brandKitSvgInk(paint: string): string {
   return paint;
 }
 
-/** The white ink, the ground a reversal removes (ignorable on a mark, a background when it covers the viewBox). */
-const BRAND_KIT_SVG_WHITE = '#ffffff';
-
 /** One paint of an element: its `fill`/`stroke` attribute, else its inline style's, else undefined (inherit). */
 function brandKitSvgPaint(attributes: string, property: 'fill' | 'stroke'): string | undefined {
   const attribute = new RegExp(`(?:^|\\s)${property}\\s*=\\s*["']([^"']*)["']`, 'i').exec(attributes);
@@ -1440,13 +1437,15 @@ function brandKitSvgLength(attributes: string, name: string, whole: number): num
  *   inline style, else the nearest ancestor's (`<g fill="…">` inherits),
  *   else SVG's initial values, a black fill and no stroke. The default black
  *   counts as an ink.
- * - `none` and `transparent` draw nothing. White is the ground a reversal
- *   removes, so a white part of a mark is ignored, but a rendered rect the
- *   viewBox's size, in any paint, under or over any other mark is a
- *   background and a second ink: inverting it would set the mark in a box,
- *   so the artwork is not derivable (the ruling: supplied file, else derived
- *   from one ink, else the white plate; nothing is ever stripped from a
- *   copy). A lone full-canvas rect is one ink.
+ * - `none` and `transparent` draw nothing. Every rendered paint counts as an
+ *   ink, white included (the editor's rule): a black tile with a white
+ *   glyph is two inks, since reversing it would turn the tile white and
+ *   lose the glyph. A rendered rect the viewBox's size, in any paint, under
+ *   or over any other mark is a background and a second ink: inverting it
+ *   would set the mark in a box, so the artwork is not derivable (the
+ *   ruling: supplied file, else derived from one ink, else the white plate;
+ *   nothing is ever stripped from a copy). A lone full-canvas rect is one
+ *   ink.
  * - Gradients, patterns, any `url(#…)` paint, `currentColor`, `<use>`,
  *   images, a `mask` or `filter` on a shape, a `<style>` sheet or a `class`
  *   attribute cannot be resolved from the markup: not derivable,
@@ -1502,7 +1501,6 @@ export function brandKitSvgIsMonochrome(svg: string): boolean {
           backgrounds += 1;
           continue;
         }
-        if (paint === BRAND_KIT_SVG_WHITE) continue;
         inks.add(paint);
         if (inks.size > 1) return false;
       }
