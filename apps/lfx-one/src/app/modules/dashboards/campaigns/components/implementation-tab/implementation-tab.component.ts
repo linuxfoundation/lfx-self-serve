@@ -12033,16 +12033,6 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * A one-entry-per-line textarea's value as the entries it stands for.
-   *
-   * Splits on either newline convention, trims each entry and drops the empties, so a trailing
-   * newline or a blank separator line does not become an entry that counts against the cap or
-   * reaches the wire as an empty image URL.
-   *
-   * Shared by the creative list fields and the conversion-action list, which have the same shape
-   * on screen and the same shape on the wire.
-   */
-  /**
    * The placement exclusions box split one per line, each trimmed with Go's rules (`googleAdsTrimSpace`,
    * as upstream and the shared judge trim), blanks dropped. `String.prototype.trim` keeps U+0085, so a
    * line holding only that would otherwise be judged blank rather than ignored, as the user doc says.
@@ -12055,6 +12045,16 @@ export class ImplementationTabComponent implements OnInit {
       .filter((line) => line !== '');
   }
 
+  /**
+   * A one-entry-per-line textarea's value as the entries it stands for.
+   *
+   * Splits on either newline convention, trims each entry and drops the empties, so a trailing
+   * newline or a blank separator line does not become an entry that counts against the cap or
+   * reaches the wire as an empty image URL.
+   *
+   * Shared by the creative list fields and the conversion-action list, which have the same shape
+   * on screen and the same shape on the wire.
+   */
   private splitCreativeLines(value: string | null | undefined): string[] {
     if (typeof value !== 'string') return [];
     return value
