@@ -250,11 +250,11 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(frameworkPrint.getByTestId('mktg-framework-print-pillars')).toHaveCount(1);
   await expect(frameworkPrint.locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(1);
   // The family hands the framework its run record, so its Sources & gaps page prints inside the family as it does alone: the
-  // intro, the blocks as the fixture's report holds them (nothing read, no source failed, no gap) and the approval card with
-  // the version and the approval date the opener prints.
+  // intro dated by the run's record, the blocks as the fixture's report holds them (nothing read, no source failed, no gap)
+  // and the approval card with the version and the approval date the opener prints.
   await expect(frameworkFrames.last()).toHaveAttribute('data-page-id', 'sources');
   await expect(printDocument.getByTestId('mktg-framework-print-sources-intro')).toHaveText(
-    'What the framework was built from, what could not be read, and what is still open.'
+    'What the framework was built from on 18 Oct 2026, what could not be read, and what is still open.'
   );
   await expect(printDocument.getByTestId('mktg-framework-print-sources-read')).toHaveCount(0);
   await expect(printDocument.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveText('No source failed.');
@@ -323,8 +323,14 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   // the fixture's documents disagree (the kit's brand line against the framework's tagline, as the data holds them), with the
   // document to re-run; the open item under its document's chip; no placeholder, note or bracketed template text anywhere.
   const sources = frames.byId('sources');
-  await expect(sources.getByTestId('family-print-sources-row')).toHaveCount(4);
-  await expect(sources.getByTestId('family-print-sources-row').first().locator('td').nth(3)).toContainText('figures as of');
+  // The Data cell prints only a date the record holds: the framework's date_read and the kit's generated_at; the FAQ's and
+  // the boilerplates' native fixtures carry neither, so their cells are empty, never the revision's date.
+  const sourceRows = sources.getByTestId('family-print-sources-row');
+  await expect(sourceRows).toHaveCount(4);
+  await expect(sourceRows.nth(0).locator('td').nth(3)).toHaveText('figures as of 18 Oct 2026');
+  await expect(sourceRows.nth(1).locator('td').nth(3)).toHaveText('figures as of 17 Oct 2026');
+  await expect(sourceRows.nth(2).locator('td').nth(3)).toHaveText('');
+  await expect(sourceRows.nth(3).locator('td').nth(3)).toHaveText('');
   const conflicts = sources.getByTestId('family-print-sources-conflicts');
   await expect(conflicts.locator('.fps-row')).toHaveCount(1);
   await expect(conflicts.locator('.fps-row__topic')).toHaveText('Brand line');

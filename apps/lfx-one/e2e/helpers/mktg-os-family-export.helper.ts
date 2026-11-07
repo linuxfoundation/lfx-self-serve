@@ -47,7 +47,9 @@ export async function openFamilyExports(
     approval,
     approvedCurrent: { revisionId: revision.id, number: revision.number },
     markdown: JSON.stringify(asset.content),
-    sidecar: { report: asset.report, checks: asset.checks, mode: asset.mode },
+    // The run's record as the live store holds it: the day it read its sources dates the framework's Sources & gaps intro
+    // and the family's "figures as of" cell (a record without one leaves both undated; nothing is invented from the revision).
+    sidecar: { report: asset.report, checks: asset.checks, mode: asset.mode, inputs_record: { date_read: '2026-10-18' } },
   };
   const listing: MktgDocumentsResponse = {
     project: DOCUMENT_PROJECT.uid,
