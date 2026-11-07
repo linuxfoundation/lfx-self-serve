@@ -189,6 +189,8 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   matrixProofTight: { size: 10.5, line: 1.35, weight: 400 },
   matrixBite: { size: 12.5, line: 1.3, weight: 500 },
   matrixCrosscut: { size: 11, line: 1.5, weight: 400 },
+  /** A proof's source tag (`.fwp-matrix-source`): small, semibold, tracked capitals (`FRAMEWORK_PORTRAIT_ROOM.matrixSourceTracking`), never broken. */
+  matrixSource: { size: 8, line: 1.3, weight: 600 },
   /** A page's title in the grammar's type (`.pp-title`, 34/1.1/500), fitted to one line on the goal pages. */
   pageTitle: { size: 34, line: 1.1, weight: 500 },
   /** An anchor question (`.fwp-anchor-question`) and its number; the crosscut box's text. */
@@ -363,7 +365,15 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   matrixProofGap: 5,
   matrixBiteInset: 12,
   matrixCrosscutGap: 8,
-  /** The least room a banded matrix leaves under itself, above the footer gap, for its proof row to print (the editor's allowance for a browser setting the face wider; a smaller margin drops the row). */
+  /** The source tag's letter-spacing, em (`.fwp-matrix-source`). */
+  matrixSourceTracking: 0.1,
+  /**
+   * The least room a banded matrix leaves under itself, above the footer gap, for its proof row to print (the editor's allowance for
+   * a browser setting the face wider; a smaller margin drops the row). Calibrated on the served Chrome render of the overfull record's
+   * page 2 (project cncf, Letter, 7 Nov 2026): with the cells measured on the matrix's face factor and the source tag on its own line
+   * where it does not fit beside the fact, the model ends the matrix 0.5 px from the print's (969.8 vs 969.3); nothing of the print is
+   * left unplaced, so the allowance stays 12.
+   */
   matrixBuffer: 12,
   /** The say list: its margin above, a pill's padding and border around (8 + 8 + 1 + 1 down, 14 + 14 + 1 + 1 across; tight 6 + 6 / 10 + 10), the gap between pills; the say column's and the avoid column's widths and the avoid column's left. */
   sayListTop: 10,

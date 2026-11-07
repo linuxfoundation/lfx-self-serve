@@ -856,20 +856,20 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(laid.bands).toHaveLength(2);
     const labels = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-goals-label"]')).map((label) => label.textContent?.trim());
     expect(labels.filter((label) => label === 'Key message')).toHaveLength(2);
-    // Measured on the glyph table in the LF look's face, this shape's bands hold the proof row at the ladder's first step: every
-    // cell's one whole first proof with its own "+3 more" line, the plain caption under the bands, the buffer above the footer kept.
-    expect(labels.filter((label) => label === 'Proof')).toHaveLength(2);
+    // Measured on the glyph table in the LF look's face as the served print set it (the matrix's own Inter factor, the source tag on
+    // its own line when the fact's last line cannot hold it): this shape's seven-line key messages and six-line first proofs leave the
+    // proof row no room even folded (the folded bands end 11 px under the buffer), so the ladder's last step takes it: no proof row,
+    // every cell empty, the caption naming all three rows; the key messages print whole at their type.
+    expect(labels.filter((label) => label === 'Proof')).toHaveLength(0);
     expect(labels.filter((label) => label === 'Value proposition')).toHaveLength(0);
     expect(labels.filter((label) => label === 'Sound bite')).toHaveLength(0);
-    expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
-    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(laid.rows).toEqual({ value: false, bite: false, proof: false });
+    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesAll]);
     expect(FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix - laid.height).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBuffer);
-    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof-cell"]')).toHaveLength(8);
-    expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proofs-cut"]')).map((note) => note.textContent?.trim())).toEqual(
-      Array.from({ length: 8 }, () => '+3 more in LFX One')
-    );
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof-cell"]')).toHaveLength(0);
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proofs-cut"]')).toHaveLength(0);
     expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).map((note) => note.textContent?.trim())).toEqual([
-      'Value propositions and sound bites are on each goal page.',
+      'Value propositions, sound bites and proofs are on each goal page.',
     ]);
     const keys = Array.from(host().querySelectorAll<HTMLElement>('.fwp-matrix-key'));
     expect(keys.map((key) => key.style.fontSize)).toEqual(Array.from({ length: 8 }, () => `${FRAMEWORK_PORTRAIT_TYPE.matrixKey.size}px`));

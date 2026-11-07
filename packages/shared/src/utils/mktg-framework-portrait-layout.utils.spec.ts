@@ -28,6 +28,8 @@ import {
   frameworkPortraitCutNoteHeight,
   frameworkPortraitFactRowHeight,
   frameworkPortraitFigureSize,
+  FRAMEWORK_PORTRAIT_MATRIX_FACE_WIDTH,
+  frameworkPortraitGlyphProofHeight,
   frameworkPortraitGlyphTextHeight,
   frameworkPortraitNumberTiles,
   frameworkPortraitLfxSourced,
@@ -1566,9 +1568,13 @@ describe('the framework portrait book’s goal matrix head row (editor FA1)', ()
     const laid = frameworkPortraitMatrix(record, bandCrosscut, room, face);
     expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
     expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
-    expect(laid.height).toBeCloseTo(589.91, 0);
-    expect(Math.abs(laid.height - 589.91)).toBeLessThan(0.25);
-    expect(room - laid.height).toBeCloseTo(74.1, 0);
+    // The chrome alone (the glyph table's Inter and the tag as a word) put this shape at 590.05, a quarter px off a Chromium replica
+    // of the sheet with Google's Inter; the served book's Chrome sets Inter wider and the tag on its own line (the tests below), so
+    // the model reads 633.8 here, the row a line taller in each band than the replica. Against the served render of the overfull
+    // record's page (the one shape with a measured print, 7 Nov 2026): matrix bottom 969.8 vs the render's 969.3.
+    expect(laid.height).toBeCloseTo(633.8, 0);
+    expect(FRAMEWORK_PORTRAIT_TOPS.matrix + laid.height).toBeCloseTo(969.3, -1);
+    expect(Math.abs(FRAMEWORK_PORTRAIT_TOPS.matrix + laid.height - 969.3)).toBeLessThan(1);
     // The head's chrome as the sheet's: `.fwp-matrix-head` has padding 10 + 10 and no rule; the label is an inline span in the page's
     // 12.5 / 1.6 body, so its line box is the body's 20 px strut (CSS 2.1 §10.8), not the label's own 10 × 1.2; the title's margin 3.
     expect(FRAMEWORK_PORTRAIT_ROOM.matrixGoalHeadRow).toBe(FRAMEWORK_PORTRAIT_ROOM.matrixRow - 1);
@@ -1581,6 +1587,70 @@ describe('the framework portrait book’s goal matrix head row (editor FA1)', ()
     const cell = 5 * type.matrixProofTight.size * type.matrixProofTight.line + frameworkPortraitCutNoteHeightIn(3, column);
     expect(cell).toBeCloseTo(91.575, 2);
     expect(frameworkPortraitCutNoteHeightIn(3, column)).toBe(FRAMEWORK_PORTRAIT_ROOM.cutNoteGap + type.cutNote.size * type.cutNote.line);
+  });
+
+  it('measures a proof cell’s source tag as the sheet sets it: small tracked capitals that never break, beside the fact’s last line when they fit there, else on a line of their own (the served render, 7 Nov 2026)', () => {
+    // The overfull record's page 2 as the served book printed it (Chrome, Letter, Inter): goal 2's "More than 250 projects …" ran
+    // four lines and its LFX FIELD tag took a fifth; goal 1's five-line fact put WEBSITE on a sixth; goal 4's fact kept its tag on
+    // its fifth line. The tag measured as one more word of the fact at 10.5 px counted a line short in three cells of eight.
+    const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
+    const face = "'Inter', sans-serif";
+    const line = type.matrixProofTight.size * type.matrixProofTight.line;
+    const lines = (fact: string, source: string) => Math.round(frameworkPortraitGlyphProofHeight(fact, source, type.matrixProofTight, column, face) / line);
+    expect(lines(facts[0], 'Website')).toBe(6);
+    expect(lines(facts[1], 'LFX field')).toBe(5);
+    expect(lines(facts[2], 'Website')).toBe(5);
+    expect(lines(facts[3], 'Website')).toBe(5);
+    expect(lines(facts[4], 'Website')).toBe(5);
+    expect(lines(facts[5], 'LFX field')).toBe(6);
+    expect(lines(facts[6], 'Website')).toBe(5);
+    expect(lines(facts[7], 'Website')).toBe(5);
+    // The tag's own measure: 8 px, semibold, capitals tracked 0.1 em (`.fwp-matrix-source`); a tag beside a short last line adds no line.
+    expect(type.matrixSource).toEqual({ size: 8, line: 1.3, weight: 600 });
+    expect(FRAMEWORK_PORTRAIT_ROOM.matrixSourceTracking).toBe(0.1);
+    expect(lines('A short fact.', 'Website')).toBe(1);
+    expect(frameworkPortraitGlyphProofHeight('', 'Website', type.matrixProofTight, column, face)).toBe(line);
+  });
+
+  it('reads the served render of the overfull record’s page: sixteen cells wrap as the model counts, the matrix ends where the print did (Chrome, Letter, Inter, 7 Nov 2026)', () => {
+    // The served framework book at 7d16a677e, the overfull record's page 2, read from the PDF's text boxes (CSS px): the eight key
+    // messages wrap to 4, 3, 4, 5 | 4, 3, 4, 3 lines of their 130 px columns at 11 px semibold; the eight first proofs with their tags
+    // to 6, 5, 5, 5 | 5, 6, 5, 5 at 10.5 px; band 0 spans 336–622, band 1 638–907.6, the caption and the two-line crosscut end at
+    // 969.3; the footer's text begins at 1018.5. The glyph table's Inter factor (1.05, the Chromium replica's and the family book's)
+    // counted four cells a line short against this print; the matrix's own factor 1.15 counts every cell as the print set it, and the
+    // page within a px.
+    const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
+    const face = "'Inter', sans-serif";
+    const sources = ['Website', 'LFX field', 'Website', 'Website', 'Website', 'LFX field', 'Website', 'Website'];
+    const printed = goals(overfull).map((goal, index) => ({
+      ...goal,
+      proofRows: goal.proofRows.map((proof, at) => (at === 0 ? { ...proof, source: sources[index] } : proof)),
+    }));
+    expect(
+      printed.map((goal) => Math.round(frameworkPortraitGlyphTextHeight(goal.key, type.matrixKey, column, face) / (type.matrixKey.size * type.matrixKey.line)))
+    ).toEqual([4, 3, 4, 5, 4, 3, 4, 3]);
+    expect(
+      printed.map((goal) =>
+        Math.round(
+          frameworkPortraitGlyphProofHeight(goal.proofRows[0].fact, goal.proofRows[0].source, type.matrixProofTight, column, face) /
+            (type.matrixProofTight.size * type.matrixProofTight.line)
+        )
+      )
+    ).toEqual([6, 5, 5, 5, 5, 6, 5, 5]);
+    expect(
+      printed.map((goal) => Math.round(frameworkPortraitGlyphTextHeight(goal.t, type.matrixGoal, column, face) / (type.matrixGoal.size * type.matrixGoal.line)))
+    ).toEqual(Array.from({ length: 8 }, () => 1));
+    expect(FRAMEWORK_PORTRAIT_MATRIX_FACE_WIDTH).toEqual({ inter: 1.15 });
+    const laid = frameworkPortraitMatrix(printed, crosscut, room, face);
+    expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
+    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(laid.proofs.every((cell) => cell.rows.length === 1 && cell.cut === 3 && cell.tight && cell.note === '+3 more in LFX One')).toBe(true);
+    const bottom = FRAMEWORK_PORTRAIT_TOPS.matrix + laid.height;
+    expect(Math.abs(bottom - 969.3)).toBeLessThan(1);
+    // The print's distance to the footer's text, 1018.5 px from the page top: the model's within three px of the measured 51.
+    const footerText = 1056 - 28 - 9.5;
+    expect(Math.abs(footerText - bottom - 51)).toBeLessThanOrEqual(3);
+    expect(room - laid.height).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBuffer);
   });
 
   it('never prints a band’s first proof cut at a word: where a cell’s room falls short of its whole first proof the ladder steps on (fold, then drop) instead of the strip’s text cut', () => {

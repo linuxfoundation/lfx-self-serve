@@ -29,7 +29,7 @@ import {
   MKTG_PRINT_CUT_NOTE,
   MKTG_PRINT_OBJECTION_DASH,
 } from '../constants/mktg-print.constants';
-import { MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
+import { MKTG_PORTRAIT_FAMILY_WIDTH, MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT, MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
 import type {
   FoundationMessageAudienceRow,
@@ -67,6 +67,7 @@ import {
   mktgPortraitCharEm,
   mktgPortraitCharsPerLine,
   mktgPortraitCutText,
+  mktgPortraitFirstFamily,
   mktgPortraitFitBlock,
   mktgPortraitPageNumber,
   mktgPortraitParaHeight,
@@ -111,17 +112,63 @@ export function frameworkPortraitTextHeight(text: string, type: FoundationMessag
  * cells' `overflow-wrap` lets it. The measure for the bands only; a strip and every other block keep the flat model.
  */
 export function frameworkPortraitGlyphTextHeight(text: string, type: FoundationMessagePrintType, width: number, family?: string): number {
+  return glyphLines(text, type, width, family).lines * type.size * type.line;
+}
+
+/**
+ * The height a proof cell's row takes in a band, px: its fact wrapped on the glyph measure, then its source tag, which the
+ * sheet sets small, semibold, in tracked capitals and unbreakable (`.fwp-matrix-source`, `TYPE.matrixSource`), on the fact's
+ * last line when the tag and a space fit beside it, else on a line of its own at the row's leading. Read from the served
+ * framework book (7d16a677e, the overfull record's page 2): the model that measured the tag as one more word of the fact
+ * counted a line short in three cells of eight.
+ */
+export function frameworkPortraitGlyphProofHeight(fact: string, source: string, type: FoundationMessagePrintType, width: number, family?: string): number {
+  const { lines, last } = glyphLines(fact, type, width, family);
+  const scale = matrixFaceScale(family);
+  const tag =
+    mktgPortraitTextWidth(source, TYPE.matrixSource.size, {
+      weight: TYPE.matrixSource.weight,
+      caps: true,
+      tracking: ROOM.matrixSourceTracking,
+      family,
+    }) * scale;
+  const beside = last === '' ? tag : mktgPortraitTextWidth(`${last} `, type.size, { weight: type.weight, family }) * scale + tag;
+  return (beside <= width ? lines : lines + 1) * type.size * type.line;
+}
+
+/**
+ * How much wider than the glyph table a face sets a goal matrix cell's lines, by family, where the served render set them
+ * wider than the family table (`MKTG_PORTRAIT_FAMILY_WIDTH`) reads: the matrix's own measure, in place of the table's factor.
+ * Inter 1.15, measured on the served Chrome render of the overfull record's page 2 (project cncf, Letter, 7 Nov 2026): the
+ * table's 1.05 counted four of sixteen cells a line short (keys 4, 3, 4, 5 | 4, 3, 4, 3; proofs with their tags 6, 5, 5, 5 |
+ * 5, 6, 5, 5 as printed); 1.15 counts all sixteen as printed and ends the matrix 0.5 px from the print's. The family table's
+ * 1.05 matches a Chromium replica's Inter build and the family book's print of the same matrix; whether the table moves for
+ * every book is a follow-up (B1), so the matrix carries its own factor here (B2, 7 Nov 2026).
+ */
+export const FRAMEWORK_PORTRAIT_MATRIX_FACE_WIDTH: Readonly<Record<string, number>> = { inter: 1.15 };
+
+/** The matrix's width scale over the glyph table's for a face: its own factor over the family table's, 1 where it has none. */
+function matrixFaceScale(family?: string): number {
+  const first = mktgPortraitFirstFamily(family);
+  const own = FRAMEWORK_PORTRAIT_MATRIX_FACE_WIDTH[first];
+  return own === undefined ? 1 : own / (MKTG_PORTRAIT_FAMILY_WIDTH[first] ?? MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT);
+}
+
+/** A text wrapped word by word on the glyph measure (the matrix's face factor): its line count and its last line (empty after a word wider than the column). */
+function glyphLines(text: string, type: FoundationMessagePrintType, width: number, family?: string): { lines: number; last: string } {
   const para = { weight: type.weight, family };
-  const widthOf = (line: string): number => mktgPortraitTextWidth(line, type.size, para);
+  const scale = matrixFaceScale(family);
+  const widthOf = (line: string): number => mktgPortraitTextWidth(line, type.size, para) * scale;
   let lines = 0;
+  let line = '';
   for (const hard of text.split('\n')) {
     const words = hard.split(/\s+/).filter((word) => word !== '');
+    line = '';
     if (words.length === 0) {
       lines += 1;
       continue;
     }
     lines += 1;
-    let line = '';
     for (const word of words) {
       if (widthOf(word) > width) {
         // The word fills whole lines and ends part way along the last; what follows may share that last line.
@@ -139,7 +186,7 @@ export function frameworkPortraitGlyphTextHeight(text: string, type: FoundationM
       }
     }
   }
-  return lines * type.size * type.line;
+  return { lines, last: line };
 }
 
 /** The room the muted line under a cut list takes: its gap above and one line. */
@@ -530,7 +577,9 @@ function frameworkPortraitMatrixBandFrame(
     ROOM.matrixGoalHeadTitleTop +
     tallest(titles.map((title) => textHeight(title.text, { ...TYPE.matrixGoal, size: title.size }, column)));
   const proofRow = (proof: FoundationMessagePrintGoalProof, type: FoundationMessagePrintType): number =>
-    textHeight(`${proof.fact} ${proof.source}`, { ...type, size: proof.size ?? type.size }, column) + ROOM.matrixProofGap;
+    (banded
+      ? frameworkPortraitGlyphProofHeight(proof.fact, proof.source, { ...type, size: proof.size ?? type.size }, column, family)
+      : textHeight(`${proof.fact} ${proof.source}`, { ...type, size: proof.size ?? type.size }, column)) + ROOM.matrixProofGap;
   // A cell's own "+N more" line costs its gap less the last proof's margin: the two margins meet at the list's end and collapse to the
   // larger (`.fwp-matrix-proofs li` 5 px under `.fwp-cut-note` 6 px above), as Chromium and WebKit both lay it.
   const noteIn = (cut: number): number => (cut > 0 ? frameworkPortraitCutNoteHeightIn(cut, column) - ROOM.matrixProofGap : 0);
