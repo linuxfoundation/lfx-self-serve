@@ -188,6 +188,8 @@ export function foundationMessagePrintIcps(content: FoundationMessageContent): F
 
 /** `aaif.io/md/about`, `docs.example.org`: a web address written without its scheme (a host with a dot, a path after it or nothing). */
 const BARE_ADDRESS_REGEX = /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:\/\S*)?$/i;
+/** A bare address with the record's remark on it in parentheses, or alone: `aaif.io (home)`, `docs.example.org`. Words after a dotted name make a phrase (`Node.js docs`), not an address. */
+const BARE_ADDRESS_REMARK_REGEX = /^(\S+)(\s*\(.*\))?$/;
 /** `host/path`, as the grammar's `mktgReadableSourceName` returns a page's address: the host is what the Sources page prints of it. */
 const HOST_PATH_REGEX = /^[a-z0-9.-]+\//i;
 
@@ -207,9 +209,13 @@ export function foundationMessagePrintSourceLabel(source: string): string {
   const trimmed = source.trim();
   const type = FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES.find((prefix) => trimmed.startsWith(`${prefix}: `));
   const rest = type ? trimmed.slice(type.length + 2).trim() : trimmed;
-  const url = rest.match(/^(https?:\/\/\S+)(.*)$/) ?? (BARE_ADDRESS_REGEX.test(rest.split(/\s/)[0]) ? rest.match(/^(\S+)(.*)$/) : null);
+  // A bare token is an address only when the grammar has no word of its own for it: a file name (`a1b2c3d4e5f6.svg`,
+  // `brand-guide.pdf`), an archive member (`brand.zip/logo.svg`) or the LFX record go to `mktgReadableSourceName` as written.
+  const first = rest.split(/\s/)[0];
+  const bare = BARE_ADDRESS_REGEX.test(first) && mktgReadableSourceName(first) === first ? rest.match(BARE_ADDRESS_REMARK_REGEX) : null;
+  const url = rest.match(/^(https?:\/\/\S+)(.*)$/) ?? bare;
   if (!url) return mktgReadableSourceName(rest);
-  const [, written, remarkRaw] = url;
+  const [, written, remarkRaw = ''] = url;
   const address = /^https?:\/\//i.test(written) ? written : `https://${written}`;
   const readable = mktgReadableSourceName(address);
   // A page's address comes back as `host/path`: the host alone. The grammar's words for a file or a stylesheet stay.

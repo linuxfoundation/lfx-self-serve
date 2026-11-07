@@ -324,6 +324,18 @@ describe('the framework’s print', () => {
     expect(foundationMessagePrintSourceLabel('Link: https://github.com/orbit (org page and repos API)')).toBe('github.com · org page and repos API');
     expect(foundationMessagePrintSourceLabel('orbit.example.org/md/about')).toBe('orbit.example.org');
     expect(foundationMessagePrintSourceLabel('docs.orbit.example.org')).toBe('docs.orbit.example.org');
+    expect(foundationMessagePrintSourceLabel('orbit.example.org (home)')).toBe('orbit.example.org · home');
+    // A bare file name, an archive member or a hashed name is never an address: the grammar's words (the editor's "never a hashed
+    // file name"); a dotted name followed by words is a phrase, as written.
+    expect(foundationMessagePrintSourceLabel('a1b2c3d4e5f6a7b8c9d0.svg')).toBe(MKTG_READABLE_SOURCE.uploadedFiles);
+    expect(foundationMessagePrintSourceLabel('Link: brand-guide.pdf')).toBe(MKTG_READABLE_SOURCE.uploadedFiles);
+    expect(foundationMessagePrintSourceLabel('brand.zip/logo.svg')).toBe(MKTG_READABLE_SOURCE.uploadedPackage);
+    expect(foundationMessagePrintSourceLabel('logo.svg')).toBe(MKTG_READABLE_SOURCE.uploadedFiles);
+    expect(foundationMessagePrintSourceLabel('Node.js docs')).toBe('Node.js docs');
+    expect(foundationMessagePrintSourceRows(['logo.svg', 'a1b2c3d4e5f6a7b8c9d0.svg'])).toEqual([
+      MKTG_READABLE_SOURCE.uploadedFiles,
+      MKTG_READABLE_SOURCE.uploadedFiles,
+    ]);
     // A press release as the mock names it, "The press release" with the site's host (its press path goes with every other path).
     expect(foundationMessagePrintSourceLabel('Press release: https://www.linuxfoundation.org/press/linux-foundation-announces-orbit')).toBe(
       'The press release (linuxfoundation.org)'
