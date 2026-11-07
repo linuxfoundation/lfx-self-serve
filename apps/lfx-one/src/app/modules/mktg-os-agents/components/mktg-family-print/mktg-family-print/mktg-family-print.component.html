@@ -40,10 +40,10 @@
             }
           </div>
         }
-        <div [lfxPpRect]="[inset[0], 984, inset[1]]">
-          <div class="pp-cover-strip fpc-strip" data-testid="family-print-cover-strip">
-            <span>{{ book().footLeft }}</span>
-            <span>{{ coverFootRight() }}</span>
+        <div [lfxPpRect]="coverStripRect()">
+          <div class="pp-cover-strip" [class.pp-cover-strip--wrapped]="coverStrip().wraps" data-testid="family-print-cover-strip">
+            <span>{{ coverStrip().left }}</span>
+            <span>{{ coverStrip().right }}</span>
           </div>
         </div>
       </lfx-mktg-portrait-page>

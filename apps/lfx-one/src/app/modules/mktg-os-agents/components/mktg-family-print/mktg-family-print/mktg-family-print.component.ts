@@ -27,6 +27,7 @@ import {
   MktgFamilyPrintPlanMember,
   MktgFamilyPrintView,
   MktgPortraitBook,
+  MktgPortraitCoverStrip,
   MktgPortraitLook,
   MktgPortraitPlanPage,
 } from '@lfx-one/shared/interfaces';
@@ -41,6 +42,7 @@ import {
   mktgFamilyPrintHeadTight,
   mktgFamilyPrintPageRange,
   mktgFamilyPrintPlan,
+  mktgPortraitCoverStrip,
   mktgPortraitDocumentName,
   mktgPortraitFootLeft,
   mktgPortraitLook,
@@ -127,6 +129,19 @@ export class MktgFamilyPrintComponent {
 
   public readonly printedLabel: Signal<string> = this.initPrintedLabel();
   public readonly coverFootRight: Signal<string> = this.initCoverFootRight();
+  /**
+   * The cover strip's halves as the grammar fits them on one line (mktgPortraitCoverStrip, as the kit's cover does): the
+   * project line drops its LF suffix before a long name, then words go with an ellipsis; only when one word each still
+   * does not fit does the strip wrap, moved up one line so it ends where the one line did.
+   */
+  public readonly coverStrip: Signal<MktgPortraitCoverStrip> = computed(() =>
+    mktgPortraitCoverStrip(this.book().footLeft, this.coverFootRight(), this.inset[1], this.look().fontStack)
+  );
+  public readonly coverStripRect: Signal<readonly [number, number, number]> = computed(() => [
+    this.inset[0],
+    MKTG_PORTRAIT_COVER_STRIP.top - (this.coverStrip().wraps ? MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight : 0),
+    this.inset[1],
+  ]);
   public readonly coverPurpose: Signal<string> = this.initCoverPurpose();
   public readonly contentsIntro: Signal<string> = this.initContentsIntro();
   public readonly contentsNote: Signal<string> = this.initContentsNote();

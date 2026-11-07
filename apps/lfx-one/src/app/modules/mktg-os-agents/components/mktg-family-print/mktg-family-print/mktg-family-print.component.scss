@@ -42,23 +42,6 @@
   color: color-mix(in srgb, var(--pp-on-dark) 75%, transparent);
 }
 
-/* The cover's foot strip on the grammar's (pp-cover-strip): the site and date never break ("2026" alone), the
-   project line takes the rest and wraps balanced when it must ("PROJECT" alone), the two kept apart by a gap;
-   wrapped lines get a line's room. */
-.fpc-strip {
-  gap: 24px;
-  line-height: 1.4;
-
-  > :first-child {
-    text-wrap: balance;
-  }
-
-  > :last-child {
-    flex: none;
-    white-space: nowrap;
-  }
-}
-
 .fpc-docs {
   display: grid;
   grid-auto-flow: column;
