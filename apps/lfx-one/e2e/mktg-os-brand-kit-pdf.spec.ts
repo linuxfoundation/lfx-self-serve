@@ -7,7 +7,7 @@
  * The structural pair (`mktg-os-brand-kit-pdf-robust.spec.ts`) pins the `data-testid` contract.
  */
 
-import { BRAND_KIT_PRINT_BODY_CLASS, MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { BRAND_KIT_PRINT_BODY_CLASS, MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, MKTG_PORTRAIT_PAGE_NUMBER_DIGITS } from '@lfx-one/shared/constants';
 import { MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { expect, FrameLocator, Locator, Page, test } from '@playwright/test';
@@ -115,7 +115,10 @@ test.describe('Brand kit PDF: the portrait book', () => {
     // The version is on the cover and the back cover only: not on the contents page, not in a running head.
     await expect(pages.nth(1)).not.toContainText('V3.0');
     await expect(pages.nth(3)).not.toContainText('V3.0');
-    await expect(pages.getByTestId('mktg-portrait-page-number')).toHaveText(Array.from({ length: 14 }, (_, index) => String(index + 2)));
+    // The grammar prints the inner pages' numbers padded ("02"…"15"), the cover and back cover unnumbered.
+    await expect(pages.getByTestId('mktg-portrait-page-number')).toHaveText(
+      Array.from({ length: 14 }, (_, index) => String(index + 2).padStart(MKTG_PORTRAIT_PAGE_NUMBER_DIGITS, '0'))
+    );
     await page.screenshot({ path: info.outputPath('book-frames.png'), fullPage: true });
   });
 

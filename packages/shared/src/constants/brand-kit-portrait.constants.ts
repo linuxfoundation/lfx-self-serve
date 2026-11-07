@@ -31,8 +31,47 @@ export const BRAND_KIT_PORTRAIT_TYPE_SAMPLE_PX = 48;
 /** The scale rows' label and spec columns (96 px each) and their two 16 px gaps, left of a row's sample. */
 export const BRAND_KIT_PORTRAIT_SCALE_META_PX = 96 + 96 + 16 + 16;
 
-/** The smallest size a one-line sample is set at before it is let wrap instead: the page's caption size, still readable in print. */
+/**
+ * The CSS filter the portrait book's "don't recolor" watchout draws the lockup
+ * with, in place of the on-screen tile's hue rotation: a lilac whatever the
+ * mark's own colour (black and dark marks included, which a hue rotation
+ * alone leaves black), so the printed tile looks wrong on every kit. The
+ * on-screen kit view keeps its own draw.
+ */
+export const BRAND_KIT_PORTRAIT_RECOLOR_FILTER = 'invert(55%) sepia(1) saturate(2.5) hue-rotate(220deg)';
+
+/** The smallest size a one-line sample is set at: the page's caption size, still readable in print (the H1 keeps one line and clips past it; open). */
 export const BRAND_KIT_PORTRAIT_FIT_MIN_PX = 9;
+
+/**
+ * The Typography page's scale and the two blocks under it, as the fit model
+ * measures them: the scale's label (10/1.2) at y 436 with the rows 6 px under
+ * it, each row a 1 px rule, 8 px of padding above and below, its label line
+ * (10.5 px at the frame's 1.6) and its sample at the step's own line height;
+ * the display step's sample 4 px under its label line with 10 px below. The
+ * "Where to get the font" and "Rules" blocks sit at the mock's y 830 when the
+ * scale ends above it, else 16 px under the scale (the mock's gap), both
+ * 340 px wide, and never end past y 990. The body step keeps its 18/30
+ * unless the stack would not fit: then it is set smaller in the grammar's
+ * steps, to 14 px at the least, and only then cut at a sentence.
+ */
+export const BRAND_KIT_PORTRAIT_TYPE_PAGE = {
+  scaleTop: 436,
+  labelHeight: 12,
+  scaleAbove: 6,
+  rule: 1,
+  rowPadding: 8,
+  metaLine: 17,
+  displaySampleAbove: 4,
+  displayBottom: 10,
+  lowerTop: 830,
+  lowerGap: 16,
+  lowerWidth: 340,
+  bottom: 990,
+  bodyMinPx: 14,
+  text: { size: 12, line: 1.6, above: 8 },
+  list: { size: 12.5, line: 1.6, above: 8, indent: 16 },
+} as const;
 
 /**
  * The Imagery page's umbrella-message card: 224 × 220 px with 20 px padding

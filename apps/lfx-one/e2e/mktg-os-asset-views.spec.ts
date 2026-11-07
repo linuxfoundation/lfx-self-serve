@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import {
   BRAND_KIT_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
   MKTG_SLIDES_EXPORT_API_PATH,
 } from '@lfx-one/shared/constants';
@@ -263,7 +264,10 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       });
       await expect(print.getByTestId('mktg-portrait-cover-title')).toHaveText('Brand Kit');
       await expect(print.locator('.kit-chapter, lfx-mktg-print-chapter-header, .lfx-brand-kit-page, tfoot')).toHaveCount(0);
-      await expect(print.getByTestId('mktg-portrait-page-number')).toHaveText(Array.from({ length: 14 }, (_, index) => String(index + 2)));
+      // The grammar prints the inner pages' numbers padded ("02"…"15"), the cover and back cover unnumbered.
+      await expect(print.getByTestId('mktg-portrait-page-number')).toHaveText(
+        Array.from({ length: 14 }, (_, index) => String(index + 2).padStart(MKTG_PORTRAIT_PAGE_NUMBER_DIGITS, '0'))
+      );
     } else {
       await expectMktgPrintPageSetup(frame, print, browserName);
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');

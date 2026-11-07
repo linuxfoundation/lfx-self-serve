@@ -7,7 +7,7 @@
  * lists. Computed by `brand-kit-portrait.utils.ts` from a `BrandKitBookView`.
  */
 
-import type { BrandKitContrastGrade, BrandKitLogoSlot, BrandKitUsageView } from './brand-kit.interface';
+import type { BrandKitContrastGrade, BrandKitLogoSlot, BrandKitTypeStep, BrandKitUsageView } from './brand-kit.interface';
 
 /** How a page draws the artwork: as supplied, reversed to white, or one-colour black. */
 export type BrandKitPortraitArtworkMode = 'full' | 'reversed' | 'mono';
@@ -96,6 +96,35 @@ export interface BrandKitPortraitConflict {
   name: string;
   chosen: string;
   values: BrandKitPortraitConflictValue[];
+}
+
+/** One step of the Typography page's scale as printed: the record's step with its sample, the spec column's text, and the size and line height it is set at. */
+export interface BrandKitPortraitTypeStep extends BrandKitTypeStep {
+  sample: string;
+  /** `500 · 32/40`: the step's recorded size, whatever the sample is set at. */
+  spec: string;
+  /** The display step: the sample on its own full-width line. */
+  display: boolean;
+}
+
+/** One line of the "Where to get the font" block. */
+export interface BrandKitPortraitTypeSourceLine {
+  text: string;
+  muted: boolean;
+}
+
+/**
+ * The Typography page laid out from its data: the scale's steps as printed, where the scale ends, the y of the two blocks
+ * under it (the mock's 830, or lower when the scale runs past it), the lines of the font-source block, the share of its
+ * size the body step is set at (1 when the stack fit as written) and whether its sample had to be cut.
+ */
+export interface BrandKitPortraitTypeLayout {
+  steps: BrandKitPortraitTypeStep[];
+  scaleEnd: number;
+  lowerTop: number;
+  sourceLines: BrandKitPortraitTypeSourceLine[];
+  bodyScale: number;
+  cut: boolean;
 }
 
 /** The Voice page's attributes fitted to their grid's room: the share of the type size they are set at, whether a line had to be cut, and the attributes as printed. */

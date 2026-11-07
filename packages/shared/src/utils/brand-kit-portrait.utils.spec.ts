@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
+import { brandKitReportV2Fixture } from './__fixtures__/brand-kit-report-v2.fixture';
 import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
-import { BRAND_KIT_PORTRAIT_FIT_MIN_PX } from '../constants/brand-kit-portrait.constants';
+import { BRAND_KIT_PORTRAIT_FIT_MIN_PX, BRAND_KIT_PORTRAIT_TYPE_PAGE } from '../constants/brand-kit-portrait.constants';
 import { lfxColors } from '../constants/colors.constants';
 import { buildBrandKitBookView } from './brand-kit-book.utils';
 import {
@@ -25,6 +26,7 @@ import {
   brandKitPortraitReadableSource,
   brandKitPortraitShare,
   brandKitPortraitSources,
+  brandKitPortraitTypeLayout,
   brandKitPortraitTypeSample,
   brandKitPortraitTypeSource,
   brandKitPortraitUsageCards,
@@ -126,7 +128,7 @@ describe('the contrast page’s matrix', () => {
     expect(brandKitPortraitContrastGrade(8.3)).toBe('AAA');
     expect(brandKitPortraitContrastGrade(7)).toBe('AAA');
     expect(brandKitPortraitContrastGrade(4.5)).toBe('AA');
-    // 4.46 prints as 4.5 but is graded as it is: not AA.
+    // 4.46 is labelled 4.4 (cut, not rounded) and graded as it is: not AA.
     expect(brandKitPortraitContrastGrade(4.46)).toBe('Large text only');
     expect(brandKitPortraitContrastGrade(3)).toBe('Large text only');
     expect(brandKitPortraitContrastGrade(2.96)).toBe('Fails');
@@ -138,9 +140,9 @@ describe('the contrast page’s matrix', () => {
     expect(brandKitPortraitContrast('#4D4E4E', '#FFFFFF')).toBeCloseTo(8.35, 2);
     const matrix = brandKitPortraitContrastMatrix(view);
     expect(matrix.map((row) => row.name)).toEqual(['Charcoal', 'White', 'Orange', 'Mid gray']);
-    expect(matrix[0].cells.map((cell) => cell.label)).toEqual(['', '8.3', '3.0', '1.8']);
+    expect(matrix[0].cells.map((cell) => cell.label)).toEqual(['', '8.3', '2.9', '1.8']);
     expect(matrix[0].cells.map((cell) => cell.grade?.label ?? null)).toEqual([null, 'AAA', 'Fails', 'Fails']);
-    // 2.95 prints as 3.0 but fails: graded on the ratio, not on its label.
+    // 2.95 is labelled 2.9 (cut, never rounded up to a threshold) and fails: graded on the ratio, not on its label.
     expect(matrix[0].cells[2].ratio).toBeCloseTo(2.95, 2);
     expect(matrix[0].cells.map((cell) => cell.tinted)).toEqual([true, false, true, true]);
     expect(matrix[1].cells[0]).toMatchObject({ foreground: '#FFFFFF', background: '#4D4E4E', label: '8.3', tinted: true });
@@ -193,6 +195,54 @@ describe('the type page’s strings', () => {
     );
     expect(brandKitPortraitTypeSource('https://one.example.org/brand')).toBe('one.example.org');
     expect(brandKitPortraitTypeSource('Named in the brand guide')).toBe('Named in the brand guide');
+  });
+
+  it('places the lower blocks at y 830 while the scale ends above it, and under the scale when a three-line body step runs past', () => {
+    const c = BRAND_KIT_PORTRAIT_TYPE_PAGE;
+    // The synthetic umbrella is one line at 18/30: the scale ends well above 830 and the blocks keep the mock's y.
+    const short = brandKitPortraitTypeLayout(view, 704);
+    expect(short.steps.map((step) => step.step)).toEqual(['display', 'h2', 'h3', 'eyebrow', 'body', 'caption']);
+    expect(short.steps[4]).toMatchObject({ sample: view.voice.umbrella, size: 18, line_height: 30, spec: '400 · 18/30' });
+    expect(short.scaleEnd).toBeLessThan(c.lowerTop - c.lowerGap);
+    expect(short).toMatchObject({ lowerTop: 830, bodyScale: 1, cut: false });
+    expect(short.sourceLines).toEqual([
+      { text: 'Montserrat · Google Fonts · weights 400, 700', muted: false },
+      { text: 'Fallback: none', muted: false },
+      { text: 'Named on one.example.org', muted: true },
+    ]);
+    // A live foundation's umbrella (three lines at 18/30 in the 480 px sample column) takes the caption row to y 850: the
+    // blocks follow the scale's real end, 16 px under it, the body step still at 18/30, and the stack ends above y 990.
+    const umbrella =
+      'The Synthetic Foundation is the neutral home at the Linux Foundation where the open protocols and tools for agents are governed in the open.';
+    const three = brandKitPortraitTypeLayout({ ...view, voice: { ...view.voice, umbrella } }, 704);
+    expect(three.steps[4]).toMatchObject({ sample: umbrella, size: 18, line_height: 30 });
+    expect(three.scaleEnd).toBeGreaterThan(c.lowerTop);
+    expect(three.lowerTop).toBe(Math.ceil(three.scaleEnd) + c.lowerGap);
+    expect(three.lowerTop).toBeGreaterThan(830);
+    expect(three.lowerTop).toBeLessThan(c.bottom - 60);
+    expect(three).toMatchObject({ bodyScale: 1, cut: false });
+  });
+
+  it('gives the body step size, never below 14 px, before anything is cut when the stack would cross the footer', () => {
+    const c = BRAND_KIT_PORTRAIT_TYPE_PAGE;
+    const sentence = 'Where organizations fund the open computing standards every member builds on, together and in the open, every year.';
+    // Two sentences: five lines at 18/30 would push the blocks past the footer, so the body step is set smaller (a whole
+    // message still) until the stack ends by y 990 — four lines at 14/24 here.
+    const long = brandKitPortraitTypeLayout({ ...view, voice: { ...view.voice, umbrella: `${sentence} ${sentence}` } }, 704);
+    expect(long.bodyScale).toBeLessThan(1);
+    expect(long.steps[4].size).toBeGreaterThanOrEqual(c.bodyMinPx);
+    expect(long.steps[4].size).toBeLessThan(18);
+    expect(long.steps[4].sample).toBe(`${sentence} ${sentence}`);
+    expect(long.cut).toBe(false);
+    expect(long.lowerTop).toBeLessThan(c.bottom);
+    // An essay no size down to 14 px holds is cut at a sentence, and the result says so.
+    const essay = Array(12).fill(sentence).join(' ');
+    const cut = brandKitPortraitTypeLayout({ ...view, voice: { ...view.voice, umbrella: essay } }, 704);
+    expect(cut.steps[4].size).toBe(c.bodyMinPx);
+    expect(cut.cut).toBe(true);
+    expect(cut.steps[4].sample.length).toBeLessThan(essay.length);
+    expect(cut.steps[4].sample.endsWith('.')).toBe(true);
+    expect(cut.lowerTop).toBeLessThan(c.bottom);
   });
 });
 
@@ -269,6 +319,17 @@ describe('the Sources page’s lists', () => {
     expect(rich.conflicts[0].values.map((value) => value.source)).toEqual(['one.example.org stylesheets', 'the uploaded logo files']);
     expect(rich.conflicts[0].values.map((value) => value.label)).toEqual(['#F37625 · kept', '#F07000']);
     expect(rich.conflicts[0].values.map((value) => value.kept)).toEqual([true, false]);
+  });
+
+  it('prints a live record’s sources in a reader’s words: the site root as its host, a conflict value’s `<kind>: <url>` as the place itself', () => {
+    const live = brandKitPortraitSources({ ...view, report: brandKitReportV2Fixture() });
+    // The record read the root, four stylesheet chunks (folded), the brand page and the LFX record: no raw address, no chunk name.
+    expect(live.read).toEqual(['aaif.io', 'aaif.io stylesheets', 'aaif.io/brand', 'The LFX project record']);
+    expect(live.failed.map((entry) => entry.source)).toEqual(['aaif.io/brand-guidelines', 'the logo package linked from the site']);
+    expect(live.missing[0].reason).toBe("The site's header links a logo image that was not read in this run, so the kit shows placeholder marks.");
+    expect(live.conflicts.map((conflict) => conflict.name)).toEqual(['Coral']);
+    expect(live.conflicts[0].values.map((value) => value.source)).toEqual(['aaif.io/brand', 'aaif.io stylesheets']);
+    expect(JSON.stringify(live)).not.toMatch(/https?:|_next|brand_page|site_css/);
   });
 
   it('takes a v2 report’s findings, names the missing assets by the shared labels and lifts a fix they all share', () => {

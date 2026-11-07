@@ -64,12 +64,36 @@ describe('the Typography page', () => {
     expect(long.length).toBeLessThanOrEqual(mktgPortraitCharsPerLine(704, size, { weight: 500 }));
   });
 
-  it('sets the body step at its real size and lets the paragraph wrap, however long the umbrella message', async () => {
-    const umbrella = 'A long umbrella message that runs well past one line of the scale row at eighteen pixels, as a live kit’s often does.';
+  it('sets the body step at its real size and lets the paragraph wrap, and moves the lower blocks under the scale when three lines run past y 830', async () => {
+    const umbrella =
+      'The Synthetic Foundation is the neutral home at the Linux Foundation where the open protocols and tools for agents are governed in the open.';
     const { frame } = await mountBrandKitPage(MktgBrandKitPageTypeComponent, 'type', (view) => ({ ...view, voice: { ...view.voice, umbrella } }));
     const body = frame.querySelector<HTMLElement>('[data-step="body"] .kp-scale-sample');
     expect(body?.style.fontSize).toBe('18px');
     expect(body?.style.lineHeight).toBe('30px');
     expect(body?.textContent?.trim()).toBe(umbrella);
+    // Three lines at 18/30 take the caption row past the mock's y 830: both blocks follow the scale's real end instead of
+    // printing over it, side by side at the same y, and still end above the footer.
+    const source = rectOf(frame.querySelector('[data-testid="brand-kit-type-source"]'));
+    const rules = rectOf(frame.querySelector('[data-testid="brand-kit-type-rules"]'));
+    const top = parseFloat(source.top);
+    expect(top).toBeGreaterThan(830);
+    expect(top).toBeLessThan(930);
+    expect(rules.top).toBe(source.top);
+    expect(source).toMatchObject({ left: '56px', width: '340px' });
+    expect(rules).toMatchObject({ left: '420px', width: '340px' });
+  });
+
+  it('sets the body step smaller, never below 14 px, when even the moved blocks would cross the footer', async () => {
+    const sentence = 'Where organizations fund the open computing standards every member builds on, together and in the open, every year.';
+    const umbrella = `${sentence} ${sentence}`;
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageTypeComponent, 'type', (view) => ({ ...view, voice: { ...view.voice, umbrella } }));
+    const body = frame.querySelector<HTMLElement>('[data-step="body"] .kp-scale-sample');
+    const size = parseFloat(body?.style.fontSize ?? '0');
+    expect(size).toBeLessThan(18);
+    expect(size).toBeGreaterThanOrEqual(14);
+    expect(body?.textContent?.trim()).toBe(umbrella);
+    expect(frame.querySelector('[data-step="body"] .kp-scale-spec')?.textContent).toBe('400 · 18/30');
+    expect(parseFloat(rectOf(frame.querySelector('[data-testid="brand-kit-type-source"]')).top)).toBeLessThan(990);
   });
 });

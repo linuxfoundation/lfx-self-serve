@@ -27,7 +27,7 @@
   <div [lfxPpRect]="[x, 436, w]" data-testid="brand-kit-type-scale">
     <div class="pp-lab pp-lab--dark">Scale · at real size</div>
     <div class="kp-scale">
-      @for (step of scale(); track step.step) {
+      @for (step of layout().steps; track step.step) {
         @if (step.display) {
           <div class="kp-scale-display" [attr.data-step]="step.step">
             <div class="kp-scale-meta">
@@ -59,17 +59,22 @@
       }
     </div>
   </div>
-  <div [lfxPpRect]="[x, 830, 340]" data-testid="brand-kit-type-source">
+  <div [lfxPpRect]="[x, layout().lowerTop, lowerWidth]" data-testid="brand-kit-type-source">
     <div class="pp-lab pp-lab--dark">Where to get the font</div>
     <div class="kp-text kp-text--tight">
-      {{ v.type.family }} · {{ v.type.google_fonts ? 'Google Fonts' : 'supplied files' }} · weights {{ weightList() }}<br />
-      Fallback: {{ v.type.fallback || 'none' }}
-      @if (source()) {
-        <br /><span class="kp-muted">Named on {{ source() }}</span>
+      @for (line of layout().sourceLines; track $index) {
+        @if ($index) {
+          <br />
+        }
+        @if (line.muted) {
+          <span class="kp-muted">{{ line.text }}</span>
+        } @else {
+          {{ line.text }}
+        }
       }
     </div>
   </div>
-  <div [lfxPpRect]="[x + 364, 830, 340]" data-testid="brand-kit-type-rules">
+  <div [lfxPpRect]="[x + rulesLeft, layout().lowerTop, lowerWidth]" data-testid="brand-kit-type-rules">
     <div class="pp-lab pp-lab--dark">Rules</div>
     <ul class="kp-list">
       @for (rule of v.type.rules; track $index) {

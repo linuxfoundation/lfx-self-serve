@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BRAND_KIT_RECOLOR_FILTER } from '@lfx-one/shared/constants';
+import { BRAND_KIT_PORTRAIT_RECOLOR_FILTER } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 import { MktgBrandKitPageLogoWatchoutsComponent } from './mktg-brand-kit-page-logo-watchouts.component';
 import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
@@ -18,7 +18,7 @@ describe('the Watchouts page', () => {
     expect(tiles.every((tile) => tile.querySelector('.kp-no')?.textContent === '✕')).toBe(true);
     expect(tiles[0].querySelector<HTMLElement>('span')?.style.transform).toBe('scaleX(1.45)');
     // The recoloured mark is a lilac whatever the mark's own colour, so a dark lockup looks wrong too (not black).
-    expect(tiles[1].querySelector<HTMLElement>('span')?.style.filter).toBe(BRAND_KIT_RECOLOR_FILTER);
+    expect(tiles[1].querySelector<HTMLElement>('span')?.style.filter).toBe(BRAND_KIT_PORTRAIT_RECOLOR_FILTER);
     expect(tiles[3].querySelector<HTMLElement>('span')?.style.filter).toBe('drop-shadow(4px 5px 3px rgba(0, 0, 0, 0.45))');
     expect(tiles[4].querySelector<HTMLElement>('span')?.style.transform).toBe('');
     expect(tiles[5].querySelector('.kp-retyped')?.textContent).toBe('Project One');

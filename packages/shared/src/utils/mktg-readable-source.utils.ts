@@ -5,8 +5,18 @@ import { BRAND_KIT_OPAQUE_FILE_STEM_REGEX } from '../constants/brand-kit.constan
 import { MKTG_READABLE_SOURCE } from '../constants/mktg-readable-source.constants';
 import { brandKitWebsiteHost } from './brand-kit.utils';
 
-/** A URL, up to whitespace or a closing bracket or quote (the record's prose wraps them in parentheses). */
-const URL_REGEX = /https?:\/\/[^\s)\]}>"'”’]+/gi;
+/**
+ * A URL, up to whitespace or a closing bracket or quote (the record's prose wraps them in parentheses); the sentence's
+ * own punctuation after it (`…logo.svg.`, `…/brand,`) is a second group, kept out of the address and put back after it.
+ */
+const URL_REGEX = /(https?:\/\/[^\s)\]}>"'”’]+?)([.,;:!?]*)(?=[\s)\]}>"'”’]|$)/gi;
+/** `(a logo image linked from the site)`: a parenthetical left holding only a source's words once its file name is rewritten. */
+const REPEATED_PARENTHETICAL_REGEX = new RegExp(
+  ` \\((?:${Object.values(MKTG_READABLE_SOURCE)
+    .map((phrase) => phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')})\\)`,
+  'gi'
+);
 
 /** A bare file name (no `/` before it) with an image, archive or document extension, as the record names uploads and site files. */
 const FILE_NAME_SOURCE = '(?<![\\w/.%-])[\\w.%-]+\\.(?:svg|png|jpe?g|webp|gif|pdf|eps|ai|zip|tar\\.gz|7z|rar)(?![\\w.%-])';
@@ -14,6 +24,10 @@ const FILE_NAME_REGEX = new RegExp(FILE_NAME_SOURCE, 'gi');
 const WHOLE_FILE_NAME_REGEX = new RegExp(`^${FILE_NAME_SOURCE}$`, 'i');
 
 const ARCHIVE_REGEX = /\.(?:zip|tar\.gz|7z|rar)$/i;
+/** `site_css: https://…`, `logo: brand.zip/logo.svg`: the record's provenance kind before the source itself. */
+const KIND_PREFIX_REGEX = /^[a-z][a-z0-9_]*:\s+(?=\S)/i;
+/** `brand.zip/logo.svg`: a member of an uploaded archive. */
+const ARCHIVE_MEMBER_REGEX = /^[^\s/]+\.(?:zip|tar\.gz|7z|rar)\/\S+$/i;
 const IMAGE_REGEX = /\.(?:svg|png|jpe?g|webp|gif|eps|ai)$/i;
 
 /** The file name's stem: the last path segment without its extension and a CMS's `-838x203` size suffix. */
@@ -25,9 +39,10 @@ function fileStem(path: string): string {
     .trim();
 }
 
-/** Whether a file is named by nothing a reader knows (a CDN's hash, a UUID), the kit's own test. */
+/** Whether a file is named by nothing a reader knows (a CDN's hash, a UUID), the kit's own test; a path with no file in it (a site's root) is not a file. */
 function isOpaque(path: string): boolean {
-  return BRAND_KIT_OPAQUE_FILE_STEM_REGEX.test(fileStem(path));
+  const stem = fileStem(path);
+  return stem !== '' && BRAND_KIT_OPAQUE_FILE_STEM_REGEX.test(stem);
 }
 
 /**
@@ -43,8 +58,10 @@ function isOpaque(path: string): boolean {
 export function mktgReadableSourceName(source: string, count: 'one' | 'many' = 'many'): string {
   const text = source.trim();
   if (/^LFX record/i.test(text)) return MKTG_READABLE_SOURCE.lfxRecord;
+  if (KIND_PREFIX_REGEX.test(text)) return mktgReadableSourceName(text.replace(KIND_PREFIX_REGEX, ''), count);
   const isUrl = /^https?:\/\//i.test(text);
   if (!isUrl) {
+    if (ARCHIVE_MEMBER_REGEX.test(text)) return MKTG_READABLE_SOURCE.uploadedPackage;
     if (WHOLE_FILE_NAME_REGEX.test(text)) {
       if (ARCHIVE_REGEX.test(text)) return MKTG_READABLE_SOURCE.uploadedPackage;
       return count === 'one' ? MKTG_READABLE_SOURCE.uploadedFile : MKTG_READABLE_SOURCE.uploadedFiles;
@@ -57,17 +74,20 @@ export function mktgReadableSourceName(source: string, count: 'one' | 'many' = '
   if (IMAGE_REGEX.test(path)) return MKTG_READABLE_SOURCE.linkedImage;
   if (isOpaque(path)) return MKTG_READABLE_SOURCE.linkedFile;
   if (host && /\/_next\/static\/|\.css$/i.test(path)) return `${host} stylesheets`;
-  return path.replace(/^https?:\/\/(?:www\.)?/i, '');
+  return path.replace(/^https?:\/\/(?:www\.)?/i, '').replace(/\/$/, '');
 }
 
 /**
  * A sentence of the run record (a reason, a warning, a gap, a note, a fix)
  * with every URL and bare file name in it replaced by `mktgReadableSourceName`'s
- * words, so no hashed name and no long file URL is printed: "(16dd7d…-838x203.svg)"
- * reads "(a logo image linked from the site)".
+ * words, so no hashed name and no long file URL is printed, the sentence's own
+ * punctuation kept after the rewritten address; a parenthetical left holding
+ * only such words ("links a logo image (a logo image linked from the site)")
+ * is dropped, the sentence already naming the thing.
  */
 export function mktgReadableSourceText(text: string): string {
   return text
-    .replace(URL_REGEX, (url) => mktgReadableSourceName(url, 'one'))
-    .replace(FILE_NAME_REGEX, (name) => (isOpaque(name) ? MKTG_READABLE_SOURCE.linkedImage : mktgReadableSourceName(name, 'one')));
+    .replace(URL_REGEX, (_match, url: string, punctuation: string) => `${mktgReadableSourceName(url, 'one')}${punctuation}`)
+    .replace(FILE_NAME_REGEX, (name) => (isOpaque(name) ? MKTG_READABLE_SOURCE.linkedImage : mktgReadableSourceName(name, 'one')))
+    .replace(REPEATED_PARENTHETICAL_REGEX, '');
 }
