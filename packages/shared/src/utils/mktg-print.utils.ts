@@ -282,9 +282,12 @@ export function foundationMessagePrintFacts(goals: FoundationMessagePrintGoal[])
  */
 export function foundationMessagePrintNumbers(numbers: FoundationMessageNumberRow[], facts: FoundationMessagePrintFactRow[]): FoundationMessagePrintNumber[] {
   return numbers.map((row) => {
-    // The figure prints with its thousands separators (the editor's rule); a fact states it in either form.
+    // The figure prints with its thousands separators (the editor's rule); a fact states it in either form, whichever form the
+    // record stores: the stored figure, it without its separators, and it separated again (`10,000+` matches `10000` too).
     const number = mktgPrintFigure(row.number, row.label);
-    const figures = [...new Set([row.number.trim(), number].map((figure) => figure.replace(/\+$/, '')).filter((figure) => figure !== ''))];
+    const bare = row.number.trim().replace(/\+$/, '');
+    const plain = bare.replace(/,/g, '');
+    const figures = [...new Set([bare, plain, mktgPrintFigure(plain, row.label).replace(/\+$/, '')].filter((figure) => figure !== ''))];
     const tokens = figures.map((figure) => new RegExp(`(?:^|[^\\d,.])${figure.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d|[,.]\\d)`));
     const sources = new Set(facts.filter((fact) => tokens.some((token) => token.test(fact.fact))).map((fact) => fact.source));
     return { ...row, number, source: sources.size === 1 ? [...sources][0] : '' };

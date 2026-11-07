@@ -191,7 +191,7 @@ export class MktgFamilyPrintComponent {
             return { document, faqGroups: this.faqGroups() };
         }
       });
-      return mktgFamilyPrintPlan(members, view.conflicts.length);
+      return mktgFamilyPrintPlan(members);
     });
   }
 

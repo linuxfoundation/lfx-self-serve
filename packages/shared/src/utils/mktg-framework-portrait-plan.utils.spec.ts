@@ -131,6 +131,17 @@ describe('the framework’s portrait plan', () => {
     ).toEqual(['key-numbers', 'key-numbers-2', 'sources']);
   });
 
+  it('keys a goal page on the goal’s position, never its number: two goals sharing an `n` both get a page, each titled with its own number', () => {
+    // The validator asks only that `n` be a positive integer, so a hand-edited record may repeat one.
+    const base = content(3, 1);
+    const twins = { ...base, mf: { ...base.mf, goals: base.mf.goals.map((goal, index) => (index === 2 ? { ...goal, n: 2 } : goal)) } };
+    const view = buildFoundationMessagePrintView(twins, 'TestOrbit', 1, null);
+    const goalPages = frameworkPortraitPlan(view, { inFamily: false }).filter((page) => page.id.startsWith('goal-'));
+    expect(goalPages.map((page) => page.id)).toEqual(['goal-1', 'goal-2', 'goal-3']);
+    expect(goalPages.map((page) => page.title.slice(0, 6))).toEqual(['Goal 1', 'Goal 2', 'Goal 2']);
+    expect(goalPages.map((page) => page.title.endsWith(view.goals[Number(page.id.slice('goal-'.length)) - 1].t))).toEqual([true, true, true]);
+  });
+
   it('pages the profiles two a page in data order, the last page taking one when the count is odd', () => {
     const view = buildFoundationMessagePrintView(content(1, 5), 'TestOrbit', 1, null);
     expect(frameworkPortraitIcpPages(view.icps).map((page) => page.icps.map((row) => row.id))).toEqual([['i1', 'i2'], ['i3', 'i4'], ['i5']]);
