@@ -4,6 +4,7 @@
 import { MKTG_FAMILY_EXPORT_KINDS } from '../constants/mktg-family-export.constants';
 import type { MktgDocumentType, MktgStoredRevision } from './mktg-document-store.interface';
 import type { BrandKitBookView } from './brand-kit.interface';
+import type { MktgFamilyPrintDocument } from './mktg-family-print.interface';
 import type { BoilerplatesPrintView, FaqPrintView, FoundationMessagePrintView, MktgPrintBrand } from './mktg-print.interface';
 import type {
   MktgSlidesExportDeckRecord,
@@ -93,6 +94,15 @@ export interface MktgFamilyPrintView {
   newestRevisionAt: string | null;
   fontFamily: string | null;
   weights: readonly number[];
+  /** The printed members as the book's chapters name them, in exporter order (the family's cover cards, openers, contents and Sources page). */
+  documents: MktgFamilyPrintDocument[];
+  /** The framework's tagline for the cover's eyebrow and the back cover, '' when the family has no framework or it has none. */
+  tagline: string;
+  /** The project's site as the kit read it (`aaif.io`), '' when the family has no kit or it names none. */
+  websiteLabel: string;
+  /** The boilerplates run's notes and the sources it read, both [] when the revision carries no report: the blocks are omitted then. */
+  boilerplatesNotes: string[];
+  boilerplatesSources: string[];
 }
 
 /** Validated exporter output, shared by document and family polling. */

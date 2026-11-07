@@ -569,6 +569,11 @@ describe('Family export slot', () => {
       newestRevisionAt: '2026-10-21T10:00:00Z',
       fontFamily: null,
       weights: [400],
+      documents: [],
+      tagline: '',
+      websiteLabel: '',
+      boilerplatesNotes: [],
+      boilerplatesSources: [],
     });
     pending.complete();
     await fixture.whenStable();

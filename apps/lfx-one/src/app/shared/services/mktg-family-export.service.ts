@@ -17,11 +17,15 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
+  brandKitWebsiteHost,
   buildBoilerplatesPrintView,
   buildBrandKitBookView,
   buildFaqPrintView,
   buildFoundationMessagePrintView,
   faqAssetOfRevision,
+  isFoundationMessageReport,
+  mktgFamilyExportAgentKeys,
+  mktgFamilyPrintDocument,
   mktgPrintBrand,
   readBrandKitRevision,
   readFoundationMessageContent,
@@ -144,6 +148,27 @@ export class MktgFamilyExportService {
           .map((response) => response.revision.createdAt)
           .filter((createdAt): createdAt is string => !!createdAt && Number.isFinite(Date.parse(createdAt)))
           .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+        // The book's chapters, in exporter order (the family's asset order, not an agent list), each with what its run left open.
+        const frameworkReport = frameworkResponse?.sidecar?.['report'];
+        const openItems: Record<string, string[]> = {
+          'foundation-message': isFoundationMessageReport(frameworkReport) ? frameworkReport.gaps : [],
+          'brand-kit': kit?.report.findings?.missing_assets.map((missing) => missing.reason) ?? [],
+          boilerplates: boilerplates?.report.gaps ?? [],
+          faq: faq?.report.gaps ?? [],
+        };
+        const documents = mktgFamilyExportAgentKeys(target.familyId)
+          .map((agentKey) => ({ agentKey, response: responses.find((response) => response.type.agentKey === agentKey) }))
+          .filter((entry) => !!entry.response)
+          .map(({ agentKey, response }, index) =>
+            mktgFamilyPrintDocument(
+              target.familyId,
+              agentKey,
+              index + 1,
+              response?.revision.number ?? null,
+              response?.approval ?? null,
+              openItems[agentKey] ?? []
+            )
+          );
         return {
           framework,
           kit: book,
@@ -155,6 +180,14 @@ export class MktgFamilyExportService {
           newestRevisionAt: newestRevisionAt ?? null,
           fontFamily: book?.fontUrl ? book.type.family : brand.fontFamily,
           weights: book?.weights.map((weight) => weight.weight) ?? MKTG_PRINT_FONT_WEIGHTS,
+          documents,
+          tagline: content?.mf.tagline?.trim() ?? '',
+          websiteLabel: brandKitWebsiteHost(kit?.websiteUrl ?? null),
+          boilerplatesNotes: (boilerplates?.report.notes ?? '')
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean),
+          boilerplatesSources: boilerplates?.report.sources_read.map((source) => source.trim()).filter(Boolean) ?? [],
         };
       })
     );

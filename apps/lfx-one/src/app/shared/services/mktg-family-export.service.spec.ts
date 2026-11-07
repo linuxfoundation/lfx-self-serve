@@ -130,6 +130,7 @@ describe('Family export client', () => {
         chapters: kit.chapters,
         report: kit.report,
         generated_at: kit.generatedAt,
+        inputs: { website_url: kit.websiteUrl },
       },
     };
   }
@@ -172,6 +173,24 @@ describe('Family export client', () => {
     expect(view?.fontFamily).toBe('Montserrat');
     // The newest dated member revision names the family PDF; a member without a date is passed over.
     expect(view?.newestRevisionAt).toBe('2026-10-28T09:00:00Z');
+    // The book's chapters, in the family's asset order, named from the kit catalogue with the approval as printed.
+    expect(
+      view?.documents.map((document) => [
+        document.number,
+        document.agentKey,
+        document.title,
+        document.versionLabel,
+        document.approvedLabel,
+        document.approvedBy,
+      ])
+    ).toEqual([
+      ['01', 'brand-kit', 'Brand kit', 'V1.0', '20 Oct 2026', null],
+      ['02', 'boilerplates', 'Boilerplates', 'V1.0', '20 Oct 2026', null],
+      ['03', 'faq', 'FAQ', 'V1.0', '20 Oct 2026', null],
+    ]);
+    expect(view?.tagline).toBe('');
+    expect(view?.websiteLabel).toBe('one.example.org');
+    expect(view?.boilerplatesSources).toEqual(boilerplatesEnvelope.report.sources_read);
   });
 
   it.each(['boilerplates', 'faq'] as const)('rejects unreadable approved %s instead of silently omitting it', (agentKey) => {
