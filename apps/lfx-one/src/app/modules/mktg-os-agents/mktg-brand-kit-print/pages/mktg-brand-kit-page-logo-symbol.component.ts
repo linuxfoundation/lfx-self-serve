@@ -21,11 +21,16 @@ import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-po
 })
 export class MktgBrandKitPageLogoSymbolComponent extends MktgBrandKitPageBase {
   protected readonly hasSymbol = computed(() => !!this.view().symbol?.src);
+  /**
+   * The four shapes; the dark ones captioned by what they draw: the reversed symbol when the slot derives one, else the
+   * full-colour symbol on the white plate (a "reversed" caption over a plate would be a false label).
+   */
   protected readonly shapes = computed(() => {
     const dark = this.view().dark;
+    const onDark = this.view().derivable.symbol ? 'reversed' : 'full color on a plate';
     return [
-      { ground: dark, radius: '50%', mode: 'reversed' as const, caption: 'Circle · reversed', onWhite: false },
-      { ground: dark, radius: '24px', mode: 'reversed' as const, caption: 'Rounded square · reversed', onWhite: false },
+      { ground: dark, radius: '50%', mode: 'reversed' as const, caption: `Circle · ${onDark}`, onWhite: false },
+      { ground: dark, radius: '24px', mode: 'reversed' as const, caption: `Rounded square · ${onDark}`, onWhite: false },
       { ground: this.inks.mist, radius: '24px', mode: 'full' as const, caption: 'Rounded square · light tint', onWhite: false },
       { ground: this.inks.white, radius: '24px', mode: 'full' as const, caption: 'Rounded square · white', onWhite: true },
     ];

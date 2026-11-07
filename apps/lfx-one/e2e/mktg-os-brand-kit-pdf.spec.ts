@@ -14,8 +14,15 @@ import {
   MKTG_PORTRAIT_PAPERS,
 } from '@lfx-one/shared/constants';
 import { MktgRevisionResponse } from '@lfx-one/shared/interfaces';
-import { brandKitMinimalFixture, brandKitOverfullFixture, brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import {
+  BRAND_KIT_FIXTURE_LOCKUP_SVG,
+  brandKitMinimalFixture,
+  brandKitOverfullFixture,
+  brandKitTestRevision,
+} from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import type { BrandKitRevision } from '@lfx-one/shared/interfaces';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils/brand-kit-book.utils';
+import { brandKitPortraitAccentMoment } from '@lfx-one/shared/utils/brand-kit-portrait.utils';
 import { mktgPortraitAccentText } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
 import { expect, FrameLocator, Locator, Page, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
@@ -73,6 +80,15 @@ function stackedOnlyResponse(): MktgRevisionResponse {
   return { ...base, sidecar: { ...sidecar, chapters: { ...sidecar.chapters, logo } } as MktgRevisionResponse['sidecar'] };
 }
 
+/** The approved kit with a three-colour symbol file beside its lockup: a Symbol page whose dark shapes cannot reverse the mark. */
+function threeColourSymbolResponse(): MktgRevisionResponse {
+  const base = columnAssetRevisionResponse('brand-kit');
+  const sidecar = base.sidecar as { chapters: { logo: { files: Record<string, unknown> } } };
+  const symbol = { ref: 'symbol.svg', svg: BRAND_KIT_FIXTURE_LOCKUP_SVG };
+  const logo = { ...sidecar.chapters.logo, files: { ...sidecar.chapters.logo.files, symbol } };
+  return { ...base, sidecar: { ...sidecar, chapters: { ...sidecar.chapters, logo } } as MktgRevisionResponse['sidecar'] };
+}
+
 /** The approved kit with PNG uploads only (no SVG bytes): files the record holds and the print cannot draw. */
 function pngOnlyResponse(): MktgRevisionResponse {
   const base = columnAssetRevisionResponse('brand-kit');
@@ -96,10 +112,13 @@ function noLogoFilesResponse(): MktgRevisionResponse {
 }
 
 /** The approved kit's response with another shared fixture's record in the sidecar (the overfull and the minimal records). */
-function fixtureResponse(kit: BrandKitRevision): MktgRevisionResponse {
+function fixtureResponse(kit: BrandKitRevision, projectName = kit.projectName): MktgRevisionResponse {
   const base = columnAssetRevisionResponse('brand-kit');
   const sidecar = base.sidecar as Record<string, unknown>;
-  return { ...base, sidecar: { ...sidecar, kit: kit.kit, chapters: kit.chapters, report: kit.report } as MktgRevisionResponse['sidecar'] };
+  return {
+    ...base,
+    sidecar: { ...sidecar, project_name: projectName, kit: kit.kit, chapters: kit.chapters, report: kit.report } as MktgRevisionResponse['sidecar'],
+  };
 }
 
 /** True when every box inside `root` ends at or above `bottom` px from the frame's top (nothing runs past the footer line). */
@@ -112,9 +131,13 @@ async function endsAbove(frame: Locator, root: Locator, bottom: number): Promise
 }
 
 /** Opens the approved kit, clicks Download PDF and returns the print frame's book. */
-async function openBook(page: Page, response = columnAssetRevisionResponse('brand-kit')): Promise<{ frame: FrameLocator; book: Locator; pages: Locator }> {
+async function openBook(
+  page: Page,
+  response = columnAssetRevisionResponse('brand-kit'),
+  project = ASSET_PROJECT
+): Promise<{ frame: FrameLocator; book: Locator; pages: Locator }> {
   await stubMktgPrintFrame(page);
-  await openAssetDocument(page, 'brand-kit', 200, true, false, response);
+  await openAssetDocument(page, 'brand-kit', 200, true, false, response, project);
   await page.getByTestId('brand-kit-web-view-download-pdf').getByRole('button').click();
   await expectMktgPrintFrame(page, BRAND_KIT_PRINT_BODY_CLASS, 'lfx-mktg-brand-kit-print');
   const frame = await layoutMktgPrintFrame(page);
@@ -352,8 +375,18 @@ test.describe('Brand kit PDF: the portrait book', () => {
       const box = await card.getByTestId('brand-kit-usage-frame').boundingBox();
       expect(box && { width: Math.round(box.width), height: Math.round(box.height) }).toEqual({ width: 344, height: 210 });
     }
-    await expect(cards.nth(1).getByTestId('brand-kit-usage-frame')).toHaveCSS('background-color', rgb(kit.kit.accent));
-    await expect(cards.nth(1).getByTestId('brand-kit-usage-frame')).toHaveCSS('color', rgb(kit.kit.dark));
+    // The social card is the kit's one accent moment, resolved by the shared rule from the kit's own contrast: this
+    // kit's palette has no AA ink on Orange, so the card is white with the accent as a 6 px top rule, the text in the
+    // dark, and the full-colour lockup sits on it as on any white ground (no "No logo on the accent" note).
+    const moment = brandKitPortraitAccentMoment(buildBrandKitBookView(kit));
+    expect(moment.ground).toBe('white');
+    const social = cards.nth(1).getByTestId('brand-kit-usage-frame');
+    await expect(social).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await expect(social).toHaveCSS('color', rgb(moment.ink));
+    await expect(social).toHaveCSS('border-top-color', rgb(kit.kit.accent));
+    await expect(social).toHaveCSS('border-top-width', '6px');
+    await expect(social.getByTestId('brand-kit-artwork-lockup')).toHaveCount(1);
+    await expect(social.getByTestId('brand-kit-usage-social-note')).toHaveCount(0);
     await expect(cards.nth(0)).toContainText(kit.chapters.voice.line);
     await expect(cards.nth(2)).toContainText(`${kit.projectName} annual report 2026`);
     await expect(cards.nth(3)).toContainText(`New members join ${kit.projectName}`);
@@ -538,10 +571,32 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await finishMktgPrintFrame(page);
   });
 
+  test('a three-colour symbol’s dark shapes draw it on the plate and say so: "full color on a plate", never "reversed"', async ({ page }, info) => {
+    const { pages } = await openBook(page, threeColourSymbolResponse());
+    const symbol = pageById(pages, 'logo-symbol');
+    const shapes = symbol.getByTestId('brand-kit-symbol-shapes').locator('> div');
+    await expect(shapes).toHaveCount(4);
+    await expect(shapes.nth(0).locator('.pp-cap')).toHaveText('Circle · full color on a plate');
+    await expect(shapes.nth(1).locator('.pp-cap')).toHaveText('Rounded square · full color on a plate');
+    await expect(shapes.nth(0).getByTestId('mktg-portrait-plate')).toHaveCount(1);
+    await expect(shapes.nth(1).getByTestId('mktg-portrait-plate')).toHaveCount(1);
+    await expect(symbol.getByTestId('brand-kit-symbol-shapes')).not.toContainText('reversed');
+    // The variant tiles stay honest too: "Not supplied" under the Reversed and One-color labels.
+    await expect(symbol.getByTestId('brand-kit-symbol-variant-missing')).toHaveCount(2);
+    await symbol.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('logo-symbol-plated-shapes.png'), fullPage: false });
+    await page.emulateMedia({ media: 'screen' });
+    await finishMktgPrintFrame(page);
+  });
+
   test('the overfull record (five colours, 300-character lines, twenty sources, six conflicts) prints every page bounded: nothing past the footer line, the rest counted in "+N more" lines', async ({
     page,
   }, info) => {
-    const { pages } = await openBook(page, fixtureResponse(brandKitOverfullFixture()));
+    // The record's project carries a name long enough to overfill the cover strip (S8/K3) and to need the retyped
+    // sample's size step (E3), in the kit's sidecar and the project context alike; the synthetic project is otherwise
+    // `ASSET_PROJECT`.
+    const overfullProject = { ...ASSET_PROJECT, name: 'Cloud Native Computing Foundation (CNCF)' };
+    const { pages } = await openBook(page, fixtureResponse(brandKitOverfullFixture(), overfullProject.name), overfullProject);
     await expect(pages).toHaveCount(PAGES.length);
     // Every content page's placed boxes end above the footer line (y 990 of 1056); the footer itself sits under it.
     for (const id of PAGES.slice(2, -1)) {
@@ -581,6 +636,11 @@ test.describe('Brand kit PDF: the portrait book', () => {
     for (const img of await pageById(pages, 'cover').locator('img').all()) await expect(img).toHaveCSS('filter', 'none');
     await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '42px');
     await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-plate')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    // The plate's corners are a sixth of its shorter side, as a slide's rounded rectangle (K5): read against the drawn box.
+    const coverPlate = pageById(pages, 'cover').getByTestId('mktg-portrait-plate');
+    const coverPlateBox = await coverPlate.boundingBox();
+    const coverPlateRadius = parseFloat(await coverPlate.evaluate((node) => getComputedStyle(node).borderTopLeftRadius));
+    expect(coverPlateBox && Math.abs(coverPlateRadius - Math.min(coverPlateBox.width, coverPlateBox.height) / 6) < 0.5).toBe(true);
     const partnershipDark = pageById(pages, 'logo-partnership').getByTestId('brand-kit-partnership-dark').locator('img');
     await expect(partnershipDark).toHaveCSS('filter', 'none');
     await expect(pageById(pages, 'logo-partnership').getByTestId('brand-kit-partnership-dark').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '16px');
@@ -593,18 +653,25 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(pageById(pages, 'logo-system').getByTestId('brand-kit-logo-system-tiles')).toContainText(
       'On the dark · full color on a white plate (no reversed file)'
     );
-    // The cover strip's halves share one line: "· a Linux Foundation project" goes before a word of the name, the
-    // name whole, never wrapped at 10 px.
+    // The cover strip's halves share one line: under the long name "· a Linux Foundation project" is given up before a
+    // word of the name, the name whole, the host and version kept, never wrapped at 10 px (the short-named record's
+    // strip keeps the tail: the main test's read).
     const strip = pageById(pages, 'cover').getByTestId('mktg-portrait-cover-strip');
-    await expect(strip).toContainText(ASSET_PROJECT.name);
+    await expect(strip).toContainText(overfullProject.name);
     await expect(strip).not.toContainText('Linux Foundation project');
+    await expect(strip).toContainText(buildBrandKitBookView(brandKitOverfullFixture()).host);
     const halves = await strip.locator('span').all();
     const boxes = await Promise.all(halves.map((half) => half.boundingBox()));
     expect(boxes.every((box) => box !== null && box.height < 20)).toBe(true);
     expect(await strip.evaluate((node) => node.classList.contains('pp-cover-strip--wrapped'))).toBe(false);
-    // The Watch-outs' three columns stay equal under the long retyped name, which ends inside its tile with an ellipsis.
+    // The Watch-outs' three columns stay equal, and the retyped sample prints the long name WHOLE, its size stepped down
+    // from 30 px (to 20 at the least) before a word of the name is given up: a cut name on this tile reads as a defect.
     await expectEqualWatchoutColumns(pageById(pages, 'logo-watchouts'));
-    await expect(pageById(pages, 'logo-watchouts').getByTestId('brand-kit-watchout-retyped')).toHaveText(/…$/);
+    const retyped = pageById(pages, 'logo-watchouts').getByTestId('brand-kit-watchout-retyped');
+    await expect(retyped).toHaveText(overfullProject.name);
+    const retypedSize = parseFloat(await retyped.evaluate((node) => getComputedStyle(node).fontSize));
+    expect(retypedSize).toBeLessThan(30);
+    expect(retypedSize).toBeGreaterThanOrEqual(20);
     await contrast.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('overfull-contrast.png'), fullPage: false });
     await page.emulateMedia({ media: 'screen' });

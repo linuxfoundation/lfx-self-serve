@@ -77,6 +77,8 @@ describe('lfx-mktg-portrait-back-cover', () => {
     const plate = plated.page.querySelector<HTMLElement>('[data-testid="mktg-portrait-plate"]');
     expect(plate?.classList.contains('pp-plate')).toBe(true);
     expect(plate?.style.padding).toBe('36px');
+    // A sixth of the 144 px tall plate's shorter side → 24.
+    expect(parseFloat(plate?.style.borderRadius ?? '')).toBe(24);
     // The plated block starts a padding higher (384): the lockup stays at y 420 and the plate (72 + 2 × 36) ends at 528,
     // 32 px above the brand line's block at 560; the bare layout keeps the block at 420.
     const lockupBlock = plate?.closest<HTMLElement>('.pp-back-lockup');

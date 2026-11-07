@@ -25,6 +25,7 @@ describe('the Partnership lockup page', () => {
     // The three-colour fixture lockup is never filtered: the dark tile draws it in full colour on the white plate.
     expect(dark?.querySelector<HTMLElement>('img')?.style.filter).toBe('');
     expect(dark?.querySelector<HTMLElement>('.pp-plate')?.style.padding).toBe('16px');
+    expect(parseFloat(dark?.querySelector<HTMLElement>('.pp-plate')?.style.borderRadius ?? '')).toBeCloseTo(64 / 6, 3);
     expect(light?.querySelector('.kp-partner')?.textContent).toBe('Partner logo');
     expect(light?.parentElement?.querySelector('.pp-cap')?.textContent).toBe('On light grounds · Charcoal bar');
     expect(dark?.parentElement?.querySelector('.pp-cap')?.textContent).toBe('On dark grounds · white bar');

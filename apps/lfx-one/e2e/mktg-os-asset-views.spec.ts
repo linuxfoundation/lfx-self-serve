@@ -31,6 +31,7 @@ import {
 import { brandKitLogolessFixture, brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { mktgPortraitAccentOnDark, mktgPortraitAccentText, mktgPortraitPlatePadding } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
 import {
+  ASSET_PROJECT,
   columnAssetRevisionResponse,
   cssRgb,
   nativeAssetRevisionResponse,
@@ -666,7 +667,7 @@ test('Download PDF waits for the project’s Brand Kit: disabled with the reason
   const kit = brandKitTestRevision();
   let release: () => void = () => undefined;
   const hold = new Promise<void>((resolve) => (release = resolve));
-  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), kit, { hold });
+  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), ASSET_PROJECT, kit, { hold });
   const download = page.getByTestId('mktg-framework-view-download-pdf');
   // While the read is open: the button is disabled, its wrapper says why, and no print root (no LF-default book) is on the page.
   await expect(download.getByRole('button')).toBeDisabled();
@@ -700,7 +701,9 @@ test('Download PDF waits for the project’s Brand Kit: disabled with the reason
 test('a failed Brand Kit read never prints the LF look: Download PDF stays disabled and says so, with no print root on the page', async ({ page }, info) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await stubMktgPrintFrame(page);
-  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), brandKitTestRevision(), { status: 500 });
+  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), ASSET_PROJECT, brandKitTestRevision(), {
+    status: 500,
+  });
   const download = page.getByTestId('mktg-framework-view-download-pdf');
   await expect(download.getByRole('button')).toBeDisabled();
   await expect(page.locator('span[aria-label]', { has: download })).toHaveAttribute('aria-label', MKTG_PRINT_KIT_READ_NOTES.failed);
@@ -719,7 +722,7 @@ test('the framework print set in the project’s kit: accent text darkened to re
   const kit = brandKitLogolessFixture();
   const accent = '#FF702D';
   kit.kit.accent = accent;
-  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), kit);
+  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), ASSET_PROJECT, kit);
   await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
   await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
   const frame = await layoutMktgPrintFrame(page);

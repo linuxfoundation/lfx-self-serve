@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (image(); as image) {
-  <span [class.pp-plate]="image.plate" [style.padding.px]="image.plate ? fit().padding : null" [attr.data-testid]="image.plate ? 'mktg-portrait-plate' : null">
+  <span [lfxPpPlate]="image.plate ? height() : null">
     <img
       class="block w-auto"
       [style.height.px]="fit().height"

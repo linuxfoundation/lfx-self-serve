@@ -40,6 +40,7 @@ import {
   mktgNoBreak,
   mktgPortraitPlateFit,
   mktgPortraitPlatePadding,
+  mktgPortraitPlateRadius,
   mktgNoWidow,
   mktgPortraitLargestFitting,
   mktgPortraitMoreLine,
@@ -224,6 +225,19 @@ describe('mktgPortraitPlatePadding', () => {
     expect(mktgPortraitPlateFit(64)).toEqual({ height: 32, padding: 16 });
     const { height, padding } = mktgPortraitPlateFit(76);
     expect(height + 2 * padding).toBe(76);
+  });
+
+  it('rounds the plate by a sixth of its shorter side: the cover plate by its height, a tall plate by its width', () => {
+    // The cover's 84 px lockup on its plate: 168 tall and wider → 28.
+    expect(mktgPortraitPlateRadius(420, 168)).toBe(28);
+    expect(mktgPortraitPlateRadius(300, 152)).toBeCloseTo(25.33, 2);
+    // A 40 px tile's plate → 6.7; a 126 px box → 21.
+    expect(mktgPortraitPlateRadius(96, 40)).toBeCloseTo(6.67, 2);
+    expect(mktgPortraitPlateRadius(200, 126)).toBe(21);
+    // A plate taller than wide takes its width; a width not yet measured reads as wide.
+    expect(mktgPortraitPlateRadius(60, 126)).toBe(10);
+    expect(mktgPortraitPlateRadius(null, 126)).toBe(21);
+    expect(mktgPortraitPlateRadius(0, 126)).toBe(21);
   });
 });
 

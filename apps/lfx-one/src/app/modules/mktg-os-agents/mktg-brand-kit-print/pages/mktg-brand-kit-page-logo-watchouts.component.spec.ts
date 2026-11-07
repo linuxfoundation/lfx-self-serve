@@ -32,13 +32,23 @@ describe('the Watchouts page', () => {
     expect(fallback?.textContent).toContain('never smaller than 32 px tall.');
   });
 
-  it('shortens a long name in the retyped sample to the four lines the tile holds clear of its badge, with an ellipsis', async () => {
+  it('sets a name with a wide word smaller rather than cutting it, and shortens only what 20 px cannot hold', async () => {
+    // "Agentic AI Foundation" whole, stepped below 30 px so "Foundation" fits the clear 156 px (the mock prints the whole name).
+    const aaif = await mountBrandKitPage(MktgBrandKitPageLogoWatchoutsComponent, 'logo-watchouts', (view) => ({
+      ...view,
+      projectName: 'Agentic AI Foundation',
+    }));
+    const whole = aaif.frame.querySelector<HTMLElement>('[data-testid="brand-kit-watchout-retyped"]');
+    expect(whole?.textContent).toBe('Agentic AI Foundation');
+    expect(parseFloat(whole?.style.fontSize ?? '')).toBeLessThan(30);
+    expect(parseFloat(whole?.style.fontSize ?? '')).toBeGreaterThanOrEqual(20);
+    // A name four lines cannot hold even at 20 px is shortened at a word with the ellipsis, at 20 px.
     const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoWatchoutsComponent, 'logo-watchouts', (view) => ({
       ...view,
       projectName: 'The Synthetic Foundation for Interoperable Agentic Computing Standards and Open Governance',
     }));
-    const retyped = frame.querySelector('[data-testid="brand-kit-watchout-retyped"]')?.textContent ?? '';
-    // K4: the sample stops before the first word wider than the tile's clear 156 px ("Foundation" at 30 px Georgia 700).
-    expect(retyped).toBe('The Synthetic…');
+    const retyped = frame.querySelector<HTMLElement>('[data-testid="brand-kit-watchout-retyped"]');
+    expect(retyped?.textContent).toMatch(/^The Synthetic Foundation .*…$/);
+    expect(retyped?.style.fontSize).toBe('20px');
   });
 });

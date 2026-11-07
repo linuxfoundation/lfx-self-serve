@@ -31,6 +31,13 @@ describe('the Symbol & symbol in shape page', () => {
     expect(shapes[0].querySelector<HTMLElement>('.kp-shape')?.style.borderRadius).toBe('50%');
     expect(shapes[0].querySelector<HTMLElement>('.kp-shape')?.style.width).toBe('158px');
     expect(shapes[3].querySelector<HTMLElement>('.kp-shape')?.style.width).toBe('126px');
+    // The three-colour symbol sits on a plate in the dark shapes, and their captions say so (never "reversed").
+    expect(shapes.map((shape) => shape.querySelector('.pp-cap')?.textContent)).toEqual([
+      'Circle · full color on a plate',
+      'Rounded square · full color on a plate',
+      'Rounded square · light tint',
+      'Rounded square · white',
+    ]);
     expect(shapes[3].querySelector('.kp-shape-stage')?.classList.contains('kp-shape-stage--mist')).toBe(true);
     // The three-colour symbol is plated on the demo's dark stage, the plate fitted to the 100 px box: the mark at 50.
     expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] img')?.style.height).toBe('50px');
@@ -53,6 +60,17 @@ describe('the Symbol & symbol in shape page', () => {
     const variants = frame.querySelector('[data-testid="brand-kit-symbol-variants"]');
     expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['', 'brightness(0) invert(1)', 'brightness(0)']);
     expect(variants?.querySelector('[data-testid="brand-kit-symbol-variant-missing"]')).toBeNull();
+  });
+
+  it('captions the dark shapes "reversed" when the symbol slot derives one', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
+      ...view,
+      derivable: { lockup: false, symbol: true },
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
+    }));
+    const shapes = Array.from(frame.querySelectorAll('[data-testid="brand-kit-symbol-shapes"] > div'));
+    expect(shapes.slice(0, 2).map((shape) => shape.querySelector('.pp-cap')?.textContent)).toEqual(['Circle · reversed', 'Rounded square · reversed']);
+    expect(shapes[0].querySelector('.pp-plate')).toBeNull();
   });
 
   it('says "Not supplied" on the two variant tiles for a multi-colour symbol even when the lockup is one ink', async () => {
@@ -82,6 +100,8 @@ describe('the Symbol & symbol in shape page', () => {
       const padding = parseFloat(plate.style.padding);
       expect(padding).toBe(drawn / 2);
       expect([76, 100]).toContain(drawn + 2 * padding);
+      // The plate's corners: a sixth of its shorter side (its height, the symbol's plate being as wide or wider).
+      expect(parseFloat(plate.style.borderRadius)).toBeCloseTo((drawn + 2 * padding) / 6, 3);
     }
     expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] .pp-plate img')?.style.height).toBe('50px');
     expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] .pp-plate')?.style.padding).toBe('25px');

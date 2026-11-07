@@ -684,9 +684,11 @@ export interface AssetKitReadOptions {
 }
 
 /**
- * Stub native asset reads; cookie suppression precedes every navigation. `kit` is the project's stored Brand Kit the
- * framework print is set in (its stored endpoint answers with the kit's sidecar); none, and the print takes the LF look.
- * `kitRead` holds that answer back or fails it, for the print's wait on the read.
+ * Stub native asset reads; cookie suppression precedes every navigation. `project` replaces the synthetic
+ * `ASSET_PROJECT` for one test (a long name, say), in the slug mock, the lens items and the selected-project cookie.
+ * `kit` is the project's stored Brand Kit the framework print is set in (its stored endpoint answers with the kit's
+ * sidecar); none, and the print takes the LF look. `kitRead` holds that answer back or fails it, for the print's wait
+ * on the read.
  */
 export async function openAssetDocument(
   page: Page,
@@ -695,17 +697,18 @@ export async function openAssetDocument(
   writer = true,
   unreadable = false,
   responseOverride?: MktgRevisionResponse,
+  project: Project = ASSET_PROJECT,
   kit: BrandKitRevision | null = null,
   kitRead: AssetKitReadOptions = {}
 ): Promise<void> {
   await suppressCookieBanner(page);
-  mockProjects[ASSET_PROJECT.slug] = ASSET_PROJECT;
-  await ApiMockHelper.setupProjectSlugMock(page, { writer });
+  mockProjects[project.slug] = project;
+  await ApiMockHelper.setupProjectSlugMock(page, { writer, project });
   await pinMktgOsFlags(page);
   const cookies = [
     { name: PERSONA_COOKIE_KEY, value: { primary: 'executive-director', all: ['executive-director'] } },
     { name: LENS_COOKIE_KEY, value: 'project' },
-    { name: SELECTED_PROJECT_COOKIE_KEY, value: { uid: ASSET_PROJECT.uid, slug: ASSET_PROJECT.slug, name: ASSET_PROJECT.name } },
+    { name: SELECTED_PROJECT_COOKIE_KEY, value: { uid: project.uid, slug: project.slug, name: project.name } },
   ].map(({ name, value }) => ({ name, value: typeof value === 'string' ? value : encodeURIComponent(JSON.stringify(value)), domain: 'localhost', path: '/' }));
   await page.context().addCookies(cookies);
   await page.route('**/api/user/personas*', (route) =>
@@ -714,7 +717,7 @@ export async function openAssetDocument(
   await page.route('**/api/nav/lens-items*', (route) => {
     const projectLens = new URL(route.request().url()).searchParams.get('lens') === 'project';
     return route.fulfill({
-      json: { items: projectLens ? [ASSET_PROJECT] : [], next_page_token: null, upstream_failed: false, lens: projectLens ? 'project' : 'foundation' },
+      json: { items: projectLens ? [project] : [], next_page_token: null, upstream_failed: false, lens: projectLens ? 'project' : 'foundation' },
     });
   });
   await page.route('**/api/projects/*/sfid*', (route) => route.fulfill({ json: { sfid: null } }));

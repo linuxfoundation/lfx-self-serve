@@ -6,6 +6,7 @@ import { MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
 import { mktgPortraitPlatePadding } from '@lfx-one/shared/utils';
 import { MktgPortraitLogo, MktgPortraitLook, MktgPortraitBook } from '@lfx-one/shared/interfaces';
 import { MktgPortraitPageComponent } from '../mktg-portrait-page/mktg-portrait-page.component';
+import { MktgPortraitPlateDirective } from '../mktg-portrait-plate.directive';
 import { MktgPortraitRectDirective } from '../mktg-portrait-rect.directive';
 import { MKTG_PORTRAIT_BLOCK_HOST } from '../mktg-portrait-host';
 
@@ -20,7 +21,7 @@ import { MKTG_PORTRAIT_BLOCK_HOST } from '../mktg-portrait-host';
  */
 @Component({
   selector: 'lfx-mktg-portrait-back-cover',
-  imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
+  imports: [MktgPortraitPageComponent, MktgPortraitRectDirective, MktgPortraitPlateDirective],
   templateUrl: './mktg-portrait-back-cover.component.html',
   styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
@@ -32,6 +33,8 @@ export class MktgPortraitBackCoverComponent {
   /** The lockup's drawn height, and the white plate's padding under a lockup the kit cannot reverse: half of it. */
   protected readonly lockupHeight = 72;
   protected readonly platePadding = mktgPortraitPlatePadding(this.lockupHeight);
+  /** The plate's outer height: the lockup in its padding above and below. */
+  protected readonly plateHeight = this.lockupHeight + 2 * this.platePadding;
   /** The brand line; '' draws none. */
   public readonly line = input('');
   /** `aaif.io`; '' draws none. */
