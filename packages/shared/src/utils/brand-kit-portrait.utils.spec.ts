@@ -20,6 +20,7 @@ import {
   brandKitPortraitAccentMoment,
   brandKitPortraitApprovalLine,
   brandKitPortraitArtwork,
+  brandKitPortraitSymbolIsWide,
   brandKitPortraitBackCoverLine,
   brandKitPortraitBuiltFrom,
   brandKitPortraitContrast,
@@ -101,6 +102,13 @@ describe('brandKitPortraitArtwork', () => {
 
   it('prefers the supplied reversed file as it is, and draws nothing for a slot the kit lacks', () => {
     const withReversed = { ...view, logos: { ...view.logos, reversed: { ref: 'r.svg', name: 'r.svg', src: SVG } } };
+    // A wide symbol (aspect over 1.5) is shown in rounded squares only; square-ish or unknown aspects are not wide.
+    const symbolOf = (aspect: number | null): typeof view => ({ ...view, symbol: { ref: 's.svg', name: 's.svg', src: SVG, aspect } });
+    expect(brandKitPortraitSymbolIsWide(symbolOf(120 / 36))).toBe(true);
+    expect(brandKitPortraitSymbolIsWide(symbolOf(1.5))).toBe(false);
+    expect(brandKitPortraitSymbolIsWide(symbolOf(1.2))).toBe(false);
+    expect(brandKitPortraitSymbolIsWide(symbolOf(null))).toBe(false);
+    expect(brandKitPortraitSymbolIsWide({ ...view, symbol: null })).toBe(false);
     // A synthetic image without a viewBox reads as aspect null (the plate then fits by height alone).
     expect(brandKitPortraitArtwork(withReversed, 'lockup', 'reversed')).toEqual({ src: SVG, alt: 'Reversed lockup', filter: '', aspect: null });
     expect(brandKitPortraitArtwork(view, 'symbol')).toBeNull();

@@ -138,6 +138,14 @@ export const BRAND_KIT_PORTRAIT_BACK_COVER_LINE = { width: MKTG_PORTRAIT_PAGE.co
 export const BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED = { width: 156, badgeClear: 34, size: 30, minSize: 20, weight: 700, maxLines: 4 } as const;
 
 /**
+ * The Symbol page's "In shape" row: a symbol wider than this (width over
+ * height) is a wide symbol, shown in the rounded squares only (a circle
+ * would cut it), with a note under the row saying so.
+ */
+export const BRAND_KIT_PORTRAIT_WIDE_SYMBOL_ASPECT = 1.5;
+export const BRAND_KIT_PORTRAIT_WIDE_SYMBOL_NOTE = 'Wide symbol: shown in a rounded square only';
+
+/**
  * The usage cards' lines (the brand line on the keynote slide and the social
  * card, 308 px of text inside the 344 px card): shortened at a word to the
  * lines the card holds under its lockup or note, never set smaller.

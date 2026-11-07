@@ -41,6 +41,7 @@ import {
   mktgPortraitPlateFit,
   mktgPortraitPlateFitIn,
   mktgPortraitPlatePadding,
+  mktgPortraitMarkFitIn,
   mktgPortraitPlateRadius,
   mktgPortraitShapeInnerWidth,
   mktgNoWidow,
@@ -250,6 +251,11 @@ describe('mktgPortraitPlatePadding', () => {
     expect(square.height).toBeCloseTo(75.6 / (aspect + 1), 2);
     // No inner width: the height fit alone.
     expect(mktgPortraitPlateFitIn(40, null, aspect)).toEqual({ height: 20, padding: 10, plate: 40 });
+    // A bare mark (no plate) in the tint and white squares: square-ish as today, a wide one inside the inner box.
+    for (const square of [1, 1.2, null]) expect(mktgPortraitMarkFitIn(76, 94.8, square)).toBe(76);
+    expect(mktgPortraitMarkFitIn(76, 94.8, aspect)).toBeCloseTo(94.8 / aspect, 6);
+    expect(mktgPortraitMarkFitIn(60, 75.6, aspect)).toBeCloseTo(75.6 / aspect, 6);
+    expect(mktgPortraitMarkFitIn(60, null, aspect)).toBe(60);
   });
 
   it('rounds the plate by a sixth of its shorter side: the cover plate by its height, a tall plate by its width', () => {
