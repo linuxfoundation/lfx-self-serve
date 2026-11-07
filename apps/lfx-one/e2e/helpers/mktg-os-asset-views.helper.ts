@@ -54,6 +54,9 @@ export const ASSET_PROJECT: Project = {
   mailing_list_count: 0,
 };
 
+/** When the fixture's stored revision was written: the summary's nullable `createdAt`, and the current record's and run's dates, which the contract types as strings. */
+const FIXTURE_REVISION_CREATED_AT = '2026-10-19T10:00:00Z';
+
 /** Header/approval scenarios reuse main's canonical FAQ envelope, not a second FAQ contract fixture. */
 export function nativeAssetRevisionResponse(key: 'faq' | 'boilerplates', unreadable = false): MktgRevisionResponse {
   const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === key);
@@ -61,7 +64,7 @@ export function nativeAssetRevisionResponse(key: 'faq' | 'boilerplates', unreada
   const revision: MktgRevisionSummary = {
     id: `000001-${'a'.repeat(64)}`,
     number: 1,
-    createdAt: '2026-10-19T10:00:00Z',
+    createdAt: FIXTURE_REVISION_CREATED_AT,
     origin: 'generated',
     restoredFromNumber: null,
     intakeMode: 'form',
@@ -555,7 +558,7 @@ export async function openDraftAssetRun(page: Page, immediateReceipt = true) {
   const response: MktgRevisionResponse = {
     ...base,
     type,
-    current: { revisionId, changedAt: base.revision.createdAt, changedBy: null },
+    current: { revisionId, changedAt: FIXTURE_REVISION_CREATED_AT, changedBy: null },
     markdown: JSON.stringify(asset.content),
     sidecar: { content: asset.content, report: asset.report, checks: asset.checks, mode: asset.mode },
     runs: [],
@@ -569,7 +572,7 @@ export async function openDraftAssetRun(page: Page, immediateReceipt = true) {
         documentId: 'living',
         runId,
         state: state.finished ? 'storing' : 'writing',
-        startedAt: base.revision.createdAt,
+        startedAt: FIXTURE_REVISION_CREATED_AT,
       },
     ];
   };
