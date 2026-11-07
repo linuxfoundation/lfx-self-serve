@@ -649,9 +649,7 @@ describe('MktgFrameworkPrintComponent', () => {
     const goalPage = frame('goal-1');
     expect(goalPage?.querySelectorAll('[data-testid="mktg-framework-print-proof-row"]')).toHaveLength(0);
     expect(goalPage?.textContent).toContain('Proof points');
-    expect(goalPage?.querySelector('[data-testid="mktg-framework-print-proofs-cut"]')?.textContent?.trim()).toBe(
-      "+3 more on the framework's Framework tab in LFX One"
-    );
+    expect(goalPage?.querySelector('[data-testid="mktg-framework-print-proofs-cut"]')?.textContent?.trim()).toBe('+3 more in LFX One');
   });
 
   it('closes on the sources and gaps: what was read as stored (its type prefix off), what could not be, the gaps, and the approval card; never the notes', async () => {
@@ -826,7 +824,7 @@ describe('MktgFrameworkPrintComponent', () => {
       'Profile c',
       'Profile d',
     ]);
-    expect(goalPage?.querySelector('[data-testid="mktg-framework-print-served-cut"]')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(2, 'framework'));
+    expect(goalPage?.querySelector('[data-testid="mktg-framework-print-served-cut"]')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(2));
     // The name is part of the fitted block: it prints at the size the fit model gave it, never past the type's.
     const names = cards.map((card) => parseFloat(card.querySelector<HTMLElement>('.fwp-served-name')?.style.fontSize ?? '0'));
     expect(names.every((size) => size > 0 && size <= FRAMEWORK_PORTRAIT_TYPE.servedName.size)).toBe(true);
@@ -839,7 +837,7 @@ describe('MktgFrameworkPrintComponent', () => {
     const longCards = Array.from(longPage?.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-served-card"]') ?? []);
     expect(longCards).toHaveLength(4);
     const noteText = longPage?.querySelector('[data-testid="mktg-framework-print-served-cut"]')?.textContent?.trim() ?? '';
-    expect(noteText).toBe(foundationMessagePrintCutNote(2, 'framework'));
+    expect(noteText).toBe(foundationMessagePrintCutNote(2));
     const width = MKTG_PORTRAIT_PAGE.contentWidth;
     const cardWidth = (width - 3 * FRAMEWORK_PORTRAIT_ROOM.servedGap) / 4 - FRAMEWORK_PORTRAIT_ROOM.cardPaddingSide;
     const room =
@@ -849,7 +847,7 @@ describe('MktgFrameworkPrintComponent', () => {
       FRAMEWORK_PORTRAIT_ROOM.servedTop -
       FRAMEWORK_PORTRAIT_ROOM.cardPadding -
       FRAMEWORK_PORTRAIT_ROOM.cardBorder -
-      frameworkPortraitCutNoteHeightIn(2, 'framework', width);
+      frameworkPortraitCutNoteHeightIn(2, width);
     for (const card of longCards) {
       const [name, need, cta] = Array.from(card.querySelectorAll<HTMLElement>('.fwp-served-name, .fwp-served-line'));
       const height =
@@ -944,7 +942,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(matrixProofs.length).toBeGreaterThan(0);
     expect(matrixProofs.length).toBeLessThan(12);
     expect(query('mktg-framework-print-matrix-proof-cell')?.classList.contains('fwp-matrix-proofs--tight')).toBe(true);
-    expect(query('mktg-framework-print-matrix-proofs-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(12 - matrixProofs.length, 'framework'));
+    expect(query('mktg-framework-print-matrix-proofs-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(12 - matrixProofs.length));
     // The goal page: its long title at the floor size over the lines it needs, whole, and the lead set under those lines (the number and the lead
     // never overlap it); the value, the key message and the sound bite fitted; the proof list keeps the leading whole rows that fit above the
     // bite; four cards' lines fitted.
@@ -964,11 +962,9 @@ describe('MktgFrameworkPrintComponent', () => {
     // Tightened before the cut (9 px padding, 14 px type), and the cut said under the list: "+N more", N the rows left off.
     expect(goalPage?.querySelector('.fwp-proof-list')?.classList.contains('fwp-proof-list-tight')).toBe(true);
     expect(goalPage?.querySelector('[data-testid="mktg-framework-print-proofs-cut"]')?.textContent?.trim()).toBe(
-      foundationMessagePrintCutNote(12 - proofs.length, 'framework')
+      foundationMessagePrintCutNote(12 - proofs.length)
     );
-    expect(goalPage?.querySelector('[data-testid="mktg-framework-print-proofs-cut"]')?.textContent?.trim()).toBe(
-      `+${12 - proofs.length} more on the framework's Framework tab in LFX One`
-    );
+    expect(goalPage?.querySelector('[data-testid="mktg-framework-print-proofs-cut"]')?.textContent?.trim()).toBe(`+${12 - proofs.length} more in LFX One`);
     expect(parseFloat(goalPage?.querySelector<HTMLElement>('.fwp-goal-vp')?.style.fontSize ?? '22')).toBeLessThan(22);
     expect(parseFloat(goalPage?.querySelector<HTMLElement>('.fwp-goal-key-text')?.style.fontSize ?? '19')).toBeLessThan(19);
     expect(parseFloat(goalPage?.querySelector<HTMLElement>('.fwp-goal-bite-text')?.style.fontSize ?? '34')).toBeLessThan(34);
@@ -1002,7 +998,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(560 + FRAMEWORK_PORTRAIT_ROOM.label + FRAMEWORK_PORTRAIT_ROOM.tableHead + factsUsed).toBeLessThanOrEqual(tops.footer);
     // Twelve proof points make twelve facts; a cut table says how many more there are (tight first), a whole one says nothing.
     expect(query('mktg-framework-print-facts-cut')?.textContent?.trim() ?? null).toBe(
-      factRows.length < 12 ? foundationMessagePrintCutNote(12 - factRows.length, 'framework') : null
+      factRows.length < 12 ? foundationMessagePrintCutNote(12 - factRows.length) : null
     );
     if (factRows.length < 12) expect(factsTight).toBe(true);
     // Sources & gaps: each list tightened (11.5/1.5) then cut to the whole rows that fit above the approval card at 880, in order, the cut said under it;
@@ -1018,10 +1014,10 @@ describe('MktgFrameworkPrintComponent', () => {
     const gaps = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-gaps-row"]'));
     expect(query('mktg-framework-print-sources-read')?.classList.contains('fwp-source-list-tight')).toBe(true);
     expect(query('mktg-framework-print-gaps')?.classList.contains('fwp-source-list-tight')).toBe(true);
-    expect(query('mktg-framework-print-sources-read-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(60 - read.length, 'sources'));
-    expect(query('mktg-framework-print-gaps-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(60 - gaps.length, 'sources'));
+    expect(query('mktg-framework-print-sources-read-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(60 - read.length));
+    expect(query('mktg-framework-print-gaps-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(60 - gaps.length));
     expect(query('mktg-framework-print-sources-failed-cut')?.textContent?.trim() ?? null).toBe(
-      failed.length < 30 ? foundationMessagePrintCutNote(30 - failed.length, 'sources') : null
+      failed.length < 30 ? foundationMessagePrintCutNote(30 - failed.length) : null
     );
     expect([read.length > 0, read.length < 60, failed.length > 0, failed.length < 30, gaps.length > 0, gaps.length < 60]).toEqual([
       true,
@@ -1060,8 +1056,8 @@ describe('MktgFrameworkPrintComponent', () => {
     expect([pills.length > 0, pills.length < 12, avoidRows.length > 0, avoidRows.length < 12]).toEqual([true, true, true, true]);
     expect(sayAvoid?.querySelector('.fwp-say-list')?.classList.contains('fwp-say-list--tight')).toBe(true);
     expect(sayAvoid?.querySelector('.fwp-avoid-list')?.classList.contains('fwp-avoid-list--tight')).toBe(true);
-    expect(query('mktg-framework-print-say-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(12 - pills.length, 'framework'));
-    expect(query('mktg-framework-print-avoid-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(12 - avoidRows.length, 'framework'));
+    expect(query('mktg-framework-print-say-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(12 - pills.length));
+    expect(query('mktg-framework-print-avoid-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(12 - avoidRows.length));
     expect(pills.map((pill) => pill.textContent?.trim())).toEqual(pills.map((_, index) => `${long.slice(0, 40).trim()} ${index}`));
     const anchorsBlock = query('mktg-framework-print-anchor')?.parentElement;
     expect(top(anchorsBlock)).toBe(tops.anchors);

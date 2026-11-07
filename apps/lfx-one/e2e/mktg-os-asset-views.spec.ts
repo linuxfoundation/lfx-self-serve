@@ -543,7 +543,7 @@ test('the framework print lists every figure past six as a table, continued on a
   const kept = await proofRows.count();
   expect(kept).toBeGreaterThan(0);
   expect(kept).toBeLessThan(4);
-  await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveText(`+${4 - kept} more on the framework's Framework tab in LFX One`);
+  await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveText(`+${4 - kept} more in LFX One`);
   await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveCSS('color', 'rgb(107, 114, 128)');
   await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveCSS('font-size', '10.5px');
   // Sixty sources read and forty gaps: each list cut to its column with its own line, the counts from the report.
@@ -551,9 +551,7 @@ test('the framework print lists every figure past six as a table, continued on a
   const readKept = await read.count();
   expect(readKept).toBeGreaterThan(0);
   expect(readKept).toBeLessThan(60);
-  await expect(print.getByTestId('mktg-framework-print-sources-read-cut')).toHaveText(
-    `+${60 - readKept} more on the framework's Sources and gaps tab in LFX One`
-  );
+  await expect(print.getByTestId('mktg-framework-print-sources-read-cut')).toHaveText(`+${60 - readKept} more in LFX One`);
   // The failed source in a reader's words: the sign-in-walled recordings page as its host, no scheme, www. or path, the reason after the dash.
   await expect(print.getByTestId('mktg-framework-print-sources-failed-row').first()).toContainText('example.org — ');
   // Never a path in a printed source line (the editor's rule): the Read rows are hosts (the first here, one counted row would gather a
@@ -564,7 +562,7 @@ test('the framework print lists every figure past six as a table, continued on a
   const gaps = print.getByTestId('mktg-framework-print-gaps-row');
   const gapsKept = await gaps.count();
   expect(gapsKept).toBeLessThan(40);
-  await expect(print.getByTestId('mktg-framework-print-gaps-cut')).toHaveText(`+${40 - gapsKept} more on the framework's Sources and gaps tab in LFX One`);
+  await expect(print.getByTestId('mktg-framework-print-gaps-cut')).toHaveText(`+${40 - gapsKept} more in LFX One`);
   await expect(print.getByTestId('mktg-framework-print-sources-failed-cut')).toHaveCount(0);
   // Every variable-length block bounded (the design reader's rule): on every frame, every placed block ends at or above the footer's
   // room (1019 in the frame's coordinates) and no block passes the next one's top; the goal pages' titles whole, the lead under them;
@@ -612,9 +610,9 @@ test('the framework print lists every figure past six as a table, continued on a
   expect(order).toEqual({ sayAboveAnchors: true, avoidAboveAnchors: true, anchorsAboveCrosscut: true });
   // Ten say phrases and five long avoid rows: each list tightened, then cut to what its column holds above the anchors, the cut said under it.
   await expect(sayAvoid.getByTestId('mktg-framework-print-say-row')).toHaveCount(7);
-  await expect(sayAvoid.getByTestId('mktg-framework-print-say-cut')).toHaveText("+3 more on the framework's Framework tab in LFX One");
+  await expect(sayAvoid.getByTestId('mktg-framework-print-say-cut')).toHaveText('+3 more in LFX One');
   await expect(sayAvoid.getByTestId('mktg-framework-print-avoid-row')).toHaveCount(3);
-  await expect(sayAvoid.getByTestId('mktg-framework-print-avoid-cut')).toHaveText("+2 more on the framework's Framework tab in LFX One");
+  await expect(sayAvoid.getByTestId('mktg-framework-print-avoid-cut')).toHaveText('+2 more in LFX One');
   // Every profile card ends at least 4 px above the footer rule (the harness's A4 finding: at a 0.974 scale a card that touched the rule crossed it),
   // and no profile page's cards are set tight (the record's cards fit at the normal measure).
   const icpBottoms = await print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id^="icps-"]').evaluateAll((pages) =>
@@ -820,7 +818,7 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   const notes = matrix.getByTestId('mktg-framework-print-matrix-proofs-cut');
   const noteCount = await notes.count();
   expect(noteCount).toBeGreaterThan(0);
-  for (const note of await notes.all()) await expect(note).toHaveText(/^\+[1-3] more on the framework's Framework tab in LFX One$/);
+  for (const note of await notes.all()) await expect(note).toHaveText(/^\+[1-3] more in LFX One$/);
   // Eight figures print as the table, each with its thousands separators (the editor's rule); the fixture's bare "2000" is in the year range
   // and prints as stored.
   await expect(page.getByTestId('mktg-framework-print-numbers-table').getByTestId('mktg-framework-print-number-figure')).toHaveText([
@@ -903,7 +901,7 @@ test('a goal served by six profiles: four cards, the note for the other two, the
   const goalPage = frame.getByTestId('mktg-framework-print').locator('[data-page-id="goal-1"]');
   // The row holds the board's four cards; the two it does not hold are counted in the note under it.
   await expect(goalPage.getByTestId('mktg-framework-print-served-card')).toHaveCount(4);
-  await expect(goalPage.getByTestId('mktg-framework-print-served-cut')).toHaveText("+2 more on the framework's Framework tab in LFX One");
+  await expect(goalPage.getByTestId('mktg-framework-print-served-cut')).toHaveText('+2 more in LFX One');
   // The cards' long lines are fitted into the room the note leaves: the whole block (label, cards, note) ends above the footer rule (1000).
   const servedBottom = await goalPage.evaluate((page) => {
     const block = page.querySelector('[data-testid="mktg-framework-print-served"]') as HTMLElement;

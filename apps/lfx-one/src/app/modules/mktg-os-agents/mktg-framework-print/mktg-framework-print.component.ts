@@ -325,7 +325,6 @@ export class MktgFrameworkPrintComponent {
     const proofs = frameworkPortraitCutList(
       goal.proofRows,
       proofsRoom,
-      'framework',
       (proof) => proofRow(proof, TYPE.goalProof) + ROOM.proofRow,
       (proof) => proofRow(proof, TYPE.goalProofTight) + ROOM.proofRowTight
     );
@@ -336,7 +335,7 @@ export class MktgFrameworkPrintComponent {
     const cardWidth = served.length ? (width - (served.length - 1) * ROOM.servedGap) / served.length - ROOM.cardPaddingSide : width;
     // The cards' room: under the label and the row's margin, inside a card's padding and border, above the note the cut profiles take,
     // less the two fixed gaps between a card's lines (the stylesheet's margins, which the fit model's scale does not reach).
-    const servedNote = servedCut > 0 ? frameworkPortraitCutNoteHeightIn(servedCut, 'framework', width) : 0;
+    const servedNote = servedCut > 0 ? frameworkPortraitCutNoteHeightIn(servedCut, width) : 0;
     const cardRoom =
       tops.footer - tops.goalServed - ROOM.label - ROOM.servedTop - ROOM.cardPadding - ROOM.cardBorder - servedNote - ROOM.servedLineTop - ROOM.servedLineGap;
     return {
@@ -387,7 +386,7 @@ export class MktgFrameworkPrintComponent {
         }),
         cut: servedCut,
         tight: false,
-        note: servedCut > 0 ? foundationMessagePrintCutNote(servedCut, 'framework') : '',
+        note: servedCut > 0 ? foundationMessagePrintCutNote(servedCut) : '',
       },
     };
   }
@@ -426,7 +425,7 @@ export class MktgFrameworkPrintComponent {
     const columnRoom = this.tops.sourcesApproval - this.tops.sourcesLists - ROOM.gap;
     const rowHeight = (text: string): number => this.paraHeight(text, TYPE.source, listWidth);
     const tightHeight = (text: string): number => this.paraHeight(text, TYPE.sourceTight, listWidth);
-    const list = (rows: readonly string[], room: number) => frameworkPortraitCutList(rows, room, 'sources', rowHeight, tightHeight);
+    const list = (rows: readonly string[], room: number) => frameworkPortraitCutList(rows, room, rowHeight, tightHeight);
     let lists: FoundationMessagePrintSourcesPage['report'] = null;
     if (report) {
       const failedAll = report.sources_failed.map(

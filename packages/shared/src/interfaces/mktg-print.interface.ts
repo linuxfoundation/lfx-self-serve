@@ -19,7 +19,6 @@ import type {
   FoundationMessagePillarView,
   FoundationMessageProofView,
   FoundationMessageReport,
-  FoundationMessageViewTab,
 } from './foundation-message.interface';
 import type { MktgPortraitPlanPage } from './mktg-portrait-print.interface';
 
@@ -149,9 +148,6 @@ export interface FoundationMessagePrintServedCard {
   cta: FoundationMessagePrintFittedText;
 }
 
-/** The on-screen tab a cut list's note sends the reader to, by its id in FOUNDATION_MESSAGE_VIEW_TABS (the note prints its label): `framework` for proof points and the facts table, `sources` for the Sources & gaps lists. */
-export type FoundationMessagePrintCutTab = FoundationMessageViewTab;
-
 /** A list cut to the rows that fit its room: the rows kept, how many were left off (the muted line under the list says so), and whether the list was tightened first. */
 export interface FoundationMessagePrintCutList<T> {
   rows: T[];
@@ -159,7 +155,7 @@ export interface FoundationMessagePrintCutList<T> {
   cut: number;
   /** True when the list is set in its tight type and padding (tried before any cut). */
   tight: boolean;
-  /** The muted line under a cut list, `+N more on the framework's <Framework | Sources> tab in LFX One`; '' when nothing was cut. */
+  /** The muted caption line under a cut list, `+N more in LFX One`; '' when nothing was cut. */
   note: string;
 }
 

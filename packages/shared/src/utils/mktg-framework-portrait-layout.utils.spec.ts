@@ -16,7 +16,6 @@ import {
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
 } from '../constants/mktg-print.constants';
-import { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 import { FoundationMessageContent } from '../interfaces/foundation-message.interface';
 import { FoundationMessagePrintNumber } from '../interfaces/mktg-print.interface';
 import {
@@ -139,31 +138,29 @@ describe('the framework portrait book’s cut lists', () => {
   const tight = () => 20;
 
   it('keeps every row at the normal measure when they fit', () => {
-    expect(frameworkPortraitCutList(rows, 120, 'framework', normal, tight)).toEqual({ rows, cut: 0, tight: false, note: '' });
+    expect(frameworkPortraitCutList(rows, 120, normal, tight)).toEqual({ rows, cut: 0, tight: false, note: '' });
   });
 
   it('tightens first: every row at the tight measure when that is what fits', () => {
-    expect(frameworkPortraitCutList(rows, 100, 'framework', normal, tight)).toEqual({ rows, cut: 0, tight: true, note: '' });
+    expect(frameworkPortraitCutList(rows, 100, normal, tight)).toEqual({ rows, cut: 0, tight: true, note: '' });
   });
 
   it('then cuts to the leading whole rows that fit beside the note, and counts the rest', () => {
     const note = frameworkPortraitCutNoteHeight();
     expect(note).toBeCloseTo(6 + 10.5 * 1.4);
     // Four tight rows are 80: at 79 the list is cut, and the rows that stay (three at 60) must leave the note its room too.
-    const cutTo = (kept: string[], cut: number) => ({ rows: kept, cut, tight: true, note: `+${cut} more on the framework's Framework tab in LFX One` });
-    expect(frameworkPortraitCutList(rows, 79, 'framework', normal, tight)).toEqual(cutTo(['a', 'b'], 2));
-    expect(frameworkPortraitCutList(rows, 40 + note, 'framework', normal, tight)).toEqual(cutTo(['a', 'b'], 2));
-    expect(frameworkPortraitCutList(rows, 39 + note, 'framework', normal, tight)).toEqual(cutTo(['a'], 3));
+    const cutTo = (kept: string[], cut: number) => ({ rows: kept, cut, tight: true, note: `+${cut} more in LFX One` });
+    expect(frameworkPortraitCutList(rows, 79, normal, tight)).toEqual(cutTo(['a', 'b'], 2));
+    expect(frameworkPortraitCutList(rows, 40 + note, normal, tight)).toEqual(cutTo(['a', 'b'], 2));
+    expect(frameworkPortraitCutList(rows, 39 + note, normal, tight)).toEqual(cutTo(['a'], 3));
     // A room too small for any row still says what was cut: the note carries the count, the rows are none.
-    expect(frameworkPortraitCutList(rows, 10, 'framework', normal, tight)).toEqual(cutTo([], 4));
-    expect(frameworkPortraitCutList([], 0, 'framework', normal, tight)).toEqual({ rows: [], cut: 0, tight: false, note: '' });
+    expect(frameworkPortraitCutList(rows, 10, normal, tight)).toEqual(cutTo([], 4));
+    expect(frameworkPortraitCutList([], 0, normal, tight)).toEqual({ rows: [], cut: 0, tight: false, note: '' });
   });
 
-  it('words the note from the count and the tab the rows live on', () => {
-    // The tab is named as the screen labels it (FOUNDATION_MESSAGE_VIEW_TABS), never a literal of the print's own.
-    expect(foundationMessagePrintCutNote(3, 'sources')).toBe("+3 more on the framework's Sources and gaps tab in LFX One");
-    expect(foundationMessagePrintCutNote(1, 'framework')).toBe("+1 more on the framework's Framework tab in LFX One");
-    expect(FOUNDATION_MESSAGE_VIEW_TABS.map((tab) => tab.label)).toEqual(['Framework', 'Key numbers', 'Sources and gaps']);
+  it('words the note from the count alone, the editor’s one form everywhere (W5)', () => {
+    expect(foundationMessagePrintCutNote(3)).toBe('+3 more in LFX One');
+    expect(foundationMessagePrintCutNote(1)).toBe('+1 more in LFX One');
   });
 });
 
@@ -249,7 +246,7 @@ describe('the framework portrait book’s bounded blocks', () => {
     expect(bounded.proofs[0].rows.length).toBeGreaterThan(0);
     expect(bounded.proofs[0].rows.length).toBeLessThan(12);
     expect(bounded.proofs[0].tight).toBe(true);
-    expect(bounded.proofs[0].note).toBe(`+${12 - bounded.proofs[0].rows.length} more on the framework's Framework tab in LFX One`);
+    expect(bounded.proofs[0].note).toBe(`+${12 - bounded.proofs[0].rows.length} more in LFX One`);
     expect(bounded.proofs[1].cut).toBe(0);
     expect(bounded.height).toBeLessThanOrEqual(664);
   });
@@ -276,7 +273,7 @@ describe('the framework portrait book’s bounded blocks', () => {
     // Every proof cell keeps its note at the real count: none is cut to nothing without the line that says so.
     for (const cell of matrix.proofs) {
       expect(cell.rows.length + cell.cut).toBe(4);
-      if (cell.cut > 0) expect(cell.note).toBe(`+${cell.cut} more on the framework's Framework tab in LFX One`);
+      if (cell.cut > 0) expect(cell.note).toBe(`+${cell.cut} more in LFX One`);
     }
   });
 
@@ -303,7 +300,7 @@ describe('the framework portrait book’s bounded blocks', () => {
     for (const index of [0, 3]) {
       const cell = matrix.proofs[index];
       expect(cell.cut).toBe(3);
-      expect(cell.note).toBe("+3 more on the framework's Framework tab in LFX One");
+      expect(cell.note).toBe('+3 more in LFX One');
       expect((cell.rows[0].size ?? 10.5) < 10.5 || cell.rows[0].fact.length < sentence.length).toBe(true);
       const type = { ...FRAMEWORK_PORTRAIT_TYPE.matrixProofTight, size: cell.rows[0].size ?? 10.5 };
       expect(frameworkPortraitTextHeight(`${cell.rows[0].fact} ${cell.rows[0].source}`, type, column)).toBeLessThan(400);
@@ -379,15 +376,13 @@ describe('the framework portrait book’s bounded blocks', () => {
     expect(cut.rows.length).toBeLessThan(12);
     expect(cut.rows).toEqual(pills.slice(0, cut.rows.length));
     expect(cut.tight).toBe(true);
-    expect(frameworkPortraitPillsHeight(cut.rows, 320, true) + frameworkPortraitCutNoteHeightIn(cut.cut, 'framework', 320)).toBeLessThanOrEqual(
-      frameworkPortraitSayRoom()
-    );
+    expect(frameworkPortraitPillsHeight(cut.rows, 320, true) + frameworkPortraitCutNoteHeightIn(cut.cut, 320)).toBeLessThanOrEqual(frameworkPortraitSayRoom());
     const rows = Array.from({ length: 12 }, (_, index) => ({ avoid: `${long.slice(0, 50).trim()} ${index}`, instead: long.slice(0, 60).trim() }));
     const avoid = frameworkPortraitAvoidList(rows, 360, frameworkPortraitSayRoom());
     expect(avoid.rows.length).toBeGreaterThan(0);
     expect(avoid.rows.length).toBeLessThan(12);
     expect(avoid.tight).toBe(true);
-    expect(avoid.note).toBe(`+${12 - avoid.rows.length} more on the framework's Framework tab in LFX One`);
+    expect(avoid.note).toBe(`+${12 - avoid.rows.length} more in LFX One`);
   });
 
   it('keeps the anchors at their top and the crosscut box at the design’s, sets long questions smaller then cuts them so both end above the footer', () => {
@@ -460,13 +455,13 @@ describe('the framework portrait book’s message house', () => {
     expect(tall.pillars).toHaveLength(5);
     expect(tall.pillars[0].rows.length).toBeLessThan(4);
     expect(tall.pillars[0].rows.length).toBeGreaterThan(0);
-    expect(tall.pillars[0].note).toBe(`+${4 - tall.pillars[0].rows.length} more on the framework's Framework tab in LFX One`);
+    expect(tall.pillars[0].note).toBe(`+${4 - tall.pillars[0].rows.length} more in LFX One`);
     expect(tall.lowerTop).toBeLessThanOrEqual(1000 - 80);
     expect(tall.lowerTop).toBeGreaterThan(780);
     expect(tall.whyNow?.size).toBeLessThan(13);
     expect(tall.audiences.rows.length).toBeLessThan(6);
     expect(tall.audiences.rows.length).toBeGreaterThan(0);
-    expect(tall.audiences.note).toBe(`+${6 - tall.audiences.rows.length} more on the framework's Framework tab in LFX One`);
+    expect(tall.audiences.note).toBe(`+${6 - tall.audiences.rows.length} more in LFX One`);
     expect(frameworkPortraitHouse(view([pillar(1)], 0, ''), { text: '', size: 19 }).whyNow).toBeNull();
   });
 });

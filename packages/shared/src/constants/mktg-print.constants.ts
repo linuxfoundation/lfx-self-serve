@@ -194,7 +194,7 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   sayPillTight: { size: 12, line: 1.2, weight: 500 },
   avoidRow: { size: 13, line: 1.5, weight: 400 },
   avoidRowTight: { size: 12, line: 1.4, weight: 400 },
-  /** The muted line under a cut list: `+N more on the framework's <tab> tab in LFX One`, the tab named as FOUNDATION_MESSAGE_VIEW_TABS labels it. */
+  /** The muted caption line under a cut list: `+N more in LFX One` (MKTG_PRINT_CUT_NOTE). */
   cutNote: { size: 10.5, line: 1.4, weight: 400 },
   /** A key number tile's figure (`.fwp-number`), stepped down in whole px to one line of the tile, to a floor of half its size; when the floor does not hold a figure the numbers print as the table instead (frameworkPortraitNumberTiles). */
   tileFigure: { size: 54, line: 1, weight: 500 },
@@ -397,6 +397,14 @@ export const FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES = ['Website', 'Link', 'Press 
  * personas and the facts' "used by" all join with it (mktgPrintJoin, mktg-print-text.utils.ts); no thin or hair space anywhere.
  */
 export const MKTG_PRINT_DOT = ' · ';
+
+/**
+ * The one line under a cut list, everywhere a framework print cuts one (the
+ * matrix's and a goal's proofs, the house's audiences, the sources, the family
+ * chapter): `+3 more in LFX One`, the editor's form (7 November 2026), set at
+ * the caption size (`FRAMEWORK_PORTRAIT_TYPE.cutNote`).
+ */
+export const MKTG_PRINT_CUT_NOTE = { prefix: '+', suffix: ' more in LFX One' } as const;
 
 /** The Brand Kit read as a print starts: open, nothing known yet (`MktgPrintKitRead`). */
 export const MKTG_PRINT_KIT_READ_PENDING = { settled: false, kit: null, failed: false } as const;
