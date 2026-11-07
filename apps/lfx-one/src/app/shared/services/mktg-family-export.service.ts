@@ -175,7 +175,9 @@ export class MktgFamilyExportService {
           framework: frameworkAsset?.report?.gaps ?? [],
           kit: kit?.report.findings?.missing_assets.map((missing) => missing.reason) ?? [],
           boilerplates: boilerplates?.report.gaps ?? [],
-          faq: faq?.report.gaps ?? [],
+          // A question the FAQ left unanswered prints nowhere else (the FAQ pages print answered questions only), so it
+          // is an open item too, once, whether or not the run's report repeats it as a gap.
+          faq: faq ? [...new Set([...faq.report.gaps, ...faq.checks.unanswered.map((entry) => entry.question)])] : [],
         };
         const documents = mktgFamilyExportAgentKeys(target.familyId)
           .map((agentKey) => ({ agentKey, response: responses.find((response) => response.type.agentKey === agentKey) }))
