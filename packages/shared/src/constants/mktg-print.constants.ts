@@ -61,9 +61,9 @@ export const FRAMEWORK_PORTRAIT_TITLES = {
 } as const;
 
 /**
- * The key numbers page's tiles, px: 140 high on a six-track grid (each tile's
+ * The key numbers page's tiles, px: 156 high on a six-track grid (each tile's
  * share of a row is FRAMEWORK_PORTRAIT_TILE_SHARES'; 344 wide as a half), a 16
- * gap, the first row at 210; the "Figures and their sources" table 28 under
+ * gap, the first row at 210; the "Figures and their sources" table 22 under
  * the last row. The table of every figure (past six) starts at the same top.
  */
 export const FRAMEWORK_PORTRAIT_NUMBER_TILE = {
@@ -166,7 +166,7 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   pageTitle: { size: 34, line: 1.1, weight: 500 },
   /** An anchor question (`.fwp-anchor-question`) and its number; the crosscut box's text. */
   anchorQuestion: { size: 22, line: 1.3, weight: 500 },
-  anchorNumber: { size: 26, line: 1.2, weight: 500 },
+  anchorNumber: { size: 26, line: 1, weight: 500 },
   crosscutText: { size: 13, line: 1.6, weight: 400 },
   /** A profile card: its name, kind and goal chips line, who text and persona rows; a field's eyebrow and text (and the text's tight measure, taken when one card alone outruns its page). */
   icpName: { size: 15, line: 1.3, weight: 600 },
@@ -226,6 +226,21 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   servedLineTop: 6,
   servedLineGap: 4,
   servedCardMin: 164,
+  /** The cover's umbrella: its measure (`.fwp-cover-umbrella` max-width) and the room the dark band gives it under the lockup and the tagline (four lines of 32/1.18, 151, kept with air). */
+  coverUmbrellaWidth: 640,
+  coverUmbrellaRoom: 160,
+  /** The house's umbrella bar: the room for its text, three lines of 19/1.4 (79.8), kept whole. */
+  houseUmbrellaRoom: 84,
+  /** A goal page: the lead's gap between the number and the value (`.fwp-goal-lead`), the number's width (`.fwp-goal-number`), the value block's top padding (`.fwp-goal-vp-block`); the key bar's padding down (24 + 24) and across (28 + 28), its gap and about how wide its "Key message" label sets (`.fwp-goal-key`, `.fwp-goal-key-label`); the proof list's margin under its eyebrow (`.fwp-proof-list`); the sound bite's margin (`.fwp-goal-bite-text`). */
+  goalLeadGap: 28,
+  goalNumberWidth: 150,
+  goalValueTop: 12,
+  goalKeyPaddingDown: 48,
+  goalKeyPaddingAcross: 56,
+  goalKeyGap: 22,
+  goalKeyLabel: 90,
+  proofListTop: 6,
+  goalBiteTop: 10,
   /** `.fwp-proof-row` padding (13 + 13) and its hairline. */
   proofRow: 27,
   /** `.fwp-proof-list-tight .fwp-proof-row` padding (9 + 9) and its hairline. */

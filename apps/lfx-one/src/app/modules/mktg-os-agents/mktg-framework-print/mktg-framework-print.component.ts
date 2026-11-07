@@ -198,9 +198,11 @@ export class MktgFrameworkPrintComponent {
   /** The cover's bottom strip, right: `aaif.io · V1.0 · 6 Nov 2026`, less any part the revision lacks. */
   protected readonly coverStripRight = computed(() => mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel]));
   /** The cover's umbrella, fitted to the dark band's room under the lockup and the tagline. */
-  protected readonly coverUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.coverUmbrella, 640, 160));
+  protected readonly coverUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.coverUmbrella, ROOM.coverUmbrellaWidth, ROOM.coverUmbrellaRoom));
   /** The message house's umbrella bar, fitted to three lines. */
-  protected readonly houseUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.houseUmbrella, this.page.contentWidth - 56, 84));
+  protected readonly houseUmbrella = computed(() =>
+    this.fit(this.view().mh.umbrella, TYPE.houseUmbrella, this.page.contentWidth - ROOM.houseUmbrellaPaddingAcross, ROOM.houseUmbrellaRoom)
+  );
   /** The Google Fonts stylesheet of the brand's typeface, when the kit says it is there (null otherwise). */
   private readonly fontUrl$ = toObservable(computed(() => this.view().brand.fontUrl));
 
@@ -284,7 +286,7 @@ export class MktgFrameworkPrintComponent {
   private goalPage(goal: FoundationMessagePrintGoal, view: FoundationMessagePrintView, leadTop: number): FoundationMessagePrintGoalPage {
     const tops = this.tops;
     const width = this.page.contentWidth;
-    const proofsRoom = tops.goalBite - tops.goalProofs - ROOM.label - 6 - ROOM.gap;
+    const proofsRoom = tops.goalBite - tops.goalProofs - ROOM.label - ROOM.proofListTop - ROOM.gap;
     // A proof row is the fact beside its chip: the chip is capped at ROOM.chip (`.fwp-chip-wrap`) and wraps inside it, so the row is the
     // taller of the fact (measured against the rest) and the chip; the list is tightened before it is cut, and the cut is said under it.
     const factWidth = width - ROOM.chip - ROOM.proofGap;
@@ -307,10 +309,20 @@ export class MktgFrameworkPrintComponent {
       goal,
       numberLabel: mktgPortraitPageNumber(goal.n),
       leadTop,
-      value: this.fit(goal.vp, TYPE.goalValue, width - 150 - 28, tops.goalKey - leadTop - ROOM.label - 12 - ROOM.gap),
-      key: this.fit(goal.key, TYPE.goalKey, width - 56 - 22 - 90, tops.goalProofs - tops.goalKey - 48 - ROOM.gap),
+      value: this.fit(
+        goal.vp,
+        TYPE.goalValue,
+        width - ROOM.goalNumberWidth - ROOM.goalLeadGap,
+        tops.goalKey - leadTop - ROOM.label - ROOM.goalValueTop - ROOM.gap
+      ),
+      key: this.fit(
+        goal.key,
+        TYPE.goalKey,
+        width - ROOM.goalKeyPaddingAcross - ROOM.goalKeyGap - ROOM.goalKeyLabel,
+        tops.goalProofs - tops.goalKey - ROOM.goalKeyPaddingDown - ROOM.gap
+      ),
       proofs,
-      bite: goal.bite ? this.fit(`“${goal.bite}”`, TYPE.goalBite, width, tops.goalServed - tops.goalBite - ROOM.label - 10 - ROOM.gap) : null,
+      bite: goal.bite ? this.fit(`“${goal.bite}”`, TYPE.goalBite, width, tops.goalServed - tops.goalBite - ROOM.label - ROOM.goalBiteTop - ROOM.gap) : null,
       served: {
         rows: served.map((icp) => {
           // The name and the two lines fitted to the card together, so a long name is measured with them.

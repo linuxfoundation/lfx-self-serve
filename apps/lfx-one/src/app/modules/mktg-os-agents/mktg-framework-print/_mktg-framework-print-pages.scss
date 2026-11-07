@@ -5,8 +5,9 @@
    the framework's own blocks, under the `fwp-` prefix, global for the same reason as the grammar's `pp-`
    classes and the kit's `kp-` (they are set on content projected into the page frame), and every rule
    scoped under the print root `.lfx-framework-print` so it keeps the specificity it had as a component
-   style (root + block, two classes) over the grammar's one-class rules, and reaches nothing outside the
-   framework's print. The values are the design boards', ported 1:1 in px: the cover's dark band edge to
+   style (root + block, two classes) over the grammar's one-class rules. That root class is shared with the
+   flowing prints (the FAQ's, the boilerplates', the document view's), so the rules are scoped to the
+   framework's own frames, `.lfx-framework-print.lfx-mktg-portrait`, and reach nothing in them. The values are the design boards', ported 1:1 in px: the cover's dark band edge to
    edge (816×420), the statement cards and the goal matrix, the goal page's number, key-message bar and
    cards, the say/avoid pills and rows, the profile rows, the message house's pillars, the key numbers'
    tiles and the sources page's lists. Every color is a `--pp-*` property (the brand's dark, accent and
@@ -16,7 +17,7 @@
    share one value; the room each rule takes around a fitted block (padding, hairlines, gaps) is mirrored
    in FRAMEWORK_PORTRAIT_ROOM, named at each rule. The grammar's `.pp-r` sets each block's position. */
 
-.lfx-framework-print {
+.lfx-framework-print.lfx-mktg-portrait {
   /* The page title at the size the component fits it to the title room (frameworkPortraitTitle, bound on the frame as
      --fwp-title-size): the grammar's 34 px where the title fits one line, smaller where a goal's runs long, and over
      the lines it needs at the floor, the page's first block set under them. The one grammar class the framework
@@ -76,7 +77,7 @@
   }
 
   .fwp-cover-umbrella {
-    max-width: 640px;
+    max-width: 640px; /* FRAMEWORK_PORTRAIT_ROOM.coverUmbrellaWidth */
     font-size: var(--fwp-cover-umbrella-size);
     font-weight: var(--fwp-cover-umbrella-weight);
     line-height: var(--fwp-cover-umbrella-line);
@@ -198,22 +199,22 @@
   .fwp-matrix-goal {
     display: block;
     margin-top: 3px;
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 1.2;
+    font-size: var(--fwp-matrix-goal-size); /* FRAMEWORK_PORTRAIT_TYPE.matrixGoal */
+    font-weight: var(--fwp-matrix-goal-weight);
+    line-height: var(--fwp-matrix-goal-line);
     color: var(--pp-dark);
   }
 
   .fwp-matrix-vp {
-    font-size: 11px;
-    line-height: 1.4;
+    font-size: var(--fwp-matrix-cell-size); /* FRAMEWORK_PORTRAIT_TYPE.matrixCell */
+    line-height: var(--fwp-matrix-cell-line);
     color: var(--pp-ink);
   }
 
   .fwp-matrix-key {
-    font-size: 11px;
-    font-weight: 600;
-    line-height: 1.4;
+    font-size: var(--fwp-matrix-key-size); /* FRAMEWORK_PORTRAIT_TYPE.matrixKey */
+    font-weight: var(--fwp-matrix-key-weight);
+    line-height: var(--fwp-matrix-key-line);
     color: var(--pp-dark);
   }
 
@@ -223,16 +224,16 @@
 
     li {
       margin-bottom: 5px; /* FRAMEWORK_PORTRAIT_ROOM.matrixProofGap */
-      font-size: 11px; /* FRAMEWORK_PORTRAIT_TYPE.matrixProof */
-      line-height: 1.4;
+      font-size: var(--fwp-matrix-proof-size); /* FRAMEWORK_PORTRAIT_TYPE.matrixProof */
+      line-height: var(--fwp-matrix-proof-line);
       color: var(--pp-ink);
     }
   }
 
   /* A proof cell tightened before a cut (FRAMEWORK_PORTRAIT_TYPE.matrixProofTight). */
   .fwp-matrix-proofs--tight li {
-    font-size: 10.5px;
-    line-height: 1.35;
+    font-size: var(--fwp-matrix-proof-tight-size);
+    line-height: var(--fwp-matrix-proof-tight-line);
   }
 
   .fwp-matrix-source {
@@ -248,9 +249,9 @@
   }
 
   .fwp-matrix-bite {
-    font-size: 12.5px;
-    font-weight: 500;
-    line-height: 1.3;
+    font-size: var(--fwp-matrix-bite-size); /* FRAMEWORK_PORTRAIT_TYPE.matrixBite */
+    font-weight: var(--fwp-matrix-bite-weight);
+    line-height: var(--fwp-matrix-bite-line);
     color: var(--pp-dark);
     border-left: 2px solid var(--pp-accent);
     padding-left: 10px;
@@ -264,8 +265,8 @@
   .fwp-matrix-crosscut {
     margin-top: 8px;
     padding: 0 12px;
-    font-size: 11px;
-    line-height: 1.5;
+    font-size: var(--fwp-matrix-crosscut-size); /* FRAMEWORK_PORTRAIT_TYPE.matrixCrosscut */
+    line-height: var(--fwp-matrix-crosscut-line);
     color: var(--pp-muted);
   }
 
@@ -273,12 +274,12 @@
 
   .fwp-goal-lead {
     display: flex;
-    gap: 28px;
+    gap: 28px; /* FRAMEWORK_PORTRAIT_ROOM.goalLeadGap */
     align-items: flex-start;
   }
 
   .fwp-goal-number {
-    min-width: 150px;
+    min-width: 150px; /* FRAMEWORK_PORTRAIT_ROOM.goalNumberWidth */
     font-size: 110px;
     font-weight: 500;
     line-height: 1;
@@ -288,7 +289,7 @@
 
   .fwp-goal-vp-block {
     flex: 1;
-    padding-top: 12px;
+    padding-top: 12px; /* FRAMEWORK_PORTRAIT_ROOM.goalValueTop */
   }
 
   .fwp-goal-vp {
@@ -299,19 +300,19 @@
     color: var(--pp-dark);
   }
 
-  /* The key message bar keeps the brand's dark; with background graphics off the bar's text prints in the dark on white. */
+  /* The key message bar: the brand's dark ground with the kit's ink on it, printed as shown (the frame's print-color-adjust: exact keeps every ground). */
   .fwp-goal-key {
     display: flex;
-    gap: 22px;
+    gap: 22px; /* FRAMEWORK_PORTRAIT_ROOM.goalKeyGap */
     align-items: center;
     border-radius: 10px;
-    padding: 24px 28px;
+    padding: 24px 28px; /* FRAMEWORK_PORTRAIT_ROOM.goalKeyPaddingDown (24 + 24) / goalKeyPaddingAcross (28 + 28) */
     background: var(--pp-dark);
     color: var(--pp-on-dark);
   }
 
   .fwp-goal-key-label {
-    flex: none;
+    flex: none; /* about FRAMEWORK_PORTRAIT_ROOM.goalKeyLabel wide */
     font-size: 9.5px;
     font-weight: 600;
     line-height: 1;
@@ -327,7 +328,7 @@
   }
 
   .fwp-proof-list {
-    margin-top: 6px;
+    margin-top: 6px; /* FRAMEWORK_PORTRAIT_ROOM.proofListTop */
     padding: 0;
     list-style: none;
   }
@@ -361,7 +362,7 @@
   }
 
   .fwp-goal-bite-text {
-    margin-top: 10px;
+    margin-top: 10px; /* FRAMEWORK_PORTRAIT_ROOM.goalBiteTop */
     font-size: var(--fwp-goal-bite-size);
     font-weight: var(--fwp-goal-bite-weight);
     line-height: var(--fwp-goal-bite-line);
@@ -419,9 +420,9 @@
   }
 
   .fwp-say-pill {
-    font-size: 13px; /* FRAMEWORK_PORTRAIT_TYPE.sayPill */
-    font-weight: 500;
-    line-height: 1.2;
+    font-size: var(--fwp-say-pill-size); /* FRAMEWORK_PORTRAIT_TYPE.sayPill */
+    font-weight: var(--fwp-say-pill-weight);
+    line-height: var(--fwp-say-pill-line);
     color: var(--pp-dark);
     border: 1px solid var(--pp-hairline);
     border-radius: 999px;
@@ -430,7 +431,8 @@
 
   /* The pills tightened before a cut (FRAMEWORK_PORTRAIT_TYPE.sayPillTight, ROOM.sayPillPaddingTight). */
   .fwp-say-list--tight .fwp-say-pill {
-    font-size: 12px;
+    font-size: var(--fwp-say-pill-tight-size);
+    line-height: var(--fwp-say-pill-tight-line);
     padding: 6px 10px;
   }
 
@@ -446,15 +448,15 @@
     align-items: baseline;
     border-top: 1px solid var(--pp-hairline);
     padding: 10px 0; /* FRAMEWORK_PORTRAIT_ROOM.avoidRow */
-    font-size: 13px; /* FRAMEWORK_PORTRAIT_TYPE.avoidRow */
-    line-height: 1.5;
+    font-size: var(--fwp-avoid-row-size); /* FRAMEWORK_PORTRAIT_TYPE.avoidRow */
+    line-height: var(--fwp-avoid-row-line);
   }
 
   /* The rows tightened before a cut (FRAMEWORK_PORTRAIT_TYPE.avoidRowTight, ROOM.avoidRowTight). */
   .fwp-avoid-list--tight .fwp-avoid-row {
     padding: 7px 0;
-    font-size: 12px;
-    line-height: 1.4;
+    font-size: var(--fwp-avoid-row-tight-size);
+    line-height: var(--fwp-avoid-row-tight-line);
   }
 
   .fwp-avoid-word {
@@ -497,16 +499,16 @@
   .fwp-anchor-number {
     flex: none;
     width: 44px;
-    font-size: 26px;
-    font-weight: 500;
-    line-height: 1;
+    font-size: var(--fwp-anchor-number-size); /* FRAMEWORK_PORTRAIT_TYPE.anchorNumber */
+    font-weight: var(--fwp-anchor-number-weight);
+    line-height: var(--fwp-anchor-number-line);
     color: var(--pp-accent-text, var(--pp-accent)); /* accent TEXT on the page white: the grammar's darkened text accent */
   }
 
   .fwp-anchor-question {
-    font-size: 22px; /* FRAMEWORK_PORTRAIT_TYPE.anchorQuestion; the component sets the fitted size on the row */
-    font-weight: 500;
-    line-height: 1.3;
+    font-size: var(--fwp-anchor-question-size); /* FRAMEWORK_PORTRAIT_TYPE.anchorQuestion; the component sets the fitted size on the row */
+    font-weight: var(--fwp-anchor-question-weight);
+    line-height: var(--fwp-anchor-question-line);
     color: var(--pp-dark);
   }
 
@@ -518,8 +520,8 @@
 
   .fwp-crosscut-text {
     margin-top: 8px;
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: var(--fwp-crosscut-text-size); /* FRAMEWORK_PORTRAIT_TYPE.crosscutText */
+    line-height: var(--fwp-crosscut-text-line);
     color: var(--pp-ink);
   }
 
@@ -547,9 +549,9 @@
 
   .fwp-icp-name {
     display: block;
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 1.3;
+    font-size: var(--fwp-icp-name-size); /* FRAMEWORK_PORTRAIT_TYPE.icpName */
+    font-weight: var(--fwp-icp-name-weight);
+    line-height: var(--fwp-icp-name-line);
     color: var(--pp-dark);
   }
 
@@ -568,8 +570,8 @@
 
   .fwp-icp-who-text {
     margin-top: 10px;
-    font-size: 11.5px;
-    line-height: 1.5;
+    font-size: var(--fwp-icp-who-size); /* FRAMEWORK_PORTRAIT_TYPE.icpWho */
+    line-height: var(--fwp-icp-who-line);
     color: var(--pp-ink);
   }
 
@@ -577,8 +579,8 @@
     margin-top: 8px;
     padding: 0;
     list-style: none;
-    font-size: 10.5px;
-    line-height: 1.5;
+    font-size: var(--fwp-icp-persona-size); /* FRAMEWORK_PORTRAIT_TYPE.icpPersona */
+    line-height: var(--fwp-icp-persona-line);
     color: var(--pp-muted);
   }
 
@@ -591,9 +593,9 @@
     margin: 0;
 
     dt {
-      font-size: 9.5px;
-      font-weight: 600;
-      line-height: 1.2;
+      font-size: var(--fwp-icp-eyebrow-size); /* FRAMEWORK_PORTRAIT_TYPE.icpEyebrow */
+      font-weight: var(--fwp-icp-eyebrow-weight);
+      line-height: var(--fwp-icp-eyebrow-line);
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: var(--pp-muted);
@@ -601,15 +603,15 @@
 
     dd {
       margin: 4px 0 0; /* FRAMEWORK_PORTRAIT_ROOM.icpFieldGap */
-      font-size: 12.5px; /* FRAMEWORK_PORTRAIT_TYPE.icpField */
-      line-height: 1.5;
+      font-size: var(--fwp-icp-field-size); /* FRAMEWORK_PORTRAIT_TYPE.icpField */
+      line-height: var(--fwp-icp-field-line);
       color: var(--pp-ink);
     }
   }
   /* A lone card that outran its page at the normal measure: its fields at FRAMEWORK_PORTRAIT_TYPE.icpFieldTight. */
   .fwp-icp-rows--tight .fwp-icp-fields dd {
-    font-size: 11.5px;
-    line-height: 1.45;
+    font-size: var(--fwp-icp-field-tight-size);
+    line-height: var(--fwp-icp-field-tight-line);
   }
 
   .fwp-icp-lead {
@@ -625,8 +627,8 @@
 
   .fwp-matrix-note {
     margin-top: 4px;
-    font-size: 11.5px;
-    line-height: 1.5;
+    font-size: var(--fwp-matrix-note-size); /* FRAMEWORK_PORTRAIT_TYPE.matrixNote */
+    line-height: var(--fwp-matrix-note-line);
     color: var(--pp-muted);
   }
 
@@ -634,8 +636,8 @@
     width: 100%;
     margin-top: 12px;
     border-collapse: collapse;
-    font-size: 12px;
-    line-height: 1.4;
+    font-size: var(--fwp-matrix-cell-text-size); /* FRAMEWORK_PORTRAIT_TYPE.matrixCellText */
+    line-height: var(--fwp-matrix-cell-text-line);
     color: var(--pp-ink);
   }
 
@@ -643,9 +645,9 @@
     text-align: left;
     padding: 6px 0;
     border-bottom: 1px solid var(--pp-ink);
-    font-size: 9.5px;
-    font-weight: 600;
-    line-height: 1.4;
+    font-size: var(--fwp-matrix-head-size); /* FRAMEWORK_PORTRAIT_TYPE.matrixHead */
+    font-weight: var(--fwp-matrix-head-weight);
+    line-height: var(--fwp-matrix-head-line);
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--pp-muted);
@@ -688,7 +690,7 @@
 
   /* ---------- 03 message house ---------- */
 
-  /* The umbrella bar keeps the brand's dark; with background graphics off its text prints in the dark on white. */
+  /* The umbrella bar: the brand's dark ground with the kit's ink on it, printed as shown (the frame's print-color-adjust: exact keeps every ground). */
   .fwp-house-umbrella {
     border-radius: 10px;
     padding: 24px 28px;
@@ -701,9 +703,9 @@
 
   .fwp-house-line {
     margin: 14px 0 22px;
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 1.3;
+    font-size: var(--fwp-house-line-size); /* FRAMEWORK_PORTRAIT_TYPE.houseLine */
+    font-weight: var(--fwp-house-line-weight);
+    line-height: var(--fwp-house-line-line);
     color: var(--pp-dark);
   }
 
@@ -726,16 +728,16 @@
 
   .fwp-pillar-title {
     display: block;
-    font-size: 16px;
-    font-weight: 600;
-    line-height: 1.25;
+    font-size: var(--fwp-pillar-title-size); /* FRAMEWORK_PORTRAIT_TYPE.pillarTitle */
+    font-weight: var(--fwp-pillar-title-weight);
+    line-height: var(--fwp-pillar-title-line);
     color: var(--pp-dark);
   }
 
   .fwp-pillar-message {
     margin-top: 8px;
-    font-size: 12.5px;
-    line-height: 1.5;
+    font-size: var(--fwp-pillar-message-size); /* FRAMEWORK_PORTRAIT_TYPE.pillarMessage */
+    line-height: var(--fwp-pillar-message-line);
     color: var(--pp-ink);
   }
 
@@ -746,9 +748,9 @@
 
     li {
       border-top: 1px solid var(--pp-hairline);
-      padding: 8px 0;
-      font-size: 11.5px;
-      line-height: 1.45;
+      padding: 8px 0; /* FRAMEWORK_PORTRAIT_ROOM.pillarProofRow = 16 + the hairline */
+      font-size: var(--fwp-pillar-proof-size); /* FRAMEWORK_PORTRAIT_TYPE.pillarProof */
+      line-height: var(--fwp-pillar-proof-line);
       color: var(--pp-ink);
     }
   }
@@ -760,8 +762,8 @@
 
   .fwp-why-now-text {
     margin-top: 8px; /* FRAMEWORK_PORTRAIT_ROOM.whyNowTextTop */
-    font-size: 13px; /* FRAMEWORK_PORTRAIT_TYPE.whyNow; the component sets the fitted size */
-    line-height: 1.55;
+    font-size: var(--fwp-why-now-size); /* FRAMEWORK_PORTRAIT_TYPE.whyNow; the component sets the fitted size */
+    line-height: var(--fwp-why-now-line);
     color: var(--pp-ink);
   }
 
@@ -774,12 +776,12 @@
   .fwp-audience-row {
     border-top: 1px solid var(--pp-hairline);
     padding: 7px 0; /* FRAMEWORK_PORTRAIT_ROOM.audienceRow */
-    font-size: 11.5px; /* FRAMEWORK_PORTRAIT_TYPE.audienceRow */
-    line-height: 1.45;
+    font-size: var(--fwp-audience-row-size); /* FRAMEWORK_PORTRAIT_TYPE.audienceRow */
+    line-height: var(--fwp-audience-row-line);
     color: var(--pp-ink);
 
     strong {
-      font-weight: 600;
+      font-weight: var(--fwp-audience-row-weight);
       color: var(--pp-dark);
     }
   }
@@ -787,8 +789,8 @@
   /* The rows tightened before a cut (FRAMEWORK_PORTRAIT_TYPE.audienceRowTight, ROOM.audienceRowTight). */
   .fwp-audience-list--tight .fwp-audience-row {
     padding: 5px 0;
-    font-size: 11px;
-    line-height: 1.4;
+    font-size: var(--fwp-audience-row-tight-size); /* FRAMEWORK_PORTRAIT_TYPE.audienceRowTight */
+    line-height: var(--fwp-audience-row-tight-line);
   }
 
   /* ---------- 04 key numbers ---------- */
@@ -901,8 +903,8 @@
 
   .fwp-source-text {
     margin-top: 8px;
-    font-size: 12px;
-    line-height: 1.6;
+    font-size: var(--fwp-source-size); /* FRAMEWORK_PORTRAIT_TYPE.source */
+    line-height: var(--fwp-source-line);
     color: var(--pp-ink);
   }
 
