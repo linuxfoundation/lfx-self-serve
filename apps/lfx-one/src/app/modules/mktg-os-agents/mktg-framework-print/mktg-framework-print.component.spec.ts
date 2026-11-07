@@ -291,7 +291,9 @@ describe('MktgFrameworkPrintComponent', () => {
     ]);
     expect(rows.map((row) => row.querySelectorAll('span').length)).toEqual(rows.map(() => 2));
     // The LF look has no kit, so no web host: the strip's right carries the version and the approval's date.
-    expect(text(query('mktg-framework-print-cover-strip'))).toBe(`TestOrbit · a Linux Foundation project V2.0${FRAMEWORK_PORTRAIT_SEP}6 Nov 2026`);
+    expect(text(query('mktg-framework-print-cover-strip'))).toBe(
+      `TestOrbit${FRAMEWORK_PORTRAIT_SEP}a Linux Foundation project V2.0${FRAMEWORK_PORTRAIT_SEP}6 Nov 2026`
+    );
     expect(query('mktg-framework-print-cover-strip')?.classList.contains('pp-cover-strip--wrapped')).toBe(false);
     // The LF logo stands on the dark band.
     expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toBe('/images/logo_lf_white.svg');
@@ -1253,7 +1255,8 @@ describe('MktgFrameworkPrintComponent', () => {
     wide.websiteUrl = `https://${word.toLowerCase()}.example.org/`;
     await setView(printView(wide, word));
     expect(strip?.classList.contains('pp-cover-strip--wrapped')).toBe(true);
-    expect(halves()[0]).toBe(`${word} · a Linux Foundation project`);
+    // The foot line's segments the rule keeps print with the framework's separator, as the right half does (S-b).
+    expect(halves()[0]).toBe(`${word}${FRAMEWORK_PORTRAIT_SEP}a Linux Foundation project`);
     expect(top(strip)).toBe(FRAMEWORK_PORTRAIT_TOPS.coverStrip - MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight);
   });
 

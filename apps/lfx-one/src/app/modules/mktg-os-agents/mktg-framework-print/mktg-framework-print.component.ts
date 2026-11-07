@@ -211,16 +211,19 @@ export class MktgFrameworkPrintComponent {
     const view = this.view();
     return mktgPrintJoin([view.versionLabel, view.approvedLabel, view.dateReadLabel ? `figures as of ${view.dateReadLabel}` : ''], FRAMEWORK_PORTRAIT_SEP);
   });
-  /** The cover's bottom strip, right: `aaif.io · V1.0 · 6 Nov 2026`, less any part the revision lacks. */
   /**
    * The cover's strip by the grammar's rule (`mktgPortraitCoverStrip`, the kit cover's): the two halves on one line of the
    * content column; a long project name or host loses its segments after the name, then words with an ellipsis, before the
-   * strip wraps, and then it wraps moved up a line so it ends where the one line did (`MKTG_PORTRAIT_COVER_STRIP`).
+   * strip wraps, and then it wraps moved up a line so it ends where the one line did (`MKTG_PORTRAIT_COVER_STRIP`). The
+   * left half is the book's foot line (`project · a Linux Foundation project`), whose segments the rule reads by the
+   * grammar's own dot; the framework prints the segments it keeps with its separator (S-b), as it prints the right half
+   * (`aaif.io · V1.0 · 6 Nov 2026`, less any part the revision lacks).
    */
   protected readonly coverStrip = computed(() => {
     const right = mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel], FRAMEWORK_PORTRAIT_SEP);
     const strip = mktgPortraitCoverStrip(this.resolvedBook().footLeft, right, MKTG_PORTRAIT_PAGE.contentWidth, this.resolvedLook().fontStack);
-    return { ...strip, top: TOPS.coverStrip - (strip.wraps ? MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight : 0) };
+    const left = mktgPrintJoin(strip.left.split(MKTG_PORTRAIT_COVER_STRIP.separator), FRAMEWORK_PORTRAIT_SEP);
+    return { ...strip, left, top: TOPS.coverStrip - (strip.wraps ? MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight : 0) };
   });
   /** The cover's umbrella, fitted to the dark band's room under the lockup and the tagline. */
   protected readonly coverUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.coverUmbrella, ROOM.coverUmbrellaWidth, ROOM.coverUmbrellaRoom));
