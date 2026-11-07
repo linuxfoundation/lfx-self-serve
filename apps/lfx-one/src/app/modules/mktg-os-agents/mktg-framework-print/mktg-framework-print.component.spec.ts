@@ -1205,7 +1205,8 @@ describe('MktgFrameworkPrintComponent', () => {
     await configure('browser', printView(kit));
     const logo = query('mktg-framework-print-cover-logo');
     expect(brand.logoOnDark).not.toBeNull();
-    expect([logo?.getAttribute('src'), logo?.getAttribute('alt'), logo?.style.filter]).toEqual([brand.logoOnDark?.src, 'TestOrbit logo', '']);
+    // The alt names the kit's project (`mktgPrintBrand`), the fixture's 'Project One'.
+    expect([logo?.getAttribute('src'), logo?.getAttribute('alt'), logo?.style.filter]).toEqual([brand.logoOnDark?.src, `${kit.projectName} logo`, '']);
     expect(logo?.getAttribute('src')).not.toBe('/images/logo_lf_white.svg');
     expect(logo?.getAttribute('src')?.startsWith('data:image/svg+xml')).toBe(true);
     const cover = frame('cover');

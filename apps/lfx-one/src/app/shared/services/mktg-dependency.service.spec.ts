@@ -555,8 +555,13 @@ describe('MktgDependencyService', () => {
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       getStored.mockReturnValue(throwError(() => new HttpErrorResponse({ status: HttpStatusCode.Forbidden })));
       expect(await read()).toEqual({ settled: true, kit: null, failed: true });
+      // Two requests (the read is deferred, so the retry issues a fresh one), each logged by the approved-current read, then the print's own line.
       expect(getStored).toHaveBeenCalledTimes(2);
-      expect(consoleError).toHaveBeenCalledTimes(1);
+      expect(consoleError.mock.calls.map(([message]) => message)).toEqual([
+        '[mktg-dependency] approved current read failed',
+        '[mktg-dependency] approved current read failed',
+        '[mktg-dependency] brand kit read failed; the print waits rather than printing the LF look',
+      ]);
       consoleError.mockRestore();
     });
 
