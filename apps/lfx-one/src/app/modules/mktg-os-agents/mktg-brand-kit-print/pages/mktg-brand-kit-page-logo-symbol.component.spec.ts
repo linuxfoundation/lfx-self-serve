@@ -86,10 +86,11 @@ describe('the Symbol & symbol in shape page', () => {
 
   it('fits a plated symbol inside its shape and stage: drawn + 2 × padding = the box the page sizes for the bare mark', async () => {
     // A three-colour symbol cannot be reversed: on the dark shapes and the padding demo it sits on the white plate,
-    // fitted to the box (76 px sample → 38 drawn in 19 of white; 100 px demo → 50 in 25), never spilling out.
+    // fitted to the box (76 px sample → 38 drawn in 19 of white; 100 px demo → 50 in 25), never spilling out. A square
+    // symbol (aspect 1) is bound by the height alone.
     const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
       ...view,
-      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG, aspect: 1 },
     }));
     const plates = Array.from(
       frame.querySelectorAll<HTMLElement>('[data-testid="brand-kit-symbol-shapes"] .pp-plate, [data-testid="brand-kit-symbol-padding"] .pp-plate')
@@ -105,6 +106,29 @@ describe('the Symbol & symbol in shape page', () => {
     }
     expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] .pp-plate img')?.style.height).toBe('50px');
     expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] .pp-plate')?.style.padding).toBe('25px');
+  });
+
+  it('sizes a wide mark down so its plate stays inside the circle, the rounded square and the demo’s dashed box', async () => {
+    // The fixture lockup drawn as the symbol: 120 × 36 (aspect 3.33). The plate is (aspect + 1) × h wide and 2h tall;
+    // h = min(box / 2, innerWidth / (aspect + 1)), the inner width the circle's inscribed square (158 / √2) or the
+    // rounded square's side less its 20 % inset each side (158 → 94.8; the 200 px demo → 120).
+    const aspect = 120 / 36;
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
+      ...view,
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG, aspect },
+    }));
+    const shapes = Array.from(frame.querySelectorAll<HTMLElement>('[data-testid="brand-kit-symbol-shapes"] .kp-shape'));
+    const drawnIn = (shape: HTMLElement | null | undefined): number => parseFloat(shape?.querySelector<HTMLElement>('.pp-plate img')?.style.height ?? '');
+    expect(drawnIn(shapes[0])).toBeCloseTo(158 / Math.SQRT2 / (aspect + 1), 2);
+    expect(drawnIn(shapes[1])).toBeCloseTo(94.8 / (aspect + 1), 2);
+    for (const shape of shapes.slice(0, 2)) {
+      const plate = shape.querySelector<HTMLElement>('.pp-plate');
+      const drawn = drawnIn(shape);
+      expect(parseFloat(plate?.style.padding ?? '')).toBeCloseTo(drawn / 2, 6);
+      expect((aspect + 1) * drawn).toBeLessThanOrEqual(parseFloat(shape.style.width) / Math.SQRT2 + 0.001);
+    }
+    const demo = frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"]');
+    expect(drawnIn(demo)).toBeCloseTo(120 / (aspect + 1), 2);
   });
 
   it('keeps the rule without the AA figure when white reads on the accent', async () => {

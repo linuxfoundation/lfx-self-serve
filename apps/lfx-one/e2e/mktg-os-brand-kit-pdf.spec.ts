@@ -589,6 +589,31 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(shapes.nth(1).locator('.pp-cap')).toHaveText('Rounded square · full color on a plate');
     await expect(shapes.nth(0).getByTestId('mktg-portrait-plate')).toHaveCount(1);
     await expect(shapes.nth(1).getByTestId('mktg-portrait-plate')).toHaveCount(1);
+    // The wide mark (the 120 × 36 lockup as the symbol) is sized down so its plate sits INSIDE the circle (its inscribed
+    // square) and the rounded square, never a white band cut by the shape; in the demo, inside the dashed X box.
+    const inside = (
+      inner: { x: number; y: number; width: number; height: number } | null,
+      outer: { x: number; y: number; width: number; height: number } | null
+    ): boolean =>
+      !!inner &&
+      !!outer &&
+      inner.x >= outer.x - 0.5 &&
+      inner.y >= outer.y - 0.5 &&
+      inner.x + inner.width <= outer.x + outer.width + 0.5 &&
+      inner.y + inner.height <= outer.y + outer.height + 0.5;
+    for (const index of [0, 1]) {
+      const shape = await shapes.nth(index).locator('.kp-shape').boundingBox();
+      const plate = await shapes.nth(index).getByTestId('mktg-portrait-plate').boundingBox();
+      expect(inside(plate, shape)).toBe(true);
+      // The circle: inside the inscribed square too (the plate's corners under the arc).
+      if (index === 0 && shape) {
+        const side = shape.width / Math.SQRT2;
+        const square = { x: shape.x + (shape.width - side) / 2, y: shape.y + (shape.height - side) / 2, width: side, height: side };
+        expect(inside(plate, square)).toBe(true);
+      }
+    }
+    const demo = symbol.getByTestId('brand-kit-symbol-padding');
+    expect(inside(await demo.getByTestId('mktg-portrait-plate').boundingBox(), await demo.locator('.kp-padding-demo-inset').boundingBox())).toBe(true);
     await expect(symbol.getByTestId('brand-kit-symbol-shapes')).not.toContainText('reversed');
     // The variant tiles stay honest too: "Not supplied" under the Reversed and One-color labels.
     await expect(symbol.getByTestId('brand-kit-symbol-variant-missing')).toHaveCount(2);

@@ -1456,9 +1456,9 @@ function brandKitSvgLength(attributes: string, name: string, whole: number): num
  * - Two inks flatten to one shape under a filter: not derivable.
  */
 export function brandKitSvgIsMonochrome(svg: string): boolean {
-  const viewBox = /viewBox\s*=\s*["']\s*([-0-9.]+)[\s,]+([-0-9.]+)[\s,]+([0-9.]+)[\s,]+([0-9.]+)/i.exec(svg);
-  const viewWidth = viewBox ? Number(viewBox[3]) : null;
-  const viewHeight = viewBox ? Number(viewBox[4]) : null;
+  const viewBox = brandKitSvgViewBox(svg);
+  const viewWidth = viewBox?.width ?? null;
+  const viewHeight = viewBox?.height ?? null;
   const inks = new Set<string>();
   const inherited: { fill?: string; stroke?: string }[] = [{}];
   // Painted shapes: full-canvas rects (backgrounds) and the marks drawn beside them.
@@ -1517,6 +1517,28 @@ export function brandKitSvgDataUrl(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+/** The first `viewBox` of an SVG document (the root's) as width and height, or null when it has none; the four values as `brandKitSvgViewBoxValues` reads them. */
+export function brandKitSvgViewBox(svg: string): { width: number; height: number } | null {
+  const values = brandKitSvgViewBoxValues(/viewBox\s*=\s*["']([^"']*)["']/i.exec(svg)?.[1] ?? '');
+  return values ? { width: values[2], height: values[3] } : null;
+}
+
+/** A viewBox attribute's four numbers (`min-x min-y width height`, space or comma separated), or null when it is not one. */
+export function brandKitSvgViewBoxValues(viewBox: string): [number, number, number, number] | null {
+  const parts = viewBox
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part)) || parts[2] <= 0 || parts[3] <= 0) return null;
+  return [parts[0], parts[1], parts[2], parts[3]];
+}
+
+/** The artwork's width over its height from a viewBox string, or null when it has none. */
+export function brandKitSvgAspect(viewBox: string | null | undefined): number | null {
+  const values = viewBox ? brandKitSvgViewBoxValues(viewBox) : null;
+  return values ? values[2] / values[3] : null;
+}
+
 /** The SVG with its root viewBox replaced (the symbol cropped out of the primary lockup), or unchanged when the root carries none. */
 export function brandKitSvgWithViewBox(svg: string, viewBox: string): string {
   const root = /<svg\b[^>]*>/i.exec(svg);
@@ -1566,7 +1588,13 @@ export function brandKitLogoImage(ref: BrandKitLogoRef | null): BrandKitLogoImag
   if (!ref) {
     return null;
   }
-  return { ref: ref.ref, name: brandKitLogoFileName(ref.ref) ?? 'the logo you supplied', src: ref.svg ? brandKitSvgDataUrl(ref.svg) : null };
+  const viewBox = ref.svg ? brandKitSvgViewBox(ref.svg) : null;
+  return {
+    ref: ref.ref,
+    name: brandKitLogoFileName(ref.ref) ?? 'the logo you supplied',
+    src: ref.svg ? brandKitSvgDataUrl(ref.svg) : null,
+    aspect: viewBox ? viewBox.width / viewBox.height : null,
+  };
 }
 
 /** The symbol as a page draws it: the symbol file, else the primary lockup cropped to the symbol's viewBox, else null. */
@@ -1576,7 +1604,7 @@ export function brandKitSymbolImage(files: BrandKitChapters['logo']['files'], sy
   }
   const primary = brandKitLogoImage(files.primary);
   if (primary && files.primary?.svg && symbolViewBox) {
-    return { ...primary, src: brandKitSvgDataUrl(brandKitSvgWithViewBox(files.primary.svg, symbolViewBox)) };
+    return { ...primary, src: brandKitSvgDataUrl(brandKitSvgWithViewBox(files.primary.svg, symbolViewBox)), aspect: brandKitSvgAspect(symbolViewBox) };
   }
   return null;
 }

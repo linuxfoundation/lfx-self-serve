@@ -121,11 +121,14 @@ export function brandKitPortraitArtwork(
   const alt = { lockup: 'Horizontal lockup', symbol: 'Symbol', stacked: 'Stacked lockup' }[kind];
   const derivable = kind === 'symbol' ? view.derivable.symbol : view.derivable.lockup;
   const filter = derivable ? ARTWORK_FILTERS[mode] : '';
-  if (kind === 'lockup' && mode === 'reversed' && view.logos.reversed?.src) return { src: view.logos.reversed.src, alt: 'Reversed lockup', filter: '' };
+  if (kind === 'lockup' && mode === 'reversed' && view.logos.reversed?.src) {
+    return { src: view.logos.reversed.src, alt: 'Reversed lockup', filter: '', aspect: view.logos.reversed.aspect ?? null };
+  }
   const images: Record<typeof kind, BrandKitLogoImage | null> = { lockup: view.logos.primary, symbol: view.symbol, stacked: view.logos.stacked };
   const image = images[kind];
   if (!image?.src) return null;
-  return mode === 'reversed' && !derivable ? { src: image.src, alt, filter, plate: true } : { src: image.src, alt, filter };
+  const aspect = image.aspect ?? null;
+  return mode === 'reversed' && !derivable ? { src: image.src, alt, filter, plate: true, aspect } : { src: image.src, alt, filter, aspect };
 }
 
 /** A file's format from its reference: `SVG`, `PNG`, …, or `File`. */

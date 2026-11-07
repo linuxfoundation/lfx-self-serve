@@ -51,11 +51,11 @@
             <div class="kp-shape-stage" [class.kp-shape-stage--mist]="shape.onWhite">
               <div
                 class="kp-shape"
-                [style.width.px]="shape.onWhite ? 126 : 158"
-                [style.height.px]="shape.onWhite ? 126 : 158"
+                [style.width.px]="shape.side"
+                [style.height.px]="shape.side"
                 [style.border-radius]="shape.radius"
                 [style.background]="shape.ground">
-                <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" [mode]="shape.mode" [height]="shape.onWhite ? 60 : 76" />
+                <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" [mode]="shape.mode" [height]="shape.box" [innerWidth]="shape.innerWidth" />
               </div>
             </div>
             <div class="pp-cap">{{ shape.caption }}</div>
@@ -66,7 +66,7 @@
     <div class="kp-padding-row" [lfxPpRect]="[x, 720, w]">
       <div class="kp-padding-demo" data-testid="brand-kit-symbol-padding">
         <div class="kp-padding-demo-inset"></div>
-        <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" mode="reversed" [height]="100" />
+        <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" mode="reversed" [height]="100" [innerWidth]="demoInnerWidth" />
       </div>
       <div class="flex-1">
         <div class="pp-lab pp-lab--dark">Padding in a shape</div>
