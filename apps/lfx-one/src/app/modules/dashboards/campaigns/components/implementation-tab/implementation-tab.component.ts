@@ -214,6 +214,7 @@ import {
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOAL_LABELS,
   REDDIT_VIDEO_GOALS,
+  googleAdsDecodedText,
   googleAdsEchoed,
   googleAdsToLower,
   googleAdsTrimSpace,
@@ -3615,8 +3616,8 @@ export class ImplementationTabComponent implements OnInit {
     // `googleExtensionsCapabilityBlock` is its sibling on the SAME capability read and is
     // deliberately NOT a gate here. The difference is what the withholding costs. A withheld Manual
     // bid changes what the campaign does — it would be created automatic and spend differently from
-    // the choice on screen — so that create waits for the answer. Withheld callouts and sitelinks
-    // cost only the extensions: the campaign created is still the one that was asked for, and the
+    // the choice on screen — so that create waits for the answer. Withheld extensions and search
+    // themes cost only themselves: the campaign created is still the one that was asked for, and the
     // lists stay in the brief for a later edit. Blocking a create on a stalled capability read for
     // that is the worse failure, so the create goes ahead and the block says what was left out.
     // Likewise a retained Reddit image upload: never silently left out of the request.
@@ -3777,7 +3778,7 @@ export class ImplementationTabComponent implements OnInit {
    * {@link googleSearchThemesPayload} sends on it, so the two agree.
    */
   protected readonly googleSearchThemesAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_SEARCH_THEMES));
-  /** The search themes box as the request would carry them: one per line, trimmed with Go's rules, blanks dropped. */
+  /** The search themes box as the request would carry them: one per line, decoded and trimmed as the BFF does, blanks dropped. */
   protected readonly googleSearchThemes: Signal<string[]> = computed(() => {
     void this.campaignFormRevision();
     return this.googleSearchThemeLines(this.campaignForm.getRawValue().googlePerformanceMaxSearchThemes);
@@ -3802,7 +3803,8 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The search themes held back after a switch away from Performance Max, or null. The twin of
    * {@link initGoogleSitelinksWithheldWarning}: reads the resolved channel, not the capability, so it
-   * states the channel's truth only. One string feeds the visible notice and its live region.
+   * states the channel's truth only; a capability that is not an explicit yes is
+   * {@link initGoogleExtensionsCapabilityBlock}'s to name. One string feeds the visible notice and its live region.
    */
   protected readonly googleSearchThemesWithheldWarning: Signal<string | null> = computed(() => {
     const channel = this.resolveGoogleChannel();
@@ -9881,8 +9883,10 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Why the callouts, sitelinks and structured snippets on this brief are being withheld for want of
-   * a capability answer.
+   * Why the ad extensions (callouts, sitelinks, structured snippets, calls, promotions and prices) and
+   * the Performance Max search themes on this brief are being withheld for want of a capability answer.
+   * Search themes ride the same gate ({@link googleSearchThemesAvailable} reads `googleBiddingChannel`),
+   * so a restored list is counted here like the extensions, never dropped unannounced.
    *
    * The sibling of {@link initBiddingCapabilityBlock}, on the SAME read — `loadCreateCapabilitiesFor`
    * sets `googleCreativeEnabled` and `biddingEnabled` from one response, so `createCapabilityRead`
@@ -9890,15 +9894,16 @@ export class ImplementationTabComponent implements OnInit {
    *
    * It differs from that sibling in one way on purpose: it does not block Create. A withheld manual
    * bid would create the campaign automatic, spending differently from the choice on screen, so
-   * that one waits. Withheld extensions cost only the extensions, and holding a demo's create
+   * that one waits. Withheld extensions and search themes cost only themselves, and holding a demo's create
    * hostage to a stalled capability read is worse than creating and saying what was left out.
    *
    * Says nothing about the CHANNEL reason — {@link initGoogleCalloutsWithheldWarning} and its
    * twins own that, for each kind on every channel that does not take it, whatever the capability
    * says. They divide the ground exactly: this block counts a kind only where an answer could change
    * its outcome, which is only on a channel that takes that kind (sitelinks on Search, Demand Gen
-   * and Performance Max, callouts and snippets on Search and Performance Max, the rest on Search),
-   * and those warnings speak everywhere else. Nothing is withheld in
+   * and Performance Max, callouts and snippets on Search and Performance Max, search themes on
+   * Performance Max, the rest on Search), and those warnings (`googleSearchThemesWithheldWarning` for
+   * the themes) speak everywhere else. Nothing is withheld in
    * silence and nothing is explained twice.
    */
   private initGoogleExtensionsCapabilityBlock(): Signal<CampaignGoogleExtensionsCapabilityBlock | null> {
@@ -9914,13 +9919,14 @@ export class ImplementationTabComponent implements OnInit {
       // kind is counted only on a channel that takes it: nothing is lost that the answer could
       // recover, and the kind's own withheld warning is already saying the true reason — it reads the
       // same resolved channel, so it does not wait for the capability either. On Demand Gen that
-      // leaves the sitelinks alone; on Performance Max the sitelinks, callouts and snippets; on
-      // Display, nothing.
+      // leaves the sitelinks alone; on Performance Max the sitelinks, callouts, snippets and search
+      // themes; on Display, nothing.
       const channel = this.resolveGoogleChannel();
       if (channel === null) return null;
       const takesExtensions = (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel);
       const takesCalloutsAndSnippets = (GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS as readonly string[]).includes(channel);
       const takesSitelinks = (GOOGLE_CHANNELS_WITH_SITELINKS as readonly string[]).includes(channel);
+      const takesSearchThemes = (GOOGLE_CHANNELS_WITH_SEARCH_THEMES as readonly string[]).includes(channel);
 
       // "N callouts, M sitelinks and K structured snippets", dropping whichever parts are empty or
       // not taken on this channel. The counts are the point: they are what the operator is about to
@@ -9932,16 +9938,25 @@ export class ImplementationTabComponent implements OnInit {
         [this.googleCallExtensions().length, 'call extension', takesExtensions],
         [this.googlePromotions().length, 'promotion', takesExtensions],
         [this.googlePrices().length, 'price extension', takesExtensions],
+        [this.googleSearchThemes().length, 'search theme', takesSearchThemes],
       ];
-      const parts = counted.filter(([count, , taken]) => taken && count > 0).map(([count, noun]) => `${count} ${noun}${count === 1 ? '' : 's'}`);
+      const held = counted.filter(([count, , taken]) => taken && count > 0);
+      const parts = held.map(([count, noun]) => `${count} ${noun}${count === 1 ? '' : 's'}`);
       if (parts.length === 0) return null;
       // Oxford-free list: "a", "a and b", "a, b and c" — the same shape the two-part version read as.
       const lost = parts.length > 2 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts.join(' and ');
+      // What the sentences name as unconfirmed: search themes are not an ad extension, so they are
+      // named apart, alone when they are all that is held.
+      const themesHeld = held.some(([, noun]) => noun === 'search theme');
+      const extensionsHeld = held.length > (themesHeld ? 1 : 0);
+      const kinds = [extensionsHeld ? 'ad extension' : '', themesHeld ? 'search theme' : ''].filter((k) => k !== '');
+      const subject = `Google ${kinds.map((k) => `${k}s`).join(' and ')}`;
+      const support = `Google ${kinds.join(' and ')}`;
 
       if (this.googleCreativeEnabled() === false) {
         return {
           kind: 'unsupported',
-          message: `Google ad extensions are not available on this deployment, so the ${lost} on this brief will not be sent. The campaign is created without them.`,
+          message: `${subject} are not available on this deployment, so the ${lost} on this brief will not be sent. The campaign is created without them.`,
         };
       }
       // Only an IN-FLIGHT read is "checking". `unknown` — no read out and none answered, as after a
@@ -9956,18 +9971,18 @@ export class ImplementationTabComponent implements OnInit {
       if (this.createCapabilityRead() === 'pending') {
         return {
           kind: 'pending',
-          message: `Checking whether Google ad extensions can be sent. Creating the campaign before the check finishes sends it without the ${lost} on this brief.`,
+          message: `Checking whether ${subject} can be sent. Creating the campaign before the check finishes sends it without the ${lost} on this brief.`,
         };
       }
       if (!this.briefPersistence().briefId) {
         return {
           kind: 'unsaved',
-          message: `Google ad extension support can't be checked until this brief is saved, so the ${lost} on it will not be sent. Save the brief to send them.`,
+          message: `${support} support can't be checked until this brief is saved, so the ${lost} on it will not be sent. Save the brief to send them.`,
         };
       }
       return {
         kind: 'failed',
-        message: `Could not confirm that Google ad extensions can be sent, so the ${lost} on this brief will not be sent. Retry the check to send them.`,
+        message: `Could not confirm that ${subject} can be sent, so the ${lost} on this brief will not be sent. Retry the check to send them.`,
       };
     });
   }
@@ -10857,12 +10872,17 @@ export class ImplementationTabComponent implements OnInit {
     return themes.length > 0 ? { performanceMaxSearchThemes: [...themes] } : {};
   }
 
-  /** The search themes box split one per line, each trimmed with Go's rules (as upstream trims), blanks dropped. */
+  /**
+   * The search themes box split one per line, blanks dropped, each normalised with
+   * {@link googleAdsDecodedText} (a lone surrogate becomes U+FFFD, as Go's decoder makes it, then Go's
+   * trim): the BFF's `googleSearchThemeList` normalisation exactly. So the shared judge sees the same
+   * strings on both sides, and two lines only a lone surrogate apart are a repeat here as they are there.
+   */
   private googleSearchThemeLines(value: string | null | undefined): string[] {
     if (typeof value !== 'string') return [];
     return value
       .split(/\r?\n/)
-      .map((line) => googleAdsTrimSpace(line))
+      .map((line) => googleAdsDecodedText(line))
       .filter((line) => line !== '');
   }
 

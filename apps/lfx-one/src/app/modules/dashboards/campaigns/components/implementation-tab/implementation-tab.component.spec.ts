@@ -19285,6 +19285,84 @@ describe('ImplementationTabComponent google performance max search themes', () =
     c['resetGoogleFields']();
     expect(c['campaignForm'].controls.googlePerformanceMaxSearchThemes.value).toBe('');
   });
+
+  /**
+   * The BFF decodes each theme as Go does (`googleAdsDecodedText`: a lone surrogate becomes U+FFFD)
+   * before the shared judge, so two lines only a lone surrogate apart are one theme there. The tab
+   * normalises the same way, so it holds Create with the BFF's own sentence instead of letting the
+   * server refuse after dispatch.
+   */
+  it('holds Create on two themes a lone surrogate apart, which the BFF decodes into one', () => {
+    const c = seedPmax('cloud\uD800\ncloud\uD801');
+
+    expect(c['googleSearchThemesError']()).toBe(
+      'Google Ads refuses a Performance Max asset group that lists the search theme cloud\ufffd more than once. Remove the repeat and create again.'
+    );
+    expect(c['canSubmit']()).toBe(false);
+    expect(find('implementation-google-search-themes-error')?.textContent).toContain('more than once');
+  });
+
+  it('sends a lone surrogate as U+FFFD, the string the BFF judges and forwards', () => {
+    const c = seedPmax(' cloud\uD800 \nkubernetes');
+
+    expect(c['googleSearchThemesPayload']()).toEqual({ performanceMaxSearchThemes: ['cloud\ufffd', 'kubernetes'] });
+  });
+
+  /**
+   * Restored themes on Performance Max while the create capability is not an explicit yes: the box
+   * hides and the payload withholds them (`googleSearchThemesAvailable` reads `googleBiddingChannel`),
+   * so the capability notice counts them as it counts the extensions, with Retry where a read could
+   * succeed. Never dropped in silence; Create is not held, as for the extensions on the same notice.
+   */
+  function seedPmaxCapability(capability: boolean | null, read: 'pending' | 'failed' | 'ready', themes: string): Record<string, any> {
+    const c = seedPmax(themes);
+    fixture.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'brief-1', message: null, approved: true });
+    fixture.componentRef.setInput('createCapabilityRead', read);
+    fixture.componentRef.setInput('googleCreativeEnabled', capability);
+    fixture.detectChanges();
+    return c;
+  }
+
+  it('names retained themes in the capability notice while the check is pending', () => {
+    const c = seedPmaxCapability(null, 'pending', 'kubernetes\ncloud native');
+
+    expect(c['googleSearchThemesPayload']()).toEqual({});
+    expect(c['googleSearchThemesWithheldWarning']()).toBeNull();
+    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('pending');
+    const notice = find('implementation-google-extensions-capability-pending')?.textContent ?? '';
+    expect(notice).toContain('Checking whether Google search themes can be sent');
+    expect(notice).toContain('sends it without the 2 search themes on this brief');
+    expect(find('implementation-google-extensions-capability-live')?.textContent?.trim()).toBe(c['googleExtensionsCapabilityMessage']());
+    expect(find('implementation-google-extensions-capability-retry')).toBeNull();
+  });
+
+  it('names retained themes in the capability notice, with Retry, when the check failed', () => {
+    const retried = vi.fn();
+    fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
+    const c = seedPmaxCapability(null, 'failed', 'kubernetes');
+
+    expect(c['googleSearchThemesPayload']()).toEqual({});
+    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('failed');
+    const notice = find('implementation-google-extensions-capability-failed')?.textContent ?? '';
+    expect(notice).toContain('Could not confirm that Google search themes can be sent, so the 1 search theme on this brief will not be sent');
+    (find('implementation-google-extensions-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+    expect(retried).toHaveBeenCalledTimes(1);
+  });
+
+  it('names themes beside the extensions they are held with, and goes quiet once the capability answers yes', () => {
+    const c = seedPmaxCapability(false, 'ready', 'kubernetes');
+    c['addGoogleCallout']('Hands-On Labs');
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()?.message).toBe(
+      'Google ad extensions and search themes are not available on this deployment, so the 1 callout and 1 search theme on this brief will not be sent. The campaign is created without them.'
+    );
+
+    fixture.componentRef.setInput('googleCreativeEnabled', true);
+    fixture.detectChanges();
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+    expect(c['googleSearchThemesPayload']()).toEqual({ performanceMaxSearchThemes: ['kubernetes'] });
+  });
 });
 
 /**

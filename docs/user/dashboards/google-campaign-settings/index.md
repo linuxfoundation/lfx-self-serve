@@ -206,6 +206,8 @@ Search themes tell Google which searches a Performance Max campaign is for, such
 
 If a search theme would be refused, a message appears under the box and **Create Campaign** stays unavailable until you fix it. If you switch to another campaign type, the box disappears and a notice says your search themes will not be sent. They are kept, so switching back to Performance Max restores them.
 
+If LFX can't confirm that search themes can be sent, for example while that check is still running or after it fails, the box is hidden and a notice says how many search themes will not be sent. When the check failed, select **Retry** to check again. This notice does not hold **Create Campaign**: a campaign created before the check succeeds is created without the search themes.
+
 ## Demand Gen video ads
 
 Each Demand Gen ad is an image ad or a YouTube video ad. Choose one under **Ad format** in the **Demand Gen Creative** section. **Image ad** is the default.

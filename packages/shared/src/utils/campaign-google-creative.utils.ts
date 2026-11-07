@@ -127,7 +127,8 @@ export function googlePerformanceMaxShortDescriptionMissing(descriptions: unknow
  * entry, first bad one wins — blank, over {@link GOOGLE_ADS_MAX_SEARCH_THEME_RUNES} runes, or a repeat
  * keyed on Go's `strings.ToLower`. A repeat is REFUSED, not collapsed, as upstream refuses it.
  *
- * The entries are judged as given: the caller trims them with Go's rules first, as upstream does. The
+ * The entries are judged as given: both callers normalise them with `googleAdsDecodedText` first (a lone
+ * surrogate becomes U+FFFD, as Go decodes it, then Go's trim), so they judge the same strings. The
  * channel and the asset-group rule are the caller's, because they need the request around the list.
  * `index` is reported from 1; upstream numbers from 0.
  */
