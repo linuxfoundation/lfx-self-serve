@@ -1154,18 +1154,24 @@ describe('MktgFrameworkPrintComponent', () => {
   });
 
   it('sets every profile card’s name-and-tags column at the book’s one width, so the fields start at one x on every profile page, a lone card too', async () => {
-    // One profile's long kind tag grows its column past the board's 190; the others' tags fit 190. Three profiles: two on the first page, one alone on the second.
-    const kind = 'Member companies and prospects';
+    // One profile serves three goals, so its tags grow its column past the board's 190; the others' tags fit 190. Three profiles: two on the
+    // first page, one alone on the second. (The kind is the record's union, so the tags that grow the column are the goal chips.)
+    const [first] = CONTENT.mf.goals;
+    const goals = [first, { ...first, id: 'g2', n: 2, t: 'Second' }, { ...first, id: 'g3', n: 3, t: 'Third' }];
     await configure(
       'browser',
       buildFoundationMessagePrintView(
-        { ...CONTENT, icp: [{ ...CONTENT.icp[0], kind }, CONTENT.icp[1], { ...CONTENT.icp[1], id: 'c', name: 'C' }] },
+        {
+          ...CONTENT,
+          mf: { ...CONTENT.mf, goals },
+          icp: [{ ...CONTENT.icp[0], goals: goals.map((goal) => goal.id) }, CONTENT.icp[1], { ...CONTENT.icp[1], id: 'c', name: 'C' }],
+        },
         'TestOrbit',
         2,
         null
       )
     );
-    const widest = frameworkPortraitIcpWhoWidth([kind, 'Goal 1']);
+    const widest = frameworkPortraitIcpWhoWidth([CONTENT.icp[0].kind, 'Goal 1', 'Goal 2', 'Goal 3']);
     expect(widest).toBeGreaterThan(FRAMEWORK_PORTRAIT_ROOM.icpWho);
     const pages = [frame('icps-1'), frame('icps-2')];
     expect(pages.map((page) => page?.querySelectorAll('.fwp-icp-row').length)).toEqual([2, 1]);

@@ -227,7 +227,7 @@ export function frameworkPortraitTitle(title: string): FoundationMessagePrintFit
  */
 export function frameworkPortraitTitlesAtOneSize(titles: readonly string[]): FoundationMessagePrintFittedTitle[] {
   const fits = titles.map((title) => frameworkPortraitTitle(title));
-  const size = fits.reduce((least, fit) => Math.min(least, fit.size), TYPE.pageTitle.size);
+  const size = Math.min(TYPE.pageTitle.size, ...fits.map((fit) => fit.size));
   const perLine = mktgPortraitCharsPerLine(PAGE.contentWidth, size, { weight: TYPE.pageTitle.weight });
   return fits.map((fit) => (fit.size === size ? fit : { text: fit.text, size, lines: mktgPortraitWrapLines(fit.text, perLine) }));
 }
@@ -809,7 +809,7 @@ export function frameworkPortraitIcpIn(icp: FoundationMessagePrintIcp, room: num
  * card already at it is the same object.
  */
 export function frameworkPortraitIcpsAligned(icps: readonly FoundationMessagePrintIcp[]): FoundationMessagePrintIcp[] {
-  const width = icps.reduce((widest, icp) => Math.max(widest, icp.whoWidth), ROOM.icpWho);
+  const width = Math.max(ROOM.icpWho, ...icps.map((icp) => icp.whoWidth));
   return icps.map((icp) => (icp.whoWidth === width ? icp : { ...icp, whoWidth: width }));
 }
 
