@@ -14,10 +14,9 @@ import {
   expectMktgPrintFrame,
   finishMktgPrintFrame,
   layoutMktgPrintFrame,
+  mktgPrintComputedPx,
   PRINT_FRAME_LETTER,
   stubMktgPrintFrame,
-  expectMktgPrintPageSetup,
-  mktgPrintComputedPx,
 } from './helpers/mktg-print.helper';
 
 import {
@@ -331,7 +330,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       // The chapter band on a chapter's first page only.
       await expect(print.getByTestId('mktg-portrait-page-band')).toHaveCount(5);
       // The framework page's goal matrix, one column per goal, with the grammar's labels.
-      const rowLabels = print.getByTestId('mktg-framework-print-goals').locator('.fwp-matrix-row > .pp-lab');
+      const rowLabels = print.getByTestId('mktg-framework-print-goals-label');
       await expect(rowLabels).toHaveText(['Value proposition', 'Key message', 'Proof', 'Sound bite']);
       for (const label of await rowLabels.all()) {
         await expect(label).toHaveCSS('text-transform', 'uppercase');
@@ -344,22 +343,31 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       // The goal's page, the profile with the goals × profiles matrix (one profile: the page has room), the house, the numbers.
       await expect(print.getByTestId('mktg-framework-print-goal-1')).toContainText('01');
       await expect(print.getByTestId('mktg-framework-print-icp-users')).toContainText('End users');
-      await expect(print.getByTestId('mktg-framework-print-matrix').locator('.fwp-grid-dot')).toHaveCount(1);
+      await expect(print.getByTestId('mktg-framework-print-matrix-row')).toHaveCount(1);
+      await expect(print.getByTestId('mktg-framework-print-matrix-dot')).toHaveCount(1);
       await expect(print.getByTestId('mktg-framework-print-pillars')).toContainText('Open');
       await expect(print.getByTestId('mktg-framework-print-numbers')).toContainText('1,200');
-      // One number: its tile spans the column (no orphan half-tile).
-      await expect(print.getByTestId('mktg-framework-print-numbers').locator('.fwp-number-tile-wide')).toHaveCount(1);
-      await expect(print.getByTestId('mktg-framework-print-facts').locator('tbody tr')).toHaveCount(2);
+      // One number: its tile spans the column (no orphan half-tile); the facts table lists the fixture's one proof point.
+      await expect(print.getByTestId('mktg-framework-print-number-tile-0')).toHaveAttribute('data-wide', 'true');
+      await expect(print.locator('[data-testid^="mktg-framework-print-number-tile-"]')).toHaveCount(1);
+      await expect(print.locator('[data-testid^="mktg-framework-print-fact-"]')).toHaveCount(1);
       // Nothing to avoid in this fixture: the page says so rather than printing an empty list.
       await expect(print.getByTestId('mktg-framework-print-avoid')).toHaveCount(0);
       await expect(print.getByTestId('mktg-framework-print-avoid-empty')).toHaveText('Nothing to avoid was stated.');
-      // Sources & gaps: the fixture's sidecar carries no report, so the shared empty states and the approval card without a read date.
+      // Sources & gaps: the fixture's sidecar carries a report with empty lists and no read date, so the Read block is empty, the two
+      // shared empty-state lines print, the approval card names the version and the approval without the gaps clause, and no
+      // Notes block exists (the run's notes stay on screen).
       await expect(print.getByTestId('mktg-framework-print-sources-intro')).toHaveText(
         'What the framework was built from, what could not be read, and what is still open.'
       );
+      await expect(print.getByTestId('mktg-framework-print-sources-read').locator('li')).toHaveCount(0);
       await expect(print.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveText('No source failed.');
       await expect(print.getByTestId('mktg-framework-print-gaps-empty')).toHaveText('The sources left no gap.');
-      await expect(print.getByTestId('mktg-framework-print-approval')).toContainText('V1.0 · Approved 19 Oct 2026.');
+      await expect(print.getByTestId('mktg-framework-print-approval')).toHaveText(
+        'V1.0 · Approved 19 Oct 2026. A later run re-reads the sources and refreshes the LFX figures.'
+      );
+      await expect(print.getByTestId('mktg-framework-print-notes')).toHaveCount(0);
+      await expect(pages.last()).not.toContainText('Notes');
       // No reviewer's note on paper.
       await expect(print).not.toContainText('choices for the reviewer');
       // Visibility-only hiding leaves screen canvas height behind. The entire

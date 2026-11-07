@@ -133,7 +133,7 @@ export class MktgFrameworkViewComponent {
   public readonly approvedVersion = input<number | null>(null);
   /** When the approved revision was stored (ISO), as the page shows it: it dates the PDF's name. */
   public readonly approvedCreatedAt = input<string | null>(null);
-  /** When the approved revision was approved (ISO): the print's cover and back cover date it. */
+  /** When the approved revision was approved (ISO): the print's cover and its Sources & gaps approval card date it. */
   public readonly approvedAt = input<string | null>(null);
   public readonly approvedLoading = input(false);
   public readonly approvedError = input('');

@@ -485,8 +485,9 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-print-umbrella')?.textContent).toContain('Open releases for everyone.');
     expect(query('mktg-framework-print-numbers')?.textContent).toContain('releases a year');
     expect(query('mktg-framework-print-gaps')?.textContent).toContain('No member count.');
-    expect(query('mktg-framework-print-notes')?.textContent).toContain('Check the dates.');
-    // The reviewer's note stays on screen only.
+    // The run's notes and the reviewer's note stay on screen only.
+    expect(query('mktg-framework-print-notes')).toBeNull();
+    expect(print?.textContent).not.toContain('Check the dates.');
     expect(print?.textContent).not.toContain('Check the member count.');
 
     // Export to Google Slides waits for the page to name a stored revision.
@@ -577,7 +578,7 @@ describe('MktgFrameworkViewComponent', () => {
     const print = query('mktg-framework-print') as HTMLElement;
     expect(print.getAttribute('data-brand')).toBe('kit');
     // The kit's inks and typeface reach every frame through the portrait grammar's look.
-    const frame = query('mktg-framework-print-page-framework') as HTMLElement;
+    const frame = element().querySelector('[data-testid="lfx-mktg-portrait-page"][data-page-id="framework"]') as HTMLElement;
     expect(frame.style.getPropertyValue('--pp-dark')).toBe(kit.kit.dark);
     expect(frame.style.getPropertyValue('--pp-accent')).toBe(kit.kit.accent);
     expect(frame.style.getPropertyValue('--pp-font')).toContain('Montserrat');
