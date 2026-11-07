@@ -222,9 +222,11 @@ export async function expectFamilyBookFrames(book: Locator) {
     });
     expect({ id: frames[index].id, overflowing: frame.overflowing }).toEqual({ id: frames[index].id, overflowing: [] });
   });
-  // The family's own pages are the book's direct children; the framework's and the kit's frames sit in their prints
-  // (their plan ids, `sources` among them, may repeat the family's).
-  const own = (id: string): string => `:scope > [data-testid="lfx-mktg-portrait-page"][data-page-id="${id}"]`;
+  // The family's own pages are the book's direct children or sit in the grammar's own wrappers (an opener, the back cover);
+  // the framework's and the kit's frames sit in their prints (their plan ids, `sources` among them, may repeat the family's).
+  const frame = (id: string): string => `[data-testid="lfx-mktg-portrait-page"][data-page-id="${id}"]`;
+  const own = (id: string): string =>
+    [`:scope > ${frame(id)}`, `:scope > lfx-mktg-portrait-opener > ${frame(id)}`, `:scope > lfx-mktg-portrait-back-cover > ${frame(id)}`].join(', ');
   return {
     frames,
     openers,
