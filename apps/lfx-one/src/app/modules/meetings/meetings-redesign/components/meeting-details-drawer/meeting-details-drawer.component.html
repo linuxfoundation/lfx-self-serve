@@ -29,17 +29,23 @@
 
         <div class="flex flex-wrap items-center gap-x-[10px] gap-y-[8px]" data-testid="meeting-details-badges">
           @for (badge of visibilityBadges(); track badge.kind) {
-            <lfx-ui-badge
-              class="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-              [tone]="visibilityTones[badge.kind]"
-              [attr.role]="badge.description ? 'img' : null"
-              [attr.tabindex]="badge.description ? 0 : null"
-              [attr.aria-label]="badge.description ? badge.title + ': ' + badge.description : null"
-              [lfxUiTooltip]="badge.description ?? ''"
-              [lfxUiTooltipDisabled]="!badge.description"
-              [attr.data-testid]="'meeting-details-visibility-' + badge.kind"
-              ><i [class]="badge.icon" aria-hidden="true"></i>{{ badge.title }}</lfx-ui-badge
-            >
+            <!-- The badge keeps only static role and tabindex, so a described badge gets its own branch. -->
+            @if (badge.description; as description) {
+              <lfx-ui-badge
+                class="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                role="img"
+                tabindex="0"
+                [tone]="visibilityTones[badge.kind]"
+                [attr.aria-label]="badge.title + ': ' + description"
+                [lfxUiTooltip]="description"
+                [attr.data-testid]="'meeting-details-visibility-' + badge.kind"
+                ><i [class]="badge.icon" aria-hidden="true"></i>{{ badge.title }}</lfx-ui-badge
+              >
+            } @else {
+              <lfx-ui-badge [tone]="visibilityTones[badge.kind]" [attr.data-testid]="'meeting-details-visibility-' + badge.kind"
+                ><i [class]="badge.icon" aria-hidden="true"></i>{{ badge.title }}</lfx-ui-badge
+              >
+            }
           }
           @if (meetingType(); as type) {
             <lfx-ui-badge variant="outline" data-testid="meeting-details-type"><i [class]="type.icon" aria-hidden="true"></i>{{ type.label }}</lfx-ui-badge>
