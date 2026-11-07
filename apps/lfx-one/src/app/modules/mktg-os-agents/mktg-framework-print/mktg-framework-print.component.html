@@ -82,9 +82,14 @@
               </ol>
             }
           </div>
-          <div class="fwp-cover-strip" [lfxPpRect]="[page.margin, tops.coverStrip, page.contentWidth]" data-testid="mktg-framework-print-cover-strip">
-            <span>{{ pageBook.footLeft }}</span>
-            <span>{{ coverStripRight() }}</span>
+          <!-- The strip by the grammar's rule (coverStrip): the kit cover's classes carry the one line, the gap and the wrap; the framework's its inks on white. -->
+          <div
+            class="pp-cover-strip fwp-cover-strip"
+            [class.pp-cover-strip--wrapped]="coverStrip().wraps"
+            [lfxPpRect]="[page.margin, coverStrip().top, page.contentWidth]"
+            data-testid="mktg-framework-print-cover-strip">
+            <span>{{ coverStrip().left }}</span>
+            <span>{{ coverStrip().right }}</span>
           </div>
         }
 

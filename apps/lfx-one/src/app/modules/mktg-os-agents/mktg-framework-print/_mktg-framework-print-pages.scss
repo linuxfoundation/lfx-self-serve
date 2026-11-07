@@ -148,15 +148,9 @@
     color: var(--pp-muted);
   }
 
+  /* The strip's measure, line and wrap are the grammar's (.pp-cover-strip, the kit cover's); the framework's strip sits on white, so only its inks are its own. */
   .fwp-cover-strip {
-    display: flex;
-    justify-content: space-between;
     border-top: 1px solid var(--pp-hairline);
-    padding-top: 10px;
-    font-size: 10px;
-    line-height: 1;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
     color: var(--pp-muted);
   }
 

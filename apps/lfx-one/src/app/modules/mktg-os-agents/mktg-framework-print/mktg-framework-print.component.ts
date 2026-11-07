@@ -16,6 +16,7 @@ import {
   FRAMEWORK_PORTRAIT_TYPE,
   MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
   MKTG_PORTRAIT_COLUMNS,
+  MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_PAGE,
   MKTG_PRINT_DOT,
 } from '@lfx-one/shared/constants';
@@ -63,6 +64,7 @@ import {
   frameworkPortraitTaglineSize,
   frameworkPortraitTitle,
   frameworkPortraitTitlesAtOneSize,
+  mktgPortraitCoverStrip,
   mktgPortraitDocumentName,
   mktgNoWidow,
   mktgPortraitFitBlock,
@@ -207,7 +209,16 @@ export class MktgFrameworkPrintComponent {
     return mktgPrintJoin([view.versionLabel, view.approvedLabel, view.dateReadLabel ? `figures as of ${view.dateReadLabel}` : '']);
   });
   /** The cover's bottom strip, right: `aaif.io · V1.0 · 6 Nov 2026`, less any part the revision lacks. */
-  protected readonly coverStripRight = computed(() => mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel]));
+  /**
+   * The cover's strip by the grammar's rule (`mktgPortraitCoverStrip`, the kit cover's): the two halves on one line of the
+   * content column; a long project name or host loses its segments after the name, then words with an ellipsis, before the
+   * strip wraps, and then it wraps moved up a line so it ends where the one line did (`MKTG_PORTRAIT_COVER_STRIP`).
+   */
+  protected readonly coverStrip = computed(() => {
+    const right = mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel]);
+    const strip = mktgPortraitCoverStrip(this.resolvedBook().footLeft, right, MKTG_PORTRAIT_PAGE.contentWidth, this.resolvedLook().fontStack);
+    return { ...strip, top: TOPS.coverStrip - (strip.wraps ? MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight : 0) };
+  });
   /** The cover's umbrella, fitted to the dark band's room under the lockup and the tagline. */
   protected readonly coverUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.coverUmbrella, ROOM.coverUmbrellaWidth, ROOM.coverUmbrellaRoom));
   /**

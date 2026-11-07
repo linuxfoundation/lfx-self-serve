@@ -7,6 +7,7 @@ import {
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES,
   FRAMEWORK_PORTRAIT_ROOM,
+  FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
   MKTG_PORTRAIT_FIT,
   MKTG_PORTRAIT_PAGE,
@@ -696,6 +697,34 @@ test('Download PDF waits for the project’s Brand Kit: disabled with the reason
     if (press === 3) await page.screenshot({ path: info.outputPath('framework-pdf-kit-cover-third-download.png') });
     await finishMktgPrintFrame(page);
   }
+});
+
+test('the cover strip keeps one line under a long project name with the kit’s host: the Linux Foundation segment goes first, nothing wraps (order 41)', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  // The overfull record under the editor's long name, with the kit's host in the strip's right half: at 33584d0ea both halves
+  // wrapped to two lines. The strip is now the grammar's rule (`mktgPortraitCoverStrip`): the left half gives up
+  // "· a Linux Foundation project" and both halves share the one line; only one word each still too long would wrap it.
+  const kit = brandKitTestRevision();
+  const project = { ...ASSET_PROJECT, name: 'Cloud Native Computing Foundation (CNCF)' };
+  await openAssetDocument(page, 'foundation-message', 200, true, false, overfullFrameworkRevisionResponse(), project, kit);
+  await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+  await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+  const frame = await layoutMktgPrintFrame(page);
+  const strip = frame.getByTestId('mktg-framework-print-cover-strip');
+  await expect(strip.locator('span')).toHaveText([project.name, /^one\.example\.org · V\d+\.0 · /]);
+  await expect(strip).not.toHaveClass(/pp-cover-strip--wrapped/);
+  const lines = await strip.evaluate((block) => {
+    const line = parseFloat(getComputedStyle(block).fontSize);
+    return Array.from(block.querySelectorAll('span')).map((span) => Math.round(span.getBoundingClientRect().height / line));
+  });
+  expect(lines).toEqual([1, 1]);
+  await expect(strip).toHaveCSS('top', `${FRAMEWORK_PORTRAIT_TOPS.coverStrip}px`);
+  await page.screenshot({ path: info.outputPath('framework-pdf-cover-strip-long-name.png') });
+  await page.emulateMedia({ media: 'screen' });
+  await finishMktgPrintFrame(page);
 });
 
 test('a failed Brand Kit read never prints the LF look: Download PDF stays disabled and says so, with no print root on the page', async ({ page }, info) => {

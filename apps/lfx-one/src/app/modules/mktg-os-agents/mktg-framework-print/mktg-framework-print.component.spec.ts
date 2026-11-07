@@ -16,10 +16,12 @@ import {
   MKTG_PRINT_LF_LOOK,
   MKTG_PRINT_REVERSED_FILTER,
   MKTG_PORTRAIT_COLUMNS,
+  MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_FIT,
 } from '@lfx-one/shared/constants';
 import { BrandKitRevision, FoundationMessageContent, FoundationMessagePrintView, FoundationMessageReport } from '@lfx-one/shared/interfaces';
 import {
+  brandKitWebsiteHost,
   buildFoundationMessagePrintView,
   foundationMessagePrintCutNote,
   frameworkPortraitCutNoteHeightIn,
@@ -286,6 +288,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(rows.map((row) => row.querySelectorAll('span').length)).toEqual(rows.map(() => 2));
     // The LF look has no kit, so no web host: the strip's right carries the version and the approval's date.
     expect(text(query('mktg-framework-print-cover-strip'))).toBe('TestOrbit · a Linux Foundation project V2.0 · 6 Nov 2026');
+    expect(query('mktg-framework-print-cover-strip')?.classList.contains('pp-cover-strip--wrapped')).toBe(false);
     // The LF logo stands on the dark band.
     expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toBe('/images/logo_lf_white.svg');
     // Without the approval and read dates, the edition shows the version alone; without any, no line.
@@ -1218,6 +1221,27 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(cover?.style.getPropertyValue('--pp-dark')).not.toBe(MKTG_PRINT_LF_LOOK.dark);
     expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('kit');
     expect(query('mktg-framework-print-tagline')?.classList.contains('fwp-cover-eyebrow')).toBe(true);
+  });
+
+  it('keeps the cover strip on one line by the grammar’s rule: a long name loses the Linux Foundation segment first; only one word each still too long wraps it, moved up a line (order 41)', async () => {
+    // The overfull record's name with the kit's host: the left half gives up "· a Linux Foundation project" and both halves share
+    // the one line (K's `mktgPortraitCoverStrip`, the kit cover's rule), the strip at the design's top.
+    const kit = brandKitTestRevision();
+    await configure('browser', printView(kit, 'Cloud Native Computing Foundation (CNCF)'));
+    const strip = query('mktg-framework-print-cover-strip');
+    const halves = (): string[] => Array.from(strip?.querySelectorAll('span') ?? []).map((span) => span.textContent?.trim() ?? '');
+    expect(halves()).toEqual(['Cloud Native Computing Foundation (CNCF)', `${brandKitWebsiteHost(kit.websiteUrl)} · V2.0 · 6 Nov 2026`]);
+    expect(strip?.classList.contains('pp-cover-strip')).toBe(true);
+    expect(strip?.classList.contains('pp-cover-strip--wrapped')).toBe(false);
+    expect(top(strip)).toBe(FRAMEWORK_PORTRAIT_TOPS.coverStrip);
+    // One word each that still does not fit: the strip wraps whole, moved up one line so it ends where the one line did.
+    const word = 'Supercalifragilisticexpialidociousfoundationofeverythingopenandneutralforever';
+    const wide = brandKitTestRevision();
+    wide.websiteUrl = `https://${word.toLowerCase()}.example.org/`;
+    await setView(printView(wide, word));
+    expect(strip?.classList.contains('pp-cover-strip--wrapped')).toBe(true);
+    expect(halves()[0]).toBe(`${word} · a Linux Foundation project`);
+    expect(top(strip)).toBe(FRAMEWORK_PORTRAIT_TOPS.coverStrip - MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight);
   });
 
   it('sets a full-colour lockup the kit cannot reverse on the grammar’s white plate, padded by half its height, the artwork kept in place; no plate for a one-ink or a supplied reversed lockup (editor W3)', async () => {
