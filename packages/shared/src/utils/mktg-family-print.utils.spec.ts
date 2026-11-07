@@ -244,10 +244,12 @@ describe('mktgFamilyPrintFaqPages', () => {
         ['0.2H', '0.3'],
       ],
     ]);
+    // Three and four: the second group's heading would sit at the left column's foot over its first question alone, the
+    // group going on in the right; it moves on whole instead (the editor's F5: a heading keeps at least two questions).
     expect(shape(mktgFamilyPrintFaqPages(faqGroups([3, 4])))).toEqual([
       [
-        ['0.0H', '0.1', '0.2', '1.0H'],
-        ['1.1H', '1.2', '1.3'],
+        ['0.0H', '0.1', '0.2'],
+        ['1.0H', '1.1', '1.2', '1.3'],
       ],
     ]);
     expect(shape(mktgFamilyPrintFaqPages(faqGroups([2, 2])))).toEqual([
@@ -260,11 +262,36 @@ describe('mktgFamilyPrintFaqPages', () => {
     expect(shape(mktgFamilyPrintFaqPages(faqGroups([2])))).toEqual([[['0.0H'], ['0.1H']]]);
   });
 
+  it('never leaves a group heading over one question at a column or page foot while the group goes on; a one-question group may close a column', () => {
+    // Six long answers fill the left column at three; a group of two opening at its foot would stand there with one
+    // question (its heading repeated over the other on the right): both go right.
+    const long = 'A longer answer that runs on. '.repeat(10);
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([3, 2, 1], long)))).toEqual([
+      [
+        ['0.0H', '0.1', '0.2'],
+        ['1.0H', '1.1', '2.0H'],
+      ],
+    ]);
+    // Every column of every page: an entry that opens its group's heading is never the column's last while the group's
+    // next question starts the next column or page.
+    const groups = faqGroups([5, 4, 7, 2, 6, 3], long);
+    const pages = mktgFamilyPrintFaqPages(groups);
+    const columns = pages.flatMap((page) => page.columns).filter((column) => column.length);
+    columns.forEach((column, index) => {
+      const last = column[column.length - 1];
+      const next = columns[index + 1]?.[0];
+      const opens = column.length === 1 || column[column.length - 2].group !== last.group;
+      if (next && next.group === last.group) expect({ column: index, opens }).toEqual({ column: index, opens: false });
+    });
+    expect(pages.flatMap((page) => page.columns.flat())).toHaveLength(27);
+  });
+
   it('skips empty groups, prints no page with no questions, and sets an entry taller than a column alone', () => {
+    // The third group's heading never closes the left column over one question: the group opens the right column whole.
     expect(shape(mktgFamilyPrintFaqPages(faqGroups([2, 0, 3])))).toEqual([
       [
-        ['0.0H', '0.1', '2.0H'],
-        ['2.1H', '2.2'],
+        ['0.0H', '0.1'],
+        ['2.0H', '2.1', '2.2'],
       ],
     ]);
     expect(mktgFamilyPrintFaqPages(faqGroups([0, 0]))).toEqual([]);

@@ -128,10 +128,13 @@ export function mktgFamilyPrintFaqEntryHeight(entry: MktgFamilyPrintFaqPlanGroup
  * The FAQ's pages, filled by height: the answered questions in order, each
  * under its group's heading, into the page's two columns one after the
  * other; when both are full the next page opens, a group split where its
- * column ended (its heading repeats). An entry taller than a column stands
- * alone in one. Empty groups are not printed. No page with no questions.
- * A second page opens only when the first is full; the columns of every
- * page, and the pages, are then balanced (mktgFamilyPrintFaqBalancedPages).
+ * column ended (its heading repeats). A group's heading never sits at a
+ * column's foot with one question alone when the group goes on: it opens a
+ * column only where its first two questions fit, else the group moves on
+ * whole (the editor's F5). An entry taller than a column stands alone in
+ * one. Empty groups are not printed. No page with no questions. A second
+ * page opens only when the first is full; the columns of every page, and
+ * the pages, are then balanced (mktgFamilyPrintFaqBalancedPages).
  */
 export function mktgFamilyPrintFaqPages(groups: MktgFamilyPrintFaqPlanGroup[]): MktgFamilyPrintFaqPage[] {
   const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
@@ -154,7 +157,11 @@ export function mktgFamilyPrintFaqPages(groups: MktgFamilyPrintFaqPlanGroup[]): 
       const entryHeight = mktgFamilyPrintFaqEntryHeight(entry, width);
       let heading = lastGroup !== groupIndex;
       let height = entryHeight + (heading ? layout.heading : 0);
-      if (used > 0 && used + height > budget) {
+      // A heading opens here only with its second question beside it (when the group has one): a heading over one
+      // question at a column's foot, the group going on in the next, is what the rule keeps off the page.
+      const second = group.questions[questionIndex + 1];
+      const keepWith = heading && second ? mktgFamilyPrintFaqEntryHeight(second, width) : 0;
+      if (used > 0 && used + height + keepWith > budget) {
         if (column === 0) {
           column = 1;
         } else {
@@ -736,7 +743,9 @@ interface MktgFamilyPrintFaqDealItem {
  * three/two and two/two; four on one page lie two and two). A column never
  * exceeds its budget, except for one entry taller than a column, which
  * stands alone; what a page cannot hold goes on to the next, so nothing is
- * cut. A group split by a page or a column repeats its heading.
+ * cut. A group split by a page or a column repeats its heading, and never
+ * at a column's foot over one question alone while the group goes on: that
+ * question follows its group into the next column or page (the editor's F5).
  */
 export function mktgFamilyPrintFaqBalancedPages(groups: MktgFamilyPrintFaqPlanGroup[], pageCount: number): MktgFamilyPrintFaqPage[] {
   const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
@@ -749,7 +758,9 @@ export function mktgFamilyPrintFaqBalancedPages(groups: MktgFamilyPrintFaqPlanGr
   const cost = (item: MktgFamilyPrintFaqDealItem, previous: MktgFamilyPrintFaqDealItem | undefined): number =>
     item.height + (!previous || previous.group !== item.group ? layout.heading : 0);
   const runHeight = (run: MktgFamilyPrintFaqDealItem[]): number => run.reduce((sum, item, index) => sum + cost(item, run[index - 1]), 0);
-  // Items from `from` while the run stays under `target` and within `room`; the first item always goes in.
+  // Items from `from` while the run stays under `target` and within `room`; the first item always goes in. A run never
+  // ends on a heading over one question alone while its group goes on (the one before it is of another group or the
+  // run opens with it): that question is left for the next run, unless it is all the run holds.
   const take = (run: MktgFamilyPrintFaqDealItem[], from: number, target: number, room: number): MktgFamilyPrintFaqDealItem[] => {
     const taken: MktgFamilyPrintFaqDealItem[] = [];
     let used = 0;
@@ -759,6 +770,10 @@ export function mktgFamilyPrintFaqBalancedPages(groups: MktgFamilyPrintFaqPlanGr
       taken.push(run[index]);
       used += next;
     }
+    const last = taken[taken.length - 1];
+    const before = taken[taken.length - 2];
+    const after = run[from + taken.length];
+    if (taken.length > 1 && last && after && after.group === last.group && (!before || before.group !== last.group)) taken.pop();
     return taken;
   };
   const toItems = (column: MktgFamilyPrintFaqDealItem[]): MktgFamilyPrintFaqItem[] =>
