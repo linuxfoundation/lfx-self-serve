@@ -163,6 +163,8 @@ export const MKTG_FAMILY_PRINT_COPY = {
   rerunAgainstFramework: 'Re-run the [Document] so it reads the approved framework.',
   /** The topic of the brand-line conflict. */
   brandLineTopic: 'Brand line',
+  /** The action after a colour the kit read with two values: `[Document]` is the kit, `[Name]` the colour. */
+  rerunOnColor: 'Re-run the [Document] once its sources agree on [Name].',
 } as const;
 
 /** The body text sizes of the four boilerplate cards, longest last, and the cards' minimum heights (px). */

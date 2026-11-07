@@ -479,8 +479,9 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
  * The Sources page's "Where the documents disagree", as the store names it:
  * the kit's brand line against the framework's tagline when both exist and
  * differ, and the kit report's colour conflicts (one colour read with two
- * values). The key numbers' rows are mktgFamilyPrintNumberConflicts. Nothing
- * else is a conflict the book may claim.
+ * values). Each row names the document to re-run. The key numbers' rows are
+ * mktgFamilyPrintNumberConflicts. Nothing else is a conflict the book may
+ * claim.
  */
 export function mktgFamilyPrintConflicts(
   tagline: string,
@@ -517,7 +518,8 @@ export function mktgFamilyPrintConflicts(
         Values: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.lastOfList, { Items: readings.slice(0, -1).join(', '), Last: readings[readings.length - 1] }),
         Chosen: conflict.chosen.toUpperCase(),
       }),
-      rerun: '',
+      // Every row names its action: the kit is re-run once the sources it read agree (the brand-line row's is the framework).
+      rerun: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.rerunOnColor, { Document: mktgFamilyPrintInSentence(kitTitle), Name: conflict.name }),
     });
   }
   return conflicts;

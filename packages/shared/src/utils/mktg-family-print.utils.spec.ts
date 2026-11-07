@@ -487,7 +487,8 @@ describe('mktgFamilyPrintConflicts', () => {
         id: 'Coral · Brand kit',
         topic: 'Coral',
         text: 'The brand kit reads Coral as #FF702D from the brand page and #FF7D2D from the site buttons; it keeps #FF702D.',
-        rerun: '',
+        // The colour row carries its action like the brand-line row does: the kit, once its sources agree.
+        rerun: 'Re-run the brand kit once its sources agree on Coral.',
       },
     ]);
   });
