@@ -219,6 +219,8 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   contentsRowTight: 11,
   contentsColumns: 2,
   contentsColumnGap: 24,
+  /** `.fwp-contents-number`'s width: the room a row's title has is its column less this. */
+  contentsNumber: 30,
   /** `.fwp-card` padding, top and bottom together (14 + 14), and across (16 + 16); its hairline border above and below (1 + 1). */
   cardPadding: 28,
   cardBorder: 2,

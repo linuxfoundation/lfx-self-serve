@@ -109,10 +109,11 @@
     column-gap: 24px;
   }
 
+  /* One line a row (the board's): the title is set one line by the layout (`mktgPortraitOneLine`, cut at a word with an ellipsis past the row's measure), so the list's height is its count's. */
   .fwp-contents-row {
     display: flex;
     border-top: 1px solid var(--pp-hairline);
-    padding: 8px 0;
+    padding: 8px 0; /* FRAMEWORK_PORTRAIT_ROOM.contentsRow = 16 + the hairline */
     font-size: var(--fwp-contents-row-size, 13px);
     line-height: var(--fwp-contents-row-line, 1.3);
     color: var(--pp-ink);
@@ -120,14 +121,22 @@
   }
 
   .fwp-contents--tight .fwp-contents-row {
-    padding: 5px 0;
+    padding: 5px 0; /* FRAMEWORK_PORTRAIT_ROOM.contentsRowTight = 10 + the hairline */
     font-size: var(--fwp-contents-row-tight-size, 12px);
     line-height: var(--fwp-contents-row-tight-line, 1.3);
   }
 
+  /* The title keeps to its one line as measured: a word the measure's estimate did not foresee ends in the ellipsis, never a second line. */
+  .fwp-contents-title {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
   .fwp-contents-number {
     flex: none;
-    width: 30px;
+    width: 30px; /* FRAMEWORK_PORTRAIT_ROOM.contentsNumber */
     font-size: 11px;
     color: var(--pp-muted);
   }

@@ -64,6 +64,7 @@ import {
   mktgPortraitCharsPerLine,
   mktgPortraitCutText,
   mktgPortraitFitBlock,
+  mktgPortraitOneLine,
   mktgPortraitPageNumber,
   mktgPortraitParaHeight,
   mktgPortraitWrapLines,
@@ -339,7 +340,12 @@ export function frameworkPortraitContentsRoom(): number {
   return TOPS.coverStrip - TOPS.coverContents - ROOM.label - ROOM.contentsTop;
 }
 
-/** The height a contents list of `count` rows takes in its columns at the normal or the tight measure: one line a row, the rows split across the columns. */
+/** The width a contents row's title has, px: a column of the list (the content width less the gap, halved) less the page number's. */
+export function frameworkPortraitContentsTitleWidth(): number {
+  return (PAGE.contentWidth - ROOM.contentsColumnGap * (ROOM.contentsColumns - 1)) / ROOM.contentsColumns - ROOM.contentsNumber;
+}
+
+/** The height a contents list of `count` rows takes in its columns at the normal or the tight measure: one line a row (the titles are set one line, `frameworkPortraitContents`), the rows split across the columns. */
 export function frameworkPortraitContentsHeight(count: number, tight: boolean): number {
   const type = tight ? TYPE.contentsRowTight : TYPE.contentsRow;
   const row = type.size * type.line + (tight ? ROOM.contentsRowTight : ROOM.contentsRow);
@@ -355,18 +361,24 @@ function contentsRunOf(id: string): string | null {
 
 /**
  * The cover's contents, bounded in the room above the cover strip (the design reader's list rule): every page after the
- * cover, one row each at the design's measure where they fit; tightened where they do not; and where the tight rows still
- * run past the strip, each run of repeated pages (the goals, the profiles, a continued key-numbers table) collapsed to
- * ONE row with its page range (`Goals 1–8 · 03–10`), so every page stays listed and nothing is dropped. A provisional
- * call: the design's board shows the short book only.
+ * cover, one row each, its title set on one line (the board's row; a title longer than the row's measure is cut at a
+ * word with an ellipsis, `mktgPortraitOneLine`) at the design's measure where the rows fit; tightened where they do not;
+ * and where the tight rows still run past the strip, each run of repeated pages (the goals, the profiles, a continued
+ * key-numbers table) collapsed to ONE row with its page range (`Goals 1–8 · 03–10`), so every page stays listed and
+ * nothing is dropped. A provisional call: the design's board shows the short book only.
  */
 export function frameworkPortraitContents(plan: readonly MktgPortraitPlanPage[], firstPage: number): FoundationMessagePrintContents {
   const entries = plan
     .map((page, index) => ({ id: page.id, title: page.title, number: firstPage + index, numberLabel: mktgPortraitPageNumber(firstPage + index) }))
     .filter((entry) => entry.id !== FRAMEWORK_PORTRAIT_PAGE_IDS.cover);
   const room = frameworkPortraitContentsRoom();
-  if (frameworkPortraitContentsHeight(entries.length, false) <= room) return { rows: entries, tight: false, collapsed: false };
-  if (frameworkPortraitContentsHeight(entries.length, true) <= room) return { rows: entries, tight: true, collapsed: false };
+  const width = frameworkPortraitContentsTitleWidth();
+  const oneLine = (list: readonly FoundationMessagePrintContentsEntry[], tight: boolean): FoundationMessagePrintContentsEntry[] => {
+    const type = tight ? TYPE.contentsRowTight : TYPE.contentsRow;
+    return list.map((entry) => ({ ...entry, title: mktgPortraitOneLine(entry.title, width, type.size, { weight: type.weight }) }));
+  };
+  if (frameworkPortraitContentsHeight(entries.length, false) <= room) return { rows: oneLine(entries, false), tight: false, collapsed: false };
+  if (frameworkPortraitContentsHeight(entries.length, true) <= room) return { rows: oneLine(entries, true), tight: true, collapsed: false };
   const rows: FoundationMessagePrintContentsEntry[] = [];
   for (const entry of entries) {
     const run = contentsRunOf(entry.id);
@@ -379,7 +391,8 @@ export function frameworkPortraitContents(plan: readonly MktgPortraitPlanPage[],
       rows.push(entry);
     }
   }
-  return { rows, tight: frameworkPortraitContentsHeight(rows.length, false) > room, collapsed: true };
+  const tight = frameworkPortraitContentsHeight(rows.length, false) > room;
+  return { rows: oneLine(rows, tight), tight, collapsed: true };
 }
 
 /** The width a say pill takes, px: its text at the pill's type plus its padding and border, at the normal or the tight measure. */

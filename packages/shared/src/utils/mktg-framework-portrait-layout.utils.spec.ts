@@ -34,6 +34,7 @@ import {
   frameworkPortraitChipHeight,
   frameworkPortraitContents,
   frameworkPortraitContentsHeight,
+  frameworkPortraitContentsTitleWidth,
   frameworkPortraitContentsRoom,
   frameworkPortraitCutNoteHeightIn,
   frameworkPortraitHouse,
@@ -388,6 +389,29 @@ describe('the framework portrait book’s cover contents', () => {
     expect(cap).toMatchObject({ tight: true, collapsed: false });
     expect(cap.rows).toHaveLength(24);
     expect(frameworkPortraitContentsHeight(cap.rows.length, true)).toBeLessThanOrEqual(frameworkPortraitContentsRoom());
+  });
+
+  it('sets every title on one line of its column, cut at a word past the row’s measure, so the list’s height is its count’s', () => {
+    // A column is half the content width less the gap, less the page number's 30 px: 310 px, about 43 characters at 13 px.
+    expect(frameworkPortraitContentsTitleWidth()).toBe((704 - 24) / 2 - 30);
+    const max = mktgPortraitCharsPerLine(frameworkPortraitContentsTitleWidth(), 13);
+    expect(max).toBe(43);
+    // Eight goals with real-shaped titles at the cap, one of them long enough to wrap: every row is one line, the long one cut with the ellipsis.
+    const longTitle = 'Goal 4 · Events where the roadmap is decided in the open, with the people who build it';
+    const pages = plan(8, 2).map((page) => (page.id === 'goal-4' ? { ...page, title: longTitle } : page));
+    const contents = frameworkPortraitContents(pages, 1);
+    expect(contents).toMatchObject({ tight: false, collapsed: false });
+    for (const row of contents.rows) expect(row.title.length).toBeLessThanOrEqual(max);
+    const cut = contents.rows.find((row) => row.id === 'goal-4');
+    expect(cut?.title).toBe('Goal 4 · Events where the roadmap is…');
+    expect(contents.rows.find((row) => row.id === 'goal-3')?.title).toBe('Goal 3 · Title');
+    // At the tight measure the row holds more (12 px): the same title is cut later.
+    const tight = frameworkPortraitContents(
+      plan(8, 10, 2).map((page) => (page.id === 'goal-4' ? { ...page, title: longTitle } : page)),
+      1
+    );
+    expect(tight.tight).toBe(true);
+    expect(tight.rows.find((row) => row.id === 'goal-4')?.title).toBe('Goal 4 · Events where the roadmap is decided…');
   });
 
   it('collapses each run of repeated pages to one row with its page range when the tight rows still pass the strip, dropping no page', () => {
