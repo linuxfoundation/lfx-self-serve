@@ -17,11 +17,13 @@
 }
 
 .fpc-tagline {
-  /* A tagline longer than the measure wraps (printed as stored, never cut); the lines keep their own room. */
+  /* A tagline longer than the measure wraps (printed as stored, never cut); the lines keep their own room,
+     balanced so the last line is never one word alone ("THEM."), as the title's are. */
   font: 500 11.5px/1.5 var(--pp-font);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--pp-accent);
+  text-wrap: balance;
 }
 
 .fpc-title {
@@ -37,6 +39,23 @@
   max-width: 560px;
   font: 400 17px/1.5 var(--pp-font);
   color: color-mix(in srgb, var(--pp-on-dark) 75%, transparent);
+}
+
+/* The cover's foot strip on the grammar's (pp-cover-strip): the site and date never break ("2026" alone), the
+   project line takes the rest and wraps balanced when it must ("PROJECT" alone), the two kept apart by a gap;
+   wrapped lines get a line's room. */
+.fpc-strip {
+  gap: 24px;
+  line-height: 1.4;
+
+  > :first-child {
+    text-wrap: balance;
+  }
+
+  > :last-child {
+    flex: none;
+    white-space: nowrap;
+  }
 }
 
 .fpc-docs {
@@ -77,10 +96,12 @@
 .fpt-chapter {
   break-inside: avoid;
 
+  /* The page number keeps its width and a gap from a title that wraps (the layout's `aside` holds both). */
   &__row {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
+    gap: 12px;
     padding: 14px 0 6px;
     border-top: 1px solid var(--pp-ink);
   }
@@ -105,19 +126,23 @@
   }
 
   &__page {
+    flex: none;
     font: 400 13px/1.2 var(--pp-font);
     color: var(--pp-muted);
   }
 }
 
+/* An entry row: the page number keeps its width and a gap from a title that wraps (the layout's `numberWidth` holds both). */
 .fpt-entry {
   display: flex;
   justify-content: space-between;
+  gap: 12px;
   padding: 4px 0 4px 36px;
   font: 400 12px/1.3 var(--pp-font);
   color: var(--pp-ink);
 
   &__page {
+    flex: none;
     font-size: 11px;
     color: var(--pp-muted);
   }
