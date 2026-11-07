@@ -178,9 +178,9 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   // The geometry proof measures the frame's document: the one the dialog prints.
   const printFrame = await layoutMktgPrintFrame(page);
   const printDocument = printFrame.getByTestId('family-export-print-document');
-  // The family prints as one book of the portrait grammar's frames (CSS Paged Media Level 3: `@page { size: 8.5in 11in;
-  // margin: 0 }`, one fixed 816×1056 frame per page): the family's own pages, and the framework's and the kit's
-  // portrait pages in the family's book.
+  // The family prints as one book of the portrait grammar's frames (CSS Paged Media Level 3: `@page { size: auto;
+  // margin: 0 }`, the page box the dialog's paper, one fixed 816×1056 frame per page that the grammar scales to a
+  // narrower paper itself): the family's own pages, and the framework's and the kit's portrait pages in the family's book.
   const book = printDocument.locator('lfx-mktg-family-print');
   await expect(book).toHaveCount(1);
   await expect(book).toHaveClass(/lfx-mktg-portrait/);
@@ -192,10 +192,12 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   // Only the wrapper travels: the card's controls are not in the frame.
   await expect(printFrame.getByTestId('family-export-actions')).toHaveCount(0);
   const frames = await expectFamilyBookFrames(book);
-  // Both @page rules, named and unnamed, the same values in every engine; the frame writes them last in its head.
+  // Both @page rules, named and unnamed, carry the grammar's exported setup (`MKTG_PRINT_PAGE_SETUPS['mktg-portrait']`:
+  // the paper box the dialog chose, no margin — its value is the kit's to pin, so no literal here can strand on the
+  // grammar's next change); the frame writes them last in its head, the same values in every engine.
   const setup = MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
   expect(await printFrame.locator('head style').last().textContent()).toBe(`@page { ${setup} }\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
-  expect(setup).toBe('size: 8.5in 11in; margin: 0;');
+  expect(setup).toMatch(/margin: 0;/);
   // The cover: the family's title on the kit's dark, the logo, the four documents' tiles with version and date.
   const cover = frames.byId('cover');
   await expect(cover).toHaveClass(/pp-page--dark/);
