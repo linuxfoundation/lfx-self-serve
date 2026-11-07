@@ -715,7 +715,7 @@ test('the framework print set in the project’s kit: accent text darkened to re
   await finishMktgPrintFrame(page);
 });
 
-test('a framework at the goals’ cap: the matrix’s eight columns fit their text and cut their proofs to the note, ending above the footer', async ({
+test('a framework at the goals’ cap: the matrix’s eight columns fit their text, each proof cell keeping its first proof over the note, ending above the footer', async ({
   page,
 }, info) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -765,11 +765,14 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   for (const size of layout.vp) expect(size).toBeLessThan(11);
   for (const size of [...layout.vp, ...layout.key]) expect(size).toBeGreaterThanOrEqual(floor(11));
   for (const size of layout.bite) expect(size).toBeGreaterThanOrEqual(floor(12.5));
-  // Every proof cell says what it cut; the count is the record's (four a goal).
+  // Every proof cell keeps its first proof (editor F3: never only the note) and says what it cut; the count is the record's (four a goal).
+  const cells = matrix.getByTestId('mktg-framework-print-matrix-proof-cell');
+  await expect(cells).toHaveCount(8);
+  for (const cell of await cells.all()) await expect(cell.getByTestId('mktg-framework-print-matrix-proof')).toHaveCount(1);
   const notes = matrix.getByTestId('mktg-framework-print-matrix-proofs-cut');
   const noteCount = await notes.count();
   expect(noteCount).toBeGreaterThan(0);
-  for (const note of await notes.all()) await expect(note).toHaveText(/^\+[1-4] more on the framework's Framework tab in LFX One$/);
+  for (const note of await notes.all()) await expect(note).toHaveText(/^\+[1-3] more on the framework's Framework tab in LFX One$/);
   // Eight figures print as the table, each with its thousands separators (the editor's rule); the fixture's bare "2000" is in the year range
   // and prints as stored.
   await expect(page.getByTestId('mktg-framework-print-numbers-table').getByTestId('mktg-framework-print-number-figure')).toHaveText([

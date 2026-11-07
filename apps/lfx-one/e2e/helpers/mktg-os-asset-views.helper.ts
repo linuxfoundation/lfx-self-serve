@@ -442,7 +442,8 @@ export const OVERFULL_GOAL_TITLES = ['Adoption', 'Contributors', 'Certification'
 /**
  * The framework record at the goals' cap (`FOUNDATION_MESSAGE_CONTENT_LIMITS.goals.max`: eight goals, four proofs each, long
  * cells), so the framework page's matrix has 57 px columns and must fit its text cells and cut every proof cell to its
- * note to end above the footer; the rest of the record is the real-shaped asset's. With `titles`, the goals take those
+ * first proof and the note (editor F3: never only the note) to end above the footer; the rest of the record is the
+ * real-shaped asset's. With `titles`, the goals take those
  * (the overfull record's: the strip cannot hold their words, so the matrix prints as two bands of four).
  */
 export function capGoalsFrameworkRevisionResponse(titles?: readonly string[]): MktgRevisionResponse {
