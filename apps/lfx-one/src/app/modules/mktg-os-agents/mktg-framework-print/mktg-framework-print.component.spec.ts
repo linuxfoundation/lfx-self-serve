@@ -725,6 +725,44 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(text(query('mktg-framework-print-approval'))).toBe('V2.0. A later run re-reads the sources and refreshes the LFX figures.');
   });
 
+  it('gives the failed sources the room the Read block leaves as it prints: twenty short failures under no Read block all print, with no note', async () => {
+    const failed = Array.from({ length: 20 }, (_, index) => ({ name: `Source ${index + 1}`, reason: 'timed out' }));
+    await configure(
+      'browser',
+      buildFoundationMessagePrintView(CONTENT, 'TestOrbit', 2, null, '2026-11-06T09:00:00Z', { sources_read: [], sources_failed: failed, gaps: [], notes: '' })
+    );
+    expect(query('mktg-framework-print-sources-read')).toBeNull();
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-sources-failed-row"]')).toHaveLength(20);
+    expect(query('mktg-framework-print-sources-failed-cut')).toBeNull();
+    // With a long Read list in the column, the failures keep at least the half the design gives them while the Read list is cut to leave it.
+    const read = Array.from({ length: 40 }, (_, index) => `Website: https://site-${index + 1}.example.org`);
+    await setView(
+      buildFoundationMessagePrintView(CONTENT, 'TestOrbit', 2, null, '2026-11-06T09:00:00Z', {
+        sources_read: read,
+        sources_failed: failed,
+        gaps: [],
+        notes: '',
+      })
+    );
+    expect(query('mktg-framework-print-sources-read-cut')).not.toBeNull();
+    const kept = host().querySelectorAll('[data-testid="mktg-framework-print-sources-failed-row"]').length;
+    expect(kept).toBeGreaterThan(0);
+    expect(kept).toBeLessThan(20);
+    expect(query('mktg-framework-print-sources-failed-cut')?.textContent?.trim()).toBe(`+${20 - kept} more in LFX One`);
+  });
+
+  it('keys a goal page’s frame and lead on the goal’s position: two goals numbered alike both print, each under its own number', async () => {
+    const twin = { ...CONTENT.mf.goals[0], id: 'twin', t: 'Twin', vp: 'Twin VP.' };
+    await configure(
+      'browser',
+      buildFoundationMessagePrintView({ ...CONTENT, mf: { ...CONTENT.mf, goals: [CONTENT.mf.goals[0], twin] } }, 'TestOrbit', 2, null)
+    );
+    expect(frame('goal-1')?.querySelector('[data-testid="mktg-framework-print-goal-1"] .fwp-goal-vp')?.textContent?.trim()).toBe('VP.');
+    expect(frame('goal-2')?.querySelector('[data-testid="mktg-framework-print-goal-2"] .fwp-goal-vp')?.textContent?.trim()).toBe('Twin VP.');
+    expect(frame('goal-2')?.querySelector('.fwp-goal-number')?.textContent?.trim()).toBe('01');
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-goal-1"]')).toHaveLength(1);
+  });
+
   it('decides the empty-state lines by the report’s counts, not by the rows that fit, and prints no heading or label over nothing', async () => {
     const long = 'A long sentence about the project and the many things it does for the people who use it every day. ';
     const report: FoundationMessageReport = {

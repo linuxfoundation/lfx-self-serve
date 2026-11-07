@@ -865,18 +865,13 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   const noteCount = await notes.count();
   expect(noteCount).toBeGreaterThan(0);
   for (const note of await notes.all()) await expect(note).toHaveText(/^\+[1-3] more in LFX One$/);
-  // Eight figures print as the table, each with its thousands separators (the editor's rule); the fixture's bare "2000" is a count
-  // under a count's label, so it is separated too — the year rule holds only under a year label (editor S1).
-  await expect(page.getByTestId('mktg-framework-print-numbers-table').getByTestId('mktg-framework-print-number-figure')).toHaveText([
-    '1,000',
-    '2,000',
-    '3,000',
-    '4,000',
-    '5,000',
-    '6,000',
-    '7,000',
-    '8,000',
-  ]);
+  // The record keeps the real-shaped asset's four figures, so they print as tiles, each with its thousands separators (the editor's
+  // rule), and no key numbers table (the overfull record's eight figures prove the table and its separators).
+  await expect(print.locator('[data-testid^="mktg-framework-print-number-tile-"]')).toHaveCount(4);
+  for (const [index, figure] of ['1,200,000', '3,400', '41', '2,800'].entries()) {
+    await expect(print.getByTestId(`mktg-framework-print-number-tile-${index}`)).toContainText(figure);
+  }
+  await expect(print.getByTestId('mktg-framework-print-numbers-table')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('foundation-message-print-cap-goals.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);
