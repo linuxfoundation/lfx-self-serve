@@ -135,7 +135,7 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   sourceTight: { size: 11.5, line: 1.5, weight: 400 },
   /** The muted line under a cut list: `+N more on the framework's Framework tab in LFX One` (the Sources tab for the Sources & gaps lists). */
   cutNote: { size: 10.5, line: 1.4, weight: 400 },
-  /** A key number tile's figure (`.fwp-number`), stepped down to one line of the tile when it must be. */
+  /** A key number tile's figure (`.fwp-number`), stepped down in whole px to one line of the tile, to a floor of half its size; a longer figure overflows the tile (follow-up). */
   tileFigure: { size: 54, line: 1, weight: 500 },
   /** A key number tile's label (`.fwp-number-label`), fitted to the room under the figure. */
   tileLabel: { size: 14, line: 1.4, weight: 400 },

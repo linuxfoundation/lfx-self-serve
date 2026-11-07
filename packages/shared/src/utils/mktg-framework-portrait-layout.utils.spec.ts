@@ -133,7 +133,7 @@ describe('the framework portrait book’s key numbers', () => {
     expect(frameworkPortraitNumbersPages(view(0))[0]).toMatchObject({ tiles: [], numbersTable: [], factsTop: tile.top });
   });
 
-  it('fits a tile’s figure to one line and its label to the room under it, stepping the sizes down, never clipping', () => {
+  it('steps the figure down to the half-size floor and fits the label to the room under it', () => {
     // A third-width tile: (704 − 2 × 16) / 3 = 224 wide, 176 of content. Six seven-digit figures with a 30-character label.
     const content = (704 - 2 * 16) / 3 - 2 * 24;
     expect(content).toBe(176);
