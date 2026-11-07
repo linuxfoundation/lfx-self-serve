@@ -73,6 +73,7 @@ import {
 import { MktgPrintService } from '@services/mktg-print.service';
 import { distinctUntilChanged, filter } from 'rxjs';
 
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../components/mktg-portrait/mktg-portrait-host';
 import { MktgPortraitPageComponent } from '../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../components/mktg-portrait/mktg-portrait-rect.directive';
 
@@ -86,8 +87,9 @@ const ROOM = FRAMEWORK_PORTRAIT_ROOM;
 // nothing flows across a page edge (CSS Paged Media: the grammar's `.pp-page`
 // is the named Letter page with no margin and carries the one break per
 // frame, `break-before: page; break-after: auto`; this component sets no
-// page and no break, and its host is a block, MKTG_PORTRAIT_BLOCK_HOST, so
-// Google Chrome adds no sheet at an inline host). The pages are the plan's
+// page and no break; its one component style is the grammar's
+// MKTG_PORTRAIT_BLOCK_HOST, `:host { display: block }`, so Google Chrome adds
+// no sheet at an inline host). The pages are the plan's
 // (`frameworkPortraitPlan`): a cover with the contents; 01 Framework (the
 // statements and the goal matrix, one page per goal, say and avoid with the
 // anchor questions); 02 ICPs, by their measured cards, two a page at most;
@@ -122,12 +124,13 @@ const ROOM = FRAMEWORK_PORTRAIT_ROOM;
 // alone). The frames' measurements are the design's, in the `[lfxPpRect]`
 // placements, FRAMEWORK_PORTRAIT_TOPS and FRAMEWORK_PORTRAIT_ROOM; the pages'
 // styles are the global partial `_mktg-framework-print-pages.scss` beside
-// this file, `@use`d from styles.scss, scoped to this book's root.
+// this file, `@use`d from styles.scss, scoped to this book's root (no
+// component stylesheet: the host rule above is the component's whole style).
 @Component({
   selector: 'lfx-mktg-framework-print',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
   templateUrl: './mktg-framework-print.component.html',
-  styleUrl: './mktg-framework-print.component.scss',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgFrameworkPrintComponent {
   // === Injections ===

@@ -115,6 +115,8 @@ test('A2: the family PDF prints the lead-in as a paragraph and its items as a li
   // the brand's color printed as it shows, and the group heading in the document's typeface, not the base layer's Inter.
   await expect(faqPrint).toHaveCSS('padding-left', '57.6px');
   await expect(faqPrint).toHaveCSS('print-color-adjust', 'exact');
+  // The FAQ's host is a block (MKTG_PORTRAIT_BLOCK_HOST): an inline host around its page break costs a blank sheet in Google Chrome.
+  await expect(frame.locator('lfx-mktg-faq-print')).toHaveCSS('display', 'block');
   const [rootFont, headingFont, listMarker] = await faqPrint.evaluate((root) => [
     getComputedStyle(root).fontFamily,
     getComputedStyle(root.querySelector('[data-testid="mktg-faq-print-group"]') as Element).fontFamily,
