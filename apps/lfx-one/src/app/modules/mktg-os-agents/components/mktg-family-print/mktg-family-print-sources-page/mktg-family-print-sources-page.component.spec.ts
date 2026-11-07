@@ -44,7 +44,13 @@ describe('MktgFamilyPrintSourcesPageComponent', () => {
     const open = root.querySelector<HTMLElement>('[data-testid="family-print-sources-open"]');
     expect(open?.textContent).toContain('No stacked lockup.');
     expect(open?.querySelector('.pp-chip')?.textContent).toBe('Brand kit');
-    expect(open?.style.top).toBe('690px');
+    // The two lists flow from y 410 in one frame: the Still open block follows the conflicts (a block gap under them), with no fixed y of its own.
+    const lists = root.querySelector<HTMLElement>('[data-testid="family-print-sources-lists"]');
+    expect(lists?.style.top).toBe('410px');
+    expect(open?.previousElementSibling).toBe(conflicts);
+    expect(open?.style.top).toBe('');
+    expect(open?.classList.contains('fps-block')).toBe(true);
+    expect(conflicts?.classList.contains('fps-block')).toBe(true);
   });
 
   it('omits the conflicts block when the store names none, and the open list moves up', async () => {
@@ -53,7 +59,9 @@ describe('MktgFamilyPrintSourcesPageComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="family-print-sources-conflicts"]')).toBeNull();
-    expect(root.querySelector<HTMLElement>('[data-testid="family-print-sources-open"]')?.style.top).toBe('410px');
+    const open = root.querySelector<HTMLElement>('[data-testid="family-print-sources-open"]');
+    expect(open?.previousElementSibling).toBeNull();
+    expect(open?.parentElement?.style.top).toBe('410px');
   });
 
   it('omits the open list when every run closed clean', async () => {

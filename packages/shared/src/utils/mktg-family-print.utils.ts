@@ -267,6 +267,16 @@ export function mktgFamilyPrintCutNote(cut: number): string {
   return cut > 0 ? mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.cutNote, { Count: cut }) : '';
 }
 
+/**
+ * A sentence that quotes another, with one stop: when the quoted words end on
+ * their own stop before the closing quote (`… on them.”.`), the sentence's
+ * stop after the quote is dropped (`… on them.”`), as English sets it; a
+ * quote with no stop of its own keeps the sentence's.
+ */
+export function mktgFamilyPrintOneStop(text: string): string {
+  return text.replace(/([.!?…])([”"’')\]]+)\.(?=\s|$)/g, '$1$2');
+}
+
 /** The boilerplates page's Built from block as it fits under the cards: the distinct labels, whole rows above the footer in a list column `width` wide, the rest counted. */
 export function mktgFamilyPrintFitRunBlock(rows: readonly string[], width: number): MktgFamilyPrintFitRows<string> {
   const layout = MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT;
@@ -444,23 +454,37 @@ export function mktgFamilyPrintOpenItems(chapters: MktgFamilyPrintChapter[]): Mk
  * The Sources page's two lists as they fit their fixed blocks: the conflicts
  * from y 410 to the Still open block, the open items from there to the
  * page's bottom (from y 410 when there are no conflicts); whole rows only,
- * nothing added, the rows past a block counted for its cut note. The open
- * rows' text column starts after the widest document chip, so the chips
- * align whatever the longest document name.
+ * nothing added, the rows past a block counted for its cut note. The Still
+ * open block follows the conflicts printed, a block gap under them, never
+ * lower than the board's y for it, so the page keeps no dead space between
+ * the two; its budget runs from there. The open rows' text column starts
+ * after the widest document chip, so the chips align whatever the longest
+ * document name.
  */
 export function mktgFamilyPrintSourcesLayout(conflicts: MktgFamilyPrintConflict[], openItems: MktgFamilyPrintOpenItem[]): MktgFamilyPrintSourcesLayout {
   const layout = MKTG_FAMILY_PRINT_SOURCES_LAYOUT;
   const width = MKTG_PORTRAIT_PAGE.contentWidth;
+  const conflictText = (row: MktgFamilyPrintConflict): string => [row.text, row.rerun].filter(Boolean).join(' → ');
+  const conflictWidth = width - layout.topicWidth - layout.gap;
   const keptConflicts = mktgFamilyPrintFitRows(
     conflicts,
-    (row) => [row.text, row.rerun].filter(Boolean).join(' → '),
-    width - layout.topicWidth - layout.gap,
+    conflictText,
+    conflictWidth,
     layout.conflict.size,
     layout.conflict.line,
     layout.conflict.padding,
     layout.openTop - layout.conflictsTop - layout.heading
   );
-  const openTop = conflicts.length ? layout.openTop : layout.conflictsTop;
+  // The conflicts' height as the fit model measured it, the cut note's line included: the Still open block starts under it.
+  const noteLine = keptConflicts.cut > 0 ? layout.conflict.padding + layout.conflict.size * layout.conflict.line : 0;
+  const conflictsHeight = keptConflicts.rows.reduce(
+    (height, row) =>
+      height +
+      layout.conflict.padding +
+      mktgPortraitParaHeight({ text: conflictText(row), size: layout.conflict.size, line: layout.conflict.line }, conflictWidth),
+    noteLine
+  );
+  const openTop = conflicts.length ? Math.min(layout.openTop, layout.conflictsTop + layout.heading + conflictsHeight + layout.blockGap) : layout.conflictsTop;
   const chipWidth = Math.max(0, ...openItems.map((item) => item.document.length)) * layout.chip.size * MKTG_PORTRAIT_FIT.charEmCaps + layout.chip.padding;
   const keptOpen = mktgFamilyPrintFitRows(
     openItems,
@@ -610,7 +634,8 @@ export function mktgFamilyPrintConflicts(
     conflicts.push({
       id: `${topic} · ${kitTitle}`,
       topic,
-      text: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.brandLineConflict, { Line: line, Tagline: tag }),
+      // One stop: a tagline that ends on its own full stop does not take the sentence's after the closing quote.
+      text: mktgFamilyPrintOneStop(mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.brandLineConflict, { Line: line, Tagline: tag })),
       rerun: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.rerunAgainstFramework, { Document: mktgFamilyPrintInSentence(kitTitle) }),
     });
   }

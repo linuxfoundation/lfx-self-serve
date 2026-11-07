@@ -39,6 +39,7 @@ import {
   mktgFamilyPrintFigure,
   mktgFamilyPrintNumberConflicts,
   mktgFamilyPrintOpenItemText,
+  mktgFamilyPrintOneStop,
   mktgFamilyPrintOpenItems,
   mktgFamilyPrintPageRange,
   mktgFamilyPrintPlan,
@@ -332,7 +333,19 @@ describe('the fixed blocks', () => {
     expect(layout.conflictsCut).toBe(2);
     expect(layout.openItems).toEqual(openItems.slice(0, 8));
     expect(layout.openCut).toBe(4);
-    expect(layout.openTop).toBe(MKTG_FAMILY_PRINT_SOURCES_LAYOUT.openTop);
+    // A full conflicts block (less than one row free): the Still open block sits within a row of where the board draws it, never lower.
+    const { openTop, conflict: conflictType } = MKTG_FAMILY_PRINT_SOURCES_LAYOUT;
+    expect(layout.openTop).toBeLessThanOrEqual(openTop);
+    expect(layout.openTop).toBeGreaterThan(openTop - conflictType.padding - conflictType.size * conflictType.line);
+    // One short conflict: the Still open block follows it, the block gap under its row, and holds the rows the dead space held before.
+    const tight = mktgFamilyPrintSourcesLayout([conflict], openItems);
+    expect(tight.conflicts).toEqual([conflict]);
+    expect(tight.openTop).toBeLessThan(MKTG_FAMILY_PRINT_SOURCES_LAYOUT.openTop - 100);
+    expect(tight.openTop).toBeGreaterThan(
+      MKTG_FAMILY_PRINT_SOURCES_LAYOUT.conflictsTop + MKTG_FAMILY_PRINT_SOURCES_LAYOUT.heading + MKTG_FAMILY_PRINT_SOURCES_LAYOUT.blockGap
+    );
+    expect(tight.openItems).toEqual(openItems);
+    expect(tight.openCut).toBe(0);
     const alone = mktgFamilyPrintSourcesLayout([], openItems);
     expect(alone.conflicts).toEqual([]);
     expect(alone.openItems).toEqual(openItems);
@@ -515,6 +528,10 @@ describe('mktgFamilyPrintConflicts', () => {
         rerun: 'Re-run the brand kit so it reads the approved framework.',
       },
     ]);
+    // A tagline that ends on its own full stop keeps one stop at the closing quote, never two (`them.”.`).
+    expect(mktgFamilyPrintConflicts('Open foundations, governed by the people who build on them.', 'Agents in the open', [], 'Brand kit')[0].text).toBe(
+      'The brand kit carries “Agents in the open”; the framework’s tagline is “Open foundations, governed by the people who build on them.”'
+    );
     expect(
       mktgFamilyPrintConflicts(
         '',
@@ -612,6 +629,15 @@ describe('mktgFamilyPrintFitBoilerplateCards', () => {
     const fitted = mktgFamilyPrintFitBoilerplateCards([sentence, long, sentence, long].map(card), MKTG_PORTRAIT_PAGE.contentWidth);
     expect(fitted.map((entry) => entry.text.length > 0)).toEqual([true, true, true, true]);
     expect(fitted.filter((entry) => entry.cutWords > 0).length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('mktgFamilyPrintOneStop', () => {
+  it('drops the sentence’s stop after a quote that ends on its own, and keeps it after one that does not', () => {
+    expect(mktgFamilyPrintOneStop('The tagline is “Build on them.”.')).toBe('The tagline is “Build on them.”');
+    expect(mktgFamilyPrintOneStop('The tagline is “Why not?”. Next.')).toBe('The tagline is “Why not?” Next.');
+    expect(mktgFamilyPrintOneStop('The tagline is “Open source for AI”.')).toBe('The tagline is “Open source for AI”.');
+    expect(mktgFamilyPrintOneStop('Version 2.0.')).toBe('Version 2.0.');
   });
 });
 
