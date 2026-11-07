@@ -21,6 +21,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   FoundationMessagePrintFittedText,
+  FoundationMessageProofView,
   FoundationMessagePrintFrame,
   FoundationMessagePrintGoal,
   FoundationMessagePrintGoalPage,
@@ -43,6 +44,7 @@ import {
   frameworkPortraitAvoidList,
   frameworkPortraitBodyTop,
   frameworkPortraitCutList,
+  frameworkPortraitChipHeight,
   frameworkPortraitContents,
   frameworkPortraitHouse,
   frameworkPortraitIcpMatrixHeight,
@@ -279,14 +281,17 @@ export class MktgFrameworkPrintComponent {
     const tops = this.tops;
     const width = this.page.contentWidth;
     const proofsRoom = tops.goalBite - tops.goalProofs - ROOM.label - 6 - ROOM.gap;
-    // A proof row is the fact beside its chip: the chip is capped at ROOM.chip (`.fwp-chip-wrap`), so the fact measures against the rest;
-    // the list is tightened before it is cut, and the cut is said under it.
+    // A proof row is the fact beside its chip: the chip is capped at ROOM.chip (`.fwp-chip-wrap`) and wraps inside it, so the row is the
+    // taller of the fact (measured against the rest) and the chip; the list is tightened before it is cut, and the cut is said under it.
+    const factWidth = width - ROOM.chip - ROOM.proofGap;
+    const proofRow = (proof: FoundationMessageProofView, type: FoundationMessagePrintType): number =>
+      Math.max(this.paraHeight(proof.fact, type, factWidth), frameworkPortraitChipHeight(proof.source, ROOM.chip));
     const proofs = frameworkPortraitCutList(
       goal.proofRows,
       proofsRoom,
-      'Framework',
-      (proof) => this.paraHeight(proof.fact, TYPE.goalProof, width - ROOM.chip - ROOM.proofGap) + ROOM.proofRow,
-      (proof) => this.paraHeight(proof.fact, TYPE.goalProofTight, width - ROOM.chip - ROOM.proofGap) + ROOM.proofRowTight
+      'framework',
+      (proof) => proofRow(proof, TYPE.goalProof) + ROOM.proofRow,
+      (proof) => proofRow(proof, TYPE.goalProofTight) + ROOM.proofRowTight
     );
     const served = goal.icps.map((id) => view.icps.find((icp) => icp.id === id)).filter((icp): icp is FoundationMessagePrintIcp => !!icp);
     const cardWidth = served.length ? (width - (served.length - 1) * 16) / served.length - 32 : width;
@@ -348,7 +353,7 @@ export class MktgFrameworkPrintComponent {
     const columnRoom = this.tops.sourcesApproval - this.tops.sourcesLists - ROOM.gap;
     const rowHeight = (text: string): number => this.paraHeight(text, TYPE.source, listWidth);
     const tightHeight = (text: string): number => this.paraHeight(text, TYPE.sourceTight, listWidth);
-    const list = (rows: readonly string[], room: number) => frameworkPortraitCutList(rows, room, 'Sources', rowHeight, tightHeight);
+    const list = (rows: readonly string[], room: number) => frameworkPortraitCutList(rows, room, 'sources', rowHeight, tightHeight);
     let lists: FoundationMessagePrintSourcesPage['report'] = null;
     if (report) {
       const failedAll = report.sources_failed.map(

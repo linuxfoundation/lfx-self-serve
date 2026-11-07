@@ -26,6 +26,7 @@ import {
   FRAMEWORK_PORTRAIT_TYPE,
   mktgPrintJoin,
 } from '../constants/mktg-print.constants';
+import { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 import { MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
 import type {
@@ -73,9 +74,15 @@ const TOPS = FRAMEWORK_PORTRAIT_TOPS;
 const PAGE = MKTG_PORTRAIT_PAGE;
 const FIT = MKTG_PORTRAIT_FIT;
 
-/** The line under a cut list: `+3 more on the framework's Sources tab in LFX One` (the design reader's form, 7 Nov 2026). */
+/** The line under a cut list: `+3 more on the framework's Sources and gaps tab in LFX One` (the design reader's form, 7 Nov 2026), the tab named as the screen labels it. */
 export function foundationMessagePrintCutNote(cut: number, tab: FoundationMessagePrintCutTab): string {
-  return `+${cut} more on the framework's ${tab} tab in LFX One`;
+  const label = FOUNDATION_MESSAGE_VIEW_TABS.find((entry) => entry.id === tab)?.label ?? tab;
+  return `+${cut} more on the framework's ${label} tab in LFX One`;
+}
+
+/** The height a wrapping source chip takes (`.pp-chip.fwp-chip-wrap`): its capitals at the chip's size on the lines its box holds, with its padding and border above and below. */
+export function frameworkPortraitChipHeight(text: string, width: number): number {
+  return mktgPortraitParaHeight({ text, size: ROOM.chipSize, line: 1, caps: true }, Math.min(width, ROOM.chip) - ROOM.chipPadding) + ROOM.chipVertical;
 }
 
 /** The height a text takes at a type in a column, px. */
@@ -115,27 +122,32 @@ export function frameworkPortraitCutList<T>(
   return { rows: kept, cut, tight: true, note: foundationMessagePrintCutNote(cut, tab) };
 }
 
-/** The size at which a figure sits on one line of `width` px, stepped down from the tile figure's size in whole px, never under half of it. */
-export function frameworkPortraitFigureSize(figure: string, width: number): number {
+/** The size at which a figure sits on one line of `width` px, stepped down from the tile figure's size in whole px, never under half of it; null when the floor does not hold it (the numbers then print as the table). */
+export function frameworkPortraitFigureSize(figure: string, width: number): number | null {
   const type = TYPE.tileFigure;
+  const fits = (size: number): boolean => mktgPortraitCharsPerLine(width, size, { weight: type.weight }) >= figure.length;
   let size = type.size;
-  while (size > type.size / 2 && mktgPortraitCharsPerLine(width, size, { weight: type.weight }) < figure.length) size -= 1;
-  return size;
+  while (size > type.size / 2 && !fits(size)) size -= 1;
+  return fits(size) ? size : null;
 }
 
 /**
  * The tiles for a count the tiles hold (1 to FRAMEWORK_PORTRAIT_MAX_TILES), each with its share of a row and its text fitted to the
- * tile: the figure on one line, the label in the room under it less the source pill's when the figure has a source; none past that.
+ * tile: the figure on one line, the label in the room under it less the source pill's when the figure has a source; none past that
+ * count, and none when a figure does not sit on one line at the figure's floor (the numbers then print as the table, whole).
  */
 export function frameworkPortraitNumberTiles(numbers: readonly FoundationMessagePrintNumber[]): FoundationMessagePrintNumberTile[] {
   const shares: readonly number[] | undefined = FRAMEWORK_PORTRAIT_TILE_SHARES[numbers.length as keyof typeof FRAMEWORK_PORTRAIT_TILE_SHARES];
   if (!shares || numbers.length > FRAMEWORK_PORTRAIT_MAX_TILES) return [];
   const tile = FRAMEWORK_PORTRAIT_NUMBER_TILE;
+  // A tile's content width: its share of the row less the gaps between tiles, less the side padding.
+  const widthOf = (share: number): number => (PAGE.contentWidth - (share - 1) * tile.gap) / share - 2 * tile.paddingSide;
+  const sizes = numbers.map((row, index) => frameworkPortraitFigureSize(row.number, widthOf(shares[index])));
+  if (sizes.some((size) => size === null)) return [];
   return numbers.map((row, index) => {
     const share = shares[index];
-    // A tile's content width: its share of the row less the gaps between tiles, less the side padding.
-    const width = (PAGE.contentWidth - (share - 1) * tile.gap) / share - 2 * tile.paddingSide;
-    const figureSize = frameworkPortraitFigureSize(row.number, width);
+    const width = widthOf(share);
+    const figureSize = sizes[index] ?? TYPE.tileFigure.size;
     const pillRoom = row.source ? tile.labelGap + tile.sourceHeight : 0;
     const labelRoom = tile.height - 2 * tile.paddingTop - figureSize * TYPE.tileFigure.line - tile.labelGap - pillRoom;
     const label = mktgPortraitFitBlock({ paras: [{ text: row.label, ...TYPE.tileLabel }] }, width, labelRoom).block.paras[0];
@@ -143,13 +155,31 @@ export function frameworkPortraitNumberTiles(numbers: readonly FoundationMessage
   });
 }
 
+/** The key numbers table's two cell widths at the `<colgroup>` shares, less the cells' padding. */
+function numbersCellWidths(): [number, number] {
+  const [figure, label] = FRAMEWORK_PORTRAIT_NUMBER_COLUMNS.map((share) => (PAGE.contentWidth * share) / 100 - ROOM.factCellPadding);
+  return [figure, label];
+}
+
 /** The height of a key numbers table row at the fact type: the taller of its two cells, with the row's padding and hairline. */
 function numbersRowHeight(row: FoundationMessageNumberRow, tight: boolean): number {
-  const [figure, label] = FRAMEWORK_PORTRAIT_NUMBER_COLUMNS.map((share) => (PAGE.contentWidth * share) / 100 - ROOM.factCellPadding);
+  const [figure, label] = numbersCellWidths();
   return (
     Math.max(frameworkPortraitTextHeight(row.number, TYPE.fact, figure), frameworkPortraitTextHeight(row.label, TYPE.fact, label)) +
     (tight ? ROOM.factRowTight : ROOM.factRow)
   );
+}
+
+/**
+ * A key numbers table row that is taller than a whole page's room, cut at a sentence (then a word) in each cell until the row
+ * ends inside it, at the fact type (never set smaller): the row stays one row on its page instead of running under the footer.
+ */
+export function frameworkPortraitNumbersRowIn(row: FoundationMessageNumberRow, room: number): FoundationMessageNumberRow {
+  if (numbersRowHeight(row, false) <= room) return row;
+  const [figure, label] = numbersCellWidths();
+  const cell = (text: string, width: number): string =>
+    mktgPortraitFitBlock({ paras: [{ text, ...TYPE.fact }] }, width, room - ROOM.factRow, 1).block.paras[0]?.text ?? text;
+  return { number: cell(row.number, figure), label: cell(row.label, label) };
 }
 
 /** The room the muted line under a cut list takes in a column `width` px wide: its gap above and its wrapped lines. */
@@ -230,7 +260,7 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
   const note = crosscut ? ROOM.matrixCrosscutGap + frameworkPortraitTextHeight(crosscut, TYPE.matrixCrosscut, PAGE.contentWidth - ROOM.matrixPadding) : 0;
   // The proofs row keeps at least its chrome and the note at the count every proof would make: never less, whatever the text rows run to.
   const mostProofs = tallest(goals.map((goal) => goal.proofRows.length));
-  const proofsLeast = ROOM.matrixRow + (mostProofs > 0 ? frameworkPortraitCutNoteHeightIn(mostProofs, 'Framework', column) : 0);
+  const proofsLeast = ROOM.matrixRow + (mostProofs > 0 ? frameworkPortraitCutNoteHeightIn(mostProofs, 'framework', column) : 0);
   const quoted = (bite: string): string => `“${bite}”`;
   const measure = (cells: readonly FoundationMessagePrintMatrixCell[]): { value: number; key: number; bite: number } => ({
     value: ROOM.matrixRow + tallest(cells.map((cell) => frameworkPortraitTextHeight(cell.vp.text, { ...TYPE.matrixCell, size: cell.vp.size }, column))),
@@ -272,10 +302,10 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
     frameworkPortraitCutList(
       goal.proofRows,
       proofsRoom,
-      'Framework',
+      'framework',
       (proof) => proofRow(proof, TYPE.matrixProof),
       (proof) => proofRow(proof, TYPE.matrixProofTight),
-      frameworkPortraitCutNoteHeightIn(1, 'Framework', column)
+      frameworkPortraitCutNoteHeightIn(1, 'framework', column)
     )
   );
   const proofsHeight =
@@ -284,7 +314,7 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
       proofs.map(
         (cell) =>
           cell.rows.reduce((sum, proof) => sum + proofRow(proof, cell.tight ? TYPE.matrixProofTight : TYPE.matrixProof), 0) +
-          (cell.cut > 0 ? frameworkPortraitCutNoteHeightIn(cell.cut, 'Framework', column) : 0)
+          (cell.cut > 0 ? frameworkPortraitCutNoteHeightIn(cell.cut, 'framework', column) : 0)
       )
     );
   return { cells, proofs, height: head + rows.value + rows.key + rows.bite + proofsHeight + note };
@@ -375,11 +405,11 @@ export function frameworkPortraitPillList(pills: readonly string[], width: numbe
   let kept = pills.length - 1;
   while (
     kept > 0 &&
-    frameworkPortraitPillsHeight(pills.slice(0, kept), width, true) + frameworkPortraitCutNoteHeightIn(pills.length - kept, 'Framework', width) > room
+    frameworkPortraitPillsHeight(pills.slice(0, kept), width, true) + frameworkPortraitCutNoteHeightIn(pills.length - kept, 'framework', width) > room
   )
     kept -= 1;
   const cut = pills.length - kept;
-  return { rows: pills.slice(0, kept), cut, tight: true, note: foundationMessagePrintCutNote(cut, 'Framework') };
+  return { rows: pills.slice(0, kept), cut, tight: true, note: foundationMessagePrintCutNote(cut, 'framework') };
 }
 
 /** The height an avoid row takes: the taller of its two cells (each half the column less the arrow), the row's padding and hairline. */
@@ -401,10 +431,10 @@ export function frameworkPortraitAvoidList(
   return frameworkPortraitCutList(
     rows,
     room,
-    'Framework',
+    'framework',
     (row) => frameworkPortraitAvoidRowHeight(row, width, false),
     (row) => frameworkPortraitAvoidRowHeight(row, width, true),
-    frameworkPortraitCutNoteHeightIn(1, 'Framework', width)
+    frameworkPortraitCutNoteHeightIn(1, 'framework', width)
   );
 }
 
@@ -468,15 +498,20 @@ export function frameworkPortraitPillarHeadHeight(pillar: FoundationMessagePilla
   return ROOM.pillarTop + frameworkPortraitTextHeight(pillar.t, TYPE.pillarTitle, width) + message;
 }
 
-/** The height a pillar's proof row takes: its hairline and padding, the fact's lines and the source chip's line. */
+/** The height a pillar's proof row takes: its hairline and padding, the fact's lines, and the source chip on its own line (its margin and its measured height). */
 export function frameworkPortraitPillarProofHeight(proof: FoundationMessageProofView, width: number): number {
-  return ROOM.pillarProofRow + frameworkPortraitTextHeight(proof.fact, TYPE.pillarProof, width) + ROOM.pillarProofChip;
+  return (
+    ROOM.pillarProofRow +
+    frameworkPortraitTextHeight(proof.fact, TYPE.pillarProof, width) +
+    ROOM.pillarProofChipTop +
+    frameworkPortraitChipHeight(proof.source, width)
+  );
 }
 
 /** The height a pillar takes with the proof rows it prints: its head, then the list's margin and the rows (and the cut's line). */
 function pillarHeight(pillar: FoundationMessagePillarView, proofs: FoundationMessagePrintCutList<FoundationMessageProofView>, width: number): number {
   const rows = proofs.rows.reduce((sum, proof) => sum + frameworkPortraitPillarProofHeight(proof, width), 0);
-  const note = proofs.cut > 0 ? frameworkPortraitCutNoteHeightIn(proofs.cut, 'Framework', width) : 0;
+  const note = proofs.cut > 0 ? frameworkPortraitCutNoteHeightIn(proofs.cut, 'framework', width) : 0;
   return frameworkPortraitPillarHeadHeight(pillar, width) + (pillar.proofRows.length ? ROOM.pillarProofsTop + rows + note : 0);
 }
 
@@ -501,7 +536,7 @@ export function frameworkPortraitHouse(view: FoundationMessagePrintView, umbrell
   const pillars = view.pillars.map((pillar) => {
     const measure = (proof: FoundationMessageProofView): number => frameworkPortraitPillarProofHeight(proof, column);
     const room = pillarsRoom - frameworkPortraitPillarHeadHeight(pillar, column) - ROOM.pillarProofsTop;
-    return frameworkPortraitCutList(pillar.proofRows, room, 'Framework', measure, measure, frameworkPortraitCutNoteHeightIn(1, 'Framework', column));
+    return frameworkPortraitCutList(pillar.proofRows, room, 'framework', measure, measure, frameworkPortraitCutNoteHeightIn(1, 'framework', column));
   });
   const tallest = view.pillars.reduce((max, pillar, index) => Math.max(max, pillarHeight(pillar, pillars[index], column)), 0);
   const top = pillarsTop + tallest + ROOM.houseLowerGap;
@@ -518,10 +553,10 @@ export function frameworkPortraitHouse(view: FoundationMessagePrintView, umbrell
     audiences: frameworkPortraitCutList(
       view.audiences,
       room - ROOM.audienceListTop,
-      'Framework',
+      'framework',
       (audience) => audienceRow(audience, TYPE.audienceRow, ROOM.audienceRow),
       (audience) => audienceRow(audience, TYPE.audienceRowTight, ROOM.audienceRowTight),
-      frameworkPortraitCutNoteHeightIn(1, 'Framework', ROOM.audiencesColumn)
+      frameworkPortraitCutNoteHeightIn(1, 'framework', ROOM.audiencesColumn)
     ),
   };
 }
@@ -619,13 +654,13 @@ export function frameworkPortraitIcpWhoWidth(chips: readonly string[]): number {
   return Math.min(ROOM.icpWhoMax, Math.max(ROOM.icpWho, tags));
 }
 
-/** The height of a facts table row: the tallest of its three cells at the `<colgroup>` widths, with the row's padding and hairline. */
+/** The height of a facts table row: the tallest of its three cells at the `<colgroup>` widths (the source as the wrapping chip it prints as), with the row's padding and hairline. */
 export function frameworkPortraitFactRowHeight(fact: FoundationMessagePrintFactRow, tight: boolean): number {
   const [factWidth, sourceWidth, usedWidth] = FRAMEWORK_PORTRAIT_FACT_COLUMNS.map((share) => (PAGE.contentWidth * share) / 100 - ROOM.factCellPadding);
   return (
     Math.max(
       frameworkPortraitTextHeight(fact.fact, TYPE.fact, factWidth),
-      frameworkPortraitTextHeight(fact.source, TYPE.fact, Math.min(sourceWidth, ROOM.chip)),
+      frameworkPortraitChipHeight(fact.source, sourceWidth),
       frameworkPortraitTextHeight(fact.usedBy, TYPE.fact, usedWidth)
     ) + (tight ? ROOM.factRowTight : ROOM.factRow)
   );
@@ -671,15 +706,17 @@ export function frameworkPortraitNumbersPages(view: FoundationMessagePrintView):
       facts: noFacts,
     };
     if (remaining.length) {
-      // The key numbers table: whole rows down to the footer, the rest on the next page; never cut. A fresh page always
-      // keeps at least one row (K's paginate rule), so a row taller than the page still moves the loop on.
+      // The key numbers table: whole rows down to the footer, the rest on the next page; never cut, save a row taller than a
+      // whole page, cut inside it. A fresh page always keeps at least one row (K's paginate rule), so the loop moves on.
       let used = cursor + ROOM.label + ROOM.tableHead;
       const kept: FoundationMessageNumberRow[] = [];
       for (const row of remaining) {
         const height = numbersRowHeight(row, false);
         if (kept.length > 0 && used + height > tops.footer) break;
-        used += height;
-        kept.push(row);
+        // A first row taller than the page's whole room is cut in its cells to end inside it (frameworkPortraitNumbersRowIn).
+        const fitted = frameworkPortraitNumbersRowIn(row, tops.footer - used);
+        used += numbersRowHeight(fitted, false);
+        kept.push(fitted);
       }
       page.numbersTable = kept;
       remaining = remaining.slice(kept.length);
@@ -705,7 +742,7 @@ export function frameworkPortraitNumbersPages(view: FoundationMessagePrintView):
         facts: frameworkPortraitCutList(
           view.facts,
           tops.footer - tops.numbersContinued - ROOM.label - ROOM.tableHead,
-          'Framework',
+          'framework',
           (fact) => frameworkPortraitFactRowHeight(fact, false),
           (fact) => frameworkPortraitFactRowHeight(fact, true)
         ),
@@ -716,7 +753,7 @@ export function frameworkPortraitNumbersPages(view: FoundationMessagePrintView):
     page.facts = frameworkPortraitCutList(
       view.facts,
       factsRoom,
-      'Framework',
+      'framework',
       (fact) => frameworkPortraitFactRowHeight(fact, false),
       (fact) => frameworkPortraitFactRowHeight(fact, true)
     );

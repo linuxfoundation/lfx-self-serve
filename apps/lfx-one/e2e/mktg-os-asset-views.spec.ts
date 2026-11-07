@@ -542,7 +542,9 @@ test('the framework print lists every figure past six as a table, continued on a
   const readKept = await read.count();
   expect(readKept).toBeGreaterThan(0);
   expect(readKept).toBeLessThan(60);
-  await expect(print.getByTestId('mktg-framework-print-sources-read-cut')).toHaveText(`+${60 - readKept} more on the framework's Sources tab in LFX One`);
+  await expect(print.getByTestId('mktg-framework-print-sources-read-cut')).toHaveText(
+    `+${60 - readKept} more on the framework's Sources and gaps tab in LFX One`
+  );
   // The failed source in a reader's words: the sign-in-walled recordings page as its address, no scheme or www., the reason after the dash.
   await expect(print.getByTestId('mktg-framework-print-sources-failed').locator('li').first()).toContainText(
     'example.org/summit/2026/roadmap-sessions/recordings — '
@@ -552,7 +554,7 @@ test('the framework print lists every figure past six as a table, continued on a
   const gaps = print.getByTestId('mktg-framework-print-gaps').locator('li');
   const gapsKept = await gaps.count();
   expect(gapsKept).toBeLessThan(40);
-  await expect(print.getByTestId('mktg-framework-print-gaps-cut')).toHaveText(`+${40 - gapsKept} more on the framework's Sources tab in LFX One`);
+  await expect(print.getByTestId('mktg-framework-print-gaps-cut')).toHaveText(`+${40 - gapsKept} more on the framework's Sources and gaps tab in LFX One`);
   await expect(print.getByTestId('mktg-framework-print-sources-failed-cut')).toHaveCount(0);
   // Every variable-length block bounded (the design reader's rule): on every frame, every placed block ends at or above the footer's
   // room (1019 in the frame's coordinates) and no block passes the next one's top; the goal pages' titles whole, the lead under them;

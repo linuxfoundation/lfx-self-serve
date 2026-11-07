@@ -197,9 +197,9 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   sayPillTight: { size: 12, line: 1.2, weight: 500 },
   avoidRow: { size: 13, line: 1.5, weight: 400 },
   avoidRowTight: { size: 12, line: 1.4, weight: 400 },
-  /** The muted line under a cut list: `+N more on the framework's Framework tab in LFX One` (the Sources tab for the Sources & gaps lists). */
+  /** The muted line under a cut list: `+N more on the framework's <tab> tab in LFX One`, the tab named as FOUNDATION_MESSAGE_VIEW_TABS labels it. */
   cutNote: { size: 10.5, line: 1.4, weight: 400 },
-  /** A key number tile's figure (`.fwp-number`), stepped down in whole px to one line of the tile, to a floor of half its size; a longer figure overflows the tile (follow-up). */
+  /** A key number tile's figure (`.fwp-number`), stepped down in whole px to one line of the tile, to a floor of half its size; when the floor does not hold a figure the numbers print as the table instead (frameworkPortraitNumberTiles). */
   tileFigure: { size: 54, line: 1, weight: 500 },
   /** A key number tile's label (`.fwp-number-label`), fitted to the room under the figure. */
   tileLabel: { size: 14, line: 1.4, weight: 400 },
@@ -249,9 +249,10 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   /** `.fwp-icp-who`: the profile's name-and-tags column, px (the board's), and the most it grows so a row of tags never wraps. */
   icpWho: 190,
   icpWhoMax: 300,
-  /** The grammar's `.pp-chip`: its type size, its padding and border across (7 + 7 + 1 + 1), and `.fwp-icp-chips`' gap between tags. */
+  /** The grammar's `.pp-chip`: its type size, its padding and border across (7 + 7 + 1 + 1) and down (3 + 3 + 1 + 1), and `.fwp-icp-chips`' gap between tags. */
   chipSize: 8.5,
   chipPadding: 16,
+  chipVertical: 8,
   chipGap: 4,
   /** A profile card: its hairline and padding (1 + 20 + 28); the gap between its two columns; the chips line's margin above and its height (8.5 px type on one line, 3 + 3 padding, 2 border); the who text's and the personas' margins above; a field's gap under its eyebrow; the fields grid's row and column gaps; the proof list's margin above; the least room every card keeps above the footer rule (the harness's A4 finding: ≥ 4 px, so a 0.974 scale cannot cross it); the matrix's note margin, its table margin, its head row (6 + 6 padding, 1 rule, two lines of 9.5 type) and a cell row (9 + 9 padding, 1 hairline). */
   icpRow: 49,
@@ -278,7 +279,8 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   pillarMessageTop: 8,
   pillarProofsTop: 12,
   pillarProofRow: 17,
-  pillarProofChip: 20.5,
+  /** `.fwp-pillar-source`'s margin above the chip (the chip's own height is measured, frameworkPortraitChipHeight). */
+  pillarProofChipTop: 4,
   houseLowerGap: 32,
   houseLowerMin: 80,
   whyNowColumn: 300,

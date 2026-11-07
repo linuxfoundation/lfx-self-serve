@@ -351,7 +351,7 @@
     line-height: var(--fwp-goal-proof-tight-line);
   }
 
-  /* The line under a cut list: "+N more on the framework's Framework tab in LFX One" (Sources for the Sources & gaps lists), FRAMEWORK_PORTRAIT_TYPE.cutNote, .cutNoteGap = 6, the muted ink. */
+  /* The line under a cut list: "+N more on the framework's <tab> tab in LFX One", the tab as FOUNDATION_MESSAGE_VIEW_TABS labels it; FRAMEWORK_PORTRAIT_TYPE.cutNote, .cutNoteGap = 6, the muted ink. */
   .fwp-cut-note {
     margin: 6px 0 0;
     font-size: var(--fwp-cut-note-size);
@@ -755,7 +755,7 @@
 
   .fwp-pillar-source {
     display: block;
-    margin-top: 4px;
+    margin-top: 4px; /* FRAMEWORK_PORTRAIT_ROOM.pillarProofChipTop; the chip's height is measured (frameworkPortraitChipHeight) */
   }
 
   .fwp-why-now-text {

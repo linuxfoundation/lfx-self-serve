@@ -21,6 +21,7 @@ import type {
   FoundationMessageViewTab,
 } from './foundation-message.interface';
 import type { MktgPortraitPlanPage } from './mktg-portrait-print.interface';
+import type { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 
 /** Boilerplates in contract order, set in the same brand as the framework. */
 export interface BoilerplatesPrintView {
@@ -139,8 +140,8 @@ export interface FoundationMessagePrintServedCard {
   cta: FoundationMessagePrintFittedText;
 }
 
-/** The on-screen tab a cut list's note sends the reader to: the Framework tab for proof points and the facts table, the Sources tab for the Sources & gaps lists. */
-export type FoundationMessagePrintCutTab = 'Framework' | 'Sources';
+/** The on-screen tab a cut list's note sends the reader to, by its id in FOUNDATION_MESSAGE_VIEW_TABS (the note prints its label): `framework` for proof points and the facts table, `sources` for the Sources & gaps lists. */
+export type FoundationMessagePrintCutTab = (typeof FOUNDATION_MESSAGE_VIEW_TABS)[number]['id'];
 
 /** A list cut to the rows that fit its room: the rows kept, how many were left off (the muted line under the list says so), and whether the list was tightened first. */
 export interface FoundationMessagePrintCutList<T> {
