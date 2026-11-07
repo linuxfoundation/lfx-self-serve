@@ -26,14 +26,13 @@ import {
   foundationMessagePrintAnchorIntro,
   foundationMessagePrintMatrix,
   foundationMessagePrintNumbers,
-  foundationMessagePrintSections,
   foundationMessagePrintReportText,
   foundationMessagePrintSourceLabel,
-  mktgPrintApprovedDate,
   mktgPrintBrand,
   mktgPrintDocumentTitle,
   mktgPrintIsWebKit,
 } from './mktg-print.utils';
+import { brandKitPortraitDate } from './brand-kit-portrait.utils';
 import boilerplatesEnvelope from './__fixtures__/boilerplates.envelope.json';
 import faqEnvelope from './__fixtures__/faq-envelope.json';
 import { brandKitLogolessFixture } from './__fixtures__/brand-kit-revision.fixture';
@@ -247,13 +246,6 @@ describe('the print’s brand', () => {
 });
 
 describe('the framework’s print', () => {
-  it('holds the framework and the key numbers — never the hidden ICPs and message house, nor the run’s sources and gaps', () => {
-    expect(foundationMessagePrintSections()).toEqual([
-      { id: 'framework', number: '01', title: 'Framework' },
-      { id: 'numbers', number: '02', title: 'Key numbers' },
-    ]);
-  });
-
   it('says what the screen says: the project, the version on the page, the approval’s date, the run’s report and read date, the framework’s own rows', () => {
     const report: FoundationMessageReport = { sources_read: ['Website: https://orbit.example.org'], sources_failed: [], gaps: ['A gap.'], notes: 'A note.' };
     const view = buildFoundationMessagePrintView(CONTENT, ' TestOrbit ', 4, null, '2026-11-06T23:30:00Z', report, '2026-11-04');
@@ -282,14 +274,19 @@ describe('the framework’s print', () => {
     expect(withKit.brand.source).toBe('kit');
   });
 
-  it('dates the approval and the read as the deck does, in UTC, and leaves a date out when there is none or it cannot be read', () => {
-    expect(mktgPrintApprovedDate('2026-11-06T23:30:00Z')).toBe('6 Nov 2026');
-    expect(mktgPrintApprovedDate('2026-01-01T00:00:00Z')).toBe('1 Jan 2026');
-    expect(mktgPrintApprovedDate('2026-11-04')).toBe('4 Nov 2026');
-    expect(mktgPrintApprovedDate(null)).toBe('');
-    expect(mktgPrintApprovedDate('not a date')).toBe('');
+  it('dates the approval and the read as the brand kit’s book does (one shared date rule, UTC), and leaves a date out when there is none or it cannot be read', () => {
+    const dated = (approvedAt: string | null, dateRead: string | null) =>
+      buildFoundationMessagePrintView(CONTENT, 'TestOrbit', 1, null, approvedAt, null, dateRead);
+    expect(dated('2026-11-06T23:30:00Z', '2026-11-04')).toMatchObject({
+      dateLabel: '6 Nov 2026',
+      dateReadLabel: '4 Nov 2026',
+      approvedLabel: 'Approved 6 Nov 2026',
+    });
+    expect(dated('2026-01-01T00:00:00Z', null)).toMatchObject({ dateLabel: '1 Jan 2026', dateReadLabel: '' });
+    expect(dated(null, 'not a date')).toMatchObject({ dateLabel: '', dateReadLabel: '', approvedLabel: '' });
+    expect(dated('2026-11-06T23:30:00Z', null).dateLabel).toBe(brandKitPortraitDate('2026-11-06T23:30:00Z'));
     // Every month, in UTC, the day without a leading zero: no locale call, so the same in every runtime.
-    expect(Array.from({ length: 12 }, (_, month) => mktgPrintApprovedDate(`2026-${String(month + 1).padStart(2, '0')}-09T12:00:00Z`))).toEqual([
+    expect(Array.from({ length: 12 }, (_, month) => dated(`2026-${String(month + 1).padStart(2, '0')}-09T12:00:00Z`, null).dateLabel)).toEqual([
       '9 Jan 2026',
       '9 Feb 2026',
       '9 Mar 2026',

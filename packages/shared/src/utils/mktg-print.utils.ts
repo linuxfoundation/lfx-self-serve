@@ -14,14 +14,12 @@ import { BRAND_KIT_HEX_REGEX } from '../constants/brand-kit.constants';
 import { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 import {
   FOUNDATION_MESSAGE_PRINT_COUNT_WORDS,
-  FOUNDATION_MESSAGE_PRINT_TAB_IDS,
   FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES,
   FOUNDATION_MESSAGE_PRINT_TITLE,
   MKTG_PRINT_BODY_INK_MIN_CONTRAST,
   MKTG_PRINT_INK_ON_DARK,
   MKTG_PRINT_INK_ON_LIGHT,
   MKTG_PRINT_LF_LOOK,
-  MKTG_PRINT_MONTHS,
   mktgPrintJoin,
 } from '../constants/mktg-print.constants';
 import type { BrandKitRevision } from '../interfaces/brand-kit.interface';
@@ -32,13 +30,12 @@ import type {
   FoundationMessagePrintIcp,
   FoundationMessagePrintMatrixRow,
   FoundationMessagePrintNumber,
-  FoundationMessagePrintSection,
   FoundationMessagePrintView,
   MktgPrintBrand,
   MktgPrintLogo,
 } from '../interfaces/mktg-print.interface';
 import { brandKitContrastRatio, brandKitLuminance, brandKitTint, buildBrandKitBookView } from './brand-kit-book.utils';
-import { brandKitPortraitArtwork } from './brand-kit-portrait.utils';
+import { brandKitPortraitArtwork, brandKitPortraitDate } from './brand-kit-portrait.utils';
 import { mktgReadableSourceName, mktgReadableSourceText } from './mktg-readable-source.utils';
 import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitWebsiteHost, brandKitWeights } from './brand-kit.utils';
 import { frameworkPortraitIcpWhoWidth } from './mktg-framework-portrait-layout.utils';
@@ -164,16 +161,6 @@ export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
   };
 }
 
-/** The sections the framework print holds, numbered as the cover lists them. */
-export function foundationMessagePrintSections(): FoundationMessagePrintSection[] {
-  const printed: readonly string[] = FOUNDATION_MESSAGE_PRINT_TAB_IDS;
-  return FOUNDATION_MESSAGE_VIEW_TABS.filter((tab) => printed.includes(tab.id)).map((tab, index) => ({
-    id: tab.id,
-    number: String(index + 1).padStart(2, '0'),
-    title: tab.label,
-  }));
-}
-
 /** The goal columns with their segments as one line, so the template joins nothing. */
 export function foundationMessagePrintGoals(content: FoundationMessageContent): FoundationMessagePrintGoal[] {
   // The references are trimmed once here, as the screen's views trim them to resolve names: the validator tolerates
@@ -195,14 +182,6 @@ export function foundationMessagePrintIcps(content: FoundationMessageContent): F
       whoWidth: frameworkPortraitIcpWhoWidth([icp.kind, ...goalChips]),
     };
   });
-}
-
-/** The approval's date as the cover prints it (`6 Nov 2026`, UTC), '' when there is none to read. */
-export function mktgPrintApprovedDate(approvedAt: string | null): string {
-  const time = Date.parse(approvedAt ?? '');
-  if (Number.isNaN(time)) return '';
-  const date = new Date(time);
-  return `${date.getUTCDate()} ${MKTG_PRINT_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 }
 
 /**
@@ -292,8 +271,9 @@ export function buildFoundationMessagePrintView(
   const goals = foundationMessagePrintGoals(content);
   const icps = foundationMessagePrintIcps(content);
   const facts = foundationMessagePrintFacts(goals);
-  const dateLabel = mktgPrintApprovedDate(approvedAt);
-  const dateReadLabel = mktgPrintApprovedDate(dateRead);
+  // The dates as the brand kit's book prints them (K's one date rule: UTC, a fixed month table), '' for none or an unreadable one.
+  const dateLabel = brandKitPortraitDate(approvedAt ?? '');
+  const dateReadLabel = brandKitPortraitDate(dateRead ?? '');
   return {
     brand: mktgPrintBrand(kit),
     projectName: name,
@@ -306,7 +286,6 @@ export function buildFoundationMessagePrintView(
     dateReadLabel,
     report,
     runningHead: `${name} ${FOUNDATION_MESSAGE_PRINT_TITLE}`.trim(),
-    sections: foundationMessagePrintSections(),
     facts,
     mf: content.mf,
     mh: content.mh,

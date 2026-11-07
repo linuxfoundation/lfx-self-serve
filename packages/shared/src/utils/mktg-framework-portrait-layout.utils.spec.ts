@@ -90,7 +90,37 @@ const content = (numbers: number, proofs: number): FoundationMessageContent => (
   nums: Array.from({ length: numbers }, (_, index) => pair(`${(index + 1) * 1000}`, `figure ${index + 1}`)),
 });
 
-const view = (numbers: number, proofs = 1) => buildFoundationMessagePrintView(content(numbers, proofs), 'TestOrbit', 1, null);
+const view = (numbers: number, proofs = 1): FoundationMessagePrintView => buildFoundationMessagePrintView(content(numbers, proofs), 'TestOrbit', 1, null);
+
+/** A full print view (the real builder's, from the smallest content) with the fields a test sets spread last. */
+const viewWith = (overrides: Partial<FoundationMessagePrintView>): FoundationMessagePrintView => ({ ...view(1), ...overrides });
+
+/** A full profile (every field of FoundationMessagePrintIcp) with the fields a test sets spread last. */
+const icpWith = (overrides: Partial<FoundationMessagePrintIcp> & Pick<FoundationMessagePrintIcp, 'id'>): FoundationMessagePrintIcp => ({
+  name: `Profile ${overrides.id}`,
+  kind: 'Organization',
+  who: 'Who.',
+  goals: ['g1'],
+  need: 'Need.',
+  value: 'Value.',
+  lead: 'Lead.',
+  proof: [pair('A fact.', 'Docs')],
+  cta: 'CTA.',
+  channels: ['Docs', 'Slack'],
+  objection: ['Too early?', null],
+  personas: [pair('Role', 'Cares')],
+  basis: 'Inferred',
+  proofRows: [{ fact: 'A fact.', source: 'Docs' }],
+  goalTitles: ['Goal'],
+  personaRows: [{ role: 'Role', cares: 'Cares' }],
+  objectionText: 'Too early?',
+  objectionResponse: '',
+  goalLabel: 'Goal',
+  channelsLabel: 'Docs · Slack',
+  goalChips: ['Goal 1'],
+  whoWidth: 190,
+  ...overrides,
+});
 
 describe('the framework portrait book’s cut lists', () => {
   const rows = ['a', 'b', 'c', 'd'];
@@ -263,11 +293,11 @@ describe('the framework portrait book’s bounded blocks', () => {
 
 describe('the framework portrait book’s message house', () => {
   const view = (pillars: FoundationMessagePillarView[], audiences: number, found = 'Why now.'): FoundationMessagePrintView =>
-    ({
+    viewWith({
       mh: { umbrella: 'Umbrella.', line: 'Brand line.', pillars, found, aud: [] },
       pillars,
       audiences: Array.from({ length: audiences }, (_, index) => ({ name: `Audience ${index}`, lead: 'A lead sentence for the audience row.' })),
-    }) as unknown as FoundationMessagePrintView;
+    });
   const pillar = (proofs: number, message = 'A message.'): FoundationMessagePillarView => ({
     t: 'Open',
     m: message,
@@ -381,23 +411,16 @@ describe('the framework portrait book’s cover contents', () => {
 describe('the framework portrait book’s profile pages', () => {
   const sentence = 'A sentence of the profile that runs on for a while to take a second line in its column. ';
   const icp = (id: string, repeat: number, personas = 1): FoundationMessagePrintIcp =>
-    ({
+    icpWith({
       id,
-      name: `Profile ${id}`,
-      kind: 'Segment',
       who: sentence.repeat(repeat).trim(),
       need: sentence.repeat(repeat).trim(),
       value: sentence.repeat(repeat).trim(),
       lead: sentence.repeat(repeat).trim(),
       cta: sentence.repeat(repeat).trim(),
-      objectionText: 'Too early?',
       objectionResponse: sentence.repeat(repeat).trim(),
-      channelsLabel: 'Docs · Slack',
-      proofRows: [{ fact: 'A fact.', source: 'Docs' }],
       personaRows: Array.from({ length: personas }, (_, index) => ({ role: `Role ${index}`, cares: sentence.trim() })),
-      goalChips: ['Goal 1'],
-      whoWidth: 190,
-    }) as unknown as FoundationMessagePrintIcp;
+    });
 
   it('measures a card: its chrome and the taller of the name column and the fields grid, the fields three a row', () => {
     const short = icp('a', 1);

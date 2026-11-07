@@ -18,13 +18,6 @@ export const FOUNDATION_MESSAGE_PRINT_BODY_CLASS = 'lfx-print-framework';
 /** The class of the framework print document's wrapper: never shown on screen, shown only while the framework prints (see styles.scss). */
 export const FOUNDATION_MESSAGE_PRINT_ONLY_CLASS = 'lfx-framework-print-only';
 
-/**
- * The framework view's tabs that print, in order: the framework and the key
- * numbers. The run's sources and gaps (and the
- * reviewer's note) stay on screen: they are for the reviewer, not the reader.
- */
-export const FOUNDATION_MESSAGE_PRINT_TAB_IDS = ['framework', 'numbers'] as const;
-
 /** Printed marker for an unanswered FAQ; independent of the screen's tab labels. */
 export const MKTG_FAQ_PRINT_UNANSWERED = 'Needs an answer';
 
@@ -371,9 +364,6 @@ export const MKTG_PRINT_DOT = ' · ';
 export function mktgPrintJoin(parts: readonly string[]): string {
   return parts.filter((part) => part !== '').join(MKTG_PRINT_DOT);
 }
-
-/** The fixed three-letter month names the prints date with (UTC), the same in every engine and locale. */
-export const MKTG_PRINT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 
 /**
  * The LF look: what a print uses when the project has no Brand Kit yet. The

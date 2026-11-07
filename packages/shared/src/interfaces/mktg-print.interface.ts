@@ -21,7 +21,6 @@ import type {
   FoundationMessageViewTab,
 } from './foundation-message.interface';
 import type { MktgPortraitPlanPage } from './mktg-portrait-print.interface';
-import type { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 
 /** Boilerplates in contract order, set in the same brand as the framework. */
 export interface BoilerplatesPrintView {
@@ -66,14 +65,6 @@ export interface MktgPrintBrand {
   /** The logo on the dark cover, and on the white pages' running heads; null when there is no artwork to draw. */
   logoOnDark: MktgPrintLogo | null;
   logoOnLight: MktgPrintLogo | null;
-}
-
-/** One section of the framework print, as the cover lists it. */
-export interface FoundationMessagePrintSection {
-  id: FoundationMessageViewTab;
-  /** `01`. */
-  number: string;
-  title: string;
 }
 
 /** One goal column as the print binds it: the view's column, with its segments as one line. */
@@ -141,7 +132,7 @@ export interface FoundationMessagePrintServedCard {
 }
 
 /** The on-screen tab a cut list's note sends the reader to, by its id in FOUNDATION_MESSAGE_VIEW_TABS (the note prints its label): `framework` for proof points and the facts table, `sources` for the Sources & gaps lists. */
-export type FoundationMessagePrintCutTab = (typeof FOUNDATION_MESSAGE_VIEW_TABS)[number]['id'];
+export type FoundationMessagePrintCutTab = FoundationMessageViewTab;
 
 /** A list cut to the rows that fit its room: the rows kept, how many were left off (the muted line under the list says so), and whether the list was tightened first. */
 export interface FoundationMessagePrintCutList<T> {
@@ -379,7 +370,6 @@ export interface FoundationMessagePrintView {
   report: FoundationMessageReport | null;
   /** `Jupyter Foundation Messaging Framework`. */
   runningHead: string;
-  sections: FoundationMessagePrintSection[];
   /** Every goal's proof points with their sources, for the key numbers page. */
   facts: FoundationMessagePrintFactRow[];
   mf: FoundationMessageMf;
