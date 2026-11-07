@@ -89,7 +89,7 @@ function lfPrintBrand(): MktgPrintBrand {
   };
 }
 
-/** The ink, light or dark, with the higher contrast against a background colour. */
+/** The ink, light or dark, with the higher contrast against a background color. */
 function betterInkOn(background: string): string {
   const ground = brandKitLuminance(background);
   const onLight = brandKitContrastRatio(ground, brandKitLuminance(MKTG_PRINT_INK_ON_LIGHT));
@@ -143,7 +143,7 @@ export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
   }
   const darkIsHex = BRAND_KIT_HEX_REGEX.test(dark);
   // Text on the kit's dark panels takes whichever ink reads better against it:
-  // a mid-grey "dark" can be too light for white text yet not light enough to count as light.
+  // a mid-gray "dark" can be too light for white text yet not light enough to count as light.
   const onDark = darkIsHex ? betterInkOn(dark) : MKTG_PRINT_INK_ON_DARK;
   const darkReadsOnWhite = !darkIsHex || brandKitContrastRatio(brandKitLuminance(dark), 1) >= MKTG_PRINT_BODY_INK_MIN_CONTRAST;
   return {

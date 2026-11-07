@@ -8,9 +8,16 @@
    dark band edge to edge (816×420), the statement cards and the goal matrix,
    the goal page's number, key-message bar and cards, the say/avoid pills and
    rows, the profile rows, the message house's pillars, the key numbers' tiles
-   and the sources page's lists. Every colour is a `--pp-*` property (the
+   and the sources page's lists. Every color is a `--pp-*` property (the
    brand's dark, accent and spark, the ink on the dark) or one of the grammar's
-   neutral inks; the typeface is `--pp-font` through the frame. */
+   neutral inks; the typeface is `--pp-font` through the frame. The type of
+   every block the component fits (the statements, the tagline, the umbrellas,
+   a goal's value, key, proofs, bite and served lines, the facts, the sources)
+   is read from the `--fwp-<name>-size|line|weight` properties the component
+   binds on the root from FRAMEWORK_PORTRAIT_TYPE, so the fit model and the
+   print share one value; the room each rule takes around a fitted block
+   (padding, hairlines, gaps) is mirrored in FRAMEWORK_PORTRAIT_ROOM, named at
+   each rule. */
 
 :host {
   display: block;
@@ -27,7 +34,7 @@
 .fwp-card {
   border: 1px solid var(--pp-hairline);
   border-radius: 10px;
-  padding: 14px 16px;
+  padding: 14px 16px; /* FRAMEWORK_PORTRAIT_ROOM.cardPadding = 28 */
 }
 
 .fwp-card-mist {
@@ -37,7 +44,7 @@
 
 .fwp-block-after {
   display: block;
-  margin-top: 18px;
+  margin-top: 18px; /* FRAMEWORK_PORTRAIT_ROOM.blockAfter */
 }
 
 /* ---------- cover ---------- */
@@ -76,9 +83,9 @@
 
 .fwp-cover-umbrella {
   max-width: 640px;
-  font-size: 32px;
-  font-weight: 500;
-  line-height: 1.18;
+  font-size: var(--fwp-cover-umbrella-size);
+  font-weight: var(--fwp-cover-umbrella-weight);
+  line-height: var(--fwp-cover-umbrella-line);
 }
 
 .fwp-cover-title {
@@ -89,8 +96,9 @@
   color: var(--pp-dark);
 }
 
+/* The gap under the cover title: 18 px, inside the editor's 16–24 px (7 Nov 2026). */
 .fwp-cover-edition {
-  margin-top: 14px;
+  margin-top: 18px;
   font-size: 14px;
   line-height: 1.5;
   color: var(--pp-muted);
@@ -174,15 +182,15 @@
 
 .fwp-statement {
   margin-top: 8px;
-  font-size: 11.5px;
-  line-height: 1.45;
+  font-size: var(--fwp-statement-size);
+  line-height: var(--fwp-statement-line);
   color: var(--pp-ink);
 }
 
 .fwp-statement-accent {
-  font-size: 18px;
-  font-weight: 500;
-  line-height: 1.3;
+  font-size: var(--fwp-tagline-size);
+  font-weight: var(--fwp-tagline-weight);
+  line-height: var(--fwp-tagline-line);
   color: var(--pp-dark);
   border-left: 3px solid var(--pp-accent);
   padding-left: 10px;
@@ -297,9 +305,9 @@
 
 .fwp-goal-vp {
   margin-top: 8px;
-  font-size: 22px;
-  font-weight: 500;
-  line-height: 1.35;
+  font-size: var(--fwp-goal-value-size);
+  font-weight: var(--fwp-goal-value-weight);
+  line-height: var(--fwp-goal-value-line);
   color: var(--pp-dark);
 }
 
@@ -325,9 +333,9 @@
 }
 
 .fwp-goal-key-text {
-  font-size: 19px;
-  font-weight: 500;
-  line-height: 1.4;
+  font-size: var(--fwp-goal-key-size);
+  font-weight: var(--fwp-goal-key-weight);
+  line-height: var(--fwp-goal-key-line);
 }
 
 .fwp-proof-list {
@@ -342,17 +350,33 @@
   gap: 16px;
   align-items: baseline;
   border-top: 1px solid var(--pp-hairline);
-  padding: 13px 0;
-  font-size: 15px;
-  line-height: 1.45;
+  padding: 13px 0; /* FRAMEWORK_PORTRAIT_ROOM.proofRow = 26 + the hairline */
+  font-size: var(--fwp-goal-proof-size);
+  line-height: var(--fwp-goal-proof-line);
   color: var(--pp-ink);
+}
+
+/* The list tightened before a cut (the design reader's rule): FRAMEWORK_PORTRAIT_TYPE.goalProofTight and .proofRowTight = 18 + the hairline. */
+.fwp-proof-list-tight .fwp-proof-row {
+  padding: 9px 0;
+  font-size: var(--fwp-goal-proof-tight-size);
+  line-height: var(--fwp-goal-proof-tight-line);
+}
+
+/* The line under a cut list: "+N more in the framework's Sources tab in LFX One", FRAMEWORK_PORTRAIT_TYPE.cutNote, .cutNoteGap = 6, the muted ink. */
+.fwp-cut-note {
+  margin: 6px 0 0;
+  font-size: var(--fwp-cut-note-size);
+  font-weight: var(--fwp-cut-note-weight);
+  line-height: var(--fwp-cut-note-line);
+  color: var(--pp-muted);
 }
 
 .fwp-goal-bite-text {
   margin-top: 10px;
-  font-size: 34px;
-  font-weight: 500;
-  line-height: 1.2;
+  font-size: var(--fwp-goal-bite-size);
+  font-weight: var(--fwp-goal-bite-weight);
+  line-height: var(--fwp-goal-bite-line);
   letter-spacing: -0.01em;
   color: var(--pp-dark);
 }
@@ -378,8 +402,8 @@
 
 .fwp-served-line {
   margin-top: 6px;
-  font-size: 11.5px;
-  line-height: 1.5;
+  font-size: var(--fwp-served-line-size);
+  line-height: var(--fwp-served-line-line);
   color: var(--pp-ink);
 
   + .fwp-served-line {
@@ -658,9 +682,9 @@
   padding: 24px 28px;
   background: var(--pp-dark);
   color: var(--pp-on-dark);
-  font-size: 19px;
-  font-weight: 500;
-  line-height: 1.4;
+  font-size: var(--fwp-house-umbrella-size);
+  font-weight: var(--fwp-house-umbrella-weight);
+  line-height: var(--fwp-house-umbrella-line);
 }
 
 .fwp-house-line {
@@ -750,26 +774,22 @@
 
 /* ---------- 04 key numbers ---------- */
 
+/* Six tracks so a tile can take the row, a half or a third by its share (FRAMEWORK_PORTRAIT_TILE_SHARES; the template sets `grid-column: span 6 / share`); a fixed height (FRAMEWORK_PORTRAIT_NUMBER_TILE) keeps the rows' tops stable. */
 .fwp-number-tiles {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 16px;
 }
 
-/* 344 px in pairs; an odd count's last tile spans the column (the editor's rule: no orphan tile); a fixed height keeps the rows' tops stable. */
 .fwp-number-tile {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  width: 344px;
+  min-width: 0;
   height: 140px;
   border: 1px solid var(--pp-hairline);
   border-radius: 12px;
   padding: 22px 24px;
-}
-
-.fwp-number-tile-wide {
-  width: 704px;
 }
 
 .fwp-number-tile-lead {
@@ -794,33 +814,40 @@
 .fwp-facts-table {
   margin-top: 8px;
   table-layout: fixed;
-  font-size: 11px;
-  line-height: 1.3;
+  font-size: var(--fwp-fact-size);
+  line-height: var(--fwp-fact-line);
 
   td {
-    padding: 4px 12px 4px 0;
+    padding: 4px 12px 4px 0; /* FRAMEWORK_PORTRAIT_ROOM.factRow = 8 + the hairline; .factCellPadding = 12 */
     border-bottom: 1px solid var(--pp-hairline);
     overflow-wrap: anywhere;
   }
 }
 
-/* The fact takes half the column; the source and the goal that uses it a quarter each (the component measures the rows by these). */
-.fwp-fact {
-  width: 50%;
+/* The facts table tightened before a cut: FRAMEWORK_PORTRAIT_ROOM.factRowTight = 6 + the hairline. */
+.fwp-facts-table-tight td {
+  padding-top: 3px;
+  padding-bottom: 3px;
 }
 
-.fwp-fact-source {
-  width: 25%;
-
-  .pp-chip {
-    white-space: normal;
-  }
+/* A figure in the key numbers table (more figures than the tiles hold). */
+.fwp-number-cell {
+  font-weight: 500;
+  color: var(--pp-dark);
 }
 
+/* The columns' widths are the table's <colgroup> (FRAMEWORK_PORTRAIT_FACT_COLUMNS): `table-layout: fixed` reads <col>, not the cells. */
 .fwp-fact-used {
-  width: 25%;
   padding-right: 0;
   color: var(--pp-muted);
+}
+
+/* A proof's source chip in the framework print (the grammar's pp-chip is nowrap): wraps within a cap the component measures against (FRAMEWORK_PORTRAIT_ROOM.chip). */
+.fwp-chip-wrap {
+  max-width: 140px; /* FRAMEWORK_PORTRAIT_ROOM.chip */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
 }
 
 /* ---------- 05 sources & gaps ---------- */
@@ -828,9 +855,15 @@
 .fwp-source-list {
   margin: 8px 0 0;
   padding-left: 16px;
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--fwp-source-size);
+  line-height: var(--fwp-source-line);
   color: var(--pp-ink);
+}
+
+/* A sources list tightened before a cut: FRAMEWORK_PORTRAIT_TYPE.sourceTight. */
+.fwp-source-list-tight {
+  font-size: var(--fwp-source-tight-size);
+  line-height: var(--fwp-source-tight-line);
 }
 
 .fwp-source-text {

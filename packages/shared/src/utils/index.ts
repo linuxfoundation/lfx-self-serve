@@ -112,6 +112,7 @@ export * from './mktg-print.utils';
 export * from './mktg-portrait-print.utils';
 export * from './mktg-portrait-plan.utils';
 export * from './mktg-framework-portrait-plan.utils';
+export * from './mktg-framework-portrait-layout.utils';
 export * from './brand-kit-portrait.utils';
 export * from './mktg-slides-export.utils';
 export * from './mktg-session-event.utils';

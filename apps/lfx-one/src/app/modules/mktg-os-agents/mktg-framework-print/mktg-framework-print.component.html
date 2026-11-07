@@ -12,10 +12,16 @@
   data-testid="lfx-mktg-portrait-page" with data-page-id = the plan id. The grammar's `pp-*`
   classes set the type; the stylesheet's `fwp-*` classes set what is the framework's alone. The
   root's lfx-mktg-portrait class is MKTG_PORTRAIT_PRINT_CLASS: the print frame picks the frames'
-  Letter setup by it. Every block is laid out and bounded in the component (frames()): the
+  Letter setup by it; its inline `--fwp-*` custom properties are FRAMEWORK_PORTRAIT_TYPE, which the
+  stylesheet reads for the fitted blocks. Every page is laid out in the component (frames()): the
   template binds fields.
 -->
-<div class="lfx-framework-print lfx-mktg-portrait" [attr.data-brand]="v.brand.source" [attr.data-pages]="frames().length" data-testid="mktg-framework-print">
+<div
+  class="lfx-framework-print lfx-mktg-portrait"
+  [style]="typeVars"
+  [attr.data-brand]="v.brand.source"
+  [attr.data-pages]="frames().length"
+  data-testid="mktg-framework-print">
   @for (frame of frames(); track frame.id) {
     <lfx-mktg-portrait-page
       [look]="pageLook"
@@ -110,7 +116,7 @@
           }
           <div
             class="fwp-matrix"
-            [lfxPpRect]="[page.margin, 336, page.contentWidth]"
+            [lfxPpRect]="[page.margin, tops.matrix, page.contentWidth]"
             [style.--fwp-goal-count]="v.goals.length"
             data-testid="mktg-framework-print-goals">
             <div class="fwp-matrix-row fwp-matrix-head">
@@ -191,17 +197,19 @@
               <p class="fwp-avoid-none" data-testid="mktg-framework-print-avoid-empty">Nothing to avoid was stated.</p>
             }
           </div>
-          <div [lfxPpRect]="[page.margin, 470, page.contentWidth]">
-            <span class="pp-lab pp-lab--dark">Every piece of content answers</span>
-            <ol class="fwp-anchor-list" data-testid="mktg-framework-print-anchor">
-              @for (anchor of frame.anchors; track anchor.numberLabel) {
-                <li class="fwp-anchor-row">
-                  <span class="fwp-anchor-number">{{ anchor.numberLabel }}</span>
-                  <span class="fwp-anchor-question">{{ anchor.question }}</span>
-                </li>
-              }
-            </ol>
-          </div>
+          @if (frame.anchors.length > 0) {
+            <div [lfxPpRect]="[page.margin, 470, page.contentWidth]">
+              <span class="pp-lab pp-lab--dark">Every piece of content answers</span>
+              <ol class="fwp-anchor-list" data-testid="mktg-framework-print-anchor">
+                @for (anchor of frame.anchors; track anchor.numberLabel) {
+                  <li class="fwp-anchor-row">
+                    <span class="fwp-anchor-number">{{ anchor.numberLabel }}</span>
+                    <span class="fwp-anchor-question">{{ anchor.question }}</span>
+                  </li>
+                }
+              </ol>
+            </div>
+          }
           @if (v.mf.crosscut) {
             <div class="fwp-crosscut-box" [lfxPpRect]="[page.margin, 760, page.contentWidth]">
               <span class="pp-lab pp-lab--dark">Across the goals</span>
@@ -223,13 +231,15 @@
               @for (pillar of v.pillars; track pillar.t) {
                 <div class="fwp-pillar" [class.fwp-pillar-spark]="$first">
                   <span class="fwp-pillar-title">{{ pillar.t }}</span>
-                  <p class="fwp-pillar-message">{{ pillar.m }}</p>
+                  @if (pillar.m) {
+                    <p class="fwp-pillar-message">{{ pillar.m }}</p>
+                  }
                   <ul class="fwp-pillar-proofs">
                     @for (proof of pillar.proofRows; track $index) {
                       <li>
                         {{ proof.fact }}
                         <span class="fwp-pillar-source"
-                          ><span class="pp-chip">{{ proof.source }}</span></span
+                          ><span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span></span
                         >
                       </li>
                     }
@@ -244,95 +254,68 @@
               <p class="fwp-why-now-text">{{ v.mh.found }}</p>
             </div>
           }
-          <div [lfxPpRect]="[page.margin + 344, 780, 360]">
-            <span class="pp-lab pp-lab--dark">Audiences</span>
-            <ul class="fwp-audience-list" data-testid="mktg-framework-print-audiences">
-              @for (audience of v.audiences; track audience.name) {
-                <li class="fwp-audience-row">
-                  <strong>{{ audience.name }}.</strong> {{ audience.lead }}
-                </li>
-              }
-            </ul>
-          </div>
-        }
-
-        <!-- 04 KEY NUMBERS: the figures as tiles in full rows, then every proof point with its source and the goal that uses it -->
-        @case (ids.keyNumbers) {
-          @if (frame.numbersPage; as numbers) {
-            <p class="pp-body pp-body--wide" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">{{ numbers.intro }}</p>
-            <div class="fwp-number-tiles" [lfxPpRect]="[page.margin, tile.top, page.contentWidth]" data-testid="mktg-framework-print-numbers">
-              @for (row of numbers.tiles; track $index) {
-                <div
-                  class="fwp-number-tile"
-                  [class.fwp-number-tile-lead]="$first"
-                  [class.fwp-number-tile-wide]="row.wide"
-                  [attr.data-wide]="row.wide"
-                  [attr.data-testid]="'mktg-framework-print-number-tile-' + $index">
-                  <span class="fwp-number">{{ row.number }}</span>
-                  <span class="fwp-number-label">{{ row.label }}</span>
-                </div>
-              }
-            </div>
-            <div [lfxPpRect]="[page.margin, numbers.factsTop, page.contentWidth]" data-testid="mktg-framework-print-facts">
-              <span class="pp-lab pp-lab--dark">Every figure and its source</span>
-              <!-- A table of one frame: no head or foot group, which Chromium would paginate on. -->
-              <table class="fwp-grid-table fwp-facts-table">
-                <tbody>
-                  <tr>
-                    <th scope="col" class="fwp-grid-th">Fact</th>
-                    <th scope="col" class="fwp-grid-th">Source</th>
-                    <th scope="col" class="fwp-grid-th">Used by</th>
-                  </tr>
-                  @for (fact of numbers.facts; track $index) {
-                    <tr [attr.data-testid]="'mktg-framework-print-fact-' + $index">
-                      <td class="fwp-fact">{{ fact.fact }}</td>
-                      <td class="fwp-fact-source">
-                        <span class="pp-chip">{{ fact.source }}</span>
-                      </td>
-                      <td class="fwp-fact-used">{{ fact.usedBy }}</td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
+          @if (v.audiences.length > 0) {
+            <div [lfxPpRect]="[page.margin + 344, 780, 360]">
+              <span class="pp-lab pp-lab--dark">Audiences</span>
+              <ul class="fwp-audience-list" data-testid="mktg-framework-print-audiences">
+                @for (audience of v.audiences; track audience.name) {
+                  <li class="fwp-audience-row">
+                    <strong>{{ audience.name }}.</strong>
+                    @if (audience.lead) {
+                      {{ audience.lead }}
+                    }
+                  </li>
+                }
+              </ul>
             </div>
           }
         }
 
-        <!-- 05 SOURCES & GAPS: the run's report as stored (none when the record has none); the reviewer's note and the run's notes stay on screen -->
+        <!-- 05 SOURCES & GAPS: an existing report's lists (none, and no intro, when the record has no report); the reviewer's note and the run's notes stay on screen -->
         @case (ids.sources) {
           @if (frame.sourcesPage; as sources) {
-            <p class="pp-body pp-body--wide" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]" data-testid="mktg-framework-print-sources-intro">
-              {{ sources.intro }}
-            </p>
-            @if (sources.read && sources.failed) {
+            @if (sources.report; as report) {
+              <p class="pp-body pp-body--wide" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]" data-testid="mktg-framework-print-sources-intro">
+                {{ report.intro }}
+              </p>
               <div [lfxPpRect]="[page.margin, tops.sourcesLists, columns.half]">
-                <span class="pp-lab pp-lab--dark">Read</span>
-                <ul class="fwp-source-list" data-testid="mktg-framework-print-sources-read">
-                  @for (source of sources.read; track $index) {
-                    <li>{{ source }}</li>
-                  }
-                </ul>
-                <span class="pp-lab pp-lab--dark fwp-block-after">Could not be read</span>
-                @if (sources.failed.length > 0) {
-                  <ul class="fwp-source-list" data-testid="mktg-framework-print-sources-failed">
-                    @for (source of sources.failed; track $index) {
+                @if (report.read.rows.length > 0) {
+                  <span class="pp-lab pp-lab--dark">Read</span>
+                  <ul class="fwp-source-list" [class.fwp-source-list-tight]="report.read.tight" data-testid="mktg-framework-print-sources-read">
+                    @for (source of report.read.rows; track $index) {
                       <li>{{ source }}</li>
                     }
                   </ul>
+                  @if (report.read.cut > 0) {
+                    <p class="fwp-cut-note" data-testid="mktg-framework-print-sources-read-cut">{{ cutNote(report.read.cut) }}</p>
+                  }
+                }
+                <span class="pp-lab pp-lab--dark" [class.fwp-block-after]="report.read.rows.length > 0">Could not be read</span>
+                <!-- The empty-state lines read the report's counts, not the lists cut to the room. -->
+                @if (report.failedCount > 0) {
+                  <ul class="fwp-source-list" [class.fwp-source-list-tight]="report.failed.tight" data-testid="mktg-framework-print-sources-failed">
+                    @for (source of report.failed.rows; track $index) {
+                      <li>{{ source }}</li>
+                    }
+                  </ul>
+                  @if (report.failed.cut > 0) {
+                    <p class="fwp-cut-note" data-testid="mktg-framework-print-sources-failed-cut">{{ cutNote(report.failed.cut) }}</p>
+                  }
                 } @else {
                   <p class="fwp-source-text" data-testid="mktg-framework-print-sources-failed-empty">{{ noSourceFailed }}</p>
                 }
               </div>
-            }
-            @if (sources.gaps) {
               <div [lfxPpRect]="[page.margin + columns.half + columns.halfGap, tops.sourcesLists, columns.half]">
                 <span class="pp-lab pp-lab--dark">Gaps</span>
-                @if (sources.gaps.length > 0) {
-                  <ul class="fwp-source-list" data-testid="mktg-framework-print-gaps">
-                    @for (gap of sources.gaps; track $index) {
+                @if (report.gapsCount > 0) {
+                  <ul class="fwp-source-list" [class.fwp-source-list-tight]="report.gaps.tight" data-testid="mktg-framework-print-gaps">
+                    @for (gap of report.gaps.rows; track $index) {
                       <li>{{ gap }}</li>
                     }
                   </ul>
+                  @if (report.gaps.cut > 0) {
+                    <p class="fwp-cut-note" data-testid="mktg-framework-print-gaps-cut">{{ cutNote(report.gaps.cut) }}</p>
+                  }
                 } @else {
                   <p class="fwp-source-text" data-testid="mktg-framework-print-gaps-empty">{{ noGap }}</p>
                 }
@@ -349,51 +332,148 @@
 
         <!-- goal-N and icps-k, by their data -->
         @default {
-          @if (frame.goalPage; as goalPage) {
+          @if (frame.numbersPage; as numbers) {
+            <!-- 04 KEY NUMBERS (`key-numbers`, `key-numbers-2`…, as many as the figures need): the tiles by the count's layout up to six, or the key numbers table of every figure past that, continued on the next page when full; then every proof point with its source and the goal that uses it, on the last page -->
+            @if (numbers.intro) {
+              <p class="pp-body pp-body--wide" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">{{ numbers.intro }}</p>
+            }
+            @if (numbers.tiles.length > 0) {
+              <div class="fwp-number-tiles" [lfxPpRect]="[page.margin, tile.top, page.contentWidth]" data-testid="mktg-framework-print-numbers">
+                @for (row of numbers.tiles; track $index) {
+                  <div
+                    class="fwp-number-tile"
+                    [class.fwp-number-tile-lead]="$first"
+                    [style.grid-column]="'span ' + 6 / row.share"
+                    [attr.data-wide]="row.wide"
+                    [attr.data-share]="row.share"
+                    [attr.data-testid]="'mktg-framework-print-number-tile-' + $index">
+                    <span class="fwp-number">{{ row.number }}</span>
+                    <span class="fwp-number-label">{{ row.label }}</span>
+                  </div>
+                }
+              </div>
+            }
+            @if (numbers.numbersTable.length > 0) {
+              <div [lfxPpRect]="[page.margin, numbers.numbersTop, page.contentWidth]" data-testid="mktg-framework-print-numbers-table">
+                <span class="pp-lab pp-lab--dark">Key numbers</span>
+                <!-- A table of one frame: no head or foot group, which Chromium would paginate on; the rows past the footer go to the next page. -->
+                <table class="fwp-grid-table fwp-facts-table">
+                  <colgroup>
+                    @for (width of numberColumns; track $index) {
+                      <col [style.width.%]="width" />
+                    }
+                  </colgroup>
+                  <tbody>
+                    <tr>
+                      <th scope="col" class="fwp-grid-th">Figure</th>
+                      <th scope="col" class="fwp-grid-th">What it counts</th>
+                    </tr>
+                    @for (row of numbers.numbersTable; track $index) {
+                      <tr data-testid="mktg-framework-print-number-row">
+                        <td class="fwp-fact fwp-number-cell">{{ row.number }}</td>
+                        <td class="fwp-fact-used">{{ row.label }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+            @if (numbers.factsTop !== null) {
+              <div [lfxPpRect]="[page.margin, numbers.factsTop, page.contentWidth]" data-testid="mktg-framework-print-facts">
+                <span class="pp-lab pp-lab--dark">Figures and their sources</span>
+                <!-- A table of one frame: no head or foot group, which Chromium would paginate on. -->
+                <table
+                  class="fwp-grid-table fwp-facts-table"
+                  [class.fwp-facts-table-tight]="numbers.facts.tight"
+                  data-testid="mktg-framework-print-facts-table">
+                  <!-- The column widths live here: `table-layout: fixed` reads <col>, not a later row's cells. -->
+                  <colgroup>
+                    @for (width of factColumns; track $index) {
+                      <col [style.width.%]="width" />
+                    }
+                  </colgroup>
+                  <tbody>
+                    <tr>
+                      <th scope="col" class="fwp-grid-th">Fact</th>
+                      <th scope="col" class="fwp-grid-th">Source</th>
+                      <th scope="col" class="fwp-grid-th">Used by</th>
+                    </tr>
+                    @for (fact of numbers.facts.rows; track $index) {
+                      <tr [attr.data-testid]="'mktg-framework-print-fact-' + $index">
+                        <td class="fwp-fact">{{ fact.fact }}</td>
+                        <td class="fwp-fact-source">
+                          <span class="pp-chip fwp-chip-wrap">{{ fact.source }}</span>
+                        </td>
+                        <td class="fwp-fact-used">{{ fact.usedBy }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+                @if (numbers.facts.cut > 0) {
+                  <p class="fwp-cut-note" data-testid="mktg-framework-print-facts-cut">{{ cutNote(numbers.facts.cut) }}</p>
+                }
+              </div>
+            }
+          } @else if (frame.goalPage; as goalPage) {
             <!-- ONE PAGE PER GOAL: the number and the value proposition, the key message bar, the proof points, the sound bite, who it is for -->
             <div
               class="fwp-goal-lead"
               [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]"
               [attr.data-testid]="'mktg-framework-print-goal-' + goalPage.goal.n">
               <span class="fwp-goal-number">{{ goalPage.numberLabel }}</span>
-              <div class="fwp-goal-vp-block">
-                <span class="pp-lab">Value proposition</span>
-                <p class="fwp-goal-vp" [style.font-size.px]="goalPage.value.size">{{ goalPage.value.text }}</p>
+              @if (goalPage.value.text) {
+                <div class="fwp-goal-vp-block">
+                  <span class="pp-lab">Value proposition</span>
+                  <p class="fwp-goal-vp" [style.font-size.px]="goalPage.value.size">{{ goalPage.value.text }}</p>
+                </div>
+              }
+            </div>
+            @if (goalPage.key.text) {
+              <div class="fwp-goal-key" [lfxPpRect]="[page.margin, tops.goalKey, page.contentWidth]">
+                <span class="fwp-goal-key-label">Key message</span>
+                <span class="fwp-goal-key-text" [style.font-size.px]="goalPage.key.size">{{ goalPage.key.text }}</span>
               </div>
-            </div>
-            <div class="fwp-goal-key" [lfxPpRect]="[page.margin, tops.goalKey, page.contentWidth]">
-              <span class="fwp-goal-key-label">Key message</span>
-              <span class="fwp-goal-key-text" [style.font-size.px]="goalPage.key.size">{{ goalPage.key.text }}</span>
-            </div>
-            <div [lfxPpRect]="[page.margin, tops.goalProofs, page.contentWidth]">
-              <span class="pp-lab pp-lab--dark">Proof points</span>
-              <ul class="fwp-proof-list">
-                @for (proof of goalPage.proofs; track $index) {
-                  <li class="fwp-proof-row">
-                    <span>{{ proof.fact }}</span>
-                    <span class="pp-chip">{{ proof.source }}</span>
-                  </li>
+            }
+            @if (goalPage.proofs.rows.length > 0) {
+              <div [lfxPpRect]="[page.margin, tops.goalProofs, page.contentWidth]">
+                <span class="pp-lab pp-lab--dark">Proof points</span>
+                <ul class="fwp-proof-list" [class.fwp-proof-list-tight]="goalPage.proofs.tight">
+                  @for (proof of goalPage.proofs.rows; track $index) {
+                    <li class="fwp-proof-row">
+                      <span>{{ proof.fact }}</span>
+                      <span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span>
+                    </li>
+                  }
+                </ul>
+                @if (goalPage.proofs.cut > 0) {
+                  <p class="fwp-cut-note" data-testid="mktg-framework-print-proofs-cut">{{ cutNote(goalPage.proofs.cut) }}</p>
                 }
-              </ul>
-            </div>
+              </div>
+            }
             @if (goalPage.bite; as bite) {
               <div [lfxPpRect]="[page.margin, tops.goalBite, page.contentWidth]">
                 <span class="pp-lab pp-lab--dark">Sound bite</span>
                 <p class="fwp-goal-bite-text" [style.font-size.px]="bite.size">{{ bite.text }}</p>
               </div>
             }
-            <div [lfxPpRect]="[page.margin, tops.goalServed, page.contentWidth]">
-              <span class="pp-lab pp-lab--dark">Who it's for</span>
-              <div class="fwp-served-cards">
-                @for (card of goalPage.served; track card.id) {
-                  <div class="fwp-card fwp-served-card">
-                    <span class="fwp-served-name">{{ card.name }}</span>
-                    <p class="fwp-served-line" [style.font-size.px]="card.need.size"><strong>Needs</strong> {{ card.need.text }}</p>
-                    <p class="fwp-served-line" [style.font-size.px]="card.cta.size"><strong>Ask them to</strong> {{ card.cta.text }}</p>
-                  </div>
-                }
+            @if (goalPage.served.length > 0) {
+              <div [lfxPpRect]="[page.margin, tops.goalServed, page.contentWidth]">
+                <span class="pp-lab pp-lab--dark">Who it's for</span>
+                <div class="fwp-served-cards">
+                  @for (card of goalPage.served; track card.id) {
+                    <div class="fwp-card fwp-served-card">
+                      <span class="fwp-served-name">{{ card.name }}</span>
+                      @if (card.need.text) {
+                        <p class="fwp-served-line" [style.font-size.px]="card.need.size"><strong>Needs</strong> {{ card.need.text }}</p>
+                      }
+                      @if (card.cta.text) {
+                        <p class="fwp-served-line" [style.font-size.px]="card.cta.size"><strong>Ask them to</strong> {{ card.cta.text }}</p>
+                      }
+                    </div>
+                  }
+                </div>
               </div>
-            </div>
+            }
           } @else if (frame.icpPage; as icpPage) {
             <!-- 02 IDEAL CUSTOMER PROFILES, two a page; the goals × profiles matrix where a page holds one -->
             <p class="pp-body fwp-intro-icps" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">{{ icpPage.intro }}</p>
@@ -408,30 +488,41 @@
                         <span class="pp-chip">{{ chip }}</span>
                       }
                     </div>
-                    <p class="fwp-icp-who-text">{{ icp.who }}</p>
+                    @if (icp.who) {
+                      <p class="fwp-icp-who-text">{{ icp.who }}</p>
+                    }
                     <ul class="fwp-icp-personas">
                       @for (persona of icp.personaRows; track persona.role) {
                         <li>{{ persona.role }} · {{ persona.cares }}</li>
                       }
                     </ul>
                   </div>
+                  <!-- Each field prints with its eyebrow only when the profile has it: no label over nothing. -->
                   <dl class="fwp-icp-fields">
-                    <div>
-                      <dt>Need</dt>
-                      <dd>{{ icp.need }}</dd>
-                    </div>
-                    <div>
-                      <dt>Value</dt>
-                      <dd>{{ icp.value }}</dd>
-                    </div>
-                    <div>
-                      <dt>Lead message</dt>
-                      <dd class="fwp-icp-lead">{{ icp.lead }}</dd>
-                    </div>
-                    <div>
-                      <dt>Call to action</dt>
-                      <dd>{{ icp.cta }}</dd>
-                    </div>
+                    @if (icp.need) {
+                      <div>
+                        <dt>Need</dt>
+                        <dd>{{ icp.need }}</dd>
+                      </div>
+                    }
+                    @if (icp.value) {
+                      <div>
+                        <dt>Value</dt>
+                        <dd>{{ icp.value }}</dd>
+                      </div>
+                    }
+                    @if (icp.lead) {
+                      <div>
+                        <dt>Lead message</dt>
+                        <dd class="fwp-icp-lead">{{ icp.lead }}</dd>
+                      </div>
+                    }
+                    @if (icp.cta) {
+                      <div>
+                        <dt>Call to action</dt>
+                        <dd>{{ icp.cta }}</dd>
+                      </div>
+                    }
                     <!-- An objection prints only with its answer (the editor's rule: no placeholder for an unanswered one). -->
                     @if (icp.objectionResponse) {
                       <div>
@@ -439,10 +530,12 @@
                         <dd>“{{ icp.objectionText }}” — {{ icp.objectionResponse }}</dd>
                       </div>
                     }
-                    <div>
-                      <dt>Channels</dt>
-                      <dd>{{ icp.channelsLabel }}</dd>
-                    </div>
+                    @if (icp.channelsLabel) {
+                      <div>
+                        <dt>Channels</dt>
+                        <dd>{{ icp.channelsLabel }}</dd>
+                      </div>
+                    }
                     <!-- The profile's proof figure under its own eyebrow (the editor's rule), not folded into the channels. -->
                     @if (icp.proofRows.length > 0) {
                       <div>
@@ -451,7 +544,7 @@
                           <ul class="fwp-icp-proofs">
                             @for (proof of icp.proofRows; track $index) {
                               <li>
-                                {{ proof.fact }} <span class="pp-chip">{{ proof.source }}</span>
+                                {{ proof.fact }} <span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span>
                               </li>
                             }
                           </ul>

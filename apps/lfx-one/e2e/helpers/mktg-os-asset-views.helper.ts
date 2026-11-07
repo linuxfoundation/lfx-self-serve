@@ -231,7 +231,7 @@ export function realShapedFrameworkAsset(): MktgFrameworkAsset {
       vp: 'Contributors join a neutral project where their work is reviewed quickly and credited publicly, whoever employs them.',
       key: 'No single company steers the roadmap; the contributors who show up do.',
       proof: [
-        ['3,400 contributors from 210 organisations merged a change in the last year', 'Plan'],
+        ['3,400 contributors from 210 organizations merged a change in the last year', 'Plan'],
         ['Median time from pull request to first review is under nineteen hours', 'Docs'],
       ],
       bite: 'The roadmap belongs to whoever shows up to build it.',
@@ -246,7 +246,7 @@ export function realShapedFrameworkAsset(): MktgFrameworkAsset {
       proof: [
         ['Two independent security audits funded and published every year since 2024', 'Deck'],
         ['Release cadence held at every eight weeks for three consecutive years', 'Website'],
-        ['Forty-one member organisations across five continents', 'LFX field'],
+        ['Forty-one member organizations across five continents', 'LFX field'],
       ],
       bite: 'Pay for the foundations once, together, instead of again and again alone.',
       icps: ['members'],
@@ -271,11 +271,11 @@ export function realShapedFrameworkAsset(): MktgFrameworkAsset {
     content: {
       mf: {
         vision:
-          'A world where every organisation can build on infrastructure that is open, audited and governed by the people who depend on it. Nobody has to choose between moving fast and knowing what they run on.',
+          'A world where every organization can build on infrastructure that is open, audited and governed by the people who depend on it. Nobody has to choose between moving fast and knowing what they run on.',
         mission:
           'We maintain a neutral, production-grade toolkit for building platforms, fund the security and release work that keeps it trustworthy, and bring its contributors and adopters together to decide its direction in the open.',
         positioning:
-          'For platform teams and the organisations that rely on them, the toolkit is the open foundation that turns a compliance checklist into a working platform. Unlike single-vendor stacks, it is governed by its contributors and audited in public, so adopting it is a decision that outlasts any one supplier.',
+          'For platform teams and the organizations that rely on them, the toolkit is the open foundation that turns a compliance checklist into a working platform. Unlike single-vendor stacks, it is governed by its contributors and audited in public, so adopting it is a decision that outlasts any one supplier.',
         tagline: 'Open foundations, audited in public, governed by the people who build on them.',
         goals,
         crosscut:
@@ -296,12 +296,12 @@ export function realShapedFrameworkAsset(): MktgFrameworkAsset {
           ['the fastest platform on the market', 'the fastest route from an empty repository to a compliant platform'],
           ['enterprise-ready', 'audited in public and adopted by regulated platform teams'],
           ['backed by the biggest vendors', 'governed by the contributors who show up, whoever employs them'],
-          ['our community', 'the contributors and the organisations that depend on the toolkit'],
+          ['our community', 'the contributors and the organizations that depend on the toolkit'],
           ['cutting-edge innovation', 'a release every eight weeks, planned in the open'],
         ],
         anchor: ['Which goal does this serve?', 'Which segment is it for?', 'Which key message does it carry?'],
         notes:
-          'The adoption figures come from the [download statistics page](https://www.example.org/metrics/downloads) and the audit cadence from the [security programme overview](https://www.example.org/security/programme); both were read on the day of the run.',
+          'The adoption figures come from the [download statistics page](https://www.example.org/metrics/downloads) and the audit cadence from the [security program overview](https://www.example.org/security/program); both were read on the day of the run.',
       },
       icp: [
         {
@@ -338,9 +338,9 @@ export function realShapedFrameworkAsset(): MktgFrameworkAsset {
         },
         {
           id: 'members',
-          name: 'Member organisations',
+          name: 'Member organizations',
           kind: 'Organization',
-          who: 'Organisations whose products depend on the toolkit and who fund its shared work.',
+          who: 'Organizations whose products depend on the toolkit and who fund its shared work.',
           goals: ['membership'],
           need: 'Security audits and release engineering they would otherwise fund alone.',
           value: 'Two published audits a year and a release every eight weeks, funded together.',
@@ -349,7 +349,7 @@ export function realShapedFrameworkAsset(): MktgFrameworkAsset {
           cta: 'Join as a member.',
           channels: ['Summit'],
           objection: ['What do we get that non-members do not?', 'A seat where the audit scope and the release plan are decided.'],
-          personas: [['Open source programme office lead', 'risk']],
+          personas: [['Open source program office lead', 'risk']],
           basis: 'Deck',
         },
       ],
@@ -358,7 +358,7 @@ export function realShapedFrameworkAsset(): MktgFrameworkAsset {
         line: 'Governed by the people who build on them.',
         pillars: [
           { t: 'Open', m: 'Every component is developed and audited in public.', p: [['Two independent security audits published every year', 'Deck']] },
-          { t: 'Governed', m: 'Contributors steer the roadmap, not a single vendor.', p: [['3,400 contributors from 210 organisations', 'Plan']] },
+          { t: 'Governed', m: 'Contributors steer the roadmap, not a single vendor.', p: [['3,400 contributors from 210 organizations', 'Plan']] },
         ],
         found: 'A Linux Foundation project.',
         aud: [
@@ -368,15 +368,15 @@ export function realShapedFrameworkAsset(): MktgFrameworkAsset {
       },
       nums: [
         ['1,200,000', 'downloads in the last twelve months'],
-        ['3,400', 'contributors from 210 organisations'],
-        ['41', 'member organisations across five continents'],
+        ['3,400', 'contributors from 210 organizations'],
+        ['41', 'member organizations across five continents'],
         ['2,800', 'attendees at the last summit'],
       ],
     },
     report: {
       sources_read: [
         'https://www.example.org/metrics/downloads/annual-report-2026/by-country-and-platform/summary',
-        'https://www.example.org/security/programme/independent-audits/2025-second-half/findings-and-remediation',
+        'https://www.example.org/security/program/independent-audits/2025-second-half/findings-and-remediation',
         'https://docs.example.org/reference-deployments/cloud-providers/compared/with-bare-metal-notes',
       ],
       sources_failed: [
@@ -399,6 +399,34 @@ export function realShapedFrameworkRevisionResponse(): MktgRevisionResponse {
     ...columnAssetRevisionResponse('foundation-message'),
     markdown: JSON.stringify(framework.content),
     sidecar: { mode: framework.mode, report: framework.report, checks: framework.checks },
+  };
+}
+
+/**
+ * The approved framework document with more than the portrait book's pages hold at their measure: nine figures (past the six
+ * tiles hold), fourteen long proof points on the first goal, sixty sources read and forty gaps, so the print's key numbers table
+ * and its cut lists print on the fixture. Synthetic throughout.
+ */
+export function overfullFrameworkRevisionResponse(): MktgRevisionResponse {
+  const framework = realShapedFrameworkAsset();
+  const sentence = 'A long proof sentence that runs across most of the column and asks the list for a second line of room.';
+  const goals = framework.content.mf.goals.map((goal, index) =>
+    index === 0 ? { ...goal, proof: Array.from({ length: 14 }, (_, n): [string, string] => [`${sentence} (${n + 1})`, 'Report']) } : goal
+  );
+  const content = {
+    ...framework.content,
+    mf: { ...framework.content.mf, goals },
+    nums: Array.from({ length: 9 }, (_, n): [string, string] => [`${(n + 1) * 1000}`, `synthetic figure ${n + 1}`]),
+  };
+  const report = {
+    ...framework.report,
+    sources_read: Array.from({ length: 60 }, (_, n) => `https://www.example.org/synthetic/source/${n + 1}/with-a-long-path-that-wraps-in-the-column`),
+    gaps: Array.from({ length: 40 }, (_, n) => `Synthetic gap ${n + 1}: no source states the figure the framework needs here.`),
+  };
+  return {
+    ...columnAssetRevisionResponse('foundation-message'),
+    markdown: JSON.stringify(content),
+    sidecar: { mode: framework.mode, report, checks: framework.checks },
   };
 }
 
