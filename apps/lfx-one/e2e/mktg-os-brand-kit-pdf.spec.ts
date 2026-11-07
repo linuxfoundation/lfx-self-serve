@@ -574,15 +574,21 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(colorways.getByTestId('brand-kit-colorway-missing')).toHaveCount(2);
     await expect(colorways.getByTestId('brand-kit-colorways-tiles').locator('img')).toHaveCount(2);
     expect(await colorways.getByTestId('brand-kit-colorways-tiles').locator('img[style*="filter"]').count()).toBe(0);
-    // The dark grounds draw the lockup in full colour, unfiltered, on the white plate padded by its height (the clear
-    // space X): the cover (84 px), the dark partnership tile (64 px) and the back cover (72 px).
+    // The dark grounds draw the lockup in full colour, unfiltered, on the white plate padded by half its drawn height:
+    // the cover (84 px lockup, 42 px of white) and the back cover (72, 36), their blocks a padding higher so the lockup
+    // stays where the design draws it; a tile's plate is fitted to the tile's box (the partnership tile's 64 px box:
+    // 32 drawn, 16 of white), so no plate spills out of its container.
     for (const img of await pageById(pages, 'cover').locator('img').all()) await expect(img).toHaveCSS('filter', 'none');
-    await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '84px');
+    await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '42px');
     await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-plate')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     const partnershipDark = pageById(pages, 'logo-partnership').getByTestId('brand-kit-partnership-dark').locator('img');
     await expect(partnershipDark).toHaveCSS('filter', 'none');
-    await expect(pageById(pages, 'logo-partnership').getByTestId('brand-kit-partnership-dark').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '64px');
-    await expect(pageById(pages, 'back-cover').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '72px');
+    await expect(pageById(pages, 'logo-partnership').getByTestId('brand-kit-partnership-dark').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '16px');
+    await expect(pageById(pages, 'back-cover').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '36px');
+    // The back cover's plate ends above the brand line's block: no text is drawn over the white.
+    const backPlate = await pageById(pages, 'back-cover').getByTestId('mktg-portrait-plate').boundingBox();
+    const backLine = await pageById(pages, 'back-cover').getByTestId('mktg-portrait-back-cover-line').boundingBox();
+    expect(backPlate && backLine && backPlate.y + backPlate.height <= backLine.y).toBe(true);
     // The Logo system's dark tile says what it draws.
     await expect(pageById(pages, 'logo-system').getByTestId('brand-kit-logo-system-tiles')).toContainText(
       'On the dark · full color on a white plate (no reversed file)'

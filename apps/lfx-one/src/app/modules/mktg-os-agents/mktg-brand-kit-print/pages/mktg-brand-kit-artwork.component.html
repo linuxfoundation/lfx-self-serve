@@ -2,10 +2,10 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (image(); as image) {
-  <span [class.pp-plate]="image.plate" [style.padding.px]="image.plate ? height() : null" [attr.data-testid]="image.plate ? 'mktg-portrait-plate' : null">
+  <span [class.pp-plate]="image.plate" [style.padding.px]="image.plate ? fit().padding : null" [attr.data-testid]="image.plate ? 'mktg-portrait-plate' : null">
     <img
       class="block w-auto"
-      [style.height.px]="height()"
+      [style.height.px]="fit().height"
       [src]="image.src"
       [alt]="image.alt"
       [style.filter]="image.filter || null"

@@ -32,7 +32,8 @@ describe('the Symbol & symbol in shape page', () => {
     expect(shapes[0].querySelector<HTMLElement>('.kp-shape')?.style.width).toBe('158px');
     expect(shapes[3].querySelector<HTMLElement>('.kp-shape')?.style.width).toBe('126px');
     expect(shapes[3].querySelector('.kp-shape-stage')?.classList.contains('kp-shape-stage--mist')).toBe(true);
-    expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] img')?.style.height).toBe('100px');
+    // The three-colour symbol is plated on the demo's dark stage, the plate fitted to the 100 px box: the mark at 50.
+    expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] img')?.style.height).toBe('50px');
     const ruleBlock = frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-rule"]');
     // The 8 px under the label comes from a grammar class: a Tailwind margin utility is beaten by the frame's reset (rv3 F7).
     expect(ruleBlock?.classList.contains('pp-body-gap-tight')).toBe(true);
@@ -63,6 +64,27 @@ describe('the Symbol & symbol in shape page', () => {
     const variants = frame.querySelector('[data-testid="brand-kit-symbol-variants"]');
     expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['']);
     expect(variants?.querySelectorAll('[data-testid="brand-kit-symbol-variant-missing"]')).toHaveLength(2);
+  });
+
+  it('fits a plated symbol inside its shape and stage: drawn + 2 × padding = the box the page sizes for the bare mark', async () => {
+    // A three-colour symbol cannot be reversed: on the dark shapes and the padding demo it sits on the white plate,
+    // fitted to the box (76 px sample → 38 drawn in 19 of white; 100 px demo → 50 in 25), never spilling out.
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
+      ...view,
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
+    }));
+    const plates = Array.from(
+      frame.querySelectorAll<HTMLElement>('[data-testid="brand-kit-symbol-shapes"] .pp-plate, [data-testid="brand-kit-symbol-padding"] .pp-plate')
+    );
+    expect(plates.length).toBeGreaterThan(0);
+    for (const plate of plates) {
+      const drawn = parseFloat(plate.querySelector<HTMLElement>('img')?.style.height ?? '');
+      const padding = parseFloat(plate.style.padding);
+      expect(padding).toBe(drawn / 2);
+      expect([76, 100]).toContain(drawn + 2 * padding);
+    }
+    expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] .pp-plate img')?.style.height).toBe('50px');
+    expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] .pp-plate')?.style.padding).toBe('25px');
   });
 
   it('keeps the rule without the AA figure when white reads on the accent', async () => {

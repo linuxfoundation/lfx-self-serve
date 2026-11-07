@@ -23,11 +23,11 @@ describe('the Logo system page', () => {
     const tiles = frame.querySelector('[data-testid="brand-kit-logo-system-tiles"]');
     expect(tiles?.querySelectorAll('.pp-tile')).toHaveLength(1);
     // The fixture's three-colour lockup is drawn on the dark as it is (a filter would flatten it), on the white plate
-    // padded by the clear space X (the drawn height), and the caption says so.
+    // fitted to the tile's 40 px box (drawn at 20, padded by half of that), and the caption says so.
     const darkTile = tiles?.querySelector<HTMLElement>('.pp-tile--dark');
     expect(darkTile?.querySelector<HTMLElement>('img')?.style.filter).toBe('');
-    expect(darkTile?.querySelector<HTMLElement>('.pp-plate[data-testid="mktg-portrait-plate"]')?.style.padding).toBe('40px');
-    expect(darkTile?.querySelector('img')?.style.height).toBe('40px');
+    expect(darkTile?.querySelector<HTMLElement>('.pp-plate[data-testid="mktg-portrait-plate"]')?.style.padding).toBe('10px');
+    expect(darkTile?.querySelector('img')?.style.height).toBe('20px');
     expect(tiles?.textContent).toContain('On the dark · full color on a white plate (no reversed file)');
     const rows = Array.from(frame.querySelectorAll('[data-testid="brand-kit-logo-system-files"] tbody tr'), (row) => wordsOf(row));
     expect(rows).toEqual([

@@ -70,13 +70,19 @@ describe('lfx-mktg-portrait-back-cover', () => {
     expect(page.querySelector('[data-testid="mktg-portrait-back-cover-line"]')).not.toBeNull();
   });
 
-  it('sets a full-colour lockup the kit cannot reverse on the white plate, padded by its clear space X (the 72 px height); none for a reversed logo', async () => {
+  it('sets a full-colour lockup the kit cannot reverse on the white plate, padded by half its 72 px height (36 px); none for a reversed logo', async () => {
     const plain = await setup(true);
     expect(plain.page.querySelector('[data-testid="mktg-portrait-plate"]')).toBeNull();
     const plated = await setup('plate');
     const plate = plated.page.querySelector<HTMLElement>('[data-testid="mktg-portrait-plate"]');
     expect(plate?.classList.contains('pp-plate')).toBe(true);
-    expect(plate?.style.padding).toBe('72px');
+    expect(plate?.style.padding).toBe('36px');
+    // The plated block starts a padding higher (384): the lockup stays at y 420 and the plate (72 + 2 × 36) ends at 528,
+    // 32 px above the brand line's block at 560; the bare layout keeps the block at 420.
+    const lockupBlock = plate?.closest<HTMLElement>('.pp-back-lockup');
+    expect(lockupBlock?.style.top).toBe('384px');
+    expect(384 + 72 + 2 * 36).toBeLessThanOrEqual(560 - 24);
+    expect(plain.page.querySelector<HTMLElement>('.pp-back-lockup')?.style.top).toBe('420px');
     expect(plate?.querySelector('[data-testid="mktg-portrait-back-cover-logo"]')).not.toBeNull();
   });
 });

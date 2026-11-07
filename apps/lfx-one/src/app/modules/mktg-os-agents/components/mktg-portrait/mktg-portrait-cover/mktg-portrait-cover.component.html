@@ -5,8 +5,14 @@
   <div class="pp-grid-ground" [lfxPpRect]="ground()" aria-hidden="true" data-testid="mktg-portrait-cover-ground"></div>
   @if (logo(); as logo) {
     <div [lfxPpRect]="lockup()">
-      <span [class.pp-plate]="logo.plate" [style.padding.px]="logo.plate ? 84 : null" [attr.data-testid]="logo.plate ? 'mktg-portrait-plate' : null">
-        <img class="h-[84px] w-auto" [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" data-testid="mktg-portrait-cover-logo" />
+      <span [class.pp-plate]="logo.plate" [style.padding.px]="logo.plate ? platePadding : null" [attr.data-testid]="logo.plate ? 'mktg-portrait-plate' : null">
+        <img
+          class="w-auto"
+          [style.height.px]="lockupHeight"
+          [src]="logo.src"
+          [alt]="logo.alt"
+          [style.filter]="logo.filter || null"
+          data-testid="mktg-portrait-cover-logo" />
       </span>
     </div>
   }

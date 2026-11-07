@@ -38,6 +38,8 @@ import {
   mktgPortraitWrapLines,
   mktgKeepName,
   mktgNoBreak,
+  mktgPortraitPlateFit,
+  mktgPortraitPlatePadding,
   mktgNoWidow,
   mktgPortraitLargestFitting,
   mktgPortraitMoreLine,
@@ -208,6 +210,20 @@ describe('the fit model', () => {
     expect(mktgPortraitPaginate([1, 2, 3, 4, 5], (page) => page.length <= 2)).toEqual([[1, 2], [3, 4], [5]]);
     expect(mktgPortraitPaginate([1, 2], () => false)).toEqual([[1], [2]]);
     expect(mktgPortraitPaginate([], () => true)).toEqual([]);
+  });
+});
+
+describe('mktgPortraitPlatePadding', () => {
+  it('pads the white plate by half the drawn height: 42 under the cover lockup, 36 under the back cover lockup', () => {
+    expect(mktgPortraitPlatePadding(84)).toBe(42);
+    expect(mktgPortraitPlatePadding(72)).toBe(36);
+  });
+
+  it('fits a plated artwork to its box: the mark drawn at half the box, the padding a quarter, nothing spilling', () => {
+    expect(mktgPortraitPlateFit(40)).toEqual({ height: 20, padding: 10 });
+    expect(mktgPortraitPlateFit(64)).toEqual({ height: 32, padding: 16 });
+    const { height, padding } = mktgPortraitPlateFit(76);
+    expect(height + 2 * padding).toBe(76);
   });
 });
 

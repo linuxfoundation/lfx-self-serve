@@ -251,13 +251,16 @@ page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's S
   Chromium adds an empty page per `tfoot` and WebKit repeats neither.
 - **Inks and look.** The kit's dark, accent, spark, the ink on the accent and the font
   come from the kit (`MktgPortraitLook`, `mktgPortraitLook(brand, spark)`); the page writes
-  them as `--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`, `--pp-font`, and
-  `--pp-accent-text`: the accent darkened in OKLab until it reads on the page white at WCAG
-  AA for ordinary text (`mktgPortraitAccentText(accent, paper)`, ≥ 4.5:1; an accent that
-  already does is itself). Every TEXT set in the accent on a light page reads that token
-  (the section label under the band, the Logo system page's rule numbers, numerals in the
-  framework and family books); fills, bands, rules and the accent on a dark page keep
-  `--pp-accent`. The
+  them as `--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`, `--pp-font`,
+  `--pp-accent-text` and `--pp-accent-on-dark`. `--pp-accent-text` is the accent darkened
+  in OKLab until it reads on the page white at WCAG AA for ordinary text
+  (`mktgPortraitAccentText(accent, paper)`, ≥ 4.5:1; an accent that already does is
+  itself): every TEXT set in the accent on a light page reads it (the section label under
+  the band, the Logo system page's rule numbers, numerals in the framework and family
+  books). `--pp-accent-on-dark` is the accent where it reads on the kit's dark at AA, else
+  the ink on the dark (`mktgPortraitAccentOnDark(look)`): every TEXT set in the accent on
+  a dark page reads it (the back cover's brand line). Fills, bands and rules keep
+  `--pp-accent` on either ground. The
   design's neutral inks (`MKTG_PORTRAIT_INKS`: ink, muted, hairline, mist, white, fail) are
   written once, as `--pp-ink` …, and the print stylesheets read only those custom
   properties (see [the styling system's print-ink exception](styling-system.md#print-inks)).
@@ -265,6 +268,19 @@ page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's S
   dark, a radial accent glow and a 32 px accent grid), `lfx-mktg-portrait-opener` (the
   family's chapter opener) and `lfx-mktg-portrait-back-cover` (the reversed lockup, brand
   line, url, version line and the trademark notice).
+- **Artwork on a dark ground: supplied, derived, or on the plate.** A dark ground draws
+  the kit's reversed file when one is supplied; else, when the slot's own SVG is one
+  resolvable ink with no background (`brandKitDerivable`, per slot: lockup and symbol), the
+  full-colour file reversed by filter; else the full-colour artwork on the white plate
+  (`.pp-plate`, `MktgPrintLogo.plate`): one shared rounded span whose padding is half the
+  artwork's drawn height (`mktgPortraitPlatePadding(height)`,
+  `MKTG_PORTRAIT_PLATE.paddingOfHeight`), drawn by the kit's artwork component and the
+  covers, never per page. The plate's outer box is laid out, not the bare artwork's: a
+  tile, sample circle or stage fits the plate inside its own box (`mktgPortraitPlateFit`:
+  the mark drawn at half the box, the padding a quarter), and the covers start the plated
+  block one padding higher so the lockup stays where the design draws it and the plate
+  ends clear of the text below. A kit with a reversed file or a derivable slot draws no
+  plate.
 - **The fit model.** `mktgPortraitFitBlock`, `brandKitPortraitShortenLine` and
   `brandKitPortraitShortenParagraph` (shared utils) fit variable text to its box. A
   one-line sample (the Type page's specimen and scale steps, the H1) prints at the kit's

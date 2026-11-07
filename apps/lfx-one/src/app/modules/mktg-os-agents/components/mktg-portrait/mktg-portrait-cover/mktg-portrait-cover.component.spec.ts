@@ -94,13 +94,16 @@ describe('lfx-mktg-portrait-cover', () => {
     expect(page.textContent).not.toContain('[');
   });
 
-  it('sets a full-colour lockup the kit cannot reverse on the white plate, padded by its clear space X (the 84 px height); none for a reversed logo', async () => {
+  it('sets a full-colour lockup the kit cannot reverse on the white plate, padded by half its 84 px height (42 px); none for a reversed logo', async () => {
     const plain = await setup(true);
     expect(plain.page.querySelector('[data-testid="mktg-portrait-plate"]')).toBeNull();
     const plated = await setup('plate');
     const plate = plated.page.querySelector<HTMLElement>('[data-testid="mktg-portrait-plate"]');
     expect(plate?.classList.contains('pp-plate')).toBe(true);
-    expect(plate?.style.padding).toBe('84px');
+    expect(plate?.style.padding).toBe('42px');
+    // The plated block starts a padding higher (258), so the lockup itself stays at y 300 and the plate ends at 426, well clear of the title at 560.
+    expect(plate?.parentElement?.style.top).toBe('258px');
+    expect(plain.page.querySelector<HTMLImageElement>('[data-testid="mktg-portrait-cover-logo"]')?.parentElement?.parentElement?.style.top).toBe('300px');
     expect(plate?.querySelector('[data-testid="mktg-portrait-cover-logo"]')).not.toBeNull();
   });
 });

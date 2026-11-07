@@ -9,17 +9,18 @@
 
 import {
   MKTG_PORTRAIT_CAPS_TRACKING_EM,
+  MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_CUT_STOP_WORDS,
   MKTG_PORTRAIT_FAMILY_WIDTH,
   MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT,
   MKTG_PORTRAIT_FIT,
-  MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
   MKTG_PORTRAIT_GLYPH_WIDTHS,
+  MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
   MKTG_PORTRAIT_HEX_REGEX,
   MKTG_PORTRAIT_INKS,
-  MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_MORE_LINE,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
+  MKTG_PORTRAIT_PLATE,
   MKTG_PORTRAIT_WEIGHT_WIDTH,
 } from '../constants/mktg-portrait-print.constants';
 import type { MktgPrintBrand } from '../interfaces/mktg-print.interface';
@@ -66,6 +67,26 @@ export function mktgNoWidow(text: string): string {
   while (gapStart > 0 && isWhitespace(trimmed[gapStart - 1])) gapStart -= 1;
   if (gapStart === 0) return trimmed;
   return `${trimmed.slice(0, gapStart)}\u00a0${trimmed.slice(wordStart)}`;
+}
+
+/**
+ * The white plate's padding for artwork drawn at `height` px: half the
+ * drawn height (`MKTG_PORTRAIT_PLATE.paddingOfHeight`), so a cover's 84 px
+ * lockup sits in 42 px of white.
+ */
+export function mktgPortraitPlatePadding(height: number): number {
+  return height * MKTG_PORTRAIT_PLATE.paddingOfHeight;
+}
+
+/**
+ * Plated artwork fitted to a box of `box` px (a tile, a sample circle, a
+ * stage): the drawn height and the padding such that drawn + 2 × padding =
+ * box, the padding still half the drawn height. A 40 px tile draws the mark
+ * at 20 px in 10 px of white; nothing spills out of its container.
+ */
+export function mktgPortraitPlateFit(box: number): { height: number; padding: number } {
+  const height = box / (1 + 2 * MKTG_PORTRAIT_PLATE.paddingOfHeight);
+  return { height, padding: mktgPortraitPlatePadding(height) };
 }
 
 /**

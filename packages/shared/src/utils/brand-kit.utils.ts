@@ -1319,8 +1319,30 @@ const BRAND_KIT_SVG_UNRENDERED = new Set(['defs', 'clippath', 'mask', 'pattern',
 /** Paint values that draw nothing. */
 const BRAND_KIT_SVG_NO_PAINT = new Set(['none', 'transparent']);
 
-/** Paint values that are white, the ground a reversal removes (ignorable on a mark, a background when they cover the viewBox). */
-const BRAND_KIT_SVG_WHITE = new Set(['white', '#fff', '#ffffff', 'rgb(255,255,255)', 'rgb(255, 255, 255)']);
+/** The named inks an exporter writes in place of a hex value, as six-digit hex. */
+const BRAND_KIT_SVG_NAMED_INKS: Readonly<Record<string, string>> = { black: '#000000', white: '#ffffff' };
+
+/**
+ * One paint as one ink: `black`, `#000`, `#000000` and `rgb(0, 0, 0)` are
+ * the same ink (six-digit lower-case hex); a paint the detector cannot read
+ * as a colour is returned as written, so two spellings of it stay two inks.
+ */
+function brandKitSvgInk(paint: string): string {
+  const named = BRAND_KIT_SVG_NAMED_INKS[paint];
+  if (named) return named;
+  const shortHex = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(paint);
+  if (shortHex) return `#${shortHex[1]}${shortHex[1]}${shortHex[2]}${shortHex[2]}${shortHex[3]}${shortHex[3]}`;
+  const rgb = /^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/.exec(paint);
+  if (rgb)
+    return `#${rgb
+      .slice(1, 4)
+      .map((channel) => Math.min(255, Number(channel)).toString(16).padStart(2, '0'))
+      .join('')}`;
+  return paint;
+}
+
+/** The white ink, the ground a reversal removes (ignorable on a mark, a background when it covers the viewBox). */
+const BRAND_KIT_SVG_WHITE = '#ffffff';
 
 /** One paint of an element: its `fill`/`stroke` attribute, else its inline style's, else undefined (inherit). */
 function brandKitSvgPaint(attributes: string, property: 'fill' | 'stroke'): string | undefined {
@@ -1330,6 +1352,75 @@ function brandKitSvgPaint(attributes: string, property: 'fill' | 'stroke'): stri
   if (!style) return undefined;
   const declaration = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i').exec(style[1]);
   return declaration ? declaration[1].trim().toLowerCase() : undefined;
+}
+
+/** One tag of an SVG document as the detector reads it. */
+interface BrandKitSvgTag {
+  /** True for `</name>`. */
+  closing: boolean;
+  /** The element name, lower-cased. */
+  name: string;
+  /** The text between the name and the closing `>`, the self-closing slash removed. */
+  attributes: string;
+  /** True for `<name … />`. */
+  selfClosing: boolean;
+  /** The index after the tag's `>`. */
+  end: number;
+}
+
+/** Characters that end an element name: whitespace, the self-closing slash, the tag's end. */
+const BRAND_KIT_SVG_NAME_END = new Set([' ', '\t', '\n', '\r', '\f', '/', '>']);
+
+/**
+ * The next element tag at or after `from`, or null: one left-to-right pass
+ * with no backtracking (the name runs to the first whitespace, `/` or `>`;
+ * the attributes to the first `>` outside quotes), so a hostile document
+ * costs its length and no more. Comments, processing instructions, doctype
+ * and CDATA sections are stepped over, not returned.
+ */
+function brandKitSvgNextTag(svg: string, from: number): BrandKitSvgTag | null {
+  let at = svg.indexOf('<', from);
+  while (at !== -1) {
+    let cursor = at + 1;
+    if (svg.startsWith('!--', cursor)) {
+      const close = svg.indexOf('-->', cursor + 3);
+      if (close === -1) return null;
+      at = svg.indexOf('<', close + 3);
+      continue;
+    }
+    const closing = svg[cursor] === '/';
+    if (closing) cursor += 1;
+    const first = svg[cursor] ?? '';
+    const isLetter = (first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z');
+    if (!isLetter) {
+      const skip = svg.indexOf('>', cursor);
+      if (skip === -1) return null;
+      at = svg.indexOf('<', skip + 1);
+      continue;
+    }
+    const nameStart = cursor;
+    while (cursor < svg.length && !BRAND_KIT_SVG_NAME_END.has(svg[cursor])) cursor += 1;
+    const name = svg.slice(nameStart, cursor).toLowerCase();
+    const attributesStart = cursor;
+    let quote: string | null = null;
+    while (cursor < svg.length) {
+      const char = svg[cursor];
+      if (quote) {
+        if (char === quote) quote = null;
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else if (char === '>') {
+        break;
+      }
+      cursor += 1;
+    }
+    if (cursor >= svg.length) return null;
+    let attributes = svg.slice(attributesStart, cursor);
+    const selfClosing = !closing && attributes.trimEnd().endsWith('/');
+    if (selfClosing) attributes = attributes.trimEnd().slice(0, -1);
+    return { closing, name, attributes, selfClosing, end: cursor + 1 };
+  }
+  return null;
 }
 
 /** A numeric attribute (`width="120"`, `width="100%"` read as the whole), or null. */
@@ -1376,10 +1467,8 @@ export function brandKitSvgIsMonochrome(svg: string): boolean {
   let marks = 0;
   // Open elements whose subtree is not rendered where it stands; their paints are skipped until they close.
   let unrendered = 0;
-  const tag = /<(\/?)([a-zA-Z][\w:-]*)([^>]*?)(\/?)>/g;
-  for (let match = tag.exec(svg); match !== null; match = tag.exec(svg)) {
-    const [, closing, rawName, attributes, selfClosing] = match;
-    const name = rawName.toLowerCase();
+  for (let tag = brandKitSvgNextTag(svg, 0); tag !== null; tag = brandKitSvgNextTag(svg, tag.end)) {
+    const { closing, name, attributes, selfClosing } = tag;
     if (closing) {
       if (inherited.length > 1) inherited.pop();
       if (unrendered > 0) unrendered -= 1;
@@ -1399,9 +1488,10 @@ export function brandKitSvgIsMonochrome(svg: string): boolean {
         [own.fill ?? 'black', true],
         [own.stroke ?? 'none', false],
       ];
-      for (const [paint, isFill] of paints) {
-        if (BRAND_KIT_SVG_NO_PAINT.has(paint)) continue;
-        if (paint.startsWith('url(') || paint === 'currentcolor' || paint === 'inherit') return false;
+      for (const [rawPaint, isFill] of paints) {
+        if (BRAND_KIT_SVG_NO_PAINT.has(rawPaint)) continue;
+        if (rawPaint.startsWith('url(') || rawPaint === 'currentcolor' || rawPaint === 'inherit') return false;
+        const paint = brandKitSvgInk(rawPaint);
         painted = true;
         // A rendered rect the viewBox's size is a background whatever its paint: a second ink under any mark.
         const coversViewBox =
@@ -1412,7 +1502,7 @@ export function brandKitSvgIsMonochrome(svg: string): boolean {
           backgrounds += 1;
           continue;
         }
-        if (BRAND_KIT_SVG_WHITE.has(paint)) continue;
+        if (paint === BRAND_KIT_SVG_WHITE) continue;
         inks.add(paint);
         if (inks.size > 1) return false;
       }

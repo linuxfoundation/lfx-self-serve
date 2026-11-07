@@ -1090,11 +1090,32 @@ describe('the book', () => {
       ],
       // The shared fixture lockup draws three inks.
       [BRAND_KIT_FIXTURE_LOCKUP_SVG, false],
+      // One ink spelled four ways is one ink; a short hex white is white.
+      [
+        '<svg viewBox="0 0 10 10"><path fill="black" d="M0 0h10"/><path fill="#000" d="M0 2h10"/><path fill="#000000" d="M0 4h10"/><path fill="rgb(0, 0, 0)" d="M0 6h10"/></svg>',
+        true,
+      ],
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><path fill="#4d4e4e" d="M0 0h10"/><path fill="#4D4E4E" d="M0 5h10"/></svg>', true],
       // Nothing drawn: nothing a filter could flatten.
       ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"/>', true],
     ];
     for (const [svg, expected] of cases) expect(brandKitSvgIsMonochrome(svg), svg).toBe(expected);
     expect(brandKitSvgIsMonochrome(SVG)).toBe(true);
+  });
+
+  it('reads a hostile document in one pass: an unclosed tag of 100k dashes, comments and a quoted ">" cost their length', () => {
+    // A 200 kB "<A" followed by dashes (CodeQL's polynomial-regex case) must return well under the budget.
+    const hostile = `<svg viewBox="0 0 10 10"><A${'-'.repeat(100_000)}${' '.repeat(100_000)}`;
+    const start = performance.now();
+    expect(brandKitSvgIsMonochrome(hostile)).toBe(true);
+    expect(performance.now() - start).toBeLessThan(50);
+    // Comments, the xml declaration and a ">" inside an attribute value are stepped over, not read as tags.
+    expect(
+      brandKitSvgIsMonochrome(
+        '<?xml version="1.0"?><!-- <rect fill="#F37625" width="10" height="10"/> --><svg viewBox="0 0 10 10"><path aria-label="a > b" fill="#4D4E4E" d="M0 0h10"/></svg>'
+      )
+    ).toBe(true);
+    expect(brandKitSvgIsMonochrome('<svg viewBox="0 0 10 10"><path fill="#4D4E4E" d="M0 0h10"/><path fill="#F37625" d="M0 5h10"/></svg>')).toBe(false);
   });
 
   it('builds the Google Fonts link for the typeface and its weights, and the CSS stack with the site’s fallback', () => {

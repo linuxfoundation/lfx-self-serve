@@ -298,7 +298,7 @@ $pp-band-height: 4px;
   background: var(--pp-dark);
 }
 
-/* The white plate under full-colour artwork on a dark ground (the tile's radius; the padding is set to the clear space X). */
+/* The white plate under full-colour artwork on a dark ground (the tile's radius; the padding, half the drawn height, is set inline). */
 .pp-plate {
   display: inline-block;
   border-radius: 10px;
