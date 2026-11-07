@@ -344,6 +344,18 @@ describe('mktgFamilyPrintPlan', () => {
     expect(plan.faqPages).toHaveLength(2);
     expect(plan.faqPages[0].columns[0][0]).toEqual({ group: 0, question: 0, heading: true });
     expect(plan.pages.find((page) => page.kind === 'opener')?.section).toBe('01 Messaging framework');
+    // The family's own content pages carry the document's name alone in the running head, like Contents and Sources: one style.
+    expect(plan.pages.filter((page) => page.kind !== 'opener').map((page) => page.section)).toEqual([
+      'Cover',
+      'Contents',
+      'Messaging framework',
+      'Brand kit',
+      'Boilerplates',
+      'FAQ',
+      'FAQ',
+      'Sources',
+      'Back cover',
+    ]);
     // The pages are the portrait grammar's plan pages, by id, so the inner documents' plans concatenate in.
     expect(plan.pages.map((page) => page.id)).toEqual([
       'cover',
