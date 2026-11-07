@@ -9,7 +9,7 @@ import {
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
 } from '../constants/mktg-family-print.constants';
-import { MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
+import { MKTG_PORTRAIT_CAPS_TRACKING_EM, MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type {
   MktgFamilyPrintConflict,
   MktgFamilyPrintDocument,
@@ -40,6 +40,7 @@ import {
   mktgFamilyPrintFitRows,
   mktgFamilyPrintFitRunBlock,
   mktgFamilyPrintFigure,
+  mktgFamilyPrintHeadLabelWidth,
   mktgFamilyPrintHeadTight,
   mktgFamilyPrintMeasuredLines,
   mktgFamilyPrintNumberConflicts,
@@ -53,7 +54,7 @@ import {
   mktgFamilyPrintSourcesLayout,
   mktgFamilyPrintVersionLabel,
 } from './mktg-family-print.utils';
-import { mktgPortraitParaHeight } from './mktg-portrait-print.utils';
+import { mktgPortraitParaHeight, mktgPortraitTextWidth } from './mktg-portrait-print.utils';
 import { mktgPrintBrand } from './mktg-print.utils';
 
 const approval = { approvedAt: '2026-11-06T18:26:00Z', approvedBy: { name: 'A. Reviewer' } };
@@ -699,6 +700,32 @@ describe('mktgFamilyPrintMeasuredLines', () => {
   });
 });
 
+describe('mktgFamilyPrintHeadLabelWidth', () => {
+  it('measures a label’s capitals by the face’s capitals, at or a little above the real face and never under it', () => {
+    // The e2e fixture's running head in Chromium (Google Fonts Montserrat 600 at 10 px, +0.12em, uppercase): the section
+    // label 278.42 px, the document name 359.91 px (M9). The grammar's lowercase factor (1.14 × 1.07) called them 316 and
+    // 408 and stepped a head that fits to 9 px; the head's capitals factors keep the measure within 2 % above the face.
+    const montserrat = "'Montserrat', sans-serif";
+    const section = mktgFamilyPrintHeadLabelWidth('Messaging framework · Message house', montserrat);
+    const name = mktgFamilyPrintHeadLabelWidth('Synthetic Documents Project positioning & brand', montserrat);
+    expect(section).toBeGreaterThanOrEqual(278.42);
+    expect(section).toBeLessThan(278.42 * 1.02);
+    expect(name).toBeGreaterThanOrEqual(359.91);
+    expect(name).toBeLessThan(359.91 * 1.02);
+    // Inter, the default face, the same labels: 265.58 and 346.86 px in Chromium.
+    expect(mktgFamilyPrintHeadLabelWidth('Messaging framework · Message house', 'Inter, sans-serif')).toBeGreaterThanOrEqual(265.58);
+    expect(mktgFamilyPrintHeadLabelWidth('Messaging framework · Message house', 'Inter, sans-serif')).toBeLessThan(265.58 * 1.03);
+    expect(mktgFamilyPrintHeadLabelWidth('Synthetic Documents Project positioning & brand', 'Inter, sans-serif')).toBeGreaterThanOrEqual(346.86);
+    // A face the head has not measured keeps the grammar's measure, the wide side.
+    const poppins = "'Poppins', sans-serif";
+    expect(mktgFamilyPrintHeadLabelWidth('Contents', poppins)).toBe(
+      mktgPortraitTextWidth('Contents', 10, { caps: true, weight: 600, family: poppins, tracking: MKTG_PORTRAIT_CAPS_TRACKING_EM })
+    );
+    expect(mktgFamilyPrintHeadLabelWidth('Contents', poppins)).toBeGreaterThan(mktgFamilyPrintHeadLabelWidth('Contents', montserrat));
+    expect(mktgFamilyPrintHeadLabelWidth('', montserrat)).toBe(0);
+  });
+});
+
 describe('mktgFamilyPrintHeadTight', () => {
   // The labels a family book mounts on the left (Inter, the default face): its own pages' and the inner prints'
   // `Document · Section`, the framework's message house the widest of them.
@@ -728,6 +755,18 @@ describe('mktgFamilyPrintHeadTight', () => {
     // The same name fits beside shorter sections; a wider face makes a fitting name overflow.
     expect(mktgFamilyPrintHeadTight(['04 FAQ'], 'Cloud Native Computing Foundation (CNCF) positioning & brand', face)).toBe(false);
     expect(mktgFamilyPrintHeadTight(sections, 'Cloud Native Computing Foundation (CNCF) positioning & brand', 'Montserrat, sans-serif')).toBe(true);
+  });
+
+  it('keeps the label’s size for the e2e fixture’s head in its own face, Montserrat, as the face sets it', () => {
+    // The fixture's kit face: in Chromium the widest section label sets 278.42 px and the document name 359.91 px at the
+    // label's size (600, +0.12em, capitals), 662.33 px with the gap in the 704 px: the head fits at 10 px (M9). The
+    // lowercase factor measured them 316 and 408 and stepped the book down to 9 px.
+    const montserrat = "'Montserrat', sans-serif";
+    expect(mktgFamilyPrintHeadTight(sections, 'Synthetic Documents Project positioning & brand', montserrat)).toBe(false);
+    // The long-name case the e2e pins steps down in the same face: 790.91 px for the name alone in Chromium.
+    expect(
+      mktgFamilyPrintHeadTight(sections, 'The Open Foundation for Cloud Native Computing, Edge and Confidential Infrastructure positioning & brand', montserrat)
+    ).toBe(true);
   });
 });
 
