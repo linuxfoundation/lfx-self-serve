@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @let shown = lists();
-<p class="pp-body pp-body--wide" [lfxPpRect]="[column[0], geometry.bodyTop, column[1]]">{{ intro }}</p>
+<p class="pp-body pp-body--wide" [lfxPpRect]="[column[0], geometry.bodyTop, column[1]]" data-testid="family-print-sources-intro">{{ intro() }}</p>
 <section [lfxPpRect]="[column[0], 210, column[1]]" data-testid="family-print-sources-table">
   <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.inThisBook }}</h2>
   <table class="fps-table">
@@ -29,6 +29,10 @@
 <!-- The two lists in one flow from y 410: the Still open block follows the conflicts printed (a block gap under them), so the page keeps no dead
      space between them whatever the conflicts' height; the fit model's `openTop` is its budget's start, never lower than the board's y. -->
 <div [lfxPpRect]="[column[0], layout.conflictsTop, column[1]]" data-testid="family-print-sources-lists">
+  @if (quiet()) {
+    <!-- Both lists empty: the cross-check's result in one line, where the lists would start (D-27). -->
+    <p class="pp-body pp-body--wide" data-testid="family-print-sources-quiet">{{ copy.sourcesQuiet }}</p>
+  }
   @if (shown.conflicts.length || shown.conflictsCut) {
     <section class="fps-block" data-testid="family-print-sources-conflicts">
       <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.disagree }}</h2>
