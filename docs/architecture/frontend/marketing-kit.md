@@ -217,10 +217,12 @@ page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's S
   host puts around a block frame, which is where the blank sheets came from. Every grammar
   and book component (`lfx-mktg-portrait-page`, cover, opener, back cover, the kit print
   host and each kit page host) sets `:host { display: block }` in its own styles
-  (`MKTG_PORTRAIT_BLOCK_HOST`, `components/mktg-portrait/mktg-portrait-host.ts`; the
-  framework print host has the rule in its stylesheet), so it holds in any document the
-  component is cloned into; each component's spec asserts the computed display, the pdf
-  e2e asserts it on every host between the body and a frame, and its Chrome proof (`printMktgFrameWithChrome`: Playwright's `channel:
+  (`MKTG_PORTRAIT_BLOCK_HOST`, `components/mktg-portrait/mktg-portrait-host.ts`); the
+  framework, FAQ and boilerplates print hosts take the same constant through `styles:
+  [MKTG_PORTRAIT_BLOCK_HOST]`, so it holds in any document the component is cloned into.
+  The e2e asserts the computed display: the framework's on every host between the body and
+  a frame (`mktg-os-asset-views.spec.ts`, the page-break test), the FAQ's on its host inside
+  the family document (`mktg-os-faq-answers.spec.ts`); the pdf e2e's Chrome proof (`printMktgFrameWithChrome`: Playwright's `channel:
   'chrome'`, `Page.printToPDF` on the frame document as the service built it, headers on
   and off, Letter and A4) asserts exactly the planned page count with no blank page.
 - **Head, title, foot, band.** Every content page carries the running head at y 36

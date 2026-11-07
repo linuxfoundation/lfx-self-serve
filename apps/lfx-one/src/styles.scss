@@ -140,11 +140,11 @@
     margin: 0;
   }
 
-  /* The sides' room of the flowing print roots (the FAQ, the boilerplates, the AEO/GEO report, the kit's
-     legacy landscape chapters): the root's, so every page fragment keeps it; the top and bottom room repeats
-     per page from the sheet tables (lfx-mktg-print-sheet). None on the page margins, which give it. The
-     portrait books (the kit's, the framework's) carry the root class too, and the grammar zeroes their
-     padding (_mktg-portrait.scss): a frame is the whole sheet and carries its own room. */
+  /* The sides' room of the flowing print roots that carry this class (the FAQ's, the boilerplates', the
+     document view's AEO/GEO report): the root's, so every page fragment keeps it; the top and bottom room
+     repeats per page from the sheet tables (lfx-mktg-print-sheet). None on the page margins, which give it.
+     The fourth root with the class, the framework book's, is a portrait book: the grammar zeroes its padding
+     (_mktg-portrait.scss), a frame is the whole sheet and carries its own room. */
   .lfx-framework-print {
     box-sizing: border-box;
     padding: 0 0.6in;
