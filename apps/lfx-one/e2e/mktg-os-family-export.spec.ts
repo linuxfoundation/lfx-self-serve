@@ -263,8 +263,8 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   ).toHaveCount(0);
   await expect(frameworkPrint.getByTestId('mktg-framework-print-goals')).toBeVisible();
   await expect(frameworkPrint.getByTestId('mktg-framework-print-pillars')).toHaveCount(1);
-  // The one profile card inside its rows container (the container's own testid shares the prefix).
-  await expect(frameworkPrint.getByTestId('mktg-framework-print-icp-rows').locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(1);
+  // The one profile card inside its rows container: its direct children (the card's own parts carry the same prefix).
+  await expect(frameworkPrint.getByTestId('mktg-framework-print-icp-rows').locator('> [data-testid^="mktg-framework-print-icp-"]')).toHaveCount(1);
   // The family hands the framework its run record, so its Sources & gaps page prints inside the family as it does alone: the
   // intro dated by the run's record, the blocks as the fixture's report holds them (nothing read, no source failed, no gap)
   // and the approval card with the version and the approval date the opener prints.
