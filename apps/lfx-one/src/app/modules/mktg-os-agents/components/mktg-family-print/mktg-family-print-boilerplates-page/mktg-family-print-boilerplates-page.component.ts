@@ -6,13 +6,13 @@ import {
   MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES,
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_LABELS,
-  MKTG_FAMILY_PRINT_RUN_BLOCKS_LAYOUT,
+  MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT,
   MKTG_FAMILY_PRINT_WARN_INK,
   MKTG_PORTRAIT_COLUMNS,
   MKTG_PORTRAIT_PAGE,
 } from '@lfx-one/shared/constants';
-import { BoilerplatesLengthRow, MktgFamilyPrintBoilerplateCard } from '@lfx-one/shared/interfaces';
-import { mktgFamilyPrintFill, mktgFamilyPrintFitRunBlock, mktgFamilyPrintSourceLabel } from '@lfx-one/shared/utils';
+import { BoilerplatesLengthRow, MktgFamilyPrintBoilerplateCard, MktgFamilyPrintFitRows } from '@lfx-one/shared/interfaces';
+import { mktgFamilyPrintCutNote, mktgFamilyPrintFill, mktgFamilyPrintFitRunBlock, mktgFamilyPrintSourceLabel } from '@lfx-one/shared/utils';
 import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 
 /**
@@ -42,14 +42,16 @@ export class MktgFamilyPrintBoilerplatesPageComponent {
   public readonly column: readonly [number, number] = [MKTG_PORTRAIT_PAGE.margin, MKTG_PORTRAIT_PAGE.contentWidth];
   public readonly warnInk = MKTG_FAMILY_PRINT_WARN_INK;
 
-  public readonly runLayout = MKTG_FAMILY_PRINT_RUN_BLOCKS_LAYOUT;
+  public readonly runLayout = MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT;
 
   public readonly cards: Signal<MktgFamilyPrintBoilerplateCard[]> = this.initCards();
-  /** The sources the page prints, each as its short readable name, as many as fit the block; [] omits the block. */
-  public readonly shownSources: Signal<string[]> = this.initShownSources();
+  /** The sources the page prints, each as its short readable name once, as many as fit the block, the rest counted; no rows omits the block. */
+  public readonly shownSources: Signal<MktgFamilyPrintFitRows<string>> = this.initShownSources();
+  /** The Built from block's cut note (`+2 more in LFX One`); '' when every source printed. */
+  public readonly sourcesCutNote: Signal<string> = computed(() => mktgFamilyPrintCutNote(this.shownSources().cut));
 
-  private initShownSources(): Signal<string[]> {
-    return computed(() => mktgFamilyPrintFitRunBlock(this.sources().map(mktgFamilyPrintSourceLabel).filter(Boolean), MKTG_PORTRAIT_COLUMNS.half));
+  private initShownSources(): Signal<MktgFamilyPrintFitRows<string>> {
+    return computed(() => mktgFamilyPrintFitRunBlock(this.sources().map(mktgFamilyPrintSourceLabel), MKTG_PORTRAIT_COLUMNS.half));
   }
 
   private initCards(): Signal<MktgFamilyPrintBoilerplateCard[]> {

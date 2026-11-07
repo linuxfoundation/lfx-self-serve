@@ -22,6 +22,8 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     fixture.componentRef.setInput('sources', [
       'https://acme-mesh.example/press/launch (press release)',
       'https://acme-mesh.example',
+      // Two URLs on one host are one label on the page.
+      'https://acme-mesh.example/about',
       'LFX project record acme-mesh (uid 00000000-0000-4000-8000-000000000000)',
     ]);
     await fixture.whenStable();
@@ -46,9 +48,10 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
       'acme-mesh.example',
       'LFX project record acme-mesh',
     ]);
+    expect(root.querySelector('[data-testid="family-print-boilerplate-sources-cut"]')).toBeNull();
   });
 
-  it('omits the Built from block when the run read nothing it can name, and keeps the whole rows that fit', async () => {
+  it('omits the Built from block when the run read nothing it can name, and keeps the whole rows that fit with the rest counted', async () => {
     const fixture = TestBed.createComponent(MktgFamilyPrintBoilerplatesPageComponent);
     fixture.componentRef.setInput('lengths', [row(0, 'One-liner', 14, 15)]);
     await fixture.whenStable();
@@ -63,5 +66,7 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     const shown = root.querySelectorAll('[data-testid="family-print-boilerplate-sources"] li').length;
     expect(shown).toBeGreaterThan(0);
     expect(shown).toBeLessThan(12);
+    // The rows past the block are counted, never dropped in silence.
+    expect(root.querySelector('[data-testid="family-print-boilerplate-sources-cut"]')?.textContent).toBe(`+${12 - shown} more in LFX One`);
   });
 });

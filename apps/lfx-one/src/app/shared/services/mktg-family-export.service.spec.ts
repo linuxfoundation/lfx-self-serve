@@ -227,13 +227,14 @@ describe('Family export client', () => {
     expect(view?.documents.map((document) => [document.agentKey, document.dataLabel, document.openItems])).toEqual([
       ['foundation-message', 'figures as of 27 Oct 2026', ['No published mission statement']],
     ]);
-    // A record without a report: the approval card alone, nothing made up.
+    // A record without a report or a date read: the approval card alone, an empty Data cell, nothing made up.
     let bare: MktgFamilyPrintView | undefined;
     service.printView(target, [member], 'Synthetic project').subscribe((value) => (bare = value));
     respond({ mode: 'draft' });
     expect(bare?.framework?.report).toBeNull();
     expect(bare?.framework?.dateReadLabel).toBe('');
     expect(bare?.documents[0].openItems).toEqual([]);
+    expect(bare?.documents[0].dataLabel).toBe('');
   });
 
   it.each(['boilerplates', 'faq'] as const)('rejects unreadable approved %s instead of silently omitting it', (agentKey) => {

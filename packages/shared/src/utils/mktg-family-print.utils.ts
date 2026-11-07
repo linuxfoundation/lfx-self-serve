@@ -13,12 +13,13 @@ import {
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_FAMILY_PRINT_LABEL_STOP_WORDS,
   MKTG_FAMILY_PRINT_ROUNDING_WORDS,
-  MKTG_FAMILY_PRINT_RUN_BLOCKS_LAYOUT,
+  MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT,
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
 } from '../constants/mktg-family-print.constants';
 import { MKTG_KIT_FAMILIES } from '../constants/mktg-kit.constants';
 import { MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type { BrandKitReportColorConflict } from '../interfaces/brand-kit.interface';
+import type { FaqGroupView } from '../interfaces/faq.interface';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
 import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.interface';
 import type { MktgFamilyExportAgentKey } from '../interfaces/mktg-family-export.interface';
@@ -30,6 +31,7 @@ import type {
   MktgFamilyPrintFaqItem,
   MktgFamilyPrintFaqPage,
   MktgFamilyPrintFaqPlanGroup,
+  MktgFamilyPrintFitRows,
   MktgFamilyPrintTextSource,
   MktgFamilyPrintOpenItem,
   MktgFamilyPrintPage,
@@ -93,6 +95,21 @@ export function mktgFamilyPrintDocument(
 }
 
 /** The height one FAQ entry takes in a column `width` px wide: its padding, the question, the answer and the source chip's line. */
+/**
+ * The FAQ as the family book prints it: each group's answered questions, in
+ * order, with the stored entry's path. The plan measures these and the page
+ * prints these, so an index into them means the same thing in both
+ * (unanswered questions do not print and are not counted).
+ */
+export function mktgFamilyPrintFaqGroups(groups: readonly FaqGroupView[]): MktgFamilyPrintFaqPlanGroup[] {
+  return groups.map((group) => ({
+    name: group.name,
+    questions: group.questions
+      .filter((entry) => entry.answered)
+      .map((entry) => ({ path: entry.path, question: entry.question, answer: entry.answer, source: entry.source })),
+  }));
+}
+
 export function mktgFamilyPrintFaqEntryHeight(entry: MktgFamilyPrintFaqPlanGroup['questions'][number], width: number): number {
   const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
   const paras: MktgPortraitFitPara[] = [
@@ -150,7 +167,13 @@ export function mktgFamilyPrintFaqPages(groups: MktgFamilyPrintFaqPlanGroup[]): 
   return pages;
 }
 
-/** The rows of a fixed block that fit above its bottom, whole rows only, nothing added: `budget` px for rows of `size`/`line` text plus `padding` each, in a column `width` wide. */
+/**
+ * The rows of a fixed block that fit above its bottom, whole rows only,
+ * nothing added, nothing dropped in silence: `budget` px for rows of
+ * `size`/`line` text plus `padding` each, in a column `width` wide. When
+ * rows do not fit, one line of the block's type is kept for the cut note
+ * (`+N more`) and `cut` counts the rows it stands for.
+ */
 export function mktgFamilyPrintFitRows<T>(
   rows: readonly T[],
   text: (row: T) => string,
@@ -159,21 +182,41 @@ export function mktgFamilyPrintFitRows<T>(
   line: number,
   padding: number,
   budget: number
-): T[] {
-  const kept: T[] = [];
-  let used = 0;
-  for (const row of rows) {
-    used += padding + mktgPortraitParaHeight({ text: text(row), size, line }, width);
-    if (used > budget) break;
-    kept.push(row);
-  }
-  return kept;
+): MktgFamilyPrintFitRows<T> {
+  const fit = (room: number): T[] => {
+    const kept: T[] = [];
+    let used = 0;
+    for (const row of rows) {
+      used += padding + mktgPortraitParaHeight({ text: text(row), size, line }, width);
+      if (used > room) break;
+      kept.push(row);
+    }
+    return kept;
+  };
+  const whole = fit(budget);
+  if (whole.length === rows.length) return { rows: whole, cut: 0 };
+  const kept = fit(budget - padding - size * line);
+  return { rows: kept, cut: rows.length - kept.length };
 }
 
-/** A run block of the boilerplates page as it fits under the cards: whole rows above the footer, in a list column `width` wide. */
-export function mktgFamilyPrintFitRunBlock(rows: readonly string[], width: number): string[] {
-  const layout = MKTG_FAMILY_PRINT_RUN_BLOCKS_LAYOUT;
-  return mktgFamilyPrintFitRows(rows, (row) => row, width - layout.indent, layout.item.size, layout.item.line, 0, layout.bottom - layout.top - layout.heading);
+/** The cut note under a fitted block: `+3 more in LFX One`; '' when nothing was cut. */
+export function mktgFamilyPrintCutNote(cut: number): string {
+  return cut > 0 ? mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.cutNote, { Count: cut }) : '';
+}
+
+/** The boilerplates page's Built from block as it fits under the cards: the distinct labels, whole rows above the footer in a list column `width` wide, the rest counted. */
+export function mktgFamilyPrintFitRunBlock(rows: readonly string[], width: number): MktgFamilyPrintFitRows<string> {
+  const layout = MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT;
+  const distinct = Array.from(new Set(rows.map((row) => row.trim()).filter(Boolean)));
+  return mktgFamilyPrintFitRows(
+    distinct,
+    (row) => row,
+    width - layout.indent,
+    layout.item.size,
+    layout.item.line,
+    0,
+    layout.bottom - layout.top - layout.heading
+  );
 }
 
 /**
@@ -293,17 +336,26 @@ export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[], confli
   return { pages, chapters, faqPages, sourcesPage, total: n };
 }
 
-/** The Sources page's Still open list: each chapter's open items, in chapter order, with the document's title. */
+/** The Sources page's Still open list: each chapter's open items, in chapter order, with the document's title; an item a record states twice prints once. */
 export function mktgFamilyPrintOpenItems(chapters: MktgFamilyPrintChapter[]): MktgFamilyPrintOpenItem[] {
-  return chapters.flatMap((chapter) => chapter.document.openItems.map((text) => ({ document: chapter.document.title, text })));
+  const seen = new Set<string>();
+  return chapters.flatMap((chapter) =>
+    chapter.document.openItems.flatMap((text) => {
+      const key = `${chapter.document.title}\u0000${text}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [{ document: chapter.document.title, text }];
+    })
+  );
 }
 
 /**
  * The Sources page's two lists as they fit their fixed blocks: the conflicts
  * from y 410 to the Still open block, the open items from there to the
  * page's bottom (from y 410 when there are no conflicts); whole rows only,
- * nothing added. The open rows' text column starts after the widest
- * document chip, so the chips align whatever the longest document name.
+ * nothing added, the rows past a block counted for its cut note. The open
+ * rows' text column starts after the widest document chip, so the chips
+ * align whatever the longest document name.
  */
 export function mktgFamilyPrintSourcesLayout(conflicts: MktgFamilyPrintConflict[], openItems: MktgFamilyPrintOpenItem[]): MktgFamilyPrintSourcesLayout {
   const layout = MKTG_FAMILY_PRINT_SOURCES_LAYOUT;
@@ -317,7 +369,7 @@ export function mktgFamilyPrintSourcesLayout(conflicts: MktgFamilyPrintConflict[
     layout.conflict.padding,
     layout.openTop - layout.conflictsTop - layout.heading
   );
-  const openTop = keptConflicts.length ? layout.openTop : layout.conflictsTop;
+  const openTop = conflicts.length ? layout.openTop : layout.conflictsTop;
   const chipWidth = Math.max(0, ...openItems.map((item) => item.document.length)) * layout.chip.size * MKTG_PORTRAIT_FIT.charEmCaps + layout.chip.padding;
   const keptOpen = mktgFamilyPrintFitRows(
     openItems,
@@ -328,17 +380,29 @@ export function mktgFamilyPrintSourcesLayout(conflicts: MktgFamilyPrintConflict[
     layout.open.padding,
     layout.bottom - openTop - layout.heading
   );
-  return { conflicts: keptConflicts, openItems: keptOpen, openTop };
+  return {
+    conflicts: keptConflicts.rows,
+    conflictsCut: keptConflicts.cut,
+    openItems: keptOpen.rows,
+    openCut: keptOpen.cut,
+    openTop,
+  };
 }
 
-/** The key-number label's measure phrase (`Member organizations` → `member organizations`): its words to the first comma or bracket, less the stop words; '' when none is left. */
+/** The key-number label's measure phrase (`Member organizations` → `member organizations`, `MCP servers at launch` → `mcp servers at launch`): its words to the first comma or bracket, less the stop words; '' when none is left. */
 function mktgFamilyPrintMeasurePhrase(label: string): string {
   return label
     .toLocaleLowerCase()
     .split(/[,(]/)[0]
-    .split(/[^a-z]+/)
-    .filter((word) => word.length >= 3 && !MKTG_FAMILY_PRINT_LABEL_STOP_WORDS.includes(word))
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 0 && !MKTG_FAMILY_PRINT_LABEL_STOP_WORDS.includes(word))
     .join(' ');
+}
+
+/** `Member organizations` read on from a figure or mid-sentence: `member organizations`; an acronym (`FAQ`, `MCP servers`) keeps its case. */
+export function mktgFamilyPrintInSentence(name: string): string {
+  const trimmed = name.trim();
+  return /^[A-Z][a-z]/.test(trimmed) ? trimmed.charAt(0).toLocaleLowerCase() + trimmed.slice(1) : trimmed;
 }
 
 /** The digits of a figure as text: `$10,000` → `10000`, `1.2M` → `1.2`; '' when it holds none. */
@@ -351,12 +415,15 @@ function mktgFamilyPrintFigure(text: string): string {
  * The framework's key numbers read against the other documents' own text: a
  * sentence that gives the same measure (the label's whole phrase, a word
  * boundary on each side, plural or singular) a different count, the figure
- * standing right before the phrase (`308 member organizations`, `over 300
- * member organizations`), is a row quoting both. A figure of another kind
- * (a price, a percentage, a year) is no count of the measure; a word that
- * only starts with the phrase (`membership`) is not the measure. One row per
- * key number and document. The document to re-run is the other one: the
- * framework is the source.
+ * standing right before the phrase (`308 member organizations`), is a row
+ * quoting both. A figure of another kind (a price, a percentage, a year), a
+ * rounded one (`over 300`, `7,000+`), a figure with words between it and the
+ * measure (`18 new member organizations`: a part, not the count) or a
+ * sentence that also states the framework's own figure (`299 …, up from 150
+ * member organizations`) is no other count of it; a word that only starts
+ * with the phrase (`membership`) is not the measure. One row per key number
+ * and document. The document to re-run is the other one: the framework is
+ * the source.
  */
 export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberRow[], sources: MktgFamilyPrintTextSource[]): MktgFamilyPrintConflict[] {
   const conflicts: MktgFamilyPrintConflict[] = [];
@@ -364,37 +431,37 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
     const figure = mktgFamilyPrintFigure(row.number);
     const phrase = mktgFamilyPrintMeasurePhrase(row.label);
     if (!figure || !phrase || /[$€£%]/.test(row.number)) continue;
-    // `[qualifier] <figure>[+] [up to two words] <phrase>[s]`: the figure must count the measure, not sit elsewhere in
-    // the sentence; a rounded figure under a qualifier (`over 7,000 code contributors`) is no other count of it.
+    // `[qualifier] <figure>[+] <phrase>[s]`: the figure right before the measure counts it; one under a qualifier or with
+    // a trailing `+` is rounded, and a year is a date. Nothing between the figure and the phrase: `18 new member
+    // organizations` counts a part of the measure, not the measure.
     const pattern = new RegExp(
-      `(?:(${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(?<![$€£\\d,.])(\\d[\\d,]*(?:\\.\\d+)?)\\+?(?:\\s+[a-z-]+){0,2}\\s+${phrase.replace(/ /g, '\\s+')}s?\\b`,
+      `(?:(${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(?<![$€£\\d,.])(\\d[\\d,]*(?:\\.\\d+)?)(\\+?)\\s+${phrase.replace(/ /g, '\\s+')}s?\\b`,
       'gi'
     );
     for (const source of sources) {
       const sentence = source.texts
         .flatMap((text) => text.split(/(?<=[.!?])\s+/))
         .map((part) => part.trim())
-        .find((part) =>
-          Array.from(part.matchAll(pattern)).some((match) => {
-            const found = match[2].replace(/,/g, '');
-            return !match[1] && !/^(?:19|20)\d\d$/.test(found) && found !== figure;
-          })
-        );
+        .find((part) => {
+          const counts = Array.from(part.matchAll(pattern))
+            .filter((match) => !match[1] && !match[3] && !/^(?:19|20)\d\d$/.test(match[2].replace(/,/g, '')))
+            .map((match) => match[2].replace(/,/g, ''));
+          // A sentence that states the framework's own figure agrees with it, whatever else it counts.
+          return counts.length > 0 && !counts.includes(figure);
+        });
       if (!sentence) continue;
       const label = row.label.trim();
       const topic = label.charAt(0).toLocaleUpperCase() + label.slice(1);
-      // In the sentence the label reads on from the figure (`299 member organizations`); an acronym keeps its case.
-      const inSentence = /^[A-Z][a-z]/.test(label) ? label.charAt(0).toLocaleLowerCase() + label.slice(1) : label;
       conflicts.push({
         id: `${topic} · ${source.title}`,
         topic,
         text: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.numberConflict, {
           Number: row.number.trim(),
-          Label: inSentence,
-          Document: source.title,
+          Label: mktgFamilyPrintInSentence(label),
+          Document: mktgFamilyPrintInSentence(source.title),
           Sentence: sentence,
         }),
-        rerun: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.rerunAgainstFramework, { Document: source.title }),
+        rerun: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.rerunAgainstFramework, { Document: mktgFamilyPrintInSentence(source.title) }),
       });
     }
   }
@@ -423,7 +490,7 @@ export function mktgFamilyPrintConflicts(
       id: `${topic} · ${kitTitle}`,
       topic,
       text: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.brandLineConflict, { Line: line, Tagline: tag }),
-      rerun: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.rerunAgainstFramework, { Document: kitTitle }),
+      rerun: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.rerunAgainstFramework, { Document: mktgFamilyPrintInSentence(kitTitle) }),
     });
   }
   for (const conflict of colorConflicts) {
@@ -438,9 +505,9 @@ export function mktgFamilyPrintConflicts(
       id: `${conflict.name} · ${kitTitle}`,
       topic: conflict.name,
       text: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.colorConflict, {
-        Kit: kitTitle,
+        Kit: mktgFamilyPrintInSentence(kitTitle),
         Name: conflict.name,
-        Values: readings.slice(0, -1).join(', ') + (readings.length > 1 ? ` and ${readings[readings.length - 1]}` : ''),
+        Values: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.lastOfList, { Items: readings.slice(0, -1).join(', '), Last: readings[readings.length - 1] }),
         Chosen: conflict.chosen.toUpperCase(),
       }),
       rerun: '',

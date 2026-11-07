@@ -4,7 +4,7 @@
 import { Component, computed, input, Signal } from '@angular/core';
 import { MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_LABELS, MKTG_FAMILY_PRINT_SOURCES_LAYOUT, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
 import { MktgFamilyPrintChapter, MktgFamilyPrintConflict, MktgFamilyPrintSourcesLayout } from '@lfx-one/shared/interfaces';
-import { mktgFamilyPrintOpenItems, mktgFamilyPrintSourcesLayout } from '@lfx-one/shared/utils';
+import { mktgFamilyPrintCutNote, mktgFamilyPrintOpenItems, mktgFamilyPrintSourcesLayout } from '@lfx-one/shared/utils';
 import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 
 /**
@@ -33,6 +33,9 @@ export class MktgFamilyPrintSourcesPageComponent {
   public readonly column: readonly [number, number] = [MKTG_PORTRAIT_PAGE.margin, MKTG_PORTRAIT_PAGE.contentWidth];
 
   public readonly lists: Signal<MktgFamilyPrintSourcesLayout> = this.initLists();
+  /** The cut notes under each list (`+2 more in LFX One`); '' when every row printed. */
+  public readonly conflictsCutNote: Signal<string> = computed(() => mktgFamilyPrintCutNote(this.lists().conflictsCut));
+  public readonly openCutNote: Signal<string> = computed(() => mktgFamilyPrintCutNote(this.lists().openCut));
 
   private initLists(): Signal<MktgFamilyPrintSourcesLayout> {
     return computed(() => mktgFamilyPrintSourcesLayout(this.conflicts(), mktgFamilyPrintOpenItems(this.chapters())));

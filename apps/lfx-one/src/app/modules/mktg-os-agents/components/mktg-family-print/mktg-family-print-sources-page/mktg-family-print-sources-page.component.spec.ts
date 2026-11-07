@@ -37,6 +37,8 @@ describe('MktgFamilyPrintSourcesPageComponent', () => {
     const conflicts = root.querySelector('[data-testid="family-print-sources-conflicts"]');
     expect(conflicts?.textContent).toContain('Brand line');
     expect(conflicts?.querySelector('.fps-rerun')?.textContent).toBe('→ Re-run the brand kit.');
+    expect(root.querySelector('[data-testid="family-print-sources-conflicts-cut"]')).toBeNull();
+    expect(root.querySelector('[data-testid="family-print-sources-open-cut"]')).toBeNull();
     const open = root.querySelector<HTMLElement>('[data-testid="family-print-sources-open"]');
     expect(open?.textContent).toContain('No stacked lockup.');
     expect(open?.querySelector('.pp-chip')?.textContent).toBe('Brand kit');
@@ -61,9 +63,11 @@ describe('MktgFamilyPrintSourcesPageComponent', () => {
     expect(root.querySelectorAll('[data-testid="family-print-sources-row"]')).toHaveLength(1);
   });
 
-  it('prints only the whole rows that fit each block above the footer, nothing added', async () => {
+  it('prints only the whole rows that fit each block above the footer, counts the rest, and prints an item a record states twice once', async () => {
     const fixture = TestBed.createComponent(MktgFamilyPrintSourcesPageComponent);
     const openItems = Array.from({ length: 14 }, (_, index) => `Open item ${index + 1} that the run left for the team to check before the next release.`);
+    // The record states the first item twice; the page prints it once (14 distinct items).
+    openItems.push(openItems[0]);
     fixture.componentRef.setInput('chapters', [
       { ...chapters[0], document: mktgFamilyPrintDocument(MKTG_KIT_POSITIONING_FAMILY_ID, 'brand-kit', 1, 4, approval, openItems) },
     ]);
@@ -85,5 +89,8 @@ describe('MktgFamilyPrintSourcesPageComponent', () => {
     expect(open).toBeGreaterThan(0);
     expect(open).toBeLessThan(14);
     expect(root.textContent).not.toContain(`Open item 14`);
+    // The rows past each block are counted under it, never dropped in silence.
+    expect(root.querySelector('[data-testid="family-print-sources-conflicts-cut"]')?.textContent).toBe(`+${8 - shown} more in LFX One`);
+    expect(root.querySelector('[data-testid="family-print-sources-open-cut"]')?.textContent).toBe(`+${14 - open} more in LFX One`);
   });
 });

@@ -64,7 +64,7 @@ test('Family PDF book structure: the portrait grammar’s frames with the family
   await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-cards')).toHaveCount(1);
   await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-card')).toHaveCount(4);
   await expect(frames.byId('faq-1').getByTestId('family-print-faq-grid')).toHaveCount(1);
-  await expect(frames.byId('faq-1').getByTestId('family-print-faq-grid').locator('> *')).toHaveCount(2);
+  await expect(frames.byId('faq-1').getByTestId('family-print-faq-column')).toHaveCount(2);
   await expect(frames.byId('faq-1').getByTestId('family-print-faq-group')).toHaveCount(2);
   await expect(frames.byId('sources').getByTestId('family-print-sources-table')).toHaveCount(1);
   await expect(frames.byId('sources').getByTestId('family-print-sources-row')).toHaveCount(4);

@@ -6,11 +6,15 @@
 // its tokens and inks are the portrait grammar's (mktg-portrait-print.constants.ts).
 
 import { lfxColors } from './colors.constants';
+import type { MktgPortraitDocumentKind } from '../interfaces/mktg-portrait-print.interface';
 
 /** The one ink the portrait grammar's tokens have not got: a boilerplate over its limit. */
 export const MKTG_FAMILY_PRINT_WARN_INK = lfxColors.amber[700];
 
-/** What a frame of the book holds; `framework` and `kit` are the mounted inner prints (stage 1) or their portrait pages. */
+/** The family book's running head names the project and the family as the grammar names a document (`<project> positioning & brand`): the grammar's own kind for it, so the compiler checks the name. */
+export const MKTG_FAMILY_PRINT_HEAD_KIND: MktgPortraitDocumentKind = 'positioning & brand';
+
+/** What a frame of the book holds; `framework` and `kit` are the inner prints' own portrait pages in the family's book. */
 export const MKTG_FAMILY_PRINT_PAGE_KINDS = ['cover', 'contents', 'opener', 'framework', 'kit', 'boilerplates', 'faq', 'sources', 'back'] as const;
 
 /**
@@ -47,8 +51,8 @@ export const MKTG_FAMILY_PRINT_SOURCES_LAYOUT = {
   chip: { size: 8.5, padding: 14 },
 } as const;
 
-/** The boilerplates page's two run blocks at the foot: their y and bottom, the heading and the list's type. */
-export const MKTG_FAMILY_PRINT_RUN_BLOCKS_LAYOUT = {
+/** The boilerplates page's run block at the foot (Built from): its y and bottom, the heading and the list's type. */
+export const MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT = {
   top: 912,
   bottom: 1000,
   heading: 26,
@@ -140,8 +144,12 @@ export const MKTG_FAMILY_PRINT_COPY = {
   overBy: 'over by [Over]',
   /** The back cover's provenance line, after the trademark notice. */
   backCoverProvenance: 'Generated from the approved documents listed on the Sources page; versions and dates are on each opener.',
-  /** The Sources table's Data cell: `[Date]` is the date the run read its figures, or the revision's. */
+  /** The Sources table's Data cell: `[Date]` is the date the run read its figures (the record's `date_read`, else its generation date). */
   figuresAsOf: 'figures as of [Date]',
+  /** Under a fitted block whose rows did not all fit: `[Count]` rows more, never dropped in silence. */
+  cutNote: '+[Count] more in LFX One',
+  /** A list in prose: `[Items]` the first ones joined with commas, `[Last]` the last. */
+  lastOfList: '[Items] and [Last]',
   /** A key-number conflict: `[Number]` and `[Label]` are the framework's, `[Document]` the other document's title, `[Sentence]` what it says. */
   numberConflict: 'The framework’s key numbers say [Number] [Label]; the [Document] says “[Sentence]”',
   /** The brand-line conflict: `[Line]` is the kit's, `[Tagline]` the framework's. */

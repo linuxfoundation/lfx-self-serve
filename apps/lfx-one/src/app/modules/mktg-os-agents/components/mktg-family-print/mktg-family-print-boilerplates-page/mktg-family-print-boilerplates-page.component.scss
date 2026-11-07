@@ -77,3 +77,10 @@
   color: var(--pp-ink);
   overflow-wrap: anywhere;
 }
+
+/* The Built from block's cut note, one line of the list's type: the sources that did not fit, counted. */
+.fpb-foot__cut {
+  margin: 4px 0 0;
+  font: 500 11px/1.55 var(--pp-font);
+  color: var(--pp-dark);
+}

@@ -3,18 +3,9 @@
 
 import { Component, computed, input, Signal } from '@angular/core';
 import { MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_FAQ_LAYOUT, MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
-import { FaqGroupView, FaqQuestionView, MktgFamilyPrintFaqItem } from '@lfx-one/shared/interfaces';
+import { MktgFamilyPrintFaqEntry, MktgFamilyPrintFaqItem, MktgFamilyPrintFaqPlanGroup } from '@lfx-one/shared/interfaces';
 import { mktgFamilyPrintFill } from '@lfx-one/shared/utils';
 import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
-
-/** One printed entry of the page: the question with its group's heading when it opens the group in its column. */
-interface MktgFamilyPrintFaqEntry {
-  key: string;
-  heading: string | null;
-  entry: FaqQuestionView;
-  /** The source chip's text: the stored source, by the book's own name for it when it has one ('' prints no chip). */
-  source: string;
-}
 
 /**
  * One FAQ page of the family book: the two columns the plan filled by
@@ -30,9 +21,9 @@ interface MktgFamilyPrintFaqEntry {
   styleUrl: './mktg-family-print-faq-page.component.scss',
 })
 export class MktgFamilyPrintFaqPageComponent {
-  /** The whole FAQ, for the counts. */
-  public readonly groups = input.required<FaqGroupView[]>();
-  /** The plan's two columns for this page: indices into `groups` and their questions. */
+  /** The FAQ as the book prints it (mktgFamilyPrintFaqGroups: the answered questions the plan paginated), for the entries and the counts. */
+  public readonly groups = input.required<MktgFamilyPrintFaqPlanGroup[]>();
+  /** The plan's two columns for this page: indices into `groups` and their questions, the plan's own index space. */
   public readonly columns = input.required<MktgFamilyPrintFaqItem[][]>();
   /** This page's index among the FAQ pages. */
   public readonly index = input(0);
@@ -51,7 +42,7 @@ export class MktgFamilyPrintFaqPageComponent {
         items.flatMap((item) => {
           const group = groups[item.group];
           const entry = group?.questions[item.question];
-          if (!group || !entry || !entry.answered) return [];
+          if (!group || !entry) return [];
           const source = entry.source.trim();
           return [
             {
@@ -79,7 +70,7 @@ export class MktgFamilyPrintFaqPageComponent {
         ).filter(Boolean);
         return `${names.join(' · ')}.`;
       }
-      const sizes = groups.map((group) => group.questions.filter((entry) => entry.answered).length).filter((size) => size > 0);
+      const sizes = groups.map((group) => group.questions.length).filter((size) => size > 0);
       const questions = sizes.reduce((sum, size) => sum + size, 0);
       return mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.faqIntro, { Questions: questions, Groups: sizes.length });
     });

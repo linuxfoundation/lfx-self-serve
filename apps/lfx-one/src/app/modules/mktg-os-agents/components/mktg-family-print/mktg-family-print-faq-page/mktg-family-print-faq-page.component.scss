@@ -1,7 +1,7 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-/* The FAQ grid: two columns, 32px gutter, groups unbroken (the design board's exact px). */
+/* The FAQ grid: two columns, 32px gutter (the design board's exact px); a group split across columns repeats its heading. */
 .fpq-grid {
   display: flex;
   gap: 32px;

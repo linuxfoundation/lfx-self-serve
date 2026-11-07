@@ -130,7 +130,7 @@
       @if (document.faq; as faq) {
         @if (frame.faqPage; as faqPage) {
           <lfx-mktg-portrait-page [look]="look()" [book]="book()" [pageId]="page.id" [page]="page.n" [section]="page.section" [title]="page.title">
-            <lfx-mktg-family-print-faq-page [groups]="faq.groups" [columns]="faqPage.columns" [index]="page.index" />
+            <lfx-mktg-family-print-faq-page [groups]="faqGroups()" [columns]="faqPage.columns" [index]="page.index" />
           </lfx-mktg-portrait-page>
         }
       }

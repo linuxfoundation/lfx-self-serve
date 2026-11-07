@@ -26,7 +26,7 @@
     </tbody>
   </table>
 </section>
-@if (shown.conflicts.length) {
+@if (shown.conflicts.length || shown.conflictsCut) {
   <section [lfxPpRect]="[column[0], layout.conflictsTop, column[1]]" data-testid="family-print-sources-conflicts">
     <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.disagree }}</h2>
     <div class="fps-rows">
@@ -42,9 +42,12 @@
         </div>
       }
     </div>
+    @if (conflictsCutNote()) {
+      <p class="fps-cut" data-testid="family-print-sources-conflicts-cut">{{ conflictsCutNote() }}</p>
+    }
   </section>
 }
-@if (shown.openItems.length) {
+@if (shown.openItems.length || shown.openCut) {
   <section [lfxPpRect]="[column[0], shown.openTop, column[1]]" data-testid="family-print-sources-open">
     <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.stillOpen }}</h2>
     <div class="fps-open">
@@ -55,5 +58,8 @@
         <span class="fps-open__text">{{ item.text }}</span>
       }
     </div>
+    @if (openCutNote()) {
+      <p class="fps-cut" data-testid="family-print-sources-open-cut">{{ openCutNote() }}</p>
+    }
   </section>
 }

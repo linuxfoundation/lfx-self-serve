@@ -6,26 +6,27 @@ import {
   BRAND_KIT_BACK_COVER_NOTICE,
   MKTG_FAMILY_EXPORT_KINDS,
   MKTG_FAMILY_PRINT_COPY,
+  MKTG_FAMILY_PRINT_HEAD_KIND,
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_PORTRAIT_PAGE,
   MKTG_PORTRAIT_PRINT_CLASS,
 } from '@lfx-one/shared/constants';
 import {
   MktgFamilyPrintChapter,
-  MktgFamilyPrintDocument,
-  MktgFamilyPrintFaqPage,
-  MktgFamilyPrintPage,
+  MktgFamilyPrintCoverTile,
+  MktgFamilyPrintFaqPlanGroup,
+  MktgFamilyPrintFrame,
   MktgFamilyPrintPlan,
   MktgFamilyPrintPlanMember,
   MktgFamilyPrintView,
   MktgPortraitBook,
-  MktgPortraitDocumentKind,
   MktgPortraitLook,
 } from '@lfx-one/shared/interfaces';
 import {
   brandKitPortraitPlan,
   frameworkPortraitPlan,
   mktgFamilyPrintDate,
+  mktgFamilyPrintFaqGroups,
   mktgFamilyPrintFill,
   mktgFamilyPrintPageRange,
   mktgFamilyPrintPlan,
@@ -42,25 +43,6 @@ import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rec
 import { MktgFamilyPrintBoilerplatesPageComponent } from '../mktg-family-print-boilerplates-page/mktg-family-print-boilerplates-page.component';
 import { MktgFamilyPrintFaqPageComponent } from '../mktg-family-print-faq-page/mktg-family-print-faq-page.component';
 import { MktgFamilyPrintSourcesPageComponent } from '../mktg-family-print-sources-page/mktg-family-print-sources-page.component';
-
-/** One frame of the book as the template reads it: the plan's page with everything its frame needs resolved, so the template reads fields only. */
-interface MktgFamilyPrintFrame {
-  page: MktgFamilyPrintPage;
-  /** The chapter the page belongs to, null for the cover, contents, Sources page and back cover. */
-  chapter: MktgFamilyPrintChapter | null;
-  /** The opener's Pages cell: `4–15`. */
-  range: string;
-  /** A mounted inner print's book: the family's, numbered from the chapter's first page. */
-  innerBook: MktgPortraitBook;
-  /** The FAQ page's columns, for a FAQ frame. */
-  faqPage: MktgFamilyPrintFaqPage | null;
-}
-
-/** A chapter on the cover's document tiles: its number, title and `V4.0 · 6 Nov 2026`, only what the store gives. */
-interface MktgFamilyPrintCoverTile {
-  document: MktgFamilyPrintDocument;
-  meta: string;
-}
 
 /**
  * The family's Download PDF as a portrait book: the plan's frames in order
@@ -101,6 +83,8 @@ export class MktgFamilyPrintComponent {
   /** The content column: x 56, 704 wide. */
   public readonly column: readonly [number, number] = [MKTG_PORTRAIT_PAGE.margin, MKTG_PORTRAIT_PAGE.contentWidth];
 
+  /** The FAQ as the book prints it: the answered questions the plan paginates and the FAQ pages print, one index space. */
+  public readonly faqGroups: Signal<MktgFamilyPrintFaqPlanGroup[]> = computed(() => mktgFamilyPrintFaqGroups(this.view().faq?.groups ?? []));
   public readonly plan: Signal<MktgFamilyPrintPlan> = this.initPlan();
   public readonly frames: Signal<MktgFamilyPrintFrame[]> = this.initFrames();
   public readonly coverTiles: Signal<MktgFamilyPrintCoverTile[]> = this.initCoverTiles();
@@ -126,17 +110,7 @@ export class MktgFamilyPrintComponent {
           case 'boilerplates':
             return { document, boilerplateCount: view.boilerplates?.lengths.filter((row) => row.text.trim()).length ?? 0 };
           case 'faq':
-            // Unanswered questions do not print: the pages take the answered ones only.
-            return {
-              document,
-              faqGroups:
-                view.faq?.groups.map((group) => ({
-                  name: group.name,
-                  questions: group.questions
-                    .filter((entry) => entry.answered)
-                    .map((entry) => ({ question: entry.question, answer: entry.answer, source: entry.source })),
-                })) ?? [],
-            };
+            return { document, faqGroups: this.faqGroups() };
         }
       });
       return mktgFamilyPrintPlan(members, view.conflicts.length);
@@ -176,8 +150,8 @@ export class MktgFamilyPrintComponent {
   private initBook(): Signal<MktgPortraitBook> {
     return computed(() => ({
       inFamily: true,
-      // The running head names the family as the grammar names a document; the grammar's kind union is the catalog's three names.
-      headRight: mktgPortraitDocumentName(this.view().projectName, this.familyName().toLocaleLowerCase() as MktgPortraitDocumentKind),
+      // The running head names the family as the grammar names a document, by the grammar's own kind for it.
+      headRight: mktgPortraitDocumentName(this.view().projectName, MKTG_FAMILY_PRINT_HEAD_KIND),
       footLeft: mktgPortraitFootLeft(this.view().projectName),
       firstPage: 1,
     }));

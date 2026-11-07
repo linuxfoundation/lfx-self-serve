@@ -22,13 +22,16 @@
     </article>
   }
 </div>
-@if (shownSources().length) {
+@if (shownSources().rows.length) {
   <section class="fpb-foot" [lfxPpRect]="[column[0], runLayout.top, columns.half]" data-testid="family-print-boilerplate-sources">
     <h2 class="pp-lab pp-lab--dark">{{ labels.builtFrom }}</h2>
     <ul class="fpb-foot__list">
-      @for (source of shownSources(); track source) {
+      @for (source of shownSources().rows; track source) {
         <li>{{ source }}</li>
       }
     </ul>
+    @if (sourcesCutNote()) {
+      <p class="fpb-foot__cut" data-testid="family-print-boilerplate-sources-cut">{{ sourcesCutNote() }}</p>
+    }
   </section>
 }

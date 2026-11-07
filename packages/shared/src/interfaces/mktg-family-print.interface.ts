@@ -8,7 +8,7 @@
 
 import { MKTG_FAMILY_PRINT_PAGE_KINDS } from '../constants/mktg-family-print.constants';
 import type { MktgFamilyExportAgentKey } from './mktg-family-export.interface';
-import type { MktgPortraitPlanPage } from './mktg-portrait-print.interface';
+import type { MktgPortraitBook, MktgPortraitPlanPage } from './mktg-portrait-print.interface';
 
 /** What a frame of the family book holds. */
 export type MktgFamilyPrintPageKind = (typeof MKTG_FAMILY_PRINT_PAGE_KINDS)[number];
@@ -30,7 +30,7 @@ export interface MktgFamilyPrintDocument {
   versionLabel: string;
   /** The approval's date as printed (`6 Nov 2026`), '' when the store gives none: the openers' cell is omitted then. */
   approvedLabel: string;
-  /** The Sources table's Data cell: the date the run read its figures (`figures as of 6 Nov 2026`), else the revision's date; '' when neither is known. */
+  /** The Sources table's Data cell: the date the run read its figures (`figures as of 6 Nov 2026`); '' when the record holds none (the cell is left empty, never a date the record did not give). */
   dataLabel: string;
   /** The run report's open items (its gaps, a missing asset), for the Sources page's Still open list. */
   openItems: string[];
@@ -86,7 +86,43 @@ export interface MktgFamilyPrintFaqPage {
 /** What the plan reads of one FAQ group to paginate it: its name and its answered questions' text. */
 export interface MktgFamilyPrintFaqPlanGroup {
   name: string;
-  questions: { question: string; answer: string; source: string }[];
+  /** The group's answered questions, in order: what the plan measures and the page prints (one index space, mktgFamilyPrintFaqGroups). */
+  questions: MktgFamilyPrintFaqQuestion[];
+}
+
+/** One answered question as the FAQ pages print it: the stored entry's path (the printed row's key), its text, answer and source label. */
+export interface MktgFamilyPrintFaqQuestion {
+  path: string;
+  question: string;
+  answer: string;
+  source: string;
+}
+
+/** One printed entry of a FAQ page: the question with its group's heading when it opens the group in its column, the source chip's text by the book's own name ('' prints no chip). */
+export interface MktgFamilyPrintFaqEntry {
+  key: string;
+  heading: string | null;
+  entry: MktgFamilyPrintFaqQuestion;
+  source: string;
+}
+
+/** One frame of the book as the template reads it: the plan's page with everything its frame needs resolved, so the template reads fields only. */
+export interface MktgFamilyPrintFrame {
+  page: MktgFamilyPrintPage;
+  /** The chapter the page belongs to, null for the cover, contents, Sources page and back cover. */
+  chapter: MktgFamilyPrintChapter | null;
+  /** The opener's Pages cell: `4–15`. */
+  range: string;
+  /** A mounted inner print's book: the family's, numbered from the chapter's first page. */
+  innerBook: MktgPortraitBook;
+  /** The FAQ page's columns, for a FAQ frame. */
+  faqPage: MktgFamilyPrintFaqPage | null;
+}
+
+/** A chapter on the cover's document tiles: its number, title and `V4.0 · 6 Nov 2026`, only what the store gives. */
+export interface MktgFamilyPrintCoverTile {
+  document: MktgFamilyPrintDocument;
+  meta: string;
 }
 
 /** The whole book as planned: every frame in order, the chapters, the total. */
@@ -106,7 +142,7 @@ export interface MktgFamilyPrintPlan {
  */
 export interface MktgFamilyPrintPlanMember {
   document: MktgFamilyPrintDocument;
-  /** For a mounted inner print (stage 1: the framework and the kit): one title per printed page. */
+  /** For a mounted inner print (the framework and the kit, each on its own portrait plan): one title per printed page. */
   innerPageTitles?: string[];
   /** For the FAQ: its groups with their answered questions, in order (unanswered questions do not print). */
   faqGroups?: MktgFamilyPrintFaqPlanGroup[];
@@ -139,9 +175,19 @@ export interface MktgFamilyPrintTextSource {
 /** The Sources page's rows as they fit its fixed blocks: whole rows above the footer, nothing added. */
 export interface MktgFamilyPrintSourcesLayout {
   conflicts: MktgFamilyPrintConflict[];
+  /** Conflict rows past the block, named by its cut note; 0 when every row printed. */
+  conflictsCut: number;
   openItems: MktgFamilyPrintOpenItem[];
+  /** Open items past the block, named by its cut note; 0 when every row printed. */
+  openCut: number;
   /** The Still open block's y: under the conflicts, or in their place when there are none. */
   openTop: number;
+}
+
+/** The rows of a fixed block that fit, and how many did not (the block's cut note names them; 0 when all fit). */
+export interface MktgFamilyPrintFitRows<T> {
+  rows: T[];
+  cut: number;
 }
 
 /** One line of the Sources page's "Still open": the document and the open item. */

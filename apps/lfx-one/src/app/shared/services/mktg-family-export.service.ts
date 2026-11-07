@@ -188,8 +188,8 @@ export class MktgFamilyExportService {
               response?.revision.number ?? null,
               response?.approval ?? null,
               openItems[MKTG_FAMILY_EXPORT_KINDS[agentKey]],
-              // The Sources table's Data cell: the day the run read its figures, else the day the revision was written.
-              this.dataReadAt(response?.sidecar) ?? response?.revision.createdAt ?? null
+              // The Sources table's Data cell: the day the run read its figures (its record's date_read, else its generation date); none → an empty cell.
+              this.dataReadAt(response?.sidecar)
             )
           );
         const boilerplatesView = boilerplates ? buildBoilerplatesPrintView(boilerplates, brand) : null;
@@ -197,7 +197,7 @@ export class MktgFamilyExportService {
         // Where the documents disagree: the framework's key numbers against the FAQ's answers and the boilerplates'
         // text, the kit's line against the framework's tagline, the kit's colour conflicts; nothing the texts do not say.
         // Spelling rows (AWS / Amazon Web Services) and the Silver tier are a recorded follow-up (maintainer, 7 Nov 2026).
-        const titleOf = (agentKey: MktgFamilyExportAgentKey): string => documents.find((document) => document.agentKey === agentKey)?.title ?? '';
+        const titleOf = (kind: MktgFamilyExportKind): string => documents.find((document) => MKTG_FAMILY_EXPORT_KINDS[document.agentKey] === kind)?.title ?? '';
         const textSources: MktgFamilyPrintTextSource[] = [
           {
             title: titleOf('faq'),
@@ -226,7 +226,7 @@ export class MktgFamilyExportService {
               frameworkAsset?.content.mf.tagline ?? '',
               kit?.chapters.voice.line ?? '',
               kit?.report.color_conflicts ?? [],
-              titleOf('brand-kit')
+              titleOf('kit')
             ),
           ],
         };

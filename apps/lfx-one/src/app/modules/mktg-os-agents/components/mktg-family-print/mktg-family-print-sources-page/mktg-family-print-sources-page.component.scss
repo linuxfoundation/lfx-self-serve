@@ -79,3 +79,10 @@
     border-top: 1px solid var(--pp-hairline);
   }
 }
+
+/* A list's cut note, one line of the list's own type under its last row: the rows that did not fit, counted. */
+.fps-cut {
+  margin: 6px 0 0;
+  font: 500 11.5px/1.45 var(--pp-font);
+  color: var(--pp-dark);
+}

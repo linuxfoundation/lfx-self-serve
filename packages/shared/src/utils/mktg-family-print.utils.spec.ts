@@ -14,9 +14,11 @@ import type {
 } from '../interfaces/mktg-family-print.interface';
 import {
   mktgFamilyPrintConflicts,
+  mktgFamilyPrintCutNote,
   mktgFamilyPrintDate,
   mktgFamilyPrintDocument,
   mktgFamilyPrintFaqEntryHeight,
+  mktgFamilyPrintFaqGroups,
   mktgFamilyPrintFaqPages,
   mktgFamilyPrintFill,
   mktgFamilyPrintFitRows,
@@ -42,7 +44,12 @@ function doc(agentKey: MktgFamilyPrintDocument['agentKey'], number: number, vers
 function faqGroups(sizes: number[], answer = 'One line answer that names the source it came from.'): MktgFamilyPrintFaqPlanGroup[] {
   return sizes.map((size, group) => ({
     name: `Group ${group + 1}`,
-    questions: Array.from({ length: size }, (_, index) => ({ question: `Question ${group}.${index} of the group?`, answer, source: 'website' })),
+    questions: Array.from({ length: size }, (_, index) => ({
+      path: `faq[${group}][1][${index}]`,
+      question: `Question ${group}.${index} of the group?`,
+      answer,
+      source: 'website',
+    })),
   }));
 }
 
@@ -102,6 +109,31 @@ describe('the small helpers', () => {
   });
 });
 
+describe('mktgFamilyPrintFaqGroups', () => {
+  it('reads the FAQ as the book prints it: the answered questions only, in order, with their paths, one index space for the plan and the page', () => {
+    const printed = mktgFamilyPrintFaqGroups([
+      {
+        path: 'faq[0]',
+        name: 'About',
+        unanswered: 1,
+        questions: [
+          { path: 'faq[0][1][0]', question: 'Who runs it?', answer: '', source: '', answered: false },
+          { path: 'faq[0][1][1]', question: 'What is it?', answer: 'A synthetic project.', source: 'Framework', answered: true },
+        ],
+      },
+      { path: 'faq[1]', name: 'Open', unanswered: 1, questions: [{ path: 'faq[1][1][0]', question: 'When?', answer: '', source: '', answered: false }] },
+    ]);
+    expect(printed).toEqual([
+      { name: 'About', questions: [{ path: 'faq[0][1][1]', question: 'What is it?', answer: 'A synthetic project.', source: 'Framework' }] },
+      { name: 'Open', questions: [] },
+    ]);
+    // The plan's first item is the first ANSWERED question of About: the index the page resolves in the same list.
+    const [page] = mktgFamilyPrintFaqPages(printed);
+    expect(page.columns[0][0]).toEqual({ group: 0, question: 0, heading: true });
+    expect(printed[page.columns[0][0].group].questions[page.columns[0][0].question].question).toBe('What is it?');
+  });
+});
+
 describe('mktgFamilyPrintFaqPages', () => {
   const width = (MKTG_PORTRAIT_PAGE.contentWidth - MKTG_FAMILY_PRINT_FAQ_LAYOUT.columnGap) / 2;
   const budget = MKTG_FAMILY_PRINT_FAQ_LAYOUT.bottom - MKTG_FAMILY_PRINT_FAQ_LAYOUT.top;
@@ -151,12 +183,18 @@ describe('mktgFamilyPrintFaqPages', () => {
 });
 
 describe('the fixed blocks', () => {
-  it('keeps the whole rows that fit a block, nothing added', () => {
+  it('keeps the whole rows that fit a block, nothing added, and counts the rest behind one reserved line for the cut note', () => {
     const rows = Array.from({ length: 8 }, (_, index) => `Note ${index + 1}: a short line`);
-    expect(mktgFamilyPrintFitRows(rows, (row) => row, 324, 11, 1.55, 0, 62)).toEqual(rows.slice(0, 3));
-    expect(mktgFamilyPrintFitRunBlock(rows, 340)).toEqual(rows.slice(0, 3));
-    expect(mktgFamilyPrintFitRunBlock(['x'.repeat(400), 'short'], 340)).toEqual([]);
-    expect(mktgFamilyPrintFitRunBlock([], 340)).toEqual([]);
+    // 62 px holds three 17.05 px lines; with rows left over one line is kept for the note, so two rows print and six are counted.
+    expect(mktgFamilyPrintFitRows(rows, (row) => row, 324, 11, 1.55, 0, 62)).toEqual({ rows: rows.slice(0, 2), cut: 6 });
+    expect(mktgFamilyPrintFitRows(rows.slice(0, 3), (row) => row, 324, 11, 1.55, 0, 62)).toEqual({ rows: rows.slice(0, 3), cut: 0 });
+    expect(mktgFamilyPrintFitRunBlock(rows, 340)).toEqual({ rows: rows.slice(0, 2), cut: 6 });
+    expect(mktgFamilyPrintFitRunBlock(['x'.repeat(400), 'short'], 340)).toEqual({ rows: [], cut: 2 });
+    expect(mktgFamilyPrintFitRunBlock([], 340)).toEqual({ rows: [], cut: 0 });
+    // A label the run read twice (two URLs on one host) is one row; blanks are no rows.
+    expect(mktgFamilyPrintFitRunBlock(['example.org', ' example.org ', '', 'press release'], 340)).toEqual({ rows: ['example.org', 'press release'], cut: 0 });
+    expect(mktgFamilyPrintCutNote(0)).toBe('');
+    expect(mktgFamilyPrintCutNote(6)).toBe('+6 more in LFX One');
   });
 
   it('prints a source as the board does: a URL by its label or host, no internal record id', () => {
@@ -181,14 +219,24 @@ describe('the fixed blocks', () => {
       text: `Open item ${index + 1} that the run left open for the team to check.`,
     }));
     const layout = mktgFamilyPrintSourcesLayout(conflicts, openItems);
-    expect(layout.conflicts).toEqual(conflicts.slice(0, 5));
-    expect(layout.openItems).toEqual(openItems.slice(0, 9));
+    // Each block keeps one line of its type for the cut note when rows are left over, and counts them.
+    expect(layout.conflicts).toEqual(conflicts.slice(0, 4));
+    expect(layout.conflictsCut).toBe(2);
+    expect(layout.openItems).toEqual(openItems.slice(0, 8));
+    expect(layout.openCut).toBe(4);
     expect(layout.openTop).toBe(MKTG_FAMILY_PRINT_SOURCES_LAYOUT.openTop);
     const alone = mktgFamilyPrintSourcesLayout([], openItems);
     expect(alone.conflicts).toEqual([]);
     expect(alone.openItems).toEqual(openItems);
+    expect(alone.openCut).toBe(0);
     expect(alone.openTop).toBe(MKTG_FAMILY_PRINT_SOURCES_LAYOUT.conflictsTop);
-    expect(mktgFamilyPrintSourcesLayout([], [])).toEqual({ conflicts: [], openItems: [], openTop: MKTG_FAMILY_PRINT_SOURCES_LAYOUT.conflictsTop });
+    expect(mktgFamilyPrintSourcesLayout([], [])).toEqual({
+      conflicts: [],
+      conflictsCut: 0,
+      openItems: [],
+      openCut: 0,
+      openTop: MKTG_FAMILY_PRINT_SOURCES_LAYOUT.conflictsTop,
+    });
   });
 });
 
@@ -322,12 +370,16 @@ describe('mktgFamilyPrintOpenItemText', () => {
 });
 
 describe('mktgFamilyPrintOpenItems', () => {
-  it('lists each chapter’s open items with its document, in chapter order', () => {
+  it('lists each chapter’s open items with its document, in chapter order, an item a record states twice once', () => {
     const plan = mktgFamilyPrintPlan(members());
     expect(mktgFamilyPrintOpenItems(plan.chapters)).toEqual([
       { document: 'Messaging framework', text: 'Regulated industries: no answer yet' },
       { document: 'Brand kit', text: 'No stacked lockup among the logo files uploaded.' },
     ]);
+    const twice = mktgFamilyPrintPlan([
+      { document: doc('brand-kit', 1, 4, ['No stacked lockup.', 'No favicon.', 'No stacked lockup.']), innerPageTitles: ['Logo'] },
+    ]);
+    expect(mktgFamilyPrintOpenItems(twice.chapters).map((item) => item.text)).toEqual(['No stacked lockup.', 'No favicon.']);
   });
 });
 
@@ -340,7 +392,7 @@ describe('mktgFamilyPrintConflicts', () => {
         id: 'Brand line · Brand kit',
         topic: 'Brand line',
         text: 'The brand kit carries “Agents in the open”; the framework’s tagline is “Open source for AI”.',
-        rerun: 'Re-run the Brand kit so it reads the approved framework.',
+        rerun: 'Re-run the brand kit so it reads the approved framework.',
       },
     ]);
     expect(
@@ -364,7 +416,7 @@ describe('mktgFamilyPrintConflicts', () => {
       {
         id: 'Coral · Brand kit',
         topic: 'Coral',
-        text: 'The Brand kit reads Coral as #FF702D from the brand page and #FF7D2D from the site buttons; it keeps #FF702D.',
+        text: 'The brand kit reads Coral as #FF702D from the brand page and #FF7D2D from the site buttons; it keeps #FF702D.',
         rerun: '',
       },
     ]);
@@ -387,7 +439,7 @@ describe('mktgFamilyPrintConflicts', () => {
       ],
       'Brand kit'
     );
-    expect(coral.text).toBe('The Brand kit reads Coral as #FF702D from the brand page, #FF7D2D from the site css and #FF8A2D; it keeps #FF702D.');
+    expect(coral.text).toBe('The brand kit reads Coral as #FF702D from the brand page, #FF7D2D from the site css and #FF8A2D; it keeps #FF702D.');
     expect(coral.text).not.toMatch(/https?:|_/);
     expect(mktgFamilyPrintReadableSource('brand_page: https://aaif.io/brand')).toBe('brand page');
     expect(mktgFamilyPrintReadableSource('https://aaif.io/brand')).toBe('aaif.io');
@@ -421,13 +473,13 @@ describe('mktgFamilyPrintNumberConflicts', () => {
       {
         id: 'Code contributors, last 12 months · Boilerplates',
         topic: 'Code contributors, last 12 months',
-        text: 'The framework’s key numbers say 7,181 code contributors, last 12 months; the Boilerplates says “A community of 299 member organizations, 7,100 code contributors and more than 10,000 published MCP servers.”',
-        rerun: 'Re-run the Boilerplates so it reads the approved framework.',
+        text: 'The framework’s key numbers say 7,181 code contributors, last 12 months; the boilerplates says “A community of 299 member organizations, 7,100 code contributors and more than 10,000 published MCP servers.”',
+        rerun: 'Re-run the boilerplates so it reads the approved framework.',
       },
     ]);
   });
 
-  it('reports no conflict for a price, a year, a rounded figure, a word that only starts with the measure, or a figure elsewhere in the sentence', () => {
+  it('reports no conflict for a price, a year, a rounded figure, a part of the measure, a sentence that states the framework’s figure, a word that only starts with the measure, or a figure elsewhere', () => {
     const sentences = [
       // The dev project's FAQ sentences the first reading mistook for conflicts.
       'Platinum membership is $350000 per year and Gold membership is $200000 per year. Silver membership runs from $5000 to $75000 per year depending on company size.',
@@ -437,6 +489,13 @@ describe('mktgFamilyPrintNumberConflicts', () => {
       'Founded in 2023 with 20 members.',
       'Over 7,000 code contributors in the last 12 months.',
       'The 2026 report counts member organizations by tier.',
+      // The second reading's false positives: a figure with words between it and the measure counts a part of it,
+      // a trailing `+` is a rounded figure, and a sentence that also states the framework's figure agrees with it.
+      '18 new member organizations joined this year.',
+      'The foundation counts 7,000+ code contributors.',
+      'AAIF grew to 299 member organizations, up from 150 member organizations at launch.',
+      'Some 300 member organizations take part.',
+      'In 2024 member organizations met twice.',
     ];
     expect(mktgFamilyPrintNumberConflicts(numbers, [{ title: 'FAQ', texts: sentences }])).toEqual([]);
     // No figure or no measure in the key number: no row.
@@ -444,10 +503,17 @@ describe('mktgFamilyPrintNumberConflicts', () => {
       mktgFamilyPrintNumberConflicts(
         [
           { number: 'many', label: 'members' },
-          { number: '12', label: 'of' },
+          { number: '12', label: 'over' },
         ],
-        [{ title: 'FAQ', texts: ['308 members.'] }]
+        [{ title: 'FAQ', texts: ['308 members. 12 over.'] }]
       )
     ).toEqual([]);
+    // A short word in the label is part of the measure (`MCP servers at launch`), not a stop word.
+    expect(
+      mktgFamilyPrintNumberConflicts(
+        [{ number: '10,000+', label: 'Published MCP servers at launch' }],
+        [{ title: 'FAQ', texts: ['There were 9,500 published MCP servers at launch.'] }]
+      )
+    ).toHaveLength(1);
   });
 });
