@@ -356,14 +356,9 @@ export const FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES = ['Website', 'Link', 'Press 
  * The one middle-dot separator every printed line joins its parts with (the editor's rule, 7 November 2026: one
  * spacing everywhere): a plain space, the middle dot, a plain space, as the grammar's footer sets it. The document
  * title, the cover's edition and strip lines, the house's brand line, a goal's `Goal 1 · Events`, the channels, the
- * personas and the facts' "used by" all join with it; no thin or hair space anywhere.
+ * personas and the facts' "used by" all join with it (mktgPrintJoin, mktg-print-text.utils.ts); no thin or hair space anywhere.
  */
 export const MKTG_PRINT_DOT = ' · ';
-
-/** Parts joined with the one middle dot, the empty ones left out. */
-export function mktgPrintJoin(parts: readonly string[]): string {
-  return parts.filter((part) => part !== '').join(MKTG_PRINT_DOT);
-}
 
 /**
  * The LF look: what a print uses when the project has no Brand Kit yet. The

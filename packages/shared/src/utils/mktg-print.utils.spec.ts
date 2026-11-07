@@ -14,8 +14,8 @@ import {
   MKTG_PRINT_INK_ON_LIGHT,
   MKTG_PRINT_LF_LOOK,
   MKTG_PRINT_REVERSED_FILTER,
-  mktgPrintJoin,
 } from '../constants/mktg-print.constants';
+import { mktgPrintJoin } from './mktg-print-text.utils';
 import { MKTG_READABLE_SOURCE } from '../constants/mktg-readable-source.constants';
 import { BrandKitLogoRef, BrandKitRevision } from '../interfaces/brand-kit.interface';
 import { FoundationMessageContent, FoundationMessageReport } from '../interfaces/foundation-message.interface';
@@ -261,6 +261,10 @@ describe('the framework’s print', () => {
     expect(view.icps[0].goalTitles).toEqual(['Adoption']);
     expect(view.icps[0].goalChips).toEqual(['Goal 1']);
     expect([view.goals[0].segmentLabel, view.icps[0].goalLabel, view.icps[0].channelsLabel]).toEqual(['End users', 'Adoption', 'Docs']);
+    // A persona prints as one joined line, so an empty part leaves no trailing dot.
+    expect(view.icps[0].personaLines).toEqual(['SRE · uptime']);
+    const bare = buildFoundationMessagePrintView({ ...CONTENT, icp: [{ ...CONTENT.icp[0], personas: [['SRE', ' ']] }] }, 'TestOrbit', 1, null);
+    expect(bare.icps[0].personaLines).toEqual(['SRE']);
     expect(view.avoidRows).toEqual([{ avoid: 'synergy', instead: 'working together' }]);
     expect(view.numbers).toEqual([{ number: '1,200', label: 'members', source: 'Website' }]);
     expect(view.audiences).toEqual([{ name: 'End users', lead: 'Ship with confidence.' }]);

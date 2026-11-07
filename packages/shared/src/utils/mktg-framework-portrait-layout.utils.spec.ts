@@ -118,6 +118,7 @@ const icpWith = (overrides: Partial<FoundationMessagePrintIcp> & Pick<Foundation
   goalLabel: 'Goal',
   channelsLabel: 'Docs · Slack',
   goalChips: ['Goal 1'],
+  personaLines: ['Role · Cares'],
   whoWidth: 190,
   ...overrides,
 });
@@ -420,6 +421,7 @@ describe('the framework portrait book’s profile pages', () => {
       cta: sentence.repeat(repeat).trim(),
       objectionResponse: sentence.repeat(repeat).trim(),
       personaRows: Array.from({ length: personas }, (_, index) => ({ role: `Role ${index}`, cares: sentence.trim() })),
+      personaLines: Array.from({ length: personas }, (_, index) => `Role ${index} · ${sentence.trim()}`),
     });
 
   it('measures a card: its chrome and the taller of the name column and the fields grid, the fields three a row', () => {

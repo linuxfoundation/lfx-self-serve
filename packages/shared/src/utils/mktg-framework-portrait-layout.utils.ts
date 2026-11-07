@@ -24,8 +24,8 @@ import {
   FRAMEWORK_PORTRAIT_TILE_SHARES,
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
-  mktgPrintJoin,
 } from '../constants/mktg-print.constants';
+import { mktgPrintJoin } from './mktg-print-text.utils';
 import { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 import { MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
@@ -584,9 +584,8 @@ export function frameworkPortraitIcpHeight(icp: FoundationMessagePrintIcp, tight
     ROOM.icpChipsTop +
     ROOM.icpChipLine +
     (icp.who ? ROOM.icpWhoTextTop + frameworkPortraitTextHeight(icp.who, TYPE.icpWho, who) : 0) +
-    (icp.personaRows.length
-      ? ROOM.icpPersonasTop +
-        icp.personaRows.reduce((sum, persona) => sum + frameworkPortraitTextHeight(mktgPrintJoin([persona.role, persona.cares]), TYPE.icpPersona, who), 0)
+    (icp.personaLines.length
+      ? ROOM.icpPersonasTop + icp.personaLines.reduce((sum, line) => sum + frameworkPortraitTextHeight(line, TYPE.icpPersona, who), 0)
       : 0);
   const column = (PAGE.contentWidth - who - ROOM.icpColumnGap - 2 * ROOM.icpGridColumnGap) / 3;
   const texts: string[] = [];

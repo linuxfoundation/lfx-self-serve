@@ -8,7 +8,8 @@
 // the kit's plan (`brandKitPortraitPlan`, mktg-portrait-plan.utils.ts), on
 // the same page type.
 
-import { FRAMEWORK_PORTRAIT_PAGE_IDS, FRAMEWORK_PORTRAIT_SECTIONS, FRAMEWORK_PORTRAIT_TITLES, mktgPrintJoin } from '../constants/mktg-print.constants';
+import { FRAMEWORK_PORTRAIT_PAGE_IDS, FRAMEWORK_PORTRAIT_SECTIONS, FRAMEWORK_PORTRAIT_TITLES } from '../constants/mktg-print.constants';
+import { mktgPrintJoin } from './mktg-print-text.utils';
 import type { FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
 import { frameworkPortraitIcpPages, frameworkPortraitNumbersPages } from './mktg-framework-portrait-layout.utils';

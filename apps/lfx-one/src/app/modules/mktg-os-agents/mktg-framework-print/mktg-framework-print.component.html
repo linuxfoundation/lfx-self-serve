@@ -543,8 +543,8 @@
                       <p class="fwp-icp-who-text">{{ icp.who }}</p>
                     }
                     <ul class="fwp-icp-personas">
-                      @for (persona of icp.personaRows; track persona.role) {
-                        <li>{{ persona.role }}{{ dot }}{{ persona.cares }}</li>
+                      @for (line of icp.personaLines; track $index) {
+                        <li>{{ line }}</li>
                       }
                     </ul>
                   </div>

@@ -20,8 +20,8 @@ import {
   MKTG_PRINT_INK_ON_DARK,
   MKTG_PRINT_INK_ON_LIGHT,
   MKTG_PRINT_LF_LOOK,
-  mktgPrintJoin,
 } from '../constants/mktg-print.constants';
+import { mktgPrintJoin } from './mktg-print-text.utils';
 import type { BrandKitRevision } from '../interfaces/brand-kit.interface';
 import type { FoundationMessageContent, FoundationMessageNumberRow, FoundationMessageReport } from '../interfaces/foundation-message.interface';
 import type {
@@ -179,6 +179,7 @@ export function foundationMessagePrintIcps(content: FoundationMessageContent): F
       goalLabel: icp.goalTitles.join(', '),
       channelsLabel: mktgPrintJoin(icp.channels),
       goalChips,
+      personaLines: icp.personaRows.map((persona) => mktgPrintJoin([persona.role, persona.cares])),
       whoWidth: frameworkPortraitIcpWhoWidth([icp.kind, ...goalChips]),
     };
   });

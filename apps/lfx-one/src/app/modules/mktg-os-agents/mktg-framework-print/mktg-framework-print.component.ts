@@ -4,6 +4,7 @@
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
+  FOUNDATION_MESSAGE_INTAKE,
   FOUNDATION_MESSAGE_PRINT_NO_GAP_MESSAGE,
   FRAMEWORK_PORTRAIT_FACT_COLUMNS,
   FRAMEWORK_PORTRAIT_NUMBER_COLUMNS,
@@ -17,7 +18,6 @@ import {
   MKTG_PORTRAIT_COLUMNS,
   MKTG_PORTRAIT_PAGE,
   MKTG_PRINT_DOT,
-  mktgPrintJoin,
 } from '@lfx-one/shared/constants';
 import {
   FoundationMessagePrintFittedText,
@@ -65,6 +65,7 @@ import {
   mktgPortraitPageNumber,
   mktgPortraitParaHeight,
   mktgPortraitSectionLabel,
+  mktgPrintJoin,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { distinctUntilChanged, filter } from 'rxjs';
@@ -234,7 +235,7 @@ export class MktgFrameworkPrintComponent {
         return {
           ...page,
           number: book.firstPage + index,
-          label: mktgPortraitSectionLabel(page.section, book.inFamily, 'Messaging framework'),
+          label: mktgPortraitSectionLabel(page.section, book.inFamily, FOUNDATION_MESSAGE_INTAKE.documentName),
           band: !book.inFamily && mktgPortraitOpensChapter(plan, index),
           titleFit,
           contents: page.id === this.ids.cover ? contents : null,
