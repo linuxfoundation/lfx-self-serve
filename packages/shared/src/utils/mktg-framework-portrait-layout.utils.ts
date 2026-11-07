@@ -361,8 +361,11 @@ export function frameworkPortraitMatrixColumns(goals: readonly Pick<FoundationMe
  * fitted rows leave (tightened first, then whole rows with the muted line). A proof cell never holds only the note
  * (the editor's rule): the proofs row is floored at every goal's first proof (at the fit model's floor) with the note
  * counting the rest, and a cell whose rows would all be cut keeps its first proof, set smaller in the fit model's
- * steps to the room above its note, then cut at a sentence, carrying its own size. The bands share the room equally,
- * less the crosscut, the notes and the gaps between them. `cells` and `proofs` are in the goals' order across the
+ * steps to the room above its note, then cut at a sentence, carrying its own size. The bands' room, less the crosscut,
+ * the notes and the gaps between them, is re-measured at each level of the ladder (the editor's rule, 7 Nov 2026): each
+ * band's head and printed text rows first, then the room the dropped rows freed to the proof rows, each band's minimal
+ * proof row (one whole first proof at the tight type beside its note) before any equal share, so the proofs drop only
+ * when that minimal row does not fit the room the whole key messages leave. `cells` and `proofs` are in the goals' order across the
  * bands; `bands` says where each starts and how many columns it is laid in; `rows` and `notes` say what was dropped. A band's
  * cells are measured on the glyph table for the book's `family` (the look's font stack; the table's default width without it).
  */
@@ -407,17 +410,29 @@ export function frameworkPortraitMatrix(
     : [{ rows: { value: true, bite: true, proof: true }, notes: [] }];
   const noteLine = frameworkPortraitCutNoteHeight();
   const chrome = (level: Pick<FoundationMessagePrintMatrix, 'notes'>): number => note + level.notes.length * noteLine + (bands.length - 1) * ROOM.matrixBandGap;
+  const sum = (heights: readonly number[]): number => heights.reduce((total, height) => total + height, 0);
   const lay = (level: Pick<FoundationMessagePrintMatrix, 'rows' | 'notes'>): FoundationMessagePrintMatrix => {
-    const bandRoom = (room - chrome(level)) / Math.max(1, bands.length);
+    // Each band's room is re-measured at this level (the editor's rule, 7 Nov 2026): its head and the text rows it prints, at their
+    // type, then the room the dropped rows freed goes to the proof rows FIRST, every band's minimal proof row (one whole first proof
+    // at the tight type beside its note, `proofsMin`) where the minimal rows all fit, the rest in equal shares; where they do not all
+    // fit, the room that stays is shared equally and the ladder's next level decides. One band is the whole room either way.
+    const free = room - chrome(level);
+    const fixed = frames.map((frame) => {
+      const rows = frame.measure(frame.cells, level.rows);
+      return frame.head + rows.value + rows.key + rows.bite;
+    });
+    const minimal = frames.map((frame) => (level.rows.proof ? frame.proofsMin : 0));
+    const granted = sum(fixed) + sum(minimal) <= free + 0.01;
+    const share = (free - sum(fixed) - (granted ? sum(minimal) : 0)) / Math.max(1, bands.length);
     const cells: FoundationMessagePrintMatrixCell[] = [];
     const proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>[] = [];
     let height = chrome(level);
-    for (const frame of frames) {
-      const laid = frameworkPortraitMatrixBand(frame, bandRoom, level.rows);
+    frames.forEach((frame, index) => {
+      const laid = frameworkPortraitMatrixBand(frame, fixed[index] + (granted ? minimal[index] : 0) + share, level.rows);
       cells.push(...laid.cells);
       proofs.push(...laid.proofs);
       height += laid.height;
-    }
+    });
     return { cells, proofs, bands, height, rows: level.rows, notes: level.notes };
   };
   const belowFloor = (matrix: FoundationMessagePrintMatrix): boolean =>
@@ -452,6 +467,8 @@ interface FrameworkPortraitMatrixBandFrame {
   banded: boolean;
   head: number;
   proofsLeast: number;
+  /** The proofs row in its minimal format: its chrome, every goal's first proof WHOLE at the tight type beside the note counting the rest. */
+  proofsMin: number;
   cells: FoundationMessagePrintMatrixCell[];
   measure: (cells: readonly FoundationMessagePrintMatrixCell[], printed: FoundationMessagePrintMatrixRows) => FrameworkPortraitMatrixRowHeights;
   proofRow: (proof: FoundationMessagePrintGoalProof, type: FoundationMessagePrintType) => number;
@@ -484,6 +501,9 @@ function frameworkPortraitMatrixBandFrame(
   const floorType: FoundationMessagePrintType = { ...TYPE.matrixProofTight, size: TYPE.matrixProofTight.size * FIT.minScale };
   const proofsLeast =
     ROOM.matrixRow + tallest(goals.map((goal) => (goal.proofRows.length ? proofRow(goal.proofRows[0], floorType) + noteIn(goal.proofRows.length - 1) : 0)));
+  const proofsMin =
+    ROOM.matrixRow +
+    tallest(goals.map((goal) => (goal.proofRows.length ? proofRow(goal.proofRows[0], TYPE.matrixProofTight) + noteIn(goal.proofRows.length - 1) : 0)));
   const quoted = (bite: string): string => `“${bite}”`;
   const measure = (cells: readonly FoundationMessagePrintMatrixCell[], printed: FoundationMessagePrintMatrixRows): FrameworkPortraitMatrixRowHeights => ({
     value: printed.value ? ROOM.matrixRow + tallest(cells.map((cell) => textHeight(cell.vp.text, { ...TYPE.matrixCell, size: cell.vp.size }, column))) : 0,
@@ -501,7 +521,7 @@ function frameworkPortraitMatrixBandFrame(
     key: { text: goal.key, size: TYPE.matrixKey.size },
     bite: goal.bite ? { text: goal.bite, size: TYPE.matrixBite.size } : null,
   }));
-  return { goals, titles, column, banded, head, proofsLeast, cells, measure, proofRow, noteIn };
+  return { goals, titles, column, banded, head, proofsLeast, proofsMin, cells, measure, proofRow, noteIn };
 }
 
 /** One band of the goal matrix (`frameworkPortraitMatrix`): its frame's text rows (those `printed`) and proof cells fitted into `room`. */

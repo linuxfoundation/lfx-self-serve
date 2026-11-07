@@ -1381,4 +1381,65 @@ describe('the framework portrait book’s goal matrix head row (editor FA1)', ()
       for (const row of cell.rows) expect(row.size ?? type.matrixProofTight.size).toBeGreaterThanOrEqual(type.matrixProofTight.size);
     expect(kept.height).toBeLessThanOrEqual(room);
   });
+
+  it('re-measures the bands after each step: the room the dropped rows freed goes to the proof row first, in its minimal format, and the proofs drop only when that row does not fit (the editor’s rule, 7 Nov 2026)', () => {
+    // The measures the ladder re-takes at the bands' level: each band's head and its whole key messages, the chrome around the bands,
+    // and the proof row's minimal format (one whole first proof at the tight type beside the note counting the rest).
+    const named = goals(overfull).map((goal, index) => ({ ...goal, t: longTitles[index] }));
+    const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
+    const bandsOf = (all: readonly FoundationMessagePrintGoal[]) => [all.slice(0, 4), all.slice(4)];
+    const fixed = (band: readonly FoundationMessagePrintGoal[]) =>
+      2 * FRAMEWORK_PORTRAIT_ROOM.matrixRow +
+      type.cutNote.size * type.cutNote.line +
+      3 +
+      Math.max(...band.map((goal) => frameworkPortraitTextHeight(goal.t, { ...type.matrixGoal, size: FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin }, column))) +
+      Math.max(...band.map((goal) => frameworkPortraitTextHeight(goal.key, type.matrixKey, column)));
+    const minimal = (band: readonly FoundationMessagePrintGoal[]) =>
+      FRAMEWORK_PORTRAIT_ROOM.matrixRow +
+      Math.max(
+        ...band.map(
+          (goal) =>
+            frameworkPortraitTextHeight(`${goal.proofRows[0].fact} ${goal.proofRows[0].source}`, type.matrixProofTight, column) +
+            FRAMEWORK_PORTRAIT_ROOM.matrixProofGap +
+            frameworkPortraitCutNoteHeightIn(goal.proofRows.length - 1, column)
+        )
+      );
+    const chrome =
+      FRAMEWORK_PORTRAIT_ROOM.matrixCrosscutGap +
+      frameworkPortraitTextHeight(crosscut, type.matrixCrosscut, MKTG_PORTRAIT_PAGE.contentWidth - FRAMEWORK_PORTRAIT_ROOM.matrixPadding) +
+      frameworkPortraitCutNoteHeight() +
+      FRAMEWORK_PORTRAIT_ROOM.matrixBandGap;
+    const free = room - chrome;
+    // The long names on the record's proofs (facts of a hundred characters and more): the two bands' heads and whole key messages
+    // leave less than the two minimal proof rows need, so the proofs truly do not fit and the row goes, as before.
+    const recordNeed = bandsOf(named).reduce((sum, band) => sum + fixed(band) + minimal(band), 0);
+    expect(recordNeed).toBeGreaterThan(free);
+    expect(frameworkPortraitMatrix(named, crosscut, room).rows).toEqual({ value: false, bite: false, proof: false });
+    // The same names with a first proof of a sentence: the minimal rows fit the room the key messages leave, so the proofs are KEPT,
+    // every cell one whole proof at the tight type or better beside its note, the note saying what moved to the goal pages, in the room.
+    const sentence = named.map((goal) => ({
+      ...goal,
+      proofRows: [{ fact: 'Runs in production at 96% of the organizations surveyed last year', source: 'Survey' }, ...goal.proofRows.slice(1)],
+    }));
+    const need = bandsOf(sentence).map((band) => fixed(band) + minimal(band));
+    expect(need[0] + need[1]).toBeLessThanOrEqual(free);
+    // ... and an equal share of the room would have starved the taller band: the measure the ladder took before this fix.
+    expect(Math.max(...need)).toBeGreaterThan(free / 2);
+    const kept = frameworkPortraitMatrix(sentence, crosscut, room);
+    expect(kept.bands).toHaveLength(2);
+    expect(kept.rows).toEqual({ value: false, bite: false, proof: true });
+    expect(kept.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(kept.proofs).toHaveLength(8);
+    for (const cell of kept.proofs) {
+      expect(cell.rows.length).toBeGreaterThanOrEqual(1);
+      expect(cell.rows[0].fact).toBe('Runs in production at 96% of the organizations surveyed last year');
+      expect(cell.rows.length + cell.cut).toBe(4);
+      for (const row of cell.rows) expect(row.size ?? (cell.tight ? type.matrixProofTight.size : type.matrixProof.size)).toBeGreaterThanOrEqual(type.matrixProofTight.size);
+    }
+    expect(frameworkPortraitMatrixProofRowSize(kept.proofs)).toBeGreaterThanOrEqual(type.matrixProofTight.size);
+    expect(kept.cells.map((cell) => cell.key.text)).toEqual(overfull.map((goal) => goal[2]));
+    expect(kept.cells.map((cell) => cell.title.text)).toEqual(longTitles);
+    expect(kept.height).toBeLessThanOrEqual(room);
+    expect(kept.height).toBeGreaterThan(frameworkPortraitMatrix(named, crosscut, room).height);
+  });
 });
