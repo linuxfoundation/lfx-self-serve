@@ -11,13 +11,15 @@ import {
   FRAMEWORK_PORTRAIT_NUMBER_TILE,
   FRAMEWORK_PORTRAIT_PAGE_IDS,
   FRAMEWORK_PORTRAIT_ROOM,
+  FRAMEWORK_PORTRAIT_SEP,
   FRAMEWORK_PORTRAIT_STATEMENT_SHARES,
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
   MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
   MKTG_PORTRAIT_COLUMNS,
+  MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_PAGE,
-  MKTG_PRINT_DOT,
+  MKTG_PRINT_OBJECTION_DASH,
 } from '@lfx-one/shared/constants';
 import {
   FoundationMessagePrintFittedText,
@@ -55,6 +57,7 @@ import {
   frameworkPortraitIcpPages,
   frameworkPortraitMatrix,
   frameworkPortraitNumbersPages,
+  frameworkPortraitServedCards,
   frameworkPortraitServedCount,
   frameworkPortraitPillList,
   frameworkPortraitPlan,
@@ -63,6 +66,7 @@ import {
   frameworkPortraitTaglineSize,
   frameworkPortraitTitle,
   frameworkPortraitTitlesAtOneSize,
+  mktgPortraitCoverStrip,
   mktgPortraitDocumentName,
   mktgNoWidow,
   mktgPortraitFitBlock,
@@ -71,6 +75,7 @@ import {
   mktgPortraitOpensChapter,
   mktgPortraitPageNumber,
   mktgPortraitParaHeight,
+  mktgPortraitPlatePadding,
   mktgPortraitSectionLabel,
   mktgPrintJoin,
 } from '@lfx-one/shared/utils';
@@ -79,6 +84,7 @@ import { distinctUntilChanged, filter } from 'rxjs';
 
 import { MKTG_PORTRAIT_BLOCK_HOST } from '../components/mktg-portrait/mktg-portrait-host';
 import { MktgPortraitPageComponent } from '../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
+import { MktgPortraitPlateDirective } from '../components/mktg-portrait/mktg-portrait-plate.directive';
 import { MktgPortraitRectDirective } from '../components/mktg-portrait/mktg-portrait-rect.directive';
 
 const TYPE = FRAMEWORK_PORTRAIT_TYPE;
@@ -134,7 +140,7 @@ const ROOM = FRAMEWORK_PORTRAIT_ROOM;
 // component stylesheet: the host rule above is the component's whole style).
 @Component({
   selector: 'lfx-mktg-framework-print',
-  imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
+  imports: [MktgPortraitPageComponent, MktgPortraitRectDirective, MktgPortraitPlateDirective],
   templateUrl: './mktg-framework-print.component.html',
   styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
@@ -195,19 +201,45 @@ export class MktgFrameworkPrintComponent {
         firstPage: 1,
       }
   );
-  /** The one middle-dot separator the template joins a line's parts with (MKTG_PRINT_DOT). */
-  protected readonly dot = MKTG_PRINT_DOT;
+  /** The framework book's middle dot the template joins a line's parts with (FRAMEWORK_PORTRAIT_SEP). */
+  protected readonly dot = FRAMEWORK_PORTRAIT_SEP;
+  /** The dash between an objection and its response, bound to the question by a no-break space (MKTG_PRINT_OBJECTION_DASH). */
+  protected readonly objectionDash = MKTG_PRINT_OBJECTION_DASH;
   /** The frames, in the plan's order, each with its book page number, printed section label, band and laid-out data. */
   protected readonly frames = this.initFrames();
   /** The cover's edition line: `V1.0 · Approved 6 Nov 2026 · figures as of 4 Nov 2026`, less any clause the revision lacks. */
   protected readonly coverVersionLine = computed(() => {
     const view = this.view();
-    return mktgPrintJoin([view.versionLabel, view.approvedLabel, view.dateReadLabel ? `figures as of ${view.dateReadLabel}` : '']);
+    return mktgPrintJoin([view.versionLabel, view.approvedLabel, view.dateReadLabel ? `figures as of ${view.dateReadLabel}` : ''], FRAMEWORK_PORTRAIT_SEP);
   });
-  /** The cover's bottom strip, right: `aaif.io · V1.0 · 6 Nov 2026`, less any part the revision lacks. */
-  protected readonly coverStripRight = computed(() => mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel]));
+  /**
+   * The cover's strip by the grammar's rule (`mktgPortraitCoverStrip`, the kit cover's): the two halves on one line of the
+   * content column; a long project name or host loses its segments after the name, then words with an ellipsis, before the
+   * strip wraps, and then it wraps moved up a line so it ends where the one line did (`MKTG_PORTRAIT_COVER_STRIP`). The
+   * left half is the book's foot line (`project · a Linux Foundation project`), whose segments the rule reads by the
+   * grammar's own dot; the framework prints the segments it keeps with its separator (S-b), as it prints the right half
+   * (`aaif.io · V1.0 · 6 Nov 2026`, less any part the revision lacks).
+   */
+  protected readonly coverStrip = computed(() => {
+    const right = mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel], FRAMEWORK_PORTRAIT_SEP);
+    const strip = mktgPortraitCoverStrip(this.resolvedBook().footLeft, right, MKTG_PORTRAIT_PAGE.contentWidth, this.resolvedLook().fontStack);
+    const left = mktgPrintJoin(strip.left.split(MKTG_PORTRAIT_COVER_STRIP.separator), FRAMEWORK_PORTRAIT_SEP);
+    return { ...strip, left, top: this.tops.coverStrip - (strip.wraps ? MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight : 0) };
+  });
   /** The cover's umbrella, fitted to the dark band's room under the lockup and the tagline. */
   protected readonly coverUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.coverUmbrella, ROOM.coverUmbrellaWidth, ROOM.coverUmbrellaRoom));
+  /**
+   * The cover's lockup on the dark band: the kit grammar's artwork (supplied reversed, else the one-ink primary filtered to
+   * white, else the full-colour primary on the white plate, `MktgPrintLogo.plate`). The plate is the grammar's `lfxPpPlate`
+   * directive, given its outer height (the lockup in its padding, half the drawn height, above and below); the block starts
+   * that padding higher so the artwork keeps its place (the kit cover's rule).
+   */
+  protected readonly coverLogo = computed(() => {
+    const logo = this.view().brand.logoOnDark;
+    if (!logo) return null;
+    const padding = logo.plate ? mktgPortraitPlatePadding(ROOM.coverLogoHeight) : 0;
+    return { ...logo, plateHeight: logo.plate ? ROOM.coverLogoHeight + 2 * padding : null, top: ROOM.coverLogoTop - padding };
+  });
   /** The message house's umbrella bar, fitted to three lines. */
   protected readonly houseUmbrella = computed(() =>
     this.fit(this.view().mh.umbrella, TYPE.houseUmbrella, this.page.contentWidth - ROOM.houseUmbrellaPaddingAcross, ROOM.houseUmbrellaRoom)
@@ -363,27 +395,8 @@ export class MktgFrameworkPrintComponent {
           )
         : null,
       served: {
-        rows: served.map((icp) => {
-          // The name and the two lines fitted to the card together, so a long name is measured with them.
-          const lines = mktgPortraitFitBlock(
-            {
-              paras: [
-                this.para(icp.name, TYPE.servedName),
-                this.para(`Needs ${icp.need}`, TYPE.servedLine),
-                this.para(`Ask them to ${icp.cta}`, TYPE.servedLine),
-              ],
-            },
-            cardWidth,
-            cardRoom
-          );
-          const [name, need, cta] = lines.block.paras;
-          return {
-            id: icp.id,
-            name: { text: name.text, size: name.size },
-            need: { text: need.text.replace(/^Needs /, ''), size: need.size },
-            cta: { text: cta.text.replace(/^Ask them to /, ''), size: cta.size },
-          };
-        }),
+        // The cards at one size across the row (the editor's S-a): each fitted with its name, then every one set at the smallest scale any needed.
+        rows: frameworkPortraitServedCards(served, cardWidth, cardRoom),
         cut: servedCut,
         tight: false,
         note: servedCut > 0 ? foundationMessagePrintCutNote(servedCut) : '',
@@ -405,7 +418,7 @@ export class MktgFrameworkPrintComponent {
       index,
       intro:
         index === 1
-          ? `${total} ${total === 1 ? 'profile' : 'profiles'}. Each names who they are, what they need, what ${project} gives them, the lead message, the call to action, the objection to expect and where to reach them. Goal numbers refer to the goal pages.`
+          ? `${total} ${total === 1 ? 'profile. It names' : 'profiles. Each names'} who they are, what they need, what ${project} gives them, the lead message, the call to action, the objection to expect and where to reach them. Goal numbers refer to the goal pages.`
           : foundationMessagePrintIcpPageIntro(start + 1, rows.icps.length, total),
       rowsTop,
       icps: rows.icps,
@@ -449,7 +462,7 @@ export class MktgFrameworkPrintComponent {
     const gapsClause = view.approvedLabel && (report?.gaps.length ?? 0) > 0 ? 'The gaps above were open at approval. ' : '';
     return {
       report: lists,
-      approvalLead: lead.length ? `${mktgPrintJoin(lead)}.` : '',
+      approvalLead: lead.length ? `${mktgPrintJoin(lead, FRAMEWORK_PORTRAIT_SEP)}.` : '',
       approvalNote: `${gapsClause}A later run re-reads the sources and refreshes the LFX figures.`,
     };
   }

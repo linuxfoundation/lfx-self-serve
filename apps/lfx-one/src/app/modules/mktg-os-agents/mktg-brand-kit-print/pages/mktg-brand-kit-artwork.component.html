@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (image(); as image) {
-  <span [lfxPpPlate]="image.plate ? height() : null">
+  <span [lfxPpPlate]="fit().plate">
     <img
       class="block w-auto"
       [style.height.px]="fit().height"

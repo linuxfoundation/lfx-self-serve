@@ -10,6 +10,7 @@ import { MKTG_FAMILY_EXPORT_KINDS } from '../constants/mktg-family-export.consta
 import {
   MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COPY,
+  MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS,
   MKTG_FAMILY_PRINT_HEAD_CAPS,
@@ -27,6 +28,7 @@ import {
 import { MKTG_KIT_FAMILIES } from '../constants/mktg-kit.constants';
 import {
   MKTG_PORTRAIT_CAPS_TRACKING_EM,
+  MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_FIT,
   MKTG_PORTRAIT_GLYPH_WIDTHS,
   MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
@@ -38,6 +40,7 @@ import type { FoundationMessageNumberRow } from '../interfaces/foundation-messag
 import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.interface';
 import type { MktgFamilyExportAgentKey } from '../interfaces/mktg-family-export.interface';
 import type {
+  MktgFamilyPrintCapsMeasure,
   MktgFamilyPrintChapter,
   MktgFamilyPrintConflict,
   MktgFamilyPrintContentsBlock,
@@ -56,10 +59,16 @@ import type {
   MktgFamilyPrintSourcesLayout,
   MktgFamilyPrintFittedText,
 } from '../interfaces/mktg-family-print.interface';
-import type { MktgPortraitFitPara } from '../interfaces/mktg-portrait-print.interface';
+import type { MktgPortraitCoverStrip, MktgPortraitFitPara } from '../interfaces/mktg-portrait-print.interface';
 import type { MktgPrintBrand } from '../interfaces/mktg-print.interface';
 import { brandKitPortraitArtwork } from './brand-kit-portrait.utils';
-import { mktgPortraitLineFits, mktgPortraitPageNumber, mktgPortraitParaHeight, mktgPortraitTextWidth } from './mktg-portrait-print.utils';
+import {
+  mktgPortraitCoverStrip,
+  mktgPortraitLineFits,
+  mktgPortraitPageNumber,
+  mktgPortraitParaHeight,
+  mktgPortraitTextWidth,
+} from './mktg-portrait-print.utils';
 
 /** One version format across the book, the kit cover's: `V4.0`; '' when the revision carries no number. */
 export function mktgFamilyPrintVersionLabel(version: number | null | undefined): string {
@@ -259,25 +268,35 @@ export function mktgFamilyPrintBrand(brand: MktgPrintBrand, book: BrandKitBookVi
 }
 
 /**
- * The width one running-head label takes at the label's size, in capitals
- * with their tracking, in the book's face: glyph by glyph from the grammar's
- * sans table, widened by the face's CAPITALS factor and the label's semibold
- * (MKTG_FAMILY_PRINT_HEAD_CAPS) when the face is measured there; else by the
- * grammar's own measure (mktgPortraitTextWidth), whose family factor is a
- * lowercase one and sets capitals wide. The head's own measure, so the kit's
- * and the framework's pages, fitted through the grammar's, do not move.
+ * The width one line of the family's capitals takes in the book's face, at
+ * the measure it is set in (the running head's by default: its size, its
+ * semibold and the grammar's capitals tracking): glyph by glyph from the
+ * grammar's sans table, widened by the face's CAPITALS factor and, above the
+ * regular weight, the semibold's (MKTG_FAMILY_PRINT_HEAD_CAPS) when the face
+ * is measured there; else by the grammar's own measure (mktgPortraitTextWidth),
+ * whose family factor is a lowercase one and sets capitals wide. The family's
+ * own measure, so the kit's and the framework's pages, fitted through the
+ * grammar's, do not move.
  */
-export function mktgFamilyPrintHeadLabelWidth(text: string, fontStack: string): number {
-  const { size, weight } = MKTG_FAMILY_PRINT_HEAD_MEASURE;
+export function mktgFamilyPrintCapsWidth(
+  text: string,
+  fontStack: string,
+  measure: MktgFamilyPrintCapsMeasure = {
+    size: MKTG_FAMILY_PRINT_HEAD_MEASURE.size,
+    weight: MKTG_FAMILY_PRINT_HEAD_MEASURE.weight,
+    tracking: MKTG_PORTRAIT_CAPS_TRACKING_EM,
+  }
+): number {
+  const { size, weight, tracking } = measure;
   const first = fontStack.split(',')[0].replace(/['"]/g, '').trim().toLowerCase();
   const caps = MKTG_FAMILY_PRINT_HEAD_CAPS.families[first];
   if (caps === undefined) {
-    return mktgPortraitTextWidth(text, size, { caps: true, weight, family: fontStack, tracking: MKTG_PORTRAIT_CAPS_TRACKING_EM });
+    return mktgPortraitTextWidth(text, size, { caps: true, weight, family: fontStack, tracking });
   }
   const shown = Array.from(text.toUpperCase());
   const glyphs = shown.reduce((sum, char) => sum + (MKTG_PORTRAIT_GLYPH_WIDTHS[char] ?? MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT), 0) / 1000;
-  const tracking = Math.max(0, shown.length - 1) * MKTG_PORTRAIT_CAPS_TRACKING_EM;
-  return (glyphs * caps * MKTG_FAMILY_PRINT_HEAD_CAPS.weight + tracking) * size;
+  const bold = weight > 400 ? MKTG_FAMILY_PRINT_HEAD_CAPS.weight : 1;
+  return (glyphs * caps * bold + Math.max(0, shown.length - 1) * tracking) * size;
 }
 
 /**
@@ -285,7 +304,7 @@ export function mktgFamilyPrintHeadLabelWidth(text: string, fontStack: string): 
  * label the book mounts on the left (its own pages' and the inner prints'),
  * the head's gap and the family's document name on the right, measured at
  * the label's size with its capitals and tracking in the brand's face
- * (mktgFamilyPrintHeadLabelWidth), do not fit the page's content width on
+ * (mktgFamilyPrintCapsWidth), do not fit the page's content width on
  * one line. Then the whole book sets both labels one step smaller (the
  * editor's rule: a size the measure asks for, never a count of characters),
  * and the ellipsis stays the last resort. A book with no section label
@@ -293,9 +312,28 @@ export function mktgFamilyPrintHeadLabelWidth(text: string, fontStack: string): 
  */
 export function mktgFamilyPrintHeadTight(sections: readonly string[], headRight: string, fontStack: string): boolean {
   const { gap } = MKTG_FAMILY_PRINT_HEAD_MEASURE;
-  const left = sections.reduce((widest, section) => Math.max(widest, mktgFamilyPrintHeadLabelWidth(section, fontStack)), 0);
+  const left = sections.reduce((widest, section) => Math.max(widest, mktgFamilyPrintCapsWidth(section, fontStack)), 0);
   const room = MKTG_PORTRAIT_PAGE.contentWidth - (left > 0 ? left + gap : 0);
-  return mktgFamilyPrintHeadLabelWidth(headRight, fontStack) > room + 0.01;
+  return mktgFamilyPrintCapsWidth(headRight, fontStack) > room + 0.01;
+}
+
+/**
+ * The family cover's strip: its halves as written when the family's measure
+ * of the face's capitals (mktgFamilyPrintCapsWidth at the strip's size and
+ * tracking, regular weight) fits them on one line with the strip's gap; else
+ * the grammar's own fit (mktgPortraitCoverStrip: the left half's segments
+ * after the name dropped, then words cut, then the wrap), unchanged. The
+ * grammar reads a face by its lowercase factor and so called the e2e
+ * fixture's strip full in Montserrat (675 px by it, 630 by the capitals, in
+ * 672) and dropped "a Linux Foundation project" where it fits (M10b). A face
+ * the family has not measured reads the grammar's measure and gets the
+ * grammar's answer. The kit's cover keeps the util as it is.
+ */
+export function mktgFamilyPrintCoverStrip(left: string, right: string, width: number, fontStack: string): MktgPortraitCoverStrip {
+  const measure = MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE;
+  const fits =
+    mktgFamilyPrintCapsWidth(left, fontStack, measure) + MKTG_PORTRAIT_COVER_STRIP.gap + mktgFamilyPrintCapsWidth(right, fontStack, measure) <= width + 0.01;
+  return fits ? { left, right, wraps: false } : mktgPortraitCoverStrip(left, right, width, fontStack);
 }
 
 /**

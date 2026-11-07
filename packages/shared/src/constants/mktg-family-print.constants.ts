@@ -6,6 +6,8 @@
 // its tokens and inks are the portrait grammar's (mktg-portrait-print.constants.ts).
 
 import { lfxColors } from './colors.constants';
+import { MKTG_PORTRAIT_COVER_STRIP } from './mktg-portrait-print.constants';
+import type { MktgFamilyPrintCapsMeasure } from '../interfaces/mktg-family-print.interface';
 import type { MktgPortraitDocumentKind } from '../interfaces/mktg-portrait-print.interface';
 
 /** The one ink the portrait grammar's tokens have not got: a boilerplate over its limit. */
@@ -52,13 +54,25 @@ export const MKTG_FAMILY_PRINT_HEAD_MEASURE = { size: 10, weight: 600, gap: 24 }
  * capitals 1.5 %, 0.9 % and 0.6 %. Each value sits a little above the face,
  * so the measure stays on the wide side and a head it calls fit really fits.
  * A face not here is measured by the grammar's own measure, the wider one.
- * The family's head only: the kit's and the framework's lines keep the
- * grammar's measure, which their pages are fitted through.
+ * The family's own capitals only, the running head and the cover strip: the
+ * kit's and the framework's lines keep the grammar's measure, which their
+ * pages are fitted through.
  */
 export const MKTG_FAMILY_PRINT_HEAD_CAPS = {
   families: { montserrat: 1.05, inter: 1.01, 'instrument sans': 1.01 } as Readonly<Record<string, number>>,
   weight: 1.02,
 } as const;
+
+/**
+ * The cover strip's capitals as the family measures them for the strip's fit
+ * (mktgFamilyPrintCoverStrip): the grammar's strip size and tracking at the
+ * regular weight, as `.pp-cover-strip` sets it (M10b).
+ */
+export const MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE: MktgFamilyPrintCapsMeasure = {
+  size: MKTG_PORTRAIT_COVER_STRIP.size,
+  weight: 400,
+  tracking: MKTG_PORTRAIT_COVER_STRIP.tracking,
+};
 
 /** The cover lockup's drawn height in px (`.fpc-logo` in the family print's styles, which cannot read this): the plate's measure when the kit's lockup needs one. */
 export const MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT = 84;

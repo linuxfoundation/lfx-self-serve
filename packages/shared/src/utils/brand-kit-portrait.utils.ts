@@ -10,6 +10,7 @@ import {
   BRAND_KIT_PORTRAIT_ATTRIBUTES,
   BRAND_KIT_PORTRAIT_BACK_COVER_LINE,
   BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED,
+  BRAND_KIT_PORTRAIT_WIDE_SYMBOL_ASPECT,
   BRAND_KIT_PORTRAIT_CONTENTS,
   BRAND_KIT_PORTRAIT_CONTRAST,
   BRAND_KIT_PORTRAIT_GRADE_INKS,
@@ -63,7 +64,7 @@ import type {
 } from '../interfaces/brand-kit-portrait.interface';
 import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.interface';
 import type { MktgPrintLogo } from '../interfaces/mktg-print.interface';
-import type { MktgPortraitFitBlock, MktgPortraitFitPara } from '../interfaces/mktg-portrait-print.interface';
+import type { MktgPortraitFitPara } from '../interfaces/mktg-portrait-print.interface';
 import {
   brandKitBestInkOn,
   brandKitContrastGradeOf,
@@ -121,11 +122,14 @@ export function brandKitPortraitArtwork(
   const alt = { lockup: 'Horizontal lockup', symbol: 'Symbol', stacked: 'Stacked lockup' }[kind];
   const derivable = kind === 'symbol' ? view.derivable.symbol : view.derivable.lockup;
   const filter = derivable ? ARTWORK_FILTERS[mode] : '';
-  if (kind === 'lockup' && mode === 'reversed' && view.logos.reversed?.src) return { src: view.logos.reversed.src, alt: 'Reversed lockup', filter: '' };
+  if (kind === 'lockup' && mode === 'reversed' && view.logos.reversed?.src) {
+    return { src: view.logos.reversed.src, alt: 'Reversed lockup', filter: '', aspect: view.logos.reversed.aspect ?? null };
+  }
   const images: Record<typeof kind, BrandKitLogoImage | null> = { lockup: view.logos.primary, symbol: view.symbol, stacked: view.logos.stacked };
   const image = images[kind];
   if (!image?.src) return null;
-  return mode === 'reversed' && !derivable ? { src: image.src, alt, filter, plate: true } : { src: image.src, alt, filter };
+  const aspect = image.aspect ?? null;
+  return mode === 'reversed' && !derivable ? { src: image.src, alt, filter, plate: true, aspect } : { src: image.src, alt, filter, aspect };
 }
 
 /** A file's format from its reference: `SVG`, `PNG`, …, or `File`. */
@@ -185,6 +189,16 @@ function formatOf(image: BrandKitLogoImage | null): string {
  */
 export function brandKitPortraitPlate(view: BrandKitBookView): boolean {
   return !!view.logos.primary?.src && !view.logos.reversed?.src && !view.derivable.lockup;
+}
+
+/**
+ * Whether the kit's symbol is a wide one (its viewBox's aspect over
+ * `BRAND_KIT_PORTRAIT_WIDE_SYMBOL_ASPECT`): the Symbol page then shows it in
+ * rounded squares only and says so. An unknown aspect reads as square-ish.
+ */
+export function brandKitPortraitSymbolIsWide(view: BrandKitBookView): boolean {
+  const aspect = view.symbol?.aspect ?? null;
+  return aspect !== null && aspect > BRAND_KIT_PORTRAIT_WIDE_SYMBOL_ASPECT;
 }
 
 /** A slot's source column: `Supplied` with a file, else the line the book says in its place. */
@@ -784,24 +798,31 @@ export function brandKitPortraitVoiceMessagesFit(view: Pick<BrandKitBookView, 'v
  * when no step holds it, and when even that runs past the room, its last
  * rules given up to a `+N more rules, in LFX One` line (the room's noun,
  * singular at one), one at a time, the first rule always kept. Items fill the columns in turn (a two-column grid's
- * order); the room is the taller column's.
+ * order), and the room is measured as the page draws it: a CSS grid whose rows align, each row as tall as its
+ * taller rule, the grid the sum of its rows, and the `+N more` line a row of its own under the grid. A one-column
+ * room is the plain sum of its items, as before.
  */
 export function brandKitPortraitRulesFit(rules: readonly string[], room: BrandKitPortraitRuleListRoom): BrandKitPortraitRulesFit {
   const c = BRAND_KIT_PORTRAIT_RULE_LISTS;
   const height = room.bottom - room.top - mktgPortraitParaHeight({ text: 'Rules', ...c.label }, room.width);
   const kept = [...rules];
   let more = 0;
-  // The columns as the grid fills them (items in turn), the `+N more` line under the last item's column.
-  const columns = (): MktgPortraitFitBlock[] =>
-    Array.from({ length: room.columns }, (_, column) => ({
-      paras: [
-        ...kept
-          .filter((_, index) => index % room.columns === column)
-          .map((text, index) => ({ text, size: room.size, line: room.line, above: index === 0 ? room.listAbove : room.above })),
-        ...(more > 0 && column === (kept.length - 1) % room.columns ? [{ text: mktgPortraitMoreLine(more, room.noun), ...c.more }] : []),
-      ],
-    }));
-  const fitsAt = (scale: number): boolean => columns().every((block) => mktgPortraitFits(mktgPortraitScaleBlock(block, scale), room.width, height));
+  // The grid as drawn: row r holds items r·columns … r·columns+columns−1 (the first row under the label's `listAbove`,
+  // later rows under the grid's `above`), and is as tall as its tallest item; the `+N more` line sits under the grid.
+  const rowsAt = (scale: number): number => {
+    const items = mktgPortraitScaleBlock(
+      { paras: kept.map((text, index) => ({ text, size: room.size, line: room.line, above: index < room.columns ? room.listAbove : room.above })) },
+      scale
+    ).paras;
+    let total = 0;
+    for (let start = 0; start < items.length; start += room.columns) {
+      total += Math.max(...items.slice(start, start + room.columns).map((para) => mktgPortraitParaHeight(para, room.width)));
+    }
+    if (more > 0)
+      total += mktgPortraitBlockHeight(mktgPortraitScaleBlock({ paras: [{ text: mktgPortraitMoreLine(more, room.noun), ...c.more }] }, scale), room.width);
+    return total;
+  };
+  const fitsAt = (scale: number): boolean => rowsAt(scale) <= height + 0.01;
   // 1. Set smaller, in the grammar's steps, down to its smallest size.
   for (let step = 0; ; step += 1) {
     const scale = Math.round((1 - step * MKTG_PORTRAIT_FIT.scaleStep) * 100) / 100;

@@ -20,6 +20,7 @@ import {
   brandKitPortraitAccentMoment,
   brandKitPortraitApprovalLine,
   brandKitPortraitArtwork,
+  brandKitPortraitSymbolIsWide,
   brandKitPortraitBackCoverLine,
   brandKitPortraitBuiltFrom,
   brandKitPortraitContrast,
@@ -60,6 +61,7 @@ import {
   mktgPortraitBlockHeight,
   mktgPortraitCharsPerLine,
   mktgPortraitLineFits,
+  mktgPortraitParaHeight,
   mktgPortraitScaleBlock,
   mktgPortraitWrapLines,
 } from './mktg-portrait-print.utils';
@@ -69,13 +71,21 @@ const view = buildBrandKitBookView(brandKitTestRevision(), 4);
 
 describe('brandKitPortraitArtwork', () => {
   it('draws the primary lockup as it is, and derives the reversed and one-colour marks by filter only from one-colour artwork', () => {
-    expect(brandKitPortraitArtwork(view, 'lockup')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '' });
+    // The fixture lockup's viewBox is 120 × 36: its aspect rides along for the plate's fit inside a shape.
+    const aspect = 120 / 36;
+    expect(brandKitPortraitArtwork(view, 'lockup')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '', aspect });
     // The fixture's lockup is drawn in three colours: a filter would flatten it to one shape, so the dark grounds draw
     // it in full colour and the one-colour slot keeps it as it is.
     expect(view.derivable).toEqual({ lockup: false, symbol: false });
     // Reversed, it sits on the white plate (the kit's watch-out forbids full colour bare on a dark ground); one-colour, as it is.
-    expect(brandKitPortraitArtwork(view, 'lockup', 'reversed')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '', plate: true });
-    expect(brandKitPortraitArtwork(view, 'lockup', 'mono')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '' });
+    expect(brandKitPortraitArtwork(view, 'lockup', 'reversed')).toEqual({
+      src: view.logos.primary?.src,
+      alt: 'Horizontal lockup',
+      filter: '',
+      plate: true,
+      aspect,
+    });
+    expect(brandKitPortraitArtwork(view, 'lockup', 'mono')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '', aspect });
     expect(brandKitPortraitPlate(view)).toBe(true);
     // A supplied reversed file or a one-ink lockup needs no plate.
     expect(brandKitPortraitPlate({ ...view, logos: { ...view.logos, reversed: { ref: 'r.svg', name: 'r.svg', src: SVG } } })).toBe(false);
@@ -86,13 +96,22 @@ describe('brandKitPortraitArtwork', () => {
       src: view.logos.primary?.src,
       alt: 'Horizontal lockup',
       filter: 'brightness(0) invert(1)',
+      aspect,
     });
     expect(brandKitPortraitArtwork(mono, 'lockup', 'mono')?.filter).toBe('brightness(0)');
   });
 
   it('prefers the supplied reversed file as it is, and draws nothing for a slot the kit lacks', () => {
     const withReversed = { ...view, logos: { ...view.logos, reversed: { ref: 'r.svg', name: 'r.svg', src: SVG } } };
-    expect(brandKitPortraitArtwork(withReversed, 'lockup', 'reversed')).toEqual({ src: SVG, alt: 'Reversed lockup', filter: '' });
+    // A wide symbol (aspect over 1.5) is shown in rounded squares only; square-ish or unknown aspects are not wide.
+    const symbolOf = (aspect: number | null): typeof view => ({ ...view, symbol: { ref: 's.svg', name: 's.svg', src: SVG, aspect } });
+    expect(brandKitPortraitSymbolIsWide(symbolOf(120 / 36))).toBe(true);
+    expect(brandKitPortraitSymbolIsWide(symbolOf(1.5))).toBe(false);
+    expect(brandKitPortraitSymbolIsWide(symbolOf(1.2))).toBe(false);
+    expect(brandKitPortraitSymbolIsWide(symbolOf(null))).toBe(false);
+    expect(brandKitPortraitSymbolIsWide({ ...view, symbol: null })).toBe(false);
+    // A synthetic image without a viewBox reads as aspect null (the plate then fits by height alone).
+    expect(brandKitPortraitArtwork(withReversed, 'lockup', 'reversed')).toEqual({ src: SVG, alt: 'Reversed lockup', filter: '', aspect: null });
     expect(brandKitPortraitArtwork(view, 'symbol')).toBeNull();
     expect(brandKitPortraitArtwork(view, 'stacked')).toBeNull();
     expect(brandKitPortraitArtwork({ ...view, logos: { ...view.logos, primary: null } }, 'lockup', 'reversed')).toBeNull();
@@ -103,10 +122,10 @@ describe('brandKitPortraitArtwork', () => {
   it('filters the symbol by its own slot: a one-ink symbol beside a multi-colour lockup reverses, and the other way round never', () => {
     const symbol = { ref: 'logo.svg', name: 'logo.svg', src: SVG };
     const symbolOnly = { ...view, derivable: { lockup: false, symbol: true }, symbol };
-    expect(brandKitPortraitArtwork(symbolOnly, 'symbol', 'reversed')).toEqual({ src: SVG, alt: 'Symbol', filter: 'brightness(0) invert(1)' });
+    expect(brandKitPortraitArtwork(symbolOnly, 'symbol', 'reversed')).toEqual({ src: SVG, alt: 'Symbol', filter: 'brightness(0) invert(1)', aspect: null });
     expect(brandKitPortraitArtwork(symbolOnly, 'lockup', 'reversed')?.filter).toBe('');
     const lockupOnly = { ...view, derivable: { lockup: true, symbol: false }, symbol };
-    expect(brandKitPortraitArtwork(lockupOnly, 'symbol', 'reversed')).toEqual({ src: SVG, alt: 'Symbol', filter: '', plate: true });
+    expect(brandKitPortraitArtwork(lockupOnly, 'symbol', 'reversed')).toEqual({ src: SVG, alt: 'Symbol', filter: '', plate: true, aspect: null });
     expect(brandKitPortraitArtwork(lockupOnly, 'symbol', 'mono')?.filter).toBe('');
     expect(brandKitPortraitArtwork(lockupOnly, 'lockup', 'mono')?.filter).toBe('brightness(0)');
   });
@@ -546,6 +565,30 @@ describe('the chapters’ rule lists', () => {
     expect(
       brandKitPortraitRulesFit(['One rule that is far too long for its room '.repeat(40)], { ...r.imageryAvoid, bottom: r.imageryAvoid.top + 30 }).rules
     ).toHaveLength(1);
+  });
+
+  it('measures a two-column list row by row, as the grid draws it: a row is as tall as its taller rule', () => {
+    // Four rules in the Partnership room, short and long alternating so each COLUMN is one short and one long rule
+    // (which the room holds), while each ROW is as tall as its long rule (which it does not): the fitter steps down.
+    const room = BRAND_KIT_PORTRAIT_RULE_LISTS.partnership;
+    const para = (text: string, above: number) => mktgPortraitParaHeight({ text, size: room.size, line: room.line, above }, room.width);
+    const height = room.bottom - room.top - mktgPortraitParaHeight({ text: 'Rules', ...BRAND_KIT_PORTRAIT_RULE_LISTS.label }, room.width);
+    const short = 'Keep the clear space.';
+    let long = 'Never redraw the partner mark.';
+    // Grow the long rule until two of them, with the grid's gaps, outrun the room while a short and a long one do not.
+    while (room.listAbove + para(long, 0) + para(long, room.above) <= height) long += ' Never redraw the partner mark.';
+    expect(room.listAbove + para(short, 0) + para(long, room.above)).toBeLessThanOrEqual(height);
+    const fit = brandKitPortraitRulesFit([short, long, long, short], room);
+    expect(fit.scale).toBeLessThan(1);
+    expect(fit.rules).toHaveLength(4);
+    // Two columns of equal rows, and a one-column room, measure as the plain sum: unchanged.
+    expect(brandKitPortraitRulesFit([short, short, short, short], room)).toMatchObject({ scale: 1, cut: false, more: 0 });
+    expect(
+      brandKitPortraitRulesFit([long, short], { ...room, columns: 1, bottom: room.top + room.listAbove + para(long, 0) + para(short, room.above) + 12 })
+    ).toMatchObject({
+      scale: 1,
+      cut: false,
+    });
   });
 });
 

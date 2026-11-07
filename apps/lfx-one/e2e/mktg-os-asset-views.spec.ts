@@ -5,6 +5,11 @@ import { expect, test } from '@playwright/test';
 import {
   BRAND_KIT_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES,
+  FRAMEWORK_PORTRAIT_ROOM,
+  FRAMEWORK_PORTRAIT_SEP,
+  FRAMEWORK_PORTRAIT_TOPS,
+  FRAMEWORK_PORTRAIT_TYPE,
   MKTG_PORTRAIT_FIT,
   MKTG_PORTRAIT_PAGE,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
@@ -13,6 +18,7 @@ import {
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
   MKTG_SLIDES_EXPORT_API_PATH,
 } from '@lfx-one/shared/constants';
+import type { FoundationMessageContent } from '@lfx-one/shared/interfaces';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import {
   expectMktgPortraitPageSetup,
@@ -26,8 +32,9 @@ import {
 } from './helpers/mktg-print.helper';
 
 import { brandKitLogolessFixture, brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
-import { mktgPortraitAccentOnDark, mktgPortraitAccentText } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
+import { mktgPortraitAccentOnDark, mktgPortraitAccentText, mktgPortraitPlatePadding } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
 import {
+  ASSET_PROJECT,
   columnAssetRevisionResponse,
   cssRgb,
   nativeAssetRevisionResponse,
@@ -345,7 +352,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
       await expect(frame.getByTestId('mktg-framework-print-umbrella')).toHaveText('Open collaboration.');
       await expect(frame.getByTestId('mktg-framework-print-title')).toHaveText('Messaging Framework');
-      await expect(frame.getByTestId('mktg-framework-print-version')).toHaveText('V1.0 · Approved 19 Oct 2026');
+      await expect(frame.getByTestId('mktg-framework-print-version')).toHaveText(`V1.0${FRAMEWORK_PORTRAIT_SEP}Approved 19 Oct 2026`);
       // The editor's gap under the cover title: 16–24 px, set at 18 (the framework pages' global partial).
       await expect(frame.getByTestId('mktg-framework-print-version')).toHaveCSS('margin-top', '18px');
       await expect(frame.getByTestId('mktg-framework-print-contents-row')).toHaveCount(7);
@@ -360,8 +367,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.getByTestId('mktg-portrait-page-doc').first()).toContainText('messaging framework');
       await expect(print.getByTestId('mktg-portrait-page-title')).toHaveText([
         'Framework',
-        'Goal 1 · Adoption',
-        'Say and avoid · anchor questions',
+        `Goal 1${FRAMEWORK_PORTRAIT_SEP}Adoption`,
+        `Say and avoid${FRAMEWORK_PORTRAIT_SEP}anchor questions`,
         'Ideal customer profiles',
         'Message house',
         'Key numbers',
@@ -420,7 +427,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveText('No source failed.');
       await expect(print.getByTestId('mktg-framework-print-gaps-empty')).toHaveText('The sources left no gap.');
       await expect(print.getByTestId('mktg-framework-print-approval')).toHaveText(
-        'V1.0 · Approved 19 Oct 2026. A later run re-reads the sources and refreshes the LFX figures.'
+        `V1.0${FRAMEWORK_PORTRAIT_SEP}Approved 19 Oct 2026. A later run re-reads the sources and refreshes the LFX figures.`
       );
       await expect(print.getByTestId('mktg-framework-print-notes')).toHaveCount(0);
       await expect(pages.last()).not.toContainText('Notes');
@@ -595,7 +602,7 @@ test('the framework print lists every figure past six as a table, continued on a
     })
   );
   expect(goalTitles.map((title) => title.underLead)).toEqual([true, true, true, true]);
-  expect(goalTitles[3].text).toBe('Goal 4 · Events where the roadmap is decided in the open');
+  expect(goalTitles[3].text).toBe(`Goal 4${FRAMEWORK_PORTRAIT_SEP}Events where the roadmap is decided in the open`);
   const sayAvoid = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="say-avoid"]');
   const order = await sayAvoid.evaluate((frame) => {
     const bottom = (selector: string): number => frame.querySelector(selector)?.getBoundingClientRect().bottom ?? Number.NaN;
@@ -663,7 +670,7 @@ test('Download PDF waits for the project’s Brand Kit: disabled with the reason
   const kit = brandKitTestRevision();
   let release: () => void = () => undefined;
   const hold = new Promise<void>((resolve) => (release = resolve));
-  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), kit, { hold });
+  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), ASSET_PROJECT, kit, { hold });
   const download = page.getByTestId('mktg-framework-view-download-pdf');
   // While the read is open: the button is disabled, its wrapper says why, and no print root (no LF-default book) is on the page.
   await expect(download.getByRole('button')).toBeDisabled();
@@ -683,15 +690,51 @@ test('Download PDF waits for the project’s Brand Kit: disabled with the reason
     await expect(logo).not.toHaveAttribute('src', /logo_lf_white\.svg/);
     const cover = frame.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="cover"]');
     await expect(cover.getByTestId('mktg-framework-print-cover')).toHaveCSS('background-color', cssRgb(kit.kit.dark));
+    // The fixture's three-colour lockup, with no reversed file, sits on the grammar's white plate, padded by half its 40 px
+    // height (the kit cover's precedence, editor W3); the band shows it in full colour, never flattened.
+    const plate = cover.getByTestId('mktg-portrait-plate');
+    await expect(plate).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await expect(plate).toHaveCSS('padding-top', `${mktgPortraitPlatePadding(FRAMEWORK_PORTRAIT_ROOM.coverLogoHeight)}px`);
+    await expect(plate.getByTestId('mktg-framework-print-cover-logo')).toHaveCSS('filter', 'none');
     if (press === 3) await page.screenshot({ path: info.outputPath('framework-pdf-kit-cover-third-download.png') });
     await finishMktgPrintFrame(page);
   }
 });
 
+test('the cover strip keeps one line under a long project name with the kit’s host: the Linux Foundation segment goes first, nothing wraps (order 41)', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  // The overfull record under the editor's long name, with the kit's host in the strip's right half: at 33584d0ea both halves
+  // wrapped to two lines. The strip is now the grammar's rule (`mktgPortraitCoverStrip`): the left half gives up
+  // "· a Linux Foundation project" and both halves share the one line; only one word each still too long would wrap it.
+  const kit = brandKitTestRevision();
+  const project = { ...ASSET_PROJECT, name: 'Cloud Native Computing Foundation (CNCF)' };
+  await openAssetDocument(page, 'foundation-message', 200, true, false, overfullFrameworkRevisionResponse(), project, kit);
+  await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+  await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+  const frame = await layoutMktgPrintFrame(page);
+  const strip = frame.getByTestId('mktg-framework-print-cover-strip');
+  await expect(strip.locator('span')).toHaveText([project.name, new RegExp(`^one\\.example\\.org${FRAMEWORK_PORTRAIT_SEP}V\\d+\\.0${FRAMEWORK_PORTRAIT_SEP}`)]);
+  await expect(strip).not.toHaveClass(/pp-cover-strip--wrapped/);
+  const lines = await strip.evaluate((block) => {
+    const line = parseFloat(getComputedStyle(block).fontSize);
+    return Array.from(block.querySelectorAll('span')).map((span) => Math.round(span.getBoundingClientRect().height / line));
+  });
+  expect(lines).toEqual([1, 1]);
+  await expect(strip).toHaveCSS('top', `${FRAMEWORK_PORTRAIT_TOPS.coverStrip}px`);
+  await page.screenshot({ path: info.outputPath('framework-pdf-cover-strip-long-name.png') });
+  await page.emulateMedia({ media: 'screen' });
+  await finishMktgPrintFrame(page);
+});
+
 test('a failed Brand Kit read never prints the LF look: Download PDF stays disabled and says so, with no print root on the page', async ({ page }, info) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await stubMktgPrintFrame(page);
-  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), brandKitTestRevision(), { status: 500 });
+  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), ASSET_PROJECT, brandKitTestRevision(), {
+    status: 500,
+  });
   const download = page.getByTestId('mktg-framework-view-download-pdf');
   await expect(download.getByRole('button')).toBeDisabled();
   await expect(page.locator('span[aria-label]', { has: download })).toHaveAttribute('aria-label', MKTG_PRINT_KIT_READ_NOTES.failed);
@@ -710,7 +753,7 @@ test('the framework print set in the project’s kit: accent text darkened to re
   const kit = brandKitLogolessFixture();
   const accent = '#FF702D';
   kit.kit.accent = accent;
-  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), kit);
+  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), ASSET_PROJECT, kit);
   await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
   await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
   const frame = await layoutMktgPrintFrame(page);
@@ -777,8 +820,8 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   // bounds it: tightened past nine pairs (eighteen rows), the runs collapsed to ranges past twelve pairs (twenty-four); fifteen rows need neither).
   const contents = print.getByTestId('mktg-framework-print-contents');
   await expect(contents.getByTestId('mktg-framework-print-contents-row')).toHaveCount(15);
-  await expect(contents.getByTestId('mktg-framework-print-contents-row').nth(1)).toContainText('03 Goal 1 · Goal 1 title');
-  await expect(contents.getByTestId('mktg-framework-print-contents-row').nth(8)).toContainText('10 Goal 8 · Goal 8 title');
+  await expect(contents.getByTestId('mktg-framework-print-contents-row').nth(1)).toContainText(`03 Goal 1${FRAMEWORK_PORTRAIT_SEP}Goal 1 title`);
+  await expect(contents.getByTestId('mktg-framework-print-contents-row').nth(8)).toContainText(`10 Goal 8${FRAMEWORK_PORTRAIT_SEP}Goal 8 title`);
   const contentsFit = await contents.evaluate((list) => {
     const frame = list.closest('[data-testid="lfx-mktg-portrait-page"]') as HTMLElement;
     const strip = frame.querySelector('[data-testid="mktg-framework-print-cover-strip"]') as HTMLElement;
@@ -805,6 +848,9 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   await expect(matrix.getByTestId('mktg-framework-print-goals-band-0')).toHaveCount(1);
   await expect(matrix.getByTestId('mktg-framework-print-goals-band-1')).toHaveCount(0);
   expect(await matrix.evaluate(matrixTitleOverlaps)).toEqual({ overlapping: 0, overflowing: 0, titles: 8 });
+  // A strip prints every row (the band rules of editor W1 never touch it): the four labels, no row note.
+  await expect(matrix.getByTestId('mktg-framework-print-goals-label')).toHaveText(['Value proposition', 'Key message', 'Proof', 'Sound bite']);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-row-note')).toHaveCount(0);
   // The cells set smaller than their type (11 / 11 / 12.5 px), never under the fit model's floor: minScale of the type, in
   // half pixels (`mktgPortraitFitBlock`; at this record the value and key cells sit on the floor, 7.5 px).
   const floor = (size: number): number => Math.floor(size * MKTG_PORTRAIT_FIT.minScale * 2) / 2;
@@ -819,11 +865,11 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   const noteCount = await notes.count();
   expect(noteCount).toBeGreaterThan(0);
   for (const note of await notes.all()) await expect(note).toHaveText(/^\+[1-3] more in LFX One$/);
-  // Eight figures print as the table, each with its thousands separators (the editor's rule); the fixture's bare "2000" is in the year range
-  // and prints as stored.
+  // Eight figures print as the table, each with its thousands separators (the editor's rule); the fixture's bare "2000" is a count
+  // under a count's label, so it is separated too — the year rule holds only under a year label (editor S1).
   await expect(page.getByTestId('mktg-framework-print-numbers-table').getByTestId('mktg-framework-print-number-figure')).toHaveText([
     '1,000',
-    '2000',
+    '2,000',
     '3,000',
     '4,000',
     '5,000',
@@ -837,6 +883,30 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
 });
 
 /** In the matrix: head titles whose boxes overlap a neighbor's, or whose text overflows its own box (a word wider than the column). */
+/** The overfull record's key messages, in its goals' order (synthetic record): four to five lines of a band's 11 px column, printed whole (editor W1b). */
+const OVERFULL_GOAL_KEYS = [
+  'The cloud native stack is open, governed in the open and run everywhere.',
+  'Build it where the whole industry maintains it with you.',
+  'The certification employers recognize, against the standard everyone ships.',
+  'Your production needs set the roadmap: bring them to the end user community.',
+  'Where cloud native is built, taught and decided: come to the next event.',
+  'Security is a shared practice here, not a product.',
+  'Sustain the neutral home the whole ecosystem depends on.',
+  'Learn cloud native the way the maintainers teach it.',
+];
+
+/** The overfull record's proof facts (synthetic figures), four a goal, in rotation. */
+const OVERFULL_GOAL_FACTS = [
+  'Kubernetes runs in production at 96 percent of the organizations surveyed in the latest annual survey',
+  'More than 250 projects are hosted across the graduated, incubating and sandbox tiers',
+  'Over 290,000 contributors from 190 countries have committed to hosted projects',
+  'KubeCon + CloudNativeCon North America drew 12,000 attendees in person last year',
+  'More than 180,000 certifications have been issued under the Kubernetes certification program',
+  '900 member organizations across every continent, from startups to the largest cloud providers',
+  'Twenty-two graduated projects have passed the open governance and security audit bar',
+  'Over 200 Kubernetes community days were held in 60 countries over the last twelve months',
+];
+
 function matrixTitleOverlaps(matrix: Element): { overlapping: number; overflowing: number; titles: number } {
   const titles = Array.from(matrix.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-title"]'));
   const boxes = titles.map((title) => title.getBoundingClientRect());
@@ -857,15 +927,25 @@ test('eight goals with the overfull record’s titles: the matrix prints as two 
 }, info) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await stubMktgPrintFrame(page);
-  await openAssetDocument(page, 'foundation-message', 200, true, false, capGoalsFrameworkRevisionResponse(OVERFULL_GOAL_TITLES));
+  // The record's key messages and proof facts on the cap record's goals (editor W1b: every key message prints whole, so the band
+  // test reads the shape the rule was set on, not the cap fixture's eight-line sentence in every cell).
+  const cap = capGoalsFrameworkRevisionResponse(OVERFULL_GOAL_TITLES);
+  const content = JSON.parse(cap.markdown) as FoundationMessageContent;
+  const goals = content.mf.goals.map((goal, index) => ({
+    ...goal,
+    key: OVERFULL_GOAL_KEYS[index],
+    proof: Array.from({ length: 4 }, (_, n): [string, string] => [OVERFULL_GOAL_FACTS[(index + n) % OVERFULL_GOAL_FACTS.length], 'Report']),
+  }));
+  const record = { ...cap, markdown: JSON.stringify({ ...content, mf: { ...content.mf, goals } }) };
+  await openAssetDocument(page, 'foundation-message', 200, true, false, record);
   await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
   await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
   const frame = await layoutMktgPrintFrame(page);
   const framework = frame.getByTestId('mktg-framework-print').locator('[data-page-id="framework"]');
   const matrix = framework.getByTestId('mktg-framework-print-goals');
   // Two bands of the board's four columns, the eight goals in order across them, every title whole at one size.
-  await expect(matrix.getByTestId('mktg-framework-print-goals-band-0').getByTestId('mktg-framework-print-matrix-vp')).toHaveCount(4);
-  await expect(matrix.getByTestId('mktg-framework-print-goals-band-1').getByTestId('mktg-framework-print-matrix-vp')).toHaveCount(4);
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-0').getByTestId('mktg-framework-print-matrix-title')).toHaveCount(4);
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-1').getByTestId('mktg-framework-print-matrix-title')).toHaveCount(4);
   await expect(matrix.getByTestId('mktg-framework-print-goals-band-2')).toHaveCount(0);
   await expect(matrix.getByTestId('mktg-framework-print-matrix-title')).toHaveText(OVERFULL_GOAL_TITLES);
   const titleSizes = await matrix
@@ -880,6 +960,40 @@ test('eight goals with the overfull record’s titles: the matrix prints as two 
     const cells = matrix.getByTestId(`mktg-framework-print-goals-band-${band}`).getByTestId('mktg-framework-print-matrix-proof-cell');
     await expect(cells).toHaveCount(4);
     for (const cell of await cells.all()) await expect(cell.getByTestId('mktg-framework-print-matrix-proof')).not.toHaveCount(0);
+  }
+  // The band rules (editor W1b, W4) on this shape: a band drops the value-proposition and sound-bite rows (each goal page prints both
+  // in full) and prints every key message whole at its 11 px type, never clamped or cut, the one note under the last band above the
+  // crosscut; and each band's proofs print at one size, never under the tight type (10.5 px).
+  for (const band of [0, 1]) {
+    await expect(matrix.getByTestId(`mktg-framework-print-goals-band-${band}`).getByTestId('mktg-framework-print-goals-label')).toHaveText([
+      'Key message',
+      'Proof',
+    ]);
+  }
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-vp')).toHaveCount(0);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-bite')).toHaveCount(0);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-row-note')).toHaveText([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-row-note')).toHaveText(['Value propositions and sound bites are on each goal page.']);
+  const bandCells = await matrix.evaluate((block) => {
+    const measure = (cell: Element): { size: number; text: string } => ({
+      size: parseFloat(getComputedStyle(cell).fontSize),
+      text: cell.textContent?.trim() ?? '',
+    });
+    const text = Array.from(block.querySelectorAll('.fwp-matrix-key')).map(measure);
+    const proofs = [0, 1].map((band) =>
+      Array.from(block.querySelectorAll(`[data-testid="mktg-framework-print-goals-band-${band}"] [data-testid="mktg-framework-print-matrix-proof"]`)).map(
+        (proof) => parseFloat(getComputedStyle(proof).fontSize)
+      )
+    );
+    return { text, proofs };
+  });
+  // Every key message whole, as the record wrote it, at 11 px: no clamp, no ellipsis.
+  expect(bandCells.text.map((cell) => cell.text)).toEqual(OVERFULL_GOAL_KEYS);
+  for (const cell of bandCells.text) expect(cell.size).toBe(11);
+  for (const sizes of bandCells.proofs) {
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(new Set(sizes).size).toBe(1);
+    expect(sizes[0]).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_TYPE.matrixProofTight.size);
   }
   const matrixBottom = await matrix.evaluate((block) => {
     const frameTop = (block.closest('[data-page-id]') as HTMLElement).getBoundingClientRect().top;
@@ -942,6 +1056,24 @@ test('the profile cards’ fields start at one x on every profile page: the name
   expect(cards.map((card) => card.who)).toEqual(cards.map(() => MKTG_PORTRAIT_PAGE.margin));
   expect(new Set(cards.map((card) => card.fields)).size).toBe(1);
   expect(cards[0].fields).toBeGreaterThan(MKTG_PORTRAIT_PAGE.margin + 190);
+  // The objection's dash stays on the question's line, bound by the no-break space, on every card with a response (editor S-d).
+  const dashes = await print.locator('[data-testid="mktg-framework-print-icp-fields"] dd').evaluateAll((cells) =>
+    cells
+      .filter((cell) => (cell.textContent ?? '').includes('—'))
+      .map((cell) => {
+        const node = Array.from(cell.childNodes).find((child) => child.nodeType === Node.TEXT_NODE && (child.textContent ?? '').includes('—')) as Text;
+        const glyphTop = (offset: number): number => {
+          const range = document.createRange();
+          range.setStart(node, offset);
+          range.setEnd(node, offset + 1);
+          return Math.round(range.getBoundingClientRect().top);
+        };
+        const text = node.textContent ?? '';
+        return { bound: text.includes('\u00a0—'), sameLine: glyphTop(text.indexOf('—')) === glyphTop(text.indexOf('”')) };
+      })
+  );
+  expect(dashes.length).toBeGreaterThan(0);
+  expect(dashes).toEqual(dashes.map(() => ({ bound: true, sameLine: true })));
   await page.screenshot({ path: info.outputPath('foundation-message-print-icp-columns.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);

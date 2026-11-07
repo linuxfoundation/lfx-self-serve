@@ -83,6 +83,24 @@ function threeColourSymbolResponse(): MktgRevisionResponse {
   return { ...base, sidecar: { ...sidecar, chapters: { ...sidecar.chapters, logo } } as MktgRevisionResponse['sidecar'] };
 }
 
+/** The approved kit with a square-ish, one-ink symbol (a 60 × 60 disc, aspect 1): the four shapes as today, no wide note. */
+function squareSymbolResponse(): MktgRevisionResponse {
+  const base = columnAssetRevisionResponse('brand-kit');
+  const sidecar = base.sidecar as { chapters: { logo: { files: Record<string, unknown> } } };
+  const symbol = { ref: 'disc.svg', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60"><circle cx="30" cy="30" r="28" fill="#4D4E4E"/></svg>' };
+  const logo = { ...sidecar.chapters.logo, files: { ...sidecar.chapters.logo.files, symbol } };
+  return { ...base, sidecar: { ...sidecar, chapters: { ...sidecar.chapters, logo } } as MktgRevisionResponse['sidecar'] };
+}
+
+/** The approved kit whose only lockup file is the reversed one (no primary): the dark tile draws it; the hero has nothing. */
+function reversedOnlyResponse(): MktgRevisionResponse {
+  const base = columnAssetRevisionResponse('brand-kit');
+  const sidecar = base.sidecar as { chapters: { logo: { files: Record<string, unknown> } } };
+  const files = { ...sidecar.chapters.logo.files, primary: null, reversed: { ref: 'reversed.svg', svg: BRAND_KIT_FIXTURE_LOCKUP_SVG } };
+  const logo = { ...sidecar.chapters.logo, files };
+  return { ...base, sidecar: { ...sidecar, chapters: { ...sidecar.chapters, logo } } as MktgRevisionResponse['sidecar'] };
+}
+
 /** The approved kit with PNG uploads only (no SVG bytes): files the record holds and the print cannot draw. */
 function pngOnlyResponse(): MktgRevisionResponse {
   const base = columnAssetRevisionResponse('brand-kit');
@@ -565,20 +583,89 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await finishMktgPrintFrame(page);
   });
 
-  test('a three-colour symbol’s dark shapes draw it on the plate and say so: "full color on a plate", never "reversed"', async ({ page }, info) => {
+  test('a three-colour, wide symbol draws on the plate in rounded squares only, inside each shape, and says so', async ({ page }, info) => {
+    // The 120 × 36 lockup as the symbol: three colours (so a plate on the dark ground, captioned "full color on a plate",
+    // never "reversed") and wide (aspect 3.33), so the circle, which would cut it, is skipped and the note says so.
     const { pages } = await openBook(page, threeColourSymbolResponse());
     const symbol = pageById(pages, 'logo-symbol');
     const shapes = symbol.getByTestId('brand-kit-symbol-shapes').locator('> div');
-    await expect(shapes).toHaveCount(4);
-    await expect(shapes.nth(0).locator('.pp-cap')).toHaveText('Circle · full color on a plate');
-    await expect(shapes.nth(1).locator('.pp-cap')).toHaveText('Rounded square · full color on a plate');
+    await expect(shapes).toHaveCount(3);
+    await expect(shapes.nth(0).locator('.pp-cap')).toHaveText('Rounded square · full color on a plate');
+    await expect(shapes.nth(1).locator('.pp-cap')).toHaveText('Rounded square · light tint');
+    await expect(shapes.nth(2).locator('.pp-cap')).toHaveText('Rounded square · white');
+    await expect(symbol.getByTestId('brand-kit-symbol-wide-note')).toHaveText('Wide symbol: shown in a rounded square only');
     await expect(shapes.nth(0).getByTestId('mktg-portrait-plate')).toHaveCount(1);
-    await expect(shapes.nth(1).getByTestId('mktg-portrait-plate')).toHaveCount(1);
+    await expect(symbol.getByTestId('mktg-portrait-plate')).toHaveCount(2);
+    // The wide mark is sized down so its plate (dark square) and its bare mark (tint and white squares) sit INSIDE each
+    // shape's inner box (the square less a fifth of its side each way), never a band cut by the shape or close to its
+    // edge; in the padding demo, inside the dashed X box.
+    const inside = (
+      inner: { x: number; y: number; width: number; height: number } | null,
+      outer: { x: number; y: number; width: number; height: number } | null
+    ): boolean =>
+      !!inner &&
+      !!outer &&
+      inner.x >= outer.x - 0.5 &&
+      inner.y >= outer.y - 0.5 &&
+      inner.x + inner.width <= outer.x + outer.width + 0.5 &&
+      inner.y + inner.height <= outer.y + outer.height + 0.5;
+    const innerBox = (shape: { x: number; y: number; width: number; height: number } | null): typeof shape =>
+      shape && { x: shape.x + shape.width / 5, y: shape.y + shape.height / 5, width: (shape.width * 3) / 5, height: (shape.height * 3) / 5 };
+    for (const index of [0, 1, 2]) {
+      const shape = await shapes.nth(index).locator('.kp-shape').boundingBox();
+      const drawn = await shapes
+        .nth(index)
+        .locator(index === 0 ? '[data-testid="mktg-portrait-plate"]' : 'img')
+        .boundingBox();
+      expect(inside(drawn, innerBox(shape))).toBe(true);
+    }
+    const demo = symbol.getByTestId('brand-kit-symbol-padding');
+    expect(inside(await demo.getByTestId('mktg-portrait-plate').boundingBox(), await demo.locator('.kp-padding-demo-inset').boundingBox())).toBe(true);
     await expect(symbol.getByTestId('brand-kit-symbol-shapes')).not.toContainText('reversed');
     // The variant tiles stay honest too: "Not supplied" under the Reversed and One-color labels.
     await expect(symbol.getByTestId('brand-kit-symbol-variant-missing')).toHaveCount(2);
     await symbol.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('logo-symbol-plated-shapes.png'), fullPage: false });
+    await page.emulateMedia({ media: 'screen' });
+    await finishMktgPrintFrame(page);
+  });
+
+  test('a square-ish symbol keeps the four shapes, the circle first, and no wide note', async ({ page }, info) => {
+    const { pages } = await openBook(page, squareSymbolResponse());
+    const symbol = pageById(pages, 'logo-symbol');
+    const shapes = symbol.getByTestId('brand-kit-symbol-shapes').locator('> div');
+    await expect(shapes).toHaveCount(4);
+    await expect(shapes.nth(0).locator('.pp-cap')).toHaveText('Circle · reversed');
+    await expect(symbol.getByTestId('brand-kit-symbol-wide-note')).toHaveCount(0);
+    await expect(symbol.getByTestId('mktg-portrait-plate')).toHaveCount(0);
+    await symbol.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('logo-symbol-square-shapes.png'), fullPage: false });
+    await page.emulateMedia({ media: 'screen' });
+    await finishMktgPrintFrame(page);
+  });
+
+  test('a reversed-only kit (no primary file) draws its dark tile from the reversed file: no hero, no empty tiles row', async ({ page }, info) => {
+    const { pages } = await openBook(page, reversedOnlyResponse());
+    const system = pageById(pages, 'logo-system');
+    await expect(system.getByTestId('brand-kit-logo-system-hero')).toHaveCount(0);
+    const tiles = system.getByTestId('brand-kit-logo-system-tiles');
+    await expect(tiles.locator('.pp-tile')).toHaveCount(1);
+    await expect(tiles.locator('.pp-tile--dark img')).toHaveAttribute('alt', 'Reversed lockup');
+    await expect(tiles.getByTestId('mktg-portrait-plate')).toHaveCount(0);
+    await expect(tiles).toContainText('Reversed · supplied file');
+    await expect(system.getByTestId('brand-kit-logo-system-undrawable')).toHaveCount(0);
+    // The pages drawn from the primary file (Clear space, Partnership, Watch-outs) are dropped by the plan; the
+    // Colorways page keeps its reversed tile; the covers draw the reversed file on the dark.
+    await expect(pageById(pages, 'logo-clear-space')).toHaveCount(0);
+    await expect(pageById(pages, 'logo-partnership')).toHaveCount(0);
+    await expect(pageById(pages, 'logo-watchouts')).toHaveCount(0);
+    const colorways = pageById(pages, 'logo-colorways').getByTestId('brand-kit-colorways-tiles');
+    await expect(colorways.locator('img')).toHaveCount(1);
+    await expect(colorways.getByTestId('brand-kit-colorway-missing')).toHaveCount(3);
+    await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-cover-logo')).toHaveCount(1);
+    await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-plate')).toHaveCount(0);
+    await system.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('logo-system-reversed-only.png'), fullPage: false });
     await page.emulateMedia({ media: 'screen' });
     await finishMktgPrintFrame(page);
   });

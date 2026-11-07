@@ -594,6 +594,8 @@ describe('MktgFrameworkViewComponent', () => {
     // flatten the mark to one shape (the kit grammar's rule; a one-colour primary is the one filtered to white).
     expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
     expect(query('mktg-framework-print-cover-logo')?.style.filter).toBe('');
+    // …and, unreversable, on the grammar's white plate (the kit cover's precedence, editor W3).
+    expect(query('mktg-portrait-plate')?.contains(query('mktg-framework-print-cover-logo'))).toBe(true);
 
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
     expect(printer.prepare).toHaveBeenCalledWith('Montserrat');

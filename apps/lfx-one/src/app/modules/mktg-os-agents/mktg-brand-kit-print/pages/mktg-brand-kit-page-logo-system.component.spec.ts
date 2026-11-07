@@ -56,6 +56,26 @@ describe('the Logo system page', () => {
     expect(frame.querySelector('[data-testid="brand-kit-logo-system-files"]')?.textContent).not.toContain('symbol.svg');
   });
 
+  it('draws the dark tile from a reversed-only kit’s file (no primary): no hero, no empty tiles row, no plate', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSystemComponent, 'logo-system', (view) => ({
+      ...view,
+      logos: { ...view.logos, primary: null, reversed: { ref: 'reversed.svg', name: 'reversed.svg', src: SVG } },
+      derivable: { lockup: false, symbol: false },
+    }));
+    expect(frame.querySelector('[data-testid="brand-kit-logo-system-hero"]')).toBeNull();
+    const tiles = frame.querySelector('[data-testid="brand-kit-logo-system-tiles"]');
+    expect(tiles?.querySelectorAll('.pp-tile')).toHaveLength(1);
+    const darkTile = tiles?.querySelector<HTMLElement>('.pp-tile--dark');
+    expect(darkTile?.querySelector('img')?.getAttribute('src')).toBe(SVG);
+    expect(darkTile?.querySelector('img')?.getAttribute('alt')).toBe('Reversed lockup');
+    expect(darkTile?.querySelector('.pp-plate')).toBeNull();
+    expect(tiles?.textContent).toContain('Reversed · supplied file');
+    expect(frame.querySelector('[data-testid="brand-kit-logo-system-undrawable"]')).toBeNull();
+    const rows = Array.from(frame.querySelectorAll('[data-testid="brand-kit-logo-system-files"] tbody tr'), (row) => wordsOf(row));
+    expect(rows[0]).toBe('Horizontal lockup — Full color Not supplied');
+    expect(rows[1]).toBe('Reversed (white) SVG White Supplied');
+  });
+
   it('captions the tiles by what they draw: PNG reversed and symbol uploads beside an SVG lockup are listed, not drawn', async () => {
     const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSystemComponent, 'logo-system', (view) => ({
       ...view,

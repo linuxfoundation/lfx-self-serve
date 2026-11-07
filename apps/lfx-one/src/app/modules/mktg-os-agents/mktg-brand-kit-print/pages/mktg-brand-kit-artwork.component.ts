@@ -4,7 +4,7 @@
 import { Component, computed, input } from '@angular/core';
 import { BrandKitBookView } from '@lfx-one/shared/interfaces';
 import { BrandKitPortraitArtworkMode } from '@lfx-one/shared/interfaces';
-import { brandKitPortraitArtwork, mktgPortraitPlateFit } from '@lfx-one/shared/utils';
+import { brandKitPortraitArtwork, mktgPortraitMarkFitIn, mktgPortraitPlateFitIn } from '@lfx-one/shared/utils';
 import { MktgPortraitPlateDirective } from '../../components/mktg-portrait/mktg-portrait-plate.directive';
 
 /**
@@ -29,7 +29,19 @@ export class MktgBrandKitArtworkComponent {
   public readonly mode = input<BrandKitPortraitArtworkMode>('full');
   /** The box's height in px: the artwork's, or the plate's outer box when the artwork sits on one. */
   public readonly height = input.required<number>();
+  /** The width the plate must fit inside (a shape's inner box, a tile's clear width), or null for no width bound. */
+  public readonly innerWidth = input<number | null>(null);
   protected readonly image = computed(() => brandKitPortraitArtwork(this.view(), this.kind(), this.mode()));
-  /** The drawn height: the bare height, or the artwork fitted inside the plate (the plate pads and rounds itself). */
-  protected readonly fit = computed(() => (this.image()?.plate ? mktgPortraitPlateFit(this.height()) : { height: this.height(), padding: 0 }));
+  /**
+   * The drawn height and the plate's outer height. Bare, the artwork takes the box's height, or less when its aspect is
+   * known and `innerWidth` would be exceeded (a wide mark sits inside the shape's inner box). Plated, the artwork is
+   * fitted inside the plate, which fits the box by height and `innerWidth` by width the same way; the plate pads and
+   * rounds itself from its outer height.
+   */
+  protected readonly fit = computed(() => {
+    const image = this.image();
+    const aspect = image?.aspect ?? null;
+    if (!image?.plate) return { height: mktgPortraitMarkFitIn(this.height(), this.innerWidth(), aspect), padding: 0, plate: null };
+    return mktgPortraitPlateFitIn(this.height(), this.innerWidth(), aspect);
+  });
 }

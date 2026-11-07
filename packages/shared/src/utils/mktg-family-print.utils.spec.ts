@@ -6,10 +6,12 @@ import { MKTG_KIT_POSITIONING_FAMILY_ID } from '../constants/mktg-kit.constants'
 import {
   MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES,
   MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
+  MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
+  MKTG_FAMILY_PRINT_HEAD_CAPS,
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
 } from '../constants/mktg-family-print.constants';
-import { MKTG_PORTRAIT_CAPS_TRACKING_EM, MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
+import { MKTG_PORTRAIT_CAPS_TRACKING_EM, MKTG_PORTRAIT_COVER_STRIP, MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type {
   MktgFamilyPrintConflict,
   MktgFamilyPrintDocument,
@@ -27,6 +29,8 @@ import {
   mktgFamilyPrintContentsEntryHeight,
   mktgFamilyPrintContentsLayout,
   mktgFamilyPrintCutFromEnd,
+  mktgFamilyPrintCapsWidth,
+  mktgFamilyPrintCoverStrip,
   mktgFamilyPrintCutNote,
   mktgFamilyPrintDate,
   mktgFamilyPrintDocument,
@@ -40,7 +44,6 @@ import {
   mktgFamilyPrintFitRows,
   mktgFamilyPrintFitRunBlock,
   mktgFamilyPrintFigure,
-  mktgFamilyPrintHeadLabelWidth,
   mktgFamilyPrintHeadTight,
   mktgFamilyPrintMeasuredLines,
   mktgFamilyPrintNumberConflicts,
@@ -54,7 +57,8 @@ import {
   mktgFamilyPrintSourcesLayout,
   mktgFamilyPrintVersionLabel,
 } from './mktg-family-print.utils';
-import { mktgPortraitParaHeight, mktgPortraitTextWidth } from './mktg-portrait-print.utils';
+import { mktgPortraitFootLeft } from './mktg-portrait-plan.utils';
+import { mktgPortraitCoverStrip, mktgPortraitParaHeight, mktgPortraitTextWidth } from './mktg-portrait-print.utils';
 import { mktgPrintBrand } from './mktg-print.utils';
 
 const approval = { approvedAt: '2026-11-06T18:26:00Z', approvedBy: { name: 'A. Reviewer' } };
@@ -700,29 +704,83 @@ describe('mktgFamilyPrintMeasuredLines', () => {
   });
 });
 
-describe('mktgFamilyPrintHeadLabelWidth', () => {
+describe('mktgFamilyPrintCapsWidth', () => {
   it('measures a label’s capitals by the face’s capitals, at or a little above the real face and never under it', () => {
     // The e2e fixture's running head in Chromium (Google Fonts Montserrat 600 at 10 px, +0.12em, uppercase): the section
     // label 278.42 px, the document name 359.91 px (M9). The grammar's lowercase factor (1.14 × 1.07) called them 316 and
     // 408 and stepped a head that fits to 9 px; the head's capitals factors keep the measure within 2 % above the face.
     const montserrat = "'Montserrat', sans-serif";
-    const section = mktgFamilyPrintHeadLabelWidth('Messaging framework · Message house', montserrat);
-    const name = mktgFamilyPrintHeadLabelWidth('Synthetic Documents Project positioning & brand', montserrat);
+    const section = mktgFamilyPrintCapsWidth('Messaging framework · Message house', montserrat);
+    const name = mktgFamilyPrintCapsWidth('Synthetic Documents Project positioning & brand', montserrat);
     expect(section).toBeGreaterThanOrEqual(278.42);
     expect(section).toBeLessThan(278.42 * 1.02);
     expect(name).toBeGreaterThanOrEqual(359.91);
     expect(name).toBeLessThan(359.91 * 1.02);
     // Inter, the default face, the same labels: 265.58 and 346.86 px in Chromium.
-    expect(mktgFamilyPrintHeadLabelWidth('Messaging framework · Message house', 'Inter, sans-serif')).toBeGreaterThanOrEqual(265.58);
-    expect(mktgFamilyPrintHeadLabelWidth('Messaging framework · Message house', 'Inter, sans-serif')).toBeLessThan(265.58 * 1.03);
-    expect(mktgFamilyPrintHeadLabelWidth('Synthetic Documents Project positioning & brand', 'Inter, sans-serif')).toBeGreaterThanOrEqual(346.86);
+    expect(mktgFamilyPrintCapsWidth('Messaging framework · Message house', 'Inter, sans-serif')).toBeGreaterThanOrEqual(265.58);
+    expect(mktgFamilyPrintCapsWidth('Messaging framework · Message house', 'Inter, sans-serif')).toBeLessThan(265.58 * 1.03);
+    expect(mktgFamilyPrintCapsWidth('Synthetic Documents Project positioning & brand', 'Inter, sans-serif')).toBeGreaterThanOrEqual(346.86);
     // A face the head has not measured keeps the grammar's measure, the wide side.
     const poppins = "'Poppins', sans-serif";
-    expect(mktgFamilyPrintHeadLabelWidth('Contents', poppins)).toBe(
+    expect(mktgFamilyPrintCapsWidth('Contents', poppins)).toBe(
       mktgPortraitTextWidth('Contents', 10, { caps: true, weight: 600, family: poppins, tracking: MKTG_PORTRAIT_CAPS_TRACKING_EM })
     );
-    expect(mktgFamilyPrintHeadLabelWidth('Contents', poppins)).toBeGreaterThan(mktgFamilyPrintHeadLabelWidth('Contents', montserrat));
-    expect(mktgFamilyPrintHeadLabelWidth('', montserrat)).toBe(0);
+    expect(mktgFamilyPrintCapsWidth('Contents', poppins)).toBeGreaterThan(mktgFamilyPrintCapsWidth('Contents', montserrat));
+    expect(mktgFamilyPrintCapsWidth('', montserrat)).toBe(0);
+  });
+
+  it('reads another measure when given one: the cover strip’s size and tracking at the regular weight, without the semibold’s factor', () => {
+    const montserrat = "'Montserrat', sans-serif";
+    const strip = MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE;
+    const regular = mktgFamilyPrintCapsWidth('Synthetic Documents Project', montserrat, strip);
+    // The same capitals at the head's semibold and wider tracking measure wider; at the strip's regular weight the semibold's factor is off.
+    expect(regular).toBeLessThan(mktgFamilyPrintCapsWidth('Synthetic Documents Project', montserrat));
+    // The semibold's factor widens the glyphs, not the tracking between them: measured untracked, the two weights
+    // stand in the factor's ratio exactly.
+    const untracked = { ...strip, tracking: 0 };
+    expect(mktgFamilyPrintCapsWidth('Synthetic Documents Project', montserrat, { ...untracked, weight: 600 })).toBeCloseTo(
+      mktgFamilyPrintCapsWidth('Synthetic Documents Project', montserrat, untracked) * MKTG_FAMILY_PRINT_HEAD_CAPS.weight,
+      6
+    );
+    // A face the family has not measured reads the grammar's measure at that measure.
+    const poppins = "'Poppins', sans-serif";
+    expect(mktgFamilyPrintCapsWidth('Contents', poppins, strip)).toBe(
+      mktgPortraitTextWidth('Contents', strip.size, { caps: true, weight: strip.weight, family: poppins, tracking: strip.tracking })
+    );
+  });
+});
+
+describe('mktgFamilyPrintCoverStrip', () => {
+  const width = MKTG_PORTRAIT_PAGE.width - 2 * MKTG_PORTRAIT_PAGE.coverInset;
+  const right = `one.example.org${MKTG_PORTRAIT_COVER_STRIP.separator}7 Nov 2026`;
+
+  it('keeps the strip as written when the face’s capitals fit it, where the grammar’s lowercase measure would drop the LF suffix', () => {
+    // The e2e fixture's cover in Montserrat (M10b): 630 px by the capitals in the 672 px inset, 675 by the grammar's measure, which
+    // dropped "a Linux Foundation project" where it fits. The suffix stays; Inter and Instrument Sans fit it under both measures.
+    const left = mktgPortraitFootLeft('Synthetic Documents Project');
+    const montserrat = "'Montserrat', sans-serif";
+    expect(mktgPortraitCoverStrip(left, right, width, montserrat).left).toBe('Synthetic Documents Project');
+    expect(mktgFamilyPrintCoverStrip(left, right, width, montserrat)).toEqual({ left, right, wraps: false });
+    expect(mktgFamilyPrintCoverStrip(left, right, width, "'Instrument Sans', sans-serif")).toEqual({ left, right, wraps: false });
+    expect(mktgFamilyPrintCoverStrip(left, right, width, 'Inter, sans-serif')).toEqual({ left, right, wraps: false });
+  });
+
+  it('hands a strip the capitals do not fit to the grammar’s fit, unchanged: the long name drops the suffix, one word each still too wide wraps', () => {
+    // The editor's p01 name is too wide with its suffix under the capitals too (706 px in Inter, 730 in Montserrat): the grammar's answer.
+    const cncf = mktgPortraitFootLeft('Cloud Native Computing Foundation (CNCF)');
+    const site = `synthetic.example${MKTG_PORTRAIT_COVER_STRIP.separator}7 Nov 2026`;
+    for (const face of ["'Montserrat', sans-serif", 'Inter, sans-serif']) {
+      expect(mktgFamilyPrintCoverStrip(cncf, site, width, face)).toEqual(mktgPortraitCoverStrip(cncf, site, width, face));
+      expect(mktgFamilyPrintCoverStrip(cncf, site, width, face)).toEqual({ left: 'Cloud Native Computing Foundation (CNCF)', right: site, wraps: false });
+    }
+    const word = mktgPortraitFootLeft('Synthetic'.repeat(12));
+    expect(mktgFamilyPrintCoverStrip(word, site, width, 'Inter, sans-serif')).toEqual({ left: word, right: site, wraps: true });
+  });
+
+  it('gives a face the family has not measured the grammar’s answer', () => {
+    const left = mktgPortraitFootLeft('Synthetic Documents Project');
+    const poppins = "'Poppins', sans-serif";
+    expect(mktgFamilyPrintCoverStrip(left, right, width, poppins)).toEqual(mktgPortraitCoverStrip(left, right, width, poppins));
   });
 });
 
@@ -1026,12 +1084,19 @@ describe('mktgFamilyPrintBrand', () => {
 
   it('draws the kit\u2019s multi-colour primary, which no filter reverses, on the white plate, named by the brand\u2019s alt', () => {
     expect(brand.logoOnDark?.filter).toBe('');
-    expect(mktgFamilyPrintBrand(brand, book).logoOnDark).toEqual({ src: book.logos.primary?.src, alt: brand.logoOnDark?.alt, filter: '', plate: true });
+    // The kit's artwork carries its aspect (for a plate fitted inside a shape); the family passes it on as it is.
+    expect(mktgFamilyPrintBrand(brand, book).logoOnDark).toEqual({
+      src: book.logos.primary?.src,
+      alt: brand.logoOnDark?.alt,
+      filter: '',
+      plate: true,
+      aspect: book.logos.primary?.aspect ?? null,
+    });
   });
 
   it('draws the supplied reversed file as it is, with no plate', () => {
     const withReversed = { ...book, logos: { ...book.logos, reversed: reversedFile } };
-    expect(mktgFamilyPrintBrand(brand, withReversed).logoOnDark).toEqual({ src: reversedFile.src, alt: brand.logoOnDark?.alt, filter: '' });
+    expect(mktgFamilyPrintBrand(brand, withReversed).logoOnDark).toEqual({ src: reversedFile.src, alt: brand.logoOnDark?.alt, filter: '', aspect: null });
   });
 
   it('reverses a one-ink primary by filter, with no plate', () => {
@@ -1040,6 +1105,7 @@ describe('mktgFamilyPrintBrand', () => {
       src: book.logos.primary?.src,
       alt: brand.logoOnDark?.alt,
       filter: 'brightness(0) invert(1)',
+      aspect: book.logos.primary?.aspect ?? null,
     });
   });
 

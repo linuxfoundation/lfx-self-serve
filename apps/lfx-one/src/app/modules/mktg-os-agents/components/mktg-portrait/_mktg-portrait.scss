@@ -75,8 +75,9 @@ $pp-band-height: 4px;
   -webkit-print-color-adjust: exact;
 
   /* The neutral inks (--pp-ink, --pp-muted, --pp-hairline, --pp-mist, --pp-white, --pp-fail) and the look's
-     (--pp-dark, --pp-accent, --pp-accent-text, --pp-accent-on-dark, --pp-spark, --pp-on-accent, --pp-font) are set on the frame by the page component
-     from MKTG_PORTRAIT_INKS and MktgPortraitLook; every rule below reads them. */
+     (--pp-dark, --pp-accent, --pp-accent-text, --pp-accent-on-dark, --pp-spark, --pp-on-accent, --pp-on-dark, --pp-font) are set on the frame by the
+     page component from MKTG_PORTRAIT_INKS and MktgPortraitLook; every rule below reads them. Text on a dark ground reads
+     --pp-on-dark (the better-contrast ink the brand picks: white when the dark is dark), with --pp-white as the fallback. */
 
   * {
     box-sizing: border-box;
@@ -110,7 +111,7 @@ $pp-band-height: 4px;
 
 .pp-page--dark {
   background: var(--pp-dark);
-  color: var(--pp-white);
+  color: var(--pp-on-dark, var(--pp-white));
 }
 
 /* Absolute placement, the `R(x, y, w, h)` convention: the directive `[lfxPpRect]` sets the coordinates. */
@@ -143,7 +144,7 @@ $pp-band-height: 4px;
   padding-bottom: 8px;
 
   .pp-page--dark & {
-    border-bottom-color: rgba(255, 255, 255, 0.25);
+    border-bottom-color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 25%, transparent);
   }
 }
 
@@ -167,7 +168,7 @@ $pp-band-height: 4px;
   color: var(--pp-muted);
 
   .pp-page--dark & {
-    color: rgba(255, 255, 255, 0.6);
+    color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 60%, transparent);
   }
 }
 
@@ -185,7 +186,7 @@ $pp-band-height: 4px;
   color: var(--pp-dark);
 
   .pp-page--dark & {
-    color: var(--pp-white);
+    color: var(--pp-on-dark, var(--pp-white));
   }
 }
 
@@ -203,7 +204,7 @@ $pp-band-height: 4px;
   color: var(--pp-muted);
 
   .pp-page--dark & {
-    color: rgba(255, 255, 255, 0.55);
+    color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 55%, transparent);
   }
 }
 
@@ -302,7 +303,8 @@ $pp-band-height: 4px;
 .pp-plate {
   // The padding and the corner radius (a sixth of the shorter side) are bound by `lfxPpPlate` from the shared geometry.
   display: inline-block;
-  background: var(--pp-white);
+  // White outside a portrait page too: the landscape framework cover plates its lockup with the same directive.
+  background: var(--pp-white, #fff);
   line-height: 0;
 }
 
@@ -335,7 +337,7 @@ $pp-band-height: 4px;
   font-weight: 500;
   line-height: 1;
   letter-spacing: -0.02em;
-  color: var(--pp-white);
+  color: var(--pp-on-dark, var(--pp-white));
 }
 
 .pp-cover-lede {
@@ -344,21 +346,21 @@ $pp-band-height: 4px;
   font-size: 17px;
   font-weight: 400;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.75);
+  color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 75%, transparent);
 }
 
 .pp-cover-strip {
   display: flex;
   justify-content: space-between;
   column-gap: 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  border-top: 1px solid color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 25%, transparent);
   padding-top: 10px;
   font-size: 10px;
   font-weight: 400;
   line-height: 1;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.6);
+  color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 60%, transparent);
 }
 
 /* The strip's halves share one line (nowrap, 24 px apart); only when one word each still does not fit does it wrap,
@@ -391,7 +393,7 @@ $pp-band-height: 4px;
   font-weight: 500;
   line-height: 1.05;
   letter-spacing: -0.02em;
-  color: var(--pp-white);
+  color: var(--pp-on-dark, var(--pp-white));
 }
 
 .pp-opener-purpose {
@@ -400,19 +402,19 @@ $pp-band-height: 4px;
   font-size: 18px;
   font-weight: 400;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.75);
+  color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 75%, transparent);
 }
 
 .pp-opener-meta {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 32px;
-  border-top: 2px solid rgba(255, 255, 255, 0.35);
+  border-top: 2px solid color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 35%, transparent);
   padding-top: 20px;
   font-size: 12px;
   font-weight: 400;
   line-height: 1.6;
-  color: rgba(255, 255, 255, 0.75);
+  color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 75%, transparent);
 }
 
 .pp-opener-meta-value {
@@ -421,7 +423,7 @@ $pp-band-height: 4px;
   font-weight: 500;
   line-height: 1.1;
   letter-spacing: -0.01em;
-  color: var(--pp-white);
+  color: var(--pp-on-dark, var(--pp-white));
 }
 
 /* The approver's name under the Approved date: the row's body size (12/1.6), 4 px under the date. */
@@ -452,16 +454,16 @@ $pp-band-height: 4px;
   text-align: center;
   font-size: 11px;
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.6);
+  color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 60%, transparent);
 }
 
 .pp-back-notice {
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  border-top: 1px solid color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 20%, transparent);
   padding-top: 10px;
   font-size: 9.5px;
   font-weight: 400;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.55);
+  color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 55%, transparent);
 }
 
 @media print {
