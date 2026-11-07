@@ -36,7 +36,7 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     expect(cards[0].style.minHeight).toBe('96px');
     expect(cards[2].style.minHeight).toBe('130px');
     expect(cards[0].querySelector('.fpb-card__count')?.textContent).toBe('14 words · max 15');
-    expect(cards[0].querySelector('.fpb-card__percent')?.textContent).toBe('93 % of the limit');
+    expect(cards[0].querySelector('.fpb-card__percent')?.textContent).toBe('93% of the limit');
     expect(cards[0].querySelector<HTMLElement>('.fpb-card__fill')?.style.width).toBe('93%');
     expect(cards[0].querySelector('[data-testid="family-print-boilerplate-over"]')).toBeNull();
     expect(cards[1].querySelector('[data-testid="family-print-boilerplate-over"]')?.textContent).toBe('over by 2');
@@ -77,6 +77,38 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     expect(Number(cut.match(/\d+/)?.[0]) + text.split(/\s+/).length).toBe(440);
     // The count line still reports the approved text's own words, not the printed ones.
     expect(cards[3].querySelector('.fpb-card__count')?.textContent).toBe('440 words · max 100');
+  });
+
+  it('prints a text whole when it fits its card in the book’s face (the editor’s overfull p30, cut by the flat average with room to spare)', async () => {
+    const opening =
+      'The Example Toolkit is a neutral, production-grade toolkit for building internal platforms, hosted as a Linux Foundation project. It is audited in public twice a year, released every eight weeks and governed by its contributors rather than by any single vendor, so adopting it is a decision that outlasts any one supplier.';
+    const long = `${opening} Its members fund the security audits, the release engineering and the events where the roadmap is decided in the open, so no single company sets its direction. Platform teams adopt it from an empty repository to a compliant platform in weeks, with the audits, the release cadence and the governance already in place, and they keep a say in where it goes next.`;
+    const fixture = TestBed.createComponent(MktgFamilyPrintBoilerplatesPageComponent);
+    fixture.componentRef.setInput('lengths', [
+      row(0, 'One-liner', 11, 15, 'The Example Toolkit: the neutral, audited foundation platform teams build on.'),
+      row(
+        1,
+        '25 words',
+        24,
+        25,
+        'The Example Toolkit is a neutral, production-grade toolkit for building internal platforms, audited in public and governed by the contributors who build on it.'
+      ),
+      row(
+        2,
+        '50 words',
+        56,
+        50,
+        'The Example Toolkit is a neutral, production-grade toolkit for building internal platforms. It is audited in public twice a year, released every eight weeks and governed by its contributors rather than by any single vendor, so adopting it is a decision that outlasts any one supplier. Platform teams get a compliant toolchain they can stand behind.'
+      ),
+      row(3, '100 words', 124, 100, long),
+    ]);
+    fixture.componentRef.setInput('fontStack', "'Montserrat', sans-serif");
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const cards = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="family-print-boilerplate-card"]'));
+    expect(cards).toHaveLength(4);
+    expect(cards[3].querySelector('.fpb-card__text')?.textContent?.trim()).toBe(long);
+    expect(root.querySelector('[data-testid="family-print-boilerplate-cut"]')).toBeNull();
   });
 
   it('omits the Built from block when the run read nothing it can name, and keeps the whole rows that fit with the rest counted', async () => {

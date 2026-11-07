@@ -43,6 +43,8 @@ export class MktgFamilyPrintBoilerplatesPageComponent {
   public readonly lengths = input.required<BoilerplatesLengthRow[]>();
   /** The sources the run read; [] omits the block. */
   public readonly sources = input<string[]>([]);
+  /** The book's font stack (the look's), so the cards' texts are measured in the face they are set in; '' measures in the sans table. */
+  public readonly fontStack = input<string>('');
 
   public readonly labels = MKTG_FAMILY_PRINT_LABELS;
   public readonly intro = MKTG_FAMILY_PRINT_COPY.boilerplatesIntro;
@@ -68,10 +70,12 @@ export class MktgFamilyPrintBoilerplatesPageComponent {
     return computed(() => {
       const rows = this.lengths().filter((row) => row.text.trim());
       const sizes = rows.map((_, index) => MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES[Math.min(index, MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES.length - 1)]);
-      // The texts held to the page's room: a text that outgrows it is cut from the end at a sentence and says so.
+      // The texts held to the page's room, measured in the book's face: a text that fits prints whole; one that outgrows it is cut from the end at a sentence and says so.
       const fitted = mktgFamilyPrintFitBoilerplateCards(
         rows.map((row, index) => ({ text: row.text, ...sizes[index] })),
-        MKTG_PORTRAIT_PAGE.contentWidth
+        MKTG_PORTRAIT_PAGE.contentWidth,
+        MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
+        this.fontStack()
       );
       return rows.map((row, index) => {
         const size = sizes[index];

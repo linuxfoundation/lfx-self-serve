@@ -172,7 +172,7 @@ export const MKTG_FAMILY_PRINT_COPY = {
   /** The word count under a boilerplate's label: `[Words]` and `[Max]`. */
   words: '[Words] words · max [Max]',
   /** The fill bar's caption: `[Percent]`. */
-  ofTheLimit: '[Percent] % of the limit',
+  ofTheLimit: '[Percent]% of the limit',
   /** Over the limit by `[Over]` words. */
   overBy: 'over by [Over]',
   /** The back cover's provenance line, after the trademark notice. */

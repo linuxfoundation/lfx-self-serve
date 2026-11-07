@@ -37,6 +37,7 @@ import {
   mktgFamilyPrintFitRows,
   mktgFamilyPrintFitRunBlock,
   mktgFamilyPrintFigure,
+  mktgFamilyPrintMeasuredLines,
   mktgFamilyPrintNumberConflicts,
   mktgFamilyPrintOpenItemText,
   mktgFamilyPrintOneStop,
@@ -48,8 +49,13 @@ import {
   mktgFamilyPrintSourcesLayout,
   mktgFamilyPrintVersionLabel,
 } from './mktg-family-print.utils';
+import { mktgPortraitParaHeight } from './mktg-portrait-print.utils';
 
 const approval = { approvedAt: '2026-11-06T18:26:00Z', approvedBy: { name: 'A. Reviewer' } };
+
+/** The overfull fixture's 100-word boilerplate as far as the page printed it before the cut: four lines of Montserrat 12.5 px in the card. */
+const overfullOpening =
+  'The Example Toolkit is a neutral, production-grade toolkit for building internal platforms, hosted as a Linux Foundation project. It is audited in public twice a year, released every eight weeks and governed by its contributors rather than by any single vendor, so adopting it is a decision that outlasts any one supplier.';
 
 function doc(agentKey: MktgFamilyPrintDocument['agentKey'], number: number, version = 1, openItems: string[] = []): MktgFamilyPrintDocument {
   return mktgFamilyPrintDocument(MKTG_KIT_POSITIONING_FAMILY_ID, agentKey, number, version, approval, openItems, '2026-10-28');
@@ -629,6 +635,33 @@ describe('mktgFamilyPrintFitBoilerplateCards', () => {
     const fitted = mktgFamilyPrintFitBoilerplateCards([sentence, long, sentence, long].map(card), MKTG_PORTRAIT_PAGE.contentWidth);
     expect(fitted.map((entry) => entry.text.length > 0)).toEqual([true, true, true, true]);
     expect(fitted.filter((entry) => entry.cutWords > 0).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('prints a text whole when it fits its card in the book’s face, where the flat average would have cut it (the editor’s overfull p30)', () => {
+    // The overfull fixture's four cards (11, 24, 56 and 124 words), set in Montserrat: the page rendered them in 2, 3, 5 and 10 lines,
+    // 46 px short of the room, and the flat model (73 characters a line at 12.5 px) counted the long card two lines over and cut it.
+    const texts = [
+      'The Example Toolkit: the neutral, audited foundation platform teams build on.',
+      'The Example Toolkit is a neutral, production-grade toolkit for building internal platforms, audited in public and governed by the contributors who build on it.',
+      'The Example Toolkit is a neutral, production-grade toolkit for building internal platforms. It is audited in public twice a year, released every eight weeks and governed by its contributors rather than by any single vendor, so adopting it is a decision that outlasts any one supplier. Platform teams get a compliant toolchain they can stand behind.',
+      `${overfullOpening} Its members fund the security audits, the release engineering and the events where the roadmap is decided in the open, so no single company sets its direction. Platform teams adopt it from an empty repository to a compliant platform in weeks, with the audits, the release cadence and the governance already in place, and they keep a say in where it goes next.`,
+    ];
+    const fitted = mktgFamilyPrintFitBoilerplateCards(texts.map(card), MKTG_PORTRAIT_PAGE.contentWidth, undefined, "'Montserrat', sans-serif");
+    expect(fitted).toEqual(texts.map((text) => ({ text, cutWords: 0 })));
+  });
+});
+
+describe('mktgFamilyPrintMeasuredLines', () => {
+  it('counts the lines the page set, in the book’s face, where the flat average counts more', () => {
+    // The 100-word card's first four lines as the overfull page broke them (Montserrat 12.5 px in the 504 px text column).
+    const measure = MKTG_PORTRAIT_PAGE.contentWidth - 52 - 120 - 28;
+    expect(mktgFamilyPrintMeasuredLines(overfullOpening, measure, 12.5, { family: 'Montserrat' })).toBe(4);
+    expect(mktgPortraitParaHeight({ text: overfullOpening, size: 12.5, line: 1.5 }, measure) / (12.5 * 1.5)).toBeGreaterThan(4);
+    // A wider face takes more lines of the same text; an empty text is one line; a hard break starts a line.
+    expect(mktgFamilyPrintMeasuredLines(overfullOpening, measure, 12.5, { family: 'Source Sans 3' })).toBeLessThanOrEqual(4);
+    expect(mktgFamilyPrintMeasuredLines(overfullOpening, measure, 16.5, { family: 'Montserrat' })).toBeGreaterThan(4);
+    expect(mktgFamilyPrintMeasuredLines('', measure, 12.5)).toBe(1);
+    expect(mktgFamilyPrintMeasuredLines('One.\nTwo.', measure, 12.5)).toBe(2);
   });
 });
 
