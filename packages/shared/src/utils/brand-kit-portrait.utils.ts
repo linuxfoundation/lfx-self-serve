@@ -255,10 +255,14 @@ export function brandKitPortraitUsageCards(view: BrandKitBookView): BrandKitPort
 
 // ---------- Sources & decisions (page 16) ----------
 
-/** A source string in words: the LFX record by name, a stylesheet chunk as the site's stylesheets, a URL without its scheme or query. */
+/** How the Sources page names the uploaded logo files, never by file name. */
+export const BRAND_KIT_PORTRAIT_LOGO_FILES_SOURCE = 'the uploaded logo files';
+
+/** A source string in words: the LFX record by name, an uploaded file as the logo files, a stylesheet chunk as the site's stylesheets, a URL without its scheme or query. */
 export function brandKitPortraitReadableSource(source: string): string {
   const text = source.trim();
   if (/^LFX record/i.test(text)) return 'The LFX project record';
+  if (!/^https?:\/\//i.test(text) && /\.(svg|png|jpe?g|webp|gif|pdf|eps|ai)$/i.test(text)) return BRAND_KIT_PORTRAIT_LOGO_FILES_SOURCE;
   const host = brandKitWebsiteHost(/^https?:\/\//i.test(text) ? text : null);
   if (host && /\/_next\/static\/|\.css(\?|$)/i.test(text)) return `${host} stylesheets`;
   return text.replace(/^https?:\/\//i, '').replace(/\?.*$/, '');

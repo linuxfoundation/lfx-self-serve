@@ -40,7 +40,11 @@ describe('the Example usage page', () => {
   });
 
   it('prints the intro alone when the kit has no examples', async () => {
-    const { frame } = await mountBrandKitPage(MktgBrandKitPageUsageComponent, 'usage', (view) => ({ ...view, usage: { ...view.usage, examples: [] } }));
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageUsageComponent, 'usage', (view) => ({
+      ...view,
+      usage: { ...view.usage, examples: [] },
+      usageTiles: [],
+    }));
     expect(frame.querySelector('[data-testid="brand-kit-usage-intro"]')).not.toBeNull();
     expect(frame.querySelector('[data-testid="brand-kit-usage-cards"]')).toBeNull();
     expect(frame.querySelector('[data-testid="brand-kit-usage-table"]')).toBeNull();

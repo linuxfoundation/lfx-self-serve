@@ -37,11 +37,14 @@ describe('the Imagery & graphic elements page', () => {
   });
 
   it('says the call-out’s text is white on an accent that passes AA, and leaves the avoid list out when the kit has none', async () => {
-    const { frame } = await mountBrandKitPage(MktgBrandKitPageVisualImageryComponent, 'visual-imagery', (view) => ({
+    const { frame, fixture, look } = await mountBrandKitPage(MktgBrandKitPageVisualImageryComponent, 'visual-imagery', (view) => ({
       ...view,
       accent: '#1E3A8A',
       visual: { ...view.visual, imagery: { ...view.visual.imagery, avoid: [] } },
     }));
+    // The look follows the brand: on this accent the shared ink rule puts white on it.
+    fixture.componentRef.setInput('look', { ...look, accent: '#1E3A8A', onAccent: 'white' });
+    await fixture.whenStable();
     expect(frame.querySelector('[data-testid="brand-kit-imagery-avoid"]')).toBeNull();
     expect(frame.querySelector('[data-testid="brand-kit-imagery-callout-caption"]')?.textContent).toBe('Call-out · the one accent moment; text in white');
   });

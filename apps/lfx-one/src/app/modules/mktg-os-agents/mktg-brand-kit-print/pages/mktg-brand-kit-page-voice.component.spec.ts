@@ -7,7 +7,7 @@ import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
 
 describe('the Voice in brief page', () => {
   it('opens the Voice chapter with the source as the intro, the umbrella message and brand line, and the attributes in two columns', async () => {
-    const { frame, view } = await mountBrandKitPage(MktgBrandKitPageVoiceComponent, 'voice');
+    const { frame, view, fixture, look } = await mountBrandKitPage(MktgBrandKitPageVoiceComponent, 'voice');
     expect(frame.getAttribute('data-page')).toBe('14');
     expect(frame.getAttribute('data-section')).toBe('06 Voice');
     expect(frame.querySelector('[data-testid="mktg-portrait-page-band"]')).not.toBeNull();
@@ -21,7 +21,12 @@ describe('the Voice in brief page', () => {
     const names = Array.from(attributes?.querySelectorAll('.kp-attribute-name') ?? [], (name) => name.textContent);
     expect(names).toEqual(['Plain', 'Specific', 'Neutral', 'Welcoming']);
     expect(attributes?.querySelector('.kp-attribute-line')?.textContent).toBe('One sentence.');
+    // The first rule is the spark, the rest the accent (the synthetic kit names no spark, so the look falls back to the
+    // accent; a kit with one shows it on the first attribute).
+    fixture.componentRef.setInput('look', { ...look, spark: '#1D4ED8' });
+    await fixture.whenStable();
     const rules = Array.from(attributes?.querySelectorAll<HTMLElement>('.kp-attribute') ?? [], (attribute) => attribute.style.borderTopColor);
+    expect(rules[0]).toBe('rgb(29, 78, 216)');
     expect(rules[0]).not.toBe(rules[1]);
     expect(new Set(rules.slice(1)).size).toBe(1);
     expect(frame.textContent).not.toContain('Say');

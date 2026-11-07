@@ -17,7 +17,9 @@ describe('the Iconography page', () => {
     expect(samples?.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(BRAND_KIT_ICON_SAMPLES.length);
     expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]')?.style.backgroundColor).toBe('rgb(77, 78, 78)');
     expect(samples?.querySelector('[data-testid="brand-kit-icon-tile-verified"] svg')?.getAttribute('width')).toBe('36');
-    expect(frame.querySelector('[data-testid="brand-kit-iconography-strip-caption"]')?.textContent).toBe('On dark grounds: white, one active state in Orange');
+    expect(frame.querySelector('[data-testid="brand-kit-iconography-strip-caption"]')?.textContent?.trim()).toBe(
+      'On dark grounds: white, one active state in Orange'
+    );
     const rules = frame.querySelector('[data-testid="brand-kit-iconography-rules"]');
     expect(rectOf(rules)).toEqual({ left: '56px', top: '680px', width: '420px' });
     expect(Array.from(rules?.querySelectorAll('li') ?? [], (li) => li.textContent)).toEqual(view.visual.icons.rules);

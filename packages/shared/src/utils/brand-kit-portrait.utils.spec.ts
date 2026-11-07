@@ -162,7 +162,9 @@ describe('the Sources page’s lists', () => {
     expect(brandKitPortraitReadableSource('LFX record')).toBe('The LFX project record');
     expect(brandKitPortraitReadableSource('https://one.example.org/_next/static/chunks/app.css')).toBe('one.example.org stylesheets');
     expect(brandKitPortraitReadableSource('https://one.example.org/brand?x=1')).toBe('one.example.org/brand');
-    expect(brandKitPortraitReadableSource('logo.svg')).toBe('logo.svg');
+    // An uploaded file is named as the logo files, never by its file name.
+    expect(brandKitPortraitReadableSource('logo.svg')).toBe('the uploaded logo files');
+    expect(brandKitPortraitReadableSource('Logo-Stacked.PNG')).toBe('the uploaded logo files');
   });
 
   it('reads only what the run record holds, folds duplicate sources and keeps a real conflict only', () => {
@@ -193,7 +195,7 @@ describe('the Sources page’s lists', () => {
     expect(rich.gaps).toEqual(['No symbol file.']);
     expect(rich.notes).toBe('A note.');
     expect(rich.conflicts.map((conflict) => conflict.name)).toEqual(['Orange']);
-    expect(rich.conflicts[0].values[0].source).toBe('one.example.org stylesheets');
+    expect(rich.conflicts[0].values.map((value) => value.source)).toEqual(['one.example.org stylesheets', 'the uploaded logo files']);
   });
 
   it('takes a v2 report’s findings, names the missing assets by the shared labels and lifts a fix they all share', () => {

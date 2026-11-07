@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
+import { MKTG_PORTRAIT_FIT } from '@lfx-one/shared/constants';
 import { MktgBrandKitPageTypeComponent } from './mktg-brand-kit-page-type.component';
 import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -16,7 +17,9 @@ describe('the Typography page', () => {
     expect(rectOf(specimen)).toEqual({ left: '56px', top: '212px', width: '704px' });
     const h1 = specimen?.querySelector<HTMLElement>('[data-testid="brand-kit-type-h1"]');
     expect(h1?.textContent).toBe(view.voice.line);
-    expect(h1?.style.fontSize).toBe('48px');
+    // The synthetic brand line (32 characters) does not fit the column at the mock's 48 px, so it is set at the largest
+    // step that fits (40 px), whole.
+    expect(h1?.style.fontSize).toBe('40px');
     expect(Array.from(specimen?.querySelectorAll('.kp-type-weight-name') ?? [], (name) => name.textContent)).toEqual(['Regular 400', 'Bold 700']);
     const scale = frame.querySelector('[data-testid="brand-kit-type-scale"]');
     expect(rectOf(scale)).toEqual({ left: '56px', top: '436px', width: '704px' });
@@ -47,6 +50,7 @@ describe('the Typography page', () => {
     const { frame } = await mountBrandKitPage(MktgBrandKitPageTypeComponent, 'type', (view) => ({ ...view, voice: { ...view.voice, line: long } }));
     const size = parseFloat(frame.querySelector<HTMLElement>('[data-testid="brand-kit-type-h1"]')?.style.fontSize ?? '0');
     expect(size).toBeLessThan(48);
-    expect(size).toBeGreaterThanOrEqual(48 * 0.72);
+    // The floor is the grammar's minimum scale, rounded down to the half pixel the sample is set at.
+    expect(size).toBeGreaterThanOrEqual(Math.floor(48 * MKTG_PORTRAIT_FIT.minScale * 2) / 2);
   });
 });

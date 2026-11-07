@@ -250,7 +250,9 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v3');
       // Viewing a new Draft does not relabel the independently approved print target.
       expect(query('mktg-brand-kit-print')?.getAttribute('data-revision')).toBe('V1.0');
-      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V1.0');
+      // The book's cover names the approved revision it prints, not the Draft on screen.
+      expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
+      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V3.0');
     });
 
     it('prints approved kit bytes while the screen renders a different Draft', async () => {
@@ -293,13 +295,15 @@ describe('BrandKitWebViewComponent', () => {
 
     it('prints the active project identity and local chapter numbers, not kit-content identity or family prefixes', async () => {
       const wrapper = query('brand-kit-web-view-print');
-      const head = () => wrapper?.querySelector('[data-testid="mktg-print-running-head"]')?.textContent;
-      expect(head()).toContain('Synthetic project Brand kit');
+      const head = () => wrapper?.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent;
+      expect(head()).toContain('Synthetic project brand kit');
       expect(head()).not.toContain('Project One');
-      expect(Array.from(wrapper?.querySelectorAll('h2 > span') ?? []).map((span) => span.textContent?.trim())).toEqual(['1', '2', '3', '4', '5']);
+      // The running heads number the kit's own chapters from 01, with no family prefix.
+      const sections = Array.from(wrapper?.querySelectorAll('[data-testid="mktg-portrait-page-section"]') ?? [], (span) => span.textContent?.trim());
+      expect([...new Set(sections)]).toEqual(['Contents', '01 Logo', '02 Color', '03 Type', '04 Visual', '05 Usage', '06 Voice', '07 Sources']);
       activeContext.set({ slug: 'synthetic', name: 'Updated project context' });
       await fixture.whenStable();
-      expect(head()).toContain('Updated project context Brand kit');
+      expect(head()).toContain('Updated project context brand kit');
       expect(wrapper?.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V1.0');
     });
 
@@ -710,7 +714,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(frame?.contentDocument?.querySelector('lfx-mktg-brand-kit-print')).not.toBeNull();
       // The frame's title names the saved PDF like the deck: the project, the asset, the approved revision and that revision's own date.
       expect(frame?.contentDocument?.title).toBe('Synthetic project · Brand kit · v1 · 2026-10-20');
-      expect(frame?.contentDocument?.querySelector('[data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project Brand kit');
+      expect(frame?.contentDocument?.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent).toContain('Synthetic project brand kit');
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
       expect(print).not.toHaveBeenCalled();
 

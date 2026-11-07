@@ -31,7 +31,7 @@ describe('the Sources & decisions page', () => {
       ...view,
       report: {
         ...view.report,
-        sources_read: ['https://one.example.org', 'https://one.example.org/_next/static/chunks/app.css', 'LFX project record'],
+        sources_read: ['https://one.example.org', 'https://one.example.org/_next/static/chunks/app.css', 'LFX record: Project One (project-one)'],
         sources_failed: [],
         gaps: ['No symbol file.'],
         notes: '',

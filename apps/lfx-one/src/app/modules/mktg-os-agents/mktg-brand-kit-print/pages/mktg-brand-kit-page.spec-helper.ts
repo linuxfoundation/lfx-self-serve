@@ -39,7 +39,8 @@ export async function mountBrandKitPage<T extends MktgBrandKitPageBase>(
   const fixture = TestBed.createComponent(component);
   fixture.componentRef.setInput('view', view);
   fixture.componentRef.setInput('brand', brand);
-  fixture.componentRef.setInput('look', mktgPortraitLook(brand, view.spark));
+  const look = mktgPortraitLook(brand, view.spark);
+  fixture.componentRef.setInput('look', look);
   fixture.componentRef.setInput('book', SYNTHETIC_BOOK);
   fixture.componentRef.setInput('page', page);
   // The contents page lists the plan: it takes the placed pages too.
@@ -48,7 +49,7 @@ export async function mountBrandKitPage<T extends MktgBrandKitPageBase>(
   const root: HTMLElement = fixture.nativeElement;
   const frame = root.querySelector<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]');
   if (!frame) throw new Error('Missing synthetic frame');
-  return { kit, view, brand, pages, page, fixture, root, frame };
+  return { kit, view, brand, look, pages, page, fixture, root, frame };
 }
 
 /** The `[lfxPpRect]` host of an element: its placement on the frame. */
