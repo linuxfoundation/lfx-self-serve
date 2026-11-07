@@ -3,8 +3,9 @@
 
 import { Component, computed, input } from '@angular/core';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
+import { AEO_GEO_SOURCES_KEEP_TOGETHER_MAX } from '@lfx-one/shared/constants';
 import { AeoGeoReport } from '@lfx-one/shared/interfaces';
-import { aeoGeoHttpLink, aeoGeoReaderCaveat } from '@lfx-one/shared/utils';
+import { aeoGeoHttpLink, aeoGeoReaderCaveats } from '@lfx-one/shared/utils';
 
 /** The validated structured report, shared by the web view and browser-print PDF. */
 @Component({
@@ -18,8 +19,10 @@ export class AeoGeoReportComponent {
   public readonly showHeadline = input(true);
   protected readonly findings = this.initFindings();
   protected readonly sources = computed(() => this.report().sources.map((source) => ({ ...source, href: aeoGeoHttpLink(source.url) })));
-  // Reader sentences: the known plumbing shapes in a caveat (a snake_case field name, a slug, a uid, a quoted or well-known provider error) are mapped or left out; other text passes through unchanged.
-  protected readonly caveats = computed(() => this.report().caveats.map(aeoGeoReaderCaveat));
+  // Reader sentences, each once: the known plumbing shapes in a caveat are mapped or left out; other text passes through unchanged.
+  protected readonly caveats = computed(() => aeoGeoReaderCaveats(this.report().caveats));
+  // A short Sources list prints as one block with its heading (its last lines never alone on a page); a long one flows.
+  protected readonly keepSourcesTogether = computed(() => this.report().sources.length <= AEO_GEO_SOURCES_KEEP_TOGETHER_MAX);
 
   private initFindings() {
     return computed(() =>

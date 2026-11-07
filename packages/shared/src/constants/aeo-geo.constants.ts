@@ -36,6 +36,11 @@ export const AEO_GEO_INTAKE_ERRORS = {
   key_pages: 'Leave blank to let the agent choose, or enter two to five different absolute http(s) URLs, one per line. Public website names only.',
 } as const;
 /**
+ * A printed Sources list up to this long moves to the next page whole with its heading rather than leave its
+ * last lines alone on a page; a longer list flows, so a near-empty page is never forced.
+ */
+export const AEO_GEO_SOURCES_KEEP_TOGETHER_MAX = 12;
+/**
  * Reader sentences for the agent's caveats. The known plumbing shapes (a snake_case field name, a slug, a uid,
  * a quoted or well-known provider error) map to these or are left out; other text passes through unchanged.
  */

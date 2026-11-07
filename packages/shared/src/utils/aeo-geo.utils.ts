@@ -387,6 +387,14 @@ export function aeoGeoReaderCaveat(caveat: string): string {
   return changed ? kept.join(' ') : caveat;
 }
 
+/**
+ * The report's caveats as reader sentences, in order, each distinct caveat once: two agent caveats that map to
+ * the same sentence (two plumbing-only caveats, say, both falling back to the fixed one) print one bullet.
+ */
+export function aeoGeoReaderCaveats(caveats: readonly string[]): string[] {
+  return Array.from(new Set(caveats.map(aeoGeoReaderCaveat)));
+}
+
 function readerSentence(sentence: string): string {
   if (providerSubject(sentence) === 'search' && carriesProviderFailure(sentence)) {
     return AEO_GEO_READER_CAVEATS.search_unavailable;

@@ -95,11 +95,14 @@ map to fixed wording, and the known plumbing shapes (a snake_case field name, a
 slug, a uid, a credits or quota phrase, a provider subject quoting its message)
 are left out of the sentence that carries them; a quoted result title and any
 sentence about the audited site pass through unchanged — the stored report is
-unchanged, and a report with no caveats prints no Caveats section. The print of a typed report opens with the report's title and facts, then
-the score card, then the report without a second headline, and its headings,
-scorecard rows, findings, recommendations and list items carry CSS Fragmentation
-`break-after: avoid` / `break-inside: avoid` so no heading is orphaned and no
-block splits across pages (no page numbers: the zero-margin page setup has no
+unchanged, a report with no caveats prints no Caveats section, and two caveats
+that map to the same sentence print it once (`aeoGeoReaderCaveats`). The print
+of a typed report opens with the report's title and facts, then the score card,
+then the report without a second headline, and its headings, scorecard rows,
+findings, recommendations and list items carry CSS Fragmentation `break-after:
+avoid` / `break-inside: avoid` so no heading is orphaned and no block splits
+across pages; a Sources list of up to `AEO_GEO_SOURCES_KEEP_TOGETHER_MAX` items
+is one such block with its heading, a longer one flows (no page numbers: the zero-margin page setup has no
 margin area for a counter). The shared `MktgPrintSheetComponent` takes an optional
 `head` template, rendered as a row of its table head group under the page room,
 which the report uses for the shared `MktgPrintRunningHeadComponent` (project,

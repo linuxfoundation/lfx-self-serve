@@ -7,7 +7,8 @@
 
 // Pagination of the printed report (CSS Fragmentation Level 3, with the page-break-* aliases older WebKit reads):
 // a heading keeps with the block under it, and a scorecard row, a finding, a recommendation or a list item never
-// splits across pages. The sections and their lists flow, so Sources starts wherever it fits. Inert on screen.
+// splits across pages. The sections and their lists flow, except a short Sources list, which the template marks a
+// block so its last lines are never alone on a page. Inert on screen.
 h2,
 h3,
 h4 {

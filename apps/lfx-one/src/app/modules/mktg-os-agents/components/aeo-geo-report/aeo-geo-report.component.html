@@ -73,7 +73,7 @@
       </ul>
     </section>
   }
-  <section aria-label="Sources" class="flex flex-col gap-3" data-testid="mktg-aeo-typed-sources">
+  <section aria-label="Sources" class="flex flex-col gap-3" [class.lfx-aeo-report-block]="keepSourcesTogether()" data-testid="mktg-aeo-typed-sources">
     <h3 class="text-xl font-semibold">Sources</h3>
     <ul class="list-disc pl-5">
       @for (source of sources(); track $index) {

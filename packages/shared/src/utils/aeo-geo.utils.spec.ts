@@ -6,6 +6,7 @@ import { AEO_GEO_CATEGORIES, AEO_GEO_INTAKE_ERRORS, AEO_GEO_READER_CAVEATS, AEO_
 import type { AeoGeoEnvelope } from '../interfaces/aeo-geo.interface';
 import {
   aeoGeoReaderCaveat,
+  aeoGeoReaderCaveats,
   buildAeoGeoFormPayload,
   extractAeoGeoEnvelopeCandidates,
   isAeoGeoEnvelope,
@@ -436,7 +437,7 @@ describe('AEO/GEO reader caveats', () => {
   });
 
   // The editor's fixtures 1–3 (synthetic domains), byte for byte: quoted titles, site responses and the site's own rate limiting pass through,
-  // a provider's quoted message maps, emptied caveats fall back, zero caveats stay zero.
+  // a provider's quoted message maps, emptied caveats fall back to one sentence printed once, zero caveats stay zero.
   it.each([
     [
       'fixture1-quoted-titles',
@@ -469,20 +470,31 @@ describe('AEO/GEO reader caveats', () => {
       ],
       [
         "Some of the audit's inputs were unavailable for this run.",
-        "Some of the audit's inputs were unavailable for this run.",
         'Metrics were not read. robots.txt allows all crawlers.',
         'No live AI-engine tests were run.',
       ],
     ],
   ])('maps the editor fixture %s exactly', (_name, caveats, expected) => {
-    expect(caveats.map(aeoGeoReaderCaveat)).toEqual(expected);
+    expect(aeoGeoReaderCaveats(caveats)).toEqual(expected);
+  });
+
+  it('prints each distinct reader sentence once, in order of first occurrence', () => {
+    // Two plumbing-only caveats both fall back to the same sentence; two identical pass-through caveats are one.
+    expect(
+      aeoGeoReaderCaveats(['(project_uid unavailable)', 'No live AI-engine tests were run.', 'Record 3f2504e0-4f89-11d3-9a0c-0305e82c3301 was unavailable.'])
+    ).toEqual([AEO_GEO_READER_CAVEATS.inputs_unavailable, 'No live AI-engine tests were run.']);
+    expect(aeoGeoReaderCaveats(['robots.txt allows all crawlers.', 'robots.txt allows all crawlers.'])).toEqual(['robots.txt allows all crawlers.']);
+    // Distinct sentences all stay, in order; an empty report stays empty.
+    const distinct = aeoGeoEnvelopeFixture('project').report?.caveats ?? [];
+    expect(aeoGeoReaderCaveats(distinct)).toEqual(distinct.map(aeoGeoReaderCaveat));
+    expect(aeoGeoReaderCaveats([])).toEqual([]);
   });
 
   it('accepts a report with no caveats, which the view relies on to print no Caveats section', () => {
     const report = aeoGeoEnvelopeFixture('project').report;
     expect(report).toBeDefined();
     expect(isAeoGeoReport({ ...report, caveats: [] })).toBe(true);
-    expect(([] as string[]).map(aeoGeoReaderCaveat)).toEqual([]);
+    expect(aeoGeoReaderCaveats([])).toEqual([]);
   });
 
   it('stays linear on long runs of whitespace and falls back above the length cap', () => {

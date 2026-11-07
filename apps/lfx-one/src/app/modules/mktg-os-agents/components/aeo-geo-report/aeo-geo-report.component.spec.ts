@@ -91,13 +91,24 @@ describe('AeoGeoReportComponent print and Markdown details', () => {
     expect(source?.textContent?.replace(/\s+/g, ' ').trim()).toBe(`${report.sources[0].url} (${report.sources[0].role})`);
     expect(element.querySelector('[data-testid="mktg-aeo-typed-source-role-0"]')?.textContent).toBe(` (${report.sources[0].role})`);
     // Pagination (computed in jsdom from the component stylesheet): a heading keeps with its block; a scorecard row, a finding,
-    // a recommendation and a list item never split; the sections and lists flow.
+    // a recommendation and a list item never split; the sections and lists flow, except a Sources list of up to 12 items, one block.
     for (const heading of element.querySelectorAll('h2, h3, h4')) expect(getComputedStyle(heading).breakAfter).toBe('avoid');
     expect(element.querySelectorAll('h4').length).toBe(report.scorecard.length + report.findings.length + report.recommendations.length);
+    const shortSources = report.sources.length <= 12;
     const blocks = element.querySelectorAll<HTMLElement>('.lfx-aeo-report-block');
-    expect(blocks).toHaveLength(report.scorecard.length + report.findings.length + report.recommendations.length);
+    expect(blocks).toHaveLength(report.scorecard.length + report.findings.length + report.recommendations.length + (shortSources ? 1 : 0));
     for (const block of blocks) expect(getComputedStyle(block).breakInside).toBe('avoid');
     expect(element.querySelector('[data-testid="mktg-aeo-typed-score-ai_crawler_access"]')?.classList.contains('lfx-aeo-report-block')).toBe(true);
+    const sourcesSection = element.querySelector('[data-testid="mktg-aeo-typed-sources"]');
+    expect(sourcesSection?.classList.contains('lfx-aeo-report-block')).toBe(shortSources);
+    // The boundary: 12 sources keep together, 13 flow.
+    const source13 = Array.from({ length: 13 }, (_, index) => ({ url: `https://reference.example/source-${index}`, role: 'external' as const }));
+    fixture.componentRef.setInput('report', { ...report, sources: source13.slice(0, 12) });
+    fixture.detectChanges();
+    expect(sourcesSection?.classList.contains('lfx-aeo-report-block')).toBe(true);
+    fixture.componentRef.setInput('report', { ...report, sources: source13 });
+    fixture.detectChanges();
+    expect(sourcesSection?.classList.contains('lfx-aeo-report-block')).toBe(false);
     for (const item of element.querySelectorAll('li')) expect(getComputedStyle(item).breakInside).toBe('avoid');
     for (const section of element.querySelectorAll('section')) expect(getComputedStyle(section).breakInside).not.toBe('avoid');
     fixture.destroy();
