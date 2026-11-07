@@ -124,6 +124,8 @@ export function mktgFamilyPrintFaqEntryHeight(entry: MktgFamilyPrintFaqPlanGroup
  * other; when both are full the next page opens, a group split where its
  * column ended (its heading repeats). An entry taller than a column stands
  * alone in one. Empty groups are not printed. No page with no questions.
+ * A second page opens only when the first is full; when it does, the pages
+ * are balanced (mktgFamilyPrintFaqBalancedPages).
  */
 export function mktgFamilyPrintFaqPages(groups: MktgFamilyPrintFaqPlanGroup[]): MktgFamilyPrintFaqPage[] {
   const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
@@ -162,7 +164,8 @@ export function mktgFamilyPrintFaqPages(groups: MktgFamilyPrintFaqPlanGroup[]): 
     });
   });
   open();
-  return pages;
+  // More than one page: the entries are re-dealt so the pages, and each page's columns, hold about the same height (8 + 1 → 5 + 4).
+  return pages.length > 1 ? mktgFamilyPrintFaqBalancedPages(groups, pages.length) : pages;
 }
 
 /**
@@ -596,4 +599,60 @@ export function mktgFamilyPrintContentsLayout(chapters: MktgFamilyPrintChapter[]
     }
   }
   return { columns, cut: 0 };
+}
+
+/** An answered question as the FAQ deal measures it: its place in the groups and its height in a column. */
+interface MktgFamilyPrintFaqDealItem {
+  group: number;
+  question: number;
+  height: number;
+}
+
+/**
+ * The FAQ's pages re-dealt by height once the fill needs more than one: the
+ * entries, in order, shared across `pageCount` pages so each holds about the
+ * same height, and across each page's two columns the same way (eight and
+ * one become five and four, laid three/two and two/two). A column never
+ * exceeds its budget, except for one entry taller than a column, which
+ * stands alone; what a page cannot hold goes on to the next, so nothing is
+ * cut. A group split by a page or a column repeats its heading.
+ */
+export function mktgFamilyPrintFaqBalancedPages(groups: MktgFamilyPrintFaqPlanGroup[], pageCount: number): MktgFamilyPrintFaqPage[] {
+  const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
+  const budget = layout.bottom - layout.top;
+  const width = (MKTG_PORTRAIT_PAGE.contentWidth - layout.columnGap) / 2;
+  const items: MktgFamilyPrintFaqDealItem[] = groups.flatMap((group, groupIndex) =>
+    group.questions.map((entry, question) => ({ group: groupIndex, question, height: mktgFamilyPrintFaqEntryHeight(entry, width) }))
+  );
+  // An item's cost in a run: its height, and the heading when it opens the run or its group.
+  const cost = (item: MktgFamilyPrintFaqDealItem, previous: MktgFamilyPrintFaqDealItem | undefined): number =>
+    item.height + (!previous || previous.group !== item.group ? layout.heading : 0);
+  const runHeight = (run: MktgFamilyPrintFaqDealItem[]): number => run.reduce((sum, item, index) => sum + cost(item, run[index - 1]), 0);
+  // Items from `from` while the run stays under `target` and within `room`; the first item always goes in.
+  const take = (run: MktgFamilyPrintFaqDealItem[], from: number, target: number, room: number): MktgFamilyPrintFaqDealItem[] => {
+    const taken: MktgFamilyPrintFaqDealItem[] = [];
+    let used = 0;
+    for (let index = from; index < run.length; index++) {
+      const next = cost(run[index], taken[taken.length - 1]);
+      if (used > 0 && (used >= target - 0.01 || used + next > room)) break;
+      taken.push(run[index]);
+      used += next;
+    }
+    return taken;
+  };
+  const toItems = (column: MktgFamilyPrintFaqDealItem[]): MktgFamilyPrintFaqItem[] =>
+    column.map((item, index) => ({ group: item.group, question: item.question, heading: index === 0 || column[index - 1].group !== item.group }));
+  const pages: MktgFamilyPrintFaqPage[] = [];
+  let rest = items;
+  for (let page = 0; rest.length > 0; page++) {
+    // The page's share of what is left; the last planned page, and any page after it, takes all it can hold.
+    const share = runHeight(rest) / Math.max(1, pageCount - page);
+    const run = take(rest, 0, share, Number.POSITIVE_INFINITY);
+    // The columns: the first to half the page's height, the second the rest; what the second cannot hold waits for the next page.
+    const first = take(run, 0, runHeight(run) / 2, budget);
+    const second = take(run, first.length, Number.POSITIVE_INFINITY, budget);
+    pages.push({ columns: [toItems(first), toItems(second)] });
+    rest = rest.slice(first.length + second.length);
+  }
+  return pages;
 }

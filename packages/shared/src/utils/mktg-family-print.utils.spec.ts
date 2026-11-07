@@ -20,6 +20,7 @@ import {
   mktgFamilyPrintCutNote,
   mktgFamilyPrintDate,
   mktgFamilyPrintDocument,
+  mktgFamilyPrintFaqBalancedPages,
   mktgFamilyPrintFaqEntryHeight,
   mktgFamilyPrintFaqGroups,
   mktgFamilyPrintFaqPages,
@@ -156,20 +157,73 @@ describe('mktgFamilyPrintFaqPages', () => {
         ['2.1H', '2.2', '3.0H', '3.1'],
       ],
     ]);
+    // Twenty questions need two pages (the first is full at fourteen); once split, the pages and their columns are balanced.
     const groups = faqGroups([5, 5, 5, 5]);
     const pages = mktgFamilyPrintFaqPages(groups);
     expect(shape(pages)).toEqual([
       [
-        ['0.0H', '0.1', '0.2', '0.3', '0.4', '1.0H'],
-        ['1.1H', '1.2', '1.3', '1.4', '2.0H', '2.1'],
+        ['0.0H', '0.1', '0.2', '0.3', '0.4'],
+        ['1.0H', '1.1', '1.2', '1.3', '1.4'],
       ],
       [
-        ['2.2H', '2.3', '2.4', '3.0H', '3.1', '3.2'],
-        ['3.3H', '3.4'],
+        ['2.0H', '2.1', '2.2', '2.3', '2.4'],
+        ['3.0H', '3.1', '3.2', '3.3', '3.4'],
       ],
     ]);
     for (const page of pages) for (const column of page.columns) expect(columnHeight(groups, column)).toBeLessThanOrEqual(budget);
     expect(pages.flatMap((page) => page.columns.flat())).toHaveLength(20);
+  });
+
+  it('opens a second page only when the first is full, then balances the pages and their columns by height: eight and one become five and four', () => {
+    // Nine six-line answers in two groups, four to a column: the greedy fill leaves one on the second page; the deal gives 3/2 and 2/2.
+    const groups = faqGroups([5, 4], 'A longer answer that runs on. '.repeat(10));
+    const pages = mktgFamilyPrintFaqPages(groups);
+    expect(shape(pages)).toEqual([
+      [
+        ['0.0H', '0.1', '0.2'],
+        ['0.3H', '0.4'],
+      ],
+      [
+        ['1.0H', '1.1'],
+        ['1.2H', '1.3'],
+      ],
+    ]);
+    const heights = pages.map((page) => page.columns.reduce((sum, column) => sum + columnHeight(groups, column), 0));
+    expect(Math.abs(heights[0] - heights[1])).toBeLessThan(mktgFamilyPrintFaqEntryHeight(groups[0].questions[0], width) + MKTG_FAMILY_PRINT_FAQ_LAYOUT.heading);
+    // Eight fill one page: no second page, no deal.
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([5, 3], 'A longer answer that runs on. '.repeat(10))))).toEqual([
+      [
+        ['0.0H', '0.1', '0.2', '0.3'],
+        ['0.4H', '1.0H', '1.1', '1.2'],
+      ],
+    ]);
+    // Every question once, in order, whatever the deal.
+    const dealt = pages.flatMap((page) => page.columns.flat()).map((item) => `${item.group}.${item.question}`);
+    expect(dealt).toEqual(groups.flatMap((group, g) => group.questions.map((_, q) => `${g}.${q}`)));
+    expect(mktgFamilyPrintFaqBalancedPages(groups, 2)).toEqual(pages);
+    expect(mktgFamilyPrintFaqBalancedPages([], 2)).toEqual([]);
+  });
+
+  it('keeps every balanced column within its budget and carries what a page cannot hold to the next, so nothing is cut', () => {
+    // Mixed heights: long answers among short ones, forty questions.
+    const groups = faqGroups([10, 10, 10, 10]).map((group, g) => ({
+      ...group,
+      questions: group.questions.map((entry, q) => ({ ...entry, answer: (g + q) % 3 === 0 ? 'A much longer answer. '.repeat(14) : entry.answer })),
+    }));
+    const pages = mktgFamilyPrintFaqPages(groups);
+    expect(pages.length).toBeGreaterThan(1);
+    for (const page of pages) for (const column of page.columns) expect(columnHeight(groups, column)).toBeLessThanOrEqual(budget);
+    expect(pages.flatMap((page) => page.columns.flat()).map((item) => `${item.group}.${item.question}`)).toEqual(
+      groups.flatMap((group, g) => group.questions.map((_, q) => `${g}.${q}`))
+    );
+    // Every column but the last holds something; a group split by a column repeats its heading.
+    expect(
+      pages
+        .flatMap((page) => page.columns)
+        .slice(0, -1)
+        .every((column) => column.length > 0)
+    ).toBe(true);
+    for (const page of pages) for (const column of page.columns) if (column.length) expect(column[0].heading).toBe(true);
   });
 
   it('skips empty groups, prints no page with no questions, and sets an entry taller than a column alone', () => {
