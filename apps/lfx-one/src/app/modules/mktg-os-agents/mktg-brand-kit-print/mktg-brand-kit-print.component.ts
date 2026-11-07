@@ -6,7 +6,14 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { BRAND_KIT_PORTRAIT_COVER_PURPOSE, BRAND_KIT_PORTRAIT_COVER_TITLE } from '@lfx-one/shared/constants';
 import { BrandKitBookView, MktgPortraitBook, MktgPortraitPlacedPage, MktgPrintBrand, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
 import { MktgPrintService } from '@services/mktg-print.service';
-import { brandKitPortraitPlan, mktgPortraitDocumentName, mktgPortraitFootLeft, mktgPortraitLook, mktgPortraitPlacePlan } from '@lfx-one/shared/utils';
+import {
+  brandKitPortraitBackCoverLine,
+  brandKitPortraitPlan,
+  mktgPortraitDocumentName,
+  mktgPortraitFootLeft,
+  mktgPortraitLook,
+  mktgPortraitPlacePlan,
+} from '@lfx-one/shared/utils';
 import { distinctUntilChanged, filter } from 'rxjs';
 import { MktgPortraitBackCoverComponent } from '../components/mktg-portrait/mktg-portrait-back-cover/mktg-portrait-back-cover.component';
 import { MktgPortraitCoverComponent } from '../components/mktg-portrait/mktg-portrait-cover/mktg-portrait-cover.component';
@@ -93,6 +100,8 @@ export class MktgBrandKitPrintComponent {
   });
   /** `V4.0 · November 2026`, less any part the kit lacks: the back cover's line. */
   protected readonly versionLine = computed(() => [this.view().versionLabel, this.view().monthYear].filter((part) => part !== '').join(' · '));
+  /** The back cover's brand line at most two lines inside the margins, shortened at a word when longer (`brandKitPortraitBackCoverLine`). */
+  protected readonly backCoverLine = computed(() => brandKitPortraitBackCoverLine(this.view().voice.line, this.brand().fontStack));
   /** `aaif.io · V4.0 · November 2026`, less any part the kit lacks: the cover's strip. */
   protected readonly coverStripRight = computed(() => [this.view().host, this.versionLine()].filter((part) => part !== '').join(' · '));
   public constructor() {

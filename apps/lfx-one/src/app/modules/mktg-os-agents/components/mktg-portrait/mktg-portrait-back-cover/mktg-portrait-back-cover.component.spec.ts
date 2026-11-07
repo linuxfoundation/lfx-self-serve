@@ -50,6 +50,9 @@ describe('lfx-mktg-portrait-back-cover', () => {
     expect(line?.textContent).toBe('Open standards for agents');
     expect(line?.classList.contains('pp-back-line')).toBe(true);
     expect(line?.parentElement?.style.top).toBe('560px');
+    // Inside the frame's margins: a long line wraps within the 704 px, never 8 px from the edges.
+    expect(line?.parentElement?.style.left).toBe('56px');
+    expect(line?.parentElement?.style.width).toBe('704px');
     expect(page.querySelector('[data-testid="mktg-portrait-back-cover-url"]')?.textContent).toBe('synthetic.example');
     expect(page.querySelector('[data-testid="mktg-portrait-back-cover-version"]')?.textContent).toBe('V4.0 · November 2026');
     const notice = page.querySelector<HTMLElement>('[data-testid="mktg-portrait-back-cover-notice"]');

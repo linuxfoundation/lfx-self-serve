@@ -28,7 +28,7 @@
       @if (v.logos.primary?.src) {
         <div>
           <div class="pp-tile pp-tile--dark kp-tile"><lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="40" /></div>
-          <div class="pp-cap">{{ reversedSupplied() ? 'Reversed · supplied file' : 'Reversed · derived from the horizontal file' }}</div>
+          <div class="pp-cap">{{ reversedCaption() }}</div>
         </div>
       }
       @if (hasStacked()) {

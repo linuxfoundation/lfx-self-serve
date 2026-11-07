@@ -31,4 +31,15 @@ describe('the Watchouts page', () => {
     expect(rectOf(fallback)).toEqual({ left: '56px', top: '760px', width: '704px' });
     expect(fallback?.textContent).toContain('never smaller than 32 px tall.');
   });
+
+  it('shortens a long name in the retyped sample to the four lines the tile holds clear of its badge, with an ellipsis', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoWatchoutsComponent, 'logo-watchouts', (view) => ({
+      ...view,
+      projectName: 'The Synthetic Foundation for Interoperable Agentic Computing Standards and Open Governance',
+    }));
+    const retyped = frame.querySelector('[data-testid="brand-kit-watchout-retyped"]')?.textContent ?? '';
+    expect(retyped.startsWith('The Synthetic Foundation')).toBe(true);
+    expect(retyped.endsWith('…')).toBe(true);
+    expect(retyped.split(' ').length).toBeLessThan(12);
+  });
 });

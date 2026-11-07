@@ -15,7 +15,8 @@ describe('the Color contrast page', () => {
     const matrix = frame.querySelector<HTMLTableElement>('[data-testid="brand-kit-contrast-matrix"]');
     expect(rectOf(matrix)).toEqual({ left: '56px', top: '220px', width: '704px' });
     // The matrix block keeps the mock's room above the pairs (390 px), so a four-colour matrix leaves them at y 610.
-    expect(matrix?.parentElement?.style.minHeight).toBe('390px');
+    // The matrix block keeps the room above the pairs' 24 px gap, so "The kit's pairs" sits at the mock's y 610.
+    expect(matrix?.parentElement?.style.minHeight).toBe('366px');
     expect(Array.from(matrix?.querySelectorAll('thead th') ?? [], (th) => th.textContent)).toEqual(['', 'on Charcoal', 'on White', 'on Orange', 'on Mid gray']);
     const rows = Array.from(matrix?.querySelectorAll('tbody tr') ?? []);
     expect(rows).toHaveLength(4);

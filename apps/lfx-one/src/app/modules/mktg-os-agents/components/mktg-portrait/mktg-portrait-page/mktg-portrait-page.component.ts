@@ -4,7 +4,7 @@
 import { Component, computed, input } from '@angular/core';
 import { MKTG_PORTRAIT_GRID_GROUND, MKTG_PORTRAIT_HEX_REGEX, MKTG_PORTRAIT_INKS } from '@lfx-one/shared/constants';
 import { MktgPortraitBook, MktgPortraitLook } from '@lfx-one/shared/interfaces';
-import { mktgPortraitAccentText, mktgPortraitPageNumber } from '@lfx-one/shared/utils';
+import { mktgPortraitAccentOnDark, mktgPortraitAccentText, mktgPortraitPageNumber } from '@lfx-one/shared/utils';
 import { MKTG_PORTRAIT_BLOCK_HOST } from '../mktg-portrait-host';
 
 /**
@@ -35,6 +35,7 @@ import { MKTG_PORTRAIT_BLOCK_HOST } from '../mktg-portrait-host';
     '[style.--pp-dark]': 'look().dark',
     '[style.--pp-accent]': 'look().accent',
     '[style.--pp-accent-text]': 'accentText()',
+    '[style.--pp-accent-on-dark]': 'accentOnDark()',
     '[style.--pp-spark]': 'look().spark',
     '[style.--pp-on-accent]': 'look().onAccent',
     '[style.--pp-on-dark]': 'look().onDark',
@@ -73,6 +74,8 @@ export class MktgPortraitPageComponent {
   protected readonly pageNumber = computed(() => mktgPortraitPageNumber(this.page()));
   /** The accent as text on the page white, readable at WCAG AA: `--pp-accent-text`, for every text set in the accent. */
   protected readonly accentText = computed(() => mktgPortraitAccentText(this.look().accent, this.inks.white));
+  /** The accent as text on the dark ground, or the ink on the dark where the accent fails AA there: `--pp-accent-on-dark`. */
+  protected readonly accentOnDark = computed(() => mktgPortraitAccentOnDark(this.look()));
   protected readonly glow = computed(() => this.accentAlpha(MKTG_PORTRAIT_GRID_GROUND.glowAlpha));
   /** The glow as the print draws it, stronger than the screen's: on paper the 33 % glow is almost invisible. */
   protected readonly glowPrint = computed(() => this.accentAlpha(MKTG_PORTRAIT_GRID_GROUND.glowPrintAlpha));

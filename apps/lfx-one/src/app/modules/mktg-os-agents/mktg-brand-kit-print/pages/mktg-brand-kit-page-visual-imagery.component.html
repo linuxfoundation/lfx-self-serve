@@ -27,11 +27,12 @@
       </div>
       <div
         class="kp-element kp-element--callout"
-        [style.background]="look().accent"
-        [style.color]="look().onAccent"
+        [class.kp-element--callout-rule]="moment().ground === 'white'"
+        [style.background]="moment().background"
+        [style.color]="moment().ink"
         data-element="callout"
         data-testid="brand-kit-imagery-element">
-        <div class="pp-lab" [style.color]="look().onAccent">Call-out card</div>
+        <div class="pp-lab" [style.color]="moment().ink">Call-out card</div>
         <div class="kp-element-callout-text">One per view, for the main call to action.</div>
         @if (v.host) {
           <span class="kp-button kp-button--small">{{ v.host }}</span>

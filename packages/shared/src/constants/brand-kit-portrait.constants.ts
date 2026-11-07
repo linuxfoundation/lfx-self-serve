@@ -9,7 +9,7 @@
 
 import type { BrandKitContrastGrade, BrandKitUsageView } from '../interfaces/brand-kit.interface';
 import { lfxColors } from './colors.constants';
-import { MKTG_PORTRAIT_MORE_LINE } from './mktg-portrait-print.constants';
+import { MKTG_PORTRAIT_MORE_LINE, MKTG_PORTRAIT_PAGE } from './mktg-portrait-print.constants';
 
 /** The cover's title. */
 export const BRAND_KIT_PORTRAIT_COVER_TITLE = 'Brand Kit';
@@ -100,6 +100,15 @@ export const BRAND_KIT_PORTRAIT_SOURCES = {
   acceptedTop: 880,
   bottom: 990,
   gap: 24,
+  /**
+   * A colour conflict as the page draws it (`.kp-conflict`): a table 8 px
+   * under the one before, its name a 12 px semibold head with 4 px under it,
+   * each value a row of swatch (22 px), label and source cells, 12.5/1.5,
+   * padded 5 px above and below over a hairline, the cells 8 px apart. The
+   * fit measures every row as the page sets it, so the column stops above the
+   * accepted box (the last row once ran under it).
+   */
+  conflict: { above: 8, name: { size: 12, line: 1.5, weight: 600 }, headBelow: 4, rowPad: 11, swatch: 22, cellGap: 8 },
 } as const;
 
 /**
@@ -109,6 +118,24 @@ export const BRAND_KIT_PORTRAIT_SOURCES = {
  * shortened at a word with an ellipsis.
  */
 export const BRAND_KIT_PORTRAIT_INTRO = { width: 600, size: 12.5, maxLines: 3 } as const;
+
+/**
+ * The back cover's brand line (13 px caps, medium, +0.16em) inside the
+ * frame's margins: at most two lines of the content width, measured glyph by
+ * glyph in the kit's face; a longer line is shortened at a word with an
+ * ellipsis, never set smaller (the overfull record's line once ran 8 px
+ * from both edges).
+ */
+export const BRAND_KIT_PORTRAIT_BACK_COVER_LINE = { width: MKTG_PORTRAIT_PAGE.contentWidth, size: 13, weight: 500, tracking: 0.16, maxLines: 2 } as const;
+
+/**
+ * The Watch-outs page's retyped sample: the project's name in a 30 px serif
+ * italic, centred in its 224 × 190 tile with 34 px clear on each side (the
+ * × badge's 22 px box and its 8 px inset, plus the grammar's 4 px), so the
+ * name never runs under the badge; at most four lines of that 156 px, a
+ * longer name shortened at a word with an ellipsis, never set smaller.
+ */
+export const BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED = { width: 156, badgeClear: 34, size: 30, weight: 700, maxLines: 4 } as const;
 
 /**
  * The usage cards' lines (the brand line on the keynote slide and the social
@@ -123,7 +150,7 @@ export const BRAND_KIT_PORTRAIT_USAGE_LINES = {
 
 /**
  * The Voice page's messages block (y 212 to the attributes at y 540, less
- * the 24 px gap): the umbrella message (30/1.3) and the brand line (24/1.2),
+ * the 24 px gap): the umbrella message (30/1.3) and the brand line (24/1.3),
  * each under its label; set smaller together in the grammar's steps when
  * the two do not fit, and cut at a sentence when no step holds them.
  */
@@ -134,7 +161,8 @@ export const BRAND_KIT_PORTRAIT_VOICE_MESSAGES = {
   label: { size: 10, line: 1.2, weight: 600, caps: true },
   umbrella: { size: 30, line: 1.3, weight: 500, above: 10 },
   lineLabelAbove: 26,
-  line: { size: 24, line: 1.2, weight: 500, above: 8 },
+  /** The brand line at the umbrella's leading (the mock's unset 24 px read as 1.0 once the line wrapped). */
+  line: { size: 24, line: 1.3, weight: 500, above: 8 },
 } as const;
 
 /**
@@ -173,6 +201,8 @@ export const BRAND_KIT_PORTRAIT_CONTRAST = {
   bottom: 990,
   header: 18,
   row: 86,
+  /** The gap over "The kit's pairs", under a four-colour matrix as under a taller one (the heading once sat on the matrix). */
+  pairsGap: 24,
   pairsLabel: 20,
   pair: 51,
   more: 20,

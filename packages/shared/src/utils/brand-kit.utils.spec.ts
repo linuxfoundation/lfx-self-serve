@@ -27,6 +27,7 @@ import {
 import { BrandKitChapters, BrandKitEnvelope, BrandKitRedraftFormPayload, BrandKitTokens } from '../interfaces/brand-kit.interface';
 import { brandKitBuiltFrom } from './brand-kit-book.utils';
 import { brandKitReportV2Envelope, brandKitReportV2Fixture } from './__fixtures__/brand-kit-report-v2.fixture';
+import { BRAND_KIT_FIXTURE_LOCKUP_SVG } from './__fixtures__/brand-kit-revision.fixture';
 import {
   brandKitBookPages,
   brandKitFontStack,
@@ -35,6 +36,7 @@ import {
   brandKitQuestionsId,
   brandKitRevisionOf,
   brandKitSvgDataUrl,
+  brandKitSvgIsMonochrome,
   brandKitSvgWithViewBox,
   brandKitSymbolImage,
   brandKitVoiceOfFramework,
@@ -1025,6 +1027,17 @@ describe('the book', () => {
     expect(symbol?.ref).toBe('logo.svg');
     expect(symbol?.src).toContain(encodeURIComponent('viewBox="0 0 60 60"'));
     expect(brandKitSymbolImage({ primary: { ref: 'logo.png', svg: null }, stacked: null, symbol: null, reversed: null }, '0 0 60 60')).toBeNull();
+  });
+
+  it('tells one-colour artwork, which a filter may reverse, from multi-colour artwork, which it would flatten', () => {
+    expect(brandKitSvgIsMonochrome(SVG)).toBe(true);
+    // Unpainted shapes are the one colour (black); white, none and currentColor are not colours of the mark.
+    expect(brandKitSvgIsMonochrome('<svg><path d="M0 0h1"/><rect fill="none" stroke="currentColor"/><circle fill="#FFF"/></svg>')).toBe(true);
+    expect(brandKitSvgIsMonochrome('<svg><path fill="#4D4E4E"/><rect style="fill: #4d4e4e; stroke: none"/></svg>')).toBe(true);
+    expect(brandKitSvgIsMonochrome('<svg><path fill="#4D4E4E"/><rect fill="#F37625"/></svg>')).toBe(false);
+    expect(brandKitSvgIsMonochrome('<svg><path fill="#4D4E4E"/><rect style="stroke:#F37625"/></svg>')).toBe(false);
+    expect(brandKitSvgIsMonochrome('<svg><defs><linearGradient id="g"/></defs><rect fill="url(#g)"/></svg>')).toBe(false);
+    expect(brandKitSvgIsMonochrome(BRAND_KIT_FIXTURE_LOCKUP_SVG)).toBe(false);
   });
 
   it('builds the Google Fonts link for the typeface and its weights, and the CSS stack with the site’s fallback', () => {

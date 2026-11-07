@@ -14,9 +14,12 @@ import { lfxColors } from '../constants/colors.constants';
 import type { MktgPortraitFitBlock } from '../interfaces/mktg-portrait-print.interface';
 import { brandKitContrastRatio, brandKitLuminance } from './brand-kit-book.utils';
 import {
+  mktgPortraitAccentOnDark,
   mktgPortraitAccentText,
   mktgPortraitBlockHeight,
   mktgPortraitCharsPerLine,
+  mktgPortraitCount,
+  mktgPortraitCoverStrip,
   mktgPortraitCutText,
   mktgPortraitFitBlock,
   mktgPortraitFits,
@@ -26,10 +29,15 @@ import {
   mktgPortraitOneLine,
   mktgPortraitPageNumber,
   mktgPortraitPaginate,
+  mktgPortraitSaysAlready,
   mktgPortraitScaleBlock,
   mktgPortraitSentences,
+  mktgPortraitTailFor,
   mktgPortraitTextWidth,
+  mktgPortraitWithTail,
   mktgPortraitWrapLines,
+  mktgKeepName,
+  mktgNoBreak,
   mktgNoWidow,
   mktgPortraitLargestFitting,
   mktgPortraitMoreLine,
@@ -136,6 +144,12 @@ describe('the fit model', () => {
     expect(mktgPortraitBlockHeight(block, 704)).toBe(15 + 8 + 15);
     expect(mktgPortraitFits(block, 704, 38)).toBe(true);
     expect(mktgPortraitFits(block, 704, 37)).toBe(false);
+    // A paragraph in a narrower cell (a table row's source beside a swatch and a label) wraps at the cell's width.
+    const words = Array.from({ length: 6 }, () => 'word').join(' ');
+    const plain: MktgPortraitFitBlock = { paras: [{ text: words, size: 12.5, line: 1.5 }] };
+    const inCell: MktgPortraitFitBlock = { paras: [{ text: words, size: 12.5, line: 1.5, indent: 200 }] };
+    expect(mktgPortraitBlockHeight(plain, 324)).toBe(12.5 * 1.5);
+    expect(mktgPortraitBlockHeight(inCell, 324)).toBeGreaterThanOrEqual(12.5 * 1.5 * 2);
   });
 
   it('scales sizes down to the half px and the space above to a tenth', () => {
@@ -197,6 +211,46 @@ describe('the fit model', () => {
   });
 });
 
+describe('mktgNoBreak and mktgKeepName', () => {
+  it('keeps a multi-word name on one line, so a headline breaks before the whole name, never inside it', () => {
+    expect(mktgNoBreak('Agentic  AI Foundation')).toBe('Agentic\u00a0AI\u00a0Foundation');
+    expect(mktgNoBreak('Alone')).toBe('Alone');
+    expect(mktgKeepName('New members join Agentic AI Foundation', 'Agentic AI Foundation')).toBe('New members join Agentic\u00a0AI\u00a0Foundation');
+    // The no-widow rule reads the no-break spaces as gaps: the name stays whole and the line may break before it.
+    expect(mktgNoWidow(mktgKeepName('New members join Agentic AI Foundation', 'Agentic AI Foundation'))).toBe(
+      'New members join Agentic\u00a0AI\u00a0Foundation'
+    );
+    expect(mktgKeepName('Project One annual report 2026', 'Project One')).toBe('Project\u00a0One annual report 2026');
+    // A one-word name, an absent name, an empty one: the text as it is.
+    expect(mktgKeepName('Open standards for one computing', 'Kubernetes')).toBe('Open standards for one computing');
+    expect(mktgKeepName('Open standards for one computing', 'Agentic AI')).toBe('Open standards for one computing');
+    expect(mktgKeepName('Open standards', '  ')).toBe('Open standards');
+  });
+});
+
+describe('mktgPortraitSaysAlready', () => {
+  it('reads a name as words and leaves a clause out when the name already says it, so a ground prints once', () => {
+    expect(mktgPortraitSaysAlready('Full color · on white', 'on white')).toBe(true);
+    expect(mktgPortraitSaysAlready('Full color · on white', 'full color on white')).toBe(true);
+    expect(mktgPortraitSaysAlready('Reversed · on Charcoal', 'white on dark')).toBe(false);
+    expect(mktgPortraitSaysAlready('Full color', '')).toBe(false);
+    expect(mktgPortraitTailFor('Full color · on white', ' · ', 'on white')).toBe('');
+    expect(mktgPortraitTailFor('Reversed', ' · ', 'on Charcoal')).toBe(' · on Charcoal');
+    expect(mktgPortraitWithTail('One-color black · print only', ' · ', 'print only')).toBe('One-color black · print only');
+    expect(mktgPortraitWithTail('One-color black', ' · ', 'print only')).toBe('One-color black · print only');
+  });
+});
+
+describe('mktgPortraitAccentOnDark', () => {
+  it('keeps the accent as text on the dark where it reads at AA, else takes the ink on the dark, and leaves a non-hex as it is', () => {
+    // The kit's orange on its charcoal: 2.9:1, as the matrix grades it; the back cover's brand line goes white.
+    expect(mktgPortraitAccentOnDark({ accent: '#F37625', dark: '#4D4E4E', onDark: '#FFFFFF' })).toBe('#FFFFFF');
+    // A yellow reads on the charcoal (above 4.5:1): the accent itself.
+    expect(mktgPortraitAccentOnDark({ accent: '#FFD700', dark: '#4D4E4E', onDark: '#FFFFFF' })).toBe('#FFD700');
+    expect(mktgPortraitAccentOnDark({ accent: 'var(--x)', dark: '#4D4E4E', onDark: '#FFFFFF' })).toBe('var(--x)');
+  });
+});
+
 describe('mktgPortraitAccentText', () => {
   const onWhite = (hex: string): number => brandKitContrastRatio(1, brandKitLuminance(hex));
 
@@ -228,6 +282,9 @@ describe('mktgPortraitMoreLine', () => {
     expect(mktgPortraitMoreLine(1, nouns.rule)).toBe('+1 more rule, in LFX One');
     expect(mktgPortraitMoreLine(3, nouns.rule)).toBe('+3 more rules, in LFX One');
     expect(mktgPortraitMoreLine(1, nouns.avoid)).toBe('+1 more item to avoid, in LFX One');
+    // The same nouns count anything on a page: the Typography page's "1 weight available".
+    expect(mktgPortraitCount(1, nouns.weight)).toBe('1 weight');
+    expect(mktgPortraitCount(3, nouns.weight)).toBe('3 weights');
     expect(mktgPortraitMoreLine(2, nouns.sourceRead)).toBe('+2 more sources read, in LFX One');
     expect(mktgPortraitMoreLine(1, nouns.colorConflict)).toBe('+1 more color conflict, in LFX One');
   });
@@ -248,5 +305,33 @@ describe('mktgNoWidow', () => {
     expect(mktgNoWidow(hostile)).toBe('x');
     expect(mktgNoWidow(`a${' '.repeat(100_000)}b`)).toBe('a\u00a0b');
     expect(performance.now() - started).toBeLessThan(50);
+  });
+});
+
+describe('the cover strip', () => {
+  it('prints both halves as written when they share the line, shortens the longer half’s first segment with an ellipsis, and wraps only as a last resort', () => {
+    const width = 672;
+    const left = 'Project One · a Linux Foundation project';
+    const right = 'one.example.org · V1.0 · October 2026';
+    expect(mktgPortraitCoverStrip(left, right, width)).toEqual({ left, right, wraps: false });
+    const long = 'Cloud Native Computing Foundation for Synthetic Everything (CNCFSE) · a Linux Foundation project';
+    const shortened = mktgPortraitCoverStrip(long, right, width);
+    expect(shortened.wraps).toBe(false);
+    expect(shortened.right).toBe(right);
+    expect(shortened.left).toMatch(/^Cloud Native.*… · a Linux Foundation project$/);
+    expect(shortened.left.length).toBeLessThan(long.length);
+    // The other half loses words too when the name alone cannot make room; one word each still too wide → the strip
+    // wraps whole (a single long token, a host, has no words to give up).
+    const wordy = 'Synthetic Host Name Of The Strip Example Site · V1.0 · October 2026';
+    const both = mktgPortraitCoverStrip(long, wordy, width);
+    expect(both.wraps).toBe(false);
+    expect(both.left.endsWith('… · a Linux Foundation project')).toBe(true);
+    expect(both.right).toMatch(/^Synthetic.*… · V1.0 · October 2026$/);
+    const hopeless = mktgPortraitCoverStrip(`${'Synthetic'.repeat(12)} · a Linux Foundation project`, `${'host'.repeat(20)}.org · V1.0 · October 2026`, width);
+    expect(hopeless).toEqual({
+      left: `${'Synthetic'.repeat(12)} · a Linux Foundation project`,
+      right: `${'host'.repeat(20)}.org · V1.0 · October 2026`,
+      wraps: true,
+    });
   });
 });

@@ -15,9 +15,9 @@
     }
   </div>
   <div [lfxPpRect]="strip()">
-    <div class="pp-cover-strip" data-testid="mktg-portrait-cover-strip">
-      <span>{{ stripLeft() }}</span>
-      <span>{{ stripRight() }}</span>
+    <div class="pp-cover-strip" [class.pp-cover-strip--wrapped]="stripText().wraps" data-testid="mktg-portrait-cover-strip">
+      <span>{{ stripText().left }}</span>
+      <span>{{ stripText().right }}</span>
     </div>
   </div>
 </lfx-mktg-portrait-page>

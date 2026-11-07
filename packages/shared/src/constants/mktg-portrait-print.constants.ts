@@ -79,6 +79,24 @@ export const MKTG_PORTRAIT_INKS = {
 export const MKTG_PORTRAIT_PAGE_NAME = 'mktg-portrait';
 
 /**
+ * The cover's bottom strip: two halves on one 10 px line (caps, 0.1 em
+ * tracking) 24 px apart in the frame's 672 px, at y 984. A half that does
+ * not fit loses words from its first segment (the project name, the host)
+ * with an ellipsis; when even that cannot hold both, the strip wraps at
+ * 1.4 leading and moves up by the extra line, so it ends where the one
+ * line did (above the 750 pt line).
+ */
+export const MKTG_PORTRAIT_COVER_STRIP = {
+  top: 984,
+  size: 10,
+  tracking: 0.1,
+  gap: 24,
+  lineHeight: 1.4,
+  /** The halves' segments are joined by this. */
+  separator: ' · ',
+} as const;
+
+/**
  * The portrait frames' page setup, as `MKTG_PRINT_PAGE_SETUPS` carries it
  * and the stylesheet mirrors it: US Letter, no margin. No margin keeps the
  * browser's header and footer off the saved PDF (it draws them only in the
@@ -154,6 +172,7 @@ export const MKTG_PORTRAIT_MORE_LINE = {
     sourceRead: { one: 'source read', many: 'sources read' },
     gap: { one: 'gap', many: 'gaps' },
     colorConflict: { one: 'color conflict', many: 'color conflicts' },
+    weight: { one: 'weight', many: 'weights' },
   },
 } as const;
 
@@ -318,6 +337,8 @@ export const MKTG_PORTRAIT_FAMILY_WIDTH: Readonly<Record<string, number>> = {
   'dm sans': 1.02,
   manrope: 1.05,
   'nunito sans': 1.02,
+  /** The Watch-outs page's retyped sample (a bold italic serif). */
+  georgia: 1.1,
 };
 
 export const MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT = 1.08;

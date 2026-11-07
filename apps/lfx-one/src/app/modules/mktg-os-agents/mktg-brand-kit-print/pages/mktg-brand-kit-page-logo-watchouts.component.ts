@@ -3,7 +3,7 @@
 
 import { Component, computed } from '@angular/core';
 import { BrandKitWatchoutView } from '@lfx-one/shared/interfaces';
-import { brandKitPortraitWatchoutDraw } from '@lfx-one/shared/utils';
+import { brandKitPortraitRetypedName, brandKitPortraitWatchoutDraw, mktgPortraitMeasure } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitArtworkComponent } from './mktg-brand-kit-artwork.component';
@@ -29,5 +29,7 @@ export class MktgBrandKitPageLogoWatchoutsComponent extends MktgBrandKitPageBase
       .watchouts.slice(0, 6)
       .map((tile) => brandKitPortraitWatchoutDraw(tile, this.view(), this.inks.white))
   );
-  protected readonly minimum = computed(() => this.view().logo.minimum_size.screen_px);
+  protected readonly minimum = computed(() => mktgPortraitMeasure(this.view().logo.minimum_size.screen_px, 'px'));
+  /** The retyped sample's text: the name, shortened to the four lines the tile holds clear of its badge. */
+  protected readonly retyped = computed(() => brandKitPortraitRetypedName(this.view().projectName));
 }

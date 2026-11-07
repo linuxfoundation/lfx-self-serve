@@ -82,11 +82,16 @@ describe('the Voice in brief page', () => {
     expect(grid?.querySelector('.kp-attribute-line')?.textContent).toBe(line);
   });
 
-  it('sets the overfull record’s umbrella and brand line smaller together above the attributes, whole at the smallest step', async () => {
+  it('sets the overfull record’s umbrella and brand line smaller together above the attributes, the umbrella cut at a sentence at the smallest step', async () => {
     const { frame, view } = await mountBrandKitPage(MktgBrandKitPageVoiceComponent, 'voice', () => buildBrandKitBookView(brandKitOverfullFixture(), 4));
     const messages = frame.querySelector<HTMLElement>('[data-testid="brand-kit-voice-messages"]');
     expect(messages?.style.getPropertyValue('--kp-fit')).toBe('0.72');
-    expect(messages?.querySelector('.kp-voice-umbrella')?.textContent).toBe(view.voice.umbrella);
+    // At the brand line's 1.3 leading the pair no longer holds whole at 0.72: the umbrella (the longer paragraph) is
+    // cut at its first sentence; the brand line stays as written.
+    const umbrella = messages?.querySelector('.kp-voice-umbrella')?.textContent ?? '';
+    expect(umbrella.length).toBeLessThan(view.voice.umbrella.length);
+    expect(view.voice.umbrella.startsWith(umbrella)).toBe(true);
+    expect(umbrella.endsWith('.')).toBe(true);
     expect(messages?.querySelector('.kp-voice-line')?.textContent).toBe(view.voice.line);
     // The intro (the source, then a 300-character note) keeps its whole sentences that fit three lines.
     expect((frame.querySelector('[data-testid="brand-kit-voice-intro"]')?.textContent ?? '').length).toBeLessThan(300);

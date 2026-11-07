@@ -14,7 +14,7 @@ const BOOK: MktgPortraitBook = {
   firstPage: 1,
 };
 
-async function setup(logo = true) {
+async function setup(logo = true, strip = { left: 'Synthetic project · a Linux Foundation project', right: 'synthetic.example · V4.0 · November 2026' }) {
   const brand = mktgPrintBrand(null);
   const fixture = TestBed.createComponent(MktgPortraitCoverComponent);
   fixture.componentRef.setInput('look', mktgPortraitLook(brand));
@@ -22,8 +22,8 @@ async function setup(logo = true) {
   fixture.componentRef.setInput('title', 'Brand Kit');
   fixture.componentRef.setInput('lede', 'Open standards. Logos, color, type and usage on one reference.');
   fixture.componentRef.setInput('logo', logo ? brand.logoOnDark : null);
-  fixture.componentRef.setInput('stripLeft', 'Synthetic project · a Linux Foundation project');
-  fixture.componentRef.setInput('stripRight', 'synthetic.example · V4.0 · November 2026');
+  fixture.componentRef.setInput('stripLeft', strip.left);
+  fixture.componentRef.setInput('stripRight', strip.right);
   await fixture.whenStable();
   const root: HTMLElement = fixture.nativeElement;
   const page = root.querySelector<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]');
@@ -61,6 +61,18 @@ describe('lfx-mktg-portrait-cover', () => {
     expect(strip?.textContent).toContain('Synthetic project · a Linux Foundation project');
     expect(strip?.textContent).toContain('synthetic.example · V4.0 · November 2026');
     expect(strip?.parentElement?.style.top).toBe('984px');
+    expect(strip?.classList.contains('pp-cover-strip--wrapped')).toBe(false);
+  });
+
+  it('keeps the strip on one line by shortening a long project name with an ellipsis, the size unchanged', async () => {
+    const left = 'Synthetic Cloud Native Computing Foundation for Everything (SCNCFE) · a Linux Foundation project';
+    const { page } = await setup(true, { left, right: 'synthetic.example · V1.0 · October 2026' });
+    const strip = page.querySelector<HTMLElement>('[data-testid="mktg-portrait-cover-strip"]');
+    const halves = Array.from(strip?.querySelectorAll('span') ?? []).map((span) => span.textContent);
+    expect(halves[0]).toMatch(/^Synthetic Cloud.*… · a Linux Foundation project$/);
+    expect(halves[1]).toBe('synthetic.example · V1.0 · October 2026');
+    expect(strip?.parentElement?.style.top).toBe('984px');
+    expect(strip?.classList.contains('pp-cover-strip--wrapped')).toBe(false);
   });
 
   it('draws nothing in the lockup’s place without a reversed logo', async () => {

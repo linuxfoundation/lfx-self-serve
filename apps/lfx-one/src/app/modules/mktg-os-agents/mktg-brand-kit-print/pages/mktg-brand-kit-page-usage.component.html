@@ -23,14 +23,20 @@
               </div>
             }
             @case ('social') {
-              <!-- The accent carries no logo (the Symbol page's rule: accent colors are not logo colors), so the card says so
-                   where the lockup would sit and keeps the brand line and the host. -->
+              <!-- On the accent the card carries no logo (the Symbol page's rule: accent colors are not logo colors) and says
+                   so where the lockup would sit; when no palette color reads on the accent the card keeps a white ground
+                   under an accent rule, and the lockup sits there as on any white ground. -->
               <div
                 class="kp-usage-frame kp-usage-frame--social"
-                [style.background]="look().accent"
-                [style.color]="look().onAccent"
+                [class.kp-usage-frame--social-rule]="moment().ground === 'white'"
+                [style.background]="moment().background"
+                [style.color]="moment().ink"
                 data-testid="brand-kit-usage-frame">
-                <div class="pp-lab kp-usage-social-note" data-testid="brand-kit-usage-social-note">No logo on the accent</div>
+                @if (moment().ground === 'accent') {
+                  <div class="pp-lab kp-usage-social-note" data-testid="brand-kit-usage-social-note">No logo on the accent</div>
+                } @else {
+                  <lfx-mktg-brand-kit-artwork [view]="v" [height]="16" />
+                }
                 <div class="kp-usage-social-text">{{ card.text }}</div>
                 @if (v.host) {
                   <span class="kp-button kp-button--tiny">{{ v.host }}</span>

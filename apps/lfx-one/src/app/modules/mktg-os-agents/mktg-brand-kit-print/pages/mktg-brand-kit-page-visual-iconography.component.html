@@ -42,7 +42,7 @@
       @for (size of sizes; track size) {
         <div class="kp-icon-size">
           <lfx-mktg-brand-kit-icon [icon]="sizedIcon" [size]="size" />
-          <div class="kp-icon-size-label">{{ size }} px</div>
+          <div class="kp-icon-size-label">{{ measure(size, 'px') }}</div>
         </div>
       }
       <div class="kp-icon-sizes-note">Stroke stays 2 px of the 24 px grid at every size; never thinner than 1.5 px when scaled down.</div>

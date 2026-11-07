@@ -30,13 +30,13 @@
         @for (step of steps; track step) {
           <div>
             <lfx-mktg-brand-kit-artwork [view]="v" [height]="step" />
-            <div class="kp-scaling-label">{{ step }} px</div>
+            <div class="kp-scaling-label">{{ measure(step, 'px') }}</div>
           </div>
         }
         @if (v.symbol?.src) {
           <div>
             <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" [height]="minimum().symbol_px" />
-            <div class="kp-scaling-label">Symbol {{ minimum().symbol_px }} px</div>
+            <div class="kp-scaling-label">Symbol {{ measure(minimum().symbol_px, 'px') }}</div>
           </div>
         }
       </div>

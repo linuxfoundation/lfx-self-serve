@@ -19,7 +19,7 @@
         <div>
           <div class="pp-tile kp-watchout" [style.background]="tile.ground" data-testid="brand-kit-watchout">
             @if (tile.retyped) {
-              <span class="kp-retyped">{{ v.projectName }}</span>
+              <span class="kp-retyped" data-testid="brand-kit-watchout-retyped">{{ retyped() }}</span>
             } @else {
               <span class="inline-block" [style.transform]="tile.transform || null" [style.filter]="tile.filter || null">
                 <lfx-mktg-brand-kit-artwork [view]="v" [height]="30" />
@@ -34,7 +34,7 @@
     <div [lfxPpRect]="[x, 760, w]">
       <div class="kp-callout" data-testid="brand-kit-watchouts-default">
         <lfx-mktg-brand-kit-artwork [view]="v" [height]="36" />
-        <div>The one safe default: the full-color horizontal lockup on white, X of clear space, never smaller than {{ minimum() }} px tall.</div>
+        <div>The one safe default: the full-color horizontal lockup on white, X of clear space, never smaller than {{ minimum() }} tall.</div>
       </div>
     </div>
   }

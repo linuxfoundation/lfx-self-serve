@@ -637,12 +637,30 @@ export interface BrandKitColorwayTile {
   ground: string;
   /** True when the tile is white or light and needs a hairline border. */
   light: boolean;
-  /** The artwork drawn on the tile: the supplied reversed file on the reversed tile when there is one, else the primary lockup. */
+  /** The artwork drawn on the tile: the supplied reversed file on the reversed tile when there is one, else the primary lockup; null when the tile's colorway is neither supplied nor derivable. */
   logo: BrandKitLogoImage | null;
+  /** The plain line a tile prints in place of artwork it has none of ("Not supplied"); '' when it draws its logo. */
+  missing: string;
   /** CSS filter drawing the primary lockup reversed (white) or one-colour black; '' for full colour or supplied reversed artwork. */
   logoFilter: string;
   /** CSS filter for the symbol on this tile: the symbol is never the supplied reversed lockup, so it keeps the tile's reversal or one-colour filter. */
   symbolFilter: string;
+}
+
+/** A named colour a text ink is chosen from (`brandKitBestInkOn`): white, or a palette entry. */
+export interface BrandKitInkCandidate {
+  name: string;
+  hex: string;
+}
+
+/**
+ * The text ink chosen for a ground (`brandKitBestInkOn`): the candidate with
+ * the highest WCAG contrast there, and whether it reaches AA (4.5:1). `ratio`
+ * is unrounded: compared as it is, printed through `brandKitRatioLabel`.
+ */
+export interface BrandKitTextInk extends BrandKitInkCandidate {
+  ratio: number;
+  readable: boolean;
 }
 
 /** One palette card of the book. */
@@ -780,6 +798,14 @@ export interface BrandKitBookView {
   logos: Record<BrandKitLogoSlot, BrandKitLogoImage | null>;
   /** The symbol as drawn: the symbol file, or the primary lockup cropped to the symbol. */
   symbol: BrandKitLogoImage | null;
+  /**
+   * True when the primary artwork is drawn in one colour, so a reversed or
+   * one-colour mark the kit did not supply may be derived from it by filter;
+   * false for a multi-colour primary, which the book never filters (it would
+   * flatten to one shape): dark grounds then draw it in full colour and the
+   * derived colorway tiles say "Not supplied".
+   */
+  derivable: boolean;
   placeholder: boolean;
   logo: BrandKitLogoChapter;
   colorways: BrandKitColorwayTile[];

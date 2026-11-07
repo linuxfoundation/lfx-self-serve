@@ -2,8 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed } from '@angular/core';
-import { BRAND_KIT_PORTRAIT_TYPE_PAGE, BRAND_KIT_PORTRAIT_TYPE_SAMPLE_PX, BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM } from '@lfx-one/shared/constants';
-import { brandKitPortraitIntro, brandKitPortraitShortenLine, brandKitPortraitTypeLayout, brandKitPortraitWeightName } from '@lfx-one/shared/utils';
+import {
+  BRAND_KIT_PORTRAIT_TYPE_PAGE,
+  BRAND_KIT_PORTRAIT_TYPE_SAMPLE_PX,
+  BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM,
+  MKTG_PORTRAIT_MORE_LINE,
+} from '@lfx-one/shared/constants';
+import {
+  brandKitPortraitIntro,
+  brandKitPortraitShortenLine,
+  brandKitPortraitTypeLayout,
+  brandKitPortraitWeightName,
+  mktgPortraitCount,
+} from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
@@ -38,6 +49,8 @@ export class MktgBrandKitPageTypeComponent extends MktgBrandKitPageBase {
     })
   );
   protected readonly weights = computed(() => this.view().type.weights.map((weight) => ({ weight, name: brandKitPortraitWeightName(weight) })));
+  /** `1 weight` / `3 weights`: the note's count, singular at one. */
+  protected readonly weightsCount = computed(() => mktgPortraitCount(this.weights().length, MKTG_PORTRAIT_MORE_LINE.nouns.weight));
   /**
    * The page's sizes from its data: each scale step at the kit's own size with the kit's own line shortened to its
    * measure (a one-line step to one line; the body step to three lines of its column at 18/30, fewer only when the model

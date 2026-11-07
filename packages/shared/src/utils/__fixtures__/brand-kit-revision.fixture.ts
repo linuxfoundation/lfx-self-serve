@@ -8,6 +8,20 @@ import type { BrandKitRevision } from '../../interfaces/brand-kit.interface';
  * result carries instead of a Markdown document. Fresh on every call, so a
  * test can edit what it returns without touching another's.
  */
+/**
+ * A small real horizontal lockup, so every frame that draws the fixture's
+ * logo prints artwork (a mark of two shapes and a wordmark bar in the kit's
+ * charcoal and orange, 120 × 36): an empty SVG once left the book's logo
+ * frames blank in the e2e and harness prints.
+ */
+export const BRAND_KIT_FIXTURE_LOCKUP_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 36">' +
+  '<circle cx="18" cy="18" r="14" fill="#F37625"/>' +
+  '<path d="M18 8l8 10-8 10-8-10z" fill="#FFFFFF"/>' +
+  '<rect x="42" y="12" width="70" height="6" rx="3" fill="#4D4E4E"/>' +
+  '<rect x="42" y="22" width="44" height="4" rx="2" fill="#767576"/>' +
+  '</svg>';
+
 export function brandKitTestRevision(): BrandKitRevision {
   const attributes = [
     { name: 'Plain', line: 'One sentence.' },
@@ -57,7 +71,7 @@ export function brandKitTestRevision(): BrandKitRevision {
     chapters: {
       logo: {
         files: {
-          primary: { ref: 'logo.svg', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"/>' },
+          primary: { ref: 'logo.svg', svg: BRAND_KIT_FIXTURE_LOCKUP_SVG },
           stacked: null,
           symbol: null,
           reversed: null,

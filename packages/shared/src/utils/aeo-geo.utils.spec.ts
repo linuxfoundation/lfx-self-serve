@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { AEO_GEO_CATEGORIES, AEO_GEO_INTAKE_ERRORS, AEO_GEO_SECTIONS } from '../constants/aeo-geo.constants';
+import { AEO_GEO_CATEGORIES, AEO_GEO_INTAKE_ERRORS, AEO_GEO_READER_CAVEATS, AEO_GEO_SECTIONS } from '../constants/aeo-geo.constants';
 import type { AeoGeoEnvelope } from '../interfaces/aeo-geo.interface';
 import {
+  aeoGeoReaderCaveat,
+  aeoGeoReaderCaveats,
   buildAeoGeoFormPayload,
   extractAeoGeoEnvelopeCandidates,
   isAeoGeoEnvelope,
@@ -318,5 +320,241 @@ describe('AEO/GEO envelope gates', () => {
     const { quality: ignored, ...named } = { ...envelope(), quality };
     expect(ignored).toBe(quality);
     expect(named).toEqual(envelope());
+  });
+});
+
+describe('AEO/GEO reader caveats', () => {
+  // The shapes the live agent wrote for a project with an LFX scope, with example identifiers; the report prints none of them.
+  it('maps a failed third-party search to one reader sentence and keeps the audit sentences after it', () => {
+    const caveat =
+      "Web search (Example Search Service) returned 'You have exceeded your credits limit' for both planned queries ('Example Foundation open standards' and 'what is the Example Foundation'). " +
+      'No independent third-party coverage, rankings or search summaries were verified. The External authority score of 5 is a conservative placeholder based only on on-site evidence. It is not a measurement.';
+    const mapped =
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} No independent third-party coverage, rankings or search summaries were verified. ` +
+      'The External authority score of 5 is a conservative placeholder based only on on-site evidence. It is not a measurement.';
+    expect(aeoGeoReaderCaveat(caveat)).toBe(mapped);
+    // The same shape with curly quotes, with another verb, with a backtick span, and without a quote at all.
+    expect(aeoGeoReaderCaveat(caveat.replace("'You have exceeded your credits limit'", '\u2018You have exceeded your credits limit\u2019'))).toBe(mapped);
+    expect(aeoGeoReaderCaveat("Web search failed with 'You have exceeded your credits limit'. No coverage was verified.")).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} No coverage was verified.`
+    );
+    expect(aeoGeoReaderCaveat('Web search failed: You have exceeded your credits limit. No coverage was verified.')).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} No coverage was verified.`
+    );
+    expect(aeoGeoReaderCaveat('The search returned `credits limit reached` for every query.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    // An abbreviation's period is not a boundary, so the whole search sentence maps and the next one stays.
+    expect(
+      aeoGeoReaderCaveat("Third-party searches (e.g. Example Search Service) returned 'You have exceeded your credits limit'. No coverage was verified.")
+    ).toBe(`${AEO_GEO_READER_CAVEATS.search_unavailable} No coverage was verified.`);
+    // A search that worked is audit content, quoted result or not.
+    expect(aeoGeoReaderCaveat('A name search returned "Example Foundation" as the top result.')).toBe(
+      'A name search returned "Example Foundation" as the top result.'
+    );
+    expect(aeoGeoReaderCaveat('The search returned three results for the project name.')).toBe('The search returned three results for the project name.');
+    // A failure word inside the quoted title is audit content; outside the quotes it is the provider's failure.
+    expect(aeoGeoReaderCaveat('The search returned "Error handling guide" as its top result.')).toBe(
+      'The search returned "Error handling guide" as its top result.'
+    );
+    expect(aeoGeoReaderCaveat("Search failed with 'Unauthorized'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+  });
+
+  it('decides by the subject: a provider quoting its message maps, a result title and the audited site pass verbatim', () => {
+    // The provider is the subject and the quoted text is its message: no failure word is needed.
+    expect(aeoGeoReaderCaveat("Web search returned 'Service unavailable'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('The search provider responded with "502 Bad Gateway" for every query. Coverage was not verified.')).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} Coverage was not verified.`
+    );
+    expect(aeoGeoReaderCaveat("The API responded 'Service unavailable'. Metrics were not read.")).toBe('Metrics were not read.');
+    // A quoted result title is never a failure, whatever its words.
+    expect(aeoGeoReaderCaveat('Search returned "Rate-limited API guide" as its first result.')).toBe(
+      'Search returned "Rate-limited API guide" as its first result.'
+    );
+    expect(aeoGeoReaderCaveat('The search returned "Quota exceeded: what it means" as the top result.')).toBe(
+      'The search returned "Quota exceeded: what it means" as the top result.'
+    );
+    // The audited site is the subject: its statuses and rate limiting are audit evidence.
+    expect(aeoGeoReaderCaveat('The homepage rate-limited the crawler with HTTP 429.')).toBe('The homepage rate-limited the crawler with HTTP 429.');
+    expect(aeoGeoReaderCaveat("The homepage returned 'Service unavailable' on the second fetch.")).toBe(
+      "The homepage returned 'Service unavailable' on the second fetch."
+    );
+    expect(aeoGeoReaderCaveat('The rate limit was reached on the third fetch of the sitemap.')).toBe(
+      'The rate limit was reached on the third fetch of the sitemap.'
+    );
+  });
+
+  it('needs evidence of failure beside the provider subject: a quoted successful result passes, a quoted failure maps', () => {
+    // The quoted text is what the search returned, and it is a result, not a failure, in any phrasing.
+    expect(aeoGeoReaderCaveat('The search returned "Example Foundation" for both queries.')).toBe('The search returned "Example Foundation" for both queries.');
+    expect(aeoGeoReaderCaveat('Web search for "aaif" returned "Agentic AI Foundation" first.')).toBe(
+      'Web search for "aaif" returned "Agentic AI Foundation" first.'
+    );
+    // A failure word or an HTTP status inside the quotes, or a failure word outside them, is the evidence.
+    expect(aeoGeoReaderCaveat('The search provider responded with "502 Bad Gateway" for every query.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat("Search failed with 'Unauthorized'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat("Web search returned 'Service unavailable'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('The search returned "nothing useful" with HTTP 500 for both queries.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    // A bare number outside the quotes is not a status.
+    expect(aeoGeoReaderCaveat('The search returned "Example Foundation" within the first 100 results.')).toBe(
+      'The search returned "Example Foundation" within the first 100 results.'
+    );
+  });
+
+  it('never splits a sentence inside its quotes, so a quoted title stays whole and a multi-sentence provider error maps as one', () => {
+    for (const caveat of [
+      'Search returned "What is AEO?" as its first result.',
+      'Search returned "Really? Yes!" as its top result.',
+      'The search returned "v2.0 release notes" as its top result.',
+      'Search returned "Is the API unavailable?" as its first result.',
+      'The search returned "No results. Try a broader query." for the project name. Coverage was not verified.',
+    ]) {
+      expect(aeoGeoReaderCaveat(caveat)).toBe(caveat);
+    }
+    // The provider's whole message maps with the sentence that quotes it; none of its later sentences leaks.
+    expect(aeoGeoReaderCaveat('Web search returned "Quota exceeded. Try again later." for both queries.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat("Web search returned 'Quota exceeded. Try again later.' for both queries. No coverage was verified.")).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} No coverage was verified.`
+    );
+    // A quotation that closes a sentence is still a boundary when the next sentence starts in uppercase, or with a file
+    // name or a property: the audit sentence after a quoted failure is kept, never glued into the failure.
+    expect(aeoGeoReaderCaveat('The page says "Welcome." The project_uid was not read.')).toBe('The page says "Welcome."');
+    expect(aeoGeoReaderCaveat('Web search returned "Quota exceeded." robots.txt allows all crawlers.')).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} robots.txt allows all crawlers.`
+    );
+    expect(aeoGeoReaderCaveat('Web search failed with "Rate limit reached?" llms.txt was fetched in full.')).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} llms.txt was fetched in full.`
+    );
+    expect(aeoGeoReaderCaveat('Web search returned "Quota exceeded." sitemap.xml lists 40 URLs. og:site_name is set.')).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} sitemap.xml lists 40 URLs. og:site_name is set.`
+    );
+    // A page's quoted text followed by a file name: both sentences stay, untouched.
+    expect(aeoGeoReaderCaveat('The title said "Welcome." robots.txt allows all crawlers.')).toBe('The title said "Welcome." robots.txt allows all crawlers.');
+    // An unbalanced straight quote or backtick (an inch mark, a truncated quote) opens no span: it never pairs with the next quote,
+    // so the sentences between them stay separate and only the plumbing one is dropped.
+    expect(aeoGeoReaderCaveat('The 5" banner. The project_uid was not read. The page is fine "ok".')).toBe('The 5" banner. The page is fine "ok".');
+    expect(aeoGeoReaderCaveat('A stray ` mark. The project_uid was not read. The span `og:title` is set.')).toBe('A stray ` mark. The span `og:title` is set.');
+  });
+
+  it('names no field, slug, uid or access error for an LFX record that could not be read, and keeps the clean sentences', () => {
+    const caveat =
+      "The LFX record could not be read by the form's project_uid (access error). " +
+      'A name search returned an entitled record (slug example-project, formation date 2025-01-01, website https://project.example, parent Example Foundation). ' +
+      'It was used only to confirm identity, not as evidence of crawlability or authority. No LFX metrics were queried.';
+    expect(aeoGeoReaderCaveat(caveat)).toBe(
+      `${AEO_GEO_READER_CAVEATS.lfx_record_unread} A name search returned an entitled record. ` +
+        'It was used only to confirm identity, not as evidence of crawlability or authority. No LFX metrics were queried.'
+    );
+    // A following sentence that starts in lowercase is its own sentence and stays.
+    expect(aeoGeoReaderCaveat("The LFX record could not be read by the form's project_uid (access error). robots.txt allows all crawlers.")).toBe(
+      `${AEO_GEO_READER_CAVEATS.lfx_record_unread} robots.txt allows all crawlers.`
+    );
+  });
+
+  it('drops a sentence that still carries plumbing and falls back to one sentence when nothing is left', () => {
+    expect(aeoGeoReaderCaveat('The lookup for id 7f3a9c21 failed. Metrics were not read.')).toBe('Metrics were not read.');
+    expect(aeoGeoReaderCaveat('The lookup failed: You have exceeded your credits limit. Metrics were not read.')).toBe('Metrics were not read.');
+    expect(aeoGeoReaderCaveat('Record 3f2504e0-4f89-11d3-9a0c-0305e82c3301 was unavailable.')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    expect(aeoGeoReaderCaveat("The provider said 'quota exhausted' for the lookup.")).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    expect(aeoGeoReaderCaveat("The provider failed with 'Service unavailable' for the lookup.")).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    expect(aeoGeoReaderCaveat("The provider returned 'quota exceeded' after three retries.")).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    expect(aeoGeoReaderCaveat('failed: You have exceeded your credits limit.')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    // A caveat that is only a plumbing parenthetical is never an empty bullet; a plumbing parenthetical inside a sentence is just removed.
+    expect(aeoGeoReaderCaveat('(project_uid unavailable)')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    expect(aeoGeoReaderCaveat('(slug example-project).')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    expect(aeoGeoReaderCaveat('Metrics (project_uid) were not read.')).toBe('Metrics were not read.');
+    expect(aeoGeoReaderCaveat('The project_name lookup was skipped.')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    // An id with a value is an identifier shape whatever its registry: the sentence is left out (named residual).
+    expect(aeoGeoReaderCaveat('The organization has Wikidata ID Q12345. The entity is otherwise well described.')).toBe(
+      'The entity is otherwise well described.'
+    );
+    expect(aeoGeoReaderCaveat('   ')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+  });
+
+  it('passes audit content through unchanged: statuses, abbreviations, URLs, file names, properties, markup and quoted page text', () => {
+    for (const caveat of [
+      'A direct fetch of the Wikipedia article returned HTTP 403 (bot policy), so it was not audited.',
+      'The homepage returned HTTP 200 but llms.txt returned HTTP 404.',
+      'The homepage returned "403 Forbidden".',
+      'The website enforces a rate limit on crawlers.',
+      'Pages fetched were truncated at 20–60 KB, so lower-page content (e.g. the full About body and Projects grid) was not fully inspected. llms.txt and sitemap.xml were also truncated at 30 KB.',
+      '/md/about returns `x-robots-tag: noindex`. This seems intended, to avoid duplicating the HTML pages, and is not counted as a problem.',
+      'The homepage at https://project.example/ declares ai-train=yes. Both key pages declare index, follow.',
+      'The sitemap lists sitemap_index.xml and /about_us. The og:site_name tag is set, and `page_title` is read from the code span.',
+      'The URL slug is descriptive. The FAQ block carries id="faq-1". The title said "Welcome".',
+      'The  site   keeps double  spaces here.',
+      ...(aeoGeoEnvelopeFixture('project').report?.caveats ?? []),
+      ...(aeoGeoEnvelopeFixture('domain').report?.caveats ?? []),
+    ]) {
+      expect(aeoGeoReaderCaveat(caveat)).toBe(caveat);
+    }
+  });
+
+  // The editor's fixtures 1–3 (synthetic domains), byte for byte: quoted titles, site responses and the site's own rate limiting pass through,
+  // a provider's quoted message maps, emptied caveats fall back to one sentence printed once, zero caveats stay zero.
+  it.each([
+    [
+      'fixture1-quoted-titles',
+      [
+        'The search returned "Why builds fail without open standards" as its top result.',
+        'The best-ranked explainer is titled "Search errors explained" and dates from 2025.',
+        'The homepage returned "403 Forbidden" to our second fetch, so its metadata is unverified.',
+        'The website enforces a rate limit on crawlers; two fetches were slowed, none refused.',
+        'The homepage rate-limited the crawler with HTTP 429.',
+        'Search returned "Rate-limited API guide" as its first result.',
+        "Web search returned 'Service unavailable'.",
+      ],
+      [
+        'The search returned "Why builds fail without open standards" as its top result.',
+        'The best-ranked explainer is titled "Search errors explained" and dates from 2025.',
+        'The homepage returned "403 Forbidden" to our second fetch, so its metadata is unverified.',
+        'The website enforces a rate limit on crawlers; two fetches were slowed, none refused.',
+        'The homepage rate-limited the crawler with HTTP 429.',
+        'Search returned "Rate-limited API guide" as its first result.',
+        'Third-party search was not available for this run.',
+      ],
+    ],
+    [
+      'fixture2-emptied',
+      [
+        '(project_uid unavailable)',
+        'Record 3f2504e0-4f89-11d3-9a0c-0305e82c3301 was unavailable.',
+        'Metrics (project_uid) were not read. robots.txt allows all crawlers.',
+        'No live AI-engine tests were run.',
+      ],
+      [
+        "Some of the audit's inputs were unavailable for this run.",
+        'Metrics were not read. robots.txt allows all crawlers.',
+        'No live AI-engine tests were run.',
+      ],
+    ],
+  ])('maps the editor fixture %s exactly', (_name, caveats, expected) => {
+    expect(aeoGeoReaderCaveats(caveats)).toEqual(expected);
+  });
+
+  it('prints each distinct reader sentence once, in order of first occurrence', () => {
+    // Two plumbing-only caveats both fall back to the same sentence; two identical pass-through caveats are one.
+    expect(
+      aeoGeoReaderCaveats(['(project_uid unavailable)', 'No live AI-engine tests were run.', 'Record 3f2504e0-4f89-11d3-9a0c-0305e82c3301 was unavailable.'])
+    ).toEqual([AEO_GEO_READER_CAVEATS.inputs_unavailable, 'No live AI-engine tests were run.']);
+    expect(aeoGeoReaderCaveats(['robots.txt allows all crawlers.', 'robots.txt allows all crawlers.'])).toEqual(['robots.txt allows all crawlers.']);
+    // Distinct sentences all stay, in order; an empty report stays empty.
+    const distinct = aeoGeoEnvelopeFixture('project').report?.caveats ?? [];
+    expect(aeoGeoReaderCaveats(distinct)).toEqual(distinct.map(aeoGeoReaderCaveat));
+    expect(aeoGeoReaderCaveats([])).toEqual([]);
+  });
+
+  it('accepts a report with no caveats, which the view relies on to print no Caveats section', () => {
+    const report = aeoGeoEnvelopeFixture('project').report;
+    expect(report).toBeDefined();
+    expect(isAeoGeoReport({ ...report, caveats: [] })).toBe(true);
+    expect(aeoGeoReaderCaveats([])).toEqual([]);
+  });
+
+  it('stays linear on long runs of whitespace and falls back above the length cap', () => {
+    for (const caveat of [`error${' '.repeat(100_000)}`, `x (${' '.repeat(100_000)}`, `The lookup failed:${' '.repeat(3_900)}`]) {
+      const started = performance.now();
+      const mapped = aeoGeoReaderCaveat(caveat);
+      expect(performance.now() - started).toBeLessThan(50);
+      expect(mapped).toBe(caveat.length > 4000 ? AEO_GEO_READER_CAVEATS.inputs_unavailable : caveat);
+    }
   });
 });

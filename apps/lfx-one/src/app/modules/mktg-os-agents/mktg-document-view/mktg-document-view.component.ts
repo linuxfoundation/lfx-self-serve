@@ -5,6 +5,7 @@ import { DatePipe, DecimalPipe, DOCUMENT, formatDate, isPlatformBrowser, Locatio
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   afterNextRender,
+  AfterRenderRef,
   Component,
   computed,
   DestroyRef,
@@ -85,6 +86,7 @@ import {
   mktgAssetHeaderMetadata,
   mktgKitAssetLabel,
   mktgKitRootPath,
+  mktgPrintBrand,
   mktgPrintDocumentTitle,
   mktgReportHasOpenGaps,
   mktgReportNeedsApprovalReview,
@@ -135,6 +137,7 @@ import {
   takeUntil,
   Subject,
   ReplaySubject,
+  Subscription,
 } from 'rxjs';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
@@ -158,6 +161,7 @@ import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity
 import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-downstream.component';
 import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/mktg-print-sheet-row.component';
 import { MktgPrintSheetComponent } from '../components/mktg-print-sheet/mktg-print-sheet.component';
+import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
@@ -193,6 +197,7 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
     MarkdownRendererComponent,
     MktgPrintSheetComponent,
     MktgPrintSheetRowComponent,
+    MktgPrintRunningHeadComponent,
     MessageComponent,
     MktgSkeletonComponent,
     MktgBoilerplatesViewComponent,
@@ -417,8 +422,14 @@ export class MktgDocumentViewComponent {
     const approved = this.approvedView().revision;
     return approved?.type.agentKey === 'brand-kit' ? readBrandKitRevision(approved.sidecar) : null;
   });
-  /** The project's stored Brand Kit, which a framework revision's print (Download PDF) is set in; null for the LF look. */
-  protected readonly printKit: Signal<BrandKitRevision | null> = this.initPrintKit();
+  /** The print's Brand Kit read: not settled until the project's kit, or null after a failed read, has arrived; a project switch starts a new read. */
+  private readonly printKitRead: Signal<{ settled: boolean; kit: BrandKitRevision | null }> = this.initPrintKitRead();
+  /** The project's stored Brand Kit, which a framework revision's or an AEO/GEO report's print (Download PDF) is set in; null for the LF look. */
+  protected readonly printKit: Signal<BrandKitRevision | null> = computed(() => this.printKitRead().kit);
+  private readonly printKitSettled = computed(() => this.printKitRead().settled);
+  private readonly printKitSettled$ = toObservable(this.printKitSettled);
+  /** The brand the other Marketing OS prints wear on their running head: the project's kit, or the LF look without one. */
+  protected readonly printBrand = computed(() => mktgPrintBrand(this.printKit()));
   /** Read-only deck lookup belongs to the viewed document, not its approved bytes. */
   protected readonly exportLookupTarget: Signal<MktgSlidesExportTarget | null> = computed(() => {
     const view = this.view();
@@ -580,6 +591,9 @@ export class MktgDocumentViewComponent {
   /** Download PDF renders only while the flag is on (#5302); the print rendering and the print path stay. */
   protected readonly pdfEnabled = inject(FeatureFlagService).getBooleanFlag(MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, false);
   private aeoPrintRequested = false;
+  /** A Download PDF press made while the Brand Kit read was still open; it prints once, after the render that follows the read. */
+  private aeoPrintWaiting: Subscription | null = null;
+  private aeoPrintRender: AfterRenderRef | null = null;
   protected readonly aeoPrintOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   protected readonly activity = signal<MktgRunActivity[]>([]);
   protected readonly aeoActivityStartedAt = signal(0);
@@ -1283,9 +1297,27 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     if (!isPlatformBrowser(this.platformId) || !view?.aeoGeoReport) return;
     this.aeoPrintRequested = true;
-    // The saved PDF's name, like the deck's title: the project, the label the page shows, the revision on the page and its date.
-    const title = mktgPrintDocumentTitle(this.projectName(), view.type.itemLabel, view.revision.number, view.revision.createdAt);
-    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, title);
+    // A press while one is already waiting (for the kit read, or for the render after it) is dropped: one press prints once.
+    if (this.aeoPrintWaiting) return;
+    // The print waits for the Brand Kit read to settle (a kit, or null after a failed read), or a press before it
+    // arrives would save the LF-default PDF: the first press is kept and prints after the render that follows the read.
+    // A press in the frame after the read settles and before that render prints at once, from the head as rendered then.
+    if (this.printKitSettled()) {
+      this.printAeoReport();
+    } else {
+      this.aeoPrintWaiting = this.printKitSettled$.pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+        // The settled signal arrives inside an effect, which runs before this template (and the running head's brand) is
+        // refreshed; the print clones the DOM, so it waits for the render that follows.
+        this.aeoPrintRender = afterNextRender(
+          () => {
+            this.aeoPrintWaiting = null;
+            this.aeoPrintRender = null;
+            this.printAeoReport();
+          },
+          { injector: this.injector }
+        );
+      });
+    }
   }
 
   protected onToggleAllRevisions(): void {
@@ -1595,20 +1627,31 @@ export class MktgDocumentViewComponent {
   }
 
   /**
-   * The project's Brand Kit, read only while a framework revision is on
-   * screen (a kit or a Markdown document prints nothing of this) and only in
-   * the browser. Any failed read is the LF look, not an error.
+   * The project's Brand Kit, which the print's running head wears: read only
+   * while a framework revision or an AEO/GEO report is on screen (a kit or a
+   * plain Markdown document prints nothing of this), only in the browser, and
+   * never on the server. Any failed read is null, the LF look, not an error.
    */
-  private initPrintKit(): Signal<BrandKitRevision | null> {
-    const projectUid = computed(() => (isPlatformBrowser(this.platformId) && this.asset() !== null ? this.projectContext.activeContextUid() : ''));
+  private initPrintKitRead(): Signal<{ settled: boolean; kit: BrandKitRevision | null }> {
+    const projectUid = computed(() =>
+      isPlatformBrowser(this.platformId) && (this.asset() !== null || !!this.view()?.aeoGeoReport) ? this.projectContext.activeContextUid() : ''
+    );
+    const pending = { settled: false, kit: null };
     return toSignal(
       toObservable(projectUid).pipe(
         distinctUntilChanged(),
-        // A project switch drops the previous project's kit at once: until the new
-        // project's kit resolves, the print takes the LF look, never another project's brand.
-        switchMap((uid) => (uid ? this.dependencyService.resolveBrandKit(uid).pipe(startWith(null)) : of(null)))
+        // A project switch drops the previous project's kit at once: until the new project's kit resolves, the print
+        // takes the LF look, never another project's brand, and a Download PDF press waits. No kit project is settled.
+        switchMap((uid) =>
+          uid
+            ? this.dependencyService.resolveBrandKit(uid).pipe(
+                map((kit) => ({ settled: true, kit })),
+                startWith(pending)
+              )
+            : of({ settled: true, kit: null })
+        )
       ),
-      { initialValue: null }
+      { initialValue: pending }
     );
   }
 
@@ -1774,7 +1817,20 @@ export class MktgDocumentViewComponent {
   }
 
   // === AEO/GEO pending helpers (private methods follow protected methods by repository lint) ===
+  private printAeoReport(): void {
+    const view = this.view();
+    if (!view?.aeoGeoReport) return;
+    // The saved PDF's name, like the deck's title: the project, the label the page shows, the revision on the page and its date.
+    const title = mktgPrintDocumentTitle(this.projectName(), view.type.itemLabel, view.revision.number, view.revision.createdAt);
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, title);
+  }
+
   private clearAeoPrint(): void {
+    // A press still waiting for the kit, or for the render after it, belongs to the document that is leaving the screen.
+    this.aeoPrintWaiting?.unsubscribe();
+    this.aeoPrintWaiting = null;
+    this.aeoPrintRender?.destroy();
+    this.aeoPrintRender = null;
     if (this.aeoPrintRequested) {
       this.printService.clear();
       this.aeoPrintRequested = false;

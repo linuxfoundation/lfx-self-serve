@@ -60,6 +60,8 @@ describe('lfx-mktg-portrait-page', () => {
     // The accent as text: the coral darkened until it reads on white at WCAG AA (the shared util's value).
     expect(page.style.getPropertyValue('--pp-accent-text')).toBe(mktgPortraitAccentText('#FF702D'));
     expect(page.style.getPropertyValue('--pp-accent-text')).not.toBe('#FF702D');
+    // The accent as text on the dark: the coral reads on black (above 4.5:1), so it stays itself there (the back cover's brand line).
+    expect(page.style.getPropertyValue('--pp-accent-on-dark')).toBe('#FF702D');
     expect(page.style.getPropertyValue('--pp-spark')).toBe('#B6B0D0');
     expect(page.style.getPropertyValue('--pp-on-accent')).toBe('#000000');
     expect(page.style.getPropertyValue('--pp-font')).toBe(LOOK.fontStack);

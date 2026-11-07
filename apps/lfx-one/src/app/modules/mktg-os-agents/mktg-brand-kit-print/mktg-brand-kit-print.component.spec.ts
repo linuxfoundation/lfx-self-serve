@@ -201,19 +201,23 @@ describe('the portrait book', () => {
     expect(root.textContent).not.toMatch(/\[[^\]]+\]/);
   });
 
-  it('inks the social card on the accent by the shared rule: the kit’s dark when white fails AA there, white when it passes; never a logo on the accent', async () => {
-    const { root, brand, fixture } = await setup();
+  it('sets the social card by the one accent-moment rule: a white card under an accent rule when nothing reads on the accent, text on the accent when something does; never a logo on the accent', async () => {
+    const { root, view, fixture } = await setup();
     const social = () => root.querySelector<HTMLElement>('.kp-usage-frame--social');
-    // The fixture's orange accent reads 2.8:1 against white, as its own contrast table would grade it.
-    expect(social()?.style.background).toBe(colour(brand.accent));
-    expect(social()?.style.color).toBe(colour(brand.dark));
-    expect(social()?.querySelector('img')).toBeNull();
-    expect(social()?.querySelector('[data-testid="brand-kit-usage-social-note"]')?.textContent).toBe('No logo on the accent');
-    // A dark accent that passes AA against white: white ink; still no lockup on the accent.
-    fixture.componentRef.setInput('brand', { ...brand, accent: '#1F4E79' });
+    // The fixture's orange: white reads 2.8:1 on it and Charcoal 2.9:1, both failing AA as its own matrix grades them,
+    // so no text goes on the accent: a white card, the kit's dark, the accent as the top rule, the lockup as on any white.
+    expect(social()?.style.background).toBe(colour('#FFFFFF'));
+    expect(social()?.style.color).toBe(colour(view.dark));
+    expect(social()?.classList.contains('kp-usage-frame--social-rule')).toBe(true);
+    expect(social()?.querySelector('img')).not.toBeNull();
+    expect(social()?.querySelector('[data-testid="brand-kit-usage-social-note"]')).toBeNull();
+    // A navy accent white reads on (10.3:1): text in white on the accent, and no lockup there.
+    fixture.componentRef.setInput('view', { ...view, accent: '#1F4E79' });
     await fixture.whenStable();
     expect(social()?.style.background).toBe(colour('#1F4E79'));
     expect(social()?.style.color).toBe(colour('white'));
+    expect(social()?.classList.contains('kp-usage-frame--social-rule')).toBe(false);
     expect(social()?.querySelector('img')).toBeNull();
+    expect(social()?.querySelector('[data-testid="brand-kit-usage-social-note"]')?.textContent).toBe('No logo on the accent');
   });
 });
