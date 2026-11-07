@@ -119,6 +119,11 @@ export interface FoundationMessagePrintFittedText {
   size: number;
 }
 
+/** A page's title as the print sets it: at the size that holds it on one line, or at the floor over the lines it needs (frameworkPortraitTitle). */
+export interface FoundationMessagePrintFittedTitle extends FoundationMessagePrintFittedText {
+  lines: number;
+}
+
 /** One proof point as a goal page lists it: the fact and its source, at the size the list is set at. */
 export interface FoundationMessagePrintGoalProof {
   fact: string;
@@ -152,6 +157,8 @@ export interface FoundationMessagePrintGoalPage {
   goal: FoundationMessagePrintGoal;
   /** `01`: the goal's number as the page prints it. */
   numberLabel: string;
+  /** The lead's top: the design's body top, lower when the title takes more than one line (frameworkPortraitBodyTop). */
+  leadTop: number;
   value: FoundationMessagePrintFittedText;
   key: FoundationMessagePrintFittedText;
   /** The proof points above the sound bite: tightened first, then cut to whole rows, in the goal's order. */
@@ -256,6 +263,19 @@ export interface FoundationMessagePrintContentsEntry {
 export interface FoundationMessagePrintAnchorRow {
   numberLabel: string;
   question: string;
+  /** The question's size, px: the design's, or smaller when the anchors would pass the footer (frameworkPortraitAnchors). */
+  size: number;
+}
+
+/** The framework page's goal matrix, bounded: each goal's proof cell as a cut list, in the goals' order (frameworkPortraitMatrix). */
+export interface FoundationMessagePrintMatrix {
+  proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>[];
+}
+
+/** The say-and-avoid page's two lists, each a cut list in its column (frameworkPortraitPillList, frameworkPortraitAvoidList). */
+export interface FoundationMessagePrintSayAvoid {
+  say: FoundationMessagePrintCutList<string>;
+  avoid: FoundationMessagePrintCutList<FoundationMessageAvoidRow>;
 }
 
 /** One frame of the framework's portrait book: its plan page with its book number, printed section label, band, and the page's laid-out data. */
@@ -273,10 +293,18 @@ export interface FoundationMessagePrintFrame extends MktgPortraitPlanPage {
     positioning: FoundationMessagePrintFittedText;
     tagline: FoundationMessagePrintFittedText;
   } | null;
+  /** The page's title in the grammar's title room (frameworkPortraitTitle): its size and the lines it takes. */
+  titleFit: FoundationMessagePrintFittedTitle;
+  /** The goal matrix's proof cells, bounded, on the framework page. */
+  matrix: FoundationMessagePrintMatrix | null;
   /** The say-and-avoid page's intro, counting its anchor questions ('' on the other pages). */
   anchorIntro: string;
+  /** The say pills and the avoid rows, cut to their columns, on the say-and-avoid page. */
+  sayAvoid: FoundationMessagePrintSayAvoid | null;
   /** The anchor questions, numbered, on the say-and-avoid page. */
   anchors: FoundationMessagePrintAnchorRow[];
+  /** The crosscut box's top on the say-and-avoid page: the design's, or under the anchors when they run longer (0 elsewhere). */
+  crosscutTop: number;
   goalPage: FoundationMessagePrintGoalPage | null;
   icpPage: FoundationMessagePrintIcpPage | null;
   numbersPage: FoundationMessagePrintNumbersPage | null;

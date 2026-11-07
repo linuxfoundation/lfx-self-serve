@@ -17,6 +17,14 @@
    in FRAMEWORK_PORTRAIT_ROOM, named at each rule. The grammar's `.pp-r` sets each block's position. */
 
 .lfx-framework-print {
+  /* The page title at the size the component fits it to the title room (frameworkPortraitTitle, bound on the frame as
+     --fwp-title-size): the grammar's 34 px where the title fits one line, smaller where a goal's runs long, and over
+     the lines it needs at the floor, the page's first block set under them. The one grammar class the framework
+     reads, scoped to its own root. */
+  .pp-title {
+    font-size: var(--fwp-title-size, 34px);
+  }
+
   .fwp-card {
     border: 1px solid var(--pp-hairline);
     border-radius: 10px;
@@ -228,11 +236,17 @@
     list-style: none;
 
     li {
-      margin-bottom: 5px;
-      font-size: 11px;
+      margin-bottom: 5px; /* FRAMEWORK_PORTRAIT_ROOM.matrixProofGap */
+      font-size: 11px; /* FRAMEWORK_PORTRAIT_TYPE.matrixProof */
       line-height: 1.4;
       color: var(--pp-ink);
     }
+  }
+
+  /* A proof cell tightened before a cut (FRAMEWORK_PORTRAIT_TYPE.matrixProofTight). */
+  .fwp-matrix-proofs--tight li {
+    font-size: 10.5px;
+    line-height: 1.35;
   }
 
   .fwp-matrix-source {
@@ -419,13 +433,19 @@
   }
 
   .fwp-say-pill {
-    font-size: 13px;
+    font-size: 13px; /* FRAMEWORK_PORTRAIT_TYPE.sayPill */
     font-weight: 500;
     line-height: 1.2;
     color: var(--pp-dark);
     border: 1px solid var(--pp-hairline);
     border-radius: 999px;
-    padding: 8px 14px;
+    padding: 8px 14px; /* FRAMEWORK_PORTRAIT_ROOM.sayPillPadding / sayPillPaddingAcross */
+  }
+
+  /* The pills tightened before a cut (FRAMEWORK_PORTRAIT_TYPE.sayPillTight, ROOM.sayPillPaddingTight). */
+  .fwp-say-list--tight .fwp-say-pill {
+    font-size: 12px;
+    padding: 6px 10px;
   }
 
   .fwp-avoid-list {
@@ -436,12 +456,19 @@
 
   .fwp-avoid-row {
     display: flex;
-    gap: 12px;
+    gap: 12px; /* FRAMEWORK_PORTRAIT_ROOM.avoidArrow holds the two gaps and the arrow */
     align-items: baseline;
     border-top: 1px solid var(--pp-hairline);
-    padding: 10px 0;
-    font-size: 13px;
+    padding: 10px 0; /* FRAMEWORK_PORTRAIT_ROOM.avoidRow */
+    font-size: 13px; /* FRAMEWORK_PORTRAIT_TYPE.avoidRow */
     line-height: 1.5;
+  }
+
+  /* The rows tightened before a cut (FRAMEWORK_PORTRAIT_TYPE.avoidRowTight, ROOM.avoidRowTight). */
+  .fwp-avoid-list--tight .fwp-avoid-row {
+    padding: 7px 0;
+    font-size: 12px;
+    line-height: 1.4;
   }
 
   .fwp-avoid-word {
@@ -491,7 +518,7 @@
   }
 
   .fwp-anchor-question {
-    font-size: 22px;
+    font-size: 22px; /* FRAMEWORK_PORTRAIT_TYPE.anchorQuestion; the component sets the fitted size on the row */
     font-weight: 500;
     line-height: 1.3;
     color: var(--pp-dark);

@@ -521,6 +521,49 @@ test('the framework print lists every figure past six as a table, continued on a
   expect(gapsKept).toBeLessThan(40);
   await expect(print.getByTestId('mktg-framework-print-gaps-cut')).toHaveText(`+${40 - gapsKept} more on the framework's Sources tab in LFX One`);
   await expect(print.getByTestId('mktg-framework-print-sources-failed-cut')).toHaveCount(0);
+  // Every variable-length block bounded (the design reader's rule): on every frame, every placed block ends at or above the footer's
+  // room (1019 in the frame's coordinates) and no block passes the next one's top; the goal pages' titles whole, the lead under them;
+  // the say pills and the avoid rows end above the anchors, and the anchors above the crosscut box.
+  const frames = print.getByTestId('lfx-mktg-portrait-page');
+  const overflow = await frames.evaluateAll((pages) =>
+    pages.flatMap((frame) => {
+      const frameTop = frame.getBoundingClientRect().top;
+      return Array.from(frame.querySelectorAll<HTMLElement>('[style*="top:"]'))
+        .map((block) => ({
+          page: frame.getAttribute('data-page-id'),
+          className: block.className,
+          bottom: Math.round(block.getBoundingClientRect().bottom - frameTop),
+        }))
+        .filter((block) => block.bottom > 1019);
+    })
+  );
+  expect(overflow).toEqual([]);
+  const goalTitles = await print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id^="goal-"]').evaluateAll((pages) =>
+    pages.map((frame) => {
+      const title = frame.querySelector('.pp-title')?.getBoundingClientRect();
+      const lead = frame.querySelector('.fwp-goal-lead')?.getBoundingClientRect();
+      return { text: frame.querySelector('.pp-title')?.textContent?.trim(), underLead: !!title && !!lead && title.bottom <= lead.top };
+    })
+  );
+  expect(goalTitles.map((title) => title.underLead)).toEqual([true, true, true, true]);
+  expect(goalTitles[3].text).toBe('Goal 4 · Events where the roadmap is decided in the open');
+  const sayAvoid = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="say-avoid"]');
+  const order = await sayAvoid.evaluate((frame) => {
+    const bottom = (selector: string): number => frame.querySelector(selector)?.getBoundingClientRect().bottom ?? Number.NaN;
+    const top = (selector: string): number => frame.querySelector(selector)?.getBoundingClientRect().top ?? Number.NaN;
+    const anchorsTop = top('[data-testid="mktg-framework-print-anchor"]');
+    return {
+      sayAboveAnchors: bottom('[data-testid="mktg-framework-print-say"]') <= anchorsTop,
+      avoidAboveAnchors: bottom('[data-testid="mktg-framework-print-avoid"]') <= anchorsTop,
+      anchorsAboveCrosscut: bottom('[data-testid="mktg-framework-print-anchor"]') <= top('.fwp-crosscut-box'),
+    };
+  });
+  expect(order).toEqual({ sayAboveAnchors: true, avoidAboveAnchors: true, anchorsAboveCrosscut: true });
+  // Ten say phrases and five long avoid rows: each list tightened, then cut to what its column holds above the anchors, the cut said under it.
+  await expect(sayAvoid.getByTestId('mktg-framework-print-say').locator('li')).toHaveCount(7);
+  await expect(sayAvoid.getByTestId('mktg-framework-print-say-cut')).toHaveText("+3 more on the framework's Framework tab in LFX One");
+  await expect(sayAvoid.getByTestId('mktg-framework-print-avoid').locator('li')).toHaveCount(3);
+  await expect(sayAvoid.getByTestId('mktg-framework-print-avoid-cut')).toHaveText("+2 more on the framework's Framework tab in LFX One");
   await page.screenshot({ path: info.outputPath('foundation-message-print-overfull.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);

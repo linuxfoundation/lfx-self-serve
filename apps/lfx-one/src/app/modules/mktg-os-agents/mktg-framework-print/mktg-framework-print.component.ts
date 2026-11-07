@@ -34,10 +34,17 @@ import {
   foundationMessagePrintAnchorIntro,
   foundationMessagePrintMatrix,
   foundationMessagePrintSourceLabel,
+  frameworkPortraitAnchors,
+  frameworkPortraitAvoidList,
+  frameworkPortraitBodyTop,
   frameworkPortraitCutList,
   frameworkPortraitIcpPages,
+  frameworkPortraitMatrix,
   frameworkPortraitNumbersPages,
+  frameworkPortraitPillList,
   frameworkPortraitPlan,
+  frameworkPortraitSayRoom,
+  frameworkPortraitTitle,
   mktgPortraitDocumentName,
   mktgPortraitFitBlock,
   mktgPortraitFootLeft,
@@ -121,6 +128,8 @@ export class MktgFrameworkPrintComponent {
   protected readonly page = MKTG_PORTRAIT_PAGE;
   protected readonly columns = MKTG_PORTRAIT_COLUMNS;
   protected readonly tops = FRAMEWORK_PORTRAIT_TOPS;
+  /** The blocks' measures the template places by (the say and avoid columns). */
+  protected readonly room = FRAMEWORK_PORTRAIT_ROOM;
   protected readonly tile = FRAMEWORK_PORTRAIT_NUMBER_TILE;
   /** The facts table's `<colgroup>` widths, %: the fact, the source, the goal that uses it (the layout measures the rows by these). */
   protected readonly factColumns = FRAMEWORK_PORTRAIT_FACT_COLUMNS;
@@ -199,16 +208,29 @@ export class MktgFrameworkPrintComponent {
         const goal = /^goal-\d+$/.test(page.id) ? (view.goals.find((entry) => `goal-${entry.n}` === page.id) ?? null) : null;
         const icpIndex = /^icps-\d+$/.test(page.id) ? Number(page.id.slice('icps-'.length)) : 0;
         const numbersIndex = this.pageIndex(page.id, this.ids.keyNumbers);
+        const sayAvoid = page.id === this.ids.sayAvoid;
+        // The anchors never move; their questions are set smaller, then cut, until they and the crosscut box end above the footer.
+        const anchors = sayAvoid ? frameworkPortraitAnchors(view.mf.anchor, view.mf.crosscut) : { anchors: [], crosscutTop: 0 };
+        const titleFit = frameworkPortraitTitle(page.title);
         return {
           ...page,
           number: book.firstPage + index,
           label: mktgPortraitSectionLabel(page.section, book.inFamily, 'Messaging framework'),
           band: !book.inFamily && mktgPortraitOpensChapter(plan, index),
+          titleFit,
           contents: page.id === this.ids.cover ? contents : [],
           statements: page.id === this.ids.framework ? this.statements(view) : null,
-          anchorIntro: page.id === this.ids.sayAvoid ? foundationMessagePrintAnchorIntro(view.mf.anchor.length) : '',
-          anchors: page.id === this.ids.sayAvoid ? view.mf.anchor.map((question, rank) => ({ numberLabel: mktgPortraitPageNumber(rank + 1), question })) : [],
-          goalPage: goal ? this.goalPage(goal, view) : null,
+          matrix: page.id === this.ids.framework ? frameworkPortraitMatrix(view.goals, view.mf.crosscut, this.tops.footer - this.tops.matrix) : null,
+          anchorIntro: sayAvoid ? foundationMessagePrintAnchorIntro(view.mf.anchor.length) : '',
+          sayAvoid: sayAvoid
+            ? {
+                say: frameworkPortraitPillList(view.mf.say, ROOM.sayColumn, frameworkPortraitSayRoom()),
+                avoid: frameworkPortraitAvoidList(view.avoidRows, ROOM.avoidColumn, frameworkPortraitSayRoom()),
+              }
+            : null,
+          anchors: anchors.anchors,
+          crosscutTop: anchors.crosscutTop,
+          goalPage: goal ? this.goalPage(goal, view, frameworkPortraitBodyTop(titleFit)) : null,
           icpPage: icpIndex ? this.icpPage(icpIndex, icpPages, view) : null,
           numbersPage: numbersIndex ? (numbersPages[numbersIndex - 1] ?? null) : null,
           sourcesPage: page.id === this.ids.sources ? this.sourcesPage(view) : null,
@@ -232,7 +254,7 @@ export class MktgFrameworkPrintComponent {
   }
 
   /** A goal's page: the value, the key message and the sound bite fitted to the room their fixed tops leave, the proof rows cut to what fits above the bite, the served cards' lines fitted. */
-  private goalPage(goal: FoundationMessagePrintGoal, view: FoundationMessagePrintView): FoundationMessagePrintGoalPage {
+  private goalPage(goal: FoundationMessagePrintGoal, view: FoundationMessagePrintView, leadTop: number): FoundationMessagePrintGoalPage {
     const tops = this.tops;
     const width = this.page.contentWidth;
     const proofsRoom = tops.goalBite - tops.goalProofs - ROOM.label - 6 - ROOM.gap;
@@ -251,7 +273,8 @@ export class MktgFrameworkPrintComponent {
     return {
       goal,
       numberLabel: mktgPortraitPageNumber(goal.n),
-      value: this.fit(goal.vp, TYPE.goalValue, width - 150 - 28, tops.goalKey - this.page.bodyTop - ROOM.label - 12 - ROOM.gap),
+      leadTop,
+      value: this.fit(goal.vp, TYPE.goalValue, width - 150 - 28, tops.goalKey - leadTop - ROOM.label - 12 - ROOM.gap),
       key: this.fit(goal.key, TYPE.goalKey, width - 56 - 22 - 90, tops.goalProofs - tops.goalKey - 48 - ROOM.gap),
       proofs,
       bite: goal.bite ? this.fit(`“${goal.bite}”`, TYPE.goalBite, width, tops.goalServed - tops.goalBite - ROOM.label - 10 - ROOM.gap) : null,

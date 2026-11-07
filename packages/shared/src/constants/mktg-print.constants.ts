@@ -104,6 +104,10 @@ export const FRAMEWORK_PORTRAIT_TOPS = {
   goalProofs: 450,
   goalBite: 690,
   goalServed: 810,
+  /** The say-and-avoid page: the two lists, the anchor questions (never moved), the crosscut box's least top (it follows the anchors when they run longer). */
+  sayLists: 200,
+  anchors: 470,
+  sayCrosscut: 760,
   sourcesLists: 210,
   sourcesApproval: 880,
   /** The first ICP page's rows start under the long intro; the later pages' under the short one. */
@@ -147,17 +151,15 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   matrixCrosscut: { size: 11, line: 1.5, weight: 400 },
   /** A page's title in the grammar's type (`.pp-title`, 34/1.1/500), fitted to one line on the goal pages. */
   pageTitle: { size: 34, line: 1.1, weight: 500 },
+  /** An anchor question (`.fwp-anchor-question`) and its number; the crosscut box's text. */
+  anchorQuestion: { size: 22, line: 1.3, weight: 500 },
+  anchorNumber: { size: 26, line: 1.2, weight: 500 },
+  crosscutText: { size: 13, line: 1.6, weight: 400 },
   /** The say pills and the avoid rows, and their tight measures. */
   sayPill: { size: 13, line: 1.2, weight: 500 },
   sayPillTight: { size: 12, line: 1.2, weight: 500 },
   avoidRow: { size: 13, line: 1.5, weight: 400 },
   avoidRowTight: { size: 12, line: 1.4, weight: 400 },
-  /** A profile row's name, its who line, its personas, a field's eyebrow and text (`.fwp-icp-*`). */
-  icpName: { size: 15, line: 1.3, weight: 600 },
-  icpWho: { size: 11.5, line: 1.5, weight: 400 },
-  icpPersona: { size: 10.5, line: 1.5, weight: 400 },
-  icpEyebrow: { size: 9.5, line: 1.2, weight: 600 },
-  icpField: { size: 12.5, line: 1.5, weight: 400 },
   /** The muted line under a cut list: `+N more on the framework's Framework tab in LFX One` (the Sources tab for the Sources & gaps lists). */
   cutNote: { size: 10.5, line: 1.4, weight: 400 },
   /** A key number tile's figure (`.fwp-number`), stepped down in whole px to one line of the tile, to a floor of half its size; a longer figure overflows the tile (follow-up). */
@@ -222,20 +224,18 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   sayColumn: 320,
   avoidColumn: 360,
   avoidLeft: 344,
-  /** The avoid list: its margin above, a row's padding (10 + 10; tight 7 + 7) and hairline, the gaps around its arrow (12 + 12) and the arrow's own width. */
-  avoidListTop: 6,
+  /** The avoid list: a row's padding (10 + 10; tight 7 + 7) and hairline, the gaps around its arrow (12 + 12) and the arrow's own width. */
   avoidRow: 21,
   avoidRowTight: 15,
   avoidArrow: 34,
-  /** A profile row (`.fwp-icp-row`): its padding (20 + 28) and hairline; the gap between its two columns; a field's eyebrow-to-text gap and the grid's gaps (18 down, 20 across); the tags' line (the chip and its margin above). */
-  icpRow: 49,
-  icpColumnGap: 24,
-  icpFieldGap: 4,
-  icpGridRowGap: 18,
-  icpGridColumnGap: 20,
-  icpTagsLine: 30,
-  icpWhoTextTop: 10,
-  icpPersonasTop: 8,
+  /** The anchor list: its margin above, a row's padding (16 + 16) and hairline, its number column and the gap after it. The crosscut box: its padding down (18 + 18) and across (22 + 22), its text's margin above. */
+  anchorListTop: 10,
+  anchorRow: 33,
+  anchorNumber: 44,
+  anchorGap: 22,
+  crosscutPadding: 36,
+  crosscutPaddingAcross: 44,
+  crosscutTextTop: 8,
 } as const;
 
 /** The key numbers facts table's `<colgroup>` widths, %: the fact, its source, the goal that uses it (`table-layout: fixed` reads them). */

@@ -29,7 +29,8 @@
       [pageId]="frame.id"
       [page]="frame.number"
       [section]="frame.label"
-      [title]="frame.title"
+      [title]="frame.titleFit.text"
+      [style.--fwp-title-size.px]="frame.titleFit.size"
       [band]="frame.band"
       [bare]="frame.id === ids.cover">
       @switch (frame.id) {
@@ -142,14 +143,22 @@
             </div>
             <div class="fwp-matrix-row">
               <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Proof</span>
-              @for (goal of v.goals; track goal.id) {
-                <ul class="fwp-matrix-proofs">
-                  @for (proof of goal.proofRows; track $index) {
-                    <li>
-                      {{ proof.fact }} <span class="fwp-matrix-source">{{ proof.source }}</span>
-                    </li>
-                  }
-                </ul>
+              <!-- Each goal's proof cell is a cut list in the row's room: tightened first, then whole rows and the muted line (frameworkPortraitMatrix). -->
+              @for (goal of v.goals; track goal.id; let column = $index) {
+                @if (frame.matrix?.proofs?.[column]; as cell) {
+                  <div>
+                    <ul class="fwp-matrix-proofs" [class.fwp-matrix-proofs--tight]="cell.tight">
+                      @for (proof of cell.rows; track $index) {
+                        <li>
+                          {{ proof.fact }} <span class="fwp-matrix-source">{{ proof.source }}</span>
+                        </li>
+                      }
+                    </ul>
+                    @if (cell.cut > 0) {
+                      <p class="fwp-cut-note" data-testid="mktg-framework-print-matrix-proofs-cut">{{ cell.note }}</p>
+                    }
+                  </div>
+                }
               }
             </div>
             <div class="fwp-matrix-row">
@@ -171,45 +180,55 @@
         <!-- 01 SAY AND AVOID · ANCHOR QUESTIONS -->
         @case (ids.sayAvoid) {
           <p class="pp-body fwp-intro-say" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">{{ frame.anchorIntro }}</p>
-          <div [lfxPpRect]="[page.margin, 200, 320]">
-            <span class="pp-lab pp-lab--dark">Say</span>
-            <ul class="fwp-say-list" data-testid="mktg-framework-print-say">
-              @for (phrase of v.mf.say; track phrase) {
-                <li class="fwp-say-pill">{{ phrase }}</li>
-              }
-            </ul>
-          </div>
-          <div [lfxPpRect]="[page.margin + 344, 200, 360]">
-            <span class="pp-lab pp-lab--dark">Avoid → say instead</span>
-            @if (v.avoidRows.length > 0) {
-              <ul class="fwp-avoid-list" data-testid="mktg-framework-print-avoid">
-                @for (row of v.avoidRows; track row.avoid) {
-                  <li class="fwp-avoid-row">
-                    <span class="fwp-avoid-word">{{ row.avoid }}</span>
-                    <span class="fwp-avoid-arrow" aria-hidden="true">→</span>
-                    <span class="fwp-avoid-instead">{{ row.instead }}</span>
-                  </li>
+          <!-- The two lists are cut to their columns above the anchors: tightened first, then whole rows with the muted line (frameworkPortraitPillList, frameworkPortraitAvoidList). -->
+          @if (frame.sayAvoid; as lists) {
+            <div [lfxPpRect]="[page.margin, tops.sayLists, room.sayColumn]">
+              <span class="pp-lab pp-lab--dark">Say</span>
+              <ul class="fwp-say-list" [class.fwp-say-list--tight]="lists.say.tight" data-testid="mktg-framework-print-say">
+                @for (phrase of lists.say.rows; track phrase) {
+                  <li class="fwp-say-pill">{{ phrase }}</li>
                 }
               </ul>
-            } @else {
-              <p class="fwp-avoid-none" data-testid="mktg-framework-print-avoid-empty">Nothing to avoid was stated.</p>
-            }
-          </div>
+              @if (lists.say.cut > 0) {
+                <p class="fwp-cut-note" data-testid="mktg-framework-print-say-cut">{{ lists.say.note }}</p>
+              }
+            </div>
+            <div [lfxPpRect]="[page.margin + room.avoidLeft, tops.sayLists, room.avoidColumn]">
+              <span class="pp-lab pp-lab--dark">Avoid → say instead</span>
+              @if (v.avoidRows.length > 0) {
+                <ul class="fwp-avoid-list" [class.fwp-avoid-list--tight]="lists.avoid.tight" data-testid="mktg-framework-print-avoid">
+                  @for (row of lists.avoid.rows; track row.avoid) {
+                    <li class="fwp-avoid-row">
+                      <span class="fwp-avoid-word">{{ row.avoid }}</span>
+                      <span class="fwp-avoid-arrow" aria-hidden="true">→</span>
+                      <span class="fwp-avoid-instead">{{ row.instead }}</span>
+                    </li>
+                  }
+                </ul>
+                @if (lists.avoid.cut > 0) {
+                  <p class="fwp-cut-note" data-testid="mktg-framework-print-avoid-cut">{{ lists.avoid.note }}</p>
+                }
+              } @else {
+                <p class="fwp-avoid-none" data-testid="mktg-framework-print-avoid-empty">Nothing to avoid was stated.</p>
+              }
+            </div>
+          }
+          <!-- The anchors never move; their questions are set smaller, then cut, so they and the crosscut box end above the footer (frameworkPortraitAnchors). -->
           @if (frame.anchors.length > 0) {
-            <div [lfxPpRect]="[page.margin, 470, page.contentWidth]">
+            <div [lfxPpRect]="[page.margin, tops.anchors, page.contentWidth]">
               <span class="pp-lab pp-lab--dark">Every piece of content answers</span>
               <ol class="fwp-anchor-list" data-testid="mktg-framework-print-anchor">
                 @for (anchor of frame.anchors; track anchor.numberLabel) {
                   <li class="fwp-anchor-row">
                     <span class="fwp-anchor-number">{{ anchor.numberLabel }}</span>
-                    <span class="fwp-anchor-question">{{ anchor.question }}</span>
+                    <span class="fwp-anchor-question" [style.font-size.px]="anchor.size">{{ anchor.question }}</span>
                   </li>
                 }
               </ol>
             </div>
           }
           @if (v.mf.crosscut) {
-            <div class="fwp-crosscut-box" [lfxPpRect]="[page.margin, 760, page.contentWidth]">
+            <div class="fwp-crosscut-box" [lfxPpRect]="[page.margin, frame.crosscutTop, page.contentWidth]">
               <span class="pp-lab pp-lab--dark">Across the goals</span>
               <p class="fwp-crosscut-text">{{ v.mf.crosscut }}</p>
             </div>
@@ -417,9 +436,10 @@
             }
           } @else if (frame.goalPage; as goalPage) {
             <!-- ONE PAGE PER GOAL: the number and the value proposition, the key message bar, the proof points, the sound bite, who it is for -->
+            <!-- The lead starts under the title: at the body top, or lower by the lines a long title takes (frameworkPortraitBodyTop). -->
             <div
               class="fwp-goal-lead"
-              [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]"
+              [lfxPpRect]="[page.margin, goalPage.leadTop, page.contentWidth]"
               [attr.data-testid]="'mktg-framework-print-goal-' + goalPage.goal.n">
               <span class="fwp-goal-number">{{ goalPage.numberLabel }}</span>
               @if (goalPage.value.text) {

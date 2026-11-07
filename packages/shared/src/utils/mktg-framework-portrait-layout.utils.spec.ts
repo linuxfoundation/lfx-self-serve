@@ -25,7 +25,19 @@ import {
   frameworkPortraitNumbersPages,
   frameworkPortraitChipWidth,
   frameworkPortraitIcpWhoWidth,
+  frameworkPortraitAnchors,
+  frameworkPortraitAvoidList,
+  frameworkPortraitBodyTop,
+  frameworkPortraitCutNoteHeightIn,
+  frameworkPortraitMatrix,
+  frameworkPortraitMatrixColumn,
+  frameworkPortraitPillList,
+  frameworkPortraitPillsHeight,
+  frameworkPortraitSayRoom,
+  frameworkPortraitTitle,
 } from './mktg-framework-portrait-layout.utils';
+import type { FoundationMessagePrintGoal } from '../interfaces/mktg-print.interface';
+import { mktgPortraitCharsPerLine } from './mktg-portrait-print.utils';
 import { buildFoundationMessagePrintView } from './mktg-print.utils';
 
 const pair = (a: string, b: string): [string, string] => [a, b];
@@ -90,6 +102,94 @@ describe('the framework portrait book’s cut lists', () => {
   it('words the note from the count and the tab the rows live on', () => {
     expect(foundationMessagePrintCutNote(3, 'Sources')).toBe("+3 more on the framework's Sources tab in LFX One");
     expect(foundationMessagePrintCutNote(1, 'Framework')).toBe("+1 more on the framework's Framework tab in LFX One");
+  });
+});
+
+describe('the framework portrait book’s bounded blocks', () => {
+  const long = 'A long sentence about the project and the many things it does for the people who use it every day. ';
+  const goal = (proofs: number): FoundationMessagePrintGoal => ({
+    id: 'g',
+    n: 1,
+    t: 'Adoption',
+    vp: 'Value',
+    key: 'Key',
+    bite: 'Bite',
+    proof: [],
+    icps: [],
+    segmentLabel: '',
+    segmentNames: [],
+    proofRows: Array.from({ length: proofs }, (_, index) => ({ fact: `${long.trim()} (${index})`, source: 'Source' })),
+  });
+
+  it('fits a page title to its room: the grammar’s 34 px on one line where it fits, smaller to the floor, then the lines it needs, never cut', () => {
+    expect(frameworkPortraitTitle('Framework')).toEqual({ text: 'Framework', size: 34, lines: 1 });
+    expect(frameworkPortraitBodyTop(frameworkPortraitTitle('Framework'))).toBe(136);
+    const longTitle = 'Goal 2 · Grow adoption across the enterprise';
+    const fitted = frameworkPortraitTitle(longTitle);
+    expect(fitted).toEqual({ text: longTitle, size: fitted.size, lines: 1 });
+    expect(fitted.size).toBeLessThan(34);
+    expect(fitted.size).toBeGreaterThanOrEqual(25);
+    expect(mktgPortraitCharsPerLine(704, fitted.size, { weight: 500 })).toBeGreaterThanOrEqual(longTitle.length);
+    const wrapped = frameworkPortraitTitle(`Goal 3 · ${long.trim()}`);
+    expect(wrapped).toEqual({ text: `Goal 3 · ${long.trim()}`, size: 25, lines: 3 });
+    expect(frameworkPortraitBodyTop(wrapped)).toBe(136 + 2 * 25 * 1.1);
+  });
+
+  it('bounds the goal matrix’s proof cells to the room the other rows leave, tight first, then whole rows with the note', () => {
+    expect(frameworkPortraitMatrixColumn(4)).toBe((704 - 24 - 96 - 64) / 4);
+    const whole = frameworkPortraitMatrix([goal(2)], 'Across the goals.', 664);
+    expect(whole.proofs[0]).toEqual({ rows: goal(2).proofRows, cut: 0, tight: false, note: '' });
+    const bounded = frameworkPortraitMatrix([goal(12), goal(1)], 'Across the goals.', 664);
+    expect(bounded.proofs[0].rows.length).toBeGreaterThan(0);
+    expect(bounded.proofs[0].rows.length).toBeLessThan(12);
+    expect(bounded.proofs[0].tight).toBe(true);
+    expect(bounded.proofs[0].note).toBe(`+${12 - bounded.proofs[0].rows.length} more on the framework's Framework tab in LFX One`);
+    expect(bounded.proofs[1].cut).toBe(0);
+  });
+
+  it('packs the say pills into their column and cuts them from the end, tight first; cuts the avoid rows to whole rows', () => {
+    const pills = Array.from({ length: 12 }, (_, index) => `${long.slice(0, 40).trim()} ${index}`);
+    expect(frameworkPortraitPillsHeight(['open'], 320, false)).toBe(13 * 1.2 + 18);
+    expect(frameworkPortraitPillList(['open', 'honest'], 320, frameworkPortraitSayRoom())).toEqual({
+      rows: ['open', 'honest'],
+      cut: 0,
+      tight: false,
+      note: '',
+    });
+    const cut = frameworkPortraitPillList(pills, 320, frameworkPortraitSayRoom());
+    expect(cut.rows.length).toBeGreaterThan(0);
+    expect(cut.rows.length).toBeLessThan(12);
+    expect(cut.rows).toEqual(pills.slice(0, cut.rows.length));
+    expect(cut.tight).toBe(true);
+    expect(frameworkPortraitPillsHeight(cut.rows, 320, true) + frameworkPortraitCutNoteHeightIn(cut.cut, 'Framework', 320)).toBeLessThanOrEqual(
+      frameworkPortraitSayRoom()
+    );
+    const rows = Array.from({ length: 12 }, (_, index) => ({ avoid: `${long.slice(0, 50).trim()} ${index}`, instead: long.slice(0, 60).trim() }));
+    const avoid = frameworkPortraitAvoidList(rows, 360, frameworkPortraitSayRoom());
+    expect(avoid.rows.length).toBeGreaterThan(0);
+    expect(avoid.rows.length).toBeLessThan(12);
+    expect(avoid.tight).toBe(true);
+    expect(avoid.note).toBe(`+${12 - avoid.rows.length} more on the framework's Framework tab in LFX One`);
+  });
+
+  it('keeps the anchors at their top and the crosscut box at the design’s, sets long questions smaller then cuts them so both end above the footer', () => {
+    const short = frameworkPortraitAnchors(['Which goal does this serve?'], 'Across the goals.');
+    expect(short).toEqual({ anchors: [{ numberLabel: '01', question: 'Which goal does this serve?', size: 22 }], crosscutTop: 760 });
+    const five = Array.from({ length: 5 }, (_, index) => `${long.trim()} Question ${index}?`);
+    const fitted = frameworkPortraitAnchors(five, 'Across the goals.');
+    expect(fitted.anchors.map((anchor) => anchor.numberLabel)).toEqual(['01', '02', '03', '04', '05']);
+    expect(fitted.anchors.every((anchor) => anchor.size < 22 && anchor.size >= 22 * 0.72 - 1e-9)).toBe(true);
+    expect(fitted.crosscutTop).toBeGreaterThanOrEqual(760);
+    const box = 36 + 26 + 8 + 13 * 1.6;
+    expect(fitted.crosscutTop + box).toBeLessThanOrEqual(1000);
+    const longer = frameworkPortraitAnchors(
+      five.map((question) => question.repeat(3)),
+      ''
+    );
+    expect(longer.anchors.every((anchor) => anchor.question.length < question(0).repeat(3).length)).toBe(true);
+    function question(index: number): string {
+      return five[index];
+    }
   });
 });
 

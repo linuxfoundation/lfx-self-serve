@@ -13,9 +13,16 @@ import {
   MKTG_PORTRAIT_PAGE,
   MKTG_PRINT_INK_ON_LIGHT,
   MKTG_PRINT_LF_LOOK,
+  MKTG_PORTRAIT_FIT,
 } from '@lfx-one/shared/constants';
 import { BrandKitRevision, FoundationMessageContent, FoundationMessagePrintView, FoundationMessageReport } from '@lfx-one/shared/interfaces';
-import { buildFoundationMessagePrintView, foundationMessagePrintCutNote, frameworkPortraitPlan, mktgPortraitParaHeight } from '@lfx-one/shared/utils';
+import {
+  buildFoundationMessagePrintView,
+  foundationMessagePrintCutNote,
+  frameworkPortraitPlan,
+  mktgPortraitCharsPerLine,
+  mktgPortraitParaHeight,
+} from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -688,9 +695,13 @@ describe('MktgFrameworkPrintComponent', () => {
         vision: long.repeat(6).trim(),
         mission: long.repeat(6).trim(),
         positioning: long.repeat(6).trim(),
+        say: Array.from({ length: 12 }, (_, index) => `${long.slice(0, 40).trim()} ${index}`),
+        avoid: Array.from({ length: 12 }, (_, index) => pair(`${long.slice(0, 50).trim()} ${index}`, long.slice(0, 60).trim())),
+        anchor: Array.from({ length: 5 }, (_, index) => `${long.trim()} Question ${index}?`),
         goals: [
           {
             ...CONTENT.mf.goals[0],
+            t: 'A goal whose title runs far past the width of the page’s title line',
             vp: long.repeat(4).trim(),
             key: long.repeat(3).trim(),
             bite: long.repeat(3).trim(),
@@ -723,9 +734,25 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(cards.slice(0, 3).every((card) => parseFloat(card.style.fontSize) < 11.5 || (card.textContent ?? '').length < long.repeat(6).trim().length)).toBe(
       true
     );
-    // The goal page: the value, the key message and the sound bite fitted; the proof list keeps the leading whole rows that fit above the bite; four cards' lines fitted.
+    // The framework page's matrix: the goal's twelve proofs cut to the whole rows that fit the proof row's room (tight first), the cut said in the
+    // cell, so the sound bite row stays above the footer.
+    const matrixProofs = Array.from(query('mktg-framework-print-goals')?.querySelectorAll('.fwp-matrix-proofs li') ?? []);
+    expect(matrixProofs.length).toBeGreaterThan(0);
+    expect(matrixProofs.length).toBeLessThan(12);
+    expect(query('mktg-framework-print-goals')?.querySelector('.fwp-matrix-proofs')?.classList.contains('fwp-matrix-proofs--tight')).toBe(true);
+    expect(query('mktg-framework-print-matrix-proofs-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(12 - matrixProofs.length, 'Framework'));
+    // The goal page: its long title at the floor size over the lines it needs, whole, and the lead set under those lines (the number and the lead
+    // never overlap it); the value, the key message and the sound bite fitted; the proof list keeps the leading whole rows that fit above the
+    // bite; four cards' lines fitted.
     const goalPage = frame('goal-1');
-    expect([top(goalPage?.querySelector('.fwp-goal-key')), top(query('mktg-framework-print-goal-1'))]).toEqual([tops.goalKey, 136]);
+    const titleSize = parseFloat(goalPage?.style.getPropertyValue('--fwp-title-size') ?? '34');
+    const title = goalPage?.querySelector('.pp-title')?.textContent?.trim() ?? '';
+    expect(titleSize).toBe(Math.ceil(34 * MKTG_PORTRAIT_FIT.minScale));
+    expect(title).toBe('Goal 1 · A goal whose title runs far past the width of the page’s title line');
+    const titleLines = Math.ceil(title.length / mktgPortraitCharsPerLine(MKTG_PORTRAIT_PAGE.contentWidth, titleSize, { weight: 500 }));
+    expect(titleLines).toBe(2);
+    expect(frame('framework')?.style.getPropertyValue('--fwp-title-size')).toBe('34px');
+    expect([top(goalPage?.querySelector('.fwp-goal-key')), top(query('mktg-framework-print-goal-1'))]).toEqual([tops.goalKey, 136 + titleSize * 1.1]);
     const proofs = Array.from(goalPage?.querySelectorAll('.fwp-proof-row') ?? []);
     expect(proofs.length).toBeGreaterThan(0);
     expect(proofs.length).toBeLessThan(12);
@@ -806,6 +833,51 @@ describe('MktgFrameworkPrintComponent', () => {
     // Four profiles, two a page: the second page's rows start at the short intro's top.
     expect(top(frame('icps-1')?.querySelector('.fwp-icp-row')?.parentElement)).toBe(tops.icpRowsFirst);
     expect(top(frame('icps-2')?.querySelector('.fwp-icp-row')?.parentElement)).toBe(tops.icpRows);
+    // Say and avoid: the pills and the rows cut to their columns above the anchors (tight first), each cut said; the anchors at their top, the five
+    // questions set smaller so they and the crosscut box end above the footer; the box under the anchors, no higher than the design's top.
+    const sayAvoid = frame('say-avoid');
+    const pills = Array.from(sayAvoid?.querySelectorAll('.fwp-say-pill') ?? []);
+    const avoidRows = Array.from(sayAvoid?.querySelectorAll('.fwp-avoid-row') ?? []);
+    expect([pills.length > 0, pills.length < 12, avoidRows.length > 0, avoidRows.length < 12]).toEqual([true, true, true, true]);
+    expect(sayAvoid?.querySelector('.fwp-say-list')?.classList.contains('fwp-say-list--tight')).toBe(true);
+    expect(sayAvoid?.querySelector('.fwp-avoid-list')?.classList.contains('fwp-avoid-list--tight')).toBe(true);
+    expect(query('mktg-framework-print-say-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(12 - pills.length, 'Framework'));
+    expect(query('mktg-framework-print-avoid-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(12 - avoidRows.length, 'Framework'));
+    expect(pills.map((pill) => pill.textContent?.trim())).toEqual(pills.map((_, index) => `${long.slice(0, 40).trim()} ${index}`));
+    const anchorsBlock = query('mktg-framework-print-anchor')?.parentElement;
+    expect(top(anchorsBlock)).toBe(tops.anchors);
+    const questions = Array.from(sayAvoid?.querySelectorAll<HTMLElement>('.fwp-anchor-question') ?? []);
+    expect(questions).toHaveLength(5);
+    expect(questions.every((question) => parseFloat(question.style.fontSize) < 22)).toBe(true);
+    const anchorsHeight = questions.reduce(
+      (sum, question) =>
+        sum +
+        Math.max(
+          FRAMEWORK_PORTRAIT_TYPE.anchorNumber.size * FRAMEWORK_PORTRAIT_TYPE.anchorNumber.line,
+          mktgPortraitParaHeight(
+            { text: question.textContent?.trim() ?? '', size: parseFloat(question.style.fontSize), line: 1.3, weight: 500 },
+            MKTG_PORTRAIT_PAGE.contentWidth - FRAMEWORK_PORTRAIT_ROOM.anchorNumber - FRAMEWORK_PORTRAIT_ROOM.anchorGap
+          )
+        ) +
+        FRAMEWORK_PORTRAIT_ROOM.anchorRow,
+      0
+    );
+    const crosscutBox = sayAvoid?.querySelector<HTMLElement>('.fwp-crosscut-box');
+    const crosscutTop = top(crosscutBox);
+    expect(crosscutTop).toBeGreaterThanOrEqual(tops.sayCrosscut);
+    expect(
+      tops.anchors + FRAMEWORK_PORTRAIT_ROOM.label + FRAMEWORK_PORTRAIT_ROOM.anchorListTop + anchorsHeight + FRAMEWORK_PORTRAIT_ROOM.gap
+    ).toBeLessThanOrEqual(crosscutTop);
+    expect(
+      crosscutTop +
+        FRAMEWORK_PORTRAIT_ROOM.crosscutPadding +
+        FRAMEWORK_PORTRAIT_ROOM.label +
+        FRAMEWORK_PORTRAIT_ROOM.crosscutTextTop +
+        mktgPortraitParaHeight(
+          { text: CONTENT.mf.crosscut, ...FRAMEWORK_PORTRAIT_TYPE.crosscutText },
+          MKTG_PORTRAIT_PAGE.contentWidth - FRAMEWORK_PORTRAIT_ROOM.crosscutPaddingAcross
+        )
+    ).toBeLessThanOrEqual(tops.footer);
   });
 
   it('inside the family’s book drops the cover and the band, prints the family’s running head and footer, and numbers from the family’s first page', async () => {
