@@ -8,6 +8,8 @@ import {
   MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_BOOK_CLASS,
+  MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
+  MKTG_FAMILY_PRINT_HEAD_TIGHT_FROM,
   MKTG_FAMILY_PRINT_HEAD_KIND,
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_PORTRAIT_PAGE,
@@ -76,7 +78,7 @@ import { MktgFamilyPrintSourcesPageComponent } from '../mktg-family-print-source
   styles: [MKTG_PORTRAIT_BLOCK_HOST],
   // The portrait grammar's root: a plain block of frames; the print service picks the page setup by its class. The
   // family's own class carries the one rule it lays over every running head in its book (styles/mktg-family-print.scss).
-  host: { class: `block ${MKTG_PORTRAIT_PRINT_CLASS} ${MKTG_FAMILY_PRINT_BOOK_CLASS}`, 'data-testid': 'family-print-book' },
+  host: { '[class]': 'hostClass()', 'data-testid': 'family-print-book' },
 })
 export class MktgFamilyPrintComponent {
   public readonly view = input.required<MktgFamilyPrintView>();
@@ -98,6 +100,12 @@ export class MktgFamilyPrintComponent {
   public readonly coverTiles: Signal<MktgFamilyPrintCoverTile[]> = this.initCoverTiles();
   public readonly look: Signal<MktgPortraitLook> = this.initLook();
   public readonly book: Signal<MktgPortraitBook> = this.initBook();
+  /** The book's classes: the grammar's root, the family's, and the tight-head modifier when the head's document name runs long. */
+  public readonly hostClass: Signal<string> = computed(() => {
+    const tight = this.book().headRight.length >= MKTG_FAMILY_PRINT_HEAD_TIGHT_FROM;
+    return ['block', MKTG_PORTRAIT_PRINT_CLASS, MKTG_FAMILY_PRINT_BOOK_CLASS, tight ? MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS : ''].filter(Boolean).join(' ');
+  });
+
   public readonly printedLabel: Signal<string> = this.initPrintedLabel();
   public readonly coverFootRight: Signal<string> = this.initCoverFootRight();
   public readonly coverPurpose: Signal<string> = this.initCoverPurpose();

@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_FAMILY_PRINT_BOOK_CLASS, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_PRINT_INK_ON_LIGHT } from '@lfx-one/shared/constants';
+import {
+  MKTG_FAMILY_PRINT_BOOK_CLASS,
+  MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
+  MKTG_FAMILY_PRINT_HEAD_TIGHT_FROM,
+  MKTG_KIT_POSITIONING_FAMILY_ID,
+  MKTG_PRINT_INK_ON_LIGHT,
+} from '@lfx-one/shared/constants';
 import { MktgFamilyPrintView } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
@@ -80,6 +86,8 @@ describe('MktgFamilyPrintComponent', () => {
     expect(root.classList.contains('lfx-mktg-portrait')).toBe(true);
     // The family's own root class beside the grammar's: the one rule over every running head in the book hangs on it.
     expect(root.classList.contains(MKTG_FAMILY_PRINT_BOOK_CLASS)).toBe(true);
+    // A short document name in the head prints at the label's size: no tight-head modifier.
+    expect(root.classList.contains(MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS)).toBe(false);
     // 1 cover · 2 contents · 3 opener · 4 boilerplates · 5 opener · 6 FAQ · 7 Sources · 8 back cover, every one a frame of the grammar.
     expect(pages(root).map((frame) => [frame.dataset['pageId'], frame.dataset['page']])).toEqual([
       ['cover', '1'],
@@ -123,6 +131,15 @@ describe('MktgFamilyPrintComponent', () => {
       'V2.0 · 6 Nov 2026',
       'V16.0 · 6 Nov 2026',
     ]);
+  });
+
+  it('tightens the running head one step when the document name runs long, before the ellipsis ever cuts it', async () => {
+    // `<project> positioning & brand` at the threshold: a project name long enough to reach it marks the book.
+    const name = 'A'.repeat(MKTG_FAMILY_PRINT_HEAD_TIGHT_FROM - ' positioning & brand'.length);
+    const root = await render({ ...view(), projectName: name });
+    expect(root.classList.contains(MKTG_FAMILY_PRINT_BOOK_CLASS)).toBe(true);
+    expect(root.classList.contains(MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS)).toBe(true);
+    expect(root.classList.contains('lfx-mktg-portrait')).toBe(true);
   });
 
   it('omits what the view does not give: no tagline, no site, no conflicts; the back cover keeps the notice', async () => {

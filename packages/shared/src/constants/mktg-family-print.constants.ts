@@ -21,6 +21,16 @@ export const MKTG_FAMILY_PRINT_HEAD_KIND: MktgPortraitDocumentKind = 'positionin
  */
 export const MKTG_FAMILY_PRINT_BOOK_CLASS = 'lfx-mktg-family-book';
 
+/**
+ * The book's modifier when its running head's document name (`<project> positioning & brand`) runs long: the head
+ * prints that name one step smaller (9 px, the grammar's label is 10 px) before it ever cuts it with an ellipsis, so
+ * a long project name is not cut mid-word on every page. From `MKTG_FAMILY_PRINT_HEAD_TIGHT_FROM` characters: at
+ * 10 px and 0.12 em tracking the head's right side holds about 44 beside the longest mounted section label
+ * (`Brand kit · Logo colorways`) within the 640 px content width and the 24 px gap.
+ */
+export const MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS = 'lfx-mktg-family-book--tight-head';
+export const MKTG_FAMILY_PRINT_HEAD_TIGHT_FROM = 44;
+
 /** What a frame of the book holds; `framework` and `kit` are the inner prints' own portrait pages in the family's book. */
 export const MKTG_FAMILY_PRINT_PAGE_KINDS = ['cover', 'contents', 'opener', 'framework', 'kit', 'boilerplates', 'faq', 'sources', 'back'] as const;
 

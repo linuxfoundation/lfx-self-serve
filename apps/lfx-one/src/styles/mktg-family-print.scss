@@ -31,6 +31,12 @@
   }
 }
 
+/* A long document name prints one step smaller before the ellipsis ever cuts it (MKTG_FAMILY_PRINT_HEAD_TIGHT_FROM). */
+.lfx-mktg-family-book--tight-head .pp-head .pp-head-doc {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
 @media print {
   /* Match the standalone framework reset: neither shell containers nor filters
      may anchor the native document to the app's narrow content column. */
