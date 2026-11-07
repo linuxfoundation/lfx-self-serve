@@ -972,9 +972,13 @@ describe('MktgFrameworkPrintComponent', () => {
     );
     if (factRows.length < 12) expect(factsTight).toBe(true);
     // Sources & gaps: each list tightened (11.5/1.5) then cut to the whole rows that fit above the approval card at 880, in order, the cut said under it;
-    // the read and the failed lists share the left column, flush left at the column's full width (the editor's read).
+    // the read and the failed lists share the left column, bulleted as the board draws them, so a row's text is measured at the column less the
+    // bullet's indent (ROOM.sourceBullet), as the component measures it.
     const rowHeight = (value: string | null | undefined) =>
-      mktgPortraitParaHeight({ text: value?.trim() ?? '', ...FRAMEWORK_PORTRAIT_TYPE.sourceTight }, MKTG_PORTRAIT_COLUMNS.half);
+      mktgPortraitParaHeight(
+        { text: value?.trim() ?? '', ...FRAMEWORK_PORTRAIT_TYPE.sourceTight },
+        MKTG_PORTRAIT_COLUMNS.half - FRAMEWORK_PORTRAIT_ROOM.sourceBullet
+      );
     const read = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-sources-read-row"]'));
     const failed = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-sources-failed-row"]'));
     const gaps = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-gaps-row"]'));
