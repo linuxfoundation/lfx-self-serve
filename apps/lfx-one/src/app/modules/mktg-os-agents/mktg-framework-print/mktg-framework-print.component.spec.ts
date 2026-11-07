@@ -23,6 +23,7 @@ import {
   frameworkPortraitCutNoteHeightIn,
   frameworkPortraitHouse,
   frameworkPortraitIcpPages,
+  frameworkPortraitIcpWhoWidth,
   frameworkPortraitServedCount,
   frameworkPortraitPlan,
   frameworkPortraitStatementWidth,
@@ -1117,6 +1118,31 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(query('mktg-framework-print-cover')?.querySelector('.fwp-cover-logo')).toBeNull();
     expect(query('mktg-framework-print-tagline')?.textContent?.trim()).toBe('Release, open.');
     expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('kit');
+  });
+
+  it('sets every profile card’s name-and-tags column at the book’s one width, so the fields start at one x on every profile page, a lone card too', async () => {
+    // One profile's long kind tag grows its column past the board's 190; the others' tags fit 190. Three profiles: two on the first page, one alone on the second.
+    const kind = 'Member companies and prospects';
+    await configure(
+      'browser',
+      buildFoundationMessagePrintView(
+        { ...CONTENT, icp: [{ ...CONTENT.icp[0], kind }, CONTENT.icp[1], { ...CONTENT.icp[1], id: 'c', name: 'C' }] },
+        'TestOrbit',
+        2,
+        null
+      )
+    );
+    const widest = frameworkPortraitIcpWhoWidth([kind, 'Goal 1']);
+    expect(widest).toBeGreaterThan(FRAMEWORK_PORTRAIT_ROOM.icpWho);
+    const pages = [frame('icps-1'), frame('icps-2')];
+    expect(pages.map((page) => page?.querySelectorAll('.fwp-icp-row').length)).toEqual([2, 1]);
+    const columns = pages.flatMap((page) => Array.from(page?.querySelectorAll<HTMLElement>('.fwp-icp-who') ?? []).map((who) => who.style.width));
+    expect(columns).toEqual([`${widest}px`, `${widest}px`, `${widest}px`]);
+    // The rows are placed at one left (the page margin) on both pages, so the fields grid's x is the margin, the shared column and the row's gap everywhere.
+    expect(pages.map((page) => (page?.querySelector('[data-testid="mktg-framework-print-icp-rows"]') as HTMLElement | null)?.style.left)).toEqual([
+      `${MKTG_PORTRAIT_PAGE.margin}px`,
+      `${MKTG_PORTRAIT_PAGE.margin}px`,
+    ]);
   });
 
   describe('in the browser', () => {

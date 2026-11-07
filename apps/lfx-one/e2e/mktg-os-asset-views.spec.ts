@@ -6,6 +6,7 @@ import {
   BRAND_KIT_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   MKTG_PORTRAIT_FIT,
+  MKTG_PORTRAIT_PAGE,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
   MKTG_PORTRAIT_PAPERS,
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
@@ -788,6 +789,38 @@ test('a goal served by six profiles: four cards, the note for the other two, the
   });
   expect(servedBottom).toBeLessThanOrEqual(1000);
   await page.screenshot({ path: info.outputPath('foundation-message-print-served-six.png'), fullPage: true });
+  await page.emulateMedia({ media: 'screen' });
+  await finishMktgPrintFrame(page);
+});
+
+test('the profile cards’ fields start at one x on every profile page: the name column takes the book’s one width, a lone card too', async ({ page }, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  // The overfull record's three profiles: one carries two goal tags (its column grows past the board's 190), the others one; two cards on the
+  // first profile page, the third alone on the second.
+  await openAssetDocument(page, 'foundation-message', 200, true, false, overfullFrameworkRevisionResponse());
+  await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+  await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+  const frame = await layoutMktgPrintFrame(page);
+  const print = frame.getByTestId('mktg-framework-print');
+  const columns = await print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id^="icps-"]').evaluateAll((pages) =>
+    pages.map((frame) => {
+      const left = frame.getBoundingClientRect().left;
+      return Array.from(frame.querySelectorAll('.fwp-icp-row')).map((row) => ({
+        who: Math.round((row.querySelector('.fwp-icp-who')?.getBoundingClientRect().left ?? Number.NaN) - left),
+        fields: Math.round((row.querySelector('.fwp-icp-fields')?.getBoundingClientRect().left ?? Number.NaN) - left),
+        tags: row.querySelectorAll('.fwp-icp-chips .pp-chip').length,
+      }));
+    })
+  );
+  expect(columns.map((page) => page.length)).toEqual([2, 1]);
+  const cards = columns.flat();
+  // The tag counts differ (the first card's column is the one that grew), yet every card's name column and fields grid start at one x.
+  expect(new Set(cards.map((card) => card.tags)).size).toBeGreaterThan(1);
+  expect(cards.map((card) => card.who)).toEqual(cards.map(() => MKTG_PORTRAIT_PAGE.margin));
+  expect(new Set(cards.map((card) => card.fields)).size).toBe(1);
+  expect(cards[0].fields).toBeGreaterThan(MKTG_PORTRAIT_PAGE.margin + 190);
+  await page.screenshot({ path: info.outputPath('foundation-message-print-icp-columns.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);
 });

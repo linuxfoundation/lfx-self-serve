@@ -719,14 +719,26 @@ export function frameworkPortraitIcpIn(icp: FoundationMessagePrintIcp, room: num
 }
 
 /**
+ * The profiles with ONE name-and-tags column width (the editor's rule, 7 Nov 2026: the fields' columns start at one x on
+ * every profile page, a lone card included): the widest column any profile's tags grew to (`frameworkPortraitIcpWhoWidth`,
+ * carried on each card as `whoWidth`) is set on every card, so the fields grid's left edge is the same on every row. A
+ * card already at it is the same object.
+ */
+export function frameworkPortraitIcpsAligned(icps: readonly FoundationMessagePrintIcp[]): FoundationMessagePrintIcp[] {
+  const width = icps.reduce((widest, icp) => Math.max(widest, icp.whoWidth), ROOM.icpWho);
+  return icps.map((icp) => (icp.whoWidth === width ? icp : { ...icp, whoWidth: width }));
+}
+
+/**
  * The profiles paged in data order, two a page at most (the design), fewer where two measured cards would end past the
  * footer: a card never crosses the footer rule, so a profile that would moves whole to the next page (the harness's A4
  * finding: the last line crossed it). A card alone that outruns its page sets its fields at the tight measure, and past
- * that has its longest texts cut until it ends in the room (frameworkPortraitIcpIn).
+ * that has its longest texts cut until it ends in the room (frameworkPortraitIcpIn). Every card takes the book's one
+ * name-and-tags column width first (frameworkPortraitIcpsAligned), so the cards are measured as they print.
  */
 export function frameworkPortraitIcpPages(icps: readonly FoundationMessagePrintIcp[]): FoundationMessagePrintIcpPageRows[] {
   const pages: FoundationMessagePrintIcpPageRows[] = [];
-  for (const icp of icps) {
+  for (const icp of frameworkPortraitIcpsAligned(icps)) {
     const height = frameworkPortraitIcpHeight(icp);
     const last = pages[pages.length - 1];
     if (last && !last.tight && last.icps.length < FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE && last.height + height <= frameworkPortraitIcpRoom(pages.length)) {

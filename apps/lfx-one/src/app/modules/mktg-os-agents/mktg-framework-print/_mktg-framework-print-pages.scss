@@ -553,7 +553,7 @@
 
   .fwp-icp-who {
     flex: none;
-    width: 190px; /* FRAMEWORK_PORTRAIT_ROOM.icpWho; the component sets the row's own, grown for its tags (frameworkPortraitIcpWhoWidth) */
+    width: 190px; /* FRAMEWORK_PORTRAIT_ROOM.icpWho; the component sets the book's one width, the widest any card's tags grew to (frameworkPortraitIcpsAligned) */
   }
 
   .fwp-icp-name {

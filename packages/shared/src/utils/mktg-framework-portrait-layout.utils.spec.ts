@@ -45,6 +45,7 @@ import {
   frameworkPortraitIcpMatrixHeight,
   frameworkPortraitIcpPages,
   frameworkPortraitIcpRoom,
+  frameworkPortraitIcpsAligned,
   frameworkPortraitMatrix,
   frameworkPortraitMatrixColumn,
   frameworkPortraitPillList,
@@ -760,5 +761,28 @@ describe('the framework portrait book’s key numbers', () => {
     expect(last.facts.rows).toHaveLength(1);
     expect(pages.every((page, index) => index === pages.length - 1 || page.factsTop === null)).toBe(true);
     expect(pages.flatMap((page) => page.numbersTable)).toHaveLength(200);
+  });
+});
+
+describe('the framework portrait book’s profile columns', () => {
+  it('gives every card the book’s one name-and-tags width, the widest any card’s tags grew to, so the fields start at one x on every page', () => {
+    const narrow = icpWith({ id: 'narrow', whoWidth: 190 });
+    const wide = icpWith({ id: 'wide', whoWidth: 240 });
+    const other = icpWith({ id: 'other', whoWidth: 204 });
+    const aligned = frameworkPortraitIcpsAligned([narrow, wide, other]);
+    expect(aligned.map((icp) => icp.whoWidth)).toEqual([240, 240, 240]);
+    expect(aligned.map((icp) => icp.id)).toEqual(['narrow', 'wide', 'other']);
+    // The card already at the width is the same object; the others are copies with the width alone changed.
+    expect(aligned[1]).toBe(wide);
+    expect(aligned[0]).toEqual({ ...narrow, whoWidth: 240 });
+    // Cards all at the board's 190 stay as they are; no card: nothing.
+    const same = [icpWith({ id: 'a' }), icpWith({ id: 'b' })];
+    expect(frameworkPortraitIcpsAligned(same)).toEqual(same);
+    expect(frameworkPortraitIcpsAligned(same)[0]).toBe(same[0]);
+    expect(frameworkPortraitIcpsAligned([])).toEqual([]);
+    // The pages carry the aligned cards, measured at the shared width (a wider name column makes the fields grid narrower and taller).
+    const pages = frameworkPortraitIcpPages([narrow, wide, other]);
+    expect(pages.flatMap((page) => page.icps.map((icp) => icp.whoWidth))).toEqual([240, 240, 240]);
+    expect(pages[0].height).toBe(frameworkPortraitIcpHeight({ ...narrow, whoWidth: 240 }) + frameworkPortraitIcpHeight(wide));
   });
 });
