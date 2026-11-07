@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_INKS, MKTG_PORTRAIT_PAGE, MKTG_PORTRAIT_PAGE_SETUP } from '../constants/mktg-portrait-print.constants';
 import { MKTG_PRINT_PAGE_SETUPS } from '../constants/mktg-print.constants';
+import { lfxColors } from '../constants/colors.constants';
 import type { MktgPortraitFitBlock } from '../interfaces/mktg-portrait-print.interface';
 import {
   mktgPortraitBlockHeight,
@@ -37,8 +38,15 @@ describe('the portrait page geometry', () => {
     expect(MKTG_PORTRAIT_PAGE_SETUP).toBe('size: 8.5in 11in; margin: 0;');
   });
 
-  it('keeps the neutral inks as the design sets them', () => {
-    expect(MKTG_PORTRAIT_INKS).toEqual({ ink: '#1F2937', muted: '#6B7280', hairline: '#E5E7EB', mist: '#F3F4F6', white: '#FFFFFF' });
+  it('keeps the four neutral inks as the design sets them, and takes white and the fail ink from the app’s scales', () => {
+    expect(MKTG_PORTRAIT_INKS).toEqual({
+      ink: '#1F2937',
+      muted: '#6B7280',
+      hairline: '#E5E7EB',
+      mist: '#F3F4F6',
+      white: lfxColors.white,
+      fail: lfxColors.red[600],
+    });
   });
 });
 

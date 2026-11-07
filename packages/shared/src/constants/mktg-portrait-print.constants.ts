@@ -48,11 +48,17 @@ export const MKTG_PORTRAIT_COLUMNS = {
 
 /**
  * The neutral inks of every portrait page: the body ink, the muted labels
- * and captions, the hairline and the mist ground. They are the print
- * design's own values (the reference
- * book's), not the app's gray scale, whose slate tint reads differently on
- * paper beside a kit's colours; the kit's dark, accent and spark come from
- * the kit itself (`MktgPortraitLook`).
+ * and captions, the hairline, the mist ground, white, and the one semantic
+ * red (the watch-out cross). These are the print design's own values
+ * (`principles.md` §2 of the portrait mock, the spec of record for this
+ * book), the ONE place they are written: the page frame sets them as
+ * `--pp-*` custom properties and the print stylesheets read only those.
+ * The four grays are not in `lfxColors` (its gray scale is slate-tinted,
+ * which reads differently on paper beside a kit's colours), so they stay
+ * as named constants here, the recorded exception in
+ * `docs/architecture/frontend/styling-system.md`; white and the red are
+ * the app's scale. The kit's dark, accent and spark are the kit's own data
+ * (`MktgPortraitLook`), never constants.
  */
 export const MKTG_PORTRAIT_INKS = {
   ink: '#1F2937',
@@ -60,6 +66,7 @@ export const MKTG_PORTRAIT_INKS = {
   hairline: '#E5E7EB',
   mist: '#F3F4F6',
   white: lfxColors.white,
+  fail: lfxColors.red[600],
 } as const;
 
 /**

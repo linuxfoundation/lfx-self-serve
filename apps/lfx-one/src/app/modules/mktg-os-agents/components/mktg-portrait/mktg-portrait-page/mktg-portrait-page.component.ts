@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input } from '@angular/core';
-import { MKTG_PORTRAIT_GRID_GROUND, MKTG_PORTRAIT_HEX_REGEX } from '@lfx-one/shared/constants';
+import { MKTG_PORTRAIT_GRID_GROUND, MKTG_PORTRAIT_HEX_REGEX, MKTG_PORTRAIT_INKS } from '@lfx-one/shared/constants';
 import { MktgPortraitBook, MktgPortraitLook } from '@lfx-one/shared/interfaces';
 import { mktgPortraitPageNumber } from '@lfx-one/shared/utils';
 
@@ -38,9 +38,17 @@ import { mktgPortraitPageNumber } from '@lfx-one/shared/utils';
     '[style.--pp-font]': 'look().fontStack',
     '[style.--pp-glow]': 'glow()',
     '[style.--pp-grid]': 'grid()',
+    '[style.--pp-ink]': 'inks.ink',
+    '[style.--pp-muted]': 'inks.muted',
+    '[style.--pp-hairline]': 'inks.hairline',
+    '[style.--pp-mist]': 'inks.mist',
+    '[style.--pp-white]': 'inks.white',
+    '[style.--pp-fail]': 'inks.fail',
   },
 })
 export class MktgPortraitPageComponent {
+  /** The design's neutral inks, written once here as the `--pp-*` properties every portrait stylesheet reads. */
+  protected readonly inks = MKTG_PORTRAIT_INKS;
   public readonly look = input.required<MktgPortraitLook>();
   /** The book the page is in, resolved by the document (standalone or the family's). */
   public readonly book = input.required<MktgPortraitBook>();

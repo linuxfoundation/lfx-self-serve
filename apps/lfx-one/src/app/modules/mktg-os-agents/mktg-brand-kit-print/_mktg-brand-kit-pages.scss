@@ -357,7 +357,7 @@
 }
 
 .kp-bar--white {
-  background: #fff;
+  background: var(--pp-white);
 }
 
 /* Watchouts: a 3-column grid of 190 px tiles with the red cross, the label 12/1.4 under each. */
@@ -385,12 +385,12 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #dc2626;
+  background: var(--pp-fail);
   font-size: 13px;
   font-weight: 700;
   line-height: 22px;
   text-align: center;
-  color: #fff;
+  color: var(--pp-white);
 }
 
 .kp-retyped {
@@ -625,7 +625,7 @@
 .kp-matrix-ratio {
   padding: 1px 4px;
   border-radius: 3px;
-  background: #fff;
+  background: var(--pp-white);
   font-size: 10.5px;
   font-weight: 600;
   color: var(--pp-ink);
@@ -884,7 +884,7 @@
 .kp-button--primary {
   padding: 12px 22px;
   background: var(--pp-dark);
-  color: #fff;
+  color: var(--pp-white);
 }
 
 .kp-button--secondary {
@@ -897,14 +897,14 @@
   padding: 8px 14px;
   background: var(--pp-dark);
   font-size: 11px;
-  color: #fff;
+  color: var(--pp-white);
 }
 
 .kp-button--tiny {
   padding: 6px 12px;
   background: var(--pp-dark);
   font-size: 10px;
-  color: #fff;
+  color: var(--pp-white);
 }
 
 /* ---- Example usage ---- */
@@ -953,7 +953,7 @@
   font-size: 20px;
   font-weight: 500;
   line-height: 1.2;
-  color: #fff;
+  color: var(--pp-white);
 }
 
 .kp-usage-social-text {
@@ -983,7 +983,7 @@
   font-size: 17px;
   font-weight: 500;
   line-height: 1.25;
-  color: #fff;
+  color: var(--pp-white);
 }
 
 .kp-table--usage {

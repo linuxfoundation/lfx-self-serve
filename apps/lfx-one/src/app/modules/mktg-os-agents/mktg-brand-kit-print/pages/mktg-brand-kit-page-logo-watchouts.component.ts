@@ -24,7 +24,7 @@ export class MktgBrandKitPageLogoWatchoutsComponent extends MktgBrandKitPageBase
       .map((tile) => ({
         ...tile,
         filter: tile.filter.startsWith('drop-shadow') ? 'drop-shadow(4px 5px 3px rgba(0, 0, 0, 0.45))' : tile.filter,
-        ground: tile.ground || '#fff',
+        ground: tile.ground || this.inks.white,
       }))
   );
   protected readonly minimum = computed(() => this.view().logo.minimum_size.screen_px);

@@ -24,7 +24,7 @@ export class MktgBrandKitPageLogoSymbolComponent extends MktgBrandKitPageBase {
       { ground: dark, radius: '50%', mode: 'reversed' as const, caption: 'Circle · reversed', onWhite: false },
       { ground: dark, radius: '24px', mode: 'reversed' as const, caption: 'Rounded square · reversed', onWhite: false },
       { ground: this.inks.mist, radius: '24px', mode: 'full' as const, caption: 'Rounded square · light tint', onWhite: false },
-      { ground: '#FFFFFF', radius: '24px', mode: 'full' as const, caption: 'Rounded square · white', onWhite: true },
+      { ground: this.inks.white, radius: '24px', mode: 'full' as const, caption: 'Rounded square · white', onWhite: true },
     ];
   });
   /** The accent's AA clause: only when white on it fails (under 4.5:1), as the mock's does for its coral. */
