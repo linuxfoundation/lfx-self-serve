@@ -20,7 +20,7 @@ const groups: FaqGroupView[] = [
     path: 'faq[1]',
     name: 'Joining',
     unanswered: 0,
-    questions: [{ path: 'faq[1][1][0]', question: 'How do I join?', answer: 'Sign up.', source: 'Site', answered: true }],
+    questions: [{ path: 'faq[1][1][0]', question: 'How do I join?', answer: 'Sign up.', source: 'Notes', answered: true }],
   },
   { path: 'faq[2]', name: 'Empty', unanswered: 0, questions: [] },
   {
