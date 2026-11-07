@@ -24,6 +24,7 @@ import {
   mktgFamilyPrintFaqEntryHeight,
   mktgFamilyPrintFaqGroups,
   mktgFamilyPrintFaqPages,
+  mktgFamilyPrintFaqSourceLabel,
   mktgFamilyPrintFill,
   mktgFamilyPrintFitRows,
   mktgFamilyPrintFitRunBlock,
@@ -698,5 +699,20 @@ describe('mktgFamilyPrintContentsLayout', () => {
 
   it('lays an empty book out as two empty columns', () => {
     expect(mktgFamilyPrintContentsLayout([])).toEqual({ columns: [[], []], cut: 0 });
+  });
+});
+
+describe('mktgFamilyPrintFaqSourceLabel', () => {
+  it('prints a stored source as its chip, none for the run\u2019s internal Notes label, and measures the entry without the chip\u2019s line then', () => {
+    expect(mktgFamilyPrintFaqSourceLabel('Framework')).toBe('Framework');
+    expect(mktgFamilyPrintFaqSourceLabel(' website ')).toBe('website');
+    expect(mktgFamilyPrintFaqSourceLabel('Notes')).toBe('');
+    expect(mktgFamilyPrintFaqSourceLabel('notes')).toBe('');
+    expect(mktgFamilyPrintFaqSourceLabel('')).toBe('');
+    const width = (MKTG_PORTRAIT_PAGE.contentWidth - MKTG_FAMILY_PRINT_FAQ_LAYOUT.columnGap) / 2;
+    const entry = faqGroups([1])[0].questions[0];
+    const withChip = mktgFamilyPrintFaqEntryHeight(entry, width);
+    expect(mktgFamilyPrintFaqEntryHeight({ ...entry, source: 'Notes' }, width)).toBe(withChip - MKTG_FAMILY_PRINT_FAQ_LAYOUT.source);
+    expect(mktgFamilyPrintFaqEntryHeight({ ...entry, source: '' }, width)).toBe(withChip - MKTG_FAMILY_PRINT_FAQ_LAYOUT.source);
   });
 });

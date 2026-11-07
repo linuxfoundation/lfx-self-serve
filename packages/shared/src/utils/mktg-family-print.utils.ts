@@ -11,6 +11,7 @@ import {
   MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
+  MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS,
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_FAMILY_PRINT_LABEL_STOP_WORDS,
   MKTG_FAMILY_PRINT_ROUNDING_WORDS,
@@ -107,7 +108,7 @@ export function mktgFamilyPrintFaqGroups(groups: readonly FaqGroupView[]): MktgF
   }));
 }
 
-/** The height one FAQ entry takes in a column `width` px wide: its padding, the question, the answer and the source chip's line. */
+/** The height one FAQ entry takes in a column `width` px wide: its padding, the question, the answer and the source chip's line when it prints one. */
 export function mktgFamilyPrintFaqEntryHeight(entry: MktgFamilyPrintFaqPlanGroup['questions'][number], width: number): number {
   const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
   const paras: MktgPortraitFitPara[] = [
@@ -115,7 +116,7 @@ export function mktgFamilyPrintFaqEntryHeight(entry: MktgFamilyPrintFaqPlanGroup
     { text: entry.answer, ...layout.answer },
   ];
   const text = paras.reduce((height, para) => height + mktgPortraitParaHeight(para, width), 0);
-  return layout.entryPadding + text + (entry.source.trim() ? layout.source : 0);
+  return layout.entryPadding + text + (mktgFamilyPrintFaqSourceLabel(entry.source) ? layout.source : 0);
 }
 
 /**
@@ -655,4 +656,10 @@ export function mktgFamilyPrintFaqBalancedPages(groups: MktgFamilyPrintFaqPlanGr
     rest = rest.slice(first.length + second.length);
   }
   return pages;
+}
+
+/** A FAQ answer's source as its chip prints it: the book's word for a stored source (MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS), else the source as stored; '' prints no chip. */
+export function mktgFamilyPrintFaqSourceLabel(source: string): string {
+  const trimmed = source.trim();
+  return MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS[trimmed.toLocaleLowerCase()] ?? trimmed;
 }

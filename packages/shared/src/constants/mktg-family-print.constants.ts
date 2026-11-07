@@ -77,10 +77,11 @@ export const MKTG_FAMILY_PRINT_ROUNDING_WORDS: readonly string[] = [
 ];
 
 /**
- * A FAQ answer's source as the family book's chip prints it, by the stored word in lower case: the run's `Notes` are
- * the project's notes to a reader of the book (the editor's round of 7 Nov 2026). A source not named here prints as stored.
+ * A FAQ answer's source as the family book's chip prints it, by the stored word in lower case; '' prints no chip. The
+ * run's `Notes` is an internal source label, so it prints none (the editor's final round of 7 Nov 2026). A source not
+ * named here prints as stored.
  */
-export const MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS: Readonly<Record<string, string>> = { notes: 'Project notes' };
+export const MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS: Readonly<Record<string, string>> = { notes: '' };
 
 /** Words of a key number's label that name no thing to count. */
 export const MKTG_FAMILY_PRINT_LABEL_STOP_WORDS: readonly string[] = [
