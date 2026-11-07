@@ -58,12 +58,16 @@
     color: var(--pp-on-dark);
   }
 
+  /* The lockup's block: bare, or the grammar's white plate (.pp-plate) padded inline by half the drawn height; its top and the drawn height are set inline (FRAMEWORK_PORTRAIT_ROOM.coverLogoTop/coverLogoHeight). */
+  .fwp-cover-logo-block {
+    display: inline-block;
+    align-self: flex-start;
+    line-height: 0;
+  }
+
   .fwp-cover-logo {
     display: block;
-    align-self: flex-start;
-    height: 40px;
     width: auto;
-    margin-top: 4px;
   }
 
   .fwp-cover-eyebrow {

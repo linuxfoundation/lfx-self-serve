@@ -231,6 +231,9 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   servedLineTop: 6,
   servedLineGap: 4,
   servedCardMin: 164,
+  /** The cover's lockup: its drawn height (`.fwp-cover-logo`) and its margin under the band's padding; a plated lockup's block starts a plate padding higher, so the artwork itself keeps this place (the kit cover's rule). */
+  coverLogoHeight: 40,
+  coverLogoTop: 4,
   /** The cover's umbrella: its measure (`.fwp-cover-umbrella` max-width) and the room the dark band gives it under the lockup and the tagline (four lines of 32/1.18, 151, kept with air). */
   coverUmbrellaWidth: 640,
   coverUmbrellaRoom: 160,

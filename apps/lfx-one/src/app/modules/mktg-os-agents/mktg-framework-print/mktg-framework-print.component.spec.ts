@@ -13,6 +13,7 @@ import {
   MKTG_PORTRAIT_PAGE,
   MKTG_PRINT_INK_ON_LIGHT,
   MKTG_PRINT_LF_LOOK,
+  MKTG_PRINT_REVERSED_FILTER,
   MKTG_PORTRAIT_COLUMNS,
   MKTG_PORTRAIT_FIT,
 } from '@lfx-one/shared/constants';
@@ -31,6 +32,7 @@ import {
   mktgPortraitAccentOnDark,
   mktgPortraitCharsPerLine,
   mktgPortraitParaHeight,
+  mktgPortraitPlatePadding,
   mktgPrintBrand,
 } from '@lfx-one/shared/utils';
 import { brandKitLogolessFixture, brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
@@ -1167,6 +1169,39 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(cover?.style.getPropertyValue('--pp-dark')).not.toBe(MKTG_PRINT_LF_LOOK.dark);
     expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('kit');
     expect(query('mktg-framework-print-tagline')?.classList.contains('fwp-cover-eyebrow')).toBe(true);
+  });
+
+  it('sets a full-colour lockup the kit cannot reverse on the grammar’s white plate, padded by half its height, the artwork kept in place; no plate for a one-ink or a supplied reversed lockup (editor W3)', async () => {
+    // The fixture's primary is drawn in three colours and the kit supplied no reversed file: on the dark band it sits on the
+    // white plate (K's precedence: supplied reversed > derived one-ink > plate), padded by half the 40 px drawn height, the
+    // block started that padding higher so the artwork itself keeps the band's lockup place.
+    const padding = mktgPortraitPlatePadding(FRAMEWORK_PORTRAIT_ROOM.coverLogoHeight);
+    await configure('browser', printView(brandKitTestRevision()));
+    const plate = query('mktg-portrait-plate');
+    expect(plate?.classList.contains('pp-plate')).toBe(true);
+    expect([plate?.style.padding, plate?.style.marginTop]).toEqual([`${padding}px`, `${FRAMEWORK_PORTRAIT_ROOM.coverLogoTop - padding}px`]);
+    const plated = plate?.querySelector<HTMLElement>('[data-testid="mktg-framework-print-cover-logo"]');
+    expect([plated?.style.filter, plated?.style.height]).toEqual(['', `${FRAMEWORK_PORTRAIT_ROOM.coverLogoHeight}px`]);
+    // A one-ink primary reverses by filter: no plate, the block at the band's place.
+    const oneInk = brandKitTestRevision();
+    oneInk.chapters.logo.files.primary = {
+      ref: 'mark.svg',
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#123456"/></svg>',
+    };
+    await setView(printView(oneInk));
+    expect(query('mktg-portrait-plate')).toBeNull();
+    const filtered = query('mktg-framework-print-cover-logo');
+    expect(filtered?.style.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+    expect(filtered?.parentElement?.style.marginTop).toBe(`${FRAMEWORK_PORTRAIT_ROOM.coverLogoTop}px`);
+    // A supplied reversed file is drawn as it is: no plate, no filter.
+    const reversed = brandKitTestRevision();
+    reversed.chapters.logo.files.reversed = {
+      ref: 'reversed.svg',
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#fff"/></svg>',
+    };
+    await setView(printView(reversed));
+    expect(query('mktg-portrait-plate')).toBeNull();
+    expect(query('mktg-framework-print-cover-logo')?.style.filter).toBe('');
   });
 
   it('skips the cover’s logo block on a kit with no drawable artwork, and keeps the rest of the cover', async () => {

@@ -71,6 +71,7 @@ import {
   mktgPortraitOpensChapter,
   mktgPortraitPageNumber,
   mktgPortraitParaHeight,
+  mktgPortraitPlatePadding,
   mktgPortraitSectionLabel,
   mktgPrintJoin,
 } from '@lfx-one/shared/utils';
@@ -208,6 +209,17 @@ export class MktgFrameworkPrintComponent {
   protected readonly coverStripRight = computed(() => mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel]));
   /** The cover's umbrella, fitted to the dark band's room under the lockup and the tagline. */
   protected readonly coverUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.coverUmbrella, ROOM.coverUmbrellaWidth, ROOM.coverUmbrellaRoom));
+  /**
+   * The cover's lockup on the dark band: the kit grammar's artwork (supplied reversed, else the one-ink primary filtered to
+   * white, else the full-colour primary on the white plate, `MktgPrintLogo.plate`), the plate padded by half the drawn height
+   * (`mktgPortraitPlatePadding`, the kit cover's rule) and its block started a padding higher so the artwork keeps its place.
+   */
+  protected readonly coverLogo = computed(() => {
+    const logo = this.view().brand.logoOnDark;
+    if (!logo) return null;
+    const padding = logo.plate ? mktgPortraitPlatePadding(ROOM.coverLogoHeight) : 0;
+    return { ...logo, padding, top: ROOM.coverLogoTop - padding };
+  });
   /** The message house's umbrella bar, fitted to three lines. */
   protected readonly houseUmbrella = computed(() =>
     this.fit(this.view().mh.umbrella, TYPE.houseUmbrella, this.page.contentWidth - ROOM.houseUmbrellaPaddingAcross, ROOM.houseUmbrellaRoom)

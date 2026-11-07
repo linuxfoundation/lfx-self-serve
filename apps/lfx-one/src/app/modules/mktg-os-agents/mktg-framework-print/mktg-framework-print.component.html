@@ -37,13 +37,21 @@
         <!-- COVER: the dark band edge to edge (the reversed lockup, the tagline, the umbrella), the title with its edition, the contents, the bottom strip -->
         @case (ids.cover) {
           <div class="fwp-cover-band" data-testid="mktg-framework-print-cover">
-            @if (v.brand.logoOnDark; as logo) {
-              <img
-                class="fwp-cover-logo"
-                [src]="logo.src"
-                [alt]="logo.alt"
-                [style.filter]="logo.filter || null"
-                data-testid="mktg-framework-print-cover-logo" />
+            @if (coverLogo(); as logo) {
+              <span
+                class="fwp-cover-logo-block"
+                [class.pp-plate]="logo.plate"
+                [style.padding.px]="logo.plate ? logo.padding : null"
+                [style.margin-top.px]="logo.top"
+                [attr.data-testid]="logo.plate ? 'mktg-portrait-plate' : null">
+                <img
+                  class="fwp-cover-logo"
+                  [style.height.px]="room.coverLogoHeight"
+                  [src]="logo.src"
+                  [alt]="logo.alt"
+                  [style.filter]="logo.filter || null"
+                  data-testid="mktg-framework-print-cover-logo" />
+              </span>
             }
             @if (v.mf.tagline) {
               <span class="fwp-cover-eyebrow" data-testid="mktg-framework-print-tagline">{{ v.mf.tagline }}</span>

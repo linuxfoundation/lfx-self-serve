@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import {
   BRAND_KIT_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  FRAMEWORK_PORTRAIT_ROOM,
   MKTG_PORTRAIT_FIT,
   MKTG_PORTRAIT_PAGE,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
@@ -26,7 +27,7 @@ import {
 } from './helpers/mktg-print.helper';
 
 import { brandKitLogolessFixture, brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
-import { mktgPortraitAccentOnDark, mktgPortraitAccentText } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
+import { mktgPortraitAccentOnDark, mktgPortraitAccentText, mktgPortraitPlatePadding } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
 import {
   columnAssetRevisionResponse,
   cssRgb,
@@ -683,6 +684,12 @@ test('Download PDF waits for the project’s Brand Kit: disabled with the reason
     await expect(logo).not.toHaveAttribute('src', /logo_lf_white\.svg/);
     const cover = frame.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="cover"]');
     await expect(cover.getByTestId('mktg-framework-print-cover')).toHaveCSS('background-color', cssRgb(kit.kit.dark));
+    // The fixture's three-colour lockup, with no reversed file, sits on the grammar's white plate, padded by half its 40 px
+    // height (the kit cover's precedence, editor W3); the band shows it in full colour, never flattened.
+    const plate = cover.getByTestId('mktg-portrait-plate');
+    await expect(plate).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await expect(plate).toHaveCSS('padding-top', `${mktgPortraitPlatePadding(FRAMEWORK_PORTRAIT_ROOM.coverLogoHeight)}px`);
+    await expect(plate.getByTestId('mktg-framework-print-cover-logo')).toHaveCSS('filter', 'none');
     if (press === 3) await page.screenshot({ path: info.outputPath('framework-pdf-kit-cover-third-download.png') });
     await finishMktgPrintFrame(page);
   }
