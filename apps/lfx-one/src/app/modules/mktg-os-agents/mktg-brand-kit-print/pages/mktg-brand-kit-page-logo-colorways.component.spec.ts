@@ -35,7 +35,8 @@ describe('the Colorways page', () => {
     expect(tiles[2].querySelector<HTMLElement>('img')?.style.filter).toBe('');
     expect(tiles[2].querySelector<HTMLElement>('.pp-tile')?.style.background).not.toBe('');
     expect(frame.querySelectorAll('[data-testid="brand-kit-colorways-rules"] li')).toHaveLength(view.logo.colorways.length);
-    expect(frame.querySelector('[data-testid="brand-kit-colorways-rules"] li')?.textContent?.trim()).toBe('Full color · on white.');
+    // Every row carries its description, the first too: the list reads as label and rule.
+    expect(frame.querySelector('[data-testid="brand-kit-colorways-rules"] li')?.textContent?.trim()).toBe('Full color · on white — full color on white.');
     expect(frame.querySelectorAll('[data-testid="brand-kit-colorways-rules"] li')[1]?.textContent?.trim()).toBe('Reversed · on Charcoal — white on dark.');
   });
 

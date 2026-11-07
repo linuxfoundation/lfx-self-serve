@@ -129,6 +129,14 @@ function pageById(pages: Locator, id: (typeof PAGES)[number]): Locator {
   return pages.and(pages.page().locator(`[data-page-id="${id}"]`));
 }
 
+/** The Watch-outs' tiles are three equal fixed columns: every tile the width of the first, within a pixel. */
+async function expectEqualWatchoutColumns(watchouts: Locator): Promise<void> {
+  const tiles = await watchouts.getByTestId('brand-kit-watchout').all();
+  expect(tiles.length).toBeGreaterThanOrEqual(3);
+  const widths = await Promise.all(tiles.map(async (tile) => (await tile.boundingBox())?.width ?? 0));
+  for (const width of widths) expect(Math.abs(width - widths[0])).toBeLessThan(1);
+}
+
 /** A frame's child placed on it: its offset from the frame's top-left corner and its width, rounded. */
 async function placement(frame: Locator, child: Locator): Promise<{ x: number; y: number; width: number }> {
   const [outer, inner] = await Promise.all([frame.boundingBox(), child.boundingBox()]);
@@ -215,6 +223,8 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(back.getByTestId('mktg-portrait-back-cover-line')).toHaveCSS('font-family', face);
     await expect(back.getByTestId('mktg-portrait-back-cover-notice')).toHaveCSS('font-family', face);
     await expect(back.getByTestId('mktg-portrait-page-foot')).toHaveCount(0);
+    // The Watch-outs' six tiles sit in three equal columns.
+    await expectEqualWatchoutColumns(pageById(pages, 'logo-watchouts'));
     await back.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('back-cover.png'), fullPage: true });
   });
@@ -568,12 +578,18 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(pageById(pages, 'logo-system').getByTestId('brand-kit-logo-system-tiles')).toContainText(
       'On the dark · full color on a white plate (no reversed file)'
     );
-    // The cover strip's halves share one line: a long project name loses words with an ellipsis, never wraps at 10 px.
+    // The cover strip's halves share one line: "· a Linux Foundation project" goes before a word of the name, the
+    // name whole, never wrapped at 10 px.
     const strip = pageById(pages, 'cover').getByTestId('mktg-portrait-cover-strip');
+    await expect(strip).toContainText(ASSET_PROJECT.name);
+    await expect(strip).not.toContainText('Linux Foundation project');
     const halves = await strip.locator('span').all();
     const boxes = await Promise.all(halves.map((half) => half.boundingBox()));
     expect(boxes.every((box) => box !== null && box.height < 20)).toBe(true);
     expect(await strip.evaluate((node) => node.classList.contains('pp-cover-strip--wrapped'))).toBe(false);
+    // The Watch-outs' three columns stay equal under the long retyped name, which ends inside its tile with an ellipsis.
+    await expectEqualWatchoutColumns(pageById(pages, 'logo-watchouts'));
+    await expect(pageById(pages, 'logo-watchouts').getByTestId('brand-kit-watchout-retyped')).toHaveText(/…$/);
     await contrast.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('overfull-contrast.png'), fullPage: false });
     await page.emulateMedia({ media: 'screen' });

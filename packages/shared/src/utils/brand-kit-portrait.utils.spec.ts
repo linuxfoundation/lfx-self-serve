@@ -572,12 +572,17 @@ describe('the Color contrast page’s layout', () => {
 describe('the Watchouts page’s retyped sample', () => {
   it('prints the name as written when the tile holds it in four lines clear of the badge, else shortened at a word with an ellipsis', () => {
     expect(brandKitPortraitRetypedName('Project One')).toBe('Project One');
-    // Each long word is a line of its own in the 156 px clear of the badge: five words are one too many, so the
-    // acronym goes and the name ends with the ellipsis.
-    expect(brandKitPortraitRetypedName('Cloud Native Computing Foundation (CNCF)')).toBe('Cloud Native Computing Foundation…');
+    // The tile's column is fixed at its third of the row: a word wider than the 156 px clear of the badge
+    // ("Computing", "Foundation" at 30 px Georgia bold) would widen it, so the sample stops before it with the ellipsis.
+    expect(mktgPortraitLineFits('Foundation', 156, 30, { weight: 700, family: 'Georgia' })).toBe(false);
+    expect(brandKitPortraitRetypedName('Cloud Native Computing Foundation (CNCF)')).toBe('Cloud Native…');
+    expect(brandKitPortraitRetypedName('Agentic AI Foundation')).toBe('Agentic AI…');
     const long = brandKitPortraitRetypedName('The Synthetic Foundation for Interoperable Agentic Computing Standards and Open Governance');
-    expect(long.endsWith('…')).toBe(true);
-    expect(long.startsWith('The Synthetic Foundation')).toBe(true);
+    expect(long).toBe('The Synthetic…');
+    // A single word too wide for the line is cut to the characters that fit.
+    const word = brandKitPortraitRetypedName('Kubernetes');
+    expect(word).toMatch(/^Kubern.*…$/);
+    expect(mktgPortraitLineFits(word, 156, 30, { weight: 700, family: 'Georgia' })).toBe(true);
     expect(brandKitPortraitRetypedName('  ')).toBe('');
   });
 });
