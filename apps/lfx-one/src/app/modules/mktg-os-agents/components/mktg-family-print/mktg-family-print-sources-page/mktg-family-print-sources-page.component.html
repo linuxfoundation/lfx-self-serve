@@ -1,0 +1,65 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let shown = lists();
+<p class="pp-body pp-body--wide" [lfxPpRect]="[column[0], geometry.bodyTop, column[1]]">{{ intro }}</p>
+<section [lfxPpRect]="[column[0], 210, column[1]]" data-testid="family-print-sources-table">
+  <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.inThisBook }}</h2>
+  <table class="fps-table">
+    <thead>
+      <tr>
+        <th>{{ labels.document }}</th>
+        <th>{{ labels.version }}</th>
+        <th>{{ labels.approved }}</th>
+        <th>{{ labels.data }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (chapter of chapters(); track chapter.document.agentKey) {
+        <tr data-testid="family-print-sources-row">
+          <td class="fps-table__name">{{ chapter.document.title }}</td>
+          <td>{{ chapter.document.versionLabel }}</td>
+          <td>{{ chapter.document.approvedLabel }}</td>
+          <td class="fps-table__muted">{{ chapter.document.dataLabel }}</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</section>
+@if (shown.conflicts.length || shown.conflictsCut) {
+  <section [lfxPpRect]="[column[0], layout.conflictsTop, column[1]]" data-testid="family-print-sources-conflicts">
+    <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.disagree }}</h2>
+    <div class="fps-rows">
+      @for (conflict of shown.conflicts; track conflict.id) {
+        <div class="fps-row">
+          <span class="fps-row__topic">{{ conflict.topic }}</span>
+          <span>
+            {{ conflict.text }}
+            @if (conflict.rerun) {
+              <span class="fps-rerun">→ {{ conflict.rerun }}</span>
+            }
+          </span>
+        </div>
+      }
+    </div>
+    @if (conflictsCutNote()) {
+      <p class="fps-cut" data-testid="family-print-sources-conflicts-cut">{{ conflictsCutNote() }}</p>
+    }
+  </section>
+}
+@if (shown.openItems.length || shown.openCut) {
+  <section [lfxPpRect]="[column[0], shown.openTop, column[1]]" data-testid="family-print-sources-open">
+    <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.stillOpen }}</h2>
+    <div class="fps-open">
+      @for (item of shown.openItems; track item.document + item.text) {
+        <span class="fps-open__chip"
+          ><span class="pp-chip">{{ item.document }}</span></span
+        >
+        <span class="fps-open__text">{{ item.text }}</span>
+      }
+    </div>
+    @if (openCutNote()) {
+      <p class="fps-cut" data-testid="family-print-sources-open-cut">{{ openCutNote() }}</p>
+    }
+  </section>
+}

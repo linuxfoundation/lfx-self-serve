@@ -6,19 +6,6 @@
   display: none;
 }
 
-.lfx-family-print-cover {
-  /* Readable with Background graphics ON or OFF: ink and logo are for white. */
-  background-color: white;
-  color: var(--mfp-ink);
-  border: 1pt solid var(--mfp-dark);
-}
-
-@layer tailwind-base {
-  .lfx-family-print-cover :is(h1, p) {
-    font-family: inherit;
-  }
-}
-
 @media print {
   /* Match the standalone framework reset: neither shell containers nor filters
      may anchor the native document to the app's narrow content column. */
@@ -50,28 +37,8 @@
 
   body.lfx-print-family,
   body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
-    page: mktg-framework;
-
-    .lfx-family-print-cover {
-      /* The sheet's head and foot take 1.1in of the page; 0.1in of slack under that keeps a fraction of
-         rounding off a blank sheet. Grid without a viewport-height flex-growing child keeps
-         title/contents together on either paper size. */
-      min-height: calc(100vh - 1.2in);
-      align-content: space-between;
-      print-color-adjust: exact;
-      -webkit-print-color-adjust: exact;
-    }
-
-    /* On the page margins (WebKit: MKTG_PRINT_PAGE_MARGINS_CLASS on the frame's body) the cover is the page
-       area under the 0.55in margins, and the 0.6in at its sides is the margin's, not its own. */
-    &.lfx-print-page-margins .lfx-family-print-cover {
-      min-height: calc(100vh - 1.1in);
-      margin-left: 0;
-      margin-right: 0;
-    }
-
-    /* One cover and one contents list for the family, not a second per asset (the framework, mounted with the
-       family's book, prints no cover of its own). */
+    /* One cover and one contents list for the family, not a second per asset (the framework, on the family's book,
+       prints no cover of its own). */
     [data-testid='brand-kit-page-cover'],
     [data-testid='brand-kit-page-contents'],
     [data-testid='brand-kit-page-back-cover'] {
@@ -82,10 +49,13 @@
   /* :has raises specificity above the legacy body height:0/overflow:hidden
      rules emitted after this partial by styles.scss. */
   body.lfx-print-framework:has(.lfx-framework-print),
-  body.lfx-print-family,
   body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
     page: mktg-framework;
+  }
 
+  body.lfx-print-framework:has(.lfx-framework-print),
+  body.lfx-print-family,
+  body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
     /* Named pages require in-flow boxes. Keep only the document's ancestor chain
        and its contents; hidden siblings must not reserve blank printed space. */
     *:not(:has(:is(.lfx-framework-print-only, .lfx-family-print-only, .lfx-brand-kit-print-only))):not(
