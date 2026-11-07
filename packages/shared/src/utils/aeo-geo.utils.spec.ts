@@ -402,6 +402,18 @@ describe('AEO/GEO reader caveats', () => {
     expect(aeoGeoReaderCaveat('The search returned "Top 100 open source foundations" for the project name.')).toBe(
       'The search returned "Top 100 open source foundations" for the project name.'
     );
+    // Inside the quotes an error status counts only where a status belongs: leading the message, or after HTTP, status or code.
+    expect(aeoGeoReaderCaveat('The search returned "Fortune 500 open source companies" for the project name.')).toBe(
+      'The search returned "Fortune 500 open source companies" for the project name.'
+    );
+    expect(aeoGeoReaderCaveat('The search returned "Top 400 projects" for the project name.')).toBe(
+      'The search returned "Top 400 projects" for the project name.'
+    );
+    expect(aeoGeoReaderCaveat('Web search failed with "404".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('Web search returned "status 404" for both queries.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    // Outside the quotes a status may carry "code" and a colon.
+    expect(aeoGeoReaderCaveat('The search returned "Not found" with status: 404.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('The search returned "Not found" with status code 404.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
   });
 
   it('never splits a sentence inside its quotes, so a quoted title stays whole and a multi-sentence provider error maps as one', () => {

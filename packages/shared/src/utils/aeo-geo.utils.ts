@@ -336,9 +336,9 @@ const CAVEAT_SENTENCE_BOUNDARY = /([.!?]['"\u2018\u2019\u201c\u201d`)\]]*)\s+(?=
 const CAVEAT_SENTENCE_MARK = '\u0000';
 const CAVEAT_QUOTE_SPACE_MARK = '\u0002';
 // A stop inside a closing quote followed by a lowercase WORD continues the sentence ("What is AEO?" as its first result).
-// A word is lowercase letters with inner hyphens or apostrophes (well-known, isn't), and it ends at whitespace, sentence
-// punctuation or a dot not followed by a letter or digit, so a file name (robots.txt, llms-full.txt, sitemap.xml) or a
-// property (og:site_name) after the quote opens its own sentence.
+// A word is lowercase letters with hyphens or apostrophes within or after them (well-known, isn't, users'), and it ends at
+// whitespace, sentence punctuation or a dot not followed by a letter or digit, so a file name (robots.txt, llms-full.txt,
+// sitemap.xml) or a property (og:site_name) after the quote opens its own sentence.
 const CAVEAT_QUOTE_CONTINUATION = /([.!?]['"\u2019\u201d`]+)(\s+)(?=\p{Ll}[\p{Ll}'\u2019-]*(?:$|[\s,;!?)\]]|\.(?![\p{L}\p{N}])))/gu;
 const CAVEAT_PARENTHETICAL = /\(([^()]*)\)/g;
 const CAVEAT_WORD_CHARACTER = /[\p{L}\p{N}]/u;
@@ -354,11 +354,12 @@ const CAVEAT_PROVIDER_SUBJECT = /^(?:(?:the|our|a|an)\s+)?(?:provider|API|lookup
 const CAVEAT_LFX_RECORD = /LFX record could not be read/i;
 const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exceeded|exhausted)/i;
 const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u201c`]/i;
-// Failure evidence: only an error status (4xx or 5xx) counts, never a successful one (HTTP 200) or a number in a title ("Top 100"):
-// inside the quotes a bare error status counts; outside them only after HTTP or status ("the first 60 KB" is no status).
+// Failure evidence: only an error status (4xx or 5xx) counts, never a successful one (HTTP 200) or a number in a title ("Top 100",
+// "Fortune 500"). Inside the quotes it counts only where a status belongs: leading the quoted message ("502 Bad Gateway") or after
+// HTTP, status or code; outside them only after HTTP or status, with an optional "code" and colon ("the first 60 KB" is no status).
 const CAVEAT_FAILURE_WORDS = 'unavailable|error|denied|unauthori[sz]ed|forbidden|exceeded|limit|timeout|timed out|quota|credits?|rate[- ]limited';
-const CAVEAT_FAILURE_IN_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|[45]\\d{2})\\b`, 'i');
-const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:HTTP|status)\\s*[45]\\d{2})\\b`, 'i');
+const CAVEAT_FAILURE_IN_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS})\\b|(?:^|['"\\u2018\\u201c\`]|\\b(?:HTTP|status|code)\\s*:?)\\s*[45]\\d{2}\\b`, 'i');
+const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:HTTP|status)(?:\\s+code)?\\s*:?\\s*[45]\\d{2})\\b`, 'i');
 const CAVEAT_RESULT_TITLE = [
   /['"\u2018\u201c`][^'"\u2019\u201d`]*['"\u2019\u201d`]\s+as (?:its|the) (?:top|first|best|second|leading)\b[^.]*\bresult/i,
   /\b(?:titled|entitled|called|named)\s*['"\u2018\u201c`]/i,
@@ -438,8 +439,9 @@ function carriesPlumbing(text: string): boolean {
 
 /**
  * A credits/quota phrase (outside a quoted result title), or a provider subject quoting its message with evidence
- * of failure (a failure word or a 4xx/5xx status) in or around the quotes; a quoted successful result
- * ("Example Foundation", with HTTP 200 or a number in its title) is audit content.
+ * of failure in or around the quotes: a failure word, or a 4xx/5xx status where a status belongs (leading the quoted
+ * message, or after HTTP, status or code); a quoted successful result ("Example Foundation", with HTTP 200 or a
+ * number in its title) is audit content.
  */
 function carriesProviderFailure(sentence: string): boolean {
   const title = CAVEAT_RESULT_TITLE.some((pattern) => pattern.test(sentence));
