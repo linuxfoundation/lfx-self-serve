@@ -584,11 +584,12 @@ describe('Family export slot', () => {
       `Version V3.0 Approved 6 Nov 2026 Pages ${kitLast + 2}`,
       `Version V4.0 Approved 6 Nov 2026 Pages ${kitLast + 4}`,
     ]);
-    // The running head names the chapter left and the family right; nothing in the book is hand-numbered.
+    // The running head names the document left (one style on the family's own pages: the document name alone, as the
+    // framework's and the kit's pages inside the book name theirs) and the family right; nothing is hand-numbered.
     const boilerplatesPage = frames.find((frame) => frame.dataset['pageId'] === 'boilerplates');
     expect(
       Array.from(boilerplatesPage?.querySelectorAll('[data-testid="mktg-portrait-page-head"] > span') ?? []).map((span) => span.textContent?.trim())
-    ).toEqual(['03 Boilerplates', 'Synthetic project positioning & brand']);
+    ).toEqual(['Boilerplates', 'Synthetic project positioning & brand']);
     expect(book.querySelectorAll('[data-testid="family-print-boilerplate-card"]')).toHaveLength(4);
     // What the run was built from, each source as a short readable name; the run's notes never print.
     expect(Array.from(book.querySelectorAll('[data-testid="family-print-boilerplate-sources"] li')).map((item) => item.textContent)).toEqual(
