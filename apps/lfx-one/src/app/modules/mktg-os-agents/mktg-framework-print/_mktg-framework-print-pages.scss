@@ -894,11 +894,13 @@
 
   /* ---------- 05 sources & gaps ---------- */
 
-  /* The lists sit flush left under their labels, like the "No source failed." line (the editor's read, 7 Nov; the design's indent dropped). */
+  /* The lists carry the design's bullets (a disc at a 16 px indent, as the mock draws every list on this page; the editor's read of
+     7 Nov on the family book); FRAMEWORK_PORTRAIT_ROOM.sourceBullet is the indent the rows' measure leaves. The "No source failed."
+     line is no list and stays flush left. */
   .fwp-source-list {
     margin: 8px 0 0;
-    padding: 0;
-    list-style: none;
+    padding: 0 0 0 16px;
+    list-style: disc;
     font-size: var(--fwp-source-size);
     line-height: var(--fwp-source-line);
     color: var(--pp-ink);

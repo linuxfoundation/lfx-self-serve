@@ -348,6 +348,8 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   crosscutPadding: 36,
   crosscutPaddingAcross: 44,
   crosscutTextTop: 8,
+  /** The sources page's lists: the indent their bullets take (`.fwp-source-list`'s padding-left, the design's 16), off the rows' measured width. */
+  sourceBullet: 16,
 } as const;
 
 /** The key numbers facts table's `<colgroup>` widths, %: the fact, its source, the goal that uses it (`table-layout: fixed` reads them). */

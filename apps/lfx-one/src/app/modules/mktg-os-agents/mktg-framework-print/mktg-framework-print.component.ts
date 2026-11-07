@@ -414,7 +414,8 @@ export class MktgFrameworkPrintComponent {
   private sourcesPage(view: FoundationMessagePrintView): FoundationMessagePrintSourcesPage {
     const date = view.dateReadLabel;
     const report = view.report;
-    const listWidth = this.columns.half;
+    // A row's text width: the column less the bullet's indent (`.fwp-source-list`, ROOM.sourceBullet).
+    const listWidth = this.columns.half - ROOM.sourceBullet;
     const columnRoom = this.tops.sourcesApproval - this.tops.sourcesLists - ROOM.gap;
     const rowHeight = (text: string): number => this.paraHeight(text, TYPE.source, listWidth);
     const tightHeight = (text: string): number => this.paraHeight(text, TYPE.sourceTight, listWidth);

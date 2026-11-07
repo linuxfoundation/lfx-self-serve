@@ -825,6 +825,34 @@ test('the profile cards’ fields start at one x on every profile page: the name
   await finishMktgPrintFrame(page);
 });
 
+test('the sources page’s Read, Could not be read and Gaps lists carry the design’s bullets, a disc at a 16 px indent, the lines indented with them', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  await openAssetDocument(page, 'foundation-message', 200, true, false, overfullFrameworkRevisionResponse());
+  await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+  await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+  const frame = await layoutMktgPrintFrame(page);
+  const print = frame.getByTestId('mktg-framework-print');
+  for (const testId of ['mktg-framework-print-sources-read', 'mktg-framework-print-sources-failed', 'mktg-framework-print-gaps']) {
+    const list = print.getByTestId(testId);
+    await expect(list).toHaveCSS('list-style-type', 'disc');
+    await expect(list).toHaveCSS('padding-left', '16px');
+    await expect(list.locator('li').first()).toHaveCSS('display', 'list-item');
+  }
+  // The rows start 16 px in from their column's left edge, the bullet in the indent; the heading above stays flush.
+  const indent = await print.getByTestId('mktg-framework-print-sources-read').evaluate((list) => {
+    const column = list.parentElement as HTMLElement;
+    const row = list.querySelector('li') as HTMLElement;
+    return Math.round(row.getBoundingClientRect().left - column.getBoundingClientRect().left);
+  });
+  expect(indent).toBe(16);
+  await page.screenshot({ path: info.outputPath('foundation-message-print-sources-bullets.png'), fullPage: true });
+  await page.emulateMedia({ media: 'screen' });
+  await finishMktgPrintFrame(page);
+});
+
 // The synthetic approved record plans eight frames (one goal, one profile); the overfull one thirteen (four goals, the profiles two a page, the
 // key numbers continued). The twelve of the AAIF record are QA's walk of the served build.
 for (const [name, response, planned] of [
