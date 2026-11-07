@@ -2,20 +2,39 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @let v = view();
-<div
-  class="lfx-framework-print lfx-brand-kit-portrait bg-white text-[9.5pt] leading-[1.45] text-[color:var(--mfp-ink)] [overflow-wrap:anywhere]"
-  [style.--mfp-font]="brand().fontStack"
-  [style.--mfp-dark]="brand().dark"
-  [style.--mfp-accent]="brand().accent"
-  [style.--mfp-tint]="brand().tint"
-  [style.--mfp-ink]="brand().ink"
-  [attr.data-revision]="v.versionLabel"
-  data-testid="mktg-brand-kit-print">
-  <ng-container *ngTemplateOutlet="chapter; context: { index: '1', title: 'Logo system', id: 'logo', body: logoBody }" />
-  <ng-container *ngTemplateOutlet="chapter; context: { index: '2', title: 'Colour', id: 'colour', body: colourBody }" />
-  <ng-container *ngTemplateOutlet="chapter; context: { index: '3', title: 'Typography', id: 'type', body: typeBody }" />
-  <ng-container *ngTemplateOutlet="chapter; context: { index: '4', title: 'Visual', id: 'visual', body: visualBody }" />
-  <ng-container *ngTemplateOutlet="chapter; context: { index: '5', title: 'Voice in brief', id: 'voice', body: voiceBody }" />
+<!-- The book's root: a plain block of frames at the sheet's edge (the print frame picks the US Letter setup by lfx-mktg-portrait). -->
+<div class="lfx-brand-kit-portrait lfx-mktg-portrait" [attr.data-revision]="v.versionLabel" data-testid="mktg-brand-kit-print">
+  <!-- One frame per plan page; a page not yet on the grammar prints below, in the flowing chapters. -->
+  @for (page of pages(); track page.id) {
+    @switch (page.id) {
+      @case ('cover') {
+        <lfx-mktg-portrait-cover
+          [look]="look()"
+          [book]="resolvedBook()"
+          [page]="page.number"
+          [title]="coverTitle"
+          [lede]="coverLede()"
+          [logo]="brand().logoOnDark"
+          [stripLeft]="resolvedBook().footLeft"
+          [stripRight]="coverStripRight()" />
+      }
+    }
+  }
+  <!-- The flowing chapters, until each page is a frame. -->
+  <div
+    class="lfx-framework-print bg-white text-[9.5pt] leading-[1.45] text-[color:var(--mfp-ink)] [overflow-wrap:anywhere]"
+    [style.--mfp-font]="brand().fontStack"
+    [style.--mfp-dark]="brand().dark"
+    [style.--mfp-accent]="brand().accent"
+    [style.--mfp-tint]="brand().tint"
+    [style.--mfp-ink]="brand().ink"
+    data-testid="mktg-brand-kit-print-chapters">
+    <ng-container *ngTemplateOutlet="chapter; context: { index: '1', title: 'Logo system', id: 'logo', body: logoBody }" />
+    <ng-container *ngTemplateOutlet="chapter; context: { index: '2', title: 'Colour', id: 'colour', body: colourBody }" />
+    <ng-container *ngTemplateOutlet="chapter; context: { index: '3', title: 'Typography', id: 'type', body: typeBody }" />
+    <ng-container *ngTemplateOutlet="chapter; context: { index: '4', title: 'Visual', id: 'visual', body: visualBody }" />
+    <ng-container *ngTemplateOutlet="chapter; context: { index: '5', title: 'Voice in brief', id: 'voice', body: voiceBody }" />
+  </div>
 </div>
 
 <!-- Native table pagination repeats the project/logo head within this chapter ONLY.
