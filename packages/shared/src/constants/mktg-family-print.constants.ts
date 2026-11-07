@@ -37,6 +37,29 @@ export const MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS = 'lfx-mktg-family-book--tight-h
  */
 export const MKTG_FAMILY_PRINT_HEAD_MEASURE = { size: 10, weight: 600, gap: 24 } as const;
 
+/**
+ * The running head's capitals, by face: how much wider than the grammar's
+ * sans table (MKTG_PORTRAIT_GLYPH_WIDTHS, Helvetica's advances) a face sets
+ * a line of CAPITALS at the regular weight (`families`, by the stack's first
+ * family, lowercase), and how much the label's semibold widens them
+ * (`weight`). The grammar's family factor (MKTG_PORTRAIT_FAMILY_WIDTH) is a
+ * lowercase factor: these faces owe their width to a large x-height and
+ * their capitals sit near the table's, so measured by it the head stepped
+ * down to 9 px for a name the face held at 10 px (M9). Measured in Chromium
+ * from the Google Fonts faces (the fixture's two labels and A–Z): Montserrat
+ * 1.03–1.05 where its lowercase is 1.15–1.17, Inter 0.98–1.01 against
+ * 1.07–1.09, Instrument Sans 0.96–1.01 against 1.01–1.07; 400 → 600 widens
+ * capitals 1.5 %, 0.9 % and 0.6 %. Each value sits a little above the face,
+ * so the measure stays on the wide side and a head it calls fit really fits.
+ * A face not here is measured by the grammar's own measure, the wider one.
+ * The family's head only: the kit's and the framework's lines keep the
+ * grammar's measure, which their pages are fitted through.
+ */
+export const MKTG_FAMILY_PRINT_HEAD_CAPS = {
+  families: { montserrat: 1.05, inter: 1.01, 'instrument sans': 1.01 } as Readonly<Record<string, number>>,
+  weight: 1.02,
+} as const;
+
 /** The cover lockup's drawn height in px (`.fpc-logo` in the family print's styles, which cannot read this): the plate's measure when the kit's lockup needs one. */
 export const MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT = 84;
 
@@ -184,6 +207,15 @@ export const MKTG_FAMILY_PRINT_LABELS = {
   data: 'Data',
 } as const;
 
+/**
+ * The middle dot between two labels the family's own pages print in the kit's face (`V2.0 · 6 Nov 2026` on the cover's
+ * tiles, the FAQ's group names, `48 words · max 50`): a thin space inside each word space, since the word space alone
+ * sets the dot tight in Instrument Sans ("Goal 1·Events", the editor's round of 7 Nov 2026). The twin of the framework
+ * print's `FRAMEWORK_PORTRAIT_SEP`, the same value. The grammar's own labels keep its dot: the running heads, and the
+ * cover strip, whose halves the grammar splits on `MKTG_PORTRAIT_COVER_STRIP.separator` to shorten them.
+ */
+export const MKTG_FAMILY_PRINT_SEP = ' \u2009·\u2009 ';
+
 /** The copy of the family's own pages; `[Project]` is the project's name, counts are filled by the plan. */
 export const MKTG_FAMILY_PRINT_COPY = {
   coverPurpose:
@@ -197,8 +229,8 @@ export const MKTG_FAMILY_PRINT_COPY = {
   faqIntro: '[Questions] questions in [Groups] groups, each answered from the framework or a source it names.',
   sourcesIntro:
     'What version of each document this book holds, where the documents disagree, and what is still open. Each document keeps its own Sources page; this one is the cross-check.',
-  /** The word count under a boilerplate's label: `[Words]` and `[Max]`. */
-  words: '[Words] words · max [Max]',
+  /** The word count under a boilerplate's label: `[Words]` and `[Max]`, joined by the family's dot (MKTG_FAMILY_PRINT_SEP). */
+  words: `[Words] words${MKTG_FAMILY_PRINT_SEP}max [Max]`,
   /** The fill bar's caption: `[Percent]`. */
   ofTheLimit: '[Percent]% of the limit',
   /** Over the limit by `[Over]` words. */

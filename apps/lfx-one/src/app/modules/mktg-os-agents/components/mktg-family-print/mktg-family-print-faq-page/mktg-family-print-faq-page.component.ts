@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, Signal } from '@angular/core';
-import { MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_FAQ_LAYOUT, MKTG_FAMILY_PRINT_LABELS, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
+import {
+  MKTG_FAMILY_PRINT_COPY,
+  MKTG_FAMILY_PRINT_FAQ_LAYOUT,
+  MKTG_FAMILY_PRINT_LABELS,
+  MKTG_FAMILY_PRINT_SEP,
+  MKTG_PORTRAIT_PAGE,
+} from '@lfx-one/shared/constants';
 import { MktgFamilyPrintFaqEntry, MktgFamilyPrintFaqItem, MktgFamilyPrintFaqPlanGroup } from '@lfx-one/shared/interfaces';
 import { mktgFamilyPrintFaqSourceLabel, mktgFamilyPrintFill } from '@lfx-one/shared/utils';
 import { MKTG_PORTRAIT_BLOCK_HOST } from '../../mktg-portrait/mktg-portrait-host';
@@ -67,7 +73,7 @@ export class MktgFamilyPrintFaqPageComponent {
               .map((item) => groups[item.group]?.name ?? '')
           )
         ).filter(Boolean);
-        return `${names.join(' · ')}.`;
+        return `${names.join(MKTG_FAMILY_PRINT_SEP)}.`;
       }
       const sizes = groups.map((group) => group.questions.length).filter((size) => size > 0);
       const questions = sizes.reduce((sum, size) => sum + size, 0);

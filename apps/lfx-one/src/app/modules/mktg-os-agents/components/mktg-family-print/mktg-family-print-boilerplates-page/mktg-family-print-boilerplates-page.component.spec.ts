@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
+import { MKTG_FAMILY_PRINT_SEP } from '@lfx-one/shared/constants';
 import { BoilerplatesLengthRow } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 import { MktgFamilyPrintBoilerplatesPageComponent } from './mktg-family-print-boilerplates-page.component';
@@ -35,7 +36,7 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     expect(cards[0].classList.contains('fpb-card--first')).toBe(true);
     expect(cards[0].style.minHeight).toBe('96px');
     expect(cards[2].style.minHeight).toBe('130px');
-    expect(cards[0].querySelector('.fpb-card__count')?.textContent).toBe('14 words · max 15');
+    expect(cards[0].querySelector('.fpb-card__count')?.textContent).toBe(`14 words${MKTG_FAMILY_PRINT_SEP}max 15`);
     expect(cards[0].querySelector('.fpb-card__percent')?.textContent).toBe('93% of the limit');
     expect(cards[0].querySelector<HTMLElement>('.fpb-card__fill')?.style.width).toBe('93%');
     expect(cards[0].querySelector('[data-testid="family-print-boilerplate-over"]')).toBeNull();
@@ -76,7 +77,7 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     expect(cut).toMatch(/^\+\d+ words in LFX One$/);
     expect(Number(cut.match(/\d+/)?.[0]) + text.split(/\s+/).length).toBe(440);
     // The count line still reports the approved text's own words, not the printed ones.
-    expect(cards[3].querySelector('.fpb-card__count')?.textContent).toBe('440 words · max 100');
+    expect(cards[3].querySelector('.fpb-card__count')?.textContent).toBe(`440 words${MKTG_FAMILY_PRINT_SEP}max 100`);
   });
 
   it('prints a text whole when it fits its card in the book’s face (the editor’s overfull p30, cut by the flat average with room to spare)', async () => {

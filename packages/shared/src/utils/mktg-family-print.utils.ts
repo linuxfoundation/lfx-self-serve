@@ -12,6 +12,7 @@ import {
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS,
+  MKTG_FAMILY_PRINT_HEAD_CAPS,
   MKTG_FAMILY_PRINT_HEAD_MEASURE,
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_FAMILY_PRINT_LABEL_STOP_WORDS,
@@ -24,7 +25,13 @@ import {
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
 } from '../constants/mktg-family-print.constants';
 import { MKTG_KIT_FAMILIES } from '../constants/mktg-kit.constants';
-import { MKTG_PORTRAIT_CAPS_TRACKING_EM, MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
+import {
+  MKTG_PORTRAIT_CAPS_TRACKING_EM,
+  MKTG_PORTRAIT_FIT,
+  MKTG_PORTRAIT_GLYPH_WIDTHS,
+  MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
+  MKTG_PORTRAIT_PAGE,
+} from '../constants/mktg-portrait-print.constants';
 import type { BrandKitBookView, BrandKitReportColorConflict } from '../interfaces/brand-kit.interface';
 import type { FaqGroupView } from '../interfaces/faq.interface';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
@@ -252,21 +259,43 @@ export function mktgFamilyPrintBrand(brand: MktgPrintBrand, book: BrandKitBookVi
 }
 
 /**
+ * The width one running-head label takes at the label's size, in capitals
+ * with their tracking, in the book's face: glyph by glyph from the grammar's
+ * sans table, widened by the face's CAPITALS factor and the label's semibold
+ * (MKTG_FAMILY_PRINT_HEAD_CAPS) when the face is measured there; else by the
+ * grammar's own measure (mktgPortraitTextWidth), whose family factor is a
+ * lowercase one and sets capitals wide. The head's own measure, so the kit's
+ * and the framework's pages, fitted through the grammar's, do not move.
+ */
+export function mktgFamilyPrintHeadLabelWidth(text: string, fontStack: string): number {
+  const { size, weight } = MKTG_FAMILY_PRINT_HEAD_MEASURE;
+  const first = fontStack.split(',')[0].replace(/['"]/g, '').trim().toLowerCase();
+  const caps = MKTG_FAMILY_PRINT_HEAD_CAPS.families[first];
+  if (caps === undefined) {
+    return mktgPortraitTextWidth(text, size, { caps: true, weight, family: fontStack, tracking: MKTG_PORTRAIT_CAPS_TRACKING_EM });
+  }
+  const shown = Array.from(text.toUpperCase());
+  const glyphs = shown.reduce((sum, char) => sum + (MKTG_PORTRAIT_GLYPH_WIDTHS[char] ?? MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT), 0) / 1000;
+  const tracking = Math.max(0, shown.length - 1) * MKTG_PORTRAIT_CAPS_TRACKING_EM;
+  return (glyphs * caps * MKTG_FAMILY_PRINT_HEAD_CAPS.weight + tracking) * size;
+}
+
+/**
  * Whether the book's running heads step down one size: the longest section
  * label the book mounts on the left (its own pages' and the inner prints'),
  * the head's gap and the family's document name on the right, measured at
  * the label's size with its capitals and tracking in the brand's face
- * (mktgPortraitTextWidth), do not fit the page's content width on one line.
- * Then the whole book sets both labels one step smaller (the editor's rule: a
- * size the measure asks for, never a count of characters), and the ellipsis
- * stays the last resort. A book with no section label measures the name alone.
+ * (mktgFamilyPrintHeadLabelWidth), do not fit the page's content width on
+ * one line. Then the whole book sets both labels one step smaller (the
+ * editor's rule: a size the measure asks for, never a count of characters),
+ * and the ellipsis stays the last resort. A book with no section label
+ * measures the name alone.
  */
 export function mktgFamilyPrintHeadTight(sections: readonly string[], headRight: string, fontStack: string): boolean {
-  const { size, weight, gap } = MKTG_FAMILY_PRINT_HEAD_MEASURE;
-  const para = { caps: true, weight, family: fontStack, tracking: MKTG_PORTRAIT_CAPS_TRACKING_EM };
-  const left = sections.reduce((widest, section) => Math.max(widest, mktgPortraitTextWidth(section, size, para)), 0);
+  const { gap } = MKTG_FAMILY_PRINT_HEAD_MEASURE;
+  const left = sections.reduce((widest, section) => Math.max(widest, mktgFamilyPrintHeadLabelWidth(section, fontStack)), 0);
   const room = MKTG_PORTRAIT_PAGE.contentWidth - (left > 0 ? left + gap : 0);
-  return !mktgPortraitLineFits(headRight, room, size, para);
+  return mktgFamilyPrintHeadLabelWidth(headRight, fontStack) > room + 0.01;
 }
 
 /**

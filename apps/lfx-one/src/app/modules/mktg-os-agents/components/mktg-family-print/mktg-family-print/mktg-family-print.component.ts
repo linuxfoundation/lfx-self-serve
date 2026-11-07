@@ -12,6 +12,8 @@ import {
   MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
   MKTG_FAMILY_PRINT_HEAD_KIND,
   MKTG_FAMILY_PRINT_LABELS,
+  MKTG_FAMILY_PRINT_SEP,
+  MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_PAGE,
   MKTG_PORTRAIT_PRINT_CLASS,
 } from '@lfx-one/shared/constants';
@@ -25,6 +27,7 @@ import {
   MktgFamilyPrintPlanMember,
   MktgFamilyPrintView,
   MktgPortraitBook,
+  MktgPortraitCoverStrip,
   MktgPortraitLook,
   MktgPortraitPlanPage,
 } from '@lfx-one/shared/interfaces';
@@ -39,6 +42,7 @@ import {
   mktgFamilyPrintHeadTight,
   mktgFamilyPrintPageRange,
   mktgFamilyPrintPlan,
+  mktgPortraitCoverStrip,
   mktgPortraitDocumentName,
   mktgPortraitFootLeft,
   mktgPortraitLook,
@@ -125,6 +129,19 @@ export class MktgFamilyPrintComponent {
 
   public readonly printedLabel: Signal<string> = this.initPrintedLabel();
   public readonly coverFootRight: Signal<string> = this.initCoverFootRight();
+  /**
+   * The cover strip's halves as the grammar fits them on one line (mktgPortraitCoverStrip, as the kit's cover does): the
+   * project line drops its LF suffix before a long name, then words go with an ellipsis; only when one word each still
+   * does not fit does the strip wrap, moved up one line so it ends where the one line did.
+   */
+  public readonly coverStrip: Signal<MktgPortraitCoverStrip> = computed(() =>
+    mktgPortraitCoverStrip(this.book().footLeft, this.coverFootRight(), this.inset[1], this.look().fontStack)
+  );
+  public readonly coverStripRect: Signal<readonly [number, number, number]> = computed(() => [
+    this.inset[0],
+    MKTG_PORTRAIT_COVER_STRIP.top - (this.coverStrip().wraps ? MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight : 0),
+    this.inset[1],
+  ]);
   public readonly coverPurpose: Signal<string> = this.initCoverPurpose();
   public readonly contentsIntro: Signal<string> = this.initContentsIntro();
   public readonly contentsNote: Signal<string> = this.initContentsNote();
@@ -198,7 +215,7 @@ export class MktgFamilyPrintComponent {
     return computed(() =>
       this.plan().chapters.map((chapter) => ({
         document: chapter.document,
-        meta: [chapter.document.versionLabel, chapter.document.approvedLabel].filter(Boolean).join(' · '),
+        meta: [chapter.document.versionLabel, chapter.document.approvedLabel].filter(Boolean).join(MKTG_FAMILY_PRINT_SEP),
       }))
     );
   }
@@ -222,7 +239,9 @@ export class MktgFamilyPrintComponent {
   }
 
   private initCoverFootRight(): Signal<string> {
-    return computed(() => [this.view().websiteLabel, this.printedLabel()].filter(Boolean).join(' · '));
+    // The strip is one line with the grammar's left half (mktgPortraitFootLeft), and the grammar splits both halves on its own
+    // separator to shorten them: this half keeps the grammar's dot, not the family's padded one.
+    return computed(() => [this.view().websiteLabel, this.printedLabel()].filter(Boolean).join(MKTG_PORTRAIT_COVER_STRIP.separator));
   }
 
   private initCoverPurpose(): Signal<string> {
