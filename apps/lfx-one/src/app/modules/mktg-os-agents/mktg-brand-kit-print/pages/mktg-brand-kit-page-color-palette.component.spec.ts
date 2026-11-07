@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { MktgBrandKitPageColorPaletteComponent } from './mktg-brand-kit-page-color-palette.component';
-import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
+import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
 describe('the Color palette page', () => {
   it('opens the Color chapter with a swatch per colour (values, share, role, source without a file name) and the proportion bar', async () => {
@@ -15,7 +15,7 @@ describe('the Color palette page', () => {
     const swatches = Array.from(frame.querySelectorAll<HTMLElement>('[data-testid="brand-kit-palette-swatches"] .kp-swatch'));
     expect(swatches).toHaveLength(4);
     expect(rectOf(swatches[0])).toEqual({ left: '56px', top: '220px', width: '704px' });
-    const first = swatches[0].textContent?.replace(/\s+/g, ' ').trim();
+    const first = wordsOf(swatches[0]);
     expect(first).toBe('Charcoal HEX #4D4E4E RGB 77 78 78 Share 55% Role Headings From the logo artwork');
     expect(swatches[0].textContent).not.toContain('logo.svg');
     expect(swatches[2].textContent).toContain('From the site’s CSS — one.example.org');

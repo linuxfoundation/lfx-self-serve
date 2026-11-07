@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Type } from '@angular/core';
+import { reflectComponentType, Type } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { BrandKitBookView, MktgPortraitBook, MktgPortraitPlacedPage } from '@lfx-one/shared/interfaces';
 import { brandKitPortraitPlan, buildBrandKitBookView, mktgPortraitLook, mktgPortraitPlacePlan, mktgPrintBrand } from '@lfx-one/shared/utils';
@@ -42,6 +42,8 @@ export async function mountBrandKitPage<T extends MktgBrandKitPageBase>(
   fixture.componentRef.setInput('look', mktgPortraitLook(brand, view.spark));
   fixture.componentRef.setInput('book', SYNTHETIC_BOOK);
   fixture.componentRef.setInput('page', page);
+  // The contents page lists the plan: it takes the placed pages too.
+  if (reflectComponentType(component)?.inputs.some((entry) => entry.propName === 'pages')) fixture.componentRef.setInput('pages', pages);
   await fixture.whenStable();
   const root: HTMLElement = fixture.nativeElement;
   const frame = root.querySelector<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]');
@@ -53,4 +55,20 @@ export async function mountBrandKitPage<T extends MktgBrandKitPageBase>(
 export function rectOf(element: Element | null): { left: string; top: string; width: string } {
   const host = element?.closest<HTMLElement>('.pp-r');
   return { left: host?.style.left ?? '', top: host?.style.top ?? '', width: host?.style.width ?? '' };
+}
+
+/**
+ * An element's text as words, one space between them whatever the markup's whitespace: the template formatter puts
+ * no whitespace between sibling elements and may break an inline text onto its own line, so `textContent` is not
+ * what the reader sees.
+ */
+export function wordsOf(element: Element | null): string {
+  if (!element) return '';
+  const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  const words: string[] = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node.textContent?.replace(/\s+/g, ' ').trim();
+    if (text) words.push(text);
+  }
+  return words.join(' ');
 }

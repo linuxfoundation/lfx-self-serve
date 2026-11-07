@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { MktgBrandKitPageSourcesComponent } from './mktg-brand-kit-page-sources.component';
-import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
+import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
 describe('the Sources & decisions page', () => {
   it('lists what was read as readable names in two columns and prints only the blocks the report fills', async () => {
@@ -57,7 +57,7 @@ describe('the Sources & decisions page', () => {
     }));
     fixture.componentRef.setInput('approval', { approvedAt: '2026-11-06T10:00:00Z', approvedBy: { name: 'Synthetic Approver' } });
     await fixture.whenStable();
-    const text = (testid: string) => frame.querySelector(`[data-testid="${testid}"]`)?.textContent?.replace(/\s+/g, ' ').trim();
+    const text = (testid: string) => wordsOf(frame.querySelector(`[data-testid="${testid}"]`));
     expect(Array.from(frame.querySelectorAll('[data-testid="brand-kit-sources-read"] li'), (li) => li.textContent)).toEqual([
       'one.example.org',
       'one.example.org stylesheets',
@@ -73,12 +73,12 @@ describe('the Sources & decisions page', () => {
     expect(conflict?.querySelector('th')?.textContent).toBe('Charcoal');
     const rows = Array.from(conflict?.querySelectorAll('tbody tr') ?? []);
     expect(rows[0].classList.contains('kp-conflict-kept')).toBe(true);
-    expect(rows[0].textContent?.replace(/\s+/g, ' ').trim()).toBe('#4D4E4E · kept one.example.org stylesheets');
+    expect(wordsOf(rows[0])).toBe('#4D4E4E · kept one.example.org stylesheets');
     expect(rows[1].classList.contains('kp-conflict-kept')).toBe(false);
     expect(rows[1].textContent).not.toContain('logo.svg');
     const accepted = frame.querySelector('[data-testid="brand-kit-sources-accepted"]');
     expect(rectOf(accepted)).toEqual({ left: '56px', top: '880px', width: '704px' });
-    expect(accepted?.textContent?.replace(/\s+/g, ' ')).toContain('Accepted when V4.0 was approved. Approved 6 Nov 2026 by Synthetic Approver.');
+    expect(wordsOf(accepted)).toContain('Accepted when V4.0 was approved. Approved 6 Nov 2026 by Synthetic Approver.');
     expect(text('brand-kit-sources-intro')).toContain(', and what was accepted when V4.0 was approved.');
   });
 });

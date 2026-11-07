@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { MktgBrandKitPageTypeComponent } from './mktg-brand-kit-page-type.component';
-import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
+import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
 describe('the Typography page', () => {
   it('opens the Type chapter with the specimen, the scale at real size with the kit’s own words, the source and the rules', async () => {
@@ -33,7 +33,7 @@ describe('the Typography page', () => {
     expect(steps[5].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.footer);
     const source = frame.querySelector('[data-testid="brand-kit-type-source"]');
     expect(rectOf(source)).toEqual({ left: '56px', top: '830px', width: '340px' });
-    expect(source?.textContent?.replace(/\s+/g, ' ')).toContain('Montserrat · Google Fonts · weights 400, 700');
+    expect(wordsOf(source)).toContain('Montserrat · Google Fonts · weights 400, 700');
     expect(source?.textContent).toContain('Fallback: none');
     expect(source?.textContent).toContain('Named on one.example.org');
     expect(source?.textContent).not.toContain('https://');

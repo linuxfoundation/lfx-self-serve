@@ -86,10 +86,11 @@ describe('the portrait book', () => {
     frames.slice(1, -1).forEach((frame) => {
       expect(frame.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent).toBe('Synthetic project brand kit');
       expect(frame.querySelector('[data-testid="mktg-portrait-page-foot"]')?.textContent).toContain('Synthetic project · a Linux Foundation project');
-      // The version is on the cover and the back cover only; nothing is bracketed.
-      expect(frame.textContent).not.toContain('V3.0');
       expect(frame.textContent).not.toMatch(/\[[^\]]+\]/);
     });
+    // The version is on the cover, in the contents page's glance and on the back cover; never in a running head.
+    frames.slice(2, -1).forEach((frame) => expect(frame.textContent).not.toContain('V3.0'));
+    expect(frames[1].querySelector('[data-testid="brand-kit-contents-version"]')?.textContent).toContain('V3.0');
     frames.forEach((frame) => expect(frame.style.getPropertyValue('--pp-dark')).toBe(view.dark));
     // No head or footer on the cover and the back cover; no flowing chapter, no legacy plate.
     expect(frames[0].querySelector('[data-testid="mktg-portrait-page-head"]')).toBeNull();

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { MktgBrandKitPageColorContrastComponent } from './mktg-brand-kit-page-color-contrast.component';
-import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
+import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
 describe('the Color contrast page', () => {
   it('grades every pairing of the palette in the matrix from the hex values and repeats the kit’s own pairs under it', async () => {
@@ -26,7 +26,7 @@ describe('the Color contrast page', () => {
     expect(cells[0].querySelector<HTMLElement>('.kp-matrix-aa')?.style.color).toBe('rgb(77, 78, 78)');
     const pairs = frame.querySelector('[data-testid="brand-kit-contrast-pairs"]');
     expect(rectOf(pairs)).toEqual({ left: '56px', top: '610px', width: '704px' });
-    expect(pairs?.querySelector('.kp-pair')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Aa Charcoal on White 8.30:1 AAA');
+    expect(wordsOf(pairs?.querySelector('.kp-pair') ?? null)).toBe('Aa Charcoal on White 8.30:1 AAA');
     expect(frame.textContent).not.toMatch(/\[[^\]]+\]/);
   });
 
