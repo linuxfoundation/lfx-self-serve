@@ -9,6 +9,7 @@ import { MktgFamilyExportLastResponse, MktgFamilyExportRunUpdate, MktgFamilyPrin
 import {
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_ONLY_CLASS,
+  MKTG_KIT_POSITIONING_FAMILY_ID,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
   MKTG_FAMILY_EXPORT_HIGHLIGHT_MS,
   MKTG_FAMILY_EXPORT_FORMAT_HINT,
@@ -26,10 +27,12 @@ import { MktgFamilyExportActionsComponent } from './mktg-family-export-actions.c
 import {
   boilerplatesAssetOfRevision,
   buildBoilerplatesPrintView,
+  brandKitPortraitPlan,
   buildBrandKitBookView,
   buildFaqPrintView,
   buildFoundationMessagePrintView,
   faqAssetOfRevision,
+  mktgFamilyPrintDocument,
   mktgPrintBrand,
 } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
@@ -73,7 +76,13 @@ describe('Family export slot', () => {
         newestRevisionAt: '2026-10-21T10:00:00Z',
         fontFamily: null,
         weights: [400],
-      })
+        documents: [],
+        tagline: '',
+        websiteLabel: '',
+        boilerplatesNotes: [],
+        boilerplatesSources: [],
+        conflicts: [],
+      } satisfies MktgFamilyPrintView)
     );
     print.prepare.mockResolvedValue(undefined);
     TestBed.configureTestingModule({
@@ -405,7 +414,7 @@ describe('Family export slot', () => {
     expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS, pdfTitle);
   });
 
-  it('composes all four print roots in exporter order with a family cover, contents and branded type', async () => {
+  it('composes the family book: fixed frames in exporter order, numbered by one plan, with the framework and kit prints inside', async () => {
     const kit = brandKitTestRevision();
     const brand = mktgPrintBrand(kit);
     const boilerplates = boilerplatesAssetOfRevision(JSON.stringify(boilerplatesEnvelope.content), boilerplatesEnvelope);
@@ -422,117 +431,159 @@ describe('Family export slot', () => {
       1,
       kit
     );
+    const approval = { approvedAt: '2026-11-06T18:00:00Z', approvedBy: { name: 'Synthetic Approver' } };
+    const documents = (['foundation-message', 'brand-kit', 'boilerplates', 'faq'] as const).map((agentKey, index) =>
+      mktgFamilyPrintDocument(MKTG_KIT_POSITIONING_FAMILY_ID, agentKey, index + 1, index + 1, approval, index === 3 ? faq.report.gaps : [])
+    );
+    const kitView = buildBrandKitBookView(kit, 1);
+    const faqView = buildFaqPrintView(faq, brand);
     api.printView.mockReturnValue(
       of({
         framework,
-        kit: buildBrandKitBookView(kit, 1),
+        kit: kitView,
         boilerplates: buildBoilerplatesPrintView(boilerplates, brand),
-        faq: buildFaqPrintView(faq, brand),
+        faq: faqView,
         brand,
         projectName: 'Synthetic project',
         printedAt: '2026-10-28T00:00:00Z',
         newestRevisionAt: '2026-10-21T10:00:00Z',
         fontFamily: brand.fontFamily,
         weights: [400],
+        documents,
+        tagline: 'Synthetic tagline',
+        websiteLabel: 'one.example.org',
+        boilerplatesNotes: [],
+        boilerplatesSources: boilerplates.report.sources_read,
+        conflicts: [{ topic: 'Brand line', text: 'The brand kit carries “A”; the framework’s tagline is “B”.', rerun: 'Re-run the brand kit.' }],
       })
     );
     const { fixture, root, button } = await setup();
     button('pdf')?.click();
     await fixture.whenStable();
     const document = root.querySelector('[data-testid="family-export-print-document"]');
-    expect(Array.from(document?.children ?? []).map((child) => child.tagName.toLowerCase())).toEqual([
-      'lfx-mktg-print-sheet',
-      'lfx-mktg-framework-print',
-      'lfx-mktg-brand-kit-print',
-      'lfx-mktg-boilerplates-print',
-      'lfx-mktg-faq-print',
+    if (!document) throw new Error('Missing synthetic family print composition');
+    const book = document.querySelector<HTMLElement>('[data-testid="family-print-book"]');
+    if (!book) throw new Error('Missing synthetic family book');
+    expect(document.children).toHaveLength(1);
+    expect(book.tagName.toLowerCase()).toBe('lfx-mktg-family-print');
+    expect(book.classList.contains('lfx-mktg-portrait')).toBe(true);
+    // The book in exporter order: cover, contents, then an opener before each document; the framework prints as
+    // main's flowing document (stage 1), the kit as its portrait pages in the family's book, the boilerplates, the
+    // FAQ and the Sources page as the family's frames.
+    const kitPlan = brandKitPortraitPlan(kitView, { inFamily: true });
+    const frameworkPages = framework.sections.length;
+    const kitFirst = 3 + frameworkPages + 2;
+    const kitLast = kitFirst + kitPlan.length - 1;
+    const total = kitLast + 6;
+    const frames = Array.from(book.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]'));
+    // The kit's frames in the book: the pages of its plan that are on the grammar at this head (the rest still print
+    // as its flowing chapters, counted by the plan all the same), in the plan's order, numbered from the chapter's first page.
+    const kitFrames = frames.filter((frame) => frame.closest('lfx-mktg-brand-kit-print'));
+    const kitIds = kitFrames.map((frame) => frame.dataset['pageId']);
+    expect(kitPlan.map((page) => page.id).filter((id) => kitIds.includes(id))).toEqual(kitIds);
+    expect(kitFrames.map((frame) => Number(frame.dataset['page']))).toEqual(kitIds.map((id) => kitFirst + kitPlan.findIndex((page) => page.id === id)));
+    expect(frames.map((frame) => frame.dataset['pageId'])).toEqual([
+      'cover',
+      'contents',
+      'opener-foundation-message',
+      'opener-brand-kit',
+      ...kitIds,
+      'opener-boilerplates',
+      'boilerplates',
+      'opener-faq',
+      'faq-1',
+      'sources',
+      'back-cover',
     ]);
-    const cover = document?.querySelector<HTMLElement>('[data-testid="family-export-print-cover"]');
-    // The cover prints in a sheet whose head gives the page's top room, as its one row (the bottom room is that row's); its sides are its own margin.
-    expect(cover?.closest('lfx-mktg-print-sheet')?.classList.contains('break-after-page')).toBe(true);
-    expect(cover?.closest('lfx-mktg-print-sheet')?.querySelectorAll('lfx-mktg-print-sheet-row')).toHaveLength(1);
-    expect(cover?.parentElement?.getAttribute('data-testid')).toBe('mktg-print-sheet-cell');
-    expect(cover?.classList.contains('mx-[0.6in]')).toBe(true);
-    expect(cover?.textContent).toContain('Synthetic project');
-    expect(cover?.textContent).toContain('28 Oct 2026');
-    expect(Array.from(cover?.querySelectorAll('dd') ?? []).map((entry) => entry.textContent?.trim())).toEqual([
+    // One plan numbers every frame: the family's own pages after the kit's chapter count on from its last page.
+    expect(frames.filter((frame) => !frame.closest('lfx-mktg-brand-kit-print')).map((frame) => Number(frame.dataset['page']))).toEqual([
+      1,
+      2,
+      3,
+      3 + frameworkPages + 1,
+      kitLast + 1,
+      kitLast + 2,
+      kitLast + 3,
+      kitLast + 4,
+      kitLast + 5,
+      kitLast + 6,
+    ]);
+    expect(frames.every((frame) => frame.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent !== 'Synthetic project brand kit')).toBe(true);
+    const cover = frames[0];
+    expect(cover.querySelector('[data-testid="family-print-cover-title"]')?.textContent).toBe('Positioning & brand');
+    expect(cover.querySelector('[data-testid="family-print-cover-tagline"]')?.textContent).toBe('Synthetic tagline');
+    expect(cover.querySelector('[data-testid="family-print-cover-logo"]')?.getAttribute('src')).toBe(brand.logoOnDark?.src);
+    expect(cover.textContent).toContain('one.example.org · 28 Oct 2026');
+    expect(cover.querySelectorAll('[data-testid="family-print-cover-documents"] > *')).toHaveLength(4);
+    expect(cover.textContent).toContain('V2.0 · 6 Nov 2026');
+    // The contents page reads the same numbers as the openers and the footers.
+    const contents = frames[1];
+    expect(contents.querySelector('[data-testid="family-print-contents-intro"]')?.textContent).toContain(`4 documents, ${total} pages.`);
+    expect(Array.from(contents.querySelectorAll('[data-testid="family-print-contents-opener-page"]')).map((n) => n.textContent?.trim())).toEqual([
+      '3',
+      String(3 + frameworkPages + 1),
+      String(kitLast + 1),
+      String(kitLast + 3),
+    ]);
+    expect(
+      Array.from(contents.querySelectorAll('[data-testid="family-print-contents-entry"]')).map((n) =>
+        Array.from(n.children)
+          .map((cell) => cell.textContent?.trim())
+          .join(' ')
+      )
+    ).toEqual([
+      ...framework.sections.map((section, index) => `${section.title} ${4 + index}`),
+      ...kitPlan.map((page, index) => `${page.title} ${kitFirst + index}`),
+      `Boilerplates ${kitLast + 2}`,
+      `Frequently asked questions ${kitLast + 4}`,
+    ]);
+    expect(contents.querySelector('[data-testid="family-print-contents-sources"]')?.textContent).toContain(String(kitLast + 5));
+    const openers = Array.from(book.querySelectorAll<HTMLElement>('lfx-mktg-portrait-opener'));
+    expect(openers.map((opener) => opener.querySelector('[data-testid="mktg-portrait-opener-title"]')?.textContent)).toEqual([
       'Messaging framework',
       'Brand kit',
       'Boilerplates',
       'FAQ',
     ]);
-    expect(cover?.querySelector('h1')?.textContent).toBe('Positioning & brand');
-    expect(cover?.querySelector('h1')?.classList.contains('text-balance')).toBe(true);
-    expect(cover?.classList.contains('grid')).toBe(true);
-    expect(cover?.classList.contains('h-screen')).toBe(false);
-    expect(cover?.querySelector('.flex-1')).toBeNull();
-    expect(cover?.querySelector('[data-testid="family-export-print-logo"]')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
-    expect(cover?.style.getPropertyValue('--mfp-ink')).toBe(brand.ink);
-    if (!document) throw new Error('Missing synthetic family print composition');
-    expect(Array.from(document.querySelectorAll('lfx-mktg-framework-print h2 > span')).map((span) => span.textContent?.trim())).toEqual(['01.1', '01.2']);
-    const frameworkRoot = document.querySelector('[data-testid="mktg-framework-print"]');
-    expect(frameworkRoot?.classList.contains('flex')).toBe(false);
-    expect(frameworkRoot?.querySelector('.h-screen, .min-h-screen, .flex-1')).toBeNull();
-    expect(frameworkRoot?.lastElementChild?.getAttribute('data-testid')).toBe('mktg-framework-print-numbers');
-    const goals = document.querySelector('[data-testid="mktg-framework-print-goals"]');
-    expect(goals).not.toBeNull();
-    expect(goals?.querySelector('thead th')?.classList.contains('w-[1.1in]')).toBe(true);
-    goals?.querySelectorAll('tbody th').forEach((label) => {
-      expect(getComputedStyle(label).overflowWrap).toBe('normal');
-      expect(getComputedStyle(label).wordBreak).toBe('normal');
-      expect(getComputedStyle(label).hyphens).toBe('none');
-      expect(label.classList.contains('uppercase')).toBe(true);
-      expect(label.classList.contains('tracking-[0.16em]')).toBe(true);
-    });
-    expect(document.querySelector('[data-testid="mktg-framework-print-icps"]')).toBeNull();
-    expect(document.querySelector('[data-testid="mktg-framework-print-message-house"]')).toBeNull();
-    const body = root.ownerDocument.body;
-    const wasPrinting = body.classList.contains(MKTG_FAMILY_PRINT_BODY_CLASS);
-    body.classList.add(MKTG_FAMILY_PRINT_BODY_CLASS);
-    try {
-      expect(document.classList.contains(MKTG_FAMILY_PRINT_ONLY_CLASS)).toBe(true);
-      const frames = document.querySelectorAll<HTMLElement>('lfx-mktg-brand-kit-print .kit-usage-frame');
-      expect(frames).toHaveLength(4);
-      frames.forEach((frame) => {
-        expect(frame.closest(`.${MKTG_FAMILY_PRINT_ONLY_CLASS}`)).toBe(document);
-        expect(frame.closest(`body.${MKTG_FAMILY_PRINT_BODY_CLASS}`)).toBe(body);
-        expect(getComputedStyle(frame).position).toBe('relative');
-        expect(getComputedStyle(frame).overflow).toBe('hidden');
-        expect(getComputedStyle(frame).breakInside).toBe('avoid');
-        const inner = frame.querySelector('.kit-usage-inner');
-        if (!inner) throw new Error('Missing synthetic family-frame content box');
-        expect(getComputedStyle(inner).position).toBe('absolute');
-        inner.querySelectorAll('img, p').forEach((child) => {
-          expect(child.closest('.kit-usage-frame')).toBe(frame);
-          expect(getComputedStyle(child).position).toBe('absolute');
-        });
-      });
-    } finally {
-      if (!wasPrinting) body.classList.remove(MKTG_FAMILY_PRINT_BODY_CLASS);
-    }
-    expect(document.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
-    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveLength(5);
-    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print lfx-mktg-print-chapter-header')).toHaveLength(5);
-    expect(document?.querySelector('lfx-brand-kit-view')).toBeNull();
-    expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project Brand kit');
-    expect(Array.from(document?.querySelectorAll('lfx-mktg-brand-kit-print h2 > span') ?? []).map((span) => span.textContent?.trim())).toEqual([
-      '02.1',
-      '02.2',
-      '02.3',
-      '02.4',
-      '02.5',
+    expect(
+      openers.map((opener) =>
+        Array.from(opener.querySelectorAll('[data-testid="mktg-portrait-opener-meta"] :is(dt, dd)'))
+          .map((cell) => cell.textContent?.trim())
+          .join(' ')
+      )
+    ).toEqual([
+      `Version V1.0 Approved 6 Nov 2026 · Synthetic Approver Pages 4–${3 + frameworkPages}`,
+      `Version V2.0 Approved 6 Nov 2026 · Synthetic Approver Pages ${kitFirst}–${kitLast}`,
+      `Version V3.0 Approved 6 Nov 2026 · Synthetic Approver Pages ${kitLast + 2}`,
+      `Version V4.0 Approved 6 Nov 2026 · Synthetic Approver Pages ${kitLast + 4}`,
     ]);
-    const numbers = Array.from(cover?.querySelectorAll('dt') ?? []).map((entry) => entry.textContent?.trim());
-    expect(numbers).toEqual(['01', '02', '03', '04']);
-    const sectionNumbers = Array.from(document?.querySelectorAll('lfx-mktg-framework-print h2 > span') ?? []).map((span) => span.textContent?.trim());
-    expect(sectionNumbers).toEqual([`${numbers[0]}.1`, `${numbers[0]}.2`]);
-    expect(document?.querySelector('[data-testid="mktg-framework-print-goals"]')).not.toBeNull();
-    expect(document?.querySelector('[data-testid="mktg-framework-print-icps"]')).toBeNull();
-    expect(document?.querySelector('[data-testid="mktg-framework-print-message-house"]')).toBeNull();
-    expect(document?.querySelector('lfx-mktg-boilerplates-print h2 > span')?.textContent?.trim()).toBe(numbers[2]);
-    expect(document?.querySelector('lfx-mktg-faq-print h2 > span')?.textContent?.trim()).toBe(numbers[3]);
-    expect(document?.querySelector('lfx-mktg-boilerplates-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project');
-    expect(document?.querySelector('lfx-mktg-faq-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project');
+    // The running head names the chapter left and the family right; nothing in the book is hand-numbered.
+    const boilerplatesPage = frames.find((frame) => frame.dataset['pageId'] === 'boilerplates');
+    expect(
+      Array.from(boilerplatesPage?.querySelectorAll('[data-testid="mktg-portrait-page-head"] > span') ?? []).map((span) => span.textContent?.trim())
+    ).toEqual(['03 Boilerplates', 'Synthetic project positioning & brand']);
+    expect(book.querySelectorAll('[data-testid="family-print-boilerplate-card"]')).toHaveLength(4);
+    // The run's two blocks print both or neither: this record has sources and no notes.
+    expect(book.querySelector('[data-testid="family-print-boilerplate-sources"]')).toBeNull();
+    expect(book.querySelector('[data-testid="family-print-boilerplate-notes"]')).toBeNull();
+    // Answered questions only, and only the groups left with one.
+    const answeredGroups = faqView.groups.map((group) => group.questions.filter((entry) => entry.answered).length).filter((size) => size > 0);
+    expect(book.querySelectorAll('[data-testid="family-print-faq-group"]')).toHaveLength(answeredGroups.length);
+    expect(book.querySelectorAll('[data-testid="family-print-faq-entry"]')).toHaveLength(answeredGroups.reduce((sum, size) => sum + size, 0));
+    expect(book.querySelector('[data-testid="family-print-faq-intro"]')?.textContent).toContain(
+      `${answeredGroups.reduce((sum, size) => sum + size, 0)} questions in ${answeredGroups.length} groups`
+    );
+    const sources = frames.find((frame) => frame.dataset['pageId'] === 'sources');
+    expect(sources?.querySelectorAll('[data-testid="family-print-sources-row"]')).toHaveLength(4);
+    expect(sources?.querySelector('[data-testid="family-print-sources-conflicts"]')?.textContent).toContain('Brand line');
+    expect(sources?.querySelector('[data-testid="family-print-sources-open"]')?.textContent).toContain('How much does membership cost?');
+    expect(book.querySelector('[data-testid="mktg-portrait-back-cover-notice"]')?.textContent).toContain('Synthetic project and its logo are trademarks');
+    // Main's framework print, numbered by the plan's chapter, inside the book (stage 1); the kit's own cover, contents and back cover stay out.
+    expect(Array.from(document.querySelectorAll('lfx-mktg-framework-print h2 > span')).map((span) => span.textContent?.trim())).toEqual(['01.1', '01.2']);
+    expect(document.querySelector('lfx-mktg-brand-kit-print [data-page-id="cover"], lfx-mktg-brand-kit-print [data-page-id="back-cover"]')).toBeNull();
+    // The boilerplates and the FAQ print as the family's frames, not as main's sheets; the framework's own sheets stay (stage 1).
+    expect(document.querySelector('lfx-mktg-boilerplates-print, lfx-mktg-faq-print')).toBeNull();
+    expect(document.querySelector('lfx-mktg-print-sheet:not(lfx-mktg-framework-print lfx-mktg-print-sheet)')).toBeNull();
     expect(print.ensureFontStylesheet).toHaveBeenCalledWith(brand.fontUrl);
   });
 
@@ -569,6 +620,12 @@ describe('Family export slot', () => {
       newestRevisionAt: '2026-10-21T10:00:00Z',
       fontFamily: null,
       weights: [400],
+      documents: [],
+      tagline: '',
+      websiteLabel: '',
+      boilerplatesNotes: [],
+      boilerplatesSources: [],
+      conflicts: [],
     });
     pending.complete();
     await fixture.whenStable();

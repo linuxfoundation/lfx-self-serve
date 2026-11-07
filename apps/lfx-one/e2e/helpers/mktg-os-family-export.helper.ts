@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
 import type { FaqContent, MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
-import { expect, Page } from '@playwright/test';
+import { expect, Locator, Page } from '@playwright/test';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '../../src/app/shared/testing/mktg-family-export-test-data';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { DOCUMENT_PROJECT, setupDocuments } from './mktg-os-documents.helper';
@@ -159,5 +159,74 @@ export async function openFamilyExports(
     },
     lookupReads: () => lookupReads,
     releasePrint,
+  };
+}
+
+/** One frame of the family book as the e2e reads it: the grammar's plan id and the book's page number. */
+export interface FamilyBookFrame {
+  id: string;
+  page: number;
+}
+
+/**
+ * The family book's frames, by the portrait grammar's contract (`[data-testid="lfx-mktg-portrait-page"]` with
+ * `data-page-id` and `data-page`): every one 816×1056 with nothing laid out past its edge, the book opening on the
+ * cover and contents, each document's opener before its pages, the Sources page and the back cover last, the numbers
+ * rising by one across the frames (the flowing framework print of stage 1 takes its pages between its opener and the
+ * next). Returns what the content assertions need: the openers, a frame by id, the kit's frame count, the total.
+ */
+export async function expectFamilyBookFrames(book: Locator) {
+  const pages = book.locator('[data-testid="lfx-mktg-portrait-page"]');
+  const frames: FamilyBookFrame[] = (
+    await pages.evaluateAll((elements) => elements.map((element) => [element.getAttribute('data-page-id') ?? '', Number(element.getAttribute('data-page'))]))
+  ).map(([id, page]) => ({ id: String(id), page: Number(page) }));
+  expect(frames.length).toBeGreaterThan(8);
+  expect(frames.slice(0, 3).map((frame) => frame.id)).toEqual(['cover', 'contents', 'opener-foundation-message']);
+  expect(frames.slice(-6).map((frame) => frame.id)).toEqual(['opener-boilerplates', 'boilerplates', 'opener-faq', 'faq-1', 'sources', 'back-cover']);
+  expect(frames[3].id).toBe('opener-brand-kit');
+  const openers = frames.filter((frame) => frame.id.startsWith('opener-'));
+  expect(openers.map((frame) => frame.id)).toEqual(['opener-foundation-message', 'opener-brand-kit', 'opener-boilerplates', 'opener-faq']);
+  // One plan numbers every frame. The framework's flowing pages (stage 1) sit between its opener (3) and the kit's;
+  // the kit's frames are the pages of its plan that are on the grammar at this head, rising by one from its opener
+  // (the rest still print as its flowing chapters, counted by the plan all the same); from the boilerplates' opener
+  // on, the family's own pages rise by one to the back cover.
+  expect(frames.slice(0, 3).map((frame) => frame.page)).toEqual([1, 2, 3]);
+  expect(frames[3].page).toBeGreaterThan(3);
+  const kitFrames = frames.slice(4, -6);
+  kitFrames.forEach((frame, index) => expect(frame.page).toBe(frames[3].page + index + 1));
+  const tail = frames.slice(-6);
+  expect(tail[0].page).toBeGreaterThan(frames[3].page + kitFrames.length);
+  tail.slice(1).forEach((frame, index) => expect(frame.page).toBe(tail[0].page + index + 1));
+  const total = frames[frames.length - 1].page;
+  // Every frame is one US Letter page, and nothing in it is laid out past its edge.
+  const geometry = await pages.evaluateAll((elements) =>
+    elements.map((element) => {
+      const box = element.getBoundingClientRect();
+      const overflowing = Array.from(element.querySelectorAll<HTMLElement>('*')).filter((child) => {
+        const rect = child.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return false;
+        return rect.left < box.left - 0.5 || rect.top < box.top - 0.5 || rect.right > box.right + 0.5 || rect.bottom > box.bottom + 0.5;
+      });
+      return { width: Math.round(box.width), height: Math.round(box.height), overflowing: overflowing.map((child) => child.className) };
+    })
+  );
+  geometry.forEach((frame, index) => {
+    expect({ id: frames[index].id, width: frame.width, height: frame.height }).toEqual({
+      id: frames[index].id,
+      width: MKTG_PORTRAIT_PAGE.width,
+      height: MKTG_PORTRAIT_PAGE.height,
+    });
+    expect({ id: frames[index].id, overflowing: frame.overflowing }).toEqual({ id: frames[index].id, overflowing: [] });
+  });
+  const kitPages = frames.filter(
+    (frame) => !frame.id.startsWith('opener-') && !['cover', 'contents', 'boilerplates', 'faq-1', 'sources', 'back-cover'].includes(frame.id)
+  );
+  return {
+    frames,
+    openers,
+    total,
+    kitPages: kitPages.length,
+    byId: (id: string): Locator => book.locator(`[data-testid="lfx-mktg-portrait-page"][data-page-id="${id}"]`),
+    byIdPage: (id: string): number => frames.find((frame) => frame.id === id)?.page ?? 0,
   };
 }

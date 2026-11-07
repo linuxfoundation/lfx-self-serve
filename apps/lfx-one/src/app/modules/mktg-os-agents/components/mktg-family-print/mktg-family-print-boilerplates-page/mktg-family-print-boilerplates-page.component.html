@@ -1,0 +1,42 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p class="pp-body pp-body--wide" [lfxPpRect]="[column[0], geometry.bodyTop, column[1]]">{{ intro }}</p>
+<div class="fpb-cards" [lfxPpRect]="[column[0], 210, column[1]]" data-testid="family-print-boilerplate-cards">
+  @for (card of cards(); track card.label; let first = $first) {
+    <article class="fpb-card" [class.fpb-card--first]="first" [style.min-height.px]="card.minHeight" data-testid="family-print-boilerplate-card">
+      <div class="fpb-card__meta">
+        <h2 class="fpb-card__label">{{ card.label }}</h2>
+        <p class="pp-cap fpb-card__count">{{ card.count }}</p>
+        @if (card.percentLabel) {
+          <div class="fpb-card__bar" role="presentation">
+            <div class="fpb-card__fill" [class.fpb-card__fill--over]="card.overLabel" [style.width.%]="card.fill"></div>
+          </div>
+          <p class="fpb-card__percent">{{ card.percentLabel }}</p>
+        }
+        @if (card.overLabel) {
+          <p class="fpb-card__over" data-testid="family-print-boilerplate-over">{{ card.overLabel }}</p>
+        }
+      </div>
+      <p class="fpb-card__text" [style.font-size.px]="card.fontSize">{{ card.text }}</p>
+    </article>
+  }
+</div>
+@if (runBlocks()) {
+  <section class="fpb-foot" [lfxPpRect]="[column[0], 912, columns.half]" data-testid="family-print-boilerplate-notes">
+    <h2 class="pp-lab pp-lab--dark">{{ labels.notesFromTheRun }}</h2>
+    <ul class="fpb-foot__list">
+      @for (note of notes(); track $index) {
+        <li>{{ note }}</li>
+      }
+    </ul>
+  </section>
+  <section class="fpb-foot" [lfxPpRect]="[column[0] + columns.half + columns.halfGap, 912, columns.half]" data-testid="family-print-boilerplate-sources">
+    <h2 class="pp-lab pp-lab--dark">{{ labels.builtFrom }}</h2>
+    <ul class="fpb-foot__list">
+      @for (source of sources(); track $index) {
+        <li>{{ source }}</li>
+      }
+    </ul>
+  </section>
+}

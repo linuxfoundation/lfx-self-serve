@@ -1,0 +1,77 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The boilerplate cards (the design board's exact px); the frame's custom properties are the portrait grammar's, --fp-warn this page's. */
+.fpb-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fpb-card {
+  display: flex;
+  gap: 28px;
+  padding: 24px 26px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 12px;
+
+  &--first {
+    border-top: 3px solid var(--pp-accent);
+  }
+
+  &__meta {
+    width: 120px;
+    flex: none;
+  }
+
+  &__label {
+    font: 500 22px/1.1 var(--pp-font);
+    color: var(--pp-dark);
+  }
+
+  &__count {
+    margin-top: 6px;
+  }
+
+  &__bar {
+    height: 6px;
+    margin-top: 8px;
+    border-radius: 3px;
+    background: var(--pp-mist);
+    overflow: hidden;
+  }
+
+  &__fill {
+    height: 6px;
+    background: var(--pp-accent);
+
+    &--over {
+      background: var(--fp-warn);
+    }
+  }
+
+  &__percent {
+    margin-top: 4px;
+    font: 400 9.5px/1.4 var(--pp-font);
+    color: var(--pp-muted);
+  }
+
+  &__over {
+    margin-top: 4px;
+    font: 500 10px/1.4 var(--pp-font);
+    color: var(--fp-warn);
+  }
+
+  &__text {
+    flex: 1;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--pp-ink);
+  }
+}
+
+.fpb-foot__list {
+  margin-top: 6px;
+  font: 400 11px/1.55 var(--pp-font);
+  color: var(--pp-ink);
+}

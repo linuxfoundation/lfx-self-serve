@@ -1,0 +1,75 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The Sources page's table and rows (the design board's exact px). */
+.fps-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font: 400 12.5px/1.4 var(--pp-font);
+  color: var(--pp-ink);
+
+  th {
+    padding: 6px 12px 6px 0;
+    text-align: left;
+    font: 600 9.5px/1.2 var(--pp-font);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--pp-muted);
+    border-bottom: 1px solid var(--pp-ink);
+  }
+
+  td {
+    padding: 9px 12px 9px 0;
+    border-bottom: 1px solid var(--pp-hairline);
+  }
+
+  &__name {
+    font-weight: 500;
+    color: var(--pp-dark);
+  }
+
+  &__muted {
+    color: var(--pp-muted);
+  }
+}
+
+.fps-label {
+  display: block;
+}
+
+.fps-rows {
+  margin-top: 6px;
+}
+
+/* A hairline-ruled row: a conflict (its 130px topic) or an open item (its 110px document chip). */
+.fps-row {
+  display: flex;
+  gap: 18px;
+  padding: 8px 0;
+  border-top: 1px solid var(--pp-hairline);
+  font: 400 12px/1.45 var(--pp-font);
+  color: var(--pp-ink);
+
+  &__topic {
+    flex: none;
+    width: 130px;
+    font-weight: 600;
+    color: var(--pp-dark);
+  }
+
+  &__chip {
+    flex: none;
+    width: 110px;
+  }
+
+  &--open {
+    padding: 7px 0;
+    font-size: 11.5px;
+  }
+}
+
+.fps-rerun {
+  font-weight: 500;
+  color: var(--pp-dark);
+}

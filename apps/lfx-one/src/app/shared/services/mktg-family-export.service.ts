@@ -5,6 +5,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS, MKTG_PRINT_FONT_WEIGHTS } from '@lfx-one/shared/constants';
 import {
+  MktgFamilyExportAgentKey,
   MktgFamilyExportLastResponse,
   MktgFamilyExportMember,
   MktgFamilyExportRecord,
@@ -17,11 +18,17 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
+  brandKitWebsiteHost,
   buildBoilerplatesPrintView,
   buildBrandKitBookView,
   buildFaqPrintView,
   buildFoundationMessagePrintView,
   faqAssetOfRevision,
+  isFoundationMessageReport,
+  mktgFamilyExportAgentKeys,
+  mktgFamilyPrintConflicts,
+  mktgFamilyPrintNumberConflicts,
+  mktgFamilyPrintDocument,
   mktgPrintBrand,
   readBrandKitRevision,
   readFoundationMessageContent,
@@ -144,17 +151,62 @@ export class MktgFamilyExportService {
           .map((response) => response.revision.createdAt)
           .filter((createdAt): createdAt is string => !!createdAt && Number.isFinite(Date.parse(createdAt)))
           .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+        // The book's chapters, in exporter order (the family's asset order, not an agent list), each with what its run left open.
+        const frameworkReport = frameworkResponse?.sidecar?.['report'];
+        const openItems: Record<string, string[]> = {
+          'foundation-message': isFoundationMessageReport(frameworkReport) ? frameworkReport.gaps : [],
+          'brand-kit': kit?.report.findings?.missing_assets.map((missing) => missing.reason) ?? [],
+          boilerplates: boilerplates?.report.gaps ?? [],
+          faq: faq?.report.gaps ?? [],
+        };
+        const documents = mktgFamilyExportAgentKeys(target.familyId)
+          .map((agentKey) => ({ agentKey, response: responses.find((response) => response.type.agentKey === agentKey) }))
+          .filter((entry) => !!entry.response)
+          .map(({ agentKey, response }, index) =>
+            mktgFamilyPrintDocument(
+              target.familyId,
+              agentKey,
+              index + 1,
+              response?.revision.number ?? null,
+              response?.approval ?? null,
+              openItems[agentKey] ?? []
+            )
+          );
+        const boilerplatesView = boilerplates ? buildBoilerplatesPrintView(boilerplates, brand) : null;
+        const faqView = faq ? buildFaqPrintView(faq, brand) : null;
+        // Where the documents disagree: the framework's key numbers against the FAQ's answers and the boilerplates'
+        // text, the kit's line against the framework's tagline, the kit's colour conflicts; nothing the texts do not say.
+        const titleOf = (agentKey: MktgFamilyExportAgentKey): string => documents.find((document) => document.agentKey === agentKey)?.title ?? '';
+        const numberSources = [
+          {
+            title: titleOf('faq'),
+            texts: faqView?.groups.flatMap((group) => group.questions.filter((entry) => entry.answered).map((entry) => entry.answer)) ?? [],
+          },
+          { title: titleOf('boilerplates'), texts: boilerplatesView?.lengths.map((row) => row.text) ?? [] },
+        ].filter((source) => source.title && source.texts.length);
         return {
           framework,
           kit: book,
-          boilerplates: boilerplates ? buildBoilerplatesPrintView(boilerplates, brand) : null,
-          faq: faq ? buildFaqPrintView(faq, brand) : null,
+          boilerplates: boilerplatesView,
+          faq: faqView,
           brand,
           projectName,
           printedAt: new Date().toISOString(),
           newestRevisionAt: newestRevisionAt ?? null,
           fontFamily: book?.fontUrl ? book.type.family : brand.fontFamily,
           weights: book?.weights.map((weight) => weight.weight) ?? MKTG_PRINT_FONT_WEIGHTS,
+          documents,
+          tagline: content?.mf.tagline?.trim() ?? '',
+          websiteLabel: brandKitWebsiteHost(kit?.websiteUrl ?? null),
+          boilerplatesNotes: (boilerplates?.report.notes ?? '')
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean),
+          boilerplatesSources: boilerplates?.report.sources_read.map((source) => source.trim()).filter(Boolean) ?? [],
+          conflicts: [
+            ...mktgFamilyPrintNumberConflicts(framework?.numbers ?? [], numberSources),
+            ...mktgFamilyPrintConflicts(content?.mf.tagline ?? '', kit?.chapters.voice.line ?? '', kit?.report.color_conflicts ?? []),
+          ],
         };
       })
     );

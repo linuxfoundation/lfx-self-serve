@@ -1,0 +1,24 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p class="pp-body pp-body--wide" [lfxPpRect]="[column[0], geometry.bodyTop, column[1]]" data-testid="family-print-faq-intro">{{ intro() }}</p>
+<div class="fpq-grid" [lfxPpRect]="[column[0], 200, column[1]]" data-testid="family-print-faq-grid">
+  @for (group of shown(); track group.path) {
+    <section class="fpq-group" data-testid="family-print-faq-group">
+      <h2 class="pp-lab pp-lab--dark">{{ group.name }}</h2>
+      <div class="fpq-group__list">
+        @for (entry of group.questions; track entry.path) {
+          <article class="fpq-entry" data-testid="family-print-faq-entry">
+            <h3 class="fpq-entry__question">{{ entry.question }}</h3>
+            <p class="fpq-entry__answer">{{ entry.answer }}</p>
+            @if (entry.source) {
+              <p class="fpq-entry__source">
+                <span class="pp-chip">{{ entry.source }}</span>
+              </p>
+            }
+          </article>
+        }
+      </div>
+    </section>
+  }
+</div>
