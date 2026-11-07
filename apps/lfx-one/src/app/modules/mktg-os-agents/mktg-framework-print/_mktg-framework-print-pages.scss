@@ -146,7 +146,7 @@
   /* The four cards share one height (136 → 320), so every card closes with its bottom edge 16 px above the goal band at 336; the text is fitted to the card. */
   .fwp-statements {
     display: flex;
-    gap: 12px;
+    gap: 12px; /* FRAMEWORK_PORTRAIT_ROOM.statementGap; each card's flex is its FRAMEWORK_PORTRAIT_STATEMENT_SHARES share, bound by the component */
     height: 184px;
     align-items: stretch;
 
@@ -156,22 +156,6 @@
       min-width: 0;
       overflow: hidden;
     }
-  }
-
-  .fwp-statement-vision {
-    flex: 0.85;
-  }
-
-  .fwp-statement-mission {
-    flex: 1.05;
-  }
-
-  .fwp-statement-positioning {
-    flex: 1.4;
-  }
-
-  .fwp-statement-tagline {
-    flex: 0.7;
   }
 
   .fwp-statement {

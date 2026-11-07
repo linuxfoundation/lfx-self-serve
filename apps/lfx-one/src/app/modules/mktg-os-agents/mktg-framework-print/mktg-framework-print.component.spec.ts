@@ -20,6 +20,8 @@ import {
   buildFoundationMessagePrintView,
   foundationMessagePrintCutNote,
   frameworkPortraitPlan,
+  frameworkPortraitStatementWidth,
+  frameworkPortraitTaglineSize,
   mktgPortraitCharsPerLine,
   mktgPortraitParaHeight,
 } from '@lfx-one/shared/utils';
@@ -285,6 +287,17 @@ describe('MktgFrameworkPrintComponent', () => {
       'Tagline',
     ]);
     expect(query('mktg-framework-print-tagline-accent')?.textContent?.trim()).toBe(view.mf.tagline);
+    // The cards share the row by FRAMEWORK_PORTRAIT_STATEMENT_SHARES: the tagline's widened from the design's 0.7 so it holds two words a line,
+    // at the design's 18 px when its longest pair of words fits that line, smaller otherwise.
+    expect(Array.from(statements?.querySelectorAll<HTMLElement>('.fwp-card') ?? []).map((card) => card.style.flex)).toEqual(['0.7', '1', '1.25', '1.05']);
+    expect(query('mktg-framework-print-tagline-accent')?.style.fontSize).toBe(
+      `${frameworkPortraitTaglineSize(view.mf.tagline, frameworkPortraitStatementWidth(1.05, true))}px`
+    );
+    await setView({ ...view, mf: { ...view.mf, tagline: 'Open standards for agentic AI' } });
+    const taglineSize = parseFloat(query('mktg-framework-print-tagline-accent')?.style.fontSize ?? '0');
+    expect(taglineSize).toBe(16);
+    expect(mktgPortraitCharsPerLine(frameworkPortraitStatementWidth(1.05, true), taglineSize, { weight: 500 })).toBeGreaterThanOrEqual('Open standards'.length);
+    await setView(view);
     const matrix = query('mktg-framework-print-goals');
     expect(matrix?.style.getPropertyValue('--fwp-goal-count')).toBe('1');
     expect(Array.from(matrix?.querySelectorAll('.fwp-matrix-row > .pp-lab') ?? []).map((label) => label.textContent?.trim())).toEqual([

@@ -10,6 +10,7 @@ import {
   FRAMEWORK_PORTRAIT_NUMBER_TILE,
   FRAMEWORK_PORTRAIT_PAGE_IDS,
   FRAMEWORK_PORTRAIT_ROOM,
+  FRAMEWORK_PORTRAIT_STATEMENT_SHARES,
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
   MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
@@ -44,6 +45,8 @@ import {
   frameworkPortraitPillList,
   frameworkPortraitPlan,
   frameworkPortraitSayRoom,
+  frameworkPortraitStatementWidth,
+  frameworkPortraitTaglineSize,
   frameworkPortraitTitle,
   mktgPortraitDocumentName,
   mktgPortraitFitBlock,
@@ -130,6 +133,8 @@ export class MktgFrameworkPrintComponent {
   protected readonly tops = FRAMEWORK_PORTRAIT_TOPS;
   /** The blocks' measures the template places by (the say and avoid columns). */
   protected readonly room = FRAMEWORK_PORTRAIT_ROOM;
+  /** The statement cards' shares of their row (their flex), one value for the fit model and the template. */
+  protected readonly shares = FRAMEWORK_PORTRAIT_STATEMENT_SHARES;
   protected readonly tile = FRAMEWORK_PORTRAIT_NUMBER_TILE;
   /** The facts table's `<colgroup>` widths, %: the fact, the source, the goal that uses it (the layout measures the rows by these). */
   protected readonly factColumns = FRAMEWORK_PORTRAIT_FACT_COLUMNS;
@@ -241,15 +246,18 @@ export class MktgFrameworkPrintComponent {
 
   // === Private helpers ===
 
-  /** The framework page's four statements, each fitted to its card (the cards share 704 less three 12 gaps by the design's flex ratios). */
+  /**
+   * The framework page's four statements, each fitted to its card (the cards share the row by FRAMEWORK_PORTRAIT_STATEMENT_SHARES);
+   * the tagline first at the size whose line holds two of its words, then to the card's height.
+   */
   private statements(view: FoundationMessagePrintView): FoundationMessagePrintFrame['statements'] {
     const cardsHeight = this.tops.matrix - this.page.bodyTop - ROOM.gap - ROOM.cardPadding - ROOM.label;
-    const column = (share: number): number => ((this.page.contentWidth - 3 * 12) * share) / 4 - 32;
+    const taglineWidth = frameworkPortraitStatementWidth(this.shares.tagline, true);
     return {
-      vision: this.fit(view.mf.vision, TYPE.statement, column(0.85), cardsHeight),
-      mission: this.fit(view.mf.mission, TYPE.statement, column(1.05), cardsHeight),
-      positioning: this.fit(view.mf.positioning, TYPE.statement, column(1.4), cardsHeight),
-      tagline: this.fit(view.mf.tagline, TYPE.tagline, column(0.7) - 13, cardsHeight),
+      vision: this.fit(view.mf.vision, TYPE.statement, frameworkPortraitStatementWidth(this.shares.vision), cardsHeight),
+      mission: this.fit(view.mf.mission, TYPE.statement, frameworkPortraitStatementWidth(this.shares.mission), cardsHeight),
+      positioning: this.fit(view.mf.positioning, TYPE.statement, frameworkPortraitStatementWidth(this.shares.positioning), cardsHeight),
+      tagline: this.fit(view.mf.tagline, { ...TYPE.tagline, size: frameworkPortraitTaglineSize(view.mf.tagline, taglineWidth) }, taglineWidth, cardsHeight),
     };
   }
 

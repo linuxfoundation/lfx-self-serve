@@ -83,27 +83,28 @@
         <!-- 01 FRAMEWORK: the four statements in cards of one height, then the goal matrix (one column per goal) -->
         @case (ids.framework) {
           @if (frame.statements; as statements) {
+            <!-- The four cards share the row by FRAMEWORK_PORTRAIT_STATEMENT_SHARES (the tagline's widened so it holds two words a line). -->
             <div class="fwp-statements" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]" data-testid="mktg-framework-print-statements">
               @if (statements.vision.text) {
-                <div class="fwp-card fwp-statement-vision">
+                <div class="fwp-card fwp-statement-vision" [style.flex]="shares.vision">
                   <span class="pp-lab">Vision</span>
                   <p class="fwp-statement" [style.font-size.px]="statements.vision.size">{{ statements.vision.text }}</p>
                 </div>
               }
               @if (statements.mission.text) {
-                <div class="fwp-card fwp-statement-mission">
+                <div class="fwp-card fwp-statement-mission" [style.flex]="shares.mission">
                   <span class="pp-lab">Mission</span>
                   <p class="fwp-statement" [style.font-size.px]="statements.mission.size">{{ statements.mission.text }}</p>
                 </div>
               }
               @if (statements.positioning.text) {
-                <div class="fwp-card fwp-statement-positioning">
+                <div class="fwp-card fwp-statement-positioning" [style.flex]="shares.positioning">
                   <span class="pp-lab">Positioning statement</span>
                   <p class="fwp-statement" [style.font-size.px]="statements.positioning.size">{{ statements.positioning.text }}</p>
                 </div>
               }
               @if (statements.tagline.text) {
-                <div class="fwp-card fwp-card-mist fwp-statement-tagline">
+                <div class="fwp-card fwp-card-mist fwp-statement-tagline" [style.flex]="shares.tagline">
                   <span class="pp-lab">Tagline</span>
                   <p
                     class="fwp-statement fwp-statement-accent"

@@ -97,6 +97,18 @@ export const FRAMEWORK_PORTRAIT_NUMBER_TILE = {
  * page's lists and approval card; and where the footer begins, which no
  * block may pass.
  */
+/**
+ * The framework page's four statement cards' shares of the row (their flex). The design's are 0.85 / 1.05 / 1.4 / 0.7; the
+ * tagline's column is widened from the vision's and the positioning's so the tagline holds two words a line (the editor's
+ * read, 7 Nov 2026: no one-word lines; the design's own board shows them).
+ */
+export const FRAMEWORK_PORTRAIT_STATEMENT_SHARES = {
+  vision: 0.7,
+  mission: 1,
+  positioning: 1.25,
+  tagline: 1.05,
+} as const;
+
 export const FRAMEWORK_PORTRAIT_TOPS = {
   /** The framework page's goal matrix, under the statement cards (which close 16 px above it). */
   matrix: 336,
@@ -206,6 +218,10 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   chipSize: 8.5,
   chipPadding: 16,
   chipGap: 4,
+  /** The statement cards: the gap between them, their padding across (16 + 16), the tagline's rule and its padding (3 + 10). */
+  statementGap: 12,
+  statementPadding: 32,
+  taglineInset: 13,
   /** The goal matrix (`.fwp-matrix-row`): a row's padding (10 + 10) and hairline; its side padding (12 + 12); the label column; the column gap; a proof row's margin under it; the sound bite's rule and padding (2 + 10); the crosscut's margin above. */
   matrixRow: 21,
   matrixPadding: 24,

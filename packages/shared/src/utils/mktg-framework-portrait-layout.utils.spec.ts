@@ -34,6 +34,8 @@ import {
   frameworkPortraitPillList,
   frameworkPortraitPillsHeight,
   frameworkPortraitSayRoom,
+  frameworkPortraitStatementWidth,
+  frameworkPortraitTaglineSize,
   frameworkPortraitTitle,
 } from './mktg-framework-portrait-layout.utils';
 import type { FoundationMessagePrintGoal } from '../interfaces/mktg-print.interface';
@@ -133,6 +135,22 @@ describe('the framework portrait book’s bounded blocks', () => {
     const wrapped = frameworkPortraitTitle(`Goal 3 · ${long.trim()}`);
     expect(wrapped).toEqual({ text: `Goal 3 · ${long.trim()}`, size: 25, lines: 3 });
     expect(frameworkPortraitBodyTop(wrapped)).toBe(136 + 2 * 25 * 1.1);
+  });
+
+  it('widens the tagline’s card and sets the tagline no larger than two words a line', () => {
+    // 704 less three 12 gaps, shared 0.7 / 1 / 1.25 / 1.05; the tagline's card less its padding, rule and inset.
+    expect(frameworkPortraitStatementWidth(1)).toBe(668 / 4 - 32);
+    expect(frameworkPortraitStatementWidth(1.05, true)).toBeCloseTo((668 * 1.05) / 4 - 32 - 13, 6);
+    const width = frameworkPortraitStatementWidth(1.05, true);
+    expect(frameworkPortraitTaglineSize('Build openly.', width)).toBe(18);
+    // Two words of fourteen characters ("Open standards") hold one line at 16 px, one size under the design's 18.
+    expect(frameworkPortraitTaglineSize('Open standards for agentic AI', width)).toBe(16);
+    const smaller = frameworkPortraitTaglineSize('Open standards for the agentic stack', width);
+    expect(smaller).toBe(16);
+    expect(mktgPortraitCharsPerLine(width, smaller, { weight: 500 })).toBeGreaterThanOrEqual('Open standards'.length);
+    // A pair no size to the floor holds ("agentic infrastructure") leaves the tagline at the floor; one word keeps the design's size.
+    expect(frameworkPortraitTaglineSize('Open standards for agentic infrastructure', width)).toBe(13);
+    expect(frameworkPortraitTaglineSize('Supercalifragilisticexpialidocious', width)).toBe(18);
   });
 
   it('bounds the goal matrix’s proof cells to the room the other rows leave, tight first, then whole rows with the note', () => {

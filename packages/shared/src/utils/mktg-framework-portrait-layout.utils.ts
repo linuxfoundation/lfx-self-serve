@@ -18,6 +18,7 @@ import {
   FRAMEWORK_PORTRAIT_NUMBER_COLUMNS,
   FRAMEWORK_PORTRAIT_NUMBER_TILE,
   FRAMEWORK_PORTRAIT_ROOM,
+  FRAMEWORK_PORTRAIT_STATEMENT_SHARES,
   FRAMEWORK_PORTRAIT_TILE_SHARES,
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
@@ -158,6 +159,31 @@ export function frameworkPortraitTitle(title: string): FoundationMessagePrintFit
 /** The top of a page's first block under its title: the design's body top, lower by the lines a title takes past its first. */
 export function frameworkPortraitBodyTop(title: FoundationMessagePrintFittedTitle): number {
   return PAGE.bodyTop + (title.lines - 1) * title.size * TYPE.pageTitle.line;
+}
+
+/** A statement card's text width, px: the card's share of the row less the gaps, less its padding (and the tagline's rule and inset). */
+export function frameworkPortraitStatementWidth(share: number, tagline = false): number {
+  const shares = FRAMEWORK_PORTRAIT_STATEMENT_SHARES;
+  const total = shares.vision + shares.mission + shares.positioning + shares.tagline;
+  const row = PAGE.contentWidth - 3 * ROOM.statementGap;
+  return (row * share) / total - ROOM.statementPadding - (tagline ? ROOM.taglineInset : 0);
+}
+
+/**
+ * The tagline's size in its card: the design's 18 px where a line holds two words, else smaller in whole px, to the fit
+ * model's floor, until the longest pair of neighboring words fits one line (no one-word lines, the editor's rule). A
+ * tagline of one word keeps the design's size.
+ */
+export function frameworkPortraitTaglineSize(tagline: string, width: number): number {
+  const words = tagline.split(/\s+/).filter((word) => word !== '');
+  const pairs = words.slice(1).map((word, index) => words[index].length + 1 + word.length);
+  const longest = pairs.length ? Math.max(...pairs) : 0;
+  const type = TYPE.tagline;
+  const floor = Math.ceil(type.size * FIT.minScale);
+  for (let size = type.size; size > floor; size -= 1) {
+    if (mktgPortraitCharsPerLine(width, size, { weight: type.weight }) >= longest) return size;
+  }
+  return floor;
 }
 
 /** A goal matrix column's width, px: the content width less the row's padding, the label column and the gaps, shared by the goals. */
