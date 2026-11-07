@@ -442,7 +442,7 @@ describe('MktgFrameworkPrintComponent', () => {
       'Channels',
     ]);
     expect(rows[0].querySelector('.fwp-icp-lead')?.textContent?.trim()).toBe('Ship with confidence.');
-    expect(text(rows[0].querySelectorAll('dd')[4])).toBe('“Too early?” — Not at all.');
+    expect(text(rows[0].querySelectorAll('dd')[4])).toBe(`“Too early?”${MKTG_PRINT_OBJECTION_DASH}Not at all.`);
     // The dash is bound to the question by a no-break space, so it never opens the response's line (editor S-d).
     expect(rows[0].querySelectorAll('dd')[4].textContent).toContain(`”${MKTG_PRINT_OBJECTION_DASH}Not at all.`);
     expect(MKTG_PRINT_OBJECTION_DASH).toBe('\u00a0— ');
@@ -788,6 +788,13 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).map((note) => note.textContent?.trim())).toEqual([
       FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages,
     ]);
+    // One size across each band's proof row (editor W4): every cell tightened together, every row at the one size the layout set.
+    for (const band of [query('mktg-framework-print-goals-band-0'), query('mktg-framework-print-goals-band-1')]) {
+      const cells = Array.from(band?.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-proof-cell"]') ?? []);
+      expect(cells).toHaveLength(4);
+      expect(new Set(cells.map((cell) => cell.classList.contains('fwp-matrix-proofs--tight'))).size).toBe(1);
+      expect(new Set(cells.flatMap((cell) => Array.from(cell.querySelectorAll<HTMLElement>('li')).map((row) => row.style.fontSize))).size).toBe(1);
+    }
     // The overfull record's texts in the bands (editor W1b): every key message whole at its type, never clamped or cut; the value and
     // sound-bite rows gone from both bands (each goal page prints them in full) with the one note under them; a dropped row leaves no
     // empty row behind.
@@ -806,26 +813,22 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(laid.bands).toHaveLength(2);
     const labels = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-goals-label"]')).map((label) => label.textContent?.trim());
     expect(labels.filter((label) => label === 'Key message')).toHaveLength(2);
-    expect(labels.filter((label) => label === 'Proof')).toHaveLength(2);
+    // With the key messages whole, this shape's proof cells would print under the tight floor: the band ladder's second step drops the
+    // proof row too (FA1b), every cell with it, and the one note says where all three rows are.
+    expect(labels.filter((label) => label === 'Proof')).toHaveLength(0);
     expect(labels.filter((label) => label === 'Value proposition')).toHaveLength(0);
     expect(labels.filter((label) => label === 'Sound bite')).toHaveLength(0);
-    expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
-    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(laid.rows).toEqual({ value: false, bite: false, proof: false });
+    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesAll]);
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof-cell"]')).toHaveLength(0);
     expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).map((note) => note.textContent?.trim())).toEqual([
-      'Value propositions and sound bites are on each goal page.',
+      'Value propositions, sound bites and proofs are on each goal page.',
     ]);
     const keys = Array.from(host().querySelectorAll<HTMLElement>('.fwp-matrix-key'));
     expect(keys.map((key) => key.style.fontSize)).toEqual(Array.from({ length: 8 }, () => `${FRAMEWORK_PORTRAIT_TYPE.matrixKey.size}px`));
     expect(keys.map((key) => key.textContent?.trim())).toEqual(Array.from({ length: 8 }, () => wordy));
     expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-vp"]')).toHaveLength(0);
     expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-bite"]')).toHaveLength(0);
-    // One size across each band's proof row (editor W4): every cell tightened together, every row at the one size the layout set.
-    for (const band of [query('mktg-framework-print-goals-band-0'), query('mktg-framework-print-goals-band-1')]) {
-      const cells = Array.from(band?.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-proof-cell"]') ?? []);
-      expect(cells).toHaveLength(4);
-      expect(new Set(cells.map((cell) => cell.classList.contains('fwp-matrix-proofs--tight'))).size).toBe(1);
-      expect(new Set(cells.flatMap((cell) => Array.from(cell.querySelectorAll<HTMLElement>('li')).map((row) => row.style.fontSize))).size).toBe(1);
-    }
     // Short titles at eight goals stay one strip of eight columns.
     await setView(
       buildFoundationMessagePrintView(
