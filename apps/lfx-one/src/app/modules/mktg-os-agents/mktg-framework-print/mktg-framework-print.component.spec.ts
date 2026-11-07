@@ -335,6 +335,9 @@ describe('MktgFrameworkPrintComponent', () => {
       `${FRAMEWORK_PORTRAIT_TYPE.matrixKey.size}px`,
     ]);
     expect(matrix?.querySelector<HTMLElement>('.fwp-matrix-bite')?.style.fontSize).toBe(`${FRAMEWORK_PORTRAIT_TYPE.matrixBite.size}px`);
+    // The head row's title too: a short title at its type (a long one is fitted into the board's two lines by the layout).
+    const title = matrix?.querySelector<HTMLElement>('.fwp-matrix-goal');
+    expect([title?.textContent?.trim(), title?.style.fontSize]).toEqual([CONTENT.mf.goals[0].t, `${FRAMEWORK_PORTRAIT_TYPE.matrixGoal.size}px`]);
     expect(matrix?.querySelector('.fwp-matrix-crosscut')?.textContent?.trim()).toBe('Every column grows the audience.');
     // Segments belong to the profile pages: the matrix does not name them.
     expect(matrix?.textContent).not.toContain('End users');
@@ -700,8 +703,8 @@ describe('MktgFrameworkPrintComponent', () => {
     // value, and an audience with no lead, print no label over nothing; no anchor questions, no "Every piece of content answers"; no audiences, no "Audiences".
     const bare: FoundationMessageContent = {
       ...CONTENT,
-      mf: { ...CONTENT.mf, anchor: [], goals: [{ ...CONTENT.mf.goals[0], key: '', proof: [], icps: [] }] },
-      icp: [{ ...CONTENT.icp[0], need: '', value: '' }],
+      mf: { ...CONTENT.mf, anchor: [], say: [], goals: [{ ...CONTENT.mf.goals[0], key: '', proof: [], icps: [] }] },
+      icp: [{ ...CONTENT.icp[0], need: '', value: '', objection: ['', null] }],
       mh: { ...CONTENT.mh, pillars: [{ t: 'Open', m: '', p: [] }], aud: [] },
     };
     await setView(buildFoundationMessagePrintView(bare, 'TestOrbit', 2, null));
@@ -709,10 +712,16 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(goalPage?.textContent).not.toContain('Proof points');
     expect(goalPage?.textContent).not.toContain("Who it's for");
     expect(goalPage?.textContent).not.toContain('Key message');
+    // No proof in the record: no "Figures and their sources" over an empty table; no phrase to say: no "Say" over an empty list; an
+    // objection with no question: no "Objection" field (never `“” — …`).
+    expect(frame('key-numbers')?.textContent).not.toContain('Figures and their sources');
+    expect(query('mktg-framework-print-facts')).toBeNull();
+    expect(query('mktg-framework-print-say')).toBeNull();
+    expect(Array.from(frame('say-avoid')?.querySelectorAll('.pp-lab--dark') ?? []).map((label) => label.textContent?.trim())).not.toContain('Say');
+    expect(frame('icps-1')?.textContent).not.toContain('“”');
     expect(Array.from(frame('icps-1')?.querySelectorAll('dt') ?? []).map((term) => term.textContent?.trim())).toEqual([
       'Lead message',
       'Call to action',
-      'Objection',
       'Channels',
     ]);
     expect(frame('say-avoid')?.textContent).not.toContain('Every piece of content answers');
@@ -957,6 +966,7 @@ describe('MktgFrameworkPrintComponent', () => {
     const icpPages = frameworkPortraitIcpPages(printed.icps);
     expect(icpPages.map((page) => page.icps.length)).toEqual([2, 2]);
     expect(host().querySelectorAll('.fwp-icp-rows--tight')).toHaveLength(0);
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-icp-rows"][data-cut]')).toHaveLength(0);
     expect(Array.from(frame('icps-2')?.querySelectorAll('.fwp-icp-row') ?? []).map((row) => row.getAttribute('data-testid'))).toEqual([
       'mktg-framework-print-icp-c',
       'mktg-framework-print-icp-d',

@@ -377,11 +377,14 @@
       }
     }
 
-    <!-- The print rendering: never shown on screen; Download PDF prints it alone (styles.scss). -->
-    @if (printView(); as print) {
-      <div [class]="printOnlyClass" data-testid="mktg-framework-view-print">
-        <lfx-mktg-framework-print [view]="print" />
-      </div>
+    <!-- The print rendering: never shown on screen; Download PDF prints it alone (styles.scss). Mounted only while the PDF flag is
+         on, as the button is: off, nothing of the book is built or in the document. -->
+    @if (pdfEnabled()) {
+      @if (printView(); as print) {
+        <div [class]="printOnlyClass" data-testid="mktg-framework-view-print">
+          <lfx-mktg-framework-print [view]="print" />
+        </div>
+      }
     }
   }
 </section>

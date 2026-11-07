@@ -377,6 +377,7 @@ export class MktgFrameworkPrintComponent {
       rowsTop,
       icps: rows.icps,
       tight: rows.tight,
+      cut: rows.cut,
       matrix: matrixFits ? foundationMessagePrintMatrix(view.goals, view.icps) : [],
       matrixTop,
     };

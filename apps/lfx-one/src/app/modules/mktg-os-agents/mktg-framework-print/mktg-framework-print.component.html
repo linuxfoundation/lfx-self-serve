@@ -126,12 +126,15 @@
             [lfxPpRect]="[page.margin, tops.matrix, page.contentWidth]"
             [style.--fwp-goal-count]="v.goals.length"
             data-testid="mktg-framework-print-goals">
+            <!-- The head row's titles as the layout fitted them into the board's two lines (frameworkPortraitMatrix). -->
             <div class="fwp-matrix-row fwp-matrix-head">
               <div></div>
-              @for (goal of v.goals; track goal.id) {
+              @for (goal of v.goals; track goal.id; let column = $index) {
                 <div>
                   <span class="pp-lab">Goal {{ goal.n }}</span>
-                  <span class="fwp-matrix-goal">{{ goal.t }}</span>
+                  <span class="fwp-matrix-goal" [style.font-size.px]="frame.matrix?.cells?.[column]?.title?.size">
+                    {{ frame.matrix?.cells?.[column]?.title?.text ?? goal.t }}
+                  </span>
                 </div>
               }
             </div>
@@ -193,17 +196,20 @@
           <p class="pp-body fwp-intro-say" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">{{ frame.anchorIntro }}</p>
           <!-- The two lists are cut to their columns above the anchors: tightened first, then whole rows with the muted line (frameworkPortraitPillList, frameworkPortraitAvoidList). -->
           @if (frame.sayAvoid; as lists) {
-            <div [lfxPpRect]="[page.margin, tops.sayLists, room.sayColumn]">
-              <span class="pp-lab pp-lab--dark">Say</span>
-              <ul class="fwp-say-list" [class.fwp-say-list--tight]="lists.say.tight" data-testid="mktg-framework-print-say">
-                @for (phrase of lists.say.rows; track phrase) {
-                  <li class="fwp-say-pill">{{ phrase }}</li>
+            <!-- No "Say" over nothing: the heading prints with its list (the record keeps at least one phrase; this is the rule, not a guess). -->
+            @if (lists.say.rows.length > 0 || lists.say.cut > 0) {
+              <div [lfxPpRect]="[page.margin, tops.sayLists, room.sayColumn]">
+                <span class="pp-lab pp-lab--dark">Say</span>
+                <ul class="fwp-say-list" [class.fwp-say-list--tight]="lists.say.tight" data-testid="mktg-framework-print-say">
+                  @for (phrase of lists.say.rows; track phrase) {
+                    <li class="fwp-say-pill">{{ phrase }}</li>
+                  }
+                </ul>
+                @if (lists.say.cut > 0) {
+                  <p class="fwp-cut-note" data-testid="mktg-framework-print-say-cut">{{ lists.say.note }}</p>
                 }
-              </ul>
-              @if (lists.say.cut > 0) {
-                <p class="fwp-cut-note" data-testid="mktg-framework-print-say-cut">{{ lists.say.note }}</p>
-              }
-            </div>
+              </div>
+            }
             <div [lfxPpRect]="[page.margin + room.avoidLeft, tops.sayLists, room.avoidColumn]">
               <span class="pp-lab pp-lab--dark">Avoid → say instead</span>
               @if (v.avoidRows.length > 0) {
@@ -530,6 +536,7 @@
             <div
               [lfxPpRect]="[page.margin, icpPage.rowsTop, page.contentWidth]"
               [class.fwp-icp-rows--tight]="icpPage.tight"
+              [attr.data-cut]="icpPage.cut ? 'true' : null"
               data-testid="mktg-framework-print-icp-rows">
               @for (icp of icpPage.icps; track icp.id) {
                 <article class="fwp-icp-row" [attr.data-testid]="'mktg-framework-print-icp-' + icp.id">

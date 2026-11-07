@@ -174,6 +174,8 @@ export interface FoundationMessagePrintIcpPage {
   icps: FoundationMessagePrintIcp[];
   /** The profile fields set at the tight measure: one card alone outran the page at the normal one. */
   tight: boolean;
+  /** The lone card's longest texts were cut past the tight measure (each ends in the ellipsis); the rows carry `data-cut` for the e2e and QA. */
+  cut: boolean;
   /** Goals × profiles, on a page that holds one profile and has the room for it under the card; empty elsewhere. */
   matrix: FoundationMessagePrintMatrixRow[];
   /** The matrix's top, px: the design's, or under the card when it runs lower. */
@@ -283,8 +285,9 @@ export interface FoundationMessagePrintMatrix {
   height: number;
 }
 
-/** One goal's text cells in the framework page's matrix (frameworkPortraitMatrix). */
+/** One goal's text cells in the framework page's matrix (frameworkPortraitMatrix): its title in the head row, fitted into the board's two lines, and its three text rows. */
 export interface FoundationMessagePrintMatrixCell {
+  title: FoundationMessagePrintFittedText;
   vp: FoundationMessagePrintFittedText;
   key: FoundationMessagePrintFittedText;
   bite: FoundationMessagePrintFittedText | null;

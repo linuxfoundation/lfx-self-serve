@@ -259,7 +259,8 @@ function fitText(text: string, type: FoundationMessagePrintType, width: number, 
 }
 
 /**
- * The framework page's goal matrix, bounded in its `room`: the head row and the crosscut measured at their type; the
+ * The framework page's goal matrix, bounded in its `room`: the head row's goal titles fitted into the board's two lines
+ * (`ROOM.matrixGoalLines`; smaller first, then cut at a word) and the crosscut measured at its type; the
  * value, key message and sound bite rows at their type where the three leave the proofs row at least its note (the
  * muted line at the count every proof would make), else each cell fitted by the portrait fit model (smaller first,
  * then cut at a sentence) into the rows' share of the room that stays; then each goal's proof cell a cut list in the
@@ -270,8 +271,13 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
   const column = frameworkPortraitMatrixColumn(goals.length);
   const biteWidth = column - ROOM.matrixBiteInset;
   const tallest = (heights: readonly number[]): number => heights.reduce((max, height) => Math.max(max, height), 0);
+  const titleRoom = TYPE.matrixGoal.size * TYPE.matrixGoal.line * ROOM.matrixGoalLines;
+  const titles = goals.map((goal) => fitText(goal.t, TYPE.matrixGoal, column, titleRoom));
   const head =
-    ROOM.matrixRow + TYPE.cutNote.size * TYPE.cutNote.line + 3 + tallest(goals.map((goal) => frameworkPortraitTextHeight(goal.t, TYPE.matrixGoal, column)));
+    ROOM.matrixRow +
+    TYPE.cutNote.size * TYPE.cutNote.line +
+    3 +
+    tallest(titles.map((title) => frameworkPortraitTextHeight(title.text, { ...TYPE.matrixGoal, size: title.size }, column)));
   const note = crosscut ? ROOM.matrixCrosscutGap + frameworkPortraitTextHeight(crosscut, TYPE.matrixCrosscut, PAGE.contentWidth - ROOM.matrixPadding) : 0;
   // The proofs row keeps at least its chrome and the note at the count every proof would make: never less, whatever the text rows run to.
   const mostProofs = tallest(goals.map((goal) => goal.proofRows.length));
@@ -286,7 +292,8 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
         cells.map((cell) => (cell.bite ? frameworkPortraitTextHeight(quoted(cell.bite.text), { ...TYPE.matrixBite, size: cell.bite.size }, biteWidth) : 0))
       ),
   });
-  let cells: FoundationMessagePrintMatrixCell[] = goals.map((goal) => ({
+  let cells: FoundationMessagePrintMatrixCell[] = goals.map((goal, index) => ({
+    title: titles[index],
     vp: { text: goal.vp, size: TYPE.matrixCell.size },
     key: { text: goal.key, size: TYPE.matrixKey.size },
     bite: goal.bite ? { text: goal.bite, size: TYPE.matrixBite.size } : null,
@@ -301,7 +308,8 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
     const valueRoom = share(rows.value);
     const keyRoom = share(rows.key);
     const biteRoom = share(rows.bite);
-    cells = goals.map((goal) => ({
+    cells = goals.map((goal, index) => ({
+      title: titles[index],
       vp: fitText(goal.vp, TYPE.matrixCell, column, valueRoom),
       key: fitText(goal.key, TYPE.matrixKey, column, keyRoom),
       bite: goal.bite
@@ -803,7 +811,8 @@ export function frameworkPortraitNumbersPages(view: FoundationMessagePrintView):
       });
       return pages;
     }
-    page.factsTop = cursor;
+    // No fact (a record whose goals state no proof): no "Figures and their sources" heading over an empty table.
+    page.factsTop = view.facts.length ? cursor : null;
     page.facts = frameworkPortraitCutList(
       view.facts,
       factsRoom,

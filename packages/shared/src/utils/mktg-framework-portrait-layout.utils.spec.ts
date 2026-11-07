@@ -212,8 +212,22 @@ describe('the framework portrait book’s bounded blocks', () => {
     const whole = frameworkPortraitMatrix([goal(2)], 'Across the goals.', 664);
     expect(whole.proofs[0]).toEqual({ rows: goal(2).proofRows, cut: 0, tight: false, note: '' });
     // Short text cells print as written, at their type.
-    expect(whole.cells).toEqual([{ vp: { text: 'Value', size: 11 }, key: { text: 'Key', size: 11 }, bite: { text: 'Bite', size: 12.5 } }]);
+    expect(whole.cells).toEqual([
+      { title: { text: goal(2).t, size: 15 }, vp: { text: 'Value', size: 11 }, key: { text: 'Key', size: 11 }, bite: { text: 'Bite', size: 12.5 } },
+    ]);
     expect(whole.height).toBeLessThanOrEqual(664);
+    // A goal title the record does not cap is fitted into the head row's two lines (smaller first, then cut at a word), so the head stays its height.
+    const titled = frameworkPortraitMatrix([goal(2, { t: long.repeat(2).trim() }), goal(1)], 'Across the goals.', 664);
+    const titleRoom = 15 * 1.2 * 2;
+    for (const cell of titled.cells) {
+      expect(
+        frameworkPortraitTextHeight(cell.title.text, { ...FRAMEWORK_PORTRAIT_TYPE.matrixGoal, size: cell.title.size }, frameworkPortraitMatrixColumn(2))
+      ).toBeLessThanOrEqual(titleRoom);
+    }
+    expect(titled.cells[0].title.size).toBeLessThan(15);
+    expect(titled.cells[0].title.text.length).toBeLessThan(long.repeat(2).trim().length);
+    expect(titled.cells[1].title).toEqual({ text: goal(1).t, size: 15 });
+    expect(titled.height).toBeLessThanOrEqual(664);
     const bounded = frameworkPortraitMatrix([goal(12), goal(1)], 'Across the goals.', 664);
     expect(bounded.proofs[0].rows.length).toBeGreaterThan(0);
     expect(bounded.proofs[0].rows.length).toBeLessThan(12);

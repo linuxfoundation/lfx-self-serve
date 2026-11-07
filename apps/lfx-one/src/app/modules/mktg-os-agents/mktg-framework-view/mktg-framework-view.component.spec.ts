@@ -525,10 +525,12 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-download-pdf')).toBeNull();
     expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual(['Export to Google Slides']);
     expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(false);
-    // The print rendering stays mounted: only the entry button is gated.
-    expect(query('mktg-framework-view-print')).not.toBeNull();
+    // The print rendering is gated with the button: off, no print root is in the document (nothing is built for a PDF no one can ask for).
+    expect(query('mktg-framework-view-print')).toBeNull();
+    expect(query('mktg-framework-print')).toBeNull();
     pdfFlag.set(true);
     await fixture.whenStable();
+    expect(query('mktg-framework-view-print')).not.toBeNull();
     expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual([
       'Export to Google Slides',
       'Download PDF',
