@@ -249,14 +249,19 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(frameworkPrint.getByTestId('mktg-framework-print-goals')).toBeVisible();
   await expect(frameworkPrint.getByTestId('mktg-framework-print-pillars')).toHaveCount(1);
   await expect(frameworkPrint.locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(1);
-  // The family passes the framework no report, approval or read date today (its follow-up), so its Sources & gaps page prints
-  // the approval card alone: no intro, no lists, no empty-state line, and a card without a version or approval lead.
+  // The family hands the framework its run record, so its Sources & gaps page prints inside the family as it does alone: the
+  // intro, the blocks as the fixture's report holds them (nothing read, no source failed, no gap) and the approval card with
+  // the version and the approval date the opener prints.
   await expect(frameworkFrames.last()).toHaveAttribute('data-page-id', 'sources');
-  await expect(printDocument.getByTestId('mktg-framework-print-sources-intro')).toHaveCount(0);
+  await expect(printDocument.getByTestId('mktg-framework-print-sources-intro')).toHaveText(
+    'What the framework was built from, what could not be read, and what is still open.'
+  );
   await expect(printDocument.getByTestId('mktg-framework-print-sources-read')).toHaveCount(0);
-  await expect(printDocument.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveCount(0);
-  await expect(printDocument.getByTestId('mktg-framework-print-gaps-empty')).toHaveCount(0);
-  await expect(printDocument.getByTestId('mktg-framework-print-approval')).toHaveText('A later run re-reads the sources and refreshes the LFX figures.');
+  await expect(printDocument.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveText('No source failed.');
+  await expect(printDocument.getByTestId('mktg-framework-print-gaps-empty')).toHaveText('The sources left no gap.');
+  await expect(printDocument.getByTestId('mktg-framework-print-approval')).toHaveText(
+    'V1.0 · Approved 20 Oct 2026. A later run re-reads the sources and refreshes the LFX figures.'
+  );
   // The kit in the family's book: every page of its family plan for this kit (the synthetic kit's record decides the
   // plan: no cover, contents or back cover of its own), in order, numbered on from its opener, under the family's
   // running head, no band; nothing of it flows as a chapter.

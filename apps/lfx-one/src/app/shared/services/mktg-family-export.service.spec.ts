@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
 import { MktgFamilyExportResultResponse, MktgFamilyPrintView, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { returningRunFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-returning-run.fixture';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '@shared/testing/mktg-family-export-test-data';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgFamilyExportService } from './mktg-family-export.service';
@@ -187,6 +188,52 @@ describe('Family export client', () => {
     expect(view?.boilerplatesSources).toEqual(boilerplatesEnvelope.report.sources_read);
     // No framework, no kit line, no colour conflict: nothing for the Sources page to call a disagreement.
     expect(view?.conflicts).toEqual([]);
+  });
+
+  it('hands the framework print its run record, so its Sources & gaps page prints inside the family as it does alone', () => {
+    const type = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message');
+    if (!type) throw new Error('Missing synthetic type');
+    const member = familyExportMember({ agentKey: 'foundation-message' });
+    const stored = returningRunFixture(type, target.project).revision;
+    const approval = { approvedAt: '2026-11-06T09:00:00Z', approvedBy: null };
+    const revision = { ...approvedKit().revision, id: member.revisionId, contentSha256: member.contentSha256, approval };
+    const report = {
+      sources_read: ['Project site'],
+      sources_failed: [{ name: 'Annual report', reason: 'timed out' }],
+      gaps: ['No published mission statement'],
+      notes: '',
+    };
+    const respond = (sidecar: Record<string, unknown> | null): void => {
+      http
+        .expectOne((request) => request.url.includes('/documents/foundation-message/living/revisions/'))
+        .flush({
+          ...stored,
+          type,
+          revisions: [revision],
+          approvedCurrent: { revisionId: member.revisionId, number: 1 },
+          revision,
+          approval,
+          markdown: stored.markdown,
+          sidecar,
+        });
+    };
+    let view: MktgFamilyPrintView | undefined;
+    service.printView(target, [member], 'Synthetic project').subscribe((value) => (view = value));
+    respond({ mode: 'draft', report, checks: { findings: [] }, inputs_record: { date_read: '2026-10-27' } });
+    // The same blocks as the standalone print: what was read, what could not be, the gaps; the approval's date; the day the run read.
+    expect(view?.framework?.report).toEqual(report);
+    expect(view?.framework?.dateReadLabel).toBe('27 Oct 2026');
+    expect(view?.framework?.dateLabel).toBe('6 Nov 2026');
+    expect(view?.documents.map((document) => [document.agentKey, document.dataLabel, document.openItems])).toEqual([
+      ['foundation-message', 'figures as of 27 Oct 2026', ['No published mission statement']],
+    ]);
+    // A record without a report: the approval card alone, nothing made up.
+    let bare: MktgFamilyPrintView | undefined;
+    service.printView(target, [member], 'Synthetic project').subscribe((value) => (bare = value));
+    respond({ mode: 'draft' });
+    expect(bare?.framework?.report).toBeNull();
+    expect(bare?.framework?.dateReadLabel).toBe('');
+    expect(bare?.documents[0].openItems).toEqual([]);
   });
 
   it.each(['boilerplates', 'faq'] as const)('rejects unreadable approved %s instead of silently omitting it', (agentKey) => {

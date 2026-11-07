@@ -27,14 +27,13 @@ import {
   buildFaqPrintView,
   buildFoundationMessagePrintView,
   faqAssetOfRevision,
-  isFoundationMessageReport,
+  foundationMessageAssetOfRevision,
   mktgFamilyExportAgentKeys,
   mktgFamilyPrintConflicts,
   mktgFamilyPrintDocument,
   mktgFamilyPrintNumberConflicts,
   mktgPrintBrand,
   readBrandKitRevision,
-  readFoundationMessageContent,
 } from '@lfx-one/shared/utils';
 import { pollMktgSlidesExport } from '@shared/utils/mktg-slides-export-poll.util';
 import { catchError, finalize, forkJoin, map, Observable, shareReplay, startWith, switchMap, take, throwError } from 'rxjs';
@@ -142,10 +141,23 @@ export class MktgFamilyExportService {
         const kit = kitResponse ? readBrandKitRevision(kitResponse.sidecar) : null;
         if (kitResponse && !kit) throw new Error('The approved brand kit could not be read.');
         const frameworkResponse = ofKind('framework');
-        const content = frameworkResponse ? readFoundationMessageContent(frameworkResponse.markdown) : null;
-        if (frameworkResponse && !content) throw new Error('The approved messaging framework could not be read.');
+        // The framework as its standalone print reads it: the content, the run's report and the day it read its sources
+        // (one reader, so its Sources & gaps page prints the same blocks inside the family; null report when the record has none).
+        const frameworkAsset = frameworkResponse ? foundationMessageAssetOfRevision(frameworkResponse.markdown, frameworkResponse.sidecar) : null;
+        if (frameworkResponse && !frameworkAsset) throw new Error('The approved messaging framework could not be read.');
         const book = kit ? buildBrandKitBookView(kit, kitResponse?.revision.number) : null;
-        const framework = content ? buildFoundationMessagePrintView(content, projectName, frameworkResponse?.revision.number ?? null, kit) : null;
+        const framework =
+          frameworkResponse && frameworkAsset
+            ? buildFoundationMessagePrintView(
+                frameworkAsset.content,
+                projectName,
+                frameworkResponse.revision.number ?? null,
+                kit,
+                frameworkResponse.approval?.approvedAt ?? null,
+                frameworkAsset.report,
+                frameworkAsset.dateRead ?? null
+              )
+            : null;
         const brand = mktgPrintBrand(kit);
         const boilerplatesResponse = ofKind('boilerplates');
         const boilerplates = boilerplatesResponse ? boilerplatesAssetOfRevision(boilerplatesResponse.markdown, boilerplatesResponse.sidecar) : null;
@@ -159,9 +171,8 @@ export class MktgFamilyExportService {
           .filter((createdAt): createdAt is string => !!createdAt && Number.isFinite(Date.parse(createdAt)))
           .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
         // The book's chapters, in exporter order (the family's asset order, not an agent list), each with what its run left open.
-        const frameworkReport = frameworkResponse?.sidecar?.['report'];
         const openItems: Record<MktgFamilyExportKind, string[]> = {
-          framework: isFoundationMessageReport(frameworkReport) ? frameworkReport.gaps : [],
+          framework: frameworkAsset?.report?.gaps ?? [],
           kit: kit?.report.findings?.missing_assets.map((missing) => missing.reason) ?? [],
           boilerplates: boilerplates?.report.gaps ?? [],
           faq: faq?.report.gaps ?? [],
@@ -206,12 +217,17 @@ export class MktgFamilyExportService {
           fontFamily: book?.fontUrl ? book.type.family : brand.fontFamily,
           weights: book?.weights.map((weight) => weight.weight) ?? MKTG_PRINT_FONT_WEIGHTS,
           documents,
-          tagline: content?.mf.tagline?.trim() ?? '',
+          tagline: frameworkAsset?.content.mf.tagline?.trim() ?? '',
           websiteLabel: brandKitWebsiteHost(kit?.websiteUrl ?? null),
           boilerplatesSources: boilerplates?.report.sources_read.map((source) => source.trim()).filter(Boolean) ?? [],
           conflicts: [
             ...mktgFamilyPrintNumberConflicts(framework?.numbers ?? [], textSources),
-            ...mktgFamilyPrintConflicts(content?.mf.tagline ?? '', kit?.chapters.voice.line ?? '', kit?.report.color_conflicts ?? [], titleOf('brand-kit')),
+            ...mktgFamilyPrintConflicts(
+              frameworkAsset?.content.mf.tagline ?? '',
+              kit?.chapters.voice.line ?? '',
+              kit?.report.color_conflicts ?? [],
+              titleOf('brand-kit')
+            ),
           ],
         };
       })
