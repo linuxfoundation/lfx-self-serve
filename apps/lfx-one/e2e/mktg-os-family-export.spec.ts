@@ -4,11 +4,12 @@
 import { expect, test } from '@playwright/test';
 import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import {
+  expectMktgPortraitPageSetup,
   expectMktgPrintCover,
   expectMktgPrintFrame,
-  expectMktgPrintPageSetup,
   finishMktgPrintFrame,
   layoutMktgPrintFrame,
   mktgPrintComputedPx,
@@ -207,35 +208,58 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   });
   expect(ancestorBackgrounds.every((color) => color === 'rgb(255, 255, 255)')).toBe(true);
   await expect(printFrame.getByTestId('family-export-print-contents').locator('dt')).toHaveText(['01', '02', '03', '04']);
-  await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2']);
+  // The framework prints as part of the family book: its plan's frames for this fixture (one goal, one ICP), no cover,
+  // each under the family's running head and foot, numbered on from the family cover (page 1), its band off.
+  const frameworkFrames = printDocument.locator('lfx-mktg-framework-print [data-testid="lfx-mktg-portrait-page"]');
+  await expect(frameworkFrames).toHaveCount(7);
+  expect(await frameworkFrames.evaluateAll((frames) => frames.map((frame) => frame.getAttribute('data-page-id')))).toEqual([
+    'framework',
+    'goal-1',
+    'say-avoid',
+    'icps-1',
+    'message-house',
+    'key-numbers',
+    'sources',
+  ]);
+  expect(await frameworkFrames.evaluateAll((frames) => frames.map((frame) => frame.getAttribute('data-page')))).toEqual(['2', '3', '4', '5', '6', '7', '8']);
+  await expect(frameworkFrames.first().getByTestId('mktg-portrait-page-number')).toHaveText('02');
+  await expect(frameworkFrames.first()).toHaveAttribute('data-section', 'Messaging framework · Framework');
+  await expect(frameworkFrames.locator('[data-testid="mktg-portrait-page-doc"]')).toHaveText(Array(7).fill(`${DOCUMENT_PROJECT.name} positioning & brand`));
+  await expect(frameworkFrames.first().getByTestId('mktg-portrait-page-foot')).toContainText(`${DOCUMENT_PROJECT.name} · a Linux Foundation project`);
+  await expect(printDocument.locator('lfx-mktg-framework-print [data-testid="mktg-portrait-page-band"]')).toHaveCount(0);
+  await expect(printDocument.getByTestId('mktg-framework-print-cover')).toHaveCount(0);
   await expect(printDocument.getByTestId('mktg-framework-print-goals')).toBeVisible();
-  await expect(printDocument.getByTestId('mktg-framework-print-pillars')).toHaveCount(0);
-  await expect(printDocument.locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(0);
+  await expect(printDocument.getByTestId('mktg-framework-print-pillars')).toHaveCount(1);
+  await expect(printDocument.locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(1);
+  for (const frame of await frameworkFrames.all()) {
+    const box = await frame.boundingBox();
+    expect({ x: Math.round(box?.x ?? -1), width: Math.round(box?.width ?? 0), height: Math.round(box?.height ?? 0) }).toEqual({
+      x: 0,
+      width: 816,
+      height: 1056,
+    });
+  }
   await expect(printDocument.locator('lfx-mktg-boilerplates-print h2 > span')).toHaveText('03');
   await expect(printDocument.locator('lfx-mktg-faq-print h2 > span')).toHaveText('04');
   for (const selector of ['lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
     await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head')).toBeVisible();
     await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head').locator('img')).toBeVisible();
   }
-  await expect(printFrame.getByTestId('mktg-framework-print-cover')).toBeHidden();
-  // The cover's whole sheet goes with it: its head and foot room alone would print as a blank page.
-  await expect(printDocument.locator('lfx-mktg-print-sheet:has([data-testid="mktg-framework-print-cover"])')).toBeHidden();
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
   // The page's room is in the document, not the @page margin (none, so no browser header or footer): every kit chapter
   // repeats its head's 0.55in per page and pads its last row, and the other sections print in sheets that repeat a head
   // and pad their last row, one row per block — no footer group anywhere, for which Chromium prints an empty page per
-  // table: the family cover 1; the framework 1 + 5 + 3 (its cover sheet is in the DOM, hidden above, and counted here);
-  // the boilerplates 4 lengths; the FAQ its header + 4 pairs. toHaveCount counts hidden elements: 6 sheets, 5 shown.
+  // table: the family cover 1; the boilerplates 4 lengths; the FAQ its header + 4 pairs (the framework prints in
+  // portrait frames, not sheets). 3 sheets, all shown.
   await expect(printDocument.locator('tfoot, [data-testid="mktg-print-sheet-foot"]')).toHaveCount(0);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
-  await expect(printDocument.getByTestId('mktg-print-sheet-head')).toHaveCount(6);
-  // Visible sheets, not heads: on the page margins (WebKit) the head room is 0px high, so no head counts as visible.
-  await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(6);
-  await expect(printDocument.locator('lfx-mktg-print-sheet').locator('visible=true')).toHaveCount(5);
-  await expect(printDocument.locator('lfx-mktg-print-sheet-row')).toHaveCount(1 + 9 + 4 + 5);
-  // The engine's page setup: Chromium margin 0 with the room in the document; WebKit the margins, the room collapsed.
-  await expectMktgPrintPageSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'), browserName);
+  await expect(printDocument.getByTestId('mktg-print-sheet-head')).toHaveCount(3);
+  await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(3);
+  await expect(printDocument.locator('lfx-mktg-print-sheet').locator('visible=true')).toHaveCount(3);
+  await expect(printDocument.locator('lfx-mktg-print-sheet-row')).toHaveCount(1 + 4 + 5);
+  // The book's page setup: a document of portrait frames prints on Letter with no margin in both engines.
+  await expectMktgPortraitPageSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'));
   // The last rows' bottom room, to a tenth (mktgPrintComputedPx): the kit's calc(10pt + 0.55in) = 66.13px or its 10pt
   // alone on the page margins; a sheet's 0.55in = 52.8px or 0.
   expect(

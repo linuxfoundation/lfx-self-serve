@@ -8,38 +8,14 @@
 // the kit's plan (`brandKitPortraitPlan`, mktg-portrait-plan.utils.ts), on
 // the same page type.
 
-import { FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE } from '../constants/mktg-print.constants';
+import {
+  FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE,
+  FRAMEWORK_PORTRAIT_PAGE_IDS,
+  FRAMEWORK_PORTRAIT_SECTIONS,
+  FRAMEWORK_PORTRAIT_TITLES,
+} from '../constants/mktg-print.constants';
 import type { FoundationMessagePrintIcp, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
-
-/** The plan ids of the framework's pages that are not numbered from the data (`goal-1`, `icps-2` are). */
-export const FRAMEWORK_PORTRAIT_PAGE_IDS = {
-  cover: 'cover',
-  framework: 'framework',
-  sayAvoid: 'say-avoid',
-  messageHouse: 'message-house',
-  keyNumbers: 'key-numbers',
-  sources: 'sources',
-} as const;
-
-/** The running head's section labels of the framework's chapters, in order. */
-export const FRAMEWORK_PORTRAIT_SECTIONS = {
-  framework: '01 Framework',
-  icps: '02 ICPs',
-  messageHouse: '03 Message house',
-  keyNumbers: '04 Key numbers',
-  sources: '05 Sources',
-} as const;
-
-/** The page titles of the framework's book that are not the data's (a goal page is titled `Goal 1 · Events`). */
-export const FRAMEWORK_PORTRAIT_TITLES = {
-  framework: 'Framework',
-  sayAvoid: 'Say and avoid · anchor questions',
-  icps: 'Ideal customer profiles',
-  messageHouse: 'Message house',
-  keyNumbers: 'Key numbers',
-  sources: 'Sources & gaps',
-} as const;
 
 /** The profiles two a page, in data order; the last page may hold one. */
 export function frameworkPortraitIcpPages(icps: readonly FoundationMessagePrintIcp[]): FoundationMessagePrintIcp[][] {

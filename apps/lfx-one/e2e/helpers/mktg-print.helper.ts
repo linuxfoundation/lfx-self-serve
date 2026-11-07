@@ -109,14 +109,18 @@ export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locato
 /**
  * A document of fixed portrait frames (the framework's book) prints on Letter with no margin in both engines: the
  * frame's unnamed rule and the frames' own named page, restated with the same values; the root lifts the flowing
- * documents' side padding, so every frame sits at the page's edge, 816 by 1056 px.
+ * documents' side padding, so every frame (the grammar's `lfx-mktg-portrait-page`, as many as the root's `data-pages`
+ * says, never none) sits at the page's edge, 816 by 1056 px, on the named page, clipping what would pass its edge.
  */
 export async function expectMktgPortraitPageSetup(frame: FrameLocator, root: Locator): Promise<void> {
   const setup = MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
   expect(setup).toBe('size: 8.5in 11in; margin: 0;');
   expect(await frame.locator('head style').last().textContent()).toBe(`@page { ${setup} }\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
   await expect(root).toHaveCSS('padding-left', '0px');
-  const pages = root.locator(':scope > section.fwp-page');
+  const pages = root.getByTestId('lfx-mktg-portrait-page');
+  const declared = Number(await root.getAttribute('data-pages'));
+  expect(declared).toBeGreaterThan(0);
+  await expect(pages).toHaveCount(declared);
   for (const page of await pages.all()) {
     const box = await page.boundingBox();
     expect({ x: Math.round(box?.x ?? -1), width: Math.round(box?.width ?? 0), height: Math.round(box?.height ?? 0) }).toEqual({

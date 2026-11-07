@@ -36,6 +36,74 @@ export const FOUNDATION_MESSAGE_PRINT_TITLE = 'Messaging Framework';
  */
 export const FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE = 2;
 
+/** The plan ids of the framework's portrait pages that are not numbered from the data (`goal-1`, `icps-2` are). */
+export const FRAMEWORK_PORTRAIT_PAGE_IDS = {
+  cover: 'cover',
+  framework: 'framework',
+  sayAvoid: 'say-avoid',
+  messageHouse: 'message-house',
+  keyNumbers: 'key-numbers',
+  sources: 'sources',
+} as const;
+
+/** The running head's section labels of the framework's portrait chapters, in order. */
+export const FRAMEWORK_PORTRAIT_SECTIONS = {
+  framework: '01 Framework',
+  icps: '02 ICPs',
+  messageHouse: '03 Message house',
+  keyNumbers: '04 Key numbers',
+  sources: '05 Sources',
+} as const;
+
+/** The page titles of the framework's portrait book that are not the data's (a goal page is titled `Goal 1 · Events`). */
+export const FRAMEWORK_PORTRAIT_TITLES = {
+  framework: 'Framework',
+  sayAvoid: 'Say and avoid · anchor questions',
+  icps: 'Ideal customer profiles',
+  messageHouse: 'Message house',
+  keyNumbers: 'Key numbers',
+  sources: 'Sources & gaps',
+} as const;
+
+/**
+ * The key numbers page's tiles, px: 344 wide in pairs, 140 high, a 16 gap,
+ * the first row at 210; the "Every figure and its source" table 28 under the
+ * last row. An odd count's last tile spans the 704 column (never an orphan
+ * half-tile).
+ */
+export const FRAMEWORK_PORTRAIT_NUMBER_TILE = { width: 344, height: 140, gap: 16, top: 210, tableGap: 28 } as const;
+
+/**
+ * The fixed tops of the framework's portrait pages whose blocks the fit
+ * model bounds (the design's R(x, y) values, px): a goal page's key-message
+ * bar, proof list, sound bite and "Who it's for" cards; the Sources & gaps
+ * page's lists and approval card; and where the footer begins, which no
+ * block may pass.
+ */
+export const FRAMEWORK_PORTRAIT_TOPS = {
+  goalKey: 330,
+  goalProofs: 450,
+  goalBite: 690,
+  goalServed: 810,
+  sourcesLists: 210,
+  sourcesApproval: 880,
+  /** The first ICP page's rows start under the long intro; the later pages' under the short one. */
+  icpRowsFirst: 214,
+  icpRows: 190,
+  icpMatrix: 560,
+  /** The top of the footer's room: the last pixel any block may reach. */
+  footer: 1000,
+} as const;
+
+/** The on-screen Sources card's empty state for the gaps, printed verbatim on the Sources & gaps page. */
+export const FOUNDATION_MESSAGE_PRINT_NO_GAP_MESSAGE = 'The sources left no gap.';
+
+/** The source types a run writes before a source (`Website: https://…`); the Sources & gaps page prints the source without the type. */
+export const FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES = ['Website', 'Link', 'Press release'] as const;
+
+/** The fixed three-letter month names the prints date with (UTC), the same in every engine and locale. */
+export const MKTG_PRINT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
 /**
  * The LF look: what a print uses when the project has no Brand Kit yet. The
  * LF navy as the dark, the LF blue as the accent, Inter (which the app

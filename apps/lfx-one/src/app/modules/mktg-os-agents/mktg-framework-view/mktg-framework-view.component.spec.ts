@@ -577,7 +577,7 @@ describe('MktgFrameworkViewComponent', () => {
     const print = query('mktg-framework-print') as HTMLElement;
     expect(print.getAttribute('data-brand')).toBe('kit');
     // The kit's inks and typeface reach every frame through the portrait grammar's look.
-    const frame = query('mktg-framework-print-page-framework') as HTMLElement;
+    const frame = element().querySelector('[data-testid="lfx-mktg-portrait-page"][data-page-id="framework"]') as HTMLElement;
     expect(frame.style.getPropertyValue('--pp-dark')).toBe(kit.kit.dark);
     expect(frame.style.getPropertyValue('--pp-accent')).toBe(kit.kit.accent);
     expect(frame.style.getPropertyValue('--pp-font')).toContain('Montserrat');

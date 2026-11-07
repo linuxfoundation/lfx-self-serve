@@ -14,11 +14,13 @@ import { BRAND_KIT_HEX_REGEX } from '../constants/brand-kit.constants';
 import { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 import {
   FOUNDATION_MESSAGE_PRINT_TAB_IDS,
+  FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES,
   FOUNDATION_MESSAGE_PRINT_TITLE,
   MKTG_PRINT_BODY_INK_MIN_CONTRAST,
   MKTG_PRINT_INK_ON_DARK,
   MKTG_PRINT_INK_ON_LIGHT,
   MKTG_PRINT_LF_LOOK,
+  MKTG_PRINT_MONTHS,
   MKTG_PRINT_REVERSED_FILTER,
 } from '../constants/mktg-print.constants';
 import type { BrandKitRevision } from '../interfaces/brand-kit.interface';
@@ -188,7 +190,19 @@ export function foundationMessagePrintIcps(content: FoundationMessageContent): F
 export function mktgPrintApprovedDate(approvedAt: string | null): string {
   const time = Date.parse(approvedAt ?? '');
   if (Number.isNaN(time)) return '';
-  return new Date(time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const date = new Date(time);
+  return `${date.getUTCDate()} ${MKTG_PRINT_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
+/**
+ * A source as the Sources & gaps page prints it: as the run stored it, with
+ * only its type prefix (`Website: `, `Link: `, `Press release: `) taken off.
+ * Nothing is renamed or invented: a URL prints as the URL.
+ */
+export function foundationMessagePrintSourceLabel(source: string): string {
+  const trimmed = source.trim();
+  const type = FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES.find((prefix) => trimmed.startsWith(`${prefix}: `));
+  return type ? trimmed.slice(type.length + 2).trim() : trimmed;
 }
 
 /** Every goal's proof points with their sources and the goal that uses each, in the framework's order. */
@@ -201,9 +215,6 @@ export function foundationMessagePrintMatrix(goals: FoundationMessagePrintGoal[]
   return icps.map((icp) => ({ name: icp.name, cells: goals.map((goal) => goal.icps.includes(icp.id)) }));
 }
 
-/** A report with nothing in it: what the print shows when the revision's record carries none. */
-export const FOUNDATION_MESSAGE_EMPTY_REPORT: FoundationMessageReport = { sources_read: [], sources_failed: [], gaps: [], notes: '' };
-
 /**
  * The Messaging Framework as one printed document: the portrait book's
  * pages (`frameworkPortraitPlan`) — the view's tabs, with the run's report
@@ -213,7 +224,8 @@ export const FOUNDATION_MESSAGE_EMPTY_REPORT: FoundationMessageReport = { source
  * Kit, or null for the LF look; `approvedAt` is when that revision was
  * approved, which the cover and the sources page date; `report` and
  * `dateRead` are the run's, from the stored record (null when the caller
- * does not know them: the labels are then empty, the report's lists empty).
+ * does not know them: the label is then empty, the report stays null and
+ * the Sources & gaps page prints no report blocks).
  */
 export function buildFoundationMessagePrintView(
   content: FoundationMessageContent,
@@ -238,9 +250,8 @@ export function buildFoundationMessagePrintView(
     approvedLabel: dateLabel ? `Approved ${dateLabel}` : '',
     dateLabel,
     website: kit ? brandKitWebsiteHost(kit.websiteUrl) : '',
-    dateRead: dateReadLabel ? dateRead : null,
     dateReadLabel,
-    report: report ?? FOUNDATION_MESSAGE_EMPTY_REPORT,
+    report,
     runningHead: `${name} ${FOUNDATION_MESSAGE_PRINT_TITLE}`.trim(),
     sections: foundationMessagePrintSections(),
     facts: foundationMessagePrintFacts(goals),

@@ -17,6 +17,7 @@ import {
   buildFoundationMessagePrintView,
   foundationMessagePrintMatrix,
   foundationMessagePrintSections,
+  foundationMessagePrintSourceLabel,
   mktgPrintApprovedDate,
   mktgPrintBrand,
   mktgPrintDocumentTitle,
@@ -246,7 +247,7 @@ describe('the framework’s print', () => {
     expect(view.runningHead).toBe('TestOrbit Messaging Framework');
     expect(view.versionLabel).toBe('V4.0');
     expect([view.approvedLabel, view.dateLabel]).toEqual(['Approved 6 Nov 2026', '6 Nov 2026']);
-    expect([view.dateRead, view.dateReadLabel]).toEqual(['2026-11-04', '4 Nov 2026']);
+    expect(view.dateReadLabel).toBe('4 Nov 2026');
     expect(view.report).toBe(report);
     expect(view.website).toBe('');
     expect(view.goals[0].segmentNames).toEqual(['End users']);
@@ -258,11 +259,10 @@ describe('the framework’s print', () => {
     expect(view.audiences).toEqual([{ name: 'End users', lead: 'Ship with confidence.' }]);
     expect(view.facts).toEqual([{ fact: '1,200 members', source: 'Website', usedBy: 'Goal 1 · Adoption' }]);
     expect(view.brand.source).toBe('lf');
-    // Without the dates and the report: empty labels, an empty report, no read date (an unreadable one reads as none).
+    // Without the dates and the report: empty labels, no report (the view says nothing the record never said), no read date (an unreadable one reads as none).
     const withKit = buildFoundationMessagePrintView(CONTENT, 'TestOrbit', null, kitWith(), null, null, 'yesterday');
     expect([withKit.versionLabel, withKit.approvedLabel, withKit.dateLabel, withKit.dateReadLabel]).toEqual(['', '', '', '']);
-    expect(withKit.dateRead).toBeNull();
-    expect(withKit.report).toEqual({ sources_read: [], sources_failed: [], gaps: [], notes: '' });
+    expect(withKit.report).toBeNull();
     expect(withKit.website).toBe('orbit.example.org');
     expect(withKit.brand.source).toBe('kit');
   });
@@ -273,6 +273,31 @@ describe('the framework’s print', () => {
     expect(mktgPrintApprovedDate('2026-11-04')).toBe('4 Nov 2026');
     expect(mktgPrintApprovedDate(null)).toBe('');
     expect(mktgPrintApprovedDate('not a date')).toBe('');
+    // Every month, in UTC, the day without a leading zero: no locale call, so the same in every runtime.
+    expect(Array.from({ length: 12 }, (_, month) => mktgPrintApprovedDate(`2026-${String(month + 1).padStart(2, '0')}-09T12:00:00Z`))).toEqual([
+      '9 Jan 2026',
+      '9 Feb 2026',
+      '9 Mar 2026',
+      '9 Apr 2026',
+      '9 May 2026',
+      '9 Jun 2026',
+      '9 Jul 2026',
+      '9 Aug 2026',
+      '9 Sep 2026',
+      '9 Oct 2026',
+      '9 Nov 2026',
+      '9 Dec 2026',
+    ]);
+  });
+
+  it('names a read source as the run stored it, with only its type prefix taken off', () => {
+    expect(foundationMessagePrintSourceLabel('Website: https://orbit.example.org')).toBe('https://orbit.example.org');
+    expect(foundationMessagePrintSourceLabel('Link: https://orbit.example.org/about')).toBe('https://orbit.example.org/about');
+    expect(foundationMessagePrintSourceLabel('Press release: https://www.linuxfoundation.org/press/orbit')).toBe('https://www.linuxfoundation.org/press/orbit');
+    // No known prefix, or a prefix inside the text: untouched.
+    expect(foundationMessagePrintSourceLabel('LFX Insights: members')).toBe('LFX Insights: members');
+    expect(foundationMessagePrintSourceLabel('The Website: page')).toBe('The Website: page');
+    expect(foundationMessagePrintSourceLabel('  Link:   spaced  ')).toBe('spaced');
   });
 
   it('crosses the goals with the profiles: one row per profile, true where the goal’s messaging is written for it', () => {

@@ -141,9 +141,19 @@
 
 /* ---------- 01 framework: the statements and the goal matrix ---------- */
 
+/* The four cards share one height (136 → 320), so every card closes with its bottom edge 16 px above the goal band at 336; the text is fitted to the card. */
 .fwp-statements {
   display: flex;
   gap: 12px;
+  height: 184px;
+  align-items: stretch;
+
+  > .fwp-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+  }
 }
 
 .fwp-statement-vision {
@@ -180,7 +190,8 @@
 
 .fwp-matrix-row {
   display: grid;
-  grid-template-columns: 96px repeat(var(--fwp-goal-count, 1), 1fr);
+  grid-template-columns: 96px repeat(var(--fwp-goal-count, 1), minmax(0, 1fr));
+  min-width: 0;
   gap: 0 16px;
   padding: 10px 12px;
   border-top: 1px solid var(--pp-hairline);
@@ -233,11 +244,11 @@
 .fwp-matrix-source {
   font-size: 8px;
   font-weight: 600;
-  line-height: 1;
+  line-height: 1.3;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--pp-muted);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .fwp-matrix-bite {
@@ -247,6 +258,11 @@
   color: var(--pp-dark);
   border-left: 2px solid var(--pp-accent);
   padding-left: 10px;
+}
+
+/* A goal without a sound bite keeps its column, with no rule to mark an empty slot. */
+.fwp-matrix-bite-none {
+  border-left: 0;
 }
 
 .fwp-matrix-crosscut {
@@ -349,6 +365,7 @@
 
 .fwp-served-card {
   flex: 1;
+  min-width: 0;
 }
 
 .fwp-served-name {
@@ -656,8 +673,9 @@
 
 .fwp-pillars {
   display: grid;
-  grid-template-columns: repeat(var(--fwp-pillar-count, 1), 1fr);
+  grid-template-columns: repeat(var(--fwp-pillar-count, 1), minmax(0, 1fr));
   gap: 20px;
+  min-width: 0;
 }
 
 /* The pillars' rules: the kit's spark on the first, the accent on the rest (the design's `rule(i)`). */
@@ -775,22 +793,33 @@
 
 .fwp-facts-table {
   margin-top: 8px;
+  table-layout: fixed;
   font-size: 11px;
   line-height: 1.3;
 
   td {
     padding: 4px 12px 4px 0;
     border-bottom: 1px solid var(--pp-hairline);
+    overflow-wrap: anywhere;
   }
 }
 
+/* The fact takes half the column; the source and the goal that uses it a quarter each (the component measures the rows by these). */
+.fwp-fact {
+  width: 50%;
+}
+
 .fwp-fact-source {
-  white-space: nowrap;
+  width: 25%;
+
+  .pp-chip {
+    white-space: normal;
+  }
 }
 
 .fwp-fact-used {
+  width: 25%;
   padding-right: 0;
-  white-space: nowrap;
   color: var(--pp-muted);
 }
 
@@ -802,11 +831,6 @@
   font-size: 12px;
   line-height: 1.6;
   color: var(--pp-ink);
-}
-
-.fwp-note-list {
-  font-size: 11.5px;
-  line-height: 1.55;
 }
 
 .fwp-source-text {
