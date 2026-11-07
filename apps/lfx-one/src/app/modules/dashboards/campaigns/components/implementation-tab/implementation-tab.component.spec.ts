@@ -19336,6 +19336,19 @@ describe('ImplementationTabComponent google performance max search themes', () =
     expect(find('implementation-google-extensions-capability-retry')).toBeNull();
   });
 
+  it('names retained themes, singular in the support noun, while the brief is unsaved', () => {
+    const c = seedPmaxCapability(null, 'ready', 'kubernetes');
+    fixture.componentRef.setInput('briefPersistence', { status: 'unsaved', briefId: null, message: null, approved: false });
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('unsaved');
+    expect(c['googleExtensionsCapabilityMessage']()).toMatch(/^Google search theme support can't be checked until this brief is saved/);
+
+    c['googleCallouts'].set(['Free shipping']);
+    fixture.detectChanges();
+    expect(c['googleExtensionsCapabilityMessage']()).toMatch(/^Google ad extension and search theme support can't be checked/);
+  });
+
   it('names retained themes in the capability notice, with Retry, when the check failed', () => {
     const retried = vi.fn();
     fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
