@@ -4,6 +4,7 @@
 import { Component, computed, input, Signal } from '@angular/core';
 import {
   MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES,
+  MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT,
@@ -12,7 +13,13 @@ import {
   MKTG_PORTRAIT_PAGE,
 } from '@lfx-one/shared/constants';
 import { BoilerplatesLengthRow, MktgFamilyPrintBoilerplateCard, MktgFamilyPrintFitRows } from '@lfx-one/shared/interfaces';
-import { mktgFamilyPrintCutNote, mktgFamilyPrintFill, mktgFamilyPrintFitRunBlock, mktgFamilyPrintSourceLabel } from '@lfx-one/shared/utils';
+import {
+  mktgFamilyPrintCutNote,
+  mktgFamilyPrintFill,
+  mktgFamilyPrintFitBoilerplateCards,
+  mktgFamilyPrintFitRunBlock,
+  mktgFamilyPrintSourceLabel,
+} from '@lfx-one/shared/utils';
 import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 
 /**
@@ -42,6 +49,7 @@ export class MktgFamilyPrintBoilerplatesPageComponent {
   public readonly column: readonly [number, number] = [MKTG_PORTRAIT_PAGE.margin, MKTG_PORTRAIT_PAGE.contentWidth];
   public readonly warnInk = MKTG_FAMILY_PRINT_WARN_INK;
 
+  public readonly cardsLayout = MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT;
   public readonly runLayout = MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT;
 
   public readonly cards: Signal<MktgFamilyPrintBoilerplateCard[]> = this.initCards();
@@ -55,23 +63,29 @@ export class MktgFamilyPrintBoilerplatesPageComponent {
   }
 
   private initCards(): Signal<MktgFamilyPrintBoilerplateCard[]> {
-    return computed(() =>
-      this.lengths()
-        .filter((row) => row.text.trim())
-        .map((row, index) => {
-          const size = MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES[Math.min(index, MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES.length - 1)];
-          const percent = row.max > 0 ? Math.round((row.words / row.max) * 100) : 0;
-          return {
-            label: row.label,
-            text: row.text,
-            count: row.max > 0 ? mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.words, { Words: row.words, Max: row.max }) : `${row.words} words`,
-            fill: Math.min(100, percent),
-            percentLabel: row.max > 0 ? mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.ofTheLimit, { Percent: percent }) : '',
-            overLabel: row.over ? mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.overBy, { Over: row.words - row.max }) : '',
-            fontSize: size.fontSize,
-            minHeight: size.minHeight,
-          };
-        })
-    );
+    return computed(() => {
+      const rows = this.lengths().filter((row) => row.text.trim());
+      const sizes = rows.map((_, index) => MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES[Math.min(index, MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES.length - 1)]);
+      // The texts held to the page's room: a text that outgrows it is cut from the end at a sentence and says so.
+      const fitted = mktgFamilyPrintFitBoilerplateCards(
+        rows.map((row, index) => ({ text: row.text, ...sizes[index] })),
+        MKTG_PORTRAIT_PAGE.contentWidth
+      );
+      return rows.map((row, index) => {
+        const size = sizes[index];
+        const percent = row.max > 0 ? Math.round((row.words / row.max) * 100) : 0;
+        return {
+          label: row.label,
+          text: fitted[index].text,
+          cutNote: fitted[index].cutWords > 0 ? mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.cutWords, { Count: fitted[index].cutWords }) : '',
+          count: row.max > 0 ? mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.words, { Words: row.words, Max: row.max }) : `${row.words} words`,
+          fill: Math.min(100, percent),
+          percentLabel: row.max > 0 ? mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.ofTheLimit, { Percent: percent }) : '',
+          overLabel: row.over ? mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.overBy, { Over: row.words - row.max }) : '',
+          fontSize: size.fontSize,
+          minHeight: size.minHeight,
+        };
+      });
+    });
   }
 }

@@ -12,6 +12,7 @@ import {
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_FAMILY_PRINT_LABEL_STOP_WORDS,
+  MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
   MKTG_FAMILY_PRINT_ROUNDING_WORDS,
   MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT,
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
@@ -38,6 +39,7 @@ import type {
   MktgFamilyPrintPlan,
   MktgFamilyPrintPlanMember,
   MktgFamilyPrintSourcesLayout,
+  MktgFamilyPrintFittedText,
 } from '../interfaces/mktg-family-print.interface';
 import type { MktgPortraitFitPara } from '../interfaces/mktg-portrait-print.interface';
 import { mktgPortraitPageNumber, mktgPortraitParaHeight } from './mktg-portrait-print.utils';
@@ -192,6 +194,60 @@ export function mktgFamilyPrintFitRows<T>(
   if (whole.length === rows.length) return { rows: whole, cut: 0 };
   const kept = fit(budget - padding - size * line);
   return { rows: kept, cut: rows.length - kept.length };
+}
+
+/** The words of a text, as the boilerplates agent counts them. */
+function mktgFamilyPrintWordCount(text: string): number {
+  return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
+
+/**
+ * A text less its last sentence (`.`, `!`, `?` or `…`, a closing quote or
+ * bracket allowed, then a space); a single sentence loses its last word
+ * instead, so the loop always shortens. '' when nothing is left to cut.
+ */
+export function mktgFamilyPrintCutFromEnd(text: string): string {
+  const trimmed = text.trim();
+  const ends = Array.from(trimmed.matchAll(/[.!?…]["”’')\]]*\s+/g)).map((match) => match.index + match[0].length);
+  const sentence = ends.filter((end) => end < trimmed.length).pop();
+  if (sentence !== undefined) return trimmed.slice(0, sentence).trim();
+  const word = trimmed.lastIndexOf(' ');
+  return word > 0 ? trimmed.slice(0, word).trim() : '';
+}
+
+/**
+ * The boilerplate cards held to the page: each card's height is its padding
+ * plus its text at the card's type and measure, at least the board's
+ * minimum; while the cards and their gaps outgrow the room, the tallest
+ * text loses its last sentence and keeps one line for the cut note, so the
+ * page prints every card and says how many words did not fit. Nothing is
+ * rephrased and nothing is cut in silence. Pure.
+ */
+export function mktgFamilyPrintFitBoilerplateCards(
+  cards: readonly { text: string; fontSize: number; minHeight: number }[],
+  width: number,
+  layout: typeof MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT = MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT
+): MktgFamilyPrintFittedText[] {
+  const room = layout.bottom - layout.top - layout.gap * Math.max(0, cards.length - 1);
+  const measure = width - layout.inset - layout.metaWidth - layout.metaGap;
+  const fitted = cards.map((card) => ({ text: card.text.trim(), cutWords: 0 }));
+  const height = (index: number): number => {
+    const card = cards[index];
+    const note = fitted[index].cutWords > 0 ? card.fontSize * layout.line : 0;
+    return Math.max(
+      card.minHeight,
+      layout.padding + note + mktgPortraitParaHeight({ text: fitted[index].text, size: card.fontSize, line: layout.line }, measure)
+    );
+  };
+  const total = (): number => fitted.reduce((sum, _, index) => sum + height(index), 0);
+  const words = cards.map((card) => mktgFamilyPrintWordCount(card.text));
+  for (let guard = 0; guard < MKTG_PORTRAIT_FIT.maxCuts && total() > room; guard++) {
+    const tallest = fitted.map((_, index) => index).reduce((best, index) => (height(index) > height(best) ? index : best), 0);
+    const shorter = mktgFamilyPrintCutFromEnd(fitted[tallest].text);
+    if (!shorter) break;
+    fitted[tallest] = { text: shorter, cutWords: words[tallest] - mktgFamilyPrintWordCount(shorter) };
+  }
+  return fitted;
 }
 
 /** The cut note under a fitted block: `+3 more in LFX One`; '' when nothing was cut. */

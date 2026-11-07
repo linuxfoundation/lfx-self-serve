@@ -51,6 +51,23 @@ export const MKTG_FAMILY_PRINT_SOURCES_LAYOUT = {
   chip: { size: 8.5, padding: 14 },
 } as const;
 
+/**
+ * The boilerplate cards' room as the board draws them: the cards' y and the bottom they may reach (above the Built from
+ * block), the gap between cards, a card's vertical padding and horizontal inset, the meta column and its gap (what the
+ * text column loses of the page's measure), and the text's line height. The cards' sum of heights is held to the room
+ * by cutting the longest text from the end, never in silence.
+ */
+export const MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT = {
+  top: 210,
+  bottom: 900,
+  gap: 12,
+  padding: 48,
+  inset: 52,
+  metaWidth: 120,
+  metaGap: 28,
+  line: 1.5,
+} as const;
+
 /** The boilerplates page's run block at the foot (Built from): its y and bottom, the heading and the list's type. */
 export const MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT = {
   top: 912,
@@ -148,6 +165,8 @@ export const MKTG_FAMILY_PRINT_COPY = {
   figuresAsOf: 'figures as of [Date]',
   /** Under a fitted block whose rows did not all fit: `[Count]` rows more, never dropped in silence. */
   cutNote: '+[Count] more in LFX One',
+  /** Under a boilerplate cut from the end to fit its card: the words that did not print. */
+  cutWords: '+[Count] words in LFX One',
   /** A list in prose: `[Items]` the first ones joined with commas, `[Last]` the last. */
   lastOfList: '[Items] and [Last]',
   /** A key-number conflict: `[Number]` and `[Label]` are the framework's, `[Document]` the other document's title, `[Sentence]` what it says. */

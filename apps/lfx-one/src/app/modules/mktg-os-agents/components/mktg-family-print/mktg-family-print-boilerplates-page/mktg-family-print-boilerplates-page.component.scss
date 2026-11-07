@@ -62,11 +62,22 @@
     color: var(--fp-warn);
   }
 
-  &__text {
+  &__body {
     flex: 1;
+    min-width: 0;
+  }
+
+  &__text {
     font-weight: 400;
     line-height: 1.5;
     color: var(--pp-ink);
+  }
+
+  /* The cut line under a text held to the page: the book's `+N … in LFX One` convention, in the caption's ink. */
+  &__cut {
+    margin-top: 6px;
+    font: 500 10px/1.4 var(--pp-font);
+    color: var(--pp-muted);
   }
 }
 

@@ -3,7 +3,11 @@
 
 import { describe, expect, it } from 'vitest';
 import { MKTG_KIT_POSITIONING_FAMILY_ID } from '../constants/mktg-kit.constants';
-import { MKTG_FAMILY_PRINT_FAQ_LAYOUT, MKTG_FAMILY_PRINT_SOURCES_LAYOUT } from '../constants/mktg-family-print.constants';
+import {
+  MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES,
+  MKTG_FAMILY_PRINT_FAQ_LAYOUT,
+  MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
+} from '../constants/mktg-family-print.constants';
 import { MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type {
   MktgFamilyPrintConflict,
@@ -14,6 +18,7 @@ import type {
 } from '../interfaces/mktg-family-print.interface';
 import {
   mktgFamilyPrintConflicts,
+  mktgFamilyPrintCutFromEnd,
   mktgFamilyPrintCutNote,
   mktgFamilyPrintDate,
   mktgFamilyPrintDocument,
@@ -21,6 +26,7 @@ import {
   mktgFamilyPrintFaqGroups,
   mktgFamilyPrintFaqPages,
   mktgFamilyPrintFill,
+  mktgFamilyPrintFitBoilerplateCards,
   mktgFamilyPrintFitRows,
   mktgFamilyPrintFitRunBlock,
   mktgFamilyPrintFigure,
@@ -446,6 +452,50 @@ describe('mktgFamilyPrintConflicts', () => {
     expect(mktgFamilyPrintReadableSource('https://aaif.io/brand')).toBe('aaif.io');
     expect(mktgFamilyPrintReadableSource('the press release')).toBe('the press release');
     expect(mktgFamilyPrintReadableSource('')).toBe('');
+  });
+});
+
+describe('mktgFamilyPrintCutFromEnd', () => {
+  it('drops the last sentence, a closing quote allowed, and a lone sentence its last word', () => {
+    expect(mktgFamilyPrintCutFromEnd('One. Two! Three?')).toBe('One. Two!');
+    expect(mktgFamilyPrintCutFromEnd('Said “one.” Then two. ')).toBe('Said “one.”');
+    expect(mktgFamilyPrintCutFromEnd('Only one sentence here.')).toBe('Only one sentence');
+    expect(mktgFamilyPrintCutFromEnd('Word')).toBe('');
+    expect(mktgFamilyPrintCutFromEnd('Version 2.0 shipped. Done.')).toBe('Version 2.0 shipped.');
+  });
+});
+
+describe('mktgFamilyPrintFitBoilerplateCards', () => {
+  const sizes = MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES;
+  const card = (text: string, index: number): { text: string; fontSize: number; minHeight: number } => ({ text, ...sizes[Math.min(index, sizes.length - 1)] });
+  const sentence = 'The project builds open standards for confidential computing with its members.';
+
+  it('prints the four texts whole when they fit the room, at the limits and over them', () => {
+    const texts = [1, 2, 4, 8].map((count) => Array.from({ length: count }, () => sentence).join(' '));
+    const fitted = mktgFamilyPrintFitBoilerplateCards(texts.map(card), MKTG_PORTRAIT_PAGE.contentWidth);
+    expect(fitted).toEqual(texts.map((text) => ({ text, cutWords: 0 })));
+  });
+
+  it('cuts the tallest text from the end at a sentence, counts the words, and keeps every card', () => {
+    const long = Array.from({ length: 40 }, () => sentence).join(' ');
+    const texts = [sentence, sentence, sentence, long];
+    const fitted = mktgFamilyPrintFitBoilerplateCards(texts.map(card), MKTG_PORTRAIT_PAGE.contentWidth);
+    expect(fitted).toHaveLength(4);
+    expect(fitted.slice(0, 3)).toEqual(texts.slice(0, 3).map((text) => ({ text, cutWords: 0 })));
+    expect(fitted[3].text.endsWith('members.')).toBe(true);
+    expect(fitted[3].text.length).toBeLessThan(long.length);
+    expect(fitted[3].cutWords).toBeGreaterThan(0);
+    expect(fitted[3].cutWords % 11).toBe(0);
+    expect(long.startsWith(fitted[3].text)).toBe(true);
+    // Only whole sentences went: the kept text is some of the same sentence.
+    expect((fitted[3].text.match(/\./g) ?? []).length).toBe(40 - fitted[3].cutWords / 11);
+  });
+
+  it('shares the cuts among texts when two are long, and never drops a card', () => {
+    const long = Array.from({ length: 25 }, () => sentence).join(' ');
+    const fitted = mktgFamilyPrintFitBoilerplateCards([sentence, long, sentence, long].map(card), MKTG_PORTRAIT_PAGE.contentWidth);
+    expect(fitted.map((entry) => entry.text.length > 0)).toEqual([true, true, true, true]);
+    expect(fitted.filter((entry) => entry.cutWords > 0).length).toBeGreaterThanOrEqual(1);
   });
 });
 

@@ -210,4 +210,12 @@ export interface MktgFamilyPrintBoilerplateCard {
   overLabel: string;
   fontSize: number;
   minHeight: number;
+  /** `+12 words in LFX One` when the text was cut from the end to fit the page; '' when it printed whole. */
+  cutNote: string;
+}
+
+/** A boilerplate's text as the cards print it: the text that fits (cut from the end at a sentence) and the words cut. */
+export interface MktgFamilyPrintFittedText {
+  text: string;
+  cutWords: number;
 }

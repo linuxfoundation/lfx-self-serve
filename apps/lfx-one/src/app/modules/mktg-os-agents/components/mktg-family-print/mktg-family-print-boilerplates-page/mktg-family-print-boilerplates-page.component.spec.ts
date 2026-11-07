@@ -51,6 +51,32 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     expect(root.querySelector('[data-testid="family-print-boilerplate-sources-cut"]')).toBeNull();
   });
 
+  it('holds a text that outgrows the page to the room, cut from the end at a sentence, and says how many words did not print', async () => {
+    const sentence = 'The project builds open standards for confidential computing with its members.';
+    const long = Array.from({ length: 40 }, () => sentence).join(' ');
+    const fixture = TestBed.createComponent(MktgFamilyPrintBoilerplatesPageComponent);
+    fixture.componentRef.setInput('lengths', [
+      row(0, 'One-liner', 11, 15, sentence),
+      row(1, '25 words', 11, 25, sentence),
+      row(2, '50 words', 11, 50, sentence),
+      row(3, '100 words', 440, 100, long),
+    ]);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const cards = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="family-print-boilerplate-card"]'));
+    expect(cards).toHaveLength(4);
+    expect(cards.slice(0, 3).map((card) => card.querySelector('[data-testid="family-print-boilerplate-cut"]'))).toEqual([null, null, null]);
+    const text = cards[3].querySelector('.fpb-card__text')?.textContent?.trim() ?? '';
+    expect(text.length).toBeLessThan(long.length);
+    expect(text.endsWith('members.')).toBe(true);
+    expect(long.startsWith(text)).toBe(true);
+    const cut = cards[3].querySelector('[data-testid="family-print-boilerplate-cut"]')?.textContent ?? '';
+    expect(cut).toMatch(/^\+\d+ words in LFX One$/);
+    expect(Number(cut.match(/\d+/)?.[0]) + text.split(/\s+/).length).toBe(440);
+    // The count line still reports the approved text's own words, not the printed ones.
+    expect(cards[3].querySelector('.fpb-card__count')?.textContent).toBe('440 words · max 100');
+  });
+
   it('omits the Built from block when the run read nothing it can name, and keeps the whole rows that fit with the rest counted', async () => {
     const fixture = TestBed.createComponent(MktgFamilyPrintBoilerplatesPageComponent);
     fixture.componentRef.setInput('lengths', [row(0, 'One-liner', 14, 15)]);
