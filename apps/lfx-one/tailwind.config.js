@@ -104,8 +104,6 @@ const uiVarMap = (tokens, prefix, keyPrefix = '') =>
   Object.fromEntries(tokens.filter((t) => t.name.startsWith(prefix)).map((t) => [`${keyPrefix}${t.name.slice(prefix.length)}`, uiVar(t.name)]));
 const uiMotion = (prefix) => uiVarMap(uiTokens.motion.tokens, prefix, 'ui-');
 const uiTypeStyles = uiTokens.type.groups.flatMap((group) => group.styles.map((style) => ({ ...style, family: style.family ?? group.family })));
-// Type-role classes set the library's cv11/ss01, so uikit text and content projected into uikit containers (modal body, table cells, collapse panels) get them; the app body is unchanged.
-const FONT_FEATURES_UI = '"cv11", "ss01"';
 const uiFontSizes = Object.fromEntries(uiTypeStyles.map((s) => [s.name, [s.fontSize, { lineHeight: s.lineHeight }]]));
 
 /** @type {import('tailwindcss').Config} */
@@ -482,8 +480,6 @@ export default {
         // Form fields (input, textarea, select, multi-select, combobox) use a stronger ring than cards.
         '.edge-control': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-300')}` },
         '.edge-control-hover': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-400')}` },
-        // cv11/ss01 for uikit text that sets a size without a type role.
-        '.font-features-ui': { fontFeatureSettings: FONT_FEATURES_UI },
         // Library icon box (bundle.css `i[class*="fa-"]`): Font Awesome 7 sizes a glyph with --fa-width (1.25em); the library keeps 1em.
         '.ui-icon': { '--fa-width': '1em', height: '1em', flexShrink: '0' },
       });
@@ -494,7 +490,6 @@ export default {
             `.${s.name}`,
             {
               fontFamily: uiVar(`font-${s.family}`),
-              fontFeatureSettings: FONT_FEATURES_UI,
               fontSize: s.fontSize,
               lineHeight: s.lineHeight,
               fontWeight: String(s.fontWeight),

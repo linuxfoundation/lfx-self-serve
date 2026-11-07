@@ -30,7 +30,7 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * Button with eight variants and four sizes (tiny 24px, small 28px, default 32px, large 40px). Renders a native `<button>`, or a router link when `link` is set.
  * Supports a leading and a trailing Font Awesome icon, an icon-only circle, a loading state and full width.
  *
- * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
+ * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipIcon`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
  * `lfxUiTooltipDisabled`) on `<lfx-ui-button>` and the button forwards them to its inner `<button>`, where the spoken description belongs.
  * `UiTooltipDirective` never attaches to `<lfx-ui-button>` itself, so importing it for other elements in the same template is safe.
  * A disabled button takes no clicks or focus and drops its forwarded tooltip, so a tooltip that explains why it is off needs a wrapper element that carries the directive.
@@ -102,6 +102,8 @@ export class UiButtonComponent {
   public readonly tooltip = input<string>('', { alias: 'lfxUiTooltip' });
   /** Bold first line of the rich tooltip layout. */
   public readonly tooltipTitle = input<string>('', { alias: 'lfxUiTooltipTitle' });
+  /** Font Awesome classes for an icon before the tooltip title. */
+  public readonly tooltipIcon = input<string>('', { alias: 'lfxUiTooltipIcon' });
   /** Keys shown as key caps after the tooltip text, such as `['⌘', 'K']`. */
   public readonly tooltipShortcut = input<string[]>([], { alias: 'lfxUiTooltipShortcut' });
   /** Preferred tooltip side; it flips when it does not fit. */

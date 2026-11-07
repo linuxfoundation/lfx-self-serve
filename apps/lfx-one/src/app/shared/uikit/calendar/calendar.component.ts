@@ -196,7 +196,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
   private dayClasses(day: UiCalendarDay, gridOff: boolean): string {
     // Exact px height; 14px root. The today dot is a 4px pseudo-element centred 5px above the bottom.
     const base =
-      'relative h-[36px] w-full rounded-ui-sm label-14 tabular-nums transition-colors duration-ui-fast motion-reduce:transition-none focus-visible:shadow-focus focus-visible:outline-none forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-2 forced-colors:focus-visible:shadow-none forced-colors:focus-visible:outline-[color:CanvasText]';
+      'relative h-[36px] w-full rounded-ui-sm label-14 transition-colors duration-ui-fast motion-reduce:transition-none focus-visible:shadow-focus focus-visible:outline-none forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-2 forced-colors:focus-visible:shadow-none forced-colors:focus-visible:outline-[color:CanvasText]';
     // forced-colors: no fills, so the selected day is Highlight with HighlightText and no backplate.
     const dot = day.today
       ? "after:absolute after:bottom-[5px] after:left-1/2 after:-ml-[2px] after:h-[4px] after:w-[4px] after:rounded-ui-full after:content-['']"
