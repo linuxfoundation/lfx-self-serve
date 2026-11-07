@@ -54,6 +54,19 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     expect(root.querySelector('[data-testid="family-print-boilerplate-sources-cut"]')).toBeNull();
   });
 
+  it('sizes each card by its length’s contract slot, so a missing one-liner leaves the 100-word card at its own size', async () => {
+    // Unreachable for approved content (the validator requires four non-empty lengths), but the right key: by position the
+    // 100-word text would have printed at the third slot's 14 px / 130 px.
+    const fixture = TestBed.createComponent(MktgFamilyPrintBoilerplatesPageComponent);
+    fixture.componentRef.setInput('lengths', [row(1, '25 words', 24, 25), row(2, '50 words', 48, 50), row(3, '100 words', 96, 100)]);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const cards = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="family-print-boilerplate-card"]'));
+    expect(cards).toHaveLength(3);
+    expect(cards.map((card) => card.querySelector<HTMLElement>('.fpb-card__text')?.style.fontSize)).toEqual(['16.5px', '14px', '12.5px']);
+    expect(cards.map((card) => card.style.minHeight)).toEqual(['108px', '130px', '150px']);
+  });
+
   it('holds a text that outgrows the page to the room, cut from the end at a sentence, and says how many words did not print', async () => {
     const sentence = 'The project builds open standards for confidential computing with its members.';
     const long = Array.from({ length: 40 }, () => sentence).join(' ');

@@ -69,7 +69,9 @@ export class MktgFamilyPrintBoilerplatesPageComponent {
   private initCards(): Signal<MktgFamilyPrintBoilerplateCard[]> {
     return computed(() => {
       const rows = this.lengths().filter((row) => row.text.trim());
-      const sizes = rows.map((_, index) => MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES[Math.min(index, MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES.length - 1)]);
+      // Each card's size is its length's contract slot (`row.index`, the one-liner first), not its position among the rows that have
+      // text, so a length the record left empty does not hand its size to the next; the fitted and returned arrays stay by position.
+      const sizes = rows.map((row) => MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES[Math.min(row.index, MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES.length - 1)]);
       // The texts held to the page's room, measured in the book's face: a text that fits prints whole; one that outgrows it is cut from the end at a sentence and says so.
       const fitted = mktgFamilyPrintFitBoilerplateCards(
         rows.map((row, index) => ({ text: row.text, ...sizes[index] })),
