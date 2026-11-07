@@ -141,9 +141,11 @@ export function frameworkPortraitGlyphProofHeight(fact: string, source: string, 
  * wider than the family table (`MKTG_PORTRAIT_FAMILY_WIDTH`) reads: the matrix's own measure, in place of the table's factor.
  * Inter 1.15, measured on the served Chrome render of the overfull record's page 2 (project cncf, Letter, 7 Nov 2026): the
  * table's 1.05 counted four of sixteen cells a line short (keys 4, 3, 4, 5 | 4, 3, 4, 3; proofs with their tags 6, 5, 5, 5 |
- * 5, 6, 5, 5 as printed); 1.15 counts all sixteen as printed and ends the matrix 0.5 px from the print's. The family table's
- * 1.05 matches a Chromium replica's Inter build and the family book's print of the same matrix; whether the table moves for
- * every book is a follow-up (B1), so the matrix carries its own factor here (B2, 7 Nov 2026).
+ * 5, 6, 5, 5 as printed); 1.15 counts all sixteen as printed and ends the matrix 0.5 px from the print's. The same record
+ * prints with identical glyph widths in the standalone and the family books (aaif, 7 Nov 2026), so the served face is Inter
+ * at ≈1.15; the family table's 1.05 matches a Chromium replica with Google's Inter variable at default axes (optical sizing
+ * unverified). Moving the table for every book is a follow-up (B1), so the matrix carries its own factor here (B2, the
+ * expert's ruling of 7 Nov 2026).
  */
 export const FRAMEWORK_PORTRAIT_MATRIX_FACE_WIDTH: Readonly<Record<string, number>> = { inter: 1.15 };
 

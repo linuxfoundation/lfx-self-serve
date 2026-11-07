@@ -1625,9 +1625,9 @@ describe('the framework portrait book’s goal matrix head row (editor FA1)', ()
     // The served framework book at 7d16a677e, the overfull record's page 2, read from the PDF's text boxes (CSS px): the eight key
     // messages wrap to 4, 3, 4, 5 | 4, 3, 4, 3 lines of their 130 px columns at 11 px semibold; the eight first proofs with their tags
     // to 6, 5, 5, 5 | 5, 6, 5, 5 at 10.5 px; band 0 spans 336–622, band 1 638–907.6, the caption and the two-line crosscut end at
-    // 969.3; the footer's text begins at 1018.5. The glyph table's Inter factor (1.05, the Chromium replica's and the family book's)
-    // counted four cells a line short against this print; the matrix's own factor 1.15 counts every cell as the print set it, and the
-    // page within a px.
+    // 969.3; the footer's text begins at 1018.5. The glyph table's Inter factor (1.05, a Chromium replica's with Google's Inter variable
+    // at default axes) counted four cells a line short against this print; the matrix's own factor 1.15 counts every cell as the print
+    // set it, and the page within a px (the same record prints with identical glyph widths in the standalone and the family books).
     const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
     const face = "'Inter', sans-serif";
     const sources = ['Website', 'LFX field', 'Website', 'Website', 'Website', 'LFX field', 'Website', 'Website'];
