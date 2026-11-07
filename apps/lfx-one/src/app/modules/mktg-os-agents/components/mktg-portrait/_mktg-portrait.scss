@@ -3,7 +3,7 @@
 
 /* The portrait print grammar (`lfx-mktg-portrait-*`): one fixed US Letter frame per page, 816×1056 px at
    96 dpi, children placed by absolute measurements, so Chromium and WebKit paginate one frame per sheet
-   and nothing flows across a page edge (CSS Paged Media: `@page { size: 8.5in 11in; margin: 0 }`,
+   and nothing flows across a page edge (CSS Paged Media: `@page { size: auto; margin: 0 }`, the paper as the page box,
    `break-before: page` on every frame, see `.pp-page`). Global, under the `pp-` prefix, because the pages' type helpers
    (`pp-lab`, `pp-body`, `pp-cap`, `pp-chip`) are set on content a document projects INTO the
    frame, which a component's own emulated stylesheet would not reach. Every value mirrors the shared
@@ -14,8 +14,13 @@
    on the page white at WCAG AA (mktgPortraitAccentText), for every TEXT set in the accent on a light page; fills,
    bands, rules and the accent on a dark page keep `--pp-accent`. */
 
+@use 'sass:math';
+
 $pp-width: 816px;
 $pp-height: 1056px;
+$pp-a4-width: 210mm;
+$pp-a4-height: 297mm;
+$pp-a4-zoom: math.div($pp-a4-width, 8.5in);
 $pp-margin: 56px;
 $pp-inset: 72px;
 $pp-head-top: 36px;
@@ -76,8 +81,10 @@ $pp-band-height: 4px;
     box-sizing: border-box;
   }
 
-  /* The browser's element margins go, at no specificity (:where), so a class on the element (`.pp-cover-lede`'s
-     margin-top, say) still sets its own. */
+  /* The browser's element margins go. `.pp-page :where(…)` is one class's specificity (0,1,0), unlayered: a class of
+     the grammar on the element (`.pp-cover-lede`'s margin-top, say) still sets its own, but a layered Tailwind margin
+     utility on a `p` inside a frame does not (`mt-[8px]` is beaten); use a grammar class (`.pp-body-gap`) or an
+     inline style. */
   :where(p, ul, ol, h1, h2, h3, figure) {
     margin: 0;
   }
@@ -85,8 +92,10 @@ $pp-band-height: 4px;
   /* Every text in the frame is set in the kit's own face (the mock: "Instrument Sans carries every communication")
      at the size and leading of the block it sits in. The app's layers put Inter on p, headings, labels, buttons and
      inputs by element (and a layer's 1rem/1.5 on a paragraph), which would beat the frame's inherited `--pp-font`
-     and a block's 12.5/1.6; this unlayered rule, at no specificity, hands them back to the frame, and a class on the
-     element (`.pp-cover-lede`, say) still sets its own. */
+     and a block's 12.5/1.6; this unlayered rule, at one class's specificity, hands them back to the frame, and a class
+     of the grammar on the element (`.pp-cover-lede`, say) still sets its own, while a layered Tailwind text or leading
+     utility there does not. It also beats the single-class font rules the family print sheet sets earlier in
+     styles.scss: the `@use` order is a dependency. */
   :where(p, h1, h2, h3, h4, h5, h6, label, button, input, table) {
     font-family: inherit;
     font-size: inherit;
@@ -239,6 +248,11 @@ $pp-band-height: 4px;
    grammar's because a Tailwind margin utility sits in a layer the frame's unlayered margin reset beats. */
 .pp-body-gap {
   margin-top: 20px;
+}
+
+/* A body paragraph set 8 px under a label (the Symbol page's padding rule under its label). */
+.pp-body-gap-tight {
+  margin-top: 8px;
 }
 
 /* Caption: 11/1.4 regular, muted, 6 px under its figure. */
@@ -425,12 +439,39 @@ $pp-band-height: 4px;
 }
 
 @media print {
-  /* The frames' own page: US Letter, no margin, in Chromium, where the print body's named page
-     (`mktg-framework`) would otherwise win; the print frame writes the same values unnamed for WebKit
-     (MKTG_PRINT_PAGE_SETUPS['mktg-portrait']). */
+  /* The frames' own page, the print's one named page: the PAPER the dialog chose, with no margin (the margin of 0 is
+     what keeps the browser's headers and footers off the sheet); the print frame writes the same values unnamed for
+     WebKit (MKTG_PRINT_PAGE_SETUPS['mktg-portrait']). A fixed `size: 8.5in 11in` let Chrome scale the page box onto
+     A4 (0.974) and print its header and footer into the bands that left. */
   @page mktg-portrait {
-    size: 8.5in 11in;
+    size: auto;
     margin: 0;
+  }
+
+  /* A paper narrower than the Letter frame (A4: 210 mm = 793.7 px): the grammar scales the frame itself, never the
+     engine the page box. Every frame zooms by the papers' width ratio (layout and type scale together, nothing
+     reflows) and its ground grows to the paper's height (the footer stays 28 px above the sheet's edge), so dark pages
+     stay edge to edge and no band is left. Letter and wider papers are untouched; the query is "narrower than the frame". (`zoom`, not `transform`: the
+     frame's laid-out box must shrink for the breaks to fall one per sheet.) MKTG_PORTRAIT_PAPERS holds the numbers. */
+  @media (max-width: #{$pp-width - 1px}) {
+    .pp-page {
+      zoom: $pp-a4-zoom;
+      min-height: math.div($pp-a4-height, $pp-a4-zoom);
+    }
+
+    /* The root narrows with its frames: left at the Letter width it would overflow the paper, and Chrome shrinks an
+       overflowing print to fit, which scaled the frames a second time. */
+    .lfx-mktg-portrait {
+      --pp-root-width: #{$pp-a4-width};
+    }
+  }
+
+  /* The grid ground's glow on paper: the screen's 33 % glow fading by 55 % of the ellipse prints almost invisible
+     (ink darkens; the PDF's pixels equal the screen's, the paper does not), so the print draws it at the stronger
+     alpha the page binds as --pp-glow-print (MKTG_PORTRAIT_GRID_GROUND.glowPrintAlpha) and lets it reach 70 %.
+     The grid lines keep their alpha. */
+  .pp-grid-ground {
+    background: radial-gradient(ellipse at 78% 22%, var(--pp-glow-print, var(--pp-glow)), transparent 70%), var(--pp-dark);
   }
 
   /* A frame document's root sits at the sheet's edge, in flow and unpadded, whichever print body class is on
@@ -442,7 +483,7 @@ $pp-band-height: 4px;
   .lfx-brand-kit-portrait.lfx-mktg-portrait {
     position: static !important;
     inset: auto !important;
-    width: $pp-width !important;
+    width: var(--pp-root-width, #{$pp-width}) !important;
     margin: 0 !important;
     padding: 0 !important;
   }

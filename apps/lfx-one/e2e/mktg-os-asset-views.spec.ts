@@ -144,6 +144,9 @@ test.describe('Native FAQ document approval and header', () => {
       const approved = { ...base.revision, approval };
       const draft = { ...base.revision, id: `000002-${'b'.repeat(64)}`, number: 2, latest: false };
       const response = { ...base, revision: draft, revisions: [draft, approved], approvedCurrent: { revisionId: approved.id, number: 1 } };
+      // Both reads carry the rows: the living document's poll merges the detail's revisions into the view, so a
+      // detail still answering the helper's one-revision base would put the v1 row back to Draft mid-test.
+      await page.route('**/api/mktg-agents/documents/faq/living?*', (route) => route.fulfill({ json: response }));
       await page.route('**/api/mktg-agents/documents/faq/living/revisions/**', (route) => route.fulfill({ json: response }));
       await page.evaluate((revision) => {
         const url = new URL(window.location.href);

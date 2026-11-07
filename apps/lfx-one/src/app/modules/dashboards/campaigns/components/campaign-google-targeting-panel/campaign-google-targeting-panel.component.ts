@@ -75,7 +75,7 @@ export class CampaignGoogleTargetingPanelComponent {
   public readonly deviceAdjustBlockedReason = input<string | null>(null);
   /**
    * The devices the channel takes, one row each: the tab's `googleAdsDevicesOn` answer. Demand Gen
-   * adds TV screens; the default is the three every other channel takes.
+   * and Performance Max add TV screens; the default is the three every other channel takes.
    */
   public readonly devices = input<readonly GoogleAdsDevice[]>(GOOGLE_ADS_DEVICES);
 
@@ -334,7 +334,7 @@ export class CampaignGoogleTargetingPanelComponent {
    * Writes one device's modifier, or drops its entry for `null`, keeping the list in
    * {@link GOOGLE_ADS_DEMAND_GEN_DEVICES} order. Ordered by that widest vocabulary rather than by
    * {@link devices}, so an entry the current channel does not list (TV screens, held after a switch
-   * away from Demand Gen) survives an edit to another row.
+   * away from Demand Gen or Performance Max) survives an edit to another row.
    */
   private setDevice(device: GoogleAdsDevice, bidModifier: number | null): void {
     const others = new Map(this.deviceBidModifiers().map((d) => [d.device, d.bidModifier]));

@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed } from '@angular/core';
-import { brandKitPortraitMessageCard, brandKitPortraitRatioLabel, brandKitPortraitWhiteContrast } from '@lfx-one/shared/utils';
+import { BRAND_KIT_PORTRAIT_RULE_LISTS } from '@lfx-one/shared/constants';
+import {
+  brandKitPortraitIntro,
+  brandKitPortraitMessageCard,
+  brandKitPortraitRatioLabel,
+  brandKitPortraitRulesFit,
+  brandKitPortraitWhiteContrast,
+} from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
@@ -23,6 +30,8 @@ import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-po
 export class MktgBrandKitPageVisualImageryComponent extends MktgBrandKitPageBase {
   /** The umbrella-message card's text, fitted to the card (the brand line when the umbrella cannot fit whole). */
   protected readonly message = computed(() => brandKitPortraitMessageCard(this.view()));
+  /** The avoid list fitted to the room under the elements (set smaller, cut at a sentence, the last ones counted when even that runs past y 990). */
+  protected readonly avoid = computed(() => brandKitPortraitRulesFit(this.view().visual.imagery.avoid, BRAND_KIT_PORTRAIT_RULE_LISTS.imageryAvoid));
 
   /** The call-out's caption: the ink the shared rule chose, and why when it is not white. */
   protected readonly calloutCaption = computed(() => {
@@ -31,4 +40,6 @@ export class MktgBrandKitPageVisualImageryComponent extends MktgBrandKitPageBase
     if (white) return 'Call-out · the one accent moment; text in white';
     return `Call-out · the one accent moment; text in ${view.darkName} (white on ${view.accentName} fails AA, ${brandKitPortraitRatioLabel(brandKitPortraitWhiteContrast(view.accent))}:1)`;
   });
+  /** The intro at most three lines of its 600 px: whole sentences that fit, or the first shortened (`brandKitPortraitIntro`). */
+  protected readonly intro = computed(() => brandKitPortraitIntro(this.view().visual.imagery.rule));
 }

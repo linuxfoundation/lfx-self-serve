@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed } from '@angular/core';
-import { brandKitPortraitAttributesFit } from '@lfx-one/shared/utils';
+import { brandKitPortraitAttributesFit, brandKitPortraitIntro, brandKitPortraitVoiceMessagesFit } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
@@ -23,11 +23,13 @@ import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-po
   styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageVoiceComponent extends MktgBrandKitPageBase {
-  /** The attributes fitted to the grid's room (more than four, or long lines, set the grid smaller together). */
+  /** The attributes fitted to the grid's room (more than four, or long lines, set the grid smaller together; what the room cannot hold is counted in a `+N more` line). */
   protected readonly attributes = computed(() => brandKitPortraitAttributesFit(this.view().voice.attributes));
+  /** The umbrella message and brand line fitted to the block above the attributes (set smaller together, cut at a sentence). */
+  protected readonly messages = computed(() => brandKitPortraitVoiceMessagesFit(this.view()));
   protected readonly intro = computed(() => {
     const { source, note } = this.view().voice;
     const lead = source.trim().replace(/\.$/, '');
-    return [lead ? `${lead}.` : '', note.trim()].filter((part) => part !== '').join(' ');
+    return brandKitPortraitIntro([lead ? `${lead}.` : '', note.trim()].filter((part) => part !== '').join(' '));
   });
 }

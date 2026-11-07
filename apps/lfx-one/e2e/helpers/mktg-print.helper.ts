@@ -116,7 +116,7 @@ export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locato
  */
 export async function expectMktgPortraitPageSetup(frame: FrameLocator, root?: Locator): Promise<void> {
   const setup = MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
-  expect(setup).toBe('size: 8.5in 11in; margin: 0;');
+  expect(setup).toBe('size: auto; margin: 0;');
   expect(await frame.locator('head style').last().textContent()).toBe(`@page { ${setup} }\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
   await expect(frame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`)).toHaveCount(0);
   if (!root) return;
@@ -177,15 +177,30 @@ async function serializeMktgPrintFrame(frame: FrameLocator): Promise<string> {
   });
 }
 
+/** One print of the frame document by Google Chrome: the dialog's variant, the page count, the paper's box, the blank pages and each page's text. */
+export interface MktgChromePrint {
+  paper: 'Letter' | 'A4';
+  headers: boolean;
+  background: boolean;
+  pages: number;
+  /** The first page's box in CSS px (the PDF's points × 96 / 72), to compare with MKTG_PORTRAIT_PAPERS. */
+  box: { width: number; height: number };
+  blank: number[];
+  text: string[];
+}
+
 /**
  * What the Save as PDF button saves, in the engine the editor uses: Google Chrome's own `Page.printToPDF` (Playwright's
  * `channel: 'chrome'`, not the bundled Chromium, which does not reproduce the blank sheet an inline host around a frame
- * cost in Chrome 156) on the frame document as the service built it, under each of the dialog's defaults in turn:
- * headers and footers on and off, the CSS page size (Letter) and A4 forced. Returns the page count and each page's text
- * for every print; a blank sheet is a page with no text, and a kit frame always prints its footer. Skips, naming it,
- * where Google Chrome is not installed.
+ * cost in Chrome 156) on the frame document as the service built it, under the dialog's eight variants: the paper
+ * Letter and A4 (the dialog's choice, never the CSS size: the grammar's `size: auto` makes the paper the page box and
+ * scales the frames itself), the browser's headers and footers on and off, background graphics on and off. Returns
+ * each print's page count, paper box, blank pages (a page with no text; a kit frame always prints its footer) and
+ * text, so a test can assert the count against the plan and that the headers-on text equals the headers-off text (a
+ * header or footer that reached the sheet shows as extra text). Returns nothing, naming it, where Google Chrome is not
+ * installed.
  */
-export async function printMktgFrameWithChrome(frame: FrameLocator): Promise<{ setup: string; pages: number; blank: number[] }[]> {
+export async function printMktgFrameWithChrome(frame: FrameLocator): Promise<MktgChromePrint[]> {
   const html = await serializeMktgPrintFrame(frame);
   const browser = await chromium.launch({ channel: 'chrome' }).catch(() => null);
   if (!browser) return [];
@@ -193,17 +208,33 @@ export async function printMktgFrameWithChrome(frame: FrameLocator): Promise<{ s
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'load' });
     await page.evaluate(() => document.fonts.ready);
-    const prints: { setup: string; pages: number; blank: number[] }[] = [];
-    const setups: { setup: string; options: Parameters<Page['pdf']>[0] }[] = [
-      { setup: 'css page size, no headers', options: { preferCSSPageSize: true, printBackground: true } },
-      { setup: 'css page size, headers', options: { preferCSSPageSize: true, printBackground: true, displayHeaderFooter: true } },
-      { setup: 'A4, no background', options: { format: 'A4', printBackground: false } },
-    ];
-    for (const { setup, options } of setups) {
-      const bytes = new Uint8Array(await page.pdf(options));
-      const pdf = await getDocumentProxy(bytes);
-      const { text } = await extractText(pdf, { mergePages: false });
-      prints.push({ setup, pages: pdf.numPages, blank: text.map((content, index) => (content.trim() ? -1 : index + 1)).filter((index) => index > 0) });
+    const prints: MktgChromePrint[] = [];
+    for (const paper of ['Letter', 'A4'] as const) {
+      for (const headers of [false, true]) {
+        for (const background of [true, false]) {
+          const bytes = new Uint8Array(
+            await page.pdf({
+              format: paper,
+              preferCSSPageSize: false,
+              margin: { top: 0, right: 0, bottom: 0, left: 0 },
+              printBackground: background,
+              displayHeaderFooter: headers,
+            })
+          );
+          const pdf = await getDocumentProxy(bytes);
+          const { text } = await extractText(pdf, { mergePages: false });
+          const [, , width, height] = (await pdf.getPage(1)).view;
+          prints.push({
+            paper,
+            headers,
+            background,
+            pages: pdf.numPages,
+            box: { width: (width * 96) / 72, height: (height * 96) / 72 },
+            blank: text.map((content, index) => (content.trim() ? -1 : index + 1)).filter((index) => index > 0),
+            text: text.map((content) => content.replace(/\s+/g, ' ').trim()),
+          });
+        }
+      }
     }
     return prints;
   } finally {

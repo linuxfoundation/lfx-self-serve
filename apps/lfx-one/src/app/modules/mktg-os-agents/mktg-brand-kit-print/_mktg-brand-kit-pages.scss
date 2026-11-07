@@ -33,13 +33,6 @@
   break-inside: avoid;
 }
 
-.kp-contents-number {
-  display: inline-block;
-  width: 34px;
-  font-size: 11px;
-  color: var(--pp-muted);
-}
-
 .kp-contents-page {
   font-size: 13px;
   color: var(--pp-muted);
@@ -47,7 +40,6 @@
 
 /* The "At a glance" card: hairline, 12 px radius, 18 px padding, 270 px tall. */
 .kp-glance {
-  height: 270px;
   padding: 18px;
   border: 1px solid var(--pp-hairline);
   border-radius: 12px;
@@ -566,6 +558,28 @@
   column-gap: 24px;
 }
 
+/* A rule list's placed box set at the fit model's scale (--kp-fit, 1 when the list fits as written;
+   BRAND_KIT_PORTRAIT_RULE_LISTS, brandKitPortraitRulesFit): its items smaller together, and the muted line that
+   counts the rules the room could not hold (.kp-list-more), never a line past the footer. */
+.kp-fit-list {
+  --kp-fit: 1;
+
+  .kp-list {
+    font-size: calc(12.5px * var(--kp-fit));
+  }
+
+  .kp-rule {
+    font-size: calc(12px * var(--kp-fit));
+  }
+}
+
+.kp-list-more {
+  margin-top: 6px;
+  font-size: calc(12.5px * var(--kp-fit, 1));
+  line-height: 1.6;
+  color: var(--pp-muted);
+}
+
 /* A WCAG grade pill: 9 px semibold on its grade's tint. */
 .kp-pill {
   display: inline-block;
@@ -663,9 +677,18 @@
   background: rgba(255, 255, 255, 0.85);
 }
 
-/* The kit's pairs: a 110 × 36 sample, the names, the ratio and the grade, over a hairline. */
+/* The kit's pairs: a 110 × 36 sample, the names, the ratio and the grade, over a hairline (51 px a pair:
+   BRAND_KIT_PORTRAIT_CONTRAST.pair); the pairs the room does not hold are counted in the muted line under them. */
 .kp-pairs {
   margin-top: 6px;
+}
+
+.kp-pairs-more {
+  padding-top: 7px;
+  border-top: 1px solid var(--pp-hairline);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--pp-muted);
 }
 
 .kp-pair {
@@ -703,7 +726,8 @@
 
 /* ---- Typography ---- */
 
-/* The H1 sample: 48 px medium in one line (the component shrinks the size until the brand line fits), the character set under it, the weights beside their names. */
+/* The H1 sample: 48 px medium in one line (the component shortens the brand line to the words that fit; nowrap is a
+   guard, never a clip), the character set under it, the weights beside their names. */
 .kp-type-h1 {
   font-weight: 500;
   line-height: 1.08;
@@ -1001,6 +1025,11 @@
   color: var(--pp-white);
 }
 
+.kp-usage-social-note {
+  color: inherit;
+  opacity: 0.8;
+}
+
 .kp-usage-social-text {
   font-size: 22px;
   font-weight: 500;
@@ -1041,9 +1070,15 @@
 
 /* ---- Voice ---- */
 
+/* The messages block set at the fit model's scale (--kp-fit, 1 when the two messages fit above the attributes;
+   BRAND_KIT_PORTRAIT_VOICE_MESSAGES, brandKitPortraitVoiceMessagesFit). */
+.kp-voice-messages {
+  --kp-fit: 1;
+}
+
 .kp-voice-umbrella {
   margin-top: 10px;
-  font-size: 30px;
+  font-size: calc(30px * var(--kp-fit, 1));
   font-weight: 500;
   line-height: 1.3;
   letter-spacing: -0.01em;
@@ -1056,7 +1091,7 @@
 
 .kp-voice-line {
   margin-top: 8px;
-  font-size: 24px;
+  font-size: calc(24px * var(--kp-fit, 1));
   font-weight: 500;
   line-height: 1.2;
   color: var(--pp-dark);
@@ -1065,10 +1100,9 @@
 /* The attributes in two columns from y 540, each under a 3 px rule (the first in the spark, the rest in the accent); set
    large (name 20 px, line 15/1.6, 28 px row gap) so four run to about y 900. The grid is set at the fit model's scale
    (--kp-fit, 1 when it fits as written; BRAND_KIT_PORTRAIT_ATTRIBUTES, brandKitPortraitAttributesFit), so more
-   attributes, or longer lines, never run under the footer. */
+   attributes, or longer lines, never run under the footer; the rows the room cannot hold are counted in the muted
+   line under the grid (.kp-attributes-more). The placed box carries --kp-fit for both. */
 .kp-attributes {
-  --kp-fit: 1;
-
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: calc(28px * var(--kp-fit)) 16px;
@@ -1090,6 +1124,13 @@
   font-size: calc(15px * var(--kp-fit));
   line-height: 1.6;
   color: var(--pp-ink);
+}
+
+.kp-attributes-more {
+  margin-top: calc(16px * var(--kp-fit, 1));
+  font-size: calc(12.5px * var(--kp-fit, 1));
+  line-height: 1.6;
+  color: var(--pp-muted);
 }
 
 /* ---- Sources & decisions ---- */

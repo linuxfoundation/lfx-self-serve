@@ -10,7 +10,7 @@
   [section]="page().label"
   [title]="page().title"
   [band]="page().band">
-  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-symbol-intro">{{ v.logo.symbol }}</p>
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-symbol-intro">{{ intro() }}</p>
   @if (hasSymbol()) {
     <div [lfxPpRect]="[x, 250, w]">
       <div class="pp-lab pp-lab--dark">Variants</div>
@@ -56,7 +56,7 @@
       </div>
       <div class="flex-1">
         <div class="pp-lab pp-lab--dark">Padding in a shape</div>
-        <p class="pp-body mt-[8px]" data-testid="brand-kit-symbol-rule">
+        <p class="pp-body pp-body-gap-tight" data-testid="brand-kit-symbol-rule">
           One X of padding from the symbol to the edge of the circle or rounded square, where X is the height of the symbol.{{ accentClause() }}
         </p>
       </div>

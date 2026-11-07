@@ -18,6 +18,7 @@ import {
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_CODE,
   GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_CODE,
+  GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
@@ -1439,6 +1440,19 @@ describe('CampaignController.createCampaign cutover', () => {
           { name: 'g', ads: [{ name: 'a', creative: { headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `H${i}`) } }] },
         ],
       },
+    ],
+    // Display placement exclusions (#462), bounded at upstream's own cap of 500, not the creative lists' 100.
+    ['a placement exclusion list above 500', { excludedPlacements: Array.from({ length: 501 }, (_v, i) => `site${i}.example`) }],
+    ['an oversized placement exclusion', { excludedPlacements: [`${'a'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}.example`] }],
+    // The named Display ad groups (#475): the list, a name, and each group's ad.
+    [
+      'a Display ad group list above the entry cap',
+      { displayAdGroups: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => ({ name: `g${i}` })) },
+    ],
+    ['an oversized Display ad group name', { displayAdGroups: [{ name: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) }] }],
+    [
+      "an oversized scalar in a Display ad group's ad",
+      { displayAdGroups: [{ name: 'a', creative: { longHeadline: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }] },
     ],
     ['an oversized conversion-action list', { conversionActions: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `a-${i}`) }],
     ['an oversized callout list', { callouts: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `c-${i}`) }],
@@ -3811,12 +3825,15 @@ describe('CampaignController.createCampaign cutover', () => {
       demandGenAds: [{ name: 'Teaser', creative: { headlines: ['Build with open source'] } }],
       demandGenAudience: 'customers/1234567890/audiences/42',
       performanceMaxCreative: { businessName: 'Example Foundation' },
+      performanceMaxSearchThemes: ['kubernetes conference'],
       displayCreative: { headlines: ['Join us this spring'] },
       path1: 'kubecon',
       path2: 'na',
       additionalSearchAds: [{ headlines: ['Register today'], descriptions: ['Join the community in Salt Lake City.'] }],
       negativeKeywords: [{ text: 'free tickets', matchType: 'Exact' }],
       searchPartners: true,
+      excludedPlacements: ['spam.example'],
+      displayAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us this spring'] } }],
     };
     const CASES = GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.map(({ field, label }) => [field, label] as const);
 
@@ -3858,6 +3875,55 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(legacyCreate).not.toHaveBeenCalled();
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenVideoCreative' });
+    });
+
+    it('refuses a Display create split into ad groups by name while the cutover is dark (#475)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['display'], displayAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us'] } }] }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayAdGroups' });
+    });
+
+    it('refuses a Display create with placement exclusions by name while the cutover is dark (#462)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['display'], excludedPlacements: ['spam.example'] }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'excludedPlacements' });
+    });
+
+    // Pinned outside the table, which iterates the constant and so cannot notice an entry going missing.
+    it('refuses Performance Max search themes by name while the cutover is dark (#5262)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['performance-max'], performanceMaxSearchThemes: ['kubernetes'] }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'performanceMaxSearchThemes' });
     });
 
     it('refuses a Demand Gen create split into ad groups by name while the cutover is dark (#5226)', async () => {
@@ -4636,19 +4702,81 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent[1]['bidModifier']).toBe(0.8);
   });
 
-  it('refuses device bid modifiers on Performance Max, whose automated bidding sets no device adjustment', async () => {
-    // Half of `validateCriteriaPlan`'s Performance Max SPLIT, and the half that makes this list
-    // narrower than ad schedules: the same channel that keeps schedules refuses these.
-    await controller.createCampaign(
-      buildReq(googleBody({ campaignTypes: ['performance-max'], deviceBidModifiers: [MOBILE_BID] }), { project: 'tlf', brief_id: 'b-1' }),
-      res,
-      next
-    );
+  /**
+   * Performance Max device exclusions (#5262). campaign-service v1.0.33's `validateCriteriaPlan` takes
+   * a device there only as an exclusion (linuxfoundation/lfx-v2-campaign-service#500), sent as a bid modifier of 0 on the row Google creates
+   * on every Performance Max campaign; refuses any other modifier, 1 included; refuses a list excluding
+   * all four devices; and caps the list at its four-device vocabulary, CONNECTED_TV included.
+   */
+  describe('device exclusions on performance max', () => {
+    const pmaxBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+      googleBody({ campaignTypes: ['performance-max'], budgetUsd: 500, performanceMaxCreative: { businessName: 'Example Foundation' }, ...overrides });
+    const create = (body: Record<string, unknown>): Promise<void> =>
+      controller.createCampaign(buildReq(body as never, { project: 'tlf', brief_id: 'b-1' }), res, next);
+    const excluded = (...devices: string[]) => devices.map((device) => ({ device, bidModifier: 0 }));
 
-    expect(createCampaigns).not.toHaveBeenCalled();
-    const error = refusalFrom();
-    expect(error.field).toBe('deviceBidModifiers');
-    expect(error.message).toContain('Performance Max');
+    it('dispatches three exclusions, TV screens among them, verbatim for upstream to normalize', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005d1', error: null });
+
+      await create(pmaxBody({ deviceBidModifiers: [...excluded('MOBILE', 'TABLET'), { device: ' connected_tv ', bidModifier: 0 }] }));
+
+      expect(next).not.toHaveBeenCalled();
+      expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['deviceBidModifiers']).toEqual([
+        ...excluded('MOBILE', 'TABLET'),
+        { device: ' connected_tv ', bidModifier: 0 },
+      ]);
+    });
+
+    it.each([
+      ['absent', {}],
+      ['empty', { deviceBidModifiers: [] }],
+      ['null', { deviceBidModifiers: null }],
+    ])('leaves a Performance Max request byte-identical when the list is %s', async (_label, overrides) => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005d2', error: null });
+      await create(pmaxBody());
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      createCampaigns.mockClear();
+
+      await create(pmaxBody(overrides));
+
+      expect(next).not.toHaveBeenCalled();
+      expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+      expect(without).not.toContain('deviceBidModifiers');
+    });
+
+    it.each([
+      ['an adjustment', MOBILE_BID, 'a bid modifier of 1.2'],
+      ['a modifier of 1, which adjusts nothing', { device: 'MOBILE', bidModifier: 1 }, 'a bid modifier of 1.'],
+    ])('refuses %s by name, as Performance Max takes a device only as an exclusion', async (_label, entry, expected) => {
+      await create(pmaxBody({ deviceBidModifiers: [entry] }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('deviceBidModifiers');
+      expect(refusalFrom().message).toContain(expected);
+      expect(refusalFrom().message).toContain('Performance Max campaigns take a device only as an exclusion');
+    });
+
+    it('refuses excluding all four devices, however they are spelled, as the campaign could serve nowhere', async () => {
+      await create(pmaxBody({ deviceBidModifiers: excluded('mobile', ' DESKTOP', 'Tablet', 'CONNECTED_TV') }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('deviceBidModifiers');
+      expect(refusalFrom().message).toContain('exclude every device (Mobile phones, Computers, Tablets and TV screens) on a Performance Max campaign');
+    });
+
+    it('caps the list at four, the size of its vocabulary', async () => {
+      await create(pmaxBody({ deviceBidModifiers: excluded('MOBILE', 'DESKTOP', 'TABLET', 'MOBILE', 'DESKTOP') }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().message).toContain('at most 4 device bid modifiers on one Performance Max campaign');
+    });
+
+    it('refuses a device outside its four by name', async () => {
+      await create(pmaxBody({ deviceBidModifiers: excluded('OTHER') }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().message).toContain('names OTHER, which is not one of MOBILE, DESKTOP, TABLET, CONNECTED_TV on Performance Max campaigns');
+    });
   });
 
   it('refuses a non-zero device modifier on Demand Gen, which takes a device only as an exclusion', async () => {
@@ -4664,7 +4792,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('Demand Gen campaigns take a device only as an exclusion');
   });
 
-  it('dispatches a Demand Gen CONNECTED_TV exclusion, which only Demand Gen takes (#474)', async () => {
+  it('dispatches a Demand Gen CONNECTED_TV exclusion, which Demand Gen takes (linuxfoundation/lfx-v2-campaign-service#474)', async () => {
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000031', error: null });
 
     await controller.createCampaign(
@@ -4698,8 +4826,8 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   it.each([['video'], ['display']])('dispatches a device exclusion on %s, which upstream leaves un-narrowed', async (channel) => {
-    // The over-refusal guard for the channel fence: only Demand Gen and Performance Max are fenced
-    // off, so fencing the list to Search alone would refuse two creates Google takes. An EXCLUSION,
+    // The over-refusal guard for the channel fence: only Demand Gen and Performance Max are narrowed
+    // to exclusions, so fencing the list to Search alone would refuse two creates Google takes. An EXCLUSION,
     // because both channels default to an automated strategy, under which only 0 is accepted.
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000021', error: null });
 
@@ -5345,6 +5473,189 @@ describe('CampaignController.createCampaign cutover', () => {
 
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(refusalFrom().field).toBe('additionalSearchAds.headlines');
+    });
+  });
+
+  describe('Display placement exclusions (#462)', () => {
+    const create = async (fields: Record<string, unknown>, campaignTypes = ['display']): Promise<void> => {
+      await controller.createCampaign(buildReq(googleBody({ campaignTypes, ...fields }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    };
+
+    it('forwards the list on Display, each entry trimmed, repeats kept for upstream to fold', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000462a', error: null });
+
+      await create({ excludedPlacements: [' spam.example ', 'news.example.org', 'SPAM.example'] });
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config['excludedPlacements']).toEqual(['spam.example', 'news.example.org', 'SPAM.example']);
+    });
+
+    it('accepts exactly 500 entries', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000462b', error: null });
+
+      await create({ excludedPlacements: Array.from({ length: 500 }, (_v, i) => `site${i}.example`) });
+
+      expect(next).not.toHaveBeenCalled();
+      expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown[]>)['excludedPlacements']).toHaveLength(500);
+    });
+
+    it('leaves the request byte-identical when no list, a null or an empty list is sent', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000462c', error: null });
+      await create({ displayCreative: { headlines: ['Join us'] } });
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      for (const excludedPlacements of [[], null]) {
+        createCampaigns.mockClear();
+        await create({ displayCreative: { headlines: ['Join us'] }, excludedPlacements });
+        expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+      }
+      expect(without).not.toContain('excludedPlacements');
+    });
+
+    it.each([
+      ['a value that is not a list', { excludedPlacements: 'spam.example' }, ['display'], 'must be a list of website domains'],
+      ['a non-string entry', { excludedPlacements: ['spam.example', 7] }, ['display'], 'must be a list of website domains'],
+      ['a malformed list on another channel', { excludedPlacements: { a: 1 } }, ['search'], 'must be a list of website domains'],
+      ['a blank entry', { excludedPlacements: ['spam.example', '  '] }, ['display'], 'Placement exclusion 2 is blank'],
+      ['a scheme', { excludedPlacements: ['https://spam.example'] }, ['display'], 'starts with a scheme'],
+      ['a path', { excludedPlacements: ['spam.example/news'] }, ['display'], 'must be a bare domain'],
+      ['a non-ASCII name', { excludedPlacements: ['bücher.example'] }, ['display'], 'is not plain ASCII'],
+      ['a single label', { excludedPlacements: ['localhost'] }, ['display'], 'is not a domain name'],
+      ['a list on Search', { excludedPlacements: ['spam.example'] }, ['search'], 'only on Display campaigns, not on Search campaigns'],
+      ['a list on Demand Gen', { excludedPlacements: ['spam.example'] }, ['demand-gen'], 'only on Display campaigns, not on Demand Gen campaigns'],
+      ['a list on Performance Max', { excludedPlacements: ['spam.example'] }, ['performance-max'], 'only on Display campaigns'],
+    ])('refuses %s by name before any upstream call', async (_label, fields, campaignTypes, fragment) => {
+      await create(fields, campaignTypes);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'excludedPlacements', message: expect.stringContaining(fragment) });
+    });
+
+    it('builds the key on Display alone, whatever the body carries', () => {
+      const build = (controller as unknown as { googleExcludedPlacements: (body: unknown, channel: string) => unknown }).googleExcludedPlacements.bind(
+        controller
+      );
+      const body = { excludedPlacements: [' spam.example ', 7] };
+      expect(build(body, 'display')).toEqual({ excludedPlacements: ['spam.example'] });
+      for (const channel of ['search', 'demand-gen', 'performance-max', 'video']) expect(build(body, channel)).toEqual({});
+    });
+  });
+
+  describe('Display ad groups (#475)', () => {
+    const create = async (fields: Record<string, unknown>, campaignTypes = ['display']): Promise<void> => {
+      await controller.createCampaign(buildReq(googleBody({ campaignTypes, ...fields }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    };
+
+    it('forwards the groups under displayAdGroups, normalized, with no campaign-level Display ad', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000475a', error: null });
+
+      await create({
+        displayAdGroups: [
+          { name: ' Retargeting ', creative: { headlines: [' Join us ', ' '], businessName: '' }, audienceSegments: ['customers/1/userLists/2'] },
+          { name: 'Prospecting', creative: { headlines: ['Register'] } },
+        ],
+      });
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config).not.toHaveProperty('displayCreative');
+      expect(config['displayAdGroups']).toEqual([
+        { name: 'Retargeting', creative: { headlines: ['Join us'] } },
+        { name: 'Prospecting', creative: { headlines: ['Register'] } },
+      ]);
+    });
+
+    it('leaves the request byte-identical when no list, or an empty list, is sent', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000475b', error: null });
+      await create({ displayCreative: { headlines: ['Join us'] } });
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      createCampaigns.mockClear();
+
+      await create({ displayCreative: { headlines: ['Join us'] }, displayAdGroups: [] });
+
+      expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+      expect(without).not.toContain('displayAdGroups');
+    });
+
+    it.each([
+      ['a value that is not a list', { displayAdGroups: { name: 'Retargeting' } }, 'must be a list'],
+      [
+        'six groups',
+        { displayAdGroups: ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => ({ name, creative: { headlines: ['Join us'] } })) },
+        'at most 5 ad groups',
+      ],
+      ['a blank name', { displayAdGroups: [{ name: ' | ', creative: { headlines: ['Join us'] } }] }, 'ad group 1 needs a name'],
+      [
+        'a name repeated ignoring case',
+        {
+          displayAdGroups: [
+            { name: 'Retargeting', creative: { headlines: ['Join us'] } },
+            { name: 'RETARGETING', creative: { headlines: ['Join us'] } },
+          ],
+        },
+        'same name as ad group 1',
+      ],
+      ['a full name over 255', { eventName: 'E'.repeat(240), displayAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us'] } }] }, 'over Google'],
+      ['a group with no ad', { displayAdGroups: [{ name: 'a', creative: { headlines: [' '] } }] }, 'has no ad'],
+      [
+        'the list beside a campaign-level Display ad',
+        { displayCreative: { headlines: ['Join us'] }, displayAdGroups: [{ name: 'a', creative: { headlines: ['Join us'] } }] },
+        'must be empty',
+      ],
+    ])('refuses %s by name before any upstream call', async (_label, fields, fragment) => {
+      await create(fields);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayAdGroups', message: expect.stringContaining(fragment) });
+    });
+
+    describe("judged on the stored brief's event name", () => {
+      const stored = (storedEventName: string) => ({
+        status: 'loaded',
+        briefId: 'b-1',
+        brief: { eventDetails: { registrationUrl: 'https://events.example.org/register' } },
+        etag: 'W/"1"',
+        approved: true,
+        storedEventName,
+      });
+      const GROUPS = { displayAdGroups: [{ name: 'abc', creative: { headlines: ['Join us'] } }] };
+      const LONG = 'E'.repeat(255 - ' - Display Network | ab'.length);
+
+      it('refuses on a stored name that makes 256, though the request names a short event, reading the brief once', async () => {
+        loadBriefById.mockResolvedValue(stored(LONG));
+
+        await create({ eventName: 'Short', ...GROUPS });
+
+        expect(createCampaigns).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({ field: 'displayAdGroups', message: expect.stringContaining('is 256 characters') });
+        expect(loadBriefById).toHaveBeenCalledTimes(1);
+      });
+
+      it('accepts on a short stored name, though the request names a long event, reading the brief once', async () => {
+        createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000475d', error: null });
+        loadBriefById.mockResolvedValue(stored('Short'));
+
+        await create({ eventName: LONG, ...GROUPS });
+
+        expect(next).not.toHaveBeenCalled();
+        expect(loadBriefById).toHaveBeenCalledTimes(1);
+      });
+
+      it("keeps the request's name when the brief cannot be read", async () => {
+        await create({ eventName: LONG, ...GROUPS });
+
+        expect(loadBriefById).toHaveBeenCalledTimes(1);
+        expect(refusalFrom()).toMatchObject({ field: 'displayAdGroups', message: expect.stringContaining('is 256 characters') });
+      });
+    });
+
+    it('neither sends nor judges groups left under another channel', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000475c', error: null });
+
+      await create({ displayAdGroups: [{ name: ' ' }] }, ['performance-max']);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(envelopeFor(createCampaigns)['googleAdsConfig']).not.toHaveProperty('displayAdGroups');
     });
   });
 
@@ -7090,14 +7401,13 @@ describe('CampaignController.createCampaign cutover', () => {
 
   it.each([
     ['a sitelink on Display', 'display', 'Display', [link('Register')]],
-    ['a sitelink on Performance Max', 'performance-max', 'Performance Max', [link('Register')]],
     ['an entry with every field blank, which upstream still counts as asked', 'display', 'Display', [{ text: '', finalUrl: '' }]],
   ])('refuses %s by name, a channel sitelinks are not sent on', async (_label, channel, channelLabel, sitelinks) => {
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: [channel], sitelinks }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(createCampaigns).not.toHaveBeenCalled();
     expect(refusalFrom().field).toBe('sitelinks');
-    expect(refusalFrom().message).toContain(`only sent on Search and Demand Gen campaigns, not on ${channelLabel} campaigns`);
+    expect(refusalFrom().message).toContain(`only sent on Search, Demand Gen and Performance Max campaigns, not on ${channelLabel} campaigns`);
   });
 
   /**
@@ -7134,6 +7444,148 @@ describe('CampaignController.createCampaign cutover', () => {
     });
   });
 
+  describe('performance max search themes (#5262)', () => {
+    const PMAX_CREATIVE = { businessName: 'Example Foundation' };
+    const pmaxBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+      googleBody({ campaignTypes: ['performance-max'], budgetUsd: 500, performanceMaxCreative: PMAX_CREATIVE, ...overrides });
+    const create = (body: Record<string, unknown>): Promise<void> =>
+      controller.createCampaign(buildReq(body as never, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    /**
+     * `validatePerformanceMaxSignals` (v1.0.31) trims each theme with Go's rules and sends it as an
+     * asset group signal. Pinned whole, so a builder that leaked a Search-shaped field onto the
+     * Performance Max envelope beside them fails here, and the key rides after the creative.
+     */
+    it("dispatches the themes on a Performance Max create, trimmed with Go's rules, after the creative", async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005b1', error: null });
+
+      await create(pmaxBody({ performanceMaxSearchThemes: [' kubernetes conference ', 'cloud native\u0085'] }));
+
+      expect(next).not.toHaveBeenCalled();
+      const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+      expect(config).toEqual({
+        budget: 500,
+        channel: 'performance-max',
+        startDate: '2026-04-01',
+        endDate: '2026-04-30',
+        performanceMaxCreative: PMAX_CREATIVE,
+        performanceMaxSearchThemes: ['kubernetes conference', 'cloud native'],
+      });
+      expect(Object.keys(config).slice(-2)).toEqual(['performanceMaxCreative', 'performanceMaxSearchThemes']);
+    });
+
+    it.each([
+      ['an absent theme list', {}],
+      ['an empty theme list', { performanceMaxSearchThemes: [] }],
+      ['a null theme list, which the Go decode reads as absent', { performanceMaxSearchThemes: null }],
+    ])('leaves a Performance Max request byte-identical for %s', async (_label, overrides) => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005b2', error: null });
+      await create(pmaxBody());
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      createCampaigns.mockClear();
+
+      await create(pmaxBody(overrides));
+
+      expect(next).not.toHaveBeenCalled();
+      expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+      expect(without).not.toContain('performanceMaxSearchThemes');
+    });
+
+    it.each([
+      ['search', 'Search'],
+      ['display', 'Display'],
+      ['demand-gen', 'Demand Gen'],
+    ])('refuses search themes on %s by name, because upstream refuses the whole create there', async (channel, channelLabel) => {
+      await create(googleBody({ campaignTypes: [channel], performanceMaxSearchThemes: ['kubernetes'] }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('performanceMaxSearchThemes');
+      expect(refusalFrom().message).toContain(`only accepts search themes on Performance Max campaigns, not on ${channelLabel} campaigns`);
+    });
+
+    it.each([['search'], ['display'], ['demand-gen']])('leaves a %s request byte-identical when it carries an empty theme list', async (channel) => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005b3', error: null });
+      await create(googleBody({ campaignTypes: [channel] }));
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      createCampaigns.mockClear();
+
+      await create(googleBody({ campaignTypes: [channel], performanceMaxSearchThemes: [] }));
+
+      expect(next).not.toHaveBeenCalled();
+      expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+    });
+
+    it.each([
+      ['no creative', { performanceMaxCreative: undefined }],
+      ['a creative that empties out, which creates no asset group', { performanceMaxCreative: { businessName: '   ' } }],
+    ])('refuses themes on a Performance Max create with %s, as they attach to the asset group', async (_label, overrides) => {
+      await create(pmaxBody({ performanceMaxSearchThemes: ['kubernetes'], ...overrides }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ field: 'performanceMaxSearchThemes', message: GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL });
+    });
+
+    it.each([
+      ['a bare string', 'kubernetes', 'must be a list of text'],
+      ['a non-string entry', ['kubernetes', 7], 'must be a list of text'],
+      ['a null entry', ['kubernetes', null], 'must be a list of text'],
+      ['a blank entry', ['kubernetes', ' \u0085 '], 'blank entry (search theme 2)'],
+      ['a theme over 80 runes', ['x'.repeat(81)], 'has 81'],
+      ['a repeat in a different case', ['Cloud Native', 'cloud native'], 'more than once'],
+      ['51 themes', Array.from({ length: 51 }, (_, i) => `theme ${i}`), 'at most 50 search themes'],
+    ])('refuses %s by name before any upstream call', async (_label, performanceMaxSearchThemes, expected) => {
+      await create(pmaxBody({ performanceMaxSearchThemes }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('performanceMaxSearchThemes');
+      expect(refusalFrom().message).toContain(expected);
+    });
+
+    it.each([
+      [
+        'the channel before the cap',
+        googleBody({ campaignTypes: ['display'], performanceMaxSearchThemes: Array.from({ length: 51 }, (_, i) => `t${i}`) }),
+        'Display',
+      ],
+      [
+        'the asset group before the cap',
+        pmaxBody({ performanceMaxCreative: undefined, performanceMaxSearchThemes: Array.from({ length: 51 }, (_, i) => `t${i}`) }),
+        'asset group',
+      ],
+      ['the extensions before the themes', pmaxBody({ promotions: [{}], performanceMaxSearchThemes: [''] }), 'promotion'],
+    ])("refuses for %s, in upstream's own order", async (_label, body, expected) => {
+      await create(body);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().message).toContain(expected);
+    });
+
+    it('accepts exactly 50 themes of 80 runes each', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005b4', error: null });
+      const themes = Array.from({ length: 50 }, (_, i) => `${String(i).padStart(2, '0')}${'x'.repeat(78)}`);
+
+      await create(pmaxBody({ performanceMaxSearchThemes: themes }));
+
+      expect(next).not.toHaveBeenCalled();
+      expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['performanceMaxSearchThemes']).toEqual(themes);
+    });
+
+    /** The builder's own channel gate, behind the by-name refusal: pinned on the helper. */
+    it.each([
+      ['search', false],
+      ['demand-gen', false],
+      ['display', false],
+      ['performance-max', true],
+      ['video', false],
+    ] as const)('builds search themes for %s only when the channel takes them', (channel, taken) => {
+      const build = (controller as unknown as { googleSearchThemes: (body: unknown, channel: string) => Record<string, unknown> }).googleSearchThemes.bind(
+        controller
+      );
+
+      expect(build({ performanceMaxSearchThemes: ['kubernetes'] }, channel)).toEqual(taken ? { performanceMaxSearchThemes: ['kubernetes'] } : {});
+    });
+  });
+
   /**
    * The builder's own channel gate, behind the by-name refusal: unreachable through a create today,
    * so pinned on the helper, which must never put sitelinks on a channel outside the list.
@@ -7142,7 +7594,7 @@ describe('CampaignController.createCampaign cutover', () => {
     ['search', true],
     ['demand-gen', true],
     ['display', false],
-    ['performance-max', false],
+    ['performance-max', true],
     ['video', false],
   ] as const)('builds sitelinks for %s only when the channel takes them', (channel, taken) => {
     const build = (controller as unknown as { googleSitelinks: (body: unknown, channel: string) => Record<string, unknown> }).googleSitelinks.bind(controller);
@@ -7208,7 +7660,115 @@ describe('CampaignController.createCampaign cutover', () => {
     );
 
     expect(createCampaigns).not.toHaveBeenCalled();
-    expect(refusalFrom().message).toContain(`only accepts ${noun} on Search campaigns, not on Demand Gen`);
+    expect(refusalFrom().message).toContain(`only accepts ${noun} on Search and Performance Max campaigns, not on Demand Gen`);
+  });
+
+  describe('extensions on performance max (#5262)', () => {
+    const PMAX_CREATIVE = { businessName: 'Example Foundation' };
+    const SNIPPET = { header: 'Types', values: ['Talks', 'Labs', 'Demos'] };
+    const pmaxBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+      googleBody({ campaignTypes: ['performance-max'], budgetUsd: 500, performanceMaxCreative: PMAX_CREATIVE, ...overrides });
+    const create = (body: Record<string, unknown>): Promise<void> =>
+      controller.createCampaign(buildReq(body as never, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    /**
+     * `validateAssetPlan` (v1.0.31, linuxfoundation/lfx-v2-campaign-service#461) takes sitelinks, callouts and structured snippets on
+     * Performance Max and links each to the campaign. Pinned whole, trimmed with Go's rules.
+     */
+    it('dispatches sitelinks, callouts and snippets on a Performance Max create, trimmed', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005c1', error: null });
+
+      await create(
+        pmaxBody({
+          sitelinks: [link(' Register ')],
+          callouts: [' Free to attend '],
+          structuredSnippets: [{ header: ' Types ', values: [' Talks', 'Labs', 'Demos'] }],
+        })
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+        budget: 500,
+        channel: 'performance-max',
+        startDate: '2026-04-01',
+        endDate: '2026-04-30',
+        sitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }],
+        callouts: ['Free to attend'],
+        structuredSnippets: [SNIPPET],
+        performanceMaxCreative: PMAX_CREATIVE,
+      });
+    });
+
+    it.each([
+      ['absent lists', {}],
+      ['empty lists', { sitelinks: [], callouts: [], structuredSnippets: [] }],
+      ['null lists', { sitelinks: null, callouts: null, structuredSnippets: null }],
+    ])('leaves a Performance Max request byte-identical for %s', async (_label, overrides) => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000005c2', error: null });
+      await create(pmaxBody());
+      const without = JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig']);
+      createCampaigns.mockClear();
+
+      await create(pmaxBody(overrides));
+
+      expect(next).not.toHaveBeenCalled();
+      expect(JSON.stringify(envelopeFor(createCampaigns)['googleAdsConfig'])).toBe(without);
+    });
+
+    /** Upstream still refuses these three on Performance Max ("supported on Search campaigns only"). */
+    it.each([
+      ['call extensions', { callExtensions: [{ countryCode: 'US', phoneNumber: '+1 415 555 0100' }] }],
+      ['promotions', { promotions: [{ promotionTarget: 'Conference passes', discountPercent: 25 }] }],
+      ['price extensions', { prices: [{ type: 'EVENTS', offerings: [{ header: 'Standard', description: 'Two days', amount: 499, currencyCode: 'USD' }] }] }],
+    ])('still refuses %s on Performance Max by name', async (noun, overrides) => {
+      await create(pmaxBody(overrides));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().message).toContain(`only accepts ${noun} on Search campaigns, not on Performance Max`);
+    });
+
+    it.each([
+      ['callouts', 'display', { callouts: ['Free to attend'] }, 'Display'],
+      ['structured snippets', 'demand-gen', { structuredSnippets: [SNIPPET] }, 'Demand Gen'],
+    ])('still refuses %s on %s by name', async (noun, channel, overrides, label) => {
+      await create(googleBody({ campaignTypes: [channel], ...overrides }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().message).toContain(`only accepts ${noun} on Search and Performance Max campaigns, not on ${label} campaigns`);
+    });
+
+    /** The same per-entry rules as Search, because upstream runs the same validators on both. */
+    it.each([
+      ['a callout over 25 runes', { callouts: ['A'.repeat(26)] }, 'callouts', 'has 26'],
+      ['a repeated callout', { callouts: ['Labs', 'labs'] }, 'callouts', 'more than once'],
+      ['21 callouts', { callouts: Array.from({ length: 21 }, (_, i) => `C${i}`) }, 'callouts', 'at most 20 callouts'],
+      ['a snippet with two values', { structuredSnippets: [{ header: 'Types', values: ['Talks', 'Labs'] }] }, 'structuredSnippets', 'Types'],
+      ['a sitelink with no link text', { sitelinks: [link('  ')] }, 'sitelinks', 'no link text'],
+    ])('refuses %s on Performance Max, as on Search', async (_label, overrides, field, expected) => {
+      await create(pmaxBody(overrides));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe(field);
+      expect(refusalFrom().message).toContain(expected);
+    });
+
+    it.each([
+      ['search', true],
+      ['performance-max', true],
+      ['demand-gen', false],
+      ['display', false],
+      ['video', false],
+    ] as const)('builds callouts and snippets for %s only when the channel takes them', (channel, taken) => {
+      const helpers = controller as unknown as Record<
+        'googleCallouts' | 'googleStructuredSnippets',
+        (body: unknown, channel: string) => Record<string, unknown>
+      >;
+
+      expect(helpers.googleCallouts.call(controller, { callouts: ['Labs'] }, channel)).toEqual(taken ? { callouts: ['Labs'] } : {});
+      expect(helpers.googleStructuredSnippets.call(controller, { structuredSnippets: [SNIPPET] }, channel)).toEqual(
+        taken ? { structuredSnippets: [SNIPPET] } : {}
+      );
+    });
   });
 
   it.each([
@@ -11174,6 +11734,28 @@ describe('CampaignController.createCampaign Google stored images', () => {
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
     expect(error.toResponse()['errors']).toEqual([expect.objectContaining({ field })]);
+  });
+
+  it("refuses a stored image in a Display ad group's ad when the Google-assets flag is off (#475)", async () => {
+    flagsWith(false, true);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          ...body('display', 'displayCreative', {}),
+          displayAdGroups: [{ name: 'a' }, { name: 'b', creative: { marketingImages: ['https://cdn.example/a.png', { imageAssetId: ASSET }] } }],
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([expect.objectContaining({ field: 'displayAdGroups[1].creative.marketingImages[1].imageAssetId' })]);
   });
 
   it('refuses a stored image in the Demand Gen video logo when the Google-assets flag is off (#5226)', async () => {

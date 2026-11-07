@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed } from '@angular/core';
-import { brandKitPortraitPaletteSource, brandKitPortraitShare } from '@lfx-one/shared/utils';
+import { brandKitPortraitIntro, brandKitPortraitPaletteSource, brandKitPortraitShare } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
@@ -28,4 +28,6 @@ export class MktgBrandKitPageColorPaletteComponent extends MktgBrandKitPageBase 
     }));
   });
   protected readonly short = computed(() => this.view().palette.length > 4);
+  /** The intro at most three lines of its 600 px: whole sentences that fit, or the first shortened (`brandKitPortraitIntro`). */
+  protected readonly intro = computed(() => brandKitPortraitIntro(this.view().color.summary));
 }

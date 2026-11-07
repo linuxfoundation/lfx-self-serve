@@ -41,6 +41,18 @@ export function mktgPortraitLook(brand: MktgPrintBrand, spark: string | null = n
   };
 }
 
+/**
+ * A headline with no widow: its last two words joined by a no-break space, so
+ * a line never ends on one short word alone ("… for agentic" / "AI."). One
+ * word, or none, is returned as it is; the words' other spaces are kept.
+ */
+export function mktgNoWidow(text: string): string {
+  const trimmed = text.trim();
+  const at = trimmed.search(/\s+\S+$/);
+  if (at <= 0) return trimmed;
+  return `${trimmed.slice(0, at)}\u00a0${trimmed.slice(at).trimStart()}`;
+}
+
 /** The footer's page number: `03`. */
 export function mktgPortraitPageNumber(page: number): string {
   return String(page).padStart(MKTG_PORTRAIT_PAGE_NUMBER_DIGITS, '0');
@@ -187,7 +199,7 @@ export function mktgPortraitCutText(text: string, max: number): string {
 const CUT_TAIL = new Set([' ', '\t', '\n', '\r', '\f', '\v', '\u00a0', ',', ';', ':', '.', '—', '-']);
 
 /** A cut's text without its trailing spaces and punctuation, read from the end one character at a time (linear, whatever the text). */
-function mktgPortraitTrimTail(text: string): string {
+export function mktgPortraitTrimTail(text: string): string {
   let end = text.length;
   while (end > 0 && CUT_TAIL.has(text[end - 1])) end -= 1;
   return text.slice(0, end);
@@ -200,9 +212,13 @@ function mktgPortraitTrimTail(text: string): string {
  * says what happened, so a page can show the cut.
  */
 export function mktgPortraitFitBlock(block: MktgPortraitFitBlock, width: number, height: number, minScale = MKTG_PORTRAIT_FIT.minScale): MktgPortraitFitResult {
-  for (let scale = 1; scale >= minScale - 1e-9; scale -= MKTG_PORTRAIT_FIT.scaleStep) {
+  // Each step is measured at the scale the page will print (two decimals, the grammar's --kp-fit), not the loop's
+  // floating value: 0.8399… floors a 12.5 px line to 10 px where 0.84 prints 10.5.
+  for (let step = 0; ; step += 1) {
+    const scale = Math.round((1 - step * MKTG_PORTRAIT_FIT.scaleStep) * 100) / 100;
+    if (scale < minScale - 1e-9) break;
     const scaled = scale === 1 ? block : mktgPortraitScaleBlock(block, scale);
-    if (mktgPortraitFits(scaled, width, height)) return { block: scaled, scale: Math.round(scale * 100) / 100, cut: false };
+    if (mktgPortraitFits(scaled, width, height)) return { block: scaled, scale, cut: false };
   }
   let current = mktgPortraitScaleBlock(block, minScale);
   for (let guard = 0; guard < MKTG_PORTRAIT_FIT.maxCuts && !mktgPortraitFits(current, width, height); guard++) {

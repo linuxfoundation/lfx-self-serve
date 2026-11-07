@@ -182,9 +182,10 @@ describe('the portrait book', () => {
     await fixture.whenStable();
     const frames = Array.from(root.querySelectorAll('[data-testid="lfx-mktg-portrait-page"]'));
     expect(frames.map((frame) => frame.getAttribute('data-page-id'))).toEqual(FRAMES.filter((id) => !id.startsWith('logo-') || id === 'logo-system'));
-    // The contents page lists exactly the frames after it, numbered as the footers are: the count follows the file.
+    // The contents page lists exactly the content frames after it (not the back cover), numbered as the footers are: the
+    // count follows the file.
     const rows = Array.from(root.querySelectorAll('.kp-contents-row'));
-    expect(rows).toHaveLength(frames.length - 2);
+    expect(rows).toHaveLength(frames.length - 3);
     expect(frames.slice(2).map((frame) => frame.getAttribute('data-page'))).toEqual(frames.slice(2).map((_, index) => String(index + 3)));
     expect(root.querySelector('[data-testid="brand-kit-logo-system-none"]')?.textContent).toBe('No logo files uploaded yet');
     expect(root.querySelector('[data-testid="brand-kit-logo-system-files"]')).toBeNull();

@@ -16,6 +16,7 @@ import {
   googleCreativeFieldWidth,
   googleCreativeImageFit,
   googleCreativeImageRequirement,
+  googlePerformanceMaxSearchThemesRefusal,
   googlePerformanceMaxShortDescriptionMissing,
   storedCreativeAssetLabel,
 } from './campaign-google-creative.utils';
@@ -92,6 +93,39 @@ describe('GOOGLE_CREATIVE_FIELD_SPECS image shapes', () => {
     expect(shapes('demand-gen')['logoImages']).toEqual(SQUARE_LOGO);
     expect(shapes('performance-max')['logoImages']).toEqual(SQUARE_LOGO);
     expect(shapes('demand-gen')['tallPortraitImages']).toEqual({ ratioW: 9, ratioH: 16, minWidth: 600, minHeight: 1067 });
+  });
+});
+
+describe('googlePerformanceMaxSearchThemesRefusal', () => {
+  const themes = (n: number): string[] => Array.from({ length: n }, (_, i) => `theme ${i + 1}`);
+
+  it('accepts no themes, and 50 distinct ones, the probe-verified ceiling', () => {
+    expect(googlePerformanceMaxSearchThemesRefusal([])).toBeNull();
+    expect(googlePerformanceMaxSearchThemesRefusal(themes(50))).toBeNull();
+  });
+
+  it('refuses a 51st theme on the submitted count, before judging any entry', () => {
+    expect(googlePerformanceMaxSearchThemesRefusal([...themes(50), ''])).toContain('at most 50 search themes');
+  });
+
+  it('refuses a blank entry by its position', () => {
+    expect(googlePerformanceMaxSearchThemesRefusal(['kubernetes', ''])).toContain('blank entry (search theme 2)');
+  });
+
+  it('bounds a theme at 80 runes, counting code points rather than UTF-16 units', () => {
+    expect(googlePerformanceMaxSearchThemesRefusal(['x'.repeat(80)])).toBeNull();
+    expect(googlePerformanceMaxSearchThemesRefusal(['x'.repeat(81)])).toContain('has 81');
+    // 80 astral-plane characters are 160 UTF-16 units but 80 runes, which upstream accepts.
+    expect(googlePerformanceMaxSearchThemesRefusal(['😀'.repeat(80)])).toBeNull();
+  });
+
+  it('refuses a repeat case-folded with Go rules, rather than collapsing it', () => {
+    expect(googlePerformanceMaxSearchThemesRefusal(['Cloud Native', 'cloud native'])).toContain('more than once');
+    expect(googlePerformanceMaxSearchThemesRefusal(['ΟΔΟΣ', 'οδοσ'])).toContain('more than once');
+  });
+
+  it('names the first bad entry in list order', () => {
+    expect(googlePerformanceMaxSearchThemesRefusal(['a', 'A', 'x'.repeat(81)])).toContain('more than once');
   });
 });
 

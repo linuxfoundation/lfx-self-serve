@@ -31,6 +31,17 @@ export function brandKitPortraitHasLogoFiles(view: BrandKitBookView): boolean {
   return Object.values(view.logos).some((file) => !!file?.src) || !!view.symbol?.src;
 }
 
+/**
+ * Whether the kit has any logo file uploaded at all, drawable or not: a PNG
+ * or a ZIP member the envelope carries no bytes for is a supplied file
+ * (`brandKitLogoImage` keeps the entry with `src: null`), so the Logo system
+ * page lists it in its files table even when no tile can draw it. Only a
+ * kit with no entry in any slot has "no logo files uploaded yet".
+ */
+export function brandKitPortraitHasLogoUploads(view: BrandKitBookView): boolean {
+  return Object.values(view.logos).some((file) => !!file);
+}
+
 /** Whether the kit has a symbol the pages can draw (its own inline file or the crop out of the horizontal lockup). */
 export function brandKitPortraitHasSymbol(view: BrandKitBookView): boolean {
   return !!view.logos.symbol?.src || !!view.symbol?.src;

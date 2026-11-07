@@ -24,6 +24,7 @@ import {
   mktgPortraitSentences,
   mktgPortraitTextWidth,
   mktgPortraitWrapLines,
+  mktgNoWidow,
 } from './mktg-portrait-print.utils';
 import { mktgPrintBrand } from './mktg-print.utils';
 
@@ -39,7 +40,7 @@ describe('the portrait page geometry', () => {
 
   it('prints on its own US Letter page with no margin, the setup the print frame writes', () => {
     expect(MKTG_PORTRAIT_PAGE_SETUP).toBe(MKTG_PRINT_PAGE_SETUPS['mktg-portrait']);
-    expect(MKTG_PORTRAIT_PAGE_SETUP).toBe('size: 8.5in 11in; margin: 0;');
+    expect(MKTG_PORTRAIT_PAGE_SETUP).toBe('size: auto; margin: 0;');
   });
 
   it('keeps the four neutral inks as the design sets them, and takes white and the fail ink from the app’s scales', () => {
@@ -201,5 +202,15 @@ describe('mktgPortraitAccentText', () => {
   it('leaves anything that is not a six-digit hex alone', () => {
     expect(mktgPortraitAccentText('coral')).toBe('coral');
     expect(mktgPortraitAccentText('#FFF')).toBe('#FFF');
+  });
+});
+
+describe('mktgNoWidow', () => {
+  it('joins the last two words with a no-break space and leaves one word, or nothing, alone', () => {
+    expect(mktgNoWidow('Open foundations for agentic AI.')).toBe('Open foundations for agentic\u00a0AI.');
+    expect(mktgNoWidow('New members join Project One')).toBe('New members join Project\u00a0One');
+    expect(mktgNoWidow('  two  words ')).toBe('two\u00a0words');
+    expect(mktgNoWidow('Interoperability')).toBe('Interoperability');
+    expect(mktgNoWidow('   ')).toBe('');
   });
 });

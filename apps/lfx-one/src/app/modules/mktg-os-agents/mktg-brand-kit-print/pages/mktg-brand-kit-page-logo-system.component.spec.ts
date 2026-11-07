@@ -60,4 +60,36 @@ describe('the Logo system page', () => {
     expect(frame.querySelector('[data-testid="brand-kit-logo-system-none"]')?.textContent).toBe('No logo files uploaded yet');
     expect(rectOf(frame.querySelector('[data-testid="brand-kit-logo-system-none"]'))).toEqual({ left: '56px', top: '232px', width: '704px' });
   });
+
+  it('lists a PNG-only kit’s supplied files and says the book draws SVG only, never "no logo files uploaded yet"', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSystemComponent, 'logo-system', (view) => ({
+      ...view,
+      logos: {
+        primary: { ref: 'project-one-lockup.png', name: 'project-one-lockup.png', src: null },
+        stacked: null,
+        symbol: { ref: 'project-one-symbol.png', name: 'project-one-symbol.png', src: null },
+        reversed: null,
+      },
+      symbol: null,
+    }));
+    expect(frame.querySelector('[data-testid="brand-kit-logo-system-hero"]')).toBeNull();
+    expect(frame.querySelector('[data-testid="brand-kit-logo-system-tiles"]')).toBeNull();
+    expect(frame.querySelector('img')).toBeNull();
+    expect(frame.querySelector('[data-testid="brand-kit-logo-system-none"]')).toBeNull();
+    const line = frame.querySelector('[data-testid="brand-kit-logo-system-undrawable"]');
+    expect(line?.textContent).toBe(
+      'This book draws SVG artwork only. The supplied horizontal lockup (PNG) and symbol (PNG) are listed below and not drawn here.'
+    );
+    expect(rectOf(line)).toEqual({ left: '56px', top: '232px', width: '704px' });
+    expect(frame.textContent).not.toContain('.png');
+    const table = frame.querySelector('[data-testid="brand-kit-logo-system-files"]');
+    expect(rectOf(table)).toEqual({ left: '56px', top: '300px', width: '704px' });
+    const rows = Array.from(table?.querySelectorAll('tbody tr') ?? [], (row) => Array.from(row.querySelectorAll('td'), (td) => td.textContent));
+    expect(rows.map((row) => [row[1], row[3]])).toEqual([
+      ['PNG', 'Supplied'],
+      ['—', 'Not supplied: this book derives it from the horizontal file'],
+      ['PNG', 'Supplied'],
+      ['—', 'Not supplied'],
+    ]);
+  });
 });

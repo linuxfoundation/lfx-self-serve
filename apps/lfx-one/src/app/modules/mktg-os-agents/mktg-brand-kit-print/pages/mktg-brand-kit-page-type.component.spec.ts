@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
+import { brandKitOverfullFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils';
 import { mktgPortraitLineFits } from '@lfx-one/shared/utils';
 import { MktgBrandKitPageTypeComponent } from './mktg-brand-kit-page-type.component';
 import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
@@ -16,10 +18,10 @@ describe('the Typography page', () => {
     const specimen = frame.querySelector('[data-testid="brand-kit-type-specimen"]');
     expect(rectOf(specimen)).toEqual({ left: '56px', top: '212px', width: '704px' });
     const h1 = specimen?.querySelector<HTMLElement>('[data-testid="brand-kit-type-h1"]');
-    expect(h1?.textContent).toBe(view.voice.line);
-    // The synthetic brand line, measured in Montserrat (a wide face) at 500, does not fit the column at the mock's 48 px,
-    // so it is set at the largest step that fits (38 px), whole; a line that fits stays at 48 (the shared spec).
-    expect(h1?.style.fontSize).toBe('38px');
+    // The specimen is always at the mock's 48 px; the synthetic brand line, measured in Montserrat (a wide face) at 500,
+    // does not fit the column whole, so it is shortened to the words that do (the editor: shorten, never shrink).
+    expect(h1?.style.fontSize).toBe('48px');
+    expect(h1?.textContent).toBe('Open standards for one');
     expect(Array.from(specimen?.querySelectorAll('.kp-type-weight-name') ?? [], (name) => name.textContent)).toEqual(['Regular 400', 'Bold 700']);
     // The scale and the two lower blocks are one placed block in flow: the scale at least the room above the mock's
     // y 830 less the 16 px gap (830 − 16 − 436), the lower blocks right after it, so they sit at 830 while the scale is
@@ -31,17 +33,18 @@ describe('the Typography page', () => {
     expect(scale?.nextElementSibling?.classList.contains('kp-type-lower')).toBe(true);
     const steps = Array.from(scale?.querySelectorAll<HTMLElement>('[data-step]') ?? []);
     expect(steps.map((step) => step.getAttribute('data-step'))).toEqual(['display', 'h2', 'h3', 'eyebrow', 'body', 'caption']);
-    // The display step shows the project's name at its real size on its own line; a step whose sample would not fit its
-    // line (the brand line at 32 px here) is set smaller, never cut; the spec column still names the step's real size.
+    // The display step shows the project's name at its real size on its own line; every step prints at the kit's own
+    // size and leading, and a step whose sample would not fit its line (the brand line at 32 px here) is shortened to the
+    // words that do, never shrunk or cut; the spec column names the kit's real size always.
     const display = steps[0].querySelector<HTMLElement>('.kp-scale-sample');
     expect(display?.style.fontSize).toBe('64px');
     expect(display?.style.lineHeight).toBe('72px');
     expect(display?.textContent?.trim()).toBe('Project One');
     expect(steps[0].querySelector('.kp-scale-meta')?.textContent).toContain('500 · 64/72');
-    expect(steps[1].querySelector<HTMLElement>('.kp-scale-sample')?.style.fontSize).toBe('26.5px');
-    expect(steps[1].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.voice.line);
-    // The spec column names what is printed: the smaller size here, the step's own where the sample is at it.
-    expect(steps[1].querySelector('.kp-scale-spec')?.textContent).toBe('500 · 26.5/40');
+    expect(steps[1].querySelector<HTMLElement>('.kp-scale-sample')?.style.fontSize).toBe('32px');
+    expect(steps[1].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe('Open standards for one');
+    expect(steps[1].querySelector('.kp-scale-spec')?.textContent).toBe('500 · 32/40');
+    expect(steps[2].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.voice.line);
     expect(steps[2].querySelector('.kp-scale-spec')?.textContent).toBe('500 · 24/32');
     expect(steps[3].querySelector('.kp-scale-sample')?.classList.contains('kp-scale-sample--caps')).toBe(true);
     expect(steps[3].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.voice.line);
@@ -63,16 +66,15 @@ describe('the Typography page', () => {
     expect(Array.from(rules?.querySelectorAll('li') ?? [], (li) => li.textContent)).toEqual(view.type.rules);
   });
 
-  it('shrinks the H1 sample until a long brand line fits the column in one line, never cut', async () => {
+  it('shortens a long brand line to the words that fit the column at 48 px, in one line, never shrunk or clipped', async () => {
     const long = 'Open standards, open governance and open collaboration for every kind of computing everywhere';
     const { frame } = await mountBrandKitPage(MktgBrandKitPageTypeComponent, 'type', (view) => ({ ...view, voice: { ...view.voice, line: long } }));
     const h1 = frame.querySelector<HTMLElement>('[data-testid="brand-kit-type-h1"]');
-    const size = parseFloat(h1?.style.fontSize ?? '0');
-    expect(size).toBeLessThan(48);
-    // 94 characters in Montserrat at 500 fit the 704 px column at 13 px by the measured width; the text is whole.
-    expect(size).toBe(13);
-    expect(h1?.textContent).toBe(long);
-    expect(mktgPortraitLineFits(long, 704, size, { weight: 500, family: 'Montserrat' })).toBe(true);
+    expect(h1?.style.fontSize).toBe('48px');
+    // 94 characters in Montserrat at 500: the first three words fit the 704 px column at 48 by the measured width.
+    expect(h1?.textContent).toBe('Open standards, open');
+    expect(mktgPortraitLineFits('Open standards, open', 704, 48, { weight: 500, family: 'Montserrat', tracking: -0.015 })).toBe(true);
+    expect(mktgPortraitLineFits('Open standards, open governance', 704, 48, { weight: 500, family: 'Montserrat', tracking: -0.015 })).toBe(false);
   });
 
   it('sets the body step at its real size and lets the paragraph wrap, the lower blocks following the scale in flow when three lines run past y 830', async () => {
@@ -93,16 +95,30 @@ describe('the Typography page', () => {
     expect(Array.from(lower?.children ?? [], (block) => (block as HTMLElement).style.top)).toEqual(['', '']);
   });
 
-  it('sets the body step smaller, never below 14 px, when even the moved blocks would cross the footer', async () => {
+  it('keeps the body step at 18/30 and shortens a long umbrella to three lines, cut at a word with an ellipsis, never shrunk', async () => {
     const sentence = 'Where organizations fund the open computing standards every member builds on, together and in the open, every year.';
     const umbrella = `${sentence} ${sentence}`;
     const { frame } = await mountBrandKitPage(MktgBrandKitPageTypeComponent, 'type', (view) => ({ ...view, voice: { ...view.voice, umbrella } }));
     const body = frame.querySelector<HTMLElement>('[data-step="body"] .kp-scale-sample');
-    const size = parseFloat(body?.style.fontSize ?? '0');
-    expect(size).toBeLessThan(18);
-    expect(size).toBeGreaterThanOrEqual(14);
-    expect(body?.textContent?.trim()).toBe(umbrella);
-    // The label agrees with the sample: the shrunk size and leading, not the step's nominal 18/30.
-    expect(frame.querySelector('[data-step="body"] .kp-scale-spec')?.textContent).toBe(`400 · ${size}/${parseFloat(body?.style.lineHeight ?? '0')}`);
+    expect(body?.style.fontSize).toBe('18px');
+    expect(body?.style.lineHeight).toBe('30px');
+    const text = body?.textContent?.trim() ?? '';
+    expect(text.length).toBeLessThan(umbrella.length);
+    expect(text.endsWith('…')).toBe(true);
+    expect(umbrella.startsWith(text.slice(0, -1))).toBe(true);
+    // The label names the kit's real size, which is what is printed.
+    expect(frame.querySelector('[data-step="body"] .kp-scale-spec')?.textContent).toBe('400 · 18/30');
+  });
+
+  it('cuts a 300-character summary to three lines and sets three 300-character rules smaller and cut at a sentence in the lower block', async () => {
+    const { frame, view } = await mountBrandKitPage(MktgBrandKitPageTypeComponent, 'type', () => buildBrandKitBookView(brandKitOverfullFixture(), 4));
+    const intro = frame.querySelector('[data-testid="brand-kit-type-intro"]')?.textContent ?? '';
+    expect(intro.length).toBeLessThan(view.type.summary.length);
+    const rules = frame.querySelector<HTMLElement>('[data-testid="brand-kit-type-rules"]');
+    expect(rules?.style.getPropertyValue('--kp-fit')).toBe('0.72');
+    expect(rules?.classList.contains('kp-fit-list')).toBe(true);
+    const items = Array.from(rules?.querySelectorAll('li') ?? [], (li) => li.textContent ?? '');
+    expect(items).toHaveLength(3);
+    expect(items.every((rule) => rule.length < 300)).toBe(true);
   });
 });

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed } from '@angular/core';
-import { mktgPortraitPageNumber } from '@lfx-one/shared/utils';
+import { BRAND_KIT_PORTRAIT_RULE_LISTS } from '@lfx-one/shared/constants';
+import { brandKitPortraitRulesFit, mktgPortraitPageNumber } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitArtworkComponent } from './mktg-brand-kit-artwork.component';
@@ -19,5 +20,7 @@ import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-po
   styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageLogoPartnershipComponent extends MktgBrandKitPageBase {
-  protected readonly rules = computed(() => this.view().logo.partnership.map((text, index) => ({ number: mktgPortraitPageNumber(index + 1), text })));
+  /** The five rules fitted to the room under the tiles (set smaller, cut at a sentence, the last ones counted when even that runs past y 990). */
+  protected readonly fit = computed(() => brandKitPortraitRulesFit(this.view().logo.partnership, BRAND_KIT_PORTRAIT_RULE_LISTS.partnership));
+  protected readonly rules = computed(() => this.fit().rules.map((text, index) => ({ number: mktgPortraitPageNumber(index + 1), text })));
 }

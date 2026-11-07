@@ -1,7 +1,6 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@let v = view();
 <lfx-mktg-portrait-page
   [look]="look()"
   [book]="book()"
@@ -13,25 +12,31 @@
   @if (intro()) {
     <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-voice-intro">{{ intro() }}</p>
   }
-  <div [lfxPpRect]="[x, 212, w]" data-testid="brand-kit-voice-messages">
-    @if (v.voice.umbrella) {
+  <div class="kp-voice-messages" [style.--kp-fit]="messages().scale" [lfxPpRect]="[x, 212, w]" data-testid="brand-kit-voice-messages">
+    @if (messages().umbrella) {
       <div class="pp-lab">Umbrella message</div>
-      <div class="kp-voice-umbrella">{{ v.voice.umbrella }}</div>
+      <div class="kp-voice-umbrella">{{ messages().umbrella }}</div>
     }
-    @if (v.voice.line) {
+    @if (messages().line) {
       <div class="kp-voice-line-block">
         <div class="pp-lab">Brand line</div>
-        <div class="kp-voice-line">{{ v.voice.line }}</div>
+        <div class="kp-voice-line">{{ messages().line }}</div>
       </div>
     }
   </div>
   @if (attributes().attributes.length) {
-    <div class="kp-attributes" [style.--kp-fit]="attributes().scale" [lfxPpRect]="[x, 540, w]" data-testid="brand-kit-voice-attributes">
-      @for (attribute of attributes().attributes; track $index; let first = $first) {
-        <div class="kp-attribute" [style.border-top-color]="first ? look().spark : look().accent">
-          <div class="kp-attribute-name">{{ attribute.name }}</div>
-          <div class="kp-attribute-line">{{ attribute.line }}</div>
-        </div>
+    <div [style.--kp-fit]="attributes().scale" [lfxPpRect]="[x, 540, w]">
+      <div class="kp-attributes" data-testid="brand-kit-voice-attributes">
+        @for (attribute of attributes().attributes; track $index; let first = $first) {
+          <div class="kp-attribute" [style.border-top-color]="first ? look().spark : look().accent">
+            <div class="kp-attribute-name">{{ attribute.name }}</div>
+            <div class="kp-attribute-line">{{ attribute.line }}</div>
+          </div>
+        }
+      </div>
+      <!-- The rows the room does not hold, even cut at the smallest step, are never dropped in silence. -->
+      @if (attributes().more; as more) {
+        <div class="kp-attributes-more" data-testid="brand-kit-voice-attributes-more">+{{ more }} more on the Voice tab in LFX One</div>
       }
     </div>
   }

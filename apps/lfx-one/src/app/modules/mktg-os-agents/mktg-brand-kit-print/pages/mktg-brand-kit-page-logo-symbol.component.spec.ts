@@ -27,7 +27,11 @@ describe('the Symbol & symbol in shape page', () => {
     expect(shapes[3].querySelector<HTMLElement>('.kp-shape')?.style.width).toBe('126px');
     expect(shapes[3].querySelector('.kp-shape-stage')?.classList.contains('kp-shape-stage--mist')).toBe(true);
     expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] img')?.style.height).toBe('100px');
-    const rule = frame.querySelector('[data-testid="brand-kit-symbol-rule"]')?.textContent?.replace(/\s+/g, ' ').trim();
+    const ruleBlock = frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-rule"]');
+    // The 8 px under the label comes from a grammar class: a Tailwind margin utility is beaten by the frame's reset (rv3 F7).
+    expect(ruleBlock?.classList.contains('pp-body-gap-tight')).toBe(true);
+    expect(ruleBlock?.className).not.toMatch(/\bmt-\[/);
+    const rule = ruleBlock?.textContent?.replace(/\s+/g, ' ').trim();
     expect(rule).toBe(
       'One X of padding from the symbol to the edge of the circle or rounded square, where X is the height of the symbol. Never put the symbol on the accent: accent colors are not logo colors, and white on Orange fails AA (2.8:1).'
     );

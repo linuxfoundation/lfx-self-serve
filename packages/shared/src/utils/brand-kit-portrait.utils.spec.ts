@@ -3,9 +3,14 @@
 
 import { describe, expect, it } from 'vitest';
 import { brandKitReportV2Fixture } from './__fixtures__/brand-kit-report-v2.fixture';
-import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
+import { brandKitOverfullFixture, brandKitPngOnlyFixture, brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
 import {
-  BRAND_KIT_PORTRAIT_FIT_MIN_PX,
+  BRAND_KIT_PORTRAIT_ATTRIBUTES,
+  BRAND_KIT_PORTRAIT_INTRO,
+  BRAND_KIT_PORTRAIT_RECOLOR_FILTER,
+  BRAND_KIT_PORTRAIT_RULE_LISTS,
+  BRAND_KIT_PORTRAIT_SOURCES,
+  BRAND_KIT_PORTRAIT_VOICE_MESSAGES,
   BRAND_KIT_PORTRAIT_TYPE_PAGE,
   BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM,
 } from '../constants/brand-kit-portrait.constants';
@@ -20,9 +25,15 @@ import {
   brandKitPortraitContrastMatrix,
   brandKitPortraitDate,
   brandKitPortraitFiles,
-  brandKitPortraitFitSize,
+  brandKitPortraitUndrawableFilesLine,
+  brandKitPortraitShortenLine,
+  brandKitPortraitShortenParagraph,
   brandKitPortraitAttributesFit,
   brandKitPortraitContentsLayout,
+  brandKitPortraitContrastLayout,
+  brandKitPortraitIntro,
+  brandKitPortraitRulesFit,
+  brandKitPortraitVoiceMessagesFit,
   brandKitPortraitGradePill,
   brandKitPortraitMessageCard,
   brandKitPortraitSourcesFit,
@@ -34,11 +45,20 @@ import {
   brandKitPortraitTypeSample,
   brandKitPortraitTypeSource,
   brandKitPortraitUsageCards,
+  brandKitPortraitWatchoutDraw,
   brandKitPortraitWeightName,
   brandKitPortraitRatioLabel,
   brandKitPortraitWhiteContrast,
 } from './brand-kit-portrait.utils';
-import { mktgPortraitLineFits } from './mktg-portrait-print.utils';
+import { brandKitPortraitHasLogoFiles, brandKitPortraitHasLogoUploads } from './mktg-portrait-plan.utils';
+import {
+  mktgNoWidow,
+  mktgPortraitBlockHeight,
+  mktgPortraitCharsPerLine,
+  mktgPortraitLineFits,
+  mktgPortraitScaleBlock,
+  mktgPortraitWrapLines,
+} from './mktg-portrait-print.utils';
 
 const SVG = 'data:image/svg+xml,synthetic';
 const view = buildBrandKitBookView(brandKitTestRevision(), 4);
@@ -85,6 +105,30 @@ describe('brandKitPortraitFiles', () => {
     expect(brandKitPortraitFiles(png)[3]).toMatchObject({ format: 'PNG', source: 'Supplied' });
     const none = { ...view, logos: { ...view.logos, primary: null } };
     expect(brandKitPortraitFiles(none)[1].source).toBe('Not supplied');
+  });
+
+  it('tells a PNG-only kit from a kit with no uploads: the table lists the supplied files, the tiles’ line names them by the record', () => {
+    const pngOnly = buildBrandKitBookView(brandKitPngOnlyFixture(), 4);
+    expect(brandKitPortraitHasLogoUploads(pngOnly)).toBe(true);
+    expect(brandKitPortraitHasLogoFiles(pngOnly)).toBe(false);
+    expect(brandKitPortraitFiles(pngOnly).map((row) => [row.format, row.source])).toEqual([
+      ['PNG', 'Supplied'],
+      ['—', 'Not supplied: this book derives it from the horizontal file'],
+      ['PNG', 'Supplied'],
+      ['—', 'Not supplied'],
+    ]);
+    expect(brandKitPortraitUndrawableFilesLine(pngOnly)).toBe(
+      'This book draws SVG artwork only. The supplied horizontal lockup (PNG) and symbol (PNG) are listed below and not drawn here.'
+    );
+    const one = { ...pngOnly, logos: { ...pngOnly.logos, symbol: null } };
+    expect(brandKitPortraitUndrawableFilesLine(one)).toBe(
+      'This book draws SVG artwork only. The supplied horizontal lockup (PNG) is listed below and not drawn here.'
+    );
+    // Nothing uploaded, or something drawable: no line.
+    const none = { ...view, logos: { primary: null, stacked: null, symbol: null, reversed: null }, symbol: null };
+    expect(brandKitPortraitHasLogoUploads(none)).toBe(false);
+    expect(brandKitPortraitUndrawableFilesLine(none)).toBe('');
+    expect(brandKitPortraitUndrawableFilesLine(view)).toBe('');
   });
 });
 
@@ -194,58 +238,70 @@ describe('the type page’s strings', () => {
     const samples = view.type.scale.map((step) => brandKitPortraitTypeSample(view, step));
     expect(samples).toEqual(['Project One', view.voice.line, view.voice.line, view.voice.line, view.voice.umbrella, view.footer]);
     expect(brandKitPortraitTypeSample({ ...view, voice: { ...view.voice, umbrella: '' } }, view.type.scale[4])).toBe(view.voice.line);
-    // A sample is set at its step's size when its measured line fits (the kit's face, its weight, its tracking), smaller
-    // (never cut) when it would not — as the served AAIF book shows (QA round 1, p11): the display line at 64 fits 704,
-    // the tracked specimen (-0.015em) at 48 fits 704 (≈696 px drawn), the untracked H2 line at 32 wraps the 480 px
-    // column (so it is set at 30.5, one line), the H3 at 24 fits …
+    // A sample is never set smaller than its step (the editor's rule): a line that fits its measure at the step's size
+    // prints whole, one that would not is shortened at a word, no ellipsis — as the served AAIF book needs (QA round 1,
+    // p11): the display line at 64 fits 704, the tracked specimen (-0.015em) at 48 fits 704, the untracked H2 line at 32
+    // wraps the 480 px column (so it loses its last word), the H3 at 24 fits …
     const sans = { weight: 500, family: 'Instrument Sans' };
-    expect(brandKitPortraitFitSize('Agentic AI Foundation', 704, 64, sans)).toBe(64);
-    expect(brandKitPortraitFitSize('Open foundations for agentic AI.', 704, 48, { ...sans, tracking: BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM })).toBe(48);
-    expect(mktgPortraitLineFits('Open foundations for agentic AI.', 480, 32, sans)).toBe(false);
-    expect(brandKitPortraitFitSize('Open foundations for agentic AI.', 480, 32, sans)).toBe(30.5);
-    expect(brandKitPortraitFitSize('Open foundations for agentic AI.', 480, 24, sans)).toBe(24);
-    // … while the synthetic line in Montserrat, a wide face, is set smaller in the 480 px H2 column.
-    expect(brandKitPortraitFitSize('Project One', 704, 64, { weight: 500, family: view.type.family })).toBe(64);
-    expect(brandKitPortraitFitSize(view.voice.line, 480, 32, { weight: 500, family: view.type.family })).toBe(26.5);
-    expect(brandKitPortraitFitSize(view.voice.line, 704, 48, { weight: 500, family: view.type.family })).toBe(38);
-    // No floor but the readable minimum: a line no size above it holds is set at the minimum and wraps.
-    expect(
-      brandKitPortraitFitSize('Open standards, open governance and open collaboration for every kind of computing everywhere', 704, 48, { weight: 500 })
-    ).toBe(13);
-    expect(brandKitPortraitFitSize('A very long project name that fits no line at all at this size', 200, 64, { weight: 500 })).toBe(
-      BRAND_KIT_PORTRAIT_FIT_MIN_PX
+    expect(brandKitPortraitShortenLine('Agentic AI Foundation', 704, 64, sans)).toBe('Agentic AI Foundation');
+    expect(brandKitPortraitShortenLine('Open foundations for agentic AI.', 704, 48, { ...sans, tracking: BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM })).toBe(
+      'Open foundations for agentic AI.'
     );
+    expect(mktgPortraitLineFits('Open foundations for agentic AI.', 480, 32, sans)).toBe(false);
+    expect(brandKitPortraitShortenLine('Open foundations for agentic AI.', 480, 32, sans)).toBe('Open foundations for agentic');
+    expect(brandKitPortraitShortenLine('Open foundations for agentic AI.', 480, 24, sans)).toBe('Open foundations for agentic AI.');
+    // … while the synthetic line in Montserrat, a wide face, loses words in the 480 px H2 column and at the 48 px specimen.
+    const montserrat = { weight: 500, family: view.type.family };
+    expect(brandKitPortraitShortenLine('Project One', 704, 64, montserrat)).toBe('Project One');
+    expect(brandKitPortraitShortenLine(view.voice.line, 480, 32, montserrat)).toBe('Open standards for one');
+    expect(brandKitPortraitShortenLine(view.voice.line, 704, 48, montserrat)).toBe('Open standards for one');
+    // At least the first word, whatever the measure; spaces never count.
+    expect(brandKitPortraitShortenLine('  Interoperability   everywhere ', 40, 64, { weight: 500 })).toBe('Interoperability');
+    expect(brandKitPortraitShortenLine('', 400, 64, {})).toBe('');
+    // A paragraph sample is shortened to its lines, cut at a word with an ellipsis, trailing punctuation dropped first.
+    const sentence = 'Where organizations fund the open computing standards every member builds on, together and in the open, every year.';
+    expect(brandKitPortraitShortenParagraph(view.voice.umbrella, 480, 18, { weight: 400 }, 3)).toBe(view.voice.umbrella);
+    const three = brandKitPortraitShortenParagraph(`${sentence} ${sentence} ${sentence}`, 480, 18, { weight: 400 }, 3);
+    expect(three.endsWith('…')).toBe(true);
+    expect(three.length).toBeLessThan(sentence.length * 2);
+    expect(mktgPortraitWrapLines(three, mktgPortraitCharsPerLine(480, 18, { weight: 400 }))).toBeLessThanOrEqual(3);
+    expect(/[,;:.—-]…$/.test(three)).toBe(false);
+    expect(brandKitPortraitShortenParagraph(`${sentence} ${sentence}`, 480, 18, { weight: 400 }, 1).split(' ').length).toBeLessThan(12);
     expect(brandKitPortraitTypeSource('https://one.example.org/brand')).toBe('one.example.org');
     expect(brandKitPortraitTypeSource('Named in the brand guide')).toBe('Named in the brand guide');
   });
 
   it('places the lower blocks at y 830 while the scale ends above it, and under the scale when a three-line body step runs past', () => {
     const c = BRAND_KIT_PORTRAIT_TYPE_PAGE;
-    // The synthetic umbrella is one line at 18/30: the scale ends well above 830 and the blocks keep the mock's y.
+    // The synthetic umbrella is one line at 18/30: the scale ends well above 830 and the blocks keep the mock's y. Every
+    // step prints at the kit's size, its spec the kit's values; the Montserrat H2 line is shortened to its column.
     const short = brandKitPortraitTypeLayout(view, 704);
     expect(short.steps.map((step) => step.step)).toEqual(['display', 'h2', 'h3', 'eyebrow', 'body', 'caption']);
-    expect(short.steps.map((step) => step.size)).toEqual([64, 26.5, 24, 14, 18, 12]);
-    expect(short.steps[4]).toMatchObject({ sample: view.voice.umbrella, size: 18, line_height: 30, spec: '400 · 18/30' });
+    expect(short.steps.map((step) => step.size)).toEqual(view.type.scale.map((step) => step.size));
+    expect(short.steps.map((step) => step.spec)).toEqual(view.type.scale.map((step) => `${step.weight} · ${step.size}/${step.line_height}`));
+    expect(short.steps[1]).toMatchObject({ sample: 'Open standards for one', shortened: true, size: 32 });
+    expect(short.steps[4]).toMatchObject({ sample: view.voice.umbrella, size: 18, line_height: 30, spec: '400 · 18/30', shortened: false });
     expect(short.scaleEnd).toBeLessThan(c.lowerTop - c.lowerGap);
-    expect(short).toMatchObject({ lowerTop: 830, bodyScale: 1, cut: false });
+    expect(short).toMatchObject({ lowerTop: 830, bodyLines: 3 });
     expect(short.sourceLines).toEqual([
       { text: 'Montserrat · Google Fonts · weights 400, 700', muted: false },
       { text: 'Fallback: none', muted: false },
       { text: 'Named on one.example.org', muted: true },
     ]);
     // A live foundation's umbrella (three lines at 18/30 in the 480 px sample column) takes the caption row to y 850: the
-    // blocks follow the scale's real end, 16 px under it, the body step still at 18/30, and the stack ends above y 990.
+    // blocks follow the scale's real end, 16 px under it, the body step still at 18/30, whole, and the stack ends above
+    // y 990.
     const umbrella =
       'The Synthetic Foundation is the neutral home at the Linux Foundation where the open protocols and tools for agents are governed in the open.';
     const three = brandKitPortraitTypeLayout({ ...view, voice: { ...view.voice, umbrella } }, 704);
-    expect(three.steps[4]).toMatchObject({ sample: umbrella, size: 18, line_height: 30 });
+    expect(three.steps[4]).toMatchObject({ sample: umbrella, size: 18, line_height: 30, shortened: false });
     expect(three.scaleEnd).toBeGreaterThan(c.lowerTop);
     expect(three.lowerTop).toBe(Math.ceil(three.scaleEnd) + c.lowerGap);
     expect(three.lowerTop).toBeGreaterThan(830);
     expect(three.lowerTop).toBeLessThan(c.bottom - 60);
-    expect(three).toMatchObject({ bodyScale: 1, cut: false });
-    // The served AAIF book (QA round 1b): Instrument Sans, the H2 line set at 30.5 in one line (its label saying so), the
-    // display, H3 and eyebrow at size, and the three-line umbrella leaving the body step at 18/30 under "400 · 18/30".
+    expect(three.bodyLines).toBe(3);
+    // The served AAIF book: Instrument Sans, every step at the kit's size under the kit's spec — the H2 line, which 32 px
+    // would wrap in 480 px, prints its first four words at 32/40 (the editor's rule: shorten, never shrink).
     const aaif = brandKitPortraitTypeLayout(
       {
         ...view,
@@ -254,39 +310,34 @@ describe('the type page’s strings', () => {
       },
       704
     );
-    expect(aaif.steps.map((step) => [step.step, step.size, step.spec])).toEqual([
-      ['display', 64, '500 · 64/72'],
-      ['h2', 30.5, '500 · 30.5/40'],
-      ['h3', 24, '500 · 24/32'],
-      ['eyebrow', 14, '500 · 14/20'],
-      ['body', 18, '400 · 18/30'],
-      ['caption', 12, '500 · 12/16'],
+    expect(aaif.steps.map((step) => [step.step, step.size, step.spec, step.sample])).toEqual([
+      ['display', 64, '500 · 64/72', 'Project One'],
+      ['h2', 32, '500 · 32/40', 'Open foundations for agentic'],
+      ['h3', 24, '500 · 24/32', 'Open foundations for agentic AI.'],
+      ['eyebrow', 14, '500 · 14/20', 'Open foundations for agentic AI.'],
+      ['body', 18, '400 · 18/30', umbrella],
+      ['caption', 12, '500 · 12/16', view.footer],
     ]);
-    expect(aaif).toMatchObject({ bodyScale: 1, cut: false });
     expect(aaif.lowerTop).toBeLessThan(c.bottom - 60);
   });
 
-  it('gives the body step size, never below 14 px, before anything is cut when the stack would cross the footer', () => {
+  it('shortens the body sample to three lines, and to fewer when the stack would cross the footer, never setting it smaller', () => {
     const c = BRAND_KIT_PORTRAIT_TYPE_PAGE;
     const sentence = 'Where organizations fund the open computing standards every member builds on, together and in the open, every year.';
-    // Two sentences: five lines at 18/30 would push the blocks past the footer, so the body step is set smaller (a whole
-    // message still) until the stack ends by y 990 — four lines at 14/24 here.
-    const long = brandKitPortraitTypeLayout({ ...view, voice: { ...view.voice, umbrella: `${sentence} ${sentence}` } }, 704);
-    expect(long.bodyScale).toBeLessThan(1);
-    expect(long.steps[4].size).toBeGreaterThanOrEqual(c.bodyMinPx);
-    expect(long.steps[4].size).toBeLessThan(18);
-    expect(long.steps[4].spec).toBe(`400 · ${long.steps[4].size}/${long.steps[4].line_height}`);
-    expect(long.steps[4].sample).toBe(`${sentence} ${sentence}`);
-    expect(long.cut).toBe(false);
+    // A 300-character umbrella (five lines at 18/30) prints its first words, at 18/30, ending in an ellipsis within three lines.
+    const long = brandKitPortraitTypeLayout({ ...view, voice: { ...view.voice, umbrella: `${sentence} ${sentence} ${sentence}` } }, 704);
+    expect(long.steps[4]).toMatchObject({ size: 18, line_height: 30, spec: '400 · 18/30', shortened: true });
+    expect(long.steps[4].sample.endsWith('…')).toBe(true);
+    expect(mktgPortraitWrapLines(long.steps[4].sample, mktgPortraitCharsPerLine(480, 18, { weight: 400 }))).toBeLessThanOrEqual(3);
+    expect(long.bodyLines).toBe(3);
     expect(long.lowerTop).toBeLessThan(c.bottom);
-    // An essay no size down to 14 px holds is cut at a sentence, and the result says so.
-    const essay = Array(12).fill(sentence).join(' ');
-    const cut = brandKitPortraitTypeLayout({ ...view, voice: { ...view.voice, umbrella: essay } }, 704);
-    expect(cut.steps[4].size).toBe(c.bodyMinPx);
-    expect(cut.cut).toBe(true);
-    expect(cut.steps[4].sample.length).toBeLessThan(essay.length);
-    expect(cut.steps[4].sample.endsWith('.')).toBe(true);
-    expect(cut.lowerTop).toBeLessThan(c.bottom);
+    // When the lower blocks are tall (many rules), three body lines would push the stack past y 990: the body sample takes
+    // fewer lines, still at 18/30.
+    const rules = Array.from({ length: 9 }, (_, index) => `Rule ${index + 1}: one sentence of guidance for the page, long enough to wrap its column once.`);
+    const tall = brandKitPortraitTypeLayout({ ...view, type: { ...view.type, rules }, voice: { ...view.voice, umbrella: `${sentence} ${sentence}` } }, 704);
+    expect(tall.bodyLines).toBeLessThan(3);
+    expect(tall.steps[4]).toMatchObject({ size: 18, line_height: 30 });
+    expect(tall.lowerTop).toBeLessThan(c.bottom);
   });
 });
 
@@ -294,7 +345,10 @@ describe('the usage page’s cards', () => {
   it('gives each card the kit’s line for its layout and the mock’s accent moment, from the kit’s examples', () => {
     const cards = brandKitPortraitUsageCards(view, { approvedAt: '2026-11-06T10:00:00Z', approvedBy: null });
     expect(cards.map((card) => card.layout)).toEqual(['keynote', 'social', 'report', 'announcement']);
-    expect(cards.map((card) => card.text)).toEqual([view.voice.line, view.voice.line, 'Project One annual report 2026', 'New members join Project One']);
+    // The headlines keep their last two words together (a no-break space), so no card ends on one word alone.
+    const line = mktgNoWidow(view.voice.line);
+    expect(line).toBe(view.voice.line.replace(/ (\S+)$/, '\u00a0$1'));
+    expect(cards.map((card) => card.text)).toEqual([line, line, 'Project One annual report 2026', 'New members join Project\u00a0One']);
     // Without a recorded approval the report cover carries no year: never a made-up one.
     expect(brandKitPortraitUsageCards(view)[2].text).toBe('Project One annual report');
     expect(cards.map((card) => card.accentMoment)).toEqual(['none (grid ground)', 'the card itself', 'none', 'the top rule']);
@@ -303,22 +357,149 @@ describe('the usage page’s cards', () => {
   });
 });
 
+describe('the chapters’ intros', () => {
+  it('keeps an intro that fits as written, keeps whole sentences of a long one, and shortens a single long sentence at a word', () => {
+    const sentence = 'The page names the typeface and its weights, and links the logo package the site offers to the press.';
+    expect(brandKitPortraitIntro('Montserrat throughout.')).toBe('Montserrat throughout.');
+    // Four sentences (412 chars) wrap to five lines of 87; the first two (206) fit three lines.
+    expect(brandKitPortraitIntro(Array.from({ length: 4 }, () => sentence).join(' '))).toBe(Array.from({ length: 2 }, () => sentence).join(' '));
+    const run = Array.from({ length: 5 }, () => sentence.slice(0, -1)).join(', ');
+    const shortened = brandKitPortraitIntro(run);
+    expect(shortened.endsWith('…')).toBe(true);
+    expect(shortened.length).toBeLessThan(run.length);
+    expect(mktgPortraitWrapLines(shortened, mktgPortraitCharsPerLine(BRAND_KIT_PORTRAIT_INTRO.width, BRAND_KIT_PORTRAIT_INTRO.size))).toBeLessThanOrEqual(3);
+    expect(brandKitPortraitIntro(brandKitOverfullFixture().chapters.type.summary).length).toBeLessThan(300);
+  });
+});
+
+describe('the Voice page’s messages', () => {
+  it('prints the umbrella and the brand line as written when they fit, and sets a long pair smaller together, cut at a sentence, above the attributes', () => {
+    expect(brandKitPortraitVoiceMessagesFit(view)).toEqual({ scale: 1, cut: false, umbrella: view.voice.umbrella, line: view.voice.line });
+    expect(brandKitPortraitVoiceMessagesFit({ voice: { ...view.voice, umbrella: '' } })).toMatchObject({ umbrella: '', line: view.voice.line, scale: 1 });
+    const long = buildBrandKitBookView(brandKitOverfullFixture(), 4);
+    const fit = brandKitPortraitVoiceMessagesFit(long);
+    expect(fit.scale).toBe(0.72);
+    expect(fit.cut).toBe(true);
+    expect(fit.umbrella.length).toBeLessThan(long.voice.umbrella.length);
+    const c = BRAND_KIT_PORTRAIT_VOICE_MESSAGES;
+    const height = mktgPortraitBlockHeight(
+      mktgPortraitScaleBlock(
+        {
+          paras: [
+            { text: 'Umbrella message', ...c.label },
+            { text: fit.umbrella, ...c.umbrella },
+            { text: 'Brand line', ...c.label, above: c.lineLabelAbove },
+            { text: fit.line, ...c.line },
+          ],
+        },
+        fit.scale
+      ),
+      c.width
+    );
+    expect(height).toBeLessThanOrEqual(c.bottom - c.top);
+  });
+});
+
+describe('the chapters’ rule lists', () => {
+  it('prints a list as written when its columns hold it, smaller and cut at a sentence for 300-character rules, and counts the rules a room cannot hold', () => {
+    const r = BRAND_KIT_PORTRAIT_RULE_LISTS;
+    expect(brandKitPortraitRulesFit(view.logo.partnership, r.partnership)).toEqual({ scale: 1, cut: false, rules: view.logo.partnership, more: 0 });
+    const long = buildBrandKitBookView(brandKitOverfullFixture(), 4);
+    for (const [rules, room] of [
+      [long.logo.partnership, r.partnership],
+      [long.visual.icons.rules, r.iconography],
+      [long.visual.imagery.avoid, r.imageryAvoid],
+      [long.type.rules, r.typeRules],
+    ] as const) {
+      const fit = brandKitPortraitRulesFit(rules, room);
+      expect(fit.scale).toBe(0.72);
+      expect(fit.cut).toBe(true);
+      expect(fit.rules.length + fit.more).toBe(rules.length);
+      expect(fit.rules.length).toBeGreaterThan(0);
+      expect(fit.rules.every((rule) => rule.length < 300)).toBe(true);
+    }
+    // The Partnership and Type lists hold every rule cut at a sentence; the Iconography and Imagery rooms count some.
+    expect(brandKitPortraitRulesFit(long.logo.partnership, r.partnership).more).toBe(0);
+    expect(brandKitPortraitRulesFit(long.type.rules, r.typeRules).more).toBe(0);
+    expect(brandKitPortraitRulesFit(long.visual.icons.rules, r.iconography).more).toBe(2);
+    expect(brandKitPortraitRulesFit(long.visual.imagery.avoid, r.imageryAvoid).more).toBe(1);
+    // Twelve short rules in the Imagery page's 70 px: the first few print, the rest are counted, the first always kept.
+    const many = brandKitPortraitRulesFit(
+      Array.from({ length: 12 }, (_, index) => `Avoid the ${index + 1}th thing.`),
+      r.imageryAvoid
+    );
+    expect(many.more).toBeGreaterThan(0);
+    expect(many.rules.length + many.more).toBe(12);
+    expect(many.rules[0]).toBe('Avoid the 1th thing.');
+    expect(
+      brandKitPortraitRulesFit(['One rule that is far too long for its room '.repeat(40)], { ...r.imageryAvoid, bottom: r.imageryAvoid.top + 30 }).rules
+    ).toHaveLength(1);
+  });
+});
+
+describe('the Color contrast page’s layout', () => {
+  it('keeps the pairs at the mock’s y 610 under four colours, lets a bigger matrix push them down, and counts the pairs the footer cannot hold', () => {
+    expect(brandKitPortraitContrastLayout(4, 1)).toEqual({ matrixHeight: 362, matrixMinHeight: 390, pairsTop: 610, pairsKept: 1, more: 0 });
+    // Seven pairs fill the room under four colours (990 − 610 − 20 = 360 ≥ 7 × 51); the eighth needs the line.
+    expect(brandKitPortraitContrastLayout(4, 7)).toMatchObject({ pairsKept: 7, more: 0 });
+    expect(brandKitPortraitContrastLayout(4, 8)).toMatchObject({ pairsKept: 6, more: 2 });
+    // Six colours: the matrix is 534 px, the pairs start at 754 and three of eight fit with the line; one always prints.
+    expect(brandKitPortraitContrastLayout(6, 8)).toEqual({ matrixHeight: 534, matrixMinHeight: 390, pairsTop: 754, pairsKept: 3, more: 5 });
+    expect(brandKitPortraitContrastLayout(9, 2)).toMatchObject({ pairsKept: 1, more: 1 });
+  });
+});
+
+describe('the Watchouts page’s draws', () => {
+  it('draws each tile by its kind: the shadow in px, the recolor as the portrait filter, the busy ground as the mock’s gradient, white under the rest', () => {
+    const drawn = view.watchouts.map((tile) => brandKitPortraitWatchoutDraw(tile, view, '#FFFFFF'));
+    expect(drawn.map((tile) => tile.kind)).toEqual(['stretched', 'recolored', 'rotated', 'shadowed', 'busy', 'retyped']);
+    expect(drawn[0]).toMatchObject({ transform: 'scaleX(1.45)', filter: '', ground: '#FFFFFF' });
+    expect(drawn[1].filter).toBe(BRAND_KIT_PORTRAIT_RECOLOR_FILTER);
+    expect(drawn[3].filter).toBe('drop-shadow(4px 5px 3px rgba(0, 0, 0, 0.45))');
+    expect(drawn[4].ground).toBe(`linear-gradient(120deg, ${view.accent}, ${view.palette[3].hex} 60%, ${view.dark})`);
+    expect(drawn[5]).toMatchObject({ retyped: true, ground: '#FFFFFF' });
+    // The key is the kind, not the screen's CSS: a recolored tile drawn differently on screen still prints the portrait filter.
+    expect(brandKitPortraitWatchoutDraw({ ...view.watchouts[1], filter: 'sepia(1)' }, view, '#FFFFFF').filter).toBe(BRAND_KIT_PORTRAIT_RECOLOR_FILTER);
+    // Without a fourth colour the busy ground goes through the spark.
+    const three = { ...view, palette: view.palette.slice(0, 3) };
+    expect(brandKitPortraitWatchoutDraw(view.watchouts[4], three, '#FFFFFF').ground).toBe(
+      `linear-gradient(120deg, ${view.accent}, ${view.spark} 60%, ${view.dark})`
+    );
+  });
+});
+
 describe('the Voice page’s attributes', () => {
   it('keeps four attributes as written, sets eight long ones smaller in the grammar’s steps, and cuts only what no step holds', () => {
-    expect(brandKitPortraitAttributesFit(view.voice.attributes)).toEqual({ scale: 1, cut: false, attributes: view.voice.attributes });
+    const room = BRAND_KIT_PORTRAIT_ATTRIBUTES.bottom - BRAND_KIT_PORTRAIT_ATTRIBUTES.top;
+    const four = brandKitPortraitAttributesFit(view.voice.attributes);
+    expect(four).toMatchObject({ scale: 1, cut: false, attributes: view.voice.attributes, more: 0 });
+    expect(four.height).toBeLessThanOrEqual(room);
     const line = 'Every claim names its number and its source, in the words the reader would use, and never a superlative the record cannot back.';
     const eight = Array.from({ length: 8 }, (_, index) => ({ name: `Attribute ${index + 1}`, line }));
     const fitted = brandKitPortraitAttributesFit(eight);
     expect(fitted.scale).toBeLessThan(1);
     expect(fitted.scale).toBeGreaterThanOrEqual(0.72);
-    expect(fitted.cut).toBe(false);
-    expect(fitted.attributes).toEqual(eight);
+    expect(fitted).toMatchObject({ cut: false, attributes: eight, more: 0 });
+    expect(fitted.height).toBeLessThanOrEqual(room);
+    // Twenty two-sentence attributes: every line cut to three lines at the smallest step, the rows the room still does
+    // not hold counted in the "+N more" line, and the stack never past the room (rv2 P1-5: it overran the footer).
     const twenty = Array.from({ length: 20 }, (_, index) => ({ name: `Attribute ${index + 1}`, line: `${line} ${line}` }));
     const cut = brandKitPortraitAttributesFit(twenty);
     expect(cut.scale).toBe(0.72);
     expect(cut.cut).toBe(true);
-    expect(cut.attributes).toHaveLength(20);
-    expect(cut.attributes.some((attribute) => attribute.line.length < `${line} ${line}`.length)).toBe(true);
+    expect(cut.more).toBeGreaterThan(0);
+    expect(cut.attributes.length + cut.more).toBe(20);
+    expect(cut.attributes.length % BRAND_KIT_PORTRAIT_ATTRIBUTES.columns).toBe(0);
+    expect(cut.height).toBeLessThanOrEqual(room);
+    // Each line is cut at a sentence (whole, so no ellipsis when one fits), never left as written.
+    expect(cut.attributes.every((attribute) => attribute.line.length < `${line} ${line}`.length)).toBe(true);
+    expect(cut.attributes[0].line).toBe(line);
+    expect(cut.attributes.map((attribute) => attribute.name)).toEqual(twenty.slice(0, cut.attributes.length).map((attribute) => attribute.name));
+    // Ten long attributes (rv2's probe: 535 px as written): cut, three rows kept, four counted in the line.
+    const ten = brandKitPortraitAttributesFit(Array.from({ length: 10 }, (_, index) => ({ name: `Attribute ${index + 1}`, line: `${line} ${line}` })));
+    expect(ten.height).toBeLessThanOrEqual(room);
+    expect(ten).toMatchObject({ cut: true, more: 4 });
+    expect(ten.attributes).toHaveLength(6);
   });
 });
 
@@ -405,7 +586,7 @@ describe('the Sources page’s lists', () => {
 
   it('fits the two columns to their room: as written when they fit, smaller together for a long record, cut at a sentence when no size holds it', () => {
     const short = brandKitPortraitSourcesFit(brandKitPortraitSources(view), true);
-    expect(short).toEqual({ scale: 1, cut: false, sources: brandKitPortraitSources(view) });
+    expect(short).toEqual({ scale: 1, cut: false, sources: brandKitPortraitSources(view), moreRead: 0, moreGaps: 0, moreConflicts: 0 });
     // Forty read sources at 20 px a line overrun the 636 px above the accepted box; the columns shrink in the grammar's steps.
     const sentence = 'The page names the typeface and its weights, and links the logo package the site offers to the press.';
     const long = brandKitPortraitSources({
@@ -417,6 +598,7 @@ describe('the Sources page’s lists', () => {
     expect(fitted.scale).toBeGreaterThanOrEqual(0.72);
     expect(fitted.cut).toBe(false);
     expect(fitted.sources.read).toEqual(long.read);
+    expect(fitted.moreRead).toBe(0);
     // Without the accepted box the same record has the room down to y 990: it fits at a larger size.
     expect(brandKitPortraitSourcesFit(long, false).scale).toBeGreaterThan(fitted.scale);
     // Eighty gap sentences hold at no step: the longest lines are cut at a sentence, marked, and the record's lists stay in order.
@@ -424,8 +606,48 @@ describe('the Sources page’s lists', () => {
     const cut = brandKitPortraitSourcesFit(essay, true);
     expect(cut.scale).toBe(0.72);
     expect(cut.cut).toBe(true);
-    expect(cut.sources.gaps).toHaveLength(80);
     expect(cut.sources.gaps.some((gap) => gap.length < `${sentence} ${sentence}`.length)).toBe(true);
     expect(cut.sources.read).toEqual(essay.read);
+    // Eighty cut gaps still hold at no step: the column keeps what fits and counts the rest, never past the room.
+    expect(cut.moreGaps).toBeGreaterThan(0);
+    expect(cut.sources.gaps.length + cut.moreGaps).toBe(80);
+    expect(cut.moreRead).toBe(0);
+    expect(cut.moreConflicts).toBe(0);
+  });
+
+  it('counts the items a column cannot hold even cut in "+N more" lines: sources read (left) and color conflicts (right), one kept at least', () => {
+    const room = BRAND_KIT_PORTRAIT_SOURCES.acceptedTop - BRAND_KIT_PORTRAIT_SOURCES.gap - BRAND_KIT_PORTRAIT_SOURCES.top;
+    const width = BRAND_KIT_PORTRAIT_SOURCES.width - BRAND_KIT_PORTRAIT_SOURCES.indent;
+    const read = Array.from({ length: 120 }, (_, index) => `https://one.example.org/page-${index + 1}`);
+    const conflict = (index: number) => ({
+      name: `Color ${index + 1}`,
+      values: [
+        { hex: '#112233', source: 'https://one.example.org/brand' },
+        { hex: '#113344', source: 'https://one.example.org/_next/static/chunks/a1b2c3.css' },
+      ],
+      chosen: '#112233',
+    });
+    const crowded = brandKitPortraitSources({
+      ...view,
+      report: { ...view.report, sources_read: read, color_conflicts: Array.from({ length: 30 }, (_, index) => conflict(index)) },
+    });
+    const fit = brandKitPortraitSourcesFit(crowded, true);
+    expect(fit.scale).toBe(0.72);
+    expect(fit.moreRead).toBeGreaterThan(0);
+    expect(fit.sources.read.length + fit.moreRead).toBe(120);
+    expect(fit.sources.read.length).toBeGreaterThanOrEqual(1);
+    expect(fit.moreConflicts).toBeGreaterThan(0);
+    expect(fit.sources.conflicts.length + fit.moreConflicts).toBe(30);
+    expect(fit.sources.conflicts.length).toBeGreaterThanOrEqual(1);
+    // The columns as printed, with their "+N more" lines, end inside the room.
+    const column = (paras: { text: string; size: number; line: number; above?: number }[]) =>
+      mktgPortraitBlockHeight(mktgPortraitScaleBlock({ paras }, fit.scale), width);
+    const item = BRAND_KIT_PORTRAIT_SOURCES.item;
+    const left = [
+      { text: 'Read', ...BRAND_KIT_PORTRAIT_SOURCES.label },
+      ...fit.sources.read.map((text, index) => ({ text, ...item, above: index === 0 ? BRAND_KIT_PORTRAIT_SOURCES.listAbove : 0 })),
+      { text: `+${fit.moreRead} more`, ...item },
+    ];
+    expect(column(left)).toBeLessThanOrEqual(room);
   });
 });

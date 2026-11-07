@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed } from '@angular/core';
-import { brandKitPortraitContrastMatrix, brandKitPortraitGradePill } from '@lfx-one/shared/utils';
+import { brandKitPortraitContrastLayout, brandKitPortraitContrastMatrix, brandKitPortraitGradePill, brandKitPortraitIntro } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
@@ -22,6 +22,16 @@ import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-po
 export class MktgBrandKitPageColorContrastComponent extends MktgBrandKitPageBase {
   /** The matrix, every cell graded on its unrounded ratio and labelled to one decimal (shared util). */
   protected readonly matrix = computed(() => brandKitPortraitContrastMatrix(this.view()));
-  /** The kit's own pairs as the web view prints them: its ratio label (`8.3:1`) and its recorded grade. */
-  protected readonly pairs = computed(() => this.view().contrast.map((row) => ({ ...row, pill: brandKitPortraitGradePill(row.grade) })));
+  /** The kit's own pairs as the web view prints them: its ratio label (`8.3:1`) and its recorded grade; as many as the room holds. */
+  protected readonly pairs = computed(() =>
+    this.view()
+      .contrast.slice(0, this.layout().pairsKept)
+      .map((row) => ({ ...row, pill: brandKitPortraitGradePill(row.grade) }))
+  );
+  /** The matrix and the pairs are one placed block in flow: the pairs sit at the mock's y 610 under a four-colour matrix and follow a taller one, never on it. */
+  protected readonly layout = computed(() => brandKitPortraitContrastLayout(this.view().color.palette.length, this.view().contrast.length));
+  /** The intro at most three lines of its 600 px: whole sentences that fit, or the first shortened (`brandKitPortraitIntro`). */
+  protected readonly intro = computed(() =>
+    brandKitPortraitIntro(`${this.view().color.contrast.rule} The matrix shows every pairing of the palette; the list repeats the kit's own table.`)
+  );
 }
