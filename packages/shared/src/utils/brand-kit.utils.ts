@@ -1307,6 +1307,43 @@ export function brandKitPageNumber(number: number): string {
   return String(number).padStart(2, '0');
 }
 
+/** Paint values that are not a colour of the artwork: nothing, the text colour, or white (the ground a reversal removes). */
+const BRAND_KIT_SVG_UNCOLORED_PAINTS = new Set([
+  'none',
+  'transparent',
+  'currentcolor',
+  'inherit',
+  'white',
+  '#fff',
+  '#ffffff',
+  'rgb(255,255,255)',
+  'rgb(255, 255, 255)',
+]);
+
+/**
+ * True when an SVG is drawn in one colour (its `fill`/`stroke` attributes and
+ * inline `fill:`/`stroke:` styles name at most one paint besides none, white
+ * and currentColor; unpainted shapes count as that one colour, black), so a
+ * reversed or one-colour mark can be derived from it by a CSS filter. A
+ * multi-colour artwork (two paints, or a gradient) flattens under such a
+ * filter to one shape and loses its mark: the book never derives from it.
+ */
+export function brandKitSvgIsMonochrome(svg: string): boolean {
+  const paints = new Set<string>();
+  const attribute = /\b(?:fill|stroke)\s*=\s*["']([^"']*)["']/gi;
+  const style = /\b(?:fill|stroke)\s*:\s*([^;"'}]+)/gi;
+  for (const regex of [attribute, style]) {
+    for (let match = regex.exec(svg); match !== null; match = regex.exec(svg)) {
+      const paint = match[1].trim().toLowerCase();
+      if (!paint || BRAND_KIT_SVG_UNCOLORED_PAINTS.has(paint)) continue;
+      if (paint.startsWith('url(')) return false;
+      paints.add(paint);
+      if (paints.size > 1) return false;
+    }
+  }
+  return true;
+}
+
 /** An SVG as an `<img>` source: a data URL. An image never runs the SVG's scripts, which is why the view draws logos this way and never inlines them. */
 export function brandKitSvgDataUrl(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;

@@ -26,8 +26,13 @@ describe('the Colorways page', () => {
       'One-color black · print only',
     ]);
     expect(tiles[1].querySelector('.pp-tile')?.classList.contains('pp-tile--dark')).toBe(true);
-    expect(tiles[1].querySelector<HTMLElement>('img')?.style.filter).toBe('brightness(0) invert(1)');
-    expect(tiles[3].querySelector<HTMLElement>('img')?.style.filter).toBe('brightness(0)');
+    // The fixture's lockup is three colours: the reversed and one-colour tiles cannot be derived by filter (it would
+    // flatten the mark), so they print the plain "Not supplied" line and no image; the two full-colour tiles draw it.
+    expect(tiles[1].querySelector('img')).toBeNull();
+    expect(tiles[1].querySelector('[data-testid="brand-kit-colorway-missing"]')?.textContent).toBe('Not supplied');
+    expect(tiles[3].querySelector('[data-testid="brand-kit-colorway-missing"]')?.textContent).toBe('Not supplied');
+    expect(tiles[0].querySelector<HTMLElement>('img')?.style.filter).toBe('');
+    expect(tiles[2].querySelector<HTMLElement>('img')?.style.filter).toBe('');
     expect(tiles[2].querySelector<HTMLElement>('.pp-tile')?.style.background).not.toBe('');
     expect(frame.querySelectorAll('[data-testid="brand-kit-colorways-rules"] li')).toHaveLength(view.logo.colorways.length);
     expect(frame.querySelector('[data-testid="brand-kit-colorways-rules"] li')?.textContent?.trim()).toBe('Full color · on white.');

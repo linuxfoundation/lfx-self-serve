@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed } from '@angular/core';
-import { brandKitPortraitIntro } from '@lfx-one/shared/utils';
+import { brandKitPortraitIntro, mktgPortraitMeasure, mktgPortraitMeasuresInText } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitArtworkComponent } from './mktg-brand-kit-artwork.component';
@@ -21,15 +21,17 @@ import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-po
 export class MktgBrandKitPageLogoClearSpaceComponent extends MktgBrandKitPageBase {
   protected readonly minimum = computed(() => this.view().logo.minimum_size);
   protected readonly intro = computed(() =>
-    brandKitPortraitIntro([this.view().logo.clear_space, this.minimum().rule].filter((part) => part.trim() !== '').join(' '))
+    mktgPortraitMeasuresInText(brandKitPortraitIntro([this.view().logo.clear_space, this.minimum().rule].filter((part) => part.trim() !== '').join(' ')))
   );
+  /** A measure in the pages' one format (`32 px`, `10 mm`), for the scaling labels and the cards alike. */
+  protected readonly measure = mktgPortraitMeasure;
   protected readonly steps = [48, 40, 32];
   protected readonly cards = computed(() => {
     const size = this.minimum();
     return [
-      { figure: `${size.screen_px} px`, label: 'Minimum height on screen' },
-      { figure: `${size.print_mm} mm`, label: 'Minimum height in print' },
-      { figure: `${size.symbol_px} px`, label: 'Minimum symbol, below that nothing' },
+      { figure: mktgPortraitMeasure(size.screen_px, 'px'), label: 'Minimum height on screen' },
+      { figure: mktgPortraitMeasure(size.print_mm, 'mm'), label: 'Minimum height in print' },
+      { figure: mktgPortraitMeasure(size.symbol_px, 'px'), label: 'Minimum symbol, below that nothing' },
     ];
   });
 }

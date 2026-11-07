@@ -129,6 +129,15 @@ export const BRAND_KIT_PORTRAIT_INTRO = { width: 600, size: 12.5, maxLines: 3 } 
 export const BRAND_KIT_PORTRAIT_BACK_COVER_LINE = { width: MKTG_PORTRAIT_PAGE.contentWidth, size: 13, weight: 500, tracking: 0.16, maxLines: 2 } as const;
 
 /**
+ * The Watch-outs page's retyped sample: the project's name in a 30 px serif
+ * italic, centred in its 224 × 190 tile with 34 px clear on each side (the
+ * × badge's 22 px box and its 8 px inset, plus the grammar's 4 px), so the
+ * name never runs under the badge; at most four lines of that 156 px, a
+ * longer name shortened at a word with an ellipsis, never set smaller.
+ */
+export const BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED = { width: 156, badgeClear: 34, size: 30, weight: 700, maxLines: 4 } as const;
+
+/**
  * The usage cards' lines (the brand line on the keynote slide and the social
  * card, 308 px of text inside the 344 px card): shortened at a word to the
  * lines the card holds under its lockup or note, never set smaller.

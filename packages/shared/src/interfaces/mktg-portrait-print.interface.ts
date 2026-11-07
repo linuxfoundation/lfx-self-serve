@@ -70,6 +70,14 @@ export interface MktgPortraitPlacedPage extends MktgPortraitPlanPage {
 /** A logo as a portrait cover draws it. */
 export type MktgPortraitLogo = MktgPrintLogo;
 
+/** The cover strip as printed: its halves, shortened when needed, and whether the strip still wraps. */
+export interface MktgPortraitCoverStrip {
+  left: string;
+  right: string;
+  /** True when both halves shortened still do not share one line: the strip wraps and moves up one line. */
+  wraps: boolean;
+}
+
 /** A counted noun as a `+N more …` line prints it: `rule` / `rules`, `item to avoid` / `items to avoid`. */
 export interface MktgPortraitNoun {
   one: string;

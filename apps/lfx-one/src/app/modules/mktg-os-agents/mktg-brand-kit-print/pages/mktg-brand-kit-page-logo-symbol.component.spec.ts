@@ -17,7 +17,8 @@ describe('the Symbol & symbol in shape page', () => {
     expect(frame.querySelector('[data-testid="brand-kit-symbol-intro"]')?.textContent).toBe('The symbol.');
     const variants = frame.querySelector('[data-testid="brand-kit-symbol-variants"]');
     expect(rectOf(variants)).toEqual({ left: '56px', top: '250px', width: '704px' });
-    expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['', 'brightness(0) invert(1)', 'brightness(0)']);
+    // The symbol is cropped from the three-colour lockup, which no filter may flatten: every variant draws it as it is.
+    expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['', '', '']);
     expect(Array.from(variants?.querySelectorAll('.pp-cap') ?? [], (cap) => cap.textContent)).toEqual(['Full color', 'Reversed', 'One-color black']);
     const shapes = Array.from(frame.querySelectorAll('[data-testid="brand-kit-symbol-shapes"] > div'));
     expect(shapes).toHaveLength(4);

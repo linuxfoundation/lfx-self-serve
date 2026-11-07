@@ -342,6 +342,7 @@ $pp-band-height: 4px;
 .pp-cover-strip {
   display: flex;
   justify-content: space-between;
+  column-gap: 24px;
   border-top: 1px solid rgba(255, 255, 255, 0.25);
   padding-top: 10px;
   font-size: 10px;
@@ -350,6 +351,21 @@ $pp-band-height: 4px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.6);
+}
+
+/* The strip's halves share one line (nowrap, 24 px apart); only when one word each still does not fit does it wrap,
+   at the grammar's leading, the cover having moved it up one line. */
+.pp-cover-strip > span {
+  white-space: nowrap;
+}
+
+.pp-cover-strip--wrapped {
+  flex-wrap: wrap;
+  line-height: 1.4;
+}
+
+.pp-cover-strip--wrapped > span {
+  white-space: normal;
 }
 
 /* ---------- the chapter opener (the family's) ---------- */

@@ -9,6 +9,7 @@
 import {
   BRAND_KIT_PORTRAIT_ATTRIBUTES,
   BRAND_KIT_PORTRAIT_BACK_COVER_LINE,
+  BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED,
   BRAND_KIT_PORTRAIT_CONTENTS,
   BRAND_KIT_PORTRAIT_CONTRAST,
   BRAND_KIT_PORTRAIT_GRADE_INKS,
@@ -70,6 +71,7 @@ import {
   brandKitInWords,
   brandKitLuminance,
   brandKitRatioLabel,
+  BRAND_KIT_NOT_SUPPLIED,
 } from './brand-kit-book.utils';
 import {
   mktgKeepName,
@@ -105,7 +107,10 @@ const ARTWORK_FILTERS: Readonly<Record<BrandKitPortraitArtworkMode, string>> = {
  * reversed, it is the supplied reversed file as it is, else the primary
  * filtered to white; one-colour, the primary filtered to black. The symbol
  * is the symbol file or the primary cropped to it, filtered the same way;
- * the stacked lockup is only ever its own file.
+ * the stacked lockup is only ever its own file. A filter is applied only to
+ * one-colour artwork (`view.derivable`): a multi-colour primary would flatten
+ * to one shape under it, so the slot draws it in full colour instead (the
+ * Colorways tiles, which name their colorway, say "Not supplied" there).
  */
 export function brandKitPortraitArtwork(
   view: BrandKitBookView,
@@ -113,7 +118,7 @@ export function brandKitPortraitArtwork(
   mode: BrandKitPortraitArtworkMode = 'full'
 ): MktgPrintLogo | null {
   const alt = { lockup: 'Horizontal lockup', symbol: 'Symbol', stacked: 'Stacked lockup' }[kind];
-  const filter = ARTWORK_FILTERS[mode];
+  const filter = view.derivable ? ARTWORK_FILTERS[mode] : '';
   if (kind === 'lockup' && mode === 'reversed' && view.logos.reversed?.src) return { src: view.logos.reversed.src, alt: 'Reversed lockup', filter: '' };
   const images: Record<typeof kind, BrandKitLogoImage | null> = { lockup: view.logos.primary, symbol: view.symbol, stacked: view.logos.stacked };
   const image = images[kind];
@@ -137,10 +142,10 @@ export function brandKitPortraitFiles(view: BrandKitBookView): BrandKitPortraitF
   const { primary, reversed, symbol, stacked } = view.logos;
   const cropped = !symbol && !!view.symbol?.src;
   return [
-    { slot: 'primary', name: 'Horizontal lockup', format: formatOf(primary), variant: 'Full color', source: suppliedOr(primary, 'Not supplied') },
-    { slot: 'reversed', name: 'Reversed (white)', format: formatOf(reversed), variant: 'White', source: suppliedOr(reversed, reversedFallback(primary)) },
+    { slot: 'primary', name: 'Horizontal lockup', format: formatOf(primary), variant: 'Full color', source: suppliedOr(primary, BRAND_KIT_NOT_SUPPLIED) },
+    { slot: 'reversed', name: 'Reversed (white)', format: formatOf(reversed), variant: 'White', source: suppliedOr(reversed, reversedFallback(view)) },
     { slot: 'symbol', name: 'Symbol', format: symbolFormat(symbol, cropped), variant: 'Full color', source: symbolSource(symbol, cropped) },
-    { slot: 'stacked', name: 'Stacked lockup', format: formatOf(stacked), variant: 'Full color', source: suppliedOr(stacked, 'Not supplied') },
+    { slot: 'stacked', name: 'Stacked lockup', format: formatOf(stacked), variant: 'Full color', source: suppliedOr(stacked, BRAND_KIT_NOT_SUPPLIED) },
   ];
 }
 
@@ -174,8 +179,8 @@ function suppliedOr(image: BrandKitLogoImage | null, otherwise: string): string 
 }
 
 /** What the book does for a missing reversed file: derives it from the horizontal file when there is one. */
-function reversedFallback(primary: BrandKitLogoImage | null): string {
-  return primary ? 'Not supplied: this book derives it from the horizontal file' : 'Not supplied';
+function reversedFallback(view: BrandKitBookView): string {
+  return view.logos.primary && view.derivable ? 'Not supplied: this book derives it from the horizontal file' : BRAND_KIT_NOT_SUPPLIED;
 }
 
 /** The symbol's format: its file's, `SVG (crop)` when the book crops it out of the lockup, else a dash. */
@@ -187,7 +192,7 @@ function symbolFormat(symbol: BrandKitLogoImage | null, cropped: boolean): strin
 /** The symbol's source: supplied, cropped out of the lockup, or not supplied. */
 function symbolSource(symbol: BrandKitLogoImage | null, cropped: boolean): string {
   if (symbol) return 'Supplied';
-  return cropped ? 'Cropped out of the horizontal lockup' : 'Not supplied';
+  return cropped ? 'Cropped out of the horizontal lockup' : BRAND_KIT_NOT_SUPPLIED;
 }
 
 /**
@@ -441,6 +446,23 @@ export function brandKitPortraitBackCoverLine(text: string, family?: string): st
   const c = BRAND_KIT_PORTRAIT_BACK_COVER_LINE;
   const para = { weight: c.weight, caps: true, tracking: c.tracking, family };
   const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  const linesOf = (line: string): number => measuredLines(line.split(' '), c.width, c.size, para);
+  if (linesOf(words.join(' ')) <= c.maxLines) return words.join(' ');
+  const shortened = (count: number): string => `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(words.slice(0, count)).join(' '))}…`;
+  const count = mktgPortraitLargestFitting(words.length - 1, (prefix) => linesOf(shortened(prefix)) <= c.maxLines);
+  return shortened(count);
+}
+
+/**
+ * The Watch-outs page's retyped sample: the project's name as written when it
+ * holds in the tile's four lines clear of the × badge, else shortened at a
+ * word with an ellipsis (the serif's own widths are near the default's).
+ */
+export function brandKitPortraitRetypedName(name: string): string {
+  const c = BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED;
+  const para = { weight: c.weight, family: 'Georgia' };
+  const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return '';
   const linesOf = (line: string): number => measuredLines(line.split(' '), c.width, c.size, para);
   if (linesOf(words.join(' ')) <= c.maxLines) return words.join(' ');

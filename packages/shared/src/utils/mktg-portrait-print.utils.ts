@@ -17,6 +17,7 @@ import {
   MKTG_PORTRAIT_GLYPH_WIDTHS,
   MKTG_PORTRAIT_HEX_REGEX,
   MKTG_PORTRAIT_INKS,
+  MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_MORE_LINE,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
   MKTG_PORTRAIT_WEIGHT_WIDTH,
@@ -27,6 +28,7 @@ import type {
   MktgPortraitFitPara,
   MktgPortraitFitResult,
   MktgPortraitLook,
+  MktgPortraitCoverStrip,
   MktgPortraitNoun,
 } from '../interfaces/mktg-portrait-print.interface';
 import { BRAND_KIT_CONTRAST_AA } from '../constants/brand-kit.constants';
@@ -352,6 +354,39 @@ export function mktgPortraitFitBlock(block: MktgPortraitFitBlock, width: number,
     current = { paras: current.paras.map((entry, index) => (index === longest ? { ...entry, text } : entry)) };
   }
   return { block: current, scale: minScale, cut: true };
+}
+
+/**
+ * The cover strip's halves on one line: as written when both fit the width
+ * with the gap between them; else the longer half loses words from its first
+ * segment (the project name, or the host) with an ellipsis until both fit,
+ * then the other half the same way; when one word each still does not fit,
+ * both halves print whole and the strip wraps (`wraps`), the cover moving it
+ * up one line. The size never changes.
+ */
+export function mktgPortraitCoverStrip(left: string, right: string, width: number, family?: string): MktgPortraitCoverStrip {
+  const c = MKTG_PORTRAIT_COVER_STRIP;
+  const para = { caps: true, tracking: c.tracking, family };
+  const fits = (first: string, second: string): boolean =>
+    mktgPortraitTextWidth(first, c.size, para) + c.gap + mktgPortraitTextWidth(second, c.size, para) <= width + 0.01;
+  if (fits(left, right)) return { left, right, wraps: false };
+  const shortened = (half: string, count: number): string => {
+    const [head, ...rest] = half.split(c.separator);
+    const words = head.split(' ');
+    const kept = count >= words.length ? head : `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(words.slice(0, count)).join(' '))}…`;
+    return [kept, ...rest].join(c.separator);
+  };
+  const wordsOf = (half: string): number => half.split(c.separator)[0].split(' ').length;
+  const longerFirst = mktgPortraitTextWidth(left, c.size, para) >= mktgPortraitTextWidth(right, c.size, para);
+  const [longer, shorter] = longerFirst ? [left, right] : [right, left];
+  const pair = (first: string, second: string): MktgPortraitCoverStrip =>
+    longerFirst ? { left: first, right: second, wraps: false } : { left: second, right: first, wraps: false };
+  const longerCount = mktgPortraitLargestFitting(wordsOf(longer) - 1, (count) => fits(shortened(longer, count), shorter));
+  if (fits(shortened(longer, longerCount), shorter)) return pair(shortened(longer, longerCount), shorter);
+  const least = shortened(longer, 1);
+  const shorterCount = mktgPortraitLargestFitting(wordsOf(shorter) - 1, (count) => fits(least, shortened(shorter, count)));
+  if (fits(least, shortened(shorter, shorterCount))) return pair(least, shortened(shorter, shorterCount));
+  return { left, right, wraps: true };
 }
 
 /** A text cut to fit one line `width` px wide at `size` px (unchanged when it already fits). */

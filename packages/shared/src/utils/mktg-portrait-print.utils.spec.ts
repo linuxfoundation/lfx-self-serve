@@ -19,6 +19,7 @@ import {
   mktgPortraitBlockHeight,
   mktgPortraitCharsPerLine,
   mktgPortraitCount,
+  mktgPortraitCoverStrip,
   mktgPortraitCutText,
   mktgPortraitFitBlock,
   mktgPortraitFits,
@@ -304,5 +305,33 @@ describe('mktgNoWidow', () => {
     expect(mktgNoWidow(hostile)).toBe('x');
     expect(mktgNoWidow(`a${' '.repeat(100_000)}b`)).toBe('a\u00a0b');
     expect(performance.now() - started).toBeLessThan(50);
+  });
+});
+
+describe('the cover strip', () => {
+  it('prints both halves as written when they share the line, shortens the longer half’s first segment with an ellipsis, and wraps only as a last resort', () => {
+    const width = 672;
+    const left = 'Project One · a Linux Foundation project';
+    const right = 'one.example.org · V1.0 · October 2026';
+    expect(mktgPortraitCoverStrip(left, right, width)).toEqual({ left, right, wraps: false });
+    const long = 'Cloud Native Computing Foundation for Synthetic Everything (CNCFSE) · a Linux Foundation project';
+    const shortened = mktgPortraitCoverStrip(long, right, width);
+    expect(shortened.wraps).toBe(false);
+    expect(shortened.right).toBe(right);
+    expect(shortened.left).toMatch(/^Cloud Native.*… · a Linux Foundation project$/);
+    expect(shortened.left.length).toBeLessThan(long.length);
+    // The other half loses words too when the name alone cannot make room; one word each still too wide → the strip
+    // wraps whole (a single long token, a host, has no words to give up).
+    const wordy = 'Synthetic Host Name Of The Strip Example Site · V1.0 · October 2026';
+    const both = mktgPortraitCoverStrip(long, wordy, width);
+    expect(both.wraps).toBe(false);
+    expect(both.left.endsWith('… · a Linux Foundation project')).toBe(true);
+    expect(both.right).toMatch(/^Synthetic.*… · V1.0 · October 2026$/);
+    const hopeless = mktgPortraitCoverStrip(`${'Synthetic'.repeat(12)} · a Linux Foundation project`, `${'host'.repeat(20)}.org · V1.0 · October 2026`, width);
+    expect(hopeless).toEqual({
+      left: `${'Synthetic'.repeat(12)} · a Linux Foundation project`,
+      right: `${'host'.repeat(20)}.org · V1.0 · October 2026`,
+      wraps: true,
+    });
   });
 });

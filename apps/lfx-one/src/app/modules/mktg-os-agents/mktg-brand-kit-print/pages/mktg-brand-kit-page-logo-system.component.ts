@@ -42,6 +42,14 @@ export class MktgBrandKitPageLogoSystemComponent extends MktgBrandKitPageBase {
    */
   protected readonly symbolSupplied = computed(() => !!this.view().logos.symbol?.src);
   protected readonly reversedSupplied = computed(() => !!this.view().logos.reversed?.src);
+  /**
+   * The dark tile's caption: the supplied reversed file, the one derived by filter from a one-colour lockup, or (a
+   * multi-colour lockup, which a filter would flatten) the full-colour lockup drawn on the dark as it is.
+   */
+  protected readonly reversedCaption = computed(() => {
+    if (this.reversedSupplied()) return 'Reversed · supplied file';
+    return this.view().derivable ? 'Reversed · derived from the horizontal file' : 'On the dark · the full-color lockup (no reversed file)';
+  });
   protected readonly hasStacked = computed(() => !!this.view().logos.stacked?.src);
   /** The intro at most three lines of its 600 px: whole sentences that fit, or the first shortened (`brandKitPortraitIntro`). */
   protected readonly intro = computed(() => brandKitPortraitIntro(this.view().logo.system));

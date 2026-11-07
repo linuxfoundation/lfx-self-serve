@@ -31,7 +31,11 @@
     @for (tile of tiles(); track tile.name) {
       <div>
         <div class="pp-tile kp-tile kp-tile--wide" [class.pp-tile--dark]="!tile.light" [style.background]="tile.ground">
-          <img class="kp-colorway-logo" [src]="tile.logo.src" [alt]="tile.name" [style.filter]="tile.logoFilter || null" />
+          @if (tile.logo?.src; as src) {
+            <img class="kp-colorway-logo" [src]="src" [alt]="tile.name" [style.filter]="tile.logoFilter || null" />
+          } @else if (tile.missing) {
+            <span class="kp-tile-missing" data-testid="brand-kit-colorway-missing">{{ tile.missing }}</span>
+          }
         </div>
         <div class="pp-cap">{{ tile.caption }}</div>
       </div>

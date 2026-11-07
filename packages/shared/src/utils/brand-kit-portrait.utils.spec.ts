@@ -34,6 +34,7 @@ import {
   brandKitPortraitContentsLayout,
   brandKitPortraitContrastLayout,
   brandKitPortraitIntro,
+  brandKitPortraitRetypedName,
   brandKitPortraitRulesFit,
   brandKitPortraitVoiceMessagesFit,
   brandKitPortraitGradePill,
@@ -66,10 +67,16 @@ const SVG = 'data:image/svg+xml,synthetic';
 const view = buildBrandKitBookView(brandKitTestRevision(), 4);
 
 describe('brandKitPortraitArtwork', () => {
-  it('draws the primary lockup as it is, reversed by filter without a reversed file, and one-colour black', () => {
+  it('draws the primary lockup as it is, and derives the reversed and one-colour marks by filter only from one-colour artwork', () => {
     expect(brandKitPortraitArtwork(view, 'lockup')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '' });
-    expect(brandKitPortraitArtwork(view, 'lockup', 'reversed')?.filter).toBe('brightness(0) invert(1)');
-    expect(brandKitPortraitArtwork(view, 'lockup', 'mono')?.filter).toBe('brightness(0)');
+    // The fixture's lockup is drawn in three colours: a filter would flatten it to one shape, so the dark grounds draw
+    // it in full colour and the one-colour slot keeps it as it is.
+    expect(view.derivable).toBe(false);
+    expect(brandKitPortraitArtwork(view, 'lockup', 'reversed')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '' });
+    expect(brandKitPortraitArtwork(view, 'lockup', 'mono')?.filter).toBe('');
+    const mono = { ...view, derivable: true };
+    expect(brandKitPortraitArtwork(mono, 'lockup', 'reversed')?.filter).toBe('brightness(0) invert(1)');
+    expect(brandKitPortraitArtwork(mono, 'lockup', 'mono')?.filter).toBe('brightness(0)');
   });
 
   it('prefers the supplied reversed file as it is, and draws nothing for a slot the kit lacks', () => {
@@ -83,8 +90,9 @@ describe('brandKitPortraitArtwork', () => {
   });
 
   it('filters the symbol the same way, from the symbol file or the crop', () => {
-    const withSymbol = { ...view, symbol: { ref: 'logo.svg', name: 'logo.svg', src: SVG } };
+    const withSymbol = { ...view, derivable: true, symbol: { ref: 'logo.svg', name: 'logo.svg', src: SVG } };
     expect(brandKitPortraitArtwork(withSymbol, 'symbol', 'reversed')).toEqual({ src: SVG, alt: 'Symbol', filter: 'brightness(0) invert(1)' });
+    expect(brandKitPortraitArtwork({ ...withSymbol, derivable: false }, 'symbol', 'reversed')?.filter).toBe('');
   });
 });
 
@@ -93,8 +101,9 @@ describe('brandKitPortraitFiles', () => {
     const rows = brandKitPortraitFiles(view);
     expect(rows.map((row) => row.slot)).toEqual(['primary', 'reversed', 'symbol', 'stacked']);
     expect(rows[0]).toEqual({ slot: 'primary', name: 'Horizontal lockup', format: 'SVG', variant: 'Full color', source: 'Supplied' });
-    expect(rows[1].source).toBe('Not supplied: this book derives it from the horizontal file');
-    expect(rows[1].format).toBe('—');
+    // The reversed slot says the book derives it only when it can (a one-colour primary); the fixture's is three colours.
+    expect(rows[1]).toMatchObject({ format: '—', source: 'Not supplied' });
+    expect(brandKitPortraitFiles({ ...view, derivable: true })[1].source).toBe('Not supplied: this book derives it from the horizontal file');
     expect(rows[2].source).toBe('Not supplied');
     expect(rows[3]).toMatchObject({ format: '—', source: 'Not supplied' });
     expect(JSON.stringify(rows)).not.toContain('logo.svg');
@@ -115,7 +124,8 @@ describe('brandKitPortraitFiles', () => {
     expect(brandKitPortraitHasLogoFiles(pngOnly)).toBe(false);
     expect(brandKitPortraitFiles(pngOnly).map((row) => [row.format, row.source])).toEqual([
       ['PNG', 'Supplied'],
-      ['—', 'Not supplied: this book derives it from the horizontal file'],
+      // A PNG lockup is not artwork the book can filter, so the reversed slot is plainly not supplied.
+      ['—', 'Not supplied'],
       ['PNG', 'Supplied'],
       ['—', 'Not supplied'],
     ]);
@@ -531,6 +541,19 @@ describe('the Color contrast page’s layout', () => {
       moreLine: '+5 more pairs, in LFX One',
     });
     expect(brandKitPortraitContrastLayout(9, 2)).toMatchObject({ pairsKept: 1, more: 1, moreLine: '+1 more pair, in LFX One' });
+  });
+});
+
+describe('the Watchouts page’s retyped sample', () => {
+  it('prints the name as written when the tile holds it in four lines clear of the badge, else shortened at a word with an ellipsis', () => {
+    expect(brandKitPortraitRetypedName('Project One')).toBe('Project One');
+    // Each long word is a line of its own in the 156 px clear of the badge: five words are one too many, so the
+    // acronym goes and the name ends with the ellipsis.
+    expect(brandKitPortraitRetypedName('Cloud Native Computing Foundation (CNCF)')).toBe('Cloud Native Computing Foundation…');
+    const long = brandKitPortraitRetypedName('The Synthetic Foundation for Interoperable Agentic Computing Standards and Open Governance');
+    expect(long.endsWith('…')).toBe(true);
+    expect(long.startsWith('The Synthetic Foundation')).toBe(true);
+    expect(brandKitPortraitRetypedName('  ')).toBe('');
   });
 });
 

@@ -195,6 +195,10 @@ describe('the print’s brand', () => {
 
   it('draws the primary lockup white on the cover when there is no reversed artwork, and leaves out a logo it cannot draw', () => {
     expect(mktgPrintBrand(kitWith({ primary: { ref: 'orbit.svg', svg: SVG } })).logoOnDark?.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+    // A multi-colour primary is never filtered (it would flatten to one shape): the dark ground draws it in full colour.
+    const twoColours =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><rect fill="#1D4ED8" width="3" height="3"/><rect fill="#111827" x="4" width="6" height="3"/></svg>';
+    expect(mktgPrintBrand(kitWith({ primary: { ref: 'orbit.svg', svg: twoColours } })).logoOnDark?.filter).toBe('');
     // A PNG the envelope carries no bytes for, or the kit's placeholder marks: no logo rather than a broken image.
     const png = mktgPrintBrand(kitWith({ primary: { ref: 'orbit.png', svg: null } }));
     expect([png.logoOnDark, png.logoOnLight]).toEqual([null, null]);

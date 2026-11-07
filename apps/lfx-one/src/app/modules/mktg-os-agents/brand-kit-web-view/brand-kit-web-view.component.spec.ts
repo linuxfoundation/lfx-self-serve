@@ -442,10 +442,13 @@ describe('BrandKitWebViewComponent', () => {
         'Full color · on light tint',
         'One-color black · print only',
       ]);
-      // The reversed tile sits on the kit's dark and draws the logo white.
+      // The reversed tile sits on the kit's dark; the fixture's three-colour lockup cannot be reversed by filter (it
+      // would flatten), so the tile says "Not supplied" instead of a filtered image.
       const reversed = colorways[1].firstElementChild as HTMLElement;
       expect(reversed.style.background).toContain('rgb(77, 78, 78)');
-      expect((reversed.firstElementChild as HTMLElement).style.filter).toBe('brightness(0) invert(1)');
+      expect((reversed.firstElementChild as HTMLElement).style.filter).toBe('');
+      expect(reversed.textContent?.trim()).toBe('Not supplied');
+      expect(reversed.querySelector('img')).toBeNull();
       expect(query('brand-kit-web-view-clear-space')?.textContent).toContain('X on every side.');
       expect(query('brand-kit-web-view-minimum-size')?.textContent).toContain('32 px tall on screen, 10 mm in print.');
       expect(queryAll('brand-kit-web-view-watchout')).toHaveLength(6);

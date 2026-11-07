@@ -199,7 +199,29 @@ describe('the book’s view model', () => {
     // The symbol is never the supplied reversed lockup: the reversed tile still turns a dark symbol white.
     expect(supplied.map((tile) => tile.symbolFilter)).toEqual(['', 'brightness(0) invert(1)', '', 'brightness(0)']);
     const fallback = buildBrandKitBookView(withColorways(kitWith({ primary }))).colorways[1];
-    expect([fallback.logo?.name, fallback.logoFilter]).toEqual(['orbit-horizontal.svg', 'brightness(0) invert(1)']);
+    expect([fallback.logo?.name, fallback.logoFilter, fallback.missing]).toEqual(['orbit-horizontal.svg', 'brightness(0) invert(1)', '']);
+    expect(supplied.every((tile) => tile.missing === '')).toBe(true);
+  });
+
+  it('never filters a multi-colour primary: its dark grounds draw it in full colour and the derived tiles say "Not supplied"', () => {
+    const colorways = ['Full colour', 'Reversed', 'On the tint', 'One colour'].map((name) => ({ name, ground: 'x', logo: 'x' }));
+    const withColorways = (kit: BrandKitRevision): BrandKitRevision => ({ ...kit, chapters: { ...kit.chapters, logo: { ...kit.chapters.logo, colorways } } });
+    const twoColours =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><rect fill="#1D4ED8" width="3" height="3"/><path fill="#fff" d="M1 1h1v1z"/><rect fill="#111827" x="4" width="6" height="3"/></svg>';
+    const primary = { ref: 'orbit-horizontal.svg', svg: twoColours };
+    const view = buildBrandKitBookView(withColorways(kitWith({ primary })));
+    expect(view.derivable).toBe(false);
+    expect(view.colorways.map((tile) => [tile.logo?.name ?? null, tile.logoFilter, tile.missing])).toEqual([
+      ['orbit-horizontal.svg', '', ''],
+      [null, '', 'Not supplied'],
+      ['orbit-horizontal.svg', '', ''],
+      [null, '', 'Not supplied'],
+    ]);
+    // A supplied reversed file is drawn as it is whatever the primary's colours.
+    const supplied = buildBrandKitBookView(withColorways(kitWith({ primary, reversed: { ref: 'orbit-reversed.svg', svg: SVG } }))).colorways[1];
+    expect([supplied.logo?.name, supplied.logoFilter, supplied.missing]).toEqual(['orbit-reversed.svg', '', '']);
+    // The family's and the document's print look reverse by filter only a one-colour primary.
+    expect(buildBrandKitBookView(kitWith({ primary: { ref: 'one.svg', svg: SVG } })).derivable).toBe(true);
   });
 
   it('says where each palette value was found without a raw URL: the logo by name, a stylesheet by its site', () => {

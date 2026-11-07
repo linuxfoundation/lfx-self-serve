@@ -32,7 +32,7 @@ import type {
   MktgPrintLogo,
 } from '../interfaces/mktg-print.interface';
 import { brandKitContrastRatio, brandKitLuminance, brandKitTint } from './brand-kit-book.utils';
-import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitLogoImage, brandKitWeights } from './brand-kit.utils';
+import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitLogoImage, brandKitSvgIsMonochrome, brandKitWeights } from './brand-kit.utils';
 import {
   foundationMessageAudienceRows,
   foundationMessageAvoidRows,
@@ -134,8 +134,9 @@ export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
   let logoOnDark: MktgPrintLogo | null = null;
   if (reversed?.src) {
     logoOnDark = { src: reversed.src, alt, filter: '' };
-  } else if (primary?.src) {
-    logoOnDark = { src: primary.src, alt, filter: MKTG_PRINT_REVERSED_FILTER };
+  } else if (primary?.src && files.primary?.svg) {
+    // A one-colour primary reverses by filter; a multi-colour one would flatten to one shape, so it is drawn in full colour.
+    logoOnDark = { src: primary.src, alt, filter: brandKitSvgIsMonochrome(files.primary.svg) ? MKTG_PRINT_REVERSED_FILTER : '' };
   }
   const darkIsHex = BRAND_KIT_HEX_REGEX.test(dark);
   // Text on the kit's dark panels takes whichever ink reads better against it:

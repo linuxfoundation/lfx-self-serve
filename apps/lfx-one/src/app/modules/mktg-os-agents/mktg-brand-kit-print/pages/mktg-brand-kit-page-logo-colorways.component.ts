@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed } from '@angular/core';
-import { BrandKitColorway, BrandKitColorwayTile } from '@lfx-one/shared/interfaces';
+import { BrandKitColorway } from '@lfx-one/shared/interfaces';
 import { mktgPortraitTailFor, mktgPortraitWithTail } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
@@ -32,10 +32,11 @@ export class MktgBrandKitPageLogoColorwaysComponent extends MktgBrandKitPageBase
       (name: string) => mktgPortraitWithTail(name, ' · ', 'print only'),
     ];
     // Each caption belongs to its tile's place in the kit's four colorways, so it is assigned before a tile without
-    // artwork is left out (one missing tile must not shift the captions of the rest).
+    // artwork is left out (one missing tile must not shift the captions of the rest). A tile whose colorway the kit
+    // did not supply and the book cannot derive (a multi-colour primary) stays, and prints its "Not supplied" line.
     return view.colorways
       .map((tile, index) => ({ ...tile, caption: (captions[index] ?? captions[2])(tile.name) }))
-      .filter((tile): tile is BrandKitColorwayTile & { caption: string; logo: NonNullable<BrandKitColorwayTile['logo']> } => !!tile.logo?.src);
+      .filter((tile) => !!tile.logo?.src || !!tile.missing);
   });
   /** The rules as `name — logo on ground.`, the dash and its clause left out when the name already says them. */
   protected readonly rules = computed(() =>

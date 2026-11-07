@@ -46,11 +46,13 @@ import {
   brandKitLogoImage,
   brandKitMonthYear,
   brandKitPageNumber,
+  brandKitSvgIsMonochrome,
   brandKitSymbolImage,
   brandKitWebsiteHost,
   brandKitWeights,
 } from './brand-kit.utils';
 import { brandKitIconColours } from './brand-kit-icons.utils';
+import { mktgPortraitMeasure } from './mktg-measure.utils';
 
 /** A letter page is 11 in wide: 1056 px at 96 dpi, which is what the type scale's px sizes are drawn against. */
 const PAGE_WIDTH_PX = 1056;
@@ -137,18 +139,29 @@ export function brandKitTint(dark: string): string {
  * reversed tile draws the supplied reversed artwork as it is; only without
  * one does it filter the primary lockup to white.
  */
-export function brandKitColorwayTiles(kit: BrandKitRevision, tint: string, logos: Record<BrandKitLogoSlot, BrandKitLogoImage | null>): BrandKitColorwayTile[] {
+export function brandKitColorwayTiles(
+  kit: BrandKitRevision,
+  tint: string,
+  logos: Record<BrandKitLogoSlot, BrandKitLogoImage | null>,
+  derivable = true
+): BrandKitColorwayTile[] {
   const primary = logos.primary;
-  const reversed = logos.reversed ? { logo: logos.reversed, logoFilter: '' } : { logo: primary, logoFilter: MKTG_PRINT_REVERSED_FILTER };
+  // A colorway the kit did not supply is derived from the primary only when that is one colour; else the tile says so.
+  const derived = (filter: string) =>
+    derivable ? { logo: primary, logoFilter: filter, missing: '' } : { logo: null, logoFilter: '', missing: BRAND_KIT_NOT_SUPPLIED };
+  const reversed = logos.reversed ? { logo: logos.reversed, logoFilter: '', missing: '' } : derived(MKTG_PRINT_REVERSED_FILTER);
   // The symbol is never the supplied reversed lockup, so it always takes the tile's own filter.
   const grounds = [
-    { ground: 'white', light: true, logo: primary, logoFilter: '', symbolFilter: '' },
+    { ground: 'white', light: true, logo: primary, logoFilter: '', symbolFilter: '', missing: '' },
     { ground: kit.kit.dark, light: false, ...reversed, symbolFilter: MKTG_PRINT_REVERSED_FILTER },
-    { ground: tint, light: true, logo: primary, logoFilter: '', symbolFilter: '' },
-    { ground: 'white', light: true, logo: primary, logoFilter: 'brightness(0)', symbolFilter: 'brightness(0)' },
+    { ground: tint, light: true, logo: primary, logoFilter: '', symbolFilter: '', missing: '' },
+    { ground: 'white', light: true, ...derived('brightness(0)'), symbolFilter: 'brightness(0)' },
   ];
   return kit.chapters.logo.colorways.map((colorway, index) => ({ name: colorway.name, ...(grounds[index] ?? grounds[0]) }));
 }
+
+/** The plain line of a logo slot the kit has no file for, in the files table and on a tile the book cannot derive. */
+export const BRAND_KIT_NOT_SUPPLIED = 'Not supplied';
 
 /** The six watchout tiles: the rule, the distortion each tile shows (`kind`) and the on-screen draw of it. */
 export function brandKitWatchoutTiles(kit: BrandKitRevision): BrandKitWatchoutView[] {
@@ -346,6 +359,7 @@ export function buildBrandKitBookView(kit: BrandKitRevision, version?: number | 
     (Object.keys(kit.chapters.logo.files) as BrandKitLogoSlot[]).map((slot) => [slot, brandKitLogoImage(kit.chapters.logo.files[slot])])
   ) as BrandKitBookView['logos'];
   const monthYear = brandKitMonthYear(kit.generatedAt);
+  const derivable = !!kit.chapters.logo.files.primary?.svg && brandKitSvgIsMonochrome(kit.chapters.logo.files.primary.svg);
   return {
     projectName: kit.projectName,
     projectCaps: kit.projectName.toUpperCase(),
@@ -368,14 +382,11 @@ export function buildBrandKitBookView(kit: BrandKitRevision, version?: number | 
     builtFrom: brandKitBuiltFrom(kit),
     logos,
     symbol: brandKitSymbolImage(kit.chapters.logo.files, kit.chapters.logo.symbol_viewbox),
+    derivable,
     placeholder: kit.chapters.logo.placeholder,
     logo: kit.chapters.logo,
-    colorways: brandKitColorwayTiles(kit, tint, logos),
-    minimumSizes: [
-      { label: '48 px', px: 48 },
-      { label: '40 px', px: 40 },
-      { label: `${kit.chapters.logo.minimum_size.screen_px} px`, px: kit.chapters.logo.minimum_size.screen_px },
-    ],
+    colorways: brandKitColorwayTiles(kit, tint, logos, derivable),
+    minimumSizes: [48, 40, kit.chapters.logo.minimum_size.screen_px].map((px) => ({ label: mktgPortraitMeasure(px, 'px'), px })),
     watchouts: brandKitWatchoutTiles(kit),
     color: kit.chapters.color,
     palette: brandKitPaletteCards(kit),

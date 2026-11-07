@@ -176,6 +176,18 @@
   height: 250px;
 }
 
+/* The plain line of a colorway tile whose artwork the kit did not supply and the book cannot derive. */
+.kp-tile-missing {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pp-muted);
+}
+
+.pp-tile--dark .kp-tile-missing {
+  color: var(--pp-white);
+  opacity: 0.8;
+}
+
 /* The logo files table: caps heads over a 1 px ink rule, 11.5/1.4 rows over hairlines, the source muted. */
 .kp-table {
   width: 100%;
@@ -459,10 +471,11 @@
   color: var(--pp-white);
 }
 
-/* The retyped sample: the project's name in a serif italic, centred in its tile with 12 px of side padding (a name
-   longer than the tile wraps, centred, at a 1.15 leading). */
+/* The retyped sample: the project's name in a serif italic, centred in its tile with 34 px clear on each side (the
+   × badge's box, its inset and the grammar's gap), so a wrapping name never runs under the badge; longer names are
+   shortened to the tile's four lines (BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED), at a 1.15 leading. */
 .kp-retyped {
-  padding: 0 12px;
+  padding: 0 34px;
   font-family: Georgia, serif;
   font-size: 30px;
   font-style: italic;
