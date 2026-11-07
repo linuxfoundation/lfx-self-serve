@@ -57,6 +57,7 @@ import {
   frameworkPortraitTaglineSize,
   frameworkPortraitTextHeight,
   frameworkPortraitTitle,
+  frameworkPortraitTitlesAtOneSize,
 } from './mktg-framework-portrait-layout.utils';
 import type { FoundationMessagePrintGoal, FoundationMessagePrintIcp, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import type { FoundationMessagePillarView } from '../interfaces/foundation-message.interface';
@@ -191,6 +192,13 @@ describe('the framework portrait book’s bounded blocks', () => {
     const wrapped = frameworkPortraitTitle(`Goal 3 · ${long.trim()}`);
     expect(wrapped).toEqual({ text: `Goal 3 · ${long.trim()}`, size: 25, lines: 3 });
     expect(frameworkPortraitBodyTop(wrapped)).toBe(136 + 2 * 25 * 1.1);
+    // The goal pages' titles at one size (the editor's rule): the smallest any needs, each at it with its own lines; a lone title fits alone.
+    const one = frameworkPortraitTitlesAtOneSize(['Goal 1 · Events', longTitle, 'Goal 3 · Adoption']);
+    expect(one.map((fit) => fit.size)).toEqual([fitted.size, fitted.size, fitted.size]);
+    expect(one.map((fit) => fit.lines)).toEqual([1, 1, 1]);
+    expect(frameworkPortraitTitlesAtOneSize(['Goal 1 · Events', `Goal 3 · ${long.trim()}`]).map((fit) => fit.size)).toEqual([25, 25]);
+    expect(frameworkPortraitTitlesAtOneSize(['Goal 1 · Events'])).toEqual([{ text: 'Goal 1 · Events', size: 34, lines: 1 }]);
+    expect(frameworkPortraitTitlesAtOneSize([])).toEqual([]);
   });
 
   it('widens the tagline’s card and sets the tagline no larger than two words a line', () => {

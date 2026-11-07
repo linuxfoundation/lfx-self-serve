@@ -219,6 +219,18 @@ export function frameworkPortraitTitle(title: string): FoundationMessagePrintFit
   return { text: title, size: floor, lines: mktgPortraitWrapLines(title, mktgPortraitCharsPerLine(width, floor, { weight: type.weight })) };
 }
 
+/**
+ * The goal pages' titles at ONE size (the editor's rule: a reader sees one book, not a page set smaller than the last):
+ * the smallest size `frameworkPortraitTitle` gives any of them, every title then set at it, with the lines it takes there.
+ * One page, or none, is the plain fit.
+ */
+export function frameworkPortraitTitlesAtOneSize(titles: readonly string[]): FoundationMessagePrintFittedTitle[] {
+  const fits = titles.map((title) => frameworkPortraitTitle(title));
+  const size = fits.reduce((least, fit) => Math.min(least, fit.size), TYPE.pageTitle.size);
+  const perLine = mktgPortraitCharsPerLine(PAGE.contentWidth, size, { weight: TYPE.pageTitle.weight });
+  return fits.map((fit) => (fit.size === size ? fit : { text: fit.text, size, lines: mktgPortraitWrapLines(fit.text, perLine) }));
+}
+
 /** The top of a page's first block under its title: the design's body top, lower by the lines a title takes past its first. */
 export function frameworkPortraitBodyTop(title: FoundationMessagePrintFittedTitle): number {
   return PAGE.bodyTop + (title.lines - 1) * title.size * TYPE.pageTitle.line;

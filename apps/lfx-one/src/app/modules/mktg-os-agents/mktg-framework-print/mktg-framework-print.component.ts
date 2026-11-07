@@ -62,7 +62,9 @@ import {
   frameworkPortraitStatementWidth,
   frameworkPortraitTaglineSize,
   frameworkPortraitTitle,
+  frameworkPortraitTitlesAtOneSize,
   mktgPortraitDocumentName,
+  mktgNoWidow,
   mktgPortraitFitBlock,
   mktgPortraitFootLeft,
   mktgPortraitLook,
@@ -236,6 +238,9 @@ export class MktgFrameworkPrintComponent {
       const icpPages = frameworkPortraitIcpPages(view.icps);
       const numbersPages = frameworkPortraitNumbersPages(view);
       const contents = frameworkPortraitContents(plan, book.firstPage);
+      // The goal pages' titles at one size across the set (the editor's rule), the smallest any of them needs; the other pages fit their own.
+      const goalPages = plan.filter((page) => /^goal-\d+$/.test(page.id));
+      const goalTitles = new Map(frameworkPortraitTitlesAtOneSize(goalPages.map((page) => page.title)).map((fit, at) => [goalPages[at].id, fit]));
       return plan.map((page, index) => {
         const goal = /^goal-\d+$/.test(page.id) ? (view.goals.find((entry) => `goal-${entry.n}` === page.id) ?? null) : null;
         const icpIndex = /^icps-\d+$/.test(page.id) ? Number(page.id.slice('icps-'.length)) : 0;
@@ -243,7 +248,7 @@ export class MktgFrameworkPrintComponent {
         const sayAvoid = page.id === this.ids.sayAvoid;
         // The anchors never move; their questions are set smaller, then cut, until they and the crosscut box end above the footer.
         const anchors = sayAvoid ? frameworkPortraitAnchors(view.mf.anchor, view.mf.crosscut) : { anchors: [], crosscutTop: 0 };
-        const titleFit = frameworkPortraitTitle(page.title);
+        const titleFit = goalTitles.get(page.id) ?? frameworkPortraitTitle(page.title);
         return {
           ...page,
           number: book.firstPage + index,
@@ -331,7 +336,11 @@ export class MktgFrameworkPrintComponent {
         tops.goalProofs - tops.goalKey - ROOM.goalKeyPaddingDown - ROOM.gap
       ),
       proofs,
-      bite: goal.bite ? this.fit(`“${goal.bite}”`, TYPE.goalBite, width, tops.goalServed - tops.goalBite - ROOM.label - ROOM.goalBiteTop - ROOM.gap) : null,
+      // The sound bite at the board's fixed top (TOPS.goalBite, the mock's 690) on every goal page, fitted to the room above the served row;
+      // its last two words joined (the grammar's widow rule), so a line never ends on one short word alone.
+      bite: goal.bite
+        ? this.noWidow(this.fit(`“${goal.bite}”`, TYPE.goalBite, width, tops.goalServed - tops.goalBite - ROOM.label - ROOM.goalBiteTop - ROOM.gap))
+        : null,
       served: {
         rows: served.map((icp) => {
           // The name and the two lines fitted to the card together, so a long name is measured with them.
@@ -434,6 +443,11 @@ export class MktgFrameworkPrintComponent {
     const result = mktgPortraitFitBlock({ paras: [this.para(text, type)] }, width, height);
     const para = result.block.paras[0];
     return para ? { text: para.text, size: para.size } : { text, size: type.size };
+  }
+
+  /** A fitted headline with its last two words joined (the grammar's widow rule): the measure is the same, the break before the last word is not. */
+  private noWidow(fitted: FoundationMessagePrintFittedText): FoundationMessagePrintFittedText {
+    return { text: mktgNoWidow(fitted.text), size: fitted.size };
   }
 
   /** The height a paragraph takes at its type in a column, px (the fit model's measure). */

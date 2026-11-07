@@ -352,7 +352,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(page?.querySelector('.fwp-goal-vp')?.textContent?.trim()).toBe('VP.');
     expect(text(page?.querySelector('.fwp-goal-key'))).toBe('Key message Key.');
     expect(text(page?.querySelector('.fwp-proof-row'))).toBe('1,200 members Website');
-    expect(page?.querySelector('.fwp-goal-bite-text')?.textContent?.trim()).toBe('“In the open”');
+    expect(page?.querySelector('.fwp-goal-bite-text')?.textContent?.trim()).toBe('“In the\u00a0open”');
     const served = Array.from(page?.querySelectorAll('.fwp-served-card') ?? []);
     expect(served.map((card) => card.querySelector('.fwp-served-name')?.textContent?.trim())).toEqual(['End users', 'Maintainers']);
     expect(text(served[0])).toBe('End users Needs Need. Ask them to Try it.');
@@ -375,9 +375,13 @@ describe('MktgFrameworkPrintComponent', () => {
     expect((vp?.textContent ?? '').length).toBeLessThan(long.length);
     const bite = page?.querySelector<HTMLElement>('.fwp-goal-bite-text');
     expect(parseFloat(bite?.style.fontSize ?? '34')).toBeLessThan(34);
+    // The bite's last two words are joined (the grammar's widow rule), so no line ends on one short word; its block sits at the board's top.
+    expect(bite?.textContent).toMatch(/\S\u00a0\S+”$/);
+    expect(top(bite?.parentElement)).toBe(FRAMEWORK_PORTRAIT_TOPS.goalBite);
     // A short one is set at its size.
     await setView(printView(null));
     expect(page?.querySelector<HTMLElement>('.fwp-goal-vp')?.style.fontSize).toBe('22px');
+    expect(page?.querySelector<HTMLElement>('.fwp-goal-bite-text')?.textContent?.trim()).toBe('“In the\u00a0open”');
   });
 
   it('prints say and avoid with the anchor questions, numbered, and the crosscut note; says when nothing is to be avoided', async () => {
@@ -728,6 +732,20 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(frame('say-avoid')?.textContent).not.toContain('Every piece of content answers');
     expect(frame('message-house')?.textContent).not.toContain('Audiences');
     expect(frame('message-house')?.querySelector('.fwp-pillar-message')).toBeNull();
+  });
+
+  it('sets every goal page’s title at one size, the smallest any of them needs, and the sound bite at one top on each (the editor’s read)', async () => {
+    const titles = ['Events', 'A goal whose title runs well past the width of the page’s title line at the grammar’s size', 'Adoption'];
+    const goals = titles.map((t, index) => ({ ...CONTENT.mf.goals[0], id: `g${index}`, n: index + 1, t }));
+    await configure('browser', buildFoundationMessagePrintView({ ...CONTENT, mf: { ...CONTENT.mf, goals } }, 'TestOrbit', 2, null));
+    const sizes = [1, 2, 3].map((n) => frame(`goal-${n}`)?.style.getPropertyValue('--fwp-title-size'));
+    expect(new Set(sizes).size).toBe(1);
+    expect(parseFloat(sizes[0] ?? '34')).toBeLessThan(34);
+    expect(parseFloat(sizes[0] ?? '0')).toBeGreaterThanOrEqual(Math.ceil(34 * MKTG_PORTRAIT_FIT.minScale));
+    // The other pages keep their own fit (the framework page's short title at the grammar's 34 px).
+    expect(frame('framework')?.style.getPropertyValue('--fwp-title-size')).toBe('34px');
+    // The sound bite's block tops the same fixed y on every goal page (the board's 690), whatever the proof rows above it took.
+    for (const n of [1, 2, 3]) expect(top(frame(`goal-${n}`)?.querySelector('.fwp-goal-bite-text')?.parentElement)).toBe(FRAMEWORK_PORTRAIT_TOPS.goalBite);
   });
 
   it('holds four "Who it’s for" cards at most, the board’s narrowest, and says the rest under the row; a long name is fitted with its lines', async () => {
