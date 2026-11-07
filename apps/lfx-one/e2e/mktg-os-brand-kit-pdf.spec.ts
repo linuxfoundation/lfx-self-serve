@@ -89,6 +89,15 @@ function threeColourSymbolResponse(): MktgRevisionResponse {
   return { ...base, sidecar: { ...sidecar, chapters: { ...sidecar.chapters, logo } } as MktgRevisionResponse['sidecar'] };
 }
 
+/** The approved kit whose only lockup file is the reversed one (no primary): the dark tile draws it; the hero has nothing. */
+function reversedOnlyResponse(): MktgRevisionResponse {
+  const base = columnAssetRevisionResponse('brand-kit');
+  const sidecar = base.sidecar as { chapters: { logo: { files: Record<string, unknown> } } };
+  const files = { ...sidecar.chapters.logo.files, primary: null, reversed: { ref: 'reversed.svg', svg: BRAND_KIT_FIXTURE_LOCKUP_SVG } };
+  const logo = { ...sidecar.chapters.logo, files };
+  return { ...base, sidecar: { ...sidecar, chapters: { ...sidecar.chapters, logo } } as MktgRevisionResponse['sidecar'] };
+}
+
 /** The approved kit with PNG uploads only (no SVG bytes): files the record holds and the print cannot draw. */
 function pngOnlyResponse(): MktgRevisionResponse {
   const base = columnAssetRevisionResponse('brand-kit');
@@ -585,6 +594,32 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(symbol.getByTestId('brand-kit-symbol-variant-missing')).toHaveCount(2);
     await symbol.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('logo-symbol-plated-shapes.png'), fullPage: false });
+    await page.emulateMedia({ media: 'screen' });
+    await finishMktgPrintFrame(page);
+  });
+
+  test('a reversed-only kit (no primary file) draws its dark tile from the reversed file: no hero, no empty tiles row', async ({ page }, info) => {
+    const { pages } = await openBook(page, reversedOnlyResponse());
+    const system = pageById(pages, 'logo-system');
+    await expect(system.getByTestId('brand-kit-logo-system-hero')).toHaveCount(0);
+    const tiles = system.getByTestId('brand-kit-logo-system-tiles');
+    await expect(tiles.locator('.pp-tile')).toHaveCount(1);
+    await expect(tiles.locator('.pp-tile--dark img')).toHaveAttribute('alt', 'Reversed lockup');
+    await expect(tiles.getByTestId('mktg-portrait-plate')).toHaveCount(0);
+    await expect(tiles).toContainText('Reversed · supplied file');
+    await expect(system.getByTestId('brand-kit-logo-system-undrawable')).toHaveCount(0);
+    // The pages drawn from the primary file (Clear space, Partnership, Watch-outs) are dropped by the plan; the
+    // Colorways page keeps its reversed tile; the covers draw the reversed file on the dark.
+    await expect(pageById(pages, 'logo-clear-space')).toHaveCount(0);
+    await expect(pageById(pages, 'logo-partnership')).toHaveCount(0);
+    await expect(pageById(pages, 'logo-watchouts')).toHaveCount(0);
+    const colorways = pageById(pages, 'logo-colorways').getByTestId('brand-kit-colorways-tiles');
+    await expect(colorways.locator('img')).toHaveCount(1);
+    await expect(colorways.getByTestId('brand-kit-colorway-missing')).toHaveCount(3);
+    await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-cover-logo')).toHaveCount(1);
+    await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-plate')).toHaveCount(0);
+    await system.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('logo-system-reversed-only.png'), fullPage: false });
     await page.emulateMedia({ media: 'screen' });
     await finishMktgPrintFrame(page);
   });

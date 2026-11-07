@@ -3,6 +3,7 @@
 
 import { Component, computed } from '@angular/core';
 import {
+  brandKitPortraitArtwork,
   brandKitPortraitFiles,
   brandKitPortraitHasLogoFiles,
   brandKitPortraitHasLogoUploads,
@@ -35,6 +36,14 @@ export class MktgBrandKitPageLogoSystemComponent extends MktgBrandKitPageBase {
   /** The files table under the tiles, or up where the hero would start when there is nothing to draw above it. */
   protected readonly filesTop = computed(() => (this.hasArtwork() ? 716 : 300));
   protected readonly hasSymbol = computed(() => !!this.view().symbol?.src);
+  protected readonly hasStacked = computed(() => !!this.view().logos.stacked?.src);
+  /**
+   * The dark tile draws whatever the reversed slot resolves to (`brandKitPortraitArtwork`): the supplied reversed file
+   * first, else the primary reversed or plated. So a kit whose only lockup file is the reversed one still has its dark
+   * tile, and the tiles row shows only when one of its tiles can draw (never an empty row).
+   */
+  protected readonly hasReversedTile = computed(() => brandKitPortraitArtwork(this.view(), 'lockup', 'reversed') !== null);
+  protected readonly hasTiles = computed(() => this.hasSymbol() || this.hasReversedTile() || this.hasStacked());
   /**
    * The captions name what the tile draws, as `brandKitPortraitArtwork` resolves it: a supplied file only when its own
    * artwork is drawable (an uploaded PNG has no `src`, so the symbol tile crops the lockup and the reversed tile derives
@@ -50,7 +59,6 @@ export class MktgBrandKitPageLogoSystemComponent extends MktgBrandKitPageBase {
     if (this.reversedSupplied()) return 'Reversed · supplied file';
     return this.view().derivable.lockup ? 'Reversed · derived from the horizontal file' : 'On the dark · full color on a white plate (no reversed file)';
   });
-  protected readonly hasStacked = computed(() => !!this.view().logos.stacked?.src);
   /** The intro at most three lines of its 600 px: whole sentences that fit, or the first shortened (`brandKitPortraitIntro`). */
   protected readonly intro = computed(() => brandKitPortraitIntro(this.view().logo.system));
 }
