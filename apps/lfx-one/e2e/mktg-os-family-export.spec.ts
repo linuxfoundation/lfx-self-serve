@@ -14,7 +14,7 @@ import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-k
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
 import { expectFamilyBookFrames, openFamilyExports } from './helpers/mktg-os-family-export.helper';
-import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
+import { expectMktgPortraitPageSetup, expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -262,6 +262,15 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printDocument.getByTestId('mktg-framework-print-approval')).toHaveText(
     'V1.0 · Approved 20 Oct 2026. A later run re-reads the sources and refreshes the LFX figures.'
   );
+  // Every framework frame is a whole sheet: 816 × 1056 at the sheet's left edge, in the family as alone.
+  for (const frame of await frameworkFrames.all()) {
+    const box = await frame.boundingBox();
+    expect({ x: Math.round(box?.x ?? -1), width: Math.round(box?.width ?? 0), height: Math.round(box?.height ?? 0) }).toEqual({
+      x: 0,
+      width: 816,
+      height: 1056,
+    });
+  }
   // The kit in the family's book: every page of its family plan for this kit (the synthetic kit's record decides the
   // plan: no cover, contents or back cover of its own), in order, numbered on from its opener, under the family's
   // running head, no band; nothing of it flows as a chapter.
@@ -280,6 +289,26 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
     kitPrint.locator('[data-page-id="cover"], [data-page-id="contents"], [data-page-id="back-cover"], [data-testid="mktg-portrait-page-band"]')
   ).toHaveCount(0);
   await expect(kitPrint.locator('.kit-chapter, lfx-mktg-print-chapter-header, .lfx-brand-kit-page')).toHaveCount(0);
+  // The page setup: the kit's and the framework's portrait frames make the family a document of frames, US Letter with
+  // no margin in both engines and the room in the document (never the page margins, which would shift a frame off its
+  // sheet); no footer group anywhere, for which Chromium prints an empty page per table.
+  await expect(printDocument.locator('tfoot, [data-testid="mktg-print-sheet-foot"]')).toHaveCount(0);
+  await expectMktgPortraitPageSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'));
+  // The kit's pages read from the kit's own record: the four usage cards, the six watch-outs, the type source as a host.
+  await expect(kitPrint.locator('.kp-usage-card')).toHaveCount(4);
+  await expect(kitPrint.getByTestId('brand-kit-watchouts-tiles').locator('.kp-watchout')).toHaveCount(6);
+  await expect(kitPrint.getByTestId('brand-kit-type-source')).toContainText('Named on one.example.org');
+  await expect(kitPrint.getByTestId('brand-kit-type-source')).not.toContainText('https://');
+  await expect(kitPrint.getByTestId('brand-kit-voice-messages').locator('.pp-lab')).toHaveText(['Umbrella message', 'Brand line']);
+  await expect(kitFrames.first()).toHaveCSS('break-after', 'page');
+  // Every kit frame is a whole sheet: 816 × 1056 at the sheet's left edge, in the family as alone.
+  for (const frame of await kitFrames.all()) {
+    const box = await frame.boundingBox();
+    if (!box) throw new Error('Missing synthetic kit frame');
+    expect({ x: Math.round(box.x), width: Math.round(box.width), height: Math.round(box.height) }).toEqual({ x: 0, width: 816, height: 1056 });
+  }
+  await expect(kitPrint).not.toContainText('SVG supplied');
+  await expect(kitPrint).not.toContainText('V1.0');
   await expect(printDocument.locator('lfx-brand-kit-view, .lfx-brand-kit-page')).toHaveCount(0);
   // The boilerplates as cards, one per length with text; the FAQ's answered questions only.
   await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-card')).toHaveCount(4);

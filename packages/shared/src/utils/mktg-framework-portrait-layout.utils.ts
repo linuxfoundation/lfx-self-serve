@@ -26,6 +26,7 @@ import { MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
 import type {
   FoundationMessagePrintCutList,
+  FoundationMessagePrintCutTab,
   FoundationMessagePrintFactRow,
   FoundationMessagePrintNumbersPage,
   FoundationMessagePrintNumberTile,
@@ -37,9 +38,6 @@ import { mktgPortraitCharsPerLine, mktgPortraitFitBlock, mktgPortraitParaHeight 
 const ROOM = FRAMEWORK_PORTRAIT_ROOM;
 const TYPE = FRAMEWORK_PORTRAIT_TYPE;
 const PAGE = MKTG_PORTRAIT_PAGE;
-
-/** The on-screen tab a cut list's note sends the reader to: the Framework tab for proof points and the facts table, the Sources tab for the Sources & gaps lists. */
-export type FoundationMessagePrintCutTab = 'Framework' | 'Sources';
 
 /** The line under a cut list: `+3 more on the framework's Sources tab in LFX One` (the design reader's form, 7 Nov 2026). */
 export function foundationMessagePrintCutNote(cut: number, tab: FoundationMessagePrintCutTab): string {

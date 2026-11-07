@@ -131,6 +131,9 @@ export interface FoundationMessagePrintServedCard {
   cta: FoundationMessagePrintFittedText;
 }
 
+/** The on-screen tab a cut list's note sends the reader to: the Framework tab for proof points and the facts table, the Sources tab for the Sources & gaps lists. */
+export type FoundationMessagePrintCutTab = 'Framework' | 'Sources';
+
 /** A list cut to the rows that fit its room: the rows kept, how many were left off (the muted line under the list says so), and whether the list was tightened first. */
 export interface FoundationMessagePrintCutList<T> {
   rows: T[];
@@ -171,8 +174,8 @@ export interface FoundationMessagePrintIcpPage {
 
 /**
  * One key number's tile: its share of a row (1 = the row, 2 = a half, 3 = a third; FRAMEWORK_PORTRAIT_TILE_SHARES), wide when it spans
- * the row; the figure's size stepped down until it sits on one line of the tile, and the label fitted (smaller, then cut at a sentence) to
- * the room under it.
+ * the row; the figure's size stepped down in whole px to one line of the tile, to a floor of half its size (a longer figure overflows the
+ * tile: follow-up), and the label fitted (smaller, then cut at a sentence) to the room under it.
  */
 export interface FoundationMessagePrintNumberTile extends FoundationMessageNumberRow {
   share: number;
