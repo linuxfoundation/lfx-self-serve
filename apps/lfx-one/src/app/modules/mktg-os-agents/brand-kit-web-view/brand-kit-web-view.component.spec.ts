@@ -725,6 +725,21 @@ describe('BrandKitWebViewComponent', () => {
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
     });
 
+    it('prints the approved revision’s own approval, not the viewed revision’s, on the contents page', async () => {
+      // Viewing a later draft (v2) of a kit whose approved current is v1: the PDF's approval line is v1's record.
+      fixture.componentRef.setInput('version', 2);
+      fixture.componentRef.setInput('approval', null);
+      fixture.componentRef.setInput('approvedVersion', 1);
+      fixture.componentRef.setInput('approvedApproval', { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Synthetic Approver' } });
+      await fixture.whenStable();
+      button('brand-kit-web-view-download-pdf')?.click();
+      const frame = document.querySelector<HTMLIFrameElement>('[data-testid="lfx-print-frame"]');
+      expect(frame?.contentDocument?.querySelector('[data-testid="brand-kit-contents-approval"]')?.textContent).toBe(
+        'Approved 19 Oct 2026 by Synthetic Approver'
+      );
+      frame?.contentWindow?.dispatchEvent(new Event('afterprint'));
+    });
+
     it('prepares the kit typeface ahead of creating the PDF frame in the click task', async () => {
       const prepare = vi.spyOn(TestBed.inject(MktgPrintService), 'prepare').mockResolvedValue(undefined);
       try {

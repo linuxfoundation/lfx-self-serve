@@ -464,18 +464,24 @@ export const MKTG_PRINT_FRAME_PAPER_IN = { width: 8.5, height: 10.9 } as const;
  * it (no element names that page any more: it is a shared-mechanism
  * clean-up). `mktg-portrait` is the fixed-frame portrait book
  * (`MKTG_PORTRAIT_PRINT_CLASS`: the kit's pages and the framework's, every
- * document built of `lfx-mktg-portrait-page` frames): US Letter with no
- * margin in BOTH engines, since each frame is the whole sheet and carries its
- * own room; the print frame writes it unnamed (WebKit) and as
- * `@page mktg-portrait` (Chromium, where the body's inherited named page would
- * otherwise win), and the grammar's `.pp-page` names it. Keep these in step
- * with styles.scss and `_mktg-portrait.scss`, which cannot read them.
+ * document built of `lfx-mktg-portrait-page` frames): the page box is the
+ * PAPER the dialog chose (`size: auto`), with no margin in BOTH engines, since
+ * each frame is the whole sheet and carries its own room. The frame is drawn
+ * for US Letter (816 × 1056 px) and the grammar scales it to a narrower paper
+ * itself (`_mktg-portrait.scss`: A4 zooms every frame by 210 mm / 8.5 in and
+ * grows its ground to the paper's height), where a fixed `size: 8.5in 11in`
+ * let Chrome scale the page box onto A4 and print its headers and footers
+ * into the bands that left (the margin of 0 is what keeps them off the
+ * sheet). The print frame writes the setup unnamed (WebKit) and as `@page
+ * mktg-portrait`, the print's one named page, and the grammar's `.pp-page`
+ * names it. Keep these in step with styles.scss and `_mktg-portrait.scss`,
+ * which cannot read them.
  */
 export const MKTG_PRINT_PAGE_SETUPS = {
   'brand-kit': 'size: letter landscape; margin: 0;',
   'mktg-framework': 'size: portrait; margin: 0;',
   'mktg-framework-page-margins': 'size: portrait; margin: 0.55in 0.6in;',
-  'mktg-portrait': 'size: 8.5in 11in; margin: 0;',
+  'mktg-portrait': 'size: auto; margin: 0;',
 } as const;
 
 /**

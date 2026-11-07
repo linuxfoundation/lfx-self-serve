@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
+import { brandKitOverfullFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils';
 import { MktgBrandKitPageLogoPartnershipComponent } from './mktg-brand-kit-page-logo-partnership.component';
 import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -14,6 +16,10 @@ describe('the Partnership lockup page', () => {
     expect(rectOf(light)).toEqual({ left: '56px', top: '148px', width: '704px' });
     expect(rectOf(dark)).toEqual({ left: '56px', top: '486px', width: '704px' });
     expect(light?.querySelector<HTMLElement>('img')?.style.height).toBe('64px');
+    // The same lockup size and bar on both tiles (the editor's ruling: the mock's smaller dark lockup read as a size change).
+    expect(dark?.querySelector<HTMLElement>('img')?.style.height).toBe('64px');
+    expect(light?.querySelector('.kp-bar')?.classList.contains('h-[96px]')).toBe(true);
+    expect(dark?.querySelector('.kp-bar')?.classList.contains('h-[96px]')).toBe(true);
     expect(dark?.querySelector<HTMLElement>('img')?.style.filter).toBe('brightness(0) invert(1)');
     expect(light?.querySelector('.kp-partner')?.textContent).toBe('Partner logo');
     expect(light?.parentElement?.querySelector('.pp-cap')?.textContent).toBe('On light grounds · Charcoal bar');
@@ -21,5 +27,17 @@ describe('the Partnership lockup page', () => {
     const rules = Array.from(frame.querySelectorAll('[data-testid="brand-kit-partnership-rules"] li'), (li) => wordsOf(li));
     expect(rules).toEqual(view.logo.partnership.map((rule, index) => `0${index + 1} ${rule}`));
     expect(rectOf(frame.querySelector('[data-testid="brand-kit-partnership-rules"]'))).toEqual({ left: '56px', top: '806px', width: '704px' });
+  });
+
+  it('sets five 300-character rules smaller and cut at a sentence so the list ends above the footer, in the record’s order', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoPartnershipComponent, 'logo-partnership', () =>
+      buildBrandKitBookView(brandKitOverfullFixture(), 4)
+    );
+    const box = frame.querySelector<HTMLElement>('[data-testid="brand-kit-partnership-rules"]')?.closest<HTMLElement>('.kp-fit-list');
+    expect(box?.style.getPropertyValue('--kp-fit')).toBe('0.72');
+    const rules = Array.from(frame.querySelectorAll('[data-testid="brand-kit-partnership-rules"] li'), (li) => li.textContent ?? '');
+    expect(rules).toHaveLength(5);
+    expect(rules.every((rule) => rule.length < 300)).toBe(true);
+    expect(frame.querySelector('[data-testid="brand-kit-partnership-rules-more"]')).toBeNull();
   });
 });

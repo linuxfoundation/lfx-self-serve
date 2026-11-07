@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BRAND_KIT_OPAQUE_FILE_STEM_REGEX } from '../constants/brand-kit.constants';
+import { BRAND_KIT_FOUND_IN_KINDS, BRAND_KIT_OPAQUE_FILE_STEM_REGEX } from '../constants/brand-kit.constants';
 import { MKTG_READABLE_SOURCE } from '../constants/mktg-readable-source.constants';
 import { brandKitWebsiteHost } from './brand-kit.utils';
 
@@ -11,13 +11,8 @@ const URL_START_REGEX = /https?:\/\//gi;
 const URL_END = new Set([' ', '\t', '\n', '\r', '\f', '\v', '\u00a0', ')', ']', '}', '>', '"', "'", '”', '’']);
 /** The sentence's own punctuation after a URL (`…logo.svg.`, `…/brand,`): kept out of the address and put back after it. */
 const URL_TRAIL = new Set(['.', ',', ';', ':', '!', '?']);
-/** `(a logo image linked from the site)`: a parenthetical left holding only a source's words once its file name is rewritten. */
-const REPEATED_PARENTHETICAL_REGEX = new RegExp(
-  ` \\((?:${Object.values(MKTG_READABLE_SOURCE)
-    .map((phrase) => phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|')})\\)`,
-  'gi'
-);
+/** The words a rewrite can produce: a parenthetical holding one source alone is dropped only when its rewrite is one of them. */
+const READABLE_PHRASES = new Set<string>(Object.values(MKTG_READABLE_SOURCE));
 
 /**
  * A bare file name (no `/` before it) with an image, archive or document extension, as the record names uploads and site
@@ -26,10 +21,19 @@ const REPEATED_PARENTHETICAL_REGEX = new RegExp(
 const FILE_NAME_SOURCE = '(?<![\\w/.%-])[\\w.%-]+\\.(?:svg|png|jpe?g|webp|gif|pdf|eps|ai|zip|tar\\.gz|7z|rar)(?![\\w%-])(?!\\.[\\w%-])';
 const FILE_NAME_REGEX = new RegExp(FILE_NAME_SOURCE, 'gi');
 const WHOLE_FILE_NAME_REGEX = new RegExp(`^${FILE_NAME_SOURCE}$`, 'i');
+/** ` (https://…)` or ` (logo.svg)`: a parenthetical the record wrote around one source and nothing else. */
+const SOURCE_PARENTHETICAL_REGEX = new RegExp(` \\((https?://[^\\s()]+|${FILE_NAME_SOURCE})\\)`, 'gi');
+/**
+ * `agentic.ai`, `agntcy.eps`: in prose a token whose extension is also a top-level domain (`.ai`, `.eps` is not one, but
+ * reads the same way) is host-shaped, not a file, unless its stem is a CDN's hash or the record wrote it as a file
+ * (`logo_v2.ai`, an underscore or a size suffix): a site's name is printed as written, never as "an uploaded logo file".
+ */
+const HOST_SHAPED_EXTENSION_REGEX = /\.(?:ai|eps)$/i;
+const FILE_SHAPED_STEM_REGEX = /[_]|[-_]\d+x\d+$/;
 
 const ARCHIVE_REGEX = /\.(?:zip|tar\.gz|7z|rar)$/i;
-/** `site_css: https://…`, `logo: brand.zip/logo.svg`: the record's provenance kind before the source itself. */
-const KIND_PREFIX_REGEX = /^[a-z][a-z0-9_]*:\s+(?=\S)/i;
+/** `site_css: https://…`, `logo: brand.zip/logo.svg`: the record's provenance kind before the source itself, one of the kit's kinds and nothing else (`Note: …` is the record's own word). */
+const KIND_PREFIX_REGEX = new RegExp(`^(?:${BRAND_KIT_FOUND_IN_KINDS.join('|')}):\\s+(?=\\S)`, 'i');
 /** `brand.zip/logo.svg`: a member of an uploaded archive. */
 const ARCHIVE_MEMBER_REGEX = /^[^\s/]+\.(?:zip|tar\.gz|7z|rar)\/\S+$/i;
 const IMAGE_REGEX = /\.(?:svg|png|jpe?g|webp|gif|eps|ai)$/i;
@@ -66,7 +70,7 @@ export function mktgReadableSourceName(source: string, count: 'one' | 'many' = '
   const isUrl = /^https?:\/\//i.test(text);
   if (!isUrl) {
     if (ARCHIVE_MEMBER_REGEX.test(text)) return MKTG_READABLE_SOURCE.uploadedPackage;
-    if (WHOLE_FILE_NAME_REGEX.test(text)) {
+    if (WHOLE_FILE_NAME_REGEX.test(text) && !isHostShaped(text)) {
       if (ARCHIVE_REGEX.test(text)) return MKTG_READABLE_SOURCE.uploadedPackage;
       return count === 'one' ? MKTG_READABLE_SOURCE.uploadedFile : MKTG_READABLE_SOURCE.uploadedFiles;
     }
@@ -75,10 +79,12 @@ export function mktgReadableSourceName(source: string, count: 'one' | 'many' = '
   const query = text.search(/[?#]/);
   const path = query === -1 ? text : text.slice(0, query);
   const host = brandKitWebsiteHost(text);
-  if (ARCHIVE_REGEX.test(path)) return MKTG_READABLE_SOURCE.linkedPackage;
-  if (IMAGE_REGEX.test(path)) return MKTG_READABLE_SOURCE.linkedImage;
-  if (isOpaque(path)) return MKTG_READABLE_SOURCE.linkedFile;
-  if (host && /\/_next\/static\/|\.css$/i.test(path)) return `${host} stylesheets`;
+  // The file tests read the pathname alone: a host's top-level domain (`agntcy.ai`) is no extension.
+  const pathname = path.replace(/^https?:\/\/[^/]*/i, '');
+  if (ARCHIVE_REGEX.test(pathname)) return MKTG_READABLE_SOURCE.linkedPackage;
+  if (IMAGE_REGEX.test(pathname)) return MKTG_READABLE_SOURCE.linkedImage;
+  if (isOpaque(pathname)) return MKTG_READABLE_SOURCE.linkedFile;
+  if (host && /\/_next\/static\/|\.css$/i.test(pathname)) return `${host} stylesheets`;
   return path.replace(/^https?:\/\/(?:www\.)?/i, '').replace(/\/$/, '');
 }
 
@@ -86,14 +92,31 @@ export function mktgReadableSourceName(source: string, count: 'one' | 'many' = '
  * A sentence of the run record (a reason, a warning, a gap, a note, a fix)
  * with every URL and bare file name in it replaced by `mktgReadableSourceName`'s
  * words, so no hashed name and no long file URL is printed, the sentence's own
- * punctuation kept after the rewritten address; a parenthetical left holding
- * only such words ("links a logo image (a logo image linked from the site)")
- * is dropped, the sentence already naming the thing.
+ * punctuation kept after the rewritten address. A parenthetical the record
+ * wrote around one source alone (" (logo.svg)", " (https://…/logo.svg)") whose
+ * rewrite is only such words ("links a logo image (a logo image linked from
+ * the site)") is dropped with it, the sentence already naming the thing; a
+ * parenthetical with any other words, or one the record wrote in words, stays.
+ * A host-shaped token (`agentic.ai`) is not a file and prints as written.
  */
 export function mktgReadableSourceText(text: string): string {
-  return mktgReplaceUrls(text, (url) => mktgReadableSourceName(url, 'one'))
-    .replace(FILE_NAME_REGEX, (name) => (isOpaque(name) ? MKTG_READABLE_SOURCE.linkedImage : mktgReadableSourceName(name, 'one')))
-    .replace(REPEATED_PARENTHETICAL_REGEX, '');
+  const withoutSourceParentheticals = text.replace(SOURCE_PARENTHETICAL_REGEX, (whole, source: string) =>
+    READABLE_PHRASES.has(mktgReadableProseName(source)) ? '' : whole
+  );
+  return mktgReplaceUrls(withoutSourceParentheticals, (url) => mktgReadableSourceName(url, 'one')).replace(FILE_NAME_REGEX, (name) =>
+    isHostShaped(name) ? name : mktgReadableProseName(name)
+  );
+}
+
+/** A URL or a bare file name in prose, in words: a hashed bare name is a logo image the site links (the record's CDN names). */
+function mktgReadableProseName(source: string): string {
+  if (/^https?:\/\//i.test(source)) return mktgReadableSourceName(source, 'one');
+  return isOpaque(source) ? MKTG_READABLE_SOURCE.linkedImage : mktgReadableSourceName(source, 'one');
+}
+
+/** Whether a token in prose is a site's name rather than a file (`agentic.ai`), by its extension and stem. */
+function isHostShaped(token: string): boolean {
+  return HOST_SHAPED_EXTENSION_REGEX.test(token) && !isOpaque(token) && !FILE_SHAPED_STEM_REGEX.test(fileStem(token));
 }
 
 /**

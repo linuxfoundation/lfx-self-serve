@@ -10,11 +10,11 @@
   [section]="page().label"
   [title]="page().title"
   [band]="page().band">
-  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-symbol-intro">{{ v.logo.symbol }}</p>
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-symbol-intro">{{ intro() }}</p>
   @if (hasSymbol()) {
     <div [lfxPpRect]="[x, 250, w]">
       <div class="pp-lab pp-lab--dark">Variants</div>
-      <div class="kp-tiles mt-[10px]" data-testid="brand-kit-symbol-variants">
+      <div class="kp-tiles kp-tiles--under-label" data-testid="brand-kit-symbol-variants">
         <div>
           <div class="pp-tile kp-tile"><lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" [height]="80" /></div>
           <div class="pp-cap">Full color</div>
@@ -31,9 +31,9 @@
     </div>
     <div [lfxPpRect]="[x, 470, w]">
       <div class="pp-lab pp-lab--dark">In shape</div>
-      <div class="flex gap-[24px] mt-[14px]" data-testid="brand-kit-symbol-shapes">
+      <div class="kp-shapes" data-testid="brand-kit-symbol-shapes">
         @for (shape of shapes(); track shape.caption) {
-          <div class="w-[158px]">
+          <div class="kp-shape-column">
             <div class="kp-shape-stage" [class.kp-shape-stage--mist]="shape.onWhite">
               <div
                 class="kp-shape"
@@ -49,14 +49,14 @@
         }
       </div>
     </div>
-    <div class="flex items-center gap-[24px]" [lfxPpRect]="[x, 720, w]">
+    <div class="kp-padding-row" [lfxPpRect]="[x, 720, w]">
       <div class="kp-padding-demo" data-testid="brand-kit-symbol-padding">
         <div class="kp-padding-demo-inset"></div>
         <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" mode="reversed" [height]="100" />
       </div>
       <div class="flex-1">
         <div class="pp-lab pp-lab--dark">Padding in a shape</div>
-        <p class="pp-body mt-[8px]" data-testid="brand-kit-symbol-rule">
+        <p class="pp-body pp-body-gap-tight" data-testid="brand-kit-symbol-rule">
           One X of padding from the symbol to the edge of the circle or rounded square, where X is the height of the symbol.{{ accentClause() }}
         </p>
       </div>

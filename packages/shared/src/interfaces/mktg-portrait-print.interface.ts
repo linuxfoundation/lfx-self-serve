@@ -70,6 +70,12 @@ export interface MktgPortraitPlacedPage extends MktgPortraitPlanPage {
 /** A logo as a portrait cover draws it. */
 export type MktgPortraitLogo = MktgPrintLogo;
 
+/** A counted noun as a `+N more …` line prints it: `rule` / `rules`, `item to avoid` / `items to avoid`. */
+export interface MktgPortraitNoun {
+  one: string;
+  many: string;
+}
+
 /** One paragraph of a block the fit model measures: its text and how it is set, in px. */
 export interface MktgPortraitFitPara {
   text: string;

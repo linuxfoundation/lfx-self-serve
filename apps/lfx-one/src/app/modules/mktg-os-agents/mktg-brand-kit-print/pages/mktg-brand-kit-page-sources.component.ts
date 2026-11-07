@@ -31,6 +31,11 @@ export class MktgBrandKitPageSourcesComponent extends MktgBrandKitPageBase {
   /** The lists fitted to the two columns' room (above the accepted box when it prints): the scale the columns are set at, and the lists as printed. */
   protected readonly fit = computed(() => brandKitPortraitSourcesFit(brandKitPortraitSources(this.view()), this.approvalLine() !== ''));
   protected readonly sources = computed(() => this.fit().sources);
+  /** True when the record's lists are all empty: the page says so instead of printing two empty columns. */
+  protected readonly empty = computed(() => {
+    const s = this.sources();
+    return [s.read, s.failed, s.warnings, s.missing, s.gaps, s.conflicts].every((list) => list.length === 0) && !s.notes;
+  });
   protected readonly intro = computed(() => {
     const version = this.view().versionLabel;
     const approved = this.approvalLine() !== '';

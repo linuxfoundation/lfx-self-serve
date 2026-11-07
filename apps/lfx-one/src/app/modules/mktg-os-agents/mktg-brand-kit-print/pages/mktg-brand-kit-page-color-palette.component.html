@@ -10,7 +10,7 @@
   [section]="page().label"
   [title]="page().title"
   [band]="page().band">
-  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-palette-intro">{{ v.color.summary }}</p>
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-palette-intro">{{ intro() }}</p>
   <div class="kp-swatches" [lfxPpRect]="[x, 220, w]" data-testid="brand-kit-palette-swatches">
     @for (swatch of swatches(); track swatch.hex) {
       <div class="kp-swatch" [attr.data-swatch]="swatch.hexDigits">

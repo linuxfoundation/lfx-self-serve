@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
+import { brandKitOverfullFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils';
 import { MktgBrandKitPageVisualImageryComponent } from './mktg-brand-kit-page-visual-imagery.component';
 import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -50,5 +52,21 @@ describe('the Imagery & graphic elements page', () => {
     await fixture.whenStable();
     expect(frame.querySelector('[data-testid="brand-kit-imagery-avoid"]')).toBeNull();
     expect(frame.querySelector('[data-testid="brand-kit-imagery-callout-caption"]')?.textContent).toBe('Call-out · the one accent moment; text in white');
+  });
+
+  it('cuts a 300-character imagery rule to the intro’s three lines and counts the avoid items its 90 px cannot hold', async () => {
+    const { frame, view } = await mountBrandKitPage(MktgBrandKitPageVisualImageryComponent, 'visual-imagery', () =>
+      buildBrandKitBookView(brandKitOverfullFixture(), 4)
+    );
+    const intro = frame.querySelector('[data-testid="brand-kit-imagery-intro"]')?.textContent ?? '';
+    expect(intro.length).toBeLessThan(view.visual.imagery.rule.length);
+    expect(view.visual.imagery.rule.startsWith(intro)).toBe(true);
+    const avoid = frame.querySelector<HTMLElement>('[data-testid="brand-kit-imagery-avoid"]');
+    expect(avoid?.style.getPropertyValue('--kp-fit')).toBe('0.72');
+    const items = avoid?.querySelectorAll('li') ?? [];
+    expect(items.length).toBeGreaterThan(0);
+    // The Avoid list counts items to avoid, singular at one.
+    expect(items).toHaveLength(2);
+    expect(avoid?.querySelector('[data-testid="brand-kit-imagery-avoid-more"]')?.textContent).toBe('+1 more item to avoid, in LFX One');
   });
 });

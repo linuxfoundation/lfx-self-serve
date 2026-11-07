@@ -149,7 +149,7 @@ describe('MktgPrintService isolated frame', () => {
     root.innerHTML = `<div class="${BRAND_KIT_PORTRAIT_PRINT_CLASS} ${MKTG_PORTRAIT_PRINT_CLASS}"><section class="pp-page" data-page="1">Synthetic frame</section></div>`;
     configure().printNow(BRAND_KIT_PRINT_BODY_CLASS);
     const setup = MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
-    expect(setup).toBe('size: 8.5in 11in; margin: 0;');
+    expect(setup).toBe('size: auto; margin: 0;');
     expect(framePageRule()).toBe(`@page { ${setup} }\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
     expect(framePageRule()).not.toContain('@page mktg-framework');
     // No page margins in either engine: the flowing parts beside the frames keep their own room.

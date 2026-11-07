@@ -1463,6 +1463,10 @@ export interface CampaignImplementationDraft {
   demandGenAds?: GoogleDemandGenAdDraft[];
   /** The single Demand Gen ad group's picked Audience resource name (#5244). Absent leaves it alone. */
   demandGenAudience?: string;
+  /** Whether the Display campaign is split into named ad groups (#475). Absent restores the default, off. */
+  displayAdGroupsSplit?: boolean;
+  /** The named Display ad groups as typed, kept whether or not the split is on. Absent leaves the form's groups alone. */
+  displayAdGroups?: GoogleDisplayAdGroupDraft[];
   /**
    * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
    * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
@@ -1570,8 +1574,9 @@ export interface CampaignImplementationDraft {
    *
    * Empty means "no callouts", which is what this path sent before the list existed, so an absent
    * field and an empty list agree. Restored whatever channel the draft was saved under: the section
-   * and the payload both gate on the dispatched channel, so a list restored under Performance Max
-   * is held rather than sent, and is still there if the operator switches back to Search.
+   * and the payload both gate on the dispatched channel, so a list restored under Demand Gen or
+   * Display is held rather than sent, and is still there if the operator switches back to Search or
+   * Performance Max (`GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS`).
    */
   googleCallouts?: string[];
   /**
@@ -1579,14 +1584,16 @@ export interface CampaignImplementationDraft {
    *
    * Held and restored on exactly the same rule as {@link googleCallouts}: absent and empty agree,
    * and a list saved under a channel that takes no sitelinks is kept rather than discarded. Unlike
-   * the callouts, it is SENT on Demand Gen as well as Search (`GOOGLE_CHANNELS_WITH_SITELINKS`).
+   * the callouts, it is SENT on Demand Gen too (`GOOGLE_CHANNELS_WITH_SITELINKS`: Search, Demand Gen
+   * and Performance Max).
    */
   googleSitelinks?: CampaignSitelink[];
   /**
    * Google's structured snippets, as the operator typed them.
    *
    * Held and restored on the same rule as {@link googleCallouts} and {@link googleSitelinks}: absent
-   * and empty agree, and a list saved under a non-Search channel is kept rather than discarded.
+   * and empty agree, and a list saved under a channel that takes no snippets is kept rather than
+   * discarded.
    *
    * Its LIFETIME is shorter than theirs, and deliberately so. This draft is in-memory scratch on the
    * campaigns page: it survives switching away from the Implement tab and back, and nothing else. It
@@ -1641,6 +1648,18 @@ export interface CampaignImplementationDraft {
   googleTargetRoas?: string;
   googleCpcBid?: string;
   googleConversionActions?: string;
+  /**
+   * The Display placement exclusions box verbatim, one domain per line, unsplit and untrimmed, kept
+   * whichever channel is picked. Absent leaves the form alone.
+   */
+  googleExcludedPlacements?: string;
+  /**
+   * The Performance Max search themes box, as RAW text, one theme per line, unsplit and untrimmed, as
+   * {@link googleConversionActions} is. Restored whatever channel the draft was saved under: the
+   * section and the payload both gate on Performance Max, so text restored under another channel is
+   * held rather than sent. Optional and restored only when present.
+   */
+  googlePerformanceMaxSearchThemes?: string;
 }
 
 /**
@@ -3198,6 +3217,33 @@ export interface GoogleDemandGenAdGroupControls extends GoogleDemandGenAdControl
 }
 
 /**
+ * One named Display ad group (#475), typed to an entry of `googleAdsConfig.displayAdGroups`
+ * (`internal/dispatch/googleads.go`'s `googleAdsDisplayAdGroupConfig`). campaign-service names the group
+ * `<event name> - Display Network | <name>` and requires its responsive display ad.
+ *
+ * Upstream also takes the group's audience lists and user-list exclusions, all but `userInterests`
+ * behind `GOOGLE_ADS_DISPLAY_AUDIENCES_ENABLED` (`googleAdsDisplayAudienceFieldsSet`). None is sent:
+ * this application offers no audience input on a Display ad group.
+ */
+export interface GoogleDisplayAdGroup {
+  name: string;
+  /** The group's responsive display ad, the same shape as {@link CampaignCreateRequest.displayCreative}. */
+  creative?: GoogleDisplayCreative;
+}
+
+/** One Display ad group as the Implement tab's draft keeps it: the name and the ad's raw text. */
+export interface GoogleDisplayAdGroupDraft {
+  name: string;
+  creative: Record<string, string>;
+}
+
+/** The form controls of one Display ad group on the Implement tab: {@link GoogleDisplayAdGroupDraft}, live. */
+export interface GoogleDisplayAdGroupControls {
+  name: import('@angular/forms').FormControl<string>;
+  creative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
+}
+
+/**
  * The Performance Max ASSET GROUP, typed to `googleAdsConfig.performanceMaxCreative`.
  *
  * A Performance Max campaign has no ad groups and no ads — its creative lives in a named asset
@@ -3552,7 +3598,7 @@ export interface CampaignAdSchedule {
  *
  * Derived from {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}, the widest channel vocabulary, rather than
  * written out again, so a device added to it cannot leave this type behind. Which of these a channel
- * takes is `googleAdsDevicesOn`'s answer: `CONNECTED_TV` is Demand Gen's alone.
+ * takes is `googleAdsDevicesOn`'s answer: `CONNECTED_TV` is Demand Gen's and Performance Max's alone.
  */
 export type GoogleAdsDevice = (typeof GOOGLE_ADS_DEMAND_GEN_DEVICES)[number];
 
@@ -3817,7 +3863,24 @@ export interface CampaignCreateRequest {
    */
   demandGenAudience?: string;
   performanceMaxCreative?: GooglePerformanceMaxCreative;
+  /**
+   * The Performance Max asset group's search themes (campaign-service v1.0.31, linuxfoundation/lfx-v2-campaign-service#461): free text naming
+   * the searches the campaign is for. A signal, not targeting, so Google may serve beyond them.
+   *
+   * Omitted when empty, on the same rule as {@link callouts}. PERFORMANCE MAX ONLY
+   * (`GOOGLE_CHANNELS_WITH_SEARCH_THEMES`), and only beside a {@link performanceMaxCreative}: a theme
+   * attaches to the asset group that creative creates. At most
+   * `GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES`, each non-blank, at most
+   * `GOOGLE_ADS_MAX_SEARCH_THEME_RUNES` runes and not repeated (case-folded). The UI withholds them on
+   * any other channel and the BFF refuses every breach by name.
+   */
+  performanceMaxSearchThemes?: string[];
   displayCreative?: GoogleDisplayCreative;
+  /**
+   * The Display campaign split into named ad groups (#475), sent INSTEAD of {@link displayCreative}:
+   * campaign-service refuses the list beside it. At most `GOOGLE_DISPLAY_MAX_AD_GROUPS`.
+   */
+  displayAdGroups?: GoogleDisplayAdGroup[];
   /**
    * The places the Google campaign serves in, as ISO 3166-1 alpha-2 country codes or raw numeric
    * Google geo target constant ids — the two spellings upstream's `resolveGeoList` tells apart by
@@ -3844,6 +3907,15 @@ export interface CampaignCreateRequest {
    * says. The two are compared by RESOLVED id, so `US` in one list and `2840` in the other clash.
    */
   excludedGeoTargets?: string[];
+  /**
+   * Websites a Display campaign must never appear on, as bare domains (`example.com`), attached
+   * upstream as campaign-level negative placement criteria (campaign-service v1.0.31,
+   * `googleAdsConfig.excludedPlacements`, #462). DISPLAY ONLY: campaign-service refuses the list on
+   * every other channel (`validateDisplayTargeting`). Optional and OMITTED when empty. At most
+   * `GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS`; a scheme, path or port is refused rather than stripped
+   * (`validateExcludedPlacements`).
+   */
+  excludedPlacements?: string[];
   /**
    * Radius targeting around points — "everyone within N miles of the venue" — which is the one
    * location shape that is not a place in Google's geo table.
@@ -3896,11 +3968,11 @@ export interface CampaignCreateRequest {
    * everywhere, which is Google's own default — so this list is an adjustment and an absent key
    * means the same as an empty one, exactly as {@link adSchedules} does.
    *
-   * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, which leaves out
-   * Performance Max, where this client does not offer devices yet; the BFF refuses a list there by
-   * name. Demand Gen takes a device only as an exclusion, a modifier of `0`
-   * ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}), and is the one channel that takes
-   * `CONNECTED_TV`.
+   * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, every Google
+   * channel. Demand Gen and Performance Max take a device only as an exclusion, a modifier of `0`
+   * ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}), and are the two channels that take
+   * `CONNECTED_TV`. Performance Max also refuses a list that excludes all four devices, since the
+   * campaign could then serve nowhere.
    *
    * A NON-ZERO modifier also needs the effective bidding strategy to be `manual-cpc`: Google would
    * ignore it under any other, so campaign-service refuses it (see `googleDeviceBidModifierRefusal`).
@@ -3976,26 +4048,26 @@ export interface CampaignCreateRequest {
    * campaign has no extensions", which is what every create on this path did before the field
    * existed, so an absent key and an empty list agree — the same rule as {@link geoTargets}.
    *
-   * SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`). On Demand Gen, Display and Video upstream
-   * refuses the create outright rather than dropping the list, so the UI withholds it off Search and
-   * the BFF refuses it by name. (Upstream also takes callouts on Performance Max; this application
-   * has not opened that pairing, so it withholds and refuses them there too.)
+   * SEARCH AND PERFORMANCE MAX (`GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS`; campaign-service
+   * v1.0.31 takes them on Performance Max, linuxfoundation/lfx-v2-campaign-service#461, linked to the campaign). On Demand Gen, Display and
+   * Video upstream refuses the create outright rather than dropping the list, so the UI withholds it
+   * there and the BFF refuses it by name.
    */
   callouts?: string[];
   /**
    * The Google campaign's sitelink extensions — extra links rendered with the ad.
    *
-   * Omitted when empty, on the same rule as {@link callouts}. SEARCH AND DEMAND GEN
+   * Omitted when empty, on the same rule as {@link callouts}. SEARCH, DEMAND GEN AND PERFORMANCE MAX
    * (`GOOGLE_CHANNELS_WITH_SITELINKS`): campaign-service v1.0.31 accepts sitelinks alone on Demand
-   * Gen, under the same per-entry rules as Search. On every other channel the UI withholds them and
-   * the BFF refuses them by name.
+   * Gen and beside callouts and snippets on Performance Max, under the same per-entry rules as
+   * Search. On Display and Video the UI withholds them and the BFF refuses them by name.
    */
   sitelinks?: CampaignSitelink[];
   /**
    * The Google campaign's structured snippets — one "Header: value, value, value" line each,
    * enumerating what the campaign offers rather than claiming anything about it.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   * Omitted when empty, and Search and Performance Max only, on the same rule as {@link callouts}.
    */
   structuredSnippets?: CampaignStructuredSnippet[];
   /**
@@ -4027,20 +4099,23 @@ export interface CampaignCreateRequest {
   /**
    * The Google campaign's call extensions — a phone number shown with the text ad.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}. The key is
+   * Omitted when empty, on the same rule as {@link callouts}, and SEARCH ONLY
+   * (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`): upstream refuses it on Performance Max too. The key is
    * campaign-service's own (`googleAdsConfig.callExtensions`), forwarded unrenamed.
    */
   callExtensions?: CampaignCallExtension[];
   /**
    * The Google campaign's promotion extensions — a discount shown with the text ad.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   * Omitted when empty, on the same rule as {@link callouts}, and SEARCH ONLY
+   * (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`): upstream refuses it on Performance Max too.
    */
   promotions?: CampaignPromotion[];
   /**
    * The Google campaign's price extensions — a table of priced rows shown with the text ad.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   * Omitted when empty, on the same rule as {@link callouts}, and SEARCH ONLY
+   * (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`): upstream refuses it on Performance Max too.
    */
   prices?: CampaignPriceExtension[];
   /**

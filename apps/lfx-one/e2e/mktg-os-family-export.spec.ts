@@ -281,11 +281,11 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
     await mktgPrintComputedPx(printDocument.locator('lfx-mktg-faq-print lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell'), 'padding-bottom')
   ).toBeCloseTo(52.8, 1);
   // The kit's pages read from the kit's own record: the four usage cards, the six watch-outs, the type source as a host.
-  await expect(kitPrint.locator('.kp-usage-card')).toHaveCount(4);
-  await expect(kitPrint.getByTestId('brand-kit-watchouts-tiles').locator('.kp-watchout')).toHaveCount(6);
+  await expect(kitPrint.getByTestId('brand-kit-usage-card')).toHaveCount(4);
+  await expect(kitPrint.getByTestId('brand-kit-watchouts-tiles').getByTestId('brand-kit-watchout')).toHaveCount(6);
   await expect(kitPrint.getByTestId('brand-kit-type-source')).toContainText('Named on one.example.org');
   await expect(kitPrint.getByTestId('brand-kit-type-source')).not.toContainText('https://');
-  await expect(kitPrint.getByTestId('brand-kit-voice-messages').locator('.pp-lab')).toHaveText(['Umbrella message', 'Brand line']);
+  await expect(kitPrint.getByTestId('brand-kit-voice-messages').getByTestId('brand-kit-voice-message-label')).toHaveText(['Umbrella message', 'Brand line']);
   // One break per sheet, owned by the frame that starts it (the family's own break before the kit folds into it).
   await expect(kitPrint.locator('[data-testid="lfx-mktg-portrait-page"]').first()).toHaveCSS('break-before', 'page');
   await expect(kitPrint.locator('[data-testid="lfx-mktg-portrait-page"]').last()).toHaveCSS('break-after', 'auto');

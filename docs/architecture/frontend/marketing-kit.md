@@ -195,7 +195,8 @@ stylesheet `_mktg-portrait.scss` with the `pp-` class prefix; tokens and types i
   covers inset 72 px), `position: relative; overflow: hidden`, a block in normal flow;
   nothing fragments inside a frame and no wrapper between the body and a frame is padded
   or positioned. Content is placed absolutely with the `[lfxPpRect]="[x, y, w, h?]"`
-  directive (the mock's `R(x, y, w, h)`).
+  directive (the mock's `R(x, y, w, h)`), whose host carries `data-pp-rect`: the e2e
+  specs' handle on every placed box (the bounded-page check reads their bottoms).
 - **One break per sheet, owned by the frame that starts it.** Every frame carries
   `break-before: page` and no frame carries a `break-after`. The engine suppresses a
   forced break at the very start of the print and merges two forced breaks at one boundary
@@ -227,13 +228,26 @@ page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's S
   footer 28 px from the bottom (`<Project> · a Linux Foundation project` | the page
   number) and, on a chapter's first page standalone, a 4 px accent band at y 24. `dark`
   paints the frame in the kit's dark; `bare` drops head, title and foot (covers).
-- **The page setup in both engines.** The frame names its own page
-  (`page: mktg-portrait`, `MKTG_PORTRAIT_PAGE_NAME`) and `MktgPrintService` writes the
-  setup `MKTG_PRINT_PAGE_SETUPS['mktg-portrait']` (`size: 8.5in 11in; margin: 0`) twice:
-  unnamed `@page { … }`, which WebKit honours (it ignores page names), and
-  `@page mktg-portrait { … }`, which Chromium needs (a print body's inherited named page
-  would otherwise win). A print root holding `.lfx-mktg-portrait` (`MKTG_PORTRAIT_PRINT_CLASS`)
-  gets no page margins in any engine. No table head or foot groups give per-page room:
+- **The page setup in both engines: the paper is the page box.** The frame names its own
+  page (`page: mktg-portrait`, `MKTG_PORTRAIT_PAGE_NAME`) and `MktgPrintService` writes the
+  setup `MKTG_PRINT_PAGE_SETUPS['mktg-portrait']` (`size: auto; margin: 0`) twice: unnamed
+  `@page { … }`, which WebKit honours (it ignores page names), and `@page mktg-portrait { … }`,
+  the print's one named page. `size: auto` makes the dialog's paper the page box; the
+  margin of 0 is what keeps the browser's headers and footers off the sheet. A fixed
+  `size: 8.5in 11in` let Chrome scale the page box onto A4 (0.974) and print "date · title"
+  and "1/17" into the bands that left. The grammar scales the frame itself instead
+  (`_mktg-portrait.scss`, `MKTG_PORTRAIT_PAPERS`): on a paper narrower than the Letter frame
+  (`@media print and (max-width: 815px)`, A4 = 793.7 px) every `.pp-page` zooms by
+  210 mm / 8.5 in (≈ 0.9727; `zoom`, not `transform`, so the laid-out box shrinks and the
+  breaks fall one per sheet; layout and type scale together, nothing reflows) and its
+  ground grows to the paper's height (the footer stays 28 px above the sheet's edge), and
+  the root narrows with it (an 816 px root would overflow A4 and Chrome shrinks an
+  overflowing print to fit, scaling the frames twice). Letter prints untouched; WebKit,
+  which ignores `@page size`, prints its dialog's default as before. The pdf e2e's Chrome
+  proof prints the eight dialog variants (Letter and A4 × headers × background) and asserts
+  the paper box, the plan's page count, no blank page and headers-on text = headers-off
+  text. A print root holding `.lfx-mktg-portrait` (`MKTG_PORTRAIT_PRINT_CLASS`) gets no
+  page margins in any engine. No table head or foot groups give per-page room:
   Chromium adds an empty page per `tfoot` and WebKit repeats neither.
 - **Inks and look.** The kit's dark, accent, spark, the ink on the accent and the font
   come from the kit (`MktgPortraitLook`, `mktgPortraitLook(brand, spark)`); the page writes
@@ -251,22 +265,43 @@ page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's S
   dark, a radial accent glow and a 32 px accent grid), `lfx-mktg-portrait-opener` (the
   family's chapter opener) and `lfx-mktg-portrait-back-cover` (the reversed lockup, brand
   line, url, version line and the trademark notice).
-- **The fit model.** `mktgPortraitFitBlock` and `brandKitPortraitFitSize` (shared utils)
-  size variable text to its box: a one-line sample stays at its real size while its
-  measured line fits (`mktgPortraitTextWidth`: glyph widths in the kit's face,
-  `MKTG_PORTRAIT_GLYPH_WIDTHS` widened by `MKTG_PORTRAIT_FAMILY_WIDTH` and the weight)
-  and shrinks in the grammar's steps only when it does not, never cut; a paragraph block
-  wraps by the flat average (`MKTG_PORTRAIT_FIT.charEm`), shrinks in the grammar's steps
-  and then cuts at a sentence. Nothing may leave its frame. Where a block's height depends
-  on the record (the Type page's scale and the two blocks under it), the blocks are laid in
-  normal flow inside one placed block, with a `min-height` for the mock's drawn position, so
-  the engine's own layout places them and a line the model misjudges can move them, never be
-  drawn on.
+- **The fit model.** `mktgPortraitFitBlock`, `brandKitPortraitShortenLine` and
+  `brandKitPortraitShortenParagraph` (shared utils) fit variable text to its box. A
+  one-line sample (the Type page's specimen and scale steps, the H1) prints at the kit's
+  own size always and is **shortened**, never shrunk, when its measured line
+  (`mktgPortraitTextWidth`: glyph widths in the kit's face, `MKTG_PORTRAIT_GLYPH_WIDTHS`
+  widened by `MKTG_PORTRAIT_FAMILY_WIDTH` and the weight) does not fit: fewer words of the
+  same line, cut at a word, no ellipsis (the editor: "shorten the sample instead of
+  shrinking"); the body step is the umbrella shortened to what fits three lines at 18/30.
+  A paragraph block wraps by the flat average (`MKTG_PORTRAIT_FIT.charEm`), shrinks in the
+  grammar's steps and then cuts at a sentence; the Voice attributes are measured cell by
+  cell and what the room cannot hold even cut is counted in a "+N more on the Voice tab in
+  LFX One" line, never dropped in silence. **Every page is bounded the same way**: a
+  chapter intro keeps the whole sentences that fit its three lines
+  (`brandKitPortraitIntro`); the Voice messages shrink together above the attributes
+  (`brandKitPortraitVoiceMessagesFit`); the usage cards' brand line is shortened to the
+  lines the card holds (`BRAND_KIT_PORTRAIT_USAGE_LINES`); the rule lists under the
+  pictures (Partnership, Iconography, Imagery's avoid list, the Type page's rules) shrink,
+  cut at a sentence, then give up their last rules to a "+N more rules, in LFX One" line
+  (`brandKitPortraitRulesFit`, `BRAND_KIT_PORTRAIT_RULE_LISTS`); the contrast page's pairs
+  follow a taller matrix in flow and the pairs the footer cannot hold are counted
+  (`brandKitPortraitContrastLayout`); the Sources columns count the sources read, gaps and
+  conflicts they cannot hold even cut (`moreRead`, `moreGaps`, `moreConflicts`). Nothing
+  may leave its frame and nothing is dropped in silence. Where a block's height depends
+  on the record (the Type page's scale and the two blocks under it, the contrast matrix
+  and the pairs), the blocks are laid in normal flow inside one placed block, with a
+  `min-height` for the mock's drawn position, so the engine's own layout places them and a
+  line the model misjudges can move them, never be drawn on.
 - **The kit's face everywhere.** The frame hands `font-family`, `font-size` and
   `line-height` back to itself on every element the app's layers set by tag (`p`,
-  headings, `label`, `button`, `input`, `table`): an unlayered `:where()` rule in
-  `_mktg-portrait.scss`, at no specificity, so the kit's `--pp-font` and each block's own
-  size win over `styles.scss`'s Inter and the layer's 1rem/1.5.
+  headings, `label`, `button`, `input`, `table`), and drops the browser's element margins:
+  two `.pp-page :where(…)` rules in `_mktg-portrait.scss`. They compile to one class's
+  specificity (0,1,0), **unlayered**, so they beat every layered Tailwind text, leading and
+  margin utility on those elements inside a frame (`mt-[8px]` on a `p` does nothing there)
+  and the single-class font rules the family print sheet sets earlier in `styles.scss`
+  (the order is a dependency: the portrait grammar is `@use`d after it). Inside a frame,
+  space and type go through `pp-`/`kp-` grammar classes (`.pp-body-gap`, say) or an inline
+  style, never a Tailwind utility.
 
 **The book** (`mktg-brand-kit-print/`, pages under `pages/`, classes `kp-` in
 `_mktg-brand-kit-pages.scss`) is plan-driven: `brandKitPortraitPlan(view, { inFamily })`
@@ -280,7 +315,12 @@ Clear space, Partnership and Watchouts, `brandKitPortraitHasSymbol` for the symb
 a kit without a logo file, or with a stacked lockup only, keeps the Logo chapter's first
 page alone, which says no files were uploaded; the cover, contents and back cover go
 inside the family. `brandKitLogolessFixture()` (shared fixtures) is that kit, for the
-plan spec and the print-QA harness. The template iterates that plan (`@for` over `mktgPortraitPlacePlan`, `@switch` on
+plan spec and the print-QA harness; `brandKitPngOnlyFixture()` is a kit with raster
+uploads only (listed in the files table, not drawn); `brandKitOverfullFixture()` and
+`brandKitMinimalFixture()` are the envelope's two edges (five colours and 300-character
+lines, twenty sources and six conflicts; four colours, one logo, no pairs and an empty
+run record), both valid records the plan and page specs print bounded and the harness
+prints for the design check. The template iterates that plan (`@for` over `mktgPortraitPlacePlan`, `@switch` on
 the id), so the count, the contents page's numbers and every footer number come from one
 list, never hand-numbered. Every slot holds the kit's live data (`BrandKitBookView`,
 `MktgPrintBrand`, the logo files, icon samples, palette, type, voice, the run record for
@@ -294,7 +334,9 @@ derives the head `<Project> brand kit`, the footer, first page 1, the band on); 
 family the section label reads `Brand kit · <section>`, the head right is the family's
 document name, no band, no cover, contents or back cover, and the footer numbers run from
 `firstPage`. The frame's e2e contract: `data-testid="lfx-mktg-portrait-page"`,
-`data-page-id`, `data-page`, `data-section`. The hidden print frame builds its title as
+`data-page-id`, `data-page`, `data-section`; inside a page the specs read the
+`brand-kit-*` test ids (a row, a cell, a card, a sample, a `+N more` line), never a
+grammar class. The hidden print frame builds its title as
 before (#5224).
 
 ## Routing and verification

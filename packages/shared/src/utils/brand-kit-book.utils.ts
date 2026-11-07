@@ -122,15 +122,15 @@ export function brandKitColorwayTiles(kit: BrandKitRevision, tint: string, logos
   return kit.chapters.logo.colorways.map((colorway, index) => ({ name: colorway.name, ...(grounds[index] ?? grounds[0]) }));
 }
 
-/** The six watchout tiles: the rule, and the distortion each tile draws to show it. */
+/** The six watchout tiles: the rule, the distortion each tile shows (`kind`) and the on-screen draw of it. */
 export function brandKitWatchoutTiles(kit: BrandKitRevision): BrandKitWatchoutView[] {
-  const draws = [
-    { transform: 'scaleX(1.45)', filter: '', ground: '', retyped: false },
-    { transform: '', filter: 'hue-rotate(140deg) saturate(1.6)', ground: '', retyped: false },
-    { transform: 'rotate(-14deg)', filter: '', ground: '', retyped: false },
-    { transform: '', filter: 'drop-shadow(0.4cqw 0.4cqw 0.3cqw rgba(0, 0, 0, 0.55))', ground: '', retyped: false },
-    { transform: '', filter: '', ground: `linear-gradient(135deg, ${kit.kit.accent}, ${kit.kit.dark} 55%, ${kit.kit.spark})`, retyped: false },
-    { transform: '', filter: '', ground: '', retyped: true },
+  const draws: Omit<BrandKitWatchoutView, 'label'>[] = [
+    { kind: 'stretched', transform: 'scaleX(1.45)', filter: '', ground: '', retyped: false },
+    { kind: 'recolored', transform: '', filter: 'hue-rotate(140deg) saturate(1.6)', ground: '', retyped: false },
+    { kind: 'rotated', transform: 'rotate(-14deg)', filter: '', ground: '', retyped: false },
+    { kind: 'shadowed', transform: '', filter: 'drop-shadow(0.4cqw 0.4cqw 0.3cqw rgba(0, 0, 0, 0.55))', ground: '', retyped: false },
+    { kind: 'busy', transform: '', filter: '', ground: `linear-gradient(135deg, ${kit.kit.accent}, ${kit.kit.dark} 55%, ${kit.kit.spark})`, retyped: false },
+    { kind: 'retyped', transform: '', filter: '', ground: '', retyped: true },
   ];
   return kit.chapters.logo.watchouts.map((label, index) => ({ label, ...(draws[index] ?? draws[0]) }));
 }
@@ -169,6 +169,15 @@ export function brandKitPaletteCards(kit: BrandKitRevision): BrandKitPaletteCard
   }));
 }
 
+/**
+ * A contrast ratio's label to one decimal, cut not rounded (`4.46` → `4.4`, `2.83` → `2.8`): WCAG 1.4.3 never rounds a
+ * ratio up to a threshold, and the kit prints one rounding everywhere the ratio appears (the on-screen contrast table,
+ * the book's pairs row and the portrait matrix).
+ */
+export function brandKitRatioLabel(ratio: number): string {
+  return (Math.floor(ratio * 10 + 1e-9) / 10).toFixed(1);
+}
+
 /** The contrast table with the colours to draw each sample. */
 export function brandKitContrastRows(kit: BrandKitRevision): BrandKitContrastView[] {
   const hexByName = new Map(kit.chapters.color.palette.map((entry) => [entry.name, entry.hex]));
@@ -177,7 +186,7 @@ export function brandKitContrastRows(kit: BrandKitRevision): BrandKitContrastVie
     background: pair.background,
     foregroundHex: hexByName.get(pair.foreground) ?? kit.kit.dark,
     backgroundHex: hexByName.get(pair.background) ?? 'white',
-    ratio: `${pair.ratio.toFixed(1)}:1`,
+    ratio: `${brandKitRatioLabel(pair.ratio)}:1`,
     grade: pair.grade,
     passes: pair.grade === 'AAA' || pair.grade === 'AA',
   }));
@@ -208,6 +217,11 @@ export function brandKitUsageTiles(kit: BrandKitRevision): BrandKitUsageView[] {
 }
 
 /** Items in words: `a`, `a and b`, `a, b and c`. */
+export function brandKitInWords(items: readonly string[]): string {
+  return inWords([...items]);
+}
+
+/** The items joined for reading, the last with "and" (an empty list is ''). */
 function inWords(items: string[]): string {
   if (items.length <= 1) {
     return items.join('');

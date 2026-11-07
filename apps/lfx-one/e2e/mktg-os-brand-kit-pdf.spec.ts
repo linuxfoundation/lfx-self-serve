@@ -7,9 +7,15 @@
  * The structural pair (`mktg-os-brand-kit-pdf-robust.spec.ts`) pins the `data-testid` contract.
  */
 
-import { BRAND_KIT_PRINT_BODY_CLASS, MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, MKTG_PORTRAIT_PAGE_NUMBER_DIGITS } from '@lfx-one/shared/constants';
+import {
+  BRAND_KIT_PRINT_BODY_CLASS,
+  MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
+  MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
+  MKTG_PORTRAIT_PAPERS,
+} from '@lfx-one/shared/constants';
 import { MktgRevisionResponse } from '@lfx-one/shared/interfaces';
-import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { brandKitMinimalFixture, brandKitOverfullFixture, brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import type { BrandKitRevision } from '@lfx-one/shared/interfaces';
 import { mktgPortraitAccentText } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
 import { expect, FrameLocator, Locator, Page, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
@@ -67,12 +73,42 @@ function stackedOnlyResponse(): MktgRevisionResponse {
   return { ...base, sidecar: { ...sidecar, chapters: { ...sidecar.chapters, logo } } as MktgRevisionResponse['sidecar'] };
 }
 
+/** The approved kit with PNG uploads only (no SVG bytes): files the record holds and the print cannot draw. */
+function pngOnlyResponse(): MktgRevisionResponse {
+  const base = columnAssetRevisionResponse('brand-kit');
+  const sidecar = base.sidecar as { chapters: { logo: { files: Record<string, unknown> } } };
+  const files = {
+    primary: { ref: 'asset-example-lockup.png', svg: null },
+    stacked: null,
+    symbol: { ref: 'asset-example-symbol.png', svg: null },
+    reversed: null,
+  };
+  const logo = { ...sidecar.chapters.logo, files };
+  return { ...base, sidecar: { ...sidecar, chapters: { ...sidecar.chapters, logo } } as MktgRevisionResponse['sidecar'] };
+}
+
 /** The approved kit without any logo file: the Logo chapter is one page saying so. */
 function noLogoFilesResponse(): MktgRevisionResponse {
   const base = columnAssetRevisionResponse('brand-kit');
   const sidecar = base.sidecar as { chapters: { logo: { files: Record<string, unknown> } } };
   const logo = { ...sidecar.chapters.logo, files: { primary: null, stacked: null, symbol: null, reversed: null } };
   return { ...base, sidecar: { ...sidecar, chapters: { ...sidecar.chapters, logo } } as MktgRevisionResponse['sidecar'] };
+}
+
+/** The approved kit's response with another shared fixture's record in the sidecar (the overfull and the minimal records). */
+function fixtureResponse(kit: BrandKitRevision): MktgRevisionResponse {
+  const base = columnAssetRevisionResponse('brand-kit');
+  const sidecar = base.sidecar as Record<string, unknown>;
+  return { ...base, sidecar: { ...sidecar, kit: kit.kit, chapters: kit.chapters, report: kit.report } as MktgRevisionResponse['sidecar'] };
+}
+
+/** True when every box inside `root` ends at or above `bottom` px from the frame's top (nothing runs past the footer line). */
+async function endsAbove(frame: Locator, root: Locator, bottom: number): Promise<boolean> {
+  const outer = await frame.boundingBox();
+  if (!outer) throw new Error('The frame must be laid out');
+  const boxes = await root.locator('*').evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().bottom));
+  const top = await frame.evaluate((node) => node.getBoundingClientRect().top);
+  return boxes.every((edge) => edge - top <= bottom + 0.5);
 }
 
 /** Opens the approved kit, clicks Download PDF and returns the print frame's book. */
@@ -177,17 +213,18 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await page.screenshot({ path: info.outputPath('back-cover.png'), fullPage: true });
   });
 
-  test('numbers the contents from the plan, with the Sources page at 15 and the back cover at 16, and says what the kit is built from without a file name', async ({
+  test('numbers the content pages from the plan, once each, ending at Sources & decisions 15 (the back cover is not listed), and says what the kit is built from without a file name', async ({
     page,
   }, info) => {
     const { pages } = await openBook(page);
     const contents = pages.nth(1);
-    const rows = contents.locator('.kp-contents-row');
-    await expect(rows).toHaveCount(14);
-    await expect(rows.last()).toContainText('Back cover');
-    await expect(rows.last()).toContainText('16');
-    await expect(rows.nth(12)).toContainText('Sources & decisions');
-    await expect(rows.nth(12)).toContainText('15');
+    const rows = contents.getByTestId('brand-kit-contents-row');
+    await expect(rows).toHaveCount(13);
+    await expect(rows.first()).toHaveText(/^Logo system\s*3$/);
+    await expect(rows.last()).toHaveText(/^Sources & decisions\s*15$/);
+    await expect(contents).not.toContainText('Back cover');
+    // The At a glance card ends with its content: no fixed height on it.
+    await expect(contents.getByTestId('brand-kit-contents-glance')).toHaveCSS('height', /^(?!270px).*/);
     await expect(contents.getByTestId('brand-kit-contents-built-from')).not.toContainText('.svg');
     // The approval line stays on the contents page (the ruling); the fixture's approval has a date and no approver.
     await expect(contents.getByTestId('brand-kit-contents-approval')).toHaveText('Approved 19 Oct 2026');
@@ -203,22 +240,22 @@ test.describe('Brand kit PDF: the portrait book', () => {
     expect(await placement(contrast, matrix)).toEqual({ x: 56, y: 220, width: 704 });
     await expect(matrix.locator('thead th')).toHaveText(['', 'on Charcoal', 'on White', 'on Orange', 'on Mid gray']);
     await expect(matrix.locator('tbody tr')).toHaveCount(4);
-    await expect(matrix.locator('.kp-matrix-same')).toHaveCount(4);
-    const charcoal = matrix.locator('tbody tr').first().locator('.kp-matrix-cell');
+    await expect(matrix.getByTestId('brand-kit-contrast-matrix-same')).toHaveCount(4);
+    const charcoal = matrix.locator('tbody tr').first().getByTestId('brand-kit-contrast-matrix-cell');
     await expect(charcoal).toHaveCount(3);
     for (const cell of await charcoal.all()) {
       await expect(cell).toHaveAttribute('data-ratio', /^\d+\.\d$/);
     }
     // Charcoal on White, 8.35:1, is labelled to one decimal cut (8.3) and graded raw.
     await expect(charcoal.first()).toHaveAttribute('data-ratio', '8.3');
-    await expect(charcoal.first().locator('.kp-pill')).toHaveText('AAA');
+    await expect(charcoal.first().getByTestId('brand-kit-contrast-grade')).toHaveText('AAA');
     const pairs = contrast.getByTestId('brand-kit-contrast-pairs');
     expect(await placement(contrast, pairs)).toEqual({ x: 56, y: 610, width: 704 });
     // One pair, cell by cell (the cells abut in textContent).
-    await expect(pairs.locator('.kp-pair')).toHaveCount(1);
-    await expect(pairs.locator('.kp-pair-names')).toHaveText('Charcoal on White');
-    await expect(pairs.locator('.kp-pair-ratio')).toHaveText('8.3:1');
-    await expect(pairs.locator('.kp-pair .kp-pill')).toHaveText('AAA');
+    await expect(pairs.getByTestId('brand-kit-contrast-pair')).toHaveCount(1);
+    await expect(pairs.getByTestId('brand-kit-contrast-pair-names')).toHaveText('Charcoal on White');
+    await expect(pairs.getByTestId('brand-kit-contrast-pair-ratio')).toHaveText('8.3:1');
+    await expect(pairs.getByTestId('brand-kit-contrast-pair').getByTestId('brand-kit-contrast-grade')).toHaveText('AAA');
     await contrast.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('color-contrast.png'), fullPage: false });
   });
@@ -230,22 +267,24 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const { pages } = await openBook(page);
     const type = pages.nth(9);
     const h1 = type.getByTestId('brand-kit-type-h1');
-    await expect(h1).toHaveText(kit.chapters.voice.line);
+    // The specimen is set at the mock's 48 px always; a line that would not fit the column is shortened to the words
+    // that do (the editor: shorten, never shrink), never clipped: the fixture's line in Montserrat loses its last word.
+    await expect(h1).toHaveText('Open standards for one');
+    expect(kit.chapters.voice.line.startsWith('Open standards for one ')).toBe(true);
     await expect(h1).toHaveCSS('font-family', new RegExp(`^"?${kit.chapters.type.family}"?`));
-    // The sample is set at the mock's 48 px when the line fits the 704 px column at 48, else at the largest size that
-    // fits it whole (the synthetic line in Montserrat, a wide face, does not fit at 48): never clipped, never cut.
-    const h1Size = parseFloat(await h1.evaluate((node) => getComputedStyle(node).fontSize));
-    expect(h1Size).toBeLessThanOrEqual(48);
-    expect(h1Size).toBeGreaterThanOrEqual(13);
+    await expect(h1).toHaveCSS('font-size', '48px');
     expect(await h1.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
     expect(await placement(type, type.getByTestId('brand-kit-type-specimen'))).toEqual({ x: 56, y: 212, width: 704 });
     expect(await placement(type, type.getByTestId('brand-kit-type-scale'))).toEqual({ x: 56, y: 436, width: 704 });
     const steps = type.getByTestId('brand-kit-type-scale').locator('[data-step]');
     await expect(steps).toHaveCount(kit.chapters.type.scale.length);
-    // "At real size": a sample that fits its measure is set at the step's size, the display step 64/72 here.
-    await expect(steps.first().locator('.kp-scale-sample')).toHaveCSS('font-size', '64px');
-    await expect(steps.first().locator('.kp-scale-sample')).toHaveCSS('line-height', '72px');
-    await expect(steps.nth(4).locator('.kp-scale-sample')).toHaveCSS('font-size', '18px');
+    // "At real size": every step's sample is set at the kit's own size and leading, and its spec column prints them
+    // (`500 · 64/72`); a sample that would not fit its measure is shortened, never shrunk.
+    for (const [index, step] of kit.chapters.type.scale.entries()) {
+      await expect(steps.nth(index).getByTestId('brand-kit-type-scale-spec')).toHaveText(`${step.weight} · ${step.size}/${step.line_height}`);
+      await expect(steps.nth(index).getByTestId('brand-kit-type-scale-sample')).toHaveCSS('font-size', `${step.size}px`);
+      await expect(steps.nth(index).getByTestId('brand-kit-type-scale-sample')).toHaveCSS('line-height', `${step.line_height}px`);
+    }
     // The lower blocks sit under the scale's real end, never on it: both at one y, at least 16 px below the last row.
     const scaleBox = await type.getByTestId('brand-kit-type-scale').boundingBox();
     const source = await placement(type, type.getByTestId('brand-kit-type-source'));
@@ -256,8 +295,8 @@ test.describe('Brand kit PDF: the portrait book', () => {
     expect(source.y).toBe(rules.y);
     expect(source.y).toBeGreaterThanOrEqual(830);
     // The kit's own record names the project (the fixture's sidecar says Project One; the head carries the context's name).
-    await expect(steps.first().locator('.kp-scale-sample')).toHaveText(kit.projectName);
-    await expect(steps.nth(4).locator('.kp-scale-sample')).toHaveText(kit.chapters.voice.umbrella);
+    await expect(steps.first().getByTestId('brand-kit-type-scale-sample')).toHaveText(kit.projectName);
+    await expect(steps.nth(4).getByTestId('brand-kit-type-scale-sample')).toHaveText(kit.chapters.voice.umbrella);
     await expect(type.getByTestId('brand-kit-type-source')).toContainText('Montserrat · Google Fonts · weights 400, 700');
     await expect(type.getByTestId('brand-kit-type-source')).toContainText('Named on one.example.org');
     await expect(type.getByTestId('brand-kit-type-source')).not.toContainText('https://');
@@ -273,20 +312,23 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const { pages } = await openBook(page);
     const imagery = pages.nth(11);
     expect(await placement(imagery, imagery.getByTestId('brand-kit-imagery-ground'))).toEqual({ x: 56, y: 220, width: 704 });
-    await expect(imagery.getByTestId('brand-kit-imagery-elements').locator('.kp-element')).toHaveCount(3);
-    await expect(imagery.locator('.kp-element--callout')).toHaveCSS('background-color', rgb(kit.kit.accent));
-    await expect(imagery.locator('.kp-element--callout')).toHaveCSS('color', rgb(kit.kit.dark));
+    await expect(imagery.getByTestId('brand-kit-imagery-elements').getByTestId('brand-kit-imagery-element')).toHaveCount(3);
+    await expect(imagery.locator('[data-testid="brand-kit-imagery-element"][data-element="callout"]')).toHaveCSS('background-color', rgb(kit.kit.accent));
+    await expect(imagery.locator('[data-testid="brand-kit-imagery-element"][data-element="callout"]')).toHaveCSS('color', rgb(kit.kit.dark));
     await expect(imagery.getByTestId('brand-kit-imagery-callout-caption')).toContainText('text in Charcoal (white on Orange fails AA, 2.8:1)');
     await expect(imagery.getByTestId('brand-kit-imagery-avoid').locator('li')).toHaveText(kit.chapters.visual.imagery.avoid);
+    // On paper the ground's glow prints at the stronger alpha (the editor's p13): the print token, not the screen's.
+    // (0x88 = 0.533 alpha on the kit's accent, as the engine serializes the gradient.)
+    await expect(imagery.getByTestId('brand-kit-imagery-grid-ground')).toHaveCSS('background-image', /rgba\(243, 118, 37, 0\.53\d*\)/);
     const usage = pages.nth(12);
-    const cards = usage.getByTestId('brand-kit-usage-cards').locator('.kp-usage-card');
+    const cards = usage.getByTestId('brand-kit-usage-cards').getByTestId('brand-kit-usage-card');
     await expect(cards).toHaveCount(4);
     for (const card of await cards.all()) {
-      const box = await card.locator('.kp-usage-frame').boundingBox();
+      const box = await card.getByTestId('brand-kit-usage-frame').boundingBox();
       expect(box && { width: Math.round(box.width), height: Math.round(box.height) }).toEqual({ width: 344, height: 210 });
     }
-    await expect(cards.nth(1).locator('.kp-usage-frame')).toHaveCSS('background-color', rgb(kit.kit.accent));
-    await expect(cards.nth(1).locator('.kp-usage-frame')).toHaveCSS('color', rgb(kit.kit.dark));
+    await expect(cards.nth(1).getByTestId('brand-kit-usage-frame')).toHaveCSS('background-color', rgb(kit.kit.accent));
+    await expect(cards.nth(1).getByTestId('brand-kit-usage-frame')).toHaveCSS('color', rgb(kit.kit.dark));
     await expect(cards.nth(0)).toContainText(kit.chapters.voice.line);
     await expect(cards.nth(2)).toContainText(`${kit.projectName} annual report 2026`);
     await expect(cards.nth(3)).toContainText(`New members join ${kit.projectName}`);
@@ -302,10 +344,10 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const { pages } = await openBook(page);
     const voice = pages.nth(13);
     await expect(voice.getByTestId('brand-kit-voice-intro')).toHaveText('From the messaging framework. As they are.');
-    await expect(voice.locator('.kp-voice-umbrella')).toHaveText(kit.chapters.voice.umbrella);
-    await expect(voice.locator('.kp-voice-line')).toHaveText(kit.chapters.voice.line);
+    await expect(voice.getByTestId('brand-kit-voice-umbrella')).toHaveText(kit.chapters.voice.umbrella);
+    await expect(voice.getByTestId('brand-kit-voice-line')).toHaveText(kit.chapters.voice.line);
     expect(await placement(voice, voice.getByTestId('brand-kit-voice-attributes'))).toEqual({ x: 56, y: 540, width: 704 });
-    await expect(voice.locator('.kp-attribute-name')).toHaveText(kit.chapters.voice.attributes.map((attribute) => attribute.name));
+    await expect(voice.getByTestId('brand-kit-voice-attribute-name')).toHaveText(kit.chapters.voice.attributes.map((attribute) => attribute.name));
     await expect(voice).not.toContainText('Avoid');
     const sources = pages.nth(14);
     await expect(sources.getByTestId('brand-kit-sources-read').locator('li')).toHaveText(['one.example.org']);
@@ -340,7 +382,7 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(pages.nth(2).getByTestId('brand-kit-logo-system-files')).toHaveCount(0);
     await expect(book.locator('img')).toHaveCount(0);
     await expect(book).not.toContainText('SVG supplied');
-    await expect(pages.nth(1).locator('.kp-contents-row')).toHaveCount(10);
+    await expect(pages.nth(1).getByTestId('brand-kit-contents-row')).toHaveCount(9);
     await pages.nth(2).scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('logo-system-no-files.png'), fullPage: false });
     await page.emulateMedia({ media: 'screen' });
@@ -353,8 +395,14 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const { book, pages } = await openBook(page);
     const count = await pages.count();
     // The root's height is exactly the frames' (17 × 1056): any extra px would be one more sheet in Chrome's Save as PDF.
+    // Boxes are read with getBoundingClientRect: the print frame is hidden in the app (0 × 0), where the body's
+    // scrollHeight reads 0 whatever it holds, while the laid-out boxes keep their size.
     const heights = await book.evaluate((root) => {
-      const last = root.querySelector('[data-testid="lfx-mktg-portrait-page"]:last-of-type');
+      // Every frame is the only one of its type inside its own host, so `:last-of-type` would match each of them (the
+      // first in document order wins): the last frame is the last of the whole list.
+      const frames = root.querySelectorAll('[data-testid="lfx-mktg-portrait-page"]');
+      const last = frames[frames.length - 1];
+      if (!last) throw new Error('The book must hold a frame');
       let after = 0;
       let node: Element | null = last;
       while (node && node !== root) {
@@ -365,10 +413,14 @@ test.describe('Brand kit PDF: the portrait book', () => {
         }
         node = node.parentElement;
       }
-      return { root: root.scrollHeight, body: root.ownerDocument.body.scrollHeight, after };
+      const top = root.getBoundingClientRect().top;
+      const bottom = (element: Element) => Math.round(element.getBoundingClientRect().bottom - top);
+      return { root: Math.round(root.getBoundingClientRect().height), lastFrame: bottom(last), body: bottom(root.ownerDocument.body), after };
     });
     expect(heights.root).toBe(count * 1056);
-    expect(heights.body).toBe(count * 1056);
+    expect(heights.lastFrame).toBe(count * 1056);
+    // The body's box ends where the frames end: nothing under the root adds a sheet.
+    expect(heights.body).toBeLessThanOrEqual(count * 1056);
     expect(heights.after).toBe(0);
     await expect(pages.last()).toHaveCSS('break-after', 'auto');
     // One named page in the print, the frames' own: the root and the body name none (a change of name forces a break).
@@ -393,15 +445,53 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await finishMktgPrintFrame(page);
   });
 
-  test('Google Chrome saves exactly the planned frames, none blank, under each dialog default', async ({ page, browserName }) => {
+  test('Google Chrome saves exactly the planned frames on Letter and on A4, none blank, no header or footer on the sheet, in every dialog variant', async ({
+    page,
+    browserName,
+  }) => {
     test.skip(browserName !== 'chromium', 'The proof is the Chrome engine; one run of it is enough');
     const { frame, pages } = await openBook(page);
     const planned = await pages.count();
     const prints = await printMktgFrameWithChrome(frame);
     test.skip(prints.length === 0, 'Google Chrome is not installed here; the bundled Chromium does not reproduce the blank sheet');
+    expect(prints).toHaveLength(8);
     for (const print of prints) {
-      expect(print, print.setup).toEqual({ setup: print.setup, pages: planned, blank: [] });
+      const label = `${print.paper} headers ${print.headers} background ${print.background}`;
+      // The paper is the page box (the grammar's `size: auto`), never a Letter box scaled onto A4.
+      const paper = MKTG_PORTRAIT_PAPERS[print.paper === 'A4' ? 'a4' : 'letter'];
+      expect(print.box.width, label).toBeCloseTo(paper.width, 0);
+      expect(print.box.height, label).toBeCloseTo(paper.height, 0);
+      expect(print.pages, label).toBe(planned);
+      expect(print.blank, label).toEqual([]);
+      // The browser's header (date · title) and footer (url · n/N) never reach the sheet: a page's text with them on is
+      // its text with them off.
+      const off = prints.find((other) => other.paper === print.paper && other.background === print.background && !other.headers);
+      expect(print.text, label).toEqual(off?.text);
     }
+    await finishMktgPrintFrame(page);
+  });
+
+  test('a kit with PNG uploads only lists them in the Logo system files table under a line saying the book draws SVG only, never "no logo files uploaded yet"', async ({
+    page,
+  }, info) => {
+    const { pages, book } = await openBook(page, pngOnlyResponse());
+    const ids = await pages.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-page-id')));
+    expect(ids).toEqual(PAGES.filter((id) => !id.startsWith('logo-') || id === 'logo-system'));
+    const logoSystem = pages.nth(2);
+    await expect(logoSystem.getByTestId('brand-kit-logo-system-none')).toHaveCount(0);
+    await expect(logoSystem.getByTestId('brand-kit-logo-system-undrawable')).toHaveText(
+      'This book draws inline SVG artwork only. The supplied horizontal lockup (PNG) and symbol (PNG) are listed below and not drawn here.'
+    );
+    const rows = logoSystem.getByTestId('brand-kit-logo-system-files').locator('tbody tr');
+    await expect(rows).toHaveCount(4);
+    await expect(rows.nth(0)).toContainText('PNG');
+    await expect(rows.nth(0)).toContainText('Supplied');
+    await expect(rows.nth(2)).toContainText('Supplied');
+    await expect(book.locator('img')).toHaveCount(0);
+    await expect(book).not.toContainText('.png');
+    await logoSystem.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('logo-system-png-only.png'), fullPage: false });
+    await page.emulateMedia({ media: 'screen' });
     await finishMktgPrintFrame(page);
   });
 
@@ -411,10 +501,57 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const { pages, book } = await openBook(page, stackedOnlyResponse());
     const ids = await pages.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-page-id')));
     expect(ids).toEqual(PAGES.filter((id) => !id.startsWith('logo-') || id === 'logo-system'));
-    await expect(pages.nth(1).locator('.kp-contents-row')).toHaveCount(ids.length - 2);
+    await expect(pages.nth(1).getByTestId('brand-kit-contents-row')).toHaveCount(ids.length - 3);
+    // A negative check over the grammar's tile class (no element to name): no tile anywhere in the book is empty.
     await expect(book.locator('.pp-tile:empty')).toHaveCount(0);
     await pages.nth(2).scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('logo-system-stacked-only.png'), fullPage: false });
+    await page.emulateMedia({ media: 'screen' });
+    await finishMktgPrintFrame(page);
+  });
+
+  test('the overfull record (five colours, 300-character lines, twenty sources, six conflicts) prints every page bounded: nothing past the footer line, the rest counted in "+N more" lines', async ({
+    page,
+  }, info) => {
+    const { pages } = await openBook(page, fixtureResponse(brandKitOverfullFixture()));
+    await expect(pages).toHaveCount(PAGES.length);
+    // Every content page's placed boxes end above the footer line (y 990 of 1056); the footer itself sits under it.
+    for (const index of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) {
+      const frame = pages.nth(index);
+      expect(await endsAbove(frame, frame.locator('[data-pp-rect]'), 1000), `page ${index + 1} runs past the footer`).toBe(true);
+    }
+    // The contrast page: a five-row matrix, the pairs in flow under it, the pairs the room cannot hold counted.
+    const contrast = pages.nth(8);
+    await expect(contrast.getByTestId('brand-kit-contrast-matrix').locator('tbody tr')).toHaveCount(5);
+    await expect(contrast.getByTestId('brand-kit-contrast-pairs-more')).toHaveText(/^\+\d+ more pairs, in LFX One$/);
+    // The voice page: the messages set smaller above the attributes, the attributes smaller in their grid.
+    const voice = pages.nth(13);
+    const fit = await voice.getByTestId('brand-kit-voice-messages').evaluate((node) => Number(node.style.getPropertyValue('--kp-fit')));
+    expect(fit).toBeLessThan(1);
+    // The Sources page: twenty sources read and six conflicts, listed or counted, with the accepted box in place.
+    const sources = pages.nth(14);
+    await expect(sources.getByTestId('brand-kit-sources-read').locator('li')).not.toHaveCount(0);
+    await expect(sources.getByTestId('brand-kit-sources-conflicts').locator('table')).not.toHaveCount(0);
+    await contrast.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('overfull-contrast.png'), fullPage: false });
+    await page.emulateMedia({ media: 'screen' });
+    await finishMktgPrintFrame(page);
+  });
+
+  test('the minimal record (four colours, one logo, no pairs, no conflicts, an empty run record) prints the sixteen pages with its empty slots dropped and the Sources page saying the run recorded nothing', async ({
+    page,
+  }, info) => {
+    const { pages, book } = await openBook(page, fixtureResponse(brandKitMinimalFixture()));
+    await expect(pages).toHaveCount(PAGES.length);
+    await expect(pages.nth(8).getByTestId('brand-kit-contrast-pairs')).toHaveCount(0);
+    await expect(pages.nth(8).getByTestId('brand-kit-contrast-matrix').locator('tbody tr')).toHaveCount(4);
+    const sources = pages.nth(14);
+    await expect(sources.getByTestId('brand-kit-sources-empty')).toContainText('The run recorded no sources');
+    await expect(sources.getByTestId('brand-kit-sources-read')).toHaveCount(0);
+    await expect(sources.getByTestId('brand-kit-sources-conflicts')).toHaveCount(0);
+    await expect(book).not.toContainText(/\[[^\]]+\]/);
+    await sources.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('minimal-sources.png'), fullPage: false });
     await page.emulateMedia({ media: 'screen' });
     await finishMktgPrintFrame(page);
   });

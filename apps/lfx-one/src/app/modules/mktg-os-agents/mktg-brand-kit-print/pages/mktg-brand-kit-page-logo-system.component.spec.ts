@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
+import { MKTG_PRINT_REVERSED_FILTER } from '@lfx-one/shared/constants';
 import { MktgBrandKitPageLogoSystemComponent } from './mktg-brand-kit-page-logo-system.component';
 import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -47,6 +48,30 @@ describe('the Logo system page', () => {
     expect(frame.querySelector('[data-testid="brand-kit-logo-system-files"]')?.textContent).not.toContain('symbol.svg');
   });
 
+  it('captions the tiles by what they draw: PNG reversed and symbol uploads beside an SVG lockup are listed, not drawn', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSystemComponent, 'logo-system', (view) => ({
+      ...view,
+      logos: {
+        ...view.logos,
+        symbol: { ref: 'project-one-symbol.png', name: 'project-one-symbol.png', src: null },
+        reversed: { ref: 'project-one-reversed.png', name: 'project-one-reversed.png', src: null },
+      },
+      symbol: { ref: 'project-one-symbol.png', name: 'project-one-symbol.png', src: null },
+    }));
+    const tiles = frame.querySelector('[data-testid="brand-kit-logo-system-tiles"]');
+    // The symbol PNG has no artwork to draw and nothing to crop: no symbol tile. The reversed tile whitens the lockup.
+    expect(tiles?.querySelectorAll('.pp-tile')).toHaveLength(1);
+    expect(tiles?.textContent).not.toContain('Symbol ·');
+    expect(tiles?.textContent).toContain('Reversed · derived from the horizontal file');
+    expect(tiles?.textContent).not.toContain('supplied file');
+    expect(tiles?.querySelector<HTMLElement>('.pp-tile--dark img')?.style.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+    // The files table lists the uploads as supplied, in their format, without a file name.
+    const rows = Array.from(frame.querySelectorAll('[data-testid="brand-kit-logo-system-files"] tbody tr'), (row) => wordsOf(row));
+    expect(rows).toContain('Reversed (white) PNG White Supplied');
+    expect(rows).toContain('Symbol PNG Full color Supplied');
+    expect(frame.textContent).not.toContain('project-one-');
+  });
+
   it('prints one line for a kit with no logo files, under the intro, and no tile or table', async () => {
     const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSystemComponent, 'logo-system', (view) => ({
       ...view,
@@ -59,5 +84,37 @@ describe('the Logo system page', () => {
     expect(frame.querySelector('[data-testid="brand-kit-logo-system-files"]')).toBeNull();
     expect(frame.querySelector('[data-testid="brand-kit-logo-system-none"]')?.textContent).toBe('No logo files uploaded yet');
     expect(rectOf(frame.querySelector('[data-testid="brand-kit-logo-system-none"]'))).toEqual({ left: '56px', top: '232px', width: '704px' });
+  });
+
+  it('lists a PNG-only kit’s supplied files and says the book draws SVG only, never "no logo files uploaded yet"', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSystemComponent, 'logo-system', (view) => ({
+      ...view,
+      logos: {
+        primary: { ref: 'project-one-lockup.png', name: 'project-one-lockup.png', src: null },
+        stacked: null,
+        symbol: { ref: 'project-one-symbol.png', name: 'project-one-symbol.png', src: null },
+        reversed: null,
+      },
+      symbol: null,
+    }));
+    expect(frame.querySelector('[data-testid="brand-kit-logo-system-hero"]')).toBeNull();
+    expect(frame.querySelector('[data-testid="brand-kit-logo-system-tiles"]')).toBeNull();
+    expect(frame.querySelector('img')).toBeNull();
+    expect(frame.querySelector('[data-testid="brand-kit-logo-system-none"]')).toBeNull();
+    const line = frame.querySelector('[data-testid="brand-kit-logo-system-undrawable"]');
+    expect(line?.textContent).toBe(
+      'This book draws inline SVG artwork only. The supplied horizontal lockup (PNG) and symbol (PNG) are listed below and not drawn here.'
+    );
+    expect(rectOf(line)).toEqual({ left: '56px', top: '232px', width: '704px' });
+    expect(frame.textContent).not.toContain('.png');
+    const table = frame.querySelector('[data-testid="brand-kit-logo-system-files"]');
+    expect(rectOf(table)).toEqual({ left: '56px', top: '300px', width: '704px' });
+    const rows = Array.from(table?.querySelectorAll('tbody tr') ?? [], (row) => Array.from(row.querySelectorAll('td'), (td) => td.textContent));
+    expect(rows.map((row) => [row[1], row[3]])).toEqual([
+      ['PNG', 'Supplied'],
+      ['—', 'Not supplied: this book derives it from the horizontal file'],
+      ['PNG', 'Supplied'],
+      ['—', 'Not supplied'],
+    ]);
   });
 });

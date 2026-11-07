@@ -84,10 +84,12 @@ export class MktgBrandKitPrintComponent {
   /** The pages, in the mock's order, each with its book page number, printed section label and band. */
   protected readonly pages: Signal<MktgPortraitPlacedPage[]> = this.initPages();
   protected readonly coverTitle = BRAND_KIT_PORTRAIT_COVER_TITLE;
-  /** The brand line as a sentence, then the cover's purpose. */
+  /** The brand line as a sentence (a full stop added only when it ends on none of `. ! ? …`), then the cover's purpose. */
   protected readonly coverLede = computed(() => {
-    const line = this.view().voice.line.trim().replace(/\.?$/, '.');
-    return line === '.' ? BRAND_KIT_PORTRAIT_COVER_PURPOSE : `${line} ${BRAND_KIT_PORTRAIT_COVER_PURPOSE}`;
+    const line = this.view().voice.line.trim();
+    if (line === '') return BRAND_KIT_PORTRAIT_COVER_PURPOSE;
+    const sentence = /[.!?…]$/.test(line) ? line : `${line}.`;
+    return `${sentence} ${BRAND_KIT_PORTRAIT_COVER_PURPOSE}`;
   });
   /** `V4.0 · November 2026`, less any part the kit lacks: the back cover's line. */
   protected readonly versionLine = computed(() => [this.view().versionLabel, this.view().monthYear].filter((part) => part !== '').join(' · '));

@@ -9,6 +9,7 @@
 
 import {
   MKTG_PORTRAIT_CAPS_TRACKING_EM,
+  MKTG_PORTRAIT_CUT_STOP_WORDS,
   MKTG_PORTRAIT_FAMILY_WIDTH,
   MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT,
   MKTG_PORTRAIT_FIT,
@@ -16,11 +17,19 @@ import {
   MKTG_PORTRAIT_GLYPH_WIDTHS,
   MKTG_PORTRAIT_HEX_REGEX,
   MKTG_PORTRAIT_INKS,
+  MKTG_PORTRAIT_MORE_LINE,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
   MKTG_PORTRAIT_WEIGHT_WIDTH,
 } from '../constants/mktg-portrait-print.constants';
 import type { MktgPrintBrand } from '../interfaces/mktg-print.interface';
-import type { MktgPortraitFitBlock, MktgPortraitFitPara, MktgPortraitFitResult, MktgPortraitLook } from '../interfaces/mktg-portrait-print.interface';
+import type {
+  MktgPortraitFitBlock,
+  MktgPortraitFitPara,
+  MktgPortraitFitResult,
+  MktgPortraitLook,
+  MktgPortraitNoun,
+} from '../interfaces/mktg-portrait-print.interface';
+import { BRAND_KIT_CONTRAST_AA } from '../constants/brand-kit.constants';
 import { brandKitContrastRatio, brandKitInkOnAccent, brandKitLuminance } from './brand-kit-book.utils';
 
 /**
@@ -39,6 +48,37 @@ export function mktgPortraitLook(brand: MktgPrintBrand, spark: string | null = n
     onAccent: brandKitInkOnAccent(accent, brand.dark),
     fontStack: brand.fontStack,
   };
+}
+
+/**
+ * A headline with no widow: its last two words joined by a no-break space, so
+ * a line never ends on one short word alone ("… for agentic" / "AI."). One
+ * word, or none, is returned as it is; the words' other spaces are kept.
+ */
+export function mktgNoWidow(text: string): string {
+  const trimmed = text.trim();
+  // One backward walk (no regex over the input): past the last word, then past the gap before it.
+  let wordStart = trimmed.length;
+  while (wordStart > 0 && !isWhitespace(trimmed[wordStart - 1])) wordStart -= 1;
+  let gapStart = wordStart;
+  while (gapStart > 0 && isWhitespace(trimmed[gapStart - 1])) gapStart -= 1;
+  if (gapStart === 0) return trimmed;
+  return `${trimmed.slice(0, gapStart)}\u00a0${trimmed.slice(wordStart)}`;
+}
+
+/** One character's whitespace test, as `\s` reads it (a trimmed string has none at its ends). */
+function isWhitespace(char: string): boolean {
+  return char.trim() === '';
+}
+
+/**
+ * The line a bounded list prints for the items its room does not hold:
+ * `+1 more rule, in LFX One`, `+3 more rules, in LFX One`; '' at none. The
+ * fit models measure this same string.
+ */
+export function mktgPortraitMoreLine(count: number, noun: MktgPortraitNoun): string {
+  if (count <= 0) return '';
+  return `+${count} more ${count === 1 ? noun.one : noun.many}${MKTG_PORTRAIT_MORE_LINE.suffix}`;
 }
 
 /** The footer's page number: `03`. */
@@ -174,20 +214,50 @@ export function mktgPortraitCutText(text: string, max: number): string {
     out = next;
   }
   if (out !== '') return out;
-  out = '';
+  const words: string[] = [];
+  let length = 0;
   for (const word of text.split(/\s+/)) {
-    const next = out ? `${out} ${word}` : word;
-    if (next.length + 1 > max) break;
-    out = next;
+    const next = length === 0 ? word.length : length + 1 + word.length;
+    if (next + 1 > max) break;
+    words.push(word);
+    length = next;
   }
-  return `${mktgPortraitTrimTail(out || text.slice(0, Math.max(1, max - 1)))}…`;
+  const kept = mktgPortraitTrimStopWords(words).join(' ');
+  return `${mktgPortraitTrimTail(kept || text.slice(0, Math.max(1, max - 1)))}…`;
+}
+
+/**
+ * The words of a cut without the function words it would end on ("… goes
+ * first and" → "… goes first"), the first word always kept; a word is read
+ * without its trailing punctuation and case.
+ */
+export function mktgPortraitTrimStopWords(words: readonly string[]): string[] {
+  let end = words.length;
+  while (end > 1 && MKTG_PORTRAIT_CUT_STOP_WORDS.has(mktgPortraitTrimTail(words[end - 1]).toLowerCase())) end -= 1;
+  return words.slice(0, end);
+}
+
+/**
+ * The largest count in `[1, max]` for which `fits(count)` holds, by bisection
+ * (`fits` is monotone: a longer prefix is wider); 1 when none does. The word
+ * cuts measure O(log n) prefixes of a long line instead of every one.
+ */
+export function mktgPortraitLargestFitting(max: number, fits: (count: number) => boolean): number {
+  let low = 1;
+  let high = max;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (fits(middle)) low = middle;
+    else high = middle - 1;
+  }
+  return low;
 }
 
 /** The characters an ellipsis replaces at the end of a cut: spaces and the punctuation a cut sentence or word leaves behind. */
 const CUT_TAIL = new Set([' ', '\t', '\n', '\r', '\f', '\v', '\u00a0', ',', ';', ':', '.', '—', '-']);
 
 /** A cut's text without its trailing spaces and punctuation, read from the end one character at a time (linear, whatever the text). */
-function mktgPortraitTrimTail(text: string): string {
+export function mktgPortraitTrimTail(text: string): string {
   let end = text.length;
   while (end > 0 && CUT_TAIL.has(text[end - 1])) end -= 1;
   return text.slice(0, end);
@@ -200,9 +270,13 @@ function mktgPortraitTrimTail(text: string): string {
  * says what happened, so a page can show the cut.
  */
 export function mktgPortraitFitBlock(block: MktgPortraitFitBlock, width: number, height: number, minScale = MKTG_PORTRAIT_FIT.minScale): MktgPortraitFitResult {
-  for (let scale = 1; scale >= minScale - 1e-9; scale -= MKTG_PORTRAIT_FIT.scaleStep) {
+  // Each step is measured at the scale the page will print (two decimals, the grammar's --kp-fit), not the loop's
+  // floating value: 0.8399… floors a 12.5 px line to 10 px where 0.84 prints 10.5.
+  for (let step = 0; ; step += 1) {
+    const scale = Math.round((1 - step * MKTG_PORTRAIT_FIT.scaleStep) * 100) / 100;
+    if (scale < minScale - 1e-9) break;
     const scaled = scale === 1 ? block : mktgPortraitScaleBlock(block, scale);
-    if (mktgPortraitFits(scaled, width, height)) return { block: scaled, scale: Math.round(scale * 100) / 100, cut: false };
+    if (mktgPortraitFits(scaled, width, height)) return { block: scaled, scale, cut: false };
   }
   let current = mktgPortraitScaleBlock(block, minScale);
   for (let guard = 0; guard < MKTG_PORTRAIT_FIT.maxCuts && !mktgPortraitFits(current, width, height); guard++) {
@@ -245,9 +319,6 @@ export function mktgPortraitPaginate<T>(items: readonly T[], fitsPage: (page: T[
 
 // ---------- the text accent ----------
 
-/** WCAG 1.4.3's threshold for ordinary text, the ratio `mktgPortraitAccentText` reaches. */
-export const MKTG_PORTRAIT_TEXT_CONTRAST = 4.5;
-
 /**
  * The accent as TEXT on a light page: the kit's accent darkened, in OKLab (lightness alone, the hue and chroma kept as
  * far as the gamut allows), until it reads on the paper at WCAG AA for ordinary text (≥ 4.5:1); an accent that already
@@ -258,7 +329,7 @@ export const MKTG_PORTRAIT_TEXT_CONTRAST = 4.5;
 export function mktgPortraitAccentText(accent: string, paper: string = MKTG_PORTRAIT_INKS.white): string {
   if (!MKTG_PORTRAIT_HEX_REGEX.test(accent) || !MKTG_PORTRAIT_HEX_REGEX.test(paper)) return accent;
   const paperLuminance = brandKitLuminance(paper);
-  const reads = (hex: string): boolean => brandKitContrastRatio(paperLuminance, brandKitLuminance(hex)) >= MKTG_PORTRAIT_TEXT_CONTRAST;
+  const reads = (hex: string): boolean => brandKitContrastRatio(paperLuminance, brandKitLuminance(hex)) >= BRAND_KIT_CONTRAST_AA;
   if (reads(accent)) return accent;
   const [lightness, a, b] = mktgPortraitOklab(accent);
   for (let l = lightness - 0.005; l > 0; l -= 0.005) {

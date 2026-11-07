@@ -17,7 +17,7 @@
     <div class="kp-watchouts" [lfxPpRect]="[x, 220, w]" data-testid="brand-kit-watchouts-tiles">
       @for (tile of tiles(); track tile.label) {
         <div>
-          <div class="pp-tile kp-watchout" [style.background]="tile.ground">
+          <div class="pp-tile kp-watchout" [style.background]="tile.ground" data-testid="brand-kit-watchout">
             @if (tile.retyped) {
               <span class="kp-retyped">{{ v.projectName }}</span>
             } @else {

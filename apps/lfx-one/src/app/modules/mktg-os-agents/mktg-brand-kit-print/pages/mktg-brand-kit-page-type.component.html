@@ -1,7 +1,6 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@let v = view();
 <lfx-mktg-portrait-page
   [look]="look()"
   [book]="book()"
@@ -10,9 +9,9 @@
   [section]="page().label"
   [title]="page().title"
   [band]="page().band">
-  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-type-intro">{{ v.type.summary }}</p>
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-type-intro">{{ intro() }}</p>
   <div [lfxPpRect]="[x, 212, w]" data-testid="brand-kit-type-specimen">
-    <div class="kp-type-h1" [style.font-size.px]="sampleSize()" data-testid="brand-kit-type-h1">{{ v.voice.line }}</div>
+    <div class="kp-type-h1" [style.font-size.px]="sampleSize" data-testid="brand-kit-type-h1">{{ sample() }}</div>
     <div class="kp-type-characters">{{ characters }}</div>
     <div class="kp-type-weights">
       @for (entry of weights(); track entry.weight) {
@@ -39,6 +38,7 @@
               </div>
               <div
                 class="kp-scale-sample kp-scale-sample--display"
+                data-testid="brand-kit-type-scale-sample"
                 [style.font-weight]="step.weight"
                 [style.font-size.px]="step.size"
                 [style.line-height.px]="step.line_height">
@@ -48,9 +48,10 @@
           } @else {
             <div class="kp-scale-row" [attr.data-step]="step.step">
               <span class="kp-scale-label">{{ step.label }}</span>
-              <span class="kp-scale-spec">{{ step.spec }}</span>
+              <span class="kp-scale-spec" data-testid="brand-kit-type-scale-spec">{{ step.spec }}</span>
               <span
                 class="kp-scale-sample"
+                data-testid="brand-kit-type-scale-sample"
                 [class.kp-scale-sample--caps]="step.caps"
                 [style.font-weight]="step.weight"
                 [style.font-size.px]="step.size"
@@ -78,13 +79,16 @@
           }
         </div>
       </div>
-      <div class="kp-type-lower-block" data-testid="brand-kit-type-rules">
+      <div class="kp-type-lower-block kp-fit-list" [style.--kp-fit]="layout().rules.scale" data-testid="brand-kit-type-rules">
         <div class="pp-lab pp-lab--dark">Rules</div>
         <ul class="kp-list">
-          @for (rule of v.type.rules; track $index) {
+          @for (rule of layout().rules.rules; track $index) {
             <li>{{ rule }}</li>
           }
         </ul>
+        @if (layout().rules.more) {
+          <div class="kp-list-more" data-testid="brand-kit-type-rules-more">{{ layout().rules.moreLine }}</div>
+        }
       </div>
     </div>
   </div>

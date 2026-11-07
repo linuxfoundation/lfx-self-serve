@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed } from '@angular/core';
-import { brandKitPortraitRatioLabel, brandKitPortraitWhiteContrast } from '@lfx-one/shared/utils';
+import { BRAND_KIT_CONTRAST_AA } from '@lfx-one/shared/constants';
+import { brandKitPortraitIntro, brandKitPortraitRatioLabel, brandKitPortraitWhiteContrast } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitArtworkComponent } from './mktg-brand-kit-artwork.component';
@@ -32,8 +33,10 @@ export class MktgBrandKitPageLogoSymbolComponent extends MktgBrandKitPageBase {
   /** The accent's AA clause: only when white on it fails (the unrounded ratio under 4.5:1), as the mock's does for its coral; the figure cut to one decimal. */
   protected readonly accentClause = computed(() => {
     const ratio = brandKitPortraitWhiteContrast(this.view().accent);
-    return ratio < 4.5
+    return ratio < BRAND_KIT_CONTRAST_AA
       ? ` Never put the symbol on the accent: accent colors are not logo colors, and white on ${this.view().accentName} fails AA (${brandKitPortraitRatioLabel(ratio)}:1).`
       : ' Never put the symbol on the accent: accent colors are not logo colors.';
   });
+  /** The intro at most three lines of its 600 px: whole sentences that fit, or the first shortened (`brandKitPortraitIntro`). */
+  protected readonly intro = computed(() => brandKitPortraitIntro(this.view().logo.symbol));
 }
