@@ -8,6 +8,7 @@ import {
   MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
   MKTG_FAMILY_PRINT_SEP,
   MKTG_KIT_POSITIONING_FAMILY_ID,
+  MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_PLATE,
   MKTG_PRINT_INK_ON_LIGHT,
 } from '@lfx-one/shared/constants';
@@ -157,6 +158,11 @@ describe('MktgFamilyPrintComponent', () => {
     expect(page(root, 'cover')?.querySelector('[data-testid="family-print-cover-strip"]')?.textContent?.trim()).toBe(
       'Synthetic project · a Linux Foundation project7 Nov 2026'
     );
+    // A short name: the strip prints whole on one line at the grammar's y, unwrapped.
+    expect(page(root, 'cover')?.querySelector<HTMLElement>('[data-testid="family-print-cover-strip"]')?.parentElement?.style.top).toBe(
+      `${MKTG_PORTRAIT_COVER_STRIP.top}px`
+    );
+    expect(page(root, 'cover')?.querySelector('[data-testid="family-print-cover-strip"]')?.classList.contains('pp-cover-strip--wrapped')).toBe(false);
     expect(page(root, 'cover')?.classList.contains('pp-page--dark')).toBe(true);
     expect(page(root, 'back-cover')?.classList.contains('pp-page--dark')).toBe(true);
     expect(root.querySelector('[data-testid="family-print-sources-conflicts"]')).toBeNull();
@@ -165,6 +171,27 @@ describe('MktgFamilyPrintComponent', () => {
       'Synthetic project and its logo are trademarks of the Linux Foundation.'
     );
     expect(root.textContent).not.toMatch(/\[[A-Z][a-z]+\]/);
+  });
+
+  it('fits the cover strip through the grammar: a long name drops the LF suffix and stays on one line; only one word each that still does not fit wraps and lifts the strip', async () => {
+    // The editor's p01: `CLOUD NATIVE COMPUTING FOUNDATION (CNCF) · A LINUX FOUNDATION PROJECT` beside the site and date wrapped the strip.
+    const long = await render({ ...view(), projectName: 'Cloud Native Computing Foundation (CNCF)', websiteLabel: 'synthetic.example' });
+    const strip = page(long, 'cover')?.querySelector<HTMLElement>('[data-testid="family-print-cover-strip"]');
+    expect(Array.from(strip?.querySelectorAll('span') ?? []).map((span) => span.textContent)).toEqual([
+      'Cloud Native Computing Foundation (CNCF)',
+      `synthetic.example${MKTG_PORTRAIT_COVER_STRIP.separator}7 Nov 2026`,
+    ]);
+    expect(strip?.classList.contains('pp-cover-strip--wrapped')).toBe(false);
+    expect(strip?.parentElement?.style.top).toBe(`${MKTG_PORTRAIT_COVER_STRIP.top}px`);
+    // One unbreakable word wider than the line: both halves print whole, the strip wraps and moves up one line of its leading.
+    const word = 'Synthetic'.repeat(12);
+    const wrapped = await render({ ...view(), projectName: word, websiteLabel: 'synthetic.example' });
+    const wrappedStrip = page(wrapped, 'cover')?.querySelector<HTMLElement>('[data-testid="family-print-cover-strip"]');
+    expect(wrappedStrip?.querySelector('span')?.textContent).toBe(`${word}${MKTG_PORTRAIT_COVER_STRIP.separator}a Linux Foundation project`);
+    expect(wrappedStrip?.classList.contains('pp-cover-strip--wrapped')).toBe(true);
+    expect(wrappedStrip?.parentElement?.style.top).toBe(
+      `${MKTG_PORTRAIT_COVER_STRIP.top - MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight}px`
+    );
   });
 
   it('prints a cover, a contents page and a back cover alone when no member has an approved current', async () => {
