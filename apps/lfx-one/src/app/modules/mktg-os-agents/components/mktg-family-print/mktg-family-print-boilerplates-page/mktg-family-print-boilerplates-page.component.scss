@@ -81,11 +81,13 @@
   }
 }
 
+/* The Built from rows as the kit's Sources page sets its lists (kp-list): a disc at the 16px indent; the global reset leaves a list bare. */
 .fpb-foot__list {
   margin: 6px 0 0;
   padding-left: 16px;
   font: 400 11px/1.55 var(--pp-font);
   color: var(--pp-ink);
+  list-style: disc;
   overflow-wrap: anywhere;
 }
 
