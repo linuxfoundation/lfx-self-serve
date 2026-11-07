@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { MKTG_PRINT_REVERSED_FILTER } from '@lfx-one/shared/constants';
 import { MktgBrandKitPageLogoSystemComponent } from './mktg-brand-kit-page-logo-system.component';
 import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -60,12 +59,13 @@ describe('the Logo system page', () => {
       symbol: { ref: 'project-one-symbol.png', name: 'project-one-symbol.png', src: null },
     }));
     const tiles = frame.querySelector('[data-testid="brand-kit-logo-system-tiles"]');
-    // The symbol PNG has no artwork to draw and nothing to crop: no symbol tile. The reversed tile whitens the lockup.
+    // The symbol PNG has no artwork to draw and nothing to crop: no symbol tile. The dark tile draws the three-colour
+    // lockup as it is (a reversed PNG cannot be drawn, and a filter would flatten the mark).
     expect(tiles?.querySelectorAll('.pp-tile')).toHaveLength(1);
     expect(tiles?.textContent).not.toContain('Symbol ·');
     expect(tiles?.textContent).toContain('On the dark · the full-color lockup (no reversed file)');
     expect(tiles?.textContent).not.toContain('supplied file');
-    expect(tiles?.querySelector<HTMLElement>('.pp-tile--dark img')?.style.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+    expect(tiles?.querySelector<HTMLElement>('.pp-tile--dark img')?.style.filter).toBe('');
     // The files table lists the uploads as supplied, in their format, without a file name.
     const rows = Array.from(frame.querySelectorAll('[data-testid="brand-kit-logo-system-files"] tbody tr'), (row) => wordsOf(row));
     expect(rows).toContain('Reversed (white) PNG White Supplied');
