@@ -79,16 +79,6 @@ export function mktgPortraitPlatePadding(height: number): number {
 }
 
 /**
- * The white plate's corner radius for artwork drawn at `height` px: a sixth
- * of the plate's shorter side, the drawn height plus its padding on both
- * sides (`MKTG_PORTRAIT_PLATE.radiusOfSide`), so a cover's 84 px lockup sits
- * on a 168 px plate rounded by 28 px.
- */
-export function mktgPortraitPlateRadius(height: number): number {
-  return (height + 2 * mktgPortraitPlatePadding(height)) * MKTG_PORTRAIT_PLATE.radiusOfSide;
-}
-
-/**
  * Plated artwork fitted to a box of `box` px (a tile, a sample circle, a
  * stage): the drawn height and the padding such that drawn + 2 × padding =
  * box, the padding still half the drawn height. A 40 px tile draws the mark
@@ -97,6 +87,18 @@ export function mktgPortraitPlateRadius(height: number): number {
 export function mktgPortraitPlateFit(box: number): { height: number; padding: number } {
   const height = box / (1 + 2 * MKTG_PORTRAIT_PLATE.paddingOfHeight);
   return { height, padding: mktgPortraitPlatePadding(height) };
+}
+
+/**
+ * The plate's corner radius for its outer box of `width` × `height` px: a
+ * sixth of the shorter side (`MKTG_PORTRAIT_PLATE.radiusOfShortSide`), as a
+ * slide's rounded rectangle draws it. A plate wider than tall takes its
+ * height, a tall one its width; a width not yet known (the artwork still
+ * loading) reads as wide, the lockups' usual shape.
+ */
+export function mktgPortraitPlateRadius(width: number | null, height: number): number {
+  const short = width !== null && width > 0 && width < height ? width : height;
+  return short * MKTG_PORTRAIT_PLATE.radiusOfShortSide;
 }
 
 /**

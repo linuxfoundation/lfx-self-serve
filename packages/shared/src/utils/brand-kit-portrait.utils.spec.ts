@@ -570,20 +570,28 @@ describe('the Color contrast page’s layout', () => {
 });
 
 describe('the Watchouts page’s retyped sample', () => {
-  it('prints the name as written when the tile holds it in four lines clear of the badge, else shortened at a word with an ellipsis', () => {
-    expect(brandKitPortraitRetypedName('Project One')).toBe('Project One');
-    // The tile's column is fixed at its third of the row: a word wider than the 156 px clear of the badge
-    // ("Computing", "Foundation" at 30 px Georgia bold) would widen it, so the sample stops before it with the ellipsis.
+  it('prints the whole name, stepping the size down from 30 to 20 px before a word is given up; only at 20 is it shortened', () => {
+    expect(brandKitPortraitRetypedName('Project One')).toEqual({ text: 'Project One', size: 30 });
+    // The tile's column is fixed at its third of the row: "Foundation" at 30 px Georgia bold is wider than the 156 px
+    // clear of the badge, so the size steps down until it fits and the whole name holds in four lines (the mock's).
     expect(mktgPortraitLineFits('Foundation', 156, 30, { weight: 700, family: 'Georgia' })).toBe(false);
-    expect(brandKitPortraitRetypedName('Cloud Native Computing Foundation (CNCF)')).toBe('Cloud Native…');
-    expect(brandKitPortraitRetypedName('Agentic AI Foundation')).toBe('Agentic AI…');
+    const aaif = brandKitPortraitRetypedName('Agentic AI Foundation');
+    expect(aaif.text).toBe('Agentic AI Foundation');
+    expect(aaif.size).toBeLessThan(30);
+    expect(aaif.size).toBeGreaterThanOrEqual(20);
+    expect(mktgPortraitLineFits('Foundation', 156, aaif.size, { weight: 700, family: 'Georgia' })).toBe(true);
+    expect(brandKitPortraitRetypedName('Cloud Native Computing Foundation').text).toBe('Cloud Native Computing Foundation');
+    expect(brandKitPortraitRetypedName('Kubernetes')).toEqual({ text: 'Kubernetes', size: expect.any(Number) });
+    // A name that does not hold in four lines at 20 px is shortened at a word, at 20 px.
     const long = brandKitPortraitRetypedName('The Synthetic Foundation for Interoperable Agentic Computing Standards and Open Governance');
-    expect(long).toBe('The Synthetic…');
-    // A single word too wide for the line is cut to the characters that fit.
-    const word = brandKitPortraitRetypedName('Kubernetes');
-    expect(word).toMatch(/^Kubern.*…$/);
-    expect(mktgPortraitLineFits(word, 156, 30, { weight: 700, family: 'Georgia' })).toBe(true);
-    expect(brandKitPortraitRetypedName('  ')).toBe('');
+    expect(long.size).toBe(20);
+    expect(long.text).toMatch(/^The Synthetic Foundation .*…$/);
+    // A single word too wide for the line even at 20 px is cut to the characters that fit.
+    const word = brandKitPortraitRetypedName('A'.repeat(40));
+    expect(word.size).toBe(20);
+    expect(word.text).toMatch(/^A+…$/);
+    expect(mktgPortraitLineFits(word.text, 156, 20, { weight: 700, family: 'Georgia' })).toBe(true);
+    expect(brandKitPortraitRetypedName('  ')).toEqual({ text: '', size: 30 });
   });
 });
 

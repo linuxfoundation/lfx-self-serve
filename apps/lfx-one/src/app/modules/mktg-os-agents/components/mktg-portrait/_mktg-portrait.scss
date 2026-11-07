@@ -298,10 +298,10 @@ $pp-band-height: 4px;
   background: var(--pp-dark);
 }
 
-/* The white plate under full-colour artwork on a dark ground (the tile's radius; the padding, half the drawn height, is set inline). */
+/* The white plate under full-colour artwork on a dark ground; `lfxPpPlate` binds its padding and radius from the shared geometry. */
 .pp-plate {
+  // The padding and the corner radius (a sixth of the shorter side) are bound by `lfxPpPlate` from the shared geometry.
   display: inline-block;
-  border-radius: 10px;
   background: var(--pp-white);
   line-height: 0;
 }

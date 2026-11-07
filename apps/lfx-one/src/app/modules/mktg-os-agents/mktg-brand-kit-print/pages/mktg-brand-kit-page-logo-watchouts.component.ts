@@ -30,6 +30,6 @@ export class MktgBrandKitPageLogoWatchoutsComponent extends MktgBrandKitPageBase
       .map((tile) => brandKitPortraitWatchoutDraw(tile, this.view(), this.inks.white))
   );
   protected readonly minimum = computed(() => mktgPortraitMeasure(this.view().logo.minimum_size.screen_px, 'px'));
-  /** The retyped sample's text: the name, shortened to the four lines the tile holds clear of its badge. */
+  /** The retyped sample: the whole name at the size that holds it in four lines clear of its badge (30 px down to 20), else shortened at 20. */
   protected readonly retyped = computed(() => brandKitPortraitRetypedName(this.view().projectName));
 }

@@ -36,12 +36,12 @@ export const MKTG_PORTRAIT_PAGE = {
 /**
  * The white plate under artwork a dark ground cannot reverse (no reversed
  * file, more than one ink): its padding is this fraction of the lockup's
- * drawn height (the editor's rule, book and deck alike).
+ * drawn height, and its corner radius this fraction of its shorter side
+ * (Google Slides' rounded rectangle; the editor's rule, book and deck alike).
  */
 export const MKTG_PORTRAIT_PLATE = {
   paddingOfHeight: 0.5,
-  /** The plate's corner radius as a share of its shorter side (its padded height): a sixth, no cap. */
-  radiusOfSide: 1 / 6,
+  radiusOfShortSide: 1 / 6,
 } as const;
 
 /**

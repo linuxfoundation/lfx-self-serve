@@ -19,7 +19,7 @@
         <div>
           <div class="pp-tile kp-watchout" [style.background]="tile.ground" data-testid="brand-kit-watchout">
             @if (tile.retyped) {
-              <span class="kp-retyped" data-testid="brand-kit-watchout-retyped">{{ retyped() }}</span>
+              <span class="kp-retyped" [style.font-size.px]="retyped().size" data-testid="brand-kit-watchout-retyped">{{ retyped().text }}</span>
             } @else {
               <span class="inline-block" [style.transform]="tile.transform || null" [style.filter]="tile.filter || null">
                 <lfx-mktg-brand-kit-artwork [view]="v" [height]="30" />

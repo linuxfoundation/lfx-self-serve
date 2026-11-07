@@ -5,6 +5,7 @@ import { Component, computed, input } from '@angular/core';
 import { BrandKitBookView } from '@lfx-one/shared/interfaces';
 import { BrandKitPortraitArtworkMode } from '@lfx-one/shared/interfaces';
 import { brandKitPortraitArtwork, mktgPortraitPlateFit } from '@lfx-one/shared/utils';
+import { MktgPortraitPlateDirective } from '../../components/mktg-portrait/mktg-portrait-plate.directive';
 
 /**
  * The kit's artwork at a height, as the mock's `lockup(h, mode)` and
@@ -19,6 +20,7 @@ import { brandKitPortraitArtwork, mktgPortraitPlateFit } from '@lfx-one/shared/u
 @Component({
   selector: 'lfx-mktg-brand-kit-artwork',
   templateUrl: './mktg-brand-kit-artwork.component.html',
+  imports: [MktgPortraitPlateDirective],
   host: { class: 'inline-block align-middle' },
 })
 export class MktgBrandKitArtworkComponent {
@@ -28,6 +30,6 @@ export class MktgBrandKitArtworkComponent {
   /** The box's height in px: the artwork's, or the plate's outer box when the artwork sits on one. */
   public readonly height = input.required<number>();
   protected readonly image = computed(() => brandKitPortraitArtwork(this.view(), this.kind(), this.mode()));
-  /** The drawn height and the plate's padding: the bare height, or the plate fitted to it. */
+  /** The drawn height: the bare height, or the artwork fitted inside the plate (the plate pads and rounds itself). */
   protected readonly fit = computed(() => (this.image()?.plate ? mktgPortraitPlateFit(this.height()) : { height: this.height(), padding: 0 }));
 }
