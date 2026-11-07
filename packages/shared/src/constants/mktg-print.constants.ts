@@ -137,6 +137,27 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   source: { size: 12, line: 1.6, weight: 400 },
   /** A sources list when it must be tightened before a cut. */
   sourceTight: { size: 11.5, line: 1.5, weight: 400 },
+  /** The framework page's goal matrix: a goal's title in the head row, a cell's text, the key message's, a proof row (and its tight measure), the sound bite's, the crosscut's. */
+  matrixGoal: { size: 15, line: 1.2, weight: 600 },
+  matrixCell: { size: 11, line: 1.4, weight: 400 },
+  matrixKey: { size: 11, line: 1.4, weight: 600 },
+  matrixProof: { size: 11, line: 1.4, weight: 400 },
+  matrixProofTight: { size: 10.5, line: 1.35, weight: 400 },
+  matrixBite: { size: 12.5, line: 1.3, weight: 500 },
+  matrixCrosscut: { size: 11, line: 1.5, weight: 400 },
+  /** A page's title in the grammar's type (`.pp-title`, 34/1.1/500), fitted to one line on the goal pages. */
+  pageTitle: { size: 34, line: 1.1, weight: 500 },
+  /** The say pills and the avoid rows, and their tight measures. */
+  sayPill: { size: 13, line: 1.2, weight: 500 },
+  sayPillTight: { size: 12, line: 1.2, weight: 500 },
+  avoidRow: { size: 13, line: 1.5, weight: 400 },
+  avoidRowTight: { size: 12, line: 1.4, weight: 400 },
+  /** A profile row's name, its who line, its personas, a field's eyebrow and text (`.fwp-icp-*`). */
+  icpName: { size: 15, line: 1.3, weight: 600 },
+  icpWho: { size: 11.5, line: 1.5, weight: 400 },
+  icpPersona: { size: 10.5, line: 1.5, weight: 400 },
+  icpEyebrow: { size: 9.5, line: 1.2, weight: 600 },
+  icpField: { size: 12.5, line: 1.5, weight: 400 },
   /** The muted line under a cut list: `+N more on the framework's Framework tab in LFX One` (the Sources tab for the Sources & gaps lists). */
   cutNote: { size: 10.5, line: 1.4, weight: 400 },
   /** A key number tile's figure (`.fwp-number`), stepped down in whole px to one line of the tile, to a floor of half its size; a longer figure overflows the tile (follow-up). */
@@ -183,6 +204,38 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   chipSize: 8.5,
   chipPadding: 16,
   chipGap: 4,
+  /** The goal matrix (`.fwp-matrix-row`): a row's padding (10 + 10) and hairline; its side padding (12 + 12); the label column; the column gap; a proof row's margin under it; the sound bite's rule and padding (2 + 10); the crosscut's margin above. */
+  matrixRow: 21,
+  matrixPadding: 24,
+  matrixLabelColumn: 96,
+  matrixGap: 16,
+  matrixProofGap: 5,
+  matrixBiteInset: 12,
+  matrixCrosscutGap: 8,
+  /** The say list: its margin above, a pill's padding and border around (8 + 8 + 1 + 1 down, 14 + 14 + 1 + 1 across; tight 6 + 6 / 10 + 10), the gap between pills; the say column's and the avoid column's widths and the avoid column's left. */
+  sayListTop: 10,
+  sayPillPadding: 18,
+  sayPillPaddingAcross: 30,
+  sayPillPaddingTight: 14,
+  sayPillPaddingAcrossTight: 22,
+  sayPillGap: 8,
+  sayColumn: 320,
+  avoidColumn: 360,
+  avoidLeft: 344,
+  /** The avoid list: its margin above, a row's padding (10 + 10; tight 7 + 7) and hairline, the gaps around its arrow (12 + 12) and the arrow's own width. */
+  avoidListTop: 6,
+  avoidRow: 21,
+  avoidRowTight: 15,
+  avoidArrow: 34,
+  /** A profile row (`.fwp-icp-row`): its padding (20 + 28) and hairline; the gap between its two columns; a field's eyebrow-to-text gap and the grid's gaps (18 down, 20 across); the tags' line (the chip and its margin above). */
+  icpRow: 49,
+  icpColumnGap: 24,
+  icpFieldGap: 4,
+  icpGridRowGap: 18,
+  icpGridColumnGap: 20,
+  icpTagsLine: 30,
+  icpWhoTextTop: 10,
+  icpPersonasTop: 8,
 } as const;
 
 /** The key numbers facts table's `<colgroup>` widths, %: the fact, its source, the goal that uses it (`table-layout: fixed` reads them). */

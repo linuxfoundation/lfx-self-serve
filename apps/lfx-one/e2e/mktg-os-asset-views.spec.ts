@@ -271,6 +271,16 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print).toHaveCSS('position', 'static');
       await expect(print).toHaveCSS('display', 'block');
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
+      // Every Angular host on the print path is a block: Google Chrome breaks a page at an inline host that wraps a frame
+      // carrying a break (one blank page per host), where Playwright's Chromium does not. And the frames are siblings
+      // under one parent, so the grammar's `.pp-page + .pp-page` break rule reaches every page boundary.
+      const hosts = frame.locator('lfx-mktg-framework-print, lfx-mktg-portrait-page');
+      expect(await hosts.evaluateAll((elements) => elements.map((element) => getComputedStyle(element).display))).toEqual(
+        Array.from({ length: 9 }, () => 'block')
+      );
+      expect(await print.getByTestId('lfx-mktg-portrait-page').evaluateAll((sections) => new Set(sections.map((section) => section.parentElement)).size)).toBe(
+        1
+      );
       // One goal and one profile: the cover, the framework, the goal, say and avoid, the profiles, the house, the numbers, sources and gaps.
       const pages = print.getByTestId('lfx-mktg-portrait-page');
       await expect(pages).toHaveCount(8);
