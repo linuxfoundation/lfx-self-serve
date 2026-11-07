@@ -34,6 +34,7 @@ import {
   openDraftAssetRun,
   openUnapprovedAssetDocument,
   capGoalsFrameworkRevisionResponse,
+  OVERFULL_GOAL_TITLES,
   overfullFrameworkRevisionResponse,
   realShapedFrameworkRevisionResponse,
   servedSixFrameworkRevisionResponse,
@@ -743,6 +744,10 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
     };
   });
   expect(layout.matrix).toBeLessThanOrEqual(1000);
+  // Short titles at eight goals stay one strip of eight; no title box reaches its neighbor's, none overflows its column.
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-0')).toHaveCount(1);
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-1')).toHaveCount(0);
+  expect(await matrix.evaluate(matrixTitleOverlaps)).toEqual({ overlapping: 0, overflowing: 0, titles: 8 });
   // The cells set smaller than their type (11 / 11 / 12.5 px), never under the fit model's floor: minScale of the type, in
   // half pixels (`mktgPortraitFitBlock`; at this record the value and key cells sit on the floor, 7.5 px).
   const floor = (size: number): number => Math.floor(size * MKTG_PORTRAIT_FIT.minScale * 2) / 2;
@@ -767,6 +772,61 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
     '8,000',
   ]);
   await page.screenshot({ path: info.outputPath('foundation-message-print-cap-goals.png'), fullPage: true });
+  await page.emulateMedia({ media: 'screen' });
+  await finishMktgPrintFrame(page);
+});
+
+/** In the matrix: head titles whose boxes overlap a neighbor's, or whose text overflows its own box (a word wider than the column). */
+function matrixTitleOverlaps(matrix: Element): { overlapping: number; overflowing: number; titles: number } {
+  const titles = Array.from(matrix.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-title"]'));
+  const boxes = titles.map((title) => title.getBoundingClientRect());
+  let overlapping = 0;
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i];
+      const b = boxes[j];
+      if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) overlapping++;
+    }
+  }
+  const overflowing = titles.filter((title) => title.scrollWidth > title.clientWidth + 0.5).length;
+  return { overlapping, overflowing, titles: titles.length };
+}
+
+test('eight goals with the overfull record’s titles: the matrix prints as two bands of four, every title inside its column, none overlapping, above the footer (editor C2b)', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  await openAssetDocument(page, 'foundation-message', 200, true, false, capGoalsFrameworkRevisionResponse(OVERFULL_GOAL_TITLES));
+  await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+  await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+  const frame = await layoutMktgPrintFrame(page);
+  const framework = frame.getByTestId('mktg-framework-print').locator('[data-page-id="framework"]');
+  const matrix = framework.getByTestId('mktg-framework-print-goals');
+  // Two bands of the board's four columns, the eight goals in order across them, every title whole at one size.
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-0').locator('.fwp-matrix-vp')).toHaveCount(4);
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-1').locator('.fwp-matrix-vp')).toHaveCount(4);
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-2')).toHaveCount(0);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-title')).toHaveText(OVERFULL_GOAL_TITLES);
+  const titleSizes = await matrix
+    .getByTestId('mktg-framework-print-matrix-title')
+    .evaluateAll((titles) => titles.map((title) => getComputedStyle(title).fontSize));
+  expect(new Set(titleSizes).size).toBe(1);
+  expect(parseFloat(titleSizes[0])).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin);
+  // No title box reaches its neighbor's and none overflows its column (the harness's gate-4 overlap at 2b5f1a3e3).
+  expect(await matrix.evaluate(matrixTitleOverlaps)).toEqual({ overlapping: 0, overflowing: 0, titles: 8 });
+  // Every proof cell keeps a proof above its note (F3), and the matrix ends above the footer rule.
+  for (const band of [0, 1]) {
+    const cells = matrix.getByTestId(`mktg-framework-print-goals-band-${band}`).locator('.fwp-matrix-proofs');
+    await expect(cells).toHaveCount(4);
+    for (const cell of await cells.all()) await expect(cell.getByTestId('mktg-framework-print-matrix-proof')).not.toHaveCount(0);
+  }
+  const matrixBottom = await matrix.evaluate((block) => {
+    const frameTop = (block.closest('[data-page-id]') as HTMLElement).getBoundingClientRect().top;
+    return Math.round(block.getBoundingClientRect().bottom - frameTop);
+  });
+  expect(matrixBottom).toBeLessThanOrEqual(1000);
+  await page.screenshot({ path: info.outputPath('foundation-message-print-cap-goals-bands.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);
 });

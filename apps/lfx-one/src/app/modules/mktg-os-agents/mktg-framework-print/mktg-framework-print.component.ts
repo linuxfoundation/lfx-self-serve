@@ -249,6 +249,7 @@ export class MktgFrameworkPrintComponent {
         // The anchors never move; their questions are set smaller, then cut, until they and the crosscut box end above the footer.
         const anchors = sayAvoid ? frameworkPortraitAnchors(view.mf.anchor, view.mf.crosscut) : { anchors: [], crosscutTop: 0 };
         const titleFit = goalTitles.get(page.id) ?? frameworkPortraitTitle(page.title);
+        const matrix = page.id === this.ids.framework ? frameworkPortraitMatrix(view.goals, view.mf.crosscut, this.tops.footer - this.tops.matrix) : null;
         return {
           ...page,
           number: book.firstPage + index,
@@ -257,7 +258,9 @@ export class MktgFrameworkPrintComponent {
           titleFit,
           contents: page.id === this.ids.cover ? contents : null,
           statements: page.id === this.ids.framework ? this.statements(view) : null,
-          matrix: page.id === this.ids.framework ? frameworkPortraitMatrix(view.goals, view.mf.crosscut, this.tops.footer - this.tops.matrix) : null,
+          matrix,
+          // The matrix's bands with their goals (one strip, or bands of the board's four columns where the strip cannot hold the titles).
+          matrixBands: matrix ? matrix.bands.map((band) => ({ ...band, goals: view.goals.slice(band.offset, band.offset + band.count) })) : [],
           anchorIntro: sayAvoid ? foundationMessagePrintAnchorIntro(view.mf.anchor.length) : '',
           sayAvoid: sayAvoid
             ? {

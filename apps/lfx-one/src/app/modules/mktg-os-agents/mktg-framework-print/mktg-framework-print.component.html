@@ -121,71 +121,75 @@
               }
             </div>
           }
-          <div
-            class="fwp-matrix"
-            [lfxPpRect]="[page.margin, tops.matrix, page.contentWidth]"
-            [style.--fwp-goal-count]="v.goals.length"
-            data-testid="mktg-framework-print-goals">
-            <!-- The head row's titles as the layout fitted them into the board's two lines (frameworkPortraitMatrix). -->
-            <div class="fwp-matrix-row fwp-matrix-head">
-              <div></div>
-              @for (goal of v.goals; track goal.id; let column = $index) {
-                <div>
-                  <span class="pp-lab">Goal {{ goal.n }}</span>
-                  <span class="fwp-matrix-goal" [style.font-size.px]="frame.matrix?.cells?.[column]?.title?.size">
-                    {{ frame.matrix?.cells?.[column]?.title?.text ?? goal.t }}
-                  </span>
+          <div class="fwp-matrix" [lfxPpRect]="[page.margin, tops.matrix, page.contentWidth]" data-testid="mktg-framework-print-goals">
+            <!-- The goals in one strip, or in bands of the board's four columns where the strip's columns cannot hold the titles (frameworkPortraitMatrix). -->
+            @for (band of frame.matrixBands; track band.offset) {
+              <div class="fwp-matrix-band" [style.--fwp-goal-count]="band.columns" [attr.data-testid]="'mktg-framework-print-goals-band-' + $index">
+                <!-- The head row's titles at the one size the layout set them, wrapped to the board's two lines and cut at a word past them. -->
+                <div class="fwp-matrix-row fwp-matrix-head">
+                  <div></div>
+                  @for (goal of band.goals; track goal.id; let index = $index) {
+                    <div>
+                      <span class="pp-lab">Goal {{ goal.n }}</span>
+                      <span
+                        class="fwp-matrix-goal"
+                        [style.font-size.px]="frame.matrix?.cells?.[band.offset + index]?.title?.size"
+                        data-testid="mktg-framework-print-matrix-title">
+                        {{ frame.matrix?.cells?.[band.offset + index]?.title?.text ?? goal.t }}
+                      </span>
+                    </div>
+                  }
                 </div>
-              }
-            </div>
-            <!-- The text cells print as the layout fitted them (frameworkPortraitMatrix): at their type where the rows leave the proofs their room, smaller or cut at a sentence otherwise. -->
-            <div class="fwp-matrix-row">
-              <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Value proposition</span>
-              @for (goal of v.goals; track goal.id; let column = $index) {
-                <p class="fwp-matrix-vp" [style.font-size.px]="frame.matrix?.cells?.[column]?.vp?.size">
-                  {{ frame.matrix?.cells?.[column]?.vp?.text ?? goal.vp }}
-                </p>
-              }
-            </div>
-            <div class="fwp-matrix-row">
-              <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Key message</span>
-              @for (goal of v.goals; track goal.id; let column = $index) {
-                <p class="fwp-matrix-key" [style.font-size.px]="frame.matrix?.cells?.[column]?.key?.size">
-                  {{ frame.matrix?.cells?.[column]?.key?.text ?? goal.key }}
-                </p>
-              }
-            </div>
-            <div class="fwp-matrix-row">
-              <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Proof</span>
-              <!-- Each goal's proof cell is a cut list in the row's room: tightened first, then whole rows and the muted line (frameworkPortraitMatrix). -->
-              @for (goal of v.goals; track goal.id; let column = $index) {
-                @if (frame.matrix?.proofs?.[column]; as cell) {
-                  <div>
-                    <ul class="fwp-matrix-proofs" [class.fwp-matrix-proofs--tight]="cell.tight">
-                      @for (proof of cell.rows; track $index) {
-                        <!-- A cell's first proof kept set smaller carries its own size (editor F3: never only the note). -->
-                        <li [style.font-size.px]="proof.size ?? null" data-testid="mktg-framework-print-matrix-proof">
-                          {{ proof.fact }} <span class="fwp-matrix-source">{{ proof.source }}</span>
-                        </li>
-                      }
-                    </ul>
-                    @if (cell.cut > 0) {
-                      <p class="fwp-cut-note" data-testid="mktg-framework-print-matrix-proofs-cut">{{ cell.note }}</p>
+                <!-- The text cells print as the layout fitted them (frameworkPortraitMatrix): at their type where the rows leave the proofs their room, smaller or cut at a sentence otherwise. -->
+                <div class="fwp-matrix-row">
+                  <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Value proposition</span>
+                  @for (goal of band.goals; track goal.id; let index = $index) {
+                    <p class="fwp-matrix-vp" [style.font-size.px]="frame.matrix?.cells?.[band.offset + index]?.vp?.size">
+                      {{ frame.matrix?.cells?.[band.offset + index]?.vp?.text ?? goal.vp }}
+                    </p>
+                  }
+                </div>
+                <div class="fwp-matrix-row">
+                  <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Key message</span>
+                  @for (goal of band.goals; track goal.id; let index = $index) {
+                    <p class="fwp-matrix-key" [style.font-size.px]="frame.matrix?.cells?.[band.offset + index]?.key?.size">
+                      {{ frame.matrix?.cells?.[band.offset + index]?.key?.text ?? goal.key }}
+                    </p>
+                  }
+                </div>
+                <div class="fwp-matrix-row">
+                  <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Proof</span>
+                  <!-- Each goal's proof cell is a cut list in the row's room: tightened first, then whole rows and the muted line (frameworkPortraitMatrix). -->
+                  @for (goal of band.goals; track goal.id; let index = $index) {
+                    @if (frame.matrix?.proofs?.[band.offset + index]; as cell) {
+                      <div>
+                        <ul class="fwp-matrix-proofs" [class.fwp-matrix-proofs--tight]="cell.tight">
+                          @for (proof of cell.rows; track $index) {
+                            <!-- A cell's first proof kept set smaller carries its own size (editor F3: never only the note). -->
+                            <li [style.font-size.px]="proof.size ?? null" data-testid="mktg-framework-print-matrix-proof">
+                              {{ proof.fact }} <span class="fwp-matrix-source">{{ proof.source }}</span>
+                            </li>
+                          }
+                        </ul>
+                        @if (cell.cut > 0) {
+                          <p class="fwp-cut-note" data-testid="mktg-framework-print-matrix-proofs-cut">{{ cell.note }}</p>
+                        }
+                      </div>
                     }
-                  </div>
-                }
-              }
-            </div>
-            <div class="fwp-matrix-row">
-              <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Sound bite</span>
-              @for (goal of v.goals; track goal.id; let column = $index) {
-                @if (frame.matrix?.cells?.[column]?.bite; as bite) {
-                  <p class="fwp-matrix-bite" [style.font-size.px]="bite.size">“{{ bite.text }}”</p>
-                } @else {
-                  <p class="fwp-matrix-bite fwp-matrix-bite-none"></p>
-                }
-              }
-            </div>
+                  }
+                </div>
+                <div class="fwp-matrix-row">
+                  <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Sound bite</span>
+                  @for (goal of band.goals; track goal.id; let index = $index) {
+                    @if (frame.matrix?.cells?.[band.offset + index]?.bite; as bite) {
+                      <p class="fwp-matrix-bite" [style.font-size.px]="bite.size">“{{ bite.text }}”</p>
+                    } @else {
+                      <p class="fwp-matrix-bite fwp-matrix-bite-none"></p>
+                    }
+                  }
+                </div>
+              </div>
+            }
             @if (v.mf.crosscut) {
               <p class="fwp-matrix-crosscut">{{ v.mf.crosscut }}</p>
             }

@@ -49,6 +49,7 @@ import type {
   FoundationMessagePrintContents,
   FoundationMessagePrintContentsEntry,
   FoundationMessagePrintMatrix,
+  FoundationMessagePrintMatrixBand,
   FoundationMessagePrintMatrixCell,
   FoundationMessagePrintNumber,
   FoundationMessagePrintFactRow,
@@ -273,29 +274,112 @@ function fitText(text: string, type: FoundationMessagePrintType, width: number, 
 }
 
 /**
- * The framework page's goal matrix, bounded in its `room`: the head row's goal titles fitted into the board's two lines
- * (`ROOM.matrixGoalLines`; smaller first, then cut at a word) and the crosscut measured at its type; the
- * value, key message and sound bite rows at their type where the three leave the proofs row at least its note (the
- * muted line at the count every proof would make), else each cell fitted by the portrait fit model (smaller first,
- * then cut at a sentence) into the rows' share of the room that stays; then each goal's proof cell a cut list in the
- * room the fitted rows leave (tightened first, then whole rows with the muted line). A proof cell never holds only
- * the note (the editor's rule): the proofs row is floored at every goal's first proof (at the fit model's floor) with
- * the note counting the rest, and a cell whose rows would all be cut keeps its first proof, set smaller (then cut at
- * a sentence) to the room above its note. The matrix's height is returned with it, and is at most the room, so the
- * sound bite row stays above the footer whatever the record runs to.
+ * The one size the goal matrix's head titles print at, px: the grammar's `TYPE.matrixGoal.size`, brought down in half-px
+ * steps until every title's LONGEST WORD fits the column (a word never breaks inside the head, so the fit model's
+ * character measure is applied to the word, not the line), the same size for every title (the editor's rule: one size
+ * across the row). It can fall under `ROOM.matrixTitleMin`: then the strip is too narrow for these titles and the
+ * matrix breaks into bands (`frameworkPortraitMatrixColumns`).
+ */
+export function frameworkPortraitMatrixTitleSize(titles: readonly string[], column: number): number {
+  const em = mktgPortraitCharEm({ weight: TYPE.matrixGoal.weight });
+  const longest = titles.reduce((max, title) => Math.max(max, ...title.split(/\s+/).map((word) => word.length)), 1);
+  let size = TYPE.matrixGoal.size;
+  while (size > 0 && longest * size * em > column) size -= 0.5;
+  return Math.max(0, size);
+}
+
+/**
+ * How many columns the goal matrix's strip holds: every goal in one strip where the head titles stay readable there (at
+ * `ROOM.matrixTitleMin` or above, `frameworkPortraitMatrixTitleSize`), else the board's four (`ROOM.matrixBandColumns`),
+ * the goals in bands of four under each other (the editor's second shape, when wrapping cannot fit the titles).
+ */
+export function frameworkPortraitMatrixColumns(goals: readonly Pick<FoundationMessagePrintGoal, 't'>[]): number {
+  const titles = goals.map((goal) => goal.t);
+  if (frameworkPortraitMatrixTitleSize(titles, frameworkPortraitMatrixColumn(goals.length)) >= ROOM.matrixTitleMin) return Math.max(1, goals.length);
+  return ROOM.matrixBandColumns;
+}
+
+/**
+ * The framework page's goal matrix, bounded in its `room`: the goals in one strip, or in bands of the board's four
+ * columns where the strip's columns cannot hold the titles (`frameworkPortraitMatrixColumns`); every head title at ONE
+ * size, the largest whose longest word fits the column (`frameworkPortraitMatrixTitleSize`), wrapped to the board's
+ * two lines (`ROOM.matrixGoalLines`) and cut at a word past them; the crosscut measured once at its type under the
+ * last band. In each band: the value, key message and sound bite rows at their type where the three leave the proofs
+ * row at least its note (the muted line at the count every proof would make), else each cell fitted by the portrait
+ * fit model (smaller first, then cut at a sentence) into the rows' share of the room that stays; then each goal's
+ * proof cell a cut list in the room the fitted rows leave (tightened first, then whole rows with the muted line). A
+ * proof cell never holds only the note (the editor's rule): the proofs row is floored at every goal's first proof (at
+ * the fit model's floor) with the note counting the rest, and a cell whose rows would all be cut keeps its first
+ * proof, set smaller in the fit model's steps to the room above its note, then cut at a sentence, carrying its own
+ * size. The bands share the room equally, less the crosscut and the gaps between them. `cells` and `proofs` are in the
+ * goals' order across the bands; `bands` says where each starts and how many columns it is laid in.
  */
 export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGoal[], crosscut: string, room: number): FoundationMessagePrintMatrix {
-  const column = frameworkPortraitMatrixColumn(goals.length);
+  const columns = frameworkPortraitMatrixColumns(goals);
+  const column = frameworkPortraitMatrixColumn(columns);
+  const titleSize = Math.max(
+    ROOM.matrixTitleMin,
+    frameworkPortraitMatrixTitleSize(
+      goals.map((goal) => goal.t),
+      column
+    )
+  );
+  const titleType: FoundationMessagePrintType = { ...TYPE.matrixGoal, size: titleSize };
+  const perLine = mktgPortraitCharsPerLine(column, titleSize, { weight: titleType.weight });
+  const titles: FoundationMessagePrintFittedText[] = goals.map((goal) => ({
+    text: frameworkPortraitLinesCut(goal.t, perLine, ROOM.matrixGoalLines),
+    size: titleSize,
+  }));
+  const note = crosscut ? ROOM.matrixCrosscutGap + frameworkPortraitTextHeight(crosscut, TYPE.matrixCrosscut, PAGE.contentWidth - ROOM.matrixPadding) : 0;
+  const bands: FoundationMessagePrintMatrixBand[] = [];
+  for (let offset = 0; offset < goals.length; offset += columns) bands.push({ offset, columns, count: Math.min(columns, goals.length - offset) });
+  const bandRoom = (room - note - (bands.length - 1) * ROOM.matrixBandGap) / Math.max(1, bands.length);
+  const cells: FoundationMessagePrintMatrixCell[] = [];
+  const proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>[] = [];
+  let height = note + (bands.length - 1) * ROOM.matrixBandGap;
+  for (const band of bands) {
+    const laid = frameworkPortraitMatrixBand(
+      goals.slice(band.offset, band.offset + band.count),
+      titles.slice(band.offset, band.offset + band.count),
+      column,
+      bandRoom
+    );
+    cells.push(...laid.cells);
+    proofs.push(...laid.proofs);
+    height += laid.height;
+  }
+  return { cells, proofs, bands, height };
+}
+
+/**
+ * A text cut at a word to `lines` lines of `perLine` characters, with an ellipsis whenever a word is dropped (the words wrap as the
+ * fit model wraps them, so a cut title's line count is the one the head row measures); a text that fits is returned as it is.
+ */
+function frameworkPortraitLinesCut(text: string, perLine: number, lines: number): string {
+  if (mktgPortraitWrapLines(text, perLine) <= lines) return text;
+  const words = text.split(/\s+/).filter((word) => word !== '');
+  for (let keep = words.length - 1; keep > 0; keep -= 1) {
+    const cut = `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(words.slice(0, keep)).join(' '))}…`;
+    if (mktgPortraitWrapLines(cut, perLine) <= lines) return cut;
+  }
+  return `${words[0]?.slice(0, Math.max(1, perLine - 1)) ?? ''}…`;
+}
+
+/** One band of the goal matrix (`frameworkPortraitMatrix`): its goals' text rows and proof cells fitted into `room` at `column`, its titles given. */
+function frameworkPortraitMatrixBand(
+  goals: readonly FoundationMessagePrintGoal[],
+  titles: readonly FoundationMessagePrintFittedText[],
+  column: number,
+  room: number
+): { cells: FoundationMessagePrintMatrixCell[]; proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>[]; height: number } {
   const biteWidth = column - ROOM.matrixBiteInset;
   const tallest = (heights: readonly number[]): number => heights.reduce((max, height) => Math.max(max, height), 0);
-  const titleRoom = TYPE.matrixGoal.size * TYPE.matrixGoal.line * ROOM.matrixGoalLines;
-  const titles = goals.map((goal) => fitText(goal.t, TYPE.matrixGoal, column, titleRoom));
   const head =
     ROOM.matrixRow +
     TYPE.cutNote.size * TYPE.cutNote.line +
     3 +
     tallest(titles.map((title) => frameworkPortraitTextHeight(title.text, { ...TYPE.matrixGoal, size: title.size }, column)));
-  const note = crosscut ? ROOM.matrixCrosscutGap + frameworkPortraitTextHeight(crosscut, TYPE.matrixCrosscut, PAGE.contentWidth - ROOM.matrixPadding) : 0;
+  const note = 0;
   const proofRow = (proof: FoundationMessagePrintGoalProof, type: FoundationMessagePrintType): number =>
     frameworkPortraitTextHeight(`${proof.fact} ${proof.source}`, { ...type, size: proof.size ?? type.size }, column) + ROOM.matrixProofGap;
   const noteIn = (cut: number): number => (cut > 0 ? frameworkPortraitCutNoteHeightIn(cut, 'framework', column) : 0);

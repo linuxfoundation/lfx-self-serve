@@ -280,11 +280,25 @@ export interface FoundationMessagePrintAnchorRow {
 
 /** The framework page's goal matrix, bounded: each goal's proof cell as a cut list, in the goals' order (frameworkPortraitMatrix). */
 export interface FoundationMessagePrintMatrix {
-  /** Each goal's value proposition, key message and sound bite as the matrix sets them: fitted (smaller first, then cut at a sentence) where the rows would not leave the proofs their room. */
+  /** Each goal's value proposition, key message and sound bite as the matrix sets them: fitted (smaller first, then cut at a sentence) where the rows would not leave the proofs their room. In the goals' order across the bands. */
   cells: FoundationMessagePrintMatrixCell[];
   proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>[];
+  /** The strip, or the bands of the board's four columns the goals break into where the strip's columns cannot hold the titles (frameworkPortraitMatrixColumns), each saying where in the goals it starts. */
+  bands: FoundationMessagePrintMatrixBand[];
   /** The matrix's measured height, px, from its first row's top to the crosscut's end: at most the room it was given. */
   height: number;
+}
+
+/** One band of the goal matrix: the goals from `offset`, `count` of them, laid in `columns` grid columns (the last band of an odd count leaves columns empty). */
+export interface FoundationMessagePrintMatrixBand {
+  offset: number;
+  count: number;
+  columns: number;
+}
+
+/** A matrix band with its goals, as the framework page prints it: the band's goals in order, each cell read at `offset + index` of the matrix's `cells` and `proofs`. */
+export interface FoundationMessagePrintMatrixBandGoals extends FoundationMessagePrintMatrixBand {
+  goals: FoundationMessagePrintGoal[];
 }
 
 /** One goal's text cells in the framework page's matrix (frameworkPortraitMatrix): its title in the head row, fitted into the board's two lines, and its three text rows. */
@@ -343,6 +357,8 @@ export interface FoundationMessagePrintFrame extends MktgPortraitPlanPage {
   titleFit: FoundationMessagePrintFittedTitle;
   /** The goal matrix's proof cells, bounded, on the framework page. */
   matrix: FoundationMessagePrintMatrix | null;
+  /** The matrix's bands with their goals, so the template loops a band's goals without slicing (frameworkPortraitMatrix's `bands`). */
+  matrixBands: FoundationMessagePrintMatrixBandGoals[];
   /** The say-and-avoid page's intro, counting its anchor questions ('' on the other pages). */
   anchorIntro: string;
   /** The say pills and the avoid rows, cut to their columns, on the say-and-avoid page. */

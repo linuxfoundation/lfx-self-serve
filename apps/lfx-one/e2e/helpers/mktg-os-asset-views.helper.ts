@@ -433,12 +433,16 @@ export function overfullFrameworkRevisionResponse(): MktgRevisionResponse {
   };
 }
 
+/** The overfull record's goal titles as the editor read them: words the matrix's eight 57 px columns cannot hold, so the matrix breaks into bands. */
+export const OVERFULL_GOAL_TITLES = ['Adoption', 'Contributors', 'Certification', 'End users', 'Events', 'Security', 'Membership', 'Education'];
+
 /**
  * The framework record at the goals' cap (`FOUNDATION_MESSAGE_CONTENT_LIMITS.goals.max`: eight goals, four proofs each, long
  * cells), so the framework page's matrix has 57 px columns and must fit its text cells and cut every proof cell to its
- * note to end above the footer; the rest of the record is the real-shaped asset's.
+ * note to end above the footer; the rest of the record is the real-shaped asset's. With `titles`, the goals take those
+ * (the overfull record's: the strip cannot hold their words, so the matrix prints as two bands of four).
  */
-export function capGoalsFrameworkRevisionResponse(): MktgRevisionResponse {
+export function capGoalsFrameworkRevisionResponse(titles?: readonly string[]): MktgRevisionResponse {
   const framework = realShapedFrameworkAsset();
   const sentence =
     'A long cell that says what the goal does for the people it serves, across several lines of a narrow column, with a second sentence after it.';
@@ -447,7 +451,7 @@ export function capGoalsFrameworkRevisionResponse(): MktgRevisionResponse {
     ...first,
     id: `goal-${index + 1}`,
     n: index + 1,
-    t: `Goal ${index + 1} title`,
+    t: titles?.[index] ?? `Goal ${index + 1} title`,
     vp: sentence,
     key: sentence,
     bite: 'A sound bite that is a sentence long, as the record allows.',

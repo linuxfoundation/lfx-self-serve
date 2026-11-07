@@ -311,7 +311,9 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(mktgPortraitCharsPerLine(frameworkPortraitStatementWidth(1.05, true), taglineSize, { weight: 500 })).toBeGreaterThanOrEqual('Open standards'.length);
     await setView(view);
     const matrix = query('mktg-framework-print-goals');
-    expect(matrix?.style.getPropertyValue('--fwp-goal-count')).toBe('1');
+    // One goal, one band of one column (`--fwp-goal-count` on the band).
+    expect(query('mktg-framework-print-goals-band-0')?.style.getPropertyValue('--fwp-goal-count')).toBe('1');
+    expect(query('mktg-framework-print-goals-band-1')).toBeNull();
     expect(Array.from(matrix?.querySelectorAll('.fwp-matrix-row > .pp-lab') ?? []).map((label) => label.textContent?.trim())).toEqual([
       'Value proposition',
       'Key message',
@@ -336,8 +338,8 @@ describe('MktgFrameworkPrintComponent', () => {
       `${FRAMEWORK_PORTRAIT_TYPE.matrixKey.size}px`,
     ]);
     expect(matrix?.querySelector<HTMLElement>('.fwp-matrix-bite')?.style.fontSize).toBe(`${FRAMEWORK_PORTRAIT_TYPE.matrixBite.size}px`);
-    // The head row's title too: a short title at its type (a long one is fitted into the board's two lines by the layout).
-    const title = matrix?.querySelector<HTMLElement>('.fwp-matrix-goal');
+    // The head row's title too: a short title at its type (a long one is cut at a word into the board's two lines by the layout).
+    const title = query('mktg-framework-print-matrix-title');
     expect([title?.textContent?.trim(), title?.style.fontSize]).toEqual([CONTENT.mf.goals[0].t, `${FRAMEWORK_PORTRAIT_TYPE.matrixGoal.size}px`]);
     expect(matrix?.querySelector('.fwp-matrix-crosscut')?.textContent?.trim()).toBe('Every column grows the audience.');
     // Segments belong to the profile pages: the matrix does not name them.
@@ -741,6 +743,33 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(frame('say-avoid')?.textContent).not.toContain('Every piece of content answers');
     expect(frame('message-house')?.textContent).not.toContain('Audiences');
     expect(frame('message-house')?.querySelector('.fwp-pillar-message')).toBeNull();
+  });
+
+  it('breaks eight goals with the overfull record’s titles into two bands of four, every title at one size inside its column (editor C2b)', async () => {
+    const titles = ['Adoption', 'Contributors', 'Certification', 'End users', 'Events', 'Security', 'Membership', 'Education'];
+    const goals = titles.map((t, index) => ({ ...CONTENT.mf.goals[0], id: `g${index}`, n: index + 1, t }));
+    await configure('browser', buildFoundationMessagePrintView({ ...CONTENT, mf: { ...CONTENT.mf, goals } }, 'TestOrbit', 2, null));
+    const bands = [query('mktg-framework-print-goals-band-0'), query('mktg-framework-print-goals-band-1')];
+    expect(bands.map((band) => band?.style.getPropertyValue('--fwp-goal-count'))).toEqual(['4', '4']);
+    expect(query('mktg-framework-print-goals-band-2')).toBeNull();
+    const heads = Array.from(host().querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-title"]'));
+    expect(heads.map((head) => head.textContent?.trim())).toEqual(titles);
+    expect(new Set(heads.map((head) => head.style.fontSize)).size).toBe(1);
+    expect(parseFloat(heads[0].style.fontSize)).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin);
+    // Each band prints every row for its four goals; every proof cell keeps a row (F3 in the bands too).
+    expect(bands.map((band) => band?.querySelectorAll('.fwp-matrix-vp').length)).toEqual([4, 4]);
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof"]').length).toBeGreaterThanOrEqual(8);
+    // Short titles at eight goals stay one strip of eight columns.
+    await setView(
+      buildFoundationMessagePrintView(
+        { ...CONTENT, mf: { ...CONTENT.mf, goals: goals.map((goal, index) => ({ ...goal, t: `Goal ${index + 1} title` })) } },
+        'TestOrbit',
+        2,
+        null
+      )
+    );
+    expect(query('mktg-framework-print-goals-band-0')?.style.getPropertyValue('--fwp-goal-count')).toBe('8');
+    expect(query('mktg-framework-print-goals-band-1')).toBeNull();
   });
 
   it('sets the three statements at one size, the smallest any card needs, never one card shrunk alone (the editor’s read)', async () => {

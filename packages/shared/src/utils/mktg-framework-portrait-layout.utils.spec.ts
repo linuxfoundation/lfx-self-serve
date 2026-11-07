@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   FRAMEWORK_PORTRAIT_MAX_TILES,
   FRAMEWORK_PORTRAIT_NUMBER_TILE,
+  FRAMEWORK_PORTRAIT_ROOM,
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
 } from '../constants/mktg-print.constants';
@@ -48,6 +49,8 @@ import {
   frameworkPortraitIcpsAligned,
   frameworkPortraitMatrix,
   frameworkPortraitMatrixColumn,
+  frameworkPortraitMatrixColumns,
+  frameworkPortraitMatrixTitleSize,
   frameworkPortraitPillList,
   frameworkPortraitPillarHeadHeight,
   frameworkPortraitPillarProofHeight,
@@ -63,7 +66,7 @@ import {
 import type { FoundationMessagePrintGoal, FoundationMessagePrintIcp, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import type { FoundationMessagePillarView } from '../interfaces/foundation-message.interface';
 import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
-import { mktgPortraitCharsPerLine } from './mktg-portrait-print.utils';
+import { mktgPortraitCharEm, mktgPortraitCharsPerLine } from './mktg-portrait-print.utils';
 import { buildFoundationMessagePrintView } from './mktg-print.utils';
 
 const pair = (a: string, b: string): [string, string] => [a, b];
@@ -227,7 +230,8 @@ describe('the framework portrait book’s bounded blocks', () => {
       { title: { text: goal(2).t, size: 15 }, vp: { text: 'Value', size: 11 }, key: { text: 'Key', size: 11 }, bite: { text: 'Bite', size: 12.5 } },
     ]);
     expect(whole.height).toBeLessThanOrEqual(664);
-    // A goal title the record does not cap is fitted into the head row's two lines (smaller first, then cut at a word), so the head stays its height.
+    // A goal title the record does not cap is kept at the row's one size (its words fit the column) and cut at a word past the head row's two
+    // lines, with an ellipsis, so the head stays its height and no title is set smaller than its neighbors (the editor's rule).
     const titled = frameworkPortraitMatrix([goal(2, { t: long.repeat(2).trim() }), goal(1)], 'Across the goals.', 664);
     const titleRoom = 15 * 1.2 * 2;
     for (const cell of titled.cells) {
@@ -235,9 +239,11 @@ describe('the framework portrait book’s bounded blocks', () => {
         frameworkPortraitTextHeight(cell.title.text, { ...FRAMEWORK_PORTRAIT_TYPE.matrixGoal, size: cell.title.size }, frameworkPortraitMatrixColumn(2))
       ).toBeLessThanOrEqual(titleRoom);
     }
-    expect(titled.cells[0].title.size).toBeLessThan(15);
+    expect(titled.cells.map((cell) => cell.title.size)).toEqual([15, 15]);
     expect(titled.cells[0].title.text.length).toBeLessThan(long.repeat(2).trim().length);
+    expect(titled.cells[0].title.text.endsWith('…')).toBe(true);
     expect(titled.cells[1].title).toEqual({ text: goal(1).t, size: 15 });
+    expect(titled.bands).toEqual([{ offset: 0, count: 2, columns: 2 }]);
     expect(titled.height).toBeLessThanOrEqual(664);
     const bounded = frameworkPortraitMatrix([goal(12), goal(1)], 'Across the goals.', 664);
     expect(bounded.proofs[0].rows.length).toBeGreaterThan(0);
@@ -303,6 +309,48 @@ describe('the framework portrait book’s bounded blocks', () => {
       expect(frameworkPortraitTextHeight(`${cell.rows[0].fact} ${cell.rows[0].source}`, type, column)).toBeLessThan(400);
     }
     expect(matrix.proofs[1]).toMatchObject({ cut: 0, rows: goals[1].proofRows });
+  });
+
+  it('bounds every head title to its column at one size, and breaks eight goals into two bands of four where the strip cannot hold their words (editor C2b)', () => {
+    // The overfull record's titles: eight columns of 57 px cannot hold "Certification" at a readable size, so the matrix is two bands of the board's four.
+    const titles = ['Adoption', 'Contributors', 'Certification', 'End users', 'Events', 'Security', 'Membership', 'Education'];
+    const em = mktgPortraitCharEm({ weight: FRAMEWORK_PORTRAIT_TYPE.matrixGoal.weight });
+    expect(frameworkPortraitMatrixColumn(8)).toBe(57);
+    expect(frameworkPortraitMatrixTitleSize(titles, 57)).toBeLessThan(FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin);
+    expect('Certification'.length * FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin * em).toBeGreaterThan(57);
+    const goals = titles.map((t, index) => goal(4, { id: `g${index}`, n: index + 1, t }));
+    expect(frameworkPortraitMatrixColumns(goals)).toBe(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
+    const matrix = frameworkPortraitMatrix(goals, 'Across the goals.', 664);
+    expect(matrix.bands).toEqual([
+      { offset: 0, count: 4, columns: 4 },
+      { offset: 4, count: 4, columns: 4 },
+    ]);
+    expect(matrix.height).toBeLessThanOrEqual(664);
+    expect(matrix.cells).toHaveLength(8);
+    expect(matrix.proofs).toHaveLength(8);
+    // One size across the row, and every title's longest word inside the band's column: nothing overflows into its neighbor.
+    const column = frameworkPortraitMatrixColumn(4);
+    const sizes = new Set(matrix.cells.map((cell) => cell.title.size));
+    expect(sizes.size).toBe(1);
+    expect(matrix.cells[0].title.size).toBe(15);
+    for (const cell of matrix.cells) {
+      for (const word of cell.title.text.split(' ')) expect(word.length * cell.title.size * em).toBeLessThanOrEqual(column);
+      expect(cell.title.text).toBe(goals[matrix.cells.indexOf(cell)].t);
+    }
+    // Every proof cell keeps a row in each band (the editor's F3 holds in the bands too).
+    for (const cell of matrix.proofs) expect(cell.rows.length).toBeGreaterThan(0);
+    // Short titles at eight goals stay one strip of eight: the words fit the narrow column at the floor or above.
+    const short = Array.from({ length: 8 }, (_, index) => goal(1, { id: `s${index}`, n: index + 1, t: `Goal ${index + 1} title` }));
+    expect(frameworkPortraitMatrixColumns(short)).toBe(8);
+    const strip = frameworkPortraitMatrix(short, '', 664);
+    expect(strip.bands).toEqual([{ offset: 0, count: 8, columns: 8 }]);
+    expect(new Set(strip.cells.map((cell) => cell.title.size)).size).toBe(1);
+    expect(strip.cells[0].title.size).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin);
+    // Seven goals in bands: the second band holds three in four columns.
+    expect(frameworkPortraitMatrix(goals.slice(0, 7), '', 664).bands).toEqual([
+      { offset: 0, count: 4, columns: 4 },
+      { offset: 4, count: 3, columns: 4 },
+    ]);
   });
 
   it('packs the say pills into their column and cuts them from the end, tight first; cuts the avoid rows to whole rows', () => {

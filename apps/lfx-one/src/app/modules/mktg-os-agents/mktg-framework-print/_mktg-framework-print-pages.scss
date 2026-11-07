@@ -186,6 +186,11 @@
     padding-left: 10px;
   }
 
+  /* A band of the matrix: the strip, or one of the bands of four the goals break into (frameworkPortraitMatrixColumns); FRAMEWORK_PORTRAIT_ROOM.matrixBandGap between bands. */
+  .fwp-matrix-band + .fwp-matrix-band {
+    margin-top: 16px;
+  }
+
   .fwp-matrix-row {
     display: grid;
     grid-template-columns: 96px repeat(var(--fwp-goal-count, 1), minmax(0, 1fr));

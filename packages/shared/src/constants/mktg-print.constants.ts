@@ -294,6 +294,11 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   matrixCellRow: 19,
   /** The lines a goal's title has in the matrix's head row (the board's two): a longer title is fitted into them, smaller first, then cut. */
   matrixGoalLines: 2,
+  /** The least size a matrix head title prints at, px: under it the strip is too narrow for the titles and the matrix breaks into bands (frameworkPortraitMatrixColumns). */
+  matrixTitleMin: 9,
+  /** The board's column count, the bands' width when the matrix breaks, and `.fwp-matrix-band + .fwp-matrix-band`'s gap, px. */
+  matrixBandColumns: 4,
+  matrixBandGap: 16,
   /** The message house: the umbrella bar's padding (24 + 24) and its padding across (28 + 28); the brand line's margins (14 + 22); the pillars' gap; a pillar's rule and padding (3 + 12), its message's margin above, its proof list's margin above, a proof row's hairline and padding (1 + 16) and its source chip's line (4 + 16.5); the gap the lower blocks keep under the pillars and the least room they keep above the footer (the pillars' proofs are cut to leave it); the Why now column and the audiences column and its left; the Why now text's margin above; the audience list's margin above and a row's hairline and padding (1 + 14; tight 1 + 10). */
   houseUmbrellaPadding: 48,
   houseUmbrellaPaddingAcross: 56,
