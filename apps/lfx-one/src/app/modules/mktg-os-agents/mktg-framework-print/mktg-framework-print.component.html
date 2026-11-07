@@ -62,14 +62,12 @@
           </div>
           <div [lfxPpRect]="[page.margin, 620, page.contentWidth]">
             <span class="pp-lab pp-lab--dark">Contents</span>
+            <!-- Each row's page number once, as the "02" leader the design draws (the editor's read, 7 Nov: no trailing duplicate). -->
             <ol class="fwp-contents" data-testid="mktg-framework-print-contents">
               @for (entry of frame.contents; track entry.id) {
                 <li class="fwp-contents-row">
-                  <span
-                    ><span class="fwp-contents-number">{{ entry.numberLabel }}</span
-                    >{{ entry.title }}</span
-                  >
-                  <span class="fwp-contents-page">{{ entry.number }}</span>
+                  <span class="fwp-contents-number">{{ entry.numberLabel }}</span>
+                  <span>{{ entry.title }}</span>
                 </li>
               }
             </ol>

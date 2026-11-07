@@ -255,16 +255,18 @@ describe('MktgFrameworkPrintComponent', () => {
     // The editor's gap under the cover title (16–24 px, set at 18) is the global partial's `.fwp-cover-edition` rule, which the
     // unit build does not load: the class is asserted here, the computed gap in the e2e (mktg-os-asset-views.spec.ts).
     expect(query('mktg-framework-print-version')?.classList.contains('fwp-cover-edition')).toBe(true);
+    // Each row's page number once, as the two-digit leader (the editor's read: no trailing duplicate).
     const rows = Array.from(cover?.querySelectorAll('[data-testid="mktg-framework-print-contents"] li') ?? []);
     expect(rows.map((row) => text(row))).toEqual([
-      '02 Framework 2',
-      '03 Goal 1 · Adoption 3',
-      '04 Say and avoid · anchor questions 4',
-      '05 Ideal customer profiles 5',
-      '06 Message house 6',
-      '07 Key numbers 7',
-      '08 Sources & gaps 8',
+      '02 Framework',
+      '03 Goal 1 · Adoption',
+      '04 Say and avoid · anchor questions',
+      '05 Ideal customer profiles',
+      '06 Message house',
+      '07 Key numbers',
+      '08 Sources & gaps',
     ]);
+    expect(rows.map((row) => row.querySelectorAll('span').length)).toEqual(rows.map(() => 2));
     // The LF look has no kit, so no web host: the strip's right carries the version and the approval's date.
     expect(text(query('mktg-framework-print-cover-strip'))).toBe('TestOrbit · a Linux Foundation project V2.0 · 6 Nov 2026');
     // The LF logo stands on the dark band.
