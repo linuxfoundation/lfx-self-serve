@@ -340,6 +340,11 @@ $pp-band-height: 4px;
   color: var(--pp-white);
 }
 
+/* The approver's name under the Approved date: the row's body size (12/1.6), 4 px under the date. */
+.pp-opener-meta-note {
+  margin-top: 4px;
+}
+
 /* ---------- the back cover ---------- */
 
 .pp-back-lockup {

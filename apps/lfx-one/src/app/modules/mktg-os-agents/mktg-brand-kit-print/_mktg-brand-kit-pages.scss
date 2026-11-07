@@ -527,14 +527,17 @@
   line-height: 1.6;
 }
 
-/* A plain list under a label: 12.5/1.6, 16 px indent; `--loose` 12.5/1.7 with 10 px above; `--columns` in two.
-   An item's words break anywhere rather than leave the column (a record's address can be one long token). */
+/* A plain list under a label: 12.5/1.6, 16 px indent with the browser's bullet markers in it (the mock's plain
+   `<ul>`; the app's preflight removes them, so they are asked for), the same on every page; `--loose` 12.5/1.7 with
+   10 px above; `--columns` in two. An item's words break anywhere rather than leave the column (a record's address
+   can be one long token). */
 .kp-list {
   margin: 8px 0 0;
   padding-left: 16px;
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--pp-ink);
+  list-style: disc;
   overflow-wrap: anywhere;
 
   b {
@@ -783,6 +786,9 @@
 
 /* ---- Iconography ---- */
 
+/* The recommended set's labelled icon: the icon, then its label 14 px after it. The shared icon centres itself with
+   auto margins (the web view's tiles); in this flex row an auto margin would take the row's free space and push the
+   label to the far edge, so the margins are zeroed here. */
 .kp-icon-labelled {
   display: flex;
   align-items: center;
@@ -792,6 +798,7 @@
   color: var(--pp-ink);
 
   svg {
+    margin: 0;
     color: var(--pp-dark);
   }
 }
