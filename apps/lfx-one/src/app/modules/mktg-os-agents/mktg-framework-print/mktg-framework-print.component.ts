@@ -325,7 +325,7 @@ export class MktgFrameworkPrintComponent {
   private sourcesPage(view: FoundationMessagePrintView): FoundationMessagePrintSourcesPage {
     const date = view.dateReadLabel;
     const report = view.report;
-    const listWidth = this.columns.half - 16;
+    const listWidth = this.columns.half;
     const columnRoom = this.tops.sourcesApproval - this.tops.sourcesLists - ROOM.gap;
     const rowHeight = (text: string): number => this.paraHeight(text, TYPE.source, listWidth);
     const tightHeight = (text: string): number => this.paraHeight(text, TYPE.sourceTight, listWidth);

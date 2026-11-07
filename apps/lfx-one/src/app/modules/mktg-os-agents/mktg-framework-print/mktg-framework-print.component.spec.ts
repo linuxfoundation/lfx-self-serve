@@ -13,6 +13,7 @@ import {
   MKTG_PORTRAIT_PAGE,
   MKTG_PRINT_INK_ON_LIGHT,
   MKTG_PRINT_LF_LOOK,
+  MKTG_PORTRAIT_COLUMNS,
   MKTG_PORTRAIT_FIT,
 } from '@lfx-one/shared/constants';
 import { BrandKitRevision, FoundationMessageContent, FoundationMessagePrintView, FoundationMessageReport } from '@lfx-one/shared/interfaces';
@@ -817,8 +818,9 @@ describe('MktgFrameworkPrintComponent', () => {
     );
     if (factRows.length < 12) expect(factsTight).toBe(true);
     // Sources & gaps: each list tightened (11.5/1.5) then cut to the whole rows that fit above the approval card at 880, in order, the cut said under it;
-    // the read and the failed lists share the left column.
-    const rowHeight = (value: string | null | undefined) => mktgPortraitParaHeight({ text: value?.trim() ?? '', ...FRAMEWORK_PORTRAIT_TYPE.sourceTight }, 324);
+    // the read and the failed lists share the left column, flush left at the column's full width (the editor's read).
+    const rowHeight = (value: string | null | undefined) =>
+      mktgPortraitParaHeight({ text: value?.trim() ?? '', ...FRAMEWORK_PORTRAIT_TYPE.sourceTight }, MKTG_PORTRAIT_COLUMNS.half);
     const read = Array.from(query('mktg-framework-print-sources-read')?.querySelectorAll('li') ?? []);
     const failed = Array.from(query('mktg-framework-print-sources-failed')?.querySelectorAll('li') ?? []);
     const gaps = Array.from(query('mktg-framework-print-gaps')?.querySelectorAll('li') ?? []);

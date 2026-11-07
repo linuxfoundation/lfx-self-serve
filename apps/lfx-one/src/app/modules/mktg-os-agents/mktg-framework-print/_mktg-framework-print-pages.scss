@@ -860,9 +860,11 @@
 
   /* ---------- 05 sources & gaps ---------- */
 
+  /* The lists sit flush left under their labels, like the "No source failed." line (the editor's read, 7 Nov; the design's indent dropped). */
   .fwp-source-list {
     margin: 8px 0 0;
-    padding-left: 16px;
+    padding: 0;
+    list-style: none;
     font-size: var(--fwp-source-size);
     line-height: var(--fwp-source-line);
     color: var(--pp-ink);
