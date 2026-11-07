@@ -5,6 +5,7 @@ import { DatePipe, DecimalPipe, DOCUMENT, formatDate, isPlatformBrowser, Locatio
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   afterNextRender,
+  AfterRenderRef,
   Component,
   computed,
   DestroyRef,
@@ -586,8 +587,9 @@ export class MktgDocumentViewComponent {
   /** Download PDF renders only while the flag is on (#5302); the print rendering and the print path stay. */
   protected readonly pdfEnabled = inject(FeatureFlagService).getBooleanFlag(MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, false);
   private aeoPrintRequested = false;
-  /** A Download PDF press made while the Brand Kit read was still open; it prints once when the read settles. */
+  /** A Download PDF press made while the Brand Kit read was still open; it prints once, after the render that follows the read. */
   private aeoPrintWaiting: Subscription | null = null;
+  private aeoPrintRender: AfterRenderRef | null = null;
   protected readonly aeoPrintOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   protected readonly activity = signal<MktgRunActivity[]>([]);
   protected readonly aeoActivityStartedAt = signal(0);
@@ -1297,8 +1299,16 @@ export class MktgDocumentViewComponent {
       this.printAeoReport();
     } else if (!this.aeoPrintWaiting) {
       this.aeoPrintWaiting = this.printKitSettled$.pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-        this.aeoPrintWaiting = null;
-        this.printAeoReport();
+        // The settled signal arrives inside an effect, which runs before this template (and the running head's brand) is
+        // refreshed; the print clones the DOM, so it waits for the render that follows. The press stays one press meanwhile.
+        this.aeoPrintRender = afterNextRender(
+          () => {
+            this.aeoPrintWaiting = null;
+            this.aeoPrintRender = null;
+            this.printAeoReport();
+          },
+          { injector: this.injector }
+        );
       });
     }
   }
@@ -1809,9 +1819,11 @@ export class MktgDocumentViewComponent {
 
   // === AEO/GEO pending helpers (private methods follow protected methods by repository lint) ===
   private clearAeoPrint(): void {
-    // A press still waiting for the kit belongs to the document that is leaving the screen.
+    // A press still waiting for the kit, or for the render after it, belongs to the document that is leaving the screen.
     this.aeoPrintWaiting?.unsubscribe();
     this.aeoPrintWaiting = null;
+    this.aeoPrintRender?.destroy();
+    this.aeoPrintRender = null;
     if (this.aeoPrintRequested) {
       this.printService.clear();
       this.aeoPrintRequested = false;

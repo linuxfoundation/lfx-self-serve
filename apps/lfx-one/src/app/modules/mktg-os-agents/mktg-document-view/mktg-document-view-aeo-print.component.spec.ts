@@ -30,7 +30,7 @@ import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, of, Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
 
 /**
@@ -234,6 +234,12 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
     resolveBrandKit.mockReturnValue(kitRead);
     await render();
     const print = TestBed.inject(MktgPrintService);
+    const runningHead = (): Element | null => printArticle().querySelector('[data-testid="mktg-print-sheet-head"] [data-testid="mktg-print-running-head"]');
+    // printNow clones the print root synchronously, so what the running head shows AT THE CALL is what the PDF carries.
+    const headAtPrint: string[] = [];
+    (print.printNow as Mock).mockImplementation(() => headAtPrint.push(runningHead()?.innerHTML ?? ''));
+    const lfHead = runningHead()?.innerHTML ?? '';
+    expect(lfHead).toContain(mktgPrintBrand(null).logoOnLight?.alt);
     const button = query('mktg-document-view-download')?.querySelector('button');
     if (!button) throw new Error('Missing synthetic Download PDF button');
     // The button stays enabled while the kit is read; the press is kept, not printed yet (it would be the LF-default PDF).
@@ -245,13 +251,14 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
     kitRead.next(kit);
     kitRead.complete();
     harness.detectChanges();
-    // One print for the two presses, with the kit's brand on the running head.
+    // One print for the two presses, with the kit's brand on the running head, both after the render and at the call itself.
     expect(print.printNow).toHaveBeenCalledTimes(1);
     expect(print.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, `${PROJECT.name} · AEO/GEO report · v1 · 2026-10-15`);
-    const runningHead = printArticle().querySelector('[data-testid="mktg-print-sheet-head"] [data-testid="mktg-print-running-head"]');
     const brand = mktgPrintBrand(kit);
-    if (brand.logoOnLight) expect(runningHead?.querySelector('img')?.getAttribute('src')).toBe(brand.logoOnLight.src);
-    else expect(runningHead?.querySelector('img')).toBeNull();
+    if (brand.logoOnLight) expect(runningHead()?.querySelector('img')?.getAttribute('src')).toBe(brand.logoOnLight.src);
+    else expect(runningHead()?.querySelector('img')).toBeNull();
+    expect(headAtPrint).toEqual([runningHead()?.innerHTML]);
+    expect(headAtPrint[0]).not.toBe(lfHead);
     // Settled, a later press prints at once.
     button.click();
     expect(print.printNow).toHaveBeenCalledTimes(2);
