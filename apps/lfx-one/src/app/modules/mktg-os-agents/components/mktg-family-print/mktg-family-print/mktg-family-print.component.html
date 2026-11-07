@@ -37,7 +37,7 @@
           </div>
         }
         <div [lfxPpRect]="[inset[0], 984, inset[1]]">
-          <div class="pp-cover-strip" data-testid="family-print-cover-strip">
+          <div class="pp-cover-strip fpc-strip" data-testid="family-print-cover-strip">
             <span>{{ book().footLeft }}</span>
             <span>{{ coverFootRight() }}</span>
           </div>
@@ -127,7 +127,7 @@
     @case ('boilerplates') {
       @if (document.boilerplates; as boilerplates) {
         <lfx-mktg-portrait-page [look]="look()" [book]="book()" [pageId]="page.id" [page]="page.n" [section]="page.section" [title]="page.title">
-          <lfx-mktg-family-print-boilerplates-page [lengths]="boilerplates.lengths" [sources]="document.boilerplatesSources" />
+          <lfx-mktg-family-print-boilerplates-page [lengths]="boilerplates.lengths" [sources]="document.boilerplatesSources" [fontStack]="look().fontStack" />
         </lfx-mktg-portrait-page>
       }
     }

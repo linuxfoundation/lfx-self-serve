@@ -38,6 +38,11 @@
   display: block;
 }
 
+/* The Still open block follows the conflicts, the layout's block gap under their last row (MKTG_FAMILY_PRINT_SOURCES_LAYOUT.blockGap). */
+.fps-block + .fps-block {
+  margin-top: 16px;
+}
+
 .fps-rows {
   margin-top: 6px;
 }

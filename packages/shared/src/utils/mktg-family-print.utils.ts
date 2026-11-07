@@ -49,7 +49,7 @@ import type {
   MktgFamilyPrintFittedText,
 } from '../interfaces/mktg-family-print.interface';
 import type { MktgPortraitFitPara } from '../interfaces/mktg-portrait-print.interface';
-import { mktgPortraitPageNumber, mktgPortraitParaHeight } from './mktg-portrait-print.utils';
+import { mktgPortraitLineFits, mktgPortraitPageNumber, mktgPortraitParaHeight } from './mktg-portrait-print.utils';
 
 /** One version format across the book, the kit cover's: `V4.0`; '' when the revision carries no number. */
 export function mktgFamilyPrintVersionLabel(version: number | null | undefined): string {
@@ -235,28 +235,57 @@ export function mktgFamilyPrintCutFromEnd(text: string): string {
 }
 
 /**
+ * The lines a text wraps to in a column `width` px wide at `size` px, greedy
+ * by words, each line measured glyph by glyph in the face it is set in
+ * (mktgPortraitLineFits; a word wider than the line stands on one). The
+ * paragraph model's flat average wraps safely but counts a long text a line
+ * or two over, which cut a boilerplate its card had room for.
+ */
+export function mktgFamilyPrintMeasuredLines(text: string, width: number, size: number, para: Pick<MktgPortraitFitPara, 'weight' | 'family'> = {}): number {
+  return text.split(/\r?\n|\v/).reduce((count, hardLine) => {
+    const words = hardLine.split(/\s+/).filter((word) => word !== '');
+    if (words.length === 0) return count + 1;
+    let lines = 1;
+    let line = '';
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && !mktgPortraitLineFits(next, width, size, para)) {
+        lines++;
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    return count + lines;
+  }, 0);
+}
+
+/**
  * The boilerplate cards held to the page: each card's height is its padding
  * plus its text at the card's type and measure, at least the board's
- * minimum; while the cards and their gaps outgrow the room, the tallest
+ * minimum, the lines measured in the book's face (`family`, the look's font
+ * stack); while the cards and their gaps outgrow the room, the tallest
  * text loses its last sentence and keeps one line for the cut note, so the
- * page prints every card and says how many words did not fit. Nothing is
- * rephrased and nothing is cut in silence. Pure.
+ * page prints every card and says how many words did not fit. The room
+ * keeps one line of the largest text free, so a line the engine wraps
+ * otherwise than the measure never reaches the Built from block. A text that
+ * fits prints whole. Nothing is rephrased and nothing is cut in silence. Pure.
  */
 export function mktgFamilyPrintFitBoilerplateCards(
   cards: readonly { text: string; fontSize: number; minHeight: number }[],
   width: number,
-  layout: typeof MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT = MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT
+  layout: typeof MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT = MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
+  family = ''
 ): MktgFamilyPrintFittedText[] {
-  const room = layout.bottom - layout.top - layout.gap * Math.max(0, cards.length - 1);
+  const guard = Math.max(0, ...cards.map((card) => card.fontSize * layout.line));
+  const room = layout.bottom - layout.top - layout.gap * Math.max(0, cards.length - 1) - guard;
   const measure = width - layout.inset - layout.metaWidth - layout.metaGap;
   const fitted = cards.map((card) => ({ text: card.text.trim(), cutWords: 0 }));
   const height = (index: number): number => {
     const card = cards[index];
     const note = fitted[index].cutWords > 0 ? card.fontSize * layout.line : 0;
-    return Math.max(
-      card.minHeight,
-      layout.padding + note + mktgPortraitParaHeight({ text: fitted[index].text, size: card.fontSize, line: layout.line }, measure)
-    );
+    const lines = mktgFamilyPrintMeasuredLines(fitted[index].text, measure, card.fontSize, { family });
+    return Math.max(card.minHeight, layout.padding + note + lines * card.fontSize * layout.line);
   };
   const total = (): number => fitted.reduce((sum, _, index) => sum + height(index), 0);
   const words = cards.map((card) => mktgFamilyPrintWordCount(card.text));
@@ -272,6 +301,16 @@ export function mktgFamilyPrintFitBoilerplateCards(
 /** The cut note under a fitted block: `+3 more in LFX One`; '' when nothing was cut. */
 export function mktgFamilyPrintCutNote(cut: number): string {
   return cut > 0 ? mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.cutNote, { Count: cut }) : '';
+}
+
+/**
+ * A sentence that quotes another, with one stop: when the quoted words end on
+ * their own stop before the closing quote (`… on them.”.`), the sentence's
+ * stop after the quote is dropped (`… on them.”`), as English sets it; a
+ * quote with no stop of its own keeps the sentence's.
+ */
+export function mktgFamilyPrintOneStop(text: string): string {
+  return text.replace(/([.!?…])([”"’')\]]+)\.(?=\s|$)/g, '$1$2');
 }
 
 /** The boilerplates page's Built from block as it fits under the cards: the distinct labels, whole rows above the footer in a list column `width` wide, the rest counted. */
@@ -470,23 +509,37 @@ export function mktgFamilyPrintOpenItems(chapters: MktgFamilyPrintChapter[]): Mk
  * The Sources page's two lists as they fit their fixed blocks: the conflicts
  * from y 410 to the Still open block, the open items from there to the
  * page's bottom (from y 410 when there are no conflicts); whole rows only,
- * nothing added, the rows past a block counted for its cut note. The open
- * rows' text column starts after the widest document chip, so the chips
- * align whatever the longest document name.
+ * nothing added, the rows past a block counted for its cut note. The Still
+ * open block follows the conflicts printed, a block gap under them, never
+ * lower than the board's y for it, so the page keeps no dead space between
+ * the two; its budget runs from there. The open rows' text column starts
+ * after the widest document chip, so the chips align whatever the longest
+ * document name.
  */
 export function mktgFamilyPrintSourcesLayout(conflicts: MktgFamilyPrintConflict[], openItems: MktgFamilyPrintOpenItem[]): MktgFamilyPrintSourcesLayout {
   const layout = MKTG_FAMILY_PRINT_SOURCES_LAYOUT;
   const width = MKTG_PORTRAIT_PAGE.contentWidth;
+  const conflictText = (row: MktgFamilyPrintConflict): string => [row.text, row.rerun].filter(Boolean).join(' → ');
+  const conflictWidth = width - layout.topicWidth - layout.gap;
   const keptConflicts = mktgFamilyPrintFitRows(
     conflicts,
-    (row) => [row.text, row.rerun].filter(Boolean).join(' → '),
-    width - layout.topicWidth - layout.gap,
+    conflictText,
+    conflictWidth,
     layout.conflict.size,
     layout.conflict.line,
     layout.conflict.padding,
     layout.openTop - layout.conflictsTop - layout.heading
   );
-  const openTop = conflicts.length ? layout.openTop : layout.conflictsTop;
+  // The conflicts' height as the fit model measured it, the cut note's line included: the Still open block starts under it.
+  const noteLine = keptConflicts.cut > 0 ? layout.conflict.padding + layout.conflict.size * layout.conflict.line : 0;
+  const conflictsHeight = keptConflicts.rows.reduce(
+    (height, row) =>
+      height +
+      layout.conflict.padding +
+      mktgPortraitParaHeight({ text: conflictText(row), size: layout.conflict.size, line: layout.conflict.line }, conflictWidth),
+    noteLine
+  );
+  const openTop = conflicts.length ? Math.min(layout.openTop, layout.conflictsTop + layout.heading + conflictsHeight + layout.blockGap) : layout.conflictsTop;
   const chipWidth = Math.max(0, ...openItems.map((item) => item.document.length)) * layout.chip.size * MKTG_PORTRAIT_FIT.charEmCaps + layout.chip.padding;
   const keptOpen = mktgFamilyPrintFitRows(
     openItems,
@@ -636,7 +689,8 @@ export function mktgFamilyPrintConflicts(
     conflicts.push({
       id: `${topic} · ${kitTitle}`,
       topic,
-      text: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.brandLineConflict, { Line: line, Tagline: tag }),
+      // One stop: a tagline that ends on its own full stop does not take the sentence's after the closing quote.
+      text: mktgFamilyPrintOneStop(mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.brandLineConflict, { Line: line, Tagline: tag })),
       rerun: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.rerunAgainstFramework, { Document: mktgFamilyPrintInSentence(kitTitle) }),
     });
   }

@@ -54,7 +54,7 @@ export const MKTG_FAMILY_PRINT_FAQ_LAYOUT = {
   source: 24,
 } as const;
 
-/** The Sources page's fixed blocks: the conflicts' y and the Still open block's two y's, the page's bottom, and the rows' type for the fit model. */
+/** The Sources page's fixed blocks: the conflicts' y and the Still open block's two y's (its lowest, under the conflicts printed), the page's bottom, the gap between the two blocks, and the rows' type for the fit model. */
 export const MKTG_FAMILY_PRINT_SOURCES_LAYOUT = {
   conflictsTop: 410,
   openTop: 690,
@@ -66,6 +66,8 @@ export const MKTG_FAMILY_PRINT_SOURCES_LAYOUT = {
   open: { size: 11.5, line: 1.45, padding: 14 },
   /** The document chip's type (the grammar's `pp-chip`) and its horizontal padding. */
   chip: { size: 8.5, padding: 14 },
+  /** Between the last conflict row and the Still open label (the page's `.fps-block + .fps-block` margin). */
+  blockGap: 16,
 } as const;
 
 /**
@@ -189,7 +191,7 @@ export const MKTG_FAMILY_PRINT_COPY = {
   /** The word count under a boilerplate's label: `[Words]` and `[Max]`. */
   words: '[Words] words · max [Max]',
   /** The fill bar's caption: `[Percent]`. */
-  ofTheLimit: '[Percent] % of the limit',
+  ofTheLimit: '[Percent]% of the limit',
   /** Over the limit by `[Over]` words. */
   overBy: 'over by [Over]',
   /** The back cover's provenance line, after the trademark notice. */

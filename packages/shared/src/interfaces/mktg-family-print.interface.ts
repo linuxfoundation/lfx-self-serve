@@ -206,7 +206,7 @@ export interface MktgFamilyPrintBoilerplateCard {
   count: string;
   /** The fill bar's width, capped at 100. */
   fill: number;
-  /** `96 % of the limit`, '' without a limit. */
+  /** `96% of the limit`, '' without a limit. */
   percentLabel: string;
   /** `over by 3`, '' within the limit. */
   overLabel: string;
