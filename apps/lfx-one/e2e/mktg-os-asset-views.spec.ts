@@ -35,6 +35,7 @@ import {
   capGoalsFrameworkRevisionResponse,
   overfullFrameworkRevisionResponse,
   realShapedFrameworkRevisionResponse,
+  servedSixFrameworkRevisionResponse,
 } from './helpers/mktg-os-asset-views.helper';
 
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -743,6 +744,28 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   expect(noteCount).toBeGreaterThan(0);
   for (const note of await notes.all()) await expect(note).toHaveText(/^\+[1-4] more on the framework's Framework tab in LFX One$/);
   await page.screenshot({ path: info.outputPath('foundation-message-print-cap-goals.png'), fullPage: true });
+  await page.emulateMedia({ media: 'screen' });
+  await finishMktgPrintFrame(page);
+});
+
+test('a goal served by six profiles: four cards, the note for the other two, the block ending above the footer', async ({ page }, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  await openAssetDocument(page, 'foundation-message', 200, true, false, servedSixFrameworkRevisionResponse());
+  await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+  await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+  const frame = await layoutMktgPrintFrame(page);
+  const goalPage = frame.getByTestId('mktg-framework-print').locator('[data-page-id="goal-1"]');
+  // The row holds the board's four cards; the two it does not hold are counted in the note under it.
+  await expect(goalPage.locator('.fwp-served-card')).toHaveCount(4);
+  await expect(goalPage.getByTestId('mktg-framework-print-served-cut')).toHaveText("+2 more on the framework's Framework tab in LFX One");
+  // The cards' long lines are fitted into the room the note leaves: the whole block (label, cards, note) ends above the footer rule (1000).
+  const servedBottom = await goalPage.evaluate((page) => {
+    const block = page.querySelector('[data-testid="mktg-framework-print-served"]') as HTMLElement;
+    return block.getBoundingClientRect().bottom - page.getBoundingClientRect().top;
+  });
+  expect(servedBottom).toBeLessThanOrEqual(1000);
+  await page.screenshot({ path: info.outputPath('foundation-message-print-served-six.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);
 });

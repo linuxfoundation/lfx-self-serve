@@ -460,6 +460,32 @@ export function capGoalsFrameworkRevisionResponse(): MktgRevisionResponse {
   };
 }
 
+/**
+ * The real-shaped framework record with six profiles, every one served by the first goal, each with a long need and a
+ * long ask: more than the goal page's "Who it's for" row holds (four cards), so the row prints its note and the four
+ * cards' lines are fitted into the room the note leaves above the footer rule.
+ */
+export function servedSixFrameworkRevisionResponse(): MktgRevisionResponse {
+  const framework = realShapedFrameworkAsset();
+  const [profile] = framework.content.icp;
+  const line = 'a line long enough to wrap several times inside a quarter-width card, with a second clause that runs on past the first.';
+  const icp = Array.from({ length: 6 }, (_, index) => ({
+    ...profile,
+    id: `profile-${index + 1}`,
+    name: `Profile ${index + 1}`,
+    goals: [framework.content.mf.goals[0].id],
+    need: line,
+    cta: line,
+  }));
+  const goals = framework.content.mf.goals.map((goal, index) => (index === 0 ? { ...goal, icps: icp.map((entry) => entry.id) } : goal));
+  const content = { ...framework.content, mf: { ...framework.content.mf, goals }, icp };
+  return {
+    ...columnAssetRevisionResponse('foundation-message'),
+    markdown: JSON.stringify(content),
+    sidecar: { mode: framework.mode, report: framework.report, checks: framework.checks },
+  };
+}
+
 /** Loaded asset without approval: real controls must remain gated, not just the metadata badge. */
 export async function openUnapprovedAssetDocument(page: Page, key: 'foundation-message' | 'brand-kit', pendingApproval = false): Promise<void> {
   await openAssetDocument(page, 'faq');

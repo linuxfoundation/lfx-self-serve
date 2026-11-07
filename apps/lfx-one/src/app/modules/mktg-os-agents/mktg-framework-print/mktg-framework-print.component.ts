@@ -48,6 +48,7 @@ import {
   frameworkPortraitCutList,
   frameworkPortraitChipHeight,
   frameworkPortraitContents,
+  frameworkPortraitCutNoteHeightIn,
   frameworkPortraitHouse,
   frameworkPortraitIcpMatrixHeight,
   frameworkPortraitIcpPages,
@@ -307,7 +308,9 @@ export class MktgFrameworkPrintComponent {
     const served = servedAll.slice(0, frameworkPortraitServedCount(width));
     const servedCut = servedAll.length - served.length;
     const cardWidth = served.length ? (width - (served.length - 1) * ROOM.servedGap) / served.length - ROOM.cardPaddingSide : width;
-    const cardRoom = tops.footer - tops.goalServed - ROOM.label - ROOM.servedTop - ROOM.cardPadding;
+    // The cards' room: under the label and the row's margin, inside a card's padding and border, above the note the cut profiles take.
+    const servedNote = servedCut > 0 ? frameworkPortraitCutNoteHeightIn(servedCut, 'framework', width) : 0;
+    const cardRoom = tops.footer - tops.goalServed - ROOM.label - ROOM.servedTop - ROOM.cardPadding - ROOM.cardBorder - servedNote;
     return {
       goal,
       numberLabel: mktgPortraitPageNumber(goal.n),

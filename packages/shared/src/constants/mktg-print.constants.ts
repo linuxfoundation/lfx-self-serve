@@ -219,8 +219,9 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   contentsRowTight: 11,
   contentsColumns: 2,
   contentsColumnGap: 24,
-  /** `.fwp-card` padding, top and bottom together (14 + 14), and across (16 + 16). */
+  /** `.fwp-card` padding, top and bottom together (14 + 14), and across (16 + 16); its hairline border above and below (1 + 1). */
   cardPadding: 28,
+  cardBorder: 2,
   cardPaddingSide: 32,
   /** The "Who it's for" row: `.fwp-served-cards`' margin above and gap between cards, the name's margin to its first line and between the lines, and the narrowest card the board draws (four across 704 px): more profiles than hold at it are cut, the note under the row. */
   servedTop: 8,

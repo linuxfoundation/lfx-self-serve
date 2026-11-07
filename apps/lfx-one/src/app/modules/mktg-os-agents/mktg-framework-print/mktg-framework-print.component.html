@@ -503,7 +503,7 @@
               </div>
             }
             @if (goalPage.served.rows.length > 0) {
-              <div [lfxPpRect]="[page.margin, tops.goalServed, page.contentWidth]">
+              <div [lfxPpRect]="[page.margin, tops.goalServed, page.contentWidth]" data-testid="mktg-framework-print-served">
                 <span class="pp-lab pp-lab--dark">Who it's for</span>
                 <div class="fwp-served-cards">
                   @for (card of goalPage.served.rows; track card.id) {

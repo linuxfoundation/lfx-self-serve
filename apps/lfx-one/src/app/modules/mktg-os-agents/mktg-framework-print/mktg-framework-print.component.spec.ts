@@ -20,6 +20,7 @@ import { BrandKitRevision, FoundationMessageContent, FoundationMessagePrintView,
 import {
   buildFoundationMessagePrintView,
   foundationMessagePrintCutNote,
+  frameworkPortraitCutNoteHeightIn,
   frameworkPortraitHouse,
   frameworkPortraitIcpPages,
   frameworkPortraitServedCount,
@@ -745,6 +746,49 @@ describe('MktgFrameworkPrintComponent', () => {
     // The name is part of the fitted block: it prints at the size the fit model gave it, never past the type's.
     const names = cards.map((card) => parseFloat(card.querySelector<HTMLElement>('.fwp-served-name')?.style.fontSize ?? '0'));
     expect(names.every((size) => size > 0 && size <= FRAMEWORK_PORTRAIT_TYPE.servedName.size)).toBe(true);
+    // Six served profiles with long need and ask lines: the four cards' fitted lines, measured by the fit model at the sizes they
+    // print, stay inside the room the note under the row leaves them, so the block ends above the footer rule (1000).
+    const long = 'a line long enough to wrap several times inside a quarter-width card, with a second clause that runs on past the first';
+    const longNeed = { ...many, icp: many.icp.map((icp) => ({ ...icp, need: `${long}.`, cta: `${long}.` })) };
+    await setView(buildFoundationMessagePrintView(longNeed, 'TestOrbit', 2, null));
+    const longPage = frame('goal-1');
+    const longCards = Array.from(longPage?.querySelectorAll<HTMLElement>('.fwp-served-card') ?? []);
+    expect(longCards).toHaveLength(4);
+    const noteText = longPage?.querySelector('[data-testid="mktg-framework-print-served-cut"]')?.textContent?.trim() ?? '';
+    expect(noteText).toBe(foundationMessagePrintCutNote(2, 'framework'));
+    const width = MKTG_PORTRAIT_PAGE.contentWidth;
+    const cardWidth = (width - 3 * FRAMEWORK_PORTRAIT_ROOM.servedGap) / 4 - FRAMEWORK_PORTRAIT_ROOM.cardPaddingSide;
+    const room =
+      FRAMEWORK_PORTRAIT_TOPS.footer -
+      FRAMEWORK_PORTRAIT_TOPS.goalServed -
+      FRAMEWORK_PORTRAIT_ROOM.label -
+      FRAMEWORK_PORTRAIT_ROOM.servedTop -
+      FRAMEWORK_PORTRAIT_ROOM.cardPadding -
+      FRAMEWORK_PORTRAIT_ROOM.cardBorder -
+      frameworkPortraitCutNoteHeightIn(2, 'framework', width);
+    for (const card of longCards) {
+      const [name, need, cta] = Array.from(card.querySelectorAll<HTMLElement>('.fwp-served-name, .fwp-served-line'));
+      const height =
+        mktgPortraitParaHeight(
+          {
+            text: name.textContent ?? '',
+            size: parseFloat(name.style.fontSize),
+            line: FRAMEWORK_PORTRAIT_TYPE.servedName.line,
+            weight: FRAMEWORK_PORTRAIT_TYPE.servedName.weight,
+          },
+          cardWidth
+        ) +
+        FRAMEWORK_PORTRAIT_ROOM.servedLineTop +
+        mktgPortraitParaHeight(
+          { text: need.textContent ?? '', size: parseFloat(need.style.fontSize), line: FRAMEWORK_PORTRAIT_TYPE.servedLine.line },
+          cardWidth
+        ) +
+        FRAMEWORK_PORTRAIT_ROOM.servedLineGap +
+        mktgPortraitParaHeight({ text: cta.textContent ?? '', size: parseFloat(cta.style.fontSize), line: FRAMEWORK_PORTRAIT_TYPE.servedLine.line }, cardWidth);
+      expect(height).toBeLessThanOrEqual(room);
+      // The lines were fitted (smaller than the type), not left to overflow.
+      expect(parseFloat(need.style.fontSize)).toBeLessThan(FRAMEWORK_PORTRAIT_TYPE.servedLine.size);
+    }
     // The two served by the goal on the approved record print without a note.
     await setView(buildFoundationMessagePrintView(CONTENT, 'TestOrbit', 2, null));
     expect(frame('goal-1')?.querySelectorAll('.fwp-served-card')).toHaveLength(2);
