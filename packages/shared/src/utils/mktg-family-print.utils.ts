@@ -94,13 +94,7 @@ export function mktgFamilyPrintDocument(
   };
 }
 
-/** The height one FAQ entry takes in a column `width` px wide: its padding, the question, the answer and the source chip's line. */
-/**
- * The FAQ as the family book prints it: each group's answered questions, in
- * order, with the stored entry's path. The plan measures these and the page
- * prints these, so an index into them means the same thing in both
- * (unanswered questions do not print and are not counted).
- */
+/** The FAQ as the family book prints it: each group's answered questions in order, with their paths; the plan measures these and the page prints these, so an index means the same in both. */
 export function mktgFamilyPrintFaqGroups(groups: readonly FaqGroupView[]): MktgFamilyPrintFaqPlanGroup[] {
   return groups.map((group) => ({
     name: group.name,
@@ -110,6 +104,7 @@ export function mktgFamilyPrintFaqGroups(groups: readonly FaqGroupView[]): MktgF
   }));
 }
 
+/** The height one FAQ entry takes in a column `width` px wide: its padding, the question, the answer and the source chip's line. */
 export function mktgFamilyPrintFaqEntryHeight(entry: MktgFamilyPrintFaqPlanGroup['questions'][number], width: number): number {
   const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
   const paras: MktgPortraitFitPara[] = [

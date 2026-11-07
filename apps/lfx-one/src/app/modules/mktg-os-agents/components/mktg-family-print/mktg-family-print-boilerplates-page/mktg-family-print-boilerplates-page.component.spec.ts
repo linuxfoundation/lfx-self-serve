@@ -69,4 +69,18 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     // The rows past the block are counted, never dropped in silence.
     expect(root.querySelector('[data-testid="family-print-boilerplate-sources-cut"]')?.textContent).toBe(`+${12 - shown} more in LFX One`);
   });
+
+  it('prints the Built from block with its cut note alone when no row fits (one long first label hides nothing in silence)', async () => {
+    const fixture = TestBed.createComponent(MktgFamilyPrintBoilerplatesPageComponent);
+    fixture.componentRef.setInput('lengths', [row(0, 'One-liner', 14, 15)]);
+    fixture.componentRef.setInput('sources', [
+      `https://acme-mesh.example/a (${'a very long source label '.repeat(40).trim()})`,
+      'https://acme-mesh.example/b (short)',
+    ]);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="family-print-boilerplate-sources"]')).not.toBeNull();
+    expect(root.querySelectorAll('[data-testid="family-print-boilerplate-sources"] li')).toHaveLength(0);
+    expect(root.querySelector('[data-testid="family-print-boilerplate-sources-cut"]')?.textContent).toBe('+2 more in LFX One');
+  });
 });

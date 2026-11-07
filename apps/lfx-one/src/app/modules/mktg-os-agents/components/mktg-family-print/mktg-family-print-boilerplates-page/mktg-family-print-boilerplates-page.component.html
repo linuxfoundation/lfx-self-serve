@@ -22,7 +22,7 @@
     </article>
   }
 </div>
-@if (shownSources().rows.length) {
+@if (shownSources().rows.length || shownSources().cut) {
   <section class="fpb-foot" [lfxPpRect]="[column[0], runLayout.top, columns.half]" data-testid="family-print-boilerplate-sources">
     <h2 class="pp-lab pp-lab--dark">{{ labels.builtFrom }}</h2>
     <ul class="fpb-foot__list">
