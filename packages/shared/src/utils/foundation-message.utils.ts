@@ -950,8 +950,9 @@ export function foundationMessageDateRead(inputsRecord: unknown): string | null 
 /**
  * The run's asset out of a stored revision: the JSON text as the content and
  * the sidecar's report, checks and mode; null when the text is not a
- * framework. A sidecar without a report (never written by this BFF, but a
- * hand-copied record could lack one) reads as an empty report.
+ * framework. A sidecar without a valid report (never written by this BFF,
+ * but a hand-copied record could lack one) gives `report: null`: no empty
+ * report is made up, so the print and the view say nothing the record did not.
  */
 export function foundationMessageAssetOfRevision(text: string, sidecar: Record<string, unknown> | null): MktgFrameworkAsset | null {
   const content = readFoundationMessageContent(text);
@@ -965,7 +966,7 @@ export function foundationMessageAssetOfRevision(text: string, sidecar: Record<s
     kind: 'messaging-framework',
     content,
     dateRead: foundationMessageDateRead(sidecar?.['inputs_record']),
-    report: isFoundationMessageReport(report) ? report : { sources_read: [], sources_failed: [], gaps: [], notes: '' },
+    report: isFoundationMessageReport(report) ? report : null,
     checks:
       isObject(checks) && Array.isArray(checks['findings'])
         ? { findings: checks['findings'].filter((finding): finding is string => typeof finding === 'string') }

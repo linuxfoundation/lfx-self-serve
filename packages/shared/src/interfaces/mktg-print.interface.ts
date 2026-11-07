@@ -41,14 +41,14 @@ export interface MktgPrintLogo {
   /** A data URL of the kit's SVG, or the app's own LF logo. */
   src: string;
   alt: string;
-  /** CSS filter on the image: the reversed (white) rendering of a full-colour lockup, or '' to draw it as it is. */
+  /** CSS filter on the image: the reversed (white) rendering of a full-color lockup, or '' to draw it as it is. */
   filter: string;
 }
 
-/** The brand a print is set in: colours, typeface and logo. */
+/** The brand a print is set in: colors, typeface and logo. */
 export interface MktgPrintBrand {
   source: MktgPrintBrandSource;
-  /** CSS colours: the primary dark, the one accent, a light tint of the dark, and the ink on the dark. */
+  /** CSS colors: the primary dark, the one accent, a light tint of the dark, and the ink on the dark. */
   dark: string;
   accent: string;
   tint: string;
@@ -104,7 +104,14 @@ export interface FoundationMessagePrintFactRow {
   usedBy: string;
 }
 
-/** A text fitted to its box by the portrait fit model: the text (cut at a sentence when it had to be) and the size it is set at, px. */
+/** The type a framework block is set in before it is fitted: the size px, the line height as a multiple, the weight (a `MktgPortraitFitPara` less its text). */
+export interface FoundationMessagePrintType {
+  size: number;
+  line: number;
+  weight: number;
+}
+
+/** A text fitted to its box by the portrait fit model: the text (cut at a sentence when it had to be) and the size the model measured it at, px. */
 export interface FoundationMessagePrintFittedText {
   text: string;
   size: number;
@@ -124,15 +131,24 @@ export interface FoundationMessagePrintServedCard {
   cta: FoundationMessagePrintFittedText;
 }
 
-/** A goal page as the print lays it out: every block bounded to its box (the fit model), nothing passing the footer. */
+/** A list cut to the rows that fit its room: the rows kept, how many were left off (the muted line under the list says so), and whether the list was tightened first. */
+export interface FoundationMessagePrintCutList<T> {
+  rows: T[];
+  /** The rows left off, 0 when every row printed. */
+  cut: number;
+  /** True when the list is set in its tight type and padding (tried before any cut). */
+  tight: boolean;
+}
+
+/** A goal page as the print lays it out: the value, key message and sound bite fitted, the proof rows cut to what fits, the served cards' lines fitted. */
 export interface FoundationMessagePrintGoalPage {
   goal: FoundationMessagePrintGoal;
   /** `01`: the goal's number as the page prints it. */
   numberLabel: string;
   value: FoundationMessagePrintFittedText;
   key: FoundationMessagePrintFittedText;
-  /** The proof points that fit above the sound bite, whole rows, in the goal's order. */
-  proofs: FoundationMessagePrintGoalProof[];
+  /** The proof points above the sound bite: tightened first, then cut to whole rows, in the goal's order. */
+  proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>;
   /** The sound bite in quotes, fitted; null when the goal has none. */
   bite: FoundationMessagePrintFittedText | null;
   /** The profiles the goal's messaging is written for, in the goal's order. */
@@ -151,29 +167,54 @@ export interface FoundationMessagePrintIcpPage {
   matrix: FoundationMessagePrintMatrixRow[];
 }
 
-/** One key number's tile: wide when an odd count's last tile spans the column. */
+/** One key number's tile: its share of a row (1 = the row, 2 = a half, 3 = a third; FRAMEWORK_PORTRAIT_TILE_SHARES); wide when it spans the row. */
 export interface FoundationMessagePrintNumberTile extends FoundationMessageNumberRow {
+  share: number;
   wide: boolean;
 }
 
-/** The key numbers page as the print lays it out: the tiles in full rows, the facts table under them, cut to the rows that fit. */
+/**
+ * A key numbers page as the print lays it out. Up to FRAMEWORK_PORTRAIT_MAX_TILES figures print as tiles by the count's layout on one page;
+ * more print as the key numbers table, every figure, continued on `key-numbers-2`… when a page is full (never cut). The facts table
+ * ("Figures and their sources") follows on the last page in the room left, tightened first, then cut to whole rows with the muted
+ * line under it.
+ */
 export interface FoundationMessagePrintNumbersPage {
+  /** 1-based, in the book's order. */
+  index: number;
+  /** The intro sentence, on the first page only ('' after). */
   intro: string;
+  /** The tiles, on the first page only when the count allows them. */
   tiles: FoundationMessagePrintNumberTile[];
-  /** The top of the "Every figure and its source" table, px: under the tiles' rows. */
-  factsTop: number;
-  facts: FoundationMessagePrintFactRow[];
+  /** The key numbers table's rows on this page (more figures than the tiles hold); empty when the tiles print. */
+  numbersTable: FoundationMessageNumberRow[];
+  /** The top of the key numbers table, px (the tiles' top on the first page, the continuation top after). */
+  numbersTop: number;
+  /** The top of the facts table, px; null when this page holds no facts (they follow on a later page, or there are none). */
+  factsTop: number | null;
+  facts: FoundationMessagePrintCutList<FoundationMessagePrintFactRow>;
 }
 
-/** The Sources & gaps page as the print lays it out: the run's report (null when the record has none) cut to the rows that fit, and the approval card. */
+/**
+ * The Sources & gaps page as the print lays it out: the run's report cut to the rows that fit, and the approval card. With no report
+ * (the record has none) `report` is null: no intro, no lists, the approval card alone.
+ */
 export interface FoundationMessagePrintSourcesPage {
-  intro: string;
-  /** The sources read, as stored, without their type prefix; null when there is no report. */
-  read: string[] | null;
-  /** `<name> — <reason>` per source that could not be read; null when there is no report. */
-  failed: string[] | null;
-  /** The gaps as the run wrote them; null when there is no report. */
-  gaps: string[] | null;
+  /** The lists of an existing report; null when the record has none. */
+  report: {
+    /** The intro sentence above the lists. */
+    intro: string;
+    /** The sources read, as stored, without their type prefix, tightened then cut to the rows that fit; the block prints only when there is one. */
+    read: FoundationMessagePrintCutList<string>;
+    /** `<name> — <reason>` per source that could not be read, tightened then cut to the rows that fit. */
+    failed: FoundationMessagePrintCutList<string>;
+    /** How many sources could not be read in the report (the empty-state line reads this, not the cut list). */
+    failedCount: number;
+    /** The gaps as the run wrote them, tightened then cut to the rows that fit. */
+    gaps: FoundationMessagePrintCutList<string>;
+    /** How many gaps the report holds (the empty-state line reads this, not the cut list). */
+    gapsCount: number;
+  } | null;
   /** `V1.0 · Approved 6 Nov 2026.`, or `V1.0.`; '' without a version. */
   approvalLead: string;
   approvalNote: string;
@@ -218,7 +259,7 @@ export interface FoundationMessagePrintFrame extends MktgPortraitPlanPage {
   sourcesPage: FoundationMessagePrintSourcesPage | null;
 }
 
-/** The Messaging Framework as its print lays it out: every string and colour the document binds. */
+/** The Messaging Framework as its print lays it out: every string and color the document binds. */
 export interface FoundationMessagePrintView {
   brand: MktgPrintBrand;
   projectName: string;

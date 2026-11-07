@@ -25,6 +25,7 @@ import {
   openAssetDocument,
   openDraftAssetRun,
   openUnapprovedAssetDocument,
+  overfullFrameworkRevisionResponse,
 } from './helpers/mktg-os-asset-views.helper';
 
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -347,20 +348,24 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.getByTestId('mktg-framework-print-matrix-dot')).toHaveCount(1);
       await expect(print.getByTestId('mktg-framework-print-pillars')).toContainText('Open');
       await expect(print.getByTestId('mktg-framework-print-numbers')).toContainText('1,200');
-      // One number: its tile spans the column (no orphan half-tile); the facts table lists the fixture's one proof point.
+      // One number: its tile spans the column (no orphan half-tile); the facts table lists the fixture's one proof point, whole, with no cut line.
       await expect(print.getByTestId('mktg-framework-print-number-tile-0')).toHaveAttribute('data-wide', 'true');
       await expect(print.locator('[data-testid^="mktg-framework-print-number-tile-"]')).toHaveCount(1);
+      await expect(print.getByTestId('mktg-framework-print-numbers-table')).toHaveCount(0);
+      await expect(print.getByTestId('mktg-framework-print-facts')).toContainText('Figures and their sources');
       await expect(print.locator('[data-testid^="mktg-framework-print-fact-"]')).toHaveCount(1);
+      await expect(print.getByTestId('mktg-framework-print-facts-cut')).toHaveCount(0);
+      await expect(print.getByTestId('mktg-framework-print-proofs-cut')).toHaveCount(0);
       // Nothing to avoid in this fixture: the page says so rather than printing an empty list.
       await expect(print.getByTestId('mktg-framework-print-avoid')).toHaveCount(0);
       await expect(print.getByTestId('mktg-framework-print-avoid-empty')).toHaveText('Nothing to avoid was stated.');
-      // Sources & gaps: the fixture's sidecar carries a report with empty lists and no read date, so the Read block is empty, the two
-      // shared empty-state lines print, the approval card names the version and the approval without the gaps clause, and no
-      // Notes block exists (the run's notes stay on screen).
+      // Sources & gaps: the fixture's sidecar carries a report with empty lists and no read date, so the intro prints without a
+      // date, no Read block (nothing was read), the two shared empty-state lines print, the approval card names the version and
+      // the approval without the gaps clause, and no Notes block exists (the run's notes stay on screen).
       await expect(print.getByTestId('mktg-framework-print-sources-intro')).toHaveText(
         'What the framework was built from, what could not be read, and what is still open.'
       );
-      await expect(print.getByTestId('mktg-framework-print-sources-read').locator('li')).toHaveCount(0);
+      await expect(print.getByTestId('mktg-framework-print-sources-read')).toHaveCount(0);
       await expect(print.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveText('No source failed.');
       await expect(print.getByTestId('mktg-framework-print-gaps-empty')).toHaveText('The sources left no gap.');
       await expect(print.getByTestId('mktg-framework-print-approval')).toHaveText(
@@ -456,3 +461,44 @@ for (const immediateReceipt of [true, false]) {
     await page.screenshot({ path: info.outputPath(`stored-document-${immediateReceipt}.png`), fullPage: true });
   });
 }
+
+test('the framework print lists every figure past six as a table and says how many rows a cut list left off', async ({ page }, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  await openAssetDocument(page, 'foundation-message', 200, true, false, overfullFrameworkRevisionResponse());
+  await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+  await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+  const frame = await layoutMktgPrintFrame(page);
+  const print = frame.getByTestId('mktg-framework-print');
+  await expect(print).toBeVisible();
+  // Nine figures: no tiles, the key numbers table lists all nine on one page under the intro, the facts table after it.
+  await expect(print.locator('[data-testid^="mktg-framework-print-number-tile-"]')).toHaveCount(0);
+  const numbersPage = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="key-numbers"]');
+  await expect(numbersPage.getByTestId('mktg-framework-print-number-row')).toHaveCount(9);
+  await expect(numbersPage.getByTestId('mktg-framework-print-number-row').last()).toContainText('synthetic figure 9');
+  await expect(print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="key-numbers-2"]')).toHaveCount(0);
+  await expect(numbersPage.getByTestId('mktg-framework-print-facts')).toContainText('Figures and their sources');
+  // Fourteen long proof points on the first goal: tightened, then cut to whole rows, with the muted "+N more" line under them.
+  const goalPage = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="goal-1"]');
+  const proofRows = goalPage.locator('.fwp-proof-row');
+  const kept = await proofRows.count();
+  expect(kept).toBeGreaterThan(0);
+  expect(kept).toBeLessThan(14);
+  await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveText(`+${14 - kept} more in the framework's Sources tab in LFX One`);
+  await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveCSS('color', 'rgb(107, 114, 128)');
+  await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveCSS('font-size', '10.5px');
+  // Sixty sources read and forty gaps: each list cut to its column with its own line, the counts from the report.
+  const read = print.getByTestId('mktg-framework-print-sources-read').locator('li');
+  const readKept = await read.count();
+  expect(readKept).toBeGreaterThan(0);
+  expect(readKept).toBeLessThan(60);
+  await expect(print.getByTestId('mktg-framework-print-sources-read-cut')).toHaveText(`+${60 - readKept} more in the framework's Sources tab in LFX One`);
+  const gaps = print.getByTestId('mktg-framework-print-gaps').locator('li');
+  const gapsKept = await gaps.count();
+  expect(gapsKept).toBeLessThan(40);
+  await expect(print.getByTestId('mktg-framework-print-gaps-cut')).toHaveText(`+${40 - gapsKept} more in the framework's Sources tab in LFX One`);
+  await expect(print.getByTestId('mktg-framework-print-sources-failed-cut')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('foundation-message-print-overfull.png'), fullPage: true });
+  await page.emulateMedia({ media: 'screen' });
+  await finishMktgPrintFrame(page);
+});

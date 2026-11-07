@@ -724,13 +724,15 @@ describe('the stored revision and the view models', () => {
       dateRead: envelope.inputs_record.date_read,
     });
     expect(foundationMessageAsset(envelope).dateRead).toBe(envelope.inputs_record.date_read);
-    // A migrated or hand-copied record without a sidecar still renders, with an empty report and no read date.
+    // A migrated or hand-copied record without a sidecar still renders, with NO report (none is made up) and no read date.
     expect(foundationMessageAssetOfRevision(JSON.stringify(content), null)).toMatchObject({
-      report: { sources_read: [], gaps: [] },
+      report: null,
       checks: { findings: [] },
       mode: 'draft',
       dateRead: null,
     });
+    // A sidecar whose report is not one reads the same way.
+    expect(foundationMessageAssetOfRevision(JSON.stringify(content), { report: { sources_read: 'web' } })?.report).toBeNull();
     // The read date is the record's `YYYY-MM-DD` alone: anything else reads as none.
     expect(foundationMessageDateRead({ date_read: '2026-11-04' })).toBe('2026-11-04');
     expect(foundationMessageDateRead({ date_read: '4 Nov 2026' })).toBeNull();

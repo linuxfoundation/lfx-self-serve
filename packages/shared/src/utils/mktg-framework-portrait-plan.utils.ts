@@ -16,6 +16,7 @@ import {
 } from '../constants/mktg-print.constants';
 import type { FoundationMessagePrintIcp, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
+import { frameworkPortraitNumbersPages } from './mktg-framework-portrait-layout.utils';
 
 /** The profiles two a page, in data order; the last page may hold one. */
 export function frameworkPortraitIcpPages(icps: readonly FoundationMessagePrintIcp[]): FoundationMessagePrintIcp[][] {
@@ -30,7 +31,8 @@ export function frameworkPortraitIcpPages(icps: readonly FoundationMessagePrintI
  * The pages of the Messaging Framework's portrait book, in the mock's order:
  * the cover · 01 Framework (the statements and the goal matrix; one page per
  * goal; say and avoid with the anchor questions) · 02 ICPs (two profiles a
- * page) · 03 Message house · 04 Key numbers · 05 Sources & gaps. Inside the
+ * page) · 03 Message house · 04 Key numbers (more pages when the figures'
+ * table needs them) · 05 Sources & gaps. Inside the
  * family (`inFamily`) the cover goes: the family has its own. The ids are
  * stable (`goal-2`, `icps-3`): the template switches on them, QA reads them
  * from the frames.
@@ -48,7 +50,14 @@ export function frameworkPortraitPlan(view: FoundationMessagePrintView, options:
     pages.push({ id: `icps-${index + 1}`, section: sections.icps, title: index === 0 ? titles.icps : `${titles.icps} (${index + 1})` })
   );
   pages.push({ id: ids.messageHouse, section: sections.messageHouse, title: titles.messageHouse });
-  pages.push({ id: ids.keyNumbers, section: sections.keyNumbers, title: titles.keyNumbers });
+  // The key numbers take the pages their count needs (`key-numbers`, `key-numbers-2`, …), as the ICPs do.
+  frameworkPortraitNumbersPages(view).forEach((_, index) =>
+    pages.push({
+      id: index === 0 ? ids.keyNumbers : `${ids.keyNumbers}-${index + 1}`,
+      section: sections.keyNumbers,
+      title: index === 0 ? titles.keyNumbers : `${titles.keyNumbers} (${index + 1})`,
+    })
+  );
   pages.push({ id: ids.sources, section: sections.sources, title: titles.sources });
   return pages;
 }
