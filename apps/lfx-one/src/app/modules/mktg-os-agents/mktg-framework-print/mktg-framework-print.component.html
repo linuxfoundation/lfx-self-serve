@@ -71,7 +71,7 @@
                 [attr.data-collapsed]="contents.collapsed ? 'true' : null"
                 data-testid="mktg-framework-print-contents">
                 @for (entry of contents.rows; track entry.id) {
-                  <li class="fwp-contents-row">
+                  <li class="fwp-contents-row" data-testid="mktg-framework-print-contents-row">
                     <span class="fwp-contents-number">{{ entry.numberLabel }}</span>
                     <span class="fwp-contents-title">{{ entry.title }}</span>
                   </li>
@@ -164,7 +164,7 @@
                     <ul class="fwp-matrix-proofs" [class.fwp-matrix-proofs--tight]="cell.tight">
                       @for (proof of cell.rows; track $index) {
                         <!-- A cell's first proof kept set smaller carries its own size (editor F3: never only the note). -->
-                        <li [style.font-size.px]="proof.size ?? null">
+                        <li [style.font-size.px]="proof.size ?? null" data-testid="mktg-framework-print-matrix-proof">
                           {{ proof.fact }} <span class="fwp-matrix-source">{{ proof.source }}</span>
                         </li>
                       }
@@ -203,7 +203,7 @@
                 <span class="pp-lab pp-lab--dark">Say</span>
                 <ul class="fwp-say-list" [class.fwp-say-list--tight]="lists.say.tight" data-testid="mktg-framework-print-say">
                   @for (phrase of lists.say.rows; track phrase) {
-                    <li class="fwp-say-pill">{{ phrase }}</li>
+                    <li class="fwp-say-pill" data-testid="mktg-framework-print-say-row">{{ phrase }}</li>
                   }
                 </ul>
                 @if (lists.say.cut > 0) {
@@ -216,7 +216,7 @@
               @if (v.avoidRows.length > 0) {
                 <ul class="fwp-avoid-list" [class.fwp-avoid-list--tight]="lists.avoid.tight" data-testid="mktg-framework-print-avoid">
                   @for (row of lists.avoid.rows; track row.avoid) {
-                    <li class="fwp-avoid-row">
+                    <li class="fwp-avoid-row" data-testid="mktg-framework-print-avoid-row">
                       <span class="fwp-avoid-word">{{ row.avoid }}</span>
                       <span class="fwp-avoid-arrow" aria-hidden="true">→</span>
                       <span class="fwp-avoid-instead">{{ row.instead }}</span>
@@ -237,7 +237,7 @@
               <span class="pp-lab pp-lab--dark">Every piece of content answers</span>
               <ol class="fwp-anchor-list" data-testid="mktg-framework-print-anchor">
                 @for (anchor of frame.anchors; track anchor.numberLabel) {
-                  <li class="fwp-anchor-row">
+                  <li class="fwp-anchor-row" data-testid="mktg-framework-print-anchor-row">
                     <span class="fwp-anchor-number">{{ anchor.numberLabel }}</span>
                     <span class="fwp-anchor-question" [style.font-size.px]="anchor.size">{{ anchor.question }}</span>
                   </li>
@@ -274,7 +274,7 @@
                     @if (proofs.rows.length > 0) {
                       <ul class="fwp-pillar-proofs">
                         @for (proof of proofs.rows; track $index) {
-                          <li>
+                          <li data-testid="mktg-framework-print-pillar-proof">
                             {{ proof.fact }}
                             <span class="fwp-pillar-source"
                               ><span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span></span
@@ -304,7 +304,7 @@
                 <span class="pp-lab pp-lab--dark">Audiences</span>
                 <ul class="fwp-audience-list" [class.fwp-audience-list--tight]="house.audiences.tight" data-testid="mktg-framework-print-audiences">
                   @for (audience of house.audiences.rows; track audience.name) {
-                    <li class="fwp-audience-row">
+                    <li class="fwp-audience-row" data-testid="mktg-framework-print-audience-row">
                       <strong>{{ audience.name }}.</strong>
                       @if (audience.lead) {
                         {{ audience.lead }}
@@ -332,7 +332,7 @@
                   <span class="pp-lab pp-lab--dark">Read</span>
                   <ul class="fwp-source-list" [class.fwp-source-list-tight]="report.read.tight" data-testid="mktg-framework-print-sources-read">
                     @for (source of report.read.rows; track $index) {
-                      <li>{{ source }}</li>
+                      <li data-testid="mktg-framework-print-sources-read-row">{{ source }}</li>
                     }
                   </ul>
                   @if (report.read.cut > 0) {
@@ -344,7 +344,7 @@
                 @if (report.failedCount > 0) {
                   <ul class="fwp-source-list" [class.fwp-source-list-tight]="report.failed.tight" data-testid="mktg-framework-print-sources-failed">
                     @for (source of report.failed.rows; track $index) {
-                      <li>{{ source }}</li>
+                      <li data-testid="mktg-framework-print-sources-failed-row">{{ source }}</li>
                     }
                   </ul>
                   @if (report.failed.cut > 0) {
@@ -359,7 +359,7 @@
                 @if (report.gapsCount > 0) {
                   <ul class="fwp-source-list" [class.fwp-source-list-tight]="report.gaps.tight" data-testid="mktg-framework-print-gaps">
                     @for (gap of report.gaps.rows; track $index) {
-                      <li>{{ gap }}</li>
+                      <li data-testid="mktg-framework-print-gaps-row">{{ gap }}</li>
                     }
                   </ul>
                   @if (report.gaps.cut > 0) {
@@ -421,8 +421,8 @@
                       <th scope="col" class="fwp-grid-th">What it counts</th>
                     </tr>
                     @for (row of numbers.numbersTable; track $index) {
-                      <tr data-testid="mktg-framework-print-number-row">
-                        <td class="fwp-fact fwp-number-cell">{{ row.number }}</td>
+                      <tr [attr.data-testid]="'mktg-framework-print-number-row-' + $index">
+                        <td class="fwp-fact fwp-number-cell" data-testid="mktg-framework-print-number-figure">{{ row.number }}</td>
                         <td class="fwp-fact-used">{{ row.label }}</td>
                       </tr>
                     }
@@ -492,7 +492,7 @@
                 <span class="pp-lab pp-lab--dark">Proof points</span>
                 <ul class="fwp-proof-list" [class.fwp-proof-list-tight]="goalPage.proofs.tight">
                   @for (proof of goalPage.proofs.rows; track $index) {
-                    <li class="fwp-proof-row">
+                    <li class="fwp-proof-row" data-testid="mktg-framework-print-proof-row">
                       <span>{{ proof.fact }}</span>
                       <span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span>
                     </li>
@@ -555,7 +555,7 @@
                     }
                     <ul class="fwp-icp-personas">
                       @for (line of icp.personaLines; track $index) {
-                        <li>{{ line }}</li>
+                        <li data-testid="mktg-framework-print-icp-persona">{{ line }}</li>
                       }
                     </ul>
                   </div>
@@ -608,7 +608,7 @@
                           @if (icp.proofRows.length > 0) {
                             <ul class="fwp-icp-proofs">
                               @for (proof of icp.proofRows; track $index) {
-                                <li>
+                                <li data-testid="mktg-framework-print-icp-proof">
                                   {{ proof.fact }} <span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span>
                                 </li>
                               }

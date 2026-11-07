@@ -265,7 +265,7 @@ describe('MktgFrameworkPrintComponent', () => {
     const list = cover?.querySelector('[data-testid="mktg-framework-print-contents"]');
     expect(list?.classList.contains('fwp-contents--tight')).toBe(false);
     expect(list?.getAttribute('data-collapsed')).toBeNull();
-    const rows = Array.from(list?.querySelectorAll('li') ?? []);
+    const rows = Array.from(list?.querySelectorAll('[data-testid="mktg-framework-print-contents-row"]') ?? []);
     expect(rows.map((row) => text(row))).toEqual([
       '02 Framework',
       '03 Goal 1 · Adoption',
@@ -318,7 +318,7 @@ describe('MktgFrameworkPrintComponent', () => {
       'Sound bite',
     ]);
     expect(matrix?.querySelector('.fwp-matrix-goal')?.textContent?.trim()).toBe('Adoption');
-    expect(text(matrix?.querySelector('.fwp-matrix-proofs li'))).toBe('1,200 members Website');
+    expect(text(query('mktg-framework-print-matrix-proof'))).toBe('1,200 members Website');
     // The source tag is the fixed vocabulary, kept whole as the mock's: the fact before it wraps, never the tag ("LFX / FIELD").
     const tag = matrix?.querySelector('.fwp-matrix-source');
     expect(tag?.textContent?.trim()).toBe('Website');
@@ -351,7 +351,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(page?.querySelector('[data-testid="mktg-framework-print-goal-1"] .fwp-goal-number')?.textContent?.trim()).toBe('01');
     expect(page?.querySelector('.fwp-goal-vp')?.textContent?.trim()).toBe('VP.');
     expect(text(page?.querySelector('.fwp-goal-key'))).toBe('Key message Key.');
-    expect(text(page?.querySelector('.fwp-proof-row'))).toBe('1,200 members Website');
+    expect(text(page?.querySelector('[data-testid="mktg-framework-print-proof-row"]'))).toBe('1,200 members Website');
     expect(page?.querySelector('.fwp-goal-bite-text')?.textContent?.trim()).toBe('“In the\u00a0open”');
     const served = Array.from(page?.querySelectorAll('.fwp-served-card') ?? []);
     expect(served.map((card) => card.querySelector('.fwp-served-name')?.textContent?.trim())).toEqual(['End users', 'Maintainers']);
@@ -387,9 +387,9 @@ describe('MktgFrameworkPrintComponent', () => {
   it('prints say and avoid with the anchor questions, numbered, and the crosscut note; says when nothing is to be avoided', async () => {
     const view = printView(null);
     await configure('browser', view);
-    expect(Array.from(query('mktg-framework-print-say')?.querySelectorAll('li') ?? []).map((pill) => pill.textContent?.trim())).toEqual(['open']);
-    expect(text(query('mktg-framework-print-avoid')?.querySelector('li'))).toBe('synergy → working together');
-    expect(text(query('mktg-framework-print-anchor')?.querySelector('li'))).toBe('01 Which goal does this serve?');
+    expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-say-row"]')).map((pill) => pill.textContent?.trim())).toEqual(['open']);
+    expect(text(query('mktg-framework-print-avoid-row'))).toBe('synergy → working together');
+    expect(text(query('mktg-framework-print-anchor-row'))).toBe('01 Which goal does this serve?');
     // The intro counts the anchor questions in words, as the mock's sentence does ("the three questions") with the agent's three.
     expect(text(frame('say-avoid')?.querySelector('.fwp-intro-say'))).toBe(
       'The words the framework uses, the ones it replaces, and the one question every piece of content answers.'
@@ -554,9 +554,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(tiles().map((tile) => tile.querySelector<HTMLElement>('.fwp-number')?.style.fontSize)).toEqual(Array.from({ length: 6 }, () => '35px'));
     expect(tiles().map((tile) => tile.querySelector<HTMLElement>('.fwp-number-label')?.style.fontSize)).toEqual(Array.from({ length: 6 }, () => '14px'));
     expect(tiles()[0].querySelector('.fwp-number-label')?.textContent?.trim()).toBe('members across five continents');
-    const tileBox = tiles()[0].getBoundingClientRect();
-    const figureBox = tiles()[0].querySelector('.fwp-number')?.getBoundingClientRect();
-    expect(figureBox && figureBox.right <= tileBox.right + 0.5).toBe(true);
+    // (The figure's box inside the tile's is a layout fact: jsdom lays nothing out, so the e2e's real-Chrome tile check holds it, not this spec.)
     // 3×2 under a short figure at its full 54 px: the label's 48 px hold two lines as written; with a source pill under it (a proof
     // point states the figure) the label loses the pill's 27 px and comes down to one line, the pill on every stated tile.
     await setView(
@@ -594,8 +592,10 @@ describe('MktgFrameworkPrintComponent', () => {
     const view = buildFoundationMessagePrintView({ ...CONTENT, nums: nums(9) }, 'TestOrbit', 2, null);
     await configure('browser', view);
     expect(host().querySelectorAll('[data-testid^="mktg-framework-print-number-tile-"]')).toHaveLength(0);
-    const rows = () => Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-number-row"]'));
-    expect(rows().map((row) => row.querySelector('.fwp-number-cell')?.textContent?.trim())).toEqual(nums(9).map(([number]) => number));
+    const rows = () => Array.from(host().querySelectorAll('[data-testid^="mktg-framework-print-number-row-"]'));
+    expect(rows().map((row) => row.querySelector('[data-testid="mktg-framework-print-number-figure"]')?.textContent?.trim())).toEqual(
+      nums(9).map(([number]) => number)
+    );
     expect(rows()[8].textContent).toContain('figure 9');
     expect(frame('key-numbers')?.querySelector('[data-testid="mktg-framework-print-numbers-table"]')?.getAttribute('style')).toContain('top: 210px');
     expect(frame('key-numbers-2')).toBeNull();
@@ -619,11 +619,13 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(frame('key-numbers')?.querySelector('[data-testid="mktg-framework-print-facts"]')).toBeNull();
     expect(second?.querySelector('[data-testid="mktg-framework-print-facts"]')).not.toBeNull();
     // The first page's rows, then the second's, in the data's order, split where the first page filled.
-    const firstRows = Array.from(frame('key-numbers')?.querySelectorAll('[data-testid="mktg-framework-print-number-row"]') ?? []);
-    const secondRows = Array.from(second?.querySelectorAll('[data-testid="mktg-framework-print-number-row"]') ?? []);
+    const firstRows = Array.from(frame('key-numbers')?.querySelectorAll('[data-testid^="mktg-framework-print-number-row-"]') ?? []);
+    const secondRows = Array.from(second?.querySelectorAll('[data-testid^="mktg-framework-print-number-row-"]') ?? []);
     expect(firstRows.length).toBeGreaterThan(6);
     expect(firstRows.length + secondRows.length).toBe(40);
-    expect(secondRows[0].querySelector('.fwp-number-cell')?.textContent?.trim()).toBe(`${firstRows.length + 1},000`);
+    expect(secondRows[0].querySelector('[data-testid="mktg-framework-print-number-figure"]')?.textContent?.trim()).toBe(`${firstRows.length + 1},000`);
+    // The rows are indexed within their page's table, as the facts are (`-fact-<i>`).
+    expect(secondRows[0].getAttribute('data-testid')).toBe('mktg-framework-print-number-row-0');
     // The contents page counts every page the data needs.
     expect(query('mktg-framework-print-contents')?.textContent).toContain('Key numbers (2)');
   });
@@ -638,7 +640,7 @@ describe('MktgFrameworkPrintComponent', () => {
       buildFoundationMessagePrintView({ ...CONTENT, mf: { ...CONTENT.mf, goals: [{ ...CONTENT.mf.goals[0], proof: tall }] } }, 'TestOrbit', 2, null)
     );
     const goalPage = frame('goal-1');
-    expect(goalPage?.querySelectorAll('.fwp-proof-row')).toHaveLength(0);
+    expect(goalPage?.querySelectorAll('[data-testid="mktg-framework-print-proof-row"]')).toHaveLength(0);
     expect(goalPage?.textContent).toContain('Proof points');
     expect(goalPage?.querySelector('[data-testid="mktg-framework-print-proofs-cut"]')?.textContent?.trim()).toBe(
       "+3 more on the framework's Framework tab in LFX One"
@@ -653,7 +655,7 @@ describe('MktgFrameworkPrintComponent', () => {
     );
     // Each source in a reader's words and never a path (foundationMessagePrintSourceRows): its type prefix off, a URL as its host, the pages
     // of one host gathered into one counted row, a press release named with its site's host.
-    expect(Array.from(query('mktg-framework-print-sources-read')?.querySelectorAll('li') ?? []).map((item) => item.textContent?.trim())).toEqual([
+    expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-sources-read-row"]')).map((item) => item.textContent?.trim())).toEqual([
       'orbit.example.org · 2 pages',
       'The press release (linuxfoundation.org)',
     ]);
@@ -705,7 +707,7 @@ describe('MktgFrameworkPrintComponent', () => {
     };
     await configure('browser', buildFoundationMessagePrintView(CONTENT, 'TestOrbit', 2, null, '2026-11-06T09:00:00Z', report));
     // The failed list is cut to the room, yet the page never says "No source failed."; the same for the gaps.
-    const failed = query('mktg-framework-print-sources-failed')?.querySelectorAll('li').length ?? 0;
+    const failed = host().querySelectorAll('[data-testid="mktg-framework-print-sources-failed-row"]').length;
     expect(failed).toBeGreaterThan(0);
     expect(failed).toBeLessThan(80);
     expect(query('mktg-framework-print-sources-failed-empty')).toBeNull();
@@ -903,7 +905,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(new Set(cards.slice(0, 3).map((card) => card.style.fontSize)).size).toBe(1);
     // The framework page's matrix: the goal's twelve proofs cut to the whole rows that fit the proof row's room (tight first), the cut said in the
     // cell, so the sound bite row stays above the footer.
-    const matrixProofs = Array.from(query('mktg-framework-print-goals')?.querySelectorAll('.fwp-matrix-proofs li') ?? []);
+    const matrixProofs = Array.from(query('mktg-framework-print-goals')?.querySelectorAll('[data-testid="mktg-framework-print-matrix-proof"]') ?? []);
     expect(matrixProofs.length).toBeGreaterThan(0);
     expect(matrixProofs.length).toBeLessThan(12);
     expect(query('mktg-framework-print-goals')?.querySelector('.fwp-matrix-proofs')?.classList.contains('fwp-matrix-proofs--tight')).toBe(true);
@@ -920,7 +922,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(titleLines).toBe(2);
     expect(frame('framework')?.style.getPropertyValue('--fwp-title-size')).toBe('34px');
     expect([top(goalPage?.querySelector('.fwp-goal-key')), top(query('mktg-framework-print-goal-1'))]).toEqual([tops.goalKey, 136 + titleSize * 1.1]);
-    const proofs = Array.from(goalPage?.querySelectorAll('.fwp-proof-row') ?? []);
+    const proofs = Array.from(goalPage?.querySelectorAll('[data-testid="mktg-framework-print-proof-row"]') ?? []);
     expect(proofs.length).toBeGreaterThan(0);
     expect(proofs.length).toBeLessThan(12);
     expect(proofs.map((row) => row.querySelector('span')?.textContent?.trim())).toEqual(proofs.map((_, index) => `${long.repeat(2).trim()} (${index})`));
@@ -972,9 +974,9 @@ describe('MktgFrameworkPrintComponent', () => {
     // the read and the failed lists share the left column, flush left at the column's full width (the editor's read).
     const rowHeight = (value: string | null | undefined) =>
       mktgPortraitParaHeight({ text: value?.trim() ?? '', ...FRAMEWORK_PORTRAIT_TYPE.sourceTight }, MKTG_PORTRAIT_COLUMNS.half);
-    const read = Array.from(query('mktg-framework-print-sources-read')?.querySelectorAll('li') ?? []);
-    const failed = Array.from(query('mktg-framework-print-sources-failed')?.querySelectorAll('li') ?? []);
-    const gaps = Array.from(query('mktg-framework-print-gaps')?.querySelectorAll('li') ?? []);
+    const read = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-sources-read-row"]'));
+    const failed = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-sources-failed-row"]'));
+    const gaps = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-gaps-row"]'));
     expect(query('mktg-framework-print-sources-read')?.classList.contains('fwp-source-list-tight')).toBe(true);
     expect(query('mktg-framework-print-gaps')?.classList.contains('fwp-source-list-tight')).toBe(true);
     expect(query('mktg-framework-print-sources-read-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(60 - read.length, 'sources'));
@@ -1014,8 +1016,8 @@ describe('MktgFrameworkPrintComponent', () => {
     // Say and avoid: the pills and the rows cut to their columns above the anchors (tight first), each cut said; the anchors at their top, the five
     // questions set smaller so they and the crosscut box end above the footer; the box under the anchors, no higher than the design's top.
     const sayAvoid = frame('say-avoid');
-    const pills = Array.from(sayAvoid?.querySelectorAll('.fwp-say-pill') ?? []);
-    const avoidRows = Array.from(sayAvoid?.querySelectorAll('.fwp-avoid-row') ?? []);
+    const pills = Array.from(sayAvoid?.querySelectorAll('[data-testid="mktg-framework-print-say-row"]') ?? []);
+    const avoidRows = Array.from(sayAvoid?.querySelectorAll('[data-testid="mktg-framework-print-avoid-row"]') ?? []);
     expect([pills.length > 0, pills.length < 12, avoidRows.length > 0, avoidRows.length < 12]).toEqual([true, true, true, true]);
     expect(sayAvoid?.querySelector('.fwp-say-list')?.classList.contains('fwp-say-list--tight')).toBe(true);
     expect(sayAvoid?.querySelector('.fwp-avoid-list')?.classList.contains('fwp-avoid-list--tight')).toBe(true);

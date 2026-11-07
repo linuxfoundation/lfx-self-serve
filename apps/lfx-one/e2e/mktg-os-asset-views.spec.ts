@@ -345,9 +345,9 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(frame.getByTestId('mktg-framework-print-version')).toHaveText('V1.0 · Approved 19 Oct 2026');
       // The editor's gap under the cover title: 16–24 px, set at 18 (the framework pages' global partial).
       await expect(frame.getByTestId('mktg-framework-print-version')).toHaveCSS('margin-top', '18px');
-      await expect(frame.getByTestId('mktg-framework-print-contents').locator('li')).toHaveCount(7);
-      await expect(frame.getByTestId('mktg-framework-print-contents').locator('li').first()).toContainText('Framework');
-      await expect(frame.getByTestId('mktg-framework-print-contents').locator('li').last()).toContainText('Sources & gaps');
+      await expect(frame.getByTestId('mktg-framework-print-contents-row')).toHaveCount(7);
+      await expect(frame.getByTestId('mktg-framework-print-contents-row').first()).toContainText('Framework');
+      await expect(frame.getByTestId('mktg-framework-print-contents-row').last()).toContainText('Sources & gaps');
       await expect(frame.getByTestId('mktg-framework-print-cover-strip')).toContainText('a Linux Foundation project');
       const coverBand = frame.getByTestId('mktg-framework-print-cover');
       await expect(coverBand).toBeVisible();
@@ -388,7 +388,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       // prints its question alone (the editor's rule); the kind and goal tags hold one line.
       await expect(icpRow.locator('dt')).toHaveText(['Need', 'Value', 'Lead message', 'Call to action', 'Objection', 'Channels']);
       await expect(icpRow.locator('dd').nth(4)).toHaveText('“Too early?”');
-      await expect(icpRow.locator('dd').nth(5).locator('.fwp-icp-proofs li')).toHaveCount(1);
+      await expect(icpRow.locator('dd').nth(5).getByTestId('mktg-framework-print-icp-proof')).toHaveCount(1);
       await expect(icpRow.locator('.fwp-icp-chips')).toHaveCSS('flex-wrap', 'nowrap');
       await expect(print.getByTestId('mktg-framework-print-matrix-row')).toHaveCount(1);
       await expect(print.getByTestId('mktg-framework-print-matrix-dot')).toHaveCount(1);
@@ -527,16 +527,16 @@ test('the framework print lists every figure past six as a table, continued on a
   const numbersPage = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="key-numbers"]');
   const numbersPage2 = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="key-numbers-2"]');
   await expect(numbersPage2).toHaveCount(1);
-  await expect(numbersPage.getByTestId('mktg-framework-print-number-row').first()).toContainText('synthetic figure 1');
-  await expect(numbersPage2.getByTestId('mktg-framework-print-number-row').last()).toContainText('synthetic figure 8');
-  await expect(print.getByTestId('mktg-framework-print-number-row')).toHaveCount(8);
+  await expect(numbersPage.getByTestId('mktg-framework-print-number-row-0')).toContainText('synthetic figure 1');
+  await expect(numbersPage2.locator('[data-testid^="mktg-framework-print-number-row-"]').last()).toContainText('synthetic figure 8');
+  await expect(print.locator('[data-testid^="mktg-framework-print-number-row-"]')).toHaveCount(8);
   await expect(numbersPage.getByTestId('mktg-framework-print-facts')).toHaveCount(0);
   await expect(numbersPage2.getByTestId('mktg-framework-print-facts')).toContainText('Figures and their sources');
   // The last of the record's 13 frames: cover, framework, goal-1…4, say-avoid, icps-1, icps-2, message-house, key-numbers, key-numbers-2, sources.
   await expect(print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="sources"]')).toHaveAttribute('data-page', '13');
   // Four long proof points (the record's cap) on the first goal: tightened, then cut to whole rows, with the muted "+N more" line.
   const goalPage = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="goal-1"]');
-  const proofRows = goalPage.locator('.fwp-proof-row');
+  const proofRows = goalPage.getByTestId('mktg-framework-print-proof-row');
   const kept = await proofRows.count();
   expect(kept).toBeGreaterThan(0);
   expect(kept).toBeLessThan(4);
@@ -544,7 +544,7 @@ test('the framework print lists every figure past six as a table, continued on a
   await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveCSS('color', 'rgb(107, 114, 128)');
   await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveCSS('font-size', '10.5px');
   // Sixty sources read and forty gaps: each list cut to its column with its own line, the counts from the report.
-  const read = print.getByTestId('mktg-framework-print-sources-read').locator('li');
+  const read = print.getByTestId('mktg-framework-print-sources-read-row');
   const readKept = await read.count();
   expect(readKept).toBeGreaterThan(0);
   expect(readKept).toBeLessThan(60);
@@ -552,13 +552,13 @@ test('the framework print lists every figure past six as a table, continued on a
     `+${60 - readKept} more on the framework's Sources and gaps tab in LFX One`
   );
   // The failed source in a reader's words: the sign-in-walled recordings page as its host, no scheme, www. or path, the reason after the dash.
-  await expect(print.getByTestId('mktg-framework-print-sources-failed').locator('li').first()).toContainText('example.org — ');
+  await expect(print.getByTestId('mktg-framework-print-sources-failed-row').first()).toContainText('example.org — ');
   // Never a path in a printed source line (the editor's rule): the Read rows are hosts (the first here, one counted row would gather a
   // host's pages), the failed rows hosts with their reason.
-  await expect(print.getByTestId('mktg-framework-print-sources-read').locator('li').first()).toHaveText('synthetic-source-1.example.org');
-  for (const row of await print.getByTestId('mktg-framework-print-sources-read').locator('li').allTextContents()) expect(row).not.toContain('/');
-  for (const row of await print.getByTestId('mktg-framework-print-sources-failed').locator('li').allTextContents()) expect(row).not.toContain('/');
-  const gaps = print.getByTestId('mktg-framework-print-gaps').locator('li');
+  await expect(read.first()).toHaveText('synthetic-source-1.example.org');
+  for (const row of await read.allTextContents()) expect(row).not.toContain('/');
+  for (const row of await print.getByTestId('mktg-framework-print-sources-failed-row').allTextContents()) expect(row).not.toContain('/');
+  const gaps = print.getByTestId('mktg-framework-print-gaps-row');
   const gapsKept = await gaps.count();
   expect(gapsKept).toBeLessThan(40);
   await expect(print.getByTestId('mktg-framework-print-gaps-cut')).toHaveText(`+${40 - gapsKept} more on the framework's Sources and gaps tab in LFX One`);
@@ -608,9 +608,9 @@ test('the framework print lists every figure past six as a table, continued on a
   });
   expect(order).toEqual({ sayAboveAnchors: true, avoidAboveAnchors: true, anchorsAboveCrosscut: true });
   // Ten say phrases and five long avoid rows: each list tightened, then cut to what its column holds above the anchors, the cut said under it.
-  await expect(sayAvoid.getByTestId('mktg-framework-print-say').locator('li')).toHaveCount(7);
+  await expect(sayAvoid.getByTestId('mktg-framework-print-say-row')).toHaveCount(7);
   await expect(sayAvoid.getByTestId('mktg-framework-print-say-cut')).toHaveText("+3 more on the framework's Framework tab in LFX One");
-  await expect(sayAvoid.getByTestId('mktg-framework-print-avoid').locator('li')).toHaveCount(3);
+  await expect(sayAvoid.getByTestId('mktg-framework-print-avoid-row')).toHaveCount(3);
   await expect(sayAvoid.getByTestId('mktg-framework-print-avoid-cut')).toHaveText("+2 more on the framework's Framework tab in LFX One");
   // Every profile card ends at least 4 px above the footer rule (the harness's A4 finding: at a 0.974 scale a card that touched the rule crossed it),
   // and no profile page's cards are set tight (the record's cards fit at the normal measure).
@@ -688,6 +688,15 @@ test('the framework print set in the project’s kit: accent text darkened to re
     .evaluateAll((figures) => figures.map((figure) => Math.round(figure.getBoundingClientRect().top)));
   expect(figureTops).toHaveLength(4);
   expect(figureTops[0]).toBe(figureTops[1]);
+  // Each figure's box ends inside its tile's (the fit model's measure against the tile's inner width holds in real layout).
+  const overflowing = await print.locator('[data-testid^="mktg-framework-print-number-tile-"]').evaluateAll(
+    (tiles) =>
+      tiles.filter((tile) => {
+        const figure = tile.querySelector('.fwp-number');
+        return !!figure && figure.getBoundingClientRect().right > tile.getBoundingClientRect().right + 0.5;
+      }).length
+  );
+  expect(overflowing).toBe(0);
   await page.screenshot({ path: info.outputPath('foundation-message-print-kit.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);
@@ -708,9 +717,9 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   // The cover lists all fifteen pages after it, one row each, and the list ends above the cover strip (the design reader's list rule
   // bounds it: tightened past nine pairs (eighteen rows), the runs collapsed to ranges past twelve pairs (twenty-four); fifteen rows need neither).
   const contents = print.getByTestId('mktg-framework-print-contents');
-  await expect(contents.locator('li')).toHaveCount(15);
-  await expect(contents.locator('li').nth(1)).toContainText('03 Goal 1 · Goal 1 title');
-  await expect(contents.locator('li').nth(8)).toContainText('10 Goal 8 · Goal 8 title');
+  await expect(contents.getByTestId('mktg-framework-print-contents-row')).toHaveCount(15);
+  await expect(contents.getByTestId('mktg-framework-print-contents-row').nth(1)).toContainText('03 Goal 1 · Goal 1 title');
+  await expect(contents.getByTestId('mktg-framework-print-contents-row').nth(8)).toContainText('10 Goal 8 · Goal 8 title');
   const contentsFit = await contents.evaluate((list) => {
     const frame = list.closest('[data-testid="lfx-mktg-portrait-page"]') as HTMLElement;
     const strip = frame.querySelector('[data-testid="mktg-framework-print-cover-strip"]') as HTMLElement;
@@ -746,7 +755,7 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   for (const note of await notes.all()) await expect(note).toHaveText(/^\+[1-4] more on the framework's Framework tab in LFX One$/);
   // Eight figures print as the table, each with its thousands separators (the editor's rule); the fixture's bare "2000" is in the year range
   // and prints as stored.
-  await expect(page.getByTestId('mktg-framework-print-numbers-table').locator('.fwp-number-cell')).toHaveText([
+  await expect(page.getByTestId('mktg-framework-print-numbers-table').getByTestId('mktg-framework-print-number-figure')).toHaveText([
     '1,000',
     '2000',
     '3,000',
