@@ -1000,6 +1000,91 @@ test('eight goals with the overfull record’s titles: the matrix prints as two 
   await finishMktgPrintFrame(page);
 });
 
+/** The long-name shape's goal titles (the layout spec's): three to four lines a head cell, so the bands' room is the matrix's narrowest. */
+const LONG_GOAL_TITLES = [
+  'Adoption across every cloud and vendor',
+  'Contributors and maintainers of the projects',
+  'Certification for the engineers employers hire',
+  'End users who shape the roadmap they depend on',
+  'Events in every region of the world',
+  'Security as a shared industry practice',
+  'Membership that funds the neutral home',
+  'Education from the first container onward',
+];
+
+test('the long-name shape (the calibration window): the bands fold the cells’ lines into the caption and the matrix ends clear of the footer in the real render', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  // The maintainer's calibration fixture (7 Nov 2026): the overfull record's key messages and facts under the long-name titles, in the
+  // LF look's face. The model lays it folded at 648.65 px, 15.35 px over the footer gap: inside the 12–20 px window where a model a
+  // few px optimistic would print into the footer. The real render in Chromium and WebKit must end clear of the footer's room.
+  const cap = capGoalsFrameworkRevisionResponse(LONG_GOAL_TITLES);
+  const content = JSON.parse(cap.markdown) as FoundationMessageContent;
+  const goals = content.mf.goals.map((goal, index) => ({
+    ...goal,
+    key: OVERFULL_GOAL_KEYS[index],
+    proof: Array.from({ length: 4 }, (_, n): [string, string] => [OVERFULL_GOAL_FACTS[(index + n) % OVERFULL_GOAL_FACTS.length], 'Report']),
+  }));
+  const record = { ...cap, markdown: JSON.stringify({ ...content, mf: { ...content.mf, goals } }) };
+  await openAssetDocument(page, 'foundation-message', 200, true, false, record);
+  await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+  await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+  const frame = await layoutMktgPrintFrame(page);
+  const framework = frame.getByTestId('mktg-framework-print').locator('[data-page-id="framework"]');
+  const matrix = framework.getByTestId('mktg-framework-print-goals');
+  // Two bands of four, every long title whole at one size, none overlapping.
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-0').getByTestId('mktg-framework-print-matrix-title')).toHaveCount(4);
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-1').getByTestId('mktg-framework-print-matrix-title')).toHaveCount(4);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-title')).toHaveText(LONG_GOAL_TITLES);
+  expect(await matrix.evaluate(matrixTitleOverlaps)).toEqual({ overlapping: 0, overflowing: 0, titles: 8 });
+  // The ladder's fold step: the value propositions and sound bites on the goal pages, every cell one whole first proof at the tight type
+  // with no line of its own, the one caption under the bands naming both.
+  for (const band of [0, 1]) {
+    await expect(matrix.getByTestId(`mktg-framework-print-goals-band-${band}`).getByTestId('mktg-framework-print-goals-label')).toHaveText([
+      'Key message',
+      'Proof',
+    ]);
+  }
+  const cells = matrix.getByTestId('mktg-framework-print-matrix-proof-cell');
+  await expect(cells).toHaveCount(8);
+  for (const cell of await cells.all()) await expect(cell.getByTestId('mktg-framework-print-matrix-proof')).toHaveCount(1);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-proofs-cut')).toHaveCount(0);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-row-note')).toHaveText([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold]);
+  const facts = await matrix
+    .getByTestId('mktg-framework-print-matrix-proof')
+    .evaluateAll((proofs) => proofs.map((proof) => proof.childNodes[0]?.textContent?.trim() ?? ''));
+  expect(facts).toEqual(goals.map((goal) => goal.proof[0][0]));
+  for (const size of await matrix
+    .getByTestId('mktg-framework-print-matrix-proof')
+    .evaluateAll((proofs) => proofs.map((proof) => parseFloat(getComputedStyle(proof).fontSize))))
+    expect(size).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_TYPE.matrixProofTight.size);
+  // The proof: the real render's matrix bottom against the footer's room, in this engine; the figure goes to the report.
+  const bottoms = await matrix.evaluate((block) => {
+    const frameTop = (block.closest('[data-page-id]') as HTMLElement).getBoundingClientRect().top;
+    const at = (element: Element | null): number => Math.round(((element?.getBoundingClientRect().bottom ?? Number.NaN) - frameTop) * 100) / 100;
+    const page = block.closest('[data-page-id]') as HTMLElement;
+    return {
+      matrix: at(block),
+      band0: at(block.querySelector('[data-testid="mktg-framework-print-goals-band-0"]')),
+      band1: at(block.querySelector('[data-testid="mktg-framework-print-goals-band-1"]')),
+      caption: at(block.querySelector('[data-testid="mktg-framework-print-matrix-row-note"]')),
+      footerTop:
+        Math.round(((page.querySelector('[data-testid="mktg-portrait-page-foot"]')?.getBoundingClientRect().top ?? Number.NaN) - frameTop) * 100) / 100,
+    };
+  });
+  info.annotations.push({
+    type: 'calibration',
+    description: `${info.project.name}: ${JSON.stringify(bottoms)}; model bottom 984.65 (648.65 under the matrix top, 15.35 over the footer gap)`,
+  });
+  expect(bottoms.matrix).toBeLessThanOrEqual(FRAMEWORK_PORTRAIT_TOPS.footer);
+  expect(bottoms.matrix).toBeLessThan(bottoms.footerTop);
+  await page.screenshot({ path: info.outputPath('foundation-message-print-long-names-fold.png'), fullPage: true });
+  await page.emulateMedia({ media: 'screen' });
+  await finishMktgPrintFrame(page);
+});
+
 test('a goal served by six profiles: four cards, the note for the other two, the block ending above the footer', async ({ page }, info) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await stubMktgPrintFrame(page);
