@@ -11,12 +11,13 @@ import {
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_ONLY_CLASS,
-  MKTG_FAMILY_PRINT_PAGE_NAME,
   MKTG_PRINT_FONT_LINK_ID_PREFIX,
   MKTG_PRINT_FONT_WAIT_MS,
   MKTG_PRINT_FONT_WEIGHTS,
   MKTG_PRINT_FRAME_LINGER_MS,
   MKTG_PRINT_FRAME_PAPER_IN,
+  MKTG_PORTRAIT_PAGE_NAME,
+  MKTG_PORTRAIT_PRINT_CLASS,
   MKTG_PRINT_PAGE_MARGINS_CLASS,
   MKTG_PRINT_PAGE_SETUPS,
 } from '@lfx-one/shared/constants';
@@ -166,9 +167,7 @@ export class MktgPrintService {
     doc.body.classList.add(bodyClass);
     // The engine, read once per print from the app window (the same-origin frame shares it): WebKit prints a
     // table's head and foot once, so there the pages print on their margins and the documents' room collapses.
-    // The family book is fixed frames, one per page and no margin in every engine: the page margins never apply to it.
-    const familyBook = bodyClass === MKTG_FAMILY_PRINT_BODY_CLASS;
-    const pageMargins = !familyBook && mktgPrintIsWebKit(this.document.defaultView.navigator.userAgent);
+    const pageMargins = mktgPrintIsWebKit(this.document.defaultView.navigator.userAgent);
     if (pageMargins) doc.body.classList.add(MKTG_PRINT_PAGE_MARGINS_CLASS);
     doc.body.style.cssText = this.document.body.style.cssText;
     doc.title = title ?? this.document.title;
@@ -189,14 +188,15 @@ export class MktgPrintService {
     // On the page margins (WebKit) the portrait setup also restates the named framework page, after
     // the cloned sheets, so an engine that did honour named pages could not print the margin-less
     // setup; the book's landscape setup is never written into the framework's page.
-    // The family book writes its setup named as well (its frames' `page` name): the frame is the page in every engine.
+    // A document of portrait frames (MKTG_PORTRAIT_PRINT_CLASS) names its own page on every frame, so the setup is
+    // written named too: in Chromium the body's inherited named page would otherwise win over the unnamed rule.
     const setup = doc.createElement('style');
     const pageSetup = this.pageSetup(bodyClass, roots, pageMargins);
     const restatesFramework = pageSetup === MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'];
     let named = '';
-    if (familyBook) named = MKTG_FAMILY_PRINT_PAGE_NAME;
-    else if (restatesFramework) named = 'mktg-framework';
-    setup.textContent = named ? `@page { ${pageSetup} }\n@page ${named} { ${pageSetup} }` : `@page { ${pageSetup} }`;
+    if (restatesFramework) named = `\n@page mktg-framework { ${pageSetup} }`;
+    if (pageSetup === MKTG_PRINT_PAGE_SETUPS['mktg-portrait']) named = `\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${pageSetup} }`;
+    setup.textContent = `@page { ${pageSetup} }${named}`;
     doc.head.appendChild(setup);
     // Only the three existing print-only wrappers, selected by their shared constants.
     // Keep Angular's scoping attributes; never clone the interactive app shell or its scripts/streams.
@@ -270,12 +270,15 @@ export class MktgPrintService {
   }
 
   /**
-   * The page setup this print gets, by the stylesheets' test (the family book is its fixed US Letter frame
-   * in every engine; only the kit's legacy book is landscape), and the engine's: the portrait pages print with no margin, or on their margins where the
+   * The page setup this print gets, by the stylesheets' test (only the kit's legacy book is landscape),
+   * and the engine's: the portrait pages print with no margin, or on their margins where the
    * documents' per-page room cannot repeat (`pageMargins`: WebKit).
    */
   private pageSetup(bodyClass: string, roots: HTMLElement[], pageMargins: boolean): string {
-    if (bodyClass === MKTG_FAMILY_PRINT_BODY_CLASS) return MKTG_PRINT_PAGE_SETUPS['mktg-family-portrait'];
+    // Fixed US Letter frames (the portrait grammar) are the whole sheet in both engines: no margin, whatever the engine
+    // repeats, and never the page margins.
+    const frames = roots.some((root) => root.classList.contains(MKTG_PORTRAIT_PRINT_CLASS) || root.querySelector(`.${MKTG_PORTRAIT_PRINT_CLASS}`));
+    if (frames) return MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
     const portrait = roots.some((root) => root.classList.contains(BRAND_KIT_PORTRAIT_PRINT_CLASS) || root.querySelector(`.${BRAND_KIT_PORTRAIT_PRINT_CLASS}`));
     const book = bodyClass === BRAND_KIT_PRINT_BODY_CLASS && !portrait;
     if (book) return MKTG_PRINT_PAGE_SETUPS['brand-kit'];

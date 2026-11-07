@@ -109,6 +109,8 @@ export * from './mktg-document-redraft.utils';
 export * from './mktg-document.utils';
 export * from './mktg-envelope.utils';
 export * from './mktg-print.utils';
+export * from './mktg-portrait-print.utils';
+export * from './mktg-portrait-plan.utils';
 export * from './mktg-slides-export.utils';
 export * from './mktg-session-event.utils';
 export * from './mktg-run-activity.utils';
