@@ -60,13 +60,15 @@ export const MKTG_PRINT_DOT = ' · ';
 
 /**
  * The framework book's middle dot (the editor's S-b read of 33584d0ea: in the book's Instrument Sans the dot sat tight on
- * its one space, "Goal 1·Events"): a plain space and a thin space (U+2009, about a fifth of an em) each side; the thin space
- * adds the room, the plain space beside it keeps the line breakable there. A provisional glyph for the editor's re-read.
- * Every framework join passes it to `mktgPrintJoin` (a goal's `Goal 1 · Events`, the contents, the cover's eyebrow, edition
- * and strip lines, the house's brand line, the channels, the personas, the sources' `host · N pages` and the facts'
- * "used by"); the other prints and the saved PDF's file name keep MKTG_PRINT_DOT.
+ * its one space, "Goal 1·Events"): the room of a space and a thin space each side, and no break before the dot. Before
+ * it a no-break space and a narrow no-break space (U+00A0, U+202F); after it a narrow no-break space and a plain space,
+ * so the one place a line may break is the trailing space and the dot ends a line, never starts one (the editor's S-b2
+ * read of 1fd50fc8a: a breakable thin space put the dot at the head of 21 channel lines). Every framework join passes it
+ * to `mktgPrintJoin` (a goal's `Goal 1 · Events`, the contents, the cover's eyebrow, edition and strip lines, the house's
+ * brand line, the channels, the personas, the sources' `host · N pages` and the facts' "used by"); the other prints and
+ * the saved PDF's file name keep MKTG_PRINT_DOT.
  */
-export const FRAMEWORK_PORTRAIT_SEP = ' \u2009·\u2009 ';
+export const FRAMEWORK_PORTRAIT_SEP = '\u00a0\u202f·\u202f ';
 
 /**
  * The dash between a profile's objection and its response (`“Too early?” — Not at all.`): a no-break space binds the dash

@@ -10,9 +10,11 @@ describe('the marketing prints’ joined lines', () => {
   it('joins the parts with the one middle dot, a plain space either side, the empty parts left out', () => {
     expect(MKTG_PRINT_DOT).toBe(' · ');
     expect(mktgPrintJoin(['Goal 1', '', 'Events'])).toBe('Goal 1 · Events');
-    // The framework book's dot: a plain space and a thin space each side (the editor's S-b read: it sat tight in Instrument Sans).
-    expect(FRAMEWORK_PORTRAIT_SEP).toBe(' \u2009·\u2009 ');
-    expect(mktgPrintJoin(['Goal 1', '', 'Events'], FRAMEWORK_PORTRAIT_SEP)).toBe('Goal 1 \u2009·\u2009 Events');
+    // The framework book's dot: the room of a space and a thin space each side, with no break before the dot (the editor's S-b and
+    // S-b2 reads): a line may break only at its trailing space, so the dot ends a line and never starts one.
+    expect(FRAMEWORK_PORTRAIT_SEP).toBe('\u00a0\u202f·\u202f ');
+    expect(mktgPrintJoin(['Goal 1', '', 'Events'], FRAMEWORK_PORTRAIT_SEP)).toBe('Goal 1\u00a0\u202f·\u202f Events');
+    expect(FRAMEWORK_PORTRAIT_SEP.indexOf(' ')).toBe(FRAMEWORK_PORTRAIT_SEP.length - 1);
     expect(mktgPrintJoin(['Maintainer', ''])).toBe('Maintainer');
     expect(mktgPrintJoin([' Maintainer ', '  '])).toBe('Maintainer');
     expect(mktgPrintJoin([])).toBe('');
