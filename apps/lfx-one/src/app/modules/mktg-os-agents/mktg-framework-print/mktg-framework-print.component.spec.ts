@@ -641,12 +641,13 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(query('mktg-framework-print-sources-intro')?.textContent?.trim()).toBe(
       'What the framework was built from on 4 Nov 2026, what could not be read, and what is still open.'
     );
-    // Each source in a reader's words (foundationMessagePrintSourceLabel): its type prefix off, a URL as its address, a press release named.
+    // Each source in a reader's words and never a path (foundationMessagePrintSourceRows): its type prefix off, a URL as its host, the pages
+    // of one host gathered into one counted row, a press release named with its site's host.
     expect(Array.from(query('mktg-framework-print-sources-read')?.querySelectorAll('li') ?? []).map((item) => item.textContent?.trim())).toEqual([
-      'orbit.example.org',
-      'orbit.example.org/about',
-      'The press release (linuxfoundation.org/press)',
+      'orbit.example.org · 2 pages',
+      'The press release (linuxfoundation.org)',
     ]);
+    expect(query('mktg-framework-print-sources-read')?.textContent).not.toContain('/');
     expect(query('mktg-framework-print-sources-failed')?.textContent?.trim()).toBe('Members page — timed out');
     expect(query('mktg-framework-print-gaps')?.textContent?.trim()).toBe('No 2027 figures yet.');
     // The run's notes stay on screen: no Notes block, no raw field name.
@@ -845,7 +846,8 @@ describe('MktgFrameworkPrintComponent', () => {
       nums: Array.from({ length: 4 }, (_, index) => pair(`${index + 1},000`, 'figures')),
     };
     const report: FoundationMessageReport = {
-      sources_read: Array.from({ length: 60 }, (_, index) => `Link: https://orbit.example.org/page-${index}`),
+      // Sixty hosts (one host's pages would gather into one row).
+      sources_read: Array.from({ length: 60 }, (_, index) => `Link: https://site-${index}.example.org/page`),
       sources_failed: Array.from({ length: 30 }, (_, index) => ({ name: `Source ${index}`, reason: 'timed out' })),
       gaps: Array.from({ length: 60 }, (_, index) => `Gap ${index}: ${long.trim()}`),
       notes: '',

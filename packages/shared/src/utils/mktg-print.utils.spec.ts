@@ -29,6 +29,7 @@ import {
   foundationMessagePrintNumbers,
   foundationMessagePrintReportText,
   foundationMessagePrintSourceLabel,
+  foundationMessagePrintSourceRows,
   mktgPrintBrand,
   mktgPrintDocumentTitle,
   mktgPrintIsWebKit,
@@ -313,14 +314,31 @@ describe('the framework’s print', () => {
   it('names a read source as the run stored it, with only its type prefix taken off', () => {
     // A URL as its address (the grammar's readable name: no scheme, no www., no query), a remark after it kept.
     expect(foundationMessagePrintSourceLabel('Website: https://orbit.example.org')).toBe('orbit.example.org');
-    expect(foundationMessagePrintSourceLabel('Website: https://www.orbit.example.org/ (home)')).toBe('orbit.example.org (home)');
-    expect(foundationMessagePrintSourceLabel('Link: https://orbit.example.org/about?utm=x')).toBe('orbit.example.org/about');
-    expect(foundationMessagePrintSourceLabel('Link: https://github.com/orbit (org page and repos API)')).toBe('github.com/orbit (org page and repos API)');
-    // A press release as the mock names it: "The press release" with the site's press address, never the headline's slug.
+    // Never a path (the editor's rule): the host, with the record's own remark after the dot when it wrote one; no word invented for a title.
+    expect(foundationMessagePrintSourceLabel('Website: https://www.orbit.example.org/ (home)')).toBe('orbit.example.org · home');
+    expect(foundationMessagePrintSourceLabel('Link: https://orbit.example.org/about?utm=x')).toBe('orbit.example.org');
+    expect(foundationMessagePrintSourceLabel('Link: https://github.com/orbit (org page and repos API)')).toBe('github.com · org page and repos API');
+    expect(foundationMessagePrintSourceLabel('orbit.example.org/md/about')).toBe('orbit.example.org');
+    expect(foundationMessagePrintSourceLabel('docs.orbit.example.org')).toBe('docs.orbit.example.org');
+    // A press release as the mock names it, "The press release" with the site's host (its press path goes with every other path).
     expect(foundationMessagePrintSourceLabel('Press release: https://www.linuxfoundation.org/press/linux-foundation-announces-orbit')).toBe(
-      'The press release (linuxfoundation.org/press)'
+      'The press release (linuxfoundation.org)'
     );
     expect(foundationMessagePrintSourceLabel('Press release: https://orbit.example.org')).toBe('The press release (orbit.example.org)');
+    // The Read list's rows: the pages of one host gathered into one counted row, in the first one's place; a lone page keeps its remark.
+    expect(
+      foundationMessagePrintSourceRows([
+        'Website: https://orbit.example.org (home)',
+        'Website: https://orbit.example.org/md/about',
+        'Link: https://github.com/orbit (org page and repos API)',
+        'Website: https://orbit.example.org/md/members',
+        'LFX record orbit and standard metrics',
+        'LFX Insights: members',
+      ])
+    ).toEqual(['orbit.example.org · 3 pages', 'github.com · org page and repos API', MKTG_READABLE_SOURCE.lfxRecord, 'LFX Insights: members']);
+    expect(foundationMessagePrintSourceRows(['Docs', 'Docs'])).toEqual(['Docs', 'Docs']);
+    for (const row of foundationMessagePrintSourceRows(['Website: https://a.example.org/x/y', 'Link: https://b.example.org/z (notes)']))
+      expect(row).not.toContain('/');
     // The LFX record by the grammar's name, never its slug; an image URL as the grammar's words.
     expect(foundationMessagePrintSourceLabel('LFX record agentic-ai-foundation and standard metrics')).toBe(MKTG_READABLE_SOURCE.lfxRecord);
     expect(foundationMessagePrintSourceLabel('Link: https://cdn.example.org/a1b2c3d4e5f6a7b8.svg')).toBe(MKTG_READABLE_SOURCE.linkedImage);

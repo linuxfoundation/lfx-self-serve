@@ -551,12 +551,13 @@ test('the framework print lists every figure past six as a table, continued on a
   await expect(print.getByTestId('mktg-framework-print-sources-read-cut')).toHaveText(
     `+${60 - readKept} more on the framework's Sources and gaps tab in LFX One`
   );
-  // The failed source in a reader's words: the sign-in-walled recordings page as its address, no scheme or www., the reason after the dash.
-  await expect(print.getByTestId('mktg-framework-print-sources-failed').locator('li').first()).toContainText(
-    'example.org/summit/2026/roadmap-sessions/recordings — '
-  );
-  await expect(print.getByTestId('mktg-framework-print-sources-failed')).not.toContainText('https://');
-  await expect(print.getByTestId('mktg-framework-print-sources-read')).not.toContainText('https://');
+  // The failed source in a reader's words: the sign-in-walled recordings page as its host, no scheme, www. or path, the reason after the dash.
+  await expect(print.getByTestId('mktg-framework-print-sources-failed').locator('li').first()).toContainText('example.org — ');
+  // Never a path in a printed source line (the editor's rule): the Read rows are hosts (the first here, one counted row would gather a
+  // host's pages), the failed rows hosts with their reason.
+  await expect(print.getByTestId('mktg-framework-print-sources-read').locator('li').first()).toHaveText('synthetic-source-1.example.org');
+  for (const row of await print.getByTestId('mktg-framework-print-sources-read').locator('li').allTextContents()) expect(row).not.toContain('/');
+  for (const row of await print.getByTestId('mktg-framework-print-sources-failed').locator('li').allTextContents()) expect(row).not.toContain('/');
   const gaps = print.getByTestId('mktg-framework-print-gaps').locator('li');
   const gapsKept = await gaps.count();
   expect(gapsKept).toBeLessThan(40);

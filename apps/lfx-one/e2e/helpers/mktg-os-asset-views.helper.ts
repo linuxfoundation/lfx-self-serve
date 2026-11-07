@@ -422,7 +422,8 @@ export function overfullFrameworkRevisionResponse(): MktgRevisionResponse {
   };
   const report = {
     ...framework.report,
-    sources_read: Array.from({ length: 60 }, (_, n) => `https://www.example.org/synthetic/source/${n + 1}/with-a-long-path-that-wraps-in-the-column`),
+    // Sixty hosts: the pages of one host print as one counted row, and the cut list needs sixty rows.
+    sources_read: Array.from({ length: 60 }, (_, n) => `https://synthetic-source-${n + 1}.example.org/with-a-long-path-that-wraps-in-the-column`),
     gaps: Array.from({ length: 40 }, (_, n) => `Synthetic gap ${n + 1}: no source states the figure the framework needs here.`),
   };
   return {

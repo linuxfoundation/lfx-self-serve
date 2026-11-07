@@ -42,6 +42,7 @@ import {
   foundationMessagePrintMatrix,
   foundationMessagePrintReportText,
   foundationMessagePrintSourceLabel,
+  foundationMessagePrintSourceRows,
   frameworkPortraitAnchors,
   frameworkPortraitAvoidList,
   frameworkPortraitBodyTop,
@@ -406,7 +407,7 @@ export class MktgFrameworkPrintComponent {
         intro: date
           ? `What the framework was built from on ${date}, what could not be read, and what is still open.`
           : 'What the framework was built from, what could not be read, and what is still open.',
-        read: list(report.sources_read.map(foundationMessagePrintSourceLabel), columnRoom - ROOM.label - Math.min(failedHeight, columnRoom / 2)),
+        read: list(foundationMessagePrintSourceRows(report.sources_read), columnRoom - ROOM.label - Math.min(failedHeight, columnRoom / 2)),
         failed: list(failedAll, columnRoom / 2 - ROOM.blockAfter - ROOM.label),
         failedCount: report.sources_failed.length,
         gaps: list(report.gaps.map(foundationMessagePrintReportText), columnRoom - ROOM.label),
