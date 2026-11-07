@@ -735,8 +735,11 @@ describe('mktgFamilyPrintCapsWidth', () => {
     const regular = mktgFamilyPrintCapsWidth('Synthetic Documents Project', montserrat, strip);
     // The same capitals at the head's semibold and wider tracking measure wider; at the strip's regular weight the semibold's factor is off.
     expect(regular).toBeLessThan(mktgFamilyPrintCapsWidth('Synthetic Documents Project', montserrat));
-    expect(mktgFamilyPrintCapsWidth('Synthetic Documents Project', montserrat, { ...strip, weight: 600 })).toBeCloseTo(
-      regular * MKTG_FAMILY_PRINT_HEAD_CAPS.weight,
+    // The semibold's factor widens the glyphs, not the tracking between them: measured untracked, the two weights
+    // stand in the factor's ratio exactly.
+    const untracked = { ...strip, tracking: 0 };
+    expect(mktgFamilyPrintCapsWidth('Synthetic Documents Project', montserrat, { ...untracked, weight: 600 })).toBeCloseTo(
+      mktgFamilyPrintCapsWidth('Synthetic Documents Project', montserrat, untracked) * MKTG_FAMILY_PRINT_HEAD_CAPS.weight,
       6
     );
     // A face the family has not measured reads the grammar's measure at that measure.
@@ -1081,12 +1084,19 @@ describe('mktgFamilyPrintBrand', () => {
 
   it('draws the kit\u2019s multi-colour primary, which no filter reverses, on the white plate, named by the brand\u2019s alt', () => {
     expect(brand.logoOnDark?.filter).toBe('');
-    expect(mktgFamilyPrintBrand(brand, book).logoOnDark).toEqual({ src: book.logos.primary?.src, alt: brand.logoOnDark?.alt, filter: '', plate: true });
+    // The kit's artwork carries its aspect (for a plate fitted inside a shape); the family passes it on as it is.
+    expect(mktgFamilyPrintBrand(brand, book).logoOnDark).toEqual({
+      src: book.logos.primary?.src,
+      alt: brand.logoOnDark?.alt,
+      filter: '',
+      plate: true,
+      aspect: book.logos.primary?.aspect ?? null,
+    });
   });
 
   it('draws the supplied reversed file as it is, with no plate', () => {
     const withReversed = { ...book, logos: { ...book.logos, reversed: reversedFile } };
-    expect(mktgFamilyPrintBrand(brand, withReversed).logoOnDark).toEqual({ src: reversedFile.src, alt: brand.logoOnDark?.alt, filter: '' });
+    expect(mktgFamilyPrintBrand(brand, withReversed).logoOnDark).toEqual({ src: reversedFile.src, alt: brand.logoOnDark?.alt, filter: '', aspect: null });
   });
 
   it('reverses a one-ink primary by filter, with no plate', () => {
@@ -1095,6 +1105,7 @@ describe('mktgFamilyPrintBrand', () => {
       src: book.logos.primary?.src,
       alt: brand.logoOnDark?.alt,
       filter: 'brightness(0) invert(1)',
+      aspect: book.logos.primary?.aspect ?? null,
     });
   });
 
