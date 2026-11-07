@@ -1,0 +1,12 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (image(); as image) {
+  <img
+    class="block w-auto"
+    [style.height.px]="height()"
+    [src]="image.src"
+    [alt]="image.alt"
+    [style.filter]="image.filter || null"
+    [attr.data-testid]="'brand-kit-artwork-' + kind()" />
+}

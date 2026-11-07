@@ -1,13 +1,15 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-/* The table, not a flex/height-constrained page, owns physical pagination. */
-.lfx-brand-kit-portrait {
+/* The chapters still flowing (until each is a portrait frame): the table, not a flex/height-constrained page,
+   owns their physical pagination, on the framework's named page. The frames before them set their own font
+   and page (the portrait grammar), so these rules stop at the chapters' root. */
+.lfx-brand-kit-portrait .lfx-framework-print {
   font-family: var(--font-inter), sans-serif;
 }
 
 @media print {
-  .lfx-brand-kit-portrait {
+  .lfx-brand-kit-portrait .lfx-framework-print {
     page: mktg-framework;
   }
 }

@@ -152,6 +152,8 @@ describe('MktgPrintService isolated frame', () => {
     expect(setup).toBe('size: 8.5in 11in; margin: 0;');
     expect(framePageRule()).toBe(`@page { ${setup} }\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
     expect(framePageRule()).not.toContain('@page mktg-framework');
+    // No page margins in either engine: the flowing parts beside the frames keep their own room.
+    expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(false);
   });
 
   it('in the family print, the portrait frames set the page too', () => {

@@ -8,7 +8,7 @@ import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import {
   expectMktgPrintCover,
   expectMktgPrintFrame,
-  expectMktgPrintPageSetup,
+  expectMktgPortraitPageSetup,
   finishMktgPrintFrame,
   layoutMktgPrintFrame,
   mktgPrintComputedPx,
@@ -144,10 +144,7 @@ test('unsupported family shows one line without export buttons or Positioning no
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 
-test('Download PDF stays disabled behind the checking line until prepared, then the first click prints from the isolated frame', async ({
-  page,
-  browserName,
-}, info) => {
+test('Download PDF stays disabled behind the checking line until prepared, then the first click prints from the isolated frame', async ({ page }, info) => {
   await stubMktgPrintFrame(page);
   const controls = await openFamilyExports(page, { allAssets: true, holdPrint: true });
   const pdf = page.getByTestId('family-export-pdf').getByRole('button');
@@ -190,8 +187,9 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printFrame.getByTestId('family-export-actions')).toHaveCount(0);
   const cover = printFrame.getByTestId('family-export-print-cover');
   await expectMktgPrintCover(cover);
-  // The cover's 0.6in at the sides is its own where the page has no margin, and the margin's in WebKit.
-  await expect(cover).toHaveCSS('margin-left', browserName === 'webkit' ? '0px' : '57.6px');
+  // The cover's 0.6in at the sides is its own: with the kit's portrait frames in the family the page has no margin in
+  // either engine.
+  await expect(cover).toHaveCSS('margin-left', '57.6px');
   await expect(printFrame.getByTestId('family-export-print-title')).toHaveText('Positioning & brand');
   await expect(printFrame.getByTestId('family-export-print-title')).toHaveCSS('text-wrap', 'balance');
   await expect(printFrame.getByTestId('family-export-print-logo')).toBeVisible();
@@ -221,7 +219,10 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   // The cover's whole sheet goes with it: its head and foot room alone would print as a blank page.
   await expect(printDocument.locator('lfx-mktg-print-sheet:has([data-testid="mktg-framework-print-cover"])')).toBeHidden();
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter')).toHaveCount(5);
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
+  // The kit's Logo chapter and palette are portrait frames (one frame, one sheet; the synthetic kit has no symbol, so
+  // no symbol page); four kit chapters still flow.
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]')).toHaveCount(6);
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(4);
   // The page's room is in the document, not the @page margin (none, so no browser header or footer): every kit chapter
   // repeats its head's 0.55in per page and pads its last row, and the other sections print in sheets that repeat a head
   // and pad their last row, one row per block — no footer group anywhere, for which Chromium prints an empty page per
@@ -230,20 +231,21 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printDocument.locator('tfoot, [data-testid="mktg-print-sheet-foot"]')).toHaveCount(0);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
   await expect(printDocument.getByTestId('mktg-print-sheet-head')).toHaveCount(6);
-  // Visible sheets, not heads: on the page margins (WebKit) the head room is 0px high, so no head counts as visible.
   await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(6);
   await expect(printDocument.locator('lfx-mktg-print-sheet').locator('visible=true')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-print-sheet-row')).toHaveCount(1 + 9 + 4 + 5);
-  // The engine's page setup: Chromium margin 0 with the room in the document; WebKit the margins, the room collapsed.
-  await expectMktgPrintPageSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'), browserName);
-  // The last rows' bottom room, to a tenth (mktgPrintComputedPx): the kit's calc(10pt + 0.55in) = 66.13px or its 10pt
-  // alone on the page margins; a sheet's 0.55in = 52.8px or 0.
+  // The page setup: the kit's portrait frames make the family a document of frames, US Letter with no margin in both
+  // engines and the room in the document (never the page margins, which would shift a frame off its sheet).
+  await expectMktgPortraitPageSetup(printFrame);
+  await expect(printDocument.locator('lfx-mktg-framework-print .lfx-framework-print')).toHaveCSS('padding-left', '57.6px');
+  // The last rows' bottom room, to a tenth (mktgPrintComputedPx): the kit's calc(10pt + 0.55in) = 66.13px; a sheet's
+  // 0.55in = 52.8px.
   expect(
     await mktgPrintComputedPx(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > tbody > tr:last-child > td').first(), 'padding-bottom')
-  ).toBeCloseTo(browserName === 'webkit' ? 13.333 : 66.133, 1);
+  ).toBeCloseTo(66.133, 1);
   expect(
     await mktgPrintComputedPx(printDocument.locator('lfx-mktg-faq-print lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell'), 'padding-bottom')
-  ).toBeCloseTo(browserName === 'webkit' ? 0 : 52.8, 1);
+  ).toBeCloseTo(52.8, 1);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
   const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');
   // This fixture's short contrast table stays whole: no one/two-row Letter tail.
@@ -255,10 +257,8 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(kitPrint.getByTestId('kit-print-type')).not.toContainText('https://');
   await expect(kitPrint.getByTestId('kit-print-voice').locator('.kit-eyebrow')).toHaveText(['Umbrella message', 'Brand line']);
   await expect(kitPrint.getByTestId('kit-print-voice').locator('.kit-voice-source')).toHaveText('From the messaging framework');
-  await expect(kitPrint.getByTestId('kit-print-watchouts').locator('ul')).toHaveCSS('column-count', '3');
-  for (const tail of ['kit-print-partnership', 'kit-print-watchouts']) {
-    await expect(kitPrint.getByTestId(tail)).toHaveCSS('break-inside', 'avoid');
-  }
+  await expect(kitPrint.getByTestId('brand-kit-watchouts-tiles').locator('.kp-watchout')).toHaveCount(6);
+  await expect(kitPrint.locator('[data-testid="lfx-mktg-portrait-page"]').first()).toHaveCSS('break-after', 'page');
   for (const frame of await kitPrint.locator('.kit-usage-frame').all()) {
     await expect(frame).toHaveCSS('position', 'relative');
     await expect(frame).toHaveCSS('overflow', 'hidden');

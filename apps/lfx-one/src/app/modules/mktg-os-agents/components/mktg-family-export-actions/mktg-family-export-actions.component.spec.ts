@@ -510,13 +510,17 @@ describe('Family export slot', () => {
     } finally {
       if (!wasPrinting) body.classList.remove(MKTG_FAMILY_PRINT_BODY_CLASS);
     }
-    expect(document.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
-    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveLength(5);
-    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print lfx-mktg-print-chapter-header')).toHaveLength(5);
+    // The kit's Logo chapter and palette are portrait frames inside the family (no cover, contents or back cover); the
+    // chapters not yet on the grammar still flow as numbered chapters.
+    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]')).toHaveLength(6);
+    expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="mktg-portrait-cover-title"]')).toBeNull();
+    expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]')?.getAttribute('data-section')).toBe('Brand kit · Logo');
+    expect(document.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(4);
+    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveLength(4);
+    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print lfx-mktg-print-chapter-header')).toHaveLength(4);
     expect(document?.querySelector('lfx-brand-kit-view')).toBeNull();
     expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project Brand kit');
     expect(Array.from(document?.querySelectorAll('lfx-mktg-brand-kit-print h2 > span') ?? []).map((span) => span.textContent?.trim())).toEqual([
-      '02.1',
       '02.2',
       '02.3',
       '02.4',
