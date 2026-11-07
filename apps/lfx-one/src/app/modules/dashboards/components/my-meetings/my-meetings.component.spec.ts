@@ -215,6 +215,28 @@ describe('MyMeetingsComponent', () => {
       expect(position()).toBe('1 of 5');
     });
 
+    it('starts again from the next meeting after the project changes', async () => {
+      await open([meetingIn('m1', 2), meetingIn('m2', 3), meetingIn('m3', 4)]);
+      await click('next');
+      expect(position()).toBe('2 of 3');
+
+      activeContext.set({ uid: 'project-2' } as ProjectContext);
+      await fixture.whenStable();
+
+      expect(position()).toBe('1 of 3');
+    });
+
+    it('starts again from the next meeting after Retry reloads the list', async () => {
+      await open([meetingIn('m1', 2), meetingIn('m2', 3), meetingIn('m3', 4)]);
+      await click('next');
+      expect(position()).toBe('2 of 3');
+
+      fixture.componentInstance['retryUpcoming']();
+      await fixture.whenStable();
+
+      expect(position()).toBe('1 of 3');
+    });
+
     it('starts again from the next meeting after the lens changes away and back', async () => {
       await open([meetingIn('m1', 2), meetingIn('m2', 3), meetingIn('m3', 4)]);
       await click('next');

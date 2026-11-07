@@ -309,6 +309,75 @@ describe('DashboardMeetingCardComponent', () => {
     });
   });
 
+  describe('when the card shows one date of a recurring meeting', () => {
+    const first: MeetingOccurrence = { occurrence_id: 'o1', title: 'Weekly', description: '', start_time: '2026-11-10T15:00:00Z', duration: 30 };
+    const later: MeetingOccurrence = { occurrence_id: 'o2', title: 'Weekly', description: '', start_time: '2026-11-17T15:00:00Z', duration: 30 };
+    const laterMs = String(new Date(later.start_time).getTime());
+    const series = (overrides: Partial<Meeting> = {}): Meeting => buildMeeting({ id: 'series-1', occurrences: [first, later], ...overrides });
+
+    it('names that date in the meeting details link', async () => {
+      await render(series(), { occurrence: later });
+
+      expect(fixture.componentInstance.meetingDetailQueryParams()).toEqual({ occurrence: laterMs });
+      expect(fixture.componentInstance.meetingDetailHref()).toBe(`/meetings/series-1?occurrence=${laterMs}`);
+    });
+
+    it('names that date in the copied link, next to the password', async () => {
+      await render(series({ password: 'pass-1' }), { occurrence: later });
+
+      expect(fixture.componentInstance.meetingDetailQueryParams()).toEqual({ password: 'pass-1', occurrence: laterMs });
+      expect(fixture.componentInstance.meetingDetailClipboardUrl()).toContain(`occurrence=${laterMs}`);
+      expect(fixture.componentInstance.meetingDetailClipboardUrl()).toContain('password=pass-1');
+    });
+
+    it('follows the date when the card moves to another one', async () => {
+      await render(series(), { occurrence: first });
+      expect(fixture.componentInstance.meetingDetailQueryParams()).toEqual({ occurrence: String(new Date(first.start_time).getTime()) });
+
+      fixture.componentRef.setInput('occurrence', later);
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.meetingDetailQueryParams()).toEqual({ occurrence: laterMs });
+    });
+
+    it('adds no date for a meeting that does not recur, or when the host passes none', async () => {
+      await render(buildMeeting({ id: 'single-1', occurrences: [] }), { occurrence: later });
+      expect(fixture.componentInstance.meetingDetailQueryParams()).toEqual({});
+
+      await render(series());
+      expect(fixture.componentInstance.meetingDetailQueryParams()).toEqual({});
+    });
+  });
+
+  describe('join link while the meeting changes', () => {
+    const soon = (): string => new Date(Date.now() + 60 * 1000).toISOString();
+
+    it("never shows the previous meeting's link while the next one loads", async () => {
+      await render(buildMeeting({ id: 'm1', start_time: soon() }), { authenticated: true });
+      const joinUrl = TestBed.inject(MeetingService).getPublicMeetingJoinUrl as unknown as ReturnType<typeof vi.fn>;
+      const user = TestBed.inject(UserService).user as unknown as WritableSignal<{ email: string } | null>;
+      joinUrl.mockReturnValueOnce(of({ link: 'https://zoom.example/j/1' }));
+
+      user.set({ email: 'viewer@example.test' });
+      await fixture.whenStable();
+      expect(fixture.componentInstance.joinUrl()).toContain('zoom.example/j/1');
+
+      const second$ = new Subject<{ link: string }>();
+      joinUrl.mockReturnValueOnce(second$);
+      fixture.componentRef.setInput('meeting', buildMeeting({ id: 'm2', start_time: soon() }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance.joinUrl()).toBeNull();
+
+      second$.next({ link: 'https://zoom.example/j/2' });
+      second$.complete();
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance.joinUrl()).toContain('zoom.example/j/2');
+    });
+  });
+
   describe('header pager', () => {
     const pager = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="dashboard-meeting-card-pager"]');
     const button = (kind: 'previous' | 'next'): HTMLButtonElement =>

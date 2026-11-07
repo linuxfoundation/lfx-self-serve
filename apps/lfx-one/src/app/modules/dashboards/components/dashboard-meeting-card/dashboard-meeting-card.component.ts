@@ -27,7 +27,7 @@ import { MeetingInviteResendService } from '@services/meeting-invite-resend.serv
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, map, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, map, of, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-dashboard-meeting-card',
@@ -122,7 +122,9 @@ export class DashboardMeetingCardComponent {
         if (authenticated && user?.email) {
           return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password, { email: user.email }).pipe(
             map((res) => buildJoinUrlWithParams(res.link, user)),
-            catchError(() => of(null))
+            catchError(() => of(null)),
+            // Clear the previous meeting's link while this one loads: the card is reused when the pager changes meeting, and Join must never open the old one.
+            startWith(null)
           );
         }
         return of(null);
@@ -303,7 +305,16 @@ export class DashboardMeetingCardComponent {
   private initMeetingDetailQueryParams(): Signal<Record<string, string>> {
     return computed((): Record<string, string> => {
       const meeting = this.meeting();
-      return meeting.password ? { password: meeting.password } : {};
+      const params: Record<string, string> = meeting.password ? { password: meeting.password } : {};
+      // A recurring meeting's page opens on its current or next date unless told which one, so name the date this card shows.
+      const occurrence = this.occurrence();
+      if (meeting.occurrences?.length && occurrence?.start_time) {
+        const startMs = new Date(occurrence.start_time).getTime();
+        if (!Number.isNaN(startMs)) {
+          params['occurrence'] = String(startMs);
+        }
+      }
+      return params;
     });
   }
 
