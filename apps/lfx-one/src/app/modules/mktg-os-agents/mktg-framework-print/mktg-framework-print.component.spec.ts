@@ -28,8 +28,10 @@ import {
   frameworkPortraitPlan,
   frameworkPortraitStatementWidth,
   frameworkPortraitTaglineSize,
+  mktgPortraitAccentOnDark,
   mktgPortraitCharsPerLine,
   mktgPortraitParaHeight,
+  mktgPrintBrand,
 } from '@lfx-one/shared/utils';
 import { brandKitLogolessFixture, brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -1146,6 +1148,29 @@ describe('MktgFrameworkPrintComponent', () => {
     fixture.componentRef.setInput('look', null);
     await setView(printView(null));
     expect(framework?.style.getPropertyValue('--pp-dark')).toBe(MKTG_PRINT_LF_LOOK.dark);
+  });
+
+  it('prints the cover in the project’s Brand Kit when the view carries one: the kit’s lockup, its dark band, its accent (editor C1)', async () => {
+    // The kit's primary is the fixture's multi-colour lockup with no reversed file: on the dark band it is drawn as it is (never
+    // flattened to white, K's rule), the band is the kit's dark, the eyebrow and the goal labels read the grammar's accent on
+    // that dark (the accent where it reaches AA there, else the ink), never the LF look's.
+    const kit = brandKitTestRevision();
+    const brand = mktgPrintBrand(kit);
+    await configure('browser', printView(kit));
+    const logo = query('mktg-framework-print-cover-logo');
+    expect(brand.logoOnDark).not.toBeNull();
+    expect([logo?.getAttribute('src'), logo?.getAttribute('alt'), logo?.style.filter]).toEqual([brand.logoOnDark?.src, 'TestOrbit logo', '']);
+    expect(logo?.getAttribute('src')).not.toBe('/images/logo_lf_white.svg');
+    expect(logo?.getAttribute('src')?.startsWith('data:image/svg+xml')).toBe(true);
+    const cover = frame('cover');
+    expect(cover?.style.getPropertyValue('--pp-dark')).toBe(kit.kit.dark);
+    expect(cover?.style.getPropertyValue('--pp-accent')).toBe(kit.kit.accent);
+    expect(cover?.style.getPropertyValue('--pp-accent-on-dark')).toBe(
+      mktgPortraitAccentOnDark({ accent: kit.kit.accent, dark: kit.kit.dark, onDark: brand.onDark })
+    );
+    expect(cover?.style.getPropertyValue('--pp-dark')).not.toBe(MKTG_PRINT_LF_LOOK.dark);
+    expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('kit');
+    expect(query('mktg-framework-print-tagline')?.classList.contains('fwp-cover-eyebrow')).toBe(true);
   });
 
   it('skips the cover’s logo block on a kit with no drawable artwork, and keeps the rest of the cover', async () => {
