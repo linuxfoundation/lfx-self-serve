@@ -224,7 +224,7 @@ export class MktgFrameworkPrintComponent {
     const right = mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel], FRAMEWORK_PORTRAIT_SEP);
     const strip = mktgPortraitCoverStrip(this.resolvedBook().footLeft, right, MKTG_PORTRAIT_PAGE.contentWidth, this.resolvedLook().fontStack);
     const left = mktgPrintJoin(strip.left.split(MKTG_PORTRAIT_COVER_STRIP.separator), FRAMEWORK_PORTRAIT_SEP);
-    return { ...strip, left, top: TOPS.coverStrip - (strip.wraps ? MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight : 0) };
+    return { ...strip, left, top: this.tops.coverStrip - (strip.wraps ? MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight : 0) };
   });
   /** The cover's umbrella, fitted to the dark band's room under the lockup and the tagline. */
   protected readonly coverUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.coverUmbrella, ROOM.coverUmbrellaWidth, ROOM.coverUmbrellaRoom));

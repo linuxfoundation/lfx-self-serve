@@ -469,7 +469,9 @@ describe('MktgFrameworkPrintComponent', () => {
     // One profile: the page has room for the goals × profiles matrix, one row per profile, a dot where the goal is written for it.
     await setView(buildFoundationMessagePrintView({ ...CONTENT, icp: [CONTENT.icp[0]] }, 'TestOrbit', 2, null));
     // One profile: the intro in the singular (editor S-c).
-    expect(query('.fwp-intro-icps', true)?.textContent).toContain('1 profile. It names who they are, what they need, what TestOrbit gives them,');
+    expect(frame('icps-1')?.querySelector('.fwp-intro-icps')?.textContent).toContain(
+      '1 profile. It names who they are, what they need, what TestOrbit gives them,'
+    );
     const matrix = query('mktg-framework-print-matrix');
     expect(Array.from(matrix?.querySelectorAll('th') ?? []).map((cell) => text(cell))).toEqual(['Profile', 'Goal 1 Adoption']);
     expect(matrix?.querySelector('.fwp-grid-name')?.textContent?.trim()).toBe('End users');
