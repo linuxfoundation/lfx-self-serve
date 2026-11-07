@@ -33,15 +33,19 @@
             <p-skeleton width="100%" height="1.75rem" borderRadius="8px" />
           </div>
         </div>
-      } @else if (nextMeeting(); as item) {
+      } @else if (shownUpcoming(); as item) {
         <lfx-dashboard-meeting-card
           class="block flex-1"
           [meeting]="item.meeting"
           [occurrence]="item.occurrence"
-          cardLabel="NEXT MEETING"
+          [cardLabel]="upcomingLabel()"
           cardVariant="accent"
           viewAllRouterLink="/meetings"
-          [overlappingCount]="overlappingNextCount()" />
+          [overlappingCount]="overlappingNextCount()"
+          [pagerIndex]="upcomingPosition()"
+          [pagerTotal]="upcomingWindow().length"
+          (pagerPrevious)="showPreviousUpcoming()"
+          (pagerNext)="showNextUpcoming()" />
       } @else if (upcomingError()) {
         <div
           class="bg-gradient-to-b from-blue-50 to-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden flex-1 flex flex-col items-center justify-center gap-2 px-5 py-10"

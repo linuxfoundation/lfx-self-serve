@@ -1177,3 +1177,9 @@ export const MEETING_DURATION_OPTIONS = [
 
 /** How often the meeting page re-reads the wall clock so time-gated UI (join window, ended) updates without a reload. */
 export const MEETING_CLOCK_TICK_MS = 5_000;
+
+/**
+ * How many upcoming meetings the dashboard meetings card lets a user page through, starting from the
+ * meeting it opens on. Fixed rather than a setting so there is nothing to store per user.
+ */
+export const DASHBOARD_UPCOMING_MEETINGS_PAGE_LIMIT = 5;
