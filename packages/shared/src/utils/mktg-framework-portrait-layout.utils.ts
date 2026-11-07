@@ -311,9 +311,10 @@ export function frameworkPortraitMatrixColumns(goals: readonly Pick<FoundationMe
  * fit model (smaller first, then cut at a sentence) into the rows' share of the room that stays. In bands (the
  * editor's W1, 7 Nov 2026: a one-line cut loses its meaning): the value proposition and the key message at their type,
  * clamped to `ROOM.matrixBandLines` lines and cut at a word past them; the sound bites WHOLE, or, where the bands then
- * cannot hold the proofs their least, the sound-bite row dropped from every band, then the value-proposition row,
- * each drop said in one caption line under the bands (`FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES`), so the matrix stays
- * one page; the key message and the proofs always print. Then each goal's proof cell a cut list in the room the
+ * cannot hold the proofs at the tight type (every goal's first proof whole at `TYPE.matrixProofTight` beside its
+ * note: a band never sets its proofs under the tight type to keep a row), the sound-bite row dropped from every band,
+ * then the value-proposition row, each drop said in one caption line under the bands
+ * (`FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES`), so the matrix stays one page; the key message and the proofs always print. Then each goal's proof cell a cut list in the room the
  * fitted rows leave (tightened first, then whole rows with the muted line). A proof cell never holds only the note
  * (the editor's rule): the proofs row is floored at every goal's first proof (at the fit model's floor) with the note
  * counting the rest, and a cell whose rows would all be cut keeps its first proof, set smaller in the fit model's
@@ -344,8 +345,8 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
   const frames = bands.map((band) =>
     frameworkPortraitMatrixBandFrame(goals.slice(band.offset, band.offset + band.count), titles.slice(band.offset, band.offset + band.count), column, banded)
   );
-  // The rows the bands print (the editor's W1): every row where the bites print whole beside the proofs' least; else the sound-bite row
-  // dropped, then the value row too, each drop one caption line under the bands; a strip prints every row.
+  // The rows the bands print (the editor's W1): every row where the bites print whole beside the proofs at the tight type; else the
+  // sound-bite row dropped, then the value row too, each drop one caption line under the bands; a strip prints every row.
   const noteLine = frameworkPortraitCutNoteHeight();
   const levels: Pick<FoundationMessagePrintMatrix, 'rows' | 'notes'>[] = banded
     ? [
@@ -407,7 +408,8 @@ interface FrameworkPortraitMatrixRowHeights {
  * One band of the goal matrix before its room is known (`frameworkPortraitMatrix`): its goals, its measures, its head row's
  * height, the proofs row's least (every goal's first proof at the fit model's floor beside its note, never only the note),
  * its text cells as the shape sets them (in bands clamped to `ROOM.matrixBandLines` lines at their type, the bites whole; in a
- * strip at their type, to be fitted into the room that stays), and what the band needs at least to print a set of rows.
+ * strip at their type, to be fitted into the room that stays), and what the band needs to print a set of rows with its proofs
+ * at the tight type (every goal's first proof whole at `TYPE.matrixProofTight` beside its note).
  */
 interface FrameworkPortraitMatrixBandFrame {
   goals: readonly FoundationMessagePrintGoal[];
@@ -420,7 +422,7 @@ interface FrameworkPortraitMatrixBandFrame {
   measure: (cells: readonly FoundationMessagePrintMatrixCell[], printed: FoundationMessagePrintMatrixRows) => FrameworkPortraitMatrixRowHeights;
   proofRow: (proof: FoundationMessagePrintGoalProof, type: FoundationMessagePrintType) => number;
   noteIn: (cut: number) => number;
-  /** The least height the band takes printing `printed` rows: its head, those rows as set, and the proofs' least. */
+  /** The height the band takes printing `printed` rows with its proofs at the tight type: its head, those rows as set, and the proofs row at every goal's first proof whole at `TYPE.matrixProofTight` beside its note (the editor's W1 d: a band drops a row before it sets its proofs smaller). */
   least: (printed: FoundationMessagePrintMatrixRows) => number;
 }
 
@@ -470,9 +472,13 @@ function frameworkPortraitMatrixBandFrame(
     key: clamp(goal.key, TYPE.matrixKey),
     bite: goal.bite ? { text: goal.bite, size: TYPE.matrixBite.size } : null,
   }));
+  // A band holds a set of rows when its proofs stay at the tight type beside them: the first proof whole, its note under it.
+  const proofsTight =
+    ROOM.matrixRow +
+    tallest(goals.map((goal) => (goal.proofRows.length ? proofRow(goal.proofRows[0], TYPE.matrixProofTight) + noteIn(goal.proofRows.length - 1) : 0)));
   const least = (printed: FoundationMessagePrintMatrixRows): number => {
     const rows = measure(cells, printed);
-    return head + rows.value + rows.key + rows.bite + proofsLeast;
+    return head + rows.value + rows.key + rows.bite + proofsTight;
   };
   return { goals, titles, column, banded, head, proofsLeast, cells, measure, proofRow, noteIn, least };
 }

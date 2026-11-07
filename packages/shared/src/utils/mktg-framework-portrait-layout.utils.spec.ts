@@ -1008,16 +1008,21 @@ describe('the framework portrait book’s goal matrix in bands (editor W1)', () 
   });
 
   it('prints the sound bites whole where the bands hold them, else drops the row from every band and says so once under them (W1 c)', () => {
+    // On the page (the overfull record at the matrix's room) the bands cannot hold the bites whole beside the proofs at the tight
+    // type, but they hold the value row: the sound-bite row goes with its one note, the value proposition, the key message and the
+    // proofs stay, the proofs never under 10.5 px (the one-line cut note, MKTG_PRINT_CUT_NOTE, is what leaves the value row its room).
     const matrix = frameworkPortraitMatrix(goals(overfull), crosscut, room);
-    if (matrix.rows.bite) {
-      expect(matrix.notes).toEqual([]);
-      for (const [index, cell] of matrix.cells.entries()) expect(cell.bite).toEqual({ text: overfull[index][3], size: type.matrixBite.size });
-    } else {
-      expect(matrix.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites]);
-      expect(matrix.rows.value).toBe(true);
+    expect(matrix.rows).toEqual({ value: true, bite: false });
+    expect(matrix.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites]);
+    expect(matrix.height).toBeLessThanOrEqual(room);
+    for (const cell of matrix.proofs) {
+      expect(cell.rows.length).toBeGreaterThan(0);
+      expect(cell.tight).toBe(true);
+      for (const row of cell.rows) expect(row.size ?? type.matrixProofTight.size).toBeGreaterThanOrEqual(type.matrixProofTight.size);
     }
     // Whole bites are never cut in a band: as the room closes, the bites print whole at their type until the bands cannot hold them
-    // beside the proofs' least; then the row is dropped from both bands with its one note, the key message and the proofs staying.
+    // beside the proofs at the tight type; then the row is dropped from both bands with its one note, the key message and the proofs
+    // staying, still at the tight type or above (a band drops a row before it sets its proofs smaller, W1 d).
     const whole = frameworkPortraitMatrix(goals(overfull), '', 2000);
     expect(whole.rows).toEqual({ value: true, bite: true });
     expect(whole.notes).toEqual([]);
@@ -1032,7 +1037,10 @@ describe('the framework portrait book’s goal matrix in bands (editor W1)', () 
     expect(dropped.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites]);
     expect(dropped.height).toBeLessThanOrEqual(at);
     expect(dropped.cells.map((cell) => cell.key.size)).toEqual(Array.from({ length: 8 }, () => type.matrixKey.size));
-    for (const cell of dropped.proofs) expect(cell.rows.length).toBeGreaterThan(0);
+    for (const cell of dropped.proofs) {
+      expect(cell.rows.length).toBeGreaterThan(0);
+      for (const row of cell.rows) expect(row.size ?? type.matrixProofTight.size).toBeGreaterThanOrEqual(type.matrixProofTight.size);
+    }
   });
 
   it('drops the value proposition row after the sound bites, with its own note, when the bands still do not fit; the key message and the proofs always print (W1 d)', () => {
@@ -1162,6 +1170,8 @@ describe('the framework portrait book’s goal matrix proof row (editor W4)', ()
     for (const band of matrix.bands) {
       const cells = matrix.proofs.slice(band.offset, band.offset + band.count);
       expect(new Set(cells.map(sizeOf)).size).toBe(1);
+      // The bands dropped their rows before setting the proofs smaller (W1 d): the one size is the tight type's or above.
+      expect(sizeOf(cells[0])).toBeGreaterThanOrEqual(tight);
       for (const cell of cells) {
         expect(cell.rows.length).toBeGreaterThan(0);
         expect(cell.rows.length + cell.cut).toBe(4);
