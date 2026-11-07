@@ -204,6 +204,22 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(root?.querySelectorAll('[data-testid="mktg-print-sheet-head"]')).toHaveLength(3);
   });
 
+  it('plates the cover lockup when the brand says so, and draws a supplied reversed file bare', async () => {
+    // The fixture's lockup has three colours and no reversed file: `mktgPrintBrand` flags the plate, and the cover draws
+    // it: the white ground around the lockup, padded by half the lockup's 57.6 px (0.6 in), its corners a sixth of its
+    // shorter side. With a reversed file supplied, no plate.
+    await configure('browser', printView(brandKitTestRevision()));
+    const plate = host().querySelector<HTMLElement>('[data-testid="mktg-portrait-plate"]');
+    expect(plate?.querySelector('[data-testid="mktg-framework-print-cover-logo"]')).toBeTruthy();
+    expect(parseFloat(plate?.style.padding ?? '')).toBeCloseTo(28.8, 6);
+    expect(parseFloat(plate?.style.borderRadius ?? '')).toBeCloseTo((57.6 + 2 * 28.8) / 6, 3);
+    const kit = brandKitTestRevision();
+    const files = { ...kit.chapters.logo.files, reversed: { ref: 'reversed.svg', svg: kit.chapters.logo.files.primary?.svg ?? '' } };
+    await setView(printView({ ...kit, chapters: { ...kit.chapters, logo: { ...kit.chapters.logo, files } } }));
+    expect(query('mktg-portrait-plate')).toBeNull();
+    expect(query('mktg-framework-print-cover-logo')).toBeTruthy();
+  });
+
   it('sets its body text in the brand’s ink, not its dark: a kit whose "dark" is white still prints readable text', async () => {
     const kit = brandKitTestRevision();
     const pale: BrandKitRevision = { ...kit, kit: { ...kit.kit, dark: '#FFFFFF' } };

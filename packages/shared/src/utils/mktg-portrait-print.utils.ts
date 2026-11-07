@@ -106,6 +106,16 @@ export function mktgPortraitPlateFitIn(box: number, innerWidth: number | null, a
 }
 
 /**
+ * A bare (unplated) mark fitted to a box of `box` px tall and, when its
+ * aspect is known, inside `innerWidth` px: the drawn height, `box` for a
+ * square-ish mark, less for a wide one so it sits inside the shape's inner
+ * box instead of running close to its edge.
+ */
+export function mktgPortraitMarkFitIn(box: number, innerWidth: number | null, aspect: number | null): number {
+  return innerWidth !== null && aspect !== null && aspect > 0 ? Math.min(box, innerWidth / aspect) : box;
+}
+
+/**
  * The width a plate may take inside a shape of `side` px: a circle's
  * inscribed square (`side / √2`), a rounded square's side less its clear
  * inset on both sides (`MKTG_PORTRAIT_PLATE.shapeInsetOfSide`).

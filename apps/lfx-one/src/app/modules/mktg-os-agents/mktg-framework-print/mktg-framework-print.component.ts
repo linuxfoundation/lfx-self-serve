@@ -5,12 +5,14 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, input } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FoundationMessagePrintView } from '@lfx-one/shared/interfaces';
+import { mktgPortraitPlatePadding } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { distinctUntilChanged, filter } from 'rxjs';
 import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 import { MktgPrintChapterHeaderComponent } from '../components/mktg-print-chapter-header/mktg-print-chapter-header.component';
 import { MktgPrintSheetComponent } from '../components/mktg-print-sheet/mktg-print-sheet.component';
 import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/mktg-print-sheet-row.component';
+import { MktgPortraitPlateDirective } from '../components/mktg-portrait/mktg-portrait-plate.directive';
 
 // The Messaging Framework's PRINT rendering (Download PDF): the framework
 // view's tabs as one document on portrait pages of the paper the print
@@ -26,11 +28,20 @@ import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/m
 // kit book's sheet and the one pager's letter page.
 @Component({
   selector: 'lfx-mktg-framework-print',
-  imports: [NgTemplateOutlet, MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent, MktgPrintSheetComponent, MktgPrintSheetRowComponent],
+  imports: [
+    NgTemplateOutlet,
+    MktgPrintRunningHeadComponent,
+    MktgPrintChapterHeaderComponent,
+    MktgPrintSheetComponent,
+    MktgPrintSheetRowComponent,
+    MktgPortraitPlateDirective,
+  ],
   templateUrl: './mktg-framework-print.component.html',
   styleUrl: './mktg-framework-print.component.scss',
 })
 export class MktgFrameworkPrintComponent {
+  /** The cover lockup is drawn 0.6 in tall (57.6 px); plated, the plate's outer height is the lockup plus half its height each side. */
+  protected readonly coverLogoPlateHeight = 0.6 * 96 + 2 * mktgPortraitPlatePadding(0.6 * 96);
   // === Injections ===
   private readonly printService = inject(MktgPrintService);
 

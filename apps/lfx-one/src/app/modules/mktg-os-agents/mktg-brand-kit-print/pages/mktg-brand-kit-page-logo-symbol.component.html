@@ -62,6 +62,9 @@
           </div>
         }
       </div>
+      @if (wide()) {
+        <div class="pp-cap" data-testid="brand-kit-symbol-wide-note">{{ wideNote }}</div>
+      }
     </div>
     <div class="kp-padding-row" [lfxPpRect]="[x, 720, w]">
       <div class="kp-padding-demo" data-testid="brand-kit-symbol-padding">
