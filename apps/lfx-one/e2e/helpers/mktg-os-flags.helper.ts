@@ -9,7 +9,7 @@
  * targeted for.
  */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MKTG_OS_AGENTS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MKTG_OS_AGENTS_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Page } from '@playwright/test';
 
 /** What a Marketing OS page runs under unless a spec says otherwise: the module on. */

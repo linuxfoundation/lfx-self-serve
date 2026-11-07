@@ -164,7 +164,6 @@ Create for an existing deck, shows progress and a dated revision-linked last exp
 and marks changed approved member sets stale. Families without an export target render only
 the export title and one unsupported line: no PDF/Slides buttons, Positioning PDF note or
 Drive note. Supported families keep both export buttons outlined, with reasons in words rather than repeated hover tooltips: **Available once the framework is approved: PDF and Slides use the approved current.**
-Download PDF and its PDF note are always offered beside Export to Google Slides, and the card always prepares its PDF once the approval read allows it.
 Readers see disabled supported actions and the write-access note. A failed last-export lookup blocks creation until retried rather
 than guessing that no deck exists. Lookup starts independently of document-list loading;
 the slot stays available after a listing error/403. Browser family and document clients
