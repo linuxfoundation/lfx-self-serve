@@ -4,18 +4,36 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, input } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { BrandKitBookView, MktgPrintBrand } from '@lfx-one/shared/interfaces';
+import { BRAND_KIT_PORTRAIT_COVER_PURPOSE, BRAND_KIT_PORTRAIT_COVER_TITLE } from '@lfx-one/shared/constants';
+import { BrandKitBookView, MktgPortraitBook, MktgPrintBrand } from '@lfx-one/shared/interfaces';
 import { MktgPrintService } from '@services/mktg-print.service';
-import { brandKitInkOnAccent, brandKitIsLight, brandKitLabelInk } from '@lfx-one/shared/utils';
+import {
+  brandKitInkOnAccent,
+  brandKitIsLight,
+  brandKitLabelInk,
+  brandKitPortraitPlan,
+  mktgPortraitDocumentName,
+  mktgPortraitFootLeft,
+  mktgPortraitLook,
+  mktgPortraitOpensChapter,
+  mktgPortraitSectionLabel,
+} from '@lfx-one/shared/utils';
 import { distinctUntilChanged, filter } from 'rxjs';
 import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 import { MktgPrintChapterHeaderComponent } from '../components/mktg-print-chapter-header/mktg-print-chapter-header.component';
 import { MktgBrandKitIconSamplesComponent } from '../components/mktg-brand-kit-icon-samples/mktg-brand-kit-icon-samples.component';
+import { MktgPortraitCoverComponent } from '../components/mktg-portrait/mktg-portrait-cover/mktg-portrait-cover.component';
 
-/** Native portrait text, shared by family and standalone PDFs; never a scaled book plate. */
+/**
+ * The kit's portrait book, one fixed US Letter frame per page on the portrait
+ * print grammar (`lfx-mktg-portrait-*`), shared by the standalone Download
+ * PDF and the family export; never a scaled book plate. The cover is on the
+ * grammar; the chapters that follow are the earlier flowing pages until each
+ * is a frame.
+ */
 @Component({
   selector: 'lfx-mktg-brand-kit-print',
-  imports: [NgTemplateOutlet, MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent, MktgBrandKitIconSamplesComponent],
+  imports: [NgTemplateOutlet, MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent, MktgBrandKitIconSamplesComponent, MktgPortraitCoverComponent],
   templateUrl: './mktg-brand-kit-print.component.html',
   styleUrls: ['../mktg-framework-print/mktg-framework-print.component.scss', './mktg-brand-kit-print.component.scss'],
 })
@@ -28,7 +46,45 @@ export class MktgBrandKitPrintComponent {
   public readonly projectName = input.required<string>();
   /** Only the family exporter supplies the document prefix. */
   public readonly number = input('');
+  /**
+   * The book the pages are set in: `null` standalone (the kit derives its
+   * document name and footer, numbers from 1, the band on, its own cover,
+   * contents and back cover); the family's book inside the family export.
+   */
+  public readonly book = input<MktgPortraitBook | null>(null);
   protected readonly head = computed(() => `${this.projectName()} Brand kit`);
+  /** The document's look: the kit's dark, accent and spark, the ink on the accent by the shared rule, the typeface. */
+  protected readonly look = computed(() => mktgPortraitLook(this.brand(), this.view().spark));
+  protected readonly resolvedBook = computed(
+    (): MktgPortraitBook =>
+      this.book() ?? {
+        inFamily: false,
+        headRight: mktgPortraitDocumentName(this.projectName(), 'brand kit'),
+        footLeft: mktgPortraitFootLeft(this.projectName()),
+        firstPage: 1,
+      }
+  );
+  /** The pages, in the mock's order, each with its book page number, printed section label and band. */
+  protected readonly pages = computed(() => {
+    const book = this.resolvedBook();
+    const plan = brandKitPortraitPlan(this.view(), { inFamily: book.inFamily });
+    return plan.map((page, index) => ({
+      ...page,
+      number: book.firstPage + index,
+      label: mktgPortraitSectionLabel(page.section, book.inFamily),
+      band: !book.inFamily && mktgPortraitOpensChapter(plan, index),
+    }));
+  });
+  protected readonly coverTitle = BRAND_KIT_PORTRAIT_COVER_TITLE;
+  /** The brand line as a sentence, then the cover's purpose. */
+  protected readonly coverLede = computed(() => {
+    const line = this.view().voice.line.trim().replace(/\.?$/, '.');
+    return line === '.' ? BRAND_KIT_PORTRAIT_COVER_PURPOSE : `${line} ${BRAND_KIT_PORTRAIT_COVER_PURPOSE}`;
+  });
+  /** `aaif.io · V4.0 · November 2026`, less any part the kit lacks. */
+  protected readonly coverStripRight = computed(() =>
+    [this.view().host, this.view().versionLabel, this.view().monthYear].filter((part) => part !== '').join(' · ')
+  );
   protected readonly typeNote = computed(() => {
     const { summary, note } = this.view().type;
     const normalize = (text: string) =>

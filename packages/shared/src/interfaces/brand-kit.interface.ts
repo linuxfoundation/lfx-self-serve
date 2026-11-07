@@ -755,9 +755,10 @@ export interface BrandKitBookView {
   runningHead: string;
   /** The footer of every chapter page: `Jupyter Foundation · a Linux Foundation project`. */
   footer: string;
-  /** The primary dark, the accent, the light tint and the light gray (or the tint again), as CSS colours. */
+  /** The primary dark, the accent, the spark (the kit's secondary accent), the light tint and the light gray (or the tint again), as CSS colours. */
   dark: string;
   accent: string;
+  spark: string;
   tint: string;
   lightGray: string;
   /** The names the kit gives the dark and the accent, for the colorway captions and the prose. */

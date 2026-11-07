@@ -1,0 +1,23 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-mktg-portrait-page [look]="look()" [book]="book()" pageId="back-cover" [page]="page()" section="Back cover" [dark]="true" [bare]="true">
+  @if (logo(); as logo) {
+    <div class="pp-back-lockup" [lfxPpRect]="lockupRect()">
+      <img class="h-[72px] w-auto" [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" data-testid="mktg-portrait-back-cover-logo" />
+    </div>
+  }
+  <div [lfxPpRect]="lineRect()">
+    @if (line()) {
+      <p class="pp-back-line" data-testid="mktg-portrait-back-cover-line">{{ line() }}</p>
+    }
+    @if (url()) {
+      <p class="pp-back-url" data-testid="mktg-portrait-back-cover-url">{{ url() }}</p>
+    }
+  </div>
+  @if (notice()) {
+    <div [lfxPpRect]="noticeRect()">
+      <p class="pp-back-notice" data-testid="mktg-portrait-back-cover-notice">{{ notice() }}</p>
+    </div>
+  }
+</lfx-mktg-portrait-page>

@@ -268,6 +268,7 @@ export * from './mktg-document-comments.interface';
 export * from './mktg-document-redraft.interface';
 export * from './mktg-document-run.interface';
 export * from './mktg-print.interface';
+export * from './mktg-portrait-print.interface';
 export * from './mktg-run.interface';
 export * from './mktg-slides-export.interface';
 

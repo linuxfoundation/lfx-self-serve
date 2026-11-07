@@ -1,0 +1,26 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-mktg-portrait-page [look]="look()" [book]="book()" [pageId]="pageId()" [page]="page()" [section]="section()" [dark]="true" [bare]="true">
+  <div [lfxPpRect]="numberRect()">
+    <div class="pp-opener-number" data-testid="mktg-portrait-opener-number">{{ number() }}</div>
+  </div>
+  <div [lfxPpRect]="titleRect()">
+    <h1 class="pp-opener-title" data-testid="mktg-portrait-opener-title">{{ title() }}</h1>
+    @if (purpose()) {
+      <p class="pp-opener-purpose" data-testid="mktg-portrait-opener-purpose">{{ purpose() }}</p>
+    }
+  </div>
+  @if (meta().length) {
+    <div [lfxPpRect]="metaRect()">
+      <dl class="pp-opener-meta" data-testid="mktg-portrait-opener-meta">
+        @for (cell of meta(); track cell.label) {
+          <div>
+            <dt class="pp-lab pp-lab--accent">{{ cell.label }}</dt>
+            <dd class="pp-opener-meta-value m-0">{{ cell.value }}</dd>
+          </div>
+        }
+      </dl>
+    </div>
+  }
+</lfx-mktg-portrait-page>
