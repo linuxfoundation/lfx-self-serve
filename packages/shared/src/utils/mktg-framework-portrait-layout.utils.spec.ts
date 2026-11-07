@@ -1542,6 +1542,24 @@ describe('the framework portrait book’s goal matrix head row (editor FA1)', ()
     expect(kept.height).toBeGreaterThan(dropped.height);
   });
 
+  it('never prints a band’s first proof cut at a word: where a cell’s room falls short of its whole first proof the ladder steps on (fold, then drop) instead of the strip’s text cut', () => {
+    // The long names in the record's face: a level whose bands' room would hold the proof row only by cutting first proofs at a word
+    // (the fit model's cut, which a strip may take) is not a fit for a band, so the ladder steps on and every kept first proof is the
+    // record's, whole, at the tight type: on this shape the cells' lines fold into the caption.
+    const named = goals(overfull).map((goal, index) => ({ ...goal, t: longTitles[index] }));
+    const face = "'Instrument Sans', sans-serif";
+    const folded = frameworkPortraitMatrix(named, crosscut, room, face);
+    expect(folded.rows).toEqual({ value: false, bite: false, proof: true });
+    expect(folded.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold]);
+    expect(folded.proofs.map((cell) => cell.rows[0].fact)).toEqual(named.map((goal) => goal.proofRows[0].fact));
+    expect(folded.proofs.some((cell) => cell.rows[0].fact.endsWith('…'))).toBe(false);
+    // Every level the ladder lays on this shape, at any room from under the drop to twice the page: no kept first proof is ever cut.
+    for (const at of [room - 40, room - 20, room - 8, room, room + 8, room + 20, room + 60, room * 2]) {
+      const matrix = frameworkPortraitMatrix(named, crosscut, at, face);
+      for (const [index, cell] of matrix.proofs.entries()) if (cell.rows.length > 0) expect(cell.rows[0].fact).toBe(named[index].proofRows[0].fact);
+    }
+  });
+
   it('drops a strip’s proofs alone, with its own note, when they would print below the tight floor; the small shapes keep every row (the floor holds everywhere)', () => {
     // Six of the overfull record's goals are a strip (their one-word titles fit six columns): the fitted value, key and sound-bite rows
     // leave the proofs only the fallback's 8.8 px, below the floor, so the proof row goes to the goal pages and the note says so; the

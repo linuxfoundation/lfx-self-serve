@@ -456,9 +456,14 @@ export function frameworkPortraitMatrix(
     });
     return { cells, proofs, bands, height, rows: level.rows, notes: level.notes };
   };
+  // A band's kept first proof is the record's, whole: a cell whose room fell short of it, cut at a word (the strip's fit model), is
+  // not a fit, the ladder's next step is (fold, then drop); a cell's fact is never cut in a band.
+  const whole = (matrix: FoundationMessagePrintMatrix): boolean =>
+    !banded || goals.every((goal, index) => matrix.proofs[index].rows.length === 0 || matrix.proofs[index].rows[0].fact === goal.proofRows[0].fact);
   const fits = (matrix: FoundationMessagePrintMatrix): boolean =>
     matrix.height <= laid + 0.01 &&
     (!matrix.rows.proof || goals.every((goal, index) => goal.proofRows.length === 0 || matrix.proofs[index].rows.length > 0)) &&
+    whole(matrix) &&
     bands.every((band) => frameworkPortraitMatrixProofRowSize(matrix.proofs.slice(band.offset, band.offset + band.count)) >= TYPE.matrixProofTight.size);
   let matrix = lay(ladder[0]);
   for (let step = 1; step < ladder.length && !fits(matrix); step += 1) matrix = lay(ladder[step]);
