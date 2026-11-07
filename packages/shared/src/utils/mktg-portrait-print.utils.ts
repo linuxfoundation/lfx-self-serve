@@ -90,6 +90,41 @@ export function mktgPortraitPlateFit(box: number): { height: number; padding: nu
 }
 
 /**
+ * Plated artwork fitted to a box of `box` px tall AND inside `innerWidth` px
+ * when the artwork's aspect (width over height) is known: the plate is
+ * `(aspect + 1) × h` wide and `2h` tall, so a wide mark (a lockup drawn as
+ * the symbol) is sized down until its plate sits inside the shape instead
+ * of running out of it as a band; a square-ish mark comes out as
+ * `mktgPortraitPlateFit(box)`. `plate` is the plate's outer height.
+ */
+export function mktgPortraitPlateFitIn(box: number, innerWidth: number | null, aspect: number | null): { height: number; padding: number; plate: number } {
+  const byHeight = mktgPortraitPlateFit(box).height;
+  const byWidth = innerWidth !== null && aspect !== null && aspect > 0 ? innerWidth / (aspect + 2 * MKTG_PORTRAIT_PLATE.paddingOfHeight) : byHeight;
+  const height = Math.min(byHeight, byWidth);
+  const padding = mktgPortraitPlatePadding(height);
+  return { height, padding, plate: height + 2 * padding };
+}
+
+/**
+ * A bare (unplated) mark fitted to a box of `box` px tall and, when its
+ * aspect is known, inside `innerWidth` px: the drawn height, `box` for a
+ * square-ish mark, less for a wide one so it sits inside the shape's inner
+ * box instead of running close to its edge.
+ */
+export function mktgPortraitMarkFitIn(box: number, innerWidth: number | null, aspect: number | null): number {
+  return innerWidth !== null && aspect !== null && aspect > 0 ? Math.min(box, innerWidth / aspect) : box;
+}
+
+/**
+ * The width a plate may take inside a shape of `side` px: a circle's
+ * inscribed square (`side / √2`), a rounded square's side less its clear
+ * inset on both sides (`MKTG_PORTRAIT_PLATE.shapeInsetOfSide`).
+ */
+export function mktgPortraitShapeInnerWidth(side: number, shape: 'circle' | 'square'): number {
+  return shape === 'circle' ? side / Math.SQRT2 : side * (1 - 2 * MKTG_PORTRAIT_PLATE.shapeInsetOfSide);
+}
+
+/**
  * The plate's corner radius for its outer box of `width` × `height` px: a
  * sixth of the shorter side (`MKTG_PORTRAIT_PLATE.radiusOfShortSide`), as a
  * slide's rounded rectangle draws it. A plate wider than tall takes its
@@ -371,7 +406,12 @@ export function mktgPortraitTrimTail(text: string): string {
  * paragraph is cut at a sentence (then at a word) until it does. The result
  * says what happened, so a page can show the cut.
  */
-export function mktgPortraitFitBlock(block: MktgPortraitFitBlock, width: number, height: number, minScale = MKTG_PORTRAIT_FIT.minScale): MktgPortraitFitResult {
+export function mktgPortraitFitBlock(
+  block: MktgPortraitFitBlock,
+  width: number,
+  height: number,
+  minScale: number = MKTG_PORTRAIT_FIT.minScale
+): MktgPortraitFitResult {
   // Each step is measured at the scale the page will print (two decimals, the grammar's --kp-fit), not the loop's
   // floating value: 0.8399… floors a 12.5 px line to 10 px where 0.84 prints 10.5.
   for (let step = 0; ; step += 1) {

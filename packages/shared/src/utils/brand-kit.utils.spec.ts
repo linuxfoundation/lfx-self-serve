@@ -33,11 +33,14 @@ import {
   brandKitFontStack,
   brandKitGoogleFontsUrl,
   brandKitLogoFileKind,
+  brandKitLogoImage,
   brandKitQuestionsId,
   brandKitRevisionOf,
   brandKitSvgDataUrl,
   brandKitSvgIsMonochrome,
   brandKitSvgWithViewBox,
+  brandKitSvgAspect,
+  brandKitSvgViewBox,
   brandKitSymbolImage,
   brandKitVoiceOfFramework,
   brandKitWebsiteHost,
@@ -1035,6 +1038,15 @@ describe('the book', () => {
     const symbol = brandKitSymbolImage({ primary: { ref: 'logo.svg', svg: SVG }, stacked: null, symbol: null, reversed: null }, '0 0 60 60');
     expect(symbol?.ref).toBe('logo.svg');
     expect(symbol?.src).toContain(encodeURIComponent('viewBox="0 0 60 60"'));
+    // The crop's aspect is the viewBox's; a file's is its root viewBox's; a PNG's or a viewBox-less SVG's is unknown.
+    expect(symbol?.aspect).toBe(1);
+    expect(brandKitLogoImage({ ref: 'logo.svg', svg: SVG })?.aspect).toBe(200 / 60);
+    expect(brandKitLogoImage({ ref: 'logo.png', svg: null })?.aspect).toBeNull();
+    expect(brandKitLogoImage({ ref: 'bare.svg', svg: '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h1"/></svg>' })?.aspect).toBeNull();
+    expect(brandKitSvgViewBox('<svg viewBox=" 0,0 120 , 36 "/>')).toEqual({ width: 120, height: 36 });
+    expect(brandKitSvgViewBox('<svg viewBox="0 0 0 36"/>')).toBeNull();
+    expect(brandKitSvgAspect('0 0 60 60')).toBe(1);
+    expect(brandKitSvgAspect('nonsense')).toBeNull();
     expect(brandKitSymbolImage({ primary: { ref: 'logo.png', svg: null }, stacked: null, symbol: null, reversed: null }, '0 0 60 60')).toBeNull();
   });
 

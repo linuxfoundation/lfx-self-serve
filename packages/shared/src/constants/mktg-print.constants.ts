@@ -50,10 +50,35 @@ export const FRAMEWORK_PORTRAIT_SECTIONS = {
   sources: '05 Sources',
 } as const;
 
+/**
+ * The one middle-dot separator every printed line joins its parts with (the editor's rule, 7 November 2026: one
+ * spacing everywhere): a plain space, the middle dot, a plain space, as the grammar's footer sets it. The document
+ * title (the saved PDF's file name) and every print join with it (mktgPrintJoin, mktg-print-text.utils.ts); the
+ * framework book passes its own, FRAMEWORK_PORTRAIT_SEP, to the same join.
+ */
+export const MKTG_PRINT_DOT = ' · ';
+
+/**
+ * The framework book's middle dot (the editor's S-b read of 33584d0ea: in the book's Instrument Sans the dot sat tight on
+ * its one space, "Goal 1·Events"): a plain space and a thin space (U+2009, about a fifth of an em) each side; the thin space
+ * adds the room, the plain space beside it keeps the line breakable there. A provisional glyph for the editor's re-read.
+ * Every framework join passes it to `mktgPrintJoin` (a goal's `Goal 1 · Events`, the contents, the cover's eyebrow, edition
+ * and strip lines, the house's brand line, the channels, the personas, the sources' `host · N pages` and the facts'
+ * "used by"); the other prints and the saved PDF's file name keep MKTG_PRINT_DOT.
+ */
+export const FRAMEWORK_PORTRAIT_SEP = ' \u2009·\u2009 ';
+
+/**
+ * The dash between a profile's objection and its response (`“Too early?” — Not at all.`): a no-break space binds the dash
+ * to the question, so it never opens the response's line on its own (the editor's S-d read of 33584d0ea); a plain space
+ * after it lets the response wrap as text does. The template and the layout measure compose the line with it.
+ */
+export const MKTG_PRINT_OBJECTION_DASH = '\u00a0— ';
+
 /** The page titles of the framework's portrait book that are not the data's (a goal page is titled `Goal 1 · Events`). */
 export const FRAMEWORK_PORTRAIT_TITLES = {
   framework: 'Framework',
-  sayAvoid: 'Say and avoid · anchor questions',
+  sayAvoid: `Say and avoid${FRAMEWORK_PORTRAIT_SEP}anchor questions`,
   icps: 'Ideal customer profiles',
   messageHouse: 'Message house',
   keyNumbers: 'Key numbers',
@@ -231,6 +256,9 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   servedLineTop: 6,
   servedLineGap: 4,
   servedCardMin: 164,
+  /** The cover's lockup: its drawn height (`.fwp-cover-logo`) and its margin under the band's padding; a plated lockup's block starts a plate padding higher, so the artwork itself keeps this place (the kit cover's rule). */
+  coverLogoHeight: 40,
+  coverLogoTop: 4,
   /** The cover's umbrella: its measure (`.fwp-cover-umbrella` max-width) and the room the dark band gives it under the lockup and the tagline (four lines of 32/1.18, 151, kept with air). */
   coverUmbrellaWidth: 640,
   coverUmbrellaRoom: 160,
@@ -292,8 +320,6 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   matrixTableTop: 12,
   matrixHeadRow: 13,
   matrixCellRow: 19,
-  /** The lines a goal's title has in the matrix's head row (the board's two): a longer title is fitted into them, smaller first, then cut. */
-  matrixGoalLines: 2,
   /** The least size a matrix head title prints at, px: under it the strip is too narrow for the titles and the matrix breaks into bands (frameworkPortraitMatrixColumns). */
   matrixTitleMin: 9,
   /** The board's column count, the bands' width when the matrix breaks, and `.fwp-matrix-band + .fwp-matrix-band`'s gap, px. */
@@ -381,6 +407,16 @@ export const FRAMEWORK_PORTRAIT_TILE_SHARES = {
 /** The most figures the key numbers page prints as tiles; past it, the table lists them all. */
 export const FRAMEWORK_PORTRAIT_MAX_TILES = 6;
 
+/**
+ * The one caption line under the goal matrix's bands (the editor's W1b, 7 Nov 2026): a band drops the value-proposition and
+ * sound-bite rows, each goal page printing both in full, and prints every key message whole (frameworkPortraitMatrix).
+ */
+export const FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES = {
+  goalPages: 'Value propositions and sound bites are on each goal page.',
+  /** The bands dropped the proof row as well (the editor's FA1b): its cells would have printed below the tight floor. */
+  goalPagesAll: 'Value propositions, sound bites and proofs are on each goal page.',
+} as const;
+
 /** A count in words for the print's sentences, up to the anchor questions' limit (FOUNDATION_MESSAGE_CONTENT_LIMITS.anchor.max); a count past it prints as digits. */
 export const FOUNDATION_MESSAGE_PRINT_COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five'] as const;
 
@@ -389,14 +425,6 @@ export const FOUNDATION_MESSAGE_PRINT_NO_GAP_MESSAGE = 'The sources left no gap.
 
 /** The source types a run writes before a source (`Website: https://…`); the Sources & gaps page prints the source without the type. */
 export const FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES = ['Website', 'Link', 'Press release'] as const;
-
-/**
- * The one middle-dot separator every printed line joins its parts with (the editor's rule, 7 November 2026: one
- * spacing everywhere): a plain space, the middle dot, a plain space, as the grammar's footer sets it. The document
- * title, the cover's edition and strip lines, the house's brand line, a goal's `Goal 1 · Events`, the channels, the
- * personas and the facts' "used by" all join with it (mktgPrintJoin, mktg-print-text.utils.ts); no thin or hair space anywhere.
- */
-export const MKTG_PRINT_DOT = ' · ';
 
 /**
  * The one line under a cut list, everywhere a framework print cuts one (the

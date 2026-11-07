@@ -9,7 +9,6 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import {
   brandKitPortraitBackCoverLine,
   brandKitPortraitPlan,
-  brandKitPortraitPlate,
   mktgPortraitDocumentName,
   mktgPortraitFootLeft,
   mktgPortraitLook,
@@ -103,11 +102,8 @@ export class MktgBrandKitPrintComponent {
   protected readonly versionLine = computed(() => [this.view().versionLabel, this.view().monthYear].filter((part) => part !== '').join(' · '));
   /** The back cover's brand line at most two lines inside the margins, shortened at a word when longer (`brandKitPortraitBackCoverLine`). */
   protected readonly backCoverLine = computed(() => brandKitPortraitBackCoverLine(this.view().voice.line, this.brand().fontStack));
-  /** The covers' lockup: the family print's logo on the dark, on the white plate when the kit's full-colour lockup needs one. */
-  protected readonly coverLogo = computed((): MktgPrintLogo | null => {
-    const logo = this.brand().logoOnDark;
-    return logo && brandKitPortraitPlate(this.view()) ? { ...logo, plate: true } : logo;
-  });
+  /** The covers' lockup: the family print's logo on the dark, which carries the plate flag when the full-colour lockup needs one (`mktgPrintBrand`). */
+  protected readonly coverLogo = computed((): MktgPrintLogo | null => this.brand().logoOnDark);
   /** `aaif.io · V4.0 · November 2026`, less any part the kit lacks: the cover's strip. */
   protected readonly coverStripRight = computed(() => [this.view().host, this.versionLine()].filter((part) => part !== '').join(' · '));
   public constructor() {

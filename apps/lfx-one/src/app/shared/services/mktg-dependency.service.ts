@@ -6,7 +6,7 @@ import { inject, Injectable } from '@angular/core';
 import { BRAND_KIT_INTAKE, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
 import { BrandKitRevision, MktgDependencyDocument, MktgPrintKitRead, MktgRevisionFormat } from '@lfx-one/shared/interfaces';
 import { readBrandKitRevision, readFoundationMessageContent, renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
-import { catchError, forkJoin, map, Observable, of, retry, Subject, throwError } from 'rxjs';
+import { catchError, defer, forkJoin, map, Observable, of, retry, Subject, throwError } from 'rxjs';
 import { MktgArtifactService } from './mktg-artifact.service';
 
 /**
@@ -66,11 +66,12 @@ export class MktgDependencyService {
    * kit stored as Markdown alone, the LF look), and `failed` when the read
    * errored (auth, network, the server) after one retry — a print never sets
    * a failed read in the LF look (the Download PDF button waits and says why).
-   * No project: settled with nothing, the LF look.
+   * No project: settled with nothing, the LF look. The read is deferred so
+   * the retry issues a fresh request, not a resubscription to the first.
    */
   public readBrandKit(projectUid: string): Observable<MktgPrintKitRead> {
     if (!projectUid) return of({ settled: true, kit: null, failed: false });
-    return this.resolveDependency(projectUid, BRAND_KIT_INTAKE.agentId, true).pipe(
+    return defer(() => this.resolveDependency(projectUid, BRAND_KIT_INTAKE.agentId, true)).pipe(
       retry(1),
       map((document): MktgPrintKitRead => ({ settled: true, kit: readBrandKitRevision(document?.sidecar ?? null), failed: false })),
       catchError((error: unknown) => {

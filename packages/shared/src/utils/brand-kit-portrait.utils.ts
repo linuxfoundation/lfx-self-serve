@@ -10,6 +10,7 @@ import {
   BRAND_KIT_PORTRAIT_ATTRIBUTES,
   BRAND_KIT_PORTRAIT_BACK_COVER_LINE,
   BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED,
+  BRAND_KIT_PORTRAIT_WIDE_SYMBOL_ASPECT,
   BRAND_KIT_PORTRAIT_CONTENTS,
   BRAND_KIT_PORTRAIT_CONTRAST,
   BRAND_KIT_PORTRAIT_GRADE_INKS,
@@ -121,11 +122,14 @@ export function brandKitPortraitArtwork(
   const alt = { lockup: 'Horizontal lockup', symbol: 'Symbol', stacked: 'Stacked lockup' }[kind];
   const derivable = kind === 'symbol' ? view.derivable.symbol : view.derivable.lockup;
   const filter = derivable ? ARTWORK_FILTERS[mode] : '';
-  if (kind === 'lockup' && mode === 'reversed' && view.logos.reversed?.src) return { src: view.logos.reversed.src, alt: 'Reversed lockup', filter: '' };
+  if (kind === 'lockup' && mode === 'reversed' && view.logos.reversed?.src) {
+    return { src: view.logos.reversed.src, alt: 'Reversed lockup', filter: '', aspect: view.logos.reversed.aspect ?? null };
+  }
   const images: Record<typeof kind, BrandKitLogoImage | null> = { lockup: view.logos.primary, symbol: view.symbol, stacked: view.logos.stacked };
   const image = images[kind];
   if (!image?.src) return null;
-  return mode === 'reversed' && !derivable ? { src: image.src, alt, filter, plate: true } : { src: image.src, alt, filter };
+  const aspect = image.aspect ?? null;
+  return mode === 'reversed' && !derivable ? { src: image.src, alt, filter, plate: true, aspect } : { src: image.src, alt, filter, aspect };
 }
 
 /** A file's format from its reference: `SVG`, `PNG`, …, or `File`. */
@@ -185,6 +189,16 @@ function formatOf(image: BrandKitLogoImage | null): string {
  */
 export function brandKitPortraitPlate(view: BrandKitBookView): boolean {
   return !!view.logos.primary?.src && !view.logos.reversed?.src && !view.derivable.lockup;
+}
+
+/**
+ * Whether the kit's symbol is a wide one (its viewBox's aspect over
+ * `BRAND_KIT_PORTRAIT_WIDE_SYMBOL_ASPECT`): the Symbol page then shows it in
+ * rounded squares only and says so. An unknown aspect reads as square-ish.
+ */
+export function brandKitPortraitSymbolIsWide(view: BrandKitBookView): boolean {
+  const aspect = view.symbol?.aspect ?? null;
+  return aspect !== null && aspect > BRAND_KIT_PORTRAIT_WIDE_SYMBOL_ASPECT;
 }
 
 /** A slot's source column: `Supplied` with a file, else the line the book says in its place. */

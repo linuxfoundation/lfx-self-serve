@@ -39,8 +39,11 @@ import {
   mktgKeepName,
   mktgNoBreak,
   mktgPortraitPlateFit,
+  mktgPortraitPlateFitIn,
   mktgPortraitPlatePadding,
+  mktgPortraitMarkFitIn,
   mktgPortraitPlateRadius,
+  mktgPortraitShapeInnerWidth,
   mktgNoWidow,
   mktgPortraitLargestFitting,
   mktgPortraitMoreLine,
@@ -225,6 +228,34 @@ describe('mktgPortraitPlatePadding', () => {
     expect(mktgPortraitPlateFit(64)).toEqual({ height: 32, padding: 16 });
     const { height, padding } = mktgPortraitPlateFit(76);
     expect(height + 2 * padding).toBe(76);
+  });
+
+  it('fits a wide mark’s plate inside its shape by width too; a square-ish mark comes out exactly as the height fit', () => {
+    // A circle's inner width is its inscribed square; a rounded square's its side less the 20 % inset each side.
+    expect(mktgPortraitShapeInnerWidth(158, 'circle')).toBeCloseTo(111.72, 2);
+    expect(mktgPortraitShapeInnerWidth(158, 'square')).toBeCloseTo(94.8, 2);
+    expect(mktgPortraitShapeInnerWidth(200, 'square')).toBe(120);
+    // Aspect 1 and 1.2 in the 158 circle (box 76) and the 126 square (box 60): today's numbers, to the pixel.
+    for (const aspect of [1, 1.2, null]) {
+      expect(mktgPortraitPlateFitIn(76, mktgPortraitShapeInnerWidth(158, 'circle'), aspect)).toEqual({ height: 38, padding: 19, plate: 76 });
+      expect(mktgPortraitPlateFitIn(60, mktgPortraitShapeInnerWidth(126, 'square'), aspect)).toEqual({ height: 30, padding: 15, plate: 60 });
+    }
+    // The fixture lockup as the symbol (120 × 36, aspect 3.33): the plate's width (aspect + 1) × h fits the inner width.
+    const aspect = 120 / 36;
+    const circle = mktgPortraitPlateFitIn(76, mktgPortraitShapeInnerWidth(158, 'circle'), aspect);
+    expect(circle.height).toBeCloseTo(25.78, 2);
+    expect((aspect + 1) * circle.height).toBeLessThanOrEqual(mktgPortraitShapeInnerWidth(158, 'circle') + 0.001);
+    expect(circle.plate).toBeCloseTo(2 * circle.height, 6);
+    const square = mktgPortraitPlateFitIn(60, mktgPortraitShapeInnerWidth(126, 'square'), aspect);
+    expect((aspect + 1) * square.height).toBeLessThanOrEqual(75.6 + 0.001);
+    expect(square.height).toBeCloseTo(75.6 / (aspect + 1), 2);
+    // No inner width: the height fit alone.
+    expect(mktgPortraitPlateFitIn(40, null, aspect)).toEqual({ height: 20, padding: 10, plate: 40 });
+    // A bare mark (no plate) in the tint and white squares: square-ish as today, a wide one inside the inner box.
+    for (const square of [1, 1.2, null]) expect(mktgPortraitMarkFitIn(76, 94.8, square)).toBe(76);
+    expect(mktgPortraitMarkFitIn(76, 94.8, aspect)).toBeCloseTo(94.8 / aspect, 6);
+    expect(mktgPortraitMarkFitIn(60, 75.6, aspect)).toBeCloseTo(75.6 / aspect, 6);
+    expect(mktgPortraitMarkFitIn(60, null, aspect)).toBe(60);
   });
 
   it('rounds the plate by a sixth of its shorter side: the cover plate by its height, a tall plate by its width', () => {

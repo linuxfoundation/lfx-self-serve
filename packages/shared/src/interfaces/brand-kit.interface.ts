@@ -628,6 +628,8 @@ export interface BrandKitLogoImage {
   name: string;
   /** A data URL of the SVG, or null when the file is not an SVG (a PNG or a ZIP member the envelope carries no bytes for) or there is no file. */
   src: string | null;
+  /** The artwork's width over its height, from the SVG's viewBox (the crop's when cropped); null when unknown (a PNG, no viewBox). */
+  aspect?: number | null;
 }
 
 /** One colorway tile of the book: the ground it sits on and how the logo is drawn on it. */

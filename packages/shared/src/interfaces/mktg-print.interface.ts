@@ -44,6 +44,8 @@ export interface MktgPrintLogo {
   alt: string;
   /** CSS filter on the image: the reversed (white) rendering of a full-color lockup, or '' to draw it as it is. */
   filter: string;
+  /** The artwork's width over its height from its viewBox, for fitting a plate inside a shape; null or absent when unknown. */
+  aspect?: number | null;
   /**
    * True when the artwork is drawn in full colour on a dark ground because
    * the kit supplied no reversed file and the artwork cannot be derived from
@@ -305,6 +307,18 @@ export interface FoundationMessagePrintMatrix {
   bands: FoundationMessagePrintMatrixBand[];
   /** The matrix's measured height, px, from its first row's top to the crosscut's end: at most the room it was given. */
   height: number;
+  /** The rows the matrix prints: every row in a strip; in band mode the sound-bite and value-proposition rows are dropped, and the proof row too when its cells would print below the tight floor (frameworkPortraitMatrix, the editor's W1b and FA1b), said in the one note under the bands. */
+  rows: FoundationMessagePrintMatrixRows;
+  /** The caption lines under the bands saying which rows were dropped (FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES), in the order they were; empty when none. */
+  notes: string[];
+}
+
+/** Which of the goal matrix's optional rows print: the value proposition, sound bite and proof rows (the key message row always does). */
+export interface FoundationMessagePrintMatrixRows {
+  value: boolean;
+  bite: boolean;
+  /** The proof row: dropped in band mode when its cells would print below the tight floor (the editor's FA1b), every goal page printing its proofs in full. */
+  proof: boolean;
 }
 
 /** One band of the goal matrix: the goals from `offset`, `count` of them, laid in `columns` grid columns (the last band of an odd count leaves columns empty). */

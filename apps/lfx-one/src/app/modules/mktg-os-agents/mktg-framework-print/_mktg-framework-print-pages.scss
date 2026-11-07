@@ -58,12 +58,16 @@
     color: var(--pp-on-dark);
   }
 
+  /* The lockup's block: bare, or the grammar's white plate (the lfxPpPlate directive: .pp-plate, its padding and radius); its top and the drawn height are set inline (FRAMEWORK_PORTRAIT_ROOM.coverLogoTop/coverLogoHeight). */
+  .fwp-cover-logo-block {
+    display: inline-block;
+    align-self: flex-start;
+    line-height: 0;
+  }
+
   .fwp-cover-logo {
     display: block;
-    align-self: flex-start;
-    height: 40px;
     width: auto;
-    margin-top: 4px;
   }
 
   .fwp-cover-eyebrow {
@@ -144,15 +148,9 @@
     color: var(--pp-muted);
   }
 
+  /* The strip's measure, line and wrap are the grammar's (.pp-cover-strip, the kit cover's); the framework's strip sits on white, so only its inks are its own. */
   .fwp-cover-strip {
-    display: flex;
-    justify-content: space-between;
     border-top: 1px solid var(--pp-hairline);
-    padding-top: 10px;
-    font-size: 10px;
-    line-height: 1;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
     color: var(--pp-muted);
   }
 
@@ -220,6 +218,8 @@
     font-weight: var(--fwp-matrix-goal-weight);
     line-height: var(--fwp-matrix-goal-line);
     color: var(--pp-dark);
+    /* A goal name prints whole and the head row grows (editor FA1); a word longer than the column at the floor size breaks inside, as the fit model counts it. */
+    overflow-wrap: anywhere;
   }
 
   .fwp-matrix-vp {
@@ -285,6 +285,11 @@
     font-size: var(--fwp-matrix-crosscut-size); /* FRAMEWORK_PORTRAIT_TYPE.matrixCrosscut */
     line-height: var(--fwp-matrix-crosscut-line);
     color: var(--pp-muted);
+  }
+
+  /* A row the bands dropped, said once under them at the cut note's measure, inside the rows' side padding (FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES). */
+  .fwp-matrix-band-note {
+    padding: 0 12px;
   }
 
   /* ---------- one page per goal ---------- */

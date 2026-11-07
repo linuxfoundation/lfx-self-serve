@@ -250,6 +250,20 @@ describe('the book’s view model', () => {
       ['', '', ''],
       ['brightness(0)', '', ''],
     ]);
+    // A reversed-only kit (no primary file): the dark tile draws the reversed file; the full-colour and one-colour
+    // tiles say "Not supplied" rather than standing empty.
+    const reversedOnly = brandKitColorwayTiles(
+      brandKitTestRevision(),
+      '#eee',
+      { primary: null, reversed: brandKitLogoImage(one), symbol: null, stacked: null },
+      { lockup: false, symbol: false }
+    );
+    expect(reversedOnly.map((tile) => [tile.logo?.src ?? null, tile.missing])).toEqual([
+      [null, 'Not supplied'],
+      [brandKitLogoImage(one)?.src ?? null, ''],
+      [null, 'Not supplied'],
+      [null, 'Not supplied'],
+    ]);
   });
 
   it('says where each palette value was found without a raw URL: the logo by name, a stylesheet by its site', () => {

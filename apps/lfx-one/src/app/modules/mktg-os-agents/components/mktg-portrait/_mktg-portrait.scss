@@ -302,7 +302,8 @@ $pp-band-height: 4px;
 .pp-plate {
   // The padding and the corner radius (a sixth of the shorter side) are bound by `lfxPpPlate` from the shared geometry.
   display: inline-block;
-  background: var(--pp-white);
+  // White outside a portrait page too: the landscape framework cover plates its lockup with the same directive.
+  background: var(--pp-white, #fff);
   line-height: 0;
 }
 

@@ -274,7 +274,8 @@ page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's S
   the kit's reversed file when one is supplied; else, when the slot's own SVG is one
   resolvable ink with no background (`brandKitDerivable`, per slot: lockup and symbol), the
   full-colour file reversed by filter; else the full-colour artwork on the white plate
-  (`.pp-plate`, `MktgPrintLogo.plate`): one shared span, the `lfxPpPlate` directive given
+  (`.pp-plate`, `MktgPrintLogo.plate`, set at the source by `mktgPrintBrand` on `logoOnDark`,
+  so the kit's covers and the landscape framework cover read one rule): one shared span, the `lfxPpPlate` directive given
   the plate's outer height, whose padding is half the artwork's drawn height
   (`mktgPortraitPlatePadding(height)`, `MKTG_PORTRAIT_PLATE.paddingOfHeight`) and whose
   corner radius is a sixth of its shorter side (`mktgPortraitPlateRadius(width, height)`,
@@ -285,7 +286,17 @@ page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's S
   the mark drawn at half the box, the padding a quarter), and the covers start the plated
   block one padding higher so the lockup stays where the design draws it and the plate
   ends clear of the text below. A kit with a reversed file or a derivable slot draws no
-  plate.
+  plate. **A wide mark fits by width too**: the artwork's aspect is read once from its
+  SVG's viewBox into the logo image (`BrandKitLogoImage.aspect`, `brandKitSvgAspect`; the
+  crop's for a cropped symbol, unknown for a PNG), and the plate's fit
+  (`mktgPortraitPlateFitIn`) or the bare mark's (`mktgPortraitMarkFitIn`) is bounded by
+  the width the shape offers inside (`mktgPortraitShapeInnerWidth`: a circle's inscribed
+  square, a rounded square's side less `MKTG_PORTRAIT_PLATE.shapeInsetOfSide` each side,
+  a tile's clear width), so a wide symbol never runs out of its shape; a square-ish or
+  unknown-aspect mark is drawn exactly as before. The Symbol page shows a wide symbol
+  (`brandKitPortraitSymbolIsWide`, over `BRAND_KIT_PORTRAIT_WIDE_SYMBOL_ASPECT`) in its
+  rounded squares only, the circle skipped, and says so under the row
+  (`BRAND_KIT_PORTRAIT_WIDE_SYMBOL_NOTE`).
 - **The fit model.** `mktgPortraitFitBlock`, `brandKitPortraitShortenLine` and
   `brandKitPortraitShortenParagraph` (shared utils) fit variable text to its box. A
   one-line sample (the Type page's specimen and scale steps, the H1) prints at the kit's
