@@ -102,11 +102,13 @@ const ROOM = FRAMEWORK_PORTRAIT_ROOM;
 // title, a goal page's value proposition, key message, sound bite and "who
 // it's for" lines, the matrix cells, a tile's figure and label, the house's
 // Why now) by the portrait fit model (set smaller first, then cut at a
-// sentence); lists (the cover's contents, a goal page's proof rows, the
+// sentence); lists (a goal page's proof rows and "who it's for" cards, the
 // matrix's proofs, the say pills and avoid rows, the pillars' proofs, the
 // audiences, the facts table and the Sources & gaps lists) by the design
 // reader's list rule (tightened first, then cut to whole rows, with a muted
-// "+N more" line under the cut, never silently); the profile cards by their
+// "+N more" line under the cut, never silently); the cover's contents
+// tightened, then its repeated runs collapsed to one row with a page range
+// (never cut, every page listed); the profile cards by their
 // measured height (a page holds the cards that end above the footer, a lone
 // card past the room is set tight and its long fields fitted). The key
 // numbers print as tiles up to FRAMEWORK_PORTRAIT_MAX_TILES by the count's

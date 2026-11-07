@@ -306,7 +306,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
       // Every Angular host on the print path is a block: Google Chrome breaks a page at an inline host that wraps a frame
       // carrying a break (one blank page per host), where Playwright's Chromium does not. And the frames are siblings
-      // under one parent, so the grammar's `.pp-page + .pp-page` break rule reaches every page boundary.
+      // under one parent, so the grammar's `.pp-page { break-before: page; break-after: auto }` rule gives every page boundary its one break.
       const hosts = frame.locator('lfx-mktg-framework-print, lfx-mktg-portrait-page');
       expect(await hosts.evaluateAll((elements) => elements.map((element) => getComputedStyle(element).display))).toEqual(
         Array.from({ length: 9 }, () => 'block')
@@ -705,7 +705,7 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   // Eight goals: cover, framework, goal-1…8, say-avoid, the four profiles two a page, the house, the numbers, the sources.
   await expect(print.getByTestId('lfx-mktg-portrait-page')).toHaveCount(16);
   // The cover lists all fifteen pages after it, one row each, and the list ends above the cover strip (the design reader's list rule
-  // bounds it: tightened past twelve pairs, the runs collapsed to ranges past that; fifteen rows need neither).
+  // bounds it: tightened past nine pairs (eighteen rows), the runs collapsed to ranges past twelve pairs (twenty-four); fifteen rows need neither).
   const contents = print.getByTestId('mktg-framework-print-contents');
   await expect(contents.locator('li')).toHaveCount(15);
   await expect(contents.locator('li').nth(1)).toContainText('03 Goal 1 · Goal 1 title');

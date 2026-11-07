@@ -4,8 +4,8 @@
 /* The framework's portrait pages on the portrait grammar (`components/mktg-portrait/_mktg-portrait.scss`):
    the framework's own blocks, under the `fwp-` prefix, global for the same reason as the grammar's `pp-`
    classes and the kit's `kp-` (they are set on content projected into the page frame), and every rule
-   scoped under the print root `.lfx-framework-print` so it keeps the specificity it had as a component
-   style (root + block, two classes) over the grammar's one-class rules. That root class is shared with the
+   scoped under the print root `.lfx-framework-print.lfx-mktg-portrait` so it keeps at least the specificity
+   it had as a component style (root + block: three classes here) over the grammar's one-class rules. That root class is shared with the
    flowing prints (the FAQ's, the boilerplates', the document view's), so the rules are scoped to the
    framework's own frames, `.lfx-framework-print.lfx-mktg-portrait`, and reach nothing in them. The values are the design boards', ported 1:1 in px: the cover's dark band edge to
    edge (816×420), the statement cards and the goal matrix, the goal page's number, key-message bar and

@@ -132,16 +132,19 @@
      once, the frame writes the margins instead ('mktg-framework-page-margins'), restates this named rule with
      them (mktg-print.service.ts), and marks its body MKTG_PRINT_PAGE_MARGINS_CLASS, under which the documents'
      own room collapses. No element names this page any more (the framework's frames moved to the grammar's
-     `mktg-portrait`, the last `page: mktg-framework` went with them), so the named block is reached only through
-     the service's WebKit restatement; removing it is a clean-up of that shared mechanism, not this book's. */
+     `mktg-portrait`, the last `page: mktg-framework` went with them), so this named block is unused: nothing
+     reaches it; the service restates the name for WebKit on its own. Removing it is a clean-up of that shared
+     mechanism (the kit's and main's), not this book's. */
   @page mktg-framework {
     size: portrait;
     margin: 0;
   }
 
-  /* The sides' room of every print root (the framework, the kit, the FAQ, the boilerplates, the AEO/GEO
-     report): the root's, so every page fragment keeps it; the top and bottom room repeats per page from the
-     sheet tables (lfx-mktg-print-sheet, the kit's chapters). None on the page margins, which give it. */
+  /* The sides' room of the flowing print roots (the FAQ, the boilerplates, the AEO/GEO report, the kit's
+     legacy landscape chapters): the root's, so every page fragment keeps it; the top and bottom room repeats
+     per page from the sheet tables (lfx-mktg-print-sheet). None on the page margins, which give it. The
+     portrait books (the kit's, the framework's) carry the root class too, and the grammar zeroes their
+     padding (_mktg-portrait.scss): a frame is the whole sheet and carries its own room. */
   .lfx-framework-print {
     box-sizing: border-box;
     padding: 0 0.6in;
