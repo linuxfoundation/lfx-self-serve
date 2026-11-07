@@ -363,6 +363,11 @@ const CAVEAT_RESULT_TITLE = [
 ];
 // Quoted spans are blanked before the credits/quota test on a result-title sentence: the words belong to the title.
 const CAVEAT_QUOTED_SPANS = [/"[^"]*"/g, /`[^`]*`/g, /\u201c[^\u201d]*\u201d/g, /\u2018[^\u2019]*\u2019/g, /(^|[\s(])'[^']*'(?=$|[\s).,;:!?])/g];
+// A symmetric delimiter with an odd count in the text (an inch mark, a truncated quote) opens no span: it would pair with the next one.
+const CAVEAT_SYMMETRIC_QUOTES: [string, RegExp][] = [
+  ['"', CAVEAT_QUOTED_SPANS[0]],
+  ['`', CAVEAT_QUOTED_SPANS[1]],
+];
 const CAVEAT_IDENTIFIERS = [
   // a snake_case field name as a standalone token: not part of a file name, a path, an og: property or a code span
   /(?:^|[^:/.\-`\w])[a-z]+(?:_[a-z0-9]+)+(?![./\-`\w])/,
@@ -456,26 +461,34 @@ function providerSubject(sentence: string): 'search' | 'provider' | null {
 
 /** The quoted spans' text, joined; the single-quote rule's leading character is not part of its span. */
 function insideQuotes(text: string): string {
-  return CAVEAT_QUOTED_SPANS.flatMap((span) =>
-    Array.from(text.matchAll(span), (match) => (typeof match[1] === 'string' ? match[0].slice(match[1].length) : match[0]))
-  ).join(' ');
+  return quotedSpans(text)
+    .flatMap((span) => Array.from(text.matchAll(span), (match) => (typeof match[1] === 'string' ? match[0].slice(match[1].length) : match[0])))
+    .join(' ');
 }
 
 /** Whitespace inside a quoted span, and after a quote-closed stop the sentence continues past, is masked so the split never breaks a quotation. */
 function maskQuotedSpaces(text: string): string {
-  return CAVEAT_QUOTED_SPANS.reduce(
-    (rest, span) =>
-      rest.replace(span, (match, lead: unknown) => {
-        const keep = typeof lead === 'string' ? lead : '';
-        return keep + match.slice(keep.length).replace(/\s/g, CAVEAT_QUOTE_SPACE_MARK);
-      }),
-    text
-  ).replace(CAVEAT_QUOTE_CONTINUATION, (_match, quote: string, spaces: string) => quote + spaces.replace(/\s/g, CAVEAT_QUOTE_SPACE_MARK));
+  return quotedSpans(text)
+    .reduce(
+      (rest, span) =>
+        rest.replace(span, (match, lead: unknown) => {
+          const keep = typeof lead === 'string' ? lead : '';
+          return keep + match.slice(keep.length).replace(/\s/g, CAVEAT_QUOTE_SPACE_MARK);
+        }),
+      text
+    )
+    .replace(CAVEAT_QUOTE_CONTINUATION, (_match, quote: string, spaces: string) => quote + spaces.replace(/\s/g, CAVEAT_QUOTE_SPACE_MARK));
 }
 
 function outsideQuotes(text: string): string {
   // Only the straight-single-quote span captures its leading character; the others have no group.
-  return CAVEAT_QUOTED_SPANS.reduce((rest, span) => rest.replace(span, (_match, lead: unknown) => (typeof lead === 'string' ? lead : '') + ' '), text);
+  return quotedSpans(text).reduce((rest, span) => rest.replace(span, (_match, lead: unknown) => (typeof lead === 'string' ? lead : '') + ' '), text);
+}
+
+/** The span rules that apply to this text: a straight quote or backtick with an odd count is left out (one count per delimiter, linear). */
+function quotedSpans(text: string): RegExp[] {
+  const unbalanced = CAVEAT_SYMMETRIC_QUOTES.filter(([mark]) => text.split(mark).length % 2 === 0).map(([, span]) => span);
+  return unbalanced.length ? CAVEAT_QUOTED_SPANS.filter((span) => !unbalanced.includes(span)) : CAVEAT_QUOTED_SPANS;
 }
 
 /** Frozen report fields are required; additional presentation fields remain forward compatible. */

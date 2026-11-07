@@ -42,7 +42,8 @@ export const AEO_GEO_INTAKE_ERRORS = {
 export const AEO_GEO_SOURCES_KEEP_TOGETHER_MAX = 12;
 /**
  * Reader sentences for the agent's caveats. The known plumbing shapes (a snake_case field name, a slug, a uid,
- * a quoted or well-known provider error) map to these or are left out; other text passes through unchanged.
+ * a credits or quota phrase, or a provider subject (a search, the provider, the API, a lookup) quoting a failure)
+ * map to these or are left out; quoted results and sentences about the audited site pass through unchanged.
  */
 export const AEO_GEO_READER_CAVEATS = {
   search_unavailable: 'Third-party search was not available for this run.',

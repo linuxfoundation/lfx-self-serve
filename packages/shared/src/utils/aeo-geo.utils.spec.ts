@@ -428,6 +428,10 @@ describe('AEO/GEO reader caveats', () => {
     );
     // A page's quoted text followed by a file name: both sentences stay, untouched.
     expect(aeoGeoReaderCaveat('The title said "Welcome." robots.txt allows all crawlers.')).toBe('The title said "Welcome." robots.txt allows all crawlers.');
+    // An unbalanced straight quote or backtick (an inch mark, a truncated quote) opens no span: it never pairs with the next quote,
+    // so the sentences between them stay separate and only the plumbing one is dropped.
+    expect(aeoGeoReaderCaveat('The 5" banner. The project_uid was not read. The page is fine "ok".')).toBe('The 5" banner. The page is fine "ok".');
+    expect(aeoGeoReaderCaveat('A stray ` mark. The project_uid was not read. The span `og:title` is set.')).toBe('A stray ` mark. The span `og:title` is set.');
   });
 
   it('names no field, slug, uid or access error for an LFX record that could not be read, and keeps the clean sentences', () => {

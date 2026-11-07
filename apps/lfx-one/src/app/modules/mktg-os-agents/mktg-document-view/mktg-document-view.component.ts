@@ -1293,14 +1293,17 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     if (!isPlatformBrowser(this.platformId) || !view?.aeoGeoReport) return;
     this.aeoPrintRequested = true;
+    // A press while one is already waiting (for the kit read, or for the render after it) is dropped: one press prints once.
+    if (this.aeoPrintWaiting) return;
     // The print waits for the Brand Kit read to settle (a kit, or null after a failed read), or a press before it
-    // arrives would save the LF-default PDF: the click is kept, not dropped, and prints once when the read settles.
+    // arrives would save the LF-default PDF: the first press is kept and prints after the render that follows the read.
+    // A press in the frame after the read settles and before that render prints at once, from the head as rendered then.
     if (this.printKitSettled()) {
       this.printAeoReport();
-    } else if (!this.aeoPrintWaiting) {
+    } else {
       this.aeoPrintWaiting = this.printKitSettled$.pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
         // The settled signal arrives inside an effect, which runs before this template (and the running head's brand) is
-        // refreshed; the print clones the DOM, so it waits for the render that follows. The press stays one press meanwhile.
+        // refreshed; the print clones the DOM, so it waits for the render that follows.
         this.aeoPrintRender = afterNextRender(
           () => {
             this.aeoPrintWaiting = null;
@@ -1648,14 +1651,6 @@ export class MktgDocumentViewComponent {
     );
   }
 
-  private printAeoReport(): void {
-    const view = this.view();
-    if (!view?.aeoGeoReport) return;
-    // The saved PDF's name, like the deck's title: the project, the label the page shows, the revision on the page and its date.
-    const title = mktgPrintDocumentTitle(this.projectName(), view.type.itemLabel, view.revision.number, view.revision.createdAt);
-    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, title);
-  }
-
   private initVisibleRevisionRows(): Signal<MktgRevisionSummary[]> {
     return computed(() => {
       const rows = this.revisionRows();
@@ -1818,6 +1813,14 @@ export class MktgDocumentViewComponent {
   }
 
   // === AEO/GEO pending helpers (private methods follow protected methods by repository lint) ===
+  private printAeoReport(): void {
+    const view = this.view();
+    if (!view?.aeoGeoReport) return;
+    // The saved PDF's name, like the deck's title: the project, the label the page shows, the revision on the page and its date.
+    const title = mktgPrintDocumentTitle(this.projectName(), view.type.itemLabel, view.revision.number, view.revision.createdAt);
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, title);
+  }
+
   private clearAeoPrint(): void {
     // A press still waiting for the kit, or for the render after it, belongs to the document that is leaving the screen.
     this.aeoPrintWaiting?.unsubscribe();

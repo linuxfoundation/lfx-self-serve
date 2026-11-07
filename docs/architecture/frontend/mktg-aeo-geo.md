@@ -95,8 +95,9 @@ map to fixed wording, and the known plumbing shapes (a snake_case field name, a
 slug, a uid, a credits or quota phrase, a provider subject quoting a failure)
 are left out of the sentence that carries them; a quoted result title and any
 sentence about the audited site pass through unchanged — the stored report is
-unchanged, a report with no caveats prints no Caveats section, and two caveats
-that map to the same sentence print it once (`aeoGeoReaderCaveats`). The print
+unchanged, and, on screen and in print alike (one shared component), a report
+with no caveats shows no Caveats section and two caveats that map to the same
+sentence print it once (`aeoGeoReaderCaveats`). The print
 of a typed report opens with the report's title and facts, then the score card,
 then the report without a second headline, and its headings, scorecard rows,
 findings, recommendations and list items carry CSS Fragmentation `break-after:
@@ -114,7 +115,11 @@ typed report is not silently treated as legacy. Download PDF renders only while 
 Audit again alone otherwise) and uses the shared
 `MktgPrintService` browser dialog (Save as PDF) and the asset pages' print-only
 CSS. Only the validated report prints, never
-the navigation, and a scope change or destruction cancels a pending print.
+the navigation, and a scope change or destruction cancels a pending print. A
+press before the project's Brand Kit read settles (a kit, or the LF look after
+a failed read) is kept as one press and prints after the render that follows;
+the button stays enabled, and a document change or destruction drops the
+waiting press.
 No Markdown file is downloaded. Refusal and permanent polling failures clear recovery and offer Run again without Check again. A timeout keeps the capability until its TTL: “The audit is taking longer than expected.” offers Check again, which resumes result polling so a late report can be stored. Explicit Run again clears the old capability before re-entry or a fresh generation. A transient poll fallback is marked, never treated as proof that answers landed. It offers Run again, never comments, revision
 or restore controls for a report. Its single immutable revision row and About share the right column at laptop width and stack below on narrow screens.
 Slides export is a separate capability,

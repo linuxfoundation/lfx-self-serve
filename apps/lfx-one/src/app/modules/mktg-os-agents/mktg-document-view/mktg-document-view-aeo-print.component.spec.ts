@@ -250,8 +250,12 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
     const kit = brandKitTestRevision();
     kitRead.next(kit);
     kitRead.complete();
-    harness.detectChanges();
-    // One print for the two presses, with the kit's brand on the running head, both after the render and at the call itself.
+    // The read has settled but nothing has rendered yet: a third press in this frame is dropped too (one press is waiting).
+    button.click();
+    expect(print.printNow).not.toHaveBeenCalled();
+    // The app is zoneless: the response's signal write schedules the tick that runs the effect and the render after it.
+    await harness.fixture.whenStable();
+    // One print for the three presses, with the kit's brand on the running head, both after the render and at the call itself.
     expect(print.printNow).toHaveBeenCalledTimes(1);
     expect(print.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, `${PROJECT.name} · AEO/GEO report · v1 · 2026-10-15`);
     const brand = mktgPrintBrand(kit);
@@ -273,9 +277,25 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
     query('mktg-document-view-download')?.querySelector('button')?.click();
     expect(print.printNow).not.toHaveBeenCalled();
     kitRead.next(null);
-    // The settled signal reaches the waiting press through an effect, i.e. on the change detection the response triggers.
-    harness.detectChanges();
+    // The settled signal reaches the waiting press through an effect, on the tick the response schedules, then the render.
+    await harness.fixture.whenStable();
     expect(print.printNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a press waiting for the Brand Kit read when the document leaves the screen', async () => {
+    const kitRead = new Subject<BrandKitRevision | null>();
+    resolveBrandKit.mockReturnValue(kitRead);
+    await render();
+    const print = TestBed.inject(MktgPrintService);
+    query('mktg-document-view-download')?.querySelector('button')?.click();
+    expect(print.printNow).not.toHaveBeenCalled();
+    // The view is destroyed (the same clearAeoPrint runs on a document change) while the read is still open.
+    harness.fixture.destroy();
+    expect(print.clear).toHaveBeenCalled();
+    kitRead.next(brandKitTestRevision());
+    kitRead.complete();
+    await harness.fixture.whenStable();
+    expect(print.printNow).not.toHaveBeenCalled();
   });
 
   it('wears the project kit brand on the running head once the kit resolves', async () => {
