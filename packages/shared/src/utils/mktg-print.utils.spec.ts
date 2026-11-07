@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  FRAMEWORK_PORTRAIT_SEP,
   MKTG_PRINT_DOT,
   MKTG_PRINT_INK_ON_DARK,
   MKTG_PRINT_INK_ON_LIGHT,
@@ -256,7 +257,7 @@ describe('the framework’s print', () => {
     const report: FoundationMessageReport = { sources_read: ['Website: https://orbit.example.org'], sources_failed: [], gaps: ['A gap.'], notes: 'A note.' };
     const view = buildFoundationMessagePrintView(CONTENT, ' TestOrbit ', 4, null, '2026-11-06T23:30:00Z', report, '2026-11-04');
     expect(view.projectName).toBe('TestOrbit');
-    expect(view.eyebrow).toBe('TestOrbit · a Linux Foundation project');
+    expect(view.eyebrow).toBe(`TestOrbit${FRAMEWORK_PORTRAIT_SEP}a Linux Foundation project`);
     expect(view.runningHead).toBe('TestOrbit Messaging Framework');
     expect(view.versionLabel).toBe('V4.0');
     expect([view.approvedLabel, view.dateLabel]).toEqual(['Approved 6 Nov 2026', '6 Nov 2026']);
@@ -271,13 +272,13 @@ describe('the framework’s print', () => {
     expect(foundationMessagePrintIcpPageIntro(3, 2, 10)).toBe('Profiles 3–4 of 10.');
     expect(foundationMessagePrintIcpPageIntro(2, 1, 10)).toBe('Profile 2 of 10.');
     // A persona prints as one joined line, so an empty part leaves no trailing dot.
-    expect(view.icps[0].personaLines).toEqual(['SRE · uptime']);
+    expect(view.icps[0].personaLines).toEqual([`SRE${FRAMEWORK_PORTRAIT_SEP}uptime`]);
     const bare = buildFoundationMessagePrintView({ ...CONTENT, icp: [{ ...CONTENT.icp[0], personas: [['SRE', ' ']] }] }, 'TestOrbit', 1, null);
     expect(bare.icps[0].personaLines).toEqual(['SRE']);
     expect(view.avoidRows).toEqual([{ avoid: 'synergy', instead: 'working together' }]);
     expect(view.numbers).toEqual([{ number: '1,200', label: 'members', source: 'Website' }]);
     expect(view.audiences).toEqual([{ name: 'End users', lead: 'Ship with confidence.' }]);
-    expect(view.facts).toEqual([{ fact: '1,200 members', source: 'Website', usedBy: 'Goal 1 · Adoption' }]);
+    expect(view.facts).toEqual([{ fact: '1,200 members', source: 'Website', usedBy: `Goal 1${FRAMEWORK_PORTRAIT_SEP}Adoption` }]);
     expect(view.brand.source).toBe('lf');
     // Without the dates and the report: empty labels, no report (the view says nothing the record never said), no read date (an unreadable one reads as none).
     const withKit = buildFoundationMessagePrintView(CONTENT, 'TestOrbit', null, kitWith(), null, null, 'yesterday');
@@ -319,12 +320,14 @@ describe('the framework’s print', () => {
     // A URL as its address (the grammar's readable name: no scheme, no www., no query), a remark after it kept.
     expect(foundationMessagePrintSourceLabel('Website: https://orbit.example.org')).toBe('orbit.example.org');
     // Never a path (the editor's rule): the host, with the record's own remark after the dot when it wrote one; no word invented for a title.
-    expect(foundationMessagePrintSourceLabel('Website: https://www.orbit.example.org/ (home)')).toBe('orbit.example.org · home');
+    expect(foundationMessagePrintSourceLabel('Website: https://www.orbit.example.org/ (home)')).toBe(`orbit.example.org${FRAMEWORK_PORTRAIT_SEP}home`);
     expect(foundationMessagePrintSourceLabel('Link: https://orbit.example.org/about?utm=x')).toBe('orbit.example.org');
-    expect(foundationMessagePrintSourceLabel('Link: https://github.com/orbit (org page and repos API)')).toBe('github.com · org page and repos API');
+    expect(foundationMessagePrintSourceLabel('Link: https://github.com/orbit (org page and repos API)')).toBe(
+      `github.com${FRAMEWORK_PORTRAIT_SEP}org page and repos API`
+    );
     expect(foundationMessagePrintSourceLabel('orbit.example.org/md/about')).toBe('orbit.example.org');
     expect(foundationMessagePrintSourceLabel('docs.orbit.example.org')).toBe('docs.orbit.example.org');
-    expect(foundationMessagePrintSourceLabel('orbit.example.org (home)')).toBe('orbit.example.org · home');
+    expect(foundationMessagePrintSourceLabel('orbit.example.org (home)')).toBe(`orbit.example.org${FRAMEWORK_PORTRAIT_SEP}home`);
     // A bare file name, an archive member or a hashed name is never an address: the grammar's words (the editor's "never a hashed
     // file name"); a dotted name followed by words is a phrase, as written.
     expect(foundationMessagePrintSourceLabel('a1b2c3d4e5f6a7b8c9d0.svg')).toBe(MKTG_READABLE_SOURCE.uploadedFiles);
@@ -351,7 +354,12 @@ describe('the framework’s print', () => {
         'LFX record orbit and standard metrics',
         'LFX Insights: members',
       ])
-    ).toEqual(['orbit.example.org · 3 pages', 'github.com · org page and repos API', MKTG_READABLE_SOURCE.lfxRecord, 'LFX Insights: members']);
+    ).toEqual([
+      `orbit.example.org${FRAMEWORK_PORTRAIT_SEP}3 pages`,
+      `github.com${FRAMEWORK_PORTRAIT_SEP}org page and repos API`,
+      MKTG_READABLE_SOURCE.lfxRecord,
+      'LFX Insights: members',
+    ]);
     expect(foundationMessagePrintSourceRows(['Docs', 'Docs'])).toEqual(['Docs', 'Docs']);
     for (const row of foundationMessagePrintSourceRows(['Website: https://a.example.org/x/y', 'Link: https://b.example.org/z (notes)']))
       expect(row).not.toContain('/');
@@ -365,6 +373,7 @@ describe('the framework’s print', () => {
     // One middle-dot rule for every joined line: a plain space either side of the dot, the empty parts left out.
     expect(MKTG_PRINT_DOT).toBe(' · ');
     expect(mktgPrintJoin(['Goal 1', '', 'Events'])).toBe('Goal 1 · Events');
+    // The saved PDF's file name keeps the prints' plain dot; the framework's pages take FRAMEWORK_PORTRAIT_SEP (S-b).
     expect(mktgPrintDocumentTitle('Orbit', 'Messaging Framework', 2, '2026-11-04T10:00:00Z')).toBe('Orbit · Messaging Framework · v2 · 2026-11-04');
     // A report sentence: the URL in it rewritten, the sentence's punctuation kept.
     expect(foundationMessagePrintReportText('The members page https://www.orbit.example.org/members?x=1 answered with a sign-in wall.')).toBe(
@@ -469,7 +478,7 @@ describe('the framework’s print', () => {
     const view = buildFoundationMessagePrintView(many, 'TestOrbit', 1, null);
     expect(view.goals[0].segmentLabel).toBe('End users, Maintainers');
     expect(view.icps.map((icp) => [icp.goalLabel, icp.channelsLabel])).toEqual([
-      ['Adoption', 'Docs · Slack'],
+      ['Adoption', `Docs${FRAMEWORK_PORTRAIT_SEP}Slack`],
       ['', ''],
     ]);
   });

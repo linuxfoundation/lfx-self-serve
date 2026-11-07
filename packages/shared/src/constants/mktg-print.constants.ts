@@ -50,10 +50,35 @@ export const FRAMEWORK_PORTRAIT_SECTIONS = {
   sources: '05 Sources',
 } as const;
 
+/**
+ * The one middle-dot separator every printed line joins its parts with (the editor's rule, 7 November 2026: one
+ * spacing everywhere): a plain space, the middle dot, a plain space, as the grammar's footer sets it. The document
+ * title (the saved PDF's file name) and every print join with it (mktgPrintJoin, mktg-print-text.utils.ts); the
+ * framework book passes its own, FRAMEWORK_PORTRAIT_SEP, to the same join.
+ */
+export const MKTG_PRINT_DOT = ' · ';
+
+/**
+ * The framework book's middle dot (the editor's S-b read of 33584d0ea: in the book's Instrument Sans the dot sat tight on
+ * its one space, "Goal 1·Events"): a plain space and a thin space (U+2009, about a fifth of an em) each side; the thin space
+ * adds the room, the plain space beside it keeps the line breakable there. A provisional glyph for the editor's re-read.
+ * Every framework join passes it to `mktgPrintJoin` (a goal's `Goal 1 · Events`, the contents, the cover's eyebrow, edition
+ * and strip lines, the house's brand line, the channels, the personas, the sources' `host · N pages` and the facts'
+ * "used by"); the other prints and the saved PDF's file name keep MKTG_PRINT_DOT.
+ */
+export const FRAMEWORK_PORTRAIT_SEP = ' \u2009·\u2009 ';
+
+/**
+ * The dash between a profile's objection and its response (`“Too early?” — Not at all.`): a no-break space binds the dash
+ * to the question, so it never opens the response's line on its own (the editor's S-d read of 33584d0ea); a plain space
+ * after it lets the response wrap as text does. The template and the layout measure compose the line with it.
+ */
+export const MKTG_PRINT_OBJECTION_DASH = '\u00a0— ';
+
 /** The page titles of the framework's portrait book that are not the data's (a goal page is titled `Goal 1 · Events`). */
 export const FRAMEWORK_PORTRAIT_TITLES = {
   framework: 'Framework',
-  sayAvoid: 'Say and avoid · anchor questions',
+  sayAvoid: `Say and avoid${FRAMEWORK_PORTRAIT_SEP}anchor questions`,
   icps: 'Ideal customer profiles',
   messageHouse: 'Message house',
   keyNumbers: 'Key numbers',
@@ -403,14 +428,6 @@ export const FOUNDATION_MESSAGE_PRINT_NO_GAP_MESSAGE = 'The sources left no gap.
 
 /** The source types a run writes before a source (`Website: https://…`); the Sources & gaps page prints the source without the type. */
 export const FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES = ['Website', 'Link', 'Press release'] as const;
-
-/**
- * The one middle-dot separator every printed line joins its parts with (the editor's rule, 7 November 2026: one
- * spacing everywhere): a plain space, the middle dot, a plain space, as the grammar's footer sets it. The document
- * title, the cover's edition and strip lines, the house's brand line, a goal's `Goal 1 · Events`, the channels, the
- * personas and the facts' "used by" all join with it (mktgPrintJoin, mktg-print-text.utils.ts); no thin or hair space anywhere.
- */
-export const MKTG_PRINT_DOT = ' · ';
 
 /**
  * The one line under a cut list, everywhere a framework print cuts one (the

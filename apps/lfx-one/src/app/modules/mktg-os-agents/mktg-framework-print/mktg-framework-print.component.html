@@ -616,7 +616,7 @@
                       <div>
                         <dt>Objection</dt>
                         @if (icp.objectionResponse) {
-                          <dd>“{{ icp.objectionText }}” — {{ icp.objectionResponse }}</dd>
+                          <dd>“{{ icp.objectionText }}”{{ objectionDash }}{{ icp.objectionResponse }}</dd>
                         } @else {
                           <dd>“{{ icp.objectionText }}”</dd>
                         }

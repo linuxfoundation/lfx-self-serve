@@ -16,10 +16,10 @@ import {
   FOUNDATION_MESSAGE_PRINT_COUNT_WORDS,
   FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES,
   FOUNDATION_MESSAGE_PRINT_TITLE,
+  FRAMEWORK_PORTRAIT_SEP,
   MKTG_PRINT_BODY_INK_MIN_CONTRAST,
   MKTG_PRINT_INK_ON_DARK,
   MKTG_PRINT_INK_ON_LIGHT,
-  MKTG_PRINT_DOT,
   MKTG_PRINT_LF_LOOK,
 } from '../constants/mktg-print.constants';
 import { mktgPrintFigure, mktgPrintJoin } from './mktg-print-text.utils';
@@ -179,9 +179,9 @@ export function foundationMessagePrintIcps(content: FoundationMessageContent): F
       ...icp,
       goals,
       goalLabel: icp.goalTitles.join(', '),
-      channelsLabel: mktgPrintJoin(icp.channels),
+      channelsLabel: mktgPrintJoin(icp.channels, FRAMEWORK_PORTRAIT_SEP),
       goalChips,
-      personaLines: icp.personaRows.map((persona) => mktgPrintJoin([persona.role, persona.cares])),
+      personaLines: icp.personaRows.map((persona) => mktgPrintJoin([persona.role, persona.cares], FRAMEWORK_PORTRAIT_SEP)),
       whoWidth: frameworkPortraitIcpWhoWidth([icp.kind, ...goalChips]),
     };
   });
@@ -225,8 +225,8 @@ export function foundationMessagePrintSourceLabel(source: string): string {
     .trim()
     .replace(/^\((.*)\)$/, '$1')
     .trim();
-  if (type === 'Press release') return `The press release (${name})${remark ? `${MKTG_PRINT_DOT}${remark}` : ''}`;
-  return mktgPrintJoin([name, remark]);
+  if (type === 'Press release') return `The press release (${name})${remark ? `${FRAMEWORK_PORTRAIT_SEP}${remark}` : ''}`;
+  return mktgPrintJoin([name, remark], FRAMEWORK_PORTRAIT_SEP);
 }
 
 /**
@@ -242,12 +242,12 @@ export function foundationMessagePrintSourceRows(sources: readonly string[]): st
     const label = foundationMessagePrintSourceLabel(source);
     // The remark is the record's own word on one page; the count gathers the pages of one host whatever each remark said.
     // A row that is no address (the LFX record, a name the record wrote) is its own and never counted.
-    const host = label.split(MKTG_PRINT_DOT)[0];
+    const host = label.split(FRAMEWORK_PORTRAIT_SEP)[0];
     const row = BARE_ADDRESS_REGEX.test(host) ? rows.find((entry) => entry.host === host) : undefined;
     if (row) row.count += 1;
     else rows.push({ label, host: BARE_ADDRESS_REGEX.test(host) ? host : '', count: 1 });
   }
-  return rows.map((row) => (row.count > 1 ? `${row.host}${MKTG_PRINT_DOT}${row.count} pages` : row.label));
+  return rows.map((row) => (row.count > 1 ? `${row.host}${FRAMEWORK_PORTRAIT_SEP}${row.count} pages` : row.label));
 }
 
 /** A sentence of the report (a failed source's reason, a gap) with every URL and file name in it in a reader's words (the grammar's rule). */
@@ -269,7 +269,7 @@ export function foundationMessagePrintIcpPageIntro(start: number, count: number,
 /** Every goal's proof points with their sources and the goal that uses each, in the framework's order. */
 export function foundationMessagePrintFacts(goals: FoundationMessagePrintGoal[]): FoundationMessagePrintFactRow[] {
   return goals.flatMap((goal) =>
-    goal.proofRows.map((proof) => ({ fact: proof.fact, source: proof.source, usedBy: mktgPrintJoin([`Goal ${goal.n}`, goal.t]) }))
+    goal.proofRows.map((proof) => ({ fact: proof.fact, source: proof.source, usedBy: mktgPrintJoin([`Goal ${goal.n}`, goal.t], FRAMEWORK_PORTRAIT_SEP) }))
   );
 }
 
@@ -327,7 +327,7 @@ export function buildFoundationMessagePrintView(
   return {
     brand: mktgPrintBrand(kit),
     projectName: name,
-    eyebrow: name ? mktgPrintJoin([name, 'a Linux Foundation project']) : 'A Linux Foundation project',
+    eyebrow: name ? mktgPrintJoin([name, 'a Linux Foundation project'], FRAMEWORK_PORTRAIT_SEP) : 'A Linux Foundation project',
     title: FOUNDATION_MESSAGE_PRINT_TITLE,
     versionLabel: version === null ? '' : `V${version}.0`,
     approvedLabel: dateLabel ? `Approved ${dateLabel}` : '',

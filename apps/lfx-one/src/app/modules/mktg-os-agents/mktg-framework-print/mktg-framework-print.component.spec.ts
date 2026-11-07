@@ -9,10 +9,12 @@ import {
   FRAMEWORK_PORTRAIT_MAX_TILES,
   FRAMEWORK_PORTRAIT_TILE_SHARES,
   FRAMEWORK_PORTRAIT_ROOM,
+  FRAMEWORK_PORTRAIT_SEP,
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
   MKTG_PORTRAIT_PAGE,
   MKTG_PRINT_INK_ON_LIGHT,
+  MKTG_PRINT_OBJECTION_DASH,
   MKTG_PRINT_LF_LOOK,
   MKTG_PRINT_REVERSED_FILTER,
   MKTG_PORTRAIT_COLUMNS,
@@ -226,8 +228,8 @@ describe('MktgFrameworkPrintComponent', () => {
     );
     expect(inner.map((page) => page.querySelector('[data-testid="mktg-portrait-page-title"]')?.textContent?.trim())).toEqual([
       'Framework',
-      'Goal 1 · Adoption',
-      'Say and avoid · anchor questions',
+      `Goal 1${FRAMEWORK_PORTRAIT_SEP}Adoption`,
+      `Say and avoid${FRAMEWORK_PORTRAIT_SEP}anchor questions`,
       'Ideal customer profiles',
       'Message house',
       'Key numbers',
@@ -266,7 +268,9 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(query('mktg-framework-print-tagline')?.textContent?.trim()).toBe('Release, open.');
     expect(query('mktg-framework-print-umbrella')?.textContent?.trim()).toBe('Umbrella.');
     expect(query('mktg-framework-print-title')?.textContent?.trim()).toBe('Messaging Framework');
-    expect(query('mktg-framework-print-version')?.textContent?.trim()).toBe('V2.0 · Approved 6 Nov 2026 · figures as of 4 Nov 2026');
+    expect(query('mktg-framework-print-version')?.textContent?.trim()).toBe(
+      `V2.0${FRAMEWORK_PORTRAIT_SEP}Approved 6 Nov 2026${FRAMEWORK_PORTRAIT_SEP}figures as of 4 Nov 2026`
+    );
     // The editor's gap under the cover title (16–24 px, set at 18) is the global partial's `.fwp-cover-edition` rule, which the
     // unit build does not load: the class is asserted here, the computed gap in the e2e (mktg-os-asset-views.spec.ts).
     expect(query('mktg-framework-print-version')?.classList.contains('fwp-cover-edition')).toBe(true);
@@ -278,8 +282,8 @@ describe('MktgFrameworkPrintComponent', () => {
     const rows = Array.from(list?.querySelectorAll('[data-testid="mktg-framework-print-contents-row"]') ?? []);
     expect(rows.map((row) => text(row))).toEqual([
       '02 Framework',
-      '03 Goal 1 · Adoption',
-      '04 Say and avoid · anchor questions',
+      `03 Goal 1${FRAMEWORK_PORTRAIT_SEP}Adoption`,
+      `04 Say and avoid${FRAMEWORK_PORTRAIT_SEP}anchor questions`,
       '05 Ideal customer profiles',
       '06 Message house',
       '07 Key numbers',
@@ -287,7 +291,7 @@ describe('MktgFrameworkPrintComponent', () => {
     ]);
     expect(rows.map((row) => row.querySelectorAll('span').length)).toEqual(rows.map(() => 2));
     // The LF look has no kit, so no web host: the strip's right carries the version and the approval's date.
-    expect(text(query('mktg-framework-print-cover-strip'))).toBe('TestOrbit · a Linux Foundation project V2.0 · 6 Nov 2026');
+    expect(text(query('mktg-framework-print-cover-strip'))).toBe(`TestOrbit · a Linux Foundation project V2.0${FRAMEWORK_PORTRAIT_SEP}6 Nov 2026`);
     expect(query('mktg-framework-print-cover-strip')?.classList.contains('pp-cover-strip--wrapped')).toBe(false);
     // The LF logo stands on the dark band.
     expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toBe('/images/logo_lf_white.svg');
@@ -437,9 +441,12 @@ describe('MktgFrameworkPrintComponent', () => {
     ]);
     expect(rows[0].querySelector('.fwp-icp-lead')?.textContent?.trim()).toBe('Ship with confidence.');
     expect(text(rows[0].querySelectorAll('dd')[4])).toBe('“Too early?” — Not at all.');
-    expect(text(rows[0].querySelectorAll('dd')[5])).toBe('Docs · Slack A fact Docs');
+    // The dash is bound to the question by a no-break space, so it never opens the response's line (editor S-d).
+    expect(rows[0].querySelectorAll('dd')[4].textContent).toContain(`”${MKTG_PRINT_OBJECTION_DASH}Not at all.`);
+    expect(MKTG_PRINT_OBJECTION_DASH).toBe('\u00a0— ');
+    expect(text(rows[0].querySelectorAll('dd')[5])).toBe(`Docs${FRAMEWORK_PORTRAIT_SEP}Slack A fact Docs`);
     expect(rows[0].querySelector('.fwp-icp-proofs')?.parentElement?.previousElementSibling?.textContent?.trim()).toBe('Channels');
-    expect(rows[0].querySelector('.fwp-icp-personas')?.textContent?.trim()).toBe('SRE · uptime');
+    expect(rows[0].querySelector('.fwp-icp-personas')?.textContent?.trim()).toBe(`SRE${FRAMEWORK_PORTRAIT_SEP}uptime`);
     // An objection without a response prints its question alone: no dash, no placeholder (the editor's rule, 7 Nov).
     expect(Array.from(rows[1].querySelectorAll('dt')).map((term) => term.textContent?.trim())).toEqual([
       'Need',
@@ -459,6 +466,8 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(query('mktg-framework-print-matrix')).toBeNull();
     // One profile: the page has room for the goals × profiles matrix, one row per profile, a dot where the goal is written for it.
     await setView(buildFoundationMessagePrintView({ ...CONTENT, icp: [CONTENT.icp[0]] }, 'TestOrbit', 2, null));
+    // One profile: the intro in the singular (editor S-c).
+    expect(query('.fwp-intro-icps', true)?.textContent).toContain('1 profile. It names who they are, what they need, what TestOrbit gives them,');
     const matrix = query('mktg-framework-print-matrix');
     expect(Array.from(matrix?.querySelectorAll('th') ?? []).map((cell) => text(cell))).toEqual(['Profile', 'Goal 1 Adoption']);
     expect(matrix?.querySelector('.fwp-grid-name')?.textContent?.trim()).toBe('End users');
@@ -471,7 +480,7 @@ describe('MktgFrameworkPrintComponent', () => {
     await configure('browser', printView(null));
     const house = query('mktg-framework-print-house');
     expect(house?.querySelector('.fwp-house-umbrella')?.textContent?.trim()).toBe('Umbrella.');
-    expect(house?.querySelector('.fwp-house-line')?.textContent?.trim()).toBe('Brand line · Release, open.');
+    expect(house?.querySelector('.fwp-house-line')?.textContent?.trim()).toBe(`Brand line${FRAMEWORK_PORTRAIT_SEP}Release, open.`);
     expect(query('mktg-framework-print-pillars')?.style.getPropertyValue('--fwp-pillar-count')).toBe('1');
     expect(text(query('mktg-framework-print-pillars'))).toBe('Open Open message. Fact Web');
     expect(query('mktg-framework-print-pillars')?.querySelector('.fwp-pillar')?.classList.contains('fwp-pillar-spark')).toBe(true);
@@ -485,11 +494,10 @@ describe('MktgFrameworkPrintComponent', () => {
     const numbers = query('mktg-framework-print-numbers');
     expect(numbers?.querySelector('.fwp-number')?.textContent?.trim()).toBe('1,200');
     expect(numbers?.querySelector('.fwp-number-label')?.textContent?.trim()).toBe('members');
-    expect(frame('key-numbers')?.querySelector('.pp-body')?.textContent?.trim()).toBe(
-      'The figures the framework leans on, with where each came from. LFX figures are as of 4 Nov 2026.'
-    );
+    // The one figure and its fact come from the site, so the "as of" sentence, the LFX figures', is not printed (editor S-c).
+    expect(frame('key-numbers')?.querySelector('.pp-body')?.textContent?.trim()).toBe('The figures the framework leans on, with where each came from.');
     const facts = Array.from(query('mktg-framework-print-facts')?.querySelectorAll('tbody tr') ?? []).slice(1);
-    expect(facts.map((row) => text(row))).toEqual(['1,200 members Website Goal 1 · Adoption']);
+    expect(facts.map((row) => text(row))).toEqual([`1,200 members Website Goal 1${FRAMEWORK_PORTRAIT_SEP}Adoption`]);
     // The table's columns are its <colgroup> (fixed layout reads <col>): 50/25/25 %; the source chip wraps within the framework's cap.
     const cols = Array.from(query('mktg-framework-print-facts-table')?.querySelectorAll<HTMLTableColElement>('colgroup > col') ?? []);
     expect(cols.map((col) => col.style.width)).toEqual(['50%', '25%', '25%']);
@@ -669,7 +677,7 @@ describe('MktgFrameworkPrintComponent', () => {
     // Each source in a reader's words and never a path (foundationMessagePrintSourceRows): its type prefix off, a URL as its host, the pages
     // of one host gathered into one counted row, a press release named with its site's host.
     expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-sources-read-row"]')).map((item) => item.textContent?.trim())).toEqual([
-      'orbit.example.org · 2 pages',
+      `orbit.example.org${FRAMEWORK_PORTRAIT_SEP}2 pages`,
       'The press release (linuxfoundation.org)',
     ]);
     expect(query('mktg-framework-print-sources-read')?.textContent).not.toContain('/');
@@ -680,7 +688,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(frame('sources')?.textContent).not.toContain('Notes');
     expect(frame('sources')?.textContent).not.toContain('First note.');
     expect(text(query('mktg-framework-print-approval'))).toBe(
-      'V2.0 · Approved 6 Nov 2026. The gaps above were open at approval. A later run re-reads the sources and refreshes the LFX figures.'
+      `V2.0${FRAMEWORK_PORTRAIT_SEP}Approved 6 Nov 2026. The gaps above were open at approval. A later run re-reads the sources and refreshes the LFX figures.`
     );
     // The reviewer's note is not printed anywhere.
     expect(host().textContent).not.toContain('For the reviewer.');
@@ -696,7 +704,9 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(frame('sources')?.textContent).not.toMatch(/\bRead\b/);
     expect(query('mktg-framework-print-sources-failed-empty')?.textContent?.trim()).toBe('No source failed.');
     expect(query('mktg-framework-print-gaps-empty')?.textContent?.trim()).toBe('The sources left no gap.');
-    expect(text(query('mktg-framework-print-approval'))).toBe('V2.0 · Approved 6 Nov 2026. A later run re-reads the sources and refreshes the LFX figures.');
+    expect(text(query('mktg-framework-print-approval'))).toBe(
+      `V2.0${FRAMEWORK_PORTRAIT_SEP}Approved 6 Nov 2026. A later run re-reads the sources and refreshes the LFX figures.`
+    );
     // No report at all (a record without one): the page says nothing the store never said — no intro, no Read, Could-not-be-read or Gaps
     // block, no empty-state line; the approval card alone, and the page stays in the plan.
     await setView(buildFoundationMessagePrintView(CONTENT, 'TestOrbit', 2, null));
@@ -1003,7 +1013,7 @@ describe('MktgFrameworkPrintComponent', () => {
     const titleSize = parseFloat(goalPage?.style.getPropertyValue('--fwp-title-size') ?? '34');
     const title = goalPage?.querySelector('.pp-title')?.textContent?.trim() ?? '';
     expect(titleSize).toBe(Math.ceil(34 * MKTG_PORTRAIT_FIT.minScale));
-    expect(title).toBe('Goal 1 · A goal whose title runs far past the width of the page’s title line');
+    expect(title).toBe(`Goal 1${FRAMEWORK_PORTRAIT_SEP}A goal whose title runs far past the width of the page’s title line`);
     const titleLines = Math.ceil(title.length / mktgPortraitCharsPerLine(MKTG_PORTRAIT_PAGE.contentWidth, titleSize, { weight: 500 }));
     expect(titleLines).toBe(2);
     expect(frame('framework')?.style.getPropertyValue('--fwp-title-size')).toBe('34px');
@@ -1230,7 +1240,10 @@ describe('MktgFrameworkPrintComponent', () => {
     await configure('browser', printView(kit, 'Cloud Native Computing Foundation (CNCF)'));
     const strip = query('mktg-framework-print-cover-strip');
     const halves = (): string[] => Array.from(strip?.querySelectorAll('span') ?? []).map((span) => span.textContent?.trim() ?? '');
-    expect(halves()).toEqual(['Cloud Native Computing Foundation (CNCF)', `${brandKitWebsiteHost(kit.websiteUrl)} · V2.0 · 6 Nov 2026`]);
+    expect(halves()).toEqual([
+      'Cloud Native Computing Foundation (CNCF)',
+      `${brandKitWebsiteHost(kit.websiteUrl)}${FRAMEWORK_PORTRAIT_SEP}V2.0${FRAMEWORK_PORTRAIT_SEP}6 Nov 2026`,
+    ]);
     expect(strip?.classList.contains('pp-cover-strip')).toBe(true);
     expect(strip?.classList.contains('pp-cover-strip--wrapped')).toBe(false);
     expect(top(strip)).toBe(FRAMEWORK_PORTRAIT_TOPS.coverStrip);

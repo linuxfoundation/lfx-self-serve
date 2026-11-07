@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { FRAMEWORK_PORTRAIT_SEP } from '../constants/mktg-print.constants';
 import { FoundationMessageContent } from '../interfaces/foundation-message.interface';
 import { frameworkPortraitIcpPages } from './mktg-framework-portrait-layout.utils';
 import { frameworkPortraitPlan } from './mktg-framework-portrait-plan.utils';
@@ -67,11 +68,11 @@ describe('the framework’s portrait plan', () => {
     expect(plan(4, 5).map((page) => [page.id, page.section, page.title])).toEqual([
       ['cover', 'Cover', 'Cover'],
       ['framework', '01 Framework', 'Framework'],
-      ['goal-1', '01 Framework', 'Goal 1 · Goal 1 title'],
-      ['goal-2', '01 Framework', 'Goal 2 · Goal 2 title'],
-      ['goal-3', '01 Framework', 'Goal 3 · Goal 3 title'],
-      ['goal-4', '01 Framework', 'Goal 4 · Goal 4 title'],
-      ['say-avoid', '01 Framework', 'Say and avoid · anchor questions'],
+      ['goal-1', '01 Framework', `Goal 1${FRAMEWORK_PORTRAIT_SEP}Goal 1 title`],
+      ['goal-2', '01 Framework', `Goal 2${FRAMEWORK_PORTRAIT_SEP}Goal 2 title`],
+      ['goal-3', '01 Framework', `Goal 3${FRAMEWORK_PORTRAIT_SEP}Goal 3 title`],
+      ['goal-4', '01 Framework', `Goal 4${FRAMEWORK_PORTRAIT_SEP}Goal 4 title`],
+      ['say-avoid', '01 Framework', `Say and avoid${FRAMEWORK_PORTRAIT_SEP}anchor questions`],
       ['icps-1', '02 ICPs', 'Ideal customer profiles'],
       ['icps-2', '02 ICPs', 'Ideal customer profiles (2)'],
       ['icps-3', '02 ICPs', 'Ideal customer profiles (3)'],

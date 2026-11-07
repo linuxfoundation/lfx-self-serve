@@ -26,6 +26,7 @@ import {
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
   MKTG_PRINT_CUT_NOTE,
+  MKTG_PRINT_OBJECTION_DASH,
 } from '../constants/mktg-print.constants';
 import { MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
@@ -920,7 +921,8 @@ export function frameworkPortraitIcpHeight(icp: FoundationMessagePrintIcp, tight
   if (icp.value) texts.push(icp.value);
   if (icp.lead) texts.push(icp.lead);
   if (icp.cta) texts.push(icp.cta);
-  if (icp.objectionText) texts.push(icp.objectionResponse ? `“${icp.objectionText}” — ${icp.objectionResponse}` : `“${icp.objectionText}”`);
+  if (icp.objectionText)
+    texts.push(icp.objectionResponse ? `“${icp.objectionText}”${MKTG_PRINT_OBJECTION_DASH}${icp.objectionResponse}` : `“${icp.objectionText}”`);
   const fields = texts.map((text) => frameworkPortraitTextHeight(text, field, column));
   if (icp.channelsLabel || icp.proofRows.length > 0) {
     const proofs = icp.proofRows.reduce((sum, proof) => sum + frameworkPortraitTextHeight(`${proof.fact} ${proof.source}`, field, column), 0);
@@ -1041,6 +1043,11 @@ export function frameworkPortraitFactRowHeight(fact: FoundationMessagePrintFactR
   );
 }
 
+/** Whether a printed source label is LFX's (the project record, LFX Insights), whose figures the "as of" date dates. */
+export function frameworkPortraitLfxSourced(source: string): boolean {
+  return /\bLFX\b/.test(source);
+}
+
 /** The rows of tiles a count takes (each FRAMEWORK_PORTRAIT_NUMBER_TILE.height high). */
 function tileRows(tiles: readonly FoundationMessagePrintNumberTile[]): number {
   return Math.ceil(tiles.reduce((sum, tile) => sum + 1 / tile.share, 0) - 1e-9);
@@ -1055,7 +1062,9 @@ export function frameworkPortraitNumbersPages(view: FoundationMessagePrintView):
   const tile = FRAMEWORK_PORTRAIT_NUMBER_TILE;
   const tops = FRAMEWORK_PORTRAIT_TOPS;
   const date = view.dateReadLabel;
-  const intro = `The figures the framework leans on, with where each came from.${date ? ` LFX figures are as of ${date}.` : ''}`;
+  // The "as of" sentence is the LFX figures': it prints only when a figure on these pages (a key number, a fact) is LFX-sourced (editor S-c).
+  const lfxFigures = [...view.numbers, ...view.facts].some((row) => frameworkPortraitLfxSourced(row.source));
+  const intro = `The figures the framework leans on, with where each came from.${date && lfxFigures ? ` LFX figures are as of ${date}.` : ''}`;
   const tiles = frameworkPortraitNumberTiles(view.numbers);
   const tableRows = tiles.length ? [] : [...view.numbers];
   const noFacts: FoundationMessagePrintCutList<FoundationMessagePrintFactRow> = { rows: [], cut: 0, tight: false, note: '' };

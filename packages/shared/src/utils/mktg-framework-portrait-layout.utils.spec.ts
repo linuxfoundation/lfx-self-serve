@@ -16,7 +16,9 @@ import {
   FRAMEWORK_PORTRAIT_ROOM,
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
+  MKTG_PRINT_OBJECTION_DASH,
 } from '../constants/mktg-print.constants';
+import { MKTG_READABLE_SOURCE } from '../constants/mktg-readable-source.constants';
 import { FoundationMessageContent } from '../interfaces/foundation-message.interface';
 import { FoundationMessagePrintNumber } from '../interfaces/mktg-print.interface';
 import {
@@ -26,6 +28,7 @@ import {
   frameworkPortraitFactRowHeight,
   frameworkPortraitFigureSize,
   frameworkPortraitNumberTiles,
+  frameworkPortraitLfxSourced,
   frameworkPortraitNumbersPages,
   frameworkPortraitNumbersRowIn,
   frameworkPortraitWordCut,
@@ -632,7 +635,13 @@ describe('the framework portrait book’s profile pages', () => {
       frameworkPortraitTextHeight(text, tight ? FRAMEWORK_PORTRAIT_TYPE.icpFieldTight : FRAMEWORK_PORTRAIT_TYPE.icpField, column);
     const eyebrow = 9.5 * 1.2 + 4;
     const row1 = eyebrow + Math.max(field(short.need), field(short.value), field(short.lead));
-    const row2 = eyebrow + Math.max(field(short.cta), field(`“Too early?” — ${short.objectionResponse}`), field('Docs · Slack') + 4 + field('A fact. Docs'));
+    const row2 =
+      eyebrow +
+      Math.max(
+        field(short.cta),
+        field(`“Too early?”${MKTG_PRINT_OBJECTION_DASH}${short.objectionResponse}`),
+        field('Docs · Slack') + 4 + field('A fact. Docs')
+      );
     const grid = row1 + 18 + row2;
     const whoColumn =
       frameworkPortraitTextHeight(short.name, FRAMEWORK_PORTRAIT_TYPE.icpName, 190) +
@@ -770,6 +779,26 @@ describe('the framework portrait book’s key numbers', () => {
     expect(frameworkPortraitNumbersPages(view(5))[0].factsTop).toBe(560);
     expect(frameworkPortraitNumbersPages(view(1))[0].factsTop).toBe(388);
     expect(frameworkPortraitNumbersPages(view(0))[0]).toMatchObject({ tiles: [], numbersTable: [], factsTop: tile.top });
+  });
+
+  it('dates the LFX figures in the intro only when a key number or fact on the pages is LFX-sourced (editor S-c)', () => {
+    const dated = (overrides: Partial<FoundationMessagePrintView>): string =>
+      frameworkPortraitNumbersPages(viewWith({ dateReadLabel: '7 Nov 2026', ...overrides }))[0].intro;
+    // The smallest record: its one figure and fact come from the site; the sentence is not printed.
+    expect(dated({})).toBe('The figures the framework leans on, with where each came from.');
+    // A key number the LFX project record states, or a fact LFX Insights states, is an LFX figure: the sentence dates it.
+    const number = { ...view(1).numbers[0], source: MKTG_READABLE_SOURCE.lfxRecord };
+    expect(dated({ numbers: [number] })).toBe('The figures the framework leans on, with where each came from. LFX figures are as of 7 Nov 2026.');
+    const fact = { ...view(1).facts[0], source: 'LFX Insights: members' };
+    expect(dated({ facts: [fact] })).toContain('LFX figures are as of 7 Nov 2026.');
+    // No read date: no sentence, LFX-sourced or not.
+    expect(dated({ dateReadLabel: '', numbers: [number] })).toBe('The figures the framework leans on, with where each came from.');
+    expect(['LFX Insights: members', MKTG_READABLE_SOURCE.lfxRecord, 'Website', 'lfx.example.org'].map(frameworkPortraitLfxSourced)).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ]);
   });
 
   it('steps the figure down to the half-size floor and fits the label to the room under it', () => {

@@ -7,6 +7,7 @@ import {
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES,
   FRAMEWORK_PORTRAIT_ROOM,
+  FRAMEWORK_PORTRAIT_SEP,
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
   MKTG_PORTRAIT_FIT,
@@ -350,7 +351,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
       await expect(frame.getByTestId('mktg-framework-print-umbrella')).toHaveText('Open collaboration.');
       await expect(frame.getByTestId('mktg-framework-print-title')).toHaveText('Messaging Framework');
-      await expect(frame.getByTestId('mktg-framework-print-version')).toHaveText('V1.0 · Approved 19 Oct 2026');
+      await expect(frame.getByTestId('mktg-framework-print-version')).toHaveText(`V1.0${FRAMEWORK_PORTRAIT_SEP}Approved 19 Oct 2026`);
       // The editor's gap under the cover title: 16–24 px, set at 18 (the framework pages' global partial).
       await expect(frame.getByTestId('mktg-framework-print-version')).toHaveCSS('margin-top', '18px');
       await expect(frame.getByTestId('mktg-framework-print-contents-row')).toHaveCount(7);
@@ -365,8 +366,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.getByTestId('mktg-portrait-page-doc').first()).toContainText('messaging framework');
       await expect(print.getByTestId('mktg-portrait-page-title')).toHaveText([
         'Framework',
-        'Goal 1 · Adoption',
-        'Say and avoid · anchor questions',
+        `Goal 1${FRAMEWORK_PORTRAIT_SEP}Adoption`,
+        `Say and avoid${FRAMEWORK_PORTRAIT_SEP}anchor questions`,
         'Ideal customer profiles',
         'Message house',
         'Key numbers',
@@ -425,7 +426,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveText('No source failed.');
       await expect(print.getByTestId('mktg-framework-print-gaps-empty')).toHaveText('The sources left no gap.');
       await expect(print.getByTestId('mktg-framework-print-approval')).toHaveText(
-        'V1.0 · Approved 19 Oct 2026. A later run re-reads the sources and refreshes the LFX figures.'
+        `V1.0${FRAMEWORK_PORTRAIT_SEP}Approved 19 Oct 2026. A later run re-reads the sources and refreshes the LFX figures.`
       );
       await expect(print.getByTestId('mktg-framework-print-notes')).toHaveCount(0);
       await expect(pages.last()).not.toContainText('Notes');
@@ -600,7 +601,7 @@ test('the framework print lists every figure past six as a table, continued on a
     })
   );
   expect(goalTitles.map((title) => title.underLead)).toEqual([true, true, true, true]);
-  expect(goalTitles[3].text).toBe('Goal 4 · Events where the roadmap is decided in the open');
+  expect(goalTitles[3].text).toBe(`Goal 4${FRAMEWORK_PORTRAIT_SEP}Events where the roadmap is decided in the open`);
   const sayAvoid = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="say-avoid"]');
   const order = await sayAvoid.evaluate((frame) => {
     const bottom = (selector: string): number => frame.querySelector(selector)?.getBoundingClientRect().bottom ?? Number.NaN;
@@ -714,7 +715,7 @@ test('the cover strip keeps one line under a long project name with the kit’s 
   await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
   const frame = await layoutMktgPrintFrame(page);
   const strip = frame.getByTestId('mktg-framework-print-cover-strip');
-  await expect(strip.locator('span')).toHaveText([project.name, /^one\.example\.org · V\d+\.0 · /]);
+  await expect(strip.locator('span')).toHaveText([project.name, new RegExp(`^one\\.example\\.org${FRAMEWORK_PORTRAIT_SEP}V\\d+\\.0${FRAMEWORK_PORTRAIT_SEP}`)]);
   await expect(strip).not.toHaveClass(/pp-cover-strip--wrapped/);
   const lines = await strip.evaluate((block) => {
     const line = parseFloat(getComputedStyle(block).fontSize);
@@ -818,8 +819,8 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   // bounds it: tightened past nine pairs (eighteen rows), the runs collapsed to ranges past twelve pairs (twenty-four); fifteen rows need neither).
   const contents = print.getByTestId('mktg-framework-print-contents');
   await expect(contents.getByTestId('mktg-framework-print-contents-row')).toHaveCount(15);
-  await expect(contents.getByTestId('mktg-framework-print-contents-row').nth(1)).toContainText('03 Goal 1 · Goal 1 title');
-  await expect(contents.getByTestId('mktg-framework-print-contents-row').nth(8)).toContainText('10 Goal 8 · Goal 8 title');
+  await expect(contents.getByTestId('mktg-framework-print-contents-row').nth(1)).toContainText(`03 Goal 1${FRAMEWORK_PORTRAIT_SEP}Goal 1 title`);
+  await expect(contents.getByTestId('mktg-framework-print-contents-row').nth(8)).toContainText(`10 Goal 8${FRAMEWORK_PORTRAIT_SEP}Goal 8 title`);
   const contentsFit = await contents.evaluate((list) => {
     const frame = list.closest('[data-testid="lfx-mktg-portrait-page"]') as HTMLElement;
     const strip = frame.querySelector('[data-testid="mktg-framework-print-cover-strip"]') as HTMLElement;
@@ -1021,6 +1022,24 @@ test('the profile cards’ fields start at one x on every profile page: the name
   expect(cards.map((card) => card.who)).toEqual(cards.map(() => MKTG_PORTRAIT_PAGE.margin));
   expect(new Set(cards.map((card) => card.fields)).size).toBe(1);
   expect(cards[0].fields).toBeGreaterThan(MKTG_PORTRAIT_PAGE.margin + 190);
+  // The objection's dash stays on the question's line, bound by the no-break space, on every card with a response (editor S-d).
+  const dashes = await print.locator('[data-testid="mktg-framework-print-icp-fields"] dd').evaluateAll((cells) =>
+    cells
+      .filter((cell) => (cell.textContent ?? '').includes('—'))
+      .map((cell) => {
+        const node = Array.from(cell.childNodes).find((child) => child.nodeType === Node.TEXT_NODE && (child.textContent ?? '').includes('—')) as Text;
+        const glyphTop = (offset: number): number => {
+          const range = document.createRange();
+          range.setStart(node, offset);
+          range.setEnd(node, offset + 1);
+          return Math.round(range.getBoundingClientRect().top);
+        };
+        const text = node.textContent ?? '';
+        return { bound: text.includes('\u00a0—'), sameLine: glyphTop(text.indexOf('—')) === glyphTop(text.indexOf('”')) };
+      })
+  );
+  expect(dashes.length).toBeGreaterThan(0);
+  expect(dashes).toEqual(dashes.map(() => ({ bound: true, sameLine: true })));
   await page.screenshot({ path: info.outputPath('foundation-message-print-icp-columns.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);

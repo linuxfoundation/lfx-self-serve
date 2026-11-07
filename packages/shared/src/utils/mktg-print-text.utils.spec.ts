@@ -3,13 +3,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MKTG_PRINT_DOT } from '../constants/mktg-print.constants';
+import { FRAMEWORK_PORTRAIT_SEP, MKTG_PRINT_DOT } from '../constants/mktg-print.constants';
 import { mktgPrintFigure, mktgPrintJoin } from './mktg-print-text.utils';
 
 describe('the marketing prints’ joined lines', () => {
   it('joins the parts with the one middle dot, a plain space either side, the empty parts left out', () => {
     expect(MKTG_PRINT_DOT).toBe(' · ');
     expect(mktgPrintJoin(['Goal 1', '', 'Events'])).toBe('Goal 1 · Events');
+    // The framework book's dot: a plain space and a thin space each side (the editor's S-b read: it sat tight in Instrument Sans).
+    expect(FRAMEWORK_PORTRAIT_SEP).toBe(' \u2009·\u2009 ');
+    expect(mktgPrintJoin(['Goal 1', '', 'Events'], FRAMEWORK_PORTRAIT_SEP)).toBe('Goal 1 \u2009·\u2009 Events');
     expect(mktgPrintJoin(['Maintainer', ''])).toBe('Maintainer');
     expect(mktgPrintJoin([' Maintainer ', '  '])).toBe('Maintainer');
     expect(mktgPrintJoin([])).toBe('');

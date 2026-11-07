@@ -9,12 +9,15 @@
 
 import { MKTG_PRINT_DOT } from '../constants/mktg-print.constants';
 
-/** Parts joined with the one middle dot, each trimmed, the empty ones left out: `Goal 1 · Events`. */
-export function mktgPrintJoin(parts: readonly string[]): string {
+/**
+ * Parts joined with the middle dot, each trimmed, the empty ones left out: `Goal 1 · Events`. The default is the
+ * prints' plain dot; the framework book passes its own, FRAMEWORK_PORTRAIT_SEP.
+ */
+export function mktgPrintJoin(parts: readonly string[], dot: string = MKTG_PRINT_DOT): string {
   return parts
     .map((part) => part.trim())
     .filter((part) => part !== '')
-    .join(MKTG_PRINT_DOT);
+    .join(dot);
 }
 
 /**

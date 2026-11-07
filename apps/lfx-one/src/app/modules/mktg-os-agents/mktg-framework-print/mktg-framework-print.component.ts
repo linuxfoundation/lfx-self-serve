@@ -11,6 +11,7 @@ import {
   FRAMEWORK_PORTRAIT_NUMBER_TILE,
   FRAMEWORK_PORTRAIT_PAGE_IDS,
   FRAMEWORK_PORTRAIT_ROOM,
+  FRAMEWORK_PORTRAIT_SEP,
   FRAMEWORK_PORTRAIT_STATEMENT_SHARES,
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
@@ -18,7 +19,7 @@ import {
   MKTG_PORTRAIT_COLUMNS,
   MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_PAGE,
-  MKTG_PRINT_DOT,
+  MKTG_PRINT_OBJECTION_DASH,
 } from '@lfx-one/shared/constants';
 import {
   FoundationMessagePrintFittedText,
@@ -199,14 +200,16 @@ export class MktgFrameworkPrintComponent {
         firstPage: 1,
       }
   );
-  /** The one middle-dot separator the template joins a line's parts with (MKTG_PRINT_DOT). */
-  protected readonly dot = MKTG_PRINT_DOT;
+  /** The framework book's middle dot the template joins a line's parts with (FRAMEWORK_PORTRAIT_SEP). */
+  protected readonly dot = FRAMEWORK_PORTRAIT_SEP;
+  /** The dash between an objection and its response, bound to the question by a no-break space (MKTG_PRINT_OBJECTION_DASH). */
+  protected readonly objectionDash = MKTG_PRINT_OBJECTION_DASH;
   /** The frames, in the plan's order, each with its book page number, printed section label, band and laid-out data. */
   protected readonly frames = this.initFrames();
   /** The cover's edition line: `V1.0 · Approved 6 Nov 2026 · figures as of 4 Nov 2026`, less any clause the revision lacks. */
   protected readonly coverVersionLine = computed(() => {
     const view = this.view();
-    return mktgPrintJoin([view.versionLabel, view.approvedLabel, view.dateReadLabel ? `figures as of ${view.dateReadLabel}` : '']);
+    return mktgPrintJoin([view.versionLabel, view.approvedLabel, view.dateReadLabel ? `figures as of ${view.dateReadLabel}` : ''], FRAMEWORK_PORTRAIT_SEP);
   });
   /** The cover's bottom strip, right: `aaif.io · V1.0 · 6 Nov 2026`, less any part the revision lacks. */
   /**
@@ -215,7 +218,7 @@ export class MktgFrameworkPrintComponent {
    * strip wraps, and then it wraps moved up a line so it ends where the one line did (`MKTG_PORTRAIT_COVER_STRIP`).
    */
   protected readonly coverStrip = computed(() => {
-    const right = mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel]);
+    const right = mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel], FRAMEWORK_PORTRAIT_SEP);
     const strip = mktgPortraitCoverStrip(this.resolvedBook().footLeft, right, MKTG_PORTRAIT_PAGE.contentWidth, this.resolvedLook().fontStack);
     return { ...strip, top: TOPS.coverStrip - (strip.wraps ? MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight : 0) };
   });
@@ -430,7 +433,7 @@ export class MktgFrameworkPrintComponent {
       index,
       intro:
         index === 1
-          ? `${total} ${total === 1 ? 'profile' : 'profiles'}. Each names who they are, what they need, what ${project} gives them, the lead message, the call to action, the objection to expect and where to reach them. Goal numbers refer to the goal pages.`
+          ? `${total} ${total === 1 ? 'profile. It names' : 'profiles. Each names'} who they are, what they need, what ${project} gives them, the lead message, the call to action, the objection to expect and where to reach them. Goal numbers refer to the goal pages.`
           : foundationMessagePrintIcpPageIntro(start + 1, rows.icps.length, total),
       rowsTop,
       icps: rows.icps,
@@ -474,7 +477,7 @@ export class MktgFrameworkPrintComponent {
     const gapsClause = view.approvedLabel && (report?.gaps.length ?? 0) > 0 ? 'The gaps above were open at approval. ' : '';
     return {
       report: lists,
-      approvalLead: lead.length ? `${mktgPrintJoin(lead)}.` : '',
+      approvalLead: lead.length ? `${mktgPrintJoin(lead, FRAMEWORK_PORTRAIT_SEP)}.` : '',
       approvalNote: `${gapsClause}A later run re-reads the sources and refreshes the LFX figures.`,
     };
   }
