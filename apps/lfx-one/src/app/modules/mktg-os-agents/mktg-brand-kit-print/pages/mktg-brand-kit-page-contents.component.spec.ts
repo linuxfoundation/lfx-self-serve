@@ -40,9 +40,35 @@ describe('the contents page', () => {
     expect(glance?.querySelectorAll('.kp-glance-dot')).toHaveLength(view.palette.length);
     expect(glance?.querySelector('.kp-glance-family')?.textContent).toContain('Montserrat');
     expect(glance?.querySelector('.kp-glance-weights')?.textContent).toBe('· weights 400, 700');
-    expect(glance?.querySelector('[data-testid="brand-kit-contents-version"]')?.textContent).toContain('Version V4.0 · October 2026');
+    // The version prints on the cover and the back cover only, never in the glance.
+    expect(glance?.querySelector('[data-testid="brand-kit-contents-version"]')).toBeNull();
+    expect(glance?.textContent).not.toContain('V4.0');
     expect(frame.querySelector('[data-testid="brand-kit-contents-approval"]')).toBeNull();
     expect(frame.textContent).not.toContain('[');
+  });
+
+  it('moves the two lower blocks down for sixteen rows and lists seventeen in two columns, the type never smaller', async () => {
+    const sixteen = await setup();
+    const extra = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        ...sixteen.pages[sixteen.pages.length - 1],
+        id: `extra-${index}`,
+        title: `Extra ${index + 1}`,
+        number: 17 + index,
+      }));
+    sixteen.fixture.componentRef.setInput('pages', [...sixteen.pages, ...extra(2)]);
+    await sixteen.fixture.whenStable();
+    const list = sixteen.frame.querySelector('[data-testid="brand-kit-contents-list"]');
+    expect(list?.querySelectorAll('.kp-contents-row')).toHaveLength(16);
+    expect(list?.classList.contains('kp-contents-list--columns')).toBe(false);
+    expect(rectOf(sixteen.frame.querySelector('[data-testid="brand-kit-contents-built-from"]'))).toEqual({ left: '56px', top: '716px', width: '340px' });
+    expect(rectOf(sixteen.frame.querySelector('[data-testid="brand-kit-contents-glance"]'))).toEqual({ left: '420px', top: '716px', width: '340px' });
+
+    sixteen.fixture.componentRef.setInput('pages', [...sixteen.pages, ...extra(3)]);
+    await sixteen.fixture.whenStable();
+    expect(list?.querySelectorAll('.kp-contents-row')).toHaveLength(17);
+    expect(list?.classList.contains('kp-contents-list--columns')).toBe(true);
+    expect(rectOf(sixteen.frame.querySelector('[data-testid="brand-kit-contents-built-from"]'))).toEqual({ left: '56px', top: '690px', width: '340px' });
   });
 
   it('prints the approval line only from a recorded approval, with the approver when the store names one', async () => {

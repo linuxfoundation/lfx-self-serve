@@ -25,6 +25,7 @@ import { MktgBrandKitPageUsageComponent } from './pages/mktg-brand-kit-page-usag
 import { MktgBrandKitPageVisualIconographyComponent } from './pages/mktg-brand-kit-page-visual-iconography.component';
 import { MktgBrandKitPageVisualImageryComponent } from './pages/mktg-brand-kit-page-visual-imagery.component';
 import { MktgBrandKitPageVoiceComponent } from './pages/mktg-brand-kit-page-voice.component';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The kit's portrait book, one fixed US Letter frame per page on the portrait
@@ -55,6 +56,7 @@ import { MktgBrandKitPageVoiceComponent } from './pages/mktg-brand-kit-page-voic
     MktgBrandKitPageSourcesComponent,
   ],
   templateUrl: './mktg-brand-kit-print.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPrintComponent {
   private readonly print = inject(MktgPrintService);
@@ -87,10 +89,10 @@ export class MktgBrandKitPrintComponent {
     const line = this.view().voice.line.trim().replace(/\.?$/, '.');
     return line === '.' ? BRAND_KIT_PORTRAIT_COVER_PURPOSE : `${line} ${BRAND_KIT_PORTRAIT_COVER_PURPOSE}`;
   });
-  /** `aaif.io · V4.0 · November 2026`, less any part the kit lacks. */
-  protected readonly coverStripRight = computed(() =>
-    [this.view().host, this.view().versionLabel, this.view().monthYear].filter((part) => part !== '').join(' · ')
-  );
+  /** `V4.0 · November 2026`, less any part the kit lacks: the back cover's line. */
+  protected readonly versionLine = computed(() => [this.view().versionLabel, this.view().monthYear].filter((part) => part !== '').join(' · '));
+  /** `aaif.io · V4.0 · November 2026`, less any part the kit lacks: the cover's strip. */
+  protected readonly coverStripRight = computed(() => [this.view().host, this.versionLine()].filter((part) => part !== '').join(' · '));
   public constructor() {
     toObservable(computed(() => this.view().fontUrl))
       .pipe(
@@ -101,6 +103,11 @@ export class MktgBrandKitPrintComponent {
       .subscribe((url) => this.print.ensureFontStylesheet(url));
   }
 
+  /**
+   * The book the pages are in: the family's when it passes one; else derived here (standalone, or the family's legacy
+   * `number` input without a book: in family, numbered from 1 until the family lane passes its book with the kit's
+   * first page).
+   */
   private initResolvedBook() {
     return computed((): MktgPortraitBook => {
       const book = this.book();

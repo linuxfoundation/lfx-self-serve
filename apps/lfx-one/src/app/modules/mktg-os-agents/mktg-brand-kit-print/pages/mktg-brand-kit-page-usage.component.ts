@@ -8,6 +8,7 @@ import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-p
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitArtworkComponent } from './mktg-brand-kit-artwork.component';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The Example usage page (mock 14): the summary, the four sample cards from
@@ -20,6 +21,7 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
   selector: 'lfx-mktg-brand-kit-page-usage',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective, MktgBrandKitArtworkComponent],
   templateUrl: './mktg-brand-kit-page-usage.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageUsageComponent extends MktgBrandKitPageBase {
   /** The revision's recorded approval, or null before one: the report cover's year. */

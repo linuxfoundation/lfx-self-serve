@@ -3,7 +3,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { MktgBrandKitPageLogoClearSpaceComponent } from './mktg-brand-kit-page-logo-clear-space.component';
-import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { mountBrandKitPage, rectOf, syntheticPlacedPlan, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
 describe('the Clear space & minimum size page', () => {
   it('shows the rule, the X box with four badges on the mist stage, the scaling row and the three minimum cards from the kit’s sizes', async () => {
@@ -23,15 +25,13 @@ describe('the Clear space & minimum size page', () => {
     expect(rectOf(frame.querySelector('.kp-figure-card'))).toEqual({ left: '56px', top: '770px', width: '704px' });
   });
 
-  it('keeps the cards and the rule when the kit has a file but no horizontal lockup to stage', async () => {
-    // A kit with only a stacked file keeps its Logo pages (a kit with no file at all has no clear-space page).
-    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoClearSpaceComponent, 'logo-clear-space', (view) => ({
-      ...view,
-      logos: { primary: null, stacked: view.logos.primary, symbol: null, reversed: null },
-      symbol: null,
-    }));
-    expect(frame.querySelector('[data-testid="brand-kit-clear-space-stage"]')).toBeNull();
-    expect(frame.querySelector('[data-testid="brand-kit-clear-space-scaling"]')).toBeNull();
-    expect(frame.querySelectorAll('.kp-figure-card')).toHaveLength(3);
+  it('is not planned for a kit without a horizontal lockup to stage: the plan drops the page rather than printing its cards alone', () => {
+    // The page's stage, scaling row and minimum cards all draw the primary lockup; without one the plan leaves the page
+    // out (as it does Partnership and Watchouts), so the component never mounts a stacked-only or logo-less kit.
+    const kit = brandKitTestRevision();
+    const view = buildBrandKitBookView(kit, 4);
+    const stackedOnly = { ...view, logos: { primary: null, stacked: view.logos.primary, symbol: null, reversed: null }, symbol: null };
+    expect(syntheticPlacedPlan(stackedOnly).map((page) => page.id)).not.toContain('logo-clear-space');
+    expect(syntheticPlacedPlan(view).map((page) => page.id)).toContain('logo-clear-space');
   });
 });

@@ -3,7 +3,8 @@
 
 import { Component, computed, input } from '@angular/core';
 import { BrandKitBookView } from '@lfx-one/shared/interfaces';
-import { brandKitPortraitArtwork, BrandKitPortraitArtworkMode } from '@lfx-one/shared/utils';
+import { BrandKitPortraitArtworkMode } from '@lfx-one/shared/interfaces';
+import { brandKitPortraitArtwork } from '@lfx-one/shared/utils';
 
 /**
  * The kit's artwork at a height, as the mock's `lockup(h, mode)` and

@@ -191,8 +191,8 @@ export class MktgPrintService {
     // On the page margins (WebKit) the portrait setup also restates the named framework page, after
     // the cloned sheets, so an engine that did honour named pages could not print the margin-less
     // setup; the book's landscape setup is never written into the framework's page.
-    // A document of portrait frames (MKTG_PORTRAIT_PRINT_CLASS) names its own page on every frame, so the setup is
-    // written named too: in Chromium the body's inherited named page would otherwise win over the unnamed rule.
+    // A document of portrait frames (MKTG_PORTRAIT_PRINT_CLASS) names its own page on every frame, the print's one
+    // named page (nothing else in a print names one), so the setup is written as that named rule too.
     const setup = doc.createElement('style');
     const pageSetup = this.pageSetup(bodyClass, roots, pageMargins);
     const restatesFramework = pageSetup === MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'];

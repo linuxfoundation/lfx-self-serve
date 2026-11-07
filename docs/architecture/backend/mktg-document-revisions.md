@@ -182,9 +182,10 @@ The Family page eagerly checks last export independently of its document-list re
 A failed check disables export rather than guessing Create. Download PDF composes
 the approved-current framework, brand kit, boilerplates and FAQ in exporter order,
 with one family cover and contents. The family print body class selects a shared
-portrait layout. Family and standalone kit PDFs use the same five-chapter native
-portrait component, not scaled landscape artwork; the existing kit JSON/book view
-model supplies its text and embedded logo assets without new API fields.
+portrait layout. Family and standalone kit PDFs use the same portrait-book component
+(fixed portrait frames; see [the brand kit's portrait book](../frontend/marketing-kit.md#the-brand-kits-portrait-book-download-pdf)),
+not scaled landscape artwork; the existing kit JSON/book view model supplies its
+text and embedded logo assets without new API fields.
 Slides exports the same supported approved assets.
 Neither export changes the on-screen asset rendering or grants Google Drive access.
 

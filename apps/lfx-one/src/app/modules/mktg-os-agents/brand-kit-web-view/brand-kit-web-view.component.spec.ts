@@ -192,7 +192,7 @@ describe('BrandKitWebViewComponent', () => {
       );
     });
 
-    it('hides Download PDF and the footer’s PDF sentence while its flag is off, Export to Google Slides solid and alone, restoring today’s row when it turns on (#5302)', async () => {
+    it('hides Download PDF, the footer’s PDF sentence and the whole book while its flag is off, Export to Google Slides solid and alone, restoring today’s row when it turns on (#5302)', async () => {
       pdfFlag.set(false);
       await fixture.whenStable();
       const actions = query('brand-kit-web-view-actions');
@@ -203,10 +203,12 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-footer')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
         'Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.'
       );
-      // The book stays in its print-only wrapper: only the entry button is gated.
-      expect(query('brand-kit-web-view-print')).not.toBeNull();
+      // Nothing of the book is in the page without the flag: neither the button nor the print-only wrapper and its frames.
+      expect(query('brand-kit-web-view-print')).toBeNull();
+      expect(fixture.nativeElement.querySelectorAll('[data-testid="lfx-mktg-portrait-page"]')).toHaveLength(0);
       pdfFlag.set(true);
       await fixture.whenStable();
+      expect(query('brand-kit-web-view-print')).not.toBeNull();
       expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual([
         'Export to Google Slides',
         'Download PDF',

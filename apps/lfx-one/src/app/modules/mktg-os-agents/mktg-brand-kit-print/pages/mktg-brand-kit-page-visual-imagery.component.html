@@ -19,7 +19,7 @@
     <div class="kp-elements">
       <div class="kp-element kp-element--eyebrow">
         <div class="pp-lab pp-lab--dark">Umbrella message</div>
-        <div class="kp-element-message">{{ v.voice.umbrella }}</div>
+        <div class="kp-element-message" [style.font-size.px]="message().size" data-testid="brand-kit-imagery-message">{{ message().text }}</div>
       </div>
       <div class="kp-element kp-element--buttons">
         <span class="kp-button kp-button--primary">Primary button</span>
@@ -34,7 +34,7 @@
       </div>
     </div>
     <div class="kp-element-captions">
-      <span>Eyebrow card</span>
+      <span>Umbrella message card</span>
       <span>Buttons · pill, 12px semibold</span>
       <span data-testid="brand-kit-imagery-callout-caption">{{ calloutCaption() }}</span>
     </div>

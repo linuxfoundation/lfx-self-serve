@@ -21,12 +21,13 @@ describe('the Color contrast page', () => {
     // The same colour on itself is a blank cell; the others carry the computed ratio and its WCAG grade.
     expect(rows[0].querySelectorAll('.kp-matrix-same')).toHaveLength(1);
     const cells = Array.from(rows[0].querySelectorAll<HTMLElement>('.kp-matrix-cell'));
-    expect(cells.map((cell) => cell.getAttribute('data-ratio'))).toEqual(['8.3', '3.0', '1.8']);
+    expect(cells.map((cell) => cell.getAttribute('data-ratio'))).toEqual(['8.3', '2.9', '1.8']);
     expect(cells.map((cell) => cell.querySelector('.kp-pill')?.textContent)).toEqual(['AAA', 'Fails', 'Fails']);
     expect(cells[0].querySelector<HTMLElement>('.kp-matrix-aa')?.style.color).toBe('rgb(77, 78, 78)');
     const pairs = frame.querySelector('[data-testid="brand-kit-contrast-pairs"]');
     expect(rectOf(pairs)).toEqual({ left: '56px', top: '610px', width: '704px' });
-    expect(wordsOf(pairs?.querySelector('.kp-pair') ?? null)).toBe('Aa Charcoal on White 8.30:1 AAA');
+    // The kit's own pairs print the kit's own ratio label and recorded grade, as the web view does.
+    expect(wordsOf(pairs?.querySelector('.kp-pair') ?? null)).toBe('Aa Charcoal on White 8.3:1 AAA');
     expect(frame.textContent).not.toMatch(/\[[^\]]+\]/);
   });
 

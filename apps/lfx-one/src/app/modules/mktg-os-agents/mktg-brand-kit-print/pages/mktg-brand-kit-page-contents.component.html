@@ -10,7 +10,7 @@
   [section]="page().label"
   [title]="page().title"
   [band]="page().band">
-  <div [lfxPpRect]="[x, 148, w]" data-testid="brand-kit-contents-list">
+  <div [lfxPpRect]="[x, 148, w]" class="kp-contents-list" [class.kp-contents-list--columns]="layout().columns === 2" data-testid="brand-kit-contents-list">
     @for (entry of entries(); track entry.id) {
       <div class="kp-contents-row" [attr.data-page-ref]="entry.id">
         <span
@@ -21,20 +21,20 @@
       </div>
     }
   </div>
-  <div [lfxPpRect]="[x, 690, 340, 270]">
+  <div [lfxPpRect]="[x, layout().blocksTop, 340, 270]">
     <div class="pp-lab pp-lab--dark">What this kit is built from</div>
     <div class="kp-text" data-testid="brand-kit-contents-built-from">{{ builtFrom() }}</div>
     @if (sourcesPage(); as sources) {
       <div class="kp-note">The full list, with what failed or is missing, is on page {{ sources }}.</div>
     }
   </div>
-  <div [lfxPpRect]="[x + 364, 690, 340, 270]">
+  <div [lfxPpRect]="[x + 364, layout().blocksTop, 340, 270]">
     <div class="kp-glance" data-testid="brand-kit-contents-glance">
       <div class="pp-lab">At a glance</div>
       <div class="mt-[14px]"><lfx-mktg-brand-kit-artwork [view]="v" [height]="28" /></div>
       <div class="mt-[16px] flex">
         @for (color of v.palette; track color.hex) {
-          <span class="kp-glance-dot" [title]="color.name">
+          <span class="kp-glance-dot">
             <span class="kp-glance-dot-swatch" [style.background]="color.hex"></span>
             <span>{{ color.name }}</span>
           </span>
@@ -46,14 +46,9 @@
           <span class="kp-glance-weights">· weights {{ weights() }}</span>
         }
       </div>
-      <div class="kp-glance-meta mt-[12px]" data-testid="brand-kit-contents-version">
-        @if (versionLine()) {
-          <div>Version {{ versionLine() }}</div>
-        }
-        @if (approvalLine()) {
-          <div data-testid="brand-kit-contents-approval">{{ approvalLine() }}</div>
-        }
-      </div>
+      @if (approvalLine()) {
+        <div class="kp-glance-meta mt-[12px]" data-testid="brand-kit-contents-approval">{{ approvalLine() }}</div>
+      }
     </div>
   </div>
 </lfx-mktg-portrait-page>

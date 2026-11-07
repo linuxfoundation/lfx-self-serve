@@ -49,11 +49,6 @@
   /* :has raises specificity above the legacy body height:0/overflow:hidden
      rules emitted after this partial by styles.scss. */
   body.lfx-print-framework:has(.lfx-framework-print),
-  body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
-    page: mktg-framework;
-  }
-
-  body.lfx-print-framework:has(.lfx-framework-print),
   body.lfx-print-family,
   body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
     /* Named pages require in-flow boxes. Keep only the document's ancestor chain
@@ -90,7 +85,6 @@
     lfx-mktg-boilerplates-print,
     lfx-mktg-faq-print,
     lfx-mktg-brand-kit-print {
-      page: mktg-framework;
       width: 100%;
       break-before: page;
       /* The whole ancestor chain of a print root paints white: the screen's canvas never shows through a page. */

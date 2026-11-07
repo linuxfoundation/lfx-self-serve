@@ -48,11 +48,17 @@ export const MKTG_PORTRAIT_COLUMNS = {
 
 /**
  * The neutral inks of every portrait page: the body ink, the muted labels
- * and captions, the hairline and the mist ground. They are the print
- * design's own values (the reference
- * book's), not the app's gray scale, whose slate tint reads differently on
- * paper beside a kit's colours; the kit's dark, accent and spark come from
- * the kit itself (`MktgPortraitLook`).
+ * and captions, the hairline, the mist ground, white, and the one semantic
+ * red (the watch-out cross). These are the print design's own values
+ * (`principles.md` §2 of the portrait mock, the spec of record for this
+ * book), the ONE place they are written: the page frame sets them as
+ * `--pp-*` custom properties and the print stylesheets read only those.
+ * The four grays are not in `lfxColors` (its gray scale is slate-tinted,
+ * which reads differently on paper beside a kit's colours), so they stay
+ * as named constants here, the recorded exception in
+ * `docs/architecture/frontend/styling-system.md`; white and the red are
+ * the app's scale. The kit's dark, accent and spark are the kit's own data
+ * (`MktgPortraitLook`), never constants.
  */
 export const MKTG_PORTRAIT_INKS = {
   ink: '#1F2937',
@@ -60,6 +66,7 @@ export const MKTG_PORTRAIT_INKS = {
   hairline: '#E5E7EB',
   mist: '#F3F4F6',
   white: lfxColors.white,
+  fail: lfxColors.red[600],
 } as const;
 
 /**
@@ -130,3 +137,154 @@ export const MKTG_PORTRAIT_FIT = {
   /** A guard on the cut loop. */
   maxCuts: 120,
 } as const;
+
+/**
+ * A sans face's advance width per character, in thousandths of an em (the
+ * Helvetica metrics, the sans standard every humanist sans sits near), for
+ * measuring one line that must fit its measure at its real size: a flat
+ * average (above) wraps a paragraph safely but shrinks a line that fits.
+ * A character not here takes `MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT`.
+ */
+export const MKTG_PORTRAIT_GLYPH_WIDTHS: Readonly<Record<string, number>> = {
+  ' ': 278,
+  '!': 278,
+  '"': 355,
+  '#': 556,
+  $: 556,
+  '%': 889,
+  '&': 667,
+  "'": 191,
+  '(': 333,
+  ')': 333,
+  '*': 389,
+  '+': 584,
+  ',': 278,
+  '-': 333,
+  '.': 278,
+  '/': 278,
+  '0': 556,
+  '1': 556,
+  '2': 556,
+  '3': 556,
+  '4': 556,
+  '5': 556,
+  '6': 556,
+  '7': 556,
+  '8': 556,
+  '9': 556,
+  ':': 278,
+  ';': 278,
+  '<': 584,
+  '=': 584,
+  '>': 584,
+  '?': 556,
+  '@': 1015,
+  A: 667,
+  B: 667,
+  C: 722,
+  D: 722,
+  E: 667,
+  F: 611,
+  G: 778,
+  H: 722,
+  I: 278,
+  J: 500,
+  K: 667,
+  L: 556,
+  M: 833,
+  N: 722,
+  O: 778,
+  P: 667,
+  Q: 778,
+  R: 722,
+  S: 667,
+  T: 611,
+  U: 722,
+  V: 667,
+  W: 944,
+  X: 667,
+  Y: 667,
+  Z: 611,
+  '[': 278,
+  '\\': 278,
+  ']': 278,
+  '^': 469,
+  _: 556,
+  '`': 333,
+  a: 556,
+  b: 556,
+  c: 500,
+  d: 556,
+  e: 556,
+  f: 278,
+  g: 556,
+  h: 556,
+  i: 222,
+  j: 222,
+  k: 500,
+  l: 222,
+  m: 833,
+  n: 556,
+  o: 556,
+  p: 556,
+  q: 556,
+  r: 333,
+  s: 500,
+  t: 278,
+  u: 556,
+  v: 500,
+  w: 722,
+  x: 500,
+  y: 500,
+  z: 500,
+  '{': 334,
+  '|': 260,
+  '}': 334,
+  '~': 584,
+  '·': 278,
+  '’': 222,
+  '‘': 222,
+  '“': 333,
+  '”': 333,
+  '–': 556,
+  '—': 1000,
+  '…': 1000,
+};
+
+/** The width of a character the table does not name (an accented letter, say): a lowercase letter's. */
+export const MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT = 556;
+
+/**
+ * How much wider than the table a face sets a line, by family (lowercase):
+ * Montserrat and Poppins are wide geometric faces, Source Sans narrow; a
+ * family not here takes `MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT`, a little wide
+ * so an unknown face still fits. Weight widens too: `MKTG_PORTRAIT_WEIGHT_WIDTH`.
+ * Instrument Sans is read from the served AAIF book (QA round 1, p11): its
+ * display line at 64/500 measures ≈649 px, its H2 line at 32/500 wraps a
+ * 480 px column, its tracked specimen at 48/500 fits 704 — 1.02 holds all
+ * three.
+ */
+export const MKTG_PORTRAIT_FAMILY_WIDTH: Readonly<Record<string, number>> = {
+  'instrument sans': 1.02,
+  inter: 1.05,
+  montserrat: 1.14,
+  poppins: 1.12,
+  roboto: 0.99,
+  'open sans': 1.05,
+  lato: 0.98,
+  'source sans 3': 0.93,
+  'source sans pro': 0.93,
+  'ibm plex sans': 1.03,
+  'work sans': 1.07,
+  'dm sans': 1.02,
+  manrope: 1.05,
+  'nunito sans': 1.02,
+};
+
+export const MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT = 1.08;
+
+/** A heavier weight's width against the regular, by the hundred (400 → 1, 500 → 1.03, 600 → 1.07, 700 and up → 1.1). */
+export const MKTG_PORTRAIT_WEIGHT_WIDTH: Readonly<Record<number, number>> = { 400: 1, 500: 1.03, 600: 1.07, 700: 1.1 };
+
+/** The eyebrow's tracking, in em per character, when a line is set in capitals (a `tracking` of its own wins). */
+export const MKTG_PORTRAIT_CAPS_TRACKING_EM = 0.12;

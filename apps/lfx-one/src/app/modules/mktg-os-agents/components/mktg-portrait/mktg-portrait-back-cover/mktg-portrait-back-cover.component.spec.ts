@@ -23,10 +23,13 @@ async function setup(logo = true) {
   fixture.componentRef.setInput('logo', logo ? brand.logoOnDark : null);
   fixture.componentRef.setInput('line', 'Open standards for agents');
   fixture.componentRef.setInput('url', 'synthetic.example');
+  fixture.componentRef.setInput('version', 'V4.0 · November 2026');
   fixture.componentRef.setInput('notice', 'Copyright © The Linux Foundation and its contributors.');
   await fixture.whenStable();
   const page = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]');
   if (!page) throw new Error('Missing synthetic back cover');
+  // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+  expect(getComputedStyle(fixture.nativeElement as HTMLElement).display).toBe('block');
   return { fixture, page, brand };
 }
 
@@ -48,6 +51,7 @@ describe('lfx-mktg-portrait-back-cover', () => {
     expect(line?.classList.contains('pp-back-line')).toBe(true);
     expect(line?.parentElement?.style.top).toBe('560px');
     expect(page.querySelector('[data-testid="mktg-portrait-back-cover-url"]')?.textContent).toBe('synthetic.example');
+    expect(page.querySelector('[data-testid="mktg-portrait-back-cover-version"]')?.textContent).toBe('V4.0 · November 2026');
     const notice = page.querySelector<HTMLElement>('[data-testid="mktg-portrait-back-cover-notice"]');
     expect(notice?.textContent).toContain('Copyright ©');
     expect(notice?.parentElement?.style.left).toBe('72px');

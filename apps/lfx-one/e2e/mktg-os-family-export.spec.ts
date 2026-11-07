@@ -300,7 +300,9 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(kitPrint.getByTestId('brand-kit-type-source')).toContainText('Named on one.example.org');
   await expect(kitPrint.getByTestId('brand-kit-type-source')).not.toContainText('https://');
   await expect(kitPrint.getByTestId('brand-kit-voice-messages').locator('.pp-lab')).toHaveText(['Umbrella message', 'Brand line']);
-  await expect(kitFrames.first()).toHaveCSS('break-after', 'page');
+  // One break per sheet, owned by the frame that starts it (the family's own break before the kit folds into it).
+  await expect(kitFrames.first()).toHaveCSS('break-before', 'page');
+  await expect(kitFrames.last()).toHaveCSS('break-after', 'auto');
   // Every kit frame is a whole sheet: 816 × 1056 at the sheet's left edge, in the family as alone.
   for (const frame of await kitFrames.all()) {
     const box = await frame.boundingBox();
