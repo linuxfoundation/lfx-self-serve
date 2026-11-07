@@ -3,19 +3,24 @@
 
 // Unit tests for Download PDF's view models: the brand a print is set in (the
 // project's Brand Kit, or the LF look) and the Messaging Framework's print —
-// its tabs as one document, the run's report left out. Every fixture is
-// synthetic.
+// its tabs as one portrait book of fixed pages, the run's report left out.
+// Every fixture is synthetic.
 
 import { describe, expect, it } from 'vitest';
 
 import { MKTG_PRINT_INK_ON_DARK, MKTG_PRINT_INK_ON_LIGHT, MKTG_PRINT_LF_LOOK, MKTG_PRINT_REVERSED_FILTER } from '../constants/mktg-print.constants';
 import { BrandKitLogoRef, BrandKitRevision } from '../interfaces/brand-kit.interface';
-import { FoundationMessageContent } from '../interfaces/foundation-message.interface';
+import { FoundationMessageContent, FoundationMessageReport } from '../interfaces/foundation-message.interface';
 import {
   buildBoilerplatesPrintView,
   buildFaqPrintView,
   buildFoundationMessagePrintView,
+  foundationMessagePrintAnchorIntro,
+  foundationMessagePrintMatrix,
+  foundationMessagePrintNumbers,
   foundationMessagePrintSections,
+  foundationMessagePrintSourceLabel,
+  mktgPrintApprovedDate,
   mktgPrintBrand,
   mktgPrintDocumentTitle,
   mktgPrintIsWebKit,
@@ -236,21 +241,122 @@ describe('the framework’s print', () => {
     ]);
   });
 
-  it('says what the screen says: the project, the version on the page, the framework’s own rows', () => {
-    const view = buildFoundationMessagePrintView(CONTENT, ' TestOrbit ', 4, null);
+  it('says what the screen says: the project, the version on the page, the approval’s date, the run’s report and read date, the framework’s own rows', () => {
+    const report: FoundationMessageReport = { sources_read: ['Website: https://orbit.example.org'], sources_failed: [], gaps: ['A gap.'], notes: 'A note.' };
+    const view = buildFoundationMessagePrintView(CONTENT, ' TestOrbit ', 4, null, '2026-11-06T23:30:00Z', report, '2026-11-04');
     expect(view.projectName).toBe('TestOrbit');
     expect(view.eyebrow).toBe('TestOrbit · a Linux Foundation project');
     expect(view.runningHead).toBe('TestOrbit Messaging Framework');
-    expect(view.versionLabel).toBe('Version 4');
+    expect(view.versionLabel).toBe('V4.0');
+    expect([view.approvedLabel, view.dateLabel]).toEqual(['Approved 6 Nov 2026', '6 Nov 2026']);
+    expect(view.dateReadLabel).toBe('4 Nov 2026');
+    expect(view.report).toBe(report);
+    expect(view.website).toBe('');
     expect(view.goals[0].segmentNames).toEqual(['End users']);
     expect(view.icps[0].goalTitles).toEqual(['Adoption']);
+    expect(view.icps[0].goalChips).toEqual(['Goal 1']);
     expect([view.goals[0].segmentLabel, view.icps[0].goalLabel, view.icps[0].channelsLabel]).toEqual(['End users', 'Adoption', 'Docs']);
     expect(view.avoidRows).toEqual([{ avoid: 'synergy', instead: 'working together' }]);
-    expect(view.numbers).toEqual([{ number: '1,200', label: 'members' }]);
+    expect(view.numbers).toEqual([{ number: '1,200', label: 'members', source: 'Website' }]);
     expect(view.audiences).toEqual([{ name: 'End users', lead: 'Ship with confidence.' }]);
+    expect(view.facts).toEqual([{ fact: '1,200 members', source: 'Website', usedBy: 'Goal 1 · Adoption' }]);
     expect(view.brand.source).toBe('lf');
-    expect(buildFoundationMessagePrintView(CONTENT, 'TestOrbit', null, kitWith()).versionLabel).toBe('');
-    expect(buildFoundationMessagePrintView(CONTENT, 'TestOrbit', null, kitWith()).brand.source).toBe('kit');
+    // Without the dates and the report: empty labels, no report (the view says nothing the record never said), no read date (an unreadable one reads as none).
+    const withKit = buildFoundationMessagePrintView(CONTENT, 'TestOrbit', null, kitWith(), null, null, 'yesterday');
+    expect([withKit.versionLabel, withKit.approvedLabel, withKit.dateLabel, withKit.dateReadLabel]).toEqual(['', '', '', '']);
+    expect(withKit.report).toBeNull();
+    expect(withKit.website).toBe('orbit.example.org');
+    expect(withKit.brand.source).toBe('kit');
+  });
+
+  it('dates the approval and the read as the deck does, in UTC, and leaves a date out when there is none or it cannot be read', () => {
+    expect(mktgPrintApprovedDate('2026-11-06T23:30:00Z')).toBe('6 Nov 2026');
+    expect(mktgPrintApprovedDate('2026-01-01T00:00:00Z')).toBe('1 Jan 2026');
+    expect(mktgPrintApprovedDate('2026-11-04')).toBe('4 Nov 2026');
+    expect(mktgPrintApprovedDate(null)).toBe('');
+    expect(mktgPrintApprovedDate('not a date')).toBe('');
+    // Every month, in UTC, the day without a leading zero: no locale call, so the same in every runtime.
+    expect(Array.from({ length: 12 }, (_, month) => mktgPrintApprovedDate(`2026-${String(month + 1).padStart(2, '0')}-09T12:00:00Z`))).toEqual([
+      '9 Jan 2026',
+      '9 Feb 2026',
+      '9 Mar 2026',
+      '9 Apr 2026',
+      '9 May 2026',
+      '9 Jun 2026',
+      '9 Jul 2026',
+      '9 Aug 2026',
+      '9 Sep 2026',
+      '9 Oct 2026',
+      '9 Nov 2026',
+      '9 Dec 2026',
+    ]);
+  });
+
+  it('names a read source as the run stored it, with only its type prefix taken off', () => {
+    expect(foundationMessagePrintSourceLabel('Website: https://orbit.example.org')).toBe('https://orbit.example.org');
+    expect(foundationMessagePrintSourceLabel('Link: https://orbit.example.org/about')).toBe('https://orbit.example.org/about');
+    expect(foundationMessagePrintSourceLabel('Press release: https://www.linuxfoundation.org/press/orbit')).toBe('https://www.linuxfoundation.org/press/orbit');
+    // No known prefix, or a prefix inside the text: untouched.
+    expect(foundationMessagePrintSourceLabel('LFX Insights: members')).toBe('LFX Insights: members');
+    expect(foundationMessagePrintSourceLabel('The Website: page')).toBe('The Website: page');
+    expect(foundationMessagePrintSourceLabel('  Link:   spaced  ')).toBe('spaced');
+  });
+
+  it('crosses the goals with the profiles: one row per profile, true where the goal’s messaging is written for it', () => {
+    const view = buildFoundationMessagePrintView(
+      {
+        ...CONTENT,
+        mf: { ...CONTENT.mf, goals: [CONTENT.mf.goals[0], { ...CONTENT.mf.goals[0], id: 'funding', n: 2, t: 'Funding', icps: ['members'] }] },
+        icp: [CONTENT.icp[0], { ...CONTENT.icp[0], id: 'members', name: 'Members', goals: ['funding'] }],
+      },
+      'TestOrbit',
+      1,
+      null
+    );
+    expect(foundationMessagePrintMatrix(view.goals, view.icps)).toEqual([
+      { name: 'End users', cells: [true, false] },
+      { name: 'Members', cells: [false, true] },
+    ]);
+    expect(view.icps.map((row) => row.goalChips)).toEqual([['Goal 1'], ['Goal 2']]);
+  });
+
+  it('counts the anchor questions in words in the say-and-avoid intro, the mock’s sentence with the agent’s three', () => {
+    expect(foundationMessagePrintAnchorIntro(3)).toBe(
+      'The words the framework uses, the ones it replaces, and the three questions every piece of content answers.'
+    );
+    expect(foundationMessagePrintAnchorIntro(1)).toBe(
+      'The words the framework uses, the ones it replaces, and the one question every piece of content answers.'
+    );
+    expect(foundationMessagePrintAnchorIntro(5)).toContain('the five questions');
+    expect(foundationMessagePrintAnchorIntro(7)).toContain('the 7 questions');
+  });
+
+  it('gives a key number the source of the proof points that state its figure whole, and none when none does or they disagree', () => {
+    const fact = (text: string, source: string) => ({ fact: text, source, usedBy: 'Goal 1 · Adoption' });
+    const facts = [
+      fact('299 member organizations', 'LFX field'),
+      fact('More than 10,000 published MCP servers at launch', 'Press release'),
+      fact('8 Platinum, 50 Gold and 188 Silver memberships', 'LFX field'),
+      fact('4,370 registrations for AGNTCon + MCPCon North America 2026', 'LFX field'),
+      fact('4,370 seats were sold, says the venue', 'Website'),
+    ];
+    const numbers = foundationMessagePrintNumbers(
+      [
+        { number: '299', label: 'member organizations' },
+        { number: '10,000+', label: 'published MCP servers at launch' },
+        { number: '188', label: 'Silver memberships' },
+        { number: '8', label: 'Platinum memberships' },
+        { number: '88', label: 'nothing states this' },
+        { number: '4,370', label: 'registrations' },
+        { number: '', label: 'no figure' },
+      ],
+      facts
+    );
+    expect(numbers.map((row) => row.source)).toEqual(['LFX field', 'Press release', 'LFX field', 'LFX field', '', '', '']);
+    // The stored record's key numbers carry no source of their own: the view's come from the facts, never from the pair.
+    expect(buildFoundationMessagePrintView({ ...CONTENT, nums: [['7', 'wonders']] }, 'TestOrbit', 1, null).numbers).toEqual([
+      { number: '7', label: 'wonders', source: '' },
+    ]);
   });
 
   it('joins the lists the print sets as one line, and leaves a line empty when there is nothing to list', () => {

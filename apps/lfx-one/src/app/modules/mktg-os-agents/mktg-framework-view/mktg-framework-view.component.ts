@@ -133,6 +133,8 @@ export class MktgFrameworkViewComponent {
   public readonly approvedVersion = input<number | null>(null);
   /** When the approved revision was stored (ISO), as the page shows it: it dates the PDF's name. */
   public readonly approvedCreatedAt = input<string | null>(null);
+  /** When the approved revision was approved (ISO): the print's cover and its Sources & gaps approval card date it. */
+  public readonly approvedAt = input<string | null>(null);
   public readonly approvedLoading = input(false);
   public readonly approvedError = input('');
 
@@ -187,7 +189,17 @@ export class MktgFrameworkViewComponent {
   /** The framework as its print lays it out, in the kit's brand or the LF look; null until the framework exists. */
   protected readonly printView: Signal<FoundationMessagePrintView | null> = computed(() => {
     const approved = this.approvedAsset();
-    return approved ? buildFoundationMessagePrintView(approved.content, this.projectName(), this.approvedVersion(), this.kit()) : null;
+    return approved
+      ? buildFoundationMessagePrintView(
+          approved.content,
+          this.projectName(),
+          this.approvedVersion(),
+          this.kit(),
+          this.approvedAt(),
+          approved.report,
+          approved.dateRead ?? null
+        )
+      : null;
   });
   /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
   protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));

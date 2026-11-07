@@ -3,10 +3,12 @@
 
 // Download PDF for the Marketing OS asset views: each asset prints as a
 // document through the browser's print dialog ("Save as PDF"), in the
-// project's brand when the project has a Brand Kit (its colours, typeface and
+// project's brand when the project has a Brand Kit (its colors, typeface and
 // logo) and in the LF look otherwise. The Brand Kit's own book keeps its
 // constants in brand-kit.constants.ts; these are the Messaging Framework's
 // print and what every print shares.
+
+import type { FoundationMessagePrintType } from '../interfaces/mktg-print.interface';
 
 import { lfxColors } from './colors.constants';
 
@@ -28,6 +30,189 @@ export const MKTG_FAQ_PRINT_UNANSWERED = 'Needs an answer';
 
 /** The document's title on the cover and in the running heads. */
 export const FOUNDATION_MESSAGE_PRINT_TITLE = 'Messaging Framework';
+
+/**
+ * The framework's portrait book: how many ideal customer profiles one page
+ * holds (two full profile rows at reading size), so the page count follows
+ * the data and no profile flows across a page edge.
+ */
+export const FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE = 2;
+
+/** The plan ids of the framework's portrait pages that are not numbered from the data (`goal-1`, `icps-2` are). */
+export const FRAMEWORK_PORTRAIT_PAGE_IDS = {
+  cover: 'cover',
+  framework: 'framework',
+  sayAvoid: 'say-avoid',
+  messageHouse: 'message-house',
+  keyNumbers: 'key-numbers',
+  sources: 'sources',
+} as const;
+
+/** The running head's section labels of the framework's portrait chapters, in order. */
+export const FRAMEWORK_PORTRAIT_SECTIONS = {
+  framework: '01 Framework',
+  icps: '02 ICPs',
+  messageHouse: '03 Message house',
+  keyNumbers: '04 Key numbers',
+  sources: '05 Sources',
+} as const;
+
+/** The page titles of the framework's portrait book that are not the data's (a goal page is titled `Goal 1 · Events`). */
+export const FRAMEWORK_PORTRAIT_TITLES = {
+  framework: 'Framework',
+  sayAvoid: 'Say and avoid · anchor questions',
+  icps: 'Ideal customer profiles',
+  messageHouse: 'Message house',
+  keyNumbers: 'Key numbers',
+  sources: 'Sources & gaps',
+} as const;
+
+/**
+ * The key numbers page's tiles, px: 140 high on a six-track grid (each tile's
+ * share of a row is FRAMEWORK_PORTRAIT_TILE_SHARES'; 344 wide as a half), a 16
+ * gap, the first row at 210; the "Figures and their sources" table 28 under
+ * the last row. The table of every figure (past six) starts at the same top.
+ */
+export const FRAMEWORK_PORTRAIT_NUMBER_TILE = {
+  width: 344,
+  /** The mock's tile as drawn: 22 + the 54 figure + 10 + a 14/1.4 label line (20) + 10 + the 17 source pill + 22. */
+  height: 156,
+  gap: 16,
+  top: 210,
+  /** Under two rows of tiles the facts table starts where the mock draws it: 210 + 2 × 156 + 16 + 22 = 560. */
+  tableGap: 22,
+  /** `.fwp-number-tile` padding: 22 above and below, 24 at the sides (the figure and the label fit the width inside). */
+  paddingTop: 22,
+  paddingSide: 24,
+  /** `.fwp-number-label` and `.fwp-number-source` margin-top. */
+  labelGap: 10,
+  /** The grammar's `.pp-chip` as the tile's source pill: 8.5 px type on one line, 3 px padding and a 1 px border above and below (16.5, kept whole). */
+  sourceHeight: 17,
+} as const;
+
+/**
+ * The fixed tops of the framework's portrait pages whose blocks the fit
+ * model bounds (the design's R(x, y) values, px): a goal page's key-message
+ * bar, proof list, sound bite and "Who it's for" cards; the Sources & gaps
+ * page's lists and approval card; and where the footer begins, which no
+ * block may pass.
+ */
+export const FRAMEWORK_PORTRAIT_TOPS = {
+  /** The framework page's goal matrix, under the statement cards (which close 16 px above it). */
+  matrix: 336,
+  goalKey: 330,
+  goalProofs: 450,
+  goalBite: 690,
+  goalServed: 810,
+  sourcesLists: 210,
+  sourcesApproval: 880,
+  /** The first ICP page's rows start under the long intro; the later pages' under the short one. */
+  icpRowsFirst: 214,
+  icpRows: 190,
+  icpMatrix: 560,
+  /** A key numbers continuation page's table top (no intro). */
+  numbersContinued: 136,
+  /** The top of the footer's room: the last pixel any block may reach. */
+  footer: 1000,
+} as const;
+
+/**
+ * The type of the framework print's fitted blocks (size px, line height as a multiple, weight): what the fit model
+ * measures and what the component binds on the frame as `--fwp-<name>-size` / `--fwp-<name>-line`, which the
+ * stylesheet reads, so the measured type and the printed type are one value.
+ */
+export const FRAMEWORK_PORTRAIT_TYPE = {
+  statement: { size: 11.5, line: 1.45, weight: 400 },
+  tagline: { size: 18, line: 1.3, weight: 500 },
+  coverUmbrella: { size: 32, line: 1.18, weight: 500 },
+  houseUmbrella: { size: 19, line: 1.4, weight: 500 },
+  goalValue: { size: 22, line: 1.35, weight: 500 },
+  goalKey: { size: 19, line: 1.4, weight: 500 },
+  goalProof: { size: 15, line: 1.45, weight: 400 },
+  /** A goal's proof rows when they must be tightened before a cut (the design reader's rule). */
+  goalProofTight: { size: 14, line: 1.45, weight: 400 },
+  goalBite: { size: 34, line: 1.2, weight: 500 },
+  servedLine: { size: 11.5, line: 1.5, weight: 400 },
+  fact: { size: 11, line: 1.3, weight: 400 },
+  source: { size: 12, line: 1.6, weight: 400 },
+  /** A sources list when it must be tightened before a cut. */
+  sourceTight: { size: 11.5, line: 1.5, weight: 400 },
+  /** The muted line under a cut list: `+N more on the framework's Framework tab in LFX One` (the Sources tab for the Sources & gaps lists). */
+  cutNote: { size: 10.5, line: 1.4, weight: 400 },
+  /** A key number tile's figure (`.fwp-number`), stepped down in whole px to one line of the tile, to a floor of half its size; a longer figure overflows the tile (follow-up). */
+  tileFigure: { size: 54, line: 1, weight: 500 },
+  /** A key number tile's label (`.fwp-number-label`), fitted to the room under the figure. */
+  tileLabel: { size: 14, line: 1.4, weight: 400 },
+} as const satisfies Record<string, FoundationMessagePrintType>;
+
+/**
+ * The room the framework print's stylesheet takes around a fitted block, px, which the component subtracts from a
+ * block's box before it fits the text. Each value names the stylesheet rule it mirrors (mktg-framework-print.component.scss).
+ */
+export const FRAMEWORK_PORTRAIT_ROOM = {
+  /** A `pp-lab` eyebrow (the grammar's) and the gap under it. */
+  label: 26,
+  /** `.fwp-card` padding, top and bottom together (14 + 14). */
+  cardPadding: 28,
+  /** `.fwp-proof-row` padding (13 + 13) and its hairline. */
+  proofRow: 27,
+  /** `.fwp-proof-list-tight .fwp-proof-row` padding (9 + 9) and its hairline. */
+  proofRowTight: 19,
+  /** `.fwp-proof-row` gap between the fact and its chip. */
+  proofGap: 16,
+  /** `.fwp-facts-table td` padding (4 + 4) and its hairline. */
+  factRow: 9,
+  /** `.fwp-facts-table-tight td` padding (3 + 3) and its hairline. */
+  factRowTight: 7,
+  /** `.fwp-cut-note`: the gap above the line under a cut list. */
+  cutNoteGap: 6,
+  /** A grid table's head row: `.fwp-grid-th` 9.5 px × 1.4 + padding 6 + 6 + its hairline, and the table's 8 px margin under the eyebrow. */
+  tableHead: 34,
+  /** The facts table's cell padding on the right (`.fwp-facts-table td` 12), off each column's width. */
+  factCellPadding: 12,
+  /** `.fwp-block-after`: the gap between the Read and the Could-not-be-read blocks. */
+  blockAfter: 18,
+  /** The gap between the last block of a page and the one under it. */
+  gap: 16,
+  /** `.fwp-chip-wrap` max-width: a proof chip's cap, px, so a fact's measuring width is the row less the chip. */
+  chip: 140,
+} as const;
+
+/** The key numbers facts table's `<colgroup>` widths, %: the fact, its source, the goal that uses it (`table-layout: fixed` reads them). */
+export const FRAMEWORK_PORTRAIT_FACT_COLUMNS = [50, 25, 25] as const;
+
+/** The key numbers table's `<colgroup>` widths, % (more figures than the tiles hold): the figure, what it counts. */
+export const FRAMEWORK_PORTRAIT_NUMBER_COLUMNS = [25, 75] as const;
+
+/**
+ * The key numbers' tile layout by count (the maintainer's ruling, 7 Nov 2026, through the design reader): each entry is
+ * one tile's share of a row (1 = the row, 2 = a half, 3 = a third), in order: 4 → 2×2, 5 → a row of three then a row of
+ * two, 6 → 3×2. One to three figures keep the earlier rule (pairs, an odd last tile across the row). More figures than
+ * the tiles hold print no tiles: the key numbers table lists every one.
+ */
+export const FRAMEWORK_PORTRAIT_TILE_SHARES = {
+  1: [1],
+  2: [2, 2],
+  3: [2, 2, 1],
+  4: [2, 2, 2, 2],
+  5: [3, 3, 3, 2, 2],
+  6: [3, 3, 3, 3, 3, 3],
+} as const satisfies Record<number, readonly number[]>;
+
+/** The most figures the key numbers page prints as tiles; past it, the table lists them all. */
+export const FRAMEWORK_PORTRAIT_MAX_TILES = 6;
+
+/** A count in words for the print's sentences, up to the anchor questions' limit (FOUNDATION_MESSAGE_CONTENT_LIMITS.anchor.max); a count past it prints as digits. */
+export const FOUNDATION_MESSAGE_PRINT_COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five'] as const;
+
+/** The on-screen Sources card's empty state for the gaps, printed verbatim on the Sources & gaps page. */
+export const FOUNDATION_MESSAGE_PRINT_NO_GAP_MESSAGE = 'The sources left no gap.';
+
+/** The source types a run writes before a source (`Website: https://…`); the Sources & gaps page prints the source without the type. */
+export const FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES = ['Website', 'Link', 'Press release'] as const;
+
+/** The fixed three-letter month names the prints date with (UTC), the same in every engine and locale. */
+export const MKTG_PRINT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 
 /**
  * The LF look: what a print uses when the project has no Brand Kit yet. The
@@ -54,7 +239,7 @@ export const MKTG_PRINT_INK_ON_DARK = lfxColors.white;
 /** The contrast a kit's dark must reach on white to set the white pages' body text: WCAG AA for normal text. Below it the body takes MKTG_PRINT_INK_ON_LIGHT. */
 export const MKTG_PRINT_BODY_INK_MIN_CONTRAST = 4.5;
 
-/** The CSS filter that draws a full-colour lockup reversed (white), when the kit supplies no reversed artwork. */
+/** The CSS filter that draws a full-color lockup reversed (white), when the kit supplies no reversed artwork. */
 export const MKTG_PRINT_REVERSED_FILTER = 'brightness(0) invert(1)';
 
 /** How long Download PDF waits for the brand's typeface before it opens the print dialog anyway (ms). */
