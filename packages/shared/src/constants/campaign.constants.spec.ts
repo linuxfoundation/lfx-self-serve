@@ -827,10 +827,11 @@ describe('Google location caps', () => {
   });
 
   /**
-   * The resource bound on the excluded geo list must sit ABOVE the cap, or a list at the cap would be
+   * The resource bound on both geo lists must sit ABOVE both caps, or a list at its cap would be
    * refused by the generic bound before the named refusal; the shared creative bound stays at 100.
    */
-  it('bounds the geo list above its cap without widening the shared list bound', () => {
+  it('bounds the geo lists above their caps without widening the shared list bound', () => {
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBeGreaterThan(GOOGLE_ADS_MAX_GEO_TARGETS);
     expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBeGreaterThan(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS);
     expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBe(2000);
     expect(MAX_GOOGLE_CREATIVE_LIST_ENTRIES).toBe(100);

@@ -4532,8 +4532,8 @@ export const AUDIENCE_STANDARD_SUPPRESSION_GROUP_KEY = 'group:standard';
  *
  * Deliberately FAR above anything legitimate, because these are resource bounds and not content
  * rules — every width and count in `GOOGLE_CREATIVE_FIELD_SPECS` is the upstream client's preflight
- * to enforce, and this layer stays shape-only. The excluded geo list is NOT bounded here: its cap
- * is 500, so it takes its own {@link MAX_GOOGLE_GEO_LIST_ENTRIES}. Every list this one does bound
+ * to enforce, and this layer stays shape-only. Neither Google geo list is bounded here: their caps
+ * are 500 each, so they take their own {@link MAX_GOOGLE_GEO_LIST_ENTRIES}. Every list this one does bound
  * has an upstream cap of at most 100 (the widest is `conversionActions`,
  * {@link GOOGLE_ADS_MAX_CONVERSION_ACTIONS}; the widest creative list holds 20), and the widest text
  * field is 256 characters (`assetGroupName`), so a list at its cap or a field at its width is never
@@ -4543,18 +4543,19 @@ export const MAX_GOOGLE_CREATIVE_LIST_ENTRIES = 100;
 export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
 
 /**
- * The same resource bound for the excluded Google geo list, which is the one list on the create
- * route whose upstream cap ({@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS}, 500) is wider than
+ * The same resource bound for the targeted and excluded Google geo lists, the two lists on the
+ * create route whose upstream caps ({@link GOOGLE_ADS_MAX_GEO_TARGETS} and
+ * {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS}, 500 each) are wider than
  * {@link MAX_GOOGLE_CREATIVE_LIST_ENTRIES}.
  *
  * Its own constant rather than a raised shared one, so the hundred-entry ceiling on every creative,
- * extension and criteria list stays where it is. Four times the cap, so a list at or a little past
+ * extension and criteria list stays where it is. Four times the wider cap, so a list at or a little past
  * it reaches the named cap refusal an operator can act on ("accepts at most 500 excluded
  * locations") instead of this generic one, while a pathological body is still stopped before
  * `createConfigEnvelope` walks it. Upstream counts the list BEFORE de-duplication, so no list longer
  * than the cap is one upstream accepts, and this bound can never refuse a create upstream would take.
  */
-export const MAX_GOOGLE_GEO_LIST_ENTRIES = 4 * GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS;
+export const MAX_GOOGLE_GEO_LIST_ENTRIES = 4 * Math.max(GOOGLE_ADS_MAX_GEO_TARGETS, GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS);
 
 /**
  * The same resource bound for a list nested INSIDE a list entry, where the widest legitimate list

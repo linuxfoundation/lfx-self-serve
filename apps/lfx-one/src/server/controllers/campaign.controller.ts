@@ -7201,8 +7201,8 @@ export class CampaignController {
    * The first field of one bounded source that breaks a resource bound, or null: a creative key's
    * object of fields, or a bare list such as `conversionActions`. {@link oversizedGoogleCreativeField}'s
    * per-key walk, shared with each named Demand Gen ad group's two creatives (#5226). `listMax` is
-   * the list-length bound, the shared one unless the caller names a wider one (the excluded geo
-   * list's MAX_GOOGLE_GEO_LIST_ENTRIES).
+   * the list-length bound, the shared one unless the caller names a wider one (both Google geo
+   * lists take MAX_GOOGLE_GEO_LIST_ENTRIES).
    */
   private oversizedBoundableField(key: string, source: unknown, listMax: number = MAX_GOOGLE_CREATIVE_LIST_ENTRIES): { field: string; message: string } | null {
     // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
