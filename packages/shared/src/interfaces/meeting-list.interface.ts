@@ -292,6 +292,9 @@ export type MeetingDetailsState = 'far' | 'soon' | 'live' | 'ended';
 /** Tab of the meeting details drawer. */
 export type MeetingDetailsTab = 'agenda' | 'guests';
 
+/** Where on the meetings home page the details drawer was opened from, sent with its analytics event. */
+export type MeetingDetailsEntryPoint = 'row' | 'next_card' | 'last_card' | 'pending_rsvps' | 'attendance';
+
 /** How the meeting details drawer opens. */
 export interface MeetingDetailsOpenOptions {
   /** Tab to open on; Agenda & Materials by default. */
