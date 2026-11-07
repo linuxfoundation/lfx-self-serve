@@ -534,16 +534,66 @@ function frameworkPortraitMatrixBand(
     }
     return { rows: [kept], cut, tight: true, note: foundationMessagePrintCutNote(cut) };
   });
+  // One size across the proof row (the editor's W4, as the titles): the smallest any cell needed, every cell then re-cut at it, so
+  // no cell prints smaller than its neighbors; a cell re-cut smaller keeps at least the rows it had.
+  const rowSize = frameworkPortraitMatrixProofRowSize(proofs);
+  const unified =
+    rowSize === TYPE.matrixProof.size
+      ? proofs
+      : goals.map((goal) => frameworkPortraitMatrixProofsAt(goal.proofRows, rowSize, proofsRoom, column, proofRow, noteIn));
   const proofsHeight =
     ROOM.matrixRow +
     tallest(
-      proofs.map(
+      unified.map(
         (cell) =>
           cell.rows.reduce((sum, proof) => sum + proofRow(proof, cell.tight ? TYPE.matrixProofTight : TYPE.matrixProof), 0) +
           (cell.cut > 0 ? frameworkPortraitCutNoteHeightIn(cell.cut, column) : 0)
       )
     );
-  return { cells, proofs, height: head + rows.value + rows.key + rows.bite + proofsHeight };
+  return { cells, proofs: unified, height: head + rows.value + rows.key + rows.bite + proofsHeight };
+}
+
+/**
+ * The one size a goal matrix's proof row prints at (the editor's W4, 7 Nov 2026: one size per row, as the titles): the type's where
+ * every cell printed at it, else the tight type's, else the smallest a kept first proof fell to (editor F3); a cell with no proofs
+ * says nothing.
+ */
+export function frameworkPortraitMatrixProofRowSize(cells: readonly FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>[]): number {
+  return cells.reduce((size: number, cell) => {
+    if (cell.rows.length === 0) return size;
+    const own = cell.tight ? Math.min(...cell.rows.map((row) => row.size ?? TYPE.matrixProofTight.size)) : TYPE.matrixProof.size;
+    return Math.min(size, own);
+  }, TYPE.matrixProof.size);
+}
+
+/**
+ * A goal's proof cell re-cut at the row's one `size` (under the type's): the whole rows that fit the room beside the note, every row
+ * carrying the size where it is under the tight type's (the tight type's is the cell's class); a cell none of whose rows fit keeps
+ * its first proof at that size, cut at a sentence to the room above its note (editor F3), never only the note.
+ */
+function frameworkPortraitMatrixProofsAt(
+  rows: readonly FoundationMessagePrintGoalProof[],
+  size: number,
+  room: number,
+  column: number,
+  proofRow: (proof: FoundationMessagePrintGoalProof, type: FoundationMessagePrintType) => number,
+  noteIn: (cut: number) => number
+): FoundationMessagePrintCutList<FoundationMessagePrintGoalProof> {
+  if (rows.length === 0) return { rows: [], cut: 0, tight: false, note: '' };
+  const type: FoundationMessagePrintType = { ...TYPE.matrixProofTight, size };
+  const at = (proof: FoundationMessagePrintGoalProof): FoundationMessagePrintGoalProof => (size < TYPE.matrixProofTight.size ? { ...proof, size } : proof);
+  const measure = (proof: FoundationMessagePrintGoalProof): number => proofRow(proof, type);
+  const list = frameworkPortraitCutList(rows.map(at), room, measure, measure, frameworkPortraitCutNoteHeightIn(1, column));
+  if (list.rows.length > 0) return { ...list, tight: true };
+  const cut = rows.length - 1;
+  const firstRoom = room - noteIn(cut);
+  let kept = at(rows[0]);
+  for (let guard = 0; guard < FIT.maxCuts && measure(kept) > firstRoom; guard++) {
+    const fact = mktgPortraitCutText(kept.fact, Math.floor(kept.fact.length * FIT.cutShare));
+    if (fact === kept.fact || fact.length >= kept.fact.length) break;
+    kept = { ...kept, fact };
+  }
+  return { rows: [kept], cut, tight: true, note: foundationMessagePrintCutNote(cut) };
 }
 
 /** The room the cover's contents list has, px: from its eyebrow's top to the cover strip, less the eyebrow and the list's margin. */

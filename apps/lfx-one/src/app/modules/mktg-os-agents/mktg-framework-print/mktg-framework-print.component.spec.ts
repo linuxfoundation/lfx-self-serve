@@ -803,6 +803,13 @@ describe('MktgFrameworkPrintComponent', () => {
     }
     // The long record's value propositions do not hold two lines of a band's column, so the row is clamped or gone, never a one-line "…".
     expect(laid.rows.bite || laid.notes[0] === FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites).toBe(true);
+    // One size across each band's proof row (editor W4): every cell tightened together, every row at the one size the layout set.
+    for (const band of [query('mktg-framework-print-goals-band-0'), query('mktg-framework-print-goals-band-1')]) {
+      const cells = Array.from(band?.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-proof-cell"]') ?? []);
+      expect(cells).toHaveLength(4);
+      expect(new Set(cells.map((cell) => cell.classList.contains('fwp-matrix-proofs--tight'))).size).toBe(1);
+      expect(new Set(cells.flatMap((cell) => Array.from(cell.querySelectorAll<HTMLElement>('li')).map((row) => row.style.fontSize))).size).toBe(1);
+    }
     // Short titles at eight goals stay one strip of eight columns.
     await setView(
       buildFoundationMessagePrintView(

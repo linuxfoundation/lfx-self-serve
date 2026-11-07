@@ -50,6 +50,7 @@ import {
   frameworkPortraitMatrix,
   frameworkPortraitMatrixColumn,
   frameworkPortraitMatrixColumns,
+  frameworkPortraitMatrixProofRowSize,
   frameworkPortraitMatrixTitleSize,
   frameworkPortraitPillList,
   frameworkPortraitPillarHeadHeight,
@@ -63,7 +64,13 @@ import {
   frameworkPortraitTitle,
   frameworkPortraitTitlesAtOneSize,
 } from './mktg-framework-portrait-layout.utils';
-import type { FoundationMessagePrintGoal, FoundationMessagePrintIcp, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
+import type {
+  FoundationMessagePrintCutList,
+  FoundationMessagePrintGoal,
+  FoundationMessagePrintGoalProof,
+  FoundationMessagePrintIcp,
+  FoundationMessagePrintView,
+} from '../interfaces/mktg-print.interface';
 import type { FoundationMessagePillarView } from '../interfaces/foundation-message.interface';
 import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
 import { mktgPortraitCharEm, mktgPortraitCharsPerLine, mktgPortraitWrapLines } from './mktg-portrait-print.utils';
@@ -892,86 +899,87 @@ describe('the framework portrait book’s profile columns', () => {
   });
 });
 
+// The overfull record's shape (the W1 and W4 specs): eight goals whose titles break the matrix into two bands of four, each with a long value proposition
+// and key message, a sound bite and four proofs (synthetic figures).
+const facts = [
+  'Kubernetes runs in production at 96 percent of the organizations surveyed in the latest annual survey',
+  'More than 250 projects are hosted across the graduated, incubating and sandbox tiers',
+  'Over 290,000 contributors from 190 countries have committed to hosted projects',
+  'KubeCon + CloudNativeCon North America drew 12,000 attendees in person last year',
+  'More than 180,000 certifications have been issued under the Kubernetes certification program',
+  '900 member organizations across every continent, from startups to the largest cloud providers',
+  'Twenty-two graduated projects have passed the open governance and security audit bar',
+  'Over 200 Kubernetes community days were held in 60 countries over the last twelve months',
+];
+const overfull: [string, string, string, string][] = [
+  [
+    'Adoption',
+    'Teams standardize on projects every major cloud and vendor already supports, so platforms outlive any one supplier.',
+    'The cloud native stack is open, governed in the open and run everywhere.',
+    'Open, everywhere, governed in the open.',
+  ],
+  [
+    'Contributors',
+    'Maintainers find a neutral home, a release cadence they set and a security process the whole industry trusts.',
+    'Build it where the whole industry maintains it with you.',
+    'Build it where the industry maintains it.',
+  ],
+  [
+    'Certification',
+    'Certified engineers prove the skills employers hire for, against a vendor-neutral curriculum.',
+    'The certification employers recognize, against the standard everyone ships.',
+    'The credential the whole stack recognizes.',
+  ],
+  [
+    'End users',
+    'End users shape the roadmaps they depend on, through the technical oversight committee and the end user community.',
+    'Your production needs set the roadmap: bring them to the end user community.',
+    'Your production sets the roadmap.',
+  ],
+  [
+    'Events',
+    'Practitioners meet the maintainers, in person and in every region, at events the community runs.',
+    'Where cloud native is built, taught and decided: come to the next event.',
+    'Where cloud native is built in person.',
+  ],
+  [
+    'Security',
+    'Projects reach the security bar enterprises require, with audits, fuzzing and a disclosure process they share.',
+    'Security is a shared practice here, not a product.',
+    'Security as a shared practice.',
+  ],
+  [
+    'Membership',
+    'Members fund the neutral infrastructure the ecosystem builds on and sit where its direction is set.',
+    'Sustain the neutral home the whole ecosystem depends on.',
+    'Sustain the neutral home.',
+  ],
+  [
+    'Education',
+    'Learners take a free, structured path from the first container to production operations.',
+    'Learn cloud native the way the maintainers teach it.',
+    'From the first container to production.',
+  ],
+];
+const goals = (shape: readonly [string, string, string, string][]): FoundationMessagePrintGoal[] =>
+  shape.map(([t, vp, key, bite], index) => ({
+    id: `g${index + 1}`,
+    n: index + 1,
+    t,
+    vp,
+    key,
+    bite,
+    proof: [],
+    icps: [],
+    segmentLabel: '',
+    segmentNames: [],
+    proofRows: Array.from({ length: 4 }, (_, at) => ({ fact: facts[(index + at) % facts.length], source: at % 2 ? 'LFX field' : 'Website' })),
+  }));
+const crosscut =
+  'Every goal shares the proof that the stack runs in production at scale and that no single vendor controls its direction; use the figures for the audience in front of you.';
+const room = FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix;
+
 describe('the framework portrait book’s goal matrix in bands (editor W1)', () => {
-  // The overfull record's shape: eight goals whose titles break the matrix into two bands of four, each with a long value proposition
-  // and key message, a sound bite and four proofs (synthetic figures).
-  const facts = [
-    'Kubernetes runs in production at 96 percent of the organizations surveyed in the latest annual survey',
-    'More than 250 projects are hosted across the graduated, incubating and sandbox tiers',
-    'Over 290,000 contributors from 190 countries have committed to hosted projects',
-    'KubeCon + CloudNativeCon North America drew 12,000 attendees in person last year',
-    'More than 180,000 certifications have been issued under the Kubernetes certification program',
-    '900 member organizations across every continent, from startups to the largest cloud providers',
-    'Twenty-two graduated projects have passed the open governance and security audit bar',
-    'Over 200 Kubernetes community days were held in 60 countries over the last twelve months',
-  ];
-  const overfull: [string, string, string, string][] = [
-    [
-      'Adoption',
-      'Teams standardize on projects every major cloud and vendor already supports, so platforms outlive any one supplier.',
-      'The cloud native stack is open, governed in the open and run everywhere.',
-      'Open, everywhere, governed in the open.',
-    ],
-    [
-      'Contributors',
-      'Maintainers find a neutral home, a release cadence they set and a security process the whole industry trusts.',
-      'Build it where the whole industry maintains it with you.',
-      'Build it where the industry maintains it.',
-    ],
-    [
-      'Certification',
-      'Certified engineers prove the skills employers hire for, against a vendor-neutral curriculum.',
-      'The certification employers recognize, against the standard everyone ships.',
-      'The credential the whole stack recognizes.',
-    ],
-    [
-      'End users',
-      'End users shape the roadmaps they depend on, through the technical oversight committee and the end user community.',
-      'Your production needs set the roadmap: bring them to the end user community.',
-      'Your production sets the roadmap.',
-    ],
-    [
-      'Events',
-      'Practitioners meet the maintainers, in person and in every region, at events the community runs.',
-      'Where cloud native is built, taught and decided: come to the next event.',
-      'Where cloud native is built in person.',
-    ],
-    [
-      'Security',
-      'Projects reach the security bar enterprises require, with audits, fuzzing and a disclosure process they share.',
-      'Security is a shared practice here, not a product.',
-      'Security as a shared practice.',
-    ],
-    [
-      'Membership',
-      'Members fund the neutral infrastructure the ecosystem builds on and sit where its direction is set.',
-      'Sustain the neutral home the whole ecosystem depends on.',
-      'Sustain the neutral home.',
-    ],
-    [
-      'Education',
-      'Learners take a free, structured path from the first container to production operations.',
-      'Learn cloud native the way the maintainers teach it.',
-      'From the first container to production.',
-    ],
-  ];
-  const goals = (shape: readonly [string, string, string, string][]): FoundationMessagePrintGoal[] =>
-    shape.map(([t, vp, key, bite], index) => ({
-      id: `g${index + 1}`,
-      n: index + 1,
-      t,
-      vp,
-      key,
-      bite,
-      proof: [],
-      icps: [],
-      segmentLabel: '',
-      segmentNames: [],
-      proofRows: Array.from({ length: 4 }, (_, at) => ({ fact: facts[(index + at) % facts.length], source: at % 2 ? 'LFX field' : 'Website' })),
-    }));
-  const crosscut =
-    'Every goal shares the proof that the stack runs in production at scale and that no single vendor controls its direction; use the figures for the audience in front of you.';
-  const room = FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix;
   const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
   const type = FRAMEWORK_PORTRAIT_TYPE;
   const linesOf = (text: string, size: number, weight: number) => mktgPortraitWrapLines(text, mktgPortraitCharsPerLine(column, size, { weight }));
@@ -1080,5 +1088,84 @@ describe('the framework portrait book’s goal matrix in bands (editor W1)', () 
     expect(eight.bands).toEqual([{ offset: 0, count: 8, columns: 8 }]);
     expect(eight.rows).toEqual({ value: true, bite: true });
     expect(eight.notes).toEqual([]);
+  });
+});
+
+describe('the framework portrait book’s goal matrix proof row (editor W4)', () => {
+  const long = 'A long sentence about the project and the many things it does for the people who use it every day. ';
+  const goal = (proofs: number, overrides: Partial<FoundationMessagePrintGoal> = {}): FoundationMessagePrintGoal => ({
+    ...goals(overfull.slice(0, 1))[0],
+    vp: 'Value',
+    key: 'Key',
+    bite: 'Bite',
+    proofRows: Array.from({ length: proofs }, (_, index) => ({ fact: `${long.trim()} (${index})`, source: 'Source' })),
+    ...overrides,
+  });
+  const tight = FRAMEWORK_PORTRAIT_TYPE.matrixProofTight.size;
+  const normal = FRAMEWORK_PORTRAIT_TYPE.matrixProof.size;
+  const sizeOf = (cell: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>): number => (cell.tight ? (cell.rows[0]?.size ?? tight) : normal);
+
+  it('reads a row’s one size: the type’s where every cell printed at it, the tight type’s past that, else the smallest a kept first proof fell to', () => {
+    const plain = { rows: [{ fact: 'A', source: 'S' }], cut: 0, tight: false, note: '' };
+    const tightened = { rows: [{ fact: 'A', source: 'S' }], cut: 2, tight: true, note: 'n' };
+    const kept = { rows: [{ fact: 'A', source: 'S', size: 9.24 }], cut: 3, tight: true, note: 'n' };
+    const empty = { rows: [], cut: 0, tight: false, note: '' };
+    expect(frameworkPortraitMatrixProofRowSize([])).toBe(normal);
+    expect(frameworkPortraitMatrixProofRowSize([plain, empty])).toBe(normal);
+    expect(frameworkPortraitMatrixProofRowSize([plain, tightened])).toBe(tight);
+    expect(frameworkPortraitMatrixProofRowSize([plain, tightened, kept, empty])).toBe(9.24);
+  });
+
+  it('sets every proof cell of a row at the smallest size any cell needed, re-cutting the others at it, as the titles do', () => {
+    // Every cell fits at the type: nothing is tightened, no row carries a size.
+    const whole = frameworkPortraitMatrix([goal(2, { id: 'a' }), goal(1, { id: 'b' })], '', 664);
+    expect(whole.proofs.map((cell) => cell.tight)).toEqual([false, false]);
+    expect(whole.proofs.flatMap((cell) => cell.rows.map((row) => row.size))).toEqual([undefined, undefined, undefined]);
+    // One goal with twelve long proofs beside two with one short proof: the first is tightened and cut, and the row follows it to the
+    // tight type (the cell's class, no size on a row); the short cells keep their whole row.
+    const tightened = frameworkPortraitMatrix([goal(12, { id: 'a' }), goal(1, { id: 'b' }), goal(1, { id: 'c' })], '', 664);
+    expect(tightened.proofs[0].cut).toBeGreaterThan(0);
+    expect(tightened.proofs.map((cell) => cell.tight)).toEqual([true, true, true]);
+    expect(tightened.proofs.flatMap((cell) => cell.rows.map((row) => row.size))).toEqual(tightened.proofs.flatMap((cell) => cell.rows.map(() => undefined)));
+    expect(tightened.proofs[1]).toEqual({ rows: goal(1).proofRows, cut: 0, tight: true, note: '' });
+    expect(frameworkPortraitMatrixProofRowSize(tightened.proofs)).toBe(tight);
+    // The editor's F3 shape: a kept first proof set smaller carries its size to every cell of the row, the short cells keeping their
+    // row at it, and the row's height is measured at that size.
+    const sentence = `${long.trim()}. ${long.trim()}.`;
+    const wordy = { vp: long.repeat(3).trim(), key: long.repeat(3).trim(), bite: long.trim() };
+    const shapes = [
+      goal(4, { id: 'g1', n: 1, ...wordy, proofRows: Array.from({ length: 4 }, () => ({ fact: sentence, source: 'Source' })) }),
+      goal(1, { id: 'g2', n: 2 }),
+      goal(1, { id: 'g3', n: 3 }),
+      goal(4, { id: 'g4', n: 4, ...wordy, proofRows: Array.from({ length: 4 }, () => ({ fact: sentence, source: 'Source' })) }),
+    ];
+    const kept = frameworkPortraitMatrix(shapes, '', 400);
+    expect(kept.height).toBeLessThanOrEqual(400);
+    const sizes = new Set(kept.proofs.map(sizeOf));
+    expect(sizes.size).toBe(1);
+    const [size] = [...sizes];
+    expect(size).toBeLessThan(tight);
+    for (const [index, cell] of kept.proofs.entries()) {
+      expect(cell.tight).toBe(true);
+      expect(cell.rows.length).toBeGreaterThan(0);
+      expect(cell.rows.length + cell.cut).toBe(shapes[index].proofRows.length);
+      for (const row of cell.rows) expect(row.size).toBe(size);
+    }
+    expect(kept.proofs[1].rows).toEqual([{ ...shapes[1].proofRows[0], size }]);
+    expect(kept.proofs[1].cut).toBe(0);
+  });
+
+  it('prints each band’s proof row of the overfull shape at one size, no cell smaller than its neighbors', () => {
+    const matrix = frameworkPortraitMatrix(goals(overfull), crosscut, room);
+    expect(matrix.bands).toHaveLength(2);
+    expect(matrix.height).toBeLessThanOrEqual(room);
+    for (const band of matrix.bands) {
+      const cells = matrix.proofs.slice(band.offset, band.offset + band.count);
+      expect(new Set(cells.map(sizeOf)).size).toBe(1);
+      for (const cell of cells) {
+        expect(cell.rows.length).toBeGreaterThan(0);
+        expect(cell.rows.length + cell.cut).toBe(4);
+      }
+    }
   });
 });
