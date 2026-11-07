@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { mktgPortraitCharsPerLine } from '@lfx-one/shared/utils';
+import { mktgPortraitLineFits } from '@lfx-one/shared/utils';
 import { MktgBrandKitPageTypeComponent } from './mktg-brand-kit-page-type.component';
 import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -17,9 +17,9 @@ describe('the Typography page', () => {
     expect(rectOf(specimen)).toEqual({ left: '56px', top: '212px', width: '704px' });
     const h1 = specimen?.querySelector<HTMLElement>('[data-testid="brand-kit-type-h1"]');
     expect(h1?.textContent).toBe(view.voice.line);
-    // The synthetic brand line (32 characters) does not fit the column at the mock's 48 px, so it is set at the largest
-    // step that fits (40 px), whole.
-    expect(h1?.style.fontSize).toBe('40px');
+    // The synthetic brand line, measured in Montserrat (a wide face) at 500, does not fit the column at the mock's 48 px,
+    // so it is set at the largest step that fits (38 px), whole; a line that fits stays at 48 (the shared spec).
+    expect(h1?.style.fontSize).toBe('38px');
     expect(Array.from(specimen?.querySelectorAll('.kp-type-weight-name') ?? [], (name) => name.textContent)).toEqual(['Regular 400', 'Bold 700']);
     const scale = frame.querySelector('[data-testid="brand-kit-type-scale"]');
     expect(rectOf(scale)).toEqual({ left: '56px', top: '436px', width: '704px' });
@@ -58,10 +58,10 @@ describe('the Typography page', () => {
     const h1 = frame.querySelector<HTMLElement>('[data-testid="brand-kit-type-h1"]');
     const size = parseFloat(h1?.style.fontSize ?? '0');
     expect(size).toBeLessThan(48);
-    // 94 characters at 500 fit the 704 px column at 13 px by the grammar's fit model; the text is whole.
+    // 94 characters in Montserrat at 500 fit the 704 px column at 13 px by the measured width; the text is whole.
     expect(size).toBe(13);
     expect(h1?.textContent).toBe(long);
-    expect(long.length).toBeLessThanOrEqual(mktgPortraitCharsPerLine(704, size, { weight: 500 }));
+    expect(mktgPortraitLineFits(long, 704, size, { weight: 500, family: 'Montserrat' })).toBe(true);
   });
 
   it('sets the body step at its real size and lets the paragraph wrap, and moves the lower blocks under the scale when three lines run past y 830', async () => {

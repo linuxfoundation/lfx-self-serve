@@ -56,6 +56,7 @@ import {
   mktgPortraitCharsPerLine,
   mktgPortraitCutText,
   mktgPortraitFitBlock,
+  mktgPortraitLineFits,
   mktgPortraitWrapLines,
 } from './mktg-portrait-print.utils';
 import { mktgReadableSourceName, mktgReadableSourceText } from './mktg-readable-source.utils';
@@ -308,18 +309,19 @@ export function brandKitPortraitMessageCard(view: BrandKitBookView): { text: str
 }
 
 /**
- * The size a one-line sample is set at so it fits `width`: `size` when it
- * does, else the largest size (in the grammar's steps) at which it does,
+ * The size a one-line sample is set at so it fits `width`, by the measured
+ * width of its glyphs in the kit's face (`para.family`): `size` when it
+ * fits, else the largest size (in the grammar's steps) at which it does,
  * down to `BRAND_KIT_PORTRAIT_FIT_MIN_PX`. The size never cuts the text: a
  * line no readable size holds is set at that minimum, and what the box then
  * does with it is the caller's: the type page's H1 keeps it on one line,
  * which clips past about 142 characters (open, with item 2's sweep).
  */
-export function brandKitPortraitFitSize(text: string, width: number, size: number, para: { weight?: number; caps?: boolean } = {}): number {
+export function brandKitPortraitFitSize(text: string, width: number, size: number, para: { weight?: number; caps?: boolean; family?: string } = {}): number {
   for (let scale = 1; scale > 0; scale -= MKTG_PORTRAIT_FIT.scaleStep) {
     const fitted = Math.floor(size * scale * 2) / 2;
     if (fitted < BRAND_KIT_PORTRAIT_FIT_MIN_PX) break;
-    if (text.length <= mktgPortraitCharsPerLine(width, fitted, para)) return fitted;
+    if (mktgPortraitLineFits(text, width, fitted, para)) return fitted;
   }
   return BRAND_KIT_PORTRAIT_FIT_MIN_PX;
 }
@@ -349,19 +351,26 @@ function typeSteps(view: BrandKitBookView, width: number, bodyScale: number, bod
     const body = step.step === 'body';
     const sample = body ? bodySample : brandKitPortraitTypeSample(view, step);
     const room = display ? width : width - BRAND_KIT_PORTRAIT_SCALE_META_PX;
-    const size = body ? halfPx(step.size, bodyScale) : brandKitPortraitFitSize(sample, room, step.size, { weight: step.weight, caps: step.caps });
+    const para = { weight: step.weight, caps: step.caps, family: view.type.family };
+    const size = body ? halfPx(step.size, bodyScale) : brandKitPortraitFitSize(sample, room, step.size, para);
     const line_height = body ? Math.round(step.line_height * bodyScale) : step.line_height;
     return { ...step, sample, spec: `${step.weight} · ${step.size}/${step.line_height}`, display, size, line_height };
   });
 }
 
-/** The y the scale ends at: its label, then each row at the height its sample's lines take. */
-function typeScaleEnd(steps: readonly BrandKitPortraitTypeStep[], width: number): number {
+/**
+ * The y the scale ends at: its label, then each row at the height its sample's lines take — one line when the measured
+ * line fits (the one-line steps, set to fit), else the paragraph model's wrap (the body step).
+ */
+function typeScaleEnd(steps: readonly BrandKitPortraitTypeStep[], width: number, family: string): number {
   const c = BRAND_KIT_PORTRAIT_TYPE_PAGE;
   return steps.reduce(
     (y, step) => {
       const room = step.display ? width : width - BRAND_KIT_PORTRAIT_SCALE_META_PX;
-      const lines = mktgPortraitWrapLines(step.sample, mktgPortraitCharsPerLine(room, step.size, { weight: step.weight, caps: step.caps }));
+      const para = { weight: step.weight, caps: step.caps, family };
+      const lines = mktgPortraitLineFits(step.sample, room, step.size, para)
+        ? 1
+        : mktgPortraitWrapLines(step.sample, mktgPortraitCharsPerLine(room, step.size, para));
       const sample = lines * step.line_height;
       if (step.display) return y + c.rule + c.rowPadding + c.metaLine + c.displaySampleAbove + sample + c.displayBottom;
       return y + c.rule + 2 * c.rowPadding + Math.max(c.metaLine, sample);
@@ -414,7 +423,7 @@ export function brandKitPortraitTypeLayout(view: BrandKitBookView, width: number
   const bodyWords = bodyStep ? brandKitPortraitTypeSample(view, bodyStep) : '';
   const layout = (bodyScale: number, bodySample: string, cut: boolean): BrandKitPortraitTypeLayout => {
     const steps = typeSteps(view, width, bodyScale, bodySample);
-    const scaleEnd = typeScaleEnd(steps, width);
+    const scaleEnd = typeScaleEnd(steps, width, view.type.family);
     const lowerTop = Math.max(c.lowerTop, Math.ceil(scaleEnd) + c.lowerGap);
     return { steps, scaleEnd, lowerTop, sourceLines, bodyScale, cut };
   };

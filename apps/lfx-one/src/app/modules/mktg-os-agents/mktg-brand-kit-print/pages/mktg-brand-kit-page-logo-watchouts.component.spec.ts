@@ -21,6 +21,10 @@ describe('the Watchouts page', () => {
     expect(tiles[1].querySelector<HTMLElement>('span')?.style.filter).toBe(BRAND_KIT_PORTRAIT_RECOLOR_FILTER);
     expect(tiles[3].querySelector<HTMLElement>('span')?.style.filter).toBe('drop-shadow(4px 5px 3px rgba(0, 0, 0, 0.45))');
     expect(tiles[4].querySelector<HTMLElement>('span')?.style.transform).toBe('');
+    // The busy ground is the mock's: the accent through the palette's fourth colour (Mid gray here) into the dark, at 120°.
+    expect(tiles[4].querySelector<HTMLElement>('.kp-watchout')?.style.background).toBe(
+      'linear-gradient(120deg, rgb(243, 118, 37), rgb(118, 117, 118) 60%, rgb(77, 78, 78))'
+    );
     expect(tiles[5].querySelector('.kp-retyped')?.textContent).toBe('Project One');
     expect(tiles[5].querySelector('img')).toBeNull();
     const fallback = frame.querySelector('[data-testid="brand-kit-watchouts-default"]');

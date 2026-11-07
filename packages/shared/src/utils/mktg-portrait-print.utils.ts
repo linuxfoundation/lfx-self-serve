@@ -7,7 +7,16 @@
 // sentence (the Google Slides exporter's model, in px). A document's page
 // plan is `mktg-portrait-plan.utils.ts`.
 
-import { MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_PAGE_NUMBER_DIGITS } from '../constants/mktg-portrait-print.constants';
+import {
+  MKTG_PORTRAIT_CAPS_TRACKING_EM,
+  MKTG_PORTRAIT_FAMILY_WIDTH,
+  MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT,
+  MKTG_PORTRAIT_FIT,
+  MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
+  MKTG_PORTRAIT_GLYPH_WIDTHS,
+  MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
+  MKTG_PORTRAIT_WEIGHT_WIDTH,
+} from '../constants/mktg-portrait-print.constants';
 import type { MktgPrintBrand } from '../interfaces/mktg-print.interface';
 import type { MktgPortraitFitBlock, MktgPortraitFitPara, MktgPortraitFitResult, MktgPortraitLook } from '../interfaces/mktg-portrait-print.interface';
 import { brandKitInkOnAccent } from './brand-kit-book.utils';
@@ -44,6 +53,40 @@ export function mktgPortraitIsChapter(section: string): boolean {
 export function mktgPortraitCharEm(para: Pick<MktgPortraitFitPara, 'weight' | 'caps'>): number {
   if (para.caps) return MKTG_PORTRAIT_FIT.charEmCaps;
   return (para.weight ?? 400) >= 600 ? MKTG_PORTRAIT_FIT.charEmBold : MKTG_PORTRAIT_FIT.charEm;
+}
+
+/** The first family of a CSS font stack, lowercased and unquoted: `'Instrument Sans', sans-serif` → `instrument sans`. */
+function firstFamily(stack: string | undefined): string {
+  return (stack ?? '').split(',')[0].replace(/['"]/g, '').trim().toLowerCase();
+}
+
+/** How much wider than the table a weight sets a line: the nearest named weight at or below it. */
+function weightWidth(weight: number): number {
+  const named = Object.keys(MKTG_PORTRAIT_WEIGHT_WIDTH)
+    .map(Number)
+    .filter((named) => named <= weight)
+    .sort((a, b) => b - a)[0];
+  return MKTG_PORTRAIT_WEIGHT_WIDTH[named ?? 400] ?? 1;
+}
+
+/**
+ * The width one line of `text` takes at `size` px, measured glyph by glyph
+ * (the sans table, widened for the family and the weight; capitals with their
+ * tracking): the measure for a line that must stay whole at its real size.
+ * It is not the paragraph model's flat average, which wraps safely but
+ * would shrink a line that fits.
+ */
+export function mktgPortraitTextWidth(text: string, size: number, para: Pick<MktgPortraitFitPara, 'weight' | 'caps' | 'family'> = {}): number {
+  const shown = para.caps ? text.toUpperCase() : text;
+  const glyphs = Array.from(shown).reduce((sum, char) => sum + (MKTG_PORTRAIT_GLYPH_WIDTHS[char] ?? MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT), 0) / 1000;
+  const tracking = para.caps ? Math.max(0, Array.from(shown).length - 1) * MKTG_PORTRAIT_CAPS_TRACKING_EM : 0;
+  const family = MKTG_PORTRAIT_FAMILY_WIDTH[firstFamily(para.family)] ?? MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT;
+  return (glyphs * family * weightWidth(para.weight ?? 400) + tracking) * size;
+}
+
+/** Whether one line of `text` fits `width` px at `size` px, by the measured width. */
+export function mktgPortraitLineFits(text: string, width: number, size: number, para: Pick<MktgPortraitFitPara, 'weight' | 'caps' | 'family'> = {}): boolean {
+  return mktgPortraitTextWidth(text, size, para) <= width + 0.01;
 }
 
 /** Characters per line in a column `width` px wide at `size` px. */

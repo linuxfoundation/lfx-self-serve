@@ -220,9 +220,17 @@ stylesheet `_mktg-portrait.scss` with the `pp-` class prefix; tokens and types i
   family's chapter opener) and `lfx-mktg-portrait-back-cover` (the reversed lockup, brand
   line, url, version line and the trademark notice).
 - **The fit model.** `mktgPortraitFitBlock` and `brandKitPortraitFitSize` (shared utils)
-  size variable text to its box: a one-line sample shrinks until it fits, never cut; a
-  paragraph block shrinks in the grammar's steps and then cuts at a sentence. Nothing may
-  leave its frame.
+  size variable text to its box: a one-line sample stays at its real size while its
+  measured line fits (`mktgPortraitTextWidth`: glyph widths in the kit's face,
+  `MKTG_PORTRAIT_GLYPH_WIDTHS` widened by `MKTG_PORTRAIT_FAMILY_WIDTH` and the weight)
+  and shrinks in the grammar's steps only when it does not, never cut; a paragraph block
+  wraps by the flat average (`MKTG_PORTRAIT_FIT.charEm`), shrinks in the grammar's steps
+  and then cuts at a sentence. Nothing may leave its frame.
+- **The kit's face everywhere.** The frame hands `font-family`, `font-size` and
+  `line-height` back to itself on every element the app's layers set by tag (`p`,
+  headings, `label`, `button`, `input`, `table`): an unlayered `:where()` rule in
+  `_mktg-portrait.scss`, at no specificity, so the kit's `--pp-font` and each block's own
+  size win over `styles.scss`'s Inter and the layer's 1rem/1.5.
 
 **The book** (`mktg-brand-kit-print/`, pages under `pages/`, classes `kp-` in
 `_mktg-brand-kit-pages.scss`) is plan-driven: `brandKitPortraitPlan(view, { inFamily })`

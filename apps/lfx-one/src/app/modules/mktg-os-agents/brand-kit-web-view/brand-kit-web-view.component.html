@@ -931,8 +931,9 @@
     Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.
   </p>
 
-  <!-- The same native portrait chapters as the family PDF; the screen view stays unchanged. -->
-  @if (printView(); as approvedPrint) {
+  <!-- The portrait book Download PDF prints, in the page only while its flag is on: without the flag nothing of the book
+       is in the DOM. The screen view stays unchanged. -->
+  @if (pdfEnabled() && printView(); as approvedPrint) {
     <div [class]="printOnlyClass" data-testid="brand-kit-web-view-print">
       <lfx-mktg-brand-kit-print [view]="approvedPrint" [brand]="printBrand()" [projectName]="projectName()" [approval]="printApproval()" />
     </div>

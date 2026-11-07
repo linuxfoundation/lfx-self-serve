@@ -405,11 +405,16 @@
   color: var(--pp-white);
 }
 
+/* The retyped sample: the project's name in a serif italic, centred in its tile with 12 px of side padding (a name
+   longer than the tile wraps, centred, at a 1.15 leading). */
 .kp-retyped {
+  padding: 0 12px;
   font-family: Georgia, serif;
   font-size: 30px;
   font-style: italic;
   font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
   color: var(--pp-dark);
 }
 
@@ -424,6 +429,11 @@
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--pp-ink);
+
+  /* The lockup keeps its drawn width beside the text: never shrunk as a flex item. */
+  > lfx-mktg-brand-kit-artwork {
+    flex: none;
+  }
 }
 
 /* ---- Color ---- */

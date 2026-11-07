@@ -3,7 +3,7 @@
 
 import { Component, computed } from '@angular/core';
 import { BRAND_KIT_PORTRAIT_RECOLOR_FILTER } from '@lfx-one/shared/constants';
-import { BrandKitWatchoutView } from '@lfx-one/shared/interfaces';
+import { BrandKitBookView, BrandKitWatchoutView } from '@lfx-one/shared/interfaces';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitArtworkComponent } from './mktg-brand-kit-artwork.component';
@@ -19,6 +19,16 @@ function printFilter(filter: string): string {
   return filter;
 }
 
+/**
+ * The busy ground as the mock draws it (p08): the accent, through the palette's fourth colour (the spark when the
+ * palette has no fourth) at 60%, into the dark, at 120°. The on-screen tile keeps its own gradient.
+ */
+function printGround(ground: string, view: BrandKitBookView): string {
+  if (!ground.startsWith('linear-gradient')) return ground;
+  const through = view.palette[3]?.hex ?? view.spark;
+  return `linear-gradient(120deg, ${view.accent}, ${through} 60%, ${view.dark})`;
+}
+
 @Component({
   selector: 'lfx-mktg-brand-kit-page-logo-watchouts',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective, MktgBrandKitArtworkComponent],
@@ -27,7 +37,8 @@ function printFilter(filter: string): string {
 export class MktgBrandKitPageLogoWatchoutsComponent extends MktgBrandKitPageBase {
   /**
    * The six tiles: the kit's watchout lines with the mock's distortions (the view's draws, its shadow in px, its hue
-   * rotation as the print's recolor, which also turns a black mark; the on-screen tile keeps its own).
+   * rotation as the print's recolor, which also turns a black mark, its busy ground as the mock's gradient; the
+   * on-screen tile keeps its own).
    */
   protected readonly tiles = computed((): (BrandKitWatchoutView & { ground: string })[] =>
     this.view()
@@ -35,7 +46,7 @@ export class MktgBrandKitPageLogoWatchoutsComponent extends MktgBrandKitPageBase
       .map((tile) => ({
         ...tile,
         filter: printFilter(tile.filter),
-        ground: tile.ground || this.inks.white,
+        ground: printGround(tile.ground, this.view()) || this.inks.white,
       }))
   );
   protected readonly minimum = computed(() => this.view().logo.minimum_size.screen_px);

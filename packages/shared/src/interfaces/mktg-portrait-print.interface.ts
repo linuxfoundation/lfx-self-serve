@@ -80,6 +80,8 @@ export interface MktgPortraitFitPara {
   weight?: number;
   /** Set in capitals. */
   caps?: boolean;
+  /** The CSS font stack the text is set in (its first family widens the measure); the sans table's width without one. */
+  family?: string;
   /** Space above the paragraph, px. */
   above?: number;
 }

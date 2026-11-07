@@ -13,12 +13,14 @@ import {
   mktgPortraitFitBlock,
   mktgPortraitFits,
   mktgPortraitIsChapter,
+  mktgPortraitLineFits,
   mktgPortraitLook,
   mktgPortraitOneLine,
   mktgPortraitPageNumber,
   mktgPortraitPaginate,
   mktgPortraitScaleBlock,
   mktgPortraitSentences,
+  mktgPortraitTextWidth,
   mktgPortraitWrapLines,
 } from './mktg-portrait-print.utils';
 import { mktgPrintBrand } from './mktg-print.utils';
@@ -83,6 +85,25 @@ describe('the fit model', () => {
     expect(mktgPortraitCharsPerLine(704, 12.5, { weight: 600 })).toBeLessThan(mktgPortraitCharsPerLine(704, 12.5));
     expect(mktgPortraitCharsPerLine(704, 12.5, { caps: true })).toBeLessThan(mktgPortraitCharsPerLine(704, 12.5, { weight: 600 }));
     expect(mktgPortraitCharsPerLine(1, 100)).toBe(1);
+  });
+
+  it('measures one line glyph by glyph in the kit’s face, so a line that fits its measure is left at its real size', () => {
+    // A live foundation's display line at 64 px in a face of ordinary width is narrower than the 704 px column …
+    const sans = { weight: 500, family: "'Instrument Sans', sans-serif" };
+    const display = mktgPortraitTextWidth('Agentic AI Foundation', 64, sans);
+    expect(display).toBeGreaterThan(560);
+    expect(display).toBeLessThan(704);
+    expect(mktgPortraitLineFits('Agentic AI Foundation', 704, 64, sans)).toBe(true);
+    // … where the flat paragraph average (0.6 em a character for a medium weight) would call it too wide.
+    expect('Agentic AI Foundation'.length * 64 * MKTG_PORTRAIT_FIT.charEmBold).toBeGreaterThan(704);
+    // The same words set wider: a wide face (Montserrat), a bolder weight, capitals with their tracking.
+    expect(mktgPortraitTextWidth('Agentic AI Foundation', 64, { weight: 500, family: 'Montserrat' })).toBeGreaterThan(display);
+    expect(mktgPortraitTextWidth('Agentic AI Foundation', 64, { weight: 700, family: sans.family })).toBeGreaterThan(display);
+    expect(mktgPortraitTextWidth('Agentic AI Foundation', 64, { ...sans, caps: true })).toBeGreaterThan(display);
+    // An unknown face measures as a face of average width; a narrow i and a wide W are not the same glyph.
+    expect(mktgPortraitTextWidth('iiii', 10)).toBeLessThan(mktgPortraitTextWidth('WWWW', 10));
+    expect(mktgPortraitTextWidth('', 10)).toBe(0);
+    expect(mktgPortraitLineFits('Agentic AI Foundation', 400, 64, sans)).toBe(false);
   });
 
   it('wraps greedily by words, a hard line on its own, a long word broken', () => {

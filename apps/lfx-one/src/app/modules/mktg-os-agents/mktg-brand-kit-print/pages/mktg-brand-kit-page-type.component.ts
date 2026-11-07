@@ -24,7 +24,9 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
 export class MktgBrandKitPageTypeComponent extends MktgBrandKitPageBase {
   protected readonly characters = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz 0123456789';
   /** The sample's size: 48 px when the brand line fits the column in one line at 48, else the largest size at which it does. */
-  protected readonly sampleSize = computed(() => brandKitPortraitFitSize(this.view().voice.line, this.w, BRAND_KIT_PORTRAIT_TYPE_SAMPLE_PX, { weight: 500 }));
+  protected readonly sampleSize = computed(() =>
+    brandKitPortraitFitSize(this.view().voice.line, this.w, BRAND_KIT_PORTRAIT_TYPE_SAMPLE_PX, { weight: 500, family: this.view().type.family })
+  );
   protected readonly weights = computed(() => this.view().type.weights.map((weight) => ({ weight, name: brandKitPortraitWeightName(weight) })));
   /**
    * The page laid out from its data: each scale step at its real size with the kit's own line (a one-line step whose

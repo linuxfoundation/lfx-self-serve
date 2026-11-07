@@ -66,6 +66,17 @@ $pp-band-height: 4px;
     margin: 0;
   }
 
+  /* Every text in the frame is set in the kit's own face (the mock: "Instrument Sans carries every communication")
+     at the size and leading of the block it sits in. The app's layers put Inter on p, headings, labels, buttons and
+     inputs by element (and a layer's 1rem/1.5 on a paragraph), which would beat the frame's inherited `--pp-font`
+     and a block's 12.5/1.6; this unlayered rule, at no specificity, hands them back to the frame, and a class on the
+     element (`.pp-cover-lede`, say) still sets its own. */
+  :where(p, h1, h2, h3, h4, h5, h6, label, button, input, table) {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
   img {
     display: block;
   }
@@ -110,7 +121,9 @@ $pp-band-height: 4px;
   }
 }
 
-.pp-head-section {
+/* The section label is a `.pp-lab` in the kit's dark, not the label's muted: the head's selector outweighs the label's
+   (the two classes alone tie, and the label's rule comes later in this sheet). */
+.pp-head .pp-head-section {
   color: var(--pp-dark);
 
   .pp-head--band &,
@@ -194,6 +207,12 @@ $pp-band-height: 4px;
 
 .pp-body--wide {
   max-width: 600px;
+}
+
+/* A second paragraph of a body block, a blank line (20 px) under the first (the mock's <br><br>); a class of the
+   grammar's because a Tailwind margin utility sits in a layer the frame's unlayered margin reset beats. */
+.pp-body-gap {
+  margin-top: 20px;
 }
 
 /* Caption: 11/1.4 regular, muted, 6 px under its figure. */

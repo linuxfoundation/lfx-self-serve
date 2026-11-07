@@ -183,9 +183,16 @@ describe('the type page’s strings', () => {
     const samples = view.type.scale.map((step) => brandKitPortraitTypeSample(view, step));
     expect(samples).toEqual(['Project One', view.voice.line, view.voice.line, view.voice.line, view.voice.umbrella, view.footer]);
     expect(brandKitPortraitTypeSample({ ...view, voice: { ...view.voice, umbrella: '' } }, view.type.scale[4])).toBe(view.voice.line);
-    // A sample is set at its step's size when it fits its line, smaller (never cut) when it would not.
-    expect(brandKitPortraitFitSize('Project One', 704, 64, { weight: 500 })).toBe(64);
-    expect(brandKitPortraitFitSize(view.voice.line, 480, 32, { weight: 500 })).toBe(26.5);
+    // A sample is set at its step's size when its measured line fits (the kit's face, its weight), smaller (never cut)
+    // when it would not: a live foundation's lines in a face of ordinary width are at real size, 64, 48 and 32 …
+    const sans = { weight: 500, family: 'Instrument Sans' };
+    expect(brandKitPortraitFitSize('Agentic AI Foundation', 704, 64, sans)).toBe(64);
+    expect(brandKitPortraitFitSize('Open foundations for agentic AI.', 704, 48, sans)).toBe(48);
+    expect(brandKitPortraitFitSize('Open foundations for agentic AI.', 480, 32, sans)).toBe(32);
+    // … while the synthetic line in Montserrat, a wide face, is set smaller in the 480 px H2 column.
+    expect(brandKitPortraitFitSize('Project One', 704, 64, { weight: 500, family: view.type.family })).toBe(64);
+    expect(brandKitPortraitFitSize(view.voice.line, 480, 32, { weight: 500, family: view.type.family })).toBe(26.5);
+    expect(brandKitPortraitFitSize(view.voice.line, 704, 48, { weight: 500, family: view.type.family })).toBe(38);
     // No floor but the readable minimum: a line no size above it holds is set at the minimum and wraps.
     expect(
       brandKitPortraitFitSize('Open standards, open governance and open collaboration for every kind of computing everywhere', 704, 48, { weight: 500 })
@@ -202,6 +209,7 @@ describe('the type page’s strings', () => {
     // The synthetic umbrella is one line at 18/30: the scale ends well above 830 and the blocks keep the mock's y.
     const short = brandKitPortraitTypeLayout(view, 704);
     expect(short.steps.map((step) => step.step)).toEqual(['display', 'h2', 'h3', 'eyebrow', 'body', 'caption']);
+    expect(short.steps.map((step) => step.size)).toEqual([64, 26.5, 24, 14, 18, 12]);
     expect(short.steps[4]).toMatchObject({ sample: view.voice.umbrella, size: 18, line_height: 30, spec: '400 · 18/30' });
     expect(short.scaleEnd).toBeLessThan(c.lowerTop - c.lowerGap);
     expect(short).toMatchObject({ lowerTop: 830, bodyScale: 1, cut: false });
