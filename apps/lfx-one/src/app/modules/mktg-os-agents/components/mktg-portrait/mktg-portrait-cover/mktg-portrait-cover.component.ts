@@ -6,6 +6,7 @@ import { MKTG_PORTRAIT_COVER_STRIP, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/c
 import { mktgPortraitCoverStrip, mktgPortraitPlatePadding } from '@lfx-one/shared/utils';
 import { MktgPortraitLogo, MktgPortraitLook, MktgPortraitBook } from '@lfx-one/shared/interfaces';
 import { MktgPortraitPageComponent } from '../mktg-portrait-page/mktg-portrait-page.component';
+import { MktgPortraitPlateDirective } from '../mktg-portrait-plate.directive';
 import { MktgPortraitRectDirective } from '../mktg-portrait-rect.directive';
 import { MKTG_PORTRAIT_BLOCK_HOST } from '../mktg-portrait-host';
 
@@ -23,7 +24,7 @@ import { MKTG_PORTRAIT_BLOCK_HOST } from '../mktg-portrait-host';
  */
 @Component({
   selector: 'lfx-mktg-portrait-cover',
-  imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
+  imports: [MktgPortraitPageComponent, MktgPortraitRectDirective, MktgPortraitPlateDirective],
   templateUrl: './mktg-portrait-cover.component.html',
   styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
@@ -47,6 +48,8 @@ export class MktgPortraitCoverComponent {
   /** The lockup's drawn height, and the white plate's padding under a lockup the kit cannot reverse: half of it. */
   protected readonly lockupHeight = 84;
   protected readonly platePadding = mktgPortraitPlatePadding(this.lockupHeight);
+  /** The plate's outer height: the lockup in its padding above and below. */
+  protected readonly plateHeight = this.lockupHeight + 2 * this.platePadding;
   /** The lockup's block at y 300; a plated lockup's block starts a padding higher, so the artwork itself stays at y 300. */
   protected readonly lockup = computed((): readonly [number, number, number] => [
     this.geometry.coverInset,

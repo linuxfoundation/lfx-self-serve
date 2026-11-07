@@ -561,23 +561,27 @@ export async function openDraftAssetRun(page: Page, immediateReceipt = true) {
   };
 }
 
-/** Stub native asset reads; cookie suppression precedes every navigation. */
+/**
+ * Stub native asset reads; cookie suppression precedes every navigation. `project` replaces the synthetic
+ * `ASSET_PROJECT` for one test (a long name, say), in the slug mock, the lens items and the selected-project cookie.
+ */
 export async function openAssetDocument(
   page: Page,
   key: 'faq' | 'boilerplates' | 'foundation-message' | 'brand-kit',
   status = 200,
   writer = true,
   unreadable = false,
-  responseOverride?: MktgRevisionResponse
+  responseOverride?: MktgRevisionResponse,
+  project: Project = ASSET_PROJECT
 ): Promise<void> {
   await suppressCookieBanner(page);
-  mockProjects[ASSET_PROJECT.slug] = ASSET_PROJECT;
-  await ApiMockHelper.setupProjectSlugMock(page, { writer });
+  mockProjects[project.slug] = project;
+  await ApiMockHelper.setupProjectSlugMock(page, { writer, project });
   await pinMktgOsFlags(page);
   const cookies = [
     { name: PERSONA_COOKIE_KEY, value: { primary: 'executive-director', all: ['executive-director'] } },
     { name: LENS_COOKIE_KEY, value: 'project' },
-    { name: SELECTED_PROJECT_COOKIE_KEY, value: { uid: ASSET_PROJECT.uid, slug: ASSET_PROJECT.slug, name: ASSET_PROJECT.name } },
+    { name: SELECTED_PROJECT_COOKIE_KEY, value: { uid: project.uid, slug: project.slug, name: project.name } },
   ].map(({ name, value }) => ({ name, value: typeof value === 'string' ? value : encodeURIComponent(JSON.stringify(value)), domain: 'localhost', path: '/' }));
   await page.context().addCookies(cookies);
   await page.route('**/api/user/personas*', (route) =>
@@ -586,7 +590,7 @@ export async function openAssetDocument(
   await page.route('**/api/nav/lens-items*', (route) => {
     const projectLens = new URL(route.request().url()).searchParams.get('lens') === 'project';
     return route.fulfill({
-      json: { items: projectLens ? [ASSET_PROJECT] : [], next_page_token: null, upstream_failed: false, lens: projectLens ? 'project' : 'foundation' },
+      json: { items: projectLens ? [project] : [], next_page_token: null, upstream_failed: false, lens: projectLens ? 'project' : 'foundation' },
     });
   });
   await page.route('**/api/projects/*/sfid*', (route) => route.fulfill({ json: { sfid: null } }));

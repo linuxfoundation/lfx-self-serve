@@ -28,6 +28,8 @@ describe('the Logo system page', () => {
     expect(darkTile?.querySelector<HTMLElement>('img')?.style.filter).toBe('');
     expect(darkTile?.querySelector<HTMLElement>('.pp-plate[data-testid="mktg-portrait-plate"]')?.style.padding).toBe('10px');
     expect(darkTile?.querySelector('img')?.style.height).toBe('20px');
+    // The 40 px plate's corners: a sixth of its shorter side.
+    expect(parseFloat(darkTile?.querySelector<HTMLElement>('.pp-plate')?.style.borderRadius ?? '')).toBeCloseTo(40 / 6, 3);
     expect(tiles?.textContent).toContain('On the dark · full color on a white plate (no reversed file)');
     const rows = Array.from(frame.querySelectorAll('[data-testid="brand-kit-logo-system-files"] tbody tr'), (row) => wordsOf(row));
     expect(rows).toEqual([

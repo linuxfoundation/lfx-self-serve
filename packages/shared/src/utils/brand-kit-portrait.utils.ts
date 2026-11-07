@@ -468,31 +468,45 @@ export function brandKitPortraitBackCoverLine(text: string, family?: string): st
   return shortened(count);
 }
 
+/** The Watch-outs page's retyped sample: its text and the size it is set at. */
+export interface BrandKitPortraitRetyped {
+  text: string;
+  /** Pixels: the design's 30, stepped down to the minimum before a word of the name is given up. */
+  size: number;
+}
+
 /**
- * The Watch-outs page's retyped sample: the project's name as written when it
- * holds in the tile's four lines clear of the × badge, else shortened at a
- * word with an ellipsis (the serif's own widths are near the default's).
+ * The Watch-outs page's retyped sample: the project's name as written, set at
+ * the design's size or stepped down one pixel at a time to the minimum until
+ * its longest word fits the tile's clear width and the whole name holds in
+ * the four lines clear of the × badge (the mock prints the whole name); only
+ * a name that still does not fit at the minimum is shortened at a word with
+ * an ellipsis, at that size (the serif's own widths are near the default's).
  */
-export function brandKitPortraitRetypedName(name: string): string {
+export function brandKitPortraitRetypedName(name: string): BrandKitPortraitRetyped {
   const c = BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED;
   const para = { weight: c.weight, family: 'Georgia' };
   const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return '';
-  const fitsLine = (word: string): boolean => mktgPortraitLineFits(word, c.width, c.size, para);
-  const linesOf = (line: string): number => measuredLines(line.split(' '), c.width, c.size, para);
-  // The tile's three columns are fixed: a word wider than the clear width would widen its column, so the sample
-  // stops before the first such word (and a first word too wide for the line is cut to the characters that fit).
-  const wholeWords = words.findIndex((word) => !fitsLine(word));
+  if (words.length === 0) return { text: '', size: c.size };
+  const fitsLine = (word: string, size: number): boolean => mktgPortraitLineFits(word, c.width, size, para);
+  const linesOf = (line: string, size: number): number => measuredLines(line.split(' '), c.width, size, para);
+  const whole = words.join(' ');
+  for (let size = c.size; size >= c.minSize; size -= 1) {
+    if (words.every((word) => fitsLine(word, size)) && linesOf(whole, size) <= c.maxLines) return { text: whole, size };
+  }
+  // At the minimum the tile's three columns stay fixed: a word wider than the clear width would widen its column, so
+  // the sample stops before the first such word (a first word too wide for the line is cut to the characters that fit).
+  const size = c.minSize;
+  const wholeWords = words.findIndex((word) => !fitsLine(word, size));
   const kept = wholeWords === -1 ? words : words.slice(0, wholeWords);
   if (kept.length === 0) {
     const first = Array.from(words[0]);
-    const chars = mktgPortraitLargestFitting(first.length - 1, (count) => fitsLine(`${first.slice(0, count).join('')}…`));
-    return `${first.slice(0, Math.max(1, chars)).join('')}…`;
+    const chars = mktgPortraitLargestFitting(first.length - 1, (count) => fitsLine(`${first.slice(0, count).join('')}…`, size));
+    return { text: `${first.slice(0, Math.max(1, chars)).join('')}…`, size };
   }
-  if (kept.length === words.length && linesOf(kept.join(' ')) <= c.maxLines) return kept.join(' ');
   const shortened = (count: number): string => `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(kept.slice(0, count)).join(' '))}…`;
-  const count = mktgPortraitLargestFitting(kept.length, (prefix) => linesOf(shortened(prefix)) <= c.maxLines);
-  return shortened(Math.max(1, count));
+  const count = mktgPortraitLargestFitting(kept.length, (prefix) => linesOf(shortened(prefix), size) <= c.maxLines);
+  return { text: shortened(Math.max(1, count)), size };
 }
 
 /** The type source as the page names it: the host of a URL (`one.example.org`), or the text as written. */

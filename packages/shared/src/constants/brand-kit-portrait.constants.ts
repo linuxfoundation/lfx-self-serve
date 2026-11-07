@@ -135,7 +135,7 @@ export const BRAND_KIT_PORTRAIT_BACK_COVER_LINE = { width: MKTG_PORTRAIT_PAGE.co
  * name never runs under the badge; at most four lines of that 156 px, a
  * longer name shortened at a word with an ellipsis, never set smaller.
  */
-export const BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED = { width: 156, badgeClear: 34, size: 30, weight: 700, maxLines: 4 } as const;
+export const BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED = { width: 156, badgeClear: 34, size: 30, minSize: 20, weight: 700, maxLines: 4 } as const;
 
 /**
  * The usage cards' lines (the brand line on the keynote slide and the social

@@ -272,10 +272,13 @@ page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's S
   the kit's reversed file when one is supplied; else, when the slot's own SVG is one
   resolvable ink with no background (`brandKitDerivable`, per slot: lockup and symbol), the
   full-colour file reversed by filter; else the full-colour artwork on the white plate
-  (`.pp-plate`, `MktgPrintLogo.plate`): one shared rounded span whose padding is half the
-  artwork's drawn height (`mktgPortraitPlatePadding(height)`,
-  `MKTG_PORTRAIT_PLATE.paddingOfHeight`), drawn by the kit's artwork component and the
-  covers, never per page. The plate's outer box is laid out, not the bare artwork's: a
+  (`.pp-plate`, `MktgPrintLogo.plate`): one shared span, the `lfxPpPlate` directive given
+  the plate's outer height, whose padding is half the artwork's drawn height
+  (`mktgPortraitPlatePadding(height)`, `MKTG_PORTRAIT_PLATE.paddingOfHeight`) and whose
+  corner radius is a sixth of its shorter side (`mktgPortraitPlateRadius(width, height)`,
+  `MKTG_PORTRAIT_PLATE.radiusOfShortSide`, a slide's rounded rectangle; the width is read
+  from the loaded image, and reads as wide until then), drawn by the kit's artwork
+  component and the covers, never per page. The plate's outer box is laid out, not the bare artwork's: a
   tile, sample circle or stage fits the plate inside its own box (`mktgPortraitPlateFit`:
   the mark drawn at half the box, the padding a quarter), and the covers start the plated
   block one padding higher so the lockup stays where the design draws it and the plate

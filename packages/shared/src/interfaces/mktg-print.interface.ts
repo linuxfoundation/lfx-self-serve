@@ -44,8 +44,9 @@ export interface MktgPrintLogo {
   /**
    * True when the artwork is drawn in full colour on a dark ground because
    * the kit supplied no reversed file and the artwork cannot be derived from
-   * by filter: it then sits on a white rounded plate, padded by half the
-   * drawn height (`mktgPortraitPlatePadding`). Absent or false: no plate.
+   * by filter: it then sits on a white plate, padded by half the drawn
+   * height and rounded by a sixth of its shorter side (`MKTG_PORTRAIT_PLATE`).
+   * Absent or false: no plate.
    */
   plate?: boolean;
 }
