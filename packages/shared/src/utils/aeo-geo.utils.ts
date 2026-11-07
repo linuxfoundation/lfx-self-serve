@@ -356,8 +356,8 @@ const CAVEAT_LFX_RECORD = /LFX record could not be read/i;
 const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exceeded|exhausted)/i;
 const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u201c`]/i;
 // Failure evidence, the stop rule: a NUMBER IS NEVER READ INSIDE QUOTES. A quoted message counts as a failure only by a failure
-// word, wherever it stands (quoted or not: 'You have exceeded your credits limit', "Quota exceeded.", Web search failed with
-// "404" by the word failed), so whatever a quoted span holds beside the words ("500 Startups", "404 Media", "Investors' 500", "500's best",
+// word, wherever it stands (quoted or not: 'You have exceeded your credits limit', "Quota exceeded.", failed with 'Unauthorized'
+// by the word Unauthorized; the merged list, no more), so whatever a quoted span holds beside the words ("500 Startups", "404 Media", "Investors' 500", "500's best",
 // "Rock 'n' 500", "Top 'Bad' 404", "A guide to '404' pages", "502 Bad Gateway", "HTTP/1.1 404 Not Found") is a result or a
 // quotation and prints verbatim; an inner quotation never counts on its own. Outside the quotes an error status (4xx or 5xx)
 // counts only after HTTP, with or without a version (HTTP 404, HTTP/1.1 404, HTTP/2 429), or status, with an optional "code" and
@@ -368,8 +368,7 @@ const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)
 // spaces, apostrophes and hyphens, at most 41 characters), an optional period, and nothing else. It is tested on the whole
 // sentence only, never on a part of it, so a status quoted in a sentence never matches it; a bare status line has no subject, so
 // the match stands without one and maps as a search failure.
-const CAVEAT_FAILURE_WORDS =
-  'unavailable|error|fail(?:ed|ure)|denied|unauthori[sz]ed|forbidden|exceeded|limit|timeout|timed out|quota|credits?|rate[- ]limited';
+const CAVEAT_FAILURE_WORDS = 'unavailable|error|denied|unauthori[sz]ed|forbidden|exceeded|limit|timeout|timed out|quota|credits?|rate[- ]limited';
 const CAVEAT_HTTP_WORD = 'HTTP(?:\\/\\d(?:\\.\\d)?)?';
 const CAVEAT_FAILURE_IN_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS})\\b`, 'i');
 const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:${CAVEAT_HTTP_WORD}|status)(?:\\s+code)?(?:\\s*:)?\\s*[45]\\d{2})\\b`, 'i');

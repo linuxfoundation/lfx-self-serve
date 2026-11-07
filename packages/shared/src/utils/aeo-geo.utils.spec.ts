@@ -441,8 +441,8 @@ describe('AEO/GEO reader caveats', () => {
     expect(aeoGeoReaderCaveat('The search returned "429 Too Many Requests".')).toBe('The search returned "429 Too Many Requests".');
     expect(aeoGeoReaderCaveat("Web search returned '404 not found'.")).toBe("Web search returned '404 not found'.");
     expect(aeoGeoReaderCaveat('Web search returned \u201c503 Service Unavailable\u201d.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
-    // The word failed is the evidence here, not the quoted number.
-    expect(aeoGeoReaderCaveat('Web search failed with "404".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    // "failed" is not a failure word, and the quoted number is never read: a quoted status in a sentence is a quotation.
+    expect(aeoGeoReaderCaveat('Web search failed with "404".')).toBe('Web search failed with "404".');
     expect(aeoGeoReaderCaveat('Web search returned `404` for both queries.')).toBe('Web search returned `404` for both queries.');
     expect(aeoGeoReaderCaveat('Web search returned "status 404" for both queries.')).toBe('Web search returned "status 404" for both queries.');
     // Outside the quotes a status may carry "code" and a colon.
@@ -613,7 +613,7 @@ describe('AEO/GEO reader caveats', () => {
         'The search returned "HTTP/2 200 OK" for the project name.',
       ],
     ],
-    ['a bare "404" in a sentence maps by the word failed, not by the number', ['Search failed with "404".'], [AEO_GEO_READER_CAVEATS.search_unavailable]],
+    ['a bare "404" in a sentence: a quoted status, verbatim; "failed" is not a failure word', ['Search failed with "404".'], ['Search failed with "404".']],
     [
       'a leading number with a reason phrase: quoted it is a quotation, bare it is a failure',
       ['Web search returned "502 Bad Gateway" for both queries.', '502 Bad Gateway'],
