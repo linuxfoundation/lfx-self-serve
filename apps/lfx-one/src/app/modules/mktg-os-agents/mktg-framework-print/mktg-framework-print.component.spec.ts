@@ -329,7 +329,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(tag?.classList.contains('fwp-matrix-source')).toBe(true);
     expect(matrix?.querySelector('.fwp-matrix-bite')?.textContent?.trim()).toBe('“In the open”');
     // Short cells print as written at their type (frameworkPortraitMatrix fits them only where the rows would crowd the proofs out).
-    const vp = matrix?.querySelector<HTMLElement>('.fwp-matrix-vp');
+    const vp = query('mktg-framework-print-matrix-vp');
     const key = matrix?.querySelector<HTMLElement>('.fwp-matrix-key');
     expect([vp?.textContent?.trim(), vp?.style.fontSize, key?.textContent?.trim(), key?.style.fontSize]).toEqual([
       CONTENT.mf.goals[0].vp,
@@ -356,7 +356,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(text(page?.querySelector('.fwp-goal-key'))).toBe('Key message Key.');
     expect(text(page?.querySelector('[data-testid="mktg-framework-print-proof-row"]'))).toBe('1,200 members Website');
     expect(page?.querySelector('.fwp-goal-bite-text')?.textContent?.trim()).toBe('“In the\u00a0open”');
-    const served = Array.from(page?.querySelectorAll('.fwp-served-card') ?? []);
+    const served = Array.from(page?.querySelectorAll('[data-testid="mktg-framework-print-served-card"]') ?? []);
     expect(served.map((card) => card.querySelector('.fwp-served-name')?.textContent?.trim())).toEqual(['End users', 'Maintainers']);
     expect(text(served[0])).toBe('End users Needs Need. Ask them to Try it.');
     // The blocks sit where the design places them (the grammar's [lfxPpRect]).
@@ -759,7 +759,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(new Set(heads.map((head) => head.style.fontSize)).size).toBe(1);
     expect(parseFloat(heads[0].style.fontSize)).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin);
     // Each band prints every row for its four goals; every proof cell keeps a row (F3 in the bands too).
-    expect(bands.map((band) => band?.querySelectorAll('.fwp-matrix-vp').length)).toEqual([4, 4]);
+    expect(bands.map((band) => band?.querySelectorAll('[data-testid="mktg-framework-print-matrix-vp"]').length)).toEqual([4, 4]);
     expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof"]').length).toBeGreaterThanOrEqual(8);
     // Short titles at eight goals stay one strip of eight columns.
     await setView(
@@ -815,7 +815,7 @@ describe('MktgFrameworkPrintComponent', () => {
     };
     await configure('browser', buildFoundationMessagePrintView(many, 'TestOrbit', 2, null));
     const goalPage = frame('goal-1');
-    const cards = Array.from(goalPage?.querySelectorAll<HTMLElement>('.fwp-served-card') ?? []);
+    const cards = Array.from(goalPage?.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-served-card"]') ?? []);
     expect(cards).toHaveLength(frameworkPortraitServedCount());
     expect(cards).toHaveLength(4);
     expect(cards.map((card) => card.querySelector('.fwp-served-name')?.textContent?.trim())).toEqual([
@@ -834,7 +834,7 @@ describe('MktgFrameworkPrintComponent', () => {
     const longNeed = { ...many, icp: many.icp.map((icp) => ({ ...icp, need: `${long}.`, cta: `${long}.` })) };
     await setView(buildFoundationMessagePrintView(longNeed, 'TestOrbit', 2, null));
     const longPage = frame('goal-1');
-    const longCards = Array.from(longPage?.querySelectorAll<HTMLElement>('.fwp-served-card') ?? []);
+    const longCards = Array.from(longPage?.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-served-card"]') ?? []);
     expect(longCards).toHaveLength(4);
     const noteText = longPage?.querySelector('[data-testid="mktg-framework-print-served-cut"]')?.textContent?.trim() ?? '';
     expect(noteText).toBe(foundationMessagePrintCutNote(2, 'framework'));
@@ -873,7 +873,7 @@ describe('MktgFrameworkPrintComponent', () => {
     }
     // The two served by the goal on the approved record print without a note.
     await setView(buildFoundationMessagePrintView(CONTENT, 'TestOrbit', 2, null));
-    expect(frame('goal-1')?.querySelectorAll('.fwp-served-card')).toHaveLength(2);
+    expect(frame('goal-1')?.querySelectorAll('[data-testid="mktg-framework-print-served-card"]')).toHaveLength(2);
     expect(frame('goal-1')?.querySelector('[data-testid="mktg-framework-print-served-cut"]')).toBeNull();
   });
 
@@ -941,7 +941,7 @@ describe('MktgFrameworkPrintComponent', () => {
     const matrixProofs = Array.from(query('mktg-framework-print-goals')?.querySelectorAll('[data-testid="mktg-framework-print-matrix-proof"]') ?? []);
     expect(matrixProofs.length).toBeGreaterThan(0);
     expect(matrixProofs.length).toBeLessThan(12);
-    expect(query('mktg-framework-print-goals')?.querySelector('.fwp-matrix-proofs')?.classList.contains('fwp-matrix-proofs--tight')).toBe(true);
+    expect(query('mktg-framework-print-matrix-proof-cell')?.classList.contains('fwp-matrix-proofs--tight')).toBe(true);
     expect(query('mktg-framework-print-matrix-proofs-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(12 - matrixProofs.length, 'framework'));
     // The goal page: its long title at the floor size over the lines it needs, whole, and the lead set under those lines (the number and the lead
     // never overlap it); the value, the key message and the sound bite fitted; the proof list keeps the leading whole rows that fit above the
@@ -970,7 +970,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(parseFloat(goalPage?.querySelector<HTMLElement>('.fwp-goal-vp')?.style.fontSize ?? '22')).toBeLessThan(22);
     expect(parseFloat(goalPage?.querySelector<HTMLElement>('.fwp-goal-key-text')?.style.fontSize ?? '19')).toBeLessThan(19);
     expect(parseFloat(goalPage?.querySelector<HTMLElement>('.fwp-goal-bite-text')?.style.fontSize ?? '34')).toBeLessThan(34);
-    const served = Array.from(goalPage?.querySelectorAll<HTMLElement>('.fwp-served-card .fwp-served-line') ?? []);
+    const served = Array.from(goalPage?.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-served-card"] .fwp-served-line') ?? []);
     expect(served).toHaveLength(8);
     expect(served.every((line) => parseFloat(line.style.fontSize) <= 11.5)).toBe(true);
     // The printed size is the size the fit model measured (its half-px steps), not the preferred size times the scale.
@@ -1177,8 +1177,10 @@ describe('MktgFrameworkPrintComponent', () => {
     const widest = frameworkPortraitIcpWhoWidth([CONTENT.icp[0].kind, 'Goal 1', 'Goal 2', 'Goal 3']);
     expect(widest).toBeGreaterThan(FRAMEWORK_PORTRAIT_ROOM.icpWho);
     const pages = [frame('icps-1'), frame('icps-2')];
-    expect(pages.map((page) => page?.querySelectorAll('.fwp-icp-row').length)).toEqual([2, 1]);
-    const columns = pages.flatMap((page) => Array.from(page?.querySelectorAll<HTMLElement>('.fwp-icp-who') ?? []).map((who) => who.style.width));
+    expect(pages.map((page) => page?.querySelectorAll('article[data-testid^="mktg-framework-print-icp-"]').length)).toEqual([2, 1]);
+    const columns = pages.flatMap((page) =>
+      Array.from(page?.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-icp-who"]') ?? []).map((who) => who.style.width)
+    );
     expect(columns).toEqual([`${widest}px`, `${widest}px`, `${widest}px`]);
     // The rows are placed at one left (the page margin) on both pages, so the fields grid's x is the margin, the shared column and the row's gap everywhere.
     expect(pages.map((page) => (page?.querySelector('[data-testid="mktg-framework-print-icp-rows"]') as HTMLElement | null)?.style.left)).toEqual([

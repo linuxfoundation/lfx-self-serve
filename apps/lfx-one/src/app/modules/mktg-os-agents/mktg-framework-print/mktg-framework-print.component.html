@@ -144,7 +144,10 @@
                 <div class="fwp-matrix-row">
                   <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Value proposition</span>
                   @for (goal of band.goals; track goal.id; let index = $index) {
-                    <p class="fwp-matrix-vp" [style.font-size.px]="frame.matrix?.cells?.[band.offset + index]?.vp?.size">
+                    <p
+                      class="fwp-matrix-vp"
+                      [style.font-size.px]="frame.matrix?.cells?.[band.offset + index]?.vp?.size"
+                      data-testid="mktg-framework-print-matrix-vp">
                       {{ frame.matrix?.cells?.[band.offset + index]?.vp?.text ?? goal.vp }}
                     </p>
                   }
@@ -163,7 +166,7 @@
                   @for (goal of band.goals; track goal.id; let index = $index) {
                     @if (frame.matrix?.proofs?.[band.offset + index]; as cell) {
                       <div>
-                        <ul class="fwp-matrix-proofs" [class.fwp-matrix-proofs--tight]="cell.tight">
+                        <ul class="fwp-matrix-proofs" [class.fwp-matrix-proofs--tight]="cell.tight" data-testid="mktg-framework-print-matrix-proof-cell">
                           @for (proof of cell.rows; track $index) {
                             <!-- A cell's first proof kept set smaller carries its own size (editor F3: never only the note). -->
                             <li [style.font-size.px]="proof.size ?? null" data-testid="mktg-framework-print-matrix-proof">
@@ -547,12 +550,12 @@
                 <article class="fwp-icp-row" [attr.data-testid]="'mktg-framework-print-icp-' + icp.id">
                   <!-- The name-and-tags column: the board's 190 px, grown so the kind and goal tags hold one line, ONE width for every card in the
                        book (frameworkPortraitIcpsAligned), so the fields start at one x on every profile page (the editor's rules). -->
-                  <div class="fwp-icp-who" [style.width.px]="icp.whoWidth">
+                  <div class="fwp-icp-who" [style.width.px]="icp.whoWidth" data-testid="mktg-framework-print-icp-who">
                     <span class="fwp-icp-name">{{ icp.name }}</span>
-                    <div class="fwp-icp-chips">
-                      <span class="pp-chip">{{ icp.kind }}</span>
+                    <div class="fwp-icp-chips" data-testid="mktg-framework-print-icp-chips">
+                      <span class="pp-chip" data-testid="mktg-framework-print-icp-chip">{{ icp.kind }}</span>
                       @for (chip of icp.goalChips; track chip) {
-                        <span class="pp-chip">{{ chip }}</span>
+                        <span class="pp-chip" data-testid="mktg-framework-print-icp-chip">{{ chip }}</span>
                       }
                     </div>
                     @if (icp.who) {
@@ -565,7 +568,7 @@
                     </ul>
                   </div>
                   <!-- Each field prints with its eyebrow only when the profile has it: no label over nothing. -->
-                  <dl class="fwp-icp-fields">
+                  <dl class="fwp-icp-fields" data-testid="mktg-framework-print-icp-fields">
                     @if (icp.need) {
                       <div>
                         <dt>Need</dt>

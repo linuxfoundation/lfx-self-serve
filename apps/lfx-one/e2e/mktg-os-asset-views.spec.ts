@@ -391,7 +391,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(icpRow.locator('dt')).toHaveText(['Need', 'Value', 'Lead message', 'Call to action', 'Objection', 'Channels']);
       await expect(icpRow.locator('dd').nth(4)).toHaveText('“Too early?”');
       await expect(icpRow.locator('dd').nth(5).getByTestId('mktg-framework-print-icp-proof')).toHaveCount(1);
-      await expect(icpRow.locator('.fwp-icp-chips')).toHaveCSS('flex-wrap', 'nowrap');
+      await expect(icpRow.getByTestId('mktg-framework-print-icp-chips')).toHaveCSS('flex-wrap', 'nowrap');
       await expect(print.getByTestId('mktg-framework-print-matrix-row')).toHaveCount(1);
       await expect(print.getByTestId('mktg-framework-print-matrix-dot')).toHaveCount(1);
       await expect(print.getByTestId('mktg-framework-print-pillars')).toContainText('Open');
@@ -619,7 +619,8 @@ test('the framework print lists every figure past six as a table, continued on a
   const icpBottoms = await print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id^="icps-"]').evaluateAll((pages) =>
     pages.map((frame) => {
       const frameTop = frame.getBoundingClientRect().top;
-      const cards = Array.from(frame.querySelectorAll('.fwp-icp-row'));
+      // A profile row is the article carrying the profile's testid (`mktg-framework-print-icp-<id>`); its parts carry their own.
+      const cards = Array.from(frame.querySelectorAll('article[data-testid^="mktg-framework-print-icp-"]'));
       const footer = frame.querySelector('[data-testid="mktg-portrait-page-foot"]')?.getBoundingClientRect();
       return {
         cards: cards.map((card) => Math.round(card.getBoundingClientRect().bottom - frameTop)),
@@ -740,7 +741,7 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   expect(contentsFit).toEqual({ aboveStrip: true, tight: false });
   const framework = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="framework"]');
   const matrix = framework.getByTestId('mktg-framework-print-goals');
-  await expect(matrix.locator('.fwp-matrix-vp')).toHaveCount(8);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-vp')).toHaveCount(8);
   const layout = await framework.evaluate((frame) => {
     const top = frame.getBoundingClientRect().top;
     const bottom = (selector: string): number => Math.round((frame.querySelector(selector)?.getBoundingClientRect().bottom ?? Number.NaN) - top);
@@ -748,7 +749,7 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
       Array.from(frame.querySelectorAll<HTMLElement>(selector)).map((cell) => parseFloat(getComputedStyle(cell).fontSize));
     return {
       matrix: bottom('[data-testid="mktg-framework-print-goals"]'),
-      vp: sizes('.fwp-matrix-vp'),
+      vp: sizes('[data-testid="mktg-framework-print-matrix-vp"]'),
       key: sizes('.fwp-matrix-key'),
       bite: sizes('.fwp-matrix-bite'),
     };
@@ -814,8 +815,8 @@ test('eight goals with the overfull record’s titles: the matrix prints as two 
   const framework = frame.getByTestId('mktg-framework-print').locator('[data-page-id="framework"]');
   const matrix = framework.getByTestId('mktg-framework-print-goals');
   // Two bands of the board's four columns, the eight goals in order across them, every title whole at one size.
-  await expect(matrix.getByTestId('mktg-framework-print-goals-band-0').locator('.fwp-matrix-vp')).toHaveCount(4);
-  await expect(matrix.getByTestId('mktg-framework-print-goals-band-1').locator('.fwp-matrix-vp')).toHaveCount(4);
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-0').getByTestId('mktg-framework-print-matrix-vp')).toHaveCount(4);
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-1').getByTestId('mktg-framework-print-matrix-vp')).toHaveCount(4);
   await expect(matrix.getByTestId('mktg-framework-print-goals-band-2')).toHaveCount(0);
   await expect(matrix.getByTestId('mktg-framework-print-matrix-title')).toHaveText(OVERFULL_GOAL_TITLES);
   const titleSizes = await matrix
@@ -827,7 +828,7 @@ test('eight goals with the overfull record’s titles: the matrix prints as two 
   expect(await matrix.evaluate(matrixTitleOverlaps)).toEqual({ overlapping: 0, overflowing: 0, titles: 8 });
   // Every proof cell keeps a proof above its note (F3), and the matrix ends above the footer rule.
   for (const band of [0, 1]) {
-    const cells = matrix.getByTestId(`mktg-framework-print-goals-band-${band}`).locator('.fwp-matrix-proofs');
+    const cells = matrix.getByTestId(`mktg-framework-print-goals-band-${band}`).getByTestId('mktg-framework-print-matrix-proof-cell');
     await expect(cells).toHaveCount(4);
     for (const cell of await cells.all()) await expect(cell.getByTestId('mktg-framework-print-matrix-proof')).not.toHaveCount(0);
   }
@@ -876,10 +877,12 @@ test('the profile cards’ fields start at one x on every profile page: the name
   const columns = await print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id^="icps-"]').evaluateAll((pages) =>
     pages.map((frame) => {
       const left = frame.getBoundingClientRect().left;
-      return Array.from(frame.querySelectorAll('.fwp-icp-row')).map((row) => ({
-        who: Math.round((row.querySelector('.fwp-icp-who')?.getBoundingClientRect().left ?? Number.NaN) - left),
-        fields: Math.round((row.querySelector('.fwp-icp-fields')?.getBoundingClientRect().left ?? Number.NaN) - left),
-        tags: row.querySelectorAll('.fwp-icp-chips .pp-chip').length,
+      return Array.from(frame.querySelectorAll('[data-testid="mktg-framework-print-icp-who"]')).map((who) => ({
+        who: Math.round(who.getBoundingClientRect().left - left),
+        fields: Math.round(
+          (who.parentElement?.querySelector('[data-testid="mktg-framework-print-icp-fields"]')?.getBoundingClientRect().left ?? Number.NaN) - left
+        ),
+        tags: who.querySelectorAll('[data-testid="mktg-framework-print-icp-chip"]').length,
       }));
     })
   );
