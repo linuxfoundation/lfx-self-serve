@@ -22,14 +22,20 @@ export const MKTG_FAMILY_PRINT_HEAD_KIND: MktgPortraitDocumentKind = 'positionin
 export const MKTG_FAMILY_PRINT_BOOK_CLASS = 'lfx-mktg-family-book';
 
 /**
- * The book's modifier when its running head's document name (`<project> positioning & brand`) runs long: the head
- * prints that name one step smaller (9 px, the grammar's label is 10 px) before it ever cuts it with an ellipsis, so
- * a long project name is not cut mid-word on every page. From `MKTG_FAMILY_PRINT_HEAD_TIGHT_FROM` characters: at
- * 10 px and 0.12 em tracking the head's right side holds about 44 beside the longest mounted section label
- * (`Brand kit · Logo colorways`) within the 640 px content width and the 24 px gap.
+ * The book's modifier when its running head measures too wide: the longest section label the book mounts on the
+ * left, the gap and the document name (`<project> positioning & brand`) on the right, at the label's size, do not
+ * fit the page's content width on one line. Then the whole book prints both labels one step smaller (9 px, the
+ * grammar's label is 10 px) before the ellipsis ever cuts the name, so a long project name is not cut mid-word on
+ * every page; a book whose heads fit keeps the label's size (mktgFamilyPrintHeadTight).
  */
 export const MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS = 'lfx-mktg-family-book--tight-head';
-export const MKTG_FAMILY_PRINT_HEAD_TIGHT_FROM = 44;
+
+/**
+ * The running head's measure for that rule: the grammar's label as `.pp-lab` sets it (10 px, semibold, capitals at
+ * 0.12 em) and the gap the family keeps between the two labels (`styles/mktg-family-print.scss`, which cannot read
+ * this).
+ */
+export const MKTG_FAMILY_PRINT_HEAD_MEASURE = { size: 10, weight: 600, gap: 24 } as const;
 
 /** What a frame of the book holds; `framework` and `kit` are the inner prints' own portrait pages in the family's book. */
 export const MKTG_FAMILY_PRINT_PAGE_KINDS = ['cover', 'contents', 'opener', 'framework', 'kit', 'boilerplates', 'faq', 'sources', 'back'] as const;

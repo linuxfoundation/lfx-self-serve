@@ -37,6 +37,7 @@ import {
   mktgFamilyPrintFitRows,
   mktgFamilyPrintFitRunBlock,
   mktgFamilyPrintFigure,
+  mktgFamilyPrintHeadTight,
   mktgFamilyPrintMeasuredLines,
   mktgFamilyPrintNumberConflicts,
   mktgFamilyPrintOpenItemText,
@@ -691,6 +692,38 @@ describe('mktgFamilyPrintMeasuredLines', () => {
     expect(mktgFamilyPrintMeasuredLines(overfullOpening, measure, 16.5, { family: 'Montserrat' })).toBeGreaterThan(4);
     expect(mktgFamilyPrintMeasuredLines('', measure, 12.5)).toBe(1);
     expect(mktgFamilyPrintMeasuredLines('One.\nTwo.', measure, 12.5)).toBe(2);
+  });
+});
+
+describe('mktgFamilyPrintHeadTight', () => {
+  // The labels a family book mounts on the left (Inter, the default face): its own pages' and the inner prints'
+  // `Document · Section`, the framework's message house the widest of them.
+  const sections = [
+    'Contents',
+    'Messaging framework · Framework',
+    'Messaging framework · Message house',
+    'Brand kit · Logo',
+    'Brand kit · Color',
+    '03 Boilerplates',
+    '04 FAQ',
+    'Sources',
+  ];
+  const face = 'Inter, sans-serif';
+
+  it('keeps the label’s size while the longest section, the gap and the document name fit the content width', () => {
+    expect(mktgFamilyPrintHeadTight(sections, 'Agentic AI Foundation positioning & brand', face)).toBe(false);
+    expect(mktgFamilyPrintHeadTight(sections, 'Synthetic project positioning & brand', face)).toBe(false);
+    // No section label at all: the name alone, measured against the whole width.
+    expect(mktgFamilyPrintHeadTight([], 'Agentic AI Foundation positioning & brand', face)).toBe(false);
+  });
+
+  it('steps the head down when the measured line runs over, by the measure and not by a count of characters', () => {
+    expect(mktgFamilyPrintHeadTight(sections, 'Cloud Native Computing Foundation (CNCF) positioning & brand', face)).toBe(true);
+    // The e2e's synthetic project, 47 characters, fits by the measure where the old count of 44 stepped it down.
+    expect(mktgFamilyPrintHeadTight(sections, 'Synthetic Documents Project positioning & brand', face)).toBe(false);
+    // The same name fits beside shorter sections; a wider face makes a fitting name overflow.
+    expect(mktgFamilyPrintHeadTight(['04 FAQ'], 'Cloud Native Computing Foundation (CNCF) positioning & brand', face)).toBe(false);
+    expect(mktgFamilyPrintHeadTight(sections, 'Cloud Native Computing Foundation (CNCF) positioning & brand', 'Montserrat, sans-serif')).toBe(true);
   });
 });
 

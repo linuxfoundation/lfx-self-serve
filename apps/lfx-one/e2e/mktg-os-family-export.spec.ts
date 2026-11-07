@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import {
   MKTG_FAMILY_EXPORT_API_PATH,
   MKTG_FAMILY_PRINT_BODY_CLASS,
+  MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_PORTRAIT_PAGE_NAME,
   MKTG_PRINT_PAGE_SETUPS,
@@ -233,6 +234,10 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(frames.byId('contents').getByTestId('mktg-portrait-page-section')).toHaveText(MKTG_FAMILY_PRINT_LABELS.contents);
   await expect(frames.byId('sources').getByTestId('mktg-portrait-page-section')).toHaveText(MKTG_FAMILY_PRINT_LABELS.sources);
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-number')).toHaveText(String(frames.byIdPage('boilerplates')).padStart(2, '0'));
+  // This book's heads measure within the content width: both labels at the grammar's label size, no tight-head modifier.
+  await expect(book).not.toHaveClass(new RegExp(MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS));
+  await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-section')).toHaveCSS('font-size', '10px');
+  await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-doc')).toHaveCSS('font-size', '10px');
   // The framework in the family's book: the pages of its family plan for this fixture (one goal, one ICP), no cover of
   // its own and no band, each under the family's running head, numbered on from its opener, on the kit's look.
   const frameworkPrint = printDocument.locator('lfx-mktg-framework-print');
@@ -371,6 +376,33 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);
   await page.screenshot({ path: info.outputPath('family-pdf-ready.png'), fullPage: true });
+});
+
+test('a running head that measures too wide steps both labels one size down, the whole book through', async ({ page }, info) => {
+  await stubMktgPrintFrame(page);
+  // A project name the head cannot hold at the label's size beside the kit's longest section label: the book steps both
+  // labels to 9 px on every page, the family's own and the mounted prints', and the head still reads on one line
+  // (mktgFamilyPrintHeadTight, by the measure; the ellipsis is the last resort).
+  const name = 'The Open Foundation for Cloud Native Computing, Edge and Confidential Infrastructure';
+  const controls = await openFamilyExports(page, { allAssets: true, holdPrint: true, projectName: name });
+  controls.releasePrint();
+  const pdf = page.getByTestId('family-export-pdf').getByRole('button');
+  await expect(pdf).toBeEnabled();
+  await pdf.click();
+  await expectMktgPrintFrame(page, MKTG_FAMILY_PRINT_BODY_CLASS, '[data-testid="family-export-print-document"]');
+  const printFrame = await layoutMktgPrintFrame(page);
+  const printDocument = printFrame.getByTestId('family-export-print-document');
+  const book = printDocument.locator('lfx-mktg-family-print');
+  await expect(book).toHaveClass(new RegExp(MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS));
+  const frames = await expectFamilyBookFrames(book);
+  const head = frames.byId('boilerplates').getByTestId('mktg-portrait-page-head');
+  await expect(head.getByTestId('mktg-portrait-page-doc')).toHaveText(`${name} positioning & brand`);
+  await expect(head.getByTestId('mktg-portrait-page-section')).toHaveCSS('font-size', '9px');
+  await expect(head.getByTestId('mktg-portrait-page-doc')).toHaveCSS('font-size', '9px');
+  const kitHead = printDocument.locator('lfx-mktg-brand-kit-print [data-testid="mktg-portrait-page-head"]').first();
+  await expect(kitHead.getByTestId('mktg-portrait-page-section')).toHaveCSS('font-size', '9px');
+  await expect(kitHead.getByTestId('mktg-portrait-page-doc')).toHaveCSS('font-size', '9px');
+  await page.screenshot({ path: info.outputPath('tight-head-print-document.png'), fullPage: true });
 });
 
 test('Export the family reveals and focuses format choices without choosing one or shifting the card', async ({ page }, info) => {

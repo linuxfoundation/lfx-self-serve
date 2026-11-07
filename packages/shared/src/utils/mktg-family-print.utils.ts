@@ -12,6 +12,7 @@ import {
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS,
+  MKTG_FAMILY_PRINT_HEAD_MEASURE,
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_FAMILY_PRINT_LABEL_STOP_WORDS,
   MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
@@ -23,7 +24,7 @@ import {
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
 } from '../constants/mktg-family-print.constants';
 import { MKTG_KIT_FAMILIES } from '../constants/mktg-kit.constants';
-import { MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
+import { MKTG_PORTRAIT_CAPS_TRACKING_EM, MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type { BrandKitReportColorConflict } from '../interfaces/brand-kit.interface';
 import type { FaqGroupView } from '../interfaces/faq.interface';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
@@ -49,7 +50,7 @@ import type {
   MktgFamilyPrintFittedText,
 } from '../interfaces/mktg-family-print.interface';
 import type { MktgPortraitFitPara } from '../interfaces/mktg-portrait-print.interface';
-import { mktgPortraitLineFits, mktgPortraitPageNumber, mktgPortraitParaHeight } from './mktg-portrait-print.utils';
+import { mktgPortraitLineFits, mktgPortraitPageNumber, mktgPortraitParaHeight, mktgPortraitTextWidth } from './mktg-portrait-print.utils';
 
 /** One version format across the book, the kit cover's: `V4.0`; '' when the revision carries no number. */
 export function mktgFamilyPrintVersionLabel(version: number | null | undefined): string {
@@ -232,6 +233,24 @@ export function mktgFamilyPrintCutFromEnd(text: string): string {
   if (sentence !== undefined) return trimmed.slice(0, sentence).trim();
   const word = trimmed.lastIndexOf(' ');
   return word > 0 ? trimmed.slice(0, word).trim() : '';
+}
+
+/**
+ * Whether the book's running heads step down one size: the longest section
+ * label the book mounts on the left (its own pages' and the inner prints'),
+ * the head's gap and the family's document name on the right, measured at
+ * the label's size with its capitals and tracking in the brand's face
+ * (mktgPortraitTextWidth), do not fit the page's content width on one line.
+ * Then the whole book sets both labels one step smaller (the editor's rule: a
+ * size the measure asks for, never a count of characters), and the ellipsis
+ * stays the last resort. A book with no section label measures the name alone.
+ */
+export function mktgFamilyPrintHeadTight(sections: readonly string[], headRight: string, fontStack: string): boolean {
+  const { size, weight, gap } = MKTG_FAMILY_PRINT_HEAD_MEASURE;
+  const para = { caps: true, weight, family: fontStack, tracking: MKTG_PORTRAIT_CAPS_TRACKING_EM };
+  const left = sections.reduce((widest, section) => Math.max(widest, mktgPortraitTextWidth(section, size, para)), 0);
+  const room = MKTG_PORTRAIT_PAGE.contentWidth - (left > 0 ? left + gap : 0);
+  return !mktgPortraitLineFits(headRight, room, size, para);
 }
 
 /**

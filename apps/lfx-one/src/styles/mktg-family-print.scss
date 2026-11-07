@@ -31,8 +31,9 @@
   }
 }
 
-/* A long document name prints one step smaller before the ellipsis ever cuts it (MKTG_FAMILY_PRINT_HEAD_TIGHT_FROM). */
-.lfx-mktg-family-book--tight-head .pp-head .pp-head-doc {
+/* A running head that measures too wide at the label's size (MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS, mktgFamilyPrintHeadTight)
+   prints both labels one step smaller, the whole book through, before the ellipsis ever cuts the document name. */
+.lfx-mktg-family-book--tight-head .pp-head .pp-lab {
   font-size: 9px;
   letter-spacing: 0.1em;
 }

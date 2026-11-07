@@ -9,13 +9,13 @@ import {
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_BOOK_CLASS,
   MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
-  MKTG_FAMILY_PRINT_HEAD_TIGHT_FROM,
   MKTG_FAMILY_PRINT_HEAD_KIND,
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_PORTRAIT_PAGE,
   MKTG_PORTRAIT_PRINT_CLASS,
 } from '@lfx-one/shared/constants';
 import {
+  MktgFamilyExportKind,
   MktgFamilyPrintContentsLayout,
   MktgFamilyPrintCoverTile,
   MktgFamilyPrintFaqPlanGroup,
@@ -25,6 +25,7 @@ import {
   MktgFamilyPrintView,
   MktgPortraitBook,
   MktgPortraitLook,
+  MktgPortraitPlanPage,
 } from '@lfx-one/shared/interfaces';
 import {
   brandKitPortraitPlan,
@@ -34,11 +35,13 @@ import {
   mktgFamilyPrintDate,
   mktgFamilyPrintFaqGroups,
   mktgFamilyPrintFill,
+  mktgFamilyPrintHeadTight,
   mktgFamilyPrintPageRange,
   mktgFamilyPrintPlan,
   mktgPortraitDocumentName,
   mktgPortraitFootLeft,
   mktgPortraitLook,
+  mktgPortraitSectionLabel,
 } from '@lfx-one/shared/utils';
 import { MktgBrandKitPrintComponent } from '../../../mktg-brand-kit-print/mktg-brand-kit-print.component';
 import { MktgFrameworkPrintComponent } from '../../../mktg-framework-print/mktg-framework-print.component';
@@ -95,14 +98,21 @@ export class MktgFamilyPrintComponent {
 
   /** The FAQ as the book prints it: the answered questions the plan paginates and the FAQ pages print, one index space. */
   public readonly faqGroups: Signal<MktgFamilyPrintFaqPlanGroup[]> = computed(() => mktgFamilyPrintFaqGroups(this.view().faq?.groups ?? []));
+  /** The inner prints' portrait plans as they mount in the family (their page titles for the contents, their sections for the heads). */
+  public readonly innerPlans: Signal<{ framework: MktgPortraitPlanPage[]; kit: MktgPortraitPlanPage[] }> = this.initInnerPlans();
   public readonly plan: Signal<MktgFamilyPrintPlan> = this.initPlan();
   public readonly frames: Signal<MktgFamilyPrintFrame[]> = this.initFrames();
   public readonly coverTiles: Signal<MktgFamilyPrintCoverTile[]> = this.initCoverTiles();
   public readonly look: Signal<MktgPortraitLook> = this.initLook();
   public readonly book: Signal<MktgPortraitBook> = this.initBook();
-  /** The book's classes: the grammar's root, the family's, and the tight-head modifier when the head's document name runs long. */
+  /**
+   * Every section label a running head in the book prints on its left: the family's own pages' (`03 Boilerplates`,
+   * `Contents`) and the mounted prints' (`Brand kit · Logo`, `Messaging framework · Message house`), for the head's measure.
+   */
+  public readonly headSections: Signal<string[]> = this.initHeadSections();
+  /** The book's classes: the grammar's root, the family's, and the tight-head modifier when the running head measures too wide. */
   public readonly hostClass: Signal<string> = computed(() => {
-    const tight = this.book().headRight.length >= MKTG_FAMILY_PRINT_HEAD_TIGHT_FROM;
+    const tight = mktgFamilyPrintHeadTight(this.headSections(), this.book().headRight, this.look().fontStack);
     return ['block', MKTG_PORTRAIT_PRINT_CLASS, MKTG_FAMILY_PRINT_BOOK_CLASS, tight ? MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS : ''].filter(Boolean).join(' ');
   });
 
@@ -117,15 +127,39 @@ export class MktgFamilyPrintComponent {
   public readonly contentsCutNote: Signal<string> = computed(() => mktgFamilyPrintCutNote(this.contents().cut));
   public readonly backCoverNotice: Signal<string> = this.initBackCoverNotice();
 
+  private initInnerPlans(): Signal<{ framework: MktgPortraitPlanPage[]; kit: MktgPortraitPlanPage[] }> {
+    return computed(() => {
+      const view = this.view();
+      return {
+        framework: view.framework ? frameworkPortraitPlan(view.framework, { inFamily: true }) : [],
+        kit: view.kit ? brandKitPortraitPlan(view.kit, { inFamily: true }) : [],
+      };
+    });
+  }
+
+  private initHeadSections(): Signal<string[]> {
+    return computed(() => {
+      const inner = this.innerPlans();
+      const own = this.plan().pages.map((page) => page.section);
+      // A mounted print labels its pages `Document · Section` inside the family (mktgPortraitSectionLabel), by its document's title.
+      const mountedPages: Partial<Record<MktgFamilyExportKind, MktgPortraitPlanPage[]>> = { framework: inner.framework, kit: inner.kit };
+      const mounted = this.view().documents.flatMap((document) =>
+        (mountedPages[MKTG_FAMILY_EXPORT_KINDS[document.agentKey]] ?? []).map((page) => mktgPortraitSectionLabel(page.section, true, document.title))
+      );
+      return [...own, ...mounted];
+    });
+  }
+
   private initPlan(): Signal<MktgFamilyPrintPlan> {
     return computed(() => {
       const view = this.view();
+      const inner = this.innerPlans();
       const members: MktgFamilyPrintPlanMember[] = view.documents.map((document) => {
         switch (MKTG_FAMILY_EXPORT_KINDS[document.agentKey]) {
           case 'framework':
-            return { document, innerPageTitles: view.framework ? frameworkPortraitPlan(view.framework, { inFamily: true }).map((page) => page.title) : [] };
+            return { document, innerPageTitles: inner.framework.map((page) => page.title) };
           case 'kit':
-            return { document, innerPageTitles: view.kit ? brandKitPortraitPlan(view.kit, { inFamily: true }).map((page) => page.title) : [] };
+            return { document, innerPageTitles: inner.kit.map((page) => page.title) };
           case 'boilerplates':
             return { document, boilerplateCount: view.boilerplates?.lengths.filter((row) => row.text.trim()).length ?? 0 };
           case 'faq':

@@ -1,10 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
+import {
+  MKTG_DOCUMENT_TYPES,
+  MKTG_FAMILY_EXPORT_API_PATH,
+  MKTG_FAMILY_EXPORT_KINDS,
+  MKTG_PORTRAIT_PAGE,
+  SELECTED_PROJECT_COOKIE_KEY,
+} from '@lfx-one/shared/constants';
 import type { FaqContent, MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page } from '@playwright/test';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '../../src/app/shared/testing/mktg-family-export-test-data';
+import { mockProjects } from '../fixtures/mock-data/projects.mock';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { DOCUMENT_PROJECT, setupDocuments } from './mktg-os-documents.helper';
 import { columnAssetRevisionResponse, draftFrameworkAsset, nativeAssetRevisionResponse } from './mktg-os-asset-views.helper';
@@ -26,11 +33,25 @@ export async function openFamilyExports(
     allAssets?: boolean;
     /** With `allAssets`: the FAQ the family PDF prints, instead of the canonical envelope's. */
     faqContent?: FaqContent;
+    /** The synthetic project's name instead of the canonical one (a long name, for the running head's measure). */
+    projectName?: string;
   } = {}
 ) {
   await suppressCookieBanner(page);
   // Pins feature override, cookies, project writer permissions and shell APIs using the canonical helper.
   await setupDocuments(page, { writer: options.writer ?? true });
+  if (options.projectName) {
+    // The name where the shell fetches the project (the slug mock reads this record) and where the selection is stored.
+    mockProjects[DOCUMENT_PROJECT.slug] = { ...mockProjects[DOCUMENT_PROJECT.slug], name: options.projectName };
+    await page.context().addCookies([
+      {
+        name: SELECTED_PROJECT_COOKIE_KEY,
+        value: encodeURIComponent(JSON.stringify({ ...DOCUMENT_PROJECT, name: options.projectName })),
+        domain: 'localhost',
+        path: '/',
+      },
+    ]);
+  }
   const member = familyExportMember();
   const type = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === member.agentKey);
   if (!type) throw new Error('Synthetic framework type missing');
