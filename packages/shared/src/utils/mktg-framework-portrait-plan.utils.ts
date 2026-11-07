@@ -31,8 +31,10 @@ export function frameworkPortraitPlan(view: FoundationMessagePrintView, options:
   const pages: MktgPortraitPlanPage[] = [];
   if (!options.inFamily) pages.push({ id: ids.cover, section: 'Cover', title: 'Cover' });
   pages.push({ id: ids.framework, section: sections.framework, title: titles.framework });
-  view.goals.forEach((goal) =>
-    pages.push({ id: `goal-${goal.n}`, section: sections.framework, title: mktgPrintJoin([`Goal ${goal.n}`, goal.t], FRAMEWORK_PORTRAIT_SEP) })
+  // A goal page's id is the goal's position in the framework (`goal-1` the first), not its displayed number `n`: the validator asks
+  // only that `n` be a positive integer, so two goals may share one, and a page keyed on it would print the first twice.
+  view.goals.forEach((goal, index) =>
+    pages.push({ id: `goal-${index + 1}`, section: sections.framework, title: mktgPrintJoin([`Goal ${goal.n}`, goal.t], FRAMEWORK_PORTRAIT_SEP) })
   );
   pages.push({ id: ids.sayAvoid, section: sections.framework, title: titles.sayAvoid });
   frameworkPortraitIcpPages(view.icps).forEach((_, index) =>

@@ -57,7 +57,9 @@ import {
   frameworkPortraitMatrixColumns,
   frameworkPortraitMatrixProofRowSize,
   frameworkPortraitMatrixTitleSize,
+  frameworkPortraitPillHeight,
   frameworkPortraitPillList,
+  frameworkPortraitPillWidth,
   frameworkPortraitPillarHeadHeight,
   frameworkPortraitPillarProofHeight,
   frameworkPortraitPillsHeight,
@@ -378,6 +380,11 @@ describe('the framework portrait book’s bounded blocks', () => {
   it('packs the say pills into their column and cuts them from the end, tight first; cuts the avoid rows to whole rows', () => {
     const pills = Array.from({ length: 12 }, (_, index) => `${long.slice(0, 40).trim()} ${index}`);
     expect(frameworkPortraitPillsHeight(['open'], 320, false)).toBe(13 * 1.2 + 18);
+    // A phrase wider than the column wraps inside its pill: its row is as tall as the lines it takes, not one line (the phrase count is bounded, not the phrase).
+    const phrase = 'A say phrase so long that it cannot sit on one line of a say column at the pill measure, and wraps';
+    expect(frameworkPortraitPillWidth(phrase, false)).toBeGreaterThan(2 * 320);
+    expect(frameworkPortraitPillHeight(phrase, 320, false)).toBe(3 * 13 * 1.2 + 18);
+    expect(frameworkPortraitPillsHeight(['open', phrase, 'honest'], 320, false)).toBe(13 * 1.2 + 18 + 8 + 3 * 13 * 1.2 + 18 + 8 + 13 * 1.2 + 18);
     expect(frameworkPortraitPillList(['open', 'honest'], 320, frameworkPortraitSayRoom())).toEqual({
       rows: ['open', 'honest'],
       cut: 0,
@@ -457,6 +464,14 @@ describe('the framework portrait book’s message house', () => {
     expect(short.whyNow).toEqual({ text: 'Why now.', size: 13 });
     expect(short.audiences).toEqual({ rows: short.audiences.rows, cut: 0, tight: false, note: '' });
     expect(short.audiences.rows).toHaveLength(2);
+    // A brand line that wraps moves the pillars, and the lower blocks with them, by the lines it takes as printed (`Brand line · <text>`).
+    const wrapped = view([pillar(1)], 2);
+    wrapped.mh = {
+      ...wrapped.mh,
+      line: 'A brand line long enough to need a second line across the whole page at the brand line’s measure, and then some words more.',
+    };
+    const two = frameworkPortraitHouse(wrapped, { text: 'Umbrella.', size: 19 });
+    expect(two.lowerTop).toBe(short.lowerTop + 13 * 1.3);
     // Five pillars (the record's cap) of four long proofs under long messages would run past the footer: each pillar's proofs are cut to whole rows
     // that leave the lower blocks their least room (80 px above the footer), the lower blocks follow the cut pillars down, the long Why now text is
     // fitted smaller and six audiences are cut to what ends above the footer, the cut said under each list.
