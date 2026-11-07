@@ -740,7 +740,7 @@ describe('MktgFrameworkPrintComponent', () => {
         name: index === 0 ? 'A profile name long enough to wrap inside a narrow card' : `Profile ${id}`,
       })),
     };
-    await setView(buildFoundationMessagePrintView(many, 'TestOrbit', 2, null));
+    await configure('browser', buildFoundationMessagePrintView(many, 'TestOrbit', 2, null));
     const goalPage = frame('goal-1');
     const cards = Array.from(goalPage?.querySelectorAll<HTMLElement>('.fwp-served-card') ?? []);
     expect(cards).toHaveLength(frameworkPortraitServedCount());

@@ -180,8 +180,9 @@ function numbersRowHeight(row: FoundationMessageNumberRow, tight: boolean): numb
 /**
  * A key numbers table row that is taller than a whole page's room, cut at a sentence (then a word) in each cell until the row
  * ends inside it, at the fact type (never set smaller): the row stays one row on its page instead of running under the footer.
+ * The row keeps its type and every other field it carries (a print row's source): only the two cells change.
  */
-export function frameworkPortraitNumbersRowIn(row: FoundationMessageNumberRow, room: number): FoundationMessageNumberRow {
+export function frameworkPortraitNumbersRowIn<T extends FoundationMessageNumberRow>(row: T, room: number): T {
   if (numbersRowHeight(row, false) <= room) return row;
   const [figure, label] = numbersCellWidths();
   // Each cell cut at a sentence (then a word) in the fit model's steps until it ends in the room the row's chrome leaves.
@@ -194,7 +195,7 @@ export function frameworkPortraitNumbersRowIn(row: FoundationMessageNumberRow, r
     }
     return current;
   };
-  return { number: cell(row.number, figure), label: cell(row.label, label) };
+  return { ...row, number: cell(row.number, figure), label: cell(row.label, label) };
 }
 
 /** The room the muted line under a cut list takes in a column `width` px wide: its gap above and its wrapped lines. */

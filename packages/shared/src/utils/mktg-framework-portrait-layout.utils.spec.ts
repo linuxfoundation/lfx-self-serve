@@ -17,6 +17,7 @@ import {
 } from '../constants/mktg-print.constants';
 import { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 import { FoundationMessageContent } from '../interfaces/foundation-message.interface';
+import { FoundationMessagePrintNumber } from '../interfaces/mktg-print.interface';
 import {
   foundationMessagePrintCutNote,
   frameworkPortraitCutList,
@@ -678,8 +679,12 @@ describe('the framework portrait book’s key numbers', () => {
     expect(cut?.label.length).toBeLessThan(tall.length);
     expect(tall.startsWith((cut?.label ?? '').replace(/…$/, ''))).toBe(true);
     const room = FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.numbersContinued - 26 - 34;
-    expect(frameworkPortraitNumbersRowIn({ number: '9', label: tall, source: '' }, room)).toEqual(cut);
-    expect(frameworkPortraitNumbersRowIn({ number: '9', label: 'short', source: '' }, room)).toEqual({ number: '9', label: 'short', source: '' });
+    // A print row (with its source) goes in and comes out as one: the util is generic over the row's type.
+    const tallRow: FoundationMessagePrintNumber = { number: '9', label: tall, source: 'Website' };
+    const fitted: FoundationMessagePrintNumber = frameworkPortraitNumbersRowIn(tallRow, room);
+    expect(fitted).toEqual({ ...cut, source: 'Website' });
+    const shortRow: FoundationMessagePrintNumber = { number: '9', label: 'short', source: '' };
+    expect(frameworkPortraitNumbersRowIn(shortRow, room)).toEqual(shortRow);
   });
 
   it('past six prints the table of every figure, and continues it on more pages when a page fills, the facts last', () => {
