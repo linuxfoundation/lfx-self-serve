@@ -807,7 +807,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(labels.filter((label) => label === 'Proof')).toHaveLength(2);
     expect(labels.filter((label) => label === 'Value proposition')).toHaveLength(0);
     expect(labels.filter((label) => label === 'Sound bite')).toHaveLength(0);
-    expect(laid.rows).toEqual({ value: false, bite: false });
+    expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
     expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
     expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).map((note) => note.textContent?.trim())).toEqual([
       'Value propositions and sound bites are on each goal page.',

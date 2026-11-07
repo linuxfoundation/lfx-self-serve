@@ -413,6 +413,8 @@ export const FRAMEWORK_PORTRAIT_MAX_TILES = 6;
  */
 export const FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES = {
   goalPages: 'Value propositions and sound bites are on each goal page.',
+  /** The bands dropped the proof row as well (the editor's FA1b): its cells would have printed below the tight floor. */
+  goalPagesAll: 'Value propositions, sound bites and proofs are on each goal page.',
 } as const;
 
 /** A count in words for the print's sentences, up to the anchor questions' limit (FOUNDATION_MESSAGE_CONTENT_LIMITS.anchor.max); a count past it prints as digits. */

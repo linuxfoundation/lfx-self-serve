@@ -170,27 +170,30 @@
                     </p>
                   }
                 </div>
-                <div class="fwp-matrix-row">
-                  <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Proof</span>
-                  <!-- Each goal's proof cell is a cut list in the row's room: tightened first, then whole rows and the muted line (frameworkPortraitMatrix). -->
-                  @for (goal of band.goals; track goal.id; let index = $index) {
-                    @if (frame.matrix?.proofs?.[band.offset + index]; as cell) {
-                      <div>
-                        <ul class="fwp-matrix-proofs" [class.fwp-matrix-proofs--tight]="cell.tight" data-testid="mktg-framework-print-matrix-proof-cell">
-                          @for (proof of cell.rows; track $index) {
-                            <!-- A cell's first proof kept set smaller carries its own size (editor F3: never only the note). -->
-                            <li [style.font-size.px]="proof.size ?? null" data-testid="mktg-framework-print-matrix-proof">
-                              {{ proof.fact }} <span class="fwp-matrix-source">{{ proof.source }}</span>
-                            </li>
+                <!-- The proof row: dropped in a band when its cells would print below the tight floor (the editor's FA1b; the note under the bands says so). -->
+                @if (frame.matrix?.rows?.proof ?? true) {
+                  <div class="fwp-matrix-row">
+                    <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Proof</span>
+                    <!-- Each goal's proof cell is a cut list in the row's room: tightened first, then whole rows and the muted line (frameworkPortraitMatrix). -->
+                    @for (goal of band.goals; track goal.id; let index = $index) {
+                      @if (frame.matrix?.proofs?.[band.offset + index]; as cell) {
+                        <div>
+                          <ul class="fwp-matrix-proofs" [class.fwp-matrix-proofs--tight]="cell.tight" data-testid="mktg-framework-print-matrix-proof-cell">
+                            @for (proof of cell.rows; track $index) {
+                              <!-- A cell's first proof kept set smaller carries its own size (editor F3: never only the note). -->
+                              <li [style.font-size.px]="proof.size ?? null" data-testid="mktg-framework-print-matrix-proof">
+                                {{ proof.fact }} <span class="fwp-matrix-source">{{ proof.source }}</span>
+                              </li>
+                            }
+                          </ul>
+                          @if (cell.cut > 0) {
+                            <p class="fwp-cut-note" data-testid="mktg-framework-print-matrix-proofs-cut">{{ cell.note }}</p>
                           }
-                        </ul>
-                        @if (cell.cut > 0) {
-                          <p class="fwp-cut-note" data-testid="mktg-framework-print-matrix-proofs-cut">{{ cell.note }}</p>
-                        }
-                      </div>
+                        </div>
+                      }
                     }
-                  }
-                </div>
+                  </div>
+                }
                 <!-- The sound bites: whole in a band (dropped, with the note under the bands, when the page cannot hold them whole), fitted in a strip. -->
                 @if (frame.matrix?.rows?.bite ?? true) {
                   <div class="fwp-matrix-row">
