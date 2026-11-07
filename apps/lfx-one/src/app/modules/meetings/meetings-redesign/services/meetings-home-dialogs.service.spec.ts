@@ -47,6 +47,16 @@ describe('MeetingsHomeDialogsService', () => {
     expect(open).toHaveBeenCalledWith(MeetingsHomeSummaryDialogComponent, { data: { row: ROW, summary, onChange } });
   });
 
+  it('passes the drawer origin and pending flag to the summary dialog', () => {
+    const summary = {} as PastMeetingSummary;
+
+    service.openSummary(ROW, summary, undefined, { origin: 'drawer', showPending: true });
+
+    expect(open).toHaveBeenCalledWith(MeetingsHomeSummaryDialogComponent, {
+      data: { row: ROW, summary, onChange: undefined, origin: 'drawer', showPending: true },
+    });
+  });
+
   it('opens a valid recording link in a new tab and reports an invalid one', () => {
     service.openRecording(SHARE_URL);
     service.openRecording('javascript:alert(1)');
