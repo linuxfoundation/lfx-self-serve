@@ -5,7 +5,9 @@ import { expect, test } from '@playwright/test';
 import {
   BRAND_KIT_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES,
   FRAMEWORK_PORTRAIT_ROOM,
+  FRAMEWORK_PORTRAIT_TYPE,
   MKTG_PORTRAIT_FIT,
   MKTG_PORTRAIT_PAGE,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
@@ -812,6 +814,9 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   await expect(matrix.getByTestId('mktg-framework-print-goals-band-0')).toHaveCount(1);
   await expect(matrix.getByTestId('mktg-framework-print-goals-band-1')).toHaveCount(0);
   expect(await matrix.evaluate(matrixTitleOverlaps)).toEqual({ overlapping: 0, overflowing: 0, titles: 8 });
+  // A strip prints every row (the band rules of editor W1 never touch it): the four labels, no row note.
+  await expect(matrix.getByTestId('mktg-framework-print-goals-label')).toHaveText(['Value proposition', 'Key message', 'Proof', 'Sound bite']);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-row-note')).toHaveCount(0);
   // The cells set smaller than their type (11 / 11 / 12.5 px), never under the fit model's floor: minScale of the type, in
   // half pixels (`mktgPortraitFitBlock`; at this record the value and key cells sit on the floor, 7.5 px).
   const floor = (size: number): number => Math.floor(size * MKTG_PORTRAIT_FIT.minScale * 2) / 2;
@@ -887,6 +892,41 @@ test('eight goals with the overfull record’s titles: the matrix prints as two 
     const cells = matrix.getByTestId(`mktg-framework-print-goals-band-${band}`).getByTestId('mktg-framework-print-matrix-proof-cell');
     await expect(cells).toHaveCount(4);
     for (const cell of await cells.all()) await expect(cell.getByTestId('mktg-framework-print-matrix-proof')).not.toHaveCount(0);
+  }
+  // The band rules (editor W1, W4) on this shape: the bands cannot hold the sound bites whole, so that row is dropped from every
+  // band and said once under the last, above the crosscut; the value row stays; the value and key cells are clamped to two lines
+  // at their 11 px type, never set smaller; and each band's proofs print at one size, never under the tight type (10.5 px).
+  for (const band of [0, 1]) {
+    await expect(matrix.getByTestId(`mktg-framework-print-goals-band-${band}`).getByTestId('mktg-framework-print-goals-label')).toHaveText([
+      'Value proposition',
+      'Key message',
+      'Proof',
+    ]);
+  }
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-bite')).toHaveCount(0);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-row-note')).toHaveText([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites]);
+  const bandCells = await matrix.evaluate((block) => {
+    const measure = (cell: Element): { size: number; lines: number } => {
+      const style = getComputedStyle(cell);
+      return { size: parseFloat(style.fontSize), lines: Math.round(cell.getBoundingClientRect().height / parseFloat(style.lineHeight)) };
+    };
+    const text = Array.from(block.querySelectorAll('[data-testid="mktg-framework-print-matrix-vp"], .fwp-matrix-key')).map(measure);
+    const proofs = [0, 1].map((band) =>
+      Array.from(block.querySelectorAll(`[data-testid="mktg-framework-print-goals-band-${band}"] [data-testid="mktg-framework-print-matrix-proof"]`)).map(
+        (proof) => parseFloat(getComputedStyle(proof).fontSize)
+      )
+    );
+    return { text, proofs };
+  });
+  expect(bandCells.text).toHaveLength(16);
+  for (const cell of bandCells.text) {
+    expect(cell.size).toBe(11);
+    expect(cell.lines).toBeLessThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBandLines);
+  }
+  for (const sizes of bandCells.proofs) {
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(new Set(sizes).size).toBe(1);
+    expect(sizes[0]).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_TYPE.matrixProofTight.size);
   }
   const matrixBottom = await matrix.evaluate((block) => {
     const frameTop = (block.closest('[data-page-id]') as HTMLElement).getBoundingClientRect().top;
