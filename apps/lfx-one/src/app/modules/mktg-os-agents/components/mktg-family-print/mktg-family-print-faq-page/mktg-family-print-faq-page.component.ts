@@ -5,6 +5,7 @@ import { Component, computed, input, Signal } from '@angular/core';
 import { MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_FAQ_LAYOUT, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
 import { MktgFamilyPrintFaqEntry, MktgFamilyPrintFaqItem, MktgFamilyPrintFaqPlanGroup } from '@lfx-one/shared/interfaces';
 import { mktgFamilyPrintFaqSourceLabel, mktgFamilyPrintFill } from '@lfx-one/shared/utils';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../mktg-portrait/mktg-portrait-host';
 import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 
 /**
@@ -19,6 +20,7 @@ import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rec
   imports: [MktgPortraitRectDirective],
   templateUrl: './mktg-family-print-faq-page.component.html',
   styleUrl: './mktg-family-print-faq-page.component.scss',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgFamilyPrintFaqPageComponent {
   /** The FAQ as the book prints it (mktgFamilyPrintFaqGroups: the answered questions the plan paginated), for the entries and the counts. */

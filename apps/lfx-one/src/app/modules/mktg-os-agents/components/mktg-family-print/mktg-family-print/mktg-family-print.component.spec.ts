@@ -74,6 +74,8 @@ function coverStyle(): string {
 describe('MktgFamilyPrintComponent', () => {
   it('prints the plan’s frames in order for the members the view holds, and nothing for the ones it lacks', async () => {
     const root = await render(view());
+    // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+    expect(getComputedStyle(root).display).toBe('block');
     expect(root.classList.contains('lfx-mktg-portrait')).toBe(true);
     // 1 cover · 2 contents · 3 opener · 4 boilerplates · 5 opener · 6 FAQ · 7 Sources · 8 back cover, every one a frame of the grammar.
     expect(pages(root).map((frame) => [frame.dataset['pageId'], frame.dataset['page']])).toEqual([

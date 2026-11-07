@@ -51,6 +51,8 @@ describe('MktgFamilyPrintFaqPageComponent', () => {
     ]);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
+    // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+    expect(getComputedStyle(root).display).toBe('block');
     // The count is of what prints: answered questions, in groups left with one.
     expect(root.querySelector('[data-testid="family-print-faq-intro"]')?.textContent).toBe(
       '3 questions in 2 groups, each answered from the framework or a source it names.'

@@ -20,6 +20,7 @@ import {
   mktgFamilyPrintFitRunBlock,
   mktgFamilyPrintBuiltFromLabel,
 } from '@lfx-one/shared/utils';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../mktg-portrait/mktg-portrait-host';
 import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 
 /**
@@ -35,6 +36,7 @@ import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rec
   imports: [MktgPortraitRectDirective],
   templateUrl: './mktg-family-print-boilerplates-page.component.html',
   styleUrl: './mktg-family-print-boilerplates-page.component.scss',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
   host: { '[style.--fp-warn]': 'warnInk' },
 })
 export class MktgFamilyPrintBoilerplatesPageComponent {

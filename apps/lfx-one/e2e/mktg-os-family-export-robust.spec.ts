@@ -71,7 +71,8 @@ test('Family PDF book structure: the portrait grammar’s frames with the family
   await expect(frames.byId('sources').getByTestId('family-print-sources-row')).toHaveCount(4);
   await expect(frames.byId('sources').getByTestId('family-print-sources-open')).toHaveCount(1);
   await expect(frames.byId('sources').getByTestId('family-print-sources-conflicts')).toHaveCount(1);
-  // Every host between the book and a frame prints as a block (Chrome 156 printed a blank page after each inline one).
+  // Every host between the book and a frame prints as a block, the grammar's rule (`.lfx-mktg-portrait > *` and each component's
+  // `:host { display: block }`): Chrome 156 printed a blank page after each inline one.
   for (const host of ['lfx-mktg-portrait-opener', 'lfx-mktg-portrait-back-cover', 'lfx-mktg-brand-kit-print', 'lfx-mktg-brand-kit-print > div > *']) {
     const hosts = book.locator(host);
     const count = await hosts.count();

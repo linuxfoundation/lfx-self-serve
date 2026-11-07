@@ -42,6 +42,7 @@ import { MktgFrameworkPrintComponent } from '../../../mktg-framework-print/mktg-
 import { MktgPortraitBackCoverComponent } from '../../mktg-portrait/mktg-portrait-back-cover/mktg-portrait-back-cover.component';
 import { MktgPortraitOpenerComponent } from '../../mktg-portrait/mktg-portrait-opener/mktg-portrait-opener.component';
 import { MktgPortraitPageComponent } from '../../mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../mktg-portrait/mktg-portrait-host';
 import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 import { MktgFamilyPrintBoilerplatesPageComponent } from '../mktg-family-print-boilerplates-page/mktg-family-print-boilerplates-page.component';
 import { MktgFamilyPrintFaqPageComponent } from '../mktg-family-print-faq-page/mktg-family-print-faq-page.component';
@@ -71,6 +72,7 @@ import { MktgFamilyPrintSourcesPageComponent } from '../mktg-family-print-source
   ],
   templateUrl: './mktg-family-print.component.html',
   styleUrl: './mktg-family-print.component.scss',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
   // The portrait grammar's root: a plain block of frames; the print service picks the US Letter setup by its class.
   host: { class: `block ${MKTG_PORTRAIT_PRINT_CLASS}`, 'data-testid': 'family-print-book' },
 })

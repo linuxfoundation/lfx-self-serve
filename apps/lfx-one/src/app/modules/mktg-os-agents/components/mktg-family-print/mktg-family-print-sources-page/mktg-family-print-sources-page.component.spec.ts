@@ -27,6 +27,8 @@ describe('MktgFamilyPrintSourcesPageComponent', () => {
     fixture.componentRef.setInput('conflicts', [{ id: 'Brand line · Brand kit', topic: 'Brand line', text: 'They differ.', rerun: 'Re-run the brand kit.' }]);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
+    // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+    expect(getComputedStyle(root).display).toBe('block');
     const rows = Array.from(root.querySelectorAll('[data-testid="family-print-sources-row"]')).map((row) =>
       Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent?.trim())
     );

@@ -28,6 +28,8 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     ]);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
+    // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+    expect(getComputedStyle(root).display).toBe('block');
     const cards = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="family-print-boilerplate-card"]'));
     expect(cards).toHaveLength(3);
     expect(cards[0].classList.contains('fpb-card--first')).toBe(true);

@@ -81,12 +81,13 @@
       transform: none !important;
     }
 
+    /* The print roots own no page break: the grammar's frames do (`.pp-page { break-before: page }`, one break per
+       sheet, no break-after anywhere), so a root's own break would double the first frame's. */
     lfx-mktg-framework-print,
     lfx-mktg-boilerplates-print,
     lfx-mktg-faq-print,
     lfx-mktg-brand-kit-print {
       width: 100%;
-      break-before: page;
       /* The whole ancestor chain of a print root paints white: the screen's canvas never shows through a page. */
       background: white;
     }
@@ -99,23 +100,11 @@
     }
   }
 
-  body.lfx-print-family {
-    /* Every host between the family's book and a portrait frame prints as a block. Angular leaves a component's host
-       inline (lfx-mktg-portrait-opener, lfx-mktg-portrait-back-cover, lfx-mktg-brand-kit-print and the kit's page
-       hosts), so the frames' `break-after: page` sat inside anonymous block boxes; Chrome 156 puts a second break at
-       each such boundary and printed a blank page after every opener and after the back cover (40 pages for 36),
-       while Chromium 1208 did not. Blocks around the frames keep the break count to one per frame in both. */
-    lfx-mktg-family-print > *,
-    lfx-mktg-brand-kit-print > div > * {
-      display: block;
-    }
-  }
+  /* Every host between the family's book and a portrait frame prints as a block: the grammar's rule
+     (`.lfx-mktg-portrait > *` on the book, `:host { display: block }` on every grammar and book component), not a
+     rule of this sheet. Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame. */
 
   body.lfx-print-framework {
-    lfx-mktg-framework-print {
-      break-before: auto;
-    }
-
     .lfx-framework-print {
       /* Override the legacy absolute root: only in-flow content sizes the body. */
       position: static !important;

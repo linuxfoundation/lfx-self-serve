@@ -3,7 +3,7 @@
 
 /* The family's own pages on the portrait grammar's frames: the cover's tiles (fpc-) and the contents page (fpt-),
    the design board's exact px (styling.md's accepted deviation for a print design). The frame's custom
-   properties (--pp-dark, --pp-accent, --pp-on-dark, --pp-font, --pp-ink, --pp-muted) are the grammar's.
+   properties (--pp-dark, --pp-accent, --pp-accent-text, --pp-on-dark, --pp-font, --pp-ink, --pp-muted) are the grammar's.
    The cover's secondary inks are mixed from --pp-on-dark (the ink the grammar selected for contrast on the
    cover ground: white on a dark, the dark ink on a light one), never a fixed translucent white, so a kit
    with a light cover ground keeps its purpose, tiles and rules readable (CSS Color 5 color-mix()). */
@@ -89,7 +89,8 @@
     margin-right: 12px;
     font: 500 11px/1.2 var(--pp-font);
     letter-spacing: 0.12em;
-    color: var(--pp-accent);
+    /* Accent as text on paper reads the grammar's darkened accent (WCAG AA on the page's ground). */
+    color: var(--pp-accent-text, var(--pp-accent));
   }
 
   &__title {
