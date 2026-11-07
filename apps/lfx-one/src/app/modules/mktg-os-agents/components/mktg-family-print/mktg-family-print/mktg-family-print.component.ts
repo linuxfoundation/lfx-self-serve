@@ -43,7 +43,6 @@ import {
   mktgPortraitFootLeft,
   mktgPortraitLook,
   mktgPortraitPlatePadding,
-  mktgPortraitPlateRadius,
   mktgPortraitSectionLabel,
 } from '@lfx-one/shared/utils';
 import { MktgBrandKitPrintComponent } from '../../../mktg-brand-kit-print/mktg-brand-kit-print.component';
@@ -51,6 +50,7 @@ import { MktgFrameworkPrintComponent } from '../../../mktg-framework-print/mktg-
 import { MktgPortraitBackCoverComponent } from '../../mktg-portrait/mktg-portrait-back-cover/mktg-portrait-back-cover.component';
 import { MktgPortraitOpenerComponent } from '../../mktg-portrait/mktg-portrait-opener/mktg-portrait-opener.component';
 import { MktgPortraitPageComponent } from '../../mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
+import { MktgPortraitPlateDirective } from '../../mktg-portrait/mktg-portrait-plate.directive';
 import { MKTG_PORTRAIT_BLOCK_HOST } from '../../mktg-portrait/mktg-portrait-host';
 import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 import { MktgFamilyPrintBoilerplatesPageComponent } from '../mktg-family-print-boilerplates-page/mktg-family-print-boilerplates-page.component';
@@ -70,6 +70,7 @@ import { MktgFamilyPrintSourcesPageComponent } from '../mktg-family-print-source
   selector: 'lfx-mktg-family-print',
   imports: [
     MktgPortraitPageComponent,
+    MktgPortraitPlateDirective,
     MktgPortraitOpenerComponent,
     MktgPortraitBackCoverComponent,
     MktgPortraitRectDirective,
@@ -98,10 +99,9 @@ export class MktgFamilyPrintComponent {
   public readonly inset: readonly [number, number] = [MKTG_PORTRAIT_PAGE.coverInset, MKTG_PORTRAIT_PAGE.width - 2 * MKTG_PORTRAIT_PAGE.coverInset];
   /** The content column: x 56, 704 wide. */
   public readonly column: readonly [number, number] = [MKTG_PORTRAIT_PAGE.margin, MKTG_PORTRAIT_PAGE.contentWidth];
-  /** The cover lockup's drawn height (`.fpc-logo`), and the white plate's padding and corner radius for it (the grammar's geometry). */
+  /** The cover lockup's drawn height (`.fpc-logo`) and the outer height of the white plate under it, half the drawn height of padding each side (the grammar's directive draws it). */
   public readonly lockupHeight = MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT;
-  public readonly platePadding = mktgPortraitPlatePadding(this.lockupHeight);
-  public readonly plateRadius = mktgPortraitPlateRadius(this.lockupHeight);
+  public readonly plateHeight = this.lockupHeight + 2 * mktgPortraitPlatePadding(this.lockupHeight);
 
   /** The FAQ as the book prints it: the answered questions the plan paginates and the FAQ pages print, one index space. */
   public readonly faqGroups: Signal<MktgFamilyPrintFaqPlanGroup[]> = computed(() => mktgFamilyPrintFaqGroups(this.view().faq?.groups ?? []));

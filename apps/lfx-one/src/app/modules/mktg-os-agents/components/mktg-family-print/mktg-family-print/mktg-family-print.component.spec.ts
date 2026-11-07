@@ -7,6 +7,7 @@ import {
   MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT,
   MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
   MKTG_KIT_POSITIONING_FAMILY_ID,
+  MKTG_PORTRAIT_PLATE,
   MKTG_PRINT_INK_ON_LIGHT,
 } from '@lfx-one/shared/constants';
 import { MktgFamilyPrintView } from '@lfx-one/shared/interfaces';
@@ -16,7 +17,7 @@ import {
   buildFaqPrintView,
   faqAssetOfRevision,
   mktgFamilyPrintDocument,
-  mktgPortraitPlatePadding,
+  mktgPortraitPlateFit,
   mktgPortraitPlateRadius,
   mktgPrintBrand,
 } from '@lfx-one/shared/utils';
@@ -174,14 +175,17 @@ describe('MktgFamilyPrintComponent', () => {
 
   it('sets a lockup the kit cannot reverse on the grammar’s white plate, padded by half its height and rounded by a sixth of its side', async () => {
     // The export service hands the family the kit book's own decision (`mktgFamilyPrintBrand`): a full-colour primary without a reversed
-    // file arrives with `plate`, and the cover draws it unfiltered on the plate, the img still 84 px so the plate never spills.
+    // file arrives with `plate`, and the cover draws it unfiltered on the grammar's plate (its directive, given the plate's outer height:
+    // the 84 px lockup in 42 px of white), the img still 84 px so the plate never spills. The radius reads the plate's height until the
+    // image has loaded, which no synthetic src does here.
     const lf = mktgPrintBrand(null);
     const brand = { ...lf, logoOnDark: { src: 'data:image/svg+xml,synthetic-two-colour', alt: 'Synthetic project logo', filter: '', plate: true } };
     const root = await render({ ...view(), brand });
     const plate = root.querySelector<HTMLElement>('[data-testid="mktg-portrait-plate"]');
+    const outer = MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT * (1 + 2 * MKTG_PORTRAIT_PLATE.paddingOfHeight);
     expect(plate?.classList.contains('pp-plate')).toBe(true);
-    expect(plate?.style.padding).toBe(`${mktgPortraitPlatePadding(MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT)}px`);
-    expect(plate?.style.borderRadius).toBe(`${mktgPortraitPlateRadius(MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT)}px`);
+    expect(plate?.style.padding).toBe(`${mktgPortraitPlateFit(outer).padding}px`);
+    expect(plate?.style.borderRadius).toBe(`${mktgPortraitPlateRadius(null, outer)}px`);
     const logo = plate?.querySelector<HTMLImageElement>('[data-testid="family-print-cover-logo"]');
     expect(logo?.getAttribute('src')).toBe('data:image/svg+xml,synthetic-two-colour');
     expect(logo?.style.filter).toBe('');
