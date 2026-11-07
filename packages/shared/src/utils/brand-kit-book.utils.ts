@@ -21,9 +21,11 @@ import {
 import { MKTG_PRINT_REVERSED_FILTER } from '../constants/mktg-print.constants';
 import {
   BrandKitBookView,
+  BrandKitChapters,
   BrandKitChapterSummary,
   BrandKitColorwayTile,
   BrandKitContrastGrade,
+  BrandKitDerivable,
   BrandKitContrastView,
   BrandKitInkCandidate,
   BrandKitLogoImage,
@@ -143,21 +145,34 @@ export function brandKitColorwayTiles(
   kit: BrandKitRevision,
   tint: string,
   logos: Record<BrandKitLogoSlot, BrandKitLogoImage | null>,
-  derivable = true
+  derivable: BrandKitDerivable = { lockup: true, symbol: true }
 ): BrandKitColorwayTile[] {
   const primary = logos.primary;
-  // A colorway the kit did not supply is derived from the primary only when that is one colour; else the tile says so.
+  // A colorway the kit did not supply is derived from the primary only when that is one ink; else the tile says so.
   const derived = (filter: string) =>
-    derivable ? { logo: primary, logoFilter: filter, missing: '' } : { logo: null, logoFilter: '', missing: BRAND_KIT_NOT_SUPPLIED };
+    derivable.lockup ? { logo: primary, logoFilter: filter, missing: '' } : { logo: null, logoFilter: '', missing: BRAND_KIT_NOT_SUPPLIED };
   const reversed = logos.reversed ? { logo: logos.reversed, logoFilter: '', missing: '' } : derived(MKTG_PRINT_REVERSED_FILTER);
-  // The symbol is never the supplied reversed lockup, so it always takes the tile's own filter.
+  // The symbol is never the supplied reversed lockup: it takes the tile's own filter when its own artwork is one ink.
+  const symbolFilter = (filter: string) => (derivable.symbol ? filter : '');
   const grounds = [
     { ground: 'white', light: true, logo: primary, logoFilter: '', symbolFilter: '', missing: '' },
-    { ground: kit.kit.dark, light: false, ...reversed, symbolFilter: MKTG_PRINT_REVERSED_FILTER },
+    { ground: kit.kit.dark, light: false, ...reversed, symbolFilter: symbolFilter(MKTG_PRINT_REVERSED_FILTER) },
     { ground: tint, light: true, logo: primary, logoFilter: '', symbolFilter: '', missing: '' },
-    { ground: 'white', light: true, ...derived('brightness(0)'), symbolFilter: 'brightness(0)' },
+    { ground: 'white', light: true, ...derived('brightness(0)'), symbolFilter: symbolFilter('brightness(0)') },
   ];
   return kit.chapters.logo.colorways.map((colorway, index) => ({ name: colorway.name, ...(grounds[index] ?? grounds[0]) }));
+}
+
+/**
+ * Which slots the book may derive a reversed or one-colour mark from by
+ * filter: the lockup from the primary file, the symbol from its own file or,
+ * cropped, from the primary. Each only when that artwork is one resolvable
+ * ink with no background (`brandKitSvgIsMonochrome`); a PNG never is.
+ */
+export function brandKitDerivable(files: BrandKitChapters['logo']['files']): BrandKitDerivable {
+  const lockup = !!files.primary?.svg && brandKitSvgIsMonochrome(files.primary.svg);
+  const symbol = files.symbol ? !!files.symbol.svg && brandKitSvgIsMonochrome(files.symbol.svg) : lockup;
+  return { lockup, symbol };
 }
 
 /** The plain line of a logo slot the kit has no file for, in the files table and on a tile the book cannot derive. */
@@ -359,7 +374,7 @@ export function buildBrandKitBookView(kit: BrandKitRevision, version?: number | 
     (Object.keys(kit.chapters.logo.files) as BrandKitLogoSlot[]).map((slot) => [slot, brandKitLogoImage(kit.chapters.logo.files[slot])])
   ) as BrandKitBookView['logos'];
   const monthYear = brandKitMonthYear(kit.generatedAt);
-  const derivable = !!kit.chapters.logo.files.primary?.svg && brandKitSvgIsMonochrome(kit.chapters.logo.files.primary.svg);
+  const derivable = brandKitDerivable(kit.chapters.logo.files);
   return {
     projectName: kit.projectName,
     projectCaps: kit.projectName.toUpperCase(),

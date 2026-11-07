@@ -1029,15 +1029,41 @@ describe('the book', () => {
     expect(brandKitSymbolImage({ primary: { ref: 'logo.png', svg: null }, stacked: null, symbol: null, reversed: null }, '0 0 60 60')).toBeNull();
   });
 
-  it('tells one-colour artwork, which a filter may reverse, from multi-colour artwork, which it would flatten', () => {
+  it('derives only from one resolvable ink with no background: default black counts, white marks are ignored, backgrounds, gradients, sheets and two inks are not derivable', () => {
+    const cases: [string, boolean][] = [
+      // One explicit fill.
+      ['<svg viewBox="0 0 10 10"><path fill="#4D4E4E" d="M0 0h10v10z"/></svg>', true],
+      // Default black only: an unpainted shape is black.
+      ['<svg viewBox="0 0 10 10"><path d="M0 0h10v10z"/><circle cx="5" cy="5" r="2"/></svg>', true],
+      // Default black beside one colour = two inks.
+      ['<svg viewBox="0 0 10 10"><path d="M0 0h5v10z"/><rect fill="#F37625" x="5" width="5" height="10"/></svg>', false],
+      // A white background rect under a black mark: inverting would set the mark in a white box.
+      ['<svg viewBox="0 0 10 10"><rect fill="#fff" width="10" height="10"/><path d="M2 2h6v6z"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><rect fill="white" width="100%" height="100%"/><path fill="#000" d="M2 2h6v6z"/></svg>', false],
+      // A white part of a mark (not the first shape, not the viewBox) is the ground a reversal removes.
+      ['<svg viewBox="0 0 10 10"><circle fill="#4D4E4E" cx="5" cy="5" r="5"/><path fill="#FFF" d="M4 4h2v2z"/></svg>', true],
+      // Stroke only.
+      ['<svg viewBox="0 0 10 10"><path fill="none" stroke="#4D4E4E" stroke-width="2" d="M0 0h10"/></svg>', true],
+      // A gradient, a pattern, currentColor: unresolvable.
+      ['<svg viewBox="0 0 10 10"><defs><linearGradient id="g"/></defs><rect fill="url(#g)" width="10" height="10"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path fill="currentColor" d="M0 0h10"/></svg>', false],
+      // A <style> sheet or a class attribute: the paint cannot be read from the markup.
+      ['<svg viewBox="0 0 10 10"><style>.a{fill:#4D4E4E}</style><path class="a" d="M0 0h10v10z"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path class="mark" d="M0 0h10v10z"/></svg>', false],
+      // Inherited paint: one ink through a group; a group ink beside an own ink is two.
+      ['<svg viewBox="0 0 10 10"><g fill="#4D4E4E"><path d="M0 0h5v5z"/><rect x="5" width="5" height="5"/></g></svg>', true],
+      ['<svg viewBox="0 0 10 10"><g fill="#4D4E4E"><path d="M0 0h5v5z"/><rect fill="#767576" x="5" width="5" height="5"/></g></svg>', false],
+      // Inline style paints read like attributes; none draws nothing.
+      ['<svg viewBox="0 0 10 10"><path style="fill: #4d4e4e; stroke: none" d="M0 0h10"/><rect style="fill:#4D4E4E" width="2" height="2"/></svg>', true],
+      // A <use> or an image cannot be resolved.
+      ['<svg viewBox="0 0 10 10"><defs><path id="p" d="M0 0h10"/></defs><use href="#p"/></svg>', false],
+      // The shared fixture lockup draws three inks.
+      [BRAND_KIT_FIXTURE_LOCKUP_SVG, false],
+      // Nothing drawn: nothing a filter could flatten.
+      ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"/>', true],
+    ];
+    for (const [svg, expected] of cases) expect(brandKitSvgIsMonochrome(svg), svg).toBe(expected);
     expect(brandKitSvgIsMonochrome(SVG)).toBe(true);
-    // Unpainted shapes are the one colour (black); white, none and currentColor are not colours of the mark.
-    expect(brandKitSvgIsMonochrome('<svg><path d="M0 0h1"/><rect fill="none" stroke="currentColor"/><circle fill="#FFF"/></svg>')).toBe(true);
-    expect(brandKitSvgIsMonochrome('<svg><path fill="#4D4E4E"/><rect style="fill: #4d4e4e; stroke: none"/></svg>')).toBe(true);
-    expect(brandKitSvgIsMonochrome('<svg><path fill="#4D4E4E"/><rect fill="#F37625"/></svg>')).toBe(false);
-    expect(brandKitSvgIsMonochrome('<svg><path fill="#4D4E4E"/><rect style="stroke:#F37625"/></svg>')).toBe(false);
-    expect(brandKitSvgIsMonochrome('<svg><defs><linearGradient id="g"/></defs><rect fill="url(#g)"/></svg>')).toBe(false);
-    expect(brandKitSvgIsMonochrome(BRAND_KIT_FIXTURE_LOCKUP_SVG)).toBe(false);
   });
 
   it('builds the Google Fonts link for the typeface and its weights, and the CSS stack with the site’s fallback', () => {

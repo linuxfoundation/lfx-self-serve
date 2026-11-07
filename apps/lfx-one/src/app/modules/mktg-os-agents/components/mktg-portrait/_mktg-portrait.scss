@@ -298,6 +298,14 @@ $pp-band-height: 4px;
   background: var(--pp-dark);
 }
 
+/* The white plate under full-colour artwork on a dark ground (the tile's radius; the padding is set to the clear space X). */
+.pp-plate {
+  display: inline-block;
+  border-radius: 10px;
+  background: var(--pp-white);
+  line-height: 0;
+}
+
 .pp-tile--mist {
   border: 0;
   background: var(--pp-mist);

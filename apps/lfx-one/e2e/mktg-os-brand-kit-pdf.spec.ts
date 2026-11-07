@@ -555,10 +555,19 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(colorways.getByTestId('brand-kit-colorway-missing')).toHaveCount(2);
     await expect(colorways.getByTestId('brand-kit-colorways-tiles').locator('img')).toHaveCount(2);
     expect(await colorways.getByTestId('brand-kit-colorways-tiles').locator('img[style*="filter"]').count()).toBe(0);
-    // The dark grounds draw the lockup in full colour, unfiltered: the cover and the dark partnership tile.
+    // The dark grounds draw the lockup in full colour, unfiltered, on the white plate padded by its height (the clear
+    // space X): the cover (84 px), the dark partnership tile (64 px) and the back cover (72 px).
     for (const img of await pageById(pages, 'cover').locator('img').all()) await expect(img).toHaveCSS('filter', 'none');
+    await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '84px');
+    await expect(pageById(pages, 'cover').getByTestId('mktg-portrait-plate')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     const partnershipDark = pageById(pages, 'logo-partnership').getByTestId('brand-kit-partnership-dark').locator('img');
     await expect(partnershipDark).toHaveCSS('filter', 'none');
+    await expect(pageById(pages, 'logo-partnership').getByTestId('brand-kit-partnership-dark').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '64px');
+    await expect(pageById(pages, 'back-cover').getByTestId('mktg-portrait-plate')).toHaveCSS('padding', '72px');
+    // The Logo system's dark tile says what it draws.
+    await expect(pageById(pages, 'logo-system').getByTestId('brand-kit-logo-system-tiles')).toContainText(
+      'On the dark · full color on a white plate (no reversed file)'
+    );
     // The cover strip's halves share one line: a long project name loses words with an ellipsis, never wraps at 10 px.
     const strip = pageById(pages, 'cover').getByTestId('mktg-portrait-cover-strip');
     const halves = await strip.locator('span').all();

@@ -41,6 +41,7 @@ import {
   brandKitPortraitMessageCard,
   brandKitPortraitSourcesFit,
   brandKitPortraitPaletteSource,
+  brandKitPortraitPlate,
   brandKitPortraitReadableSource,
   brandKitPortraitShare,
   brandKitPortraitSources,
@@ -71,11 +72,21 @@ describe('brandKitPortraitArtwork', () => {
     expect(brandKitPortraitArtwork(view, 'lockup')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '' });
     // The fixture's lockup is drawn in three colours: a filter would flatten it to one shape, so the dark grounds draw
     // it in full colour and the one-colour slot keeps it as it is.
-    expect(view.derivable).toBe(false);
-    expect(brandKitPortraitArtwork(view, 'lockup', 'reversed')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '' });
-    expect(brandKitPortraitArtwork(view, 'lockup', 'mono')?.filter).toBe('');
-    const mono = { ...view, derivable: true };
-    expect(brandKitPortraitArtwork(mono, 'lockup', 'reversed')?.filter).toBe('brightness(0) invert(1)');
+    expect(view.derivable).toEqual({ lockup: false, symbol: false });
+    // Reversed, it sits on the white plate (the kit's watch-out forbids full colour bare on a dark ground); one-colour, as it is.
+    expect(brandKitPortraitArtwork(view, 'lockup', 'reversed')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '', plate: true });
+    expect(brandKitPortraitArtwork(view, 'lockup', 'mono')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '' });
+    expect(brandKitPortraitPlate(view)).toBe(true);
+    // A supplied reversed file or a one-ink lockup needs no plate.
+    expect(brandKitPortraitPlate({ ...view, logos: { ...view.logos, reversed: { ref: 'r.svg', name: 'r.svg', src: SVG } } })).toBe(false);
+    expect(brandKitPortraitPlate({ ...view, derivable: { lockup: true, symbol: false } })).toBe(false);
+    expect(brandKitPortraitPlate({ ...view, logos: { ...view.logos, primary: null } })).toBe(false);
+    const mono = { ...view, derivable: { lockup: true, symbol: false } };
+    expect(brandKitPortraitArtwork(mono, 'lockup', 'reversed')).toEqual({
+      src: view.logos.primary?.src,
+      alt: 'Horizontal lockup',
+      filter: 'brightness(0) invert(1)',
+    });
     expect(brandKitPortraitArtwork(mono, 'lockup', 'mono')?.filter).toBe('brightness(0)');
   });
 
@@ -89,10 +100,15 @@ describe('brandKitPortraitArtwork', () => {
     expect(brandKitPortraitArtwork({ ...view, logos: { ...view.logos, stacked: { ref: 's.png', name: 's.png', src: null } } }, 'stacked')).toBeNull();
   });
 
-  it('filters the symbol the same way, from the symbol file or the crop', () => {
-    const withSymbol = { ...view, derivable: true, symbol: { ref: 'logo.svg', name: 'logo.svg', src: SVG } };
-    expect(brandKitPortraitArtwork(withSymbol, 'symbol', 'reversed')).toEqual({ src: SVG, alt: 'Symbol', filter: 'brightness(0) invert(1)' });
-    expect(brandKitPortraitArtwork({ ...withSymbol, derivable: false }, 'symbol', 'reversed')?.filter).toBe('');
+  it('filters the symbol by its own slot: a one-ink symbol beside a multi-colour lockup reverses, and the other way round never', () => {
+    const symbol = { ref: 'logo.svg', name: 'logo.svg', src: SVG };
+    const symbolOnly = { ...view, derivable: { lockup: false, symbol: true }, symbol };
+    expect(brandKitPortraitArtwork(symbolOnly, 'symbol', 'reversed')).toEqual({ src: SVG, alt: 'Symbol', filter: 'brightness(0) invert(1)' });
+    expect(brandKitPortraitArtwork(symbolOnly, 'lockup', 'reversed')?.filter).toBe('');
+    const lockupOnly = { ...view, derivable: { lockup: true, symbol: false }, symbol };
+    expect(brandKitPortraitArtwork(lockupOnly, 'symbol', 'reversed')).toEqual({ src: SVG, alt: 'Symbol', filter: '', plate: true });
+    expect(brandKitPortraitArtwork(lockupOnly, 'symbol', 'mono')?.filter).toBe('');
+    expect(brandKitPortraitArtwork(lockupOnly, 'lockup', 'mono')?.filter).toBe('brightness(0)');
   });
 });
 
@@ -103,7 +119,9 @@ describe('brandKitPortraitFiles', () => {
     expect(rows[0]).toEqual({ slot: 'primary', name: 'Horizontal lockup', format: 'SVG', variant: 'Full color', source: 'Supplied' });
     // The reversed slot says the book derives it only when it can (a one-colour primary); the fixture's is three colours.
     expect(rows[1]).toMatchObject({ format: '—', source: 'Not supplied' });
-    expect(brandKitPortraitFiles({ ...view, derivable: true })[1].source).toBe('Not supplied: this book derives it from the horizontal file');
+    expect(brandKitPortraitFiles({ ...view, derivable: { lockup: true, symbol: false } })[1].source).toBe(
+      'Not supplied: this book derives it from the horizontal file'
+    );
     expect(rows[2].source).toBe('Not supplied');
     expect(rows[3]).toMatchObject({ format: '—', source: 'Not supplied' });
     expect(JSON.stringify(rows)).not.toContain('logo.svg');
@@ -378,6 +396,13 @@ describe('the usage page’s cards', () => {
     expect(cards.map((card) => card.text)).toEqual([line, line, 'Project\u00a0One annual report 2026', 'New members join Project\u00a0One']);
     const foundation = brandKitPortraitUsageCards({ ...view, projectName: 'Agentic AI Foundation' });
     expect(foundation[3].text).toBe('New members join Agentic\u00a0AI\u00a0Foundation');
+    // A name that does not fit one line of the card at its size wraps as plain words ("Cloud Native Computing
+    // Foundatio" once overflowed the announcement header): the name is kept together only where it fits.
+    const cncf = brandKitPortraitUsageCards({ ...view, projectName: 'Cloud Native Computing Foundation' });
+    expect(cncf[3].text).toBe('New members join Cloud Native Computing\u00a0Foundation');
+    expect(cncf[2].text).toBe('Cloud Native Computing Foundation annual report');
+    expect(mktgPortraitLineFits('Cloud Native Computing Foundation', 308, 17, { weight: 500, family: view.type.family })).toBe(false);
+    expect(mktgPortraitLineFits('Agentic AI Foundation', 308, 17, { weight: 500, family: view.type.family })).toBe(true);
     // Without a recorded approval the report cover carries no year: never a made-up one.
     expect(brandKitPortraitUsageCards(view)[2].text).toBe('Project\u00a0One annual report');
     // The social card's ground and moment are the accent-moment rule's, not the record's word ("dark"): on this kit's

@@ -14,14 +14,18 @@ const BOOK: MktgPortraitBook = {
   firstPage: 1,
 };
 
-async function setup(logo = true, strip = { left: 'Synthetic project · a Linux Foundation project', right: 'synthetic.example · V4.0 · November 2026' }) {
+async function setup(
+  logo: boolean | 'plate' = true,
+  strip = { left: 'Synthetic project · a Linux Foundation project', right: 'synthetic.example · V4.0 · November 2026' }
+) {
   const brand = mktgPrintBrand(null);
+  const logoOnDark = logo === 'plate' && brand.logoOnDark ? { ...brand.logoOnDark, plate: true } : brand.logoOnDark;
   const fixture = TestBed.createComponent(MktgPortraitCoverComponent);
   fixture.componentRef.setInput('look', mktgPortraitLook(brand));
   fixture.componentRef.setInput('book', BOOK);
   fixture.componentRef.setInput('title', 'Brand Kit');
   fixture.componentRef.setInput('lede', 'Open standards. Logos, color, type and usage on one reference.');
-  fixture.componentRef.setInput('logo', logo ? brand.logoOnDark : null);
+  fixture.componentRef.setInput('logo', logo ? logoOnDark : null);
   fixture.componentRef.setInput('stripLeft', strip.left);
   fixture.componentRef.setInput('stripRight', strip.right);
   await fixture.whenStable();
@@ -64,12 +68,18 @@ describe('lfx-mktg-portrait-cover', () => {
     expect(strip?.classList.contains('pp-cover-strip--wrapped')).toBe(false);
   });
 
-  it('keeps the strip on one line by shortening a long project name with an ellipsis, the size unchanged', async () => {
+  it('keeps the strip on one line by dropping "· a Linux Foundation project" before a long name, then shortening the name with an ellipsis, the size unchanged', async () => {
+    const whole = await setup(true, {
+      left: 'Cloud Native Computing Foundation · a Linux Foundation project',
+      right: 'synthetic.example · V1.0 · October 2026',
+    });
+    const wholeHalves = Array.from(whole.page.querySelectorAll('[data-testid="mktg-portrait-cover-strip"] span'), (span) => span.textContent);
+    expect(wholeHalves).toEqual(['Cloud Native Computing Foundation', 'synthetic.example · V1.0 · October 2026']);
     const left = 'Synthetic Cloud Native Computing Foundation for Everything (SCNCFE) · a Linux Foundation project';
     const { page } = await setup(true, { left, right: 'synthetic.example · V1.0 · October 2026' });
     const strip = page.querySelector<HTMLElement>('[data-testid="mktg-portrait-cover-strip"]');
     const halves = Array.from(strip?.querySelectorAll('span') ?? []).map((span) => span.textContent);
-    expect(halves[0]).toMatch(/^Synthetic Cloud.*… · a Linux Foundation project$/);
+    expect(halves[0]).toMatch(/^Synthetic Cloud.*…$/);
     expect(halves[1]).toBe('synthetic.example · V1.0 · October 2026');
     expect(strip?.parentElement?.style.top).toBe('984px');
     expect(strip?.classList.contains('pp-cover-strip--wrapped')).toBe(false);
@@ -80,5 +90,15 @@ describe('lfx-mktg-portrait-cover', () => {
     expect(page.querySelector('[data-testid="mktg-portrait-cover-logo"]')).toBeNull();
     expect(page.querySelector('img')).toBeNull();
     expect(page.textContent).not.toContain('[');
+  });
+
+  it('sets a full-colour lockup the kit cannot reverse on the white plate, padded by its clear space X (the 84 px height); none for a reversed logo', async () => {
+    const plain = await setup(true);
+    expect(plain.page.querySelector('[data-testid="mktg-portrait-plate"]')).toBeNull();
+    const plated = await setup('plate');
+    const plate = plated.page.querySelector<HTMLElement>('[data-testid="mktg-portrait-plate"]');
+    expect(plate?.classList.contains('pp-plate')).toBe(true);
+    expect(plate?.style.padding).toBe('84px');
+    expect(plate?.querySelector('[data-testid="mktg-portrait-cover-logo"]')).not.toBeNull();
   });
 });

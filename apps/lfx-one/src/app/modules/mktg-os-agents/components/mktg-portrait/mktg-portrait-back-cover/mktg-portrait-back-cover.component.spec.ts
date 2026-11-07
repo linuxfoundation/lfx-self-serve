@@ -14,13 +14,14 @@ const BOOK: MktgPortraitBook = {
   firstPage: 1,
 };
 
-async function setup(logo = true) {
+async function setup(logo: boolean | 'plate' = true) {
   const brand = mktgPrintBrand(null);
+  const logoOnDark = logo === 'plate' && brand.logoOnDark ? { ...brand.logoOnDark, plate: true } : brand.logoOnDark;
   const fixture = TestBed.createComponent(MktgPortraitBackCoverComponent);
   fixture.componentRef.setInput('look', mktgPortraitLook(brand));
   fixture.componentRef.setInput('book', BOOK);
   fixture.componentRef.setInput('page', 17);
-  fixture.componentRef.setInput('logo', logo ? brand.logoOnDark : null);
+  fixture.componentRef.setInput('logo', logo ? logoOnDark : null);
   fixture.componentRef.setInput('line', 'Open standards for agents');
   fixture.componentRef.setInput('url', 'synthetic.example');
   fixture.componentRef.setInput('version', 'V4.0 · November 2026');
@@ -65,5 +66,15 @@ describe('lfx-mktg-portrait-back-cover', () => {
     const { page } = await setup(false);
     expect(page.querySelector('img')).toBeNull();
     expect(page.querySelector('[data-testid="mktg-portrait-back-cover-line"]')).not.toBeNull();
+  });
+
+  it('sets a full-colour lockup the kit cannot reverse on the white plate, padded by its clear space X (the 72 px height); none for a reversed logo', async () => {
+    const plain = await setup(true);
+    expect(plain.page.querySelector('[data-testid="mktg-portrait-plate"]')).toBeNull();
+    const plated = await setup('plate');
+    const plate = plated.page.querySelector<HTMLElement>('[data-testid="mktg-portrait-plate"]');
+    expect(plate?.classList.contains('pp-plate')).toBe(true);
+    expect(plate?.style.padding).toBe('72px');
+    expect(plate?.querySelector('[data-testid="mktg-portrait-back-cover-logo"]')).not.toBeNull();
   });
 });

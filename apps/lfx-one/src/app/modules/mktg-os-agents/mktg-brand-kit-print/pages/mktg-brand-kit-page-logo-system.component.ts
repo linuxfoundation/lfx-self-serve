@@ -48,7 +48,7 @@ export class MktgBrandKitPageLogoSystemComponent extends MktgBrandKitPageBase {
    */
   protected readonly reversedCaption = computed(() => {
     if (this.reversedSupplied()) return 'Reversed · supplied file';
-    return this.view().derivable ? 'Reversed · derived from the horizontal file' : 'On the dark · the full-color lockup (no reversed file)';
+    return this.view().derivable.lockup ? 'Reversed · derived from the horizontal file' : 'On the dark · full color on a white plate (no reversed file)';
   });
   protected readonly hasStacked = computed(() => !!this.view().logos.stacked?.src);
   /** The intro at most three lines of its 600 px: whole sentences that fit, or the first shortened (`brandKitPortraitIntro`). */

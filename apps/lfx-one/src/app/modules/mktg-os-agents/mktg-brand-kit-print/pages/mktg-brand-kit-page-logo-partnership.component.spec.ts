@@ -21,8 +21,9 @@ describe('the Partnership lockup page', () => {
     // The 96 px bar is the grammar class `kp-bar--partnership` on both tiles (no Tailwind utility inside a frame).
     expect(light?.querySelector('.kp-bar')?.classList.contains('kp-bar--partnership')).toBe(true);
     expect(dark?.querySelector('.kp-bar')?.classList.contains('kp-bar--partnership')).toBe(true);
-    // The three-colour fixture lockup is never filtered: the dark tile draws it in full colour.
+    // The three-colour fixture lockup is never filtered: the dark tile draws it in full colour on the white plate.
     expect(dark?.querySelector<HTMLElement>('img')?.style.filter).toBe('');
+    expect(dark?.querySelector<HTMLElement>('.pp-plate')?.style.padding).toBe('64px');
     expect(light?.querySelector('.kp-partner')?.textContent).toBe('Partner logo');
     expect(light?.parentElement?.querySelector('.pp-cap')?.textContent).toBe('On light grounds · Charcoal bar');
     expect(dark?.parentElement?.querySelector('.pp-cap')?.textContent).toBe('On dark grounds · white bar');

@@ -19,9 +19,13 @@ describe('the Logo system page', () => {
     // The synthetic kit has a primary file only: no symbol tile (no symbol, no crop), the derived reversed tile, no stacked tile.
     const tiles = frame.querySelector('[data-testid="brand-kit-logo-system-tiles"]');
     expect(tiles?.querySelectorAll('.pp-tile')).toHaveLength(1);
-    // The fixture's three-colour lockup is drawn on the dark as it is (a filter would flatten it), and the caption says so.
-    expect(tiles?.querySelector<HTMLElement>('.pp-tile--dark img')?.style.filter).toBe('');
-    expect(tiles?.textContent).toContain('On the dark · the full-color lockup (no reversed file)');
+    // The fixture's three-colour lockup is drawn on the dark as it is (a filter would flatten it), on the white plate
+    // padded by the clear space X (the drawn height), and the caption says so.
+    const darkTile = tiles?.querySelector<HTMLElement>('.pp-tile--dark');
+    expect(darkTile?.querySelector<HTMLElement>('img')?.style.filter).toBe('');
+    expect(darkTile?.querySelector<HTMLElement>('.pp-plate[data-testid="mktg-portrait-plate"]')?.style.padding).toBe('40px');
+    expect(darkTile?.querySelector('img')?.style.height).toBe('40px');
+    expect(tiles?.textContent).toContain('On the dark · full color on a white plate (no reversed file)');
     const rows = Array.from(frame.querySelectorAll('[data-testid="brand-kit-logo-system-files"] tbody tr'), (row) => wordsOf(row));
     expect(rows).toEqual([
       'Horizontal lockup SVG Full color Supplied',
@@ -63,7 +67,7 @@ describe('the Logo system page', () => {
     // lockup as it is (a reversed PNG cannot be drawn, and a filter would flatten the mark).
     expect(tiles?.querySelectorAll('.pp-tile')).toHaveLength(1);
     expect(tiles?.textContent).not.toContain('Symbol ·');
-    expect(tiles?.textContent).toContain('On the dark · the full-color lockup (no reversed file)');
+    expect(tiles?.textContent).toContain('On the dark · full color on a white plate (no reversed file)');
     expect(tiles?.textContent).not.toContain('supplied file');
     expect(tiles?.querySelector<HTMLElement>('.pp-tile--dark img')?.style.filter).toBe('');
     // The files table lists the uploads as supplied, in their format, without a file name.
@@ -71,6 +75,25 @@ describe('the Logo system page', () => {
     expect(rows).toContain('Reversed (white) PNG White Supplied');
     expect(rows).toContain('Symbol PNG Full color Supplied');
     expect(frame.textContent).not.toContain('project-one-');
+  });
+
+  it('draws no plate when the reversed file is supplied, nor when a one-ink lockup reverses by filter', async () => {
+    const supplied = await mountBrandKitPage(MktgBrandKitPageLogoSystemComponent, 'logo-system', (view) => ({
+      ...view,
+      logos: { ...view.logos, reversed: { ref: 'reversed.svg', name: 'reversed.svg', src: SVG } },
+    }));
+    const suppliedDark = supplied.frame.querySelector<HTMLElement>('[data-testid="brand-kit-logo-system-tiles"] .pp-tile--dark');
+    expect(suppliedDark?.querySelector('.pp-plate')).toBeNull();
+    expect(suppliedDark?.querySelector<HTMLElement>('img')?.style.filter).toBe('');
+    expect(supplied.frame.textContent).toContain('Reversed · supplied file');
+    const derived = await mountBrandKitPage(MktgBrandKitPageLogoSystemComponent, 'logo-system', (view) => ({
+      ...view,
+      derivable: { lockup: true, symbol: true },
+    }));
+    const derivedDark = derived.frame.querySelector<HTMLElement>('[data-testid="brand-kit-logo-system-tiles"] .pp-tile--dark');
+    expect(derivedDark?.querySelector('.pp-plate')).toBeNull();
+    expect(derivedDark?.querySelector<HTMLElement>('img')?.style.filter).toBe('brightness(0) invert(1)');
+    expect(derived.frame.textContent).toContain('Reversed · derived from the horizontal file');
   });
 
   it('prints one line for a kit with no logo files, under the intro, and no tile or table', async () => {

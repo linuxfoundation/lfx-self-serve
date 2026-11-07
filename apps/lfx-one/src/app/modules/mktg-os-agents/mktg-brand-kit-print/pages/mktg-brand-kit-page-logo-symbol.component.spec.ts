@@ -43,15 +43,26 @@ describe('the Symbol & symbol in shape page', () => {
     );
   });
 
-  it('derives the reversed and one-colour variants by filter from a one-colour kit', async () => {
+  it('derives the reversed and one-colour variants by filter from a one-ink symbol, whatever the lockup is drawn in', async () => {
     const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
       ...view,
-      derivable: true,
+      derivable: { lockup: false, symbol: true },
       symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
     }));
     const variants = frame.querySelector('[data-testid="brand-kit-symbol-variants"]');
     expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['', 'brightness(0) invert(1)', 'brightness(0)']);
     expect(variants?.querySelector('[data-testid="brand-kit-symbol-variant-missing"]')).toBeNull();
+  });
+
+  it('says "Not supplied" on the two variant tiles for a multi-colour symbol even when the lockup is one ink', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
+      ...view,
+      derivable: { lockup: true, symbol: false },
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
+    }));
+    const variants = frame.querySelector('[data-testid="brand-kit-symbol-variants"]');
+    expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['']);
+    expect(variants?.querySelectorAll('[data-testid="brand-kit-symbol-variant-missing"]')).toHaveLength(2);
   });
 
   it('keeps the rule without the AA figure when white reads on the accent', async () => {

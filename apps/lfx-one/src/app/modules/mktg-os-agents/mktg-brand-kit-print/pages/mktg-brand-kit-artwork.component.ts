@@ -10,7 +10,9 @@ import { brandKitPortraitArtwork } from '@lfx-one/shared/utils';
  * The kit's artwork at a height, as the mock's `lockup(h, mode)` and
  * `mark(h, mode)` draw it: the horizontal lockup, the symbol or the stacked
  * lockup, full colour, reversed or one-colour black. Nothing is drawn when
- * the kit has no file for the slot.
+ * the kit has no file for the slot. Reversed artwork the book cannot derive
+ * (no reversed file, more than one ink) is drawn in full colour on the white
+ * plate (`.pp-plate`), padded by the kit's clear space X: the drawn height.
  */
 @Component({
   selector: 'lfx-mktg-brand-kit-artwork',

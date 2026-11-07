@@ -4,7 +4,9 @@
 <lfx-mktg-portrait-page [look]="look()" [book]="book()" pageId="back-cover" [page]="page()" section="Back cover" [dark]="true" [bare]="true">
   @if (logo(); as logo) {
     <div class="pp-back-lockup" [lfxPpRect]="lockupRect()">
-      <img class="h-[72px] w-auto" [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" data-testid="mktg-portrait-back-cover-logo" />
+      <span [class.pp-plate]="logo.plate" [style.padding.px]="logo.plate ? 72 : null" [attr.data-testid]="logo.plate ? 'mktg-portrait-plate' : null">
+        <img class="h-[72px] w-auto" [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" data-testid="mktg-portrait-back-cover-logo" />
+      </span>
     </div>
   }
   <div [lfxPpRect]="lineRect()">

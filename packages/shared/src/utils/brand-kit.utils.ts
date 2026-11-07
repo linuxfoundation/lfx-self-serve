@@ -1307,39 +1307,97 @@ export function brandKitPageNumber(number: number): string {
   return String(number).padStart(2, '0');
 }
 
-/** Paint values that are not a colour of the artwork: nothing, the text colour, or white (the ground a reversal removes). */
-const BRAND_KIT_SVG_UNCOLORED_PAINTS = new Set([
-  'none',
-  'transparent',
-  'currentcolor',
-  'inherit',
-  'white',
-  '#fff',
-  '#ffffff',
-  'rgb(255,255,255)',
-  'rgb(255, 255, 255)',
-]);
+/** The SVG elements that paint: each takes a fill (black by default) and a stroke (none by default). */
+const BRAND_KIT_SVG_SHAPES = new Set(['path', 'rect', 'circle', 'ellipse', 'polygon', 'polyline', 'line', 'text', 'tspan']);
+
+/** Elements whose paint the detector cannot resolve from the markup alone: artwork using them is never derived from. */
+const BRAND_KIT_SVG_UNRESOLVABLE = new Set(['style', 'use', 'image', 'mask', 'filter', 'pattern', 'lineargradient', 'radialgradient', 'foreignobject']);
+
+/** Paint values that draw nothing. */
+const BRAND_KIT_SVG_NO_PAINT = new Set(['none', 'transparent']);
+
+/** Paint values that are white, the ground a reversal removes (ignorable on a mark, a background when they cover the viewBox). */
+const BRAND_KIT_SVG_WHITE = new Set(['white', '#fff', '#ffffff', 'rgb(255,255,255)', 'rgb(255, 255, 255)']);
+
+/** One paint of an element: its `fill`/`stroke` attribute, else its inline style's, else undefined (inherit). */
+function brandKitSvgPaint(attributes: string, property: 'fill' | 'stroke'): string | undefined {
+  const attribute = new RegExp(`(?:^|\\s)${property}\\s*=\\s*["']([^"']*)["']`, 'i').exec(attributes);
+  if (attribute) return attribute[1].trim().toLowerCase();
+  const style = /(?:^|\s)style\s*=\s*["']([^"']*)["']/i.exec(attributes);
+  if (!style) return undefined;
+  const declaration = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i').exec(style[1]);
+  return declaration ? declaration[1].trim().toLowerCase() : undefined;
+}
+
+/** A numeric attribute (`width="120"`, `width="100%"` read as the whole), or null. */
+function brandKitSvgLength(attributes: string, name: string, whole: number): number | null {
+  const match = new RegExp(`(?:^|\\s)${name}\\s*=\\s*["']\\s*([0-9.]+)(%?)[^"']*["']`, 'i').exec(attributes);
+  if (!match) return null;
+  return match[2] ? (Number(match[1]) / 100) * whole : Number(match[1]);
+}
 
 /**
- * True when an SVG is drawn in one colour (its `fill`/`stroke` attributes and
- * inline `fill:`/`stroke:` styles name at most one paint besides none, white
- * and currentColor; unpainted shapes count as that one colour, black), so a
- * reversed or one-colour mark can be derived from it by a CSS filter. A
- * multi-colour artwork (two paints, or a gradient) flattens under such a
- * filter to one shape and loses its mark: the book never derives from it.
+ * True when an SVG is drawn in one resolvable ink and has no background, so
+ * a reversed or one-colour mark can be derived from it by a CSS filter.
+ *
+ * Derivable means: one resolvable ink, no background.
+ * - Every painting element (path, rect, circle, ellipse, polygon, polyline,
+ *   line, text) is read with its fill and stroke: its own attribute or
+ *   inline style, else the nearest ancestor's (`<g fill="…">` inherits),
+ *   else SVG's initial values, a black fill and no stroke. The default black
+ *   counts as an ink.
+ * - `none` and `transparent` draw nothing. White is the ground a reversal
+ *   removes, so a white part of a mark is ignored, but a white shape covering
+ *   the viewBox (the first shape, or a rect the viewBox's size) is a
+ *   background: inverting it would set the mark in a white box, so the
+ *   artwork is not derivable.
+ * - Gradients, patterns, any `url(#…)` paint, `currentColor`, `<use>`,
+ *   images, masks, filters, a `<style>` sheet or a `class` attribute cannot
+ *   be resolved from the markup: not derivable, conservatively.
+ * - Two inks flatten to one shape under a filter: not derivable.
  */
 export function brandKitSvgIsMonochrome(svg: string): boolean {
-  const paints = new Set<string>();
-  const attribute = /\b(?:fill|stroke)\s*=\s*["']([^"']*)["']/gi;
-  const style = /\b(?:fill|stroke)\s*:\s*([^;"'}]+)/gi;
-  for (const regex of [attribute, style]) {
-    for (let match = regex.exec(svg); match !== null; match = regex.exec(svg)) {
-      const paint = match[1].trim().toLowerCase();
-      if (!paint || BRAND_KIT_SVG_UNCOLORED_PAINTS.has(paint)) continue;
-      if (paint.startsWith('url(')) return false;
-      paints.add(paint);
-      if (paints.size > 1) return false;
+  const viewBox = /viewBox\s*=\s*["']\s*([-0-9.]+)[\s,]+([-0-9.]+)[\s,]+([0-9.]+)[\s,]+([0-9.]+)/i.exec(svg);
+  const viewWidth = viewBox ? Number(viewBox[3]) : null;
+  const viewHeight = viewBox ? Number(viewBox[4]) : null;
+  const inks = new Set<string>();
+  const inherited: { fill?: string; stroke?: string }[] = [{}];
+  let shapes = 0;
+  const tag = /<(\/?)([a-zA-Z][\w:-]*)([^>]*?)(\/?)>/g;
+  for (let match = tag.exec(svg); match !== null; match = tag.exec(svg)) {
+    const [, closing, rawName, attributes, selfClosing] = match;
+    const name = rawName.toLowerCase();
+    if (closing) {
+      if (inherited.length > 1) inherited.pop();
+      continue;
     }
+    if (BRAND_KIT_SVG_UNRESOLVABLE.has(name) || /(?:^|\s)class\s*=/i.test(attributes)) return false;
+    const parent = inherited[inherited.length - 1];
+    const own = { fill: brandKitSvgPaint(attributes, 'fill') ?? parent.fill, stroke: brandKitSvgPaint(attributes, 'stroke') ?? parent.stroke };
+    if (BRAND_KIT_SVG_SHAPES.has(name)) {
+      shapes += 1;
+      const paints: [string, boolean][] = [
+        [own.fill ?? 'black', true],
+        [own.stroke ?? 'none', false],
+      ];
+      for (const [paint, isFill] of paints) {
+        if (BRAND_KIT_SVG_NO_PAINT.has(paint)) continue;
+        if (paint.startsWith('url(') || paint === 'currentcolor' || paint === 'inherit') return false;
+        if (BRAND_KIT_SVG_WHITE.has(paint)) {
+          if (!isFill) continue;
+          const coversViewBox =
+            name === 'rect' && viewWidth !== null && viewHeight !== null
+              ? (brandKitSvgLength(attributes, 'width', viewWidth) ?? 0) >= viewWidth &&
+                (brandKitSvgLength(attributes, 'height', viewHeight) ?? 0) >= viewHeight
+              : false;
+          if (shapes === 1 || coversViewBox) return false;
+          continue;
+        }
+        inks.add(paint);
+        if (inks.size > 1) return false;
+      }
+    }
+    if (!selfClosing) inherited.push(own);
   }
   return true;
 }

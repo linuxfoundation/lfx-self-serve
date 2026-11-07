@@ -14,7 +14,9 @@ import {
   brandKitBestInkOn,
   brandKitBuiltFrom,
   brandKitChapterSummaries,
+  brandKitColorwayTiles,
   brandKitContrastRatio,
+  brandKitDerivable,
   brandKitFoundIn,
   brandKitInkOnAccent,
   brandKitLabelInk,
@@ -22,7 +24,8 @@ import {
   brandKitRatioLabel,
   buildBrandKitBookView,
 } from './brand-kit-book.utils';
-import { brandKitLogoFileName } from './brand-kit.utils';
+import { brandKitLogoFileName, brandKitLogoImage } from './brand-kit.utils';
+import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
 
 /** A logo uploaded to a CDN that names files by a content hash and the image size: one long unbroken token. */
 const CDN_LOGO_URL = 'https://cdn.sanity.io/images/p4x9k2m1/production/0f3e9c2b8a7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f-838x203.svg';
@@ -210,7 +213,7 @@ describe('the book’s view model', () => {
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><rect fill="#1D4ED8" width="3" height="3"/><path fill="#fff" d="M1 1h1v1z"/><rect fill="#111827" x="4" width="6" height="3"/></svg>';
     const primary = { ref: 'orbit-horizontal.svg', svg: twoColours };
     const view = buildBrandKitBookView(withColorways(kitWith({ primary })));
-    expect(view.derivable).toBe(false);
+    expect(view.derivable).toEqual({ lockup: false, symbol: false });
     expect(view.colorways.map((tile) => [tile.logo?.name ?? null, tile.logoFilter, tile.missing])).toEqual([
       ['orbit-horizontal.svg', '', ''],
       [null, '', 'Not supplied'],
@@ -221,7 +224,32 @@ describe('the book’s view model', () => {
     const supplied = buildBrandKitBookView(withColorways(kitWith({ primary, reversed: { ref: 'orbit-reversed.svg', svg: SVG } }))).colorways[1];
     expect([supplied.logo?.name, supplied.logoFilter, supplied.missing]).toEqual(['orbit-reversed.svg', '', '']);
     // The family's and the document's print look reverse by filter only a one-colour primary.
-    expect(buildBrandKitBookView(kitWith({ primary: { ref: 'one.svg', svg: SVG } })).derivable).toBe(true);
+    expect(buildBrandKitBookView(kitWith({ primary: { ref: 'one.svg', svg: SVG } })).derivable).toEqual({ lockup: true, symbol: true });
+  });
+
+  it('reads derivability per slot: the symbol from its own file, else from the primary it is cropped out of', () => {
+    const twoColours =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><rect fill="#1D4ED8" width="3" height="3"/><rect fill="#111827" x="4" width="6" height="3"/></svg>';
+    const one = { ref: 'one.svg', svg: SVG };
+    const two = { ref: 'two.svg', svg: twoColours };
+    // A one-ink primary with a multi-colour symbol: the lockup reverses by filter, the symbol never.
+    expect(brandKitDerivable({ primary: one, reversed: null, symbol: two, stacked: null })).toEqual({ lockup: true, symbol: false });
+    // A multi-colour primary with a one-ink symbol: the symbol reverses by filter, the lockup never.
+    expect(brandKitDerivable({ primary: two, reversed: null, symbol: one, stacked: null })).toEqual({ lockup: false, symbol: true });
+    // No symbol file: the symbol is the primary's crop and follows it.
+    expect(brandKitDerivable({ primary: one, reversed: null, symbol: null, stacked: null })).toEqual({ lockup: true, symbol: true });
+    // A PNG cannot be read: never derived from.
+    expect(brandKitDerivable({ primary: one, reversed: null, symbol: { ref: 's.png', svg: null }, stacked: null })).toEqual({ lockup: true, symbol: false });
+    expect(brandKitDerivable({ primary: null, reversed: null, symbol: null, stacked: null })).toEqual({ lockup: false, symbol: false });
+    // The colorway tiles' symbol filter follows the symbol slot alone.
+    const logos = { primary: brandKitLogoImage(one), reversed: null, symbol: brandKitLogoImage(two), stacked: null };
+    const tiles = brandKitColorwayTiles(brandKitTestRevision(), '#eee', logos, { lockup: true, symbol: false });
+    expect(tiles.map((tile) => [tile.logoFilter, tile.symbolFilter, tile.missing])).toEqual([
+      ['', '', ''],
+      ['brightness(0) invert(1)', '', ''],
+      ['', '', ''],
+      ['brightness(0)', '', ''],
+    ]);
   });
 
   it('says where each palette value was found without a raw URL: the logo by name, a stylesheet by its site', () => {
