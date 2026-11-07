@@ -38,12 +38,9 @@ export class MktgBrandKitPageLogoColorwaysComponent extends MktgBrandKitPageBase
       .map((tile, index) => ({ ...tile, caption: (captions[index] ?? captions[2])(tile.name) }))
       .filter((tile) => !!tile.logo?.src || !!tile.missing);
   });
-  /**
-   * The rules as `name — logo on ground.`: every row carries its description (the list reads as label and rule, so
-   * the first row is not the odd one out); only the ground is left out of the clause when the name says it already.
-   */
+  /** The rules as `name — logo on ground.`, the dash and its clause left out when the name already says them (the ground printed once). */
   protected readonly rules = computed(() =>
-    this.view().logo.colorways.map((rule) => ({ name: rule.name, tail: ` — ${mktgPortraitWithTail(rule.logo, ' ', `on ${rule.ground}`)}` }))
+    this.view().logo.colorways.map((rule) => ({ name: rule.name, tail: mktgPortraitTailFor(rule.name, ' — ', `${rule.logo} on ${rule.ground}`) }))
   );
   /** The lead's three clauses, each the colorway's name and its ground unless the name says it already. */
   protected readonly intro = computed(() => {

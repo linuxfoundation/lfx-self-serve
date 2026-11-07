@@ -1350,10 +1350,12 @@ function brandKitSvgLength(attributes: string, name: string, whole: number): num
  *   else SVG's initial values, a black fill and no stroke. The default black
  *   counts as an ink.
  * - `none` and `transparent` draw nothing. White is the ground a reversal
- *   removes, so a white part of a mark is ignored, but a white shape covering
- *   the viewBox (the first shape, or a rect the viewBox's size) is a
- *   background: inverting it would set the mark in a white box, so the
- *   artwork is not derivable.
+ *   removes, so a white part of a mark is ignored, but a rendered rect the
+ *   viewBox's size, in any paint, under or over any other mark is a
+ *   background and a second ink: inverting it would set the mark in a box,
+ *   so the artwork is not derivable (the ruling: supplied file, else derived
+ *   from one ink, else the white plate; nothing is ever stripped from a
+ *   copy). A lone full-canvas rect is one ink.
  * - Gradients, patterns, any `url(#…)` paint, `currentColor`, `<use>`,
  *   images, a `mask` or `filter` on a shape, a `<style>` sheet or a `class`
  *   attribute cannot be resolved from the markup: not derivable,
@@ -1369,7 +1371,9 @@ export function brandKitSvgIsMonochrome(svg: string): boolean {
   const viewHeight = viewBox ? Number(viewBox[4]) : null;
   const inks = new Set<string>();
   const inherited: { fill?: string; stroke?: string }[] = [{}];
-  let shapes = 0;
+  // Painted shapes: full-canvas rects (backgrounds) and the marks drawn beside them.
+  let backgrounds = 0;
+  let marks = 0;
   // Open elements whose subtree is not rendered where it stands; their paints are skipped until they close.
   let unrendered = 0;
   const tag = /<(\/?)([a-zA-Z][\w:-]*)([^>]*?)(\/?)>/g;
@@ -1390,7 +1394,7 @@ export function brandKitSvgIsMonochrome(svg: string): boolean {
     const parent = inherited[inherited.length - 1];
     const own = { fill: brandKitSvgPaint(attributes, 'fill') ?? parent.fill, stroke: brandKitSvgPaint(attributes, 'stroke') ?? parent.stroke };
     if (BRAND_KIT_SVG_SHAPES.has(name)) {
-      shapes += 1;
+      let painted = false;
       const paints: [string, boolean][] = [
         [own.fill ?? 'black', true],
         [own.stroke ?? 'none', false],
@@ -1398,19 +1402,22 @@ export function brandKitSvgIsMonochrome(svg: string): boolean {
       for (const [paint, isFill] of paints) {
         if (BRAND_KIT_SVG_NO_PAINT.has(paint)) continue;
         if (paint.startsWith('url(') || paint === 'currentcolor' || paint === 'inherit') return false;
-        if (BRAND_KIT_SVG_WHITE.has(paint)) {
-          if (!isFill) continue;
-          const coversViewBox =
-            name === 'rect' && viewWidth !== null && viewHeight !== null
-              ? (brandKitSvgLength(attributes, 'width', viewWidth) ?? 0) >= viewWidth &&
-                (brandKitSvgLength(attributes, 'height', viewHeight) ?? 0) >= viewHeight
-              : false;
-          if (shapes === 1 || coversViewBox) return false;
+        painted = true;
+        // A rendered rect the viewBox's size is a background whatever its paint: a second ink under any mark.
+        const coversViewBox =
+          isFill && name === 'rect' && viewWidth !== null && viewHeight !== null
+            ? (brandKitSvgLength(attributes, 'width', viewWidth) ?? 0) >= viewWidth && (brandKitSvgLength(attributes, 'height', viewHeight) ?? 0) >= viewHeight
+            : false;
+        if (coversViewBox) {
+          backgrounds += 1;
           continue;
         }
+        if (BRAND_KIT_SVG_WHITE.has(paint)) continue;
         inks.add(paint);
         if (inks.size > 1) return false;
       }
+      if (painted) marks += 1;
+      if (backgrounds > 0 && marks > backgrounds) return false;
     }
     if (!selfClosing) inherited.push(own);
   }

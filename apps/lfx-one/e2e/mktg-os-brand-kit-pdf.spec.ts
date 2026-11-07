@@ -330,9 +330,17 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const imagery = pageById(pages, 'visual-imagery');
     expect(await placement(imagery, imagery.getByTestId('brand-kit-imagery-ground'))).toEqual({ x: 56, y: 220, width: 704 });
     await expect(imagery.getByTestId('brand-kit-imagery-elements').getByTestId('brand-kit-imagery-element')).toHaveCount(3);
-    await expect(imagery.locator('[data-testid="brand-kit-imagery-element"][data-element="callout"]')).toHaveCSS('background-color', rgb(kit.kit.accent));
-    await expect(imagery.locator('[data-testid="brand-kit-imagery-element"][data-element="callout"]')).toHaveCSS('color', rgb(kit.kit.dark));
-    await expect(imagery.getByTestId('brand-kit-imagery-callout-caption')).toContainText('text in Charcoal (white on Orange fails AA, 2.8:1)');
+    // The call-out is inked by the shared rule: no palette colour reaches AA on this kit's Orange (Charcoal 2.9:1,
+    // White 2.8:1, Mid gray 1.6:1), so the card keeps a white ground, Charcoal text and the accent as its 6 px top
+    // rule, and the caption says why.
+    const callout = imagery.locator('[data-testid="brand-kit-imagery-element"][data-element="callout"]');
+    await expect(callout).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await expect(callout).toHaveCSS('color', rgb(kit.kit.dark));
+    await expect(callout).toHaveCSS('border-top-color', rgb(kit.kit.accent));
+    await expect(callout).toHaveCSS('border-top-width', '6px');
+    await expect(imagery.getByTestId('brand-kit-imagery-callout-caption')).toContainText(
+      'the accent as a top rule; no palette color reaches AA on Orange (Charcoal 2.9:1 at best)'
+    );
     await expect(imagery.getByTestId('brand-kit-imagery-avoid').locator('li')).toHaveText(kit.chapters.visual.imagery.avoid);
     // On paper the ground's glow prints at the stronger alpha (the editor's p13): the print token, not the screen's.
     // (0x88 = 0.533 alpha on the kit's accent, as the engine serializes the gradient.)
@@ -476,10 +484,11 @@ test.describe('Brand kit PDF: the portrait book', () => {
       const label = `${print.paper} headers ${print.headers} background ${print.background}`;
       // The paper is the page box (the grammar's `size: auto`), never a Letter box scaled onto A4.
       const paper = MKTG_PORTRAIT_PAPERS[print.paper === 'A4' ? 'a4' : 'letter'];
-      // Chrome's A4 page box is 794.56 CSS px against 210 mm's 793.70: within 1 px of the paper, a Letter box scaled
-      // onto A4 would be 22 px off.
-      expect(Math.abs(print.box.width - paper.width), label).toBeLessThan(1);
-      expect(Math.abs(print.box.height - paper.height), label).toBeLessThan(1);
+      // Chrome reports its A4 page box as 794.56 × 1122.5 CSS px against 210 × 297 mm's 793.70 × 1122.52, and Letter
+      // as 816 × 1056 exactly: within 2 px of the paper's own box on both axes; a Letter box scaled onto A4 would be
+      // 22 px off in width and 70 px in height, so the tolerance still proves the paper.
+      expect(Math.abs(print.box.width - paper.width), label).toBeLessThan(2);
+      expect(Math.abs(print.box.height - paper.height), label).toBeLessThan(2);
       expect(print.pages, label).toBe(planned);
       expect(print.blank, label).toEqual([]);
       // The browser's header (date · title) and footer (url · n/N) never reach the sheet: a page's text with them on is

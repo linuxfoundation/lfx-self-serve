@@ -39,6 +39,8 @@ describe('the Typography page', () => {
     // size and leading, and a step whose sample would not fit its line (the brand line at 32 px here) is shortened to the
     // words that do, never shrunk or cut; the spec column names the kit's real size always.
     const display = steps[0].querySelector<HTMLElement>('.kp-scale-sample');
+    // The display row's spec carries the same handle as the table rows', so the e2e reads every step the same way.
+    expect(steps[0].querySelector('[data-testid="brand-kit-type-scale-spec"]')?.textContent).toBe('500 · 64/72');
     expect(display?.style.fontSize).toBe('64px');
     expect(display?.style.lineHeight).toBe('72px');
     expect(display?.textContent?.trim()).toBe('Project One');

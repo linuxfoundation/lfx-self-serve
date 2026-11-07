@@ -1005,6 +1005,15 @@ describe('the kit of a revision', () => {
   });
 });
 
+/** A synthetic lockup with a design tool's export structure (as the Agentic AI Foundation's primary is written). */
+const BRAND_KIT_EXPORTED_LOCKUP_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 838 203" height="203" width="838">' +
+  '<g clip-path="url(#clip0_synthetic)">' +
+  '<path fill="black" d="M91 55C91 35 75 19 55 19C35 19 19 35 19 55C19 75 35 91 55 91C75 91 91 75 91 55Z"></path>' +
+  '<path fill="black" d="M91 147C91 127 75 111 55 111C35 111 19 127 19 147C19 167 35 183 55 183C75 183 91 167 91 147Z"></path>' +
+  '<path fill="black" d="M140 60H190V140H140Z"></path>' +
+  '</g><defs><clipPath id="clip0_synthetic"><rect fill="white" height="203" width="838"></rect></clipPath></defs></svg>';
+
 describe('the book', () => {
   it('lays out 16 pages: the cover, the contents, the chapter pages and the back cover, with running heads', () => {
     const pages = brandKitBookPages();
@@ -1040,8 +1049,16 @@ describe('the book', () => {
       // A white background rect under a black mark: inverting would set the mark in a white box.
       ['<svg viewBox="0 0 10 10"><rect fill="#fff" width="10" height="10"/><path d="M2 2h6v6z"/></svg>', false],
       ['<svg viewBox="0 0 10 10"><rect fill="white" width="100%" height="100%"/><path fill="#000" d="M2 2h6v6z"/></svg>', false],
-      // A white part of a mark (not the first shape, not the viewBox) is the ground a reversal removes.
+      // A white part of a mark, wherever it comes in the markup, is the ground a reversal removes.
       ['<svg viewBox="0 0 10 10"><circle fill="#4D4E4E" cx="5" cy="5" r="5"/><path fill="#FFF" d="M4 4h2v2z"/></svg>', true],
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><circle fill="#4D4E4E" cx="5" cy="5" r="5"/></svg>', true],
+      // A rendered full-canvas rect in the mark's own ink is a background too: a second ink; alone, it is one ink.
+      ['<svg viewBox="0 0 10 10"><rect fill="#4D4E4E" width="10" height="10"/><path fill="#4D4E4E" d="M2 2h6v6z"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path fill="#4D4E4E" d="M2 2h6v6z"/><rect fill="#fff" width="10" height="10"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><rect fill="#4D4E4E" width="10" height="10"/></svg>', true],
+      // An exporter's lockup as Figma writes it: the root's fill="none" inherited, the marks black, a <g clip-path>
+      // and the clip's white full-canvas rect in <defs> (not drawn): one ink, derivable.
+      [BRAND_KIT_EXPORTED_LOCKUP_SVG, true],
       // Stroke only.
       ['<svg viewBox="0 0 10 10"><path fill="none" stroke="#4D4E4E" stroke-width="2" d="M0 0h10"/></svg>', true],
       // A gradient, a pattern, currentColor: unresolvable.
