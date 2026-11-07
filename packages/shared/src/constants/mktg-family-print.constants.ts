@@ -246,6 +246,10 @@ export const MKTG_FAMILY_PRINT_COPY = {
   faqIntro: '[Questions] questions in [Groups] groups, each answered from the framework or a source it names.',
   sourcesIntro:
     'What version of each document this book holds, where the documents disagree, and what is still open. Each document keeps its own Sources page; this one is the cross-check.',
+  /** The Sources page's intro when both its lists are empty (the product owner's decision, D-27): the two-lists clause dropped. */
+  sourcesIntroQuiet: 'What version of each document this book holds. Each document keeps its own Sources page; this one is the cross-check.',
+  /** The one line under the Sources table when both lists are empty: the cross-check's result, said rather than left blank. */
+  sourcesQuiet: 'The documents agree, and nothing is left open.',
   /** The word count under a boilerplate's label: `[Words]` and `[Max]`, joined by the family's dot (MKTG_FAMILY_PRINT_SEP). */
   words: `[Words] words${MKTG_FAMILY_PRINT_SEP}max [Max]`,
   /** The fill bar's caption: `[Percent]`. */
