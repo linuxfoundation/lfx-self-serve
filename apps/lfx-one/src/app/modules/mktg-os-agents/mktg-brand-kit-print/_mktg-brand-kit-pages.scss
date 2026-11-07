@@ -421,8 +421,8 @@
 }
 
 .kp-partner--dark {
-  border-color: rgb(255 255 255 / 60%);
-  color: rgb(255 255 255 / 70%);
+  border-color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 60%, transparent);
+  color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 70%, transparent);
 }
 
 .kp-bar {
@@ -435,7 +435,8 @@
 }
 
 .kp-bar--white {
-  background: var(--pp-white);
+  // The partnership bar on the dark tile only: drawn in the dark ground's text ink.
+  background: var(--pp-on-dark, var(--pp-white));
 }
 
 /* Watchouts: a 3-column grid of 190 px tiles with the red cross, the label 12/1.4 under each. */
