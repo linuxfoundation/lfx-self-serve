@@ -455,12 +455,14 @@ describe('AEO/GEO reader caveats', () => {
     expect(aeoGeoReaderCaveat('The search returned "HTTP/2 429 Too Many Requests".')).toBe('The search returned "HTTP/2 429 Too Many Requests".');
     expect(aeoGeoReaderCaveat('The search returned "Example Foundation" with HTTP/1.1 503.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     expect(aeoGeoReaderCaveat('The search returned "HTTP/2 200 OK" for the project name.')).toBe('The search returned "HTTP/2 200 OK" for the project name.');
-    // A caveat that is nothing but a status line is a provider failure on its own, with no subject; a sentence around it is not.
-    for (const line of ['HTTP/1.1 404 Not Found', '404 Not Found', '502 Bad Gateway', '503', 'HTTP 503 Service Unavailable.']) {
+    // A caveat that is nothing but a status line is a provider failure on its own, with no subject: the number alone, with an HTTP
+    // prefix, or with a recognised reason phrase. Prose after the number is a sentence, and a sentence around a status is not a line.
+    for (const line of ['HTTP/1.1 404 Not Found', '404 Not Found', '502 Bad Gateway', '503', 'HTTP 503', 'HTTP 503 Service Unavailable.']) {
       expect(aeoGeoReaderCaveat(line)).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     }
-    expect(aeoGeoReaderCaveat('HTTP 200 OK')).toBe('HTTP 200 OK');
-    expect(aeoGeoReaderCaveat('The homepage returned 404 Not Found.')).toBe('The homepage returned 404 Not Found.');
+    for (const line of ['HTTP 200 OK', '500 pages were not inspected.', '404 pages returned errors.', '500 Startups', 'The homepage returned 404 Not Found.']) {
+      expect(aeoGeoReaderCaveat(line)).toBe(line);
+    }
   });
 
   it('never splits a sentence inside its quotes, so a quoted title stays whole and a multi-sentence provider error maps as one', () => {
@@ -662,6 +664,22 @@ describe('AEO/GEO reader caveats', () => {
       'a status outside the quotes: an error maps, a success is content',
       ['The search returned "Not found" with status code 404.', 'The search returned "Example Foundation" with HTTP 200.'],
       [AEO_GEO_READER_CAVEATS.search_unavailable, 'The search returned "Example Foundation" with HTTP 200.'],
+    ],
+    [
+      'a bare status line: the number, an HTTP prefix or a recognised reason phrase; prose after the number is a sentence',
+      ['500 pages were not inspected.', 'HTTP 503', '404 pages returned errors.'],
+      ['500 pages were not inspected.', AEO_GEO_READER_CAVEATS.search_unavailable, '404 pages returned errors.'],
+    ],
+    [
+      'an apostrophe inside a single-quoted title keeps the title inside the quotes, straight or curly',
+      [
+        "The search returned 'An auditor's guide to HTTP/1.1 404' for the project name.",
+        'The search returned \u2018An auditor\u2019s guide to HTTP/1.1 404\u2019 for the project name.',
+      ],
+      [
+        "The search returned 'An auditor's guide to HTTP/1.1 404' for the project name.",
+        'The search returned \u2018An auditor\u2019s guide to HTTP/1.1 404\u2019 for the project name.',
+      ],
     ],
     [
       'a raw provider blob, quoted or not: a JSON brace pair, a long hex id or a requestId is plumbing; a short hex colour is not',

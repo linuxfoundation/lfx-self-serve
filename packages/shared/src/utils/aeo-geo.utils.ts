@@ -363,22 +363,45 @@ const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)
 // counts only after HTTP, with or without a version (HTTP 404, HTTP/1.1 404, HTTP/2 429), or status, with an optional "code" and
 // colon ("the first 60 KB" is no status); never a successful one (HTTP 200) or a number in a title ("Top 100", "Fortune 500"). The
 // whitespace before the number depends on the colon, `(?:\s*:)?\s*`, so a failed match never splits one whitespace run between two
-// `\s*`. And a caveat that, whole, is a BARE STATUS LINE (HTTP/1.1 404 Not Found, 404 Not Found, 502 Bad Gateway, 503) is a
-// provider failure on its own: an optional HTTP word with an optional version, the number, an optional reason phrase (letters,
-// spaces, apostrophes and hyphens, at most 41 characters), an optional period, and nothing else. It is tested on the whole
-// sentence only, never on a part of it, so a status quoted in a sentence never matches it; a bare status line has no subject, so
-// the match stands without one and maps as a search failure.
+// `\s*`. And a caveat that, whole, is a BARE STATUS LINE (HTTP/1.1 404 Not Found, 404 Not Found, 502 Bad Gateway, 503, HTTP 503)
+// is a provider failure on its own: an optional HTTP word with an optional version, the number, an optional RECOGNISED reason
+// phrase (the IANA 4xx/5xx list, CAVEAT_HTTP_REASON_PHRASES; prose after the number is a sentence: "500 pages were not
+// inspected." is a coverage caveat), an optional period, and nothing else. It is tested on the whole sentence only, never on a
+// part of it, so a status quoted in a sentence never matches it; a bare status line has no subject, so the match stands without
+// one and maps as a search failure.
 const CAVEAT_FAILURE_WORDS = 'unavailable|error|denied|unauthori[sz]ed|forbidden|exceeded|limit|timeout|timed out|quota|credits?|rate[- ]limited';
 const CAVEAT_HTTP_WORD = 'HTTP(?:\\/\\d(?:\\.\\d)?)?';
+// The 4xx and 5xx reason phrases of the IANA HTTP Status Code Registry (RFC 9110 §15.5 and §15.6, RFC 6585, RFC 7725, RFC 8470,
+// RFC 4918, RFC 2295, RFC 2774, RFC 5842), with the RFC 7231 names servers still send (Payload Too Large, Request Entity Too
+// Large, Request-URI Too Long, Requested Range Not Satisfiable, Unprocessable Entity). Matched case-insensitively; used only
+// by the bare-status-line rule.
+const CAVEAT_HTTP_REASON_PHRASES = [
+  'Bad Request|Unauthorized|Payment Required|Forbidden|Not Found|Method Not Allowed|Not Acceptable|Proxy Authentication Required',
+  'Request Timeout|Conflict|Gone|Length Required|Precondition Failed|Content Too Large|Payload Too Large|Request Entity Too Large',
+  'URI Too Long|Request-URI Too Long|Unsupported Media Type|Range Not Satisfiable|Requested Range Not Satisfiable|Expectation Failed',
+  'Misdirected Request|Unprocessable Content|Unprocessable Entity|Locked|Failed Dependency|Too Early|Upgrade Required',
+  'Precondition Required|Too Many Requests|Request Header Fields Too Large|Unavailable For Legal Reasons',
+  'Internal Server Error|Not Implemented|Bad Gateway|Service Unavailable|Gateway Timeout|HTTP Version Not Supported',
+  'Variant Also Negotiates|Insufficient Storage|Loop Detected|Not Extended|Network Authentication Required',
+].join('|');
 const CAVEAT_FAILURE_IN_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS})\\b`, 'i');
 const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:${CAVEAT_HTTP_WORD}|status)(?:\\s+code)?(?:\\s*:)?\\s*[45]\\d{2})\\b`, 'i');
-const CAVEAT_BARE_STATUS_LINE = new RegExp(`^(?:${CAVEAT_HTTP_WORD}\\s+)?[45]\\d{2}(?:\\s+[A-Za-z][A-Za-z' -]{0,40})?\\.?$`, 'i');
+const CAVEAT_BARE_STATUS_LINE = new RegExp(`^(?:${CAVEAT_HTTP_WORD}\\s+)?[45]\\d{2}(?:\\s+(?:${CAVEAT_HTTP_REASON_PHRASES}))?\\.?$`, 'i');
 const CAVEAT_RESULT_TITLE = [
   /['"\u2018\u201c`][^'"\u2019\u201d`]*['"\u2019\u201d`]\s+as (?:its|the) (?:top|first|best|second|leading)\b[^.]*\bresult/i,
   /\b(?:titled|entitled|called|named)\s*['"\u2018\u201c`]/i,
 ];
-// Quoted spans are blanked before the credits/quota test on a result-title sentence: the words belong to the title.
-const CAVEAT_QUOTED_SPANS = [/"[^"]*"/g, /`[^`]*`/g, /\u201c[^\u201d]*\u201d/g, /\u2018[^\u2019]*\u2019/g, /(^|[\s(])'[^']*'(?=$|[\s).,;:!?])/g];
+// Quoted spans are blanked before the credits/quota test on a result-title sentence: the words belong to the title. In the
+// single-quote rules a quote character followed by a letter is an apostrophe (auditor's, Editor’s), content rather than a closer;
+// each character matches exactly one alternative, so the scan stays linear. No number is read inside a span (the stop rule):
+// the spans only locate the quotes, for the sentence split and for the outside-quotes status test.
+const CAVEAT_QUOTED_SPANS = [
+  /"[^"]*"/g,
+  /`[^`]*`/g,
+  /\u201c[^\u201d]*\u201d/g,
+  /\u2018(?:[^\u2019]|\u2019(?=\p{L}))*\u2019/gu,
+  /(^|[\s(])'(?:[^']|'(?=\p{L}))*'(?=$|[\s).,;:!?])/gu,
+];
 // A symmetric delimiter with an odd count in the text (an inch mark, a truncated quote) opens no span: it would pair with the next one.
 const CAVEAT_SYMMETRIC_QUOTES: [string, RegExp][] = [
   ['"', CAVEAT_QUOTED_SPANS[0]],
