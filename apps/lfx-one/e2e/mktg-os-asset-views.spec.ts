@@ -17,16 +17,21 @@ import {
   layoutMktgPrintFrame,
   mktgPrintComputedPx,
   PRINT_FRAME_LETTER,
+  printMktgFrameWithChrome,
   stubMktgPrintFrame,
 } from './helpers/mktg-print.helper';
 
+import { brandKitLogolessFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { mktgPortraitAccentText } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
 import {
   columnAssetRevisionResponse,
+  cssRgb,
   nativeAssetRevisionResponse,
   openAssetDocument,
   openDraftAssetRun,
   openUnapprovedAssetDocument,
   overfullFrameworkRevisionResponse,
+  realShapedFrameworkRevisionResponse,
 } from './helpers/mktg-os-asset-views.helper';
 
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -272,6 +277,22 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       // The framework prints as a portrait book of fixed Letter frames on the portrait grammar, one per plan page, on its
       // own margin-less setup in both engines: nothing flows across a page edge, so no sheet tables, no head or foot groups.
       await expectMktgPortraitPageSetup(frame, print);
+      // One named page on the whole print path, the grammar's, set by the frames alone: the root names none, and no element above a frame
+      // does (a change of page name forces a break, which is a blank sheet). One break per boundary, owned by the frame that starts the
+      // page: `break-before: page` on every frame, `break-after` on none.
+      expect(['', 'auto', 'mktg-portrait']).toContain(await print.evaluate((root) => getComputedStyle(root).getPropertyValue('page')));
+      expect(
+        await frame
+          .locator('body *:has(> [data-testid="lfx-mktg-portrait-page"])')
+          .evaluateAll((parents) =>
+            parents.map((parent) => getComputedStyle(parent).getPropertyValue('page')).filter((name) => name && name !== 'auto' && name !== 'mktg-portrait')
+          )
+      ).toEqual([]);
+      expect(
+        await print
+          .getByTestId('lfx-mktg-portrait-page')
+          .evaluateAll((sections) => sections.map((section) => [getComputedStyle(section).breakBefore, getComputedStyle(section).breakAfter].join(' ')))
+      ).toEqual(Array.from({ length: 8 }, () => 'page auto'));
       await expect(print.locator('lfx-mktg-print-sheet, thead, tfoot')).toHaveCount(0);
       await expect(print).toHaveCSS('position', 'static');
       await expect(print).toHaveCSS('display', 'block');
@@ -570,7 +591,7 @@ test('the framework print lists every figure past six as a table, continued on a
   await expect(sayAvoid.getByTestId('mktg-framework-print-avoid').locator('li')).toHaveCount(3);
   await expect(sayAvoid.getByTestId('mktg-framework-print-avoid-cut')).toHaveText("+2 more on the framework's Framework tab in LFX One");
   // The message house: Why now and the audiences sit a gap under the measured pillars, not at a fixed top that leaves a band; the two blocks share
-  // one top. The key numbers: the lead tile's accent bar does not push its figure below the row's others.
+  // one top.
   const house = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="message-house"]');
   const houseLayout = await house.evaluate((frame) => {
     const rect = (selector: string): DOMRect | undefined => frame.querySelector(selector)?.getBoundingClientRect();
@@ -585,11 +606,73 @@ test('the framework print lists every figure past six as a table, continued on a
   expect(houseLayout.gapUnderPillars).toBeGreaterThanOrEqual(28);
   expect(houseLayout.gapUnderPillars).toBeLessThanOrEqual(36);
   expect(houseLayout.sameTop).toBe(true);
-  const figureTops = await print
-    .locator('[data-testid^="mktg-framework-print-number-tile-"] .fwp-number')
-    .evaluateAll((figures) => figures.map((figure) => Math.round(figure.getBoundingClientRect().top)));
-  expect(figureTops[0]).toBe(figureTops[1]);
   await page.screenshot({ path: info.outputPath('foundation-message-print-overfull.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);
 });
+
+test('the framework print set in the project’s kit: accent text darkened to read on the page, the cover logo skipped on a logo-less kit, the tiles’ figures on one line', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  // The grammar's logo-less kit, its accent the coral the editor measured at 2.76:1 as text on white.
+  const kit = brandKitLogolessFixture();
+  const accent = '#FF702D';
+  kit.kit.accent = accent;
+  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), kit);
+  await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+  await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+  const frame = await layoutMktgPrintFrame(page);
+  const print = frame.getByTestId('mktg-framework-print');
+  await expect(print).toHaveAttribute('data-brand', 'kit');
+  // No drawable artwork: the cover keeps its band, tagline and title, and prints no logo block (K's gating rule through mktgPrintBrand).
+  await expect(print.getByTestId('mktg-framework-print-cover-logo')).toHaveCount(0);
+  await expect(print.getByTestId('mktg-framework-print-cover')).toHaveCSS('background-color', cssRgb(kit.kit.dark));
+  expect(await print.getByTestId('mktg-framework-print-cover').boundingBox()).toMatchObject({ x: 0, y: 0, width: 816, height: 420 });
+  // Accent TEXT on the page white reads through the grammar's darkened text accent (--pp-accent-text): the goal numerals and the anchor numbers;
+  // the accent itself stays on fills and on text over a dark ground (the key message bar's label, the cover's eyebrow).
+  const textAccent = cssRgb(mktgPortraitAccentText(accent));
+  expect(textAccent).not.toBe(cssRgb(accent));
+  await expect(print.locator('.fwp-goal-number').first()).toHaveCSS('color', textAccent);
+  await expect(print.locator('.fwp-anchor-number').first()).toHaveCSS('color', textAccent);
+  await expect(print.locator('.fwp-goal-key-label').first()).toHaveCSS('color', cssRgb(accent));
+  await expect(print.getByTestId('mktg-framework-print-tagline')).toHaveCSS('color', cssRgb(accent));
+  await expect(print.locator('.fwp-number-tile-lead')).toHaveCSS('border-top-color', cssRgb(accent));
+  // Four figures in two rows of two: the lead tile's accent bar does not push its figure below its neighbor's.
+  const figureTops = await print
+    .locator('[data-testid^="mktg-framework-print-number-tile-"] .fwp-number')
+    .evaluateAll((figures) => figures.map((figure) => Math.round(figure.getBoundingClientRect().top)));
+  expect(figureTops).toHaveLength(4);
+  expect(figureTops[0]).toBe(figureTops[1]);
+  await page.screenshot({ path: info.outputPath('foundation-message-print-kit.png'), fullPage: true });
+  await page.emulateMedia({ media: 'screen' });
+  await finishMktgPrintFrame(page);
+});
+
+// The synthetic approved record plans eight frames (one goal, one profile); the overfull one thirteen (four goals, the profiles two a page, the
+// key numbers continued). The twelve of the AAIF record are QA's walk of the served build.
+for (const [name, response, planned] of [
+  ['the approved framework', columnAssetRevisionResponse('foundation-message'), 8],
+  ['an overfull framework', overfullFrameworkRevisionResponse(), 13],
+] as const) {
+  test(`Google Chrome saves ${name} as exactly its ${planned} planned frames, none blank, under each dialog default`, async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'The proof is the Chrome engine; one run of it is enough');
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await stubMktgPrintFrame(page);
+    await openAssetDocument(page, 'foundation-message', 200, true, false, response);
+    await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+    await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+    const frame = await layoutMktgPrintFrame(page);
+    await expect(frame.getByTestId('mktg-framework-print').getByTestId('lfx-mktg-portrait-page')).toHaveCount(planned);
+    // Google Chrome's own Page.printToPDF on the frame document (the editor's engine: the bundled Chromium does not reproduce the blank sheet an
+    // inline host cost in Chrome 156), headers on and off, Letter and A4: the planned count, no blank page.
+    const prints = await printMktgFrameWithChrome(frame);
+    test.skip(prints.length === 0, 'Google Chrome is not installed here; the bundled Chromium does not reproduce the blank sheet');
+    for (const print of prints) {
+      expect(print, print.setup).toEqual({ setup: print.setup, pages: planned, blank: [] });
+    }
+    await page.emulateMedia({ media: 'screen' });
+    await finishMktgPrintFrame(page);
+  });
+}

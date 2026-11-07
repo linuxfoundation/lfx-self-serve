@@ -72,7 +72,7 @@
     line-height: 1;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--pp-accent);
+    color: var(--pp-accent); /* on the cover's dark band: the accent itself, not the text accent */
   }
 
   .fwp-cover-umbrella {
@@ -275,7 +275,7 @@
     font-weight: 500;
     line-height: 1;
     letter-spacing: -0.03em;
-    color: var(--pp-accent);
+    color: var(--pp-accent-text, var(--pp-accent)); /* accent TEXT on the page white: the grammar's darkened text accent */
   }
 
   .fwp-goal-vp-block {
@@ -309,7 +309,7 @@
     line-height: 1;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--pp-accent);
+    color: var(--pp-accent); /* on the key message's dark bar: the accent itself, not the text accent */
   }
 
   .fwp-goal-key-text {
@@ -492,7 +492,7 @@
     font-size: 26px;
     font-weight: 500;
     line-height: 1;
-    color: var(--pp-accent);
+    color: var(--pp-accent-text, var(--pp-accent)); /* accent TEXT on the page white: the grammar's darkened text accent */
   }
 
   .fwp-anchor-question {

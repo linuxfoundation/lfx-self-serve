@@ -22,7 +22,6 @@ import {
   MKTG_PRINT_INK_ON_LIGHT,
   MKTG_PRINT_LF_LOOK,
   MKTG_PRINT_MONTHS,
-  MKTG_PRINT_REVERSED_FILTER,
 } from '../constants/mktg-print.constants';
 import type { BrandKitRevision } from '../interfaces/brand-kit.interface';
 import type { FoundationMessageContent, FoundationMessageNumberRow, FoundationMessageReport } from '../interfaces/foundation-message.interface';
@@ -37,8 +36,9 @@ import type {
   MktgPrintBrand,
   MktgPrintLogo,
 } from '../interfaces/mktg-print.interface';
-import { brandKitContrastRatio, brandKitLuminance, brandKitTint } from './brand-kit-book.utils';
-import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitLogoImage, brandKitWebsiteHost, brandKitWeights } from './brand-kit.utils';
+import { brandKitContrastRatio, brandKitLuminance, brandKitTint, buildBrandKitBookView } from './brand-kit-book.utils';
+import { brandKitPortraitArtwork } from './brand-kit-portrait.utils';
+import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitWebsiteHost, brandKitWeights } from './brand-kit.utils';
 import { frameworkPortraitIcpWhoWidth } from './mktg-framework-portrait-layout.utils';
 import {
   foundationMessageAudienceRows,
@@ -134,16 +134,15 @@ export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
   const { dark, accent } = kit.kit;
   const type = kit.chapters.type;
   const fontUrl = brandKitGoogleFontsUrl(type.family, brandKitWeights(type.weights), type.google_fonts);
-  const files = kit.chapters.logo.files;
+  // The logo a print draws is the portrait grammar's lockup artwork (brandKitPortraitArtwork: the supplied reversed
+  // file on a dark ground, else the primary filtered to white; the primary as it is on a light one; null when the kit
+  // has no drawable file for it), named for the project; the kit's placeholder flag draws none.
   const alt = `${kit.projectName} logo`;
-  const primary = kit.chapters.logo.placeholder ? null : brandKitLogoImage(files.primary);
-  const reversed = kit.chapters.logo.placeholder ? null : brandKitLogoImage(files.reversed);
-  let logoOnDark: MktgPrintLogo | null = null;
-  if (reversed?.src) {
-    logoOnDark = { src: reversed.src, alt, filter: '' };
-  } else if (primary?.src) {
-    logoOnDark = { src: primary.src, alt, filter: MKTG_PRINT_REVERSED_FILTER };
-  }
+  const artwork = (mode: 'full' | 'reversed'): MktgPrintLogo | null => {
+    const logo = kit.chapters.logo.placeholder ? null : brandKitPortraitArtwork(buildBrandKitBookView(kit), 'lockup', mode);
+    return logo ? { ...logo, alt } : null;
+  };
+  const logoOnDark = artwork('reversed');
   const darkIsHex = BRAND_KIT_HEX_REGEX.test(dark);
   // Text on the kit's dark panels takes whichever ink reads better against it:
   // a mid-gray "dark" can be too light for white text yet not light enough to count as light.
@@ -160,7 +159,7 @@ export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
     fontUrl,
     fontFamily: fontUrl ? type.family.trim() : null,
     logoOnDark,
-    logoOnLight: primary?.src ? { src: primary.src, alt, filter: '' } : null,
+    logoOnLight: artwork('full'),
   };
 }
 

@@ -27,7 +27,7 @@ import {
   mktgPortraitCharsPerLine,
   mktgPortraitParaHeight,
 } from '@lfx-one/shared/utils';
-import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { brandKitLogolessFixture, brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { MktgFrameworkPrintComponent } from './mktg-framework-print.component';
@@ -952,6 +952,14 @@ describe('MktgFrameworkPrintComponent', () => {
     fixture.componentRef.setInput('look', null);
     await setView(printView(null));
     expect(framework?.style.getPropertyValue('--pp-dark')).toBe(MKTG_PRINT_LF_LOOK.dark);
+  });
+
+  it('skips the cover’s logo block on a kit with no drawable artwork, and keeps the rest of the cover', async () => {
+    await configure('browser', printView(brandKitLogolessFixture()));
+    expect(query('mktg-framework-print-cover-logo')).toBeNull();
+    expect(query('mktg-framework-print-cover')?.querySelector('.fwp-cover-logo')).toBeNull();
+    expect(query('mktg-framework-print-tagline')?.textContent?.trim()).toBe('Release, open.');
+    expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('kit');
   });
 
   describe('in the browser', () => {

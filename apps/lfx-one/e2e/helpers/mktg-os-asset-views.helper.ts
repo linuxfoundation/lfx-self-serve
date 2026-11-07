@@ -10,7 +10,7 @@ import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slid
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants/persona.constants';
 import { SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants/project-context.constants';
 import type { BoilerplatesEnvelope } from '@lfx-one/shared/interfaces/boilerplates.interface';
-import type { BrandKitReport } from '@lfx-one/shared/interfaces';
+import type { BrandKitReport, BrandKitRevision } from '@lfx-one/shared/interfaces';
 import type { FaqEnvelope } from '@lfx-one/shared/interfaces/faq.interface';
 import type { FoundationMessageGoal } from '@lfx-one/shared/interfaces/foundation-message.interface';
 import type { MktgFrameworkAsset, MktgRunResultResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
@@ -591,14 +591,41 @@ export async function openDraftAssetRun(page: Page, immediateReceipt = true) {
   };
 }
 
-/** Stub native asset reads; cookie suppression precedes every navigation. */
+/** A `#RRGGBB` as the browser reports it on a computed style. */
+export function cssRgb(hex: string): string {
+  const [r, g, b] = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/** A kit's sidecar as the document store keeps it: the v2 envelope minus the Markdown (what `readBrandKitRevision` reads back). */
+export function brandKitSidecar(kit: BrandKitRevision): Record<string, unknown> {
+  return {
+    contract: BRAND_KIT_CONTRACT_ID,
+    project_name: kit.projectName,
+    project: kit.project,
+    version: kit.version,
+    mode: kit.mode,
+    kit: kit.kit,
+    chapters: kit.chapters,
+    report: kit.report,
+    inputs: { website_url: kit.websiteUrl },
+    generated_at: kit.generatedAt,
+    agent: { agent_version: kit.agentVersion },
+  };
+}
+
+/**
+ * Stub native asset reads; cookie suppression precedes every navigation. `kit` is the project's stored Brand Kit the
+ * framework print is set in (its stored endpoint answers with the kit's sidecar); none, and the print takes the LF look.
+ */
 export async function openAssetDocument(
   page: Page,
   key: 'faq' | 'boilerplates' | 'foundation-message' | 'brand-kit',
   status = 200,
   writer = true,
   unreadable = false,
-  responseOverride?: MktgRevisionResponse
+  responseOverride?: MktgRevisionResponse,
+  kit: BrandKitRevision | null = null
 ): Promise<void> {
   await suppressCookieBanner(page);
   mockProjects[ASSET_PROJECT.slug] = ASSET_PROJECT;
@@ -631,7 +658,24 @@ export async function openAssetDocument(
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ json: { project: ASSET_PROJECT.uid, groups: [] } });
   });
-  await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, (route) => route.fulfill({ status: 404, json: { error: 'No approved branding' } }));
+  await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, (route) =>
+    kit
+      ? route.fulfill({
+          json: {
+            documentMarkdown: '',
+            receipt: {
+              s3_key: `marketing/${ASSET_PROJECT.uid}/brand-kit/v${kit.version}.md`,
+              content_sha256: 'e2e',
+              project: ASSET_PROJECT.uid,
+              version: kit.version,
+              intake_mode: 'form',
+            },
+            revisionNumber: kit.version,
+            sidecar: brandKitSidecar(kit),
+          },
+        })
+      : route.fulfill({ status: 404, json: { error: 'No approved branding' } })
+  );
   await page.route(`**/api/mktg-agents/documents/${key}/living/revisions/*/approve?*`, (route) => {
     const approval = { approvedAt: '2026-10-19T11:00:00Z', approvedBy: { name: 'Project writer' } };
     const revision = { ...response.revision, approval };

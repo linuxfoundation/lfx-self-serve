@@ -27,6 +27,7 @@ import {
 } from './mktg-print.utils';
 import boilerplatesEnvelope from './__fixtures__/boilerplates.envelope.json';
 import faqEnvelope from './__fixtures__/faq-envelope.json';
+import { brandKitLogolessFixture } from './__fixtures__/brand-kit-revision.fixture';
 import { boilerplatesAssetOfRevision } from './boilerplates.utils';
 import { faqAssetOfRevision } from './faq.utils';
 
@@ -205,6 +206,9 @@ describe('the print’s brand', () => {
     expect([png.logoOnDark, png.logoOnLight]).toEqual([null, null]);
     const placeholder = mktgPrintBrand(kitWith({ primary: { ref: 'orbit.svg', svg: SVG }, placeholder: true }));
     expect([placeholder.logoOnDark, placeholder.logoOnLight]).toEqual([null, null]);
+    // The grammar's logo-less kit (no files, the placeholder set): no logo on either ground, the brand's other fields kept.
+    const logoless = mktgPrintBrand(brandKitLogolessFixture());
+    expect([logoless.logoOnDark, logoless.logoOnLight, logoless.source]).toEqual([null, null, 'kit']);
   });
 
   it('waits for no typeface the kit does not load from Google Fonts, and sets dark ink on a "dark" that is light', () => {
