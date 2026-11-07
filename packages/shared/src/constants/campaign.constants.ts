@@ -4722,6 +4722,8 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'negativeKeywords', label: 'negative keywords' },
   // `false` asks for nothing (Google Search only), like an empty list: see `unservedGoogleCriteriaField`.
   { field: 'searchPartners', label: 'Search partners' },
+  // Display placement exclusions (#462), judged in `validateDisplayTargeting`.
+  { field: 'excludedPlacements', label: 'placement exclusions' },
   // The bidding plan and the per-channel creative (#3568), judged by what the cutover's own
   // normalizers would SEND rather than by presence: `googleBidding` drops a blank strategy, a zero
   // or non-numeric bid and blank conversion actions, and `googleCreative` drops a creative whose
@@ -4739,6 +4741,7 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'demandGenAudience', label: 'Demand Gen audience', normalized: true },
   { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
   { field: 'displayCreative', label: 'Display creative', normalized: true },
+  { field: 'displayAdGroups', label: 'Display ad groups', normalized: true },
 ] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string; normalized?: true }[];
 
 /**
@@ -4895,6 +4898,23 @@ export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
  * there too (linuxfoundation/lfx-v2-campaign-service#461): this application has not opened extensions on that channel.
  */
 export const GOOGLE_CHANNELS_WITH_SITELINKS = ['search', 'demand-gen'] as const;
+
+/**
+ * The Google channels this application sends placement exclusions on: Display alone. campaign-service
+ * v1.0.31 attaches `excludedPlacements` only on the Display cascade and refuses a non-empty list on
+ * every other channel (`validateDisplayTargeting`, `internal/platform/googleads/display_targeting.go`).
+ */
+export const GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS = ['display'] as const;
+
+/**
+ * The most placement exclusions one Display campaign takes: campaign-service's `maxExcludedPlacements`
+ * (`display_targeting.go`), a service sanity cap on the one `campaignCriteria:mutate`, not Google's.
+ * Counted on the list as sent, before upstream folds repeats.
+ */
+export const GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS = 500;
+
+/** The longest domain a placement exclusion may name, in bytes: campaign-service's `maxPlacementDomainBytes`, the DNS limit. */
+export const GOOGLE_ADS_MAX_PLACEMENT_DOMAIN_BYTES = 253;
 
 /**
  * The Google channels that accept audience segments — Search and nothing else.
@@ -5288,6 +5308,27 @@ export const GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES = 255;
  * in `demandgen.go`). A named group's full name is `<event name> - Display | <its name>`.
  */
 export const GOOGLE_DEMAND_GEN_AD_GROUP_NAME_SUFFIX = ' - Display';
+
+/** The `googleAdsConfig` key the named Display ad groups ride under (#475), INSTEAD of `displayCreative`. */
+export const GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY = 'displayAdGroups' satisfies keyof CampaignCreateRequest;
+
+/**
+ * The most named ad groups one Display campaign takes: campaign-service's `maxDisplayAdGroups`
+ * (`internal/platform/googleads/display_adgroups.go`), a service bound for the reasons the Demand Gen one has.
+ */
+export const GOOGLE_DISPLAY_MAX_AD_GROUPS = 5;
+
+/**
+ * Why the Implement tab holds Create when Display is split into ad groups but none is left. Upstream reads
+ * an empty `displayAdGroups` as no split (`validateDisplayAdGroups`), so the campaign would get no ad at all.
+ */
+export const GOOGLE_DISPLAY_AD_GROUPS_EMPTY = 'Add at least one ad group, or turn the split off to send the single Display ad instead.';
+
+/**
+ * What campaign-service appends to the event name to name a Display ad group (`displayAdGroupName` in
+ * `display_creative.go`). A named group's full name is `<event name> - Display Network | <its name>`.
+ */
+export const GOOGLE_DISPLAY_AD_GROUP_NAME_SUFFIX = ' - Display Network';
 
 /**
  * What campaign-service appends to a named Demand Gen ad group's full name to name its video ad

@@ -35,6 +35,8 @@ import {
   googleDemandGenAdsRefusal,
   googleDemandGenSingleAdGroupName,
 } from '@lfx-one/shared/utils/campaign-google-demand-gen-ad-groups.utils';
+import { googleDisplayAdGroupsRefusal } from '@lfx-one/shared/utils/campaign-google-display-ad-groups.utils';
+import { googleExcludedPlacementsRefusal } from '@lfx-one/shared/utils/campaign-google-placements.utils';
 import { googleDemandGenVideoCreativeRefusal } from '@lfx-one/shared/utils/campaign-google-demand-gen-video.utils';
 import { googleCampaignAudienceSegmentFault, googleCampaignAudienceSegmentsRefusal } from '@lfx-one/shared/utils/campaign-google-user-lists.utils';
 import {
@@ -143,6 +145,7 @@ import {
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_AD_SCHEDULES,
   GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS,
+  GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_CAMPAIGN_AUDIENCE_SEGMENT_ENTRIES,
@@ -187,6 +190,7 @@ import {
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
+  GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
   GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
@@ -198,6 +202,7 @@ import {
   GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_CODE,
   GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_MESSAGE,
   GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY,
+  GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY,
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
@@ -1096,7 +1101,7 @@ export class CampaignController {
         isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs) &&
         isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
       // The stored brief, read at most once per create and only when first needed: by the Demand Gen
-      // name checks (`googleDemandGenEventName`) or the destination check further down.
+      // and Display ad group name checks (`googleAdGroupEventName`) or the destination check further down.
       let storedBrief: Promise<{ read: boolean; url: string; eventName: string }> | undefined;
       const readStoredBrief = (): Promise<{ read: boolean; url: string; eventName: string }> =>
         (storedBrief ??= this.readBriefDestinationUrl(req, typeof body?.eventSlug === 'string' ? body.eventSlug : '', projectSlug, briefId));
@@ -1575,6 +1580,14 @@ export class CampaignController {
           return;
         }
 
+        // Display placement exclusions (#462): refused by name off Display, as `validateDisplayTargeting`
+        // refuses them, and on Display through the same shared judge the Implement tab holds Create on.
+        const placementsRefusal = this.googleExcludedPlacementsRefusal(body, googleChannel);
+        if (placementsRefusal) {
+          next(ServiceValidationError.forField('excludedPlacements', placementsRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
+          return;
+        }
+
         // Performance Max's short description (#5219), judged on the descriptions the built config will
         // carry. campaign-service refuses a started creative with none of 60 or less before the budget,
         // but the job reports that only as "platform campaign creation failed", so it is named here.
@@ -1607,8 +1620,8 @@ export class CampaignController {
 
         // The named Demand Gen ad groups (#5226), first because upstream judges the list before any
         // creative: through the same shared judge the Implement tab holds Create on.
-        const demandGenEventName = await this.googleDemandGenEventName(body, googleChannel, readStoredBrief);
-        const adGroupsRefusal = this.googleDemandGenAdGroupsRefusal(body, googleChannel, demandGenEventName);
+        const adGroupEventName = await this.googleAdGroupEventName(body, googleChannel, readStoredBrief);
+        const adGroupsRefusal = this.googleDemandGenAdGroupsRefusal(body, googleChannel, adGroupEventName);
         if (adGroupsRefusal) {
           next(
             ServiceValidationError.forField(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, adGroupsRefusal, {
@@ -1622,10 +1635,22 @@ export class CampaignController {
         // Several ads for the single Demand Gen ad group (#5226), which upstream judges inside the same
         // ad group step, after the list above: through the same shared judge the Implement tab holds
         // Create on.
-        const adsRefusal = this.googleDemandGenAdsRefusal(body, googleChannel, demandGenEventName);
+        const adsRefusal = this.googleDemandGenAdsRefusal(body, googleChannel, adGroupEventName);
         if (adsRefusal) {
           next(
             ServiceValidationError.forField(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, adsRefusal, { operation: 'campaign_create', service: 'campaign_controller' })
+          );
+          return;
+        }
+
+        // The named Display ad groups (#475), through the same shared judge the Implement tab holds Create on.
+        const displayAdGroupsRefusal = this.googleDisplayAdGroupsRefusal(body, googleChannel, adGroupEventName);
+        if (displayAdGroupsRefusal) {
+          next(
+            ServiceValidationError.forField(GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY, displayAdGroupsRefusal, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
           );
           return;
         }
@@ -5704,7 +5729,9 @@ export class CampaignController {
     // `demandGenAds` (#5226), on the same terms.
     return (
       this.storedImageInAdList(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, raw?.[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY], true) ??
-      this.storedImageInAdList(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, raw?.[GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY], false)
+      this.storedImageInAdList(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, raw?.[GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY], false) ??
+      // Each named Display ad group's ad (#475), on the same terms.
+      this.storedImageInDisplayAdGroups(raw?.[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY])
     );
   }
 
@@ -5736,7 +5763,8 @@ export class CampaignController {
    * {@link oversizedGoogleCreativeField} for one Demand Gen ad group or ad list (#5226): the list's
    * length, then each entry's name, its two creatives and, on a group (`groups` true), its `audience`
    * (#5244) and its own `ads`, one level down only: an ad has no `audience`, and an ad's own `ads` is
-   * never sent, so neither is judged nor walked.
+   * never sent, so neither is judged nor walked. The named Display ad groups (#475) are bounded through
+   * it too, as a list with `groups` false.
    */
   private oversizedDemandGenAdList(field: string, list: unknown, groups: boolean): { field: string; message: string } | null {
     if (!Array.isArray(list)) return null;
@@ -5757,6 +5785,17 @@ export class CampaignController {
         this.oversizedBoundableField(`${field}.videoCreative`, videoCreative) ??
         (groups ? this.oversizedDemandGenAdList(`${field}.ads`, ads, false) : null);
       if (found !== null) return found;
+    }
+    return null;
+  }
+
+  /** The first stored-image entry in a named Display ad group's ad (#475), as `displayAdGroups[i].creative.…`, or `null`. */
+  private storedImageInDisplayAdGroups(list: unknown): string | null {
+    if (!Array.isArray(list)) return null;
+    for (const [index, group] of list.entries()) {
+      if (group === null || typeof group !== 'object') continue;
+      const found = this.storedImageIn((group as Record<string, unknown>)['creative'], GOOGLE_CREATIVE_WIRE_FIELDS['display']);
+      if (found !== null) return `${GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY}[${index}].creative.${found}`;
     }
     return null;
   }
@@ -6402,6 +6441,9 @@ export class CampaignController {
         // helper withholds them on every other channel. Normalized only — `createCampaign` names every
         // sitelink refusal first.
         ...this.googleSitelinks(body, selectedChannels[0]),
+        // Display alone takes placement exclusions (#462); the gate inside the helper withholds them
+        // elsewhere. Normalized only — `createCampaign` names every refusal first.
+        ...this.googleExcludedPlacements(body, selectedChannels[0]),
         ...creative,
       };
     }
@@ -6547,6 +6589,65 @@ export class CampaignController {
   }
 
   /**
+   * Why campaign-service would refuse this create's named Display ad groups (#475), or `null`.
+   *
+   * Judged only on a Display create and only on what {@link googleCreative} would SEND. First the
+   * campaign-level refusal `validateDisplayAdGroups` opens with: the list replaces the single ad group, so
+   * it is refused beside `displayCreative`. Then every rule of the list itself through
+   * `googleDisplayAdGroupsRefusal`. The campaign-level Display audience lists upstream also refuses beside
+   * it are fields this application does not send on Display.
+   *
+   * `eventName` is {@link googleAdGroupEventName}'s: the stored brief's, which campaign-service composes
+   * each full name from (`decodeBriefFields`), or the request's when the brief cannot be read.
+   */
+  private googleDisplayAdGroupsRefusal(body: CampaignCreateRequest, googleChannel: unknown, eventName: string): string | null {
+    if (googleChannel !== 'display') return null;
+    // Judged on the RAW value first: normalization drops anything that is not a list, which would read a
+    // malformed `displayAdGroups` as no split rather than refusing it as campaign-service does.
+    const raw: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY];
+    if (raw !== undefined && raw !== null && !Array.isArray(raw)) return googleDisplayAdGroupsRefusal(eventName, raw);
+    const sent = this.googleCreative(body, 'display');
+    const groups = sent[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY];
+    if (groups === undefined) return null;
+    if (sent[GOOGLE_CREATIVE_REQUEST_KEYS['display']] !== undefined) {
+      return 'Display ad groups replace the single Display ad, so the campaign-level Display ad must be empty. Set the ad on each ad group instead.';
+    }
+    return googleDisplayAdGroupsRefusal(eventName, groups);
+  }
+
+  /**
+   * Why campaign-service would refuse this create's Display placement exclusions (#462), or `null`.
+   * An absent, `null` or empty list asks for nothing on any channel. Anything else that is not a list
+   * of strings is refused on every channel, as Go's decode into `[]string` refuses it. Off Display a
+   * non-empty list is refused by name (`validateDisplayTargeting`); on Display every entry goes through
+   * `googleExcludedPlacementsRefusal`, which mirrors `validateExcludedPlacements`.
+   */
+  private googleExcludedPlacementsRefusal(body: CampaignCreateRequest, googleChannel: unknown): string | null {
+    const raw: unknown = (body as unknown as Record<string, unknown>)['excludedPlacements'];
+    if (raw === undefined || raw === null || (Array.isArray(raw) && raw.length === 0)) return null;
+    if (!Array.isArray(raw) || raw.some((entry) => typeof entry !== 'string')) return googleExcludedPlacementsRefusal(raw);
+    if (typeof googleChannel === 'string' && !(GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS as readonly string[]).includes(googleChannel)) {
+      const channelLabel = GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel;
+      return `Google Ads takes placement exclusions only on Display campaigns, not on ${channelLabel} campaigns. Clear them or pick Display, then create again.`;
+    }
+    return googleExcludedPlacementsRefusal(raw);
+  }
+
+  /**
+   * `excludedPlacements` as dispatched (#462), spread-ready, on Display alone: strings only, each
+   * trimmed as Go trims it. Blanks are KEPT so they are refused by name, and repeats are kept for
+   * upstream to fold. `{}` when empty, so a create without the list is byte-identical to one made
+   * before it existed.
+   */
+  private googleExcludedPlacements(body: CampaignCreateRequest, channel: GoogleCampaignChannel): { excludedPlacements?: string[] } {
+    if (!(GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS as readonly string[]).includes(channel)) return {};
+    const raw: unknown = body?.excludedPlacements;
+    if (!Array.isArray(raw)) return {};
+    const placements = raw.filter((entry): entry is string => typeof entry === 'string').map((entry) => googleAdsTrimSpace(entry));
+    return placements.length > 0 ? { excludedPlacements: placements } : {};
+  }
+
+  /**
    * Why campaign-service would refuse this create's Demand Gen video ad (#5226), or `null`.
    *
    * Judged only on a Demand Gen create, and only on what {@link googleCreative} would SEND: on any
@@ -6567,19 +6668,19 @@ export class CampaignController {
   }
 
   /**
-   * The event name the Demand Gen ad group and ad names are judged on (#5226): the one campaign-service
-   * composes them from, which is the STORED brief's (`decodeBriefFields`), not the request's
-   * `eventName`. Read on a Demand Gen create only, through the one read the destination check below
-   * makes on every cutover create anyway. When the brief cannot be read, the request's name is used, as
-   * before, so this never adds a refusal of its own.
+   * The event name the Demand Gen ad group and ad names (#5226) and the named Display ad group names
+   * (#475) are judged on: the one campaign-service composes them from, which is the STORED brief's
+   * (`decodeBriefFields`), not the request's `eventName`. Read on a Demand Gen or Display create only,
+   * through the one read the destination check below makes on every cutover create anyway. When the
+   * brief cannot be read, the request's name is used, as before, so this never adds a refusal of its own.
    */
-  private async googleDemandGenEventName(
+  private async googleAdGroupEventName(
     body: CampaignCreateRequest,
     googleChannel: unknown,
     readStoredBrief: () => Promise<{ read: boolean; eventName: string }>
   ): Promise<string> {
     const requested = typeof body?.eventName === 'string' ? body.eventName : '';
-    if (googleChannel !== 'demand-gen') return requested;
+    if (googleChannel !== 'demand-gen' && googleChannel !== 'display') return requested;
     const stored = await readStoredBrief();
     return stored.read ? stored.eventName : requested;
   }
@@ -6629,7 +6730,7 @@ export class CampaignController {
    * over-long or repeated name, and each group's one ad or several `ads`. `demandGenAudience`, which
    * upstream refuses beside the list too, is judged first, by {@link googleDemandGenAudienceRefusal}.
    *
-   * `eventName` is {@link googleDemandGenEventName}'s, which the full names are measured on.
+   * `eventName` is {@link googleAdGroupEventName}'s, which the full names are measured on.
    */
   private googleDemandGenAdGroupsRefusal(body: CampaignCreateRequest, googleChannel: unknown, eventName: string): string | null {
     if (googleChannel !== 'demand-gen') return null;
@@ -7235,12 +7336,26 @@ export class CampaignController {
       if (found !== null) return found;
     }
 
+    // Display placement exclusions (#462), bounded at upstream's own cap of 500 rather than the creative
+    // lists' 100, which would refuse a list campaign-service accepts; each entry like any other string.
+    const placements = raw['excludedPlacements'];
+    if (Array.isArray(placements)) {
+      if (placements.length > GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS) {
+        return { field: 'excludedPlacements', message: `the list exceeds the maximum of ${GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS} entries` };
+      }
+      if (placements.some((entry) => typeof entry === 'string' && this.boundedLength(entry) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH)) {
+        return { field: 'excludedPlacements', message: `an entry exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
+      }
+    }
+
     // The named Demand Gen ad groups and the single group's several ads (#5226): each list, each name,
     // each entry's two creatives on the creative keys' own terms, and each group's own `ads`, because
     // `googleDemandGenAdGroups` and `googleDemandGenAdList` normalize them all.
     const adEntries =
       this.oversizedDemandGenAdList(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, raw[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY], true) ??
-      this.oversizedDemandGenAdList(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, raw[GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY], false);
+      this.oversizedDemandGenAdList(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, raw[GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY], false) ??
+      // The named Display ad groups (#475) on the same terms: the list, each name and each group's one ad.
+      this.oversizedDemandGenAdList(GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY, raw[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY], false);
     if (adEntries !== null) return adEntries;
 
     // Nine request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
@@ -7473,7 +7588,28 @@ export class CampaignController {
         ),
       };
     }
+    // The named Display ad groups (#475) ride beside the single Display ad on the same terms, for
+    // `googleDisplayAdGroupsRefusal`.
+    if (channel === 'display') return { ...this.googleCreativeFrom(body, spec), ...this.googleDisplayAdGroups(body) };
     return this.googleCreativeFrom(body, spec);
+  }
+
+  /**
+   * `displayAdGroups` normalized and spread-ready (#475), or `{}` when the list is absent or empty, so a
+   * create without it is byte-identical to one made before it existed. Each group keeps its position; an
+   * entry that is not an object, or a name that is not a string, becomes a blank name the refusal names.
+   * The name is trimmed as Go trims; the ad is normalized as the campaign-level one is, and omitted when
+   * it empties out. Only the name and the ad are read: this application sends no group audience.
+   */
+  private googleDisplayAdGroups(body: CampaignCreateRequest): Record<string, unknown> {
+    const list: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY];
+    if (!Array.isArray(list) || list.length === 0) return {};
+    const groups = list.map((entry: unknown) => {
+      const group: Record<string, unknown> = entry !== null && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>) : {};
+      const creative = this.googleCreativeFields(group['creative'], GOOGLE_CREATIVE_WIRE_FIELDS['display']);
+      return { name: typeof group['name'] === 'string' ? googleAdsTrimSpace(group['name']) : '', ...(creative === null ? {} : { creative }) };
+    });
+    return { [GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY]: groups };
   }
 
   /**

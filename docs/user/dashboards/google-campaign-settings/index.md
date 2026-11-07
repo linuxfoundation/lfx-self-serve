@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen ad groups and Demand Gen audiences for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups and Demand Gen audiences for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -13,6 +13,7 @@ tags:
     bid adjustment,
     demographics,
     excluded locations,
+    placement exclusions,
     display path,
     responsive search ads,
     negative keywords,
@@ -90,6 +91,17 @@ The campaign does not serve in the places listed here.
 - Each excluded place shows as a chip. Select its **×** to remove it.
 - You can exclude up to 500 places. This limit is separate from the 500 places you can target.
 - A place cannot be both targeted and excluded, even when the two are written differently, such as `US` and its id `2840`. If you have added no target country, postal code or radius, the campaign targets the event country, so you cannot exclude that country either.
+
+## Placement exclusions (Display only)
+
+On a Display campaign, a **Placement exclusions** box appears below **Excluded locations**. List the websites the campaign's ads must never appear on, one per line.
+
+- Enter each website as a bare domain, such as `example.com` or `news.example.com`. Leave out `https://`, any path such as `/news`, and any port. LFX One does not strip them for you; it holds **Create Campaign** and says which entry to fix.
+- Write an international domain in its `xn--` form.
+- You can list up to 500 websites. Blank lines are ignored, and a website listed twice, even in different capitals, is excluded once.
+- `example.com` and `www.example.com` are sent as written. Neither is turned into the other, so list both if you mean both.
+
+The exclusions cover the whole campaign. If you switch to another campaign type, the box disappears and a notice says the websites you entered will not be sent. They are kept, so switching back to Display restores them.
 
 ## Demand Gen bidding and languages
 
@@ -233,8 +245,21 @@ A Demand Gen ad group can target one Google Ads Audience, such as an Audience bu
 
 Leave the picker alone and the campaign is created exactly as before, with no Audience.
 
+## Display ad groups
+
+A Display campaign can be split into named ad groups, such as Retargeting and Prospecting, each with its own responsive display ad. Tick **Split into named ad groups** in the **Display Creative** section. The first ad group appears, and **Add ad group** adds more, up to 5. **Remove ad group** removes one.
+
+For each ad group:
+
+- **Name**: required. Google Ads names the ad group after the event, then " - Display Network | " and this name, such as "KubeCon NA - Display Network | Retargeting". That full name can be up to 255 characters. Each ad group needs a different name, and names that differ only in capitals count as the same.
+- **The ad**: the same fields and rules as the campaign's single Display ad. Paste image links; the brief's image library is not offered for ad groups.
+
+Every ad group needs a complete ad. Until every ad group has a name and a complete ad, a message under the ad groups explains what to fix and **Create Campaign** stays unavailable. The same happens if you remove every ad group while the checkbox is ticked: add one, or untick the checkbox.
+
+While the campaign is split, the single Display ad you entered is kept but not sent, and a note under the checkbox says so. Untick the checkbox to send the single ad instead. Your ad groups are then kept but not sent, and the note says that too. Placement exclusions cover every ad group. Ad groups do not take their own audiences here.
+
 ## If something is wrong
 
-If a window, adjustment, exclusion, excluded place, display path, ad, video ad, Demand Gen ad, ad group, negative keyword or Performance Max description would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
+If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword or Performance Max description would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
-If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Sitelinks are sent on Search and Demand Gen, and the other ad extensions on Search only; each is kept the same way on the other campaign types, with a notice.
+If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Placement exclusions are sent on Display only, and kept with a notice on the other campaign types. Sitelinks are sent on Search and Demand Gen, and the other ad extensions on Search only; each is kept the same way on the other campaign types, with a notice.
