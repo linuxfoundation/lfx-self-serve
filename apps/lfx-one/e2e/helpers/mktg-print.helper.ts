@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, FrameLocator, Locator, Page } from '@playwright/test';
-import { MKTG_PRINT_FRAME_PAPER_IN, MKTG_PRINT_PAGE_MARGINS_CLASS, MKTG_PRINT_PAGE_SETUPS } from '@lfx-one/shared/constants';
+import { MKTG_PORTRAIT_PAGE_NAME, MKTG_PRINT_FRAME_PAPER_IN, MKTG_PRINT_PAGE_MARGINS_CLASS, MKTG_PRINT_PAGE_SETUPS } from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './account-settings-email.helper';
 
 /** The frame prints once its own stylesheets, faces and images settle, or at the service's cap. */
@@ -106,7 +106,29 @@ export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locato
   await expect(root).toHaveCSS('padding-left', webkit ? '0px' : '57.6px');
 }
 
-/** A viewport-height cover in the laid-out frame fills the page: the 1px frame left it at its content's height. */
+/**
+ * A document of fixed portrait frames (the framework's book) prints on Letter with no margin in both engines: the
+ * frame's unnamed rule and the frames' own named page, restated with the same values; the root lifts the flowing
+ * documents' side padding, so every frame sits at the page's edge, 816 by 1056 px.
+ */
+export async function expectMktgPortraitPageSetup(frame: FrameLocator, root: Locator): Promise<void> {
+  const setup = MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
+  expect(setup).toBe('size: 8.5in 11in; margin: 0;');
+  expect(await frame.locator('head style').last().textContent()).toBe(`@page { ${setup} }\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
+  await expect(root).toHaveCSS('padding-left', '0px');
+  const pages = root.locator(':scope > section.fwp-page');
+  for (const page of await pages.all()) {
+    const box = await page.boundingBox();
+    expect({ x: Math.round(box?.x ?? -1), width: Math.round(box?.width ?? 0), height: Math.round(box?.height ?? 0) }).toEqual({
+      x: 0,
+      width: 816,
+      height: 1056,
+    });
+    await expect(page).toHaveCSS('page', MKTG_PORTRAIT_PAGE_NAME);
+    await expect(page).toHaveCSS('overflow', 'hidden');
+  }
+}
+
 /**
  * A table box's computed length in px, to compare to a tenth: Chromium reports a table row's laid-out height snapped to
  * 1/64 px (52.7969px for 0.55in) and WebKit serialises 10pt with six decimals (13.333333px), so an exact string fails.

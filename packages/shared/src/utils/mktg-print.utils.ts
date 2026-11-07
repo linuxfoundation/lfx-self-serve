@@ -22,17 +22,19 @@ import {
   MKTG_PRINT_REVERSED_FILTER,
 } from '../constants/mktg-print.constants';
 import type { BrandKitRevision } from '../interfaces/brand-kit.interface';
-import type { FoundationMessageContent } from '../interfaces/foundation-message.interface';
+import type { FoundationMessageContent, FoundationMessageReport } from '../interfaces/foundation-message.interface';
 import type {
+  FoundationMessagePrintFactRow,
   FoundationMessagePrintGoal,
   FoundationMessagePrintIcp,
+  FoundationMessagePrintMatrixRow,
   FoundationMessagePrintSection,
   FoundationMessagePrintView,
   MktgPrintBrand,
   MktgPrintLogo,
 } from '../interfaces/mktg-print.interface';
 import { brandKitContrastRatio, brandKitLuminance, brandKitTint } from './brand-kit-book.utils';
-import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitLogoImage, brandKitWeights } from './brand-kit.utils';
+import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitLogoImage, brandKitWebsiteHost, brandKitWeights } from './brand-kit.utils';
 import {
   foundationMessageAudienceRows,
   foundationMessageAvoidRows,
@@ -172,42 +174,80 @@ export function foundationMessagePrintGoals(content: FoundationMessageContent): 
   return foundationMessageGoalViews(content).map((goal) => ({ ...goal, segmentLabel: goal.segmentNames.join(', ') }));
 }
 
-/** The segments with their goals and channels as one line each, so the template joins nothing. */
+/** The segments with their goals and channels as one line each, and a `Goal n` chip per goal served, so the template joins nothing. */
 export function foundationMessagePrintIcps(content: FoundationMessageContent): FoundationMessagePrintIcp[] {
   return foundationMessageIcpViews(content).map((icp) => ({
     ...icp,
     goalLabel: icp.goalTitles.join(', '),
     channelsLabel: icp.channels.join(' · '),
+    goalChips: content.mf.goals.filter((goal) => icp.goals.includes(goal.id)).map((goal) => `Goal ${goal.n}`),
   }));
 }
 
+/** The approval's date as the cover prints it (`6 Nov 2026`, UTC), '' when there is none to read. */
+export function mktgPrintApprovedDate(approvedAt: string | null): string {
+  const time = Date.parse(approvedAt ?? '');
+  if (Number.isNaN(time)) return '';
+  return new Date(time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+/** Every goal's proof points with their sources and the goal that uses each, in the framework's order. */
+export function foundationMessagePrintFacts(goals: FoundationMessagePrintGoal[]): FoundationMessagePrintFactRow[] {
+  return goals.flatMap((goal) => goal.proofRows.map((proof) => ({ fact: proof.fact, source: proof.source, usedBy: `Goal ${goal.n} · ${goal.t}` })));
+}
+
+/** Goals × profiles: one row per profile, a cell per goal (in the framework's order), true where the goal's messaging is written for the profile. */
+export function foundationMessagePrintMatrix(goals: FoundationMessagePrintGoal[], icps: FoundationMessagePrintIcp[]): FoundationMessagePrintMatrixRow[] {
+  return icps.map((icp) => ({ name: icp.name, cells: goals.map((goal) => goal.icps.includes(icp.id)) }));
+}
+
+/** A report with nothing in it: what the print shows when the revision's record carries none. */
+export const FOUNDATION_MESSAGE_EMPTY_REPORT: FoundationMessageReport = { sources_read: [], sources_failed: [], gaps: [], notes: '' };
+
 /**
- * The Messaging Framework as one printed document: a cover, then the
- * framework, the ICPs, the message house and the key numbers — the view's
- * tabs, less the run's report. `version` is the number the page shows (the
- * Documents revision, or the run's version), so the print says what the
- * screen says; `kit` is the project's stored Brand Kit, or null for the LF
- * look.
+ * The Messaging Framework as one printed document: the portrait book's
+ * pages (`frameworkPortraitPlan`) — the view's tabs, with the run's report
+ * on the last page and the reviewer's note left out. `version` is the
+ * number the page shows (the Documents revision, or the run's version), so
+ * the print says what the screen says; `kit` is the project's stored Brand
+ * Kit, or null for the LF look; `approvedAt` is when that revision was
+ * approved, which the cover and the sources page date; `report` and
+ * `dateRead` are the run's, from the stored record (null when the caller
+ * does not know them: the labels are then empty, the report's lists empty).
  */
 export function buildFoundationMessagePrintView(
   content: FoundationMessageContent,
   projectName: string,
   version: number | null,
-  kit: BrandKitRevision | null
+  kit: BrandKitRevision | null,
+  approvedAt: string | null = null,
+  report: FoundationMessageReport | null = null,
+  dateRead: string | null = null
 ): FoundationMessagePrintView {
   const name = projectName.trim();
+  const goals = foundationMessagePrintGoals(content);
+  const icps = foundationMessagePrintIcps(content);
+  const dateLabel = mktgPrintApprovedDate(approvedAt);
+  const dateReadLabel = mktgPrintApprovedDate(dateRead);
   return {
     brand: mktgPrintBrand(kit),
     projectName: name,
     eyebrow: name ? `${name} · a Linux Foundation project` : 'A Linux Foundation project',
     title: FOUNDATION_MESSAGE_PRINT_TITLE,
-    versionLabel: version === null ? '' : `Version ${version}`,
+    versionLabel: version === null ? '' : `V${version}.0`,
+    approvedLabel: dateLabel ? `Approved ${dateLabel}` : '',
+    dateLabel,
+    website: kit ? brandKitWebsiteHost(kit.websiteUrl) : '',
+    dateRead: dateReadLabel ? dateRead : null,
+    dateReadLabel,
+    report: report ?? FOUNDATION_MESSAGE_EMPTY_REPORT,
     runningHead: `${name} ${FOUNDATION_MESSAGE_PRINT_TITLE}`.trim(),
     sections: foundationMessagePrintSections(),
+    facts: foundationMessagePrintFacts(goals),
     mf: content.mf,
     mh: content.mh,
-    goals: foundationMessagePrintGoals(content),
-    icps: foundationMessagePrintIcps(content),
+    goals,
+    icps,
     pillars: foundationMessagePillarViews(content),
     avoidRows: foundationMessageAvoidRows(content),
     numbers: foundationMessageNumberRows(content),

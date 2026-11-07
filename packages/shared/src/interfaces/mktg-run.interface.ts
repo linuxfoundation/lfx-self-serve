@@ -897,6 +897,8 @@ export interface MktgFrameworkAsset {
   report: FoundationMessageReport;
   checks: FoundationMessageChecks;
   mode: FoundationMessageMode;
+  /** The day the run read its sources (`inputs_record.date_read`, YYYY-MM-DD); null when the record lacks a valid one. The print's "figures as of". */
+  dateRead?: string | null;
 }
 
 /**

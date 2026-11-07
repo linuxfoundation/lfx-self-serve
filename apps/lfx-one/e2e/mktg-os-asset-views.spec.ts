@@ -10,7 +10,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import {
-  expectMktgPrintCover,
+  expectMktgPortraitPageSetup,
   expectMktgPrintFrame,
   finishMktgPrintFrame,
   layoutMktgPrintFrame,
@@ -241,8 +241,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     const box = await print.boundingBox();
     if (!box) throw new Error('The approved print document must be rendered');
     expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: PRINT_FRAME_LETTER.width });
-    await expectMktgPrintPageSetup(frame, print, browserName);
     if (key === 'brand-kit') {
+      await expectMktgPrintPageSetup(frame, print, browserName);
       await expect(print.locator('.kit-chapter')).toHaveCount(5);
       await expect(print.locator('lfx-mktg-print-chapter-header h2 > span')).toHaveText(['1', '2', '3', '4', '5']);
       await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
@@ -257,39 +257,96 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
         1
       );
     } else {
-      await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
-      await expectMktgPrintCover(frame.getByTestId('mktg-framework-print-cover'));
-      // Each section prints in a sheet whose head repeats the page's top room in Chromium (the @page margin is 0: no
-      // browser header or footer; in WebKit the margins give it and the row is empty) and whose last row carries the
-      // bottom room — no footer group, for which Chromium prints an empty page per sheet —, one row per block, so a
-      // page breaks only between blocks: 1 (cover) + 5 (framework) + 3 (key numbers).
-      await expect(print.getByTestId('mktg-print-sheet-head')).toHaveCount(3);
-      await expect(print.getByTestId('mktg-print-sheet-head').first()).toHaveCSS('display', 'table-header-group');
-      await expect(print.getByTestId('mktg-print-sheet-foot')).toHaveCount(0);
-      // 0.55in = 52.8px, head row and last cell, or 0 on the page margins; to a tenth (mktgPrintComputedPx).
-      expect(await mktgPrintComputedPx(print.locator('.lfx-print-sheet-room').first(), 'height')).toBeCloseTo(browserName === 'webkit' ? 0 : 52.8, 1);
-      expect(await mktgPrintComputedPx(print.locator('lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell').first(), 'padding-bottom')).toBeCloseTo(
-        browserName === 'webkit' ? 0 : 52.8,
-        1
-      );
-      await expect(print.locator('lfx-mktg-print-sheet-row')).toHaveCount(9);
-      await expect(print.locator('lfx-mktg-print-sheet-row').first()).toHaveCSS('display', 'table-row');
+      // The framework prints as a portrait book of fixed Letter frames on the portrait grammar, one per plan page, on its
+      // own margin-less setup in both engines: nothing flows across a page edge, so no sheet tables, no head or foot groups.
+      await expectMktgPortraitPageSetup(frame, print);
+      await expect(print.locator('lfx-mktg-print-sheet, thead, tfoot')).toHaveCount(0);
       await expect(print).toHaveCSS('position', 'static');
       await expect(print).toHaveCSS('display', 'block');
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
-      const rowLabels = print.getByTestId('mktg-framework-print-goals').locator('tbody th');
+      // One goal and one profile: the cover, the framework, the goal, say and avoid, the profiles, the house, the numbers, sources and gaps.
+      const pages = print.getByTestId('lfx-mktg-portrait-page');
+      await expect(pages).toHaveCount(8);
+      expect(await pages.evaluateAll((sections) => sections.map((section) => section.getAttribute('data-page-id')))).toEqual([
+        'cover',
+        'framework',
+        'goal-1',
+        'say-avoid',
+        'icps-1',
+        'message-house',
+        'key-numbers',
+        'sources',
+      ]);
+      expect(await pages.evaluateAll((sections) => sections.map((section) => section.getAttribute('data-page')))).toEqual([
+        '1',
+        '2',
+        '3',
+        '4',
+        '5',
+        '6',
+        '7',
+        '8',
+      ]);
+      // The cover: the dark band edge to edge with the tagline and the umbrella, the title with the revision's version and
+      // approval date (this fixture's record carries no read date), the contents, the strip.
+      await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
+      await expect(frame.getByTestId('mktg-framework-print-umbrella')).toHaveText('Open collaboration.');
+      await expect(frame.getByTestId('mktg-framework-print-title')).toHaveText('Messaging Framework');
+      await expect(frame.getByTestId('mktg-framework-print-version')).toHaveText('V1.0 · Approved 19 Oct 2026');
+      await expect(frame.getByTestId('mktg-framework-print-contents').locator('li')).toHaveCount(7);
+      await expect(frame.getByTestId('mktg-framework-print-contents').locator('li').first()).toContainText('Framework');
+      await expect(frame.getByTestId('mktg-framework-print-contents').locator('li').last()).toContainText('Sources & gaps');
+      await expect(frame.getByTestId('mktg-framework-print-cover-strip')).toContainText('a Linux Foundation project');
+      const coverBand = frame.getByTestId('mktg-framework-print-cover');
+      await expect(coverBand).toBeVisible();
+      expect(await coverBand.boundingBox()).toMatchObject({ x: 0, y: 0, width: 816, height: 420 });
+      // Every inner page carries the running head with the chapter and the document's name, its title and its two-digit page number.
+      await expect(print.getByTestId('mktg-portrait-page-head')).toHaveCount(7);
+      await expect(print.getByTestId('mktg-portrait-page-doc').first()).toContainText('messaging framework');
+      await expect(print.getByTestId('mktg-portrait-page-title')).toHaveText([
+        'Framework',
+        'Goal 1 · Adoption',
+        'Say and avoid · anchor questions',
+        'Ideal customer profiles',
+        'Message house',
+        'Key numbers',
+        'Sources & gaps',
+      ]);
+      await expect(print.getByTestId('mktg-portrait-page-number')).toHaveText(['02', '03', '04', '05', '06', '07', '08']);
+      // The chapter band on a chapter's first page only.
+      await expect(print.getByTestId('mktg-portrait-page-band')).toHaveCount(5);
+      // The framework page's goal matrix, one column per goal, with the grammar's labels.
+      const rowLabels = print.getByTestId('mktg-framework-print-goals').locator('.fwp-matrix-row > .pp-lab');
       await expect(rowLabels).toHaveText(['Value proposition', 'Key message', 'Proof', 'Sound bite']);
       for (const label of await rowLabels.all()) {
-        await expect(label).toHaveCSS('word-break', 'normal');
-        await expect(label).toHaveCSS('overflow-wrap', 'normal');
-        await expect(label).toHaveCSS('hyphens', 'none');
         await expect(label).toHaveCSS('text-transform', 'uppercase');
         const tracking = await label.evaluate((element) => {
           const style = getComputedStyle(element);
           return parseFloat(style.letterSpacing) / parseFloat(style.fontSize);
         });
-        expect(tracking).toBeCloseTo(0.16);
+        expect(tracking).toBeCloseTo(0.12);
       }
+      // The goal's page, the profile with the goals × profiles matrix (one profile: the page has room), the house, the numbers.
+      await expect(print.getByTestId('mktg-framework-print-goal-1')).toContainText('01');
+      await expect(print.getByTestId('mktg-framework-print-icp-users')).toContainText('End users');
+      await expect(print.getByTestId('mktg-framework-print-matrix').locator('.fwp-grid-dot')).toHaveCount(1);
+      await expect(print.getByTestId('mktg-framework-print-pillars')).toContainText('Open');
+      await expect(print.getByTestId('mktg-framework-print-numbers')).toContainText('1,200');
+      // One number: its tile spans the column (no orphan half-tile).
+      await expect(print.getByTestId('mktg-framework-print-numbers').locator('.fwp-number-tile-wide')).toHaveCount(1);
+      await expect(print.getByTestId('mktg-framework-print-facts').locator('tbody tr')).toHaveCount(2);
+      // Nothing to avoid in this fixture: the page says so rather than printing an empty list.
+      await expect(print.getByTestId('mktg-framework-print-avoid')).toHaveCount(0);
+      await expect(print.getByTestId('mktg-framework-print-avoid-empty')).toHaveText('Nothing to avoid was stated.');
+      // Sources & gaps: the fixture's sidecar carries no report, so the shared empty states and the approval card without a read date.
+      await expect(print.getByTestId('mktg-framework-print-sources-intro')).toHaveText(
+        'What the framework was built from, what could not be read, and what is still open.'
+      );
+      await expect(print.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveText('No source failed.');
+      await expect(print.getByTestId('mktg-framework-print-gaps-empty')).toHaveText('The sources left no gap.');
+      await expect(print.getByTestId('mktg-framework-print-approval')).toContainText('V1.0 · Approved 19 Oct 2026.');
+      // No reviewer's note on paper.
+      await expect(print).not.toContainText('choices for the reviewer');
       // Visibility-only hiding leaves screen canvas height behind. The entire
       // ancestor chain in the frame must be white/content-sized, and nothing else in flow.
       const flow = await print.evaluate((root) => {
@@ -312,6 +369,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
         expect(ancestor.overflow).toBe('visible');
       }
       expect(Math.abs(flow.bodyEnd - flow.end)).toBeLessThan(2);
+      // The book's eight frames, end to end.
+      expect(Math.round(flow.end)).toBe(8 * 1056);
     }
     // page.pdf prints the app window, not the frame, so there is no PDF artifact; the screenshot
     // shows the laid-out frame over the page.
