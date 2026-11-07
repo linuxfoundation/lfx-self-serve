@@ -457,7 +457,7 @@ describe('MktgFrameworkPrintComponent', () => {
     // 30-character label fits under them as written; the sizes are set inline from the layout, nothing overflows the tile.
     const long = (count: number) => Array.from({ length: count }, (_, index) => pair(`${index + 1},200,000`, 'members across five continents'));
     await setView(buildFoundationMessagePrintView({ ...CONTENT, nums: long(6) }, 'TestOrbit', 2, null));
-    expect(tiles().map((tile) => tile.querySelector<HTMLElement>('.fwp-number')?.style.fontSize)).toEqual(Array.from({ length: 6 }, () => '32px'));
+    expect(tiles().map((tile) => tile.querySelector<HTMLElement>('.fwp-number')?.style.fontSize)).toEqual(Array.from({ length: 6 }, () => '35px'));
     expect(tiles().map((tile) => tile.querySelector<HTMLElement>('.fwp-number-label')?.style.fontSize)).toEqual(Array.from({ length: 6 }, () => '14px'));
     expect(tiles()[0].querySelector('.fwp-number-label')?.textContent?.trim()).toBe('members across five continents');
     const tileBox = tiles()[0].getBoundingClientRect();

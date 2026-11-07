@@ -142,11 +142,12 @@ describe('the framework portrait book’s key numbers', () => {
     const row = (number: string) => ({ number, label });
     const tiles = frameworkPortraitNumberTiles(Array.from({ length: 6 }, (_, index) => row(`${index + 1},200,000`)));
     expect(tiles.every((tile) => tile.share === 3)).toBe(true);
-    // "1,200,000" at 54/500 is 9 × 54 × 0.6 = 292 px: too wide for 176, so the size steps down to the first whole px that holds it.
-    expect(frameworkPortraitFigureSize('1,200,000', content)).toBe(32);
-    expect(tiles.map((tile) => tile.figureSize)).toEqual([32, 32, 32, 32, 32, 32]);
+    // "1,200,000" at 54/500 is 9 × 54 × 0.55 = 267 px: too wide for 176, so the size steps down to the first whole px that
+    // holds nine characters (176 / (9 × 0.55) = 35.5 → 35).
+    expect(frameworkPortraitFigureSize('1,200,000', content)).toBe(35);
+    expect(tiles.map((tile) => tile.figureSize)).toEqual([35, 35, 35, 35, 35, 35]);
     expect(frameworkPortraitFigureSize('41', content)).toBe(FRAMEWORK_PORTRAIT_TYPE.tileFigure.size);
-    // The label's room is 140 − 44 − 32 − 10 = 54: two lines of 14/1.4 (39.2) fit as written.
+    // The label's room is 140 − 44 − 35 − 10 = 51: two lines of 14/1.4 (39.2) fit as written.
     expect(tiles[0].labelSize).toBe(FRAMEWORK_PORTRAIT_TYPE.tileLabel.size);
     expect(tiles[0].labelText).toBe(label);
     // Under a 54 px figure the room is 32: a two-line label must come down (14 → 11 fits 30.8).
