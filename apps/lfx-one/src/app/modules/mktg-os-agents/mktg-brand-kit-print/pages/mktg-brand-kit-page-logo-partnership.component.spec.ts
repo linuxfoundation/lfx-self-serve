@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { MktgBrandKitPageLogoPartnershipComponent } from './mktg-brand-kit-page-logo-partnership.component';
-import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
+import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
 describe('the Partnership lockup page', () => {
   it('shows the lockup beside the partner slot on light and on dark, and numbers the rules in two columns', async () => {
@@ -18,7 +18,7 @@ describe('the Partnership lockup page', () => {
     expect(light?.querySelector('.kp-partner')?.textContent).toBe('Partner logo');
     expect(light?.parentElement?.querySelector('.pp-cap')?.textContent).toBe('On light grounds · Charcoal bar');
     expect(dark?.parentElement?.querySelector('.pp-cap')?.textContent).toBe('On dark grounds · white bar');
-    const rules = Array.from(frame.querySelectorAll('[data-testid="brand-kit-partnership-rules"] li'), (li) => li.textContent?.replace(/\s+/g, ' ').trim());
+    const rules = Array.from(frame.querySelectorAll('[data-testid="brand-kit-partnership-rules"] li'), (li) => wordsOf(li));
     expect(rules).toEqual(view.logo.partnership.map((rule, index) => `0${index + 1} ${rule}`));
     expect(rectOf(frame.querySelector('[data-testid="brand-kit-partnership-rules"]'))).toEqual({ left: '56px', top: '806px', width: '704px' });
   });

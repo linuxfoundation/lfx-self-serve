@@ -1,0 +1,75 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-usage-intro">{{ v.usage.summary }}</p>
+  @if (cards().length) {
+    <div class="kp-usage" [lfxPpRect]="[x, 220, w]" data-testid="brand-kit-usage-cards">
+      @for (card of cards(); track card.layout) {
+        <div class="kp-usage-card" [attr.data-layout]="card.layout">
+          @switch (card.layout) {
+            @case ('keynote') {
+              <div class="kp-usage-frame pp-grid-ground kp-usage-frame--keynote">
+                <div class="kp-usage-lockup"><lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="18" /></div>
+                <div class="kp-usage-keynote-text">{{ card.text }}</div>
+              </div>
+            }
+            @case ('social') {
+              <div class="kp-usage-frame kp-usage-frame--social" [style.background]="look().accent" [style.color]="look().onAccent">
+                <lfx-mktg-brand-kit-artwork [view]="v" [mode]="socialMode()" [height]="18" />
+                <div class="kp-usage-social-text">{{ card.text }}</div>
+                @if (v.host) {
+                  <span class="kp-button kp-button--tiny">{{ v.host }}</span>
+                }
+              </div>
+            }
+            @case ('report') {
+              <div class="kp-usage-frame kp-usage-frame--report">
+                <lfx-mktg-brand-kit-artwork [view]="v" [height]="16" />
+                <div>
+                  <div class="pp-lab pp-lab--dark">Report</div>
+                  <div class="kp-usage-report-text">{{ card.text }}</div>
+                </div>
+              </div>
+            }
+            @default {
+              <div class="kp-usage-frame kp-usage-frame--announcement">
+                <lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="16" />
+                <div class="kp-usage-announcement-text">{{ card.text }}</div>
+              </div>
+            }
+          }
+          <div class="pp-cap">{{ card.name }} · {{ card.format }}</div>
+        </div>
+      }
+    </div>
+    <table class="kp-table kp-table--usage" [lfxPpRect]="[x, 740, w]" data-testid="brand-kit-usage-table">
+      <thead>
+        <tr>
+          <th>Example</th>
+          <th>Format</th>
+          <th>Ground</th>
+          <th>Accent moment</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (card of cards(); track card.layout) {
+          <tr>
+            <td>{{ card.name }}</td>
+            <td>{{ card.format }}</td>
+            <td>{{ card.ground }}</td>
+            <td>{{ card.accentMoment }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</lfx-mktg-portrait-page>

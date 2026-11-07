@@ -8,10 +8,20 @@ import {
   brandKitPortraitApprovalLine,
   brandKitPortraitArtwork,
   brandKitPortraitBuiltFrom,
+  brandKitPortraitContrast,
+  brandKitPortraitContrastGrade,
+  brandKitPortraitContrastMatrix,
   brandKitPortraitDate,
   brandKitPortraitFiles,
+  brandKitPortraitFitSize,
   brandKitPortraitPaletteSource,
+  brandKitPortraitReadableSource,
   brandKitPortraitShare,
+  brandKitPortraitSources,
+  brandKitPortraitTypeSample,
+  brandKitPortraitTypeSource,
+  brandKitPortraitUsageCards,
+  brandKitPortraitWeightName,
   brandKitPortraitWhiteContrast,
 } from './brand-kit-portrait.utils';
 
@@ -101,5 +111,124 @@ describe('the contents page’s strings', () => {
     expect(brandKitPortraitBuiltFrom({ ...view, logos: { primary: null, stacked: null, symbol: null, reversed: null } })).toBe(
       'Built from the messaging framework and the brand colors the run found.'
     );
+  });
+});
+
+describe('the contrast page’s matrix', () => {
+  it('grades a ratio by the WCAG thresholds the mock uses', () => {
+    expect(brandKitPortraitContrastGrade(8.3).label).toBe('AAA');
+    expect(brandKitPortraitContrastGrade(7).label).toBe('AAA');
+    expect(brandKitPortraitContrastGrade(4.5).label).toBe('AA');
+    expect(brandKitPortraitContrastGrade(3).label).toBe('Large only');
+    expect(brandKitPortraitContrastGrade(2.8).label).toBe('Fails');
+  });
+
+  it('pairs every palette colour as text with every colour as ground, computed from the hex values, blank on the diagonal', () => {
+    expect(brandKitPortraitContrast('#4D4E4E', '#FFFFFF')).toBe(8.35);
+    const matrix = brandKitPortraitContrastMatrix(view);
+    expect(matrix.map((row) => row.name)).toEqual(['Charcoal', 'White', 'Orange', 'Mid gray']);
+    expect(matrix[0].cells.map((cell) => cell.ratio)).toEqual([null, 8.35, 2.95, 1.82]);
+    expect(matrix[1].cells[0]).toEqual({ foreground: '#FFFFFF', background: '#4D4E4E', ratio: 8.35 });
+  });
+});
+
+describe('the type page’s strings', () => {
+  it('names a weight as the mock does and leaves an uncommon one as its number', () => {
+    expect(brandKitPortraitWeightName(400)).toBe('Regular 400');
+    expect(brandKitPortraitWeightName(650)).toBe('650');
+  });
+
+  it('fills each scale step from the kit’s own words, whole, and names the font source by its host', () => {
+    const samples = view.type.scale.map((step) => brandKitPortraitTypeSample(view, step));
+    expect(samples).toEqual(['Project One', view.voice.line, view.voice.line, view.voice.line, view.voice.umbrella, view.footer]);
+    expect(brandKitPortraitTypeSample({ ...view, voice: { ...view.voice, umbrella: '' } }, view.type.scale[4])).toBe(view.voice.line);
+    // A sample is set at its step's size when it fits its line, smaller (never cut) when it would not.
+    expect(brandKitPortraitFitSize('Project One', 704, 64, { weight: 500 })).toBe(64);
+    expect(brandKitPortraitFitSize(view.voice.line, 480, 32, { weight: 500 })).toBe(26.5);
+    expect(brandKitPortraitFitSize('A very long project name that fits no line at all at this size', 200, 64, { weight: 500 })).toBe(32);
+    expect(brandKitPortraitTypeSource('https://one.example.org/brand')).toBe('one.example.org');
+    expect(brandKitPortraitTypeSource('Named in the brand guide')).toBe('Named in the brand guide');
+  });
+});
+
+describe('the usage page’s cards', () => {
+  it('gives each card the kit’s line for its layout and the mock’s accent moment, from the kit’s examples', () => {
+    const cards = brandKitPortraitUsageCards(view, { approvedAt: '2026-11-06T10:00:00Z', approvedBy: null });
+    expect(cards.map((card) => card.layout)).toEqual(['keynote', 'social', 'report', 'announcement']);
+    expect(cards.map((card) => card.text)).toEqual([view.voice.line, view.voice.line, 'Project One annual report 2026', 'New members join Project One']);
+    // Without a recorded approval the report cover carries no year: never a made-up one.
+    expect(brandKitPortraitUsageCards(view)[2].text).toBe('Project One annual report');
+    expect(cards.map((card) => card.accentMoment)).toEqual(['none (grid ground)', 'the card itself', 'none', 'the top rule']);
+    expect(cards[2]).toMatchObject({ name: 'Report cover', format: 'letter', ground: 'white' });
+    expect(brandKitPortraitUsageCards({ ...view, usageTiles: [] })).toEqual([]);
+  });
+});
+
+describe('the Sources page’s lists', () => {
+  it('writes a source in words: the LFX record by name, a stylesheet chunk as the host’s stylesheets, a URL bare', () => {
+    expect(brandKitPortraitReadableSource('LFX record')).toBe('The LFX project record');
+    expect(brandKitPortraitReadableSource('https://one.example.org/_next/static/chunks/app.css')).toBe('one.example.org stylesheets');
+    expect(brandKitPortraitReadableSource('https://one.example.org/brand?x=1')).toBe('one.example.org/brand');
+    // An uploaded file is named as the logo files, never by its file name.
+    expect(brandKitPortraitReadableSource('logo.svg')).toBe('the uploaded logo files');
+    expect(brandKitPortraitReadableSource('Logo-Stacked.PNG')).toBe('the uploaded logo files');
+  });
+
+  it('reads only what the run record holds, folds duplicate sources and keeps a real conflict only', () => {
+    const plain = brandKitPortraitSources(view);
+    expect(plain).toEqual({ read: ['one.example.org'], failed: [], warnings: [], missing: [], sharedFix: '', gaps: [], notes: '', conflicts: [] });
+    const rich = brandKitPortraitSources({
+      ...view,
+      report: {
+        sources_read: ['https://one.example.org', 'https://one.example.org/_next/static/chunks/a.css', 'https://one.example.org/_next/static/chunks/b.css'],
+        sources_failed: [{ name: 'https://one.example.org/brand.pdf', reason: 'HTTP 404' }],
+        gaps: ['No symbol file.', ' '],
+        notes: ' A note. ',
+        color_conflicts: [
+          { name: 'Charcoal', values: [{ hex: '#4D4E4E', source: 'LFX record' }], chosen: '#4D4E4E' },
+          {
+            name: 'Orange',
+            values: [
+              { hex: '#F37625', source: 'https://one.example.org/_next/static/chunks/a.css' },
+              { hex: '#F07000', source: 'logo.svg' },
+            ],
+            chosen: '#F37625',
+          },
+        ],
+      },
+    });
+    expect(rich.read).toEqual(['one.example.org', 'one.example.org stylesheets']);
+    expect(rich.failed).toEqual([{ source: 'one.example.org/brand.pdf', reason: 'HTTP 404' }]);
+    expect(rich.gaps).toEqual(['No symbol file.']);
+    expect(rich.notes).toBe('A note.');
+    expect(rich.conflicts.map((conflict) => conflict.name)).toEqual(['Orange']);
+    expect(rich.conflicts[0].values.map((value) => value.source)).toEqual(['one.example.org stylesheets', 'the uploaded logo files']);
+  });
+
+  it('takes a v2 report’s findings, names the missing assets by the shared labels and lifts a fix they all share', () => {
+    const sources = brandKitPortraitSources({
+      ...view,
+      report: {
+        ...view.report,
+        findings: {
+          sources_failed: [{ source: 'https://one.example.org/brand', kind: 'brand_page', reason: 'Timed out', detail: 'ETIMEDOUT' }],
+          missing_assets: [
+            { asset: 'logo_stacked', reason: 'Not in the record', fix: 'Upload the stacked file as SVG.' },
+            { asset: 'logo_symbol', reason: 'Not in the record', fix: 'Upload the symbol file as SVG.' },
+          ],
+          warnings: [
+            { code: 'font_unverified', text: ' Font weights unverified. ', source: 'https://one.example.org' },
+            { code: 'color_conflict', text: 'Two values for Orange.' },
+          ],
+        },
+      },
+    });
+    expect(sources.failed).toEqual([{ source: 'one.example.org/brand', reason: 'Timed out' }]);
+    expect(sources.missing).toEqual([
+      { asset: 'Stacked logo', reason: 'Not in the record', fix: '' },
+      { asset: 'Symbol', reason: 'Not in the record', fix: '' },
+    ]);
+    expect(sources.sharedFix).toBe('Upload each file as SVG.');
+    expect(sources.warnings).toEqual([{ text: 'Font weights unverified.', source: 'one.example.org' }]);
   });
 });

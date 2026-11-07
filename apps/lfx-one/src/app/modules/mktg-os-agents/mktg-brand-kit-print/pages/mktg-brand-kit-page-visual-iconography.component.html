@@ -1,0 +1,48 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <div [lfxPpRect]="[x, 148, w]" data-testid="brand-kit-iconography-samples">
+    <lfx-mktg-brand-kit-icon-samples [colours]="v.iconColours" [print]="true" [portrait]="true" />
+  </div>
+  <div class="pp-cap" [lfxPpRect]="[x, 626, w]" data-testid="brand-kit-iconography-strip-caption">
+    On dark grounds: white, one active state in {{ highlightName() }}
+  </div>
+  <div [lfxPpRect]="[x, 680, 420]" data-testid="brand-kit-iconography-rules">
+    <div class="pp-lab pp-lab--dark">Rules</div>
+    <ul class="kp-list kp-list--loose">
+      @for (rule of v.visual.icons.rules; track $index) {
+        <li>{{ rule }}</li>
+      }
+    </ul>
+  </div>
+  <div [lfxPpRect]="[x + 444, 680, 260]" data-testid="brand-kit-iconography-set">
+    <div class="pp-lab pp-lab--dark">Recommended set</div>
+    <div class="kp-text kp-text--loose">{{ v.visual.icons.recommended }}</div>
+    <div class="kp-icon-labelled" [style.color]="look().dark">
+      <lfx-mktg-brand-kit-icon [icon]="labelledIcon" [size]="24" />
+      <span>{{ labelledIcon.label }}</span>
+    </div>
+    <div class="kp-note">Every icon carries a text label.</div>
+  </div>
+  <div [lfxPpRect]="[x, 870, w]" data-testid="brand-kit-iconography-sizes">
+    <div class="pp-lab pp-lab--dark">Sizes</div>
+    <div class="kp-icon-sizes" [style.color]="look().dark">
+      @for (size of sizes; track size) {
+        <div class="kp-icon-size">
+          <lfx-mktg-brand-kit-icon [icon]="sizedIcon" [size]="size" />
+          <div class="kp-icon-size-label">{{ size }} px</div>
+        </div>
+      }
+      <div class="kp-icon-sizes-note">Stroke stays 2 px of the 24 px grid at every size; never thinner than 1.5 px when scaled down.</div>
+    </div>
+  </div>
+</lfx-mktg-portrait-page>

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { MktgBrandKitPageLogoSystemComponent } from './mktg-brand-kit-page-logo-system.component';
-import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
+import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
 describe('the Logo system page', () => {
   it('opens the Logo chapter with the band, the intro, the lockup hero, the tiles the kit has files for, and the files table without names', async () => {
@@ -21,9 +21,7 @@ describe('the Logo system page', () => {
     expect(tiles?.querySelectorAll('.pp-tile')).toHaveLength(1);
     expect(tiles?.querySelector<HTMLElement>('.pp-tile--dark img')?.style.filter).toBe('brightness(0) invert(1)');
     expect(tiles?.textContent).toContain('Reversed · derived from the horizontal file');
-    const rows = Array.from(frame.querySelectorAll('[data-testid="brand-kit-logo-system-files"] tbody tr'), (row) =>
-      row.textContent?.replace(/\s+/g, ' ').trim()
-    );
+    const rows = Array.from(frame.querySelectorAll('[data-testid="brand-kit-logo-system-files"] tbody tr'), (row) => wordsOf(row));
     expect(rows).toEqual([
       'Horizontal lockup SVG Full colour Supplied',
       'Reversed (white) — White Not supplied: this book derives it from the horizontal file',

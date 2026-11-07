@@ -3,11 +3,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { MktgBrandKitPageContentsComponent } from './mktg-brand-kit-page-contents.component';
-import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
+import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
 async function setup(approval: { approvedAt: string; approvedBy: { name: string } | null } | null = null) {
   const mounted = await mountBrandKitPage(MktgBrandKitPageContentsComponent, 'contents');
-  mounted.fixture.componentRef.setInput('pages', mounted.pages);
   mounted.fixture.componentRef.setInput('approval', approval);
   await mounted.fixture.whenStable();
   return mounted;
@@ -21,8 +20,8 @@ describe('the contents page', () => {
     expect(frame.querySelector('[data-testid="mktg-portrait-page-title"]')?.textContent).toBe("What's inside");
     const rows = Array.from(frame.querySelectorAll('.kp-contents-row'));
     expect(rows).toHaveLength(14);
-    expect(rows[0].textContent?.replace(/\s+/g, ' ').trim()).toBe('03Logo system 3');
-    expect(rows[13].textContent?.replace(/\s+/g, ' ').trim()).toBe('16Back cover 16');
+    expect(wordsOf(rows[0])).toBe('03 Logo system 3');
+    expect(wordsOf(rows[13])).toBe('16 Back cover 16');
     expect(rows.map((row) => row.getAttribute('data-page-ref'))).toEqual(pages.slice(2).map((page) => page.id));
     expect(rectOf(rows[0])).toEqual({ left: '56px', top: '148px', width: '704px' });
     expect(frame.querySelector('[data-testid="mktg-portrait-page-band"]')).toBeNull();

@@ -494,3 +494,611 @@
   border-radius: 2px;
   vertical-align: middle;
 }
+
+/* ---- Shared by the later pages ---- */
+
+/* A labelled block of the two-column pages, 26 px under the one before. */
+.kp-block {
+  margin-bottom: 26px;
+}
+
+.kp-muted {
+  color: var(--pp-muted);
+}
+
+.kp-text--tight {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.kp-text--loose {
+  line-height: 1.6;
+}
+
+/* A plain list under a label: 12.5/1.6, 16 px indent; `--loose` 12.5/1.7 with 10 px above; `--columns` in two. */
+.kp-list {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--pp-ink);
+
+  b {
+    color: var(--pp-dark);
+  }
+}
+
+.kp-list--loose {
+  margin-top: 10px;
+  line-height: 1.7;
+}
+
+.kp-list--columns {
+  columns: 2;
+  column-gap: 24px;
+}
+
+/* A WCAG grade pill: 9 px semibold on its grade's tint. */
+.kp-pill {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* ---- Color contrast ---- */
+
+/* The matrix: a row per text colour over every ground, 78 px cells with the Aa sample and the ratio and grade bottom left. */
+.kp-matrix {
+  width: 100%;
+  border-collapse: collapse;
+
+  thead th {
+    padding: 0 4px 6px;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-align: left;
+    text-transform: uppercase;
+    color: var(--pp-muted);
+  }
+
+  tbody th {
+    padding-right: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: left;
+    vertical-align: middle;
+    color: var(--pp-dark);
+  }
+
+  td {
+    padding: 4px;
+  }
+}
+
+.kp-matrix-corner {
+  width: 104px;
+}
+
+.kp-matrix-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+
+.kp-matrix-same {
+  height: 78px;
+  border-radius: 6px;
+  background: var(--pp-mist);
+}
+
+.kp-matrix-cell {
+  position: relative;
+  height: 78px;
+  padding: 8px 10px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 6px;
+}
+
+.kp-matrix-aa {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.kp-matrix-meta {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kp-matrix-ratio {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--pp-ink);
+}
+
+.kp-matrix-ratio--tinted {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+/* The kit's pairs: a 110 × 36 sample, the names, the ratio and the grade, over a hairline. */
+.kp-pairs {
+  margin-top: 6px;
+}
+
+.kp-pair {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 0;
+  border-top: 1px solid var(--pp-hairline);
+}
+
+.kp-pair-sample {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 110px;
+  height: 36px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.kp-pair-names {
+  flex: 1;
+  font-size: 12px;
+  color: var(--pp-ink);
+}
+
+.kp-pair-ratio {
+  width: 56px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pp-dark);
+}
+
+/* ---- Typography ---- */
+
+/* The H1 sample: 48 px medium in one line (the component shrinks the size until the brand line fits), the character set under it, the weights beside their names. */
+.kp-type-h1 {
+  font-weight: 500;
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  color: var(--pp-dark);
+}
+
+.kp-type-characters {
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--pp-ink);
+}
+
+.kp-type-weights {
+  display: flex;
+  gap: 28px;
+  margin-top: 18px;
+}
+
+.kp-type-weight {
+  font-size: 30px;
+  line-height: 1;
+  color: var(--pp-dark);
+}
+
+.kp-type-weight-name {
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--pp-muted);
+}
+
+.kp-type-weights-note {
+  align-self: flex-end;
+  max-width: 260px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--pp-muted);
+}
+
+/* The scale: a row per step over a hairline, label and spec 96 px each, the sample at its real size; the display step on its own line. */
+.kp-scale {
+  margin-top: 6px;
+}
+
+.kp-scale-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 8px 0;
+  border-top: 1px solid var(--pp-hairline);
+}
+
+.kp-scale-display {
+  padding: 8px 0 10px;
+  border-top: 1px solid var(--pp-hairline);
+}
+
+.kp-scale-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 10.5px;
+  color: var(--pp-muted);
+}
+
+.kp-scale-label,
+.kp-scale-spec {
+  width: 96px;
+  flex: none;
+  font-size: 10.5px;
+  color: var(--pp-muted);
+}
+
+.kp-scale-sample {
+  flex: 1;
+  color: var(--pp-dark);
+}
+
+.kp-scale-sample--display {
+  margin-top: 4px;
+  letter-spacing: -0.01em;
+}
+
+.kp-scale-sample--caps {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ---- Iconography ---- */
+
+.kp-icon-labelled {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--pp-ink);
+
+  svg {
+    color: var(--pp-dark);
+  }
+}
+
+.kp-icon-sizes {
+  display: flex;
+  align-items: flex-end;
+  gap: 36px;
+  margin-top: 12px;
+}
+
+.kp-icon-size {
+  text-align: center;
+}
+
+.kp-icon-size-label {
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--pp-muted);
+}
+
+.kp-icon-sizes-note {
+  max-width: 300px;
+  margin-left: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pp-muted);
+}
+
+/* ---- Imagery & graphic elements ---- */
+
+/* The default ground, 330 tall, 12 px radius. */
+.kp-ground {
+  height: 330px;
+  border-radius: 12px;
+}
+
+/* The three element cards, 220 tall, in a 3-column grid with 16 px gaps; their captions under them. */
+.kp-elements {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+
+.kp-element {
+  box-sizing: border-box;
+  height: 220px;
+  padding: 20px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 10px;
+}
+
+.kp-element-message {
+  margin-top: 12px;
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--pp-dark);
+}
+
+.kp-element--buttons {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+}
+
+.kp-element--callout {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 0;
+}
+
+.kp-element-callout-text {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.kp-element-captions {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--pp-muted);
+
+  span {
+    flex: 1;
+  }
+}
+
+/* The pill buttons: primary on the kit's dark, secondary outlined, the small and tiny ones the URL chips. */
+.kp-button {
+  align-self: flex-start;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.kp-button--primary {
+  padding: 12px 22px;
+  background: var(--pp-dark);
+  color: #fff;
+}
+
+.kp-button--secondary {
+  padding: 11px 21px;
+  border: 1.5px solid var(--pp-dark);
+  color: var(--pp-dark);
+}
+
+.kp-button--small {
+  padding: 8px 14px;
+  background: var(--pp-dark);
+  font-size: 11px;
+  color: #fff;
+}
+
+.kp-button--tiny {
+  padding: 6px 12px;
+  background: var(--pp-dark);
+  font-size: 10px;
+  color: #fff;
+}
+
+/* ---- Example usage ---- */
+
+/* The four cards, 344 wide and 210 tall, two to a row with 24 × 16 px gaps. */
+.kp-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px 16px;
+}
+
+.kp-usage-card {
+  width: 344px;
+}
+
+.kp-usage-frame {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 210px;
+  padding: 18px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.kp-usage-frame--keynote {
+  display: block;
+  padding: 0;
+}
+
+.kp-usage-lockup {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 1;
+}
+
+.kp-usage-keynote-text {
+  position: absolute;
+  right: 18px;
+  bottom: 20px;
+  left: 18px;
+  z-index: 1;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: #fff;
+}
+
+.kp-usage-social-text {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+.kp-usage-frame--report {
+  border: 1px solid var(--pp-hairline);
+}
+
+.kp-usage-report-text {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--pp-dark);
+}
+
+.kp-usage-frame--announcement {
+  border-top: 6px solid var(--pp-spark);
+  background: var(--pp-dark);
+}
+
+.kp-usage-announcement-text {
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: #fff;
+}
+
+.kp-table--usage {
+  margin-top: 0;
+
+  td {
+    padding: 7px 10px 7px 0;
+  }
+}
+
+/* ---- Voice ---- */
+
+.kp-voice-umbrella {
+  margin-top: 10px;
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--pp-dark);
+}
+
+.kp-voice-line-block {
+  margin-top: 26px;
+}
+
+.kp-voice-line {
+  margin-top: 8px;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--pp-dark);
+}
+
+/* The attributes in two columns from y 540, each under a 3 px rule (the first in the spark, the rest in the accent); set
+   large (name 20 px, line 15/1.6, 28 px row gap) so the grid runs to about y 900. */
+.kp-attributes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px 16px;
+}
+
+.kp-attribute {
+  padding-top: 14px;
+  border-top: 3px solid var(--pp-accent);
+}
+
+.kp-attribute-name {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--pp-dark);
+}
+
+.kp-attribute-line {
+  margin-top: 8px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--pp-ink);
+}
+
+/* ---- Sources & decisions ---- */
+
+.kp-sources-intro {
+  max-width: 640px;
+}
+
+/* A colour conflict: its name, then a row per value with its swatch, the kept one bold. */
+.kp-conflict {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--pp-ink);
+
+  th {
+    padding-bottom: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    color: var(--pp-dark);
+  }
+
+  td {
+    padding: 5px 8px 5px 0;
+    border-top: 1px solid var(--pp-hairline);
+  }
+
+  td:first-child {
+    width: 22px;
+  }
+
+  td:last-child {
+    padding-right: 0;
+  }
+}
+
+.kp-conflict-kept td:nth-child(2) {
+  font-weight: 600;
+}
+
+.kp-conflict-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--pp-hairline);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+.kp-callout--approval {
+  display: block;
+  padding: 16px 20px;
+  font-size: 12px;
+
+  b {
+    color: var(--pp-dark);
+  }
+}
