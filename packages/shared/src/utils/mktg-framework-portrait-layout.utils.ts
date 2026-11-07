@@ -32,15 +32,18 @@ import type {
   FoundationMessagePrintType,
   FoundationMessagePrintView,
 } from '../interfaces/mktg-print.interface';
-import { mktgPortraitParaHeight } from './mktg-portrait-print.utils';
+import { mktgPortraitCharsPerLine, mktgPortraitFitBlock, mktgPortraitParaHeight } from './mktg-portrait-print.utils';
 
 const ROOM = FRAMEWORK_PORTRAIT_ROOM;
 const TYPE = FRAMEWORK_PORTRAIT_TYPE;
 const PAGE = MKTG_PORTRAIT_PAGE;
 
-/** The line under a cut list: `+3 more in the framework's Sources tab in LFX One`. */
-export function foundationMessagePrintCutNote(cut: number): string {
-  return `+${cut} more in the framework's Sources tab in LFX One`;
+/** The on-screen tab a cut list's note sends the reader to: the Framework tab for proof points and the facts table, the Sources tab for the Sources & gaps lists. */
+export type FoundationMessagePrintCutTab = 'Framework' | 'Sources';
+
+/** The line under a cut list: `+3 more on the framework's Sources tab in LFX One` (the design reader's form, 7 Nov 2026). */
+export function foundationMessagePrintCutNote(cut: number, tab: FoundationMessagePrintCutTab): string {
+  return `+${cut} more on the framework's ${tab} tab in LFX One`;
 }
 
 /** The height a text takes at a type in a column, px. */
@@ -61,12 +64,13 @@ export function frameworkPortraitCutNoteHeight(): number {
 export function frameworkPortraitCutList<T>(
   rows: readonly T[],
   room: number,
+  tab: FoundationMessagePrintCutTab,
   normal: (row: T) => number,
   tight: (row: T) => number
 ): FoundationMessagePrintCutList<T> {
   const total = (measure: (row: T) => number): number => rows.reduce((sum, row) => sum + measure(row), 0);
-  if (total(normal) <= room) return { rows: [...rows], cut: 0, tight: false };
-  if (total(tight) <= room) return { rows: [...rows], cut: 0, tight: true };
+  if (total(normal) <= room) return { rows: [...rows], cut: 0, tight: false, note: '' };
+  if (total(tight) <= room) return { rows: [...rows], cut: 0, tight: true, note: '' };
   const kept: T[] = [];
   let used = frameworkPortraitCutNoteHeight();
   for (const row of rows) {
@@ -74,14 +78,32 @@ export function frameworkPortraitCutList<T>(
     if (used > room) break;
     kept.push(row);
   }
-  return { rows: kept, cut: rows.length - kept.length, tight: true };
+  const cut = rows.length - kept.length;
+  return { rows: kept, cut, tight: true, note: foundationMessagePrintCutNote(cut, tab) };
 }
 
-/** The tiles for a count the tiles hold (1 to FRAMEWORK_PORTRAIT_MAX_TILES), each with its share of a row; none past that. */
+/** The size at which a figure sits on one line of `width` px, stepped down from the tile figure's size in whole px, never under half of it. */
+export function frameworkPortraitFigureSize(figure: string, width: number): number {
+  const type = TYPE.tileFigure;
+  let size = type.size;
+  while (size > type.size / 2 && mktgPortraitCharsPerLine(width, size, { weight: type.weight }) < figure.length) size -= 1;
+  return size;
+}
+
+/** The tiles for a count the tiles hold (1 to FRAMEWORK_PORTRAIT_MAX_TILES), each with its share of a row and its text fitted to the tile; none past that. */
 export function frameworkPortraitNumberTiles(numbers: readonly FoundationMessageNumberRow[]): FoundationMessagePrintNumberTile[] {
-  const shares = FRAMEWORK_PORTRAIT_TILE_SHARES[numbers.length];
+  const shares: readonly number[] | undefined = FRAMEWORK_PORTRAIT_TILE_SHARES[numbers.length as keyof typeof FRAMEWORK_PORTRAIT_TILE_SHARES];
   if (!shares || numbers.length > FRAMEWORK_PORTRAIT_MAX_TILES) return [];
-  return numbers.map((row, index) => ({ ...row, share: shares[index], wide: shares[index] === 1 }));
+  const tile = FRAMEWORK_PORTRAIT_NUMBER_TILE;
+  return numbers.map((row, index) => {
+    const share = shares[index];
+    // A tile's content width: its share of the row less the gaps between tiles, less the side padding.
+    const width = (PAGE.contentWidth - (share - 1) * tile.gap) / share - 2 * tile.paddingSide;
+    const figureSize = frameworkPortraitFigureSize(row.number, width);
+    const labelRoom = tile.height - 2 * tile.paddingTop - figureSize * TYPE.tileFigure.line - tile.labelGap;
+    const label = mktgPortraitFitBlock({ paras: [{ text: row.label, ...TYPE.tileLabel }] }, width, labelRoom).block.paras[0];
+    return { ...row, share, wide: share === 1, figureSize, labelText: label?.text ?? row.label, labelSize: label?.size ?? TYPE.tileLabel.size };
+  });
 }
 
 /** The height of a key numbers table row at the fact type: the taller of its two cells, with the row's padding and hairline. */
@@ -122,7 +144,7 @@ export function frameworkPortraitNumbersPages(view: FoundationMessagePrintView):
   const intro = `The figures the framework leans on, with where each came from.${date ? ` LFX figures are as of ${date}.` : ''}`;
   const tiles = frameworkPortraitNumberTiles(view.numbers);
   const tableRows = tiles.length ? [] : [...view.numbers];
-  const noFacts: FoundationMessagePrintCutList<FoundationMessagePrintFactRow> = { rows: [], cut: 0, tight: false };
+  const noFacts: FoundationMessagePrintCutList<FoundationMessagePrintFactRow> = { rows: [], cut: 0, tight: false, note: '' };
   const pages: FoundationMessagePrintNumbersPage[] = [];
   // Page 1's content starts at the tiles' top; the tiles, when any, leave the facts their gap under the rows.
   let cursor: number = tile.top;
@@ -145,12 +167,13 @@ export function frameworkPortraitNumbersPages(view: FoundationMessagePrintView):
       facts: noFacts,
     };
     if (remaining.length) {
-      // The key numbers table: whole rows down to the footer, the rest on the next page; never cut.
+      // The key numbers table: whole rows down to the footer, the rest on the next page; never cut. A fresh page always
+      // keeps at least one row (K's paginate rule), so a row taller than the page still moves the loop on.
       let used = cursor + ROOM.label + ROOM.tableHead;
       const kept: FoundationMessageNumberRow[] = [];
       for (const row of remaining) {
         const height = numbersRowHeight(row, false);
-        if (used + height > tops.footer) break;
+        if (kept.length > 0 && used + height > tops.footer) break;
         used += height;
         kept.push(row);
       }
@@ -162,9 +185,9 @@ export function frameworkPortraitNumbersPages(view: FoundationMessagePrintView):
         continue;
       }
     }
-    // The facts table, in the room left on this page: at least its head and one tight row, else on a page of its own.
+    // The facts table, in the room left on this page: at least its head, one tight row and the cut note's room, else on a page of its own.
     const factsRoom = tops.footer - cursor - ROOM.label - ROOM.tableHead;
-    const firstRow = view.facts[0] ? frameworkPortraitFactRowHeight(view.facts[0], true) : 0;
+    const firstRow = view.facts[0] ? frameworkPortraitFactRowHeight(view.facts[0], true) + frameworkPortraitCutNoteHeight() : 0;
     if (view.facts.length && factsRoom < firstRow && (page.numbersTable.length || page.tiles.length)) {
       pages.push(page);
       cursor = tops.numbersContinued;
@@ -178,6 +201,7 @@ export function frameworkPortraitNumbersPages(view: FoundationMessagePrintView):
         facts: frameworkPortraitCutList(
           view.facts,
           tops.footer - tops.numbersContinued - ROOM.label - ROOM.tableHead,
+          'Framework',
           (fact) => frameworkPortraitFactRowHeight(fact, false),
           (fact) => frameworkPortraitFactRowHeight(fact, true)
         ),
@@ -188,6 +212,7 @@ export function frameworkPortraitNumbersPages(view: FoundationMessagePrintView):
     page.facts = frameworkPortraitCutList(
       view.facts,
       factsRoom,
+      'Framework',
       (fact) => frameworkPortraitFactRowHeight(fact, false),
       (fact) => frameworkPortraitFactRowHeight(fact, true)
     );

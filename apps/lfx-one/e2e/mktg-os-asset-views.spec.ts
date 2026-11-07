@@ -484,7 +484,7 @@ test('the framework print lists every figure past six as a table and says how ma
   const kept = await proofRows.count();
   expect(kept).toBeGreaterThan(0);
   expect(kept).toBeLessThan(14);
-  await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveText(`+${14 - kept} more in the framework's Sources tab in LFX One`);
+  await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveText(`+${14 - kept} more on the framework's Framework tab in LFX One`);
   await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveCSS('color', 'rgb(107, 114, 128)');
   await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveCSS('font-size', '10.5px');
   // Sixty sources read and forty gaps: each list cut to its column with its own line, the counts from the report.
@@ -492,11 +492,11 @@ test('the framework print lists every figure past six as a table and says how ma
   const readKept = await read.count();
   expect(readKept).toBeGreaterThan(0);
   expect(readKept).toBeLessThan(60);
-  await expect(print.getByTestId('mktg-framework-print-sources-read-cut')).toHaveText(`+${60 - readKept} more in the framework's Sources tab in LFX One`);
+  await expect(print.getByTestId('mktg-framework-print-sources-read-cut')).toHaveText(`+${60 - readKept} more on the framework's Sources tab in LFX One`);
   const gaps = print.getByTestId('mktg-framework-print-gaps').locator('li');
   const gapsKept = await gaps.count();
   expect(gapsKept).toBeLessThan(40);
-  await expect(print.getByTestId('mktg-framework-print-gaps-cut')).toHaveText(`+${40 - gapsKept} more in the framework's Sources tab in LFX One`);
+  await expect(print.getByTestId('mktg-framework-print-gaps-cut')).toHaveText(`+${40 - gapsKept} more on the framework's Sources tab in LFX One`);
   await expect(print.getByTestId('mktg-framework-print-sources-failed-cut')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('foundation-message-print-overfull.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });

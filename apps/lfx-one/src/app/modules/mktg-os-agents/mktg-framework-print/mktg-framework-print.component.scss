@@ -347,7 +347,7 @@
 .fwp-proof-row {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 16px; /* FRAMEWORK_PORTRAIT_ROOM.proofGap */
   align-items: baseline;
   border-top: 1px solid var(--pp-hairline);
   padding: 13px 0; /* FRAMEWORK_PORTRAIT_ROOM.proofRow = 26 + the hairline */
@@ -363,7 +363,7 @@
   line-height: var(--fwp-goal-proof-tight-line);
 }
 
-/* The line under a cut list: "+N more in the framework's Sources tab in LFX One", FRAMEWORK_PORTRAIT_TYPE.cutNote, .cutNoteGap = 6, the muted ink. */
+/* The line under a cut list: "+N more on the framework's Framework tab in LFX One" (Sources for the Sources & gaps lists), FRAMEWORK_PORTRAIT_TYPE.cutNote, .cutNoteGap = 6, the muted ink. */
 .fwp-cut-note {
   margin: 6px 0 0;
   font-size: var(--fwp-cut-note-size);
@@ -789,25 +789,26 @@
   height: 140px;
   border: 1px solid var(--pp-hairline);
   border-radius: 12px;
-  padding: 22px 24px;
+  padding: 22px 24px; /* FRAMEWORK_PORTRAIT_NUMBER_TILE.paddingTop / .paddingSide */
 }
 
 .fwp-number-tile-lead {
   border-top: 3px solid var(--pp-accent);
 }
 
+/* The figure and the label are fitted to the tile (FRAMEWORK_PORTRAIT_TYPE.tileFigure / .tileLabel): the template sets the fitted size inline. */
 .fwp-number {
-  font-size: 54px;
-  font-weight: 500;
-  line-height: 1;
+  font-size: var(--fwp-tile-figure-size);
+  font-weight: var(--fwp-tile-figure-weight);
+  line-height: var(--fwp-tile-figure-line);
   letter-spacing: -0.02em;
   color: var(--pp-dark);
 }
 
 .fwp-number-label {
-  margin-top: 10px;
-  font-size: 14px;
-  line-height: 1.4;
+  margin-top: 10px; /* FRAMEWORK_PORTRAIT_NUMBER_TILE.labelGap */
+  font-size: var(--fwp-tile-label-size);
+  line-height: var(--fwp-tile-label-line);
   color: var(--pp-ink);
 }
 
@@ -842,11 +843,13 @@
   color: var(--pp-muted);
 }
 
-/* A proof's source chip in the framework print (the grammar's pp-chip is nowrap): wraps within a cap the component measures against (FRAMEWORK_PORTRAIT_ROOM.chip). */
+/* A proof's source chip in the framework print (the grammar's pp-chip is nowrap): wraps within a cap the component measures against
+   (FRAMEWORK_PORTRAIT_ROOM.chip); it never shrinks beside a long fact (`flex: none`), and only a word longer than the cap breaks. */
 .fwp-chip-wrap {
+  flex: none;
   max-width: 140px; /* FRAMEWORK_PORTRAIT_ROOM.chip */
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   vertical-align: top;
 }
 

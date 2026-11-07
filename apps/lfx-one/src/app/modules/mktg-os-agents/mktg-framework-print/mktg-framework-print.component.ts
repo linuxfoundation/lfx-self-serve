@@ -31,7 +31,6 @@ import {
   MktgPortraitLook,
 } from '@lfx-one/shared/interfaces';
 import {
-  foundationMessagePrintCutNote,
   foundationMessagePrintMatrix,
   foundationMessagePrintSourceLabel,
   frameworkPortraitCutList,
@@ -65,7 +64,7 @@ const ROOM = FRAMEWORK_PORTRAIT_ROOM;
 // (`frameworkPortraitPlan`): a cover with the contents; 01 Framework (the
 // statements and the goal matrix, one page per goal, say and avoid with the
 // anchor questions); 02 ICPs, two a page; 03 Message house; 04 Key numbers
-// with every figure's source; 05 Sources & gaps (the run's report). The
+// with their sources; 05 Sources & gaps (the run's report). The
 // reviewer's note stays on screen. These blocks are bounded so they stop at
 // the next block's top or the footer: the four statements, a goal page's
 // value proposition, key message, sound bite and "who it's for" lines by the
@@ -126,8 +125,6 @@ export class MktgFrameworkPrintComponent {
   protected readonly factColumns = FRAMEWORK_PORTRAIT_FACT_COLUMNS;
   /** The key numbers table's `<colgroup>` widths, %: the figure, what it counts. */
   protected readonly numberColumns = FRAMEWORK_PORTRAIT_NUMBER_COLUMNS;
-  /** The line under a cut list. */
-  protected readonly cutNote = foundationMessagePrintCutNote;
   protected readonly noSourceFailed = MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE;
   protected readonly noGap = FOUNDATION_MESSAGE_PRINT_NO_GAP_MESSAGE;
   /** The fitted blocks' type as custom properties on the root (`--fwp-statement-size: 11.5px`, `--fwp-statement-line: 1.45`, …): the stylesheet reads these, the fit model the constants. */
@@ -242,8 +239,9 @@ export class MktgFrameworkPrintComponent {
     const proofs = frameworkPortraitCutList(
       goal.proofRows,
       proofsRoom,
-      (proof) => this.paraHeight(proof.fact, TYPE.goalProof, width - ROOM.chip - 12) + ROOM.proofRow,
-      (proof) => this.paraHeight(proof.fact, TYPE.goalProofTight, width - ROOM.chip - 12) + ROOM.proofRowTight
+      'Framework',
+      (proof) => this.paraHeight(proof.fact, TYPE.goalProof, width - ROOM.chip - ROOM.proofGap) + ROOM.proofRow,
+      (proof) => this.paraHeight(proof.fact, TYPE.goalProofTight, width - ROOM.chip - ROOM.proofGap) + ROOM.proofRowTight
     );
     const served = goal.icps.map((id) => view.icps.find((icp) => icp.id === id)).filter((icp): icp is FoundationMessagePrintIcp => !!icp);
     const cardWidth = served.length ? (width - (served.length - 1) * 16) / served.length - 32 : width;
@@ -298,7 +296,7 @@ export class MktgFrameworkPrintComponent {
     const columnRoom = this.tops.sourcesApproval - this.tops.sourcesLists - ROOM.gap;
     const rowHeight = (text: string): number => this.paraHeight(text, TYPE.source, listWidth);
     const tightHeight = (text: string): number => this.paraHeight(text, TYPE.sourceTight, listWidth);
-    const list = (rows: readonly string[], room: number) => frameworkPortraitCutList(rows, room, rowHeight, tightHeight);
+    const list = (rows: readonly string[], room: number) => frameworkPortraitCutList(rows, room, 'Sources', rowHeight, tightHeight);
     let lists: FoundationMessagePrintSourcesPage['report'] = null;
     if (report) {
       const failedAll = report.sources_failed.map((source) => `${source.name} — ${source.reason}`);

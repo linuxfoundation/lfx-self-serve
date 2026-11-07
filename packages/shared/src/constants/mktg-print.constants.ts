@@ -73,7 +73,18 @@ export const FRAMEWORK_PORTRAIT_TITLES = {
  * gap, the first row at 210; the "Figures and their sources" table 28 under
  * the last row. The table of every figure (past six) starts at the same top.
  */
-export const FRAMEWORK_PORTRAIT_NUMBER_TILE = { width: 344, height: 140, gap: 16, top: 210, tableGap: 28 } as const;
+export const FRAMEWORK_PORTRAIT_NUMBER_TILE = {
+  width: 344,
+  height: 140,
+  gap: 16,
+  top: 210,
+  tableGap: 28,
+  /** `.fwp-number-tile` padding: 22 above and below, 24 at the sides (the figure and the label fit the width inside). */
+  paddingTop: 22,
+  paddingSide: 24,
+  /** `.fwp-number-label` margin-top. */
+  labelGap: 10,
+} as const;
 
 /**
  * The fixed tops of the framework's portrait pages whose blocks the fit
@@ -122,8 +133,12 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   source: { size: 12, line: 1.6, weight: 400 },
   /** A sources list when it must be tightened before a cut. */
   sourceTight: { size: 11.5, line: 1.5, weight: 400 },
-  /** The muted line under a cut list: `+N more in the framework's Sources tab in LFX One`. */
+  /** The muted line under a cut list: `+N more on the framework's Framework tab in LFX One` (the Sources tab for the Sources & gaps lists). */
   cutNote: { size: 10.5, line: 1.4, weight: 400 },
+  /** A key number tile's figure (`.fwp-number`), stepped down to one line of the tile when it must be. */
+  tileFigure: { size: 54, line: 1, weight: 500 },
+  /** A key number tile's label (`.fwp-number-label`), fitted to the room under the figure. */
+  tileLabel: { size: 14, line: 1.4, weight: 400 },
 } as const satisfies Record<string, FoundationMessagePrintType>;
 
 /**
@@ -139,6 +154,8 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   proofRow: 27,
   /** `.fwp-proof-list-tight .fwp-proof-row` padding (9 + 9) and its hairline. */
   proofRowTight: 19,
+  /** `.fwp-proof-row` gap between the fact and its chip. */
+  proofGap: 16,
   /** `.fwp-facts-table td` padding (4 + 4) and its hairline. */
   factRow: 9,
   /** `.fwp-facts-table-tight td` padding (3 + 3) and its hairline. */
@@ -167,16 +184,16 @@ export const FRAMEWORK_PORTRAIT_NUMBER_COLUMNS = [25, 75] as const;
  * The key numbers' tile layout by count (the maintainer's ruling, 7 Nov 2026, through the design reader): each entry is
  * one tile's share of a row (1 = the row, 2 = a half, 3 = a third), in order: 4 → 2×2, 5 → a row of three then a row of
  * two, 6 → 3×2. One to three figures keep the earlier rule (pairs, an odd last tile across the row). More figures than
- * the table holds print no tiles: the key numbers table lists every one.
+ * the tiles hold print no tiles: the key numbers table lists every one.
  */
-export const FRAMEWORK_PORTRAIT_TILE_SHARES: Record<number, readonly number[]> = {
+export const FRAMEWORK_PORTRAIT_TILE_SHARES = {
   1: [1],
   2: [2, 2],
   3: [2, 2, 1],
   4: [2, 2, 2, 2],
   5: [3, 3, 3, 2, 2],
   6: [3, 3, 3, 3, 3, 3],
-};
+} as const satisfies Record<number, readonly number[]>;
 
 /** The most figures the key numbers page prints as tiles; past it, the table lists them all. */
 export const FRAMEWORK_PORTRAIT_MAX_TILES = 6;
