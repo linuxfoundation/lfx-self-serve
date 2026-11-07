@@ -8,7 +8,14 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MKTG_PRINT_INK_ON_DARK, MKTG_PRINT_INK_ON_LIGHT, MKTG_PRINT_LF_LOOK, MKTG_PRINT_REVERSED_FILTER } from '../constants/mktg-print.constants';
+import {
+  MKTG_PRINT_DOT,
+  MKTG_PRINT_INK_ON_DARK,
+  MKTG_PRINT_INK_ON_LIGHT,
+  MKTG_PRINT_LF_LOOK,
+  MKTG_PRINT_REVERSED_FILTER,
+  mktgPrintJoin,
+} from '../constants/mktg-print.constants';
 import { MKTG_READABLE_SOURCE } from '../constants/mktg-readable-source.constants';
 import { BrandKitLogoRef, BrandKitRevision } from '../interfaces/brand-kit.interface';
 import { FoundationMessageContent, FoundationMessageReport } from '../interfaces/foundation-message.interface';
@@ -316,6 +323,10 @@ describe('the framework’s print', () => {
     expect(foundationMessagePrintSourceLabel('LFX Insights: members')).toBe('LFX Insights: members');
     expect(foundationMessagePrintSourceLabel('The Website: page')).toBe('The Website: page');
     expect(foundationMessagePrintSourceLabel('  Link:   spaced  ')).toBe('spaced');
+    // One middle-dot rule for every joined line: a plain space either side of the dot, the empty parts left out.
+    expect(MKTG_PRINT_DOT).toBe(' · ');
+    expect(mktgPrintJoin(['Goal 1', '', 'Events'])).toBe('Goal 1 · Events');
+    expect(mktgPrintDocumentTitle('Orbit', 'Messaging Framework', 2, '2026-11-04T10:00:00Z')).toBe('Orbit · Messaging Framework · v2 · 2026-11-04');
     // A report sentence: the URL in it rewritten, the sentence's punctuation kept.
     expect(foundationMessagePrintReportText('The members page https://www.orbit.example.org/members?x=1 answered with a sign-in wall.')).toBe(
       'The members page orbit.example.org/members answered with a sign-in wall.'

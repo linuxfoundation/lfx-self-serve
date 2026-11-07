@@ -316,6 +316,19 @@ export const FOUNDATION_MESSAGE_PRINT_NO_GAP_MESSAGE = 'The sources left no gap.
 /** The source types a run writes before a source (`Website: https://…`); the Sources & gaps page prints the source without the type. */
 export const FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES = ['Website', 'Link', 'Press release'] as const;
 
+/**
+ * The one middle-dot separator every printed line joins its parts with (the editor's rule, 7 November 2026: one
+ * spacing everywhere): a plain space, the middle dot, a plain space, as the grammar's footer sets it. The document
+ * title, the cover's edition and strip lines, the house's brand line, a goal's `Goal 1 · Events`, the channels, the
+ * personas and the facts' "used by" all join with it; no thin or hair space anywhere.
+ */
+export const MKTG_PRINT_DOT = ' · ';
+
+/** Parts joined with the one middle dot, the empty ones left out. */
+export function mktgPrintJoin(parts: readonly string[]): string {
+  return parts.filter((part) => part !== '').join(MKTG_PRINT_DOT);
+}
+
 /** The fixed three-letter month names the prints date with (UTC), the same in every engine and locale. */
 export const MKTG_PRINT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 

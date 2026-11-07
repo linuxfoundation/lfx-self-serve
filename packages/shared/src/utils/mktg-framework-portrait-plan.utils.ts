@@ -13,6 +13,7 @@ import {
   FRAMEWORK_PORTRAIT_PAGE_IDS,
   FRAMEWORK_PORTRAIT_SECTIONS,
   FRAMEWORK_PORTRAIT_TITLES,
+  mktgPrintJoin,
 } from '../constants/mktg-print.constants';
 import type { FoundationMessagePrintIcp, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
@@ -44,7 +45,7 @@ export function frameworkPortraitPlan(view: FoundationMessagePrintView, options:
   const pages: MktgPortraitPlanPage[] = [];
   if (!options.inFamily) pages.push({ id: ids.cover, section: 'Cover', title: 'Cover' });
   pages.push({ id: ids.framework, section: sections.framework, title: titles.framework });
-  view.goals.forEach((goal) => pages.push({ id: `goal-${goal.n}`, section: sections.framework, title: `Goal ${goal.n} · ${goal.t}` }));
+  view.goals.forEach((goal) => pages.push({ id: `goal-${goal.n}`, section: sections.framework, title: mktgPrintJoin([`Goal ${goal.n}`, goal.t]) }));
   pages.push({ id: ids.sayAvoid, section: sections.framework, title: titles.sayAvoid });
   frameworkPortraitIcpPages(view.icps).forEach((_, index) =>
     pages.push({ id: `icps-${index + 1}`, section: sections.icps, title: index === 0 ? titles.icps : `${titles.icps} (${index + 1})` })

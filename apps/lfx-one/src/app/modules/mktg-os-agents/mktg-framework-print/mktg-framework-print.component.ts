@@ -16,6 +16,8 @@ import {
   MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
   MKTG_PORTRAIT_COLUMNS,
   MKTG_PORTRAIT_PAGE,
+  MKTG_PRINT_DOT,
+  mktgPrintJoin,
 } from '@lfx-one/shared/constants';
 import {
   FoundationMessagePrintFittedText,
@@ -167,17 +169,17 @@ export class MktgFrameworkPrintComponent {
         firstPage: 1,
       }
   );
+  /** The one middle-dot separator the template joins a line's parts with (MKTG_PRINT_DOT). */
+  protected readonly dot = MKTG_PRINT_DOT;
   /** The frames, in the plan's order, each with its book page number, printed section label, band and laid-out data. */
   protected readonly frames = this.initFrames();
   /** The cover's edition line: `V1.0 · Approved 6 Nov 2026 · figures as of 4 Nov 2026`, less any clause the revision lacks. */
   protected readonly coverVersionLine = computed(() => {
     const view = this.view();
-    return [view.versionLabel, view.approvedLabel, view.dateReadLabel ? `figures as of ${view.dateReadLabel}` : ''].filter((part) => part !== '').join(' · ');
+    return mktgPrintJoin([view.versionLabel, view.approvedLabel, view.dateReadLabel ? `figures as of ${view.dateReadLabel}` : '']);
   });
   /** The cover's bottom strip, right: `aaif.io · V1.0 · 6 Nov 2026`, less any part the revision lacks. */
-  protected readonly coverStripRight = computed(() =>
-    [this.view().website, this.view().versionLabel, this.view().dateLabel].filter((part) => part !== '').join(' · ')
-  );
+  protected readonly coverStripRight = computed(() => mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel]));
   /** The cover's umbrella, fitted to the dark band's room under the lockup and the tagline. */
   protected readonly coverUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.coverUmbrella, 640, 160));
   /** The message house's umbrella bar, fitted to three lines. */
@@ -356,7 +358,7 @@ export class MktgFrameworkPrintComponent {
     const gapsClause = view.approvedLabel && (report?.gaps.length ?? 0) > 0 ? 'The gaps above were open at approval. ' : '';
     return {
       report: lists,
-      approvalLead: lead.length ? `${lead.join(' · ')}.` : '',
+      approvalLead: lead.length ? `${mktgPrintJoin(lead)}.` : '',
       approvalNote: `${gapsClause}A later run re-reads the sources and refreshes the LFX figures.`,
     };
   }

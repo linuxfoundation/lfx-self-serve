@@ -241,7 +241,7 @@
               <p class="fwp-house-umbrella" [style.font-size.px]="houseUmbrella().size">{{ houseUmbrella().text }}</p>
             }
             @if (v.mh.line) {
-              <p class="fwp-house-line">Brand line · {{ v.mh.line }}</p>
+              <p class="fwp-house-line">Brand line{{ dot }}{{ v.mh.line }}</p>
             }
             <!-- Each pillar's proofs cut to the room that leaves Why now and the audiences theirs (frameworkPortraitHouse). -->
             <div class="fwp-pillars" [style.--fwp-pillar-count]="v.pillars.length" data-testid="mktg-framework-print-pillars">
@@ -528,7 +528,7 @@
                     }
                     <ul class="fwp-icp-personas">
                       @for (persona of icp.personaRows; track persona.role) {
-                        <li>{{ persona.role }} · {{ persona.cares }}</li>
+                        <li>{{ persona.role }}{{ dot }}{{ persona.cares }}</li>
                       }
                     </ul>
                   </div>

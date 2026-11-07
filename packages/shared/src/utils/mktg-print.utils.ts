@@ -22,6 +22,7 @@ import {
   MKTG_PRINT_INK_ON_LIGHT,
   MKTG_PRINT_LF_LOOK,
   MKTG_PRINT_MONTHS,
+  mktgPrintJoin,
 } from '../constants/mktg-print.constants';
 import type { BrandKitRevision } from '../interfaces/brand-kit.interface';
 import type { FoundationMessageContent, FoundationMessageNumberRow, FoundationMessageReport } from '../interfaces/foundation-message.interface';
@@ -71,8 +72,7 @@ export function buildFaqPrintView(asset: MktgFaqAsset, brand: MktgPrintBrand): F
 export function mktgPrintDocumentTitle(projectName: string, asset: string, version: number | null, revisionAt: string | null): string {
   const time = Date.parse(revisionAt ?? '');
   const date = Number.isNaN(time) ? '' : new Date(time).toISOString().slice(0, 10);
-  const parts = [projectName.trim(), asset.trim(), version === null ? '' : `v${version}`, date];
-  return parts.filter((part) => part !== '').join(' · ');
+  return mktgPrintJoin([projectName.trim(), asset.trim(), version === null ? '' : `v${version}`, date]);
 }
 
 /** The LF look, for a project with no Brand Kit. */
@@ -190,7 +190,7 @@ export function foundationMessagePrintIcps(content: FoundationMessageContent): F
       ...icp,
       goals,
       goalLabel: icp.goalTitles.join(', '),
-      channelsLabel: icp.channels.join(' · '),
+      channelsLabel: mktgPrintJoin(icp.channels),
       goalChips,
       whoWidth: frameworkPortraitIcpWhoWidth([icp.kind, ...goalChips]),
     };
@@ -241,7 +241,9 @@ export function foundationMessagePrintAnchorIntro(count: number): string {
 
 /** Every goal's proof points with their sources and the goal that uses each, in the framework's order. */
 export function foundationMessagePrintFacts(goals: FoundationMessagePrintGoal[]): FoundationMessagePrintFactRow[] {
-  return goals.flatMap((goal) => goal.proofRows.map((proof) => ({ fact: proof.fact, source: proof.source, usedBy: `Goal ${goal.n} · ${goal.t}` })));
+  return goals.flatMap((goal) =>
+    goal.proofRows.map((proof) => ({ fact: proof.fact, source: proof.source, usedBy: mktgPrintJoin([`Goal ${goal.n}`, goal.t]) }))
+  );
 }
 
 /**
@@ -295,7 +297,7 @@ export function buildFoundationMessagePrintView(
   return {
     brand: mktgPrintBrand(kit),
     projectName: name,
-    eyebrow: name ? `${name} · a Linux Foundation project` : 'A Linux Foundation project',
+    eyebrow: name ? mktgPrintJoin([name, 'a Linux Foundation project']) : 'A Linux Foundation project',
     title: FOUNDATION_MESSAGE_PRINT_TITLE,
     versionLabel: version === null ? '' : `V${version}.0`,
     approvedLabel: dateLabel ? `Approved ${dateLabel}` : '',
