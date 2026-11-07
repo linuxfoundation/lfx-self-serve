@@ -223,12 +223,15 @@ export const MKTG_FAMILY_PRINT_LABELS = {
 
 /**
  * The middle dot between two labels the family's own pages print in the kit's face (`V2.0 · 6 Nov 2026` on the cover's
- * tiles, the FAQ's group names, `48 words · max 50`): a thin space inside each word space, since the word space alone
- * sets the dot tight in Instrument Sans ("Goal 1·Events", the editor's round of 7 Nov 2026). The twin of the framework
- * print's `FRAMEWORK_PORTRAIT_SEP`, the same value. The grammar's own labels keep its dot: the running heads, and the
- * cover strip, whose halves the grammar splits on `MKTG_PORTRAIT_COVER_STRIP.separator` to shorten them.
+ * tiles, the FAQ's group names, `48 words · max 50`): a narrow space inside each word space, since the word space alone
+ * sets the dot tight in Instrument Sans ("Goal 1·Events", the editor's round of 7 Nov 2026), and no break before the
+ * dot: a thin space (U+2009) is a break opportunity and let a line start with "·" (the framework print's finding, M11),
+ * so the space and the narrow space before the dot are the no-break ones (U+00A0, U+202F) and the one after it the
+ * narrow no-break; a line may break only at the trailing word space. The twin of the framework print's
+ * `FRAMEWORK_PORTRAIT_SEP`, the same value. The grammar's own labels keep its dot: the running heads, and the cover
+ * strip, whose halves the grammar splits on `MKTG_PORTRAIT_COVER_STRIP.separator` to shorten them.
  */
-export const MKTG_FAMILY_PRINT_SEP = ' \u2009·\u2009 ';
+export const MKTG_FAMILY_PRINT_SEP = '\u00a0\u202f·\u202f ';
 
 /** The copy of the family's own pages; `[Project]` is the project's name, counts are filled by the plan. */
 export const MKTG_FAMILY_PRINT_COPY = {
