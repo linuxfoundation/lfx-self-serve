@@ -61,6 +61,7 @@ import {
   mktgPortraitBlockHeight,
   mktgPortraitCharsPerLine,
   mktgPortraitLineFits,
+  mktgPortraitParaHeight,
   mktgPortraitScaleBlock,
   mktgPortraitWrapLines,
 } from './mktg-portrait-print.utils';
@@ -564,6 +565,30 @@ describe('the chapters’ rule lists', () => {
     expect(
       brandKitPortraitRulesFit(['One rule that is far too long for its room '.repeat(40)], { ...r.imageryAvoid, bottom: r.imageryAvoid.top + 30 }).rules
     ).toHaveLength(1);
+  });
+
+  it('measures a two-column list row by row, as the grid draws it: a row is as tall as its taller rule', () => {
+    // Four rules in the Partnership room, short and long alternating so each COLUMN is one short and one long rule
+    // (which the room holds), while each ROW is as tall as its long rule (which it does not): the fitter steps down.
+    const room = BRAND_KIT_PORTRAIT_RULE_LISTS.partnership;
+    const para = (text: string, above: number) => mktgPortraitParaHeight({ text, size: room.size, line: room.line, above }, room.width);
+    const height = room.bottom - room.top - mktgPortraitParaHeight({ text: 'Rules', ...BRAND_KIT_PORTRAIT_RULE_LISTS.label }, room.width);
+    const short = 'Keep the clear space.';
+    let long = 'Never redraw the partner mark.';
+    // Grow the long rule until two of them, with the grid's gaps, outrun the room while a short and a long one do not.
+    while (room.listAbove + para(long, 0) + para(long, room.above) <= height) long += ' Never redraw the partner mark.';
+    expect(room.listAbove + para(short, 0) + para(long, room.above)).toBeLessThanOrEqual(height);
+    const fit = brandKitPortraitRulesFit([short, long, long, short], room);
+    expect(fit.scale).toBeLessThan(1);
+    expect(fit.rules).toHaveLength(4);
+    // Two columns of equal rows, and a one-column room, measure as the plain sum: unchanged.
+    expect(brandKitPortraitRulesFit([short, short, short, short], room)).toMatchObject({ scale: 1, cut: false, more: 0 });
+    expect(
+      brandKitPortraitRulesFit([long, short], { ...room, columns: 1, bottom: room.top + room.listAbove + para(long, 0) + para(short, room.above) + 12 })
+    ).toMatchObject({
+      scale: 1,
+      cut: false,
+    });
   });
 });
 

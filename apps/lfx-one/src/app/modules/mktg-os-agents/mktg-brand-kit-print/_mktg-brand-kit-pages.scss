@@ -184,7 +184,7 @@
 }
 
 .pp-tile--dark .kp-tile-missing {
-  color: var(--pp-white);
+  color: var(--pp-on-dark, var(--pp-white));
   opacity: 0.8;
 }
 
@@ -421,8 +421,8 @@
 }
 
 .kp-partner--dark {
-  border-color: rgb(255 255 255 / 60%);
-  color: rgb(255 255 255 / 70%);
+  border-color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 60%, transparent);
+  color: color-mix(in srgb, var(--pp-on-dark, var(--pp-white)) 70%, transparent);
 }
 
 .kp-bar {
@@ -435,7 +435,8 @@
 }
 
 .kp-bar--white {
-  background: var(--pp-white);
+  // The partnership bar on the dark tile only: drawn in the dark ground's text ink.
+  background: var(--pp-on-dark, var(--pp-white));
 }
 
 /* Watchouts: a 3-column grid of 190 px tiles with the red cross, the label 12/1.4 under each. */
@@ -1041,7 +1042,7 @@
 .kp-button--primary {
   padding: 12px 22px;
   background: var(--pp-dark);
-  color: var(--pp-white);
+  color: var(--pp-on-dark, var(--pp-white));
 }
 
 .kp-button--secondary {
@@ -1054,14 +1055,14 @@
   padding: 8px 14px;
   background: var(--pp-dark);
   font-size: 11px;
-  color: var(--pp-white);
+  color: var(--pp-on-dark, var(--pp-white));
 }
 
 .kp-button--tiny {
   padding: 6px 12px;
   background: var(--pp-dark);
   font-size: 10px;
-  color: var(--pp-white);
+  color: var(--pp-on-dark, var(--pp-white));
 }
 
 /* ---- Example usage ---- */
@@ -1110,7 +1111,7 @@
   font-size: 20px;
   font-weight: 500;
   line-height: 1.2;
-  color: var(--pp-white);
+  color: var(--pp-on-dark, var(--pp-white));
 }
 
 .kp-usage-social-note {
@@ -1151,7 +1152,7 @@
   font-size: 17px;
   font-weight: 500;
   line-height: 1.25;
-  color: var(--pp-white);
+  color: var(--pp-on-dark, var(--pp-white));
 }
 
 /* The files table's fixed columns: name 150, format 70, color variant 120; the source takes the rest. */

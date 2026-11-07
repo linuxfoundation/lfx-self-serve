@@ -253,8 +253,10 @@ page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's S
   Chromium adds an empty page per `tfoot` and WebKit repeats neither.
 - **Inks and look.** The kit's dark, accent, spark, the ink on the accent and the font
   come from the kit (`MktgPortraitLook`, `mktgPortraitLook(brand, spark)`); the page writes
-  them as `--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`, `--pp-font`,
-  `--pp-accent-text` and `--pp-accent-on-dark`. `--pp-accent-text` is the accent darkened
+  them as `--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`, `--pp-on-dark` (the
+  better-contrast ink `mktgPrintBrand` picks for the dark: every text on a dark page reads it,
+  translucent variants through `color-mix`), `--pp-font`, `--pp-accent-text` and
+  `--pp-accent-on-dark`. `--pp-accent-text` is the accent darkened
   in OKLab until it reads on the page white at WCAG AA for ordinary text
   (`mktgPortraitAccentText(accent, paper)`, ≥ 4.5:1; an accent that already does is
   itself): every TEXT set in the accent on a light page reads it (the section label under
