@@ -303,6 +303,22 @@ describe('logoVariantSources', () => {
     });
   });
 
+  it('derives nothing from a black rounded tile with a white letter: rendered white is an ink, and a reversal would turn the tile white and lose the letter', () => {
+    // The tile and its letter are two inks even though one of them is white: inverting them boxes the letter in a white tile.
+    const tile = {
+      ref: 'logo.svg',
+      svg: `<svg ${SVG_NS} viewBox="0 0 20 10"><rect x="1" y="1" width="8" height="8" rx="2" fill="#000"/><path d="M4 3h2v4H4z" fill="#fff"/><path d="M11 5h8" stroke="#000" stroke-width="2"/></svg>`,
+    };
+    expect(logoVariantSources({ ...none, primary: tile }, '0 0 10 10')).toEqual({
+      symbol: {
+        kind: 'svg',
+        svg: `<svg ${SVG_NS} viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="2" fill="#000"/><path d="M4 3h2v4H4z" fill="#fff"/><path d="M11 5h8" stroke="#000" stroke-width="2"/></svg>`,
+        derived: true,
+      },
+    });
+    expect(logoVariantSources({ ...none, primary: tile }, null)).toEqual({});
+  });
+
   it('derives no reversed, one-colour or reversed-symbol recolour from a multi-colour primary, and still names the symbol crop', () => {
     // LOCKUP paints its mark blue and its rule orange: two inks flatten to one shape under the filter, so nothing is recoloured from it.
     const twoInks = { ref: 'logo.svg', svg: LOCKUP };

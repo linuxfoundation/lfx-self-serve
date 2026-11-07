@@ -807,6 +807,27 @@ describe('MktgSlidesExportService', () => {
       expect(loggerMocks.warning).not.toHaveBeenCalled();
     });
 
+    it('sends the primary and the symbol crop alone when the primary is a black rounded tile with a white letter: rendered white is a second ink', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // Reversing the tile would turn it white and lose the letter, so the detector reads two inks and nothing is derived; the primary is sent as it came.
+      await seedKit(documentStore, {
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><rect x="1" y="1" width="8" height="8" rx="2" fill="#000"/><path d="M4 3h2v4H4z" fill="#fff"/><path d="M11 5h8" stroke="#000" stroke-width="2"/></svg>',
+        symbolViewBox: SYMBOL_VIEWBOX,
+      });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO REVERSED URL']).toBe('none');
+      expect(lines['LOGO ONE-COLOR URL']).toBe('none');
+      expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
+      expect(started.logoNote).toBeNull();
+      expect(store.publicImages.size).toBe(2 + ICON_IMAGES);
+      expect(loggerMocks.warning).not.toHaveBeenCalled();
+    });
+
     it('derives every variant from a black-on-transparent lockup with curved, anti-aliased edges: one painted colour is single-colour artwork', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
       // A mark in SVG’s default black with no background, as AAIF’s is; its round shapes draw anti-aliased edges, which are alpha, not a second colour.
