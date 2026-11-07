@@ -397,6 +397,11 @@ describe('AEO/GEO reader caveats', () => {
     expect(aeoGeoReaderCaveat('The search returned "Example Foundation" within the first 100 results.')).toBe(
       'The search returned "Example Foundation" within the first 100 results.'
     );
+    // Only an error status is evidence: a successful status beside a quoted result, or a number inside a quoted title, is not.
+    expect(aeoGeoReaderCaveat('The search returned "Example Foundation" with HTTP 200.')).toBe('The search returned "Example Foundation" with HTTP 200.');
+    expect(aeoGeoReaderCaveat('The search returned "Top 100 open source foundations" for the project name.')).toBe(
+      'The search returned "Top 100 open source foundations" for the project name.'
+    );
   });
 
   it('never splits a sentence inside its quotes, so a quoted title stays whole and a multi-sentence provider error maps as one', () => {
@@ -422,6 +427,13 @@ describe('AEO/GEO reader caveats', () => {
     );
     expect(aeoGeoReaderCaveat('Web search failed with "Rate limit reached?" llms.txt was fetched in full.')).toBe(
       `${AEO_GEO_READER_CAVEATS.search_unavailable} llms.txt was fetched in full.`
+    );
+    // A hyphenated file name is a file name too: it opens its own sentence, while a hyphenated lowercase word still continues.
+    expect(aeoGeoReaderCaveat('Web search returned "Quota exceeded." llms-full.txt was fetched in full.')).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} llms-full.txt was fetched in full.`
+    );
+    expect(aeoGeoReaderCaveat('Search returned "What is AEO?" well-known explainer as its first result.')).toBe(
+      'Search returned "What is AEO?" well-known explainer as its first result.'
     );
     expect(aeoGeoReaderCaveat('Web search returned "Quota exceeded." sitemap.xml lists 40 URLs. og:site_name is set.')).toBe(
       `${AEO_GEO_READER_CAVEATS.search_unavailable} sitemap.xml lists 40 URLs. og:site_name is set.`
