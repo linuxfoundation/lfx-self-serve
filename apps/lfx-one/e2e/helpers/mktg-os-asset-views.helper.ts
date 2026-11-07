@@ -403,20 +403,22 @@ export function realShapedFrameworkRevisionResponse(): MktgRevisionResponse {
 }
 
 /**
- * The approved framework document with more than the portrait book's pages hold at their measure: nine figures (past the six
- * tiles hold), fourteen long proof points on the first goal, sixty sources read and forty gaps, so the print's key numbers table
- * and its cut lists print on the fixture. Synthetic throughout.
+ * The largest framework record the validator takes (`FOUNDATION_MESSAGE_CONTENT_LIMITS`: 8 figures, 4 proofs a goal; the
+ * report's lists are unbounded) that still fills the book past its rooms: eight figures with long labels (no tiles past
+ * six, a Key numbers table that continues on `key-numbers-2`), four proof points on the first goal (cut to the rows that
+ * fit, with the +N line), sixty sources read and forty gaps (cut lists on the Sources & gaps page).
  */
 export function overfullFrameworkRevisionResponse(): MktgRevisionResponse {
   const framework = realShapedFrameworkAsset();
   const sentence = 'A long proof sentence that runs across most of the column and asks the list for a second line of room.';
+  const labelTail = Array.from({ length: 5 }, () => 'counted across the synthetic record so the label needs several lines of its column').join(', ');
   const goals = framework.content.mf.goals.map((goal, index) =>
-    index === 0 ? { ...goal, proof: Array.from({ length: 14 }, (_, n): [string, string] => [`${sentence} (${n + 1})`, 'Report']) } : goal
+    index === 0 ? { ...goal, proof: Array.from({ length: 4 }, (_, n): [string, string] => [`${sentence} (${n + 1})`, 'Report']) } : goal
   );
   const content = {
     ...framework.content,
     mf: { ...framework.content.mf, goals },
-    nums: Array.from({ length: 9 }, (_, n): [string, string] => [`${(n + 1) * 1000}`, `synthetic figure ${n + 1}`]),
+    nums: Array.from({ length: 8 }, (_, n): [string, string] => [`${(n + 1) * 1000}`, `synthetic figure ${n + 1}, ${labelTail}`]),
   };
   const report = {
     ...framework.report,

@@ -75,15 +75,19 @@ export const FRAMEWORK_PORTRAIT_TITLES = {
  */
 export const FRAMEWORK_PORTRAIT_NUMBER_TILE = {
   width: 344,
-  height: 140,
+  /** The mock's tile as drawn: 22 + the 54 figure + 10 + a 14/1.4 label line (20) + 10 + the 17 source pill + 22. */
+  height: 156,
   gap: 16,
   top: 210,
-  tableGap: 28,
+  /** Under two rows of tiles the facts table starts where the mock draws it: 210 + 2 × 156 + 16 + 22 = 560. */
+  tableGap: 22,
   /** `.fwp-number-tile` padding: 22 above and below, 24 at the sides (the figure and the label fit the width inside). */
   paddingTop: 22,
   paddingSide: 24,
-  /** `.fwp-number-label` margin-top. */
+  /** `.fwp-number-label` and `.fwp-number-source` margin-top. */
   labelGap: 10,
+  /** The grammar's `.pp-chip` as the tile's source pill: 8.5 px type on one line, 3 px padding and a 1 px border above and below (16.5, kept whole). */
+  sourceHeight: 17,
 } as const;
 
 /**
@@ -197,6 +201,9 @@ export const FRAMEWORK_PORTRAIT_TILE_SHARES = {
 
 /** The most figures the key numbers page prints as tiles; past it, the table lists them all. */
 export const FRAMEWORK_PORTRAIT_MAX_TILES = 6;
+
+/** A count in words for the print's sentences, up to the anchor questions' limit (FOUNDATION_MESSAGE_CONTENT_LIMITS.anchor.max); a count past it prints as digits. */
+export const FOUNDATION_MESSAGE_PRINT_COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five'] as const;
 
 /** The on-screen Sources card's empty state for the gaps, printed verbatim on the Sources & gaps page. */
 export const FOUNDATION_MESSAGE_PRINT_NO_GAP_MESSAGE = 'The sources left no gap.';

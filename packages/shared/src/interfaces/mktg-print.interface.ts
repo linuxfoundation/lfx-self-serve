@@ -175,9 +175,17 @@ export interface FoundationMessagePrintIcpPage {
 /**
  * One key number's tile: its share of a row (1 = the row, 2 = a half, 3 = a third; FRAMEWORK_PORTRAIT_TILE_SHARES), wide when it spans
  * the row; the figure's size stepped down in whole px to one line of the tile, to a floor of half its size (a longer figure overflows the
- * tile: follow-up), and the label fitted (smaller, then cut at a sentence) to the room under it.
+ * tile: follow-up), and the label fitted (smaller, then cut at a sentence) to the room under it, less the source pill's when one prints.
  */
-export interface FoundationMessagePrintNumberTile extends FoundationMessageNumberRow {
+/**
+ * A key number as the print carries it: the stored figure and label, and the source of the proof point that states the
+ * figure (the tile's pill), '' when no proof point states it or the ones that do disagree (then no pill: nothing is invented).
+ */
+export interface FoundationMessagePrintNumber extends FoundationMessageNumberRow {
+  source: string;
+}
+
+export interface FoundationMessagePrintNumberTile extends FoundationMessagePrintNumber {
   share: number;
   wide: boolean;
   figureSize: number;
@@ -263,6 +271,8 @@ export interface FoundationMessagePrintFrame extends MktgPortraitPlanPage {
     positioning: FoundationMessagePrintFittedText;
     tagline: FoundationMessagePrintFittedText;
   } | null;
+  /** The say-and-avoid page's intro, counting its anchor questions ('' on the other pages). */
+  anchorIntro: string;
   /** The anchor questions, numbered, on the say-and-avoid page. */
   anchors: FoundationMessagePrintAnchorRow[];
   goalPage: FoundationMessagePrintGoalPage | null;
@@ -301,6 +311,6 @@ export interface FoundationMessagePrintView {
   icps: FoundationMessagePrintIcp[];
   pillars: FoundationMessagePillarView[];
   avoidRows: FoundationMessageAvoidRow[];
-  numbers: FoundationMessageNumberRow[];
+  numbers: FoundationMessagePrintNumber[];
   audiences: FoundationMessageAudienceRow[];
 }

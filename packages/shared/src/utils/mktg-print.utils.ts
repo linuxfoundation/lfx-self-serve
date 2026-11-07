@@ -13,6 +13,7 @@ import { faqGroupViews } from './faq.utils';
 import { BRAND_KIT_HEX_REGEX } from '../constants/brand-kit.constants';
 import { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 import {
+  FOUNDATION_MESSAGE_PRINT_COUNT_WORDS,
   FOUNDATION_MESSAGE_PRINT_TAB_IDS,
   FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES,
   FOUNDATION_MESSAGE_PRINT_TITLE,
@@ -24,12 +25,13 @@ import {
   MKTG_PRINT_REVERSED_FILTER,
 } from '../constants/mktg-print.constants';
 import type { BrandKitRevision } from '../interfaces/brand-kit.interface';
-import type { FoundationMessageContent, FoundationMessageReport } from '../interfaces/foundation-message.interface';
+import type { FoundationMessageContent, FoundationMessageNumberRow, FoundationMessageReport } from '../interfaces/foundation-message.interface';
 import type {
   FoundationMessagePrintFactRow,
   FoundationMessagePrintGoal,
   FoundationMessagePrintIcp,
   FoundationMessagePrintMatrixRow,
+  FoundationMessagePrintNumber,
   FoundationMessagePrintSection,
   FoundationMessagePrintView,
   MktgPrintBrand,
@@ -205,9 +207,30 @@ export function foundationMessagePrintSourceLabel(source: string): string {
   return type ? trimmed.slice(type.length + 2).trim() : trimmed;
 }
 
+/** The say-and-avoid page's intro, counting the anchor questions as the mock's sentence does ("the three questions every piece of content answers"). */
+export function foundationMessagePrintAnchorIntro(count: number): string {
+  const words = FOUNDATION_MESSAGE_PRINT_COUNT_WORDS[count] ?? String(count);
+  return `The words the framework uses, the ones it replaces, and the ${words} question${count === 1 ? '' : 's'} every piece of content answers.`;
+}
+
 /** Every goal's proof points with their sources and the goal that uses each, in the framework's order. */
 export function foundationMessagePrintFacts(goals: FoundationMessagePrintGoal[]): FoundationMessagePrintFactRow[] {
   return goals.flatMap((goal) => goal.proofRows.map((proof) => ({ fact: proof.fact, source: proof.source, usedBy: `Goal ${goal.n} · ${goal.t}` })));
+}
+
+/**
+ * The key numbers with each figure's source: the source of the proof points that state the figure as a whole number (`299` in
+ * `299 member organizations`, `10,000+` in `More than 10,000 published MCP servers`; never `8` in `188`), when they agree on one.
+ * A figure no proof point states, or that proof points source differently, carries '' and prints no pill: the record's own
+ * key numbers have no source of their own, and none is invented.
+ */
+export function foundationMessagePrintNumbers(numbers: FoundationMessageNumberRow[], facts: FoundationMessagePrintFactRow[]): FoundationMessagePrintNumber[] {
+  return numbers.map((row) => {
+    const figure = row.number.trim().replace(/\+$/, '');
+    const token = new RegExp(`(?:^|[^\\d,.])${figure.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\d,.])`);
+    const sources = new Set(facts.filter((fact) => figure !== '' && token.test(fact.fact)).map((fact) => fact.source));
+    return { ...row, source: sources.size === 1 ? [...sources][0] : '' };
+  });
 }
 
 /** Goals × profiles: one row per profile, a cell per goal (in the framework's order), true where the goal's messaging is written for the profile. */
@@ -239,6 +262,7 @@ export function buildFoundationMessagePrintView(
   const name = projectName.trim();
   const goals = foundationMessagePrintGoals(content);
   const icps = foundationMessagePrintIcps(content);
+  const facts = foundationMessagePrintFacts(goals);
   const dateLabel = mktgPrintApprovedDate(approvedAt);
   const dateReadLabel = mktgPrintApprovedDate(dateRead);
   return {
@@ -254,14 +278,14 @@ export function buildFoundationMessagePrintView(
     report,
     runningHead: `${name} ${FOUNDATION_MESSAGE_PRINT_TITLE}`.trim(),
     sections: foundationMessagePrintSections(),
-    facts: foundationMessagePrintFacts(goals),
+    facts,
     mf: content.mf,
     mh: content.mh,
     goals,
     icps,
     pillars: foundationMessagePillarViews(content),
     avoidRows: foundationMessageAvoidRows(content),
-    numbers: foundationMessageNumberRows(content),
+    numbers: foundationMessagePrintNumbers(foundationMessageNumberRows(content), facts),
     audiences: foundationMessageAudienceRows(content),
   };
 }

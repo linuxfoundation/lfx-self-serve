@@ -170,9 +170,7 @@
 
         <!-- 01 SAY AND AVOID · ANCHOR QUESTIONS -->
         @case (ids.sayAvoid) {
-          <p class="pp-body fwp-intro-say" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">
-            The words the framework uses, the ones it replaces, and the questions every piece of content answers.
-          </p>
+          <p class="pp-body fwp-intro-say" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">{{ frame.anchorIntro }}</p>
           <div [lfxPpRect]="[page.margin, 200, 320]">
             <span class="pp-lab pp-lab--dark">Say</span>
             <ul class="fwp-say-list" data-testid="mktg-framework-print-say">
@@ -349,6 +347,9 @@
                     [attr.data-testid]="'mktg-framework-print-number-tile-' + $index">
                     <span class="fwp-number" [style.font-size.px]="row.figureSize">{{ row.number }}</span>
                     <span class="fwp-number-label" [style.font-size.px]="row.labelSize">{{ row.labelText }}</span>
+                    @if (row.source) {
+                      <span class="pp-chip fwp-chip-wrap fwp-number-source" data-testid="mktg-framework-print-number-source">{{ row.source }}</span>
+                    }
                   </div>
                 }
               </div>

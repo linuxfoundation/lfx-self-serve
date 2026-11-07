@@ -343,6 +343,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       // One number: its tile spans the column (no orphan half-tile); the facts table lists the fixture's one proof point, whole, with no cut line.
       await expect(print.getByTestId('mktg-framework-print-number-tile-0')).toHaveAttribute('data-wide', 'true');
       await expect(print.locator('[data-testid^="mktg-framework-print-number-tile-"]')).toHaveCount(1);
+      // The tile's source pill: the goal's proof point states the figure ("1,200 contributors", Website), so the tile carries it.
+      await expect(print.getByTestId('mktg-framework-print-number-tile-0').getByTestId('mktg-framework-print-number-source')).toHaveText('Website');
       await expect(print.getByTestId('mktg-framework-print-numbers-table')).toHaveCount(0);
       await expect(print.getByTestId('mktg-framework-print-facts')).toContainText('Figures and their sources');
       await expect(print.locator('[data-testid^="mktg-framework-print-fact-"]')).toHaveCount(1);
@@ -454,7 +456,9 @@ for (const immediateReceipt of [true, false]) {
   });
 }
 
-test('the framework print lists every figure past six as a table and says how many rows a cut list left off', async ({ page }, info) => {
+test('the framework print lists every figure past six as a table, continued on a second page, and says how many rows a cut list left off', async ({
+  page,
+}, info) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await stubMktgPrintFrame(page);
   await openAssetDocument(page, 'foundation-message', 200, true, false, overfullFrameworkRevisionResponse());
@@ -463,20 +467,25 @@ test('the framework print lists every figure past six as a table and says how ma
   const frame = await layoutMktgPrintFrame(page);
   const print = frame.getByTestId('mktg-framework-print');
   await expect(print).toBeVisible();
-  // Nine figures: no tiles, the key numbers table lists all nine on one page under the intro, the facts table after it.
+  // Eight figures (the record's cap) with long labels: no tiles, a key numbers table under the intro that lists every figure, whole
+  // rows to the footer and the rest on `key-numbers-2` (never a figure dropped), the facts table after the last row.
   await expect(print.locator('[data-testid^="mktg-framework-print-number-tile-"]')).toHaveCount(0);
   const numbersPage = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="key-numbers"]');
-  await expect(numbersPage.getByTestId('mktg-framework-print-number-row')).toHaveCount(9);
-  await expect(numbersPage.getByTestId('mktg-framework-print-number-row').last()).toContainText('synthetic figure 9');
-  await expect(print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="key-numbers-2"]')).toHaveCount(0);
-  await expect(numbersPage.getByTestId('mktg-framework-print-facts')).toContainText('Figures and their sources');
-  // Fourteen long proof points on the first goal: tightened, then cut to whole rows, with the muted "+N more" line under them.
+  const numbersPage2 = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="key-numbers-2"]');
+  await expect(numbersPage2).toHaveCount(1);
+  await expect(numbersPage.getByTestId('mktg-framework-print-number-row').first()).toContainText('synthetic figure 1');
+  await expect(numbersPage2.getByTestId('mktg-framework-print-number-row').last()).toContainText('synthetic figure 8');
+  await expect(print.getByTestId('mktg-framework-print-number-row')).toHaveCount(8);
+  await expect(numbersPage.getByTestId('mktg-framework-print-facts')).toHaveCount(0);
+  await expect(numbersPage2.getByTestId('mktg-framework-print-facts')).toContainText('Figures and their sources');
+  await expect(print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="sources"]')).toHaveAttribute('data-page', '9');
+  // Four long proof points (the record's cap) on the first goal: tightened, then cut to whole rows, with the muted "+N more" line.
   const goalPage = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="goal-1"]');
   const proofRows = goalPage.locator('.fwp-proof-row');
   const kept = await proofRows.count();
   expect(kept).toBeGreaterThan(0);
-  expect(kept).toBeLessThan(14);
-  await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveText(`+${14 - kept} more on the framework's Framework tab in LFX One`);
+  expect(kept).toBeLessThan(4);
+  await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveText(`+${4 - kept} more on the framework's Framework tab in LFX One`);
   await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveCSS('color', 'rgb(107, 114, 128)');
   await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveCSS('font-size', '10.5px');
   // Sixty sources read and forty gaps: each list cut to its column with its own line, the counts from the report.

@@ -236,7 +236,10 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printDocument.getByTestId('mktg-framework-print-sources-read')).toHaveCount(0);
   await expect(printDocument.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveCount(0);
   await expect(printDocument.getByTestId('mktg-framework-print-gaps-empty')).toHaveCount(0);
-  await expect(printDocument.getByTestId('mktg-framework-print-approval')).toHaveText('A later run re-reads the sources and refreshes the LFX figures.');
+  // The approval card inside the family: the version label leads it; the family passes no approval date and no report, so no
+  // "Approved <date>" and no gaps clause print (the family lane's follow-up passes them).
+  await expect(printDocument.getByTestId('mktg-framework-print-approval')).toHaveText('V1.0. A later run re-reads the sources and refreshes the LFX figures.');
+  await expect(printDocument.getByTestId('mktg-framework-print-approval').locator('strong')).toHaveText('V1.0.');
   for (const frame of await frameworkFrames.all()) {
     const box = await frame.boundingBox();
     expect({ x: Math.round(box?.x ?? -1), width: Math.round(box?.width ?? 0), height: Math.round(box?.height ?? 0) }).toEqual({

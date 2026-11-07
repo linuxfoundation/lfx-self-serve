@@ -27,6 +27,7 @@ import type { FoundationMessageNumberRow } from '../interfaces/foundation-messag
 import type {
   FoundationMessagePrintCutList,
   FoundationMessagePrintCutTab,
+  FoundationMessagePrintNumber,
   FoundationMessagePrintFactRow,
   FoundationMessagePrintNumbersPage,
   FoundationMessagePrintNumberTile,
@@ -88,8 +89,11 @@ export function frameworkPortraitFigureSize(figure: string, width: number): numb
   return size;
 }
 
-/** The tiles for a count the tiles hold (1 to FRAMEWORK_PORTRAIT_MAX_TILES), each with its share of a row and its text fitted to the tile; none past that. */
-export function frameworkPortraitNumberTiles(numbers: readonly FoundationMessageNumberRow[]): FoundationMessagePrintNumberTile[] {
+/**
+ * The tiles for a count the tiles hold (1 to FRAMEWORK_PORTRAIT_MAX_TILES), each with its share of a row and its text fitted to the
+ * tile: the figure on one line, the label in the room under it less the source pill's when the figure has a source; none past that.
+ */
+export function frameworkPortraitNumberTiles(numbers: readonly FoundationMessagePrintNumber[]): FoundationMessagePrintNumberTile[] {
   const shares: readonly number[] | undefined = FRAMEWORK_PORTRAIT_TILE_SHARES[numbers.length as keyof typeof FRAMEWORK_PORTRAIT_TILE_SHARES];
   if (!shares || numbers.length > FRAMEWORK_PORTRAIT_MAX_TILES) return [];
   const tile = FRAMEWORK_PORTRAIT_NUMBER_TILE;
@@ -98,7 +102,8 @@ export function frameworkPortraitNumberTiles(numbers: readonly FoundationMessage
     // A tile's content width: its share of the row less the gaps between tiles, less the side padding.
     const width = (PAGE.contentWidth - (share - 1) * tile.gap) / share - 2 * tile.paddingSide;
     const figureSize = frameworkPortraitFigureSize(row.number, width);
-    const labelRoom = tile.height - 2 * tile.paddingTop - figureSize * TYPE.tileFigure.line - tile.labelGap;
+    const pillRoom = row.source ? tile.labelGap + tile.sourceHeight : 0;
+    const labelRoom = tile.height - 2 * tile.paddingTop - figureSize * TYPE.tileFigure.line - tile.labelGap - pillRoom;
     const label = mktgPortraitFitBlock({ paras: [{ text: row.label, ...TYPE.tileLabel }] }, width, labelRoom).block.paras[0];
     return { ...row, share, wide: share === 1, figureSize, labelText: label?.text ?? row.label, labelSize: label?.size ?? TYPE.tileLabel.size };
   });

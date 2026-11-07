@@ -15,7 +15,9 @@ import {
   buildBoilerplatesPrintView,
   buildFaqPrintView,
   buildFoundationMessagePrintView,
+  foundationMessagePrintAnchorIntro,
   foundationMessagePrintMatrix,
+  foundationMessagePrintNumbers,
   foundationMessagePrintSections,
   foundationMessagePrintSourceLabel,
   mktgPrintApprovedDate,
@@ -255,7 +257,7 @@ describe('the framework’s print', () => {
     expect(view.icps[0].goalChips).toEqual(['Goal 1']);
     expect([view.goals[0].segmentLabel, view.icps[0].goalLabel, view.icps[0].channelsLabel]).toEqual(['End users', 'Adoption', 'Docs']);
     expect(view.avoidRows).toEqual([{ avoid: 'synergy', instead: 'working together' }]);
-    expect(view.numbers).toEqual([{ number: '1,200', label: 'members' }]);
+    expect(view.numbers).toEqual([{ number: '1,200', label: 'members', source: 'Website' }]);
     expect(view.audiences).toEqual([{ name: 'End users', lead: 'Ship with confidence.' }]);
     expect(view.facts).toEqual([{ fact: '1,200 members', source: 'Website', usedBy: 'Goal 1 · Adoption' }]);
     expect(view.brand.source).toBe('lf');
@@ -316,6 +318,45 @@ describe('the framework’s print', () => {
       { name: 'Members', cells: [false, true] },
     ]);
     expect(view.icps.map((row) => row.goalChips)).toEqual([['Goal 1'], ['Goal 2']]);
+  });
+
+  it('counts the anchor questions in words in the say-and-avoid intro, the mock’s sentence with the agent’s three', () => {
+    expect(foundationMessagePrintAnchorIntro(3)).toBe(
+      'The words the framework uses, the ones it replaces, and the three questions every piece of content answers.'
+    );
+    expect(foundationMessagePrintAnchorIntro(1)).toBe(
+      'The words the framework uses, the ones it replaces, and the one question every piece of content answers.'
+    );
+    expect(foundationMessagePrintAnchorIntro(5)).toContain('the five questions');
+    expect(foundationMessagePrintAnchorIntro(7)).toContain('the 7 questions');
+  });
+
+  it('gives a key number the source of the proof points that state its figure whole, and none when none does or they disagree', () => {
+    const fact = (text: string, source: string) => ({ fact: text, source, usedBy: 'Goal 1 · Adoption' });
+    const facts = [
+      fact('299 member organizations', 'LFX field'),
+      fact('More than 10,000 published MCP servers at launch', 'Press release'),
+      fact('8 Platinum, 50 Gold and 188 Silver memberships', 'LFX field'),
+      fact('4,370 registrations for AGNTCon + MCPCon North America 2026', 'LFX field'),
+      fact('4,370 seats were sold, says the venue', 'Website'),
+    ];
+    const numbers = foundationMessagePrintNumbers(
+      [
+        { number: '299', label: 'member organizations' },
+        { number: '10,000+', label: 'published MCP servers at launch' },
+        { number: '188', label: 'Silver memberships' },
+        { number: '8', label: 'Platinum memberships' },
+        { number: '88', label: 'nothing states this' },
+        { number: '4,370', label: 'registrations' },
+        { number: '', label: 'no figure' },
+      ],
+      facts
+    );
+    expect(numbers.map((row) => row.source)).toEqual(['LFX field', 'Press release', 'LFX field', 'LFX field', '', '', '']);
+    // The stored record's key numbers carry no source of their own: the view's come from the facts, never from the pair.
+    expect(buildFoundationMessagePrintView({ ...CONTENT, nums: [['7', 'wonders']] }, 'TestOrbit', 1, null).numbers).toEqual([
+      { number: '7', label: 'wonders', source: '' },
+    ]);
   });
 
   it('joins the lists the print sets as one line, and leaves a line empty when there is nothing to list', () => {

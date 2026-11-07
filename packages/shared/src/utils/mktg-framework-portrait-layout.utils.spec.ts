@@ -127,9 +127,10 @@ describe('the framework portrait book’s key numbers', () => {
     expect(pages[0].factsTop).toBe(tile.top + 2 * tile.height + tile.gap + tile.tableGap);
     expect(pages[0].facts).toMatchObject({ cut: 0, tight: false, note: '' });
     expect(pages[0].facts.rows).toHaveLength(3);
-    // Five tiles take two rows too (three, then two); one tile takes one.
-    expect(frameworkPortraitNumbersPages(view(5))[0].factsTop).toBe(534);
-    expect(frameworkPortraitNumbersPages(view(1))[0].factsTop).toBe(378);
+    // Two rows of tiles put the facts table where the mock draws it (560); five tiles take two rows too (three, then two); one tile takes one.
+    expect(pages[0].factsTop).toBe(560);
+    expect(frameworkPortraitNumbersPages(view(5))[0].factsTop).toBe(560);
+    expect(frameworkPortraitNumbersPages(view(1))[0].factsTop).toBe(388);
     expect(frameworkPortraitNumbersPages(view(0))[0]).toMatchObject({ tiles: [], numbersTable: [], factsTop: tile.top });
   });
 
@@ -139,7 +140,7 @@ describe('the framework portrait book’s key numbers', () => {
     expect(content).toBe(176);
     const label = 'members across five continents';
     expect(label.length).toBe(30);
-    const row = (number: string) => ({ number, label });
+    const row = (number: string, source = '') => ({ number, label, source });
     const tiles = frameworkPortraitNumberTiles(Array.from({ length: 6 }, (_, index) => row(`${index + 1},200,000`)));
     expect(tiles.every((tile) => tile.share === 3)).toBe(true);
     // "1,200,000" at 54/500 is 9 × 54 × 0.55 = 267 px: too wide for 176, so the size steps down to the first whole px that
@@ -147,15 +148,20 @@ describe('the framework portrait book’s key numbers', () => {
     expect(frameworkPortraitFigureSize('1,200,000', content)).toBe(35);
     expect(tiles.map((tile) => tile.figureSize)).toEqual([35, 35, 35, 35, 35, 35]);
     expect(frameworkPortraitFigureSize('41', content)).toBe(FRAMEWORK_PORTRAIT_TYPE.tileFigure.size);
-    // The label's room is 140 − 44 − 35 − 10 = 51: two lines of 14/1.4 (39.2) fit as written.
+    // The label's room is 156 − 44 − 35 − 10 = 67: two lines of 14/1.4 (39.2) fit as written.
     expect(tiles[0].labelSize).toBe(FRAMEWORK_PORTRAIT_TYPE.tileLabel.size);
     expect(tiles[0].labelText).toBe(label);
-    // Under a 54 px figure the room is 32: a two-line label must come down (14 → 11 fits 30.8).
+    // Under a 54 px figure the room is 48: two lines of 14/1.4 (39.2) still fit.
     const short = frameworkPortraitNumberTiles(Array.from({ length: 6 }, () => row('41')));
     expect(short[0].figureSize).toBe(54);
-    expect(short[0].labelSize).toBeLessThan(FRAMEWORK_PORTRAIT_TYPE.tileLabel.size);
-    expect(short[0].labelSize * 1.4 * 2).toBeLessThanOrEqual(140 - 44 - 54 - 10);
-    expect(short[0].labelText).toBe(label);
+    expect(short[0].labelSize).toBe(FRAMEWORK_PORTRAIT_TYPE.tileLabel.size);
+    // With a source pill under the label the room loses the pill and its gap (10 + 17): 21 is left, so the two lines come down to
+    // one (10.5 px holds 30 characters in 176: 14.7 ≤ 21), the label whole; a half-width tile (296) holds it at 14 on one line.
+    const sourced = frameworkPortraitNumberTiles(Array.from({ length: 6 }, () => row('41', 'LFX field')));
+    expect(sourced[0].source).toBe('LFX field');
+    expect(sourced[0].labelSize).toBe(10.5);
+    expect(sourced[0].labelText).toBe(label);
+    expect(frameworkPortraitNumberTiles(Array.from({ length: 4 }, () => row('299', 'LFX field')))[0].labelSize).toBe(14);
     // A half-width tile (296 of content) holds the same figure at its full size.
     expect(frameworkPortraitNumberTiles([row('1,200,000'), row('2')])[0].figureSize).toBe(54);
     // The figure never goes under half its size: a very long figure stops there.
@@ -165,7 +171,10 @@ describe('the framework portrait book’s key numbers', () => {
   it('keeps at least one row on every fresh page, so a row taller than a page still moves the table on', () => {
     const tall = 'x\n'.repeat(80).trim();
     const base = view(6, 1);
-    const pages = frameworkPortraitNumbersPages({ ...base, numbers: [...base.numbers, { number: '9', label: tall }, { number: '10', label: 'after' }] });
+    const pages = frameworkPortraitNumbersPages({
+      ...base,
+      numbers: [...base.numbers, { number: '9', label: tall, source: '' }, { number: '10', label: 'after', source: '' }],
+    });
     expect(pages.length).toBeGreaterThanOrEqual(2);
     expect(pages.flatMap((page) => page.numbersTable.map((row) => row.number))).toEqual(['1000', '2000', '3000', '4000', '5000', '6000', '9', '10']);
     expect(pages.some((page) => page.numbersTable.length === 1 && page.numbersTable[0].label === tall)).toBe(true);

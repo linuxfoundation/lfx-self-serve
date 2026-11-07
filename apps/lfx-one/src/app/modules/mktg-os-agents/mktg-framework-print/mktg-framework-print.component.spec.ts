@@ -288,6 +288,10 @@ describe('MktgFrameworkPrintComponent', () => {
     ]);
     expect(matrix?.querySelector('.fwp-matrix-goal')?.textContent?.trim()).toBe('Adoption');
     expect(text(matrix?.querySelector('.fwp-matrix-proofs li'))).toBe('1,200 members Website');
+    // The source tag is the fixed vocabulary, kept whole as the mock's: the fact before it wraps, never the tag ("LFX / FIELD").
+    const tag = matrix?.querySelector('.fwp-matrix-source');
+    expect(tag?.textContent?.trim()).toBe('Website');
+    expect(tag && getComputedStyle(tag).whiteSpace).toBe('nowrap');
     expect(matrix?.querySelector('.fwp-matrix-bite')?.textContent?.trim()).toBe('“In the open”');
     expect(matrix?.querySelector('.fwp-matrix-crosscut')?.textContent?.trim()).toBe('Every column grows the audience.');
     // Segments belong to the profile pages: the matrix does not name them.
@@ -337,7 +341,15 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(Array.from(query('mktg-framework-print-say')?.querySelectorAll('li') ?? []).map((pill) => pill.textContent?.trim())).toEqual(['open']);
     expect(text(query('mktg-framework-print-avoid')?.querySelector('li'))).toBe('synergy → working together');
     expect(text(query('mktg-framework-print-anchor')?.querySelector('li'))).toBe('01 Which goal does this serve?');
+    // The intro counts the anchor questions in words, as the mock's sentence does ("the three questions") with the agent's three.
+    expect(text(frame('say-avoid')?.querySelector('.fwp-intro-say'))).toBe(
+      'The words the framework uses, the ones it replaces, and the one question every piece of content answers.'
+    );
     expect(text(frame('say-avoid')?.querySelector('.fwp-crosscut-box'))).toBe('Across the goals Every column grows the audience.');
+    await setView({ ...view, mf: { ...view.mf, anchor: ['Which goal?', 'Which segment?', 'Which key message?'] } });
+    expect(text(frame('say-avoid')?.querySelector('.fwp-intro-say'))).toBe(
+      'The words the framework uses, the ones it replaces, and the three questions every piece of content answers.'
+    );
     await setView({ ...view, avoidRows: [] });
     expect(query('mktg-framework-print-avoid')).toBeNull();
     expect(query('mktg-framework-print-avoid-empty')?.textContent?.trim()).toBe('Nothing to avoid was stated.');
@@ -444,12 +456,29 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(tiles().map((tile) => tile.classList.contains('fwp-number-tile-lead'))).toEqual([true, false, false, false]);
     expect(host().textContent).toContain('Figures and their sources');
     expect(host().textContent).not.toContain('Every figure and its source');
-    // Two rows of 140 from 210, a 16 gap, then 28 to the table: 534.
-    expect(query('mktg-framework-print-facts')?.getAttribute('style')).toContain('top: 534px');
+    // Two rows of 156 from 210, a 16 gap, then 22 to the table: 560, where the mock draws it.
+    expect(query('mktg-framework-print-facts')?.getAttribute('style')).toContain('top: 560px');
+    // No proof point states these figures, so no tile carries a source pill: nothing is invented.
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-number-source"]')).toHaveLength(0);
+    // 2×2 with the proof points stating two of the figures: those two tiles print the proof's source as the grammar's chip under
+    // the label (the mock's pill), the others none.
+    const stated = {
+      ...CONTENT,
+      nums: nums(4),
+      mf: { ...CONTENT.mf, goals: [{ ...CONTENT.mf.goals[0], proof: [pair('1,000 members', 'LFX field'), pair('About 3,000 downloads', 'Website')] }] },
+    };
+    await setView(buildFoundationMessagePrintView(stated, 'TestOrbit', 2, null));
+    expect(tiles().map((tile) => tile.querySelector('[data-testid="mktg-framework-print-number-source"]')?.textContent?.trim() ?? null)).toEqual([
+      'LFX field',
+      null,
+      'Website',
+      null,
+    ]);
+    expect(tiles()[0].querySelector('.fwp-number-source')?.classList.contains('pp-chip')).toBe(true);
     await setView(buildFoundationMessagePrintView({ ...CONTENT, nums: nums(5) }, 'TestOrbit', 2, null));
     expect(shares()).toEqual([3, 3, 3, 2, 2]);
     expect(tiles().map((tile) => tile.style.gridColumn)).toEqual(['span 2', 'span 2', 'span 2', 'span 3', 'span 3']);
-    expect(query('mktg-framework-print-facts')?.getAttribute('style')).toContain('top: 534px');
+    expect(query('mktg-framework-print-facts')?.getAttribute('style')).toContain('top: 560px');
     await setView(buildFoundationMessagePrintView({ ...CONTENT, nums: nums(6) }, 'TestOrbit', 2, null));
     expect(FRAMEWORK_PORTRAIT_MAX_TILES).toBe(6);
     expect(shares()).toEqual([3, 3, 3, 3, 3, 3]);
@@ -463,20 +492,36 @@ describe('MktgFrameworkPrintComponent', () => {
     const tileBox = tiles()[0].getBoundingClientRect();
     const figureBox = tiles()[0].querySelector('.fwp-number')?.getBoundingClientRect();
     expect(figureBox && figureBox.right <= tileBox.right + 0.5).toBe(true);
-    // Under a short figure at its full 54 px, the same label comes down to fit the 32 px left.
+    // 3×2 under a short figure at its full 54 px: the label's 48 px hold two lines as written; with a source pill under it (a proof
+    // point states the figure) the label loses the pill's 27 px and comes down to one line, the pill on every stated tile.
     await setView(
       buildFoundationMessagePrintView({ ...CONTENT, nums: Array.from({ length: 6 }, () => pair('41', 'members across five continents')) }, 'TestOrbit', 2, null)
     );
     expect(tiles()[0].querySelector<HTMLElement>('.fwp-number')?.style.fontSize).toBe('54px');
-    expect(parseFloat(tiles()[0].querySelector<HTMLElement>('.fwp-number-label')?.style.fontSize ?? '14')).toBeLessThan(14);
-    expect(query('mktg-framework-print-facts')?.getAttribute('style')).toContain('top: 534px');
+    expect(tiles()[0].querySelector<HTMLElement>('.fwp-number-label')?.style.fontSize).toBe('14px');
+    await setView(
+      buildFoundationMessagePrintView(
+        {
+          ...CONTENT,
+          nums: Array.from({ length: 6 }, () => pair('41', 'members across five continents')),
+          mf: { ...CONTENT.mf, goals: [{ ...CONTENT.mf.goals[0], proof: [pair('41 members across five continents', 'LFX field')] }] },
+        },
+        'TestOrbit',
+        2,
+        null
+      )
+    );
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-number-source"]')).toHaveLength(6);
+    expect(tiles()[0].querySelector<HTMLElement>('.fwp-number-label')?.style.fontSize).toBe('10.5px');
+    expect(tiles()[0].querySelector('.fwp-number-label')?.textContent?.trim()).toBe('members across five continents');
+    expect(query('mktg-framework-print-facts')?.getAttribute('style')).toContain('top: 560px');
     // One to three figures: pairs, an odd count's last tile across the row.
     await setView(buildFoundationMessagePrintView({ ...CONTENT, nums: nums(3) }, 'TestOrbit', 2, null));
     expect(wide()).toEqual([false, false, true]);
-    expect(query('mktg-framework-print-facts')?.getAttribute('style')).toContain('top: 534px');
+    expect(query('mktg-framework-print-facts')?.getAttribute('style')).toContain('top: 560px');
     await setView(buildFoundationMessagePrintView({ ...CONTENT, nums: nums(1) }, 'TestOrbit', 2, null));
     expect(wide()).toEqual([true]);
-    expect(query('mktg-framework-print-facts')?.getAttribute('style')).toContain('top: 378px');
+    expect(query('mktg-framework-print-facts')?.getAttribute('style')).toContain('top: 388px');
   });
 
   it('past six figures prints no tiles but the key numbers table, every figure, continued on "Key numbers (2)" when a page is full; never a figure dropped', async () => {

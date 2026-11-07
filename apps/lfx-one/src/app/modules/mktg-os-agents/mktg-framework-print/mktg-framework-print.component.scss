@@ -256,7 +256,9 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--pp-muted);
-  overflow-wrap: anywhere;
+  // The tag is the fixed source vocabulary (LFX FIELD, PRESS RELEASE, WEBSITE, NOTES), never agent text, so it stays whole as the
+  // mock's does: the fact before it wraps, the tag drops to its own line when the fact's last line leaves no room.
+  white-space: nowrap;
 }
 
 .fwp-matrix-bite {
@@ -786,7 +788,7 @@
   flex-direction: column;
   box-sizing: border-box;
   min-width: 0;
-  height: 140px;
+  height: 156px; /* FRAMEWORK_PORTRAIT_NUMBER_TILE.height */
   border: 1px solid var(--pp-hairline);
   border-radius: 12px;
   padding: 22px 24px; /* FRAMEWORK_PORTRAIT_NUMBER_TILE.paddingTop / .paddingSide */
@@ -810,6 +812,12 @@
   font-size: var(--fwp-tile-label-size);
   line-height: var(--fwp-tile-label-line);
   color: var(--pp-ink);
+}
+
+// The figure's source, the grammar's chip under the label (the mock's tile; FRAMEWORK_PORTRAIT_NUMBER_TILE.sourceHeight).
+.fwp-number-source {
+  align-self: flex-start;
+  margin-top: 10px; /* FRAMEWORK_PORTRAIT_NUMBER_TILE.labelGap */
 }
 
 .fwp-facts-table {

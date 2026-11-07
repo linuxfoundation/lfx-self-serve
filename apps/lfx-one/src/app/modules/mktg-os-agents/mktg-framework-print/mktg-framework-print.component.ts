@@ -31,6 +31,7 @@ import {
   MktgPortraitLook,
 } from '@lfx-one/shared/interfaces';
 import {
+  foundationMessagePrintAnchorIntro,
   foundationMessagePrintMatrix,
   foundationMessagePrintSourceLabel,
   frameworkPortraitCutList,
@@ -205,6 +206,7 @@ export class MktgFrameworkPrintComponent {
           band: !book.inFamily && mktgPortraitOpensChapter(plan, index),
           contents: page.id === this.ids.cover ? contents : [],
           statements: page.id === this.ids.framework ? this.statements(view) : null,
+          anchorIntro: page.id === this.ids.sayAvoid ? foundationMessagePrintAnchorIntro(view.mf.anchor.length) : '',
           anchors: page.id === this.ids.sayAvoid ? view.mf.anchor.map((question, rank) => ({ numberLabel: mktgPortraitPageNumber(rank + 1), question })) : [],
           goalPage: goal ? this.goalPage(goal, view) : null,
           icpPage: icpIndex ? this.icpPage(icpIndex, icpPages, view) : null,
