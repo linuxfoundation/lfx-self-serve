@@ -17,7 +17,7 @@
       <div class="pp-cap">Primary · horizontal lockup</div>
     </div>
   }
-  @if (hasArtwork()) {
+  @if (hasTiles()) {
     <div class="kp-tiles" [lfxPpRect]="[x, 516, w]" data-testid="brand-kit-logo-system-tiles">
       @if (hasSymbol()) {
         <div>
@@ -25,7 +25,7 @@
           <div class="pp-cap">{{ symbolSupplied() ? 'Symbol · supplied file' : 'Symbol · cropped from the lockup' }}</div>
         </div>
       }
-      @if (v.logos.primary?.src) {
+      @if (hasReversedTile()) {
         <div>
           <div class="pp-tile pp-tile--dark kp-tile"><lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="40" /></div>
           <div class="pp-cap">{{ reversedCaption() }}</div>

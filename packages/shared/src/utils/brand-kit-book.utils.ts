@@ -148,6 +148,8 @@ export function brandKitColorwayTiles(
   derivable: BrandKitDerivable = { lockup: true, symbol: true }
 ): BrandKitColorwayTile[] {
   const primary = logos.primary;
+  // The full-colour tiles draw the primary file; a kit without one (its only lockup file the reversed one) says so.
+  const fullColor = { logo: primary, logoFilter: '', missing: primary ? '' : BRAND_KIT_NOT_SUPPLIED };
   // A colorway the kit did not supply is derived from the primary only when that is one ink; else the tile says so.
   const derived = (filter: string) =>
     derivable.lockup ? { logo: primary, logoFilter: filter, missing: '' } : { logo: null, logoFilter: '', missing: BRAND_KIT_NOT_SUPPLIED };
@@ -155,9 +157,9 @@ export function brandKitColorwayTiles(
   // The symbol is never the supplied reversed lockup: it takes the tile's own filter when its own artwork is one ink.
   const symbolFilter = (filter: string) => (derivable.symbol ? filter : '');
   const grounds = [
-    { ground: 'white', light: true, logo: primary, logoFilter: '', symbolFilter: '', missing: '' },
+    { ground: 'white', light: true, ...fullColor, symbolFilter: '' },
     { ground: kit.kit.dark, light: false, ...reversed, symbolFilter: symbolFilter(MKTG_PRINT_REVERSED_FILTER) },
-    { ground: tint, light: true, logo: primary, logoFilter: '', symbolFilter: '', missing: '' },
+    { ground: tint, light: true, ...fullColor, symbolFilter: '' },
     { ground: 'white', light: true, ...derived('brightness(0)'), symbolFilter: symbolFilter('brightness(0)') },
   ];
   return kit.chapters.logo.colorways.map((colorway, index) => ({ name: colorway.name, ...(grounds[index] ?? grounds[0]) }));
