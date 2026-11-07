@@ -355,16 +355,32 @@ const CAVEAT_LFX_RECORD = /LFX record could not be read/i;
 const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exceeded|exhausted)/i;
 const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u201c`]/i;
 // Failure evidence: only an error status (4xx or 5xx) counts, never a successful one (HTTP 200) or a number in a title ("Top 100",
-// "Fortune 500"). Inside the quotes it counts only where a status belongs: leading the quoted message ("502 Bad Gateway") or after
-// HTTP, with or without a version (HTTP 404, HTTP/1.1 404, HTTP/2 429), status or code; outside them only after HTTP (same forms) or
-// status, with an optional "code" and colon ("the first 60 KB" is no status).
+// "Fortune 500"). Inside the quotes it counts only where a status belongs: after HTTP, with or without a version (HTTP 404,
+// HTTP/1.1 404, HTTP/2 429), status or code; or leading the quoted message, where it needs a status-like tail: the closing quote
+// ("404") or a standard reason phrase ("502 Bad Gateway", "429 Too Many Requests"), so a quoted title that opens with such a
+// number ("500 Startups", "404 Media") is a result, not a status. Outside the quotes it counts only after HTTP (same forms) or
+// status, with an optional "code" and colon ("the first 60 KB" is no status). The whitespace before the number depends on the
+// colon, `(?:\s*:)?\s*`, so a failed match never splits one whitespace run between two `\s*`.
 const CAVEAT_FAILURE_WORDS = 'unavailable|error|denied|unauthori[sz]ed|forbidden|exceeded|limit|timeout|timed out|quota|credits?|rate[- ]limited';
 const CAVEAT_HTTP_WORD = 'HTTP(?:\\/\\d(?:\\.\\d)?)?';
+// The 4xx and 5xx reason phrases of the IANA HTTP Status Code Registry (RFC 9110 §15.5 and §15.6, RFC 6585, RFC 7725, RFC 8470,
+// RFC 4918, RFC 2295, RFC 2774, RFC 5842), with the RFC 7231 names servers still send (Payload Too Large, Request Entity Too
+// Large, Request-URI Too Long, Requested Range Not Satisfiable, Unprocessable Entity). Matched case-insensitively.
+const CAVEAT_HTTP_REASON_PHRASES = [
+  'Bad Request|Unauthorized|Payment Required|Forbidden|Not Found|Method Not Allowed|Not Acceptable|Proxy Authentication Required',
+  'Request Timeout|Conflict|Gone|Length Required|Precondition Failed|Content Too Large|Payload Too Large|Request Entity Too Large',
+  'URI Too Long|Request-URI Too Long|Unsupported Media Type|Range Not Satisfiable|Requested Range Not Satisfiable|Expectation Failed',
+  'Misdirected Request|Unprocessable Content|Unprocessable Entity|Locked|Failed Dependency|Too Early|Upgrade Required',
+  'Precondition Required|Too Many Requests|Request Header Fields Too Large|Unavailable For Legal Reasons',
+  'Internal Server Error|Not Implemented|Bad Gateway|Service Unavailable|Gateway Timeout|HTTP Version Not Supported',
+  'Variant Also Negotiates|Insufficient Storage|Loop Detected|Not Extended|Network Authentication Required',
+].join('|');
 const CAVEAT_FAILURE_IN_QUOTES = new RegExp(
-  `\\b(?:${CAVEAT_FAILURE_WORDS})\\b|(?:^|['"\\u2018\\u201c\`]|\\b(?:${CAVEAT_HTTP_WORD}|status|code)\\s*:?)\\s*[45]\\d{2}\\b`,
+  `\\b(?:${CAVEAT_FAILURE_WORDS})\\b|\\b(?:${CAVEAT_HTTP_WORD}|status|code)(?:\\s*:)?\\s*[45]\\d{2}\\b` +
+    `|(?:^|['"\\u2018\\u201c\`])\\s*[45]\\d{2}\\b(?=\\s*['"\\u2019\\u201d\`]|\\s+(?:${CAVEAT_HTTP_REASON_PHRASES})\\b)`,
   'i'
 );
-const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:${CAVEAT_HTTP_WORD}|status)(?:\\s+code)?\\s*:?\\s*[45]\\d{2})\\b`, 'i');
+const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:${CAVEAT_HTTP_WORD}|status)(?:\\s+code)?(?:\\s*:)?\\s*[45]\\d{2})\\b`, 'i');
 const CAVEAT_RESULT_TITLE = [
   /['"\u2018\u201c`][^'"\u2019\u201d`]*['"\u2019\u201d`]\s+as (?:its|the) (?:top|first|best|second|leading)\b[^.]*\bresult/i,
   /\b(?:titled|entitled|called|named)\s*['"\u2018\u201c`]/i,
@@ -449,9 +465,10 @@ function carriesPlumbing(text: string): boolean {
 
 /**
  * A credits/quota phrase (outside a quoted result title), or a provider subject quoting its message with evidence
- * of failure in or around the quotes: a failure word, or a 4xx/5xx status where a status belongs (leading the quoted
- * message, or after HTTP, with or without a version, status or code); a quoted successful result ("Example Foundation", with
- * HTTP 200 or a number in its title) is audit content.
+ * of failure in or around the quotes: a failure word, or a 4xx/5xx status where a status belongs (after HTTP, with or
+ * without a version, status or code; or leading the quoted message with a status-like tail, the closing quote or a standard
+ * reason phrase); a quoted successful result ("Example Foundation", with HTTP 200 or a number in its title, even its first
+ * word: "500 Startups") is audit content.
  */
 function carriesProviderFailure(sentence: string): boolean {
   const title = CAVEAT_RESULT_TITLE.some((pattern) => pattern.test(sentence));

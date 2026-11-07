@@ -402,14 +402,23 @@ describe('AEO/GEO reader caveats', () => {
     expect(aeoGeoReaderCaveat('The search returned "Top 100 open source foundations" for the project name.')).toBe(
       'The search returned "Top 100 open source foundations" for the project name.'
     );
-    // Inside the quotes an error status counts only where a status belongs: leading the message, or after HTTP, status or code.
+    // Inside the quotes an error status counts only where a status belongs: after HTTP, status or code, or leading the message with a
+    // status-like tail (the closing quote, or a standard reason phrase). A title that merely opens with such a number is a result.
     expect(aeoGeoReaderCaveat('The search returned "Fortune 500 open source companies" for the project name.')).toBe(
       'The search returned "Fortune 500 open source companies" for the project name.'
     );
     expect(aeoGeoReaderCaveat('The search returned "Top 400 projects" for the project name.')).toBe(
       'The search returned "Top 400 projects" for the project name.'
     );
+    for (const title of ['500 Startups', '404 Media', '503 Club']) {
+      expect(aeoGeoReaderCaveat(`The search returned "${title}" for the project name.`)).toBe(`The search returned "${title}" for the project name.`);
+    }
+    expect(aeoGeoReaderCaveat('The search provider responded with "404 Not Found".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('The search returned "429 Too Many Requests".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat("Web search returned '404 not found'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('Web search returned \u201c503 Service Unavailable\u201d.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     expect(aeoGeoReaderCaveat('Web search failed with "404".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('Web search returned `404` for both queries.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     expect(aeoGeoReaderCaveat('Web search returned "status 404" for both queries.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     // Outside the quotes a status may carry "code" and a colon.
     expect(aeoGeoReaderCaveat('The search returned "Not found" with status: 404.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
@@ -599,7 +608,14 @@ describe('AEO/GEO reader caveats', () => {
   });
 
   it('stays linear on long runs of whitespace and falls back above the length cap', () => {
-    for (const caveat of [`error${' '.repeat(100_000)}`, `x (${' '.repeat(100_000)}`, `The lookup failed:${' '.repeat(3_900)}`]) {
+    for (const caveat of [
+      `error${' '.repeat(100_000)}`,
+      `x (${' '.repeat(100_000)}`,
+      `The lookup failed:${' '.repeat(3_900)}`,
+      // A status word followed by whitespace and no number: the whitespace before the number depends on the colon, so no quadratic split.
+      `Web search returned "status${' '.repeat(3_900)}x".`,
+      `Web search returned "x" with status${' '.repeat(3_900)}x.`,
+    ]) {
       const started = performance.now();
       const mapped = aeoGeoReaderCaveat(caveat);
       expect(performance.now() - started).toBeLessThan(50);
