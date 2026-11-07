@@ -9,6 +9,7 @@ import { MktgFamilyExportLastResponse, MktgFamilyExportRunUpdate, MktgFamilyPrin
 import {
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_ONLY_CLASS,
+  MKTG_FAMILY_PRINT_SEP,
   MKTG_KIT_POSITIONING_FAMILY_ID,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
   MKTG_FAMILY_EXPORT_HIGHLIGHT_MS,
@@ -544,7 +545,9 @@ describe('Family export slot', () => {
     expect(cover.querySelector('[data-testid="family-print-cover-logo"]')?.getAttribute('src')).toBe(brand.logoOnDark?.src);
     expect(cover.textContent).toContain('one.example.org · 28 Oct 2026');
     expect(cover.querySelectorAll('[data-testid="family-print-cover-documents"] > *')).toHaveLength(4);
-    expect(cover.textContent).toContain('V2.0 · 6 Nov 2026');
+    // The cover tiles' version and date join on the family's padded separator (MKTG_FAMILY_PRINT_SEP), read here as the
+    // mktg-family-print spec reads it.
+    expect(cover.textContent).toContain(`V2.0${MKTG_FAMILY_PRINT_SEP}6 Nov 2026`);
     // The contents page reads the same numbers as the openers and the footers.
     const contents = frames[1];
     expect(contents.querySelector('[data-testid="family-print-contents-intro"]')?.textContent).toContain(`4 documents, ${total} pages.`);
