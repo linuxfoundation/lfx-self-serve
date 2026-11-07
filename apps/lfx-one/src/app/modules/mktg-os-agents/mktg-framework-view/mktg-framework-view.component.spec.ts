@@ -588,9 +588,10 @@ describe('MktgFrameworkViewComponent', () => {
     expect(frame.style.getPropertyValue('--pp-dark')).toBe(kit.kit.dark);
     expect(frame.style.getPropertyValue('--pp-accent')).toBe(kit.kit.accent);
     expect(frame.style.getPropertyValue('--pp-font')).toContain('Montserrat');
-    // No reversed artwork in the kit: the cover draws the primary lockup white.
+    // No reversed artwork in the kit, and a multi-colour primary: the cover draws it in full colour on the dark band — a filter would
+    // flatten the mark to one shape (the kit grammar's rule; a one-colour primary is the one filtered to white).
     expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
-    expect(query('mktg-framework-print-cover-logo')?.style.filter).toContain('invert');
+    expect(query('mktg-framework-print-cover-logo')?.style.filter).toBe('');
 
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
     expect(printer.prepare).toHaveBeenCalledWith('Montserrat');

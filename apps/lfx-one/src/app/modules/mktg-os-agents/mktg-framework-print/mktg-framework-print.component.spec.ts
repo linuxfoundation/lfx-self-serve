@@ -378,8 +378,10 @@ describe('MktgFrameworkPrintComponent', () => {
     expect((vp?.textContent ?? '').length).toBeLessThan(long.length);
     const bite = page?.querySelector<HTMLElement>('.fwp-goal-bite-text');
     expect(parseFloat(bite?.style.fontSize ?? '34')).toBeLessThan(34);
-    // The bite's last two words are joined (the grammar's widow rule), so no line ends on one short word; its block sits at the board's top.
+    // The bite's last two words are joined (the grammar's widow rule), so no line ends on one short word; a bite cut at a sentence keeps its
+    // closing mark; its block sits at the board's top.
     expect(bite?.textContent).toMatch(/\S\u00a0\S+”$/);
+    expect((bite?.textContent ?? '').length).toBeLessThan(long.length);
     expect(top(bite?.parentElement)).toBe(FRAMEWORK_PORTRAIT_TOPS.goalBite);
     // A short one is set at its size.
     await setView(printView(null));
@@ -773,9 +775,10 @@ describe('MktgFrameworkPrintComponent', () => {
   });
 
   it('sets the three statements at one size, the smallest any card needs, never one card shrunk alone (the editor’s read)', async () => {
-    // The logo-less record's shape: a vision that runs long beside a short mission and positioning.
+    // The logo-less record's shape: a vision that runs long beside a short mission and positioning (two sentences: what the board's narrow
+    // vision card holds whole at the fit model's floor; a third would be cut there).
     const long = 'A long sentence about the project and the many things it does for the people who use it every day. ';
-    const content: FoundationMessageContent = { ...CONTENT, mf: { ...CONTENT.mf, vision: long.repeat(4).trim() } };
+    const content: FoundationMessageContent = { ...CONTENT, mf: { ...CONTENT.mf, vision: long.repeat(2).trim() } };
     await configure('browser', buildFoundationMessagePrintView(content, 'TestOrbit', 2, null));
     const cards = Array.from(query('mktg-framework-print-statements')?.querySelectorAll<HTMLElement>('.fwp-statement') ?? []).slice(0, 3);
     expect(new Set(cards.map((card) => card.style.fontSize)).size).toBe(1);
@@ -1026,8 +1029,8 @@ describe('MktgFrameworkPrintComponent', () => {
       true,
       true,
     ]);
-    // The read list prints each source in a reader's words (mktgReadableSourceName): a URL as its host and path.
-    expect(read[0].textContent?.trim()).toBe('orbit.example.org/page-0');
+    // The read list prints each source as its host (editor F2: never a path).
+    expect(read[0].textContent?.trim()).toBe('site-0.example.org');
     expect(gaps[gaps.length - 1].textContent?.trim()).toBe(`Gap ${gaps.length - 1}: ${long.trim()}`);
     const room = tops.sourcesApproval - tops.sourcesLists;
     expect(

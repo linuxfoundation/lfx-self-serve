@@ -334,9 +334,11 @@ export class MktgFrameworkPrintComponent {
     const served = servedAll.slice(0, frameworkPortraitServedCount(width));
     const servedCut = servedAll.length - served.length;
     const cardWidth = served.length ? (width - (served.length - 1) * ROOM.servedGap) / served.length - ROOM.cardPaddingSide : width;
-    // The cards' room: under the label and the row's margin, inside a card's padding and border, above the note the cut profiles take.
+    // The cards' room: under the label and the row's margin, inside a card's padding and border, above the note the cut profiles take,
+    // less the two fixed gaps between a card's lines (the stylesheet's margins, which the fit model's scale does not reach).
     const servedNote = servedCut > 0 ? frameworkPortraitCutNoteHeightIn(servedCut, 'framework', width) : 0;
-    const cardRoom = tops.footer - tops.goalServed - ROOM.label - ROOM.servedTop - ROOM.cardPadding - ROOM.cardBorder - servedNote;
+    const cardRoom =
+      tops.footer - tops.goalServed - ROOM.label - ROOM.servedTop - ROOM.cardPadding - ROOM.cardBorder - servedNote - ROOM.servedLineTop - ROOM.servedLineGap;
     return {
       goal,
       numberLabel: mktgPortraitPageNumber(goal.n),
@@ -357,7 +359,9 @@ export class MktgFrameworkPrintComponent {
       // The sound bite at the board's fixed top (TOPS.goalBite, the mock's 690) on every goal page, fitted to the room above the served row;
       // its last two words joined (the grammar's widow rule), so a line never ends on one short word alone.
       bite: goal.bite
-        ? this.noWidow(this.fit(`“${goal.bite}”`, TYPE.goalBite, width, tops.goalServed - tops.goalBite - ROOM.label - ROOM.goalBiteTop - ROOM.gap))
+        ? this.noWidow(
+            this.quoted(this.fit(`“${goal.bite}”`, TYPE.goalBite, width, tops.goalServed - tops.goalBite - ROOM.label - ROOM.goalBiteTop - ROOM.gap))
+          )
         : null,
       served: {
         rows: served.map((icp) => {
@@ -366,8 +370,8 @@ export class MktgFrameworkPrintComponent {
             {
               paras: [
                 this.para(icp.name, TYPE.servedName),
-                this.para(`Needs ${icp.need}`, TYPE.servedLine, ROOM.servedLineTop),
-                this.para(`Ask them to ${icp.cta}`, TYPE.servedLine, ROOM.servedLineGap),
+                this.para(`Needs ${icp.need}`, TYPE.servedLine),
+                this.para(`Ask them to ${icp.cta}`, TYPE.servedLine),
               ],
             },
             cardWidth,
@@ -462,6 +466,11 @@ export class MktgFrameworkPrintComponent {
     const result = mktgPortraitFitBlock({ paras: [this.para(text, type)] }, width, height);
     const para = result.block.paras[0];
     return para ? { text: para.text, size: para.size } : { text, size: type.size };
+  }
+
+  /** A fitted quotation with its closing mark restored when the cut at a sentence dropped it (the mark is one character past a sentence end, inside the slack the cut leaves). */
+  private quoted(fitted: FoundationMessagePrintFittedText): FoundationMessagePrintFittedText {
+    return fitted.text.endsWith('”') ? fitted : { text: `${fitted.text}”`, size: fitted.size };
   }
 
   /** A fitted headline with its last two words joined (the grammar's widow rule): the measure is the same, the break before the last word is not. */
