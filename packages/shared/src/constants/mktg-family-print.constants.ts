@@ -184,6 +184,15 @@ export const MKTG_FAMILY_PRINT_LABELS = {
   data: 'Data',
 } as const;
 
+/**
+ * The middle dot between two labels the family's own pages print in the kit's face (`V2.0 · 6 Nov 2026` on the cover's
+ * tiles, the FAQ's group names, `48 words · max 50`): a thin space inside each word space, since the word space alone
+ * sets the dot tight in Instrument Sans ("Goal 1·Events", the editor's round of 7 Nov 2026). The twin of the framework
+ * print's `FRAMEWORK_PORTRAIT_SEP`, the same value. The grammar's own labels keep its dot: the running heads, and the
+ * cover strip, whose halves the grammar splits on `MKTG_PORTRAIT_COVER_STRIP.separator` to shorten them.
+ */
+export const MKTG_FAMILY_PRINT_SEP = ' \u2009·\u2009 ';
+
 /** The copy of the family's own pages; `[Project]` is the project's name, counts are filled by the plan. */
 export const MKTG_FAMILY_PRINT_COPY = {
   coverPurpose:
@@ -197,8 +206,8 @@ export const MKTG_FAMILY_PRINT_COPY = {
   faqIntro: '[Questions] questions in [Groups] groups, each answered from the framework or a source it names.',
   sourcesIntro:
     'What version of each document this book holds, where the documents disagree, and what is still open. Each document keeps its own Sources page; this one is the cross-check.',
-  /** The word count under a boilerplate's label: `[Words]` and `[Max]`. */
-  words: '[Words] words · max [Max]',
+  /** The word count under a boilerplate's label: `[Words]` and `[Max]`, joined by the family's dot (MKTG_FAMILY_PRINT_SEP). */
+  words: `[Words] words${MKTG_FAMILY_PRINT_SEP}max [Max]`,
   /** The fill bar's caption: `[Percent]`. */
   ofTheLimit: '[Percent]% of the limit',
   /** Over the limit by `[Over]` words. */
