@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_KIT_POSITIONING_FAMILY_ID } from '@lfx-one/shared/constants';
+import { MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_PRINT_INK_ON_LIGHT } from '@lfx-one/shared/constants';
 import { MktgFamilyPrintView } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
@@ -61,6 +61,14 @@ function pages(root: HTMLElement): HTMLElement[] {
 
 function page(root: HTMLElement, id: string): HTMLElement | null {
   return root.querySelector<HTMLElement>(`[data-testid="lfx-mktg-portrait-page"][data-page-id="${id}"]`);
+}
+
+/** The component's stylesheet as the engine applies it: the `<style>` the renderer adds to the head for its rules. */
+function coverStyle(): string {
+  return Array.from(document.head.querySelectorAll('style'))
+    .map((style) => style.textContent ?? '')
+    .filter((text) => text.includes('.fpc-purpose'))
+    .join('\n');
 }
 
 describe('MktgFamilyPrintComponent', () => {
@@ -124,5 +132,21 @@ describe('MktgFamilyPrintComponent', () => {
     expect(pages(root).map((frame) => frame.dataset['pageId'])).toEqual(['cover', 'contents', 'back-cover']);
     expect(root.querySelector('[data-testid="family-print-contents-intro"]')?.textContent).toContain('0 documents, 3 pages.');
     expect(root.querySelector('[data-testid="family-print-contents-sources"]')).toBeNull();
+  });
+
+  it('mixes the cover’s purpose, tile meta and rules from the ink the grammar selected for the cover ground, so a light ground gets dark ink', async () => {
+    // A kit whose "dark" is light: the brand's contrast rule picks the dark ink for it, and the cover's secondary inks follow that ink.
+    const brand = { ...mktgPrintBrand(null), dark: '#F4F4F4', onDark: MKTG_PRINT_INK_ON_LIGHT };
+    const root = await render({ ...view(), brand });
+    const cover = page(root, 'cover');
+    expect(cover?.style.getPropertyValue('--pp-on-dark')).toBe(MKTG_PRINT_INK_ON_LIGHT);
+    expect(cover?.style.getPropertyValue('--pp-dark')).toBe('#F4F4F4');
+    const style = coverStyle();
+    expect(style).toContain('color-mix(in srgb, var(--pp-on-dark) 75%, transparent)');
+    expect(style).toContain('color-mix(in srgb, var(--pp-on-dark) 60%, transparent)');
+    expect(style).toContain('color-mix(in srgb, var(--pp-on-dark) 30%, transparent)');
+    // No fixed translucent white anywhere on the cover: every secondary ink derives from the selected one.
+    expect(style).not.toMatch(/rgba\(\s*255\s*,\s*255\s*,\s*255/);
+    expect(style).not.toMatch(/#fff\b/i);
   });
 });
