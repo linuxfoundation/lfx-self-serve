@@ -531,7 +531,8 @@
                   formControlName="includeDemandGen"
                   (change)="onGoogleChannelPicked('demand-gen', $event)"
                   [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
-                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  data-testid="implementation-include-demand-gen" />
                 Demand Gen Campaign
               </label>
             }

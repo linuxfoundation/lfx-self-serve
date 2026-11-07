@@ -5997,14 +5997,19 @@ export class ImplementationTabComponent implements OnInit {
     this.focusDemandGenAudienceAfterRender(group, 'picker');
   }
 
-  /** {@link demandGenAudienceBlock}'s way out: drop every audience it holds, the only action that never needs the read. */
+  /**
+   * {@link demandGenAudienceBlock}'s way out: drop every audience it holds, the only action that never needs
+   * the read. The notice leaves with its focused Remove button, so focus moves on as
+   * {@link focusAfterDemandGenAudienceBlockRemoved} says.
+   */
   protected onDemandGenAudiencesRemoveAll(): void {
     const form = this.campaignForm.controls;
     if (!form.demandGenAdGroupsSplit.value) {
       form.demandGenAudience.setValue('');
-      return;
+    } else {
+      for (const group of form.demandGenAdGroups.controls) group.controls.audience.setValue('');
     }
-    for (const group of form.demandGenAdGroups.controls) group.controls.audience.setValue('');
+    this.focusAfterDemandGenAudienceBlockRemoved();
   }
 
   /**
@@ -11302,15 +11307,19 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * {@link demandGenAudienceRetained}: on a create whose channel resolves to Demand Gen, the audiences the
-   * split mode would send, read from the form itself rather than the payload helpers. Those return `{}`
-   * whenever Demand Gen's creative section is off screen (the cutover dark, or its answer still out), and
-   * reading them here would let a restored draft create without its audience.
+   * {@link demandGenAudienceRetained}: on a create that asks for Demand Gen, the audiences the split mode
+   * would send, read from the form itself rather than the payload helpers. Those return `{}` whenever
+   * Demand Gen's creative section is off screen (the cutover dark, its answer still out, or Search ticked
+   * beside it), and reading them here would let a restored draft create without its audience.
+   *
+   * Demand Gen among the selected channels, not {@link resolveGoogleChannel}: that resolves Search + Demand
+   * Gen to Search, yet with the cutover dark the legacy creator builds both campaigns from that pair, so
+   * the Demand Gen one would go out without its saved targeting.
    */
   private initDemandGenAudienceRetained(): Signal<{ owner: string; audience: string }[]> {
     return computed(() => {
       void this.campaignFormRevision();
-      if (this.resolveGoogleChannel() !== 'demand-gen') return [];
+      if (!this.showGoogleSection() || !this.selectedGoogleChannels().includes('demand-gen')) return [];
       const form = this.campaignForm.controls;
       if (!form.demandGenAdGroupsSplit.value) {
         const single = form.demandGenAudience.value.trim();
@@ -11422,6 +11431,25 @@ export class ImplementationTabComponent implements OnInit {
             : (host.querySelector<HTMLElement>(`[data-testid="implementation-demand-gen-audience-picker-${key}"] input`) ??
               host.querySelector<HTMLElement>(group === null ? '#implementation-demand-gen-ad-groups-split-input' : `#demand-gen-ad-group-${group}-name`));
         element?.focus();
+      },
+      { injector: this.injector }
+    );
+  }
+
+  /**
+   * Once rendered, focus Create Campaign when it is enabled, otherwise the Demand Gen channel checkbox. Both
+   * are on screen whenever {@link demandGenAudienceBlock} was, cutover dark included, where Demand Gen's
+   * creative section and its own fallbacks are hidden; the checkbox renders while Demand Gen can be
+   * selected, which the block needs.
+   */
+  private focusAfterDemandGenAudienceBlockRemoved(): void {
+    afterNextRender(
+      () => {
+        const host = this.host.nativeElement;
+        const target =
+          host.querySelector<HTMLElement>('[data-testid="implementation-submit-btn"] button:not(:disabled)') ??
+          host.querySelector<HTMLElement>('[data-testid="implementation-include-demand-gen"]');
+        target?.focus();
       },
       { injector: this.injector }
     );

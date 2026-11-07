@@ -18440,6 +18440,101 @@ describe('ImplementationTabComponent demand gen audience', () => {
     expect(c['demandGenAudienceBlock']()).toBeNull();
   });
 
+  /**
+   * Search + Demand Gen with the cutover dark: the channel resolves to Search, but the legacy creator builds
+   * the Demand Gen campaign from the pair too, so its retained audience holds Create just the same.
+   */
+  describe('beside Search while the cutover is dark', () => {
+    it('holds Create for the single ad group audience, listing it with Remove', async () => {
+      await setup();
+      const c = holdAudience(false, 'ready', 'brief-1', false);
+      restoreGoogleDraft(fixture, c, { includeSearch: true, includeDemandGen: true, demandGenAudience: AUDIENCE_A });
+
+      expect(c['resolveGoogleChannel']()).toBe('search');
+      expect(c['demandGenAudienceBlock']()?.kind).toBe('unsupported');
+      expect(query('implementation-demand-gen-audience-block-list')?.textContent).toContain(`Single ad group: ${AUDIENCE_A}`);
+      expect(c['canSubmit']()).toBe(false);
+
+      (query('implementation-demand-gen-audience-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(c['campaignForm'].controls.demandGenAudience.value).toBe('');
+      expect(c['demandGenAudienceBlock']()).toBeNull();
+      expect(c['canSubmit']()).toBe(true);
+    });
+
+    it("holds Create for a named group's audience, naming its group", async () => {
+      await setup();
+      const c = holdAudience(false, 'ready', 'brief-1', false);
+      restoreGoogleDraft(fixture, c, {
+        includeSearch: true,
+        includeDemandGen: true,
+        demandGenAdGroupsSplit: true,
+        demandGenAdGroups: [
+          { name: 'Retargeting', format: 'image', creative: {}, videoCreative: {} },
+          { name: 'Prospecting', format: 'image', creative: {}, videoCreative: {}, audience: AUDIENCE_B },
+        ],
+      });
+
+      expect(c['demandGenAudienceBlock']()?.kind).toBe('unsupported');
+      expect(query('implementation-demand-gen-audience-block-list')?.textContent).toContain(`Prospecting: ${AUDIENCE_B}`);
+      expect(c['canSubmit']()).toBe(false);
+
+      (query('implementation-demand-gen-audience-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(c['campaignForm'].controls.demandGenAdGroups.at(1).controls.audience.value).toBe('');
+      expect(c['demandGenAudienceBlock']()).toBeNull();
+      expect(c['canSubmit']()).toBe(true);
+    });
+
+    it('holds nothing once Demand Gen is unticked, leaving Search alone', async () => {
+      await setup();
+      const c = holdAudience(false, 'ready', 'brief-1', false);
+      restoreGoogleDraft(fixture, c, { includeSearch: true, includeDemandGen: false, demandGenAudience: AUDIENCE_A });
+
+      expect(c['demandGenAudienceRetained']()).toEqual([]);
+      expect(c['demandGenAudienceBlock']()).toBeNull();
+    });
+  });
+
+  /** The block's Remove takes its own focused button away; with the cutover dark nothing nearby takes focus. */
+  describe("focus after the block's Remove", () => {
+    let focused: HTMLElement[];
+    beforeEach(() => {
+      focused = [];
+      vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+        focused.push(this);
+      });
+    });
+
+    it('moves to Create Campaign once Create is enabled', async () => {
+      await setup();
+      const c = holdAudience(false, 'ready', 'brief-1', false);
+
+      (query('implementation-demand-gen-audience-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(c['canSubmit']()).toBe(true);
+      expect(focused.at(-1)).toBe(query('implementation-submit-btn')?.querySelector('button'));
+    });
+
+    it('moves to the Demand Gen checkbox while Create stays disabled', async () => {
+      await setup();
+      const c = holdAudience(false, 'ready', 'brief-1', false);
+      c['campaignForm'].controls.eventName.setValue('');
+      fixture.detectChanges();
+
+      (query('implementation-demand-gen-audience-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(c['canSubmit']()).toBe(false);
+      expect(focused.at(-1)).toBe(query('implementation-include-demand-gen'));
+    });
+  });
+
   /** With no picker rendered, Remove would take the focused control away and leave focus nowhere. */
   describe('focus after Remove with no picker to take it', () => {
     let focused: HTMLElement[];
