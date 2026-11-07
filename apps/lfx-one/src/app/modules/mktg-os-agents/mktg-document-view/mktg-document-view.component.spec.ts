@@ -3353,7 +3353,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(slidesExport.last).toHaveBeenCalledExactlyOnceWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living' });
     expect(query('mktg-framework-view-print')?.className).toContain('lfx-framework-print-only');
     expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
-    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 2');
+    expect(query('mktg-framework-print-version')?.textContent).toContain('V2.0');
   });
 
   it('keeps expanded Show all and the selected FAQ tab through two polls and a focus re-read', async () => {
@@ -4770,7 +4770,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(content?.classList.contains('hidden')).toBe(true);
     expect(content?.classList.contains('print:block')).toBe(true);
     expect(query('mktg-framework-view-print')?.closest('[data-testid="mktg-document-view-content"]')).toBe(content);
-    expect(query('mktg-framework-print')?.textContent).toContain('Version 2');
+    expect(query('mktg-framework-print')?.textContent).toContain('V2.0');
     const download = query('mktg-framework-view-download-pdf')?.querySelector('button');
     expect(download?.disabled).toBe(false);
     download?.click();

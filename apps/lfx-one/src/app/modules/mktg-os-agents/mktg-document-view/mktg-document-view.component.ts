@@ -405,6 +405,8 @@ export class MktgDocumentViewComponent {
   protected readonly approvedVersion = computed(() => this.approvedView().revision?.revision.number ?? null);
   /** When the approved revision was stored, as the page shows it; it dates the PDF's name. */
   protected readonly approvedCreatedAt = computed(() => this.approvedView().revision?.revision.createdAt ?? null);
+  /** When the approved revision was approved; the framework's print dates its cover with it. */
+  protected readonly approvedAt = computed(() => this.approvedView().revision?.revision.approval?.approvedAt ?? null);
   protected readonly approvedFramework = computed(() => {
     const approved = this.approvedView().revision;
     return approved?.type.agentKey === 'foundation-message' ? foundationMessageAssetOfRevision(approved.markdown, approved.sidecar) : null;

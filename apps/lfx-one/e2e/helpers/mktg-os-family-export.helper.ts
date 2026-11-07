@@ -172,8 +172,8 @@ export interface FamilyBookFrame {
  * The family book's frames, by the portrait grammar's contract (`[data-testid="lfx-mktg-portrait-page"]` with
  * `data-page-id` and `data-page`): every one 816×1056 with nothing laid out past its edge, the book opening on the
  * cover and contents, each document's opener before its pages, the Sources page and the back cover last, the numbers
- * rising by one across the frames (the flowing framework print of stage 1 takes its pages between its opener and the
- * next). Returns what the content assertions need: the openers, a frame by id, the kit's frame count, the total.
+ * rising by one across the frames (the framework's and the kit's own portrait frames sit between their openers and the
+ * next). Returns what the content assertions need: the openers, a frame by id, the inner prints' frame counts, the total.
  */
 export async function expectFamilyBookFrames(book: Locator) {
   const pages = book.locator('[data-testid="lfx-mktg-portrait-page"]');
@@ -183,19 +183,19 @@ export async function expectFamilyBookFrames(book: Locator) {
   expect(frames.length).toBeGreaterThan(8);
   expect(frames.slice(0, 3).map((frame) => frame.id)).toEqual(['cover', 'contents', 'opener-foundation-message']);
   expect(frames.slice(-6).map((frame) => frame.id)).toEqual(['opener-boilerplates', 'boilerplates', 'opener-faq', 'faq-1', 'sources', 'back-cover']);
-  expect(frames[3].id).toBe('opener-brand-kit');
   const openers = frames.filter((frame) => frame.id.startsWith('opener-'));
   expect(openers.map((frame) => frame.id)).toEqual(['opener-foundation-message', 'opener-brand-kit', 'opener-boilerplates', 'opener-faq']);
-  // One plan numbers every frame. The framework's flowing pages (stage 1) sit between its opener (3) and the kit's;
-  // the kit's frames are the pages of its plan that are on the grammar at this head, rising by one from its opener
-  // (the rest still print as its flowing chapters, counted by the plan all the same); from the boilerplates' opener
-  // on, the family's own pages rise by one to the back cover.
-  expect(frames.slice(0, 3).map((frame) => frame.page)).toEqual([1, 2, 3]);
-  expect(frames[3].page).toBeGreaterThan(3);
-  const kitFrames = frames.slice(4, -6);
-  kitFrames.forEach((frame, index) => expect(frame.page).toBe(frames[3].page + index + 1));
+  const kitOpener = frames.findIndex((frame) => frame.id === 'opener-brand-kit');
+  expect(kitOpener).toBeGreaterThan(3);
+  // One plan numbers every frame, rising by one from the cover to the back cover: the framework's frames (the pages
+  // of its family plan) after its opener (3), the kit's (the pages of its plan on the grammar at this head; the rest
+  // still print as its flowing chapters, counted by the plan all the same) after the kit's opener, then the family's own.
+  frames.slice(0, kitOpener + 1).forEach((frame, index) => expect({ id: frame.id, page: frame.page }).toEqual({ id: frame.id, page: index + 1 }));
+  const frameworkFrames = frames.slice(3, kitOpener);
+  const kitFrames = frames.slice(kitOpener + 1, -6);
+  kitFrames.forEach((frame, index) => expect(frame.page).toBe(frames[kitOpener].page + index + 1));
   const tail = frames.slice(-6);
-  expect(tail[0].page).toBeGreaterThan(frames[3].page + kitFrames.length);
+  expect(tail[0].page).toBeGreaterThan(frames[kitOpener].page + kitFrames.length);
   tail.slice(1).forEach((frame, index) => expect(frame.page).toBe(tail[0].page + index + 1));
   const total = frames[frames.length - 1].page;
   // Every frame is one US Letter page, and nothing in it is laid out past its edge.
@@ -218,15 +218,16 @@ export async function expectFamilyBookFrames(book: Locator) {
     });
     expect({ id: frames[index].id, overflowing: frame.overflowing }).toEqual({ id: frames[index].id, overflowing: [] });
   });
-  const kitPages = frames.filter(
-    (frame) => !frame.id.startsWith('opener-') && !['cover', 'contents', 'boilerplates', 'faq-1', 'sources', 'back-cover'].includes(frame.id)
-  );
+  // The family's own pages are the book's direct children; the framework's and the kit's frames sit in their prints
+  // (their plan ids, `sources` among them, may repeat the family's).
+  const own = (id: string): string => `:scope > [data-testid="lfx-mktg-portrait-page"][data-page-id="${id}"]`;
   return {
     frames,
     openers,
     total,
-    kitPages: kitPages.length,
-    byId: (id: string): Locator => book.locator(`[data-testid="lfx-mktg-portrait-page"][data-page-id="${id}"]`),
-    byIdPage: (id: string): number => frames.find((frame) => frame.id === id)?.page ?? 0,
+    frameworkPages: frameworkFrames.length,
+    kitPages: kitFrames.length,
+    byId: (id: string): Locator => book.locator(own(id)),
+    byIdPage: (id: string): number => (id.startsWith('opener-') ? frames.find((frame) => frame.id === id) : tail.find((frame) => frame.id === id))?.page ?? 0,
   };
 }

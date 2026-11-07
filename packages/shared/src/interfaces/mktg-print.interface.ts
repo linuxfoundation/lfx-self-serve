@@ -16,8 +16,10 @@ import type {
   FoundationMessageMh,
   FoundationMessageNumberRow,
   FoundationMessagePillarView,
+  FoundationMessageReport,
   FoundationMessageViewTab,
 } from './foundation-message.interface';
+import type { MktgPortraitPlanPage } from './mktg-portrait-print.interface';
 
 /** Boilerplates in contract order, set in the same brand as the framework. */
 export interface BoilerplatesPrintView {
@@ -39,14 +41,14 @@ export interface MktgPrintLogo {
   /** A data URL of the kit's SVG, or the app's own LF logo. */
   src: string;
   alt: string;
-  /** CSS filter on the image: the reversed (white) rendering of a full-colour lockup, or '' to draw it as it is. */
+  /** CSS filter on the image: the reversed (white) rendering of a full-color lockup, or '' to draw it as it is. */
   filter: string;
 }
 
-/** The brand a print is set in: colours, typeface and logo. */
+/** The brand a print is set in: colors, typeface and logo. */
 export interface MktgPrintBrand {
   source: MktgPrintBrandSource;
-  /** CSS colours: the primary dark, the one accent, a light tint of the dark, and the ink on the dark. */
+  /** CSS colors: the primary dark, the one accent, a light tint of the dark, and the ink on the dark. */
   dark: string;
   accent: string;
   tint: string;
@@ -84,20 +86,203 @@ export interface FoundationMessagePrintIcp extends FoundationMessageIcpView {
   goalLabel: string;
   /** `Docs · Slack`: the channels joined. */
   channelsLabel: string;
+  /** `Goal 1`, `Goal 4`: one chip per goal the segment serves, by the goal's rank, in the framework's order. */
+  goalChips: string[];
 }
 
-/** The Messaging Framework as its print lays it out: every string and colour the document binds. */
+/** One row of the goals × profiles matrix: the profile, and whether each goal (in the framework's order) is written for it. */
+export interface FoundationMessagePrintMatrixRow {
+  name: string;
+  cells: boolean[];
+}
+
+/** One proof point as the key numbers page lists it: the fact, its source and the goal that uses it. */
+export interface FoundationMessagePrintFactRow {
+  fact: string;
+  source: string;
+  /** `Goal 2 · Adoption`. */
+  usedBy: string;
+}
+
+/** The type a framework block is set in before it is fitted: the size px, the line height as a multiple, the weight (a `MktgPortraitFitPara` less its text). */
+export interface FoundationMessagePrintType {
+  size: number;
+  line: number;
+  weight: number;
+}
+
+/** A text fitted to its box by the portrait fit model: the text (cut at a sentence when it had to be) and the size the model measured it at, px. */
+export interface FoundationMessagePrintFittedText {
+  text: string;
+  size: number;
+}
+
+/** One proof point as a goal page lists it: the fact and its source, at the size the list is set at. */
+export interface FoundationMessagePrintGoalProof {
+  fact: string;
+  source: string;
+}
+
+/** One "Who it's for" card of a goal page: the profile's name, its need and its call to action, fitted to the card. */
+export interface FoundationMessagePrintServedCard {
+  id: string;
+  name: string;
+  need: FoundationMessagePrintFittedText;
+  cta: FoundationMessagePrintFittedText;
+}
+
+/** A list cut to the rows that fit its room: the rows kept, how many were left off (the muted line under the list says so), and whether the list was tightened first. */
+export interface FoundationMessagePrintCutList<T> {
+  rows: T[];
+  /** The rows left off, 0 when every row printed. */
+  cut: number;
+  /** True when the list is set in its tight type and padding (tried before any cut). */
+  tight: boolean;
+}
+
+/** A goal page as the print lays it out: the value, key message and sound bite fitted, the proof rows cut to what fits, the served cards' lines fitted. */
+export interface FoundationMessagePrintGoalPage {
+  goal: FoundationMessagePrintGoal;
+  /** `01`: the goal's number as the page prints it. */
+  numberLabel: string;
+  value: FoundationMessagePrintFittedText;
+  key: FoundationMessagePrintFittedText;
+  /** The proof points above the sound bite: tightened first, then cut to whole rows, in the goal's order. */
+  proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>;
+  /** The sound bite in quotes, fitted; null when the goal has none. */
+  bite: FoundationMessagePrintFittedText | null;
+  /** The profiles the goal's messaging is written for, in the goal's order. */
+  served: FoundationMessagePrintServedCard[];
+}
+
+/** An ICP page as the print lays it out: the profiles it holds, its intro, the rows' top, and the goals × profiles matrix when it has room. */
+export interface FoundationMessagePrintIcpPage {
+  /** 1-based, in the book's order. */
+  index: number;
+  intro: string;
+  /** The top of the profile rows, px: under the long intro on the first page, the short one after. */
+  rowsTop: number;
+  icps: FoundationMessagePrintIcp[];
+  /** Goals × profiles, on a page that holds one profile; empty elsewhere. */
+  matrix: FoundationMessagePrintMatrixRow[];
+}
+
+/** One key number's tile: its share of a row (1 = the row, 2 = a half, 3 = a third; FRAMEWORK_PORTRAIT_TILE_SHARES); wide when it spans the row. */
+export interface FoundationMessagePrintNumberTile extends FoundationMessageNumberRow {
+  share: number;
+  wide: boolean;
+}
+
+/**
+ * A key numbers page as the print lays it out. Up to FRAMEWORK_PORTRAIT_MAX_TILES figures print as tiles by the count's layout on one page;
+ * more print as the key numbers table, every figure, continued on `key-numbers-2`… when a page is full (never cut). The facts table
+ * ("Figures and their sources") follows on the last page in the room left, tightened first, then cut to whole rows with the muted
+ * line under it.
+ */
+export interface FoundationMessagePrintNumbersPage {
+  /** 1-based, in the book's order. */
+  index: number;
+  /** The intro sentence, on the first page only ('' after). */
+  intro: string;
+  /** The tiles, on the first page only when the count allows them. */
+  tiles: FoundationMessagePrintNumberTile[];
+  /** The key numbers table's rows on this page (more figures than the tiles hold); empty when the tiles print. */
+  numbersTable: FoundationMessageNumberRow[];
+  /** The top of the key numbers table, px (the tiles' top on the first page, the continuation top after). */
+  numbersTop: number;
+  /** The top of the facts table, px; null when this page holds no facts (they follow on a later page, or there are none). */
+  factsTop: number | null;
+  facts: FoundationMessagePrintCutList<FoundationMessagePrintFactRow>;
+}
+
+/**
+ * The Sources & gaps page as the print lays it out: the run's report cut to the rows that fit, and the approval card. With no report
+ * (the record has none) `report` is null: no intro, no lists, the approval card alone.
+ */
+export interface FoundationMessagePrintSourcesPage {
+  /** The lists of an existing report; null when the record has none. */
+  report: {
+    /** The intro sentence above the lists. */
+    intro: string;
+    /** The sources read, as stored, without their type prefix, tightened then cut to the rows that fit; the block prints only when there is one. */
+    read: FoundationMessagePrintCutList<string>;
+    /** `<name> — <reason>` per source that could not be read, tightened then cut to the rows that fit. */
+    failed: FoundationMessagePrintCutList<string>;
+    /** How many sources could not be read in the report (the empty-state line reads this, not the cut list). */
+    failedCount: number;
+    /** The gaps as the run wrote them, tightened then cut to the rows that fit. */
+    gaps: FoundationMessagePrintCutList<string>;
+    /** How many gaps the report holds (the empty-state line reads this, not the cut list). */
+    gapsCount: number;
+  } | null;
+  /** `V1.0 · Approved 6 Nov 2026.`, or `V1.0.`; '' without a version. */
+  approvalLead: string;
+  approvalNote: string;
+}
+
+/** One entry of the cover's contents: a page after the cover with its book page number. */
+export interface FoundationMessagePrintContentsEntry {
+  id: string;
+  title: string;
+  /** The book page number. */
+  number: number;
+  /** `02`: the number as the contents print it. */
+  numberLabel: string;
+}
+
+/** One anchor question as the say-and-avoid page numbers it. */
+export interface FoundationMessagePrintAnchorRow {
+  numberLabel: string;
+  question: string;
+}
+
+/** One frame of the framework's portrait book: its plan page with its book number, printed section label, band, and the page's laid-out data. */
+export interface FoundationMessagePrintFrame extends MktgPortraitPlanPage {
+  number: number;
+  /** The running head's section label as printed (`01 Framework`; `Messaging framework · Framework` inside the family). */
+  label: string;
+  band: boolean;
+  /** The cover's contents, on the cover; empty elsewhere. */
+  contents: FoundationMessagePrintContentsEntry[];
+  /** The four statements, fitted to their cards, on the framework page. */
+  statements: {
+    vision: FoundationMessagePrintFittedText;
+    mission: FoundationMessagePrintFittedText;
+    positioning: FoundationMessagePrintFittedText;
+    tagline: FoundationMessagePrintFittedText;
+  } | null;
+  /** The anchor questions, numbered, on the say-and-avoid page. */
+  anchors: FoundationMessagePrintAnchorRow[];
+  goalPage: FoundationMessagePrintGoalPage | null;
+  icpPage: FoundationMessagePrintIcpPage | null;
+  numbersPage: FoundationMessagePrintNumbersPage | null;
+  sourcesPage: FoundationMessagePrintSourcesPage | null;
+}
+
+/** The Messaging Framework as its print lays it out: every string and color the document binds. */
 export interface FoundationMessagePrintView {
   brand: MktgPrintBrand;
   projectName: string;
   /** `Jupyter Foundation · a Linux Foundation project`, over the title and in the footers. */
   eyebrow: string;
   title: string;
-  /** `Version 3`, '' when the page shows no version. */
+  /** `V3.0`, '' when the page shows no version (the one format every document of the family prints). */
   versionLabel: string;
+  /** `Approved 6 Nov 2026`, '' when the approval's date is not known. */
+  approvedLabel: string;
+  /** `6 Nov 2026`: the approval's date, '' when not known. */
+  dateLabel: string;
+  /** The project's web host (`aaif.io`) from its Brand Kit; '' without one. */
+  website: string;
+  /** `4 Nov 2026`: the day the run read its sources (the stored record's `inputs_record.date_read`), '' when the revision does not carry one. */
+  dateReadLabel: string;
+  /** The run's report, as the Sources & gaps page prints it (what was read, what could not be, the gaps); null when the revision's record carries none. */
+  report: FoundationMessageReport | null;
   /** `Jupyter Foundation Messaging Framework`. */
   runningHead: string;
   sections: FoundationMessagePrintSection[];
+  /** Every goal's proof points with their sources, for the key numbers page. */
+  facts: FoundationMessagePrintFactRow[];
   mf: FoundationMessageMf;
   mh: FoundationMessageMh;
   goals: FoundationMessagePrintGoal[];

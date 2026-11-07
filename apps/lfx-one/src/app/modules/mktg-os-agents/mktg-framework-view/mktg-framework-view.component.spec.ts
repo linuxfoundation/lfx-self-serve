@@ -473,20 +473,22 @@ describe('MktgFrameworkViewComponent', () => {
     expect(print?.getAttribute('data-brand')).toBe('lf');
     expect(query('mktg-framework-print-title')?.textContent).toContain('Messaging Framework');
     expect(query('mktg-framework-print-tagline')?.textContent).toContain('Release, open.');
-    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 3');
+    expect(query('mktg-framework-print-version')?.textContent).toContain('V3.0');
     expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toBe('/images/logo_lf_white.svg');
     expect(query('mktg-framework-print-contents')?.textContent).toContain('Key numbers');
-    expect(query('mktg-framework-print-contents')?.textContent).not.toContain('Sources and gaps');
-    expect(query('mktg-framework-print-goals')?.querySelectorAll('thead th').length).toBe(3);
+    expect(query('mktg-framework-print-contents')?.textContent).toContain('Sources & gaps');
+    // The portrait book prints every chapter: the goal matrix, the profiles, the message house, the numbers, the run's report.
+    expect(query('mktg-framework-print-goals')?.querySelectorAll('thead, tfoot').length).toBe(0);
     expect(query('mktg-framework-print-goals')?.textContent).toContain('Built together');
-    expect(query('mktg-framework-print-contents')?.textContent).not.toContain('ICPs');
-    expect(query('mktg-framework-print-icp-contributors')).toBeNull();
-    expect(query('mktg-framework-print-pillars')).toBeNull();
-    expect(print?.textContent).not.toContain('Open releases for everyone.');
+    expect(query('mktg-framework-print-icp-contributors')).not.toBeNull();
+    expect(query('mktg-framework-print-pillars')).not.toBeNull();
+    expect(query('mktg-framework-print-umbrella')?.textContent).toContain('Open releases for everyone.');
     expect(query('mktg-framework-print-numbers')?.textContent).toContain('releases a year');
-    expect(print?.textContent).not.toContain('No member count.');
-    expect(print?.textContent).not.toContain('Check the member count.');
+    expect(query('mktg-framework-print-gaps')?.textContent).toContain('No member count.');
+    // The run's notes and the reviewer's note stay on screen only.
+    expect(query('mktg-framework-print-notes')).toBeNull();
     expect(print?.textContent).not.toContain('Check the dates.');
+    expect(print?.textContent).not.toContain('Check the member count.');
 
     // Export to Google Slides waits for the page to name a stored revision.
     expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
@@ -507,7 +509,7 @@ describe('MktgFrameworkViewComponent', () => {
     host.approvedVersion.set(1);
     await fixture.whenStable();
     expect(query('mktg-framework-view-version')?.textContent).toContain('v3');
-    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 1');
+    expect(query('mktg-framework-print-version')?.textContent).toContain('V1.0');
     expect(query('mktg-framework-print-tagline')?.textContent).toContain('Release, open.');
     expect(query('mktg-framework-print')?.textContent).not.toContain('New draft only');
   });
@@ -575,9 +577,11 @@ describe('MktgFrameworkViewComponent', () => {
 
     const print = query('mktg-framework-print') as HTMLElement;
     expect(print.getAttribute('data-brand')).toBe('kit');
-    expect(print.style.getPropertyValue('--mfp-dark')).toBe(kit.kit.dark);
-    expect(print.style.getPropertyValue('--mfp-accent')).toBe(kit.kit.accent);
-    expect(print.style.getPropertyValue('--mfp-font')).toContain('Montserrat');
+    // The kit's inks and typeface reach every frame through the portrait grammar's look.
+    const frame = element().querySelector('[data-testid="lfx-mktg-portrait-page"][data-page-id="framework"]') as HTMLElement;
+    expect(frame.style.getPropertyValue('--pp-dark')).toBe(kit.kit.dark);
+    expect(frame.style.getPropertyValue('--pp-accent')).toBe(kit.kit.accent);
+    expect(frame.style.getPropertyValue('--pp-font')).toContain('Montserrat');
     // No reversed artwork in the kit: the cover draws the primary lockup white.
     expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
     expect(query('mktg-framework-print-cover-logo')?.style.filter).toContain('invert');

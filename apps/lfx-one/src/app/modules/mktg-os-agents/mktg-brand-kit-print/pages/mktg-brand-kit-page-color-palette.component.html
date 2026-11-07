@@ -1,0 +1,53 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-palette-intro">{{ v.color.summary }}</p>
+  <div class="kp-swatches" [lfxPpRect]="[x, 220, w]" data-testid="brand-kit-palette-swatches">
+    @for (swatch of swatches(); track swatch.hex) {
+      <div class="kp-swatch" [attr.data-swatch]="swatch.hexDigits">
+        <div class="kp-swatch-color" [class.kp-swatch-color--short]="short()" [style.background]="swatch.hex">
+          <span class="kp-swatch-name" [style.color]="swatch.ink">{{ swatch.name }}</span>
+        </div>
+        <div class="kp-swatch-values">
+          <div class="kp-swatch-codes">
+            <div><b>HEX</b> {{ swatch.hexUpper }}</div>
+            <div><b>RGB</b> {{ swatch.rgb }}</div>
+            @if (swatch.share !== null) {
+              <div><b>Share</b> {{ swatch.share }}%</div>
+            }
+          </div>
+          <div class="kp-swatch-role">
+            <div><b>Role</b> {{ swatch.role }}</div>
+            @if (swatch.source) {
+              <div class="kp-swatch-source">{{ swatch.source }}</div>
+            }
+          </div>
+        </div>
+      </div>
+    }
+  </div>
+  @if (v.proportion.length) {
+    <div [lfxPpRect]="[x, 860, w]">
+      <div class="pp-lab pp-lab--dark">Proportion</div>
+      <div class="kp-proportion" data-testid="brand-kit-palette-proportion">
+        @for (row of v.proportion; track row.hex) {
+          <span [style.flex-grow]="row.share" [style.background]="row.hex"></span>
+        }
+      </div>
+      <div class="kp-legend">
+        @for (row of v.proportion; track row.hex) {
+          <span><span class="kp-legend-swatch" [style.background]="row.hex"></span>{{ row.name }} {{ row.share }}%</span>
+        }
+      </div>
+    </div>
+  }
+</lfx-mktg-portrait-page>

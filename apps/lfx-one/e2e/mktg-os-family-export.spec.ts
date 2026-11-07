@@ -8,7 +8,11 @@ import {
   MKTG_PORTRAIT_PAGE_NAME,
   MKTG_PRINT_PAGE_SETUPS,
 } from '../../../packages/shared/src/constants';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils/brand-kit-book.utils';
+import { brandKitPortraitPlan, mktgPortraitSectionLabel } from '@lfx-one/shared/utils/mktg-portrait-plan.utils';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
 import { expectFamilyBookFrames, openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
@@ -175,16 +179,16 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   const printFrame = await layoutMktgPrintFrame(page);
   const printDocument = printFrame.getByTestId('family-export-print-document');
   // The family prints as one book of the portrait grammar's frames (CSS Paged Media Level 3: `@page { size: 8.5in 11in;
-  // margin: 0 }`, one fixed 816×1056 frame per page): the family's own pages, main's flowing framework print in its
-  // chapter's place (stage 1) and the kit's portrait pages in the family's book.
+  // margin: 0 }`, one fixed 816×1056 frame per page): the family's own pages, and the framework's and the kit's
+  // portrait pages in the family's book.
   const book = printDocument.locator('lfx-mktg-family-print');
   await expect(book).toHaveCount(1);
   await expect(book).toHaveClass(/lfx-mktg-portrait/);
   await expect(printDocument.locator('lfx-mktg-framework-print')).toHaveCount(1);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print')).toHaveCount(1);
   await expect(printDocument.locator('lfx-mktg-boilerplates-print, lfx-mktg-faq-print, tfoot')).toHaveCount(0);
-  // Main's sheets print only inside the framework's chapter (stage 1).
-  await expect(printDocument.locator('lfx-mktg-print-sheet:not(lfx-mktg-framework-print lfx-mktg-print-sheet)')).toHaveCount(0);
+  // No sheet of main's flowing prints anywhere in the book.
+  await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(0);
   // Only the wrapper travels: the card's controls are not in the frame.
   await expect(printFrame.getByTestId('family-export-actions')).toHaveCount(0);
   const frames = await expectFamilyBookFrames(book);
@@ -219,16 +223,58 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-doc')).toHaveText(/positioning & brand$/);
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-section')).toHaveText('03 Boilerplates');
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-number')).toHaveText(String(frames.byIdPage('boilerplates')).padStart(2, '0'));
-  // Main's framework print, numbered by the plan's chapter, inside the book (stage 1).
-  await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2']);
-  await expect(printDocument.getByTestId('mktg-framework-print-goals')).toBeVisible();
-  await expect(printFrame.getByTestId('mktg-framework-print-cover')).toBeHidden();
-  // The kit in the family's book: no cover, contents or back cover of its own; its frames (the pages of its plan on the
-  // grammar at this head) carry the family's head.
+  // The framework in the family's book: the pages of its family plan for this fixture (one goal, one ICP), no cover of
+  // its own and no band, each under the family's running head, numbered on from its opener, on the kit's look.
+  const frameworkPrint = printDocument.locator('lfx-mktg-framework-print');
+  const frameworkFrames = frameworkPrint.locator('[data-testid="lfx-mktg-portrait-page"]');
+  await expect(frameworkFrames).toHaveCount(frames.frameworkPages);
+  expect(await frameworkFrames.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-page-id')))).toEqual([
+    'framework',
+    'goal-1',
+    'say-avoid',
+    'icps-1',
+    'message-house',
+    'key-numbers',
+    'sources',
+  ]);
+  await expect(frameworkFrames.first()).toHaveAttribute('data-page', '4');
+  await expect(frameworkFrames.first()).toHaveAttribute('data-section', 'Messaging framework · Framework');
+  await expect(frameworkFrames.first().getByTestId('mktg-portrait-page-number')).toHaveText('04');
+  await expect(frameworkPrint.getByTestId('mktg-portrait-page-doc')).toHaveText(
+    Array(frames.frameworkPages).fill(`${DOCUMENT_PROJECT.name} positioning & brand`)
+  );
+  await expect(
+    frameworkPrint.locator('[data-page-id="cover"], [data-testid="mktg-framework-print-cover"], [data-testid="mktg-portrait-page-band"]')
+  ).toHaveCount(0);
+  await expect(frameworkPrint.getByTestId('mktg-framework-print-goals')).toBeVisible();
+  await expect(frameworkPrint.getByTestId('mktg-framework-print-pillars')).toHaveCount(1);
+  await expect(frameworkPrint.locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(1);
+  // The family passes the framework no report, approval or read date today (its follow-up), so its Sources & gaps page prints
+  // the approval card alone: no intro, no lists, no empty-state line, and a card without a version or approval lead.
+  await expect(frameworkFrames.last()).toHaveAttribute('data-page-id', 'sources');
+  await expect(printDocument.getByTestId('mktg-framework-print-sources-intro')).toHaveCount(0);
+  await expect(printDocument.getByTestId('mktg-framework-print-sources-read')).toHaveCount(0);
+  await expect(printDocument.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveCount(0);
+  await expect(printDocument.getByTestId('mktg-framework-print-gaps-empty')).toHaveCount(0);
+  await expect(printDocument.getByTestId('mktg-framework-print-approval')).toHaveText('A later run re-reads the sources and refreshes the LFX figures.');
+  // The kit in the family's book: every page of its family plan for this kit (the synthetic kit's record decides the
+  // plan: no cover, contents or back cover of its own), in order, numbered on from its opener, under the family's
+  // running head, no band; nothing of it flows as a chapter.
+  const kitPlan = brandKitPortraitPlan(buildBrandKitBookView(brandKitTestRevision(), 1), { inFamily: true });
   const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');
-  await expect(kitPrint.locator('[data-page-id="cover"], [data-page-id="contents"], [data-page-id="back-cover"]')).toHaveCount(0);
-  await expect(kitPrint.getByTestId('mktg-portrait-page-doc')).toHaveCount(frames.kitPages);
-  if (frames.kitPages) await expect(kitPrint.getByTestId('mktg-portrait-page-doc').first()).toHaveText(/positioning & brand$/);
+  const kitFrames = kitPrint.locator('[data-testid="lfx-mktg-portrait-page"]');
+  await expect(kitFrames).toHaveCount(kitPlan.length);
+  expect(frames.kitPages).toBe(kitPlan.length);
+  expect(await kitFrames.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-page-id')))).toEqual(kitPlan.map((page) => page.id));
+  expect(await kitFrames.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-section')))).toEqual(
+    kitPlan.map((page) => mktgPortraitSectionLabel(page.section, true, 'Brand kit'))
+  );
+  await expect(kitFrames.first()).toHaveAttribute('data-page', String(frames.byIdPage('opener-brand-kit') + 1));
+  await expect(kitPrint.getByTestId('mktg-portrait-page-doc')).toHaveText(Array(kitPlan.length).fill(`${DOCUMENT_PROJECT.name} positioning & brand`));
+  await expect(
+    kitPrint.locator('[data-page-id="cover"], [data-page-id="contents"], [data-page-id="back-cover"], [data-testid="mktg-portrait-page-band"]')
+  ).toHaveCount(0);
+  await expect(kitPrint.locator('.kit-chapter, lfx-mktg-print-chapter-header, .lfx-brand-kit-page')).toHaveCount(0);
   await expect(printDocument.locator('lfx-brand-kit-view, .lfx-brand-kit-page')).toHaveCount(0);
   // The boilerplates as cards, one per length with text; the FAQ's answered questions only.
   await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-card')).toHaveCount(4);

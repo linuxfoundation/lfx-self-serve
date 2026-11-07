@@ -1,0 +1,44 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  @if (v.logos.primary?.src) {
+    <div [lfxPpRect]="[x, 148, w]">
+      <div class="kp-hero h-[300px] gap-[44px]" data-testid="brand-kit-partnership-light">
+        <lfx-mktg-brand-kit-artwork [view]="v" [height]="64" />
+        <span class="kp-bar h-[96px]"></span>
+        <span class="kp-partner">Partner logo</span>
+      </div>
+      <div class="pp-cap">On light grounds · {{ v.darkName }} bar</div>
+    </div>
+    <div [lfxPpRect]="[x, 486, w]">
+      <div class="kp-hero kp-hero--dark h-[280px] gap-[44px]" data-testid="brand-kit-partnership-dark">
+        <lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="58" />
+        <span class="kp-bar kp-bar--white h-[88px]"></span>
+        <span class="kp-partner kp-partner--dark">Partner logo</span>
+      </div>
+      <div class="pp-cap">On dark grounds · white bar</div>
+    </div>
+  }
+  @if (rules().length) {
+    <div [lfxPpRect]="[x, 806, w]">
+      <div class="pp-lab pp-lab--dark">Rules</div>
+      <ol class="kp-rules" data-testid="brand-kit-partnership-rules">
+        @for (rule of rules(); track rule.number) {
+          <li class="kp-rule kp-rule--numbered">
+            <span class="kp-rule-number">{{ rule.number }}</span>
+            <span>{{ rule.text }}</span>
+          </li>
+        }
+      </ol>
+    </div>
+  }
+</lfx-mktg-portrait-page>

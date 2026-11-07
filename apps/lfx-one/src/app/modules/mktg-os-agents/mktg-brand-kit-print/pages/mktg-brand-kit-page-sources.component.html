@@ -1,0 +1,114 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+@let s = sources();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <p class="pp-body kp-sources-intro" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-sources-intro">{{ intro() }}</p>
+  <div [lfxPpRect]="[x, 220, 340]">
+    @if (s.read.length) {
+      <div class="kp-block" data-testid="brand-kit-sources-read">
+        <div class="pp-lab pp-lab--dark">Read</div>
+        <ul class="kp-list">
+          @for (source of s.read; track source) {
+            <li>{{ source }}</li>
+          }
+        </ul>
+      </div>
+    }
+    @if (s.failed.length) {
+      <div class="kp-block" data-testid="brand-kit-sources-failed">
+        <div class="pp-lab pp-lab--dark">Could not be read</div>
+        <ul class="kp-list">
+          @for (entry of s.failed; track $index) {
+            <li>
+              <b>{{ entry.source }}</b>
+              @if (entry.reason) {
+                — {{ entry.reason }}
+              }
+            </li>
+          }
+        </ul>
+      </div>
+    }
+    @if (s.warnings.length || s.gaps.length || s.notes) {
+      <div class="kp-block" data-testid="brand-kit-sources-warnings">
+        <div class="pp-lab pp-lab--dark">Warnings</div>
+        <ul class="kp-list">
+          @for (warning of s.warnings; track $index) {
+            <li>
+              {{ warning.text }}
+              @if (warning.source) {
+                <span class="kp-muted">({{ warning.source }})</span>
+              }
+            </li>
+          }
+          @for (gap of s.gaps; track $index) {
+            <li>{{ gap }}</li>
+          }
+          @if (s.notes) {
+            <li>{{ s.notes }}</li>
+          }
+        </ul>
+      </div>
+    }
+  </div>
+  <div [lfxPpRect]="[x + 364, 220, 340]">
+    @if (s.missing.length) {
+      <div class="kp-block" data-testid="brand-kit-sources-missing">
+        <div class="pp-lab pp-lab--dark">Missing</div>
+        <ul class="kp-list">
+          @for (entry of s.missing; track $index) {
+            <li>
+              <b>{{ entry.asset }}</b> — {{ entry.reason }}
+              @if (entry.fix) {
+                <span class="kp-muted">Fix: {{ entry.fix }}</span>
+              }
+            </li>
+          }
+        </ul>
+        @if (s.sharedFix) {
+          <div class="kp-text kp-muted">
+            <b>Fix, for all {{ s.missing.length }}:</b> {{ s.sharedFix }}
+          </div>
+        }
+      </div>
+    }
+    @if (s.conflicts.length) {
+      <div class="kp-block" data-testid="brand-kit-sources-conflicts">
+        <div class="pp-lab pp-lab--dark">Colour conflicts</div>
+        @for (conflict of s.conflicts; track conflict.name) {
+          <table class="kp-conflict">
+            <thead>
+              <tr>
+                <th colspan="3">{{ conflict.name }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (value of conflict.values; track $index) {
+                <tr [class.kp-conflict-kept]="value.hex.toUpperCase() === conflict.chosen.toUpperCase()">
+                  <td><span class="kp-conflict-swatch" [style.background]="value.hex"></span></td>
+                  <td>{{ value.hex.toUpperCase() }}{{ value.hex.toUpperCase() === conflict.chosen.toUpperCase() ? ' · kept' : '' }}</td>
+                  <td class="kp-muted">{{ value.source }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </div>
+    }
+  </div>
+  @if (approvalLine()) {
+    <div class="kp-callout kp-callout--approval" [lfxPpRect]="[x, 880, w]" data-testid="brand-kit-sources-accepted">
+      <b>Accepted when {{ v.versionLabel }} was approved.</b> {{ approvalLine() }}. Every item above was shown at approval and accepted as listed; a later run
+      re-reads the sources and re-opens them.
+    </div>
+  }
+</lfx-mktg-portrait-page>

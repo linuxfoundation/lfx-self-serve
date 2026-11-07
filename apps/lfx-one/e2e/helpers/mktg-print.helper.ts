@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, FrameLocator, Locator, Page } from '@playwright/test';
-import { MKTG_PRINT_FRAME_PAPER_IN, MKTG_PRINT_PAGE_MARGINS_CLASS, MKTG_PRINT_PAGE_SETUPS } from '@lfx-one/shared/constants';
+import { MKTG_PORTRAIT_PAGE_NAME, MKTG_PRINT_FRAME_PAPER_IN, MKTG_PRINT_PAGE_MARGINS_CLASS, MKTG_PRINT_PAGE_SETUPS } from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './account-settings-email.helper';
 
 /** The frame prints once its own stylesheets, faces and images settle, or at the service's cap. */
@@ -104,6 +104,36 @@ export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locato
   const marked = frame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`);
   await expect(marked).toHaveCount(webkit ? 1 : 0);
   await expect(root).toHaveCSS('padding-left', webkit ? '0px' : '57.6px');
+}
+
+/**
+ * The page setup of a document of portrait frames: US Letter with no margin in both engines, written unnamed and as
+ * the frames' own named page, and never the page margins (a frame is the whole sheet). Given the document's `root`,
+ * also its frames: the root lifts the flowing documents' side padding, and every frame (the grammar's
+ * `lfx-mktg-portrait-page`, as many as the root's `data-pages` says, never none) sits at the page's edge, 816 by
+ * 1056 px, on the named page, clipping what would pass its edge.
+ */
+export async function expectMktgPortraitPageSetup(frame: FrameLocator, root?: Locator): Promise<void> {
+  const setup = MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
+  expect(setup).toBe('size: 8.5in 11in; margin: 0;');
+  expect(await frame.locator('head style').last().textContent()).toBe(`@page { ${setup} }\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
+  await expect(frame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`)).toHaveCount(0);
+  if (!root) return;
+  await expect(root).toHaveCSS('padding-left', '0px');
+  const pages = root.getByTestId('lfx-mktg-portrait-page');
+  const declared = Number(await root.getAttribute('data-pages'));
+  expect(declared).toBeGreaterThan(0);
+  await expect(pages).toHaveCount(declared);
+  for (const page of await pages.all()) {
+    const box = await page.boundingBox();
+    expect({ x: Math.round(box?.x ?? -1), width: Math.round(box?.width ?? 0), height: Math.round(box?.height ?? 0) }).toEqual({
+      x: 0,
+      width: 816,
+      height: 1056,
+    });
+    await expect(page).toHaveCSS('page', MKTG_PORTRAIT_PAGE_NAME);
+    await expect(page).toHaveCSS('overflow', 'hidden');
+  }
 }
 
 /** A viewport-height cover in the laid-out frame fills the page: the 1px frame left it at its content's height. */

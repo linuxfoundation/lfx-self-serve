@@ -1,0 +1,63 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-contrast-intro">
+    {{ v.color.contrast.rule }} The matrix shows every pairing of the palette; the list repeats the kit's own table.
+  </p>
+  <table class="kp-matrix" [lfxPpRect]="[x, 220, w]" data-testid="brand-kit-contrast-matrix">
+    <thead>
+      <tr>
+        <th class="kp-matrix-corner"></th>
+        @for (column of v.color.palette; track column.hex) {
+          <th>on {{ column.name }}</th>
+        }
+      </tr>
+    </thead>
+    <tbody>
+      @for (row of matrix(); track row.hex) {
+        <tr>
+          <th><span class="kp-matrix-dot" [style.background]="row.hex"></span>{{ row.name }} text</th>
+          @for (cell of row.cells; track cell.background) {
+            <td>
+              @if (cell.ratio === null) {
+                <div class="kp-matrix-same"></div>
+              } @else {
+                <div class="kp-matrix-cell" [style.background]="cell.background" [attr.data-ratio]="cell.label">
+                  <span class="kp-matrix-aa" [style.color]="cell.foreground">Aa</span>
+                  <div class="kp-matrix-meta">
+                    <span class="kp-matrix-ratio" [class.kp-matrix-ratio--tinted]="cell.background.toUpperCase() !== '#FFFFFF'">{{ cell.label }}:1</span>
+                    <span class="kp-pill" [style.background]="cell.grade?.background" [style.color]="cell.grade?.color">{{ cell.grade?.label }}</span>
+                  </div>
+                </div>
+              }
+            </td>
+          }
+        </tr>
+      }
+    </tbody>
+  </table>
+  @if (pairs().length) {
+    <div [lfxPpRect]="[x, 610, w]" data-testid="brand-kit-contrast-pairs">
+      <div class="pp-lab pp-lab--dark">The kit's pairs</div>
+      <div class="kp-pairs">
+        @for (pair of pairs(); track $index) {
+          <div class="kp-pair">
+            <span class="kp-pair-sample" [style.background]="pair.backgroundHex" [style.color]="pair.foregroundHex">Aa</span>
+            <span class="kp-pair-names">{{ pair.foreground }} on {{ pair.background }}</span>
+            <span class="kp-pair-ratio">{{ pair.ratioLabel }}</span>
+            <span class="kp-pill" [style.background]="pair.pill.background" [style.color]="pair.pill.color">{{ pair.pill.label }}</span>
+          </div>
+        }
+      </div>
+    </div>
+  }
+</lfx-mktg-portrait-page>

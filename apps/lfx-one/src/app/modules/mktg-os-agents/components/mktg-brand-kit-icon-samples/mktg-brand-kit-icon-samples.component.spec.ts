@@ -4,6 +4,8 @@
 import { TestBed } from '@angular/core/testing';
 import {
   BRAND_KIT_ICON_HIGHLIGHT_INDEX,
+  BRAND_KIT_ICON_PORTRAIT_STRIP_SIZE_PX,
+  BRAND_KIT_ICON_PORTRAIT_TILE_SIZE_PX,
   BRAND_KIT_ICON_PRINT_STRIP_SIZE_PX,
   BRAND_KIT_ICON_SAMPLES,
   BRAND_KIT_ICON_STRIP_INK,
@@ -18,10 +20,11 @@ import { MktgBrandKitIconSamplesComponent } from './mktg-brand-kit-icon-samples.
 
 const COLOURS: BrandKitIconColours = { tileInk: '#003B5C', stripGround: '#003B5C', highlight: '#FF702D' };
 
-async function setup(colours: BrandKitIconColours = COLOURS, print = false) {
+async function setup(colours: BrandKitIconColours = COLOURS, print = false, portrait = false) {
   const fixture = TestBed.createComponent(MktgBrandKitIconSamplesComponent);
   fixture.componentRef.setInput('colours', colours);
   fixture.componentRef.setInput('print', print);
+  fixture.componentRef.setInput('portrait', portrait);
   await fixture.whenStable();
   const root: HTMLElement = fixture.nativeElement;
   return { fixture, root };
@@ -164,5 +167,36 @@ describe('MktgBrandKitIconSamplesComponent', () => {
     });
     // Print-safe: no filter, gradient or shadow anywhere in the markup.
     expect(root.innerHTML).not.toMatch(/filter|gradient|shadow/i);
+  });
+
+  it('draws the portrait book’s variant at the mock’s sizes: 150 px tiles with 36 px icons and 16 px gaps, then the 120 px strip 36 px below with 32 px icons, in the same table boxes', async () => {
+    const { root } = await setup(COLOURS, true, true);
+    const tiles = root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tiles"]');
+    for (const cls of ['table', 'table-fixed', 'w-[calc(100%+16px)]', '-mx-[8px]']) {
+      expect(tiles?.classList.contains(cls)).toBe(true);
+    }
+    const rows = Array.from(tiles?.querySelectorAll<HTMLElement>(':scope > .table-row') ?? []);
+    expect(rows).toHaveLength(2);
+    rows.forEach((row, rowIndex) => {
+      Array.from(row.querySelectorAll<HTMLElement>(':scope > .table-cell')).forEach((cell) => {
+        expect(cell.classList.contains('px-[8px]')).toBe(true);
+        expect(cell.classList.contains('pb-[16px]')).toBe(rowIndex === 0);
+        expect(cell.classList.contains('pb-[12px]')).toBe(false);
+        const tile = cell.firstElementChild as HTMLElement;
+        expect(tile.classList.contains('h-[150px]')).toBe(true);
+        expect(tile.classList.contains('h-[110px]')).toBe(false);
+        expect(tile.querySelector('svg')?.getAttribute('width')).toBe(String(BRAND_KIT_ICON_PORTRAIT_TILE_SIZE_PX));
+        expect(tile.querySelector('span')?.classList.contains('mt-[12px]')).toBe(true);
+      });
+    });
+    const strip = root.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]');
+    for (const cls of ['table', 'h-[120px]', 'mt-[36px]', 'px-[24px]']) {
+      expect(strip?.classList.contains(cls)).toBe(true);
+    }
+    expect(strip?.classList.contains('h-[110px]')).toBe(false);
+    const icons = Array.from(strip?.querySelectorAll<HTMLElement>('[data-testid^="brand-kit-icon-strip-"]') ?? []);
+    expect(icons).toHaveLength(8);
+    icons.forEach((icon) => expect(icon.querySelector('svg')?.getAttribute('width')).toBe(String(BRAND_KIT_ICON_PORTRAIT_STRIP_SIZE_PX)));
+    expect(icons[BRAND_KIT_ICON_HIGHLIGHT_INDEX].style.color).toBe(cssColour(COLOURS.highlight));
   });
 });
