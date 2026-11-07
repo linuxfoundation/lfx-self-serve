@@ -524,6 +524,7 @@ describe('AEO/GEO reader caveats', () => {
     expect(aeoGeoReaderCaveat('An entitled record was found. Entitled record details were not read.')).toBe(
       'A matching record was found. Matching record details were not read.'
     );
+    expect(aeoGeoReaderCaveat('A name search returned two entitled records.')).toBe('A name search returned two matching records.');
     expect(aeoGeoReaderCaveat('The record was read by name.')).toBe('The record was read by name.');
     expect(aeoGeoReaderCaveat('The explainer is entitled "Record keeping" and dates from 2025.')).toBe(
       'The explainer is entitled "Record keeping" and dates from 2025.'

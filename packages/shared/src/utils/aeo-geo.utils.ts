@@ -342,7 +342,7 @@ const CAVEAT_QUOTE_SPACE_MARK = '\u0002';
 const CAVEAT_QUOTE_CONTINUATION = /([.!?]['"\u2019\u201d`]+)(\s+)(?=\p{Ll}[\p{Ll}'\u2019-]*(?:$|[\s,;!?)\]]|\.(?![\p{L}\p{N}])))/gu;
 const CAVEAT_PARENTHETICAL = /\(([^()]*)\)/g;
 // "entitled" is LFX entitlement vocabulary (plumbing); the reader says "matching". The article's and the word's first letters keep their case.
-const CAVEAT_ENTITLED_RECORD = /\b(an\s+)?(e)ntitled record\b/gi;
+const CAVEAT_ENTITLED_RECORD = /\b(an\s+)?(e)ntitled record(s?)\b/gi;
 const CAVEAT_WORD_CHARACTER = /[\p{L}\p{N}]/u;
 // The classifier decides by the sentence's SUBJECT. A provider subject (a search, the provider, the API, a lookup)
 // that names a credits or quota limit, or quotes a message after returned/responded/failed/error/message with
@@ -425,7 +425,7 @@ const CAVEAT_IDENTIFIERS = [
 /**
  * The agent's caveats as reader sentences (web view and print). Sentence by sentence: a failed third-party
  * search and an LFX record that could not be read map to fixed wording; a parenthetical that carries plumbing
- * is removed; "an entitled record" reads "a matching record"; a sentence that still carries plumbing is left out.
+ * is removed; "an entitled record" reads "a matching record" (plural kept); a sentence that still carries plumbing is left out.
  * Plumbing is the known shapes: a snake_case
  * field name, a UUID, a slug, a uid, a raw provider blob (a JSON brace pair, a long hex id, a requestId), a credits
  * or quota phrase, a bare status line, or a provider subject (a search, the provider, the API,
@@ -475,10 +475,10 @@ function readerSentence(sentence: string): string {
     return AEO_GEO_READER_CAVEATS.lfx_record_unread;
   }
   const scrubbed = sentence.replace(CAVEAT_PARENTHETICAL, (parenthetical, inner: string) => (carriesPlumbing(inner) ? '' : parenthetical));
-  // After the identifier strip, the entitlement word becomes the reader's: "an entitled record" is "a matching record".
-  const worded = scrubbed.replace(CAVEAT_ENTITLED_RECORD, (_match, article: string | undefined, initial: string) => {
+  // After the identifier strip, the entitlement word becomes the reader's: "an entitled record" is "a matching record", "entitled records" are "matching records".
+  const worded = scrubbed.replace(CAVEAT_ENTITLED_RECORD, (_match, article: string | undefined, initial: string, plural: string) => {
     const a = article === undefined ? '' : `${article[0] === 'A' ? 'A' : 'a'} `;
-    return `${a}${initial === 'E' ? 'M' : 'm'}atching record`;
+    return `${a}${initial === 'E' ? 'M' : 'm'}atching record${plural}`;
   });
   // Only a sentence that lost a parenthetical has its whitespace normalised; the word swap alone leaves it as written.
   if (scrubbed === sentence) {
