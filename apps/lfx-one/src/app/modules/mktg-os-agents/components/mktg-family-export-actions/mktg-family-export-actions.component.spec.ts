@@ -76,7 +76,13 @@ describe('Family export slot', () => {
         newestRevisionAt: '2026-10-21T10:00:00Z',
         fontFamily: null,
         weights: [400],
-      })
+        documents: [],
+        tagline: '',
+        websiteLabel: '',
+        boilerplatesNotes: [],
+        boilerplatesSources: [],
+        conflicts: [],
+      } satisfies MktgFamilyPrintView)
     );
     print.prepare.mockResolvedValue(undefined);
     TestBed.configureTestingModule({
@@ -530,7 +536,13 @@ describe('Family export slot', () => {
       'Boilerplates',
       'FAQ',
     ]);
-    expect(openers.map((opener) => opener.querySelector('[data-testid="mktg-portrait-opener-meta"]')?.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+    expect(
+      openers.map((opener) =>
+        Array.from(opener.querySelectorAll('[data-testid="mktg-portrait-opener-meta"] :is(dt, dd)'))
+          .map((cell) => cell.textContent?.trim())
+          .join(' ')
+      )
+    ).toEqual([
       `Version V1.0 Approved 6 Nov 2026 · Synthetic Approver Pages 4–${3 + frameworkPages}`,
       `Version V2.0 Approved 6 Nov 2026 · Synthetic Approver Pages ${kitFirst}–${kitLast}`,
       `Version V3.0 Approved 6 Nov 2026 · Synthetic Approver Pages ${kitLast + 2}`,
@@ -538,9 +550,9 @@ describe('Family export slot', () => {
     ]);
     // The running head names the chapter left and the family right; nothing in the book is hand-numbered.
     const boilerplatesPage = frames.find((frame) => frame.dataset['pageId'] === 'boilerplates');
-    expect(boilerplatesPage?.querySelector('[data-testid="mktg-portrait-page-head"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      '03 Boilerplates Synthetic project positioning & brand'
-    );
+    expect(
+      Array.from(boilerplatesPage?.querySelectorAll('[data-testid="mktg-portrait-page-head"] > span') ?? []).map((span) => span.textContent?.trim())
+    ).toEqual(['03 Boilerplates', 'Synthetic project positioning & brand']);
     expect(book.querySelectorAll('[data-testid="family-print-boilerplate-card"]')).toHaveLength(4);
     // The run's two blocks print both or neither: this record has sources and no notes.
     expect(book.querySelector('[data-testid="family-print-boilerplate-sources"]')).toBeNull();

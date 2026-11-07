@@ -88,7 +88,9 @@ describe('MktgFamilyPrintComponent', () => {
     expect(root.querySelector('[data-testid="family-print-contents-intro"]')?.textContent).toContain('2 documents, 8 pages.');
     expect(Array.from(root.querySelectorAll('[data-testid="family-print-contents-opener-page"]')).map((n) => n.textContent)).toEqual(['3', '5']);
     const openerMeta = Array.from(root.querySelectorAll('[data-testid="mktg-portrait-opener-meta"]')).map((meta) =>
-      meta.textContent?.replace(/\s+/g, ' ').trim()
+      Array.from(meta.querySelectorAll('dt, dd'))
+        .map((cell) => cell.textContent?.trim())
+        .join(' ')
     );
     expect(openerMeta).toEqual(['Version V2.0 Approved 6 Nov 2026 · Synthetic Approver Pages 4', 'Version V16.0 Approved 6 Nov 2026 Pages 6']);
     expect(root.querySelector('[data-testid="family-print-contents-sources"]')?.textContent).toContain('7');
