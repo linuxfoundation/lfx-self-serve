@@ -147,6 +147,8 @@ export const MKTG_FAMILY_PRINT_LABELS = {
   contents: 'Contents',
   boilerplates: 'Boilerplates',
   faq: 'Frequently asked questions',
+  /** After a group's heading where the group goes on from an earlier column or page (the editor's S1). */
+  faqContinued: '(continued)',
   sources: 'Sources',
   sourcesTitle: 'Sources across the documents',
   backCover: 'Back cover',

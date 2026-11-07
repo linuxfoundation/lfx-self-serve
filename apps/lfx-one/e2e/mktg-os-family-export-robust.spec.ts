@@ -67,6 +67,8 @@ test('Family PDF book structure: the portrait grammar’s frames with the family
   await expect(frames.byId('faq-1').getByTestId('family-print-faq-grid')).toHaveCount(1);
   await expect(frames.byId('faq-1').getByTestId('family-print-faq-column')).toHaveCount(2);
   await expect(frames.byId('faq-1').getByTestId('family-print-faq-group')).toHaveCount(2);
+  // Neither group of the fixture's three questions breaks across the columns: no heading carries the continued mark.
+  await expect(frames.byId('faq-1').getByTestId('family-print-faq-continued')).toHaveCount(0);
   await expect(frames.byId('sources').getByTestId('family-print-sources-table')).toHaveCount(1);
   await expect(frames.byId('sources').getByTestId('family-print-sources-row')).toHaveCount(4);
   await expect(frames.byId('sources').getByTestId('family-print-sources-open')).toHaveCount(1);

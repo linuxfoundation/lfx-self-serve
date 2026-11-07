@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, Signal } from '@angular/core';
-import { MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_FAQ_LAYOUT, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
+import { MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_FAQ_LAYOUT, MKTG_FAMILY_PRINT_LABELS, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
 import { MktgFamilyPrintFaqEntry, MktgFamilyPrintFaqItem, MktgFamilyPrintFaqPlanGroup } from '@lfx-one/shared/interfaces';
 import { mktgFamilyPrintFaqSourceLabel, mktgFamilyPrintFill } from '@lfx-one/shared/utils';
 import { MKTG_PORTRAIT_BLOCK_HOST } from '../../mktg-portrait/mktg-portrait-host';
@@ -11,7 +11,8 @@ import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rec
 /**
  * One FAQ page of the family book: the two columns the plan filled by
  * height, each a run of question, answer and source chip under its group's
- * heading (a group split across columns or pages repeats its heading). The
+ * heading (a group split across columns or pages repeats its heading, with
+ * the continued mark after it). The
  * first page's intro counts the whole FAQ; a later page's names its groups.
  * Unanswered questions do not print; an internal source label prints no chip.
  */
@@ -31,6 +32,7 @@ export class MktgFamilyPrintFaqPageComponent {
   public readonly index = input(0);
 
   public readonly layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
+  public readonly labels = MKTG_FAMILY_PRINT_LABELS;
   public readonly geometry = MKTG_PORTRAIT_PAGE;
   public readonly column: readonly [number, number] = [MKTG_PORTRAIT_PAGE.margin, MKTG_PORTRAIT_PAGE.contentWidth];
 
@@ -46,7 +48,9 @@ export class MktgFamilyPrintFaqPageComponent {
           const entry = group?.questions[item.question];
           if (!group || !entry) return [];
           // The chip's word for the source, as the plan measured it; '' (the run's internal `Notes`) prints no chip.
-          return [{ key: entry.path, heading: item.heading ? group.name : null, entry, source: mktgFamilyPrintFaqSourceLabel(entry.source) }];
+          // A heading over any question but the group's first repeats one begun in an earlier column or page.
+          const heading = item.heading ? group.name : null;
+          return [{ key: entry.path, heading, continued: !!heading && item.question > 0, entry, source: mktgFamilyPrintFaqSourceLabel(entry.source) }];
         })
       );
     });

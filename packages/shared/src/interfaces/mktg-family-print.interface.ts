@@ -102,6 +102,8 @@ export interface MktgFamilyPrintFaqQuestion {
 export interface MktgFamilyPrintFaqEntry {
   key: string;
   heading: string | null;
+  /** The heading repeats a group begun in an earlier column or page: it carries the continued mark. */
+  continued: boolean;
   entry: MktgFamilyPrintFaqQuestion;
   source: string;
 }
