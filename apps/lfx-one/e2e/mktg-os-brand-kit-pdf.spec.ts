@@ -395,8 +395,11 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const { book, pages } = await openBook(page);
     const count = await pages.count();
     // The root's height is exactly the frames' (17 × 1056): any extra px would be one more sheet in Chrome's Save as PDF.
+    // Boxes are read with getBoundingClientRect: the print frame is hidden in the app (0 × 0), where the body's
+    // scrollHeight reads 0 whatever it holds, while the laid-out boxes keep their size.
     const heights = await book.evaluate((root) => {
       const last = root.querySelector('[data-testid="lfx-mktg-portrait-page"]:last-of-type');
+      if (!last) throw new Error('The book must hold a frame');
       let after = 0;
       let node: Element | null = last;
       while (node && node !== root) {
@@ -407,10 +410,14 @@ test.describe('Brand kit PDF: the portrait book', () => {
         }
         node = node.parentElement;
       }
-      return { root: root.scrollHeight, body: root.ownerDocument.body.scrollHeight, after };
+      const top = root.getBoundingClientRect().top;
+      const bottom = (element: Element) => Math.round(element.getBoundingClientRect().bottom - top);
+      return { root: Math.round(root.getBoundingClientRect().height), lastFrame: bottom(last), body: bottom(root.ownerDocument.body), after };
     });
     expect(heights.root).toBe(count * 1056);
-    expect(heights.body).toBe(count * 1056);
+    expect(heights.lastFrame).toBe(count * 1056);
+    // The body's box ends where the frames end: nothing under the root adds a sheet.
+    expect(heights.body).toBeLessThanOrEqual(count * 1056);
     expect(heights.after).toBe(0);
     await expect(pages.last()).toHaveCSS('break-after', 'auto');
     // One named page in the print, the frames' own: the root and the body name none (a change of name forces a break).
