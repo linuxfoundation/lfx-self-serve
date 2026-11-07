@@ -3,12 +3,14 @@
 
 import { MeetingVisibilityKind } from '../enums';
 import type {
+  MeetingDetailsFeature,
   MeetingHomeArtifact,
   MeetingHomeAttendanceKind,
   MeetingResponseFilterOption,
   MeetingRsvpChoice,
   MeetingsHomeFilters,
   MeetingVisibilityInfo,
+  UiBadgeTone,
 } from '../interfaces';
 
 /** The AI summary of a past meetings home row. */
@@ -93,3 +95,18 @@ export const MEETING_VISIBILITY_INFO: Record<MeetingVisibilityKind, MeetingVisib
     icon: 'fa-solid fa-lock',
   },
 };
+
+/** Badge tone of each visibility in the meeting details drawer. */
+export const MEETING_DETAILS_VISIBILITY_TONES: Record<MeetingVisibilityKind, UiBadgeTone> = {
+  [MeetingVisibilityKind.PUBLIC]: 'success',
+  [MeetingVisibilityKind.PRIVATE]: 'neutral',
+  [MeetingVisibilityKind.RESTRICTED]: 'danger',
+};
+
+/** Feature badges of the meeting details drawer, in order. */
+export const MEETING_DETAILS_FEATURES: readonly MeetingDetailsFeature[] = [
+  { setting: 'recording_enabled', label: 'Recording', icon: 'fa-light fa-video', iconClass: 'text-red-600' },
+  { setting: 'transcript_enabled', label: 'Transcripts', icon: 'fa-light fa-file-lines', iconClass: 'text-emerald-600' },
+  { setting: 'youtube_upload_enabled', label: 'YouTube Upload', icon: 'fa-light fa-upload', iconClass: 'text-amber-600' },
+  { setting: 'ai_summary_enabled', label: 'AI Summary', icon: 'fa-light fa-sparkles', iconClass: 'text-violet-600' },
+];

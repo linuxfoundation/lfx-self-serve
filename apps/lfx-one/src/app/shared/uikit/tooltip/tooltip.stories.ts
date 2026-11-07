@@ -10,7 +10,7 @@ const meta: Meta<UiTooltipDirective> = {
   title: 'Uikit/Tooltip',
   component: UiTooltipDirective,
   decorators: [moduleMetadata({ imports: [UiTooltipDirective, UiButtonComponent] })],
-  args: { text: 'Copy link', title: '', shortcut: [], side: 'top', delay: 300, disabled: false },
+  args: { text: 'Copy link', title: '', icon: '', shortcut: [], side: 'top', delay: 300, disabled: false },
   render: (args) => ({
     // Storybook copies props onto the directive instance, so nest them to keep `disabled` and the other signal inputs intact.
     props: { cfg: args },
@@ -22,6 +22,7 @@ const meta: Meta<UiTooltipDirective> = {
           [attr.aria-label]="cfg.text"
           [lfxUiTooltip]="cfg.text"
           [lfxUiTooltipTitle]="cfg.title"
+          [lfxUiTooltipIcon]="cfg.icon"
           [lfxUiTooltipShortcut]="cfg.shortcut"
           [lfxUiTooltipSide]="cfg.side"
           [lfxUiTooltipDelay]="cfg.delay"
@@ -41,6 +42,10 @@ export const WithShortcut: Story = { args: { shortcut: ['⌘', 'C'] } };
 /** A bold title with a smaller description; up to 240px wide. */
 export const Rich: Story = {
   args: { title: 'Health score', text: 'Weighted from contributor activity, release cadence and issue response time over 90 days.' },
+};
+/** A white 11px icon before the title. */
+export const RichWithIcon: Story = {
+  args: { title: 'Restricted', icon: 'fa-solid fa-lock', text: 'Only invited people can join' },
 };
 export const Bottom: Story = { args: { side: 'bottom' } };
 export const Left: Story = { args: { side: 'left' } };
