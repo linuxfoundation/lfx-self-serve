@@ -240,21 +240,18 @@ describe('the framework portrait book’s bounded blocks', () => {
       { title: { text: goal(2).t, size: 15 }, vp: { text: 'Value', size: 11 }, key: { text: 'Key', size: 11 }, bite: { text: 'Bite', size: 12.5 } },
     ]);
     expect(whole.height).toBeLessThanOrEqual(664);
-    // A goal title the record does not cap is kept at the row's one size (its words fit the column) and cut at a word past the head row's two
-    // lines, with an ellipsis, so the head stays its height and no title is set smaller than its neighbors (the editor's rule).
+    // A goal title the record does not cap is kept at the row's one size (its words fit the column) and prints WHOLE, the head row
+    // growing to hold it (the editor's FA1): no title is cut and none is set smaller than its neighbors.
     const titled = frameworkPortraitMatrix([goal(2, { t: long.repeat(2).trim() }), goal(1)], 'Across the goals.', 664);
-    const titleRoom = 15 * 1.2 * 2;
-    for (const cell of titled.cells) {
-      expect(
-        frameworkPortraitTextHeight(cell.title.text, { ...FRAMEWORK_PORTRAIT_TYPE.matrixGoal, size: cell.title.size }, frameworkPortraitMatrixColumn(2))
-      ).toBeLessThanOrEqual(titleRoom);
-    }
-    expect(titled.cells.map((cell) => cell.title.size)).toEqual([15, 15]);
-    expect(titled.cells[0].title.text.length).toBeLessThan(long.repeat(2).trim().length);
-    expect(titled.cells[0].title.text.endsWith('…')).toBe(true);
-    expect(titled.cells[1].title).toEqual({ text: goal(1).t, size: 15 });
+    expect(titled.cells.map((cell) => cell.title)).toEqual([
+      { text: long.repeat(2).trim(), size: 15 },
+      { text: goal(1).t, size: 15 },
+    ]);
     expect(titled.bands).toEqual([{ offset: 0, count: 2, columns: 2 }]);
     expect(titled.height).toBeLessThanOrEqual(664);
+    // The head's growth comes off the body's room: the matrix is taller than with short titles by the lines the long title adds.
+    const shortTitled = frameworkPortraitMatrix([goal(2), goal(1)], 'Across the goals.', 664);
+    expect(titled.height).toBeGreaterThan(shortTitled.height);
     const bounded = frameworkPortraitMatrix([goal(12), goal(1)], 'Across the goals.', 664);
     expect(bounded.proofs[0].rows.length).toBeGreaterThan(0);
     expect(bounded.proofs[0].rows.length).toBeLessThan(12);
@@ -357,7 +354,8 @@ describe('the framework portrait book’s bounded blocks', () => {
     expect(new Set(strip.cells.map((cell) => cell.title.size)).size).toBe(1);
     expect(strip.cells[0].title.size).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin);
     // At the board's count or fewer the strip is the widest shape: three goals, one with a 40-character word, stay three columns
-    // (a band of four would be narrower), the title at the floor and cut at a word.
+    // (a band of four would be narrower), the title at the floor and printed whole (the editor's FA1: the word breaks inside its
+    // column as the head's `overflow-wrap` lets it; the head row grows, never cuts).
     const wordy = [goal(1, { id: 'w1', n: 1, t: 'Events' }), goal(1, { id: 'w2', n: 2, t: 'A'.repeat(40) }), goal(1, { id: 'w3', n: 3, t: 'Adoption' })];
     expect(frameworkPortraitMatrixColumns(wordy)).toBe(3);
     const three = frameworkPortraitMatrix(wordy, '', 664);
@@ -367,7 +365,8 @@ describe('the framework portrait book’s bounded blocks', () => {
       FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin,
       FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin,
     ]);
-    expect(three.cells[1].title.text.endsWith('…')).toBe(true);
+    expect(three.cells.map((cell) => cell.title.text)).toEqual(wordy.map((goal) => goal.t));
+    expect(three.height).toBeLessThanOrEqual(664);
     // Seven goals in bands: the second band holds three in four columns.
     expect(frameworkPortraitMatrix(goals.slice(0, 7), '', 664).bands).toEqual([
       { offset: 0, count: 4, columns: 4 },
@@ -1245,5 +1244,52 @@ describe('the framework portrait book’s "Who it’s for" cards (editor S-a)', 
     expect(floor.map((card) => card.need.text.endsWith('…'))).toEqual([true, true, false]);
     expect(floor[2].need.text).toBe(servedProfiles[2].need);
     expect(frameworkPortraitServedCards([], cardWidth, 100)).toEqual([]);
+  });
+});
+
+describe('the framework portrait book’s goal matrix head row (editor FA1)', () => {
+  // The family seeds' shape: goal names of forty characters and more, on the overfull record's keys and proofs.
+  const longTitles = [
+    'Adoption across every cloud and vendor',
+    'Contributors and maintainers of the projects',
+    'Certification for the engineers employers hire',
+    'End users who shape the roadmap they depend on',
+    'Events in every region of the world',
+    'Security as a shared industry practice',
+    'Membership that funds the neutral home',
+    'Education from the first container onward',
+  ];
+  const type = FRAMEWORK_PORTRAIT_TYPE;
+
+  it('prints every goal name whole in the head row, at one size, and grows the row to hold them; clamps stay in the body', () => {
+    const named = goals(overfull).map((goal, index) => ({ ...goal, t: longTitles[index] }));
+    const matrix = frameworkPortraitMatrix(named, crosscut, room);
+    expect(matrix.bands).toHaveLength(2);
+    expect(matrix.cells.map((cell) => cell.title.text)).toEqual(longTitles);
+    expect(matrix.cells.some((cell) => cell.title.text.includes('…'))).toBe(false);
+    expect(new Set(matrix.cells.map((cell) => cell.title.size)).size).toBe(1);
+    expect(matrix.cells[0].title.size).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin);
+    // The head row grows: the long names take more lines than the record's one-word titles, and the matrix is taller by that much
+    // at a room that holds everything (the proofs at the normal type in both).
+    const wide = frameworkPortraitMatrix(named, '', 2000);
+    const wideShort = frameworkPortraitMatrix(goals(overfull), '', 2000);
+    const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
+    const tallest = (titles: readonly string[]) =>
+      Math.max(...titles.map((title) => frameworkPortraitTextHeight(title, { ...type.matrixGoal, size: wide.cells[0].title.size }, column)));
+    const grown =
+      tallest(longTitles.slice(0, 4)) -
+      tallest(overfull.slice(0, 4).map((goal) => goal[0])) +
+      (tallest(longTitles.slice(4)) - tallest(overfull.slice(4).map((goal) => goal[0])));
+    expect(wide.height - wideShort.height).toBeCloseTo(grown, 6);
+    expect(grown).toBeGreaterThan(0);
+    // On the page the growth comes off the body: the key messages still print whole, every proof cell keeps a row, the matrix stays in its room.
+    expect(matrix.height).toBeLessThanOrEqual(room);
+    expect(matrix.cells.map((cell) => cell.key.text)).toEqual(overfull.map((goal) => goal[2]));
+    expect(matrix.proofs.every((cell) => cell.rows.length > 0)).toBe(true);
+    // A strip of four long names: whole as well, one size, in its room.
+    const strip = frameworkPortraitMatrix(named.slice(0, 4), crosscut, room);
+    expect(strip.bands).toEqual([{ offset: 0, count: 4, columns: 4 }]);
+    expect(strip.cells.map((cell) => cell.title.text)).toEqual(longTitles.slice(0, 4));
+    expect(strip.height).toBeLessThanOrEqual(room);
   });
 });

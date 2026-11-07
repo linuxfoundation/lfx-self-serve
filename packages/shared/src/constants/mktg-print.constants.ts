@@ -320,8 +320,6 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   matrixTableTop: 12,
   matrixHeadRow: 13,
   matrixCellRow: 19,
-  /** The lines a goal's title has in the matrix's head row (the board's two): a longer title is fitted into them, smaller first, then cut. */
-  matrixGoalLines: 2,
   /** The least size a matrix head title prints at, px: under it the strip is too narrow for the titles and the matrix breaks into bands (frameworkPortraitMatrixColumns). */
   matrixTitleMin: 9,
   /** The board's column count, the bands' width when the matrix breaks, and `.fwp-matrix-band + .fwp-matrix-band`'s gap, px. */

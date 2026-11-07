@@ -307,8 +307,9 @@ export function frameworkPortraitMatrixColumns(goals: readonly Pick<FoundationMe
  * columns where the strip's columns cannot hold the titles (`frameworkPortraitMatrixColumns`); every head title at ONE
  * size, the largest whose longest word fits the column (`frameworkPortraitMatrixTitleSize`), floored at
  * `ROOM.matrixTitleMin`: below that floor the bands take over (at more goals than the board's four), or, at four or
- * fewer, the title prints at the floor and is cut at a word, wrapped to the board's
- * two lines (`ROOM.matrixGoalLines`) and cut at a word past them; the crosscut measured once at its type under the
+ * fewer, the title prints at the floor. Every title prints WHOLE and the head row grows to hold it (the editor's FA1,
+ * 7 Nov 2026: clamps are for body rows only; a word longer than the column at the floor breaks inside, as the head's
+ * `overflow-wrap` lets it), its height coming off the body's room; the crosscut measured once at its type under the
  * last band. In a strip: the value, key message and sound bite rows at their type where the three leave the proofs
  * row at least its note (the muted line at the count every proof would make), else each cell fitted by the portrait
  * fit model (smaller first, then cut at a sentence) into the rows' share of the room that stays. In bands (the
@@ -334,12 +335,7 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
       column
     )
   );
-  const titleType: FoundationMessagePrintType = { ...TYPE.matrixGoal, size: titleSize };
-  const perLine = mktgPortraitCharsPerLine(column, titleSize, { weight: titleType.weight });
-  const titles: FoundationMessagePrintFittedText[] = goals.map((goal) => ({
-    text: frameworkPortraitLinesCut(goal.t, perLine, ROOM.matrixGoalLines),
-    size: titleSize,
-  }));
+  const titles: FoundationMessagePrintFittedText[] = goals.map((goal) => ({ text: goal.t, size: titleSize }));
   const note = crosscut ? ROOM.matrixCrosscutGap + frameworkPortraitTextHeight(crosscut, TYPE.matrixCrosscut, PAGE.contentWidth - ROOM.matrixPadding) : 0;
   const bands: FoundationMessagePrintMatrixBand[] = [];
   for (let offset = 0; offset < goals.length; offset += columns) bands.push({ offset, columns, count: Math.min(columns, goals.length - offset) });
@@ -364,27 +360,6 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
     height += laid.height;
   }
   return { cells, proofs, bands, height, rows: level.rows, notes: level.notes };
-}
-
-/**
- * A text cut at a word to `lines` lines of `perLine` characters, with an ellipsis whenever a word is dropped (the words wrap as the
- * fit model wraps them, so a cut title's line count is the one the head row measures); a text that fits is returned as it is. A
- * word longer than a line (the head never breaks a word, so it would overflow its column) is cut inside itself to the line with
- * the ellipsis first.
- */
-function frameworkPortraitLinesCut(text: string, perLine: number, lines: number): string {
-  const whole = text
-    .split(/\s+/)
-    .filter((word) => word !== '')
-    .map((word) => (word.length > perLine ? `${word.slice(0, Math.max(1, perLine - 1))}…` : word))
-    .join(' ');
-  if (mktgPortraitWrapLines(whole, perLine) <= lines) return whole;
-  const words = whole.split(' ');
-  for (let keep = words.length - 1; keep > 0; keep -= 1) {
-    const cut = `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(words.slice(0, keep)).join(' '))}…`;
-    if (mktgPortraitWrapLines(cut, perLine) <= lines) return cut;
-  }
-  return `${words[0]?.slice(0, Math.max(1, perLine - 1)) ?? ''}…`;
 }
 
 /** The tallest of some heights, 0 when there are none. */

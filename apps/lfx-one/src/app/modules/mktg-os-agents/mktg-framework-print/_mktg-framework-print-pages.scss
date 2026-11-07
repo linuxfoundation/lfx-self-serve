@@ -218,6 +218,8 @@
     font-weight: var(--fwp-matrix-goal-weight);
     line-height: var(--fwp-matrix-goal-line);
     color: var(--pp-dark);
+    /* A goal name prints whole and the head row grows (editor FA1); a word longer than the column at the floor size breaks inside, as the fit model counts it. */
+    overflow-wrap: anywhere;
   }
 
   .fwp-matrix-vp {
