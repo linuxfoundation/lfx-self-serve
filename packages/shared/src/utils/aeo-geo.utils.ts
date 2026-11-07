@@ -356,11 +356,13 @@ const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exc
 const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u201c`]/i;
 // Failure evidence: only an error status (4xx or 5xx) counts, never a successful one (HTTP 200) or a number in a title ("Top 100",
 // "Fortune 500"). Inside the quotes it counts only where a status belongs: after HTTP, with or without a version (HTTP 404,
-// HTTP/1.1 404, HTTP/2 429), status or code; or leading the quoted message, where it needs a status-like tail: the closing quote
-// ("404") or a standard reason phrase ("502 Bad Gateway", "429 Too Many Requests"), so a quoted title that opens with such a
-// number ("500 Startups", "404 Media") is a result, not a status. Outside the quotes it counts only after HTTP (same forms) or
-// status, with an optional "code" and colon ("the first 60 KB" is no status). The whitespace before the number depends on the
-// colon, `(?:\s*:)?\s*`, so a failed match never splits one whitespace run between two `\s*`.
+// HTTP/1.1 404, HTTP/2 429), status or code, anywhere in a quoted span; or leading the span, where it needs a status-like tail: the
+// closing quote ("404") or a standard reason phrase ("502 Bad Gateway", "429 Too Many Requests"), so a quoted title that opens with
+// such a number ("500 Startups", "404 Media") is a result, not a status. Each quoted span is tested on its own, anchored at its own
+// opening quote, so an apostrophe or a nested quote inside a title ("Women's 500 fastest-growing companies", "O'Reilly 404 page
+// design") never opens the leading branch. Outside the quotes it counts only after HTTP (same forms) or status, with an optional
+// "code" and colon ("the first 60 KB" is no status). The whitespace before the number depends on the colon, `(?:\s*:)?\s*`, so a
+// failed match never splits one whitespace run between two `\s*`.
 const CAVEAT_FAILURE_WORDS = 'unavailable|error|denied|unauthori[sz]ed|forbidden|exceeded|limit|timeout|timed out|quota|credits?|rate[- ]limited';
 const CAVEAT_HTTP_WORD = 'HTTP(?:\\/\\d(?:\\.\\d)?)?';
 // The 4xx and 5xx reason phrases of the IANA HTTP Status Code Registry (RFC 9110 §15.5 and §15.6, RFC 6585, RFC 7725, RFC 8470,
@@ -375,9 +377,10 @@ const CAVEAT_HTTP_REASON_PHRASES = [
   'Internal Server Error|Not Implemented|Bad Gateway|Service Unavailable|Gateway Timeout|HTTP Version Not Supported',
   'Variant Also Negotiates|Insufficient Storage|Loop Detected|Not Extended|Network Authentication Required',
 ].join('|');
+// Tested against one quoted span at a time, quote characters included: the leading branch is anchored at the span's start.
 const CAVEAT_FAILURE_IN_QUOTES = new RegExp(
   `\\b(?:${CAVEAT_FAILURE_WORDS})\\b|\\b(?:${CAVEAT_HTTP_WORD}|status|code)(?:\\s*:)?\\s*[45]\\d{2}\\b` +
-    `|(?:^|['"\\u2018\\u201c\`])\\s*[45]\\d{2}\\b(?=\\s*['"\\u2019\\u201d\`]|\\s+(?:${CAVEAT_HTTP_REASON_PHRASES})\\b)`,
+    `|^['"\\u2018\\u201c\`]?\\s*[45]\\d{2}\\b(?=\\s*['"\\u2019\\u201d\`]$|\\s+(?:${CAVEAT_HTTP_REASON_PHRASES})\\b)`,
   'i'
 );
 const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:${CAVEAT_HTTP_WORD}|status)(?:\\s+code)?(?:\\s*:)?\\s*[45]\\d{2})\\b`, 'i');
@@ -431,14 +434,15 @@ export function aeoGeoReaderCaveat(caveat: string): string {
 /**
  * The report's caveats as reader sentences, in order, each distinct caveat once: two agent caveats that map to
  * the same sentence (two plumbing-only caveats, say, both falling back to the fixed one) print one bullet. A caveat
- * that is exactly one of the fixed sentences is left out when another kept caveat already carries that sentence
- * (the composite "Third-party search was not available for this run. robots.txt allows all crawlers." already
- * tells the reader); on its own, it stays.
+ * that is exactly one of the fixed sentences is left out when another kept caveat already carries that sentence as
+ * its own text, outside any quotes (the composite "Third-party search was not available for this run. robots.txt
+ * allows all crawlers." already tells the reader); a caveat that merely quotes the sentence does not count, and on
+ * its own the fixed sentence stays.
  */
 export function aeoGeoReaderCaveats(caveats: readonly string[]): string[] {
   const distinct = Array.from(new Set(caveats.map(aeoGeoReaderCaveat)));
   const fixed: readonly string[] = Object.values(AEO_GEO_READER_CAVEATS);
-  return distinct.filter((sentence) => !fixed.includes(sentence) || !distinct.some((other) => other !== sentence && other.includes(sentence)));
+  return distinct.filter((sentence) => !fixed.includes(sentence) || !distinct.some((other) => other !== sentence && outsideQuotes(other).includes(sentence)));
 }
 
 function readerSentence(sentence: string): string {
@@ -466,9 +470,9 @@ function carriesPlumbing(text: string): boolean {
 /**
  * A credits/quota phrase (outside a quoted result title), or a provider subject quoting its message with evidence
  * of failure in or around the quotes: a failure word, or a 4xx/5xx status where a status belongs (after HTTP, with or
- * without a version, status or code; or leading the quoted message with a status-like tail, the closing quote or a standard
- * reason phrase); a quoted successful result ("Example Foundation", with HTTP 200 or a number in its title, even its first
- * word: "500 Startups") is audit content.
+ * without a version, status or code; or leading a quoted span, at its own opening quote, with a status-like tail, the
+ * closing quote or a standard reason phrase); a quoted successful result ("Example Foundation", with HTTP 200 or a
+ * number in its title, even its first word: "500 Startups", or after an inner apostrophe: "Women's 500 …") is audit content.
  */
 function carriesProviderFailure(sentence: string): boolean {
   const title = CAVEAT_RESULT_TITLE.some((pattern) => pattern.test(sentence));
@@ -478,7 +482,7 @@ function carriesProviderFailure(sentence: string): boolean {
   if (title || providerSubject(sentence) === null || !CAVEAT_QUOTED_MESSAGE.test(sentence)) {
     return false;
   }
-  return CAVEAT_FAILURE_IN_QUOTES.test(insideQuotes(sentence)) || CAVEAT_FAILURE_OUTSIDE_QUOTES.test(outsideQuotes(sentence));
+  return quotedSpanTexts(sentence).some((span) => CAVEAT_FAILURE_IN_QUOTES.test(span)) || CAVEAT_FAILURE_OUTSIDE_QUOTES.test(outsideQuotes(sentence));
 }
 
 function providerSubject(sentence: string): 'search' | 'provider' | null {
@@ -491,11 +495,11 @@ function providerSubject(sentence: string): 'search' | 'provider' | null {
   return CAVEAT_PROVIDER_SUBJECT.test(sentence) ? 'provider' : null;
 }
 
-/** The quoted spans' text, joined; the single-quote rule's leading character is not part of its span. */
-function insideQuotes(text: string): string {
-  return quotedSpans(text)
-    .flatMap((span) => Array.from(text.matchAll(span), (match) => (typeof match[1] === 'string' ? match[0].slice(match[1].length) : match[0])))
-    .join(' ');
+/** Each quoted span's text, quote characters included, one entry per span; the single-quote rule's leading character is not part of its span. */
+function quotedSpanTexts(text: string): string[] {
+  return quotedSpans(text).flatMap((span) =>
+    Array.from(text.matchAll(span), (match) => (typeof match[1] === 'string' ? match[0].slice(match[1].length) : match[0]))
+  );
 }
 
 /** Whitespace inside a quoted span, and after a quote-closed stop the sentence continues past, is masked so the split never breaks a quotation. */

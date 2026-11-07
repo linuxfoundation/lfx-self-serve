@@ -413,6 +413,15 @@ describe('AEO/GEO reader caveats', () => {
     for (const title of ['500 Startups', '404 Media', '503 Club']) {
       expect(aeoGeoReaderCaveat(`The search returned "${title}" for the project name.`)).toBe(`The search returned "${title}" for the project name.`);
     }
+    // An apostrophe or a nested quote inside a title never opens the leading branch: each span is tested at its own quote.
+    for (const title of ["Women's 500 fastest-growing companies", "O'Reilly 404 page design", "Don't miss the 503 Club"]) {
+      expect(aeoGeoReaderCaveat(`The search returned "${title}" for the project name.`)).toBe(`The search returned "${title}" for the project name.`);
+    }
+    expect(aeoGeoReaderCaveat('The search returned "O\'Reilly" and "404 page design" for the project name.')).toBe(
+      'The search returned "O\'Reilly" and "404 page design" for the project name.'
+    );
+    // A second span that is a status line still counts on its own.
+    expect(aeoGeoReaderCaveat('The search returned "Example Foundation" and then "503 Service Unavailable".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     expect(aeoGeoReaderCaveat('The search provider responded with "404 Not Found".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     expect(aeoGeoReaderCaveat('The search returned "429 Too Many Requests".')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
     expect(aeoGeoReaderCaveat("Web search returned '404 not found'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
@@ -587,6 +596,9 @@ describe('AEO/GEO reader caveats', () => {
       aeoGeoReaderCaveats(["Web search returned 'Service unavailable'.", 'No live AI-engine tests were run.', 'Search failed with "Unauthorized".'])
     ).toEqual([AEO_GEO_READER_CAVEATS.search_unavailable, 'No live AI-engine tests were run.']);
     expect(aeoGeoReaderCaveats(["Web search returned 'Service unavailable'."])).toEqual([AEO_GEO_READER_CAVEATS.search_unavailable]);
+    // A caveat that merely QUOTES the fixed sentence does not carry it: the genuine fallback line stays beside it.
+    const quoting = `One caveat quoted the fallback sentence "${AEO_GEO_READER_CAVEATS.search_unavailable}" as an example.`;
+    expect(aeoGeoReaderCaveats([quoting, "Web search returned 'Service unavailable'."])).toEqual([quoting, AEO_GEO_READER_CAVEATS.search_unavailable]);
     // The same for the other fixed sentence: a composite LFX-record caveat absorbs a bare one.
     expect(
       aeoGeoReaderCaveats([
