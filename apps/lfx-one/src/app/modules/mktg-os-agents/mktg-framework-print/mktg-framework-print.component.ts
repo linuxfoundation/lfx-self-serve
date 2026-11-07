@@ -80,6 +80,7 @@ import { distinctUntilChanged, filter } from 'rxjs';
 
 import { MKTG_PORTRAIT_BLOCK_HOST } from '../components/mktg-portrait/mktg-portrait-host';
 import { MktgPortraitPageComponent } from '../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
+import { MktgPortraitPlateDirective } from '../components/mktg-portrait/mktg-portrait-plate.directive';
 import { MktgPortraitRectDirective } from '../components/mktg-portrait/mktg-portrait-rect.directive';
 
 const TYPE = FRAMEWORK_PORTRAIT_TYPE;
@@ -135,7 +136,7 @@ const ROOM = FRAMEWORK_PORTRAIT_ROOM;
 // component stylesheet: the host rule above is the component's whole style).
 @Component({
   selector: 'lfx-mktg-framework-print',
-  imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
+  imports: [MktgPortraitPageComponent, MktgPortraitRectDirective, MktgPortraitPlateDirective],
   templateUrl: './mktg-framework-print.component.html',
   styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
@@ -211,14 +212,15 @@ export class MktgFrameworkPrintComponent {
   protected readonly coverUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.coverUmbrella, ROOM.coverUmbrellaWidth, ROOM.coverUmbrellaRoom));
   /**
    * The cover's lockup on the dark band: the kit grammar's artwork (supplied reversed, else the one-ink primary filtered to
-   * white, else the full-colour primary on the white plate, `MktgPrintLogo.plate`), the plate padded by half the drawn height
-   * (`mktgPortraitPlatePadding`, the kit cover's rule) and its block started a padding higher so the artwork keeps its place.
+   * white, else the full-colour primary on the white plate, `MktgPrintLogo.plate`). The plate is the grammar's `lfxPpPlate`
+   * directive, given its outer height (the lockup in its padding, half the drawn height, above and below); the block starts
+   * that padding higher so the artwork keeps its place (the kit cover's rule).
    */
   protected readonly coverLogo = computed(() => {
     const logo = this.view().brand.logoOnDark;
     if (!logo) return null;
     const padding = logo.plate ? mktgPortraitPlatePadding(ROOM.coverLogoHeight) : 0;
-    return { ...logo, padding, top: ROOM.coverLogoTop - padding };
+    return { ...logo, plateHeight: logo.plate ? ROOM.coverLogoHeight + 2 * padding : null, top: ROOM.coverLogoTop - padding };
   });
   /** The message house's umbrella bar, fitted to three lines. */
   protected readonly houseUmbrella = computed(() =>

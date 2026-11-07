@@ -35,6 +35,7 @@ import {
   mktgPortraitCharsPerLine,
   mktgPortraitParaHeight,
   mktgPortraitPlatePadding,
+  mktgPortraitPlateRadius,
   mktgPrintBrand,
 } from '@lfx-one/shared/utils';
 import { brandKitLogolessFixture, brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
@@ -1224,9 +1225,11 @@ describe('MktgFrameworkPrintComponent', () => {
     // block started that padding higher so the artwork itself keeps the band's lockup place.
     const padding = mktgPortraitPlatePadding(FRAMEWORK_PORTRAIT_ROOM.coverLogoHeight);
     await configure('browser', printView(brandKitTestRevision()));
+    // The plate is the grammar's directive, given the lockup's outer height: its class, padding and radius are the directive's.
     const plate = query('mktg-portrait-plate');
     expect(plate?.classList.contains('pp-plate')).toBe(true);
     expect([plate?.style.padding, plate?.style.marginTop]).toEqual([`${padding}px`, `${FRAMEWORK_PORTRAIT_ROOM.coverLogoTop - padding}px`]);
+    expect(parseFloat(plate?.style.borderRadius ?? '')).toBeCloseTo(mktgPortraitPlateRadius(null, FRAMEWORK_PORTRAIT_ROOM.coverLogoHeight + 2 * padding), 3);
     const plated = plate?.querySelector<HTMLElement>('[data-testid="mktg-framework-print-cover-logo"]');
     expect([plated?.style.filter, plated?.style.height]).toEqual(['', `${FRAMEWORK_PORTRAIT_ROOM.coverLogoHeight}px`]);
     // A one-ink primary reverses by filter: no plate, the block at the band's place.

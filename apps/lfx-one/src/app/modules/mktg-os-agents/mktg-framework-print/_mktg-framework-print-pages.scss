@@ -58,7 +58,7 @@
     color: var(--pp-on-dark);
   }
 
-  /* The lockup's block: bare, or the grammar's white plate (.pp-plate) padded inline by half the drawn height; its top and the drawn height are set inline (FRAMEWORK_PORTRAIT_ROOM.coverLogoTop/coverLogoHeight). */
+  /* The lockup's block: bare, or the grammar's white plate (the lfxPpPlate directive: .pp-plate, its padding and radius); its top and the drawn height are set inline (FRAMEWORK_PORTRAIT_ROOM.coverLogoTop/coverLogoHeight). */
   .fwp-cover-logo-block {
     display: inline-block;
     align-self: flex-start;

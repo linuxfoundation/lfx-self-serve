@@ -38,12 +38,7 @@
         @case (ids.cover) {
           <div class="fwp-cover-band" data-testid="mktg-framework-print-cover">
             @if (coverLogo(); as logo) {
-              <span
-                class="fwp-cover-logo-block"
-                [class.pp-plate]="logo.plate"
-                [style.padding.px]="logo.plate ? logo.padding : null"
-                [style.margin-top.px]="logo.top"
-                [attr.data-testid]="logo.plate ? 'mktg-portrait-plate' : null">
+              <span class="fwp-cover-logo-block" [lfxPpPlate]="logo.plateHeight" [style.margin-top.px]="logo.top">
                 <img
                   class="fwp-cover-logo"
                   [style.height.px]="room.coverLogoHeight"
