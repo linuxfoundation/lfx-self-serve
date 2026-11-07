@@ -18,7 +18,7 @@ import {
   mktgFamilyPrintFill,
   mktgFamilyPrintFitBoilerplateCards,
   mktgFamilyPrintFitRunBlock,
-  mktgFamilyPrintSourceLabel,
+  mktgFamilyPrintBuiltFromLabel,
 } from '@lfx-one/shared/utils';
 import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 
@@ -53,13 +53,13 @@ export class MktgFamilyPrintBoilerplatesPageComponent {
   public readonly runLayout = MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT;
 
   public readonly cards: Signal<MktgFamilyPrintBoilerplateCard[]> = this.initCards();
-  /** The sources the page prints, each as its short readable name once, as many as fit the block, the rest counted; no rows omits the block. */
+  /** The sources the page prints, each in plain words once (label and host, no slug, no run term), as many as fit the block, the rest counted; no rows omits the block. */
   public readonly shownSources: Signal<MktgFamilyPrintFitRows<string>> = this.initShownSources();
   /** The Built from block's cut note (`+2 more in LFX One`); '' when every source printed. */
   public readonly sourcesCutNote: Signal<string> = computed(() => mktgFamilyPrintCutNote(this.shownSources().cut));
 
   private initShownSources(): Signal<MktgFamilyPrintFitRows<string>> {
-    return computed(() => mktgFamilyPrintFitRunBlock(this.sources().map(mktgFamilyPrintSourceLabel), MKTG_PORTRAIT_COLUMNS.half));
+    return computed(() => mktgFamilyPrintFitRunBlock(this.sources().map(mktgFamilyPrintBuiltFromLabel), MKTG_PORTRAIT_COLUMNS.half));
   }
 
   private initCards(): Signal<MktgFamilyPrintBoilerplateCard[]> {

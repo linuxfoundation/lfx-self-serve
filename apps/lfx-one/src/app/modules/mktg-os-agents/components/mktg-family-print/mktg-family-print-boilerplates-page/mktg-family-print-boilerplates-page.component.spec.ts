@@ -41,12 +41,12 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     expect(cards[1].querySelector<HTMLElement>('.fpb-card__fill')?.style.width).toBe('100%');
     expect(cards[1].querySelector('.fpb-card__fill')?.classList.contains('fpb-card__fill--over')).toBe(true);
     expect(cards.map((card) => card.querySelector<HTMLElement>('.fpb-card__text')?.style.fontSize)).toEqual(['16.5px', '16.5px', '14px']);
-    // Built from, as the board prints it: each source by its label or host, no record id; the run's notes never print.
+    // Built from, in plain words: each source by its label and host, or its host, the record without its slug; the run's notes never print.
     expect(root.querySelector('[data-testid="family-print-boilerplate-notes"]')).toBeNull();
     expect(Array.from(root.querySelectorAll('[data-testid="family-print-boilerplate-sources"] li')).map((item) => item.textContent)).toEqual([
-      'press release',
+      'Press release (acme-mesh.example)',
       'acme-mesh.example',
-      'LFX project record acme-mesh',
+      'LFX project record',
     ]);
     expect(root.querySelector('[data-testid="family-print-boilerplate-sources-cut"]')).toBeNull();
   });

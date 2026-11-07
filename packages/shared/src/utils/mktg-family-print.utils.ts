@@ -13,6 +13,7 @@ import {
   MKTG_FAMILY_PRINT_LABELS,
   MKTG_FAMILY_PRINT_LABEL_STOP_WORDS,
   MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
+  MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS,
   MKTG_FAMILY_PRINT_ROUNDING_WORDS,
   MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT,
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
@@ -281,6 +282,29 @@ export function mktgFamilyPrintSourceLabel(source: string): string {
   if (labelled) return labelled[1];
   const url = /^https?:\/\/([^/\s]+)\S*$/.exec(trimmed);
   return url ? url[1] : trimmed;
+}
+
+/**
+ * A source as the Built from list prints it, in plain words a reader of the
+ * book can place: a URL with a label is the label and its host (`Home page
+ * (aaif.io)`), a bare URL its host, an LFX project record the words alone
+ * (no slug, no id), and a parenthesis holding only the run's own terms
+ * (`(intake)`) is dropped. Words start with a capital, as a list row's; a host
+ * alone keeps its own case.
+ */
+export function mktgFamilyPrintBuiltFromLabel(source: string): string {
+  const trimmed = source.trim().replace(/ \(uid [^)]+\)/g, '');
+  const host = (url: string): string => (/^https?:\/\/([^/\s]+)/.exec(url)?.[1] ?? '').replace(/^www\./, '');
+  const labelled = /^(https?:\/\/\S+) \((.+)\)$/.exec(trimmed);
+  let label: string;
+  if (labelled) label = `${labelled[2]} (${host(labelled[1])})`;
+  else if (/^https?:\/\//.test(trimmed)) return host(trimmed);
+  else if (/^LFX project record\b/i.test(trimmed)) label = trimmed.replace(/^(LFX project record)\b.*$/i, '$1');
+  else {
+    const internal = new RegExp(`\\s*\\((?:${MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS.join('|')})\\)$`, 'i');
+    label = trimmed.replace(internal, '');
+  }
+  return label ? label[0].toLocaleUpperCase() + label.slice(1) : '';
 }
 
 /**

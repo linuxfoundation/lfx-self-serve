@@ -89,9 +89,10 @@
   overflow-wrap: anywhere;
 }
 
-/* The Built from block's cut note, exactly the one list line the fit reserves for it: the sources that did not fit, counted. */
+/* The Built from block's cut note, exactly the one list line the fit reserves for it, aligned with the rows' text. */
 .fpb-foot__cut {
   margin: 0;
+  padding-left: 16px;
   font: 500 11px/1.55 var(--pp-font);
   color: var(--pp-dark);
 }

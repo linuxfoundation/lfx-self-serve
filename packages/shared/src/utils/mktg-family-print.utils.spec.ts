@@ -17,6 +17,7 @@ import type {
   MktgFamilyPrintPlanMember,
 } from '../interfaces/mktg-family-print.interface';
 import {
+  mktgFamilyPrintBuiltFromLabel,
   mktgFamilyPrintConflicts,
   mktgFamilyPrintCutFromEnd,
   mktgFamilyPrintCutNote,
@@ -211,6 +212,18 @@ describe('the fixed blocks', () => {
       'LFX project record synthetic-project'
     );
     expect(mktgFamilyPrintSourceLabel('  The approved messaging framework (intake)  ')).toBe('The approved messaging framework (intake)');
+  });
+
+  it('prints a Built from row in plain words: label and host, host alone, the record without its slug, no run terms', () => {
+    expect(mktgFamilyPrintBuiltFromLabel('https://www.example.org/press/2025/launch (launch press release, Dec. 9, 2025)')).toBe(
+      'Launch press release, Dec. 9, 2025 (example.org)'
+    );
+    expect(mktgFamilyPrintBuiltFromLabel('https://example.org (home page)')).toBe('Home page (example.org)');
+    expect(mktgFamilyPrintBuiltFromLabel('https://example.org/brand-guidelines')).toBe('example.org');
+    expect(mktgFamilyPrintBuiltFromLabel('LFX project record synthetic-project (uid d79df990-0000-4000-8000-000000000000)')).toBe('LFX project record');
+    expect(mktgFamilyPrintBuiltFromLabel('Approved messaging framework (intake)')).toBe('Approved messaging framework');
+    expect(mktgFamilyPrintBuiltFromLabel('  the approved messaging framework  ')).toBe('The approved messaging framework');
+    expect(mktgFamilyPrintBuiltFromLabel('')).toBe('');
   });
 
   it('fits the Sources page’s lists to their blocks: whole rows, the open list under the conflicts or in their place', () => {

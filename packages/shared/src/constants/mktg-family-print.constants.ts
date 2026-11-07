@@ -99,6 +99,13 @@ export const MKTG_FAMILY_PRINT_ROUNDING_WORDS: readonly string[] = [
  */
 export const MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS: Readonly<Record<string, string>> = { notes: 'Project notes' };
 
+/**
+ * Words a run's source list uses for its own machinery, which a Built from row drops when they stand alone in
+ * parentheses (`Approved messaging framework (intake)` → `Approved messaging framework`): a reader of the book has no
+ * intake form.
+ */
+export const MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS: readonly string[] = ['intake'];
+
 /** Words of a key number's label that name no thing to count. */
 export const MKTG_FAMILY_PRINT_LABEL_STOP_WORDS: readonly string[] = [
   'more',
