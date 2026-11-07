@@ -248,6 +248,9 @@ describe('Family export slot', () => {
     expect(fixture.componentInstance['focusRequested']()).toBe(true);
     button('slides')?.click();
     await fixture.whenStable();
+    expect(api.run).toHaveBeenCalledWith({ project: 'synthetic-project', familyId: 'positioning-brand' }, 'create');
+    run.next({ mode: 'create', logoNote: null, skippedMembers: [], result: null });
+    await fixture.whenStable();
     expect(root.textContent).toContain('Exporting the family');
     expect(fixture.componentInstance['focusRequested']()).toBe(false);
     ready();
