@@ -175,17 +175,23 @@ export function foundationMessagePrintSections(): FoundationMessagePrintSection[
 
 /** The goal columns with their segments as one line, so the template joins nothing. */
 export function foundationMessagePrintGoals(content: FoundationMessageContent): FoundationMessagePrintGoal[] {
-  return foundationMessageGoalViews(content).map((goal) => ({ ...goal, segmentLabel: goal.segmentNames.join(', ') }));
+  // The references are trimmed once here, as the screen's views trim them to resolve names: the validator tolerates
+  // padding on a reference (a hand-edited version), and every print match (the served cards, the matrix) reads these.
+  return foundationMessageGoalViews(content).map((goal) => ({ ...goal, icps: goal.icps.map((id) => id.trim()), segmentLabel: goal.segmentNames.join(', ') }));
 }
 
 /** The segments with their goals and channels as one line each, and a `Goal n` chip per goal served, so the template joins nothing. */
 export function foundationMessagePrintIcps(content: FoundationMessageContent): FoundationMessagePrintIcp[] {
-  return foundationMessageIcpViews(content).map((icp) => ({
-    ...icp,
-    goalLabel: icp.goalTitles.join(', '),
-    channelsLabel: icp.channels.join(' · '),
-    goalChips: content.mf.goals.filter((goal) => icp.goals.includes(goal.id)).map((goal) => `Goal ${goal.n}`),
-  }));
+  return foundationMessageIcpViews(content).map((icp) => {
+    const goals = icp.goals.map((id) => id.trim());
+    return {
+      ...icp,
+      goals,
+      goalLabel: icp.goalTitles.join(', '),
+      channelsLabel: icp.channels.join(' · '),
+      goalChips: content.mf.goals.filter((goal) => goals.includes(goal.id)).map((goal) => `Goal ${goal.n}`),
+    };
+  });
 }
 
 /** The approval's date as the cover prints it (`6 Nov 2026`, UTC), '' when there is none to read. */
@@ -220,14 +226,15 @@ export function foundationMessagePrintFacts(goals: FoundationMessagePrintGoal[])
 
 /**
  * The key numbers with each figure's source: the source of the proof points that state the figure as a whole number (`299` in
- * `299 member organizations`, `10,000+` in `More than 10,000 published MCP servers`; never `8` in `188`), when they agree on one.
- * A figure no proof point states, or that proof points source differently, carries '' and prints no pill: the record's own
- * key numbers have no source of their own, and none is invented.
+ * `299 member organizations`, `10,000+` in `More than 10,000 published MCP servers`; never `8` in `188`, `299` in `299.5` or
+ * `1,299`, while a sentence's own comma or period after the figure is no part of it), when they agree on one. A figure no
+ * proof point states, or that proof points source differently, carries '' and prints no pill: the record's own key numbers
+ * have no source of their own, and none is invented.
  */
 export function foundationMessagePrintNumbers(numbers: FoundationMessageNumberRow[], facts: FoundationMessagePrintFactRow[]): FoundationMessagePrintNumber[] {
   return numbers.map((row) => {
     const figure = row.number.trim().replace(/\+$/, '');
-    const token = new RegExp(`(?:^|[^\\d,.])${figure.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\d,.])`);
+    const token = new RegExp(`(?:^|[^\\d,.])${figure.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d|[,.]\\d)`);
     const sources = new Set(facts.filter((fact) => figure !== '' && token.test(fact.fact)).map((fact) => fact.source));
     return { ...row, source: sources.size === 1 ? [...sources][0] : '' };
   });

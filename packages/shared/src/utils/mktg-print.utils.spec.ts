@@ -320,6 +320,23 @@ describe('the framework’s print', () => {
     expect(view.icps.map((row) => row.goalChips)).toEqual([['Goal 1'], ['Goal 2']]);
   });
 
+  it('matches a padded reference as the screen does, so a hand-edited version drops no card, chip or matrix cell', () => {
+    const view = buildFoundationMessagePrintView(
+      {
+        ...CONTENT,
+        mf: { ...CONTENT.mf, goals: [{ ...CONTENT.mf.goals[0], icps: [' end-users '] }] },
+        icp: [{ ...CONTENT.icp[0], id: 'end-users', goals: ['adoption '] }],
+      },
+      'TestOrbit',
+      1,
+      null
+    );
+    expect(view.goals[0].icps).toEqual(['end-users']);
+    expect(view.icps[0].goals).toEqual(['adoption']);
+    expect(view.icps[0].goalChips).toEqual(['Goal 1']);
+    expect(foundationMessagePrintMatrix(view.goals, view.icps)).toEqual([{ name: 'End users', cells: [true] }]);
+  });
+
   it('counts the anchor questions in words in the say-and-avoid intro, the mock’s sentence with the agent’s three', () => {
     expect(foundationMessagePrintAnchorIntro(3)).toBe(
       'The words the framework uses, the ones it replaces, and the three questions every piece of content answers.'
@@ -339,6 +356,8 @@ describe('the framework’s print', () => {
       fact('8 Platinum, 50 Gold and 188 Silver memberships', 'LFX field'),
       fact('4,370 registrations for AGNTCon + MCPCon North America 2026', 'LFX field'),
       fact('4,370 seats were sold, says the venue', 'Website'),
+      fact('The field count grew to 42.', 'LFX field'),
+      fact('Of the 42, most renewed; 42.5 is no count, nor is 1,042', 'Website'),
     ];
     const numbers = foundationMessagePrintNumbers(
       [
@@ -349,10 +368,12 @@ describe('the framework’s print', () => {
         { number: '88', label: 'nothing states this' },
         { number: '4,370', label: 'registrations' },
         { number: '', label: 'no figure' },
+        { number: '42', label: 'stated before a period and a comma, in two sources' },
+        { number: '1,042', label: 'stated once' },
       ],
       facts
     );
-    expect(numbers.map((row) => row.source)).toEqual(['LFX field', 'Press release', 'LFX field', 'LFX field', '', '', '']);
+    expect(numbers.map((row) => row.source)).toEqual(['LFX field', 'Press release', 'LFX field', 'LFX field', '', '', '', '', 'Website']);
     // The stored record's key numbers carry no source of their own: the view's come from the facts, never from the pair.
     expect(buildFoundationMessagePrintView({ ...CONTENT, nums: [['7', 'wonders']] }, 'TestOrbit', 1, null).numbers).toEqual([
       { number: '7', label: 'wonders', source: '' },
