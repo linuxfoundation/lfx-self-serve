@@ -485,8 +485,9 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-print-umbrella')?.textContent).toContain('Open releases for everyone.');
     expect(query('mktg-framework-print-numbers')?.textContent).toContain('releases a year');
     expect(query('mktg-framework-print-gaps')?.textContent).toContain('No member count.');
-    expect(query('mktg-framework-print-notes')?.textContent).toContain('Check the dates.');
-    // The reviewer's note stays on screen only.
+    // The run's notes and the reviewer's note stay on screen only.
+    expect(query('mktg-framework-print-notes')).toBeNull();
+    expect(print?.textContent).not.toContain('Check the dates.');
     expect(print?.textContent).not.toContain('Check the member count.');
 
     // Export to Google Slides waits for the page to name a stored revision.

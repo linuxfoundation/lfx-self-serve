@@ -588,8 +588,8 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(host().querySelectorAll('[data-testid="mktg-portrait-page-band"]')).toHaveLength(0);
     expect(pages[0].querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent?.trim()).toBe('TestOrbit positioning & brand');
     expect(text(pages[0].querySelector('[data-testid="mktg-portrait-page-foot"]'))).toBe('The family footer 04');
-    // The first profile page's rows start at 190 without the band's first-page intro room.
-    expect(pages[3].querySelector('.fwp-icp-row')?.parentElement?.getAttribute('style')).toContain('top: 190px');
+    // The first profile page's rows start under the long intro at 214, band or no band (the top is the page's, not the band's).
+    expect(pages[3].querySelector('.fwp-icp-row')?.parentElement?.getAttribute('style')).toContain('top: 214px');
   });
 
   it('sets the pages in the view’s brand through the grammar’s look, or in the look the family passes', async () => {
