@@ -383,6 +383,15 @@ describe('the framework portrait book’s bounded blocks', () => {
     expect(frameworkPortraitPillWidth(phrase, false)).toBeGreaterThan(2 * 320);
     expect(frameworkPortraitPillHeight(phrase, 320, false)).toBe(3 * 13 * 1.2 + 18);
     expect(frameworkPortraitPillsHeight(['open', phrase, 'honest'], 320, false)).toBe(13 * 1.2 + 18 + 8 + 3 * 13 * 1.2 + 18 + 8 + 13 * 1.2 + 18);
+    // The pill breaks its text at words (`.fwp-say-pill`): three compounds each wider than half the padded column take a line each,
+    // where the phrase's width over the column's counted two (#5345, 607OFx); tightened, two compounds share a line and two lines hold it.
+    const uneven = 'Interoperability-tested, specification-conformant, independently-audited';
+    expect(Math.ceil((frameworkPortraitPillWidth(uneven, false) - 30) / (320 - 30))).toBe(2);
+    expect(frameworkPortraitPillHeight(uneven, 320, false)).toBe(3 * 13 * 1.2 + 18);
+    expect(frameworkPortraitPillHeight(uneven, 320, true)).toBe(2 * 12 * 1.2 + 14);
+    expect(frameworkPortraitPillsHeight(['open', uneven], 320, false)).toBe(13 * 1.2 + 18 + 8 + 3 * 13 * 1.2 + 18);
+    // A pill that fits the column is one line, whatever the glyph measure says of its words.
+    expect(frameworkPortraitPillHeight('Open, everywhere, governed in the open', 320, false)).toBe(13 * 1.2 + 18);
     expect(frameworkPortraitPillList(['open', 'honest'], 320, frameworkPortraitSayRoom())).toEqual({
       rows: ['open', 'honest'],
       cut: 0,

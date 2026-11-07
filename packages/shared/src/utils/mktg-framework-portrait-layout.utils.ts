@@ -819,15 +819,15 @@ export function frameworkPortraitPillWidth(text: string, tight: boolean): number
 }
 
 /**
- * The height a pill takes in a column `width` px wide: one line of its type with its padding, or the lines its text wraps to
- * inside the padded width when the phrase is wider than the column (a pill's text wraps; the phrase count is bounded, not
- * the phrase).
+ * The height a pill takes in a column `width` px wide: one line of its type with its padding, or, when the phrase is wider
+ * than the column, the lines its text wraps to inside the padded width, word by word on the glyph measure as `.fwp-say-pill`
+ * breaks it (a pill's text wraps; the phrase count is bounded, not the phrase). Dividing the phrase's width by the column's
+ * counted the lines as if words could break anywhere: a phrase whose words do not pack evenly takes one more (#5345, 607OFx).
  */
 export function frameworkPortraitPillHeight(pill: string, width: number, tight: boolean): number {
   const type = tight ? TYPE.sayPillTight : TYPE.sayPill;
   const across = tight ? ROOM.sayPillPaddingAcrossTight : ROOM.sayPillPaddingAcross;
-  const textWidth = frameworkPortraitPillWidth(pill, tight) - across;
-  const lines = Math.max(1, Math.ceil(textWidth / Math.max(1, width - across)));
+  const lines = frameworkPortraitPillWidth(pill, tight) <= width ? 1 : glyphLines(pill, type, Math.max(1, width - across)).lines;
   return lines * type.size * type.line + (tight ? ROOM.sayPillPaddingTight : ROOM.sayPillPadding);
 }
 
