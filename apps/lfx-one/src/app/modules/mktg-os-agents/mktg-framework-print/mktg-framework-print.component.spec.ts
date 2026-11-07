@@ -321,7 +321,8 @@ describe('MktgFrameworkPrintComponent', () => {
     const page = frame('goal-1');
     const vp = page?.querySelector<HTMLElement>('.fwp-goal-vp');
     expect(parseFloat(vp?.style.fontSize ?? '22')).toBeLessThan(22);
-    expect(parseFloat(vp?.style.fontSize ?? '0')).toBeGreaterThanOrEqual(22 * 0.72 - 0.01);
+    // The floor is 72 % as the fit model measures it: in half-px steps (22 × 0.72 = 15.84 → 15.5), the size the text was measured at (P2-4).
+    expect(parseFloat(vp?.style.fontSize ?? '0')).toBeGreaterThanOrEqual(Math.floor(22 * 0.72 * 2) / 2);
     expect((vp?.textContent ?? '').length).toBeLessThan(long.length);
     const bite = page?.querySelector<HTMLElement>('.fwp-goal-bite-text');
     expect(parseFloat(bite?.style.fontSize ?? '34')).toBeLessThan(34);

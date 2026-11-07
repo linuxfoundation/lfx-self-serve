@@ -69,8 +69,10 @@ describe('the framework portrait book’s cut lists', () => {
   it('then cuts to the leading whole rows that fit beside the note, and counts the rest', () => {
     const note = frameworkPortraitCutNoteHeight();
     expect(note).toBeCloseTo(6 + 10.5 * 1.4);
-    expect(frameworkPortraitCutList(rows, 60 + note, normal, tight)).toEqual({ rows: ['a', 'b', 'c'], cut: 1, tight: true });
-    expect(frameworkPortraitCutList(rows, 59 + note, normal, tight)).toEqual({ rows: ['a', 'b'], cut: 2, tight: true });
+    // Four tight rows are 80: at 79 the list is cut, and the rows that stay (three at 60) must leave the note its room too.
+    expect(frameworkPortraitCutList(rows, 79, normal, tight)).toEqual({ rows: ['a', 'b'], cut: 2, tight: true });
+    expect(frameworkPortraitCutList(rows, 40 + note, normal, tight)).toEqual({ rows: ['a', 'b'], cut: 2, tight: true });
+    expect(frameworkPortraitCutList(rows, 39 + note, normal, tight)).toEqual({ rows: ['a'], cut: 3, tight: true });
     expect(frameworkPortraitCutList([], 0, normal, tight)).toEqual({ rows: [], cut: 0, tight: false });
   });
 
