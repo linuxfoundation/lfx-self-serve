@@ -1044,7 +1044,7 @@ describe('the framework portrait book’s goal matrix in bands (editor W1)', () 
     // the clamp); the proof row prints while its cells hold the tight floor and goes, once, below it (the editor's FA1b), never back.
     // The ladder's three steps by the room, in order and never back: the proofs with their own "+N more" lines; those lines folded
     // into the caption (the maintainer's word of 7 Nov 2026); the proof row dropped.
-    const steps = [
+    const steps: string[] = [
       FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages,
       FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold,
       FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesAll,

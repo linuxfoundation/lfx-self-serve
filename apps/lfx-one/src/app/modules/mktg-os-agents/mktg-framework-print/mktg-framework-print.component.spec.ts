@@ -820,17 +820,20 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(laid.bands).toHaveLength(2);
     const labels = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-goals-label"]')).map((label) => label.textContent?.trim());
     expect(labels.filter((label) => label === 'Key message')).toHaveLength(2);
-    // Measured on the glyph table, this shape's bands hold the proof row: with each cell's own "+3 more" line it would end under the
-    // buffer above the footer gap, so the lines fold into the one caption and every cell keeps its one whole first proof.
+    // Measured on the glyph table in the LF look's face, this shape's bands hold the proof row at the ladder's first step: every
+    // cell's one whole first proof with its own "+3 more" line, the plain caption under the bands, the buffer above the footer kept.
     expect(labels.filter((label) => label === 'Proof')).toHaveLength(2);
     expect(labels.filter((label) => label === 'Value proposition')).toHaveLength(0);
     expect(labels.filter((label) => label === 'Sound bite')).toHaveLength(0);
     expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
-    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold]);
+    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix - laid.height).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBuffer);
     expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof-cell"]')).toHaveLength(8);
-    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proofs-cut"]')).toHaveLength(0);
+    expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proofs-cut"]')).map((note) => note.textContent?.trim())).toEqual(
+      Array.from({ length: 8 }, () => '+3 more in LFX One')
+    );
     expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).map((note) => note.textContent?.trim())).toEqual([
-      'Value propositions and sound bites are on each goal page. More proofs for each goal are in LFX One.',
+      'Value propositions and sound bites are on each goal page.',
     ]);
     const keys = Array.from(host().querySelectorAll<HTMLElement>('.fwp-matrix-key'));
     expect(keys.map((key) => key.style.fontSize)).toEqual(Array.from({ length: 8 }, () => `${FRAMEWORK_PORTRAIT_TYPE.matrixKey.size}px`));
