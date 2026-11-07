@@ -693,12 +693,47 @@ function pillarHeight(pillar: FoundationMessagePillarView, proofs: FoundationMes
   return frameworkPortraitPillarHeadHeight(pillar, width) + (pillar.proofRows.length ? ROOM.pillarProofsTop + rows + note : 0);
 }
 
+/** The height an audience row takes at a measure: its name and lead as one text in the column, and the row's chrome. */
+function audienceRowHeight(audience: FoundationMessageAudienceRow, type: FoundationMessagePrintType, chrome: number): number {
+  return frameworkPortraitTextHeight(`${audience.name}. ${audience.lead}`, type, ROOM.audiencesColumn) + chrome;
+}
+
+/**
+ * The audiences cut to the room: the list rule, and, when it would keep no row, the first audience at least (the editor's
+ * read, 7 Nov 2026: a list that prints only its note leaves the block empty), set tight, its lead cut at a sentence (then
+ * at a word) to the room above the note, down to its name alone.
+ */
+function frameworkPortraitAudiences(
+  audiences: readonly FoundationMessageAudienceRow[],
+  room: number
+): FoundationMessagePrintCutList<FoundationMessageAudienceRow> {
+  const list = frameworkPortraitCutList(
+    audiences,
+    room,
+    (audience) => audienceRowHeight(audience, TYPE.audienceRow, ROOM.audienceRow),
+    (audience) => audienceRowHeight(audience, TYPE.audienceRowTight, ROOM.audienceRowTight),
+    frameworkPortraitCutNoteHeightIn(1, ROOM.audiencesColumn)
+  );
+  if (list.rows.length > 0 || audiences.length === 0) return list;
+  const [first] = audiences;
+  const cut = audiences.length - 1;
+  const firstRoom = room - frameworkPortraitCutNoteHeightIn(cut, ROOM.audiencesColumn);
+  const fits = (audience: FoundationMessageAudienceRow): boolean => audienceRowHeight(audience, TYPE.audienceRowTight, ROOM.audienceRowTight) <= firstRoom;
+  let kept = first;
+  for (let guard = 0; guard < FIT.maxCuts && kept.lead !== '' && !fits(kept); guard++) {
+    const lead = kept.lead.length < FIT.minCutLength ? '' : mktgPortraitCutText(kept.lead, Math.floor(kept.lead.length * FIT.cutShare));
+    kept = { ...kept, lead: lead.length < kept.lead.length ? lead : '' };
+  }
+  return { rows: [kept], cut, tight: true, note: foundationMessagePrintCutNote(cut) };
+}
+
 /**
  * The message house page, bounded: each pillar's proofs cut to whole rows in the room that leaves the lower blocks their
  * least (the design reader's rule; a pillar's proofs have no tight measure, so the cut is to whole rows and the muted
  * line); then Why now and the audiences a gap under the tallest pillar, where the umbrella, the brand line and the pillars
- * end (the editor's read, 7 Nov 2026: no empty band at the design's fixed 780), the Why now text fitted and the audiences
- * cut to the whole rows that end above the footer.
+ * end (the editor's read, 7 Nov 2026: no empty band at the design's fixed 780), the Why now text at its body size, cut at
+ * a sentence when the room is short (never set smaller: the editor's read of the overfull record), and the audiences cut
+ * to the whole rows that end above the footer, the first kept at least.
  */
 export function frameworkPortraitHouse(view: FoundationMessagePrintView, umbrella: FoundationMessagePrintFittedText): FoundationMessagePrintHousePage {
   const width = PAGE.contentWidth;
@@ -720,21 +755,13 @@ export function frameworkPortraitHouse(view: FoundationMessagePrintView, umbrell
   const top = pillarsTop + tallest + ROOM.houseLowerGap;
   const room = TOPS.footer - top - ROOM.label;
   const whyNow = view.mh.found
-    ? mktgPortraitFitBlock({ paras: [{ text: view.mh.found, ...TYPE.whyNow }] }, ROOM.whyNowColumn, room - ROOM.whyNowTextTop).block.paras[0]
+    ? mktgPortraitFitBlock({ paras: [{ text: view.mh.found, ...TYPE.whyNow }] }, ROOM.whyNowColumn, room - ROOM.whyNowTextTop, 1).block.paras[0]
     : null;
-  const audienceRow = (audience: FoundationMessageAudienceRow, type: FoundationMessagePrintType, chrome: number): number =>
-    frameworkPortraitTextHeight(`${audience.name}. ${audience.lead}`, type, ROOM.audiencesColumn) + chrome;
   return {
     pillars,
     lowerTop: top,
     whyNow: whyNow ? { text: whyNow.text, size: whyNow.size } : null,
-    audiences: frameworkPortraitCutList(
-      view.audiences,
-      room - ROOM.audienceListTop,
-      (audience) => audienceRow(audience, TYPE.audienceRow, ROOM.audienceRow),
-      (audience) => audienceRow(audience, TYPE.audienceRowTight, ROOM.audienceRowTight),
-      frameworkPortraitCutNoteHeightIn(1, ROOM.audiencesColumn)
-    ),
+    audiences: frameworkPortraitAudiences(view.audiences, room - ROOM.audienceListTop),
   };
 }
 

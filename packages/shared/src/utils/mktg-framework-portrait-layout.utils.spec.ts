@@ -458,11 +458,60 @@ describe('the framework portrait book’s message house', () => {
     expect(tall.pillars[0].note).toBe(`+${4 - tall.pillars[0].rows.length} more in LFX One`);
     expect(tall.lowerTop).toBeLessThanOrEqual(1000 - 80);
     expect(tall.lowerTop).toBeGreaterThan(780);
-    expect(tall.whyNow?.size).toBeLessThan(13);
+    // Why now keeps its body size and is cut at a sentence instead (the editor's read, 7 Nov 2026: never the shrunk text).
+    expect(tall.whyNow?.size).toBe(13);
+    expect(tall.whyNow?.text.length).toBeLessThan('Why now. '.repeat(40).trim().length);
+    expect(tall.whyNow?.text).toMatch(/^(Why now\. )*Why now\.$/);
     expect(tall.audiences.rows.length).toBeLessThan(6);
     expect(tall.audiences.rows.length).toBeGreaterThan(0);
     expect(tall.audiences.note).toBe(`+${6 - tall.audiences.rows.length} more in LFX One`);
     expect(frameworkPortraitHouse(view([pillar(1)], 0, ''), { text: '', size: 19 }).whyNow).toBeNull();
+  });
+
+  it('keeps the first audience at least when every row would be cut, its lead cut at a sentence to the room above the note (editor W2)', () => {
+    // Seven audiences whose leads run to many lines, under five tall pillars: the list rule would keep no row and print only "+7 more"
+    // over an empty block; the first audience prints instead, tight, its lead cut to whole sentences, the note counting the six left off.
+    const long = pillar(4, 'A message that runs on for several lines in a five-column pillar, saying what the pillar stands for.');
+    const lead = [
+      'This audience ships the project in production and reads the release notes first.',
+      'It weighs every change against the uptime it owes its own users.',
+      'It asks for the migration path before the feature.',
+      'It reads the security advisories the day they land and plans the rollout.',
+      'It expects the release cadence to hold.',
+      'It files the bug with the reproduction and the version.',
+      'It joins the community call when a change touches its stack.',
+      'It votes with its deployment, not with a comment.',
+      'It wants the upgrade to be boring.',
+    ].join(' ');
+    const audiences = Array.from({ length: 7 }, (_, index) => ({ name: `Audience ${index}`, lead }));
+    const house = frameworkPortraitHouse(
+      viewWith({
+        mh: { umbrella: 'Umbrella.', line: 'Brand line.', pillars: [long, long, long, long, long], found: 'Why now.', aud: [] },
+        pillars: [long, long, long, long, long],
+        audiences,
+      }),
+      {
+        text: 'An umbrella statement that runs to three lines of the dark bar, saying what the project is and whom it is the home for.',
+        size: 19,
+      }
+    );
+    expect(house.audiences.rows).toHaveLength(1);
+    expect(house.audiences.rows[0].name).toBe('Audience 0');
+    expect(house.audiences.rows[0].lead.length).toBeLessThan(lead.length);
+    // Whole sentences, the first kept, none broken inside (a sentence cut, not a word cut with an ellipsis).
+    expect(house.audiences.rows[0].lead).toMatch(/^This audience ships the project in production and reads the release notes first\.( It [^.]+\.)*$/);
+    expect(house.audiences).toMatchObject({ cut: 6, tight: true, note: '+6 more in LFX One' });
+    // The kept row ends above the footer with the note under it.
+    const row =
+      frameworkPortraitTextHeight(
+        `Audience 0. ${house.audiences.rows[0].lead}`,
+        FRAMEWORK_PORTRAIT_TYPE.audienceRowTight,
+        FRAMEWORK_PORTRAIT_ROOM.audiencesColumn
+      ) + FRAMEWORK_PORTRAIT_ROOM.audienceRowTight;
+    const noteHeight = frameworkPortraitCutNoteHeightIn(6, FRAMEWORK_PORTRAIT_ROOM.audiencesColumn);
+    expect(house.lowerTop + FRAMEWORK_PORTRAIT_ROOM.label + FRAMEWORK_PORTRAIT_ROOM.audienceListTop + row + noteHeight).toBeLessThanOrEqual(
+      FRAMEWORK_PORTRAIT_TOPS.footer
+    );
   });
 });
 
