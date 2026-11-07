@@ -1311,7 +1311,10 @@ export function brandKitPageNumber(number: number): string {
 const BRAND_KIT_SVG_SHAPES = new Set(['path', 'rect', 'circle', 'ellipse', 'polygon', 'polyline', 'line', 'text', 'tspan']);
 
 /** Elements whose paint the detector cannot resolve from the markup alone: artwork using them is never derived from. */
-const BRAND_KIT_SVG_UNRESOLVABLE = new Set(['style', 'use', 'image', 'mask', 'filter', 'pattern', 'lineargradient', 'radialgradient', 'foreignobject']);
+const BRAND_KIT_SVG_UNRESOLVABLE = new Set(['style', 'use', 'image', 'foreignobject']);
+
+/** Elements whose children are not rendered where they stand (definitions, clip paths, masks, patterns, symbols, markers, gradients, filters): their paints are not the artwork's. */
+const BRAND_KIT_SVG_UNRENDERED = new Set(['defs', 'clippath', 'mask', 'pattern', 'symbol', 'marker', 'lineargradient', 'radialgradient', 'filter']);
 
 /** Paint values that draw nothing. */
 const BRAND_KIT_SVG_NO_PAINT = new Set(['none', 'transparent']);
@@ -1352,8 +1355,12 @@ function brandKitSvgLength(attributes: string, name: string, whole: number): num
  *   background: inverting it would set the mark in a white box, so the
  *   artwork is not derivable.
  * - Gradients, patterns, any `url(#…)` paint, `currentColor`, `<use>`,
- *   images, masks, filters, a `<style>` sheet or a `class` attribute cannot
- *   be resolved from the markup: not derivable, conservatively.
+ *   images, a `mask` or `filter` on a shape, a `<style>` sheet or a `class`
+ *   attribute cannot be resolved from the markup: not derivable,
+ *   conservatively.
+ * - What stands inside `<defs>`, `<clipPath>`, `<mask>`, `<pattern>`,
+ *   `<symbol>` or a gradient is not drawn where it stands (an exporter's
+ *   clip rectangle the size of the viewBox is not a background): skipped.
  * - Two inks flatten to one shape under a filter: not derivable.
  */
 export function brandKitSvgIsMonochrome(svg: string): boolean {
@@ -1363,15 +1370,23 @@ export function brandKitSvgIsMonochrome(svg: string): boolean {
   const inks = new Set<string>();
   const inherited: { fill?: string; stroke?: string }[] = [{}];
   let shapes = 0;
+  // Open elements whose subtree is not rendered where it stands; their paints are skipped until they close.
+  let unrendered = 0;
   const tag = /<(\/?)([a-zA-Z][\w:-]*)([^>]*?)(\/?)>/g;
   for (let match = tag.exec(svg); match !== null; match = tag.exec(svg)) {
     const [, closing, rawName, attributes, selfClosing] = match;
     const name = rawName.toLowerCase();
     if (closing) {
       if (inherited.length > 1) inherited.pop();
+      if (unrendered > 0) unrendered -= 1;
       continue;
     }
-    if (BRAND_KIT_SVG_UNRESOLVABLE.has(name) || /(?:^|\s)class\s*=/i.test(attributes)) return false;
+    if (unrendered > 0 || BRAND_KIT_SVG_UNRENDERED.has(name)) {
+      if (!selfClosing) unrendered += 1;
+      if (!selfClosing) inherited.push(inherited[inherited.length - 1]);
+      continue;
+    }
+    if (BRAND_KIT_SVG_UNRESOLVABLE.has(name) || /(?:^|\s)(?:class|mask|filter)\s*=/i.test(attributes)) return false;
     const parent = inherited[inherited.length - 1];
     const own = { fill: brandKitSvgPaint(attributes, 'fill') ?? parent.fill, stroke: brandKitSvgPaint(attributes, 'stroke') ?? parent.stroke };
     if (BRAND_KIT_SVG_SHAPES.has(name)) {

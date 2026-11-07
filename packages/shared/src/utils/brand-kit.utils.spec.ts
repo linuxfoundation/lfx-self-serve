@@ -1055,8 +1055,22 @@ describe('the book', () => {
       ['<svg viewBox="0 0 10 10"><g fill="#4D4E4E"><path d="M0 0h5v5z"/><rect fill="#767576" x="5" width="5" height="5"/></g></svg>', false],
       // Inline style paints read like attributes; none draws nothing.
       ['<svg viewBox="0 0 10 10"><path style="fill: #4d4e4e; stroke: none" d="M0 0h10"/><rect style="fill:#4D4E4E" width="2" height="2"/></svg>', true],
-      // A <use> or an image cannot be resolved.
+      // A <use> or an image cannot be resolved; a mask or a filter on a shape neither.
       ['<svg viewBox="0 0 10 10"><defs><path id="p" d="M0 0h10"/></defs><use href="#p"/></svg>', false],
+      [
+        '<svg viewBox="0 0 10 10"><defs><mask id="m"><rect fill="#fff" width="10" height="10"/></mask></defs><path fill="#4D4E4E" mask="url(#m)" d="M0 0h10v10z"/></svg>',
+        false,
+      ],
+      // An exporter's clip path (a white rectangle the size of the viewBox inside <clipPath>) is not drawn: not a background,
+      // and its paint is not the artwork's.
+      [
+        '<svg viewBox="0 0 120 36"><g clip-path="url(#c)"><path fill="#000" d="M4 4h40v28z"/></g><defs><clipPath id="c"><rect width="120" height="36" fill="white"/></clipPath></defs></svg>',
+        true,
+      ],
+      [
+        '<svg viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#F37625"/></linearGradient></defs><path fill="#4D4E4E" d="M0 0h10v10z"/></svg>',
+        true,
+      ],
       // The shared fixture lockup draws three inks.
       [BRAND_KIT_FIXTURE_LOCKUP_SVG, false],
       // Nothing drawn: nothing a filter could flatten.
