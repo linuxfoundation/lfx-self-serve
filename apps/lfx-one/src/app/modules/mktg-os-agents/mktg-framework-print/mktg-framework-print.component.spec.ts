@@ -453,6 +453,22 @@ describe('MktgFrameworkPrintComponent', () => {
     await setView(buildFoundationMessagePrintView({ ...CONTENT, nums: nums(6) }, 'TestOrbit', 2, null));
     expect(FRAMEWORK_PORTRAIT_MAX_TILES).toBe(6);
     expect(shares()).toEqual([3, 3, 3, 3, 3, 3]);
+    // Six tiles a third wide (176 of content): seven-digit figures step down from 54 to the size that holds them on one line, a
+    // 30-character label fits under them as written; the sizes are set inline from the layout, nothing overflows the tile.
+    const long = (count: number) => Array.from({ length: count }, (_, index) => pair(`${index + 1},200,000`, 'members across five continents'));
+    await setView(buildFoundationMessagePrintView({ ...CONTENT, nums: long(6) }, 'TestOrbit', 2, null));
+    expect(tiles().map((tile) => tile.querySelector<HTMLElement>('.fwp-number')?.style.fontSize)).toEqual(Array.from({ length: 6 }, () => '35px'));
+    expect(tiles().map((tile) => tile.querySelector<HTMLElement>('.fwp-number-label')?.style.fontSize)).toEqual(Array.from({ length: 6 }, () => '14px'));
+    expect(tiles()[0].querySelector('.fwp-number-label')?.textContent?.trim()).toBe('members across five continents');
+    const tileBox = tiles()[0].getBoundingClientRect();
+    const figureBox = tiles()[0].querySelector('.fwp-number')?.getBoundingClientRect();
+    expect(figureBox && figureBox.right <= tileBox.right + 0.5).toBe(true);
+    // Under a short figure at its full 54 px, the same label comes down to fit the 32 px left.
+    await setView(
+      buildFoundationMessagePrintView({ ...CONTENT, nums: Array.from({ length: 6 }, () => pair('41', 'members across five continents')) }, 'TestOrbit', 2, null)
+    );
+    expect(tiles()[0].querySelector<HTMLElement>('.fwp-number')?.style.fontSize).toBe('54px');
+    expect(parseFloat(tiles()[0].querySelector<HTMLElement>('.fwp-number-label')?.style.fontSize ?? '14')).toBeLessThan(14);
     expect(query('mktg-framework-print-facts')?.getAttribute('style')).toContain('top: 534px');
     // One to three figures: pairs, an odd count's last tile across the row.
     await setView(buildFoundationMessagePrintView({ ...CONTENT, nums: nums(3) }, 'TestOrbit', 2, null));
@@ -500,6 +516,23 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(secondRows[0].querySelector('.fwp-number-cell')?.textContent?.trim()).toBe(`${firstRows.length + 1},000`);
     // The contents page counts every page the data needs.
     expect(query('mktg-framework-print-contents')?.textContent).toContain('Key numbers (2)');
+  });
+
+  it('says what a list cut to no rows left off: the heading and the "+N more" line still print', async () => {
+    // Proof facts so tall that none fits the proofs' room even tightened: the "Proof points" heading and the note print, no row.
+    const tall = Array.from({ length: 3 }, (_, index) =>
+      pair(`${'A very long proof sentence that fills the column. '.repeat(40).trim()} (${index})`, 'Report')
+    );
+    await configure(
+      'browser',
+      buildFoundationMessagePrintView({ ...CONTENT, mf: { ...CONTENT.mf, goals: [{ ...CONTENT.mf.goals[0], proof: tall }] } }, 'TestOrbit', 2, null)
+    );
+    const goalPage = frame('goal-1');
+    expect(goalPage?.querySelectorAll('.fwp-proof-row')).toHaveLength(0);
+    expect(goalPage?.textContent).toContain('Proof points');
+    expect(goalPage?.querySelector('[data-testid="mktg-framework-print-proofs-cut"]')?.textContent?.trim()).toBe(
+      "+3 more on the framework's Framework tab in LFX One"
+    );
   });
 
   it('closes on the sources and gaps: what was read as stored (its type prefix off), what could not be, the gaps, and the approval card; never the notes', async () => {
@@ -653,10 +686,10 @@ describe('MktgFrameworkPrintComponent', () => {
     // Tightened before the cut (9 px padding, 14 px type), and the cut said under the list: "+N more", N the rows left off.
     expect(goalPage?.querySelector('.fwp-proof-list')?.classList.contains('fwp-proof-list-tight')).toBe(true);
     expect(goalPage?.querySelector('[data-testid="mktg-framework-print-proofs-cut"]')?.textContent?.trim()).toBe(
-      foundationMessagePrintCutNote(12 - proofs.length)
+      foundationMessagePrintCutNote(12 - proofs.length, 'Framework')
     );
     expect(goalPage?.querySelector('[data-testid="mktg-framework-print-proofs-cut"]')?.textContent?.trim()).toBe(
-      `+${12 - proofs.length} more in the framework's Sources tab in LFX One`
+      `+${12 - proofs.length} more on the framework's Framework tab in LFX One`
     );
     expect(parseFloat(goalPage?.querySelector<HTMLElement>('.fwp-goal-vp')?.style.fontSize ?? '22')).toBeLessThan(22);
     expect(parseFloat(goalPage?.querySelector<HTMLElement>('.fwp-goal-key-text')?.style.fontSize ?? '19')).toBeLessThan(19);
@@ -691,7 +724,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(534 + FRAMEWORK_PORTRAIT_ROOM.label + FRAMEWORK_PORTRAIT_ROOM.tableHead + factsUsed).toBeLessThanOrEqual(tops.footer);
     // Twelve proof points make twelve facts; a cut table says how many more there are (tight first), a whole one says nothing.
     expect(query('mktg-framework-print-facts-cut')?.textContent?.trim() ?? null).toBe(
-      factRows.length < 12 ? foundationMessagePrintCutNote(12 - factRows.length) : null
+      factRows.length < 12 ? foundationMessagePrintCutNote(12 - factRows.length, 'Framework') : null
     );
     if (factRows.length < 12) expect(factsTight).toBe(true);
     // Sources & gaps: each list tightened (11.5/1.5) then cut to the whole rows that fit above the approval card at 880, in order, the cut said under it;
@@ -702,10 +735,10 @@ describe('MktgFrameworkPrintComponent', () => {
     const gaps = Array.from(query('mktg-framework-print-gaps')?.querySelectorAll('li') ?? []);
     expect(query('mktg-framework-print-sources-read')?.classList.contains('fwp-source-list-tight')).toBe(true);
     expect(query('mktg-framework-print-gaps')?.classList.contains('fwp-source-list-tight')).toBe(true);
-    expect(query('mktg-framework-print-sources-read-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(60 - read.length));
-    expect(query('mktg-framework-print-gaps-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(60 - gaps.length));
+    expect(query('mktg-framework-print-sources-read-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(60 - read.length, 'Sources'));
+    expect(query('mktg-framework-print-gaps-cut')?.textContent?.trim()).toBe(foundationMessagePrintCutNote(60 - gaps.length, 'Sources'));
     expect(query('mktg-framework-print-sources-failed-cut')?.textContent?.trim() ?? null).toBe(
-      failed.length < 30 ? foundationMessagePrintCutNote(30 - failed.length) : null
+      failed.length < 30 ? foundationMessagePrintCutNote(30 - failed.length, 'Sources') : null
     );
     expect([read.length > 0, read.length < 60, failed.length > 0, failed.length < 30, gaps.length > 0, gaps.length < 60]).toEqual([
       true,

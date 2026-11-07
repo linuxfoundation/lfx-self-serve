@@ -279,7 +279,7 @@
                 {{ report.intro }}
               </p>
               <div [lfxPpRect]="[page.margin, tops.sourcesLists, columns.half]">
-                @if (report.read.rows.length > 0) {
+                @if (report.read.rows.length > 0 || report.read.cut > 0) {
                   <span class="pp-lab pp-lab--dark">Read</span>
                   <ul class="fwp-source-list" [class.fwp-source-list-tight]="report.read.tight" data-testid="mktg-framework-print-sources-read">
                     @for (source of report.read.rows; track $index) {
@@ -287,10 +287,10 @@
                     }
                   </ul>
                   @if (report.read.cut > 0) {
-                    <p class="fwp-cut-note" data-testid="mktg-framework-print-sources-read-cut">{{ cutNote(report.read.cut) }}</p>
+                    <p class="fwp-cut-note" data-testid="mktg-framework-print-sources-read-cut">{{ report.read.note }}</p>
                   }
                 }
-                <span class="pp-lab pp-lab--dark" [class.fwp-block-after]="report.read.rows.length > 0">Could not be read</span>
+                <span class="pp-lab pp-lab--dark" [class.fwp-block-after]="report.read.rows.length > 0 || report.read.cut > 0">Could not be read</span>
                 <!-- The empty-state lines read the report's counts, not the lists cut to the room. -->
                 @if (report.failedCount > 0) {
                   <ul class="fwp-source-list" [class.fwp-source-list-tight]="report.failed.tight" data-testid="mktg-framework-print-sources-failed">
@@ -299,7 +299,7 @@
                     }
                   </ul>
                   @if (report.failed.cut > 0) {
-                    <p class="fwp-cut-note" data-testid="mktg-framework-print-sources-failed-cut">{{ cutNote(report.failed.cut) }}</p>
+                    <p class="fwp-cut-note" data-testid="mktg-framework-print-sources-failed-cut">{{ report.failed.note }}</p>
                   }
                 } @else {
                   <p class="fwp-source-text" data-testid="mktg-framework-print-sources-failed-empty">{{ noSourceFailed }}</p>
@@ -314,7 +314,7 @@
                     }
                   </ul>
                   @if (report.gaps.cut > 0) {
-                    <p class="fwp-cut-note" data-testid="mktg-framework-print-gaps-cut">{{ cutNote(report.gaps.cut) }}</p>
+                    <p class="fwp-cut-note" data-testid="mktg-framework-print-gaps-cut">{{ report.gaps.note }}</p>
                   }
                 } @else {
                   <p class="fwp-source-text" data-testid="mktg-framework-print-gaps-empty">{{ noGap }}</p>
@@ -333,7 +333,7 @@
         <!-- goal-N and icps-k, by their data -->
         @default {
           @if (frame.numbersPage; as numbers) {
-            <!-- 04 KEY NUMBERS (`key-numbers`, `key-numbers-2`…, as many as the figures need): the tiles by the count's layout up to six, or the key numbers table of every figure past that, continued on the next page when full; then every proof point with its source and the goal that uses it, on the last page -->
+            <!-- 04 KEY NUMBERS (`key-numbers`, `key-numbers-2`…, as many as the figures need): the tiles by the count's layout up to six, or the key numbers table of every figure past that, continued on the next page when full; then the proof points with their sources and the goal that uses each (the rows that fit, the cut said), on the last page -->
             @if (numbers.intro) {
               <p class="pp-body pp-body--wide" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">{{ numbers.intro }}</p>
             }
@@ -347,8 +347,8 @@
                     [attr.data-wide]="row.wide"
                     [attr.data-share]="row.share"
                     [attr.data-testid]="'mktg-framework-print-number-tile-' + $index">
-                    <span class="fwp-number">{{ row.number }}</span>
-                    <span class="fwp-number-label">{{ row.label }}</span>
+                    <span class="fwp-number" [style.font-size.px]="row.figureSize">{{ row.number }}</span>
+                    <span class="fwp-number-label" [style.font-size.px]="row.labelSize">{{ row.labelText }}</span>
                   </div>
                 }
               </div>
@@ -410,7 +410,7 @@
                   </tbody>
                 </table>
                 @if (numbers.facts.cut > 0) {
-                  <p class="fwp-cut-note" data-testid="mktg-framework-print-facts-cut">{{ cutNote(numbers.facts.cut) }}</p>
+                  <p class="fwp-cut-note" data-testid="mktg-framework-print-facts-cut">{{ numbers.facts.note }}</p>
                 }
               </div>
             }
@@ -434,7 +434,7 @@
                 <span class="fwp-goal-key-text" [style.font-size.px]="goalPage.key.size">{{ goalPage.key.text }}</span>
               </div>
             }
-            @if (goalPage.proofs.rows.length > 0) {
+            @if (goalPage.proofs.rows.length > 0 || goalPage.proofs.cut > 0) {
               <div [lfxPpRect]="[page.margin, tops.goalProofs, page.contentWidth]">
                 <span class="pp-lab pp-lab--dark">Proof points</span>
                 <ul class="fwp-proof-list" [class.fwp-proof-list-tight]="goalPage.proofs.tight">
@@ -446,7 +446,7 @@
                   }
                 </ul>
                 @if (goalPage.proofs.cut > 0) {
-                  <p class="fwp-cut-note" data-testid="mktg-framework-print-proofs-cut">{{ cutNote(goalPage.proofs.cut) }}</p>
+                  <p class="fwp-cut-note" data-testid="mktg-framework-print-proofs-cut">{{ goalPage.proofs.note }}</p>
                 }
               </div>
             }

@@ -9,12 +9,18 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { FRAMEWORK_PORTRAIT_MAX_TILES, FRAMEWORK_PORTRAIT_NUMBER_TILE, FRAMEWORK_PORTRAIT_TOPS } from '../constants/mktg-print.constants';
+import {
+  FRAMEWORK_PORTRAIT_MAX_TILES,
+  FRAMEWORK_PORTRAIT_NUMBER_TILE,
+  FRAMEWORK_PORTRAIT_TOPS,
+  FRAMEWORK_PORTRAIT_TYPE,
+} from '../constants/mktg-print.constants';
 import { FoundationMessageContent } from '../interfaces/foundation-message.interface';
 import {
   foundationMessagePrintCutNote,
   frameworkPortraitCutList,
   frameworkPortraitCutNoteHeight,
+  frameworkPortraitFigureSize,
   frameworkPortraitNumberTiles,
   frameworkPortraitNumbersPages,
 } from './mktg-framework-portrait-layout.utils';
@@ -59,25 +65,29 @@ describe('the framework portrait book’s cut lists', () => {
   const tight = () => 20;
 
   it('keeps every row at the normal measure when they fit', () => {
-    expect(frameworkPortraitCutList(rows, 120, normal, tight)).toEqual({ rows, cut: 0, tight: false });
+    expect(frameworkPortraitCutList(rows, 120, 'Framework', normal, tight)).toEqual({ rows, cut: 0, tight: false, note: '' });
   });
 
   it('tightens first: every row at the tight measure when that is what fits', () => {
-    expect(frameworkPortraitCutList(rows, 100, normal, tight)).toEqual({ rows, cut: 0, tight: true });
+    expect(frameworkPortraitCutList(rows, 100, 'Framework', normal, tight)).toEqual({ rows, cut: 0, tight: true, note: '' });
   });
 
   it('then cuts to the leading whole rows that fit beside the note, and counts the rest', () => {
     const note = frameworkPortraitCutNoteHeight();
     expect(note).toBeCloseTo(6 + 10.5 * 1.4);
     // Four tight rows are 80: at 79 the list is cut, and the rows that stay (three at 60) must leave the note its room too.
-    expect(frameworkPortraitCutList(rows, 79, normal, tight)).toEqual({ rows: ['a', 'b'], cut: 2, tight: true });
-    expect(frameworkPortraitCutList(rows, 40 + note, normal, tight)).toEqual({ rows: ['a', 'b'], cut: 2, tight: true });
-    expect(frameworkPortraitCutList(rows, 39 + note, normal, tight)).toEqual({ rows: ['a'], cut: 3, tight: true });
-    expect(frameworkPortraitCutList([], 0, normal, tight)).toEqual({ rows: [], cut: 0, tight: false });
+    const cutTo = (kept: string[], cut: number) => ({ rows: kept, cut, tight: true, note: `+${cut} more on the framework's Framework tab in LFX One` });
+    expect(frameworkPortraitCutList(rows, 79, 'Framework', normal, tight)).toEqual(cutTo(['a', 'b'], 2));
+    expect(frameworkPortraitCutList(rows, 40 + note, 'Framework', normal, tight)).toEqual(cutTo(['a', 'b'], 2));
+    expect(frameworkPortraitCutList(rows, 39 + note, 'Framework', normal, tight)).toEqual(cutTo(['a'], 3));
+    // A room too small for any row still says what was cut: the note carries the count, the rows are none.
+    expect(frameworkPortraitCutList(rows, 10, 'Framework', normal, tight)).toEqual(cutTo([], 4));
+    expect(frameworkPortraitCutList([], 0, 'Framework', normal, tight)).toEqual({ rows: [], cut: 0, tight: false, note: '' });
   });
 
-  it('words the note from the count', () => {
-    expect(foundationMessagePrintCutNote(3)).toBe("+3 more in the framework's Sources tab in LFX One");
+  it('words the note from the count and the tab the rows live on', () => {
+    expect(foundationMessagePrintCutNote(3, 'Sources')).toBe("+3 more on the framework's Sources tab in LFX One");
+    expect(foundationMessagePrintCutNote(1, 'Framework')).toBe("+1 more on the framework's Framework tab in LFX One");
   });
 });
 
@@ -115,12 +125,50 @@ describe('the framework portrait book’s key numbers', () => {
     expect(pages[0].numbersTable).toEqual([]);
     expect(pages[0].intro).toContain('The figures the framework leans on');
     expect(pages[0].factsTop).toBe(tile.top + 2 * tile.height + tile.gap + tile.tableGap);
-    expect(pages[0].facts).toMatchObject({ cut: 0, tight: false });
+    expect(pages[0].facts).toMatchObject({ cut: 0, tight: false, note: '' });
     expect(pages[0].facts.rows).toHaveLength(3);
     // Five tiles take two rows too (three, then two); one tile takes one.
     expect(frameworkPortraitNumbersPages(view(5))[0].factsTop).toBe(534);
     expect(frameworkPortraitNumbersPages(view(1))[0].factsTop).toBe(378);
     expect(frameworkPortraitNumbersPages(view(0))[0]).toMatchObject({ tiles: [], numbersTable: [], factsTop: tile.top });
+  });
+
+  it('fits a tile’s figure to one line and its label to the room under it, stepping the sizes down, never clipping', () => {
+    // A third-width tile: (704 − 2 × 16) / 3 = 224 wide, 176 of content. Six seven-digit figures with a 30-character label.
+    const content = (704 - 2 * 16) / 3 - 2 * 24;
+    expect(content).toBe(176);
+    const label = 'members across five continents';
+    expect(label.length).toBe(30);
+    const row = (number: string) => ({ number, label });
+    const tiles = frameworkPortraitNumberTiles(Array.from({ length: 6 }, (_, index) => row(`${index + 1},200,000`)));
+    expect(tiles.every((tile) => tile.share === 3)).toBe(true);
+    // "1,200,000" at 54/500 is 9 × 54 × 0.55 = 267 px: too wide for 176, so the size steps down to the first whole px that
+    // holds nine characters (176 / (9 × 0.55) = 35.5 → 35).
+    expect(frameworkPortraitFigureSize('1,200,000', content)).toBe(35);
+    expect(tiles.map((tile) => tile.figureSize)).toEqual([35, 35, 35, 35, 35, 35]);
+    expect(frameworkPortraitFigureSize('41', content)).toBe(FRAMEWORK_PORTRAIT_TYPE.tileFigure.size);
+    // The label's room is 140 − 44 − 35 − 10 = 51: two lines of 14/1.4 (39.2) fit as written.
+    expect(tiles[0].labelSize).toBe(FRAMEWORK_PORTRAIT_TYPE.tileLabel.size);
+    expect(tiles[0].labelText).toBe(label);
+    // Under a 54 px figure the room is 32: a two-line label must come down (14 → 11 fits 30.8).
+    const short = frameworkPortraitNumberTiles(Array.from({ length: 6 }, () => row('41')));
+    expect(short[0].figureSize).toBe(54);
+    expect(short[0].labelSize).toBeLessThan(FRAMEWORK_PORTRAIT_TYPE.tileLabel.size);
+    expect(short[0].labelSize * 1.4 * 2).toBeLessThanOrEqual(140 - 44 - 54 - 10);
+    expect(short[0].labelText).toBe(label);
+    // A half-width tile (296 of content) holds the same figure at its full size.
+    expect(frameworkPortraitNumberTiles([row('1,200,000'), row('2')])[0].figureSize).toBe(54);
+    // The figure never goes under half its size: a very long figure stops there.
+    expect(frameworkPortraitFigureSize('1,234,567,890,123,456', content)).toBe(27);
+  });
+
+  it('keeps at least one row on every fresh page, so a row taller than a page still moves the table on', () => {
+    const tall = 'x\n'.repeat(80).trim();
+    const base = view(6, 1);
+    const pages = frameworkPortraitNumbersPages({ ...base, numbers: [...base.numbers, { number: '9', label: tall }, { number: '10', label: 'after' }] });
+    expect(pages.length).toBeGreaterThanOrEqual(2);
+    expect(pages.flatMap((page) => page.numbersTable.map((row) => row.number))).toEqual(['1000', '2000', '3000', '4000', '5000', '6000', '9', '10']);
+    expect(pages.some((page) => page.numbersTable.length === 1 && page.numbersTable[0].label === tall)).toBe(true);
   });
 
   it('past six prints the table of every figure, and continues it on more pages when a page fills, the facts last', () => {

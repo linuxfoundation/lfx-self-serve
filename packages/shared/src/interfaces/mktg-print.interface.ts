@@ -138,6 +138,8 @@ export interface FoundationMessagePrintCutList<T> {
   cut: number;
   /** True when the list is set in its tight type and padding (tried before any cut). */
   tight: boolean;
+  /** The muted line under a cut list, `+N more on the framework's <Framework | Sources> tab in LFX One`; '' when nothing was cut. */
+  note: string;
 }
 
 /** A goal page as the print lays it out: the value, key message and sound bite fitted, the proof rows cut to what fits, the served cards' lines fitted. */
@@ -167,10 +169,17 @@ export interface FoundationMessagePrintIcpPage {
   matrix: FoundationMessagePrintMatrixRow[];
 }
 
-/** One key number's tile: its share of a row (1 = the row, 2 = a half, 3 = a third; FRAMEWORK_PORTRAIT_TILE_SHARES); wide when it spans the row. */
+/**
+ * One key number's tile: its share of a row (1 = the row, 2 = a half, 3 = a third; FRAMEWORK_PORTRAIT_TILE_SHARES), wide when it spans
+ * the row; the figure's size stepped down until it sits on one line of the tile, and the label fitted (smaller, then cut at a sentence) to
+ * the room under it.
+ */
 export interface FoundationMessagePrintNumberTile extends FoundationMessageNumberRow {
   share: number;
   wide: boolean;
+  figureSize: number;
+  labelText: string;
+  labelSize: number;
 }
 
 /**
