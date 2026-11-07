@@ -30,7 +30,9 @@ describe('the Example usage page', () => {
     expect(layouts[1].querySelector('.kp-button--tiny')?.textContent).toBe('one.example.org');
     // The report cover's year is the recorded approval's; without one the line carries no year.
     expect(layouts[2].querySelector('.kp-usage-report-text')?.textContent).toBe('Project One annual report');
-    expect(layouts[3].querySelector('.kp-usage-announcement-text')?.textContent).toBe('New members join Project One');
+    // The announcement headline joins its last two words too; the report line keeps its year as a word of its own.
+    expect(layouts[3].querySelector('.kp-usage-announcement-text')?.textContent).toBe(mktgNoWidow('New members join Project One'));
+    expect(layouts[3].querySelector('.kp-usage-announcement-text')?.textContent).toBe('New members join Project\u00a0One');
     fixture.componentRef.setInput('approval', { approvedAt: '2026-11-06T10:00:00Z', approvedBy: null });
     await fixture.whenStable();
     expect(layouts[2].querySelector('.kp-usage-report-text')?.textContent).toBe('Project One annual report 2026');
