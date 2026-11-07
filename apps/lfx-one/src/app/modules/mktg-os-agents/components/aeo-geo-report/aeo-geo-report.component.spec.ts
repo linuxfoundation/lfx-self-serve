@@ -54,6 +54,9 @@ describe('AeoGeoReportComponent print and Markdown details', () => {
     // The live agent quotes evidence in Markdown code spans; a single newline is a line break, as the plain text's was.
     report.findings[0].detail = 'robots.txt contains `User-agent: *` and an empty `Disallow:` line.\nIt names no crawler.';
     report.recommendations[0].detail = 'Replace the `{"@graph":[]}` placeholder with an Organization node.';
+    // A caveat with plumbing (a field name, a slug) prints as its reader sentences; the raw text reaches neither the screen nor the PDF.
+    report.caveats[0] =
+      "The LFX record could not be read by the form's project_uid (access error). A name search returned an entitled record (slug example-project). No LFX metrics were queried.";
     fixture.componentRef.setInput('report', report);
     fixture.detectChanges();
     const element: HTMLElement = fixture.nativeElement;
@@ -65,6 +68,10 @@ describe('AeoGeoReportComponent print and Markdown details', () => {
     expect(findingDetail?.textContent).toContain('It names no crawler.');
     expect(element.querySelector('[data-testid="mktg-aeo-typed-recommendation-detail-0"] code')?.textContent).toBe('{"@graph":[]}');
     expect(element.querySelector('[data-testid="mktg-aeo-typed-findings"] p.whitespace-pre-line')).toBeNull();
+    const caveats = Array.from(element.querySelectorAll('[data-testid="mktg-aeo-typed-caveats"] li'), (item) => item.textContent?.trim());
+    expect(caveats[0]).toBe('The LFX project record could not be read directly. A name search returned an entitled record. No LFX metrics were queried.');
+    expect(caveats).toHaveLength(report.caveats.length);
+    expect(element.textContent).not.toMatch(/project_uid|slug |access error/);
     // Every detail renders restricted: no raw HTML, no image, from the agent's text.
     report.findings[1].detail = 'Unsafe <img src="https://tracker.example/pixel.gif"> <b>markup</b>.';
     fixture.componentRef.setInput('report', { ...report });

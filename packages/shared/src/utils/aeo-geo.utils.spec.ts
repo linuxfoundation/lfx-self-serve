@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { AEO_GEO_CATEGORIES, AEO_GEO_INTAKE_ERRORS, AEO_GEO_SECTIONS } from '../constants/aeo-geo.constants';
+import { AEO_GEO_CATEGORIES, AEO_GEO_INTAKE_ERRORS, AEO_GEO_READER_CAVEATS, AEO_GEO_SECTIONS } from '../constants/aeo-geo.constants';
 import type { AeoGeoEnvelope } from '../interfaces/aeo-geo.interface';
 import {
+  aeoGeoReaderCaveat,
   buildAeoGeoFormPayload,
   extractAeoGeoEnvelopeCandidates,
   isAeoGeoEnvelope,
@@ -318,5 +319,57 @@ describe('AEO/GEO envelope gates', () => {
     const { quality: ignored, ...named } = { ...envelope(), quality };
     expect(ignored).toBe(quality);
     expect(named).toEqual(envelope());
+  });
+});
+
+describe('AEO/GEO reader caveats', () => {
+  // The three shapes the live agent wrote for a project with an LFX scope, with example identifiers; the report prints none of them.
+  it('maps a failed third-party search to one reader sentence and keeps the audit sentences after it', () => {
+    const caveat =
+      "Web search (Example Search Service) returned 'You have exceeded your credits limit' for both planned queries ('Example Foundation open standards' and 'what is the Example Foundation'). " +
+      'No independent third-party coverage, rankings or search summaries were verified. The External authority score of 5 is a conservative placeholder based only on on-site evidence. It is not a measurement.';
+    expect(aeoGeoReaderCaveat(caveat)).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} No independent third-party coverage, rankings or search summaries were verified. ` +
+        'The External authority score of 5 is a conservative placeholder based only on on-site evidence. It is not a measurement.'
+    );
+  });
+
+  it('names no field, slug, uid or access error for an LFX record that could not be read, and keeps the clean sentences', () => {
+    const caveat =
+      "The LFX record could not be read by the form's project_uid (access error). " +
+      'A name search returned an entitled record (slug example-project, formation date 2025-01-01, website https://project.example, parent Example Foundation). ' +
+      'It was used only to confirm identity, not as evidence of crawlability or authority. No LFX metrics were queried.';
+    expect(aeoGeoReaderCaveat(caveat)).toBe(
+      `${AEO_GEO_READER_CAVEATS.lfx_record_unread} A name search returned an entitled record. ` +
+        'It was used only to confirm identity, not as evidence of crawlability or authority. No LFX metrics were queried.'
+    );
+  });
+
+  it('turns an HTTP status into words: refused by the site for 4xx, did not succeed otherwise', () => {
+    expect(aeoGeoReaderCaveat('A direct fetch of the Wikipedia article returned HTTP 403 (bot policy), so it was not audited.')).toBe(
+      'A direct fetch of the Wikipedia article was refused by the site, so it was not audited.'
+    );
+    expect(aeoGeoReaderCaveat('A fetch of the sitemap returned HTTP 503, so it was not audited.')).toBe(
+      'A fetch of the sitemap did not succeed, so it was not audited.'
+    );
+  });
+
+  it('drops a sentence that still carries an identifier and falls back to one sentence when nothing is left', () => {
+    expect(aeoGeoReaderCaveat('The lookup for id 7f3a9c21 failed. Metrics were not read.')).toBe('Metrics were not read.');
+    expect(aeoGeoReaderCaveat('Record 3f2504e0-4f89-11d3-9a0c-0305e82c3301 was unavailable.')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    expect(aeoGeoReaderCaveat("The provider said 'quota exhausted' for the project_name lookup.")).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    expect(aeoGeoReaderCaveat('   ')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+  });
+
+  it('passes audit content through byte for byte, abbreviations, URLs and header values included', () => {
+    for (const caveat of [
+      'Pages fetched were truncated at 20–60 KB, so lower-page content (e.g. the full About body and Projects grid) was not fully inspected. llms.txt and sitemap.xml were also truncated at 30 KB.',
+      '/md/about returns `x-robots-tag: noindex`. This seems intended, to avoid duplicating the HTML pages, and is not counted as a problem.',
+      'The homepage at https://project.example/ declares ai-train=yes. Both key pages declare index, follow.',
+      ...(aeoGeoEnvelopeFixture('project').report?.caveats ?? []),
+      ...(aeoGeoEnvelopeFixture('domain').report?.caveats ?? []),
+    ]) {
+      expect(aeoGeoReaderCaveat(caveat)).toBe(caveat);
+    }
   });
 });

@@ -65,7 +65,7 @@
   <section aria-label="Caveats" class="flex flex-col gap-3" data-testid="mktg-aeo-typed-caveats">
     <h3 class="text-xl font-semibold">Caveats &amp; unverified items</h3>
     <ul class="list-disc pl-5">
-      @for (caveat of report().caveats; track $index) {
+      @for (caveat of caveats(); track $index) {
         <li>{{ caveat }}</li>
       }
     </ul>

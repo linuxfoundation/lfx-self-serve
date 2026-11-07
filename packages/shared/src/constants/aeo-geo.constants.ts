@@ -35,3 +35,11 @@ export const AEO_GEO_INTAKE_ERRORS = {
   domain: 'Enter a valid domain or website URL, e.g. project.example or https://project.example/. Public website names only.',
   key_pages: 'Leave blank to let the agent choose, or enter two to five different absolute http(s) URLs, one per line. Public website names only.',
 } as const;
+/** Reader sentences for the agent's caveats: the report never prints field names, slugs, uids or a provider's raw error. */
+export const AEO_GEO_READER_CAVEATS = {
+  search_unavailable: 'Third-party search was not available for this run.',
+  lfx_record_unread: 'The LFX project record could not be read directly.',
+  fetch_refused: 'was refused by the site',
+  fetch_failed: 'did not succeed',
+  inputs_unavailable: "Some of the audit's inputs were unavailable for this run.",
+} as const;

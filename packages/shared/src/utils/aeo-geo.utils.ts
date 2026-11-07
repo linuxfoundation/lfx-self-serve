@@ -14,6 +14,7 @@ import {
   AEO_GEO_HTTP_URL_PATTERN,
   AEO_GEO_INTAKE_ERRORS,
   AEO_GEO_MAX_DOCUMENT_BYTES,
+  AEO_GEO_READER_CAVEATS,
   AEO_GEO_SECTIONS,
 } from '../constants/aeo-geo.constants';
 import type {
@@ -319,6 +320,58 @@ export function aeoGeoHttpLink(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+// A boundary is . ! or ? (with a closing quote or bracket) before whitespace and a capital, so "e.g. the" and URLs stay whole.
+const CAVEAT_SENTENCE_BOUNDARY = /([.!?]['"\u201d)\]]*)\s+(?=[A-Z])/g;
+const CAVEAT_IDENTIFIERS = [
+  /\b[a-z]+(?:_[a-z0-9]+)+\b/, // a snake_case field name
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i, // a UUID
+  /\bslug\s+\S+/i,
+  /\b(?:uid|id)\b\s*[:=]?\s*['"\u201c]?[a-z0-9_-]*\d[a-z0-9_-]*/i, // uid/id followed by a value
+  /\b(?:returned|error|said)\b\s*:?\s*['"\u201c]/i, // a provider's words, quoted raw
+];
+const CAVEAT_HTTP_STATUS = /returned HTTP (\d{3})(?:\s*\([^()]*\))?/;
+const CAVEAT_PARENTHETICAL = /\s*\([^()]*\)/g;
+
+/**
+ * The agent's caveats as reader sentences (web view and print): the known shapes map to fixed
+ * wording, a parenthetical that carries an identifier is dropped, and a sentence that still names
+ * a field, slug, uid or raw provider error is left out. Audit content such as a header value passes verbatim.
+ */
+export function aeoGeoReaderCaveat(caveat: string): string {
+  const sentences = caveat
+    .trim()
+    .replace(CAVEAT_SENTENCE_BOUNDARY, '$1\u0000')
+    .split('\u0000')
+    .map((sentence) => readerSentence(sentence.trim()))
+    .filter((sentence) => sentence.length > 0 && !carriesIdentifier(sentence));
+  return sentences.length ? sentences.join(' ') : AEO_GEO_READER_CAVEATS.inputs_unavailable;
+}
+
+function readerSentence(sentence: string): string {
+  if (/\bsearch\b/i.test(sentence) && /\breturned\s+['"\u201c]/i.test(sentence)) {
+    return AEO_GEO_READER_CAVEATS.search_unavailable;
+  }
+  if (/LFX record could not be read/i.test(sentence)) {
+    return AEO_GEO_READER_CAVEATS.lfx_record_unread;
+  }
+  const status = sentence.match(CAVEAT_HTTP_STATUS);
+  if (status) {
+    return sentence.replace(CAVEAT_HTTP_STATUS, status[1].startsWith('4') ? AEO_GEO_READER_CAVEATS.fetch_refused : AEO_GEO_READER_CAVEATS.fetch_failed);
+  }
+  const kept = sentence.replace(CAVEAT_PARENTHETICAL, (parenthetical) => (carriesIdentifier(parenthetical) ? '' : parenthetical));
+  // Only a sentence that lost a parenthetical has its whitespace normalised; a clean one passes byte for byte.
+  return kept === sentence
+    ? sentence
+    : kept
+        .replace(/\s+([.,;:!?])/g, '$1')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
+function carriesIdentifier(text: string): boolean {
+  return CAVEAT_IDENTIFIERS.some((pattern) => pattern.test(text));
 }
 
 /** Frozen report fields are required; additional presentation fields remain forward compatible. */

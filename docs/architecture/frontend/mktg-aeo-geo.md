@@ -88,8 +88,12 @@ no browser input becomes a report sidecar. The guard mirrors the frozen min-leng
 `AeoGeoReportComponent` for both web and print. A finding's or recommendation's
 detail renders through the shared `MarkdownRendererComponent` in restricted mode,
 so the agent's inline code spans render as code (not as literal backticks) on both
-surfaces, in the report's own type; caveats and scorecard summaries stay plain
-text. The print of a typed report opens with the report's title and facts, then
+surfaces, in the report's own type; scorecard summaries stay plain text, and
+each caveat renders as the reader sentences of `aeoGeoReaderCaveat` (shared
+utils), which map the agent's known shapes (a failed third-party search, an LFX
+record it could not read, an HTTP status) to fixed wording and leave out any
+sentence that still names a field, slug, uid or raw provider error — the stored
+report is unchanged. The print of a typed report opens with the report's title and facts, then
 the score card, then the report without a second headline, and its headings,
 scorecard rows, findings, recommendations and list items carry CSS Fragmentation
 `break-after: avoid` / `break-inside: avoid` so no heading is orphaned and no
