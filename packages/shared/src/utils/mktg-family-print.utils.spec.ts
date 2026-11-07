@@ -71,7 +71,7 @@ describe('mktgFamilyPrintDocument', () => {
       agentKey: 'brand-kit',
       number: '02',
       title: 'Brand kit',
-      summary: 'The logo and its rules, colour and contrast, type, iconography and imagery, example usage, and the voice in brief.',
+      summary: 'The logo and its rules, color and contrast, type, iconography and imagery, example usage, and the voice in brief.',
       versionLabel: 'V4.0',
       approvedLabel: '6 Nov 2026',
       dataLabel: 'figures as of 28 Oct 2026',

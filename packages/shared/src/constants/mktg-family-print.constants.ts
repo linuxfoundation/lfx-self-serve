@@ -146,10 +146,9 @@ export const MKTG_FAMILY_PRINT_COPY = {
   numberConflict: 'The framework’s key numbers say [Number] [Label]; the [Document] says “[Sentence]”',
   /** The brand-line conflict: `[Line]` is the kit's, `[Tagline]` the framework's. */
   brandLineConflict: 'The brand kit carries “[Line]”; the framework’s tagline is “[Tagline]”.',
-  /** A colour conflict: `[Values]` lists each source's value, `[Chosen]` is the kit's. */
-  /** A colour the kit read with two values: `[Values]` is `#FF702D on the brand page and #FF7D2D in the site css`. */
+  /** A color the kit read with two values: `[Values]` is `#FF702D from the brand page and #FF7D2D from the site css`. */
   colorConflict: 'The [Kit] reads [Name] as [Values]; it keeps [Chosen].',
-  /** One of a colour's readings: `[Hex]` and where the kit read it (omitted when the record names no readable source). */
+  /** One of a color's readings: `[Hex]` and where the kit read it (omitted when the record names no readable source). */
   colorReading: '[Hex] from the [Source]',
   /** The document to re-run after a conflict with the framework: `[Document]`. */
   rerunAgainstFramework: 'Re-run the [Document] so it reads the approved framework.',
