@@ -151,11 +151,11 @@ describe('mktgFamilyPrintFaqPages', () => {
     );
   }
 
-  it('fills the two columns by height, in order, a group split where its column ends with its heading repeated', () => {
+  it('deals the two columns by height, in order, a group split where its column ends with its heading repeated', () => {
     expect(shape(mktgFamilyPrintFaqPages(faqGroups([2, 3, 3, 2])))).toEqual([
       [
-        ['0.0H', '0.1', '1.0H', '1.1', '1.2', '2.0H'],
-        ['2.1H', '2.2', '3.0H', '3.1'],
+        ['0.0H', '0.1', '1.0H', '1.1', '1.2'],
+        ['2.0H', '2.1', '2.2', '3.0H', '3.1'],
       ],
     ]);
     // Twenty questions need two pages (the first is full at fourteen); once split, the pages and their columns are balanced.
@@ -227,8 +227,37 @@ describe('mktgFamilyPrintFaqPages', () => {
     for (const page of pages) for (const column of page.columns) if (column.length) expect(column[0].heading).toBe(true);
   });
 
+  it('balances few questions across both columns of a single page, a group heading staying with its first question', () => {
+    // The minimal fixture's four and the logo-less fixture's seven: never the left column alone.
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([4])))).toEqual([
+      [
+        ['0.0H', '0.1'],
+        ['0.2H', '0.3'],
+      ],
+    ]);
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([3, 4])))).toEqual([
+      [
+        ['0.0H', '0.1', '0.2', '1.0H'],
+        ['1.1H', '1.2', '1.3'],
+      ],
+    ]);
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([2, 2])))).toEqual([
+      [
+        ['0.0H', '0.1'],
+        ['1.0H', '1.1'],
+      ],
+    ]);
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([1])))).toEqual([[['0.0H'], []]]);
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([2])))).toEqual([[['0.0H'], ['0.1H']]]);
+  });
+
   it('skips empty groups, prints no page with no questions, and sets an entry taller than a column alone', () => {
-    expect(shape(mktgFamilyPrintFaqPages(faqGroups([2, 0, 3])))).toEqual([[['0.0H', '0.1', '2.0H', '2.1', '2.2'], []]]);
+    expect(shape(mktgFamilyPrintFaqPages(faqGroups([2, 0, 3])))).toEqual([
+      [
+        ['0.0H', '0.1', '2.0H'],
+        ['2.1H', '2.2'],
+      ],
+    ]);
     expect(mktgFamilyPrintFaqPages(faqGroups([0, 0]))).toEqual([]);
     expect(mktgFamilyPrintFaqPages([])).toEqual([]);
     const tall = faqGroups([3], 'A long answer. '.repeat(400));

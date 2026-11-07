@@ -126,8 +126,8 @@ export function mktgFamilyPrintFaqEntryHeight(entry: MktgFamilyPrintFaqPlanGroup
  * other; when both are full the next page opens, a group split where its
  * column ended (its heading repeats). An entry taller than a column stands
  * alone in one. Empty groups are not printed. No page with no questions.
- * A second page opens only when the first is full; when it does, the pages
- * are balanced (mktgFamilyPrintFaqBalancedPages).
+ * A second page opens only when the first is full; the columns of every
+ * page, and the pages, are then balanced (mktgFamilyPrintFaqBalancedPages).
  */
 export function mktgFamilyPrintFaqPages(groups: MktgFamilyPrintFaqPlanGroup[]): MktgFamilyPrintFaqPage[] {
   const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
@@ -166,8 +166,10 @@ export function mktgFamilyPrintFaqPages(groups: MktgFamilyPrintFaqPlanGroup[]): 
     });
   });
   open();
-  // More than one page: the entries are re-dealt so the pages, and each page's columns, hold about the same height (8 + 1 → 5 + 4).
-  return pages.length > 1 ? mktgFamilyPrintFaqBalancedPages(groups, pages.length) : pages;
+  // The fill sets the page count (a second page only when the first is full); the entries are then re-dealt so the pages,
+  // and each page's two columns, hold about the same height (8 + 1 → 5 + 4; four questions → 2 + 2, never the left alone).
+  const dealt = mktgFamilyPrintFaqBalancedPages(groups, pages.length);
+  return dealt.length === pages.length ? dealt : pages;
 }
 
 /**
@@ -618,10 +620,10 @@ interface MktgFamilyPrintFaqDealItem {
 }
 
 /**
- * The FAQ's pages re-dealt by height once the fill needs more than one: the
- * entries, in order, shared across `pageCount` pages so each holds about the
- * same height, and across each page's two columns the same way (eight and
- * one become five and four, laid three/two and two/two). A column never
+ * The FAQ's pages re-dealt by height: the entries, in order, shared across
+ * `pageCount` pages so each holds about the same height, and across each
+ * page's two columns the same way (eight and one become five and four, laid
+ * three/two and two/two; four on one page lie two and two). A column never
  * exceeds its budget, except for one entry taller than a column, which
  * stands alone; what a page cannot hold goes on to the next, so nothing is
  * cut. A group split by a page or a column repeats its heading.
