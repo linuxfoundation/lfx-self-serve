@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_PRINT_PAGE_MARGINS_CLASS, MKTG_PRINT_REVERSED_FILTER } from '@lfx-one/shared/constants';
+import { MKTG_PRINT_REVERSED_FILTER } from '@lfx-one/shared/constants';
+import { MktgPortraitBook } from '@lfx-one/shared/interfaces';
 import { buildBrandKitBookView, mktgPrintBrand } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MktgPrintService } from '@services/mktg-print.service';
-import { expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MktgBrandKitPrintComponent } from './mktg-brand-kit-print.component';
 
 async function setup() {
@@ -24,69 +25,127 @@ async function setup() {
   return { kit, view, brand, fixture, root, print };
 }
 
-it('prints five native portrait chapters with branded heads, real SVG logo assets and no landscape plates', async () => {
-  const { root, view, print } = await setup();
-  expect(Array.from(root.querySelectorAll('h2')).map((heading) => heading.textContent?.trim())).toEqual([
-    '1 Logo system',
-    '2 Colour',
-    '3 Typography',
-    '4 Visual',
-    '5 Voice in brief',
-  ]);
-  expect(root.querySelectorAll('.kit-chapter')).toHaveLength(5);
-  const heads = root.querySelectorAll('[data-testid="mktg-print-running-head"]');
-  expect(heads).toHaveLength(5);
-  heads.forEach((head) => {
-    expect(head.textContent).toContain('Synthetic project Brand kit');
-    expect(head.textContent).not.toContain('Project One');
-    expect(head.textContent).not.toContain('02');
+const FRAMES_B1 = [
+  'cover',
+  'contents',
+  'logo-system',
+  'logo-colorways',
+  'logo-clear-space',
+  'logo-symbol',
+  'logo-partnership',
+  'logo-watchouts',
+  'color-palette',
+];
+
+describe('the portrait book', () => {
+  it('prints the planned frames in the mock’s order on the portrait root, each named for QA, then the chapters still flowing', async () => {
+    const { root, view, print } = await setup();
+    const book = root.querySelector<HTMLElement>('[data-testid="mktg-brand-kit-print"]');
+    expect(book?.classList.contains('lfx-mktg-portrait')).toBe(true);
+    expect(book?.getAttribute('data-revision')).toBe('V3.0');
+    const frames = Array.from(book?.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]') ?? []);
+    expect(frames.map((frame) => frame.getAttribute('data-page-id'))).toEqual(FRAMES_B1);
+    expect(frames.map((frame) => frame.getAttribute('data-page'))).toEqual(FRAMES_B1.map((_, index) => String(index + 1)));
+    expect(frames.map((frame) => frame.getAttribute('data-section'))).toEqual([
+      'Cover',
+      'Contents',
+      '01 Logo',
+      '01 Logo',
+      '01 Logo',
+      '01 Logo',
+      '01 Logo',
+      '02 Color',
+    ]);
+    // The band on each chapter's first page; the running head's right text is the document's name only; the footer is the project line.
+    expect(frames.map((frame) => frame.querySelector('[data-testid="mktg-portrait-page-band"]') !== null)).toEqual([
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+    ]);
+    frames.slice(1).forEach((frame) => {
+      expect(frame.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent).toBe('Synthetic project brand kit');
+      expect(frame.querySelector('[data-testid="mktg-portrait-page-foot"]')?.textContent).toContain('Synthetic project · a Linux Foundation project');
+      expect(frame.textContent).not.toContain('V3.0');
+    });
+    frames.forEach((frame) => expect(frame.style.getPropertyValue('--pp-dark')).toBe(view.dark));
+    // The cover: the version and date on the strip, the brand line in the lede, the reversed lockup.
+    const cover = frames[0];
+    expect(cover.querySelector('[data-testid="mktg-portrait-cover-title"]')?.textContent).toBe('Brand Kit');
+    expect(cover.querySelector('[data-testid="mktg-portrait-cover-lede"]')?.textContent).toContain(
+      'Open standards for one computing. Logos, color, type and usage'
+    );
+    expect(cover.querySelector('[data-testid="mktg-portrait-cover-strip"]')?.textContent).toContain('one.example.org · V3.0 · October 2026');
+    expect(cover.querySelector('[data-testid="mktg-portrait-cover-logo"]')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    // The contents page lists the plan's pages, the Sources page at 15 and the back cover at 16.
+    expect(frames[1].querySelectorAll('.kp-contents-row')).toHaveLength(14);
+    expect(frames[1].querySelector('[data-testid="brand-kit-contents-approval"]')).toBeNull();
+    // The chapters not yet on the grammar still flow after the frames, with their running heads.
+    const chapters = root.querySelector('[data-testid="mktg-brand-kit-print-chapters"]');
+    expect(Array.from(chapters?.querySelectorAll('h2') ?? []).map((heading) => heading.textContent?.trim())).toEqual([
+      '2 Colour contrast',
+      '3 Typography',
+      '4 Visual',
+      '5 Voice in brief',
+    ]);
+    expect(chapters?.querySelectorAll('.kit-chapter > tfoot')).toHaveLength(0);
+    expect(root.querySelectorAll('.lfx-brand-kit-book, .lfx-brand-kit-page, canvas, iframe')).toHaveLength(0);
+    expect(print.ensureFontStylesheet).toHaveBeenCalledWith(view.fontUrl);
   });
-  expect(root.textContent).not.toContain('V3.0');
-  expect(root.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V3.0');
-  expect(root.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
-  // The page's room: the top repeated per page by the chapter's head (its padding), the bottom once per chapter on its
-  // last row — never a footer group, for which Chromium prints an empty page per table. No @page margin remains.
-  expect(root.querySelectorAll('.kit-chapter > tfoot')).toHaveLength(0);
-  const lastCells = root.querySelectorAll<HTMLElement>('.kit-chapter > tbody > tr:last-child > td');
-  const headCell = root.querySelector<HTMLElement>('.kit-chapter > thead > tr > td');
-  if (lastCells.length !== 5 || !headCell) throw new Error('Missing synthetic kit chapter room');
-  // 0.55in (52.8px at 96dpi, jsdom's computed value); the last row keeps its 10pt (13.33px) under it.
-  expect(getComputedStyle(headCell).paddingTop).toBe('52.8px');
-  lastCells.forEach((cell) => expect(getComputedStyle(cell).paddingBottom).toBe('66.1333px'));
-  // On the page margins (WebKit prints a table's head once) the margin is the room and the chapters give none.
-  document.body.classList.add(MKTG_PRINT_PAGE_MARGINS_CLASS);
-  try {
-    expect(getComputedStyle(headCell).paddingTop).toBe('0px');
-    expect(getComputedStyle(lastCells[0]).paddingBottom).toBe('13.3333px');
-  } finally {
-    document.body.classList.remove(MKTG_PRINT_PAGE_MARGINS_CLASS);
-  }
-  expect(root.querySelectorAll('lfx-mktg-print-chapter-header')).toHaveLength(5);
-  root.querySelectorAll<HTMLElement>('lfx-mktg-print-chapter-header').forEach((header) => {
-    expect(header.style.getPropertyValue('--mfp-chapter-accent')).toBe(view.accent);
+
+  it('inside the family takes the book: no cover, contents or back cover, pages numbered from the book, the family’s head and foot, no band', async () => {
+    const { root, fixture } = await setup();
+    const book: MktgPortraitBook = { inFamily: true, headRight: 'Synthetic project positioning & brand', footLeft: 'Synthetic family foot', firstPage: 17 };
+    fixture.componentRef.setInput('book', book);
+    fixture.componentRef.setInput('number', '2');
+    await fixture.whenStable();
+    const frames = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]'));
+    expect(frames.map((frame) => frame.getAttribute('data-page-id'))).toEqual(FRAMES_B1.slice(2));
+    expect(frames.map((frame) => frame.getAttribute('data-page'))).toEqual(['17', '18', '19', '20', '21', '22']);
+    expect(frames[0].getAttribute('data-section')).toBe('Brand kit · Logo');
+    expect(frames[5].getAttribute('data-section')).toBe('Brand kit · Color');
+    frames.forEach((frame) => {
+      expect(frame.querySelector('[data-testid="mktg-portrait-page-band"]')).toBeNull();
+      expect(frame.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent).toBe('Synthetic project positioning & brand');
+      expect(frame.querySelector('[data-testid="mktg-portrait-page-foot"]')?.textContent).toContain('Synthetic family foot');
+    });
+    expect(frames[0].querySelector('[data-testid="mktg-portrait-page-number"]')?.textContent).toBe('17');
+    expect(root.querySelector('[data-testid="mktg-portrait-cover-title"]')).toBeNull();
+    // The flowing remainder keeps the family's document prefix.
+    expect(root.querySelector('[data-testid="mktg-brand-kit-print-chapters"] h2')?.textContent?.trim()).toBe('2.2 Colour contrast');
   });
-  expect(root.querySelector('[data-testid="kit-print-lockups"] img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
-  expect(root.querySelectorAll('.lfx-brand-kit-book, .lfx-brand-kit-page, canvas, iframe')).toHaveLength(0);
-  expect(print.ensureFontStylesheet).toHaveBeenCalledWith(view.fontUrl);
+
+  it('with the family’s document number and no book yet, prints inside the family: no cover, the family’s name in the head', async () => {
+    const { root, fixture } = await setup();
+    fixture.componentRef.setInput('number', '2');
+    await fixture.whenStable();
+    const frames = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]'));
+    expect(frames.map((frame) => frame.getAttribute('data-page-id'))).toEqual(FRAMES_B1.slice(2));
+    expect(frames[0].getAttribute('data-page')).toBe('1');
+    expect(frames[0].querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent).toBe('Synthetic project positioning & brand');
+    expect(root.textContent).not.toContain('V3.0');
+  });
+
+  it('prints the approval line on the contents page from the approval it is given', async () => {
+    const { root, fixture } = await setup();
+    fixture.componentRef.setInput('approval', { approvedAt: '2026-11-06T10:00:00Z', approvedBy: { name: 'Synthetic Approver' } });
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="brand-kit-contents-approval"]')?.textContent).toBe('Approved 6 Nov 2026 by Synthetic Approver');
+  });
 });
 
-it('renders all chapter data as text and keeps source type metrics beside portrait-sized specimens', async () => {
+it('renders the flowing chapters’ data as text and keeps source type metrics beside portrait-sized specimens', async () => {
   const { root, kit, brand } = await setup();
-  expect(root.textContent).toContain('Screen: 32 px · Print: 10 mm · Symbol: 16 px');
-  for (const text of [kit.chapters.logo.clear_space, kit.chapters.logo.symbol, ...kit.chapters.logo.partnership, ...kit.chapters.logo.watchouts]) {
-    expect(root.querySelector('[data-testid="kit-print-logo"]')?.textContent).toContain(text);
-  }
-  expect(root.querySelectorAll('[data-testid="kit-print-colorways"] tbody tr')).toHaveLength(kit.chapters.logo.colorways.length);
-  expect(root.querySelectorAll('[data-testid="kit-print-colorways"] tbody img')).toHaveLength(kit.chapters.logo.colorways.length);
-  expect(root.querySelector('[data-testid="kit-print-partnership"]')?.textContent).toContain('Partnership lockups');
-  expect(root.querySelector('[data-testid="kit-print-watchouts"]')?.textContent).toContain('Watch-outs');
-  kit.chapters.color.palette.forEach((entry) => expect(root.querySelector('[data-testid="kit-print-palette"]')?.textContent).toContain(entry.hex));
   expect(root.querySelector('[data-testid="kit-print-contrast"]')?.textContent).toContain('8.3:1');
   const specimens = root.querySelectorAll<HTMLElement>('.kit-specimen');
   expect(specimens).toHaveLength(kit.chapters.type.scale.length);
   expect(specimens[0].style.fontSize).toBe('32pt');
   expect(root.querySelector('[data-testid="kit-print-type"]')?.textContent).toContain('500 · 64/72 px');
-  expect(root.querySelector<HTMLElement>('[data-testid="mktg-brand-kit-print"]')?.style.getPropertyValue('--mfp-font')).toBe(brand.fontStack);
+  expect(root.querySelector<HTMLElement>('[data-testid="mktg-brand-kit-print-chapters"]')?.style.getPropertyValue('--mfp-font')).toBe(brand.fontStack);
   expect(root.querySelector('[data-testid="kit-print-visual"]')?.textContent).toContain(kit.chapters.visual.icons.recommended);
   // The board's print layout for Iconography, on the Visual chapter's first page by itself: the block ends its page
   // (break-after, never break-before, which would leave a page holding only the title); under the title, the rules
@@ -144,36 +203,6 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(root.querySelectorAll('[data-testid="kit-print-usage"]')).toHaveLength(kit.chapters.usage.examples.length);
   expect(root.querySelector('[data-testid="kit-print-voice"]')?.textContent).toContain(kit.chapters.voice.umbrella);
   kit.chapters.voice.attributes.forEach((attribute) => expect(root.textContent).toContain(attribute.line));
-});
-
-it('compacts the logo chapter for Letter while keeping each tail block whole', async () => {
-  const { root } = await setup();
-  const partnership = root.querySelector<HTMLElement>('[data-testid="kit-print-partnership"]');
-  const watchouts = root.querySelector<HTMLElement>('[data-testid="kit-print-watchouts"]');
-  if (!partnership || !watchouts) throw new Error('Missing synthetic logo tail blocks');
-  expect(partnership.tagName).toBe('TR');
-  expect(watchouts.tagName).toBe('TR');
-  expect(partnership.nextElementSibling).toBe(watchouts);
-  for (const block of [partnership, watchouts]) {
-    expect(getComputedStyle(block).breakInside).toBe('avoid');
-    const list = block.querySelector('ul');
-    if (!list) throw new Error('Missing synthetic tail list');
-    expect(getComputedStyle(list).columnCount).toBe(block === watchouts ? '3' : '2');
-  }
-  const lockup = root.querySelector<HTMLElement>('[data-testid="kit-print-lockups"] .kit-logo');
-  const colourway = root.querySelector<HTMLElement>('.kit-colourway img');
-  const cell = root.querySelector<HTMLElement>('[data-testid="kit-print-logo"] > tbody > tr > td');
-  if (!lockup || !colourway || !cell) throw new Error('Missing synthetic compact logo structure');
-  for (const [image, mm] of [
-    [lockup, 16],
-    [colourway, 6],
-  ] as const) {
-    const value = getComputedStyle(image).maxHeight;
-    const px = value.endsWith('mm') ? (Number.parseFloat(value) * 96) / 25.4 : Number.parseFloat(value);
-    expect(px).toBeCloseTo((mm * 96) / 25.4, 3);
-  }
-  expect(Number.parseFloat(getComputedStyle(cell).paddingBottom)).toBeLessThan(10);
-  expect(root.querySelector('.kit-rule-grid')).toBeNull();
 });
 
 it('keeps up to twelve contrast rows whole and longer fragments in groups of at least three', async () => {
@@ -280,10 +309,17 @@ it('omits missing logo slots and colourway samples without empty boxes or apolog
   });
   fixture.componentRef.setInput('brand', { ...brand, logoOnDark: null, logoOnLight: null });
   await fixture.whenStable();
-  expect(root.querySelector('[data-testid="kit-print-lockups"]')).toBeNull();
-  expect(root.querySelector('[data-testid="kit-print-colorways"]')).toBeNull();
-  expect(root.querySelector('.kit-colourway')).toBeNull();
+  // A kit without logo files keeps the Logo chapter's first page only: cover, contents, Logo system, palette.
+  const frames = Array.from(root.querySelectorAll('[data-testid="lfx-mktg-portrait-page"]'));
+  expect(frames.map((frame) => frame.getAttribute('data-page-id'))).toEqual(['cover', 'contents', 'logo-system', 'color-palette']);
+  expect(root.querySelector('[data-testid="brand-kit-logo-system-none"]')?.textContent).toBe('No logo files uploaded yet');
+  expect(root.querySelector('[data-testid="brand-kit-logo-system-files"]')).toBeNull();
+  expect(root.querySelector('[data-testid="lfx-mktg-portrait-page"] img')).toBeNull();
+  expect(root.querySelector('[data-testid="brand-kit-logo-system-hero"]')).toBeNull();
+  expect(root.querySelectorAll('[data-testid="brand-kit-colorways-tiles"] > div')).toHaveLength(0);
+  expect(root.querySelector('[data-testid="mktg-portrait-cover-logo"]')).toBeNull();
   expect(root.textContent).not.toContain('SVG supplied');
+  expect(root.textContent).not.toContain('[');
 });
 
 it('renders two-up usage samples with ground, logo and the current server-supplied brand line', async () => {

@@ -1,0 +1,72 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-logo-system-intro">{{ v.logo.system }}</p>
+  @if (v.logos.primary?.src) {
+    <div [lfxPpRect]="[x, 232, w]">
+      <div class="kp-hero h-[240px]" data-testid="brand-kit-logo-system-hero"><lfx-mktg-brand-kit-artwork [view]="v" [height]="84" /></div>
+      <div class="pp-cap">Primary · horizontal lockup</div>
+    </div>
+  }
+  @if (hasFiles()) {
+    <div class="kp-tiles" [lfxPpRect]="[x, 516, w]" data-testid="brand-kit-logo-system-tiles">
+      @if (hasSymbol()) {
+        <div>
+          <div class="pp-tile kp-tile"><lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" [height]="84" /></div>
+          <div class="pp-cap">{{ symbolSupplied() ? 'Symbol · supplied file' : 'Symbol · cropped from the lockup' }}</div>
+        </div>
+      }
+      @if (v.logos.primary?.src) {
+        <div>
+          <div class="pp-tile pp-tile--dark kp-tile"><lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="40" /></div>
+          <div class="pp-cap">{{ reversedSupplied() ? 'Reversed · supplied file' : 'Reversed · derived from the horizontal file' }}</div>
+        </div>
+      }
+      @if (hasStacked()) {
+        <div>
+          <div class="pp-tile kp-tile"><lfx-mktg-brand-kit-artwork [view]="v" kind="stacked" [height]="60" /></div>
+          <div class="pp-cap">Stacked lockup</div>
+        </div>
+      } @else if (hasSymbol()) {
+        <div>
+          <div class="pp-tile pp-tile--mist kp-tile"><lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" [height]="84" /></div>
+          <div class="pp-cap">Symbol on light tint · same file</div>
+        </div>
+      }
+    </div>
+    <div [lfxPpRect]="[x, 716, w]">
+      <div class="pp-lab pp-lab--dark">Logo files</div>
+      <table class="kp-table" data-testid="brand-kit-logo-system-files">
+        <thead>
+          <tr>
+            <th class="w-[150px]">Name</th>
+            <th class="w-[70px]">Format</th>
+            <th class="w-[120px]">Colour variant</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of files(); track row.slot) {
+            <tr [attr.data-slot]="row.slot">
+              <td>{{ row.name }}</td>
+              <td>{{ row.format }}</td>
+              <td>{{ row.variant }}</td>
+              <td>{{ row.source }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  } @else {
+    <p class="pp-body" [lfxPpRect]="[x, 232, w]" data-testid="brand-kit-logo-system-none">No logo files uploaded yet</p>
+  }
+</lfx-mktg-portrait-page>

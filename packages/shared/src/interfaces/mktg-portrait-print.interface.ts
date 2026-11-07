@@ -57,6 +57,16 @@ export interface MktgPortraitPlanPage {
   title: string;
 }
 
+/**
+ * A plan page placed in its book: its book page number, the section label
+ * as the running head prints it, and whether it carries the chapter band.
+ */
+export interface MktgPortraitPlacedPage extends MktgPortraitPlanPage {
+  number: number;
+  label: string;
+  band: boolean;
+}
+
 /** A logo as a portrait cover draws it. */
 export type MktgPortraitLogo = MktgPrintLogo;
 

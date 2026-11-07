@@ -107,17 +107,20 @@ export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locato
 }
 
 /**
- * A document of fixed portrait frames (the framework's book) prints on Letter with no margin in both engines: the
- * frame's unnamed rule and the frames' own named page, restated with the same values; the root lifts the flowing
- * documents' side padding, so every frame sits at the page's edge, 816 by 1056 px.
+ * A document of fixed portrait frames prints on US Letter with no margin in both engines: the frame's unnamed rule and
+ * the frames' own named page, restated with the same values, and never the page margins (a frame is the whole sheet).
+ * Given a root, every one of its frames sits at the page's edge, 816 by 1056 px.
+ * Temporary union of the framework's and the kit's helpers until F's fix head settles the signature.
  */
-export async function expectMktgPortraitPageSetup(frame: FrameLocator, root: Locator): Promise<void> {
+export async function expectMktgPortraitPageSetup(frame: FrameLocator, root?: Locator): Promise<void> {
   const setup = MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
   expect(setup).toBe('size: 8.5in 11in; margin: 0;');
-  expect(await frame.locator('head style').last().textContent()).toBe(`@page { ${setup} }\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
+  expect(await frame.locator('head style').last().textContent()).toBe(`@page { ${setup} }
+@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
+  await expect(frame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`)).toHaveCount(0);
+  if (!root) return;
   await expect(root).toHaveCSS('padding-left', '0px');
-  const pages = root.locator(':scope > section.fwp-page');
-  for (const page of await pages.all()) {
+  for (const page of await root.getByTestId('lfx-mktg-portrait-page').all()) {
     const box = await page.boundingBox();
     expect({ x: Math.round(box?.x ?? -1), width: Math.round(box?.width ?? 0), height: Math.round(box?.height ?? 0) }).toEqual({
       x: 0,
@@ -129,6 +132,7 @@ export async function expectMktgPortraitPageSetup(frame: FrameLocator, root: Loc
   }
 }
 
+/** A viewport-height cover in the laid-out frame fills the page: the 1px frame left it at its content's height. */
 /**
  * A table box's computed length in px, to compare to a tenth: Chromium reports a table row's laid-out height snapped to
  * 1/64 px (52.7969px for 0.55in) and WebKit serialises 10pt with six decimals (13.333333px), so an exact string fails.

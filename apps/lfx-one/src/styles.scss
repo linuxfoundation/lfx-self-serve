@@ -13,6 +13,7 @@
 /* The portrait print grammar (fixed Letter frames, `pp-*`): global for the same reason, its type helpers
    are set on content a document projects into the frame. */
 @use 'app/modules/mktg-os-agents/components/mktg-portrait/mktg-portrait';
+@use 'app/modules/mktg-os-agents/mktg-brand-kit-print/mktg-brand-kit-pages';
 /* LFX UI Library tokens (generated); see shared/uikit/README.md */
 @use 'styles/ui-tokens.css';
 
