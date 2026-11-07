@@ -734,6 +734,19 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(frame('message-house')?.querySelector('.fwp-pillar-message')).toBeNull();
   });
 
+  it('sets the three statements at one size, the smallest any card needs, never one card shrunk alone (the editor’s read)', async () => {
+    // The logo-less record's shape: a vision that runs long beside a short mission and positioning.
+    const long = 'A long sentence about the project and the many things it does for the people who use it every day. ';
+    const content: FoundationMessageContent = { ...CONTENT, mf: { ...CONTENT.mf, vision: long.repeat(4).trim() } };
+    await configure('browser', buildFoundationMessagePrintView(content, 'TestOrbit', 2, null));
+    const cards = Array.from(query('mktg-framework-print-statements')?.querySelectorAll<HTMLElement>('.fwp-statement') ?? []).slice(0, 3);
+    expect(new Set(cards.map((card) => card.style.fontSize)).size).toBe(1);
+    expect(parseFloat(cards[0].style.fontSize)).toBeLessThan(11.5);
+    expect(parseFloat(cards[0].style.fontSize)).toBeGreaterThanOrEqual(Math.floor(11.5 * MKTG_PORTRAIT_FIT.minScale * 2) / 2);
+    // The short cards print whole at that size (the row is the board's one box: the cards stretch to it, `.fwp-statements`).
+    expect(cards.map((card) => card.textContent?.trim())).toEqual([content.mf.vision, 'A mission.', 'For platform teams.']);
+  });
+
   it('sets every goal page’s title at one size, the smallest any of them needs, and the sound bite at one top on each (the editor’s read)', async () => {
     const titles = ['Events', 'A goal whose title runs well past the width of the page’s title line at the grammar’s size', 'Adoption'];
     const goals = titles.map((t, index) => ({ ...CONTENT.mf.goals[0], id: `g${index}`, n: index + 1, t }));
@@ -881,6 +894,7 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(cards.slice(0, 3).every((card) => parseFloat(card.style.fontSize) < 11.5 || (card.textContent ?? '').length < long.repeat(6).trim().length)).toBe(
       true
     );
+    expect(new Set(cards.slice(0, 3).map((card) => card.style.fontSize)).size).toBe(1);
     // The framework page's matrix: the goal's twelve proofs cut to the whole rows that fit the proof row's room (tight first), the cut said in the
     // cell, so the sound bite row stays above the footer.
     const matrixProofs = Array.from(query('mktg-framework-print-goals')?.querySelectorAll('.fwp-matrix-proofs li') ?? []);

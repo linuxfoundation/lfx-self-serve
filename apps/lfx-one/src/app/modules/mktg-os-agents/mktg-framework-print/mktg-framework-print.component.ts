@@ -286,10 +286,25 @@ export class MktgFrameworkPrintComponent {
   private statements(view: FoundationMessagePrintView): FoundationMessagePrintFrame['statements'] {
     const cardsHeight = this.tops.matrix - this.page.bodyTop - ROOM.gap - ROOM.cardPadding - ROOM.label;
     const taglineWidth = frameworkPortraitStatementWidth(this.shares.tagline, true);
+    // The three statements at ONE size (the editor's rule: never one card shrunk alone): each fitted to its card first, then every one set
+    // at the smallest size any needed; a card already at the floor keeps the cut the fit gave it. The row is the board's box, the tallest card's.
+    const cards = {
+      vision: { text: view.mf.vision, width: frameworkPortraitStatementWidth(this.shares.vision) },
+      mission: { text: view.mf.mission, width: frameworkPortraitStatementWidth(this.shares.mission) },
+      positioning: { text: view.mf.positioning, width: frameworkPortraitStatementWidth(this.shares.positioning) },
+    };
+    const own = {
+      vision: this.fit(cards.vision.text, TYPE.statement, cards.vision.width, cardsHeight),
+      mission: this.fit(cards.mission.text, TYPE.statement, cards.mission.width, cardsHeight),
+      positioning: this.fit(cards.positioning.text, TYPE.statement, cards.positioning.width, cardsHeight),
+    };
+    const size = Math.min(own.vision.size, own.mission.size, own.positioning.size);
+    const atOne = (card: keyof typeof cards): FoundationMessagePrintFittedText =>
+      own[card].size === size ? own[card] : this.fit(own[card].text, { ...TYPE.statement, size }, cards[card].width, cardsHeight);
     return {
-      vision: this.fit(view.mf.vision, TYPE.statement, frameworkPortraitStatementWidth(this.shares.vision), cardsHeight),
-      mission: this.fit(view.mf.mission, TYPE.statement, frameworkPortraitStatementWidth(this.shares.mission), cardsHeight),
-      positioning: this.fit(view.mf.positioning, TYPE.statement, frameworkPortraitStatementWidth(this.shares.positioning), cardsHeight),
+      vision: atOne('vision'),
+      mission: atOne('mission'),
+      positioning: atOne('positioning'),
       tagline: this.fit(view.mf.tagline, { ...TYPE.tagline, size: frameworkPortraitTaglineSize(view.mf.tagline, taglineWidth) }, taglineWidth, cardsHeight),
     };
   }
