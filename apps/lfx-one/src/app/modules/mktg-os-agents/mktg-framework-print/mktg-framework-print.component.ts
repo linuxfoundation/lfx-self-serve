@@ -275,7 +275,9 @@ export class MktgFrameworkPrintComponent {
       const goalPages = plan.filter((page) => /^goal-\d+$/.test(page.id));
       const goalTitles = new Map(frameworkPortraitTitlesAtOneSize(goalPages.map((page) => page.title)).map((fit, at) => [goalPages[at].id, fit]));
       return plan.map((page, index) => {
-        const goal = /^goal-\d+$/.test(page.id) ? (view.goals.find((entry) => `goal-${entry.n}` === page.id) ?? null) : null;
+        // A goal page is keyed on the goal's position (frameworkPortraitPlan), never on its number: two goals may share an `n`.
+        const goalAt = /^goal-(\d+)$/.exec(page.id);
+        const goal = goalAt ? (view.goals[Number(goalAt[1]) - 1] ?? null) : null;
         const icpIndex = /^icps-\d+$/.test(page.id) ? Number(page.id.slice('icps-'.length)) : 0;
         const numbersIndex = this.pageIndex(page.id, this.ids.keyNumbers);
         const sayAvoid = page.id === this.ids.sayAvoid;

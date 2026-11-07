@@ -21,6 +21,7 @@ import {
   FRAMEWORK_PORTRAIT_NUMBER_TILE,
   FRAMEWORK_PORTRAIT_PAGE_IDS,
   FRAMEWORK_PORTRAIT_ROOM,
+  FRAMEWORK_PORTRAIT_SEP,
   FRAMEWORK_PORTRAIT_STATEMENT_SHARES,
   FRAMEWORK_PORTRAIT_TILE_SHARES,
   FRAMEWORK_PORTRAIT_TOPS,
@@ -75,6 +76,7 @@ import {
   mktgPortraitTrimTail,
   mktgPortraitWrapLines,
 } from './mktg-portrait-print.utils';
+import { mktgPrintJoin } from './mktg-print-text.utils';
 
 const ROOM = FRAMEWORK_PORTRAIT_ROOM;
 const TYPE = FRAMEWORK_PORTRAIT_TYPE;
@@ -766,23 +768,36 @@ export function frameworkPortraitPillWidth(text: string, tight: boolean): number
   );
 }
 
-/** The height a row of pills wraps to in a column `width` px wide: the pills packed greedily, a line's height each row, the gap between rows. */
+/**
+ * The height a pill takes in a column `width` px wide: one line of its type with its padding, or the lines its text wraps to
+ * inside the padded width when the phrase is wider than the column (a pill's text wraps; the phrase count is bounded, not
+ * the phrase).
+ */
+export function frameworkPortraitPillHeight(pill: string, width: number, tight: boolean): number {
+  const type = tight ? TYPE.sayPillTight : TYPE.sayPill;
+  const across = tight ? ROOM.sayPillPaddingAcrossTight : ROOM.sayPillPaddingAcross;
+  const textWidth = frameworkPortraitPillWidth(pill, tight) - across;
+  const lines = Math.max(1, Math.ceil(textWidth / Math.max(1, width - across)));
+  return lines * type.size * type.line + (tight ? ROOM.sayPillPaddingTight : ROOM.sayPillPadding);
+}
+
+/** The height a row of pills wraps to in a column `width` px wide: the pills packed greedily, each row as tall as its tallest pill, the gap between rows. */
 export function frameworkPortraitPillsHeight(pills: readonly string[], width: number, tight: boolean): number {
   if (pills.length === 0) return 0;
-  const type = tight ? TYPE.sayPillTight : TYPE.sayPill;
-  const line = type.size * type.line + (tight ? ROOM.sayPillPaddingTight : ROOM.sayPillPadding);
-  let rows = 1;
+  const rows: number[] = [];
   let used = 0;
   for (const pill of pills) {
     const pillWidth = Math.min(width, frameworkPortraitPillWidth(pill, tight));
-    if (used > 0 && used + ROOM.sayPillGap + pillWidth > width) {
-      rows += 1;
+    const height = frameworkPortraitPillHeight(pill, width, tight);
+    if (rows.length === 0 || (used > 0 && used + ROOM.sayPillGap + pillWidth > width)) {
+      rows.push(height);
       used = pillWidth;
     } else {
+      rows[rows.length - 1] = Math.max(rows[rows.length - 1], height);
       used += (used > 0 ? ROOM.sayPillGap : 0) + pillWidth;
     }
   }
-  return rows * line + (rows - 1) * ROOM.sayPillGap;
+  return rows.reduce((sum, height) => sum + height, 0) + (rows.length - 1) * ROOM.sayPillGap;
 }
 
 /**
@@ -949,7 +964,10 @@ export function frameworkPortraitHouse(view: FoundationMessagePrintView, umbrell
     ? ROOM.houseUmbrellaPadding +
       frameworkPortraitTextHeight(umbrella.text, { ...TYPE.houseUmbrella, size: umbrella.size }, width - ROOM.houseUmbrellaPaddingAcross)
     : 0;
-  const line = view.mh.line ? ROOM.houseLineMargins + TYPE.houseLine.size * TYPE.houseLine.line : 0;
+  // The brand line as the page prints it (`Brand line · <text>`, the framework's separator), over the lines it wraps to at the width.
+  const line = view.mh.line
+    ? ROOM.houseLineMargins + frameworkPortraitTextHeight(mktgPrintJoin(['Brand line', view.mh.line], FRAMEWORK_PORTRAIT_SEP), TYPE.houseLine, width)
+    : 0;
   const count = Math.max(1, view.pillars.length);
   const column = (width - (count - 1) * ROOM.pillarGap) / count;
   const pillarsTop = TOPS.house + umbrellaHeight + line;

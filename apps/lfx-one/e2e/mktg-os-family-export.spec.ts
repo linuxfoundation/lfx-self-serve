@@ -228,7 +228,7 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(printDocument.getByTestId('mktg-framework-print-cover')).toHaveCount(0);
   await expect(printDocument.getByTestId('mktg-framework-print-goals')).toBeVisible();
   await expect(printDocument.getByTestId('mktg-framework-print-pillars')).toHaveCount(1);
-  await expect(printDocument.locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(1);
+  await expect(printDocument.locator('article[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(1);
   // The family passes the framework no report, approval or read date today (its follow-up), so its Sources & gaps page prints
   // the approval card alone: no intro, no lists, no empty-state line, and a card without a version or approval lead.
   await expect(frameworkFrames.last()).toHaveAttribute('data-page-id', 'sources');

@@ -469,6 +469,14 @@ describe('the framework’s print', () => {
       { number: '4,370', label: 'registrations, stored without the separator', source: '' },
     ]);
     expect(foundationMessagePrintNumbers([{ number: '10000+', label: 'servers' }], facts)[0]).toMatchObject({ number: '10,000+', source: 'Press release' });
+    // ... whichever form the record stores: a stored `10,000+` matches a proof that says `10000`, and when two sources state the
+    // figure in the two forms, they disagree as sources and no pill is invented.
+    expect(foundationMessagePrintNumbers([{ number: '10,000+', label: 'servers' }], [fact('Over 10000 servers were published', 'Website')])[0].source).toBe(
+      'Website'
+    );
+    expect(
+      foundationMessagePrintNumbers([{ number: '10,000+', label: 'servers' }], [fact('Over 10000 servers were published', 'Website'), ...facts])[0].source
+    ).toBe('');
     expect(foundationMessagePrintNumbers([{ number: '96%', label: 'a share' }], [])[0].number).toBe('96%');
     // The label decides a four-digit figure's reading: a year under a year label, a separated count under any other (editor S1).
     expect(foundationMessagePrintNumbers([{ number: '2000', label: 'research groups run the toolchain' }], [])[0].number).toBe('2,000');
