@@ -781,7 +781,7 @@
     color: var(--pp-ink);
 
     strong {
-      font-weight: var(--fwp-audience-row-weight);
+      font-weight: var(--fwp-audience-name-weight); /* FRAMEWORK_PORTRAIT_TYPE.audienceName: the name bold, the row regular */
       color: var(--pp-dark);
     }
   }

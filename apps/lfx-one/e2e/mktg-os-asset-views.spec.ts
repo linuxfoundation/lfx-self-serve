@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import {
   BRAND_KIT_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  MKTG_PORTRAIT_FIT,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
   MKTG_PORTRAIT_PAPERS,
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
@@ -730,10 +731,12 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
     };
   });
   expect(layout.matrix).toBeLessThanOrEqual(1000);
-  // The cells set smaller than their type (11 / 11 / 12.5 px), never under the fit model's floor (72 %).
+  // The cells set smaller than their type (11 / 11 / 12.5 px), never under the fit model's floor: minScale of the type, in
+  // half pixels (`mktgPortraitFitBlock`; at this record the value and key cells sit on the floor, 7.5 px).
+  const floor = (size: number): number => Math.floor(size * MKTG_PORTRAIT_FIT.minScale * 2) / 2;
   for (const size of layout.vp) expect(size).toBeLessThan(11);
-  for (const size of [...layout.vp, ...layout.key]) expect(size).toBeGreaterThanOrEqual(Math.ceil(11 * 0.72));
-  for (const size of layout.bite) expect(size).toBeGreaterThanOrEqual(Math.ceil(12.5 * 0.72));
+  for (const size of [...layout.vp, ...layout.key]) expect(size).toBeGreaterThanOrEqual(floor(11));
+  for (const size of layout.bite) expect(size).toBeGreaterThanOrEqual(floor(12.5));
   // Every proof cell says what it cut; the count is the record's (four a goal).
   const notes = matrix.getByTestId('mktg-framework-print-matrix-proofs-cut');
   const noteCount = await notes.count();

@@ -479,6 +479,9 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(root?.style.getPropertyValue('--fwp-statement-size')).toBe(`${FRAMEWORK_PORTRAIT_TYPE.statement.size}px`);
     expect(root?.style.getPropertyValue('--fwp-statement-line')).toBe(`${FRAMEWORK_PORTRAIT_TYPE.statement.line}`);
     expect(root?.style.getPropertyValue('--fwp-goal-value-weight')).toBe(`${FRAMEWORK_PORTRAIT_TYPE.goalValue.weight}`);
+    // The audience's name is bold where its row is regular (the stylesheet reads `--fwp-audience-name-weight` on the strong).
+    expect(root?.style.getPropertyValue('--fwp-audience-name-weight')).toBe('600');
+    expect(root?.style.getPropertyValue('--fwp-audience-row-weight')).toBe('400');
     expect(root?.style.getPropertyValue('--fwp-cover-umbrella-size')).toBe('32px');
     expect(root?.style.getPropertyValue('--fwp-source-line')).toBe('1.6');
     // The goal matrix sits at the shared top under the statement cards.

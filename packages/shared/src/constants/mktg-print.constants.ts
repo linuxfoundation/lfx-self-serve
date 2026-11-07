@@ -187,6 +187,8 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   whyNow: { size: 13, line: 1.55, weight: 400 },
   audienceRow: { size: 11.5, line: 1.45, weight: 400 },
   audienceRowTight: { size: 11, line: 1.4, weight: 400 },
+  /** The audience's name, bold at the row's size (`.fwp-audience-row strong`: only its weight is read; the row's size and line are the row's). */
+  audienceName: { size: 11.5, line: 1.45, weight: 600 },
   /** The say pills and the avoid rows, and their tight measures. */
   sayPill: { size: 13, line: 1.2, weight: 500 },
   sayPillTight: { size: 12, line: 1.2, weight: 500 },
