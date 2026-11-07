@@ -62,14 +62,17 @@
       </div>
     }
   </section>
-  <section aria-label="Caveats" class="flex flex-col gap-3" data-testid="mktg-aeo-typed-caveats">
-    <h3 class="text-xl font-semibold">Caveats &amp; unverified items</h3>
-    <ul class="list-disc pl-5">
-      @for (caveat of caveats(); track $index) {
-        <li>{{ caveat }}</li>
-      }
-    </ul>
-  </section>
+  <!-- A report with no caveats prints no heading over an empty list. -->
+  @if (caveats().length) {
+    <section aria-label="Caveats" class="flex flex-col gap-3" data-testid="mktg-aeo-typed-caveats">
+      <h3 class="text-xl font-semibold">Caveats &amp; unverified items</h3>
+      <ul class="list-disc pl-5">
+        @for (caveat of caveats(); track $index) {
+          <li>{{ caveat }}</li>
+        }
+      </ul>
+    </section>
+  }
   <section aria-label="Sources" class="flex flex-col gap-3" data-testid="mktg-aeo-typed-sources">
     <h3 class="text-xl font-semibold">Sources</h3>
     <ul class="list-disc pl-5">

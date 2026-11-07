@@ -72,6 +72,13 @@ describe('AeoGeoReportComponent print and Markdown details', () => {
     expect(caveats[0]).toBe('The LFX project record could not be read directly. A name search returned an entitled record. No LFX metrics were queried.');
     expect(caveats).toHaveLength(report.caveats.length);
     expect(element.textContent).not.toMatch(/project_uid|slug |access error/);
+    // No caveats: no Caveats section at all (no heading over an empty list), while the sections around it still render.
+    fixture.componentRef.setInput('report', { ...report, caveats: [] });
+    fixture.detectChanges();
+    expect(element.querySelector('[data-testid="mktg-aeo-typed-caveats"]')).toBeNull();
+    expect(element.querySelector('[data-testid="mktg-aeo-typed-sources"]')).not.toBeNull();
+    fixture.componentRef.setInput('report', report);
+    fixture.detectChanges();
     // Every detail renders restricted: no raw HTML, no image, from the agent's text.
     report.findings[1].detail = 'Unsafe <img src="https://tracker.example/pixel.gif"> <b>markup</b>.';
     fixture.componentRef.setInput('report', { ...report });

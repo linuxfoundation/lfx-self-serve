@@ -333,6 +333,7 @@ const CAVEAT_ABBREVIATION_MARK = '\u0001';
 const CAVEAT_SENTENCE_BOUNDARY = /([.!?]['"\u2018\u2019\u201c\u201d`)\]]*)\s+(?=\S)/g;
 const CAVEAT_SENTENCE_MARK = '\u0000';
 const CAVEAT_PARENTHETICAL = /\(([^()]*)\)/g;
+const CAVEAT_WORD_CHARACTER = /[\p{L}\p{N}]/u;
 const CAVEAT_SEARCH = /\bsearch(?:es)?\b/i;
 const CAVEAT_NAME_SEARCH = /\bname search\b/i;
 const CAVEAT_LFX_RECORD = /LFX record could not be read/i;
@@ -368,8 +369,8 @@ export function aeoGeoReaderCaveat(caveat: string): string {
     .split(CAVEAT_SENTENCE_MARK)
     .map((sentence) => sentence.split(CAVEAT_ABBREVIATION_MARK).join('.').trim())
     .filter((sentence) => sentence.length > 0);
-  // A sentence scrubbed to nothing (a caveat that was only a plumbing parenthetical) is left out, never an empty bullet.
-  const kept = sentences.map(readerSentence).filter((sentence) => sentence.length > 0 && !carriesPlumbing(sentence));
+  // A sentence scrubbed to nothing but punctuation (a caveat that was only a plumbing parenthetical) is left out, never an empty bullet.
+  const kept = sentences.map(readerSentence).filter((sentence) => CAVEAT_WORD_CHARACTER.test(sentence) && !carriesPlumbing(sentence));
   if (!kept.length) {
     return AEO_GEO_READER_CAVEATS.inputs_unavailable;
   }

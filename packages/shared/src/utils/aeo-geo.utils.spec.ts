@@ -382,6 +382,7 @@ describe('AEO/GEO reader caveats', () => {
     expect(aeoGeoReaderCaveat('failed: You have exceeded your credits limit.')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
     // A caveat that is only a plumbing parenthetical is never an empty bullet; a plumbing parenthetical inside a sentence is just removed.
     expect(aeoGeoReaderCaveat('(project_uid unavailable)')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    expect(aeoGeoReaderCaveat('(slug example-project).')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
     expect(aeoGeoReaderCaveat('Metrics (project_uid) were not read.')).toBe('Metrics were not read.');
     expect(aeoGeoReaderCaveat('The project_name lookup was skipped.')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
     // An id with a value is an identifier shape whatever its registry: the sentence is left out (named residual).
@@ -408,6 +409,49 @@ describe('AEO/GEO reader caveats', () => {
     ]) {
       expect(aeoGeoReaderCaveat(caveat)).toBe(caveat);
     }
+  });
+
+  // The editor's fixtures 1–3 (synthetic domains), byte for byte: quoted titles and site responses pass through, emptied caveats fall back, zero caveats stay zero.
+  it.each([
+    [
+      'fixture1-quoted-titles',
+      [
+        'The search returned "Why builds fail without open standards" as its top result.',
+        'The best-ranked explainer is titled "Search errors explained" and dates from 2025.',
+        'The homepage returned "403 Forbidden" to our second fetch, so its metadata is unverified.',
+        'The website enforces a rate limit on crawlers; two fetches were slowed, none refused.',
+      ],
+      [
+        'The search returned "Why builds fail without open standards" as its top result.',
+        'The best-ranked explainer is titled "Search errors explained" and dates from 2025.',
+        'The homepage returned "403 Forbidden" to our second fetch, so its metadata is unverified.',
+        'The website enforces a rate limit on crawlers; two fetches were slowed, none refused.',
+      ],
+    ],
+    [
+      'fixture2-emptied',
+      [
+        '(project_uid unavailable)',
+        'Record 3f2504e0-4f89-11d3-9a0c-0305e82c3301 was unavailable.',
+        'Metrics (project_uid) were not read. robots.txt allows all crawlers.',
+        'No live AI-engine tests were run.',
+      ],
+      [
+        "Some of the audit's inputs were unavailable for this run.",
+        "Some of the audit's inputs were unavailable for this run.",
+        'Metrics were not read. robots.txt allows all crawlers.',
+        'No live AI-engine tests were run.',
+      ],
+    ],
+  ])('maps the editor fixture %s exactly', (_name, caveats, expected) => {
+    expect(caveats.map(aeoGeoReaderCaveat)).toEqual(expected);
+  });
+
+  it('accepts a report with no caveats, which the view relies on to print no Caveats section', () => {
+    const report = aeoGeoEnvelopeFixture('project').report;
+    expect(report).toBeDefined();
+    expect(isAeoGeoReport({ ...report, caveats: [] })).toBe(true);
+    expect(([] as string[]).map(aeoGeoReaderCaveat)).toEqual([]);
   });
 
   it('stays linear on long runs of whitespace and falls back above the length cap', () => {
