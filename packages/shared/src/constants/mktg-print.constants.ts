@@ -415,7 +415,8 @@ export const FRAMEWORK_PORTRAIT_MAX_TILES = 6;
  * The one caption line under the goal matrix's bands (the editor's ladder, 7 Nov 2026): band mode drops its rows in a fixed
  * order, sound bites, then value propositions, then the cells' "+N more" lines folded into the caption, then proofs, until the
  * matrix fits its room with every kept row whole and the proofs at the tight floor or above; the note names what dropped, each
- * goal page printing it in full. The key message and the goal name never drop and never clamp (frameworkPortraitMatrix).
+ * goal page printing it in full. The key message and the goal name never drop and never clamp. A strip, whose other rows are
+ * fitted, drops its proofs alone when they would print below the floor (frameworkPortraitMatrix).
  */
 export const FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES = {
   /** Step 1: the sound-bite row dropped. */
@@ -429,6 +430,8 @@ export const FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES = {
   goalPagesFold: 'Value propositions and sound bites are on each goal page. More proofs for each goal are in LFX One.',
   /** Step 4: the proof row dropped as well (the editor's FA1b): its cells would have printed below the tight floor. */
   goalPagesAll: 'Value propositions, sound bites and proofs are on each goal page.',
+  /** A strip's proof row dropped (the floor applies to strips too): its value propositions and sound bites still print. */
+  proofs: 'Proofs are on each goal page.',
 } as const;
 
 /** A count in words for the print's sentences, up to the anchor questions' limit (FOUNDATION_MESSAGE_CONTENT_LIMITS.anchor.max); a count past it prints as digits. */

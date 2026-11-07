@@ -405,7 +405,8 @@ export function frameworkPortraitMatrix(
   // under the bands (the maintainer's word, order 43: the room they took goes to the proofs), then the proofs, each step taken only
   // while the matrix does not fit its room with every kept row whole and the proofs at the tight floor or above (the proof clamp,
   // first proof and "+N more", is the proof row's own format, not a drop); the one caption line under the bands names what dropped,
-  // each goal page printing it in full. The key message and the goal name never drop and never clamp. A strip prints every row.
+  // each goal page printing it in full. The key message and the goal name never drop and never clamp. A strip fits its text rows and
+  // keeps them; the floor holds there too: a strip whose proofs would print below it drops them alone, with its own note.
   const ladder: FrameworkPortraitMatrixLevel[] = banded
     ? [
         { rows: { value: true, bite: true, proof: true }, fold: false, notes: [] },
@@ -414,7 +415,10 @@ export function frameworkPortraitMatrix(
         { rows: { value: false, bite: false, proof: true }, fold: true, notes: [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold] },
         { rows: { value: false, bite: false, proof: false }, fold: false, notes: [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesAll] },
       ]
-    : [{ rows: { value: true, bite: true, proof: true }, fold: false, notes: [] }];
+    : [
+        { rows: { value: true, bite: true, proof: true }, fold: false, notes: [] },
+        { rows: { value: true, bite: true, proof: false }, fold: false, notes: [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.proofs] },
+      ];
   // The one caption under the bands is measured on its own width, as the crosscut is: the fold's sentence must stay on its line.
   const chrome = (level: FrameworkPortraitMatrixLevel): number =>
     note +
@@ -568,12 +572,8 @@ function frameworkPortraitMatrixBand(
   const biteWidth = column - ROOM.matrixBiteInset;
   let cells = frame.cells;
   let rows = measure(cells, printed);
-  // The proof row dropped (the editor's FA1b, band mode only): the band is its head and the key messages, every proof cell empty.
-  if (!printed.proof) {
-    const none: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof> = { rows: [], cut: 0, tight: false, note: '' };
-    return { cells, proofs: goals.map(() => ({ ...none })), height: head + rows.value + rows.key + rows.bite };
-  }
-  const proofsLeast = frame.proofsLeast(fold);
+  // The proof row dropped (its cells would print below the floor): it takes no room, and the band's proof cells are empty.
+  const proofsLeast = printed.proof ? frame.proofsLeast(fold) : 0;
   const textRoom = room - head - proofsLeast;
   const natural = rows.value + rows.key + rows.bite;
   if (!frame.banded && natural > textRoom) {
@@ -592,6 +592,10 @@ function frameworkPortraitMatrixBand(
         : null,
     }));
     rows = measure(cells, printed);
+  }
+  if (!printed.proof) {
+    const none: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof> = { rows: [], cut: 0, tight: false, note: '' };
+    return { cells, proofs: goals.map(() => ({ ...none })), height: head + rows.value + rows.key + rows.bite };
   }
   const proofsRoom = Math.max(proofsLeast - ROOM.matrixRow, room - head - ROOM.matrixRow - rows.value - rows.key - rows.bite);
   const proofs = goals.map((goal): FoundationMessagePrintCutList<FoundationMessagePrintGoalProof> => {
