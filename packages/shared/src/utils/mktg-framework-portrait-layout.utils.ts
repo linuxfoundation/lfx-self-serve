@@ -62,6 +62,7 @@ import { MKTG_PORTRAIT_FIT } from '../constants/mktg-portrait-print.constants';
 import {
   mktgPortraitCharEm,
   mktgPortraitCharsPerLine,
+  mktgPortraitCutText,
   mktgPortraitFitBlock,
   mktgPortraitPageNumber,
   mktgPortraitParaHeight,
@@ -177,8 +178,16 @@ function numbersRowHeight(row: FoundationMessageNumberRow, tight: boolean): numb
 export function frameworkPortraitNumbersRowIn(row: FoundationMessageNumberRow, room: number): FoundationMessageNumberRow {
   if (numbersRowHeight(row, false) <= room) return row;
   const [figure, label] = numbersCellWidths();
-  const cell = (text: string, width: number): string =>
-    mktgPortraitFitBlock({ paras: [{ text, ...TYPE.fact }] }, width, room - ROOM.factRow, 1).block.paras[0]?.text ?? text;
+  // Each cell cut at a sentence (then a word) in the fit model's steps until it ends in the room the row's chrome leaves.
+  const cell = (text: string, width: number): string => {
+    let current = text;
+    for (let guard = 0; guard < FIT.maxCuts && frameworkPortraitTextHeight(current, TYPE.fact, width) > room - ROOM.factRow; guard++) {
+      const next = mktgPortraitCutText(current, Math.floor(current.length * FIT.cutShare));
+      if (next === current || next.length >= current.length) break;
+      current = next;
+    }
+    return current;
+  };
   return { number: cell(row.number, figure), label: cell(row.label, label) };
 }
 
