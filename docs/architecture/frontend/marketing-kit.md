@@ -192,10 +192,36 @@ stylesheet `_mktg-portrait.scss` with the `pp-` class prefix; tokens and types i
 
 - **One frame per page.** `lfx-mktg-portrait-page` is a fixed 816 × 1056 px frame
   (`MKTG_PORTRAIT_PAGE`: 8.5 × 11 in at 96 dpi, 56 px margins, a 704 px content column,
-  covers inset 72 px), `position: relative; overflow: hidden`, a block sibling in normal
-  flow with `break-after: page`; nothing fragments inside a frame and no wrapper between
-  the body and a frame is padded or positioned. Content is placed absolutely with the
-  `[lfxPpRect]="[x, y, w, h?]"` directive (the mock's `R(x, y, w, h)`).
+  covers inset 72 px), `position: relative; overflow: hidden`, a block in normal flow;
+  nothing fragments inside a frame and no wrapper between the body and a frame is padded
+  or positioned. Content is placed absolutely with the `[lfxPpRect]="[x, y, w, h?]"`
+  directive (the mock's `R(x, y, w, h)`).
+- **One break per sheet, owned by the frame that starts it.** Every frame carries
+  `break-before: page` and no frame carries a `break-after`. The engine suppresses a
+  forced break at the very start of the print and merges two forced breaks at one boundary
+  (a document host's `break-before` in the family and its first frame's) into one, so a
+  leading, doubled or trailing blank sheet is impossible by construction; `break-after:
+page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's Save as
+  PDF. The print root's children (the page components' hosts) are blocks, and in print the
+  root element and body of a frame document carry no height, margin or padding beyond the
+  frames: the root is exactly N × 1056 px tall (the pdf e2e asserts the model, the last
+  frame's `break-after: auto`, no box after it and the root's height). **One named page
+  per print:** `mktg-portrait` is set by `.pp-page` alone; no print body, root or
+  document host names a page (a change of page name forces a break in Chromium, which is
+  how a blank sheet appears around a frame), and the grammar resets `page: auto` on
+  everything but a frame in a frame document. The flowing documents print on the print
+  frame's unnamed `@page` rule. **Every host is a block.** Angular leaves a component's
+  host element `display: inline`; Google Chrome 156 (the editor's engine; the bundled
+  Chromium does not reproduce it) breaks a sheet at the anonymous-block boundary an inline
+  host puts around a block frame, which is where the blank sheets came from. Every grammar
+  and book component (`lfx-mktg-portrait-page`, cover, opener, back cover, the kit print
+  host and each kit page host) sets `:host { display: block }` in its own styles
+  (`MKTG_PORTRAIT_BLOCK_HOST`, `components/mktg-portrait/mktg-portrait-host.ts`; the
+  framework print host has the rule in its stylesheet), so it holds in any document the
+  component is cloned into; each component's spec asserts the computed display, the pdf
+  e2e asserts it on every host between the body and a frame, and its Chrome proof (`printMktgFrameWithChrome`: Playwright's `channel:
+  'chrome'`, `Page.printToPDF` on the frame document as the service built it, headers on
+  and off, Letter and A4) asserts exactly the planned page count with no blank page.
 - **Head, title, foot, band.** Every content page carries the running head at y 36
   (section label left, document name right, over a 1 px rule), the title at y 84, the
   footer 28 px from the bottom (`<Project> · a Linux Foundation project` | the page
@@ -211,7 +237,13 @@ stylesheet `_mktg-portrait.scss` with the `pp-` class prefix; tokens and types i
   Chromium adds an empty page per `tfoot` and WebKit repeats neither.
 - **Inks and look.** The kit's dark, accent, spark, the ink on the accent and the font
   come from the kit (`MktgPortraitLook`, `mktgPortraitLook(brand, spark)`); the page writes
-  them as `--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`, `--pp-font`. The
+  them as `--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`, `--pp-font`, and
+  `--pp-accent-text`: the accent darkened in OKLab until it reads on the page white at WCAG
+  AA for ordinary text (`mktgPortraitAccentText(accent, paper)`, ≥ 4.5:1; an accent that
+  already does is itself). Every TEXT set in the accent on a light page reads that token
+  (the section label under the band, the Logo system page's rule numbers, numerals in the
+  framework and family books); fills, bands, rules and the accent on a dark page keep
+  `--pp-accent`. The
   design's neutral inks (`MKTG_PORTRAIT_INKS`: ink, muted, hairline, mist, white, fail) are
   written once, as `--pp-ink` …, and the print stylesheets read only those custom
   properties (see [the styling system's print-ink exception](styling-system.md#print-inks)).
@@ -242,9 +274,13 @@ stylesheet `_mktg-portrait.scss` with the `pp-` class prefix; tokens and types i
 `contents`, `logo-system`, `logo-colorways`, `logo-clear-space`, `logo-symbol`,
 `logo-partnership`, `logo-watchouts`, `color-palette`, `color-contrast`, `type`,
 `visual-iconography`, `visual-imagery`, `usage`, `voice`, `sources`, `back-cover` — and
-drops what the kit cannot draw (the logo pages after Logo system without inline logo
-artwork; the symbol page without a symbol; the cover, contents and back cover inside the
-family). The template iterates that plan (`@for` over `mktgPortraitPlacePlan`, `@switch` on
+drops what the kit cannot draw, page by page on the artwork its tiles consume
+(`brandKitPortraitHasColorwayTiles` for Colorways, `brandKitPortraitHasPrimaryLogo` for
+Clear space, Partnership and Watchouts, `brandKitPortraitHasSymbol` for the symbol page):
+a kit without a logo file, or with a stacked lockup only, keeps the Logo chapter's first
+page alone, which says no files were uploaded; the cover, contents and back cover go
+inside the family. `brandKitLogolessFixture()` (shared fixtures) is that kit, for the
+plan spec and the print-QA harness. The template iterates that plan (`@for` over `mktgPortraitPlacePlan`, `@switch` on
 the id), so the count, the contents page's numbers and every footer number come from one
 list, never hand-numbered. Every slot holds the kit's live data (`BrandKitBookView`,
 `MktgPrintBrand`, the logo files, icon samples, palette, type, voice, the run record for

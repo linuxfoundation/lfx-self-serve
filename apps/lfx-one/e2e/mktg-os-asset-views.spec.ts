@@ -252,7 +252,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(frames.first()).toHaveAttribute('data-page-id', 'cover');
       await expect(frames.last()).toHaveAttribute('data-page-id', 'back-cover');
       await expect(frames.first()).toHaveCSS('page', 'mktg-portrait');
-      await expect(frames.first()).toHaveCSS('break-after', 'page');
+      await expect(frames.first()).toHaveCSS('break-before', 'page');
+      await expect(frames.last()).toHaveCSS('break-after', 'auto');
       const coverBox = await frames.first().boundingBox();
       expect(
         coverBox && { x: Math.round(coverBox.x), y: Math.round(coverBox.y), width: Math.round(coverBox.width), height: Math.round(coverBox.height) }

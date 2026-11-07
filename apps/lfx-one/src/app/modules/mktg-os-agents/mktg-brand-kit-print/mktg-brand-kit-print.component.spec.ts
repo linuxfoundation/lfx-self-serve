@@ -73,6 +73,8 @@ function colour(value: string): string {
 describe('the portrait book', () => {
   it('prints the planned frames in the mock’s order on the portrait root, each named for QA, and nothing else', async () => {
     const { root, view, print } = await setup();
+    // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+    expect(getComputedStyle(root).display).toBe('block');
     const book = root.querySelector<HTMLElement>('[data-testid="mktg-brand-kit-print"]');
     expect(book?.classList.contains('lfx-mktg-portrait')).toBe(true);
     expect(book?.getAttribute('data-revision')).toBe('V3.0');
@@ -180,6 +182,10 @@ describe('the portrait book', () => {
     await fixture.whenStable();
     const frames = Array.from(root.querySelectorAll('[data-testid="lfx-mktg-portrait-page"]'));
     expect(frames.map((frame) => frame.getAttribute('data-page-id'))).toEqual(FRAMES.filter((id) => !id.startsWith('logo-') || id === 'logo-system'));
+    // The contents page lists exactly the frames after it, numbered as the footers are: the count follows the file.
+    const rows = Array.from(root.querySelectorAll('.kp-contents-row'));
+    expect(rows).toHaveLength(frames.length - 2);
+    expect(frames.slice(2).map((frame) => frame.getAttribute('data-page'))).toEqual(frames.slice(2).map((_, index) => String(index + 3)));
     expect(root.querySelector('[data-testid="brand-kit-logo-system-none"]')?.textContent).toBe('No logo files uploaded yet');
     expect(root.querySelector('[data-testid="brand-kit-logo-system-files"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-portrait-cover-logo"]')).toBeNull();

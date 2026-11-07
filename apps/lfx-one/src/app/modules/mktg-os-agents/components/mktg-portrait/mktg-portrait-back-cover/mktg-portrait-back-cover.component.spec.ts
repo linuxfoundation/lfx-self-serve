@@ -28,6 +28,8 @@ async function setup(logo = true) {
   await fixture.whenStable();
   const page = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]');
   if (!page) throw new Error('Missing synthetic back cover');
+  // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+  expect(getComputedStyle(fixture.nativeElement as HTMLElement).display).toBe('block');
   return { fixture, page, brand };
 }
 

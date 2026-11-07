@@ -14,12 +14,14 @@ import {
   MKTG_PORTRAIT_FIT,
   MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
   MKTG_PORTRAIT_GLYPH_WIDTHS,
+  MKTG_PORTRAIT_HEX_REGEX,
+  MKTG_PORTRAIT_INKS,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
   MKTG_PORTRAIT_WEIGHT_WIDTH,
 } from '../constants/mktg-portrait-print.constants';
 import type { MktgPrintBrand } from '../interfaces/mktg-print.interface';
 import type { MktgPortraitFitBlock, MktgPortraitFitPara, MktgPortraitFitResult, MktgPortraitLook } from '../interfaces/mktg-portrait-print.interface';
-import { brandKitInkOnAccent } from './brand-kit-book.utils';
+import { brandKitContrastRatio, brandKitInkOnAccent, brandKitLuminance } from './brand-kit-book.utils';
 
 /**
  * The look of a portrait document from the print's brand: the kit's dark
@@ -239,4 +241,61 @@ export function mktgPortraitPaginate<T>(items: readonly T[], fitsPage: (page: T[
   }
   if (current.length) pages.push(current);
   return pages;
+}
+
+// ---------- the text accent ----------
+
+/** WCAG 1.4.3's threshold for ordinary text, the ratio `mktgPortraitAccentText` reaches. */
+export const MKTG_PORTRAIT_TEXT_CONTRAST = 4.5;
+
+/**
+ * The accent as TEXT on a light page: the kit's accent darkened, in OKLab (lightness alone, the hue and chroma kept as
+ * far as the gamut allows), until it reads on the paper at WCAG AA for ordinary text (≥ 4.5:1); an accent that already
+ * does is returned as it is, as is anything that is not a six-digit hex. Bound on every frame as `--pp-accent-text`
+ * and used for every text set in the accent (the section label under the band, rule numbers, numerals); fills, bands
+ * and rules keep the accent itself, which the editor measured at 2.76:1 as text.
+ */
+export function mktgPortraitAccentText(accent: string, paper: string = MKTG_PORTRAIT_INKS.white): string {
+  if (!MKTG_PORTRAIT_HEX_REGEX.test(accent) || !MKTG_PORTRAIT_HEX_REGEX.test(paper)) return accent;
+  const paperLuminance = brandKitLuminance(paper);
+  const reads = (hex: string): boolean => brandKitContrastRatio(paperLuminance, brandKitLuminance(hex)) >= MKTG_PORTRAIT_TEXT_CONTRAST;
+  if (reads(accent)) return accent;
+  const [lightness, a, b] = mktgPortraitOklab(accent);
+  for (let l = lightness - 0.005; l > 0; l -= 0.005) {
+    const hex = mktgPortraitOklabHex(l, a, b);
+    if (reads(hex)) return hex;
+  }
+  return '#000000';
+}
+
+/** A six-digit hex in OKLab (Björn Ottosson's matrices), for perceptual darkening. */
+function mktgPortraitOklab(hex: string): [number, number, number] {
+  const linear = (offset: number): number => {
+    const value = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const [r, g, b] = [linear(1), linear(3), linear(5)];
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+
+/** An OKLab colour back as a six-digit hex, each channel clipped to the sRGB gamut. */
+function mktgPortraitOklabHex(lightness: number, a: number, b: number): string {
+  const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const channel = (linear: number): string => {
+    const clipped = Math.min(1, Math.max(0, linear));
+    const srgb = clipped <= 0.0031308 ? 12.92 * clipped : 1.055 * clipped ** (1 / 2.4) - 0.055;
+    return Math.round(srgb * 255)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${channel(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s)}${channel(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s)}${channel(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s)}`;
 }

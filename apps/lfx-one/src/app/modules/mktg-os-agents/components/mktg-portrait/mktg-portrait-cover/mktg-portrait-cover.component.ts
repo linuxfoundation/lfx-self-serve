@@ -6,6 +6,7 @@ import { MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
 import { MktgPortraitLogo, MktgPortraitLook, MktgPortraitBook } from '@lfx-one/shared/interfaces';
 import { MktgPortraitPageComponent } from '../mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../mktg-portrait-rect.directive';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../mktg-portrait-host';
 
 /**
  * A portrait document's cover: a bare dark frame on the grid ground (kit
@@ -19,6 +20,7 @@ import { MktgPortraitRectDirective } from '../mktg-portrait-rect.directive';
   selector: 'lfx-mktg-portrait-cover',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
   templateUrl: './mktg-portrait-cover.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgPortraitCoverComponent {
   public readonly look = input.required<MktgPortraitLook>();

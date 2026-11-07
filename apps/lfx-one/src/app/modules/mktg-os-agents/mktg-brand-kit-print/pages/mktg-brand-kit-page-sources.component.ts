@@ -7,6 +7,7 @@ import { brandKitPortraitApprovalLine, brandKitPortraitSources, brandKitPortrait
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The Sources & decisions page (mock 16), from the revision's own run record
@@ -21,6 +22,7 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
   selector: 'lfx-mktg-brand-kit-page-sources',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
   templateUrl: './mktg-brand-kit-page-sources.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageSourcesComponent extends MktgBrandKitPageBase {
   /** The revision's recorded approval, or null before one. */

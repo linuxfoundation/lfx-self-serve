@@ -6,7 +6,9 @@ import { MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_INKS, MKTG_PORTRAIT_PAGE, MKTG_PORTRAI
 import { MKTG_PRINT_PAGE_SETUPS } from '../constants/mktg-print.constants';
 import { lfxColors } from '../constants/colors.constants';
 import type { MktgPortraitFitBlock } from '../interfaces/mktg-portrait-print.interface';
+import { brandKitContrastRatio, brandKitLuminance } from './brand-kit-book.utils';
 import {
+  mktgPortraitAccentText,
   mktgPortraitBlockHeight,
   mktgPortraitCharsPerLine,
   mktgPortraitCutText,
@@ -175,5 +177,29 @@ describe('the fit model', () => {
     expect(mktgPortraitPaginate([1, 2, 3, 4, 5], (page) => page.length <= 2)).toEqual([[1, 2], [3, 4], [5]]);
     expect(mktgPortraitPaginate([1, 2], () => false)).toEqual([[1], [2]]);
     expect(mktgPortraitPaginate([], () => true)).toEqual([]);
+  });
+});
+
+describe('mktgPortraitAccentText', () => {
+  const onWhite = (hex: string): number => brandKitContrastRatio(1, brandKitLuminance(hex));
+
+  it('darkens a light accent until it reads on the page white at WCAG AA, keeping its hue, and returns a dark one as it is', () => {
+    const coral = mktgPortraitAccentText('#FF702D');
+    expect(onWhite('#FF702D')).toBeLessThan(3);
+    expect(onWhite(coral)).toBeGreaterThanOrEqual(4.5);
+    expect(onWhite(coral)).toBeLessThan(4.8);
+    // Still an orange: red first, then green, little blue.
+    const [r, g, b] = [1, 3, 5].map((offset) => Number.parseInt(coral.slice(offset, offset + 2), 16));
+    expect(r).toBeGreaterThan(g);
+    expect(g).toBeGreaterThan(b);
+    expect(onWhite(mktgPortraitAccentText('#F37625'))).toBeGreaterThanOrEqual(4.5);
+    expect(onWhite(mktgPortraitAccentText('#FFD400'))).toBeGreaterThanOrEqual(4.5);
+    expect(mktgPortraitAccentText('#1E3A8A')).toBe('#1E3A8A');
+    expect(mktgPortraitAccentText('#4D4E4E')).toBe('#4D4E4E');
+  });
+
+  it('leaves anything that is not a six-digit hex alone', () => {
+    expect(mktgPortraitAccentText('coral')).toBe('coral');
+    expect(mktgPortraitAccentText('#FFF')).toBe('#FFF');
   });
 });

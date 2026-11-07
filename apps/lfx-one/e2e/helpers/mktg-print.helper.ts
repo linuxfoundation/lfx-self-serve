@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { expect, FrameLocator, Locator, Page } from '@playwright/test';
+import { chromium, expect, FrameLocator, Locator, Page } from '@playwright/test';
+import { extractText, getDocumentProxy } from 'unpdf';
 import { MKTG_PORTRAIT_PAGE_NAME, MKTG_PRINT_FRAME_PAPER_IN, MKTG_PRINT_PAGE_MARGINS_CLASS, MKTG_PRINT_PAGE_SETUPS } from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './account-settings-email.helper';
 
@@ -139,4 +140,54 @@ export async function finishMktgPrintFrame(page: Page): Promise<void> {
     (frame as HTMLIFrameElement).contentWindow?.dispatchEvent(new Event('afterprint'));
   });
   await expect(page.getByTestId('lfx-print-frame')).toHaveCount(0);
+}
+
+/** The print frame's document as one self-contained page: its stylesheets inlined, its images silent. */
+async function serializeMktgPrintFrame(frame: FrameLocator): Promise<string> {
+  return frame.locator('html').evaluate(async (root) => {
+    const clone = root.cloneNode(true) as HTMLElement;
+    for (const link of Array.from(clone.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))) {
+      const style = root.ownerDocument.createElement('style');
+      style.textContent = await fetch(link.href).then((response) => response.text());
+      link.replaceWith(style);
+    }
+    // A logo the stub served from this context cannot be fetched from another browser; an image that fails to load
+    // draws nothing (no alt text), and a frame's size never depends on one.
+    clone.querySelectorAll('img').forEach((image) => image.setAttribute('alt', ''));
+    return `<!doctype html>${clone.outerHTML}`;
+  });
+}
+
+/**
+ * What the Save as PDF button saves, in the engine the editor uses: Google Chrome's own `Page.printToPDF` (Playwright's
+ * `channel: 'chrome'`, not the bundled Chromium, which does not reproduce the blank sheet an inline host around a frame
+ * cost in Chrome 156) on the frame document as the service built it, under each of the dialog's defaults in turn:
+ * headers and footers on and off, the CSS page size (Letter) and A4 forced. Returns the page count and each page's text
+ * for every print; a blank sheet is a page with no text, and a kit frame always prints its footer. Skips, naming it,
+ * where Google Chrome is not installed.
+ */
+export async function printMktgFrameWithChrome(frame: FrameLocator): Promise<{ setup: string; pages: number; blank: number[] }[]> {
+  const html = await serializeMktgPrintFrame(frame);
+  const browser = await chromium.launch({ channel: 'chrome' }).catch(() => null);
+  if (!browser) return [];
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'load' });
+    await page.evaluate(() => document.fonts.ready);
+    const prints: { setup: string; pages: number; blank: number[] }[] = [];
+    const setups: { setup: string; options: Parameters<Page['pdf']>[0] }[] = [
+      { setup: 'css page size, no headers', options: { preferCSSPageSize: true, printBackground: true } },
+      { setup: 'css page size, headers', options: { preferCSSPageSize: true, printBackground: true, displayHeaderFooter: true } },
+      { setup: 'A4, no background', options: { format: 'A4', printBackground: false } },
+    ];
+    for (const { setup, options } of setups) {
+      const bytes = new Uint8Array(await page.pdf(options));
+      const pdf = await getDocumentProxy(bytes);
+      const { text } = await extractText(pdf, { mergePages: false });
+      prints.push({ setup, pages: pdf.numPages, blank: text.map((content, index) => (content.trim() ? -1 : index + 1)).filter((index) => index > 0) });
+    }
+    return prints;
+  } finally {
+    await browser.close();
+  }
 }

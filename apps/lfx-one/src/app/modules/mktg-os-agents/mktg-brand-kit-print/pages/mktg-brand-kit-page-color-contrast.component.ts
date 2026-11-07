@@ -6,6 +6,7 @@ import { brandKitPortraitContrastMatrix, brandKitPortraitGradePill } from '@lfx-
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The Color contrast page (mock 10): the kit's rule, the matrix of every
@@ -16,6 +17,7 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
   selector: 'lfx-mktg-brand-kit-page-color-contrast',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
   templateUrl: './mktg-brand-kit-page-color-contrast.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageColorContrastComponent extends MktgBrandKitPageBase {
   /** The matrix, every cell graded on its unrounded ratio and labelled to one decimal (shared util). */

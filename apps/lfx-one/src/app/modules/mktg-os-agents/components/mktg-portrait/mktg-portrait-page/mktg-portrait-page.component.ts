@@ -4,7 +4,8 @@
 import { Component, computed, input } from '@angular/core';
 import { MKTG_PORTRAIT_GRID_GROUND, MKTG_PORTRAIT_HEX_REGEX, MKTG_PORTRAIT_INKS } from '@lfx-one/shared/constants';
 import { MktgPortraitBook, MktgPortraitLook } from '@lfx-one/shared/interfaces';
-import { mktgPortraitPageNumber } from '@lfx-one/shared/utils';
+import { mktgPortraitAccentText, mktgPortraitPageNumber } from '@lfx-one/shared/utils';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../mktg-portrait-host';
 
 /**
  * One page of a portrait print document: a fixed 816×1056 px frame
@@ -23,6 +24,7 @@ import { mktgPortraitPageNumber } from '@lfx-one/shared/utils';
 @Component({
   selector: 'lfx-mktg-portrait-page',
   templateUrl: './mktg-portrait-page.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
   host: {
     class: 'pp-page',
     '[class.pp-page--dark]': 'dark()',
@@ -32,6 +34,7 @@ import { mktgPortraitPageNumber } from '@lfx-one/shared/utils';
     'data-testid': 'lfx-mktg-portrait-page',
     '[style.--pp-dark]': 'look().dark',
     '[style.--pp-accent]': 'look().accent',
+    '[style.--pp-accent-text]': 'accentText()',
     '[style.--pp-spark]': 'look().spark',
     '[style.--pp-on-accent]': 'look().onAccent',
     '[style.--pp-on-dark]': 'look().onDark',
@@ -67,6 +70,8 @@ export class MktgPortraitPageComponent {
   public readonly bare = input(false);
   protected readonly showBand = computed(() => this.band() && !this.bare());
   protected readonly pageNumber = computed(() => mktgPortraitPageNumber(this.page()));
+  /** The accent as text on the page white, readable at WCAG AA: `--pp-accent-text`, for every text set in the accent. */
+  protected readonly accentText = computed(() => mktgPortraitAccentText(this.look().accent, this.inks.white));
   protected readonly glow = computed(() => this.accentAlpha(MKTG_PORTRAIT_GRID_GROUND.glowAlpha));
   protected readonly grid = computed(() => this.accentAlpha(MKTG_PORTRAIT_GRID_GROUND.gridAlpha));
 

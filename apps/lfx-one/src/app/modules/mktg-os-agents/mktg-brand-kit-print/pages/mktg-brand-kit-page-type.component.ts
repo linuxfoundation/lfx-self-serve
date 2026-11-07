@@ -7,6 +7,7 @@ import { brandKitPortraitFitSize, brandKitPortraitTypeLayout, brandKitPortraitWe
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The Typography page (mock 11): the summary, the family's H1 sample in one
@@ -22,6 +23,7 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
   selector: 'lfx-mktg-brand-kit-page-type',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
   templateUrl: './mktg-brand-kit-page-type.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageTypeComponent extends MktgBrandKitPageBase {
   protected readonly characters = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz 0123456789';

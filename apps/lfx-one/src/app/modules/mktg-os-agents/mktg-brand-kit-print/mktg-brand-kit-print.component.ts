@@ -25,6 +25,7 @@ import { MktgBrandKitPageUsageComponent } from './pages/mktg-brand-kit-page-usag
 import { MktgBrandKitPageVisualIconographyComponent } from './pages/mktg-brand-kit-page-visual-iconography.component';
 import { MktgBrandKitPageVisualImageryComponent } from './pages/mktg-brand-kit-page-visual-imagery.component';
 import { MktgBrandKitPageVoiceComponent } from './pages/mktg-brand-kit-page-voice.component';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The kit's portrait book, one fixed US Letter frame per page on the portrait
@@ -55,6 +56,7 @@ import { MktgBrandKitPageVoiceComponent } from './pages/mktg-brand-kit-page-voic
     MktgBrandKitPageSourcesComponent,
   ],
   templateUrl: './mktg-brand-kit-print.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPrintComponent {
   private readonly print = inject(MktgPrintService);

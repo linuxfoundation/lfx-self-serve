@@ -32,6 +32,8 @@ async function setup(
   await fixture.whenStable();
   const page = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]');
   if (!page) throw new Error('Missing synthetic opener');
+  // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+  expect(getComputedStyle(fixture.nativeElement as HTMLElement).display).toBe('block');
   return { fixture, page };
 }
 

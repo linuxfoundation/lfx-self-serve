@@ -166,6 +166,8 @@ describe('MktgFrameworkPrintComponent', () => {
     const root = query('mktg-framework-print');
     const cover = query('mktg-framework-print-cover');
     expect(root?.classList.contains('flex')).toBe(false);
+    // A block host (its stylesheet's :host rule): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+    expect(getComputedStyle(host()).display).toBe('block');
     expect(cover?.classList.contains('grid')).toBe(true);
     expect(root?.querySelector('.h-screen, .min-h-screen, .flex-1')).toBeNull();
     // Each section is one sheet (a table whose head repeats the page's top room; its last row carries the bottom room), one row per block, so a page

@@ -8,6 +8,7 @@ import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-p
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitArtworkComponent } from './mktg-brand-kit-artwork.component';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The contents page (mock 02, "What's inside"): the list of every page after it with its number (from the plan, never hand-numbered) in 34 px rows, then two blocks at y 690 (lower when the list needs the room; the list in two columns past that: `brandKitPortraitContentsLayout`): what the kit is built from (no file names) with the Sources page's number, and the At-a-glance card (the lockup, the palette dots, the type family and weights, and the approval line when the store holds one; the version prints on the cover and the back cover only, the ruling's two places).
@@ -16,6 +17,7 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
   selector: 'lfx-mktg-brand-kit-page-contents',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective, MktgBrandKitArtworkComponent],
   templateUrl: './mktg-brand-kit-page-contents.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageContentsComponent extends MktgBrandKitPageBase {
   /** Every placed page of the book, for the list and the Sources page's number. */

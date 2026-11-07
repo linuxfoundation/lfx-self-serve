@@ -8,6 +8,7 @@ import { MktgBrandKitIconSamplesComponent } from '../../components/mktg-brand-ki
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The Iconography page (mock 12): the eight sample tiles and the strip on the
@@ -18,6 +19,7 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
   selector: 'lfx-mktg-brand-kit-page-visual-iconography',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective, MktgBrandKitIconSamplesComponent, MktgBrandKitIconComponent],
   templateUrl: './mktg-brand-kit-page-visual-iconography.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageVisualIconographyComponent extends MktgBrandKitPageBase {
   protected readonly sizes = BRAND_KIT_PORTRAIT_ICON_SIZES_PX;

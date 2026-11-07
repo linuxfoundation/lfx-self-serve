@@ -215,7 +215,8 @@
   font-size: 20px;
   font-weight: 500;
   line-height: 1;
-  color: var(--pp-accent);
+  /* Accent text on the page white: the darkened text accent (WCAG AA), never the fill accent. */
+  color: var(--pp-accent-text, var(--pp-accent));
 }
 
 /* Clear space: the dashed X box on the mist stage, the X badges on the spark in the ink on the accent. */

@@ -36,15 +36,28 @@ export function brandKitPortraitHasSymbol(view: BrandKitBookView): boolean {
   return !!view.logos.symbol?.src || !!view.symbol?.src;
 }
 
+/** Whether the kit has the horizontal lockup the Clear space, Partnership and Watchouts pages draw their tiles from. */
+export function brandKitPortraitHasPrimaryLogo(view: BrandKitBookView): boolean {
+  return !!view.logos.primary?.src;
+}
+
+/** Whether any of the kit's colorway tiles has artwork to draw (the Colorways page prints nothing else in its tiles). */
+export function brandKitPortraitHasColorwayTiles(view: BrandKitBookView): boolean {
+  return view.colorways.some((tile) => !!tile.logo?.src);
+}
+
 /**
  * The seventeen pages of the Brand Kit's portrait book, in the mock's
  * order: cover · contents · 01 Logo (six pages) · 02 Color (two) · 03 Type
  * · 04 Visual (two) · 05 Usage · 06 Voice · 07 Sources · back cover. Inside
  * the family (`inFamily`) the cover, contents and back cover go: the family
- * has its own. A page is never printed empty (the editor's rule): a kit
+ * has its own. A page is never printed empty (the editor's rule): each Logo
+ * page past the first is planned only when the artwork its tiles draw is in
+ * the kit (the colorway tiles for Colorways; the horizontal lockup for Clear
+ * space, Partnership and Watchouts; a symbol for the symbol page), so a kit
  * without a logo file keeps the Logo chapter's first page alone, which says
- * no files were uploaded yet, and a kit without a symbol has no symbol page.
- * The count, the contents and the footers all follow.
+ * no files were uploaded yet, and a kit with a stacked lockup only keeps
+ * that page too. The count, the contents and the footers all follow.
  */
 export function brandKitPortraitPlan(view: BrandKitBookView, options: { inFamily: boolean }): MktgPortraitPlanPage[] {
   const pages: MktgPortraitPlanPage[] = [
@@ -68,8 +81,8 @@ export function brandKitPortraitPlan(view: BrandKitBookView, options: { inFamily
   ];
   const dropped = new Set<string>();
   if (options.inFamily) ['cover', 'contents', 'back-cover'].forEach((id) => dropped.add(id));
-  if (!brandKitPortraitHasLogoFiles(view))
-    ['logo-colorways', 'logo-clear-space', 'logo-symbol', 'logo-partnership', 'logo-watchouts'].forEach((id) => dropped.add(id));
+  if (!brandKitPortraitHasColorwayTiles(view)) dropped.add('logo-colorways');
+  if (!brandKitPortraitHasPrimaryLogo(view)) ['logo-clear-space', 'logo-partnership', 'logo-watchouts'].forEach((id) => dropped.add(id));
   if (!brandKitPortraitHasSymbol(view)) dropped.add('logo-symbol');
   return pages.filter((page) => !dropped.has(page.id));
 }

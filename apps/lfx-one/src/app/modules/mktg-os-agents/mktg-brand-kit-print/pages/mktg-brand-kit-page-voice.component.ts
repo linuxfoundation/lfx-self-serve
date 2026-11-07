@@ -6,6 +6,7 @@ import { brandKitPortraitAttributesFit } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The Voice in brief page (mock 15): where the voice comes from and the
@@ -19,6 +20,7 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
   selector: 'lfx-mktg-brand-kit-page-voice',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
   templateUrl: './mktg-brand-kit-page-voice.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageVoiceComponent extends MktgBrandKitPageBase {
   /** The attributes fitted to the grid's room (more than four, or long lines, set the grid smaller together). */

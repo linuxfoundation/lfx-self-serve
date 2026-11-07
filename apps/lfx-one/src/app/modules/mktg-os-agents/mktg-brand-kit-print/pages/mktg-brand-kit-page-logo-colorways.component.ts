@@ -6,6 +6,7 @@ import { BrandKitColorwayTile } from '@lfx-one/shared/interfaces';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The Colorways page (mock 04): the intro naming the four colorways, four 344 × 250 tiles (full colour on white, reversed on the dark, full colour on the tint, one-colour black on white), and the rules list. The tiles are the view's colorway tiles (the live grounds and filters), captioned as the mock captions them.
@@ -14,6 +15,7 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
   selector: 'lfx-mktg-brand-kit-page-logo-colorways',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
   templateUrl: './mktg-brand-kit-page-logo-colorways.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageLogoColorwaysComponent extends MktgBrandKitPageBase {
   /** The four tiles with the mock's captions: on white, on the dark (by its name), the tint's own name, print only. */

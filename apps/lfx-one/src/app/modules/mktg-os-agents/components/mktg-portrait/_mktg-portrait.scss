@@ -4,13 +4,15 @@
 /* The portrait print grammar (`lfx-mktg-portrait-*`): one fixed US Letter frame per page, 816×1056 px at
    96 dpi, children placed by absolute measurements, so Chromium and WebKit paginate one frame per sheet
    and nothing flows across a page edge (CSS Paged Media: `@page { size: 8.5in 11in; margin: 0 }`,
-   `break-after: page` on every frame). Global, under the `pp-` prefix, because the pages' type helpers
+   `break-before: page` on every frame, see `.pp-page`). Global, under the `pp-` prefix, because the pages' type helpers
    (`pp-lab`, `pp-body`, `pp-cap`, `pp-chip`) are set on content a document projects INTO the
    frame, which a component's own emulated stylesheet would not reach. Every value mirrors the shared
    constants (MKTG_PORTRAIT_PAGE, MKTG_PORTRAIT_INKS, MKTG_PRINT_PAGE_SETUPS['mktg-portrait']), which a
    stylesheet cannot read: keep them in step. The kit's dark, accent, spark and typeface are the frame's
-   custom properties (`--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`, `--pp-font`), bound by
-   `lfx-mktg-portrait-page` from the document's look. */
+   custom properties (`--pp-dark`, `--pp-accent`, `--pp-accent-text`, `--pp-spark`, `--pp-on-accent`, `--pp-font`),
+   bound by `lfx-mktg-portrait-page` from the document's look; `--pp-accent-text` is the accent darkened until it reads
+   on the page white at WCAG AA (mktgPortraitAccentText), for every TEXT set in the accent on a light page; fills,
+   bands, rules and the accent on a dark page keep `--pp-accent`. */
 
 $pp-width: 816px;
 $pp-height: 1056px;
@@ -24,12 +26,19 @@ $pp-band-height: 4px;
 
 /* The print root of a document made of frames: a plain block at the page's edge, never padded or positioned
    (a positioned or padded wrapper between the body and a frame shifts or clips the sheet). The frames paint their own
-   grounds edge to edge, so the root paints none. */
+   grounds edge to edge, so the root paints none. Its children (the page components' hosts, one per frame) are blocks,
+   so no inline box and no anonymous line can sit between frames or after the last one. */
 .lfx-mktg-portrait {
   display: block;
   width: $pp-width;
   margin: 0;
   padding: 0;
+
+  > * {
+    display: block;
+    margin: 0;
+    padding: 0;
+  }
 }
 
 .pp-page {
@@ -45,8 +54,15 @@ $pp-band-height: 4px;
   font-family: var(--pp-font, inherit);
   font-size: 12.5px;
   line-height: 1.6;
-  break-after: page;
-  page-break-after: always;
+  /* One page break per boundary, owned by the frame that starts the page: `break-before` on every frame, no
+     `break-after` anywhere in a document of frames. A forced break at the very start of the print is suppressed by
+     the engine, two forced breaks at one boundary (a document host's `break-before` and its first frame's) are one
+     break, and nothing can break after the last frame: no leading, doubled or trailing blank sheet is possible, which
+     `break-after: page` on every frame allowed (a sheet 18 of a 17-page book in Chrome's Save as PDF). */
+  break-before: page;
+  page-break-before: always;
+  break-after: auto;
+  page-break-after: auto;
   break-inside: avoid;
   page: mktg-portrait;
   print-color-adjust: exact;
@@ -128,7 +144,11 @@ $pp-band-height: 4px;
   color: var(--pp-dark);
 }
 
-.pp-head.pp-head--band .pp-head-section,
+/* The section label under the band: accent TEXT on the page white, so the darkened text accent. */
+.pp-head.pp-head--band .pp-head-section {
+  color: var(--pp-accent-text, var(--pp-accent));
+}
+
 .pp-page--dark .pp-head .pp-head-section {
   color: var(--pp-accent);
 }
@@ -193,8 +213,13 @@ $pp-band-height: 4px;
   color: var(--pp-dark);
 }
 
+/* An accent label: the text accent on a light page, the accent itself on a dark one. */
 .pp-lab--accent {
-  color: var(--pp-accent);
+  color: var(--pp-accent-text, var(--pp-accent));
+
+  .pp-page--dark & {
+    color: var(--pp-accent);
+  }
 }
 
 /* Intro / body: 12.5/1.6 regular, the body ink, 460 px wide by default, 600 for a page intro. */
@@ -435,5 +460,22 @@ $pp-band-height: 4px;
   .pp-page {
     margin: 0;
     box-shadow: none;
+  }
+
+  /* The print document of a frame book is its frames and nothing else: no height, margin or padding on the root
+     element or the body beyond them (any extra px after the last frame is one more sheet), and no page name on
+     anything but a frame: `mktg-portrait` is the one named page of the print, set by `.pp-page` alone, so no change
+     of page name can force a break before the first frame or after the last. */
+  html:has(.lfx-mktg-portrait),
+  body:has(.lfx-mktg-portrait) {
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body:has(.lfx-mktg-portrait),
+  body:has(.lfx-mktg-portrait) :not(.pp-page):not(.pp-page *) {
+    page: auto !important;
   }
 }

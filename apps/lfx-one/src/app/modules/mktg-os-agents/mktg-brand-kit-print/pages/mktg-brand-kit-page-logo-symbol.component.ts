@@ -7,6 +7,7 @@ import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-p
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitArtworkComponent } from './mktg-brand-kit-artwork.component';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The Symbol & symbol in shape page (mock 06): the rule, the three variants (full colour, reversed, one-colour black), the four shapes (a circle and a rounded square reversed, a rounded square on the tint and on white), and the padding demonstration with its rule (the AA figure for white on the accent only when it fails there). Without a symbol the page keeps its text alone.
@@ -15,6 +16,7 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
   selector: 'lfx-mktg-brand-kit-page-logo-symbol',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective, MktgBrandKitArtworkComponent],
   templateUrl: './mktg-brand-kit-page-logo-symbol.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageLogoSymbolComponent extends MktgBrandKitPageBase {
   protected readonly hasSymbol = computed(() => !!this.view().symbol?.src);

@@ -65,10 +65,10 @@
 
   body.lfx-print-brand-kit {
     /* The app shell takes no room and leaves no trailing blank sheets; the
-       book, positioned against the viewport, is what the sheets hold. */
+       book, positioned against the viewport, is what the sheets hold. The body
+       names no page: only the book's pages do (one named page per print). */
     height: 0 !important;
     overflow: hidden !important;
-    page: brand-kit;
 
     & * {
       visibility: hidden;
@@ -145,9 +145,9 @@
   }
 
   body.lfx-print-framework {
+    /* The body names no page: the print frame's unnamed @page rule is the setup. */
     height: 0 !important;
     overflow: hidden !important;
-    page: mktg-framework;
 
     & * {
       visibility: hidden;

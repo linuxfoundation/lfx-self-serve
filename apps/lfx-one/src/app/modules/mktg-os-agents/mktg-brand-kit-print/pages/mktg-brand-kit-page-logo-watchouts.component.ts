@@ -8,6 +8,7 @@ import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-p
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitArtworkComponent } from './mktg-brand-kit-artwork.component';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The Watchouts page (mock 08): the one-line rule, six 190 px tiles each showing a distortion of the lockup under a red cross (stretched, recoloured, rotated, with a shadow, on a busy gradient, retyped), and the safe default in a mist call-out.
@@ -33,6 +34,7 @@ function printGround(ground: string, view: BrandKitBookView): string {
   selector: 'lfx-mktg-brand-kit-page-logo-watchouts',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective, MktgBrandKitArtworkComponent],
   templateUrl: './mktg-brand-kit-page-logo-watchouts.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageLogoWatchoutsComponent extends MktgBrandKitPageBase {
   /**

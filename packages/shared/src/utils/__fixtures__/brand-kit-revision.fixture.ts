@@ -128,3 +128,15 @@ export function brandKitTestRevision(): BrandKitRevision {
     agentVersion: '2.0.0',
   };
 }
+
+/**
+ * The same kit before any logo file is uploaded: every logo slot empty and the chapter marked a placeholder, as the
+ * store holds a run that found no artwork. The portrait book plans its Logo chapter down to one page saying so; the
+ * print-QA harness seeds a scratch store from it (the logo-less fixture of the final round).
+ */
+export function brandKitLogolessFixture(): BrandKitRevision {
+  const revision = brandKitTestRevision();
+  revision.chapters.logo.files = { primary: null, stacked: null, symbol: null, reversed: null };
+  revision.chapters.logo.placeholder = true;
+  return revision;
+}

@@ -6,6 +6,7 @@ import { MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
 import { MktgPortraitLook, MktgPortraitBook } from '@lfx-one/shared/interfaces';
 import { MktgPortraitPageComponent } from '../mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../mktg-portrait-rect.directive';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../mktg-portrait-host';
 
 /**
  * A chapter opener, the family's (a standalone document has none: its
@@ -21,6 +22,7 @@ import { MktgPortraitRectDirective } from '../mktg-portrait-rect.directive';
   selector: 'lfx-mktg-portrait-opener',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
   templateUrl: './mktg-portrait-opener.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgPortraitOpenerComponent {
   public readonly look = input.required<MktgPortraitLook>();

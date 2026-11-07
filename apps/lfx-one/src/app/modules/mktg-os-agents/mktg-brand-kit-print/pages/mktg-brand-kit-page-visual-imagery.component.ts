@@ -6,6 +6,7 @@ import { brandKitPortraitMessageCard, brandKitPortraitRatioLabel, brandKitPortra
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The Imagery & graphic elements page (mock 13): the rule, the default grid
@@ -17,6 +18,7 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
   selector: 'lfx-mktg-brand-kit-page-visual-imagery',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
   templateUrl: './mktg-brand-kit-page-visual-imagery.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageVisualImageryComponent extends MktgBrandKitPageBase {
   /** The umbrella-message card's text, fitted to the card (the brand line when the umbrella cannot fit whole). */
