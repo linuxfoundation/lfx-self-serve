@@ -677,9 +677,16 @@ export function brandKitSidecar(kit: BrandKitRevision): Record<string, unknown> 
   };
 }
 
+/** How the stored Brand Kit read answers: held until `hold` resolves (a late read), or failing with `status` on every try. */
+export interface AssetKitReadOptions {
+  hold?: Promise<void>;
+  status?: number;
+}
+
 /**
  * Stub native asset reads; cookie suppression precedes every navigation. `kit` is the project's stored Brand Kit the
  * framework print is set in (its stored endpoint answers with the kit's sidecar); none, and the print takes the LF look.
+ * `kitRead` holds that answer back or fails it, for the print's wait on the read.
  */
 export async function openAssetDocument(
   page: Page,
@@ -688,7 +695,8 @@ export async function openAssetDocument(
   writer = true,
   unreadable = false,
   responseOverride?: MktgRevisionResponse,
-  kit: BrandKitRevision | null = null
+  kit: BrandKitRevision | null = null,
+  kitRead: AssetKitReadOptions = {}
 ): Promise<void> {
   await suppressCookieBanner(page);
   mockProjects[ASSET_PROJECT.slug] = ASSET_PROJECT;
@@ -721,8 +729,10 @@ export async function openAssetDocument(
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ json: { project: ASSET_PROJECT.uid, groups: [] } });
   });
-  await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, (route) =>
-    kit
+  await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, async (route) => {
+    if (kitRead.hold) await kitRead.hold;
+    if (kitRead.status) return route.fulfill({ status: kitRead.status, json: { error: 'Synthetic brand kit read failure' } });
+    return kit
       ? route.fulfill({
           json: {
             documentMarkdown: '',
@@ -737,8 +747,8 @@ export async function openAssetDocument(
             sidecar: brandKitSidecar(kit),
           },
         })
-      : route.fulfill({ status: 404, json: { error: 'No approved branding' } })
-  );
+      : route.fulfill({ status: 404, json: { error: 'No approved branding' } });
+  });
   await page.route(`**/api/mktg-agents/documents/${key}/living/revisions/*/approve?*`, (route) => {
     const approval = { approvedAt: '2026-10-19T11:00:00Z', approvedBy: { name: 'Project writer' } };
     const revision = { ...response.revision, approval };

@@ -398,6 +398,20 @@ export const FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES = ['Website', 'Link', 'Press 
  */
 export const MKTG_PRINT_DOT = ' · ';
 
+/** The Brand Kit read as a print starts: open, nothing known yet (`MktgPrintKitRead`). */
+export const MKTG_PRINT_KIT_READ_PENDING = { settled: false, kit: null, failed: false } as const;
+/** A print with no kit read at all (a host that passes none): settled, the LF look. */
+export const MKTG_PRINT_KIT_READ_NONE = { settled: true, kit: null, failed: false } as const;
+/**
+ * Why Download PDF is disabled while the project's Brand Kit is being read, or
+ * after the read failed: the print never prints the LF default in either case
+ * (the LF look is for a project with no kit stored), so the button says why.
+ */
+export const MKTG_PRINT_KIT_READ_NOTES = {
+  pending: 'Reading the project’s Brand Kit…',
+  failed: 'The project’s Brand Kit could not be read. Reload the page to try again.',
+} as const;
+
 /**
  * The LF look: what a print uses when the project has no Brand Kit yet. The
  * LF navy as the dark, the LF blue as the accent, Inter (which the app

@@ -6,8 +6,23 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { provideRouter, Router } from '@angular/router';
-import { FOUNDATION_MESSAGE_CONTENT_LIMITS, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM } from '@lfx-one/shared/constants';
-import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
+import {
+  FOUNDATION_MESSAGE_CONTENT_LIMITS,
+  FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM,
+  MKTG_PRINT_KIT_READ_NONE,
+  MKTG_PRINT_KIT_READ_NOTES,
+  MKTG_PRINT_KIT_READ_PENDING,
+  MKTG_PRINT_LF_LOOK,
+} from '@lfx-one/shared/constants';
+import {
+  BrandKitRevision,
+  MktgFrameworkAsset,
+  MktgFrameworkViewState,
+  MktgPrintKitRead,
+  MktgSlidesExportTarget,
+  MktgRevisionApproval,
+} from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -33,10 +48,13 @@ class HostComponent {
   public readonly approvedAsset = signal<MktgFrameworkAsset | null>(null);
   public readonly approvedVersion = signal<number | null>(null);
   public readonly approvedCreatedAt = signal<string | null>(null);
-  public readonly kit = signal<BrandKitRevision | null>(null);
+  public readonly kitRead = signal<MktgPrintKitRead>(MKTG_PRINT_KIT_READ_NONE);
   public readonly exportTarget = signal<MktgSlidesExportTarget | null>(null);
   public readonly approval = signal<MktgRevisionApproval | null>(null);
 }
+
+/** A kit read that has settled with the kit. */
+const settledKit = (kit: BrandKitRevision | null): MktgPrintKitRead => ({ settled: true, kit, failed: false });
 
 const pair = (a: string, b: string): [string, string] => [a, b];
 
@@ -558,7 +576,7 @@ describe('MktgFrameworkViewComponent', () => {
     const kit = brandKitTestRevision();
     host.asset.set(ASSET);
     host.state.set('ready');
-    host.kit.set(kit);
+    host.kitRead.set(settledKit(kit));
     host.exportTarget.set(target);
     await fixture.whenStable();
 
@@ -576,7 +594,7 @@ describe('MktgFrameworkViewComponent', () => {
     const kit = brandKitTestRevision();
     host.asset.set(ASSET);
     host.state.set('ready');
-    host.kit.set(kit);
+    host.kitRead.set(settledKit(kit));
     host.approvedAsset.set(ASSET);
     host.approvedVersion.set(1);
     await fixture.whenStable();
@@ -597,6 +615,55 @@ describe('MktgFrameworkViewComponent', () => {
     expect(printer.prepare).toHaveBeenCalledWith('Montserrat');
     // No approved date known here: the name carries none, never the download's.
     expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'TestOrbit · Messaging framework · v1');
+  });
+
+  it('waits for the Brand Kit read before it prints: no print root and Download PDF disabled with the reason while the read is open, then the kit’s brand once it settles (editor C1)', async () => {
+    const kit = brandKitTestRevision();
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(1);
+    host.kitRead.set(MKTG_PRINT_KIT_READ_PENDING);
+    await fixture.whenStable();
+    // Nothing of the LF default is built for a project whose kit is still being read.
+    expect(query('mktg-framework-print')).toBeNull();
+    const button = query('mktg-framework-view-download-pdf')?.querySelector('button');
+    expect(button?.disabled).toBe(true);
+    // The reason is the wrapping span's tooltip and label (the same span that names the approval rule).
+    expect(query('mktg-framework-view-download-pdf')?.parentElement?.getAttribute('aria-label')).toBe(MKTG_PRINT_KIT_READ_NOTES.pending);
+    button?.click();
+    expect(printer.printNow).not.toHaveBeenCalled();
+    // The read settles late with the kit: the print is the kit's, never the LF look, and the button prints it.
+    host.kitRead.set(settledKit(kit));
+    await fixture.whenStable();
+    expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('kit');
+    const frame = element().querySelector('[data-testid="lfx-mktg-portrait-page"][data-page-id="cover"]') as HTMLElement;
+    expect(frame.style.getPropertyValue('--pp-dark')).toBe(kit.kit.dark);
+    expect(frame.style.getPropertyValue('--pp-dark')).not.toBe(MKTG_PRINT_LF_LOOK.dark);
+    expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
+    expect(query('mktg-framework-view-download-pdf')?.parentElement?.getAttribute('aria-label')).toBeNull();
+    query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
+    expect(printer.printNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('never prints the LF look for a failed Brand Kit read: no print root, Download PDF disabled and saying so; the LF look only for a project with no kit stored', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(1);
+    host.kitRead.set({ settled: true, kit: null, failed: true });
+    await fixture.whenStable();
+    expect(query('mktg-framework-print')).toBeNull();
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(true);
+    expect(query('mktg-framework-view-download-pdf')?.parentElement?.getAttribute('aria-label')).toBe(MKTG_PRINT_KIT_READ_NOTES.failed);
+    query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
+    expect(printer.printNow).not.toHaveBeenCalled();
+    // No kit stored (the read settled with none): the LF look prints.
+    host.kitRead.set(MKTG_PRINT_KIT_READ_NONE);
+    await fixture.whenStable();
+    expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
   });
 
   it('opens Sources from its tab without the duplicate reviewer-note link', async () => {

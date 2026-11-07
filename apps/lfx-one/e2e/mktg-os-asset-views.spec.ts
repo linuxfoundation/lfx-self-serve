@@ -9,6 +9,7 @@ import {
   MKTG_PORTRAIT_PAGE,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
   MKTG_PORTRAIT_PAPERS,
+  MKTG_PRINT_KIT_READ_NOTES,
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
   MKTG_SLIDES_EXPORT_API_PATH,
 } from '@lfx-one/shared/constants';
@@ -24,7 +25,7 @@ import {
   stubMktgPrintFrame,
 } from './helpers/mktg-print.helper';
 
-import { brandKitLogolessFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { brandKitLogolessFixture, brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { mktgPortraitAccentOnDark, mktgPortraitAccentText } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
 import {
   columnAssetRevisionResponse,
@@ -653,6 +654,53 @@ test('the framework print lists every figure past six as a table, continued on a
   await page.screenshot({ path: info.outputPath('foundation-message-print-overfull.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);
+});
+
+test('Download PDF waits for the project’s Brand Kit: disabled with the reason while the read is open, then three downloads in a row each print the kit’s cover (editor C1)', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  // The kit with the fixture's lockup: its answer is held back until the test releases it, as a slow stored read is.
+  const kit = brandKitTestRevision();
+  let release: () => void = () => undefined;
+  const hold = new Promise<void>((resolve) => (release = resolve));
+  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), kit, { hold });
+  const download = page.getByTestId('mktg-framework-view-download-pdf');
+  // While the read is open: the button is disabled, its wrapper says why, and no print root (no LF-default book) is on the page.
+  await expect(download.getByRole('button')).toBeDisabled();
+  await expect(page.locator('span[aria-label]', { has: download })).toHaveAttribute('aria-label', MKTG_PRINT_KIT_READ_NOTES.pending);
+  await expect(page.getByTestId('mktg-framework-print')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('framework-pdf-waits-for-kit.png') });
+  release();
+  await expect(download.getByRole('button')).toBeEnabled();
+  // Three consecutive downloads: each one's cover is the kit's (its lockup as a data: SVG, never the LF file; its dark band).
+  for (let press = 1; press <= 3; press++) {
+    await download.getByRole('button').click();
+    await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+    const frame = await layoutMktgPrintFrame(page);
+    await expect(frame.getByTestId('mktg-framework-print')).toHaveAttribute('data-brand', 'kit');
+    const logo = frame.getByTestId('mktg-framework-print-cover-logo');
+    await expect(logo).toHaveAttribute('src', /^data:image\/svg\+xml/);
+    await expect(logo).not.toHaveAttribute('src', /logo_lf_white\.svg/);
+    const cover = frame.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="cover"]');
+    await expect(cover.getByTestId('mktg-framework-print-cover')).toHaveCSS('background-color', cssRgb(kit.kit.dark));
+    if (press === 3) await page.screenshot({ path: info.outputPath('framework-pdf-kit-cover-third-download.png') });
+    await finishMktgPrintFrame(page);
+  }
+});
+
+test('a failed Brand Kit read never prints the LF look: Download PDF stays disabled and says so, with no print root on the page', async ({ page }, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), brandKitTestRevision(), { status: 500 });
+  const download = page.getByTestId('mktg-framework-view-download-pdf');
+  await expect(download.getByRole('button')).toBeDisabled();
+  await expect(page.locator('span[aria-label]', { has: download })).toHaveAttribute('aria-label', MKTG_PRINT_KIT_READ_NOTES.failed);
+  await expect(page.getByTestId('mktg-framework-print')).toHaveCount(0);
+  // The rest of the page is the framework's: the failed brand read stops the PDF alone.
+  await expect(page.getByTestId('mktg-framework-view')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('framework-pdf-kit-read-failed.png') });
 });
 
 test('the framework print set in the project’s kit: accent text darkened to read on the page, the cover logo skipped on a logo-less kit, the tiles’ figures on one line', async ({

@@ -6,6 +6,7 @@
 // template binds it.
 
 import type { BoilerplatesLengthRow } from './boilerplates.interface';
+import type { BrandKitRevision } from './brand-kit.interface';
 import type { FaqGroupView } from './faq.interface';
 import type {
   FoundationMessageAudienceRow,
@@ -44,6 +45,19 @@ export interface MktgPrintLogo {
   alt: string;
   /** CSS filter on the image: the reversed (white) rendering of a full-color lockup, or '' to draw it as it is. */
   filter: string;
+}
+
+/**
+ * The print's read of the project's Brand Kit, as the print page holds it: not
+ * settled until the kit, or a definite "none stored", has arrived (a print made
+ * before that would be the LF default for a project that has a kit); `failed`
+ * when the read errored, which is never the LF look either — the print waits
+ * and says so. The LF look is for a project with no kit stored, nothing else.
+ */
+export interface MktgPrintKitRead {
+  settled: boolean;
+  kit: BrandKitRevision | null;
+  failed: boolean;
 }
 
 /** The brand a print is set in: colors, typeface and logo. */
