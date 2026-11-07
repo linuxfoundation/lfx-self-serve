@@ -39,6 +39,7 @@ import {
   mktgPortraitCharsPerLine,
   mktgPortraitParaHeight,
   mktgPortraitPlatePadding,
+  mktgPortraitLook,
   mktgPortraitPlateRadius,
   mktgPrintBrand,
 } from '@lfx-one/shared/utils';
@@ -809,20 +810,30 @@ describe('MktgFrameworkPrintComponent', () => {
     }));
     const longView = buildFoundationMessagePrintView({ ...CONTENT, mf: { ...CONTENT.mf, goals: longGoals } }, 'TestOrbit', 2, null);
     await setView(longView);
-    const laid = frameworkPortraitMatrix(longView.goals, longView.mf.crosscut, FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix);
+    // The spec measures as the component does: on the brand's face (the look's font stack).
+    const laid = frameworkPortraitMatrix(
+      longView.goals,
+      longView.mf.crosscut,
+      FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix,
+      mktgPortraitLook(longView.brand).fontStack
+    );
     expect(laid.bands).toHaveLength(2);
     const labels = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-goals-label"]')).map((label) => label.textContent?.trim());
     expect(labels.filter((label) => label === 'Key message')).toHaveLength(2);
-    // With the key messages whole, this shape's proof cells would print under the tight floor: the band ladder's second step drops the
-    // proof row too (FA1b), every cell with it, and the one note says where all three rows are.
-    expect(labels.filter((label) => label === 'Proof')).toHaveLength(0);
+    // Measured on the glyph table in the LF look's face, this shape's bands hold the proof row at the ladder's first step: every
+    // cell's one whole first proof with its own "+3 more" line, the plain caption under the bands, the buffer above the footer kept.
+    expect(labels.filter((label) => label === 'Proof')).toHaveLength(2);
     expect(labels.filter((label) => label === 'Value proposition')).toHaveLength(0);
     expect(labels.filter((label) => label === 'Sound bite')).toHaveLength(0);
-    expect(laid.rows).toEqual({ value: false, bite: false, proof: false });
-    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesAll]);
-    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof-cell"]')).toHaveLength(0);
+    expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
+    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix - laid.height).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBuffer);
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof-cell"]')).toHaveLength(8);
+    expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proofs-cut"]')).map((note) => note.textContent?.trim())).toEqual(
+      Array.from({ length: 8 }, () => '+3 more in LFX One')
+    );
     expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).map((note) => note.textContent?.trim())).toEqual([
-      'Value propositions, sound bites and proofs are on each goal page.',
+      'Value propositions and sound bites are on each goal page.',
     ]);
     const keys = Array.from(host().querySelectorAll<HTMLElement>('.fwp-matrix-key'));
     expect(keys.map((key) => key.style.fontSize)).toEqual(Array.from({ length: 8 }, () => `${FRAMEWORK_PORTRAIT_TYPE.matrixKey.size}px`));
@@ -840,6 +851,67 @@ describe('MktgFrameworkPrintComponent', () => {
     );
     expect(query('mktg-framework-print-goals-band-0')?.style.getPropertyValue('--fwp-goal-count')).toBe('8');
     expect(query('mktg-framework-print-goals-band-1')).toBeNull();
+  });
+
+  it('folds the proof cells’ "+N more" lines into the one caption when that is what keeps a whole first proof a goal (the maintainer’s fold step)', async () => {
+    // The family seeds' shape: long goal names on the overfull record's key messages and proofs. The head row grows for the names, and
+    // with each cell's own "+3 more" line the first proofs would fall below the tight floor: the lines fold into the caption, every
+    // goal keeps one whole first proof at 10.5 px, and no cell prints a line of its own.
+    const longTitles = [
+      'Adoption across every cloud and vendor',
+      'Contributors and maintainers of the projects',
+      'Certification for the engineers employers hire',
+      'End users who shape the roadmap they depend on',
+      'Events in every region of the world',
+      'Security as a shared industry practice',
+      'Membership that funds the neutral home',
+      'Education from the first container onward',
+    ];
+    const keys = [
+      'The cloud native stack is open, governed in the open and run everywhere.',
+      'Build it where the whole industry maintains it with you.',
+      'The certification employers recognize, against the standard everyone ships.',
+      'Your production needs set the roadmap: bring them to the end user community.',
+      'Where cloud native is built, taught and decided: come to the next event.',
+      'Security is a shared practice here, not a product.',
+      'Sustain the neutral home the whole ecosystem depends on.',
+      'Learn cloud native the way the maintainers teach it.',
+    ];
+    const facts = [
+      'Kubernetes runs in production at 96 percent of the organizations surveyed in the latest annual survey',
+      'More than 250 projects are hosted across the graduated, incubating and sandbox tiers',
+      'Over 290,000 contributors from 190 countries have committed to hosted projects',
+      'KubeCon + CloudNativeCon North America drew 12,000 attendees in person last year',
+      'More than 180,000 certifications have been issued under the Kubernetes certification program',
+      '900 member organizations across every continent, from startups to the largest cloud providers',
+      'Twenty-two graduated projects have passed the open governance and security audit bar',
+      'Over 200 Kubernetes community days were held in 60 countries over the last twelve months',
+    ];
+    const goals = longTitles.map((t, index) => ({
+      ...CONTENT.mf.goals[0],
+      id: `g${index}`,
+      n: index + 1,
+      t,
+      key: keys[index],
+      proof: Array.from({ length: 4 }, (_, at) => pair(facts[(index + at) % facts.length], at % 2 ? 'LFX field' : 'Website')),
+    }));
+    const view = buildFoundationMessagePrintView({ ...CONTENT, mf: { ...CONTENT.mf, goals } }, 'TestOrbit', 2, null);
+    await configure('browser', view);
+    const room = FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix;
+    const laid = frameworkPortraitMatrix(view.goals, view.mf.crosscut, room, mktgPortraitLook(view.brand).fontStack);
+    expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
+    expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold]);
+    // The matrix ends a real buffer above the footer gap (the editor's 12 px): the fold is what keeps the row, not a margin of a few px.
+    expect(room - laid.height).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBuffer);
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-title"]')).toHaveLength(8);
+    const cells = Array.from(host().querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-proof-cell"]'));
+    expect(cells).toHaveLength(8);
+    expect(cells.map((cell) => cell.querySelectorAll('li').length)).toEqual(Array.from({ length: 8 }, () => 1));
+    expect(cells.every((cell) => cell.classList.contains('fwp-matrix-proofs--tight'))).toBe(true);
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proofs-cut"]')).toHaveLength(0);
+    expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).map((note) => note.textContent?.trim())).toEqual([
+      'Value propositions and sound bites are on each goal page. More proofs for each goal are in LFX One.',
+    ]);
   });
 
   it('sets the three statements at one size, the smallest any card needs, never one card shrunk alone (the editor’s read)', async () => {

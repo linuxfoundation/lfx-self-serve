@@ -798,9 +798,12 @@ export function brandKitPortraitVoiceMessagesFit(view: Pick<BrandKitBookView, 'v
  * when no step holds it, and when even that runs past the room, its last
  * rules given up to a `+N more rules, in LFX One` line (the room's noun,
  * singular at one), one at a time, the first rule always kept. Items fill the columns in turn (a two-column grid's
- * order), and the room is measured as the page draws it: a CSS grid whose rows align, each row as tall as its
- * taller rule, the grid the sum of its rows, and the `+N more` line a row of its own under the grid. A one-column
- * room is the plain sum of its items, as before.
+ * order), and the room is measured as the page draws the grid lists (`.kp-rules`, a CSS grid whose rows align: a
+ * row is as tall as its taller rule, the grid the sum of its rows, and the `+N more` line a row of its own under
+ * the grid). The Imagery avoid list is drawn with CSS `columns`, a balanced flow; for it the row-aligned measure is
+ * a conservative bound (it never under-measures; a list may step down one size earlier than the flow strictly
+ * needs), chosen over a second model so one measure holds every room. A one-column room is the plain sum of its
+ * items.
  */
 export function brandKitPortraitRulesFit(rules: readonly string[], room: BrandKitPortraitRuleListRoom): BrandKitPortraitRulesFit {
   const c = BRAND_KIT_PORTRAIT_RULE_LISTS;
