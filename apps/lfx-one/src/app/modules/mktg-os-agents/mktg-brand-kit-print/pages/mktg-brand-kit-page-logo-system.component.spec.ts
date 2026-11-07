@@ -63,7 +63,7 @@ describe('the Logo system page', () => {
     // The symbol PNG has no artwork to draw and nothing to crop: no symbol tile. The reversed tile whitens the lockup.
     expect(tiles?.querySelectorAll('.pp-tile')).toHaveLength(1);
     expect(tiles?.textContent).not.toContain('Symbol ·');
-    expect(tiles?.textContent).toContain('Reversed · derived from the horizontal file');
+    expect(tiles?.textContent).toContain('On the dark · the full-color lockup (no reversed file)');
     expect(tiles?.textContent).not.toContain('supplied file');
     expect(tiles?.querySelector<HTMLElement>('.pp-tile--dark img')?.style.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
     // The files table lists the uploads as supplied, in their format, without a file name.

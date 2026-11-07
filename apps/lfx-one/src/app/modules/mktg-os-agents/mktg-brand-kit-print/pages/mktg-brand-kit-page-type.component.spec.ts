@@ -79,8 +79,8 @@ describe('the Typography page', () => {
     const h1 = frame.querySelector<HTMLElement>('[data-testid="brand-kit-type-h1"]');
     expect(h1?.style.fontSize).toBe('48px');
     // 94 characters in Montserrat at 500: the first three words fit the 704 px column at 48 by the measured width.
-    expect(h1?.textContent).toBe('Open standards, open');
-    expect(mktgPortraitLineFits('Open standards, open', 704, 48, { weight: 500, family: 'Montserrat', tracking: -0.015 })).toBe(true);
+    expect(h1?.textContent).toBe('Open standards, open…');
+    expect(mktgPortraitLineFits('Open standards, open…', 704, 48, { weight: 500, family: 'Montserrat', tracking: -0.015 })).toBe(true);
     expect(mktgPortraitLineFits('Open standards, open governance', 704, 48, { weight: 500, family: 'Montserrat', tracking: -0.015 })).toBe(false);
   });
 

@@ -436,7 +436,8 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-lockups')?.querySelectorAll('img').length).toBeGreaterThan(0);
       expect(query('brand-kit-web-view-lockups')?.textContent).toContain('logo.svg');
       const colorways = queryAll('brand-kit-web-view-colorway');
-      expect(colorways.map((element) => element.textContent?.trim())).toEqual([
+      // The caption under each tile (the tile itself may hold a "Not supplied" line).
+      expect(colorways.map((element) => element.lastElementChild?.textContent?.trim())).toEqual([
         'Full color · on white',
         'Reversed · on Charcoal',
         'Full color · on light tint',

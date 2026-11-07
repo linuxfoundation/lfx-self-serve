@@ -63,9 +63,11 @@ describe('the Colorways page', () => {
   it('keeps each caption with its own colorway when a tile without artwork is left out', async () => {
     const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoColorwaysComponent, 'logo-colorways', (view) => ({
       ...view,
-      colorways: view.colorways.map((tile, index) => (index === 1 ? { ...tile, logo: null } : tile)),
+      colorways: view.colorways.map((tile, index) => (index === 1 ? { ...tile, logo: null, missing: '' } : tile)),
     }));
     const tiles = Array.from(frame.querySelectorAll('[data-testid="brand-kit-colorways-tiles"] > div'));
+    // A tile with neither artwork nor a "Not supplied" line is left out; the one-colour tile (not derivable from the
+    // three-colour fixture lockup) stays with its line.
     expect(tiles).toHaveLength(3);
     expect(tiles.map((tile) => tile.querySelector('.pp-cap')?.textContent)).toEqual([
       'Full color · on white',

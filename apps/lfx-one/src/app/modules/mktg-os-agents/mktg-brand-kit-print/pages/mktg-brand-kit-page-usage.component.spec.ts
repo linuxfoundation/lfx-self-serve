@@ -39,7 +39,7 @@ describe('the Example usage page', () => {
     // The reversed lockup on the dark grounds, the full-colour one on the report and on the social card, which keeps a
     // white ground under an accent rule because nothing in this kit reads on its orange (the accent-moment rule).
     expect(layouts.map((card) => card.querySelectorAll('img').length)).toEqual([1, 1, 1, 1]);
-    expect(layouts[1].classList.contains('kp-usage-frame--social-rule')).toBe(true);
+    expect(layouts[1].querySelector('.kp-usage-frame')?.classList.contains('kp-usage-frame--social-rule')).toBe(true);
     expect(layouts[1].querySelector('[data-testid="brand-kit-usage-social-note"]')).toBeNull();
     const table = frame.querySelector('[data-testid="brand-kit-usage-table"]');
     expect(rectOf(table)).toEqual({ left: '56px', top: '740px', width: '704px' });
