@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_PRINT_REVERSED_FILTER } from '@lfx-one/shared/constants';
 import { MktgPortraitBook } from '@lfx-one/shared/interfaces';
 import { buildBrandKitBookView, mktgPrintBrand } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
@@ -121,8 +120,8 @@ describe('the portrait book', () => {
     expect(back.querySelector('[data-testid="mktg-portrait-back-cover-url"]')?.textContent).toBe('one.example.org');
     expect(back.querySelector('[data-testid="mktg-portrait-back-cover-version"]')?.textContent).toBe('V3.0 · October 2026');
     expect(back.querySelector('[data-testid="mktg-portrait-back-cover-notice"]')?.textContent).toBe(view.backCoverNotice);
-    // The contents page lists the plan's pages, the Sources page at 15 and the back cover at 16.
-    expect(frames[1].querySelectorAll('.kp-contents-row')).toHaveLength(14);
+    // The contents page lists the plan's content pages (3 to the Sources page at 15); the back cover is not listed.
+    expect(frames[1].querySelectorAll('.kp-contents-row')).toHaveLength(13);
     expect(frames[1].querySelector('[data-testid="brand-kit-contents-approval"]')).toBeNull();
   });
 
@@ -196,18 +195,19 @@ describe('the portrait book', () => {
     expect(root.textContent).not.toMatch(/\[[^\]]+\]/);
   });
 
-  it('inks the social card on the accent by the shared rule: the kit’s dark and the full-colour lockup when white fails AA there, white and the reversed lockup when it passes', async () => {
+  it('inks the social card on the accent by the shared rule: the kit’s dark when white fails AA there, white when it passes; never a logo on the accent', async () => {
     const { root, brand, fixture } = await setup();
     const social = () => root.querySelector<HTMLElement>('.kp-usage-frame--social');
     // The fixture's orange accent reads 2.8:1 against white, as its own contrast table would grade it.
     expect(social()?.style.background).toBe(colour(brand.accent));
     expect(social()?.style.color).toBe(colour(brand.dark));
-    expect(social()?.querySelector('img')?.style.filter).toBe('');
-    // A dark accent that passes AA against white: white ink and the reversed lockup.
+    expect(social()?.querySelector('img')).toBeNull();
+    expect(social()?.querySelector('[data-testid="brand-kit-usage-social-note"]')?.textContent).toBe('No logo on the accent');
+    // A dark accent that passes AA against white: white ink; still no lockup on the accent.
     fixture.componentRef.setInput('brand', { ...brand, accent: '#1F4E79' });
     await fixture.whenStable();
     expect(social()?.style.background).toBe(colour('#1F4E79'));
     expect(social()?.style.color).toBe(colour('white'));
-    expect(social()?.querySelector('img')?.style.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+    expect(social()?.querySelector('img')).toBeNull();
   });
 });

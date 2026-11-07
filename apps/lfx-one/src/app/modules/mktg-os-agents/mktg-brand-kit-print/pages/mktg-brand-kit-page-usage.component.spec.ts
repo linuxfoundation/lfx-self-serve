@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { brandKitOverfullFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
-import { buildBrandKitBookView } from '@lfx-one/shared/utils';
+import { buildBrandKitBookView, mktgNoWidow } from '@lfx-one/shared/utils';
 import { MktgBrandKitPageUsageComponent } from './mktg-brand-kit-page-usage.component';
 import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -24,8 +24,9 @@ describe('the Example usage page', () => {
       'Report cover · letter',
       'Announcement header · 1600×900',
     ]);
-    expect(layouts[0].querySelector('.kp-usage-keynote-text')?.textContent).toBe(view.voice.line);
-    expect(layouts[1].querySelector('.kp-usage-social-text')?.textContent).toBe(view.voice.line);
+    // The card lines carry the brand line with its last two words joined (no widow).
+    expect(layouts[0].querySelector('.kp-usage-keynote-text')?.textContent).toBe(mktgNoWidow(view.voice.line));
+    expect(layouts[1].querySelector('.kp-usage-social-text')?.textContent).toBe(mktgNoWidow(view.voice.line));
     expect(layouts[1].querySelector('.kp-button--tiny')?.textContent).toBe('one.example.org');
     // The report cover's year is the recorded approval's; without one the line carries no year.
     expect(layouts[2].querySelector('.kp-usage-report-text')?.textContent).toBe('Project One annual report');
