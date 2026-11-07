@@ -2,23 +2,49 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_INKS, MKTG_PORTRAIT_PAGE, MKTG_PORTRAIT_PAGE_SETUP } from '../constants/mktg-portrait-print.constants';
-import { MKTG_PRINT_PAGE_SETUPS } from '../constants/mktg-print.constants';
-import type { MktgPortraitFitBlock } from '../interfaces/mktg-portrait-print.interface';
 import {
+  MKTG_PORTRAIT_FIT,
+  MKTG_PORTRAIT_INKS,
+  MKTG_PORTRAIT_MORE_LINE,
+  MKTG_PORTRAIT_PAGE,
+  MKTG_PORTRAIT_PAGE_SETUP,
+} from '../constants/mktg-portrait-print.constants';
+import { MKTG_PRINT_PAGE_SETUPS } from '../constants/mktg-print.constants';
+import { lfxColors } from '../constants/colors.constants';
+import type { MktgPortraitFitBlock } from '../interfaces/mktg-portrait-print.interface';
+import { brandKitContrastRatio, brandKitLuminance } from './brand-kit-book.utils';
+import {
+  mktgPortraitAccentOnDark,
+  mktgPortraitAccentText,
   mktgPortraitBlockHeight,
   mktgPortraitCharsPerLine,
+  mktgPortraitCount,
+  mktgPortraitCoverStrip,
   mktgPortraitCutText,
   mktgPortraitFitBlock,
   mktgPortraitFits,
   mktgPortraitIsChapter,
+  mktgPortraitLineFits,
   mktgPortraitLook,
   mktgPortraitOneLine,
   mktgPortraitPageNumber,
   mktgPortraitPaginate,
+  mktgPortraitSaysAlready,
   mktgPortraitScaleBlock,
   mktgPortraitSentences,
+  mktgPortraitTailFor,
+  mktgPortraitTextWidth,
+  mktgPortraitWithTail,
   mktgPortraitWrapLines,
+  mktgKeepName,
+  mktgNoBreak,
+  mktgPortraitPlateFit,
+  mktgPortraitPlatePadding,
+  mktgPortraitPlateRadius,
+  mktgNoWidow,
+  mktgPortraitLargestFitting,
+  mktgPortraitMoreLine,
+  mktgPortraitTrimStopWords,
 } from './mktg-portrait-print.utils';
 import { mktgPrintBrand } from './mktg-print.utils';
 
@@ -34,11 +60,18 @@ describe('the portrait page geometry', () => {
 
   it('prints on its own US Letter page with no margin, the setup the print frame writes', () => {
     expect(MKTG_PORTRAIT_PAGE_SETUP).toBe(MKTG_PRINT_PAGE_SETUPS['mktg-portrait']);
-    expect(MKTG_PORTRAIT_PAGE_SETUP).toBe('size: 8.5in 11in; margin: 0;');
+    expect(MKTG_PORTRAIT_PAGE_SETUP).toBe('size: auto; margin: 0;');
   });
 
-  it('keeps the neutral inks as the design sets them', () => {
-    expect(MKTG_PORTRAIT_INKS).toEqual({ ink: '#1F2937', muted: '#6B7280', hairline: '#E5E7EB', mist: '#F3F4F6', white: '#FFFFFF' });
+  it('keeps the four neutral inks as the design sets them, and takes white and the fail ink from the app’s scales', () => {
+    expect(MKTG_PORTRAIT_INKS).toEqual({
+      ink: '#1F2937',
+      muted: '#6B7280',
+      hairline: '#E5E7EB',
+      mist: '#F3F4F6',
+      white: lfxColors.white,
+      fail: lfxColors.red[600],
+    });
   });
 });
 
@@ -77,6 +110,25 @@ describe('the fit model', () => {
     expect(mktgPortraitCharsPerLine(1, 100)).toBe(1);
   });
 
+  it('measures one line glyph by glyph in the kit’s face, so a line that fits its measure is left at its real size', () => {
+    // A live foundation's display line at 64 px in a face of ordinary width is narrower than the 704 px column …
+    const sans = { weight: 500, family: "'Instrument Sans', sans-serif" };
+    const display = mktgPortraitTextWidth('Agentic AI Foundation', 64, sans);
+    expect(display).toBeGreaterThan(560);
+    expect(display).toBeLessThan(704);
+    expect(mktgPortraitLineFits('Agentic AI Foundation', 704, 64, sans)).toBe(true);
+    // … where the flat paragraph average (0.6 em a character for a medium weight) would call it too wide.
+    expect('Agentic AI Foundation'.length * 64 * MKTG_PORTRAIT_FIT.charEmBold).toBeGreaterThan(704);
+    // The same words set wider: a wide face (Montserrat), a bolder weight, capitals with their tracking.
+    expect(mktgPortraitTextWidth('Agentic AI Foundation', 64, { weight: 500, family: 'Montserrat' })).toBeGreaterThan(display);
+    expect(mktgPortraitTextWidth('Agentic AI Foundation', 64, { weight: 700, family: sans.family })).toBeGreaterThan(display);
+    expect(mktgPortraitTextWidth('Agentic AI Foundation', 64, { ...sans, caps: true })).toBeGreaterThan(display);
+    // An unknown face measures as a face of average width; a narrow i and a wide W are not the same glyph.
+    expect(mktgPortraitTextWidth('iiii', 10)).toBeLessThan(mktgPortraitTextWidth('WWWW', 10));
+    expect(mktgPortraitTextWidth('', 10)).toBe(0);
+    expect(mktgPortraitLineFits('Agentic AI Foundation', 400, 64, sans)).toBe(false);
+  });
+
   it('wraps greedily by words, a hard line on its own, a long word broken', () => {
     expect(mktgPortraitWrapLines('one two three', 20)).toBe(1);
     expect(mktgPortraitWrapLines('one two three', 7)).toBe(2);
@@ -95,6 +147,12 @@ describe('the fit model', () => {
     expect(mktgPortraitBlockHeight(block, 704)).toBe(15 + 8 + 15);
     expect(mktgPortraitFits(block, 704, 38)).toBe(true);
     expect(mktgPortraitFits(block, 704, 37)).toBe(false);
+    // A paragraph in a narrower cell (a table row's source beside a swatch and a label) wraps at the cell's width.
+    const words = Array.from({ length: 6 }, () => 'word').join(' ');
+    const plain: MktgPortraitFitBlock = { paras: [{ text: words, size: 12.5, line: 1.5 }] };
+    const inCell: MktgPortraitFitBlock = { paras: [{ text: words, size: 12.5, line: 1.5, indent: 200 }] };
+    expect(mktgPortraitBlockHeight(plain, 324)).toBe(12.5 * 1.5);
+    expect(mktgPortraitBlockHeight(inCell, 324)).toBeGreaterThanOrEqual(12.5 * 1.5 * 2);
   });
 
   it('scales sizes down to the half px and the space above to a tenth', () => {
@@ -105,8 +163,27 @@ describe('the fit model', () => {
   it('splits sentences and cuts at a sentence, else at a word with an ellipsis', () => {
     expect(mktgPortraitSentences('One. Two! Three? (Four)')).toEqual(['One.', 'Two!', 'Three?', '(Four)']);
     expect(mktgPortraitCutText('One sentence. Another one here.', 14)).toBe('One sentence.');
-    expect(mktgPortraitCutText('No stop in this long line of words', 12)).toBe('No stop in…');
+    // A word cut never ends on a function word ('No stop in…' reads as a dangling cut).
+    expect(mktgPortraitCutText('No stop in this long line of words', 12)).toBe('No stop…');
+    expect(mktgPortraitCutText('No stop here this long line of words', 13)).toBe('No stop here…');
+    expect(mktgPortraitTrimStopWords(['The', 'name', 'goes', 'first', 'and'])).toEqual(['The', 'name', 'goes', 'first']);
+    expect(mktgPortraitTrimStopWords(['so,', 'with'])).toEqual(['so,']);
+    expect(mktgPortraitLargestFitting(10, (count) => count <= 7)).toBe(7);
+    expect(mktgPortraitLargestFitting(10, () => false)).toBe(1);
+    expect(mktgPortraitLargestFitting(10, () => true)).toBe(10);
     expect(mktgPortraitCutText('short', 12)).toBe('short');
+    expect(mktgPortraitCutText('A word, —  and more words after it', 9)).toBe('A word…');
+  });
+
+  it('cuts a hostile text of ten thousand tabs in linear time', () => {
+    // A first word longer than the room, after ten thousand tabs: the cut falls back to the raw slice and trims its tail.
+    const tabs = '\t'.repeat(10000);
+    const started = performance.now();
+    const slice = mktgPortraitCutText(`${tabs}x${'y'.repeat(20000)}`, 15000);
+    const words = mktgPortraitCutText(`${tabs}x`, 20);
+    expect(performance.now() - started).toBeLessThan(250);
+    expect(slice).toBe(`${tabs}x${'y'.repeat(4998)}…`);
+    expect(words).toBe('x');
   });
 
   it('keeps a block that fits as written, shrinks one that does not, and cuts the longest paragraph as the last resort', () => {
@@ -134,5 +211,166 @@ describe('the fit model', () => {
     expect(mktgPortraitPaginate([1, 2, 3, 4, 5], (page) => page.length <= 2)).toEqual([[1, 2], [3, 4], [5]]);
     expect(mktgPortraitPaginate([1, 2], () => false)).toEqual([[1], [2]]);
     expect(mktgPortraitPaginate([], () => true)).toEqual([]);
+  });
+});
+
+describe('mktgPortraitPlatePadding', () => {
+  it('pads the white plate by half the drawn height: 42 under the cover lockup, 36 under the back cover lockup', () => {
+    expect(mktgPortraitPlatePadding(84)).toBe(42);
+    expect(mktgPortraitPlatePadding(72)).toBe(36);
+  });
+
+  it('fits a plated artwork to its box: the mark drawn at half the box, the padding a quarter, nothing spilling', () => {
+    expect(mktgPortraitPlateFit(40)).toEqual({ height: 20, padding: 10 });
+    expect(mktgPortraitPlateFit(64)).toEqual({ height: 32, padding: 16 });
+    const { height, padding } = mktgPortraitPlateFit(76);
+    expect(height + 2 * padding).toBe(76);
+  });
+
+  it('rounds the plate by a sixth of its shorter side: the cover plate by its height, a tall plate by its width', () => {
+    // The cover's 84 px lockup on its plate: 168 tall and wider → 28.
+    expect(mktgPortraitPlateRadius(420, 168)).toBe(28);
+    expect(mktgPortraitPlateRadius(300, 152)).toBeCloseTo(25.33, 2);
+    // A 40 px tile's plate → 6.7; a 126 px box → 21.
+    expect(mktgPortraitPlateRadius(96, 40)).toBeCloseTo(6.67, 2);
+    expect(mktgPortraitPlateRadius(200, 126)).toBe(21);
+    // A plate taller than wide takes its width; a width not yet measured reads as wide.
+    expect(mktgPortraitPlateRadius(60, 126)).toBe(10);
+    expect(mktgPortraitPlateRadius(null, 126)).toBe(21);
+    expect(mktgPortraitPlateRadius(0, 126)).toBe(21);
+  });
+});
+
+describe('mktgNoBreak and mktgKeepName', () => {
+  it('keeps a multi-word name on one line, so a headline breaks before the whole name, never inside it', () => {
+    expect(mktgNoBreak('Agentic  AI Foundation')).toBe('Agentic\u00a0AI\u00a0Foundation');
+    expect(mktgNoBreak('Alone')).toBe('Alone');
+    expect(mktgKeepName('New members join Agentic AI Foundation', 'Agentic AI Foundation')).toBe('New members join Agentic\u00a0AI\u00a0Foundation');
+    // The no-widow rule reads the no-break spaces as gaps: the name stays whole and the line may break before it.
+    expect(mktgNoWidow(mktgKeepName('New members join Agentic AI Foundation', 'Agentic AI Foundation'))).toBe(
+      'New members join Agentic\u00a0AI\u00a0Foundation'
+    );
+    expect(mktgKeepName('Project One annual report 2026', 'Project One')).toBe('Project\u00a0One annual report 2026');
+    // A one-word name, an absent name, an empty one: the text as it is.
+    expect(mktgKeepName('Open standards for one computing', 'Kubernetes')).toBe('Open standards for one computing');
+    expect(mktgKeepName('Open standards for one computing', 'Agentic AI')).toBe('Open standards for one computing');
+    expect(mktgKeepName('Open standards', '  ')).toBe('Open standards');
+  });
+});
+
+describe('mktgPortraitSaysAlready', () => {
+  it('reads a name as words and leaves a clause out when the name already says it, so a ground prints once', () => {
+    expect(mktgPortraitSaysAlready('Full color · on white', 'on white')).toBe(true);
+    expect(mktgPortraitSaysAlready('Full color · on white', 'full color on white')).toBe(true);
+    expect(mktgPortraitSaysAlready('Reversed · on Charcoal', 'white on dark')).toBe(false);
+    expect(mktgPortraitSaysAlready('Full color', '')).toBe(false);
+    expect(mktgPortraitTailFor('Full color · on white', ' · ', 'on white')).toBe('');
+    expect(mktgPortraitTailFor('Reversed', ' · ', 'on Charcoal')).toBe(' · on Charcoal');
+    expect(mktgPortraitWithTail('One-color black · print only', ' · ', 'print only')).toBe('One-color black · print only');
+    expect(mktgPortraitWithTail('One-color black', ' · ', 'print only')).toBe('One-color black · print only');
+  });
+});
+
+describe('mktgPortraitAccentOnDark', () => {
+  it('keeps the accent as text on the dark where it reads at AA, else takes the ink on the dark, and leaves a non-hex as it is', () => {
+    // The kit's orange on its charcoal: 2.9:1, as the matrix grades it; the back cover's brand line goes white.
+    expect(mktgPortraitAccentOnDark({ accent: '#F37625', dark: '#4D4E4E', onDark: '#FFFFFF' })).toBe('#FFFFFF');
+    // A yellow reads on the charcoal (above 4.5:1): the accent itself.
+    expect(mktgPortraitAccentOnDark({ accent: '#FFD700', dark: '#4D4E4E', onDark: '#FFFFFF' })).toBe('#FFD700');
+    expect(mktgPortraitAccentOnDark({ accent: 'var(--x)', dark: '#4D4E4E', onDark: '#FFFFFF' })).toBe('var(--x)');
+  });
+});
+
+describe('mktgPortraitAccentText', () => {
+  const onWhite = (hex: string): number => brandKitContrastRatio(1, brandKitLuminance(hex));
+
+  it('darkens a light accent until it reads on the page white at WCAG AA, keeping its hue, and returns a dark one as it is', () => {
+    const coral = mktgPortraitAccentText('#FF702D');
+    expect(onWhite('#FF702D')).toBeLessThan(3);
+    expect(onWhite(coral)).toBeGreaterThanOrEqual(4.5);
+    expect(onWhite(coral)).toBeLessThan(4.8);
+    // Still an orange: red first, then green, little blue.
+    const [r, g, b] = [1, 3, 5].map((offset) => Number.parseInt(coral.slice(offset, offset + 2), 16));
+    expect(r).toBeGreaterThan(g);
+    expect(g).toBeGreaterThan(b);
+    expect(onWhite(mktgPortraitAccentText('#F37625'))).toBeGreaterThanOrEqual(4.5);
+    expect(onWhite(mktgPortraitAccentText('#FFD400'))).toBeGreaterThanOrEqual(4.5);
+    expect(mktgPortraitAccentText('#1E3A8A')).toBe('#1E3A8A');
+    expect(mktgPortraitAccentText('#4D4E4E')).toBe('#4D4E4E');
+  });
+
+  it('leaves anything that is not a six-digit hex alone', () => {
+    expect(mktgPortraitAccentText('coral')).toBe('coral');
+    expect(mktgPortraitAccentText('#FFF')).toBe('#FFF');
+  });
+});
+
+describe('mktgPortraitMoreLine', () => {
+  it('prints the count with the noun, singular at one, and nothing at none', () => {
+    const nouns = MKTG_PORTRAIT_MORE_LINE.nouns;
+    expect(mktgPortraitMoreLine(0, nouns.rule)).toBe('');
+    expect(mktgPortraitMoreLine(1, nouns.rule)).toBe('+1 more rule, in LFX One');
+    expect(mktgPortraitMoreLine(3, nouns.rule)).toBe('+3 more rules, in LFX One');
+    expect(mktgPortraitMoreLine(1, nouns.avoid)).toBe('+1 more item to avoid, in LFX One');
+    // The same nouns count anything on a page: the Typography page's "1 weight available".
+    expect(mktgPortraitCount(1, nouns.weight)).toBe('1 weight');
+    expect(mktgPortraitCount(3, nouns.weight)).toBe('3 weights');
+    expect(mktgPortraitMoreLine(2, nouns.sourceRead)).toBe('+2 more sources read, in LFX One');
+    expect(mktgPortraitMoreLine(1, nouns.colorConflict)).toBe('+1 more color conflict, in LFX One');
+  });
+});
+
+describe('mktgNoWidow', () => {
+  it('joins the last two words with a no-break space and leaves one word, or nothing, alone', () => {
+    expect(mktgNoWidow('Open foundations for agentic AI.')).toBe('Open foundations for agentic\u00a0AI.');
+    expect(mktgNoWidow('New members join Project One')).toBe('New members join Project\u00a0One');
+    expect(mktgNoWidow('  two  words ')).toBe('two\u00a0words');
+    expect(mktgNoWidow('Interoperability')).toBe('Interoperability');
+    expect(mktgNoWidow('   ')).toBe('');
+  });
+
+  it('reads a hostile headline in linear time (no regex scan over the input)', () => {
+    const hostile = `${'\t'.repeat(100_000)}x`;
+    const started = performance.now();
+    expect(mktgNoWidow(hostile)).toBe('x');
+    expect(mktgNoWidow(`a${' '.repeat(100_000)}b`)).toBe('a\u00a0b');
+    expect(performance.now() - started).toBeLessThan(50);
+  });
+});
+
+describe('the cover strip', () => {
+  it('prints both halves as written when they share the line, shortens the longer half’s first segment with an ellipsis, and wraps only as a last resort', () => {
+    const width = 672;
+    const left = 'Project One · a Linux Foundation project';
+    const right = 'one.example.org · V1.0 · October 2026';
+    expect(mktgPortraitCoverStrip(left, right, width)).toEqual({ left, right, wraps: false });
+    // A name the line cannot hold whole beside its tail keeps whole: "· a Linux Foundation project" goes first.
+    const cncf = 'Cloud Native Computing Foundation · a Linux Foundation project';
+    expect(mktgPortraitCoverStrip(cncf, right, width)).toEqual({ left: 'Cloud Native Computing Foundation', right, wraps: false });
+    // Only a name too long even bare is shortened, word by word, with an ellipsis.
+    const long = 'Cloud Native Computing Foundation for Synthetic Everything (CNCFSE) · a Linux Foundation project';
+    const shortened = mktgPortraitCoverStrip(long, right, width);
+    expect(shortened.wraps).toBe(false);
+    expect(shortened.right).toBe(right);
+    expect(shortened.left).toMatch(/^Cloud Native.*…$/);
+    expect(shortened.left).not.toContain('Linux Foundation');
+    expect(shortened.left.length).toBeLessThan(long.length);
+    // The shorter half stays whole while the longer can give; it loses words too only when the name alone cannot make
+    // room; one word each still too wide → the strip wraps whole (a single long token, a host, has no words to give up).
+    const wordy = 'Synthetic Host Name Of The Strip Example Site · V1.0 · October 2026';
+    const given = mktgPortraitCoverStrip(long, wordy, width);
+    expect(given).toMatchObject({ right: wordy, wraps: false });
+    expect(given.left).toMatch(/^Cloud Native.*…$/);
+    const wordier = 'Synthetic Host Name Of The Strip Example Site With Many More Words Than One Line Of The Strip Holds · V1.0 · October 2026';
+    const both = mktgPortraitCoverStrip(long, wordier, width);
+    expect(both.wraps).toBe(false);
+    expect(both.left).toMatch(/^Cloud.*…$/);
+    expect(both.right).toMatch(/^Synthetic.*… · V1.0 · October 2026$/);
+    const hopeless = mktgPortraitCoverStrip(`${'Synthetic'.repeat(12)} · a Linux Foundation project`, `${'host'.repeat(20)}.org · V1.0 · October 2026`, width);
+    expect(hopeless).toEqual({
+      left: `${'Synthetic'.repeat(12)} · a Linux Foundation project`,
+      right: `${'host'.repeat(20)}.org · V1.0 · October 2026`,
+      wraps: true,
+    });
   });
 });

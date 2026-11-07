@@ -31,6 +31,7 @@ import {
   mktgFamilyExportAgentKeys,
   mktgFamilyPrintConflicts,
   mktgFamilyPrintDocument,
+  mktgFamilyPrintBrand,
   mktgFamilyPrintNumberConflicts,
   mktgPrintBrand,
   readBrandKitRevision,
@@ -158,7 +159,9 @@ export class MktgFamilyExportService {
                 frameworkAsset.dateRead ?? null
               )
             : null;
-        const brand = mktgPrintBrand(kit);
+        // The family's covers draw the lockup the kit's own book decides (reversed file, filtered one-ink primary, or the
+        // full-colour primary on the white plate), so the family and the kit never disagree on a dark ground.
+        const brand = mktgFamilyPrintBrand(mktgPrintBrand(kit), book);
         const boilerplatesResponse = ofKind('boilerplates');
         const boilerplates = boilerplatesResponse ? boilerplatesAssetOfRevision(boilerplatesResponse.markdown, boilerplatesResponse.sidecar) : null;
         if (boilerplatesResponse && !boilerplates) throw new Error('The approved boilerplates could not be read.');
@@ -175,7 +178,9 @@ export class MktgFamilyExportService {
           framework: frameworkAsset?.report?.gaps ?? [],
           kit: kit?.report.findings?.missing_assets.map((missing) => missing.reason) ?? [],
           boilerplates: boilerplates?.report.gaps ?? [],
-          faq: faq?.report.gaps ?? [],
+          // A question the FAQ left unanswered prints nowhere else (the FAQ pages print answered questions only), so it
+          // is an open item too, once, whether or not the run's report repeats it as a gap.
+          faq: faq ? [...new Set([...faq.report.gaps, ...faq.checks.unanswered.map((entry) => entry.question)])] : [],
         };
         const documents = mktgFamilyExportAgentKeys(target.familyId)
           .map((agentKey) => ({ agentKey, response: responses.find((response) => response.type.agentKey === agentKey) }))
@@ -208,6 +213,8 @@ export class MktgFamilyExportService {
         return {
           framework,
           kit: book,
+          // The kit inside the family prints what the standalone print prints: its approval reaches the kit renderer unchanged.
+          kitApproval: kitResponse?.approval ?? null,
           boilerplates: boilerplatesView,
           faq: faqView,
           brand,

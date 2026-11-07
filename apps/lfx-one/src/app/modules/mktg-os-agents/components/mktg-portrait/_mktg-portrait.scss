@@ -3,17 +3,25 @@
 
 /* The portrait print grammar (`lfx-mktg-portrait-*`): one fixed US Letter frame per page, 816×1056 px at
    96 dpi, children placed by absolute measurements, so Chromium and WebKit paginate one frame per sheet
-   and nothing flows across a page edge (CSS Paged Media: `@page { size: 8.5in 11in; margin: 0 }`,
-   `break-after: page` on every frame). Global, under the `pp-` prefix, because the pages' type helpers
+   and nothing flows across a page edge (CSS Paged Media: `@page { size: auto; margin: 0 }`, the paper as the page box,
+   `break-before: page` on every frame, see `.pp-page`). Global, under the `pp-` prefix, because the pages' type helpers
    (`pp-lab`, `pp-body`, `pp-cap`, `pp-chip`) are set on content a document projects INTO the
    frame, which a component's own emulated stylesheet would not reach. Every value mirrors the shared
    constants (MKTG_PORTRAIT_PAGE, MKTG_PORTRAIT_INKS, MKTG_PRINT_PAGE_SETUPS['mktg-portrait']), which a
    stylesheet cannot read: keep them in step. The kit's dark, accent, spark and typeface are the frame's
-   custom properties (`--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`, `--pp-font`), bound by
-   `lfx-mktg-portrait-page` from the document's look. */
+   custom properties (`--pp-dark`, `--pp-accent`, `--pp-accent-text`, `--pp-spark`, `--pp-on-accent`, `--pp-font`),
+   bound by `lfx-mktg-portrait-page` from the document's look; `--pp-accent-text` is the accent darkened until it reads
+   on the page white at WCAG AA (mktgPortraitAccentText), for every TEXT set in the accent on a light page;
+   `--pp-accent-on-dark` is the accent where it reads on the dark at AA, else the ink on the dark
+   (mktgPortraitAccentOnDark), for text set in the accent on a dark page; fills, bands and rules keep `--pp-accent`. */
+
+@use 'sass:math';
 
 $pp-width: 816px;
 $pp-height: 1056px;
+$pp-a4-width: 210mm;
+$pp-a4-height: 297mm;
+$pp-a4-zoom: math.div($pp-a4-width, 8.5in);
 $pp-margin: 56px;
 $pp-inset: 72px;
 $pp-head-top: 36px;
@@ -21,19 +29,22 @@ $pp-title-top: 84px;
 $pp-foot-bottom: 28px;
 $pp-band-top: 24px;
 $pp-band-height: 4px;
-$pp-ink: #1f2937;
-$pp-muted: #6b7280;
-$pp-hairline: #e5e7eb;
-$pp-mist: #f3f4f6;
 
 /* The print root of a document made of frames: a plain block at the page's edge, never padded or positioned
-   (a positioned or padded wrapper between the body and a frame shifts or clips the sheet). */
+   (a positioned or padded wrapper between the body and a frame shifts or clips the sheet). The frames paint their own
+   grounds edge to edge, so the root paints none. Its children (the page components' hosts, one per frame) are blocks,
+   so no inline box and no anonymous line can sit between frames or after the last one. */
 .lfx-mktg-portrait {
   display: block;
   width: $pp-width;
   margin: 0;
   padding: 0;
-  background: #fff;
+
+  > * {
+    display: block;
+    margin: 0;
+    padding: 0;
+  }
 }
 
 .pp-page {
@@ -44,35 +55,52 @@ $pp-mist: #f3f4f6;
   height: $pp-height;
   margin: 0;
   overflow: hidden;
-  background: #fff;
-  color: $pp-ink;
+  background: var(--pp-white);
+  color: var(--pp-ink);
   font-family: var(--pp-font, inherit);
   font-size: 12.5px;
   line-height: 1.6;
-  break-after: page;
-  page-break-after: always;
+  /* One page break per boundary, owned by the frame that starts the page: `break-before` on every frame, no
+     `break-after` anywhere in a document of frames. A forced break at the very start of the print is suppressed by
+     the engine, two forced breaks at one boundary (a document host's `break-before` and its first frame's) are one
+     break, and nothing can break after the last frame: no leading, doubled or trailing blank sheet is possible, which
+     `break-after: page` on every frame allowed (a sheet 18 of a 17-page book in Chrome's Save as PDF). */
+  break-before: page;
+  page-break-before: always;
+  break-after: auto;
+  page-break-after: auto;
   break-inside: avoid;
   page: mktg-portrait;
   print-color-adjust: exact;
   -webkit-print-color-adjust: exact;
 
-  --pp-ink: #{$pp-ink};
-  --pp-muted: #{$pp-muted};
-  --pp-hairline: #{$pp-hairline};
-  --pp-mist: #{$pp-mist};
+  /* The neutral inks (--pp-ink, --pp-muted, --pp-hairline, --pp-mist, --pp-white, --pp-fail) and the look's
+     (--pp-dark, --pp-accent, --pp-accent-text, --pp-accent-on-dark, --pp-spark, --pp-on-accent, --pp-font) are set on the frame by the page component
+     from MKTG_PORTRAIT_INKS and MktgPortraitLook; every rule below reads them. */
 
   * {
     box-sizing: border-box;
   }
 
-  p,
-  ul,
-  ol,
-  h1,
-  h2,
-  h3,
-  figure {
+  /* The browser's element margins go. `.pp-page :where(…)` is one class's specificity (0,1,0), unlayered: a class of
+     the grammar on the element (`.pp-cover-lede`'s margin-top, say) still sets its own, but a layered Tailwind margin
+     utility on a `p` inside a frame does not (`mt-[8px]` is beaten); use a grammar class (`.pp-body-gap`) or an
+     inline style. */
+  :where(p, ul, ol, h1, h2, h3, figure) {
     margin: 0;
+  }
+
+  /* Every text in the frame is set in the kit's own face (the mock: "Instrument Sans carries every communication")
+     at the size and leading of the block it sits in. The app's layers put Inter on p, headings, labels, buttons and
+     inputs by element (and a layer's 1rem/1.5 on a paragraph), which would beat the frame's inherited `--pp-font`
+     and a block's 12.5/1.6; this unlayered rule, at one class's specificity, hands them back to the frame, and a class
+     of the grammar on the element (`.pp-cover-lede`, say) still sets its own, while a layered Tailwind text or leading
+     utility there does not. It also beats the single-class font rules the family print sheet sets earlier in
+     styles.scss: the `@use` order is a dependency. */
+  :where(p, h1, h2, h3, h4, h5, h6, label, button, input, table) {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
   }
 
   img {
@@ -82,7 +110,7 @@ $pp-mist: #f3f4f6;
 
 .pp-page--dark {
   background: var(--pp-dark);
-  color: #fff;
+  color: var(--pp-white);
 }
 
 /* Absolute placement, the `R(x, y, w, h)` convention: the directive `[lfxPpRect]` sets the coordinates. */
@@ -111,7 +139,7 @@ $pp-mist: #f3f4f6;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  border-bottom: 1px solid $pp-ink;
+  border-bottom: 1px solid var(--pp-ink);
   padding-bottom: 8px;
 
   .pp-page--dark & {
@@ -119,17 +147,24 @@ $pp-mist: #f3f4f6;
   }
 }
 
-.pp-head-section {
+/* The section label is a `.pp-lab` in the kit's dark, not the label's muted: the head's selector outweighs the label's
+   (the two classes alone tie, and the label's rule comes later in this sheet). Under the chapter band (the modifier is
+   on the head itself) and on a dark page it is the accent. */
+.pp-head .pp-head-section {
   color: var(--pp-dark);
+}
 
-  .pp-head--band &,
-  .pp-page--dark & {
-    color: var(--pp-accent);
-  }
+/* The section label under the band: accent TEXT on the page white, so the darkened text accent. */
+.pp-head.pp-head--band .pp-head-section {
+  color: var(--pp-accent-text, var(--pp-accent));
+}
+
+.pp-page--dark .pp-head .pp-head-section {
+  color: var(--pp-accent);
 }
 
 .pp-head-doc {
-  color: $pp-muted;
+  color: var(--pp-muted);
 
   .pp-page--dark & {
     color: rgba(255, 255, 255, 0.6);
@@ -150,7 +185,7 @@ $pp-mist: #f3f4f6;
   color: var(--pp-dark);
 
   .pp-page--dark & {
-    color: #fff;
+    color: var(--pp-white);
   }
 }
 
@@ -165,7 +200,7 @@ $pp-mist: #f3f4f6;
   font-size: 9.5px;
   font-weight: 400;
   line-height: 1;
-  color: $pp-muted;
+  color: var(--pp-muted);
 
   .pp-page--dark & {
     color: rgba(255, 255, 255, 0.55);
@@ -181,15 +216,20 @@ $pp-mist: #f3f4f6;
   line-height: 1.2;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: $pp-muted;
+  color: var(--pp-muted);
 }
 
 .pp-lab--dark {
   color: var(--pp-dark);
 }
 
+/* An accent label: the text accent on a light page, the accent itself on a dark one. */
 .pp-lab--accent {
-  color: var(--pp-accent);
+  color: var(--pp-accent-text, var(--pp-accent));
+
+  .pp-page--dark & {
+    color: var(--pp-accent);
+  }
 }
 
 /* Intro / body: 12.5/1.6 regular, the body ink, 460 px wide by default, 600 for a page intro. */
@@ -198,11 +238,22 @@ $pp-mist: #f3f4f6;
   font-size: 12.5px;
   font-weight: 400;
   line-height: 1.6;
-  color: $pp-ink;
+  color: var(--pp-ink);
 }
 
 .pp-body--wide {
   max-width: 600px;
+}
+
+/* A second paragraph of a body block, a blank line (20 px) under the first (the mock's <br><br>); a class of the
+   grammar's because a Tailwind margin utility sits in a layer the frame's unlayered margin reset beats. */
+.pp-body-gap {
+  margin-top: 20px;
+}
+
+/* A body paragraph set 8 px under a label (the Symbol page's padding rule under its label). */
+.pp-body-gap-tight {
+  margin-top: 8px;
 }
 
 /* Caption: 11/1.4 regular, muted, 6 px under its figure. */
@@ -211,14 +262,14 @@ $pp-mist: #f3f4f6;
   font-size: 11px;
   font-weight: 400;
   line-height: 1.4;
-  color: $pp-muted;
+  color: var(--pp-muted);
 }
 
 /* Source chip: 8.5/1 semibold caps, +0.1em, muted, in a 1 px hairline pill. */
 .pp-chip {
   display: inline-block;
   padding: 3px 7px;
-  border: 1px solid $pp-hairline;
+  border: 1px solid var(--pp-hairline);
   border-radius: 999px;
   font-size: 8.5px;
   font-weight: 600;
@@ -227,7 +278,7 @@ $pp-mist: #f3f4f6;
   text-transform: uppercase;
   white-space: nowrap;
   vertical-align: middle;
-  color: $pp-muted;
+  color: var(--pp-muted);
 }
 
 /* A tile: 1 px hairline, 10 px radius, its content centred. */
@@ -237,9 +288,9 @@ $pp-mist: #f3f4f6;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border: 1px solid $pp-hairline;
+  border: 1px solid var(--pp-hairline);
   border-radius: 10px;
-  background: #fff;
+  background: var(--pp-white);
 }
 
 .pp-tile--dark {
@@ -247,9 +298,17 @@ $pp-mist: #f3f4f6;
   background: var(--pp-dark);
 }
 
+/* The white plate under full-colour artwork on a dark ground; `lfxPpPlate` binds its padding and radius from the shared geometry. */
+.pp-plate {
+  // The padding and the corner radius (a sixth of the shorter side) are bound by `lfxPpPlate` from the shared geometry.
+  display: inline-block;
+  background: var(--pp-white);
+  line-height: 0;
+}
+
 .pp-tile--mist {
   border: 0;
-  background: $pp-mist;
+  background: var(--pp-mist);
 }
 
 /* The grid ground: kit dark, a radial accent glow from the top right, and a 32 px accent grid at low alpha
@@ -276,7 +335,7 @@ $pp-mist: #f3f4f6;
   font-weight: 500;
   line-height: 1;
   letter-spacing: -0.02em;
-  color: #fff;
+  color: var(--pp-white);
 }
 
 .pp-cover-lede {
@@ -291,6 +350,7 @@ $pp-mist: #f3f4f6;
 .pp-cover-strip {
   display: flex;
   justify-content: space-between;
+  column-gap: 24px;
   border-top: 1px solid rgba(255, 255, 255, 0.25);
   padding-top: 10px;
   font-size: 10px;
@@ -299,6 +359,21 @@ $pp-mist: #f3f4f6;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.6);
+}
+
+/* The strip's halves share one line (nowrap, 24 px apart); only when one word each still does not fit does it wrap,
+   at the grammar's leading, the cover having moved it up one line. */
+.pp-cover-strip > span {
+  white-space: nowrap;
+}
+
+.pp-cover-strip--wrapped {
+  flex-wrap: wrap;
+  line-height: 1.4;
+}
+
+.pp-cover-strip--wrapped > span {
+  white-space: normal;
 }
 
 /* ---------- the chapter opener (the family's) ---------- */
@@ -316,7 +391,7 @@ $pp-mist: #f3f4f6;
   font-weight: 500;
   line-height: 1.05;
   letter-spacing: -0.02em;
-  color: #fff;
+  color: var(--pp-white);
 }
 
 .pp-opener-purpose {
@@ -346,7 +421,12 @@ $pp-mist: #f3f4f6;
   font-weight: 500;
   line-height: 1.1;
   letter-spacing: -0.01em;
-  color: #fff;
+  color: var(--pp-white);
+}
+
+/* The approver's name under the Approved date: the row's body size (12/1.6), 4 px under the date. */
+.pp-opener-meta-note {
+  margin-top: 4px;
 }
 
 /* ---------- the back cover ---------- */
@@ -362,10 +442,12 @@ $pp-mist: #f3f4f6;
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--pp-accent);
+  /* The accent where it reads on the dark (AA), else the ink on the dark: never a pairing the matrix grades as failing. */
+  color: var(--pp-accent-on-dark);
 }
 
 .pp-back-url {
+  /* The url, and the version line under it. */
   margin-top: 12px;
   text-align: center;
   font-size: 11px;
@@ -383,12 +465,39 @@ $pp-mist: #f3f4f6;
 }
 
 @media print {
-  /* The frames' own page: US Letter, no margin, in Chromium, where the print body's named page
-     (`mktg-framework`) would otherwise win; the print frame writes the same values unnamed for WebKit
-     (MKTG_PRINT_PAGE_SETUPS['mktg-portrait']). */
+  /* The frames' own page, the print's one named page: the PAPER the dialog chose, with no margin (the margin of 0 is
+     what keeps the browser's headers and footers off the sheet); the print frame writes the same values unnamed for
+     WebKit (MKTG_PRINT_PAGE_SETUPS['mktg-portrait']). A fixed `size: 8.5in 11in` let Chrome scale the page box onto
+     A4 (0.974) and print its header and footer into the bands that left. */
   @page mktg-portrait {
-    size: 8.5in 11in;
+    size: auto;
     margin: 0;
+  }
+
+  /* A paper narrower than the Letter frame (A4: 210 mm = 793.7 px): the grammar scales the frame itself, never the
+     engine the page box. Every frame zooms by the papers' width ratio (layout and type scale together, nothing
+     reflows) and its ground grows to the paper's height (the footer stays 28 px above the sheet's edge), so dark pages
+     stay edge to edge and no band is left. Letter and wider papers are untouched; the query is "narrower than the frame". (`zoom`, not `transform`: the
+     frame's laid-out box must shrink for the breaks to fall one per sheet.) MKTG_PORTRAIT_PAPERS holds the numbers. */
+  @media (max-width: #{$pp-width - 1px}) {
+    .pp-page {
+      zoom: $pp-a4-zoom;
+      min-height: math.div($pp-a4-height, $pp-a4-zoom);
+    }
+
+    /* The root narrows with its frames: left at the Letter width it would overflow the paper, and Chrome shrinks an
+       overflowing print to fit, which scaled the frames a second time. */
+    .lfx-mktg-portrait {
+      --pp-root-width: #{$pp-a4-width};
+    }
+  }
+
+  /* The grid ground's glow on paper: the screen's 33 % glow fading by 55 % of the ellipse prints almost invisible
+     (ink darkens; the PDF's pixels equal the screen's, the paper does not), so the print draws it at the stronger
+     alpha the page binds as --pp-glow-print (MKTG_PORTRAIT_GRID_GROUND.glowPrintAlpha) and lets it reach 70 %.
+     The grid lines keep their alpha. */
+  .pp-grid-ground {
+    background: radial-gradient(ellipse at 78% 22%, var(--pp-glow-print, var(--pp-glow)), transparent 70%), var(--pp-dark);
   }
 
   /* A frame document's root sits at the sheet's edge, in flow and unpadded, whichever print body class is on
@@ -400,7 +509,7 @@ $pp-mist: #f3f4f6;
   .lfx-brand-kit-portrait.lfx-mktg-portrait {
     position: static !important;
     inset: auto !important;
-    width: $pp-width !important;
+    width: var(--pp-root-width, #{$pp-width}) !important;
     margin: 0 !important;
     padding: 0 !important;
   }
@@ -418,5 +527,22 @@ $pp-mist: #f3f4f6;
   .pp-page {
     margin: 0;
     box-shadow: none;
+  }
+
+  /* The print document of a frame book is its frames and nothing else: no height, margin or padding on the root
+     element or the body beyond them (any extra px after the last frame is one more sheet), and no page name on
+     anything but a frame: `mktg-portrait` is the one named page of the print, set by `.pp-page` alone, so no change
+     of page name can force a break before the first frame or after the last. */
+  html:has(.lfx-mktg-portrait),
+  body:has(.lfx-mktg-portrait) {
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body:has(.lfx-mktg-portrait),
+  body:has(.lfx-mktg-portrait) :not(.pp-page):not(.pp-page *) {
+    page: auto !important;
   }
 }

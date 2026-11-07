@@ -739,6 +739,8 @@ describe('FoundationMessageService.getResult', () => {
       report: envelope['report'],
       checks: { findings: [] },
       mode: 'draft',
+      // The print's "figures as of": the run's `inputs_record.date_read`.
+      dateRead: '2026-10-17',
     });
     expect(result.documentMarkdown).toBeUndefined();
   });

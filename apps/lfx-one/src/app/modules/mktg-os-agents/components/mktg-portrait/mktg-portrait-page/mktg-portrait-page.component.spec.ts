@@ -5,7 +5,7 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
 import { MktgPortraitBook, MktgPortraitLook } from '@lfx-one/shared/interfaces';
-import { mktgPortraitLook, mktgPrintBrand } from '@lfx-one/shared/utils';
+import { mktgPortraitLook, mktgPrintBrand, mktgPortraitAccentText } from '@lfx-one/shared/utils';
 import { describe, expect, it } from 'vitest';
 import { MktgPortraitPageComponent } from './mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../mktg-portrait-rect.directive';
@@ -53,13 +53,22 @@ describe('lfx-mktg-portrait-page', () => {
     expect(page.getAttribute('data-page-id')).toBe('logo-system');
     expect(page.getAttribute('data-page')).toBe('3');
     expect(page.getAttribute('data-section')).toBe('01 Logo');
+    // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+    expect(getComputedStyle(page).display).toBe('block');
     expect(page.style.getPropertyValue('--pp-dark')).toBe('#000000');
     expect(page.style.getPropertyValue('--pp-accent')).toBe('#FF702D');
+    // The accent as text: the coral darkened until it reads on white at WCAG AA (the shared util's value).
+    expect(page.style.getPropertyValue('--pp-accent-text')).toBe(mktgPortraitAccentText('#FF702D'));
+    expect(page.style.getPropertyValue('--pp-accent-text')).not.toBe('#FF702D');
+    // The accent as text on the dark: the coral reads on black (above 4.5:1), so it stays itself there (the back cover's brand line).
+    expect(page.style.getPropertyValue('--pp-accent-on-dark')).toBe('#FF702D');
     expect(page.style.getPropertyValue('--pp-spark')).toBe('#B6B0D0');
     expect(page.style.getPropertyValue('--pp-on-accent')).toBe('#000000');
     expect(page.style.getPropertyValue('--pp-font')).toBe(LOOK.fontStack);
     // The grid ground's glow and grid: the accent with its alpha.
     expect(page.style.getPropertyValue('--pp-glow')).toBe('#FF702D55');
+    // The print's glow is the stronger one (on paper the screen's is almost invisible), the same accent.
+    expect(page.style.getPropertyValue('--pp-glow-print')).toBe('#FF702D88');
     expect(page.style.getPropertyValue('--pp-grid')).toBe('#FF702D22');
     expect(MKTG_PORTRAIT_PAGE).toMatchObject({ width: 816, height: 1056 });
   });
@@ -127,6 +136,7 @@ describe('lfx-mktg-portrait-page', () => {
     await fixture.whenStable();
     const page: HTMLElement = fixture.nativeElement;
     expect(page.style.getPropertyValue('--pp-glow')).toBe('rebeccapurple');
+    expect(page.style.getPropertyValue('--pp-glow-print')).toBe('rebeccapurple');
     expect(page.getAttribute('data-testid')).toBe('lfx-mktg-portrait-page');
   });
 });

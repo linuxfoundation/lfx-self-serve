@@ -12,15 +12,26 @@
   [title]="page().title"
   [band]="page().band">
   <p class="pp-body kp-sources-intro" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-sources-intro">{{ intro() }}</p>
-  <div [lfxPpRect]="[x, 220, 340]">
+  <div class="kp-sources-column" [style.--kp-fit]="fit().scale" [lfxPpRect]="[x, 220, 340]" data-testid="brand-kit-sources-left">
+    <!-- A run that recorded nothing (no source read, failed, missing or in conflict) says so, rather than two empty columns. -->
+    @if (empty()) {
+      <div class="kp-block" data-testid="brand-kit-sources-empty">
+        <div class="pp-lab pp-lab--dark">Read</div>
+        <div class="kp-list kp-muted">The run recorded no sources: the kit was built from its uploaded files and answers alone.</div>
+      </div>
+    }
     @if (s.read.length) {
       <div class="kp-block" data-testid="brand-kit-sources-read">
         <div class="pp-lab pp-lab--dark">Read</div>
         <ul class="kp-list">
-          @for (source of s.read; track source) {
+          @for (source of s.read; track $index) {
             <li>{{ source }}</li>
           }
         </ul>
+        <!-- The sources the column does not hold even cut are counted, never dropped in silence. -->
+        @if (fit().moreRead) {
+          <div class="kp-list kp-muted" data-testid="brand-kit-sources-read-more">{{ fit().moreReadLine }}</div>
+        }
       </div>
     }
     @if (s.failed.length) {
@@ -38,7 +49,7 @@
         </ul>
       </div>
     }
-    @if (s.warnings.length || s.gaps.length || s.notes) {
+    @if (s.warnings.length || s.gaps.length || s.notes || fit().moreGaps) {
       <div class="kp-block" data-testid="brand-kit-sources-warnings">
         <div class="pp-lab pp-lab--dark">Warnings</div>
         <ul class="kp-list">
@@ -57,10 +68,13 @@
             <li>{{ s.notes }}</li>
           }
         </ul>
+        @if (fit().moreGaps) {
+          <div class="kp-list kp-muted" data-testid="brand-kit-sources-gaps-more">{{ fit().moreGapsLine }}</div>
+        }
       </div>
     }
   </div>
-  <div [lfxPpRect]="[x + 364, 220, 340]">
+  <div class="kp-sources-column" [style.--kp-fit]="fit().scale" [lfxPpRect]="[x + 364, 220, 340]" data-testid="brand-kit-sources-right">
     @if (s.missing.length) {
       <div class="kp-block" data-testid="brand-kit-sources-missing">
         <div class="pp-lab pp-lab--dark">Missing</div>
@@ -83,7 +97,7 @@
     }
     @if (s.conflicts.length) {
       <div class="kp-block" data-testid="brand-kit-sources-conflicts">
-        <div class="pp-lab pp-lab--dark">Colour conflicts</div>
+        <div class="pp-lab pp-lab--dark">Color conflicts</div>
         @for (conflict of s.conflicts; track conflict.name) {
           <table class="kp-conflict">
             <thead>
@@ -93,14 +107,17 @@
             </thead>
             <tbody>
               @for (value of conflict.values; track $index) {
-                <tr [class.kp-conflict-kept]="value.hex.toUpperCase() === conflict.chosen.toUpperCase()">
+                <tr [class.kp-conflict-kept]="value.kept">
                   <td><span class="kp-conflict-swatch" [style.background]="value.hex"></span></td>
-                  <td>{{ value.hex.toUpperCase() }}{{ value.hex.toUpperCase() === conflict.chosen.toUpperCase() ? ' · kept' : '' }}</td>
+                  <td>{{ value.label }}</td>
                   <td class="kp-muted">{{ value.source }}</td>
                 </tr>
               }
             </tbody>
           </table>
+        }
+        @if (fit().moreConflicts) {
+          <div class="kp-list kp-muted" data-testid="brand-kit-sources-conflicts-more">{{ fit().moreConflictsLine }}</div>
         }
       </div>
     }

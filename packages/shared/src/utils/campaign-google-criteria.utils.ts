@@ -6,6 +6,7 @@ import {
   GOOGLE_ADS_AGE_RANGES,
   GOOGLE_ADS_DEMAND_GEN_DEVICES,
   GOOGLE_ADS_DEVICES,
+  GOOGLE_ADS_DEVICE_LABELS,
   GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
@@ -14,6 +15,7 @@ import {
   GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
   GOOGLE_ADS_MIN_BID_MODIFIER,
+  GOOGLE_ADS_PERFORMANCE_MAX_DEVICES,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
@@ -37,6 +39,7 @@ import type {
   NormalizedGoogleAdSchedule,
   NormalizedGoogleDeviceBidModifier,
 } from '../interfaces/campaign.interface';
+import { joinAsSentenceList } from './string.utils';
 
 /**
  * Google campaign-level criteria — ad schedules, device bid modifiers, demographic exclusions and
@@ -357,18 +360,24 @@ export function googleChannelOffersManualCpc(channel: GoogleCampaignChannel): bo
 
 /**
  * The device vocabulary campaign-service accepts on `channel` (`deviceTypesFor` in
- * `campaign_criteria.go`): {@link GOOGLE_ADS_DEMAND_GEN_DEVICES} on Demand Gen, which adds
- * `CONNECTED_TV`, and {@link GOOGLE_ADS_DEVICES} elsewhere. Its length is also upstream's cap on the
- * list. Performance Max has a vocabulary of its own upstream, but this client offers no devices there
- * ({@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}), so it gets the default here.
+ * `campaign_criteria.go`): {@link GOOGLE_ADS_DEMAND_GEN_DEVICES} on Demand Gen and
+ * {@link GOOGLE_ADS_PERFORMANCE_MAX_DEVICES} on Performance Max, which both add `CONNECTED_TV`, and
+ * {@link GOOGLE_ADS_DEVICES} elsewhere. Its length is also upstream's cap on the list.
  */
 export function googleAdsDevicesOn(channel: GoogleCampaignChannel): readonly GoogleAdsDevice[] {
-  return channel === 'demand-gen' ? GOOGLE_ADS_DEMAND_GEN_DEVICES : GOOGLE_ADS_DEVICES;
+  switch (channel) {
+    case 'demand-gen':
+      return GOOGLE_ADS_DEMAND_GEN_DEVICES;
+    case 'performance-max':
+      return GOOGLE_ADS_PERFORMANCE_MAX_DEVICES;
+    default:
+      return GOOGLE_ADS_DEVICES;
+  }
 }
 
 /**
  * Whether `channel` takes a device only as an exclusion (a bid modifier of 0), under every strategy:
- * Demand Gen ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}).
+ * Demand Gen and Performance Max ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}).
  */
 export function googleChannelTakesDeviceExclusionsOnly(channel: GoogleCampaignChannel): boolean {
   return (GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY as readonly string[]).includes(channel);
@@ -414,8 +423,12 @@ export function googleDeviceAdjustmentNotSentSentence(strategy: string): string 
  * not decidable from a single entry. The cap is checked by the caller against the SUBMITTED
  * length, as upstream does.
  *
- * FIRST the channel: on Demand Gen ({@link googleChannelTakesDeviceExclusionsOnly}) any modifier but
- * `0` is refused, as `validateCriteriaPlan` refuses it before it calls `validateDeviceBidModifiers`.
+ * FIRST the channel: on Demand Gen and Performance Max ({@link googleChannelTakesDeviceExclusionsOnly})
+ * any modifier but `0` is refused, as `validateCriteriaPlan` refuses it before it calls
+ * `validateDeviceBidModifiers`. On Performance Max it then refuses a list that excludes every device
+ * in {@link GOOGLE_ADS_PERFORMANCE_MAX_DEVICES} (`allPerformanceMaxDevicesExcluded`), still before
+ * the vocabulary: a campaign excluded from every device could serve nowhere. Demand Gen has no such
+ * rule upstream, so it has none here.
  *
  * Then the per-entry branches in upstream's order: the channel's device vocabulary
  * ({@link googleAdsDevicesOn}), then the repeat, then the bid modifier. A caller who writes `TABLET` twice with two different adjustments is refused
@@ -448,6 +461,13 @@ export function googleDeviceBidModifierRefusal(devices: NormalizedGoogleDeviceBi
         // Echoed bounded: this runs before the vocabulary check, so the device is still the caller's text.
         return `The Google Ads device bid modifier ${index + 1} gives ${googleAdsEchoed(googleAdsTrimSpace(entry.device).toUpperCase())} a bid modifier of ${entry.bidModifier}. ${googleChannelDeviceAdjustmentRefusedSentence(channel)} Set it to 0 to exclude the device or remove it, then create again.`;
       }
+    }
+  }
+  if (channel === 'performance-max') {
+    // Every entry is an exclusion by now. Keyed on the trimmed, upper-cased name, as upstream's set is.
+    const excluded = new Set(devices.map((entry) => googleAdsTrimSpace(entry.device).toUpperCase()));
+    if (GOOGLE_ADS_PERFORMANCE_MAX_DEVICES.every((device) => excluded.has(device))) {
+      return `The Google Ads device bid modifiers exclude every device (${joinAsSentenceList(GOOGLE_ADS_PERFORMANCE_MAX_DEVICES.map((device) => GOOGLE_ADS_DEVICE_LABELS[device]))}) on a ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaign, so it could not serve anywhere. Keep at least one device, then create again.`;
     }
   }
   const vocabulary = googleAdsDevicesOn(channel);

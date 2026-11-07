@@ -2,8 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
+import {
+  brandKitLogolessFixture,
+  brandKitMinimalFixture,
+  brandKitOverfullFixture,
+  brandKitPngOnlyFixture,
+  brandKitTestRevision,
+} from './__fixtures__/brand-kit-revision.fixture';
 import { buildBrandKitBookView } from './brand-kit-book.utils';
+import { findBrandKitChapterErrors, findBrandKitReportErrors, findBrandKitTokenErrors } from './brand-kit.utils';
 import {
   brandKitPortraitPlan,
   mktgPortraitDocumentName,
@@ -74,11 +81,68 @@ describe('brandKitPortraitPlan', () => {
   });
 
   it('keeps only the Logo chapter’s first page for a kit without logo files, so no frame prints empty', () => {
-    const none = { ...view, logos: { primary: null, stacked: null, symbol: null, reversed: null }, symbol: null };
+    // No file, so no colorway tile has artwork either (the view builder derives the tiles from the files).
+    const none = {
+      ...view,
+      logos: { primary: null, stacked: null, symbol: null, reversed: null },
+      symbol: null,
+      colorways: view.colorways.map((tile) => ({ ...tile, logo: null })),
+    };
     const plan = brandKitPortraitPlan(none, { inFamily: false });
     expect(plan).toHaveLength(12);
     expect(plan.filter((page) => page.section === '01 Logo').map((page) => page.id)).toEqual(['logo-system']);
     expect(plan[3].id).toBe('color-palette');
+    // A kit whose only files are bitmaps (no inline src) has nothing the tiles can draw: it keeps the Logo system page,
+    // whose content is the files table, and drops the pages whose content is artwork, the same twelve pages.
+    const bitmaps = brandKitPortraitPlan(buildBrandKitBookView(brandKitPngOnlyFixture(), 4), { inFamily: false });
+    expect(bitmaps).toHaveLength(12);
+    expect(bitmaps.filter((page) => page.section === '01 Logo').map((page) => page.id)).toEqual(['logo-system']);
+    // The shared logo-less fixture (the one the print-QA harness seeds) plans the same twelve pages.
+    const logoless = brandKitPortraitPlan(buildBrandKitBookView(brandKitLogolessFixture(), 4), { inFamily: false });
+    expect(logoless).toHaveLength(12);
+    expect(logoless.filter((page) => page.section === '01 Logo').map((page) => page.id)).toEqual(['logo-system']);
+  });
+
+  it('plans the full sixteen pages for the overfull and the minimal records, both valid envelopes at the schema’s edges', () => {
+    // The two records the print-QA harness prints: every fixed list at the schema's length, so `readBrandKitRevision` reads them.
+    for (const fixture of [brandKitOverfullFixture(), brandKitMinimalFixture()]) {
+      expect(findBrandKitTokenErrors(fixture.kit)).toEqual([]);
+      expect(findBrandKitChapterErrors(fixture.chapters)).toEqual([]);
+      expect(findBrandKitReportErrors(fixture.report)).toEqual([]);
+      const plan = brandKitPortraitPlan(buildBrandKitBookView(fixture, 4), { inFamily: false });
+      expect(plan.map((page) => page.id)).toEqual(brandKitPortraitPlan(view, { inFamily: false }).map((page) => page.id));
+    }
+    expect(brandKitOverfullFixture().chapters.color.palette).toHaveLength(5);
+    // The longest line the agent may write, ended at a word and a full stop (never mid-word, so a print cut reads as one).
+    expect(brandKitOverfullFixture().chapters.voice.line.length).toBeLessThanOrEqual(300);
+    expect(brandKitOverfullFixture().chapters.voice.line.length).toBeGreaterThan(280);
+    expect(brandKitOverfullFixture().chapters.voice.line).toMatch(/[a-z]\.$/);
+    expect(brandKitMinimalFixture().chapters.color.palette).toHaveLength(4);
+    expect(brandKitMinimalFixture().report.sources_read).toEqual([]);
+  });
+
+  it('plans each Logo page on the artwork its tiles draw: a stacked lockup alone keeps only the first page, a horizontal lockup the pages it fills', () => {
+    const stackedOnly = {
+      ...view,
+      logos: { primary: null, stacked: { ref: 'stacked.svg', name: 'stacked.svg', src: SVG }, symbol: null, reversed: null },
+      symbol: null,
+      colorways: view.colorways.map((tile) => ({ ...tile, logo: null })),
+    };
+    expect(
+      brandKitPortraitPlan(stackedOnly, { inFamily: false })
+        .filter((page) => page.section === '01 Logo')
+        .map((page) => page.id)
+    ).toEqual(['logo-system']);
+    // The horizontal lockup alone: Colorways (its tiles draw it), Clear space, Partnership and Watchouts; no symbol page.
+    const primaryOnly = { ...view, logos: { ...view.logos, symbol: null, stacked: null, reversed: null }, symbol: null };
+    expect(
+      brandKitPortraitPlan(primaryOnly, { inFamily: false })
+        .filter((page) => page.section === '01 Logo')
+        .map((page) => page.id)
+    ).toEqual(['logo-system', 'logo-colorways', 'logo-clear-space', 'logo-partnership', 'logo-watchouts']);
+    expect(
+      brandKitPortraitPlan({ ...view, logos: { ...view.logos, symbol: { ref: 'symbol.png', name: 'symbol.png', src: null } } }, { inFamily: false })
+    ).toHaveLength(16);
   });
 
   it('inside the family drops the cover, the contents and the back cover: fourteen pages', () => {

@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <p class="pp-body pp-body--wide" [lfxPpRect]="[column[0], geometry.bodyTop, column[1]]">{{ intro }}</p>
-<div class="fpb-cards" [lfxPpRect]="[column[0], 210, column[1]]" data-testid="family-print-boilerplate-cards">
+<div class="fpb-cards" [lfxPpRect]="[column[0], cardsLayout.top, column[1]]" data-testid="family-print-boilerplate-cards">
   @for (card of cards(); track card.label; let first = $first) {
     <article class="fpb-card" [class.fpb-card--first]="first" [style.min-height.px]="card.minHeight" data-testid="family-print-boilerplate-card">
       <div class="fpb-card__meta">
@@ -18,7 +18,12 @@
           <p class="fpb-card__over" data-testid="family-print-boilerplate-over">{{ card.overLabel }}</p>
         }
       </div>
-      <p class="fpb-card__text" [style.font-size.px]="card.fontSize">{{ card.text }}</p>
+      <div class="fpb-card__body">
+        <p class="fpb-card__text" [style.font-size.px]="card.fontSize">{{ card.text }}</p>
+        @if (card.cutNote) {
+          <p class="fpb-card__cut" data-testid="family-print-boilerplate-cut">{{ card.cutNote }}</p>
+        }
+      </div>
     </article>
   }
 </div>

@@ -14,6 +14,7 @@ import {
   AEO_GEO_HTTP_URL_PATTERN,
   AEO_GEO_INTAKE_ERRORS,
   AEO_GEO_MAX_DOCUMENT_BYTES,
+  AEO_GEO_READER_CAVEATS,
   AEO_GEO_SECTIONS,
 } from '../constants/aeo-geo.constants';
 import type {
@@ -319,6 +320,175 @@ export function aeoGeoHttpLink(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+// Reader caveats. Every pattern below is linear in the input (one quantified run per anchor), and a caveat
+// above CAVEAT_MAX_CHARS is not scanned at all. No lookbehind: Safari before 16.4 has none.
+const CAVEAT_MAX_CHARS = 4000;
+// Quote class: straight, curly (U+2018/2019/201C/201D) and backtick.
+// An abbreviation's period is masked before the split and restored after, so "e.g. the" is not a boundary.
+const CAVEAT_ABBREVIATION = /\b(e\.g|i\.e|etc|vs|cf|approx|no)\.(?= )/gi;
+const CAVEAT_ABBREVIATION_MARK = '\u0001';
+// A boundary is . ! or ? (with closing quotes or brackets) before whitespace and any non-space, so "robots.txt …" is its own sentence.
+// The whitespace inside a quoted span is masked first, so a quoted title ("What is AEO?") or a provider's
+// multi-sentence message stays one unit.
+const CAVEAT_SENTENCE_BOUNDARY = /([.!?]['"\u2018\u2019\u201c\u201d`)\]]*)\s+(?=\S)/g;
+const CAVEAT_SENTENCE_MARK = '\u0000';
+const CAVEAT_QUOTE_SPACE_MARK = '\u0002';
+// A stop inside a closing quote followed by a lowercase WORD continues the sentence ("What is AEO?" as its first result).
+// A word ends at whitespace, sentence punctuation, an apostrophe or hyphen, or a dot not followed by a letter or digit, so a
+// file name (robots.txt, llms.txt, sitemap.xml) or a property (og:site_name) after the quote opens its own sentence.
+const CAVEAT_QUOTE_CONTINUATION = /([.!?]['"\u2019\u201d`]+)(\s+)(?=\p{Ll}+(?:$|[\s,;!?)\]'\u2019-]|\.(?![\p{L}\p{N}])))/gu;
+const CAVEAT_PARENTHETICAL = /\(([^()]*)\)/g;
+const CAVEAT_WORD_CHARACTER = /[\p{L}\p{N}]/u;
+// The classifier decides by the sentence's SUBJECT. A provider subject (a search, the provider, the API, a lookup)
+// that names a credits or quota limit, or quotes a message after returned/responded/failed/error/message with
+// evidence of failure (a failure word or an HTTP status, inside the quotes or outside them), is a provider
+// failure: a search subject maps to one fixed sentence, another provider subject is left out. A quoted successful
+// result or result title is never a failure, and a sentence about the audited site (its pages, fetches,
+// statuses, rate limiting) passes verbatim.
+const CAVEAT_NAME_SEARCH = /\bname search\b/i;
+const CAVEAT_SEARCH_SUBJECT = /^(?:(?:the|our|a|an)\s+)?(?:(?:web|third[- ]party)[\s-]+)?search(?:es)?(?:\s+(?:provider|service|API|engine))?\b/i;
+const CAVEAT_PROVIDER_SUBJECT = /^(?:(?:the|our|a|an)\s+)?(?:provider|API|lookup)\b/i;
+const CAVEAT_LFX_RECORD = /LFX record could not be read/i;
+const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exceeded|exhausted)/i;
+const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u201c`]/i;
+// Failure evidence: inside the quotes a bare three-digit status counts; outside them only after HTTP or status ("the first 60 KB" is no status).
+const CAVEAT_FAILURE_WORDS = 'unavailable|error|denied|unauthori[sz]ed|forbidden|exceeded|limit|timeout|timed out|quota|credits?|rate[- ]limited';
+const CAVEAT_FAILURE_IN_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|\\d{3})\\b`, 'i');
+const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:HTTP|status)\\s*\\d{3})\\b`, 'i');
+const CAVEAT_RESULT_TITLE = [
+  /['"\u2018\u201c`][^'"\u2019\u201d`]*['"\u2019\u201d`]\s+as (?:its|the) (?:top|first|best|second|leading)\b[^.]*\bresult/i,
+  /\b(?:titled|entitled|called|named)\s*['"\u2018\u201c`]/i,
+];
+// Quoted spans are blanked before the credits/quota test on a result-title sentence: the words belong to the title.
+const CAVEAT_QUOTED_SPANS = [/"[^"]*"/g, /`[^`]*`/g, /\u201c[^\u201d]*\u201d/g, /\u2018[^\u2019]*\u2019/g, /(^|[\s(])'[^']*'(?=$|[\s).,;:!?])/g];
+// A symmetric delimiter with an odd count in the text (an inch mark, a truncated quote) opens no span: it would pair with the next one.
+const CAVEAT_SYMMETRIC_QUOTES: [string, RegExp][] = [
+  ['"', CAVEAT_QUOTED_SPANS[0]],
+  ['`', CAVEAT_QUOTED_SPANS[1]],
+];
+const CAVEAT_IDENTIFIERS = [
+  // a snake_case field name as a standalone token: not part of a file name, a path, an og: property or a code span
+  /(?:^|[^:/.\-`\w])[a-z]+(?:_[a-z0-9]+)+(?![./\-`\w])/,
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i, // a UUID
+  /\bslug\s+[a-z0-9]+(?:-[a-z0-9]+)+\b/i, // a hyphenated slug token
+  /\b(?:uid|id)\b(?!=['"])\s*(?:[:=]\s*)?['"\u2018\u2019\u201c\u201d`]?[a-z0-9_-]*\d[a-z0-9_-]*/i, // uid/id with a value, not an HTML attribute
+];
+
+/**
+ * The agent's caveats as reader sentences (web view and print). Sentence by sentence: a failed third-party
+ * search and an LFX record that could not be read map to fixed wording; a parenthetical that carries plumbing
+ * is removed; a sentence that still carries plumbing is left out. Plumbing is the known shapes: a snake_case
+ * field name, a slug, a uid, a credits or quota phrase, or a provider subject (a search, the provider, the API,
+ * a lookup) quoting a failure. A quoted result, a quoted title and any sentence about the audited site pass
+ * through unchanged, as does a caveat with nothing to map (returned as is); a quotation is never split into
+ * sentences; an emptied caveat, or one above 4,000 characters, becomes one fixed sentence.
+ */
+export function aeoGeoReaderCaveat(caveat: string): string {
+  if (caveat.length > CAVEAT_MAX_CHARS) {
+    return AEO_GEO_READER_CAVEATS.inputs_unavailable;
+  }
+  const sentences = maskQuotedSpaces(caveat)
+    .replace(CAVEAT_ABBREVIATION, `$1${CAVEAT_ABBREVIATION_MARK}`)
+    .replace(CAVEAT_SENTENCE_BOUNDARY, `$1${CAVEAT_SENTENCE_MARK}`)
+    .split(CAVEAT_SENTENCE_MARK)
+    .map((sentence) => sentence.split(CAVEAT_ABBREVIATION_MARK).join('.').split(CAVEAT_QUOTE_SPACE_MARK).join(' ').trim())
+    .filter((sentence) => sentence.length > 0);
+  // A sentence scrubbed to nothing but punctuation (a caveat that was only a plumbing parenthetical) is left out, never an empty bullet.
+  const kept = sentences.map(readerSentence).filter((sentence) => CAVEAT_WORD_CHARACTER.test(sentence) && !carriesPlumbing(sentence));
+  if (!kept.length) {
+    return AEO_GEO_READER_CAVEATS.inputs_unavailable;
+  }
+  const changed = kept.length !== sentences.length || kept.some((sentence, index) => sentence !== sentences[index]);
+  return changed ? kept.join(' ') : caveat;
+}
+
+/**
+ * The report's caveats as reader sentences, in order, each distinct caveat once: two agent caveats that map to
+ * the same sentence (two plumbing-only caveats, say, both falling back to the fixed one) print one bullet.
+ */
+export function aeoGeoReaderCaveats(caveats: readonly string[]): string[] {
+  return Array.from(new Set(caveats.map(aeoGeoReaderCaveat)));
+}
+
+function readerSentence(sentence: string): string {
+  if (providerSubject(sentence) === 'search' && carriesProviderFailure(sentence)) {
+    return AEO_GEO_READER_CAVEATS.search_unavailable;
+  }
+  if (CAVEAT_LFX_RECORD.test(sentence)) {
+    return AEO_GEO_READER_CAVEATS.lfx_record_unread;
+  }
+  const scrubbed = sentence.replace(CAVEAT_PARENTHETICAL, (parenthetical, inner: string) => (carriesPlumbing(inner) ? '' : parenthetical));
+  // Only a sentence that lost a parenthetical has its whitespace normalised.
+  return scrubbed === sentence
+    ? sentence
+    : scrubbed
+        .split(/\s+/)
+        .join(' ')
+        .replace(/ ([.,;:!?])/g, '$1')
+        .trim();
+}
+
+function carriesPlumbing(text: string): boolean {
+  return CAVEAT_IDENTIFIERS.some((pattern) => pattern.test(text)) || carriesProviderFailure(text);
+}
+
+/**
+ * A credits/quota phrase (outside a quoted result title), or a provider subject quoting its message with evidence
+ * of failure in or around the quotes; a quoted successful result ("Example Foundation") is audit content.
+ */
+function carriesProviderFailure(sentence: string): boolean {
+  const title = CAVEAT_RESULT_TITLE.some((pattern) => pattern.test(sentence));
+  if (CAVEAT_PROVIDER_WORDS.test(title ? outsideQuotes(sentence) : sentence)) {
+    return true;
+  }
+  if (title || providerSubject(sentence) === null || !CAVEAT_QUOTED_MESSAGE.test(sentence)) {
+    return false;
+  }
+  return CAVEAT_FAILURE_IN_QUOTES.test(insideQuotes(sentence)) || CAVEAT_FAILURE_OUTSIDE_QUOTES.test(outsideQuotes(sentence));
+}
+
+function providerSubject(sentence: string): 'search' | 'provider' | null {
+  if (CAVEAT_NAME_SEARCH.test(sentence)) {
+    return null;
+  }
+  if (CAVEAT_SEARCH_SUBJECT.test(sentence)) {
+    return 'search';
+  }
+  return CAVEAT_PROVIDER_SUBJECT.test(sentence) ? 'provider' : null;
+}
+
+/** The quoted spans' text, joined; the single-quote rule's leading character is not part of its span. */
+function insideQuotes(text: string): string {
+  return quotedSpans(text)
+    .flatMap((span) => Array.from(text.matchAll(span), (match) => (typeof match[1] === 'string' ? match[0].slice(match[1].length) : match[0])))
+    .join(' ');
+}
+
+/** Whitespace inside a quoted span, and after a quote-closed stop the sentence continues past, is masked so the split never breaks a quotation. */
+function maskQuotedSpaces(text: string): string {
+  return quotedSpans(text)
+    .reduce(
+      (rest, span) =>
+        rest.replace(span, (match, lead: unknown) => {
+          const keep = typeof lead === 'string' ? lead : '';
+          return keep + match.slice(keep.length).replace(/\s/g, CAVEAT_QUOTE_SPACE_MARK);
+        }),
+      text
+    )
+    .replace(CAVEAT_QUOTE_CONTINUATION, (_match, quote: string, spaces: string) => quote + spaces.replace(/\s/g, CAVEAT_QUOTE_SPACE_MARK));
+}
+
+function outsideQuotes(text: string): string {
+  // Only the straight-single-quote span captures its leading character; the others have no group.
+  return quotedSpans(text).reduce((rest, span) => rest.replace(span, (_match, lead: unknown) => (typeof lead === 'string' ? lead : '') + ' '), text);
+}
+
+/** The span rules that apply to this text: a straight quote or backtick with an odd count is left out (one count per delimiter, linear). */
+function quotedSpans(text: string): RegExp[] {
+  const unbalanced = CAVEAT_SYMMETRIC_QUOTES.filter(([mark]) => text.split(mark).length % 2 === 0).map(([, span]) => span);
+  return unbalanced.length ? CAVEAT_QUOTED_SPANS.filter((span) => !unbalanced.includes(span)) : CAVEAT_QUOTED_SPANS;
 }
 
 /** Frozen report fields are required; additional presentation fields remain forward compatible. */

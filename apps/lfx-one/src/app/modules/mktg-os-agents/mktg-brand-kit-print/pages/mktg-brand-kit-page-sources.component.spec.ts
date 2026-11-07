@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils';
+import { brandKitMinimalFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MktgBrandKitPageSourcesComponent } from './mktg-brand-kit-page-sources.component';
 import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -24,6 +26,61 @@ describe('the Sources & decisions page', () => {
     expect(frame.querySelector('[data-testid="brand-kit-sources-accepted"]')).toBeNull();
     expect(frame.textContent).not.toContain('https://');
     expect(frame.textContent).not.toContain('Across the documents');
+  });
+
+  it('sets a long record’s two columns smaller together so nothing runs under the accepted box, and breaks a long address inside its column', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageSourcesComponent, 'sources', (view) => ({
+      ...view,
+      report: {
+        ...view.report,
+        sources_read: Array.from({ length: 40 }, (_, index) => `https://one.example.org/a-rather-long-page-address/section-${index + 1}/subsection`),
+      },
+    }));
+    const left = frame.querySelector<HTMLElement>('[data-testid="brand-kit-sources-left"]');
+    const right = frame.querySelector<HTMLElement>('[data-testid="brand-kit-sources-right"]');
+    expect(left?.querySelectorAll('[data-testid="brand-kit-sources-read"] li')).toHaveLength(40);
+    const scale = Number(left?.style.getPropertyValue('--kp-fit'));
+    expect(scale).toBeLessThan(1);
+    expect(scale).toBeGreaterThanOrEqual(0.72);
+    expect(right?.style.getPropertyValue('--kp-fit')).toBe(left?.style.getPropertyValue('--kp-fit'));
+    expect(left?.classList.contains('kp-sources-column')).toBe(true);
+    expect(frame.querySelector('[data-testid="brand-kit-sources-read-more"]')).toBeNull();
+  });
+
+  it('says so when the run recorded nothing, instead of two empty columns (the minimal record)', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageSourcesComponent, 'sources', () => buildBrandKitBookView(brandKitMinimalFixture(), 4));
+    expect(frame.querySelector('[data-testid="brand-kit-sources-empty"]')?.textContent).toContain('The run recorded no sources');
+    expect(frame.querySelector('[data-testid="brand-kit-sources-read"]')).toBeNull();
+    expect(frame.querySelector('[data-testid="brand-kit-sources-right"]')?.children).toHaveLength(0);
+    expect(frame.textContent).not.toMatch(/\[[^\]]+\]/);
+  });
+
+  it('counts the sources read and the color conflicts a column cannot hold even cut in "+N more" lines, never dropping them in silence', async () => {
+    const conflict = (index: number) => ({
+      name: `Color ${index + 1}`,
+      values: [
+        { hex: '#112233', source: 'https://one.example.org/brand' },
+        { hex: '#113344', source: 'https://one.example.org/_next/static/chunks/a1b2c3.css' },
+      ],
+      chosen: '#112233',
+    });
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageSourcesComponent, 'sources', (view) => ({
+      ...view,
+      report: {
+        ...view.report,
+        sources_read: Array.from({ length: 120 }, (_, index) => `https://one.example.org/page-${index + 1}`),
+        color_conflicts: Array.from({ length: 30 }, (_, index) => conflict(index)),
+      },
+    }));
+    const read = frame.querySelectorAll('[data-testid="brand-kit-sources-read"] li').length;
+    expect(read).toBeGreaterThan(0);
+    expect(read).toBeLessThan(120);
+    expect(frame.querySelector('[data-testid="brand-kit-sources-read-more"]')?.textContent).toBe(`+${120 - read} more sources read, in LFX One`);
+    const conflicts = frame.querySelectorAll('[data-testid="brand-kit-sources-conflicts"] table').length;
+    expect(conflicts).toBeGreaterThan(0);
+    expect(conflicts).toBeLessThan(30);
+    expect(frame.querySelector('[data-testid="brand-kit-sources-conflicts-more"]')?.textContent).toBe(`+${30 - conflicts} more color conflicts, in LFX One`);
+    expect(frame.querySelector('[data-testid="brand-kit-sources-gaps-more"]')).toBeNull();
   });
 
   it('names the failed, missing and conflicting sources from the report, the kept value marked, and the accepted box with a recorded approval', async () => {

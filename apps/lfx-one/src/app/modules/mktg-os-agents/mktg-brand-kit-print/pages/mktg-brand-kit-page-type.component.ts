@@ -2,51 +2,68 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed } from '@angular/core';
-import { MKTG_PORTRAIT_FIT } from '@lfx-one/shared/constants';
-import { brandKitPortraitFitSize, brandKitPortraitTypeSample, brandKitPortraitTypeSource, brandKitPortraitWeightName } from '@lfx-one/shared/utils';
+import {
+  BRAND_KIT_PORTRAIT_TYPE_PAGE,
+  BRAND_KIT_PORTRAIT_TYPE_SAMPLE_PX,
+  BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM,
+  MKTG_PORTRAIT_MORE_LINE,
+} from '@lfx-one/shared/constants';
+import {
+  brandKitPortraitIntro,
+  brandKitPortraitShortenLine,
+  brandKitPortraitTypeLayout,
+  brandKitPortraitWeightName,
+  mktgPortraitCount,
+} from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
-
-/** The H1 sample's size in the mock; it shrinks (to the grammar's floor) so the line fits the column whole. */
-const SAMPLE_SIZE_PX = 48;
-/** The scale's label and spec columns and their gaps, left of a row's sample. */
-const SCALE_META_PX = 96 + 96 + 16 + 16;
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The Typography page (mock 11): the summary, the family's H1 sample in one
- * line (shrunk to fit the column, never cut), the character set, the weights,
- * the scale at real size with the kit's own lines, where to get the font and
- * the rules.
+ * line at the mock's 48 px (the brand line shortened to the words that fit
+ * the column, never shrunk or clipped), the character set, the weights, the
+ * scale at the kit's real sizes with the kit's own lines (a one-line step is
+ * shortened when its line would not fit; the body step is the umbrella
+ * shortened to three lines at its real size), where to get the font and the
+ * rules. The scale and the two lower
+ * blocks are one placed block in normal flow: the lower blocks follow the
+ * scale as the engine laid it out, 16 px under it, never a computed y.
  */
 @Component({
   selector: 'lfx-mktg-brand-kit-page-type',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
   templateUrl: './mktg-brand-kit-page-type.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageTypeComponent extends MktgBrandKitPageBase {
   protected readonly characters = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz 0123456789';
-  /** The sample's size: 48 px when the brand line fits the column in one line at 48, else the largest size (to 72 %) at which it does. */
-  protected readonly sampleSize = computed(() =>
-    brandKitPortraitFitSize(this.view().voice.line, this.w, SAMPLE_SIZE_PX, { weight: 500 }, MKTG_PORTRAIT_FIT.minScale)
+  /** The 48 px specimen: the brand line, shortened at a word to what fits the column in one line at 48 (never set smaller). */
+  protected readonly sampleSize = BRAND_KIT_PORTRAIT_TYPE_SAMPLE_PX;
+  protected readonly sample = computed(() =>
+    brandKitPortraitShortenLine(this.view().voice.line, this.w, BRAND_KIT_PORTRAIT_TYPE_SAMPLE_PX, {
+      weight: 500,
+      family: this.view().type.family,
+      tracking: BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM,
+    })
   );
   protected readonly weights = computed(() => this.view().type.weights.map((weight) => ({ weight, name: brandKitPortraitWeightName(weight) })));
-  /** Each step at its real size with the kit's own line; a sample that would not fit its line is set smaller (that step only), never cut. */
-  protected readonly scale = computed(() => {
-    const view = this.view();
-    return view.type.scale.map((step) => {
-      const sample = brandKitPortraitTypeSample(view, step);
-      const display = step.step === 'display';
-      const width = display ? this.w : this.w - SCALE_META_PX;
-      return {
-        ...step,
-        sample,
-        spec: `${step.weight} · ${step.size}/${step.line_height}`,
-        display,
-        size: brandKitPortraitFitSize(sample, width, step.size, { weight: step.weight, caps: step.caps }),
-      };
-    });
-  });
-  protected readonly source = computed(() => brandKitPortraitTypeSource(this.view().type.source));
-  protected readonly weightList = computed(() => this.view().type.weights.join(', '));
+  /** `1 weight` / `3 weights`: the note's count, singular at one. */
+  protected readonly weightsCount = computed(() => mktgPortraitCount(this.weights().length, MKTG_PORTRAIT_MORE_LINE.nouns.weight));
+  /**
+   * The page's sizes from its data: each scale step at the kit's own size with the kit's own line shortened to its
+   * measure (a one-line step to one line; the body step to three lines of its column at 18/30, fewer only when the model
+   * says the stack would otherwise cross the footer), and the font block's lines. Where the lower blocks land is the
+   * engine's: they follow the scale in flow.
+   */
+  protected readonly layout = computed(() => brandKitPortraitTypeLayout(this.view(), this.w));
+  protected readonly scaleTop = BRAND_KIT_PORTRAIT_TYPE_PAGE.scaleTop;
+  /**
+   * The scale block is at least as tall as the room above the mock's y 830 less the 16 px gap, so the lower blocks sit
+   * at the mock's y while the scale is short and move down with it, in flow, when it is not.
+   */
+  protected readonly scaleMinHeight = BRAND_KIT_PORTRAIT_TYPE_PAGE.lowerTop - BRAND_KIT_PORTRAIT_TYPE_PAGE.lowerGap - BRAND_KIT_PORTRAIT_TYPE_PAGE.scaleTop;
+  /** The intro at most three lines of its 600 px: whole sentences that fit, or the first shortened (`brandKitPortraitIntro`). */
+  protected readonly intro = computed(() => brandKitPortraitIntro(this.view().type.summary));
 }

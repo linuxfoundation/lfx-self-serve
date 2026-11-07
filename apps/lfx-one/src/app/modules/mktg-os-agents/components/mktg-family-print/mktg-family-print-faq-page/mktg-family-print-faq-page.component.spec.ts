@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
+import { MKTG_FAMILY_PRINT_LABELS } from '@lfx-one/shared/constants';
 import { FaqGroupView } from '@lfx-one/shared/interfaces';
 import { mktgFamilyPrintFaqGroups } from '@lfx-one/shared/utils';
 import { describe, expect, it } from 'vitest';
@@ -51,6 +52,8 @@ describe('MktgFamilyPrintFaqPageComponent', () => {
     ]);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
+    // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+    expect(getComputedStyle(root).display).toBe('block');
     // The count is of what prints: answered questions, in groups left with one.
     expect(root.querySelector('[data-testid="family-print-faq-intro"]')?.textContent).toBe(
       '3 questions in 2 groups, each answered from the framework or a source it names.'
@@ -58,13 +61,17 @@ describe('MktgFamilyPrintFaqPageComponent', () => {
     const columns = Array.from(root.querySelectorAll('.fpq-column'));
     expect(columns).toHaveLength(2);
     expect(columns.map((column) => column.querySelectorAll('[data-testid="family-print-faq-entry"]').length)).toEqual([1, 1]);
-    expect(Array.from(root.querySelectorAll('[data-testid="family-print-faq-group"]')).map((heading) => heading.textContent)).toEqual(['About', 'Joining']);
+    expect(
+      Array.from(root.querySelectorAll('[data-testid="family-print-faq-group"]')).map((heading) => heading.textContent?.replace(/\s+/g, ' ').trim())
+    ).toEqual(['About', 'Joining']);
     const entries = Array.from(root.querySelectorAll('[data-testid="family-print-faq-entry"]'));
     expect(entries.map((entry) => entry.querySelector('.fpq-entry__question')?.textContent)).toEqual(['What is it?', 'How do I join?']);
     expect(entries[0].querySelector('.fpq-entry__answer')?.textContent).toBe('A synthetic project.');
     expect(entries[0].querySelector('.pp-chip')?.textContent).toBe('Framework');
-    // The run's `Notes` source is the project's notes to a reader of the book.
-    expect(entries[1].querySelector('.pp-chip')?.textContent).toBe('Project notes');
+    // The run's `Notes` is an internal source label: no chip, and no label in its place.
+    expect(entries[1].querySelector('.pp-chip')).toBeNull();
+    expect(entries[1].querySelector('.fpq-entry__source')).toBeNull();
+    expect(root.textContent).not.toMatch(/notes/i);
     expect(root.textContent).not.toContain('Who runs it?');
     expect(root.textContent).not.toContain('Open');
   });
@@ -81,7 +88,11 @@ describe('MktgFamilyPrintFaqPageComponent', () => {
       ['What is it?'],
       ['Where is the code?'],
     ]);
-    expect(Array.from(root.querySelectorAll('[data-testid="family-print-faq-group"]')).map((heading) => heading.textContent)).toEqual(['About', 'About']);
+    // The second heading repeats a group begun in the first column: it carries the continued mark, the first does not.
+    expect(
+      Array.from(root.querySelectorAll('[data-testid="family-print-faq-group"]')).map((heading) => heading.textContent?.replace(/\s+/g, ' ').trim())
+    ).toEqual(['About', `About ${MKTG_FAMILY_PRINT_LABELS.faqContinued}`]);
+    expect(root.querySelectorAll('[data-testid="family-print-faq-continued"]')).toHaveLength(1);
     expect(root.textContent).not.toContain('Who runs it?');
   });
 
@@ -93,6 +104,9 @@ describe('MktgFamilyPrintFaqPageComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="family-print-faq-intro"]')?.textContent).toBe('About · Joining.');
-    expect(Array.from(root.querySelectorAll('[data-testid="family-print-faq-group"]')).map((heading) => heading.textContent)).toEqual(['Joining']);
+    expect(
+      Array.from(root.querySelectorAll('[data-testid="family-print-faq-group"]')).map((heading) => heading.textContent?.replace(/\s+/g, ' ').trim())
+    ).toEqual(['Joining']);
+    expect(root.querySelectorAll('[data-testid="family-print-faq-continued"]')).toHaveLength(0);
   });
 });

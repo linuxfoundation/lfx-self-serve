@@ -13,7 +13,11 @@
         <div class="pp-grid-ground" [lfxPpRect]="[0, 0, geometry.width, geometry.height]" aria-hidden="true"></div>
         @if (document.brand.logoOnDark; as logo) {
           <div [lfxPpRect]="[inset[0], 240, 600]">
-            <img class="fpc-logo" [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" data-testid="family-print-cover-logo" />
+            <!-- The lockup as the kit's cover draws it: on the grammar's white plate (its directive pads it by half the drawn height and
+                 rounds it by a sixth of its shorter side) when the kit's full-colour primary cannot be reversed; the img keeps its 84 px. -->
+            <span [lfxPpPlate]="logo.plate ? plateHeight : null">
+              <img class="fpc-logo" [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" data-testid="family-print-cover-logo" />
+            </span>
           </div>
         }
         <div [lfxPpRect]="[inset[0], 500, inset[1]]">
@@ -37,7 +41,7 @@
           </div>
         }
         <div [lfxPpRect]="[inset[0], 984, inset[1]]">
-          <div class="pp-cover-strip" data-testid="family-print-cover-strip">
+          <div class="pp-cover-strip fpc-strip" data-testid="family-print-cover-strip">
             <span>{{ book().footLeft }}</span>
             <span>{{ coverFootRight() }}</span>
           </div>
@@ -49,26 +53,30 @@
         <p class="pp-body pp-body--wide" [lfxPpRect]="[column[0], geometry.bodyTop, column[1]]" data-testid="family-print-contents-intro">
           {{ contentsIntro() }}
         </p>
-        <div class="fpt-columns" [lfxPpRect]="[column[0], 210, column[1]]">
-          @for (chapters of contentsColumns(); track $index; let lastColumn = $last) {
+        <!-- Two columns filled by height: a chapter the first cannot finish continues under a repeated row; a cut is a note, never a clip. -->
+        <div class="fpt-columns" [lfxPpRect]="[column[0], contentsLayout.top, column[1]]">
+          @for (blocks of contents().columns; track $index; let lastColumn = $last) {
             <div class="fpt-column">
-              @for (chapter of chapters; track chapter.document.agentKey) {
-                <div class="fpt-chapter" data-testid="family-print-contents-chapter">
+              @for (block of blocks; track block.chapter.document.agentKey + (block.continued ? '+' : '')) {
+                <div class="fpt-chapter" [attr.data-continued]="block.continued || null" data-testid="family-print-contents-chapter">
                   <div class="fpt-chapter__row">
                     <span>
-                      <span class="fpt-chapter__number">{{ chapter.document.number }}</span>
-                      <span class="fpt-chapter__title">{{ chapter.document.title }}</span>
-                      @if (chapter.document.versionLabel) {
-                        <span class="fpt-chapter__version">{{ chapter.document.versionLabel }}</span>
+                      <span class="fpt-chapter__number">{{ block.chapter.document.number }}</span>
+                      <span class="fpt-chapter__title">{{ block.chapter.document.title }}</span>
+                      @if (block.chapter.document.versionLabel) {
+                        <span class="fpt-chapter__version">{{ block.chapter.document.versionLabel }}</span>
                       }
                     </span>
-                    <span class="fpt-chapter__page" data-testid="family-print-contents-opener-page">{{ chapter.openerPage }}</span>
+                    <span class="fpt-chapter__page" data-testid="family-print-contents-opener-page">{{ block.chapter.openerPage }}</span>
                   </div>
-                  @for (entry of chapter.entries; track entry.n) {
+                  @for (entry of block.entries; track entry.n) {
                     <div class="fpt-entry" data-testid="family-print-contents-entry">
                       <span>{{ entry.title }}</span>
                       <span class="fpt-entry__page">{{ entry.n }}</span>
                     </div>
+                  }
+                  @if (block.cut) {
+                    <p class="fpt-entry fpt-cut" data-testid="family-print-contents-cut">{{ contentsCutNote() }}</p>
                   }
                 </div>
               }
@@ -115,6 +123,7 @@
           [view]="kit"
           [brand]="document.brand"
           [projectName]="document.projectName"
+          [approval]="document.kitApproval"
           [number]="chapter?.document?.number ?? ''"
           [book]="frame.innerBook" />
       }
@@ -122,7 +131,7 @@
     @case ('boilerplates') {
       @if (document.boilerplates; as boilerplates) {
         <lfx-mktg-portrait-page [look]="look()" [book]="book()" [pageId]="page.id" [page]="page.n" [section]="page.section" [title]="page.title">
-          <lfx-mktg-family-print-boilerplates-page [lengths]="boilerplates.lengths" [sources]="document.boilerplatesSources" />
+          <lfx-mktg-family-print-boilerplates-page [lengths]="boilerplates.lengths" [sources]="document.boilerplatesSources" [fontStack]="look().fontStack" />
         </lfx-mktg-portrait-page>
       }
     }

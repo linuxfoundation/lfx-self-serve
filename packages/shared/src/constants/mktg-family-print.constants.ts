@@ -14,6 +14,32 @@ export const MKTG_FAMILY_PRINT_WARN_INK = lfxColors.amber[700];
 /** The family book's running head names the project and the family as the grammar names a document (`<project> positioning & brand`): the grammar's own kind for it, so the compiler checks the name. */
 export const MKTG_FAMILY_PRINT_HEAD_KIND: MktgPortraitDocumentKind = 'positioning & brand';
 
+/**
+ * The family book's root class beside the grammar's: the one rule the family lays over every running head in its
+ * book (its own pages', the framework's and the kit's) hangs on it — `styles/mktg-family-print.scss`, which cannot
+ * read this — so a document's standalone print keeps the grammar's heads as they are.
+ */
+export const MKTG_FAMILY_PRINT_BOOK_CLASS = 'lfx-mktg-family-book';
+
+/**
+ * The book's modifier when its running head measures too wide: the longest section label the book mounts on the
+ * left, the gap and the document name (`<project> positioning & brand`) on the right, at the label's size, do not
+ * fit the page's content width on one line. Then the whole book prints both labels one step smaller (9 px, the
+ * grammar's label is 10 px) before the ellipsis ever cuts the name, so a long project name is not cut mid-word on
+ * every page; a book whose heads fit keeps the label's size (mktgFamilyPrintHeadTight).
+ */
+export const MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS = 'lfx-mktg-family-book--tight-head';
+
+/**
+ * The running head's measure for that rule: the grammar's label as `.pp-lab` sets it (10 px, semibold, capitals at
+ * 0.12 em) and the gap the family keeps between the two labels (`styles/mktg-family-print.scss`, which cannot read
+ * this).
+ */
+export const MKTG_FAMILY_PRINT_HEAD_MEASURE = { size: 10, weight: 600, gap: 24 } as const;
+
+/** The cover lockup's drawn height in px (`.fpc-logo` in the family print's styles, which cannot read this): the plate's measure when the kit's lockup needs one. */
+export const MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT = 84;
+
 /** What a frame of the book holds; `framework` and `kit` are the inner prints' own portrait pages in the family's book. */
 export const MKTG_FAMILY_PRINT_PAGE_KINDS = ['cover', 'contents', 'opener', 'framework', 'kit', 'boilerplates', 'faq', 'sources', 'back'] as const;
 
@@ -37,7 +63,7 @@ export const MKTG_FAMILY_PRINT_FAQ_LAYOUT = {
   source: 24,
 } as const;
 
-/** The Sources page's fixed blocks: the conflicts' y and the Still open block's two y's, the page's bottom, and the rows' type for the fit model. */
+/** The Sources page's fixed blocks: the conflicts' y and the Still open block's two y's (its lowest, under the conflicts printed), the page's bottom, the gap between the two blocks, and the rows' type for the fit model. */
 export const MKTG_FAMILY_PRINT_SOURCES_LAYOUT = {
   conflictsTop: 410,
   openTop: 690,
@@ -49,6 +75,25 @@ export const MKTG_FAMILY_PRINT_SOURCES_LAYOUT = {
   open: { size: 11.5, line: 1.45, padding: 14 },
   /** The document chip's type (the grammar's `pp-chip`) and its horizontal padding. */
   chip: { size: 8.5, padding: 14 },
+  /** Between the last conflict row and the Still open label (the page's `.fps-block + .fps-block` margin). */
+  blockGap: 16,
+} as const;
+
+/**
+ * The boilerplate cards' room as the board draws them: the cards' y and the bottom they may reach (above the Built from
+ * block), the gap between cards, a card's vertical padding and horizontal inset, the meta column and its gap (what the
+ * text column loses of the page's measure), and the text's line height. The cards' sum of heights is held to the room
+ * by cutting the longest text from the end, never in silence.
+ */
+export const MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT = {
+  top: 210,
+  bottom: 900,
+  gap: 12,
+  padding: 48,
+  inset: 52,
+  metaWidth: 120,
+  metaGap: 28,
+  line: 1.5,
 } as const;
 
 /** The boilerplates page's run block at the foot (Built from): its y and bottom, the heading and the list's type. */
@@ -77,10 +122,24 @@ export const MKTG_FAMILY_PRINT_ROUNDING_WORDS: readonly string[] = [
 ];
 
 /**
- * A FAQ answer's source as the family book's chip prints it, by the stored word in lower case: the run's `Notes` are
- * the project's notes to a reader of the book (the editor's round of 7 Nov 2026). A source not named here prints as stored.
+ * A FAQ answer's source as the family book's chip prints it, by the stored word in lower case; '' prints no chip. The
+ * run's `Notes` is an internal source label, so it prints none (the editor's final round of 7 Nov 2026). A source not
+ * named here prints as stored.
  */
-export const MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS: Readonly<Record<string, string>> = { notes: 'Project notes' };
+export const MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS: Readonly<Record<string, string>> = { notes: '' };
+
+/**
+ * Words a run's source list uses for its own machinery, which a Built from row drops when they stand alone in
+ * parentheses (`Approved messaging framework (intake)` → `Approved messaging framework`): a reader of the book has no
+ * intake form.
+ */
+export const MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS: readonly string[] = ['intake'];
+
+/**
+ * A record's source field, in the words a reader uses for it, by the field's name in lower case (`site_css` is the
+ * site's stylesheet, not "site css"); a field not named here prints its words with the underscores as spaces.
+ */
+export const MKTG_FAMILY_PRINT_SOURCE_FIELD_WORDS: Readonly<Record<string, string>> = { site_css: 'site stylesheet', brand_page: 'brand page' };
 
 /** Words of a key number's label that name no thing to count. */
 export const MKTG_FAMILY_PRINT_LABEL_STOP_WORDS: readonly string[] = [
@@ -103,12 +162,14 @@ export const MKTG_FAMILY_PRINT_LABEL_STOP_WORDS: readonly string[] = [
   'years',
 ];
 
-/** The running head's left label and the title of the family's own pages. */
+/** The running head's left label and the title of the family's own pages (the board's: `Contents`, `Sources`; a document's pages carry its numbered chapter). */
 export const MKTG_FAMILY_PRINT_LABELS = {
   cover: 'Cover',
   contents: 'Contents',
   boilerplates: 'Boilerplates',
   faq: 'Frequently asked questions',
+  /** After a group's heading where the group goes on from an earlier column or page (the editor's S1). */
+  faqContinued: '(continued)',
   sources: 'Sources',
   sourcesTitle: 'Sources across the documents',
   backCover: 'Back cover',
@@ -139,7 +200,7 @@ export const MKTG_FAMILY_PRINT_COPY = {
   /** The word count under a boilerplate's label: `[Words]` and `[Max]`. */
   words: '[Words] words · max [Max]',
   /** The fill bar's caption: `[Percent]`. */
-  ofTheLimit: '[Percent] % of the limit',
+  ofTheLimit: '[Percent]% of the limit',
   /** Over the limit by `[Over]` words. */
   overBy: 'over by [Over]',
   /** The back cover's provenance line, after the trademark notice. */
@@ -148,13 +209,15 @@ export const MKTG_FAMILY_PRINT_COPY = {
   figuresAsOf: 'figures as of [Date]',
   /** Under a fitted block whose rows did not all fit: `[Count]` rows more, never dropped in silence. */
   cutNote: '+[Count] more in LFX One',
+  /** Under a boilerplate cut from the end to fit its card: the words that did not print. */
+  cutWords: '+[Count] words in LFX One',
   /** A list in prose: `[Items]` the first ones joined with commas, `[Last]` the last. */
   lastOfList: '[Items] and [Last]',
   /** A key-number conflict: `[Number]` and `[Label]` are the framework's, `[Document]` the other document's title, `[Sentence]` what it says. */
   numberConflict: 'The framework’s key numbers say [Number] [Label]; the [Document] says “[Sentence]”',
   /** The brand-line conflict: `[Line]` is the kit's, `[Tagline]` the framework's. */
   brandLineConflict: 'The brand kit carries “[Line]”; the framework’s tagline is “[Tagline]”.',
-  /** A color the kit read with two values: `[Values]` is `#FF702D from the brand page and #FF7D2D from the site css`. */
+  /** A color the kit read with two values: `[Values]` is `#FF702D from the brand page and #FF7D2D from the site stylesheet`. */
   colorConflict: 'The [Kit] reads [Name] as [Values]; it keeps [Chosen].',
   /** One of a color's readings: `[Hex]` and where the kit read it (omitted when the record names no readable source). */
   colorReading: '[Hex] from the [Source]',
@@ -171,3 +234,25 @@ export const MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES = [
   { fontSize: 14, minHeight: 130 },
   { fontSize: 12.5, minHeight: 150 },
 ] as const;
+
+/**
+ * The contents page's two columns (px of the frame): from `top` to `bottom`,
+ * the chapter row's and an entry's type for the fit model, and the room the
+ * last column keeps for the Sources row and the note under it. The plan
+ * fills the columns by measured height, a chapter continuing under a repeated
+ * row; what one page cannot hold is counted in a cut note, never clipped.
+ */
+export const MKTG_FAMILY_PRINT_CONTENTS_LAYOUT = {
+  top: 210,
+  bottom: 1000,
+  columnGap: 32,
+  /** The chapter row: 14 px above and 6 below its 20 px title; the number, version and page cells take `aside` of its width. */
+  chapter: { size: 20, line: 1.2, padding: 20, weight: 500, aside: 110 },
+  /** An entry row: 4 px above and below its 12 px title, indented 36, the page number's cell at the right. */
+  entry: { size: 12, line: 1.3, padding: 8, indent: 36, numberWidth: 28 },
+  /** The Sources row (a chapter row without entries) and the note under it, kept free on the last column. */
+  tail: 124,
+} as const;
+
+/** The Sources page's action after a colour the kit read with two values: `[Document]` is the kit, `[Name]` the colour. */
+export const MKTG_FAMILY_PRINT_RERUN_ON_COLOR = 'Re-run the [Document] once its sources agree on [Name].';

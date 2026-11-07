@@ -9,23 +9,28 @@
 
 /* ---- Contents ---- */
 
-/* One row of the contents list: number (34 px, muted, 11 px) and title, the page number right, over a hairline. */
+/* The contents list: one column, or two (24 px apart) when one cannot hold the rows above the lower blocks
+   (BRAND_KIT_PORTRAIT_CONTENTS, brandKitPortraitContentsLayout). */
+.kp-contents-list--columns {
+  columns: 2;
+  column-gap: 24px;
+}
+
+/* One row of the contents list: number (34 px, muted, 11 px) and title, the page number right, over a hairline.
+   34 px a row (the design reader's answer: type 15/1.3, 7 px of padding, the hairline), so fifteen rows end at
+   y 658 and clear the two blocks at y 690; the mock's 36 px rows collided with the "what this kit is built from" label. */
 .kp-contents-row {
+  box-sizing: border-box;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 8px 0;
+  height: 34px;
+  padding: 7px 0;
   border-top: 1px solid var(--pp-hairline);
   font-size: 15px;
   line-height: 1.3;
   color: var(--pp-ink);
-}
-
-.kp-contents-number {
-  display: inline-block;
-  width: 34px;
-  font-size: 11px;
-  color: var(--pp-muted);
+  break-inside: avoid;
 }
 
 .kp-contents-page {
@@ -33,12 +38,21 @@
   color: var(--pp-muted);
 }
 
-/* The "At a glance" card: hairline, 12 px radius, 18 px padding, 270 px tall. */
+/* The "At a glance" card: hairline, 12 px radius, 18 px padding, sized to its content (the logo 14 px under the
+   label, the palette dots 16 px under it, the family 14 px, the approval 12 px). */
 .kp-glance {
-  height: 270px;
   padding: 18px;
   border: 1px solid var(--pp-hairline);
   border-radius: 12px;
+}
+
+.kp-glance-logo {
+  margin-top: 14px;
+}
+
+.kp-glance-dots {
+  display: flex;
+  margin-top: 16px;
 }
 
 .kp-glance-dot {
@@ -59,6 +73,7 @@
 }
 
 .kp-glance-family {
+  margin-top: 14px;
   font-size: 15px;
   font-weight: 500;
   color: var(--pp-dark);
@@ -71,6 +86,7 @@
 }
 
 .kp-glance-meta {
+  margin-top: 12px;
   font-size: 11px;
   line-height: 1.6;
   color: var(--pp-muted);
@@ -112,10 +128,37 @@
   background: var(--pp-mist);
 }
 
+/* The Logo system page's hero, 240 px tall. */
+.kp-hero--system {
+  height: 240px;
+}
+
+/* The Partnership page's two tiles: the lockup, a 96 px bar and the partner's name 44 px apart; 300 px tall on light,
+   280 on dark. */
+.kp-hero--partnership {
+  gap: 44px;
+  height: 300px;
+}
+
+.kp-hero--partnership-dark {
+  height: 280px;
+}
+
 /* A row of tiles, 16 px apart; a tile is 224 × 150 unless the page says otherwise. */
 .kp-tiles {
   display: flex;
   gap: 16px;
+}
+
+/* A tile row 10 px under its label. */
+.kp-tiles--under-label {
+  margin-top: 10px;
+}
+
+/* The Colorways tiles' lockup, 44 px tall. */
+.kp-colorway-logo {
+  width: auto;
+  height: 44px;
 }
 
 .kp-tiles--wrap {
@@ -131,6 +174,18 @@
 .kp-tile--wide {
   width: 344px;
   height: 250px;
+}
+
+/* The plain line of a colorway tile whose artwork the kit did not supply and the book cannot derive. */
+.kp-tile-missing {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pp-muted);
+}
+
+.pp-tile--dark .kp-tile-missing {
+  color: var(--pp-white);
+  opacity: 0.8;
 }
 
 /* The logo files table: caps heads over a 1 px ink rule, 11.5/1.4 rows over hairlines, the source muted. */
@@ -203,7 +258,8 @@
   font-size: 20px;
   font-weight: 500;
   line-height: 1;
-  color: var(--pp-accent);
+  /* Accent text on the page white: the darkened text accent (WCAG AA), never the fill accent. */
+  color: var(--pp-accent-text, var(--pp-accent));
 }
 
 /* Clear space: the dashed X box on the mist stage, the X badges on the spark in the ink on the accent. */
@@ -293,7 +349,18 @@
   color: var(--pp-muted);
 }
 
-/* Symbol in shape: a 158 px stage, the shape inside (a circle or a 24 px rounded square), with a hairline. */
+/* Symbol in shape: 158 px columns 24 px apart, 14 px under the label; each a stage with the shape inside (a circle or a
+   24 px rounded square), with a hairline. */
+.kp-shapes {
+  display: flex;
+  gap: 24px;
+  margin-top: 14px;
+}
+
+.kp-shape-column {
+  width: 158px;
+}
+
 .kp-shape-stage {
   display: flex;
   align-items: center;
@@ -312,6 +379,13 @@
   align-items: center;
   justify-content: center;
   border: 1px solid var(--pp-hairline);
+}
+
+/* The padding demo and its rule side by side, 24 px apart, centred on each other. */
+.kp-padding-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
 }
 
 .kp-padding-demo {
@@ -356,14 +430,19 @@
   background: var(--pp-dark);
 }
 
+.kp-bar--partnership {
+  height: 96px;
+}
+
 .kp-bar--white {
-  background: #fff;
+  background: var(--pp-white);
 }
 
 /* Watchouts: a 3-column grid of 190 px tiles with the red cross, the label 12/1.4 under each. */
 .kp-watchouts {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Three equal tracks whatever a tile holds: a retyped name never widens its column (minmax(0, 1fr), not 1fr). */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 28px 16px;
 }
 
@@ -385,19 +464,27 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #dc2626;
+  background: var(--pp-fail);
   font-size: 13px;
   font-weight: 700;
   line-height: 22px;
   text-align: center;
-  color: #fff;
+  color: var(--pp-white);
 }
 
+/* The retyped sample: the project's name in a serif italic, centred in its tile with 34 px clear on each side (the
+   × badge's box, its inset and the grammar's gap), so a wrapping name never runs under the badge; longer names are
+   shortened to the tile's four lines (BRAND_KIT_PORTRAIT_WATCHOUT_RETYPED), at a 1.15 leading. */
 .kp-retyped {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 0 34px;
   font-family: Georgia, serif;
   font-size: 30px;
   font-style: italic;
   font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
   color: var(--pp-dark);
 }
 
@@ -412,6 +499,11 @@
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--pp-ink);
+
+  /* The lockup keeps its drawn width beside the text: never shrunk as a flex item. */
+  > lfx-mktg-brand-kit-artwork {
+    flex: none;
+  }
 }
 
 /* ---- Color ---- */
@@ -515,13 +607,18 @@
   line-height: 1.6;
 }
 
-/* A plain list under a label: 12.5/1.6, 16 px indent; `--loose` 12.5/1.7 with 10 px above; `--columns` in two. */
+/* A plain list under a label: 12.5/1.6, 16 px indent with the browser's bullet markers in it (the mock's plain
+   `<ul>`; the app's preflight removes them, so they are asked for), the same on every page; `--loose` 12.5/1.7 with
+   10 px above; `--columns` in two. An item's words break anywhere rather than leave the column (a record's address
+   can be one long token). */
 .kp-list {
   margin: 8px 0 0;
   padding-left: 16px;
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--pp-ink);
+  list-style: disc;
+  overflow-wrap: anywhere;
 
   b {
     color: var(--pp-dark);
@@ -536,6 +633,28 @@
 .kp-list--columns {
   columns: 2;
   column-gap: 24px;
+}
+
+/* A rule list's placed box set at the fit model's scale (--kp-fit, 1 when the list fits as written;
+   BRAND_KIT_PORTRAIT_RULE_LISTS, brandKitPortraitRulesFit): its items smaller together, and the muted line that
+   counts the rules the room could not hold (.kp-list-more), never a line past the footer. */
+.kp-fit-list {
+  --kp-fit: 1;
+
+  .kp-list {
+    font-size: calc(12.5px * var(--kp-fit));
+  }
+
+  .kp-rule {
+    font-size: calc(12px * var(--kp-fit));
+  }
+}
+
+.kp-list-more {
+  margin-top: 6px;
+  font-size: calc(12.5px * var(--kp-fit, 1));
+  line-height: 1.6;
+  color: var(--pp-muted);
 }
 
 /* A WCAG grade pill: 9 px semibold on its grade's tint. */
@@ -625,7 +744,7 @@
 .kp-matrix-ratio {
   padding: 1px 4px;
   border-radius: 3px;
-  background: #fff;
+  background: var(--pp-white);
   font-size: 10.5px;
   font-weight: 600;
   color: var(--pp-ink);
@@ -635,9 +754,23 @@
   background: rgba(255, 255, 255, 0.85);
 }
 
-/* The kit's pairs: a 110 × 36 sample, the names, the ratio and the grade, over a hairline. */
+/* The kit's pairs: a 110 × 36 sample, the names, the ratio and the grade, over a hairline (51 px a pair:
+   BRAND_KIT_PORTRAIT_CONTRAST.pair); the pairs the room does not hold are counted in the muted line under them. */
+/* The pairs under the matrix: the heading 24 px clear of it, under four colours as under a taller matrix. */
+.kp-pairs-block {
+  margin-top: 24px;
+}
+
 .kp-pairs {
   margin-top: 6px;
+}
+
+.kp-pairs-more {
+  padding-top: 7px;
+  border-top: 1px solid var(--pp-hairline);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--pp-muted);
 }
 
 .kp-pair {
@@ -675,11 +808,12 @@
 
 /* ---- Typography ---- */
 
-/* The H1 sample: 48 px medium in one line (the component shrinks the size until the brand line fits), the character set under it, the weights beside their names. */
+/* The H1 sample: 48 px medium in one line (the component shortens the brand line to the words that fit; nowrap is a
+   guard, never a clip), the character set under it, the weights beside their names. */
 .kp-type-h1 {
   font-weight: 500;
   line-height: 1.08;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.015em; /* = BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM, the measure's tracking for the sample */
   white-space: nowrap;
   color: var(--pp-dark);
 }
@@ -722,6 +856,19 @@
 /* The scale: a row per step over a hairline, label and spec 96 px each, the sample at its real size; the display step on its own line. */
 .kp-scale {
   margin-top: 6px;
+}
+
+/* The scale and the two lower blocks in one flow: the scale at least the room above the mock's y 830 (its min-height is
+   set from the page's constants), the blocks 16 px under it, side by side, 340 px each with the 24 px gutter. */
+.kp-type-lower {
+  display: flex;
+  gap: 24px;
+  margin-top: 16px;
+}
+
+.kp-type-lower-block {
+  flex: none;
+  width: 340px;
 }
 
 .kp-scale-row {
@@ -769,6 +916,9 @@
 
 /* ---- Iconography ---- */
 
+/* The recommended set's labelled icon: the icon, then its label 14 px after it. The shared icon centres itself with
+   auto margins (the web view's tiles); in this flex row an auto margin would take the row's free space and push the
+   label to the far edge, so the margins are zeroed here. */
 .kp-icon-labelled {
   display: flex;
   align-items: center;
@@ -778,6 +928,7 @@
   color: var(--pp-ink);
 
   svg {
+    margin: 0;
     color: var(--pp-dark);
   }
 }
@@ -852,6 +1003,12 @@
   border: 0;
 }
 
+/* The call-out when nothing reads on the accent: a white card, the accent as its top rule. */
+.kp-element--callout-rule {
+  border: 1px solid var(--pp-hairline);
+  border-top: 6px solid var(--pp-accent);
+}
+
 .kp-element-callout-text {
   font-size: 18px;
   font-weight: 500;
@@ -884,7 +1041,7 @@
 .kp-button--primary {
   padding: 12px 22px;
   background: var(--pp-dark);
-  color: #fff;
+  color: var(--pp-white);
 }
 
 .kp-button--secondary {
@@ -897,14 +1054,14 @@
   padding: 8px 14px;
   background: var(--pp-dark);
   font-size: 11px;
-  color: #fff;
+  color: var(--pp-white);
 }
 
 .kp-button--tiny {
   padding: 6px 12px;
   background: var(--pp-dark);
   font-size: 10px;
-  color: #fff;
+  color: var(--pp-white);
 }
 
 /* ---- Example usage ---- */
@@ -953,7 +1110,18 @@
   font-size: 20px;
   font-weight: 500;
   line-height: 1.2;
-  color: #fff;
+  color: var(--pp-white);
+}
+
+.kp-usage-social-note {
+  color: inherit;
+  opacity: 0.8;
+}
+
+/* The social card when nothing reads on the accent: a white card, the accent as its top rule. */
+.kp-usage-frame--social-rule {
+  border: 1px solid var(--pp-hairline);
+  border-top: 6px solid var(--pp-accent);
 }
 
 .kp-usage-social-text {
@@ -983,7 +1151,20 @@
   font-size: 17px;
   font-weight: 500;
   line-height: 1.25;
-  color: #fff;
+  color: var(--pp-white);
+}
+
+/* The files table's fixed columns: name 150, format 70, color variant 120; the source takes the rest. */
+.kp-table-col--name {
+  width: 150px;
+}
+
+.kp-table-col--format {
+  width: 70px;
+}
+
+.kp-table-col--variant {
+  width: 120px;
 }
 
 .kp-table--usage {
@@ -996,9 +1177,15 @@
 
 /* ---- Voice ---- */
 
+/* The messages block set at the fit model's scale (--kp-fit, 1 when the two messages fit above the attributes;
+   BRAND_KIT_PORTRAIT_VOICE_MESSAGES, brandKitPortraitVoiceMessagesFit). */
+.kp-voice-messages {
+  --kp-fit: 1;
+}
+
 .kp-voice-umbrella {
   margin-top: 10px;
-  font-size: 30px;
+  font-size: calc(30px * var(--kp-fit, 1));
   font-weight: 500;
   line-height: 1.3;
   letter-spacing: -0.01em;
@@ -1011,39 +1198,90 @@
 
 .kp-voice-line {
   margin-top: 8px;
-  font-size: 24px;
+  font-size: calc(24px * var(--kp-fit, 1));
   font-weight: 500;
-  line-height: 1.2;
+  /* The umbrella's leading: a brand line that wraps read as set solid at the mock's unset (normal) line height. */
+  line-height: 1.3;
   color: var(--pp-dark);
 }
 
 /* The attributes in two columns from y 540, each under a 3 px rule (the first in the spark, the rest in the accent); set
-   large (name 20 px, line 15/1.6, 28 px row gap) so the grid runs to about y 900. */
+   large (name 20 px, line 15/1.6, 28 px row gap) so four run to about y 900. The grid is set at the fit model's scale
+   (--kp-fit, 1 when it fits as written; BRAND_KIT_PORTRAIT_ATTRIBUTES, brandKitPortraitAttributesFit), so more
+   attributes, or longer lines, never run under the footer; the rows the room cannot hold are counted in the muted
+   line under the grid (.kp-attributes-more). The placed box carries --kp-fit for both. */
 .kp-attributes {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 28px 16px;
+  gap: calc(28px * var(--kp-fit)) 16px;
 }
 
 .kp-attribute {
-  padding-top: 14px;
+  padding-top: calc(14px * var(--kp-fit));
   border-top: 3px solid var(--pp-accent);
 }
 
 .kp-attribute-name {
-  font-size: 20px;
+  font-size: calc(20px * var(--kp-fit));
   font-weight: 600;
   color: var(--pp-dark);
 }
 
 .kp-attribute-line {
-  margin-top: 8px;
-  font-size: 15px;
+  margin-top: calc(8px * var(--kp-fit));
+  font-size: calc(15px * var(--kp-fit));
   line-height: 1.6;
   color: var(--pp-ink);
 }
 
+.kp-attributes-more {
+  margin-top: calc(16px * var(--kp-fit, 1));
+  font-size: calc(12.5px * var(--kp-fit, 1));
+  line-height: 1.6;
+  color: var(--pp-muted);
+}
+
 /* ---- Sources & decisions ---- */
+
+/* A Sources column set at the fit model's scale (--kp-fit, 1 when the lists fit as written): its labels, lists,
+   gaps and conflict tables scale together, as the model measured them (brandKitPortraitSourcesFit). */
+.kp-sources-column {
+  --kp-fit: 1;
+
+  .pp-lab {
+    font-size: calc(10px * var(--kp-fit));
+  }
+
+  .kp-block {
+    margin-bottom: calc(26px * var(--kp-fit));
+  }
+
+  .kp-list {
+    margin-top: calc(8px * var(--kp-fit));
+    font-size: calc(12.5px * var(--kp-fit));
+  }
+
+  .kp-text {
+    margin-top: calc(10px * var(--kp-fit));
+    font-size: calc(12.5px * var(--kp-fit));
+  }
+
+  .kp-conflict {
+    margin-top: calc(8px * var(--kp-fit));
+    font-size: calc(12.5px * var(--kp-fit));
+
+    /* The head and the rows' padding follow the fit too, as the fit model measures them. */
+    th {
+      padding-bottom: calc(4px * var(--kp-fit));
+      font-size: calc(12px * var(--kp-fit));
+    }
+
+    td {
+      padding-top: calc(5px * var(--kp-fit));
+      padding-bottom: calc(5px * var(--kp-fit));
+    }
+  }
+}
 
 .kp-sources-intro {
   max-width: 640px;
@@ -1057,6 +1295,7 @@
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--pp-ink);
+  overflow-wrap: anywhere;
 
   th {
     padding-bottom: 4px;

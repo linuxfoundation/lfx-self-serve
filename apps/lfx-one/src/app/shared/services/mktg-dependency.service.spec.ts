@@ -4,7 +4,7 @@
 import { HttpErrorResponse, HttpStatusCode } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { BRAND_KIT_CONTRACT_ID, BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_ANCHOR_QUESTIONS, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
-import { FoundationMessageContent, MktgDependencyDocument, MktgRunAsset, MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
+import { FoundationMessageContent, MktgDependencyDocument, MktgPrintKitRead, MktgRunAsset, MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
 import { renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgArtifactService } from '@services/mktg-artifact.service';
@@ -519,6 +519,57 @@ describe('MktgDependencyService', () => {
 
     it('asks nothing without a project', async () => {
       expect(await new Promise((resolve) => service.resolveBrandKit('').subscribe(resolve))).toBeNull();
+      expect(getStored).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('readBrandKit — the print’s read, a failed read kept apart from “no kit”', () => {
+    const kit = brandKitTestRevision();
+    const sidecar = {
+      contract: BRAND_KIT_CONTRACT_ID,
+      project_name: kit.projectName,
+      project: kit.project,
+      version: kit.version,
+      mode: kit.mode,
+      kit: kit.kit,
+      chapters: kit.chapters,
+      report: kit.report,
+      inputs: { website_url: kit.websiteUrl },
+      generated_at: kit.generatedAt,
+    };
+    const read = (): Promise<MktgPrintKitRead> => new Promise((resolve) => service.readBrandKit('proj-1').subscribe(resolve));
+
+    it('settles with the kit from the approved current sidecar', async () => {
+      getStored.mockReturnValue(of({ documentMarkdown: '# Kit', receipt: { version: 1 }, revisionNumber: 2, sidecar }));
+      expect(await read()).toEqual({ settled: true, kit: expect.objectContaining({ projectName: kit.projectName, kit: kit.kit }), failed: false });
+    });
+
+    it('settles with no kit — the LF look — when the project has none stored, or a kit stored as Markdown alone', async () => {
+      getStored.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: HttpStatusCode.NotFound })));
+      expect(await read()).toEqual({ settled: true, kit: null, failed: false });
+      getStored.mockReturnValueOnce(of({ documentMarkdown: '# Kit', receipt: { version: 1 } }));
+      expect(await read()).toEqual({ settled: true, kit: null, failed: false });
+    });
+
+    it('retries a failed read once, then settles as failed — never as the LF look', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getStored.mockReturnValue(throwError(() => new HttpErrorResponse({ status: HttpStatusCode.Forbidden })));
+      expect(await read()).toEqual({ settled: true, kit: null, failed: true });
+      expect(getStored).toHaveBeenCalledTimes(2);
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      consoleError.mockRestore();
+    });
+
+    it('recovers when the retry succeeds', async () => {
+      getStored
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: HttpStatusCode.InternalServerError })))
+        .mockReturnValueOnce(of({ documentMarkdown: '# Kit', receipt: { version: 1 }, revisionNumber: 2, sidecar }));
+      expect((await read()).kit?.projectName).toBe(kit.projectName);
+      expect(getStored).toHaveBeenCalledTimes(2);
+    });
+
+    it('asks nothing without a project', async () => {
+      expect(await new Promise((resolve) => service.readBrandKit('').subscribe(resolve))).toEqual({ settled: true, kit: null, failed: false });
       expect(getStored).not.toHaveBeenCalled();
     });
   });

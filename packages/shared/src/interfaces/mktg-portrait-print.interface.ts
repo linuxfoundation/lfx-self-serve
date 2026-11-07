@@ -70,6 +70,20 @@ export interface MktgPortraitPlacedPage extends MktgPortraitPlanPage {
 /** A logo as a portrait cover draws it. */
 export type MktgPortraitLogo = MktgPrintLogo;
 
+/** The cover strip as printed: its halves, shortened when needed, and whether the strip still wraps. */
+export interface MktgPortraitCoverStrip {
+  left: string;
+  right: string;
+  /** True when both halves shortened still do not share one line: the strip wraps and moves up one line. */
+  wraps: boolean;
+}
+
+/** A counted noun as a `+N more …` line prints it: `rule` / `rules`, `item to avoid` / `items to avoid`. */
+export interface MktgPortraitNoun {
+  one: string;
+  many: string;
+}
+
 /** One paragraph of a block the fit model measures: its text and how it is set, in px. */
 export interface MktgPortraitFitPara {
   text: string;
@@ -80,8 +94,14 @@ export interface MktgPortraitFitPara {
   weight?: number;
   /** Set in capitals. */
   caps?: boolean;
+  /** The CSS font stack the text is set in (its first family widens the measure); the sans table's width without one. */
+  family?: string;
+  /** The line's letter-spacing in em per character (negative for a tight headline); capitals take the caps tracking without one. */
+  tracking?: number;
   /** Space above the paragraph, px. */
   above?: number;
+  /** Px the box's width is narrowed by for this paragraph alone (a table cell beside a swatch and a label), unscaled. */
+  indent?: number;
 }
 
 /** A block of paragraphs the fit model fits to a box. */

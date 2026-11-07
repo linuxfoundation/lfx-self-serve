@@ -1307,6 +1307,213 @@ export function brandKitPageNumber(number: number): string {
   return String(number).padStart(2, '0');
 }
 
+/** The SVG elements that paint: each takes a fill (black by default) and a stroke (none by default). */
+const BRAND_KIT_SVG_SHAPES = new Set(['path', 'rect', 'circle', 'ellipse', 'polygon', 'polyline', 'line', 'text', 'tspan']);
+
+/** Elements whose paint the detector cannot resolve from the markup alone: artwork using them is never derived from. */
+const BRAND_KIT_SVG_UNRESOLVABLE = new Set(['style', 'use', 'image', 'foreignobject']);
+
+/** Elements whose children are not rendered where they stand (definitions, clip paths, masks, patterns, symbols, markers, gradients, filters): their paints are not the artwork's. */
+const BRAND_KIT_SVG_UNRENDERED = new Set(['defs', 'clippath', 'mask', 'pattern', 'symbol', 'marker', 'lineargradient', 'radialgradient', 'filter']);
+
+/** Paint values that draw nothing. */
+const BRAND_KIT_SVG_NO_PAINT = new Set(['none', 'transparent']);
+
+/** The named inks an exporter writes in place of a hex value, as six-digit hex. */
+const BRAND_KIT_SVG_NAMED_INKS: Readonly<Record<string, string>> = { black: '#000000', white: '#ffffff' };
+
+/**
+ * One paint as one ink: `black`, `#000`, `#000000` and `rgb(0, 0, 0)` are
+ * the same ink (six-digit lower-case hex); a paint the detector cannot read
+ * as a colour is returned as written, so two spellings of it stay two inks.
+ */
+function brandKitSvgInk(paint: string): string {
+  const named = BRAND_KIT_SVG_NAMED_INKS[paint];
+  if (named) return named;
+  const shortHex = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(paint);
+  if (shortHex) return `#${shortHex[1]}${shortHex[1]}${shortHex[2]}${shortHex[2]}${shortHex[3]}${shortHex[3]}`;
+  const rgb = /^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/.exec(paint);
+  if (rgb)
+    return `#${rgb
+      .slice(1, 4)
+      .map((channel) => Math.min(255, Number(channel)).toString(16).padStart(2, '0'))
+      .join('')}`;
+  return paint;
+}
+
+/** The white ink, the ground a reversal removes (ignorable on a mark, a background when it covers the viewBox). */
+const BRAND_KIT_SVG_WHITE = '#ffffff';
+
+/** One paint of an element: its `fill`/`stroke` attribute, else its inline style's, else undefined (inherit). */
+function brandKitSvgPaint(attributes: string, property: 'fill' | 'stroke'): string | undefined {
+  const attribute = new RegExp(`(?:^|\\s)${property}\\s*=\\s*["']([^"']*)["']`, 'i').exec(attributes);
+  if (attribute) return attribute[1].trim().toLowerCase();
+  const style = /(?:^|\s)style\s*=\s*["']([^"']*)["']/i.exec(attributes);
+  if (!style) return undefined;
+  const declaration = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i').exec(style[1]);
+  return declaration ? declaration[1].trim().toLowerCase() : undefined;
+}
+
+/** One tag of an SVG document as the detector reads it. */
+interface BrandKitSvgTag {
+  /** True for `</name>`. */
+  closing: boolean;
+  /** The element name, lower-cased. */
+  name: string;
+  /** The text between the name and the closing `>`, the self-closing slash removed. */
+  attributes: string;
+  /** True for `<name … />`. */
+  selfClosing: boolean;
+  /** The index after the tag's `>`. */
+  end: number;
+}
+
+/** Characters that end an element name: whitespace, the self-closing slash, the tag's end. */
+const BRAND_KIT_SVG_NAME_END = new Set([' ', '\t', '\n', '\r', '\f', '/', '>']);
+
+/**
+ * The next element tag at or after `from`, or null: one left-to-right pass
+ * with no backtracking (the name runs to the first whitespace, `/` or `>`;
+ * the attributes to the first `>` outside quotes), so a hostile document
+ * costs its length and no more. Comments, processing instructions, doctype
+ * and CDATA sections are stepped over, not returned.
+ */
+function brandKitSvgNextTag(svg: string, from: number): BrandKitSvgTag | null {
+  let at = svg.indexOf('<', from);
+  while (at !== -1) {
+    let cursor = at + 1;
+    if (svg.startsWith('!--', cursor)) {
+      const close = svg.indexOf('-->', cursor + 3);
+      if (close === -1) return null;
+      at = svg.indexOf('<', close + 3);
+      continue;
+    }
+    const closing = svg[cursor] === '/';
+    if (closing) cursor += 1;
+    const first = svg[cursor] ?? '';
+    const isLetter = (first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z');
+    if (!isLetter) {
+      const skip = svg.indexOf('>', cursor);
+      if (skip === -1) return null;
+      at = svg.indexOf('<', skip + 1);
+      continue;
+    }
+    const nameStart = cursor;
+    while (cursor < svg.length && !BRAND_KIT_SVG_NAME_END.has(svg[cursor])) cursor += 1;
+    const name = svg.slice(nameStart, cursor).toLowerCase();
+    const attributesStart = cursor;
+    let quote: string | null = null;
+    while (cursor < svg.length) {
+      const char = svg[cursor];
+      if (quote) {
+        if (char === quote) quote = null;
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else if (char === '>') {
+        break;
+      }
+      cursor += 1;
+    }
+    if (cursor >= svg.length) return null;
+    let attributes = svg.slice(attributesStart, cursor);
+    const selfClosing = !closing && attributes.trimEnd().endsWith('/');
+    if (selfClosing) attributes = attributes.trimEnd().slice(0, -1);
+    return { closing, name, attributes, selfClosing, end: cursor + 1 };
+  }
+  return null;
+}
+
+/** A numeric attribute (`width="120"`, `width="100%"` read as the whole), or null. */
+function brandKitSvgLength(attributes: string, name: string, whole: number): number | null {
+  const match = new RegExp(`(?:^|\\s)${name}\\s*=\\s*["']\\s*([0-9.]+)(%?)[^"']*["']`, 'i').exec(attributes);
+  if (!match) return null;
+  return match[2] ? (Number(match[1]) / 100) * whole : Number(match[1]);
+}
+
+/**
+ * True when an SVG is drawn in one resolvable ink and has no background, so
+ * a reversed or one-colour mark can be derived from it by a CSS filter.
+ *
+ * Derivable means: one resolvable ink, no background.
+ * - Every painting element (path, rect, circle, ellipse, polygon, polyline,
+ *   line, text) is read with its fill and stroke: its own attribute or
+ *   inline style, else the nearest ancestor's (`<g fill="…">` inherits),
+ *   else SVG's initial values, a black fill and no stroke. The default black
+ *   counts as an ink.
+ * - `none` and `transparent` draw nothing. White is the ground a reversal
+ *   removes, so a white part of a mark is ignored, but a rendered rect the
+ *   viewBox's size, in any paint, under or over any other mark is a
+ *   background and a second ink: inverting it would set the mark in a box,
+ *   so the artwork is not derivable (the ruling: supplied file, else derived
+ *   from one ink, else the white plate; nothing is ever stripped from a
+ *   copy). A lone full-canvas rect is one ink.
+ * - Gradients, patterns, any `url(#…)` paint, `currentColor`, `<use>`,
+ *   images, a `mask` or `filter` on a shape, a `<style>` sheet or a `class`
+ *   attribute cannot be resolved from the markup: not derivable,
+ *   conservatively.
+ * - What stands inside `<defs>`, `<clipPath>`, `<mask>`, `<pattern>`,
+ *   `<symbol>` or a gradient is not drawn where it stands (an exporter's
+ *   clip rectangle the size of the viewBox is not a background): skipped.
+ * - Two inks flatten to one shape under a filter: not derivable.
+ */
+export function brandKitSvgIsMonochrome(svg: string): boolean {
+  const viewBox = /viewBox\s*=\s*["']\s*([-0-9.]+)[\s,]+([-0-9.]+)[\s,]+([0-9.]+)[\s,]+([0-9.]+)/i.exec(svg);
+  const viewWidth = viewBox ? Number(viewBox[3]) : null;
+  const viewHeight = viewBox ? Number(viewBox[4]) : null;
+  const inks = new Set<string>();
+  const inherited: { fill?: string; stroke?: string }[] = [{}];
+  // Painted shapes: full-canvas rects (backgrounds) and the marks drawn beside them.
+  let backgrounds = 0;
+  let marks = 0;
+  // Open elements whose subtree is not rendered where it stands; their paints are skipped until they close.
+  let unrendered = 0;
+  for (let tag = brandKitSvgNextTag(svg, 0); tag !== null; tag = brandKitSvgNextTag(svg, tag.end)) {
+    const { closing, name, attributes, selfClosing } = tag;
+    if (closing) {
+      if (inherited.length > 1) inherited.pop();
+      if (unrendered > 0) unrendered -= 1;
+      continue;
+    }
+    if (unrendered > 0 || BRAND_KIT_SVG_UNRENDERED.has(name)) {
+      if (!selfClosing) unrendered += 1;
+      if (!selfClosing) inherited.push(inherited[inherited.length - 1]);
+      continue;
+    }
+    if (BRAND_KIT_SVG_UNRESOLVABLE.has(name) || /(?:^|\s)(?:class|mask|filter)\s*=/i.test(attributes)) return false;
+    const parent = inherited[inherited.length - 1];
+    const own = { fill: brandKitSvgPaint(attributes, 'fill') ?? parent.fill, stroke: brandKitSvgPaint(attributes, 'stroke') ?? parent.stroke };
+    if (BRAND_KIT_SVG_SHAPES.has(name)) {
+      let painted = false;
+      const paints: [string, boolean][] = [
+        [own.fill ?? 'black', true],
+        [own.stroke ?? 'none', false],
+      ];
+      for (const [rawPaint, isFill] of paints) {
+        if (BRAND_KIT_SVG_NO_PAINT.has(rawPaint)) continue;
+        if (rawPaint.startsWith('url(') || rawPaint === 'currentcolor' || rawPaint === 'inherit') return false;
+        const paint = brandKitSvgInk(rawPaint);
+        painted = true;
+        // A rendered rect the viewBox's size is a background whatever its paint: a second ink under any mark.
+        const coversViewBox =
+          isFill && name === 'rect' && viewWidth !== null && viewHeight !== null
+            ? (brandKitSvgLength(attributes, 'width', viewWidth) ?? 0) >= viewWidth && (brandKitSvgLength(attributes, 'height', viewHeight) ?? 0) >= viewHeight
+            : false;
+        if (coversViewBox) {
+          backgrounds += 1;
+          continue;
+        }
+        if (paint === BRAND_KIT_SVG_WHITE) continue;
+        inks.add(paint);
+        if (inks.size > 1) return false;
+      }
+      if (painted) marks += 1;
+      if (backgrounds > 0 && marks > backgrounds) return false;
+    }
+    if (!selfClosing) inherited.push(own);
+  }
+  return true;
+}
+
 /** An SVG as an `<img>` source: a data URL. An image never runs the SVG's scripts, which is why the view draws logos this way and never inlines them. */
 export function brandKitSvgDataUrl(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;

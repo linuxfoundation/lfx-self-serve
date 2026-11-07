@@ -16,13 +16,16 @@
   <div class="pp-cap" [lfxPpRect]="[x, 626, w]" data-testid="brand-kit-iconography-strip-caption">
     On dark grounds: white, one active state in {{ highlightName() }}
   </div>
-  <div [lfxPpRect]="[x, 680, 420]" data-testid="brand-kit-iconography-rules">
+  <div class="kp-fit-list" [style.--kp-fit]="rules().scale" [lfxPpRect]="[x, 680, 420]" data-testid="brand-kit-iconography-rules">
     <div class="pp-lab pp-lab--dark">Rules</div>
     <ul class="kp-list kp-list--loose">
-      @for (rule of v.visual.icons.rules; track $index) {
+      @for (rule of rules().rules; track $index) {
         <li>{{ rule }}</li>
       }
     </ul>
+    @if (rules().more) {
+      <div class="kp-list-more" data-testid="brand-kit-iconography-rules-more">{{ rules().moreLine }}</div>
+    }
   </div>
   <div [lfxPpRect]="[x + 444, 680, 260]" data-testid="brand-kit-iconography-set">
     <div class="pp-lab pp-lab--dark">Recommended set</div>
@@ -39,7 +42,7 @@
       @for (size of sizes; track size) {
         <div class="kp-icon-size">
           <lfx-mktg-brand-kit-icon [icon]="sizedIcon" [size]="size" />
-          <div class="kp-icon-size-label">{{ size }} px</div>
+          <div class="kp-icon-size-label">{{ measure(size, 'px') }}</div>
         </div>
       }
       <div class="kp-icon-sizes-note">Stroke stays 2 px of the 24 px grid at every size; never thinner than 1.5 px when scaled down.</div>

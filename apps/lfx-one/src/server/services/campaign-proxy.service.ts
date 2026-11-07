@@ -1900,8 +1900,8 @@ export class CampaignProxyService {
     }
 
     // Narrower than the keyword gate above, and not by oversight. Callouts and sitelinks are
-    // GOOGLE extension assets: `CampaignCreateRequest` carries them under `callouts` (Search only)
-    // and `sitelinks` (Search and Demand Gen), the Implementation tab renders their editors behind
+    // GOOGLE extension assets: `CampaignCreateRequest` carries them under `callouts` (Search and
+    // Performance Max) and `sitelinks` (those two and Demand Gen), the Implementation tab renders their editors behind
     // `googleCalloutsAvailable` and `googleSitelinksAvailable`, and only `googleads/assets.go`
     // validates them. A Microsoft-only brief takes the keyword
     // block and skips this one, which is right — seeding extensions it has no way to dispatch

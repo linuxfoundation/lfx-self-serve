@@ -10,12 +10,14 @@ import { computed, Directive, input } from '@angular/core';
  * the design's `R()` does). The one place the frame's coordinates are set,
  * so a page's layout is its measurements, not a sheet of inline styles.
  *
- * `<div [lfxPpRect]="[56, 136, 704]">` or `[lfxPpRect]="[56, 232, 704, 240]"`.
+ * `<div [lfxPpRect]="[56, 136, 704]">` or `[lfxPpRect]="[56, 232, 704, 240]"`. The
+ * host also carries `data-pp-rect`, the e2e specs' handle on every placed box.
  */
 @Directive({
   selector: '[lfxPpRect]',
   host: {
     class: 'pp-r',
+    '[attr.data-pp-rect]': "''",
     '[style.left.px]': 'left()',
     '[style.top.px]': 'top()',
     '[style.width.px]': 'width()',

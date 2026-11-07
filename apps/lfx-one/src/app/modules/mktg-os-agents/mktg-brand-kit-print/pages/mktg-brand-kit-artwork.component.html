@@ -2,11 +2,13 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (image(); as image) {
-  <img
-    class="block w-auto"
-    [style.height.px]="height()"
-    [src]="image.src"
-    [alt]="image.alt"
-    [style.filter]="image.filter || null"
-    [attr.data-testid]="'brand-kit-artwork-' + kind()" />
+  <span [lfxPpPlate]="image.plate ? height() : null">
+    <img
+      class="block w-auto"
+      [style.height.px]="fit().height"
+      [src]="image.src"
+      [alt]="image.alt"
+      [style.filter]="image.filter || null"
+      [attr.data-testid]="'brand-kit-artwork-' + kind()" />
+  </span>
 }

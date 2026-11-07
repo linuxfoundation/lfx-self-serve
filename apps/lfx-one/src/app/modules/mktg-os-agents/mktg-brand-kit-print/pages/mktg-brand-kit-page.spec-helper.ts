@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { expect } from 'vitest';
 import { reflectComponentType, Type } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { BrandKitBookView, MktgPortraitBook, MktgPortraitPlacedPage } from '@lfx-one/shared/interfaces';
@@ -49,6 +50,8 @@ export async function mountBrandKitPage<T extends MktgBrandKitPageBase>(
   const root: HTMLElement = fixture.nativeElement;
   const frame = root.querySelector<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]');
   if (!frame) throw new Error('Missing synthetic frame');
+  // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+  expect(getComputedStyle(root).display).toBe('block');
   return { kit, view, brand, look, pages, page, fixture, root, frame };
 }
 

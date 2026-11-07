@@ -13,16 +13,19 @@ async function setup(approval: { approvedAt: string; approvedBy: { name: string 
 }
 
 describe('the contents page', () => {
-  it('lists every page after it with its number from the plan, so the count is the contents’ numbers', async () => {
+  it('lists every content page after it with its number from the plan, once, and not the back cover', async () => {
     const { frame, pages } = await setup();
     expect(frame.getAttribute('data-page')).toBe('2');
     expect(frame.getAttribute('data-page-id')).toBe('contents');
     expect(frame.querySelector('[data-testid="mktg-portrait-page-title"]')?.textContent).toBe("What's inside");
     const rows = Array.from(frame.querySelectorAll('.kp-contents-row'));
-    expect(rows).toHaveLength(14);
-    expect(wordsOf(rows[0])).toBe('03 Logo system 3');
-    expect(wordsOf(rows[13])).toBe('16 Back cover 16');
-    expect(rows.map((row) => row.getAttribute('data-page-ref'))).toEqual(pages.slice(2).map((page) => page.id));
+    // The editor's ruling: the number once (right column), no left index, and the back cover is not a content page.
+    expect(rows).toHaveLength(13);
+    expect(wordsOf(rows[0])).toBe('Logo system 3');
+    expect(wordsOf(rows[12])).toBe('Sources & decisions 15');
+    expect(frame.textContent).not.toContain('Back cover');
+    expect(rows.map((row) => row.getAttribute('data-page-ref'))).toEqual(pages.slice(2, -1).map((page) => page.id));
+    expect(pages[pages.length - 1].id).toBe('back-cover');
     expect(rectOf(rows[0])).toEqual({ left: '56px', top: '148px', width: '704px' });
     expect(frame.querySelector('[data-testid="mktg-portrait-page-band"]')).toBeNull();
   });
@@ -36,13 +39,43 @@ describe('the contents page', () => {
     expect(rectOf(built)).toEqual({ left: '56px', top: '690px', width: '340px' });
     const glance = frame.querySelector<HTMLElement>('[data-testid="brand-kit-contents-glance"]');
     expect(rectOf(glance)).toEqual({ left: '420px', top: '690px', width: '340px' });
+    // The card is as tall as its content: no fixed height on it or its placed box (the editor saw ~90 px of empty foot).
+    expect(glance?.style.height).toBe('');
+    expect(glance?.closest<HTMLElement>('.pp-r')?.style.height).toBe('');
     expect(glance?.querySelector('[data-testid="brand-kit-artwork-lockup"]')?.getAttribute('src')).toBe(view.logos.primary?.src);
     expect(glance?.querySelectorAll('.kp-glance-dot')).toHaveLength(view.palette.length);
     expect(glance?.querySelector('.kp-glance-family')?.textContent).toContain('Montserrat');
     expect(glance?.querySelector('.kp-glance-weights')?.textContent).toBe('· weights 400, 700');
-    expect(glance?.querySelector('[data-testid="brand-kit-contents-version"]')?.textContent).toContain('Version V4.0 · October 2026');
+    // The version prints on the cover and the back cover only, never in the glance.
+    expect(glance?.querySelector('[data-testid="brand-kit-contents-version"]')).toBeNull();
+    expect(glance?.textContent).not.toContain('V4.0');
     expect(frame.querySelector('[data-testid="brand-kit-contents-approval"]')).toBeNull();
     expect(frame.textContent).not.toContain('[');
+  });
+
+  it('moves the two lower blocks down for sixteen rows and lists seventeen in two columns, the type never smaller', async () => {
+    const sixteen = await setup();
+    // Extra content pages after the thirteen listed (the back cover is never a row).
+    const extra = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        ...sixteen.pages[sixteen.pages.length - 1],
+        id: `extra-${index}`,
+        title: `Extra ${index + 1}`,
+        number: 17 + index,
+      }));
+    sixteen.fixture.componentRef.setInput('pages', [...sixteen.pages, ...extra(3)]);
+    await sixteen.fixture.whenStable();
+    const list = sixteen.frame.querySelector('[data-testid="brand-kit-contents-list"]');
+    expect(list?.querySelectorAll('.kp-contents-row')).toHaveLength(16);
+    expect(list?.classList.contains('kp-contents-list--columns')).toBe(false);
+    expect(rectOf(sixteen.frame.querySelector('[data-testid="brand-kit-contents-built-from"]'))).toEqual({ left: '56px', top: '716px', width: '340px' });
+    expect(rectOf(sixteen.frame.querySelector('[data-testid="brand-kit-contents-glance"]'))).toEqual({ left: '420px', top: '716px', width: '340px' });
+
+    sixteen.fixture.componentRef.setInput('pages', [...sixteen.pages, ...extra(4)]);
+    await sixteen.fixture.whenStable();
+    expect(list?.querySelectorAll('.kp-contents-row')).toHaveLength(17);
+    expect(list?.classList.contains('kp-contents-list--columns')).toBe(true);
+    expect(rectOf(sixteen.frame.querySelector('[data-testid="brand-kit-contents-built-from"]'))).toEqual({ left: '56px', top: '690px', width: '340px' });
   });
 
   it('prints the approval line only from a recorded approval, with the approver when the store names one', async () => {

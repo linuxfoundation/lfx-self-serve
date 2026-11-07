@@ -10,21 +10,33 @@
   [section]="page().label"
   [title]="page().title"
   [band]="page().band">
-  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-usage-intro">{{ v.usage.summary }}</p>
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-usage-intro">{{ intro() }}</p>
   @if (cards().length) {
     <div class="kp-usage" [lfxPpRect]="[x, 220, w]" data-testid="brand-kit-usage-cards">
       @for (card of cards(); track card.layout) {
-        <div class="kp-usage-card" [attr.data-layout]="card.layout">
+        <div class="kp-usage-card" [attr.data-layout]="card.layout" data-testid="brand-kit-usage-card">
           @switch (card.layout) {
             @case ('keynote') {
-              <div class="kp-usage-frame pp-grid-ground kp-usage-frame--keynote">
+              <div class="kp-usage-frame pp-grid-ground kp-usage-frame--keynote" data-testid="brand-kit-usage-frame">
                 <div class="kp-usage-lockup"><lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="18" /></div>
                 <div class="kp-usage-keynote-text">{{ card.text }}</div>
               </div>
             }
             @case ('social') {
-              <div class="kp-usage-frame kp-usage-frame--social" [style.background]="look().accent" [style.color]="look().onAccent">
-                <lfx-mktg-brand-kit-artwork [view]="v" [mode]="socialMode()" [height]="18" />
+              <!-- On the accent the card carries no logo (the Symbol page's rule: accent colors are not logo colors) and says
+                   so where the lockup would sit; when no palette color reads on the accent the card keeps a white ground
+                   under an accent rule, and the lockup sits there as on any white ground. -->
+              <div
+                class="kp-usage-frame kp-usage-frame--social"
+                [class.kp-usage-frame--social-rule]="moment().ground === 'white'"
+                [style.background]="moment().background"
+                [style.color]="moment().ink"
+                data-testid="brand-kit-usage-frame">
+                @if (moment().ground === 'accent') {
+                  <div class="pp-lab kp-usage-social-note" data-testid="brand-kit-usage-social-note">No logo on the accent</div>
+                } @else {
+                  <lfx-mktg-brand-kit-artwork [view]="v" [height]="16" />
+                }
                 <div class="kp-usage-social-text">{{ card.text }}</div>
                 @if (v.host) {
                   <span class="kp-button kp-button--tiny">{{ v.host }}</span>
@@ -32,7 +44,7 @@
               </div>
             }
             @case ('report') {
-              <div class="kp-usage-frame kp-usage-frame--report">
+              <div class="kp-usage-frame kp-usage-frame--report" data-testid="brand-kit-usage-frame">
                 <lfx-mktg-brand-kit-artwork [view]="v" [height]="16" />
                 <div>
                   <div class="pp-lab pp-lab--dark">Report</div>
@@ -41,7 +53,7 @@
               </div>
             }
             @default {
-              <div class="kp-usage-frame kp-usage-frame--announcement">
+              <div class="kp-usage-frame kp-usage-frame--announcement" data-testid="brand-kit-usage-frame">
                 <lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="16" />
                 <div class="kp-usage-announcement-text">{{ card.text }}</div>
               </div>

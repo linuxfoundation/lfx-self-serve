@@ -10,23 +10,29 @@
   [section]="page().label"
   [title]="page().title"
   [band]="page().band">
-  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-imagery-intro">{{ v.visual.imagery.rule }}</p>
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-imagery-intro">{{ intro() }}</p>
   <div [lfxPpRect]="[x, 220, w]" data-testid="brand-kit-imagery-ground">
-    <div class="pp-grid-ground kp-ground"></div>
+    <div class="pp-grid-ground kp-ground" data-testid="brand-kit-imagery-grid-ground"></div>
     <div class="pp-cap">Default ground: a quiet grid on {{ v.darkName }}, lit softly from one side</div>
   </div>
   <div [lfxPpRect]="[x, 600, w]" data-testid="brand-kit-imagery-elements">
     <div class="kp-elements">
-      <div class="kp-element kp-element--eyebrow">
+      <div class="kp-element kp-element--eyebrow" data-element="eyebrow" data-testid="brand-kit-imagery-element">
         <div class="pp-lab pp-lab--dark">Umbrella message</div>
-        <div class="kp-element-message">{{ v.voice.umbrella }}</div>
+        <div class="kp-element-message" [style.font-size.px]="message().size" data-testid="brand-kit-imagery-message">{{ message().text }}</div>
       </div>
-      <div class="kp-element kp-element--buttons">
+      <div class="kp-element kp-element--buttons" data-element="buttons" data-testid="brand-kit-imagery-element">
         <span class="kp-button kp-button--primary">Primary button</span>
         <span class="kp-button kp-button--secondary">Secondary</span>
       </div>
-      <div class="kp-element kp-element--callout" [style.background]="look().accent" [style.color]="look().onAccent">
-        <div class="pp-lab" [style.color]="look().onAccent">Call-out card</div>
+      <div
+        class="kp-element kp-element--callout"
+        [class.kp-element--callout-rule]="moment().ground === 'white'"
+        [style.background]="moment().background"
+        [style.color]="moment().ink"
+        data-element="callout"
+        data-testid="brand-kit-imagery-element">
+        <div class="pp-lab" [style.color]="moment().ink">Call-out card</div>
         <div class="kp-element-callout-text">One per view, for the main call to action.</div>
         @if (v.host) {
           <span class="kp-button kp-button--small">{{ v.host }}</span>
@@ -34,19 +40,22 @@
       </div>
     </div>
     <div class="kp-element-captions">
-      <span>Eyebrow card</span>
+      <span>Umbrella message card</span>
       <span>Buttons · pill, 12px semibold</span>
       <span data-testid="brand-kit-imagery-callout-caption">{{ calloutCaption() }}</span>
     </div>
   </div>
-  @if (v.visual.imagery.avoid.length) {
-    <div [lfxPpRect]="[x, 900, w]" data-testid="brand-kit-imagery-avoid">
+  @if (avoid().rules.length) {
+    <div class="kp-fit-list" [style.--kp-fit]="avoid().scale" [lfxPpRect]="[x, 900, w]" data-testid="brand-kit-imagery-avoid">
       <div class="pp-lab pp-lab--dark">Avoid</div>
       <ul class="kp-list kp-list--loose kp-list--columns">
-        @for (item of v.visual.imagery.avoid; track $index) {
+        @for (item of avoid().rules; track $index) {
           <li>{{ item }}</li>
         }
       </ul>
+      @if (avoid().more) {
+        <div class="kp-list-more" data-testid="brand-kit-imagery-avoid-more">{{ avoid().moreLine }}</div>
+      }
     </div>
   }
 </lfx-mktg-portrait-page>

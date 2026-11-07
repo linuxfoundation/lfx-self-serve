@@ -18,6 +18,9 @@
           <div>
             <dt class="pp-lab pp-lab--accent">{{ cell.label }}</dt>
             <dd class="pp-opener-meta-value m-0">{{ cell.value }}</dd>
+            @if (cell.note) {
+              <dd class="pp-opener-meta-note m-0" data-testid="mktg-portrait-opener-approver">{{ cell.note }}</dd>
+            }
           </div>
         }
       </dl>

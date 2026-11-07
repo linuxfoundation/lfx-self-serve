@@ -28,6 +28,7 @@ import {
   MKTG_AGENTS,
 } from '@lfx-one/shared/constants';
 import {
+  BrandKitRevision,
   MktgDocumentDetailResponse,
   BrandKitReport,
   MktgDocumentsResponse,
@@ -64,7 +65,7 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { filter, firstValueFrom, NEVER, of, Subject, take, throwError, TimeoutError } from 'rxjs';
+import { filter, firstValueFrom, map, NEVER, of, Subject, take, throwError, TimeoutError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
@@ -366,7 +367,16 @@ describe('MktgDocumentViewComponent', () => {
         ]),
         provideNoopAnimations(),
         MessageService,
-        { provide: MktgDependencyService, useValue: { resolveBrandKit, notifyDocumentsChanged: vi.fn(), documentsChanged$: NEVER } },
+        {
+          provide: MktgDependencyService,
+          // The print's read (readBrandKit) is the resolved kit as a settled read; the tests drive it through resolveBrandKit.
+          useValue: {
+            resolveBrandKit,
+            readBrandKit: (uid: string) => resolveBrandKit(uid).pipe(map((kit: BrandKitRevision | null) => ({ settled: true, kit, failed: false }))),
+            notifyDocumentsChanged: vi.fn(),
+            documentsChanged$: NEVER,
+          },
+        },
         provideMktgSlidesExportStub(slidesExport),
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
         { provide: MktgDocumentStoreService, useValue: store },

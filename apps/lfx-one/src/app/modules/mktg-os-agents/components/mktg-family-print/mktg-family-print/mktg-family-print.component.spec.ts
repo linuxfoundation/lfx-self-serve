@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_KIT_POSITIONING_FAMILY_ID } from '@lfx-one/shared/constants';
+import {
+  MKTG_FAMILY_PRINT_BOOK_CLASS,
+  MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT,
+  MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
+  MKTG_KIT_POSITIONING_FAMILY_ID,
+  MKTG_PORTRAIT_PLATE,
+  MKTG_PRINT_INK_ON_LIGHT,
+} from '@lfx-one/shared/constants';
 import { MktgFamilyPrintView } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
@@ -10,6 +17,8 @@ import {
   buildFaqPrintView,
   faqAssetOfRevision,
   mktgFamilyPrintDocument,
+  mktgPortraitPlateFit,
+  mktgPortraitPlateRadius,
   mktgPrintBrand,
 } from '@lfx-one/shared/utils';
 import boilerplatesEnvelope from '@lfx-one/shared/utils/__fixtures__/boilerplates.envelope.json';
@@ -27,6 +36,7 @@ function view(): MktgFamilyPrintView {
   return {
     framework: null,
     kit: null,
+    kitApproval: null,
     boilerplates: buildBoilerplatesPrintView(boilerplates, brand),
     faq: buildFaqPrintView(faq, brand),
     brand,
@@ -63,10 +73,24 @@ function page(root: HTMLElement, id: string): HTMLElement | null {
   return root.querySelector<HTMLElement>(`[data-testid="lfx-mktg-portrait-page"][data-page-id="${id}"]`);
 }
 
+/** The component's stylesheet as the engine applies it: the `<style>` the renderer adds to the head for its rules. */
+function coverStyle(): string {
+  return Array.from(document.head.querySelectorAll('style'))
+    .map((style) => style.textContent ?? '')
+    .filter((text) => text.includes('.fpc-purpose'))
+    .join('\n');
+}
+
 describe('MktgFamilyPrintComponent', () => {
   it('prints the plan’s frames in order for the members the view holds, and nothing for the ones it lacks', async () => {
     const root = await render(view());
+    // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+    expect(getComputedStyle(root).display).toBe('block');
     expect(root.classList.contains('lfx-mktg-portrait')).toBe(true);
+    // The family's own root class beside the grammar's: the one rule over every running head in the book hangs on it.
+    expect(root.classList.contains(MKTG_FAMILY_PRINT_BOOK_CLASS)).toBe(true);
+    // A running head that measures within the content width prints at the label's size: no tight-head modifier.
+    expect(root.classList.contains(MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS)).toBe(false);
     // 1 cover · 2 contents · 3 opener · 4 boilerplates · 5 opener · 6 FAQ · 7 Sources · 8 back cover, every one a frame of the grammar.
     expect(pages(root).map((frame) => [frame.dataset['pageId'], frame.dataset['page']])).toEqual([
       ['cover', '1'],
@@ -86,6 +110,16 @@ describe('MktgFamilyPrintComponent', () => {
     );
     expect(root.querySelector('[data-testid="family-print-contents-intro"]')?.textContent).toContain('2 documents, 8 pages.');
     expect(Array.from(root.querySelectorAll('[data-testid="family-print-contents-opener-page"]')).map((n) => n.textContent)).toEqual(['3', '5']);
+    // The contents' blocks are the layout's: one per chapter here, by the board's split, every entry shown, nothing continued or cut.
+    expect(Array.from(root.querySelectorAll('[data-testid="family-print-contents-chapter"]')).map((block) => block.getAttribute('data-continued'))).toEqual([
+      null,
+      null,
+    ]);
+    expect(Array.from(root.querySelectorAll('[data-testid="family-print-contents-entry"]')).map((entry) => entry.textContent)).toEqual([
+      'Boilerplates4',
+      'Frequently asked questions6',
+    ]);
+    expect(root.querySelector('[data-testid="family-print-contents-cut"]')).toBeNull();
     const openerMeta = Array.from(root.querySelectorAll('[data-testid="mktg-portrait-opener-meta"]')).map((meta) =>
       Array.from(meta.querySelectorAll('dt, dd'))
         .map((cell) => cell.textContent?.trim())
@@ -102,10 +136,23 @@ describe('MktgFamilyPrintComponent', () => {
     ]);
   });
 
+  it('tightens the running head one step when it measures too wide, before the ellipsis ever cuts it', async () => {
+    // `<project> positioning & brand` beside the book's longest section label, measured at the label's size, runs past
+    // the content width: the book carries the modifier (mktgFamilyPrintHeadTight; the size steps, never a count of characters).
+    const name = 'The Open Foundation for Cloud Native Computing, Edge and Confidential Infrastructure';
+    const root = await render({ ...view(), projectName: name });
+    expect(root.classList.contains(MKTG_FAMILY_PRINT_BOOK_CLASS)).toBe(true);
+    expect(root.classList.contains(MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS)).toBe(true);
+    expect(root.classList.contains('lfx-mktg-portrait')).toBe(true);
+  });
+
   it('omits what the view does not give: no tagline, no site, no conflicts; the back cover keeps the notice', async () => {
     const root = await render(view());
     expect(root.querySelector('[data-testid="family-print-cover-tagline"]')).toBeNull();
     expect(root.querySelector('[data-testid="family-print-cover-logo"]')?.getAttribute('src')).toBe(mktgPrintBrand(null).logoOnDark?.src);
+    // The Linux Foundation's reversed lockup needs no plate: the span around it is bare.
+    expect(root.querySelector('[data-testid="mktg-portrait-plate"]')).toBeNull();
+    expect(root.querySelector('[data-testid="family-print-cover-logo"]')?.parentElement?.classList.contains('pp-plate')).toBe(false);
     expect(page(root, 'cover')?.querySelector('[data-testid="family-print-cover-strip"]')?.textContent?.trim()).toBe(
       'Synthetic project · a Linux Foundation project7 Nov 2026'
     );
@@ -124,5 +171,39 @@ describe('MktgFamilyPrintComponent', () => {
     expect(pages(root).map((frame) => frame.dataset['pageId'])).toEqual(['cover', 'contents', 'back-cover']);
     expect(root.querySelector('[data-testid="family-print-contents-intro"]')?.textContent).toContain('0 documents, 3 pages.');
     expect(root.querySelector('[data-testid="family-print-contents-sources"]')).toBeNull();
+  });
+
+  it('sets a lockup the kit cannot reverse on the grammar’s white plate, padded by half its height and rounded by a sixth of its side', async () => {
+    // The export service hands the family the kit book's own decision (`mktgFamilyPrintBrand`): a full-colour primary without a reversed
+    // file arrives with `plate`, and the cover draws it unfiltered on the grammar's plate (its directive, given the plate's outer height:
+    // the 84 px lockup in 42 px of white), the img still 84 px so the plate never spills. The radius reads the plate's height until the
+    // image has loaded, which no synthetic src does here.
+    const lf = mktgPrintBrand(null);
+    const brand = { ...lf, logoOnDark: { src: 'data:image/svg+xml,synthetic-two-colour', alt: 'Synthetic project logo', filter: '', plate: true } };
+    const root = await render({ ...view(), brand });
+    const plate = root.querySelector<HTMLElement>('[data-testid="mktg-portrait-plate"]');
+    const outer = MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT * (1 + 2 * MKTG_PORTRAIT_PLATE.paddingOfHeight);
+    expect(plate?.classList.contains('pp-plate')).toBe(true);
+    expect(plate?.style.padding).toBe(`${mktgPortraitPlateFit(outer).padding}px`);
+    expect(plate?.style.borderRadius).toBe(`${mktgPortraitPlateRadius(null, outer)}px`);
+    const logo = plate?.querySelector<HTMLImageElement>('[data-testid="family-print-cover-logo"]');
+    expect(logo?.getAttribute('src')).toBe('data:image/svg+xml,synthetic-two-colour');
+    expect(logo?.style.filter).toBe('');
+  });
+
+  it('mixes the cover’s purpose, tile meta and rules from the ink the grammar selected for the cover ground, so a light ground gets dark ink', async () => {
+    // A kit whose "dark" is light: the brand's contrast rule picks the dark ink for it, and the cover's secondary inks follow that ink.
+    const brand = { ...mktgPrintBrand(null), dark: '#F4F4F4', onDark: MKTG_PRINT_INK_ON_LIGHT };
+    const root = await render({ ...view(), brand });
+    const cover = page(root, 'cover');
+    expect(cover?.style.getPropertyValue('--pp-on-dark')).toBe(MKTG_PRINT_INK_ON_LIGHT);
+    expect(cover?.style.getPropertyValue('--pp-dark')).toBe('#F4F4F4');
+    const style = coverStyle();
+    expect(style).toContain('color-mix(in srgb, var(--pp-on-dark) 75%, transparent)');
+    expect(style).toContain('color-mix(in srgb, var(--pp-on-dark) 60%, transparent)');
+    expect(style).toContain('color-mix(in srgb, var(--pp-on-dark) 30%, transparent)');
+    // No fixed translucent white anywhere on the cover: every secondary ink derives from the selected one.
+    expect(style).not.toMatch(/rgba\(\s*255\s*,\s*255\s*,\s*255/);
+    expect(style).not.toMatch(/#fff\b/i);
   });
 });

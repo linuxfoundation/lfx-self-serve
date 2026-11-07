@@ -170,6 +170,8 @@ describe('Family export client', () => {
     expect(view?.boilerplates?.brand.fontStack).toBe(view?.brand.fontStack);
     expect(view?.faq?.brand.source).toBe('kit');
     expect(view?.kit?.projectName).toBe('Project One');
+    // The kit's recorded approval reaches the kit renderer as the standalone print's does (its acceptance card, the usage page's report year).
+    expect(view?.kitApproval).toEqual({ approvedAt: '2026-10-20T00:00:00Z', approvedBy: null });
     expect(view?.framework).toBeNull();
     expect(view?.fontFamily).toBe('Montserrat');
     // The newest dated member revision names the family PDF; a member without a date is passed over.
@@ -188,6 +190,24 @@ describe('Family export client', () => {
     expect(view?.boilerplatesSources).toEqual(boilerplatesEnvelope.report.sources_read);
     // No framework, no kit line, no colour conflict: nothing for the Sources page to call a disagreement.
     expect(view?.conflicts).toEqual([]);
+    // The FAQ's unanswered question is an open item once, although the report's gaps name it too.
+    expect(view?.documents[2].openItems).toEqual(['How much does membership cost?']);
+  });
+
+  it('keeps an unanswered FAQ question in Still open when the run’s report lists no gap for it', () => {
+    let view: MktgFamilyPrintView | undefined;
+    service.printView(target, [familyExportMember({ agentKey: 'faq' })], 'Synthetic project').subscribe((value) => (view = value));
+    const response = approvedKit();
+    http
+      .expectOne((request) => request.url.includes('/documents/faq/living/revisions/'))
+      .flush({
+        ...response,
+        type: MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'faq'),
+        markdown: JSON.stringify(faqEnvelope.content),
+        sidecar: { ...faqEnvelope, report: { ...faqEnvelope.report, gaps: [] } },
+      });
+    expect(view?.faq?.groups[0].questions[2].answered).toBe(false);
+    expect(view?.documents[0].openItems).toEqual(['How much does membership cost?']);
   });
 
   it('hands the framework print its run record, so its Sources & gaps page prints inside the family as it does alone', () => {

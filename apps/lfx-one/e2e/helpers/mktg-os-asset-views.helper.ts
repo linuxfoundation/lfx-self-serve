@@ -10,7 +10,7 @@ import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slid
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants/persona.constants';
 import { SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants/project-context.constants';
 import type { BoilerplatesEnvelope } from '@lfx-one/shared/interfaces/boilerplates.interface';
-import type { BrandKitReport } from '@lfx-one/shared/interfaces';
+import type { BrandKitReport, BrandKitRevision } from '@lfx-one/shared/interfaces';
 import type { FaqEnvelope } from '@lfx-one/shared/interfaces/faq.interface';
 import type { FoundationMessageGoal } from '@lfx-one/shared/interfaces/foundation-message.interface';
 import type { MktgFrameworkAsset, MktgRunResultResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
@@ -54,6 +54,9 @@ export const ASSET_PROJECT: Project = {
   mailing_list_count: 0,
 };
 
+/** When the fixture's stored revision was written: the summary's nullable `createdAt`, and the current record's and run's dates, which the contract types as strings. */
+const FIXTURE_REVISION_CREATED_AT = '2026-10-19T10:00:00Z';
+
 /** Header/approval scenarios reuse main's canonical FAQ envelope, not a second FAQ contract fixture. */
 export function nativeAssetRevisionResponse(key: 'faq' | 'boilerplates', unreadable = false): MktgRevisionResponse {
   const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === key);
@@ -61,7 +64,7 @@ export function nativeAssetRevisionResponse(key: 'faq' | 'boilerplates', unreada
   const revision: MktgRevisionSummary = {
     id: `000001-${'a'.repeat(64)}`,
     number: 1,
-    createdAt: '2026-10-19T10:00:00Z',
+    createdAt: FIXTURE_REVISION_CREATED_AT,
     origin: 'generated',
     restoredFromNumber: null,
     intakeMode: 'form',
@@ -403,30 +406,92 @@ export function realShapedFrameworkRevisionResponse(): MktgRevisionResponse {
 }
 
 /**
- * The approved framework document with more than the portrait book's pages hold at their measure: nine figures (past the six
- * tiles hold), fourteen long proof points on the first goal, sixty sources read and forty gaps, so the print's key numbers table
- * and its cut lists print on the fixture. Synthetic throughout.
+ * The largest framework record the validator takes (`FOUNDATION_MESSAGE_CONTENT_LIMITS`: 8 figures, 4 proofs a goal; the
+ * report's lists are unbounded) that still fills the book past its rooms: eight figures with long labels (no tiles past
+ * six, a Key numbers table that continues on `key-numbers-2`), four proof points on the first goal (cut to the rows that
+ * fit, with the +N line), sixty sources read and forty gaps (cut lists on the Sources & gaps page).
  */
 export function overfullFrameworkRevisionResponse(): MktgRevisionResponse {
   const framework = realShapedFrameworkAsset();
   const sentence = 'A long proof sentence that runs across most of the column and asks the list for a second line of room.';
+  const labelTail = Array.from({ length: 5 }, () => 'counted across the synthetic record so the label needs several lines of its column').join(', ');
   const goals = framework.content.mf.goals.map((goal, index) =>
-    index === 0 ? { ...goal, proof: Array.from({ length: 14 }, (_, n): [string, string] => [`${sentence} (${n + 1})`, 'Report']) } : goal
+    index === 0 ? { ...goal, proof: Array.from({ length: 4 }, (_, n): [string, string] => [`${sentence} (${n + 1})`, 'Report']) } : goal
   );
   const content = {
     ...framework.content,
     mf: { ...framework.content.mf, goals },
-    nums: Array.from({ length: 9 }, (_, n): [string, string] => [`${(n + 1) * 1000}`, `synthetic figure ${n + 1}`]),
+    nums: Array.from({ length: 8 }, (_, n): [string, string] => [`${(n + 1) * 1000}`, `synthetic figure ${n + 1}, ${labelTail}`]),
   };
   const report = {
     ...framework.report,
-    sources_read: Array.from({ length: 60 }, (_, n) => `https://www.example.org/synthetic/source/${n + 1}/with-a-long-path-that-wraps-in-the-column`),
+    // Sixty hosts: the pages of one host print as one counted row, and the cut list needs sixty rows.
+    sources_read: Array.from({ length: 60 }, (_, n) => `https://synthetic-source-${n + 1}.example.org/with-a-long-path-that-wraps-in-the-column`),
     gaps: Array.from({ length: 40 }, (_, n) => `Synthetic gap ${n + 1}: no source states the figure the framework needs here.`),
   };
   return {
     ...columnAssetRevisionResponse('foundation-message'),
     markdown: JSON.stringify(content),
     sidecar: { mode: framework.mode, report, checks: framework.checks },
+  };
+}
+
+/** The overfull record's goal titles as the editor read them: words the matrix's eight 57 px columns cannot hold, so the matrix breaks into bands. */
+export const OVERFULL_GOAL_TITLES = ['Adoption', 'Contributors', 'Certification', 'End users', 'Events', 'Security', 'Membership', 'Education'];
+
+/**
+ * The framework record at the goals' cap (`FOUNDATION_MESSAGE_CONTENT_LIMITS.goals.max`: eight goals, four proofs each, long
+ * cells), so the framework page's matrix has 57 px columns and must fit its text cells and cut every proof cell to its
+ * first proof and the note (editor F3: never only the note) to end above the footer; the rest of the record is the
+ * real-shaped asset's. With `titles`, the goals take those
+ * (the overfull record's: the strip cannot hold their words, so the matrix prints as two bands of four).
+ */
+export function capGoalsFrameworkRevisionResponse(titles?: readonly string[]): MktgRevisionResponse {
+  const framework = realShapedFrameworkAsset();
+  const sentence =
+    'A long cell that says what the goal does for the people it serves, across several lines of a narrow column, with a second sentence after it.';
+  const [first] = framework.content.mf.goals;
+  const goals = Array.from({ length: 8 }, (_, index) => ({
+    ...first,
+    id: `goal-${index + 1}`,
+    n: index + 1,
+    t: titles?.[index] ?? `Goal ${index + 1} title`,
+    vp: sentence,
+    key: sentence,
+    bite: 'A sound bite that is a sentence long, as the record allows.',
+    proof: Array.from({ length: 4 }, (_, n): [string, string] => [`${sentence} (${n + 1})`, 'Report']),
+  }));
+  const content = { ...framework.content, mf: { ...framework.content.mf, goals } };
+  return {
+    ...columnAssetRevisionResponse('foundation-message'),
+    markdown: JSON.stringify(content),
+    sidecar: { mode: framework.mode, report: framework.report, checks: framework.checks },
+  };
+}
+
+/**
+ * The real-shaped framework record with six profiles, every one served by the first goal, each with a long need and a
+ * long ask: more than the goal page's "Who it's for" row holds (four cards), so the row prints its note and the four
+ * cards' lines are fitted into the room the note leaves above the footer rule.
+ */
+export function servedSixFrameworkRevisionResponse(): MktgRevisionResponse {
+  const framework = realShapedFrameworkAsset();
+  const [profile] = framework.content.icp;
+  const line = 'a line long enough to wrap several times inside a quarter-width card, with a second clause that runs on past the first.';
+  const icp = Array.from({ length: 6 }, (_, index) => ({
+    ...profile,
+    id: `profile-${index + 1}`,
+    name: `Profile ${index + 1}`,
+    goals: [framework.content.mf.goals[0].id],
+    need: line,
+    cta: line,
+  }));
+  const goals = framework.content.mf.goals.map((goal, index) => (index === 0 ? { ...goal, icps: icp.map((entry) => entry.id) } : goal));
+  const content = { ...framework.content, mf: { ...framework.content.mf, goals }, icp };
+  return {
+    ...columnAssetRevisionResponse('foundation-message'),
+    markdown: JSON.stringify(content),
+    sidecar: { mode: framework.mode, report: framework.report, checks: framework.checks },
   };
 }
 
@@ -494,7 +559,7 @@ export async function openDraftAssetRun(page: Page, immediateReceipt = true) {
   const response: MktgRevisionResponse = {
     ...base,
     type,
-    current: { revisionId, changedAt: base.revision.createdAt, changedBy: null },
+    current: { revisionId, changedAt: FIXTURE_REVISION_CREATED_AT, changedBy: null },
     markdown: JSON.stringify(asset.content),
     sidecar: { content: asset.content, report: asset.report, checks: asset.checks, mode: asset.mode },
     runs: [],
@@ -508,7 +573,7 @@ export async function openDraftAssetRun(page: Page, immediateReceipt = true) {
         documentId: 'living',
         runId,
         state: state.finished ? 'storing' : 'writing',
-        startedAt: base.revision.createdAt,
+        startedAt: FIXTURE_REVISION_CREATED_AT,
       },
     ];
   };
@@ -589,23 +654,61 @@ export async function openDraftAssetRun(page: Page, immediateReceipt = true) {
   };
 }
 
-/** Stub native asset reads; cookie suppression precedes every navigation. */
+/** A `#RRGGBB` as the browser reports it on a computed style. */
+export function cssRgb(hex: string): string {
+  const [r, g, b] = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/** A kit's sidecar as the document store keeps it: the v2 envelope minus the Markdown (what `readBrandKitRevision` reads back). */
+export function brandKitSidecar(kit: BrandKitRevision): Record<string, unknown> {
+  return {
+    contract: BRAND_KIT_CONTRACT_ID,
+    project_name: kit.projectName,
+    project: kit.project,
+    version: kit.version,
+    mode: kit.mode,
+    kit: kit.kit,
+    chapters: kit.chapters,
+    report: kit.report,
+    inputs: { website_url: kit.websiteUrl },
+    generated_at: kit.generatedAt,
+    agent: { agent_version: kit.agentVersion },
+  };
+}
+
+/** How the stored Brand Kit read answers: held until `hold` resolves (a late read), or failing with `status` on every try. */
+export interface AssetKitReadOptions {
+  hold?: Promise<void>;
+  status?: number;
+}
+
+/**
+ * Stub native asset reads; cookie suppression precedes every navigation. `project` replaces the synthetic
+ * `ASSET_PROJECT` for one test (a long name, say), in the slug mock, the lens items and the selected-project cookie.
+ * `kit` is the project's stored Brand Kit the framework print is set in (its stored endpoint answers with the kit's
+ * sidecar); none, and the print takes the LF look. `kitRead` holds that answer back or fails it, for the print's wait
+ * on the read.
+ */
 export async function openAssetDocument(
   page: Page,
   key: 'faq' | 'boilerplates' | 'foundation-message' | 'brand-kit',
   status = 200,
   writer = true,
   unreadable = false,
-  responseOverride?: MktgRevisionResponse
+  responseOverride?: MktgRevisionResponse,
+  project: Project = ASSET_PROJECT,
+  kit: BrandKitRevision | null = null,
+  kitRead: AssetKitReadOptions = {}
 ): Promise<void> {
   await suppressCookieBanner(page);
-  mockProjects[ASSET_PROJECT.slug] = ASSET_PROJECT;
-  await ApiMockHelper.setupProjectSlugMock(page, { writer });
+  mockProjects[project.slug] = project;
+  await ApiMockHelper.setupProjectSlugMock(page, { writer, project });
   await pinMktgOsFlags(page);
   const cookies = [
     { name: PERSONA_COOKIE_KEY, value: { primary: 'executive-director', all: ['executive-director'] } },
     { name: LENS_COOKIE_KEY, value: 'project' },
-    { name: SELECTED_PROJECT_COOKIE_KEY, value: { uid: ASSET_PROJECT.uid, slug: ASSET_PROJECT.slug, name: ASSET_PROJECT.name } },
+    { name: SELECTED_PROJECT_COOKIE_KEY, value: { uid: project.uid, slug: project.slug, name: project.name } },
   ].map(({ name, value }) => ({ name, value: typeof value === 'string' ? value : encodeURIComponent(JSON.stringify(value)), domain: 'localhost', path: '/' }));
   await page.context().addCookies(cookies);
   await page.route('**/api/user/personas*', (route) =>
@@ -614,7 +717,7 @@ export async function openAssetDocument(
   await page.route('**/api/nav/lens-items*', (route) => {
     const projectLens = new URL(route.request().url()).searchParams.get('lens') === 'project';
     return route.fulfill({
-      json: { items: projectLens ? [ASSET_PROJECT] : [], next_page_token: null, upstream_failed: false, lens: projectLens ? 'project' : 'foundation' },
+      json: { items: projectLens ? [project] : [], next_page_token: null, upstream_failed: false, lens: projectLens ? 'project' : 'foundation' },
     });
   });
   await page.route('**/api/projects/*/sfid*', (route) => route.fulfill({ json: { sfid: null } }));
@@ -629,7 +732,26 @@ export async function openAssetDocument(
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ json: { project: ASSET_PROJECT.uid, groups: [] } });
   });
-  await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, (route) => route.fulfill({ status: 404, json: { error: 'No approved branding' } }));
+  await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, async (route) => {
+    if (kitRead.hold) await kitRead.hold;
+    if (kitRead.status) return route.fulfill({ status: kitRead.status, json: { error: 'Synthetic brand kit read failure' } });
+    return kit
+      ? route.fulfill({
+          json: {
+            documentMarkdown: '',
+            receipt: {
+              s3_key: `marketing/${ASSET_PROJECT.uid}/brand-kit/v${kit.version}.md`,
+              content_sha256: 'e2e',
+              project: ASSET_PROJECT.uid,
+              version: kit.version,
+              intake_mode: 'form',
+            },
+            revisionNumber: kit.version,
+            sidecar: brandKitSidecar(kit),
+          },
+        })
+      : route.fulfill({ status: 404, json: { error: 'No approved branding' } });
+  });
   await page.route(`**/api/mktg-agents/documents/${key}/living/revisions/*/approve?*`, (route) => {
     const approval = { approvedAt: '2026-10-19T11:00:00Z', approvedBy: { name: 'Project writer' } };
     const revision = { ...response.revision, approval };

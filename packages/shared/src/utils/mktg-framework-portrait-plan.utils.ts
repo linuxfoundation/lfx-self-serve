@@ -8,24 +8,11 @@
 // the kit's plan (`brandKitPortraitPlan`, mktg-portrait-plan.utils.ts), on
 // the same page type.
 
-import {
-  FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE,
-  FRAMEWORK_PORTRAIT_PAGE_IDS,
-  FRAMEWORK_PORTRAIT_SECTIONS,
-  FRAMEWORK_PORTRAIT_TITLES,
-} from '../constants/mktg-print.constants';
-import type { FoundationMessagePrintIcp, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
+import { FRAMEWORK_PORTRAIT_PAGE_IDS, FRAMEWORK_PORTRAIT_SECTIONS, FRAMEWORK_PORTRAIT_TITLES } from '../constants/mktg-print.constants';
+import { mktgPrintJoin } from './mktg-print-text.utils';
+import type { FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
-import { frameworkPortraitNumbersPages } from './mktg-framework-portrait-layout.utils';
-
-/** The profiles two a page, in data order; the last page may hold one. */
-export function frameworkPortraitIcpPages(icps: readonly FoundationMessagePrintIcp[]): FoundationMessagePrintIcp[][] {
-  const pages: FoundationMessagePrintIcp[][] = [];
-  for (let start = 0; start < icps.length; start += FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE) {
-    pages.push(icps.slice(start, start + FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE));
-  }
-  return pages;
-}
+import { frameworkPortraitIcpPages, frameworkPortraitNumbersPages } from './mktg-framework-portrait-layout.utils';
 
 /**
  * The pages of the Messaging Framework's portrait book, in the mock's order:
@@ -44,7 +31,7 @@ export function frameworkPortraitPlan(view: FoundationMessagePrintView, options:
   const pages: MktgPortraitPlanPage[] = [];
   if (!options.inFamily) pages.push({ id: ids.cover, section: 'Cover', title: 'Cover' });
   pages.push({ id: ids.framework, section: sections.framework, title: titles.framework });
-  view.goals.forEach((goal) => pages.push({ id: `goal-${goal.n}`, section: sections.framework, title: `Goal ${goal.n} · ${goal.t}` }));
+  view.goals.forEach((goal) => pages.push({ id: `goal-${goal.n}`, section: sections.framework, title: mktgPrintJoin([`Goal ${goal.n}`, goal.t]) }));
   pages.push({ id: ids.sayAvoid, section: sections.framework, title: titles.sayAvoid });
   frameworkPortraitIcpPages(view.icps).forEach((_, index) =>
     pages.push({ id: `icps-${index + 1}`, section: sections.icps, title: index === 0 ? titles.icps : `${titles.icps} (${index + 1})` })

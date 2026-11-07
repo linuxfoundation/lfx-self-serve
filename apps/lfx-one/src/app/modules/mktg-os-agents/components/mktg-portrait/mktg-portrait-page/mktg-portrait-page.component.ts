@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input } from '@angular/core';
-import { MKTG_PORTRAIT_GRID_GROUND, MKTG_PORTRAIT_HEX_REGEX } from '@lfx-one/shared/constants';
+import { MKTG_PORTRAIT_GRID_GROUND, MKTG_PORTRAIT_HEX_REGEX, MKTG_PORTRAIT_INKS } from '@lfx-one/shared/constants';
 import { MktgPortraitBook, MktgPortraitLook } from '@lfx-one/shared/interfaces';
-import { mktgPortraitPageNumber } from '@lfx-one/shared/utils';
+import { mktgPortraitAccentOnDark, mktgPortraitAccentText, mktgPortraitPageNumber } from '@lfx-one/shared/utils';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../mktg-portrait-host';
 
 /**
  * One page of a portrait print document: a fixed 816×1056 px frame
@@ -23,6 +24,7 @@ import { mktgPortraitPageNumber } from '@lfx-one/shared/utils';
 @Component({
   selector: 'lfx-mktg-portrait-page',
   templateUrl: './mktg-portrait-page.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
   host: {
     class: 'pp-page',
     '[class.pp-page--dark]': 'dark()',
@@ -32,15 +34,26 @@ import { mktgPortraitPageNumber } from '@lfx-one/shared/utils';
     'data-testid': 'lfx-mktg-portrait-page',
     '[style.--pp-dark]': 'look().dark',
     '[style.--pp-accent]': 'look().accent',
+    '[style.--pp-accent-text]': 'accentText()',
+    '[style.--pp-accent-on-dark]': 'accentOnDark()',
     '[style.--pp-spark]': 'look().spark',
     '[style.--pp-on-accent]': 'look().onAccent',
     '[style.--pp-on-dark]': 'look().onDark',
     '[style.--pp-font]': 'look().fontStack',
     '[style.--pp-glow]': 'glow()',
+    '[style.--pp-glow-print]': 'glowPrint()',
     '[style.--pp-grid]': 'grid()',
+    '[style.--pp-ink]': 'inks.ink',
+    '[style.--pp-muted]': 'inks.muted',
+    '[style.--pp-hairline]': 'inks.hairline',
+    '[style.--pp-mist]': 'inks.mist',
+    '[style.--pp-white]': 'inks.white',
+    '[style.--pp-fail]': 'inks.fail',
   },
 })
 export class MktgPortraitPageComponent {
+  /** The design's neutral inks, written once here as the `--pp-*` properties every portrait stylesheet reads. */
+  protected readonly inks = MKTG_PORTRAIT_INKS;
   public readonly look = input.required<MktgPortraitLook>();
   /** The book the page is in, resolved by the document (standalone or the family's). */
   public readonly book = input.required<MktgPortraitBook>();
@@ -59,7 +72,13 @@ export class MktgPortraitPageComponent {
   public readonly bare = input(false);
   protected readonly showBand = computed(() => this.band() && !this.bare());
   protected readonly pageNumber = computed(() => mktgPortraitPageNumber(this.page()));
+  /** The accent as text on the page white, readable at WCAG AA: `--pp-accent-text`, for every text set in the accent. */
+  protected readonly accentText = computed(() => mktgPortraitAccentText(this.look().accent, this.inks.white));
+  /** The accent as text on the dark ground, or the ink on the dark where the accent fails AA there: `--pp-accent-on-dark`. */
+  protected readonly accentOnDark = computed(() => mktgPortraitAccentOnDark(this.look()));
   protected readonly glow = computed(() => this.accentAlpha(MKTG_PORTRAIT_GRID_GROUND.glowAlpha));
+  /** The glow as the print draws it, stronger than the screen's: on paper the 33 % glow is almost invisible. */
+  protected readonly glowPrint = computed(() => this.accentAlpha(MKTG_PORTRAIT_GRID_GROUND.glowPrintAlpha));
   protected readonly grid = computed(() => this.accentAlpha(MKTG_PORTRAIT_GRID_GROUND.gridAlpha));
 
   /** The accent with an alpha, for the grid ground; the accent as it is when it is not a 6-digit hex. */

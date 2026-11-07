@@ -67,10 +67,20 @@ test('Family PDF book structure: the portrait grammar’s frames with the family
   await expect(frames.byId('faq-1').getByTestId('family-print-faq-grid')).toHaveCount(1);
   await expect(frames.byId('faq-1').getByTestId('family-print-faq-column')).toHaveCount(2);
   await expect(frames.byId('faq-1').getByTestId('family-print-faq-group')).toHaveCount(2);
+  // Neither group of the fixture's three questions breaks across the columns: no heading carries the continued mark.
+  await expect(frames.byId('faq-1').getByTestId('family-print-faq-continued')).toHaveCount(0);
   await expect(frames.byId('sources').getByTestId('family-print-sources-table')).toHaveCount(1);
   await expect(frames.byId('sources').getByTestId('family-print-sources-row')).toHaveCount(4);
   await expect(frames.byId('sources').getByTestId('family-print-sources-open')).toHaveCount(1);
   await expect(frames.byId('sources').getByTestId('family-print-sources-conflicts')).toHaveCount(1);
+  // Every host between the book and a frame prints as a block, the grammar's rule (`.lfx-mktg-portrait > *` and each component's
+  // `:host { display: block }`): Chrome 156 printed a blank page after each inline one.
+  for (const host of ['lfx-mktg-portrait-opener', 'lfx-mktg-portrait-back-cover', 'lfx-mktg-brand-kit-print', 'lfx-mktg-brand-kit-print > div > *']) {
+    const hosts = book.locator(host);
+    const count = await hosts.count();
+    expect(count).toBeGreaterThan(0);
+    for (let index = 0; index < count; index++) await expect(hosts.nth(index)).toHaveCSS('display', 'block');
+  }
   // Every content frame has the grammar's head, title and numbered footer; the cover, openers and back cover none.
   const bare = ['cover', 'back-cover', ...frames.openers.map((opener) => opener.id)];
   const pages = book.locator('[data-testid="lfx-mktg-portrait-page"]');
