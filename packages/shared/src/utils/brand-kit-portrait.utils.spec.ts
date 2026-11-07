@@ -17,8 +17,10 @@ import {
 import { lfxColors } from '../constants/colors.constants';
 import { buildBrandKitBookView } from './brand-kit-book.utils';
 import {
+  brandKitPortraitAccentMoment,
   brandKitPortraitApprovalLine,
   brandKitPortraitArtwork,
+  brandKitPortraitBackCoverLine,
   brandKitPortraitBuiltFrom,
   brandKitPortraitContrast,
   brandKitPortraitContrastGrade,
@@ -32,12 +34,14 @@ import {
   brandKitPortraitContentsLayout,
   brandKitPortraitContrastLayout,
   brandKitPortraitIntro,
+  brandKitPortraitRetypedName,
   brandKitPortraitRulesFit,
   brandKitPortraitVoiceMessagesFit,
   brandKitPortraitGradePill,
   brandKitPortraitMessageCard,
   brandKitPortraitSourcesFit,
   brandKitPortraitPaletteSource,
+  brandKitPortraitPlate,
   brandKitPortraitReadableSource,
   brandKitPortraitShare,
   brandKitPortraitSources,
@@ -64,10 +68,26 @@ const SVG = 'data:image/svg+xml,synthetic';
 const view = buildBrandKitBookView(brandKitTestRevision(), 4);
 
 describe('brandKitPortraitArtwork', () => {
-  it('draws the primary lockup as it is, reversed by filter without a reversed file, and one-colour black', () => {
+  it('draws the primary lockup as it is, and derives the reversed and one-colour marks by filter only from one-colour artwork', () => {
     expect(brandKitPortraitArtwork(view, 'lockup')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '' });
-    expect(brandKitPortraitArtwork(view, 'lockup', 'reversed')?.filter).toBe('brightness(0) invert(1)');
-    expect(brandKitPortraitArtwork(view, 'lockup', 'mono')?.filter).toBe('brightness(0)');
+    // The fixture's lockup is drawn in three colours: a filter would flatten it to one shape, so the dark grounds draw
+    // it in full colour and the one-colour slot keeps it as it is.
+    expect(view.derivable).toEqual({ lockup: false, symbol: false });
+    // Reversed, it sits on the white plate (the kit's watch-out forbids full colour bare on a dark ground); one-colour, as it is.
+    expect(brandKitPortraitArtwork(view, 'lockup', 'reversed')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '', plate: true });
+    expect(brandKitPortraitArtwork(view, 'lockup', 'mono')).toEqual({ src: view.logos.primary?.src, alt: 'Horizontal lockup', filter: '' });
+    expect(brandKitPortraitPlate(view)).toBe(true);
+    // A supplied reversed file or a one-ink lockup needs no plate.
+    expect(brandKitPortraitPlate({ ...view, logos: { ...view.logos, reversed: { ref: 'r.svg', name: 'r.svg', src: SVG } } })).toBe(false);
+    expect(brandKitPortraitPlate({ ...view, derivable: { lockup: true, symbol: false } })).toBe(false);
+    expect(brandKitPortraitPlate({ ...view, logos: { ...view.logos, primary: null } })).toBe(false);
+    const mono = { ...view, derivable: { lockup: true, symbol: false } };
+    expect(brandKitPortraitArtwork(mono, 'lockup', 'reversed')).toEqual({
+      src: view.logos.primary?.src,
+      alt: 'Horizontal lockup',
+      filter: 'brightness(0) invert(1)',
+    });
+    expect(brandKitPortraitArtwork(mono, 'lockup', 'mono')?.filter).toBe('brightness(0)');
   });
 
   it('prefers the supplied reversed file as it is, and draws nothing for a slot the kit lacks', () => {
@@ -80,9 +100,15 @@ describe('brandKitPortraitArtwork', () => {
     expect(brandKitPortraitArtwork({ ...view, logos: { ...view.logos, stacked: { ref: 's.png', name: 's.png', src: null } } }, 'stacked')).toBeNull();
   });
 
-  it('filters the symbol the same way, from the symbol file or the crop', () => {
-    const withSymbol = { ...view, symbol: { ref: 'logo.svg', name: 'logo.svg', src: SVG } };
-    expect(brandKitPortraitArtwork(withSymbol, 'symbol', 'reversed')).toEqual({ src: SVG, alt: 'Symbol', filter: 'brightness(0) invert(1)' });
+  it('filters the symbol by its own slot: a one-ink symbol beside a multi-colour lockup reverses, and the other way round never', () => {
+    const symbol = { ref: 'logo.svg', name: 'logo.svg', src: SVG };
+    const symbolOnly = { ...view, derivable: { lockup: false, symbol: true }, symbol };
+    expect(brandKitPortraitArtwork(symbolOnly, 'symbol', 'reversed')).toEqual({ src: SVG, alt: 'Symbol', filter: 'brightness(0) invert(1)' });
+    expect(brandKitPortraitArtwork(symbolOnly, 'lockup', 'reversed')?.filter).toBe('');
+    const lockupOnly = { ...view, derivable: { lockup: true, symbol: false }, symbol };
+    expect(brandKitPortraitArtwork(lockupOnly, 'symbol', 'reversed')).toEqual({ src: SVG, alt: 'Symbol', filter: '', plate: true });
+    expect(brandKitPortraitArtwork(lockupOnly, 'symbol', 'mono')?.filter).toBe('');
+    expect(brandKitPortraitArtwork(lockupOnly, 'lockup', 'mono')?.filter).toBe('brightness(0)');
   });
 });
 
@@ -91,8 +117,11 @@ describe('brandKitPortraitFiles', () => {
     const rows = brandKitPortraitFiles(view);
     expect(rows.map((row) => row.slot)).toEqual(['primary', 'reversed', 'symbol', 'stacked']);
     expect(rows[0]).toEqual({ slot: 'primary', name: 'Horizontal lockup', format: 'SVG', variant: 'Full color', source: 'Supplied' });
-    expect(rows[1].source).toBe('Not supplied: this book derives it from the horizontal file');
-    expect(rows[1].format).toBe('—');
+    // The reversed slot says the book derives it only when it can (a one-colour primary); the fixture's is three colours.
+    expect(rows[1]).toMatchObject({ format: '—', source: 'Not supplied' });
+    expect(brandKitPortraitFiles({ ...view, derivable: { lockup: true, symbol: false } })[1].source).toBe(
+      'Not supplied: this book derives it from the horizontal file'
+    );
     expect(rows[2].source).toBe('Not supplied');
     expect(rows[3]).toMatchObject({ format: '—', source: 'Not supplied' });
     expect(JSON.stringify(rows)).not.toContain('logo.svg');
@@ -113,16 +142,17 @@ describe('brandKitPortraitFiles', () => {
     expect(brandKitPortraitHasLogoFiles(pngOnly)).toBe(false);
     expect(brandKitPortraitFiles(pngOnly).map((row) => [row.format, row.source])).toEqual([
       ['PNG', 'Supplied'],
-      ['—', 'Not supplied: this book derives it from the horizontal file'],
+      // A PNG lockup is not artwork the book can filter, so the reversed slot is plainly not supplied.
+      ['—', 'Not supplied'],
       ['PNG', 'Supplied'],
       ['—', 'Not supplied'],
     ]);
     expect(brandKitPortraitUndrawableFilesLine(pngOnly)).toBe(
-      'This book draws SVG artwork only. The supplied horizontal lockup (PNG) and symbol (PNG) are listed below and not drawn here.'
+      'This book draws inline SVG artwork only. The supplied horizontal lockup (PNG) and symbol (PNG) are listed below and not drawn here.'
     );
     const one = { ...pngOnly, logos: { ...pngOnly.logos, symbol: null } };
     expect(brandKitPortraitUndrawableFilesLine(one)).toBe(
-      'This book draws SVG artwork only. The supplied horizontal lockup (PNG) is listed below and not drawn here.'
+      'This book draws inline SVG artwork only. The supplied horizontal lockup (PNG) is listed below and not drawn here.'
     );
     // Nothing uploaded, or something drawable: no line.
     const none = { ...view, logos: { primary: null, stacked: null, symbol: null, reversed: null }, symbol: null };
@@ -239,25 +269,38 @@ describe('the type page’s strings', () => {
     expect(samples).toEqual(['Project One', view.voice.line, view.voice.line, view.voice.line, view.voice.umbrella, view.footer]);
     expect(brandKitPortraitTypeSample({ ...view, voice: { ...view.voice, umbrella: '' } }, view.type.scale[4])).toBe(view.voice.line);
     // A sample is never set smaller than its step (the editor's rule): a line that fits its measure at the step's size
-    // prints whole, one that would not is shortened at a word, no ellipsis — as the served AAIF book needs (QA round 1,
-    // p11): the display line at 64 fits 704, the tracked specimen (-0.015em) at 48 fits 704, the untracked H2 line at 32
-    // wraps the 480 px column (so it loses its last word), the H3 at 24 fits …
+    // prints whole, one that would not is shortened at a word with an ellipsis (never a bare cut) — as the served AAIF
+    // book needs (QA round 1, p11): the display line at 64 fits 704, the tracked specimen (-0.015em) at 48 fits 704, the
+    // untracked H2 line at 32 wraps the 480 px column (so it loses its last word), the H3 at 24 fits …
     const sans = { weight: 500, family: 'Instrument Sans' };
     expect(brandKitPortraitShortenLine('Agentic AI Foundation', 704, 64, sans)).toBe('Agentic AI Foundation');
     expect(brandKitPortraitShortenLine('Open foundations for agentic AI.', 704, 48, { ...sans, tracking: BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM })).toBe(
       'Open foundations for agentic AI.'
     );
     expect(mktgPortraitLineFits('Open foundations for agentic AI.', 480, 32, sans)).toBe(false);
-    expect(brandKitPortraitShortenLine('Open foundations for agentic AI.', 480, 32, sans)).toBe('Open foundations for agentic');
+    expect(brandKitPortraitShortenLine('Open foundations for agentic AI.', 480, 32, sans)).toBe('Open foundations for agentic…');
     expect(brandKitPortraitShortenLine('Open foundations for agentic AI.', 480, 24, sans)).toBe('Open foundations for agentic AI.');
     // … while the synthetic line in Montserrat, a wide face, loses words in the 480 px H2 column and at the 48 px specimen.
     const montserrat = { weight: 500, family: view.type.family };
     expect(brandKitPortraitShortenLine('Project One', 704, 64, montserrat)).toBe('Project One');
-    expect(brandKitPortraitShortenLine(view.voice.line, 480, 32, montserrat)).toBe('Open standards for one');
-    expect(brandKitPortraitShortenLine(view.voice.line, 704, 48, montserrat)).toBe('Open standards for one');
+    expect(brandKitPortraitShortenLine(view.voice.line, 480, 32, montserrat)).toBe('Open standards for one…');
+    expect(brandKitPortraitShortenLine(view.voice.line, 704, 48, montserrat)).toBe('Open standards for one…');
     // At least the first word, whatever the measure; spaces never count.
-    expect(brandKitPortraitShortenLine('  Interoperability   everywhere ', 40, 64, { weight: 500 })).toBe('Interoperability');
+    expect(brandKitPortraitShortenLine('  Interoperability   everywhere ', 40, 64, { weight: 500 })).toBe('Interoperability…');
     expect(brandKitPortraitShortenLine('', 400, 64, {})).toBe('');
+    // A shortened sample never ends on a function word: the overfull H3 loses "and" with the word after it.
+    const clause = 'The name of the project goes first and the rest of the sentence follows at the same weight.';
+    const h3 = brandKitPortraitShortenLine(clause, 340, 24, montserrat);
+    expect(h3.length).toBeLessThan(clause.length);
+    expect(/\b(and|the|of|so|for|to|in|on|with|at|by|a|an|or|but)$/i.test(h3)).toBe(false);
+    // A 30k-character line is shortened by bisection: a dozen measures, well under a tenth of a second.
+    const started = performance.now();
+    const huge = brandKitPortraitShortenLine(Array.from({ length: 5000 }, (_, index) => `word${index}`).join(' '), 704, 48, montserrat);
+    expect(huge.split(' ').length).toBeLessThan(20);
+    expect(
+      brandKitPortraitShortenParagraph(Array.from({ length: 5000 }, (_, index) => `word${index}`).join(' '), 480, 18, { weight: 400 }, 3).endsWith('…')
+    ).toBe(true);
+    expect(performance.now() - started).toBeLessThan(100);
     // A paragraph sample is shortened to its lines, cut at a word with an ellipsis, trailing punctuation dropped first.
     const sentence = 'Where organizations fund the open computing standards every member builds on, together and in the open, every year.';
     expect(brandKitPortraitShortenParagraph(view.voice.umbrella, 480, 18, { weight: 400 }, 3)).toBe(view.voice.umbrella);
@@ -266,6 +309,7 @@ describe('the type page’s strings', () => {
     expect(three.length).toBeLessThan(sentence.length * 2);
     expect(mktgPortraitWrapLines(three, mktgPortraitCharsPerLine(480, 18, { weight: 400 }))).toBeLessThanOrEqual(3);
     expect(/[,;:.—-]…$/.test(three)).toBe(false);
+    expect(/\b(and|the|of|so|for|to|in|on|with|at|by|a|an|or|but)…$/i.test(three)).toBe(false);
     expect(brandKitPortraitShortenParagraph(`${sentence} ${sentence}`, 480, 18, { weight: 400 }, 1).split(' ').length).toBeLessThan(12);
     expect(brandKitPortraitTypeSource('https://one.example.org/brand')).toBe('one.example.org');
     expect(brandKitPortraitTypeSource('Named in the brand guide')).toBe('Named in the brand guide');
@@ -279,7 +323,7 @@ describe('the type page’s strings', () => {
     expect(short.steps.map((step) => step.step)).toEqual(['display', 'h2', 'h3', 'eyebrow', 'body', 'caption']);
     expect(short.steps.map((step) => step.size)).toEqual(view.type.scale.map((step) => step.size));
     expect(short.steps.map((step) => step.spec)).toEqual(view.type.scale.map((step) => `${step.weight} · ${step.size}/${step.line_height}`));
-    expect(short.steps[1]).toMatchObject({ sample: 'Open standards for one', shortened: true, size: 32 });
+    expect(short.steps[1]).toMatchObject({ sample: 'Open standards for one…', shortened: true, size: 32 });
     expect(short.steps[4]).toMatchObject({ sample: view.voice.umbrella, size: 18, line_height: 30, spec: '400 · 18/30', shortened: false });
     expect(short.scaleEnd).toBeLessThan(c.lowerTop - c.lowerGap);
     expect(short).toMatchObject({ lowerTop: 830, bodyLines: 3 });
@@ -312,7 +356,7 @@ describe('the type page’s strings', () => {
     );
     expect(aaif.steps.map((step) => [step.step, step.size, step.spec, step.sample])).toEqual([
       ['display', 64, '500 · 64/72', 'Project One'],
-      ['h2', 32, '500 · 32/40', 'Open foundations for agentic'],
+      ['h2', 32, '500 · 32/40', 'Open foundations for agentic…'],
       ['h3', 24, '500 · 24/32', 'Open foundations for agentic AI.'],
       ['eyebrow', 14, '500 · 14/20', 'Open foundations for agentic AI.'],
       ['body', 18, '400 · 18/30', umbrella],
@@ -348,12 +392,67 @@ describe('the usage page’s cards', () => {
     // The headlines keep their last two words together (a no-break space), so no card ends on one word alone.
     const line = mktgNoWidow(view.voice.line);
     expect(line).toBe(view.voice.line.replace(/ (\S+)$/, '\u00a0$1'));
-    expect(cards.map((card) => card.text)).toEqual([line, line, 'Project One annual report 2026', 'New members join Project\u00a0One']);
+    // The project's name stays on one line in every card (a no-break space inside it), and a header's name as a whole.
+    expect(cards.map((card) => card.text)).toEqual([line, line, 'Project\u00a0One annual report 2026', 'New members join Project\u00a0One']);
+    const foundation = brandKitPortraitUsageCards({ ...view, projectName: 'Agentic AI Foundation' });
+    expect(foundation[3].text).toBe('New members join Agentic\u00a0AI\u00a0Foundation');
+    // A name that does not fit one line of the card at its size wraps as plain words ("Cloud Native Computing
+    // Foundatio" once overflowed the announcement header): the name is kept together only where it fits.
+    const cncf = brandKitPortraitUsageCards({ ...view, projectName: 'Cloud Native Computing Foundation' });
+    expect(cncf[3].text).toBe('New members join Cloud Native Computing\u00a0Foundation');
+    expect(cncf[2].text).toBe('Cloud Native Computing Foundation annual report');
+    expect(mktgPortraitLineFits('Cloud Native Computing Foundation', 308, 17, { weight: 500, family: view.type.family })).toBe(false);
+    expect(mktgPortraitLineFits('Agentic AI Foundation', 308, 17, { weight: 500, family: view.type.family })).toBe(true);
     // Without a recorded approval the report cover carries no year: never a made-up one.
-    expect(brandKitPortraitUsageCards(view)[2].text).toBe('Project One annual report');
-    expect(cards.map((card) => card.accentMoment)).toEqual(['none (grid ground)', 'the card itself', 'none', 'the top rule']);
+    expect(brandKitPortraitUsageCards(view)[2].text).toBe('Project\u00a0One annual report');
+    // The social card's ground and moment are the accent-moment rule's, not the record's word ("dark"): on this kit's
+    // orange nothing reads, so the card is white under the accent as its top rule.
+    expect(cards.map((card) => card.accentMoment)).toEqual(['none (grid ground)', 'the top rule', 'none', 'the top rule']);
+    expect(cards.map((card) => card.ground)).toEqual(['dark', 'white', 'white', 'dark']);
     expect(cards[2]).toMatchObject({ name: 'Report cover', format: 'letter', ground: 'white' });
+    const onNavy = brandKitPortraitUsageCards({ ...view, accent: '#1E3A8A' });
+    expect(onNavy[1]).toMatchObject({ ground: 'accent', accentMoment: 'the card itself' });
     expect(brandKitPortraitUsageCards({ ...view, usageTiles: [] })).toEqual([]);
+  });
+});
+
+describe('brandKitPortraitBackCoverLine', () => {
+  it('keeps a brand line that sets in two lines of the content width, and shortens a longer one at a word with an ellipsis, never on a function word', () => {
+    expect(brandKitPortraitBackCoverLine(view.voice.line)).toBe(view.voice.line);
+    expect(brandKitPortraitBackCoverLine('  ')).toBe('');
+    const overfull = buildBrandKitBookView(brandKitOverfullFixture(), 4).voice.line;
+    const line = brandKitPortraitBackCoverLine(overfull, 'Montserrat, sans-serif');
+    expect(overfull.length).toBeGreaterThan(280);
+    expect(line.endsWith('…')).toBe(true);
+    expect(overfull.startsWith(line.slice(0, -1))).toBe(true);
+    // Two lines of 13 px capitals at +0.16em in the 704 px: about sixty characters a line.
+    expect(line.length).toBeLessThan(140);
+    expect(line.length).toBeGreaterThan(90);
+    expect(line).not.toMatch(/ (the|a|an|and|or|of|to|in|on|for|with|at|by)…$/);
+  });
+});
+
+describe('brandKitPortraitAccentMoment', () => {
+  it('sets no text on an accent nothing in the kit reads on, and says so in the matrix’s own ratios; text in the best readable ink where one does', () => {
+    // Every fixture shares the orange: white 2.8:1 and Charcoal 2.9:1 both fail, as the contrast matrix grades them.
+    for (const kit of [brandKitTestRevision(), brandKitOverfullFixture(), brandKitPngOnlyFixture()]) {
+      const moment = brandKitPortraitAccentMoment(buildBrandKitBookView(kit, 4));
+      expect(moment).toEqual({
+        ground: 'white',
+        background: '#FFFFFF',
+        ink: '#4D4E4E',
+        inkName: 'Charcoal',
+        ratioLabel: '8.3',
+        reason: 'no palette color reaches AA on Orange (Charcoal 2.9:1 at best), so the card keeps a white ground under an accent rule',
+      });
+    }
+    // A darker orange white just reads on (4.5:1 by the floor label, graded unrounded): white on the accent.
+    expect(brandKitPortraitAccentMoment({ ...view, accent: '#C95000' })).toMatchObject({ ground: 'accent', ink: 'white', inkName: 'White', ratioLabel: '4.5' });
+    expect(brandKitPortraitAccentMoment({ ...view, accent: '#C95000' }).reason).toBe('text in White (4.5:1 on Orange)');
+    // A pale accent: the kit's dark reads on it, and is named.
+    const onPale = brandKitPortraitAccentMoment({ ...view, accent: '#FFE8D6' });
+    expect(onPale).toMatchObject({ ground: 'accent', ink: '#4D4E4E', inkName: 'Charcoal' });
+    expect(onPale.reason).toMatch(/^text in Charcoal \(\d+\.\d:1 on Orange\)$/);
   });
 });
 
@@ -376,11 +475,17 @@ describe('the Voice page’s messages', () => {
   it('prints the umbrella and the brand line as written when they fit, and sets a long pair smaller together, cut at a sentence, above the attributes', () => {
     expect(brandKitPortraitVoiceMessagesFit(view)).toEqual({ scale: 1, cut: false, umbrella: view.voice.umbrella, line: view.voice.line });
     expect(brandKitPortraitVoiceMessagesFit({ voice: { ...view.voice, umbrella: '' } })).toMatchObject({ umbrella: '', line: view.voice.line, scale: 1 });
+    // The overfull record's pair (two 295-character lines, the brand line at the umbrella's 1.3 leading) holds at the
+    // smallest step only with the umbrella cut at a sentence (the longer paragraph first); the brand line stays whole and
+    // the block still ends above the attributes.
     const long = buildBrandKitBookView(brandKitOverfullFixture(), 4);
     const fit = brandKitPortraitVoiceMessagesFit(long);
-    expect(fit.scale).toBe(0.72);
-    expect(fit.cut).toBe(true);
+    expect(fit).toMatchObject({ scale: 0.72, cut: true, line: long.voice.line });
     expect(fit.umbrella.length).toBeLessThan(long.voice.umbrella.length);
+    expect(long.voice.umbrella.startsWith(fit.umbrella)).toBe(true);
+    expect(fit.umbrella.endsWith('.')).toBe(true);
+    const doubled = { voice: { ...long.voice, umbrella: `${long.voice.umbrella} ${long.voice.umbrella}`, line: `${long.voice.line} ${long.voice.line}` } };
+    expect(brandKitPortraitVoiceMessagesFit(doubled)).toMatchObject({ scale: 0.72, cut: true });
     const c = BRAND_KIT_PORTRAIT_VOICE_MESSAGES;
     const height = mktgPortraitBlockHeight(
       mktgPortraitScaleBlock(
@@ -403,7 +508,13 @@ describe('the Voice page’s messages', () => {
 describe('the chapters’ rule lists', () => {
   it('prints a list as written when its columns hold it, smaller and cut at a sentence for 300-character rules, and counts the rules a room cannot hold', () => {
     const r = BRAND_KIT_PORTRAIT_RULE_LISTS;
-    expect(brandKitPortraitRulesFit(view.logo.partnership, r.partnership)).toEqual({ scale: 1, cut: false, rules: view.logo.partnership, more: 0 });
+    expect(brandKitPortraitRulesFit(view.logo.partnership, r.partnership)).toEqual({
+      scale: 1,
+      cut: false,
+      rules: view.logo.partnership,
+      more: 0,
+      moreLine: '',
+    });
     const long = buildBrandKitBookView(brandKitOverfullFixture(), 4);
     for (const [rules, room] of [
       [long.logo.partnership, r.partnership],
@@ -421,8 +532,9 @@ describe('the chapters’ rule lists', () => {
     // The Partnership and Type lists hold every rule cut at a sentence; the Iconography and Imagery rooms count some.
     expect(brandKitPortraitRulesFit(long.logo.partnership, r.partnership).more).toBe(0);
     expect(brandKitPortraitRulesFit(long.type.rules, r.typeRules).more).toBe(0);
-    expect(brandKitPortraitRulesFit(long.visual.icons.rules, r.iconography).more).toBe(2);
-    expect(brandKitPortraitRulesFit(long.visual.imagery.avoid, r.imageryAvoid).more).toBe(1);
+    expect(brandKitPortraitRulesFit(long.visual.icons.rules, r.iconography)).toMatchObject({ more: 2, moreLine: '+2 more rules, in LFX One' });
+    // The Avoid list counts items to avoid, not rules, and one is singular.
+    expect(brandKitPortraitRulesFit(long.visual.imagery.avoid, r.imageryAvoid)).toMatchObject({ more: 1, moreLine: '+1 more item to avoid, in LFX One' });
     // Twelve short rules in the Imagery page's 70 px: the first few print, the rest are counted, the first always kept.
     const many = brandKitPortraitRulesFit(
       Array.from({ length: 12 }, (_, index) => `Avoid the ${index + 1}th thing.`),
@@ -439,13 +551,39 @@ describe('the chapters’ rule lists', () => {
 
 describe('the Color contrast page’s layout', () => {
   it('keeps the pairs at the mock’s y 610 under four colours, lets a bigger matrix push them down, and counts the pairs the footer cannot hold', () => {
-    expect(brandKitPortraitContrastLayout(4, 1)).toEqual({ matrixHeight: 362, matrixMinHeight: 390, pairsTop: 610, pairsKept: 1, more: 0 });
+    // The matrix block keeps the room above the pairs' 24 px gap, so the heading sits at 610 under four colours.
+    expect(brandKitPortraitContrastLayout(4, 1)).toEqual({ matrixHeight: 362, matrixMinHeight: 366, pairsTop: 610, pairsKept: 1, more: 0, moreLine: '' });
     // Seven pairs fill the room under four colours (990 − 610 − 20 = 360 ≥ 7 × 51); the eighth needs the line.
     expect(brandKitPortraitContrastLayout(4, 7)).toMatchObject({ pairsKept: 7, more: 0 });
     expect(brandKitPortraitContrastLayout(4, 8)).toMatchObject({ pairsKept: 6, more: 2 });
-    // Six colours: the matrix is 534 px, the pairs start at 754 and three of eight fit with the line; one always prints.
-    expect(brandKitPortraitContrastLayout(6, 8)).toEqual({ matrixHeight: 534, matrixMinHeight: 390, pairsTop: 754, pairsKept: 3, more: 5 });
-    expect(brandKitPortraitContrastLayout(9, 2)).toMatchObject({ pairsKept: 1, more: 1 });
+    // Six colours: the matrix is 534 px, the pairs start at 778 (the gap kept) and three of eight fit with the line; one always prints.
+    expect(brandKitPortraitContrastLayout(6, 8)).toEqual({
+      matrixHeight: 534,
+      matrixMinHeight: 366,
+      pairsTop: 778,
+      pairsKept: 3,
+      more: 5,
+      moreLine: '+5 more pairs, in LFX One',
+    });
+    expect(brandKitPortraitContrastLayout(9, 2)).toMatchObject({ pairsKept: 1, more: 1, moreLine: '+1 more pair, in LFX One' });
+  });
+});
+
+describe('the Watchouts page’s retyped sample', () => {
+  it('prints the name as written when the tile holds it in four lines clear of the badge, else shortened at a word with an ellipsis', () => {
+    expect(brandKitPortraitRetypedName('Project One')).toBe('Project One');
+    // The tile's column is fixed at its third of the row: a word wider than the 156 px clear of the badge
+    // ("Computing", "Foundation" at 30 px Georgia bold) would widen it, so the sample stops before it with the ellipsis.
+    expect(mktgPortraitLineFits('Foundation', 156, 30, { weight: 700, family: 'Georgia' })).toBe(false);
+    expect(brandKitPortraitRetypedName('Cloud Native Computing Foundation (CNCF)')).toBe('Cloud Native…');
+    expect(brandKitPortraitRetypedName('Agentic AI Foundation')).toBe('Agentic AI…');
+    const long = brandKitPortraitRetypedName('The Synthetic Foundation for Interoperable Agentic Computing Standards and Open Governance');
+    expect(long).toBe('The Synthetic…');
+    // A single word too wide for the line is cut to the characters that fit.
+    const word = brandKitPortraitRetypedName('Kubernetes');
+    expect(word).toMatch(/^Kubern.*…$/);
+    expect(mktgPortraitLineFits(word, 156, 30, { weight: 700, family: 'Georgia' })).toBe(true);
+    expect(brandKitPortraitRetypedName('  ')).toBe('');
   });
 });
 
@@ -495,6 +633,12 @@ describe('the Voice page’s attributes', () => {
     expect(cut.attributes.every((attribute) => attribute.line.length < `${line} ${line}`.length)).toBe(true);
     expect(cut.attributes[0].line).toBe(line);
     expect(cut.attributes.map((attribute) => attribute.name)).toEqual(twenty.slice(0, cut.attributes.length).map((attribute) => attribute.name));
+    // The boundary: eight two-sentence attributes hold at no step as written, but the cut grid fits the room, so every
+    // attribute is kept and no "+N more" line is charged (rv4: it lost a row to a line nothing needed).
+    const eightLong = brandKitPortraitAttributesFit(Array.from({ length: 8 }, (_, index) => ({ name: `Attribute ${index + 1}`, line: `${line} ${line}` })));
+    expect(eightLong).toMatchObject({ scale: 0.72, cut: true, more: 0 });
+    expect(eightLong.attributes).toHaveLength(8);
+    expect(eightLong.height).toBeLessThanOrEqual(room);
     // Ten long attributes (rv2's probe: 535 px as written): cut, three rows kept, four counted in the line.
     const ten = brandKitPortraitAttributesFit(Array.from({ length: 10 }, (_, index) => ({ name: `Attribute ${index + 1}`, line: `${line} ${line}` })));
     expect(ten.height).toBeLessThanOrEqual(room);
@@ -584,9 +728,19 @@ describe('the Sources page’s lists', () => {
     expect(sources.warnings).toEqual([{ text: 'Font weights unverified.', source: 'one.example.org' }]);
   });
 
-  it('fits the two columns to their room: as written when they fit, smaller together for a long record, cut at a sentence when no size holds it', () => {
+  it('fits the two columns to their room: as written when they fit, smaller together for a long record, its last items given up when no size holds it', () => {
     const short = brandKitPortraitSourcesFit(brandKitPortraitSources(view), true);
-    expect(short).toEqual({ scale: 1, cut: false, sources: brandKitPortraitSources(view), moreRead: 0, moreGaps: 0, moreConflicts: 0 });
+    expect(short).toEqual({
+      scale: 1,
+      cut: false,
+      sources: brandKitPortraitSources(view),
+      moreRead: 0,
+      moreGaps: 0,
+      moreConflicts: 0,
+      moreReadLine: '',
+      moreGapsLine: '',
+      moreConflictsLine: '',
+    });
     // Forty read sources at 20 px a line overrun the 636 px above the accepted box; the columns shrink in the grammar's steps.
     const sentence = 'The page names the typeface and its weights, and links the logo package the site offers to the press.';
     const long = brandKitPortraitSources({
@@ -597,22 +751,42 @@ describe('the Sources page’s lists', () => {
     expect(fitted.scale).toBeLessThan(1);
     expect(fitted.scale).toBeGreaterThanOrEqual(0.72);
     expect(fitted.cut).toBe(false);
+    // Every name whole and unique, the failed line's source once, kept + counted = the record's.
     expect(fitted.sources.read).toEqual(long.read);
+    expect(new Set(fitted.sources.read).size).toBe(fitted.sources.read.length);
+    expect(fitted.sources.read.length + fitted.moreRead).toBe(40);
+    expect(fitted.sources.failed).toEqual(long.failed);
     expect(fitted.moreRead).toBe(0);
     // Without the accepted box the same record has the room down to y 990: it fits at a larger size.
     expect(brandKitPortraitSourcesFit(long, false).scale).toBeGreaterThan(fitted.scale);
-    // Eighty gap sentences hold at no step: the longest lines are cut at a sentence, marked, and the record's lists stay in order.
+    // Eighty gap sentences hold at no step: the column gives up its last items first (the sources read down to one, then
+    // the gaps), to `+N more` lines; what stays prints whole, in the record's order, and nothing is cut.
     const essay = brandKitPortraitSources({ ...view, report: { ...view.report, gaps: Array.from({ length: 80 }, () => `${sentence} ${sentence}`) } });
-    const cut = brandKitPortraitSourcesFit(essay, true);
-    expect(cut.scale).toBe(0.72);
+    const dropped = brandKitPortraitSourcesFit(essay, true);
+    expect(dropped.scale).toBe(0.72);
+    expect(dropped.cut).toBe(false);
+    expect(dropped.sources.gaps.every((gap) => gap === `${sentence} ${sentence}`)).toBe(true);
+    expect(dropped.sources.read).toEqual(essay.read.slice(0, 1));
+    expect(dropped.moreRead).toBe(essay.read.length - 1);
+    expect(dropped.moreGaps).toBeGreaterThan(0);
+    expect(dropped.sources.gaps.length + dropped.moreGaps).toBe(80);
+    expect(dropped.moreGapsLine).toBe(`+${dropped.moreGaps} more gaps, in LFX One`);
+    expect(dropped.moreConflicts).toBe(0);
+    // Only when nothing is left to give up is prose cut, at a sentence: one failed source with a sixty-sentence reason
+    // keeps its name whole and once, and loses its last sentences.
+    const reason = Array.from({ length: 60 }, () => sentence).join(' ');
+    const verbose = brandKitPortraitSources({
+      ...view,
+      report: { ...view.report, sources_read: [], gaps: [], sources_failed: [{ name: 'https://one.example.org/press', reason }] },
+    });
+    const cut = brandKitPortraitSourcesFit(verbose, true);
     expect(cut.cut).toBe(true);
-    expect(cut.sources.gaps.some((gap) => gap.length < `${sentence} ${sentence}`.length)).toBe(true);
-    expect(cut.sources.read).toEqual(essay.read);
-    // Eighty cut gaps still hold at no step: the column keeps what fits and counts the rest, never past the room.
-    expect(cut.moreGaps).toBeGreaterThan(0);
-    expect(cut.sources.gaps.length + cut.moreGaps).toBe(80);
-    expect(cut.moreRead).toBe(0);
-    expect(cut.moreConflicts).toBe(0);
+    expect(cut.sources.failed).toHaveLength(1);
+    expect(cut.sources.failed[0].source).toBe(verbose.failed[0].source);
+    expect(cut.sources.failed[0].reason.length).toBeLessThan(reason.length);
+    expect(reason.startsWith(cut.sources.failed[0].reason)).toBe(true);
+    expect(cut.sources.failed[0].reason.endsWith('.')).toBe(true);
+    expect(cut.moreRead + cut.moreGaps + cut.moreConflicts).toBe(0);
   });
 
   it('counts the items a column cannot hold even cut in "+N more" lines: sources read (left) and color conflicts (right), one kept at least', () => {
@@ -636,6 +810,11 @@ describe('the Sources page’s lists', () => {
     expect(fit.moreRead).toBeGreaterThan(0);
     expect(fit.sources.read.length + fit.moreRead).toBe(120);
     expect(fit.sources.read.length).toBeGreaterThanOrEqual(1);
+    // The names printed are the record's first, whole and unique; nothing is cut.
+    expect(fit.sources.read).toEqual(crowded.read.slice(0, fit.sources.read.length));
+    expect(new Set(fit.sources.read).size).toBe(fit.sources.read.length);
+    expect(fit.cut).toBe(false);
+    expect(fit.moreReadLine).toBe(`+${fit.moreRead} more sources read, in LFX One`);
     expect(fit.moreConflicts).toBeGreaterThan(0);
     expect(fit.sources.conflicts.length + fit.moreConflicts).toBe(30);
     expect(fit.sources.conflicts.length).toBeGreaterThanOrEqual(1);
@@ -646,8 +825,60 @@ describe('the Sources page’s lists', () => {
     const left = [
       { text: 'Read', ...BRAND_KIT_PORTRAIT_SOURCES.label },
       ...fit.sources.read.map((text, index) => ({ text, ...item, above: index === 0 ? BRAND_KIT_PORTRAIT_SOURCES.listAbove : 0 })),
-      { text: `+${fit.moreRead} more`, ...item },
+      { text: fit.moreReadLine, ...item },
     ];
     expect(column(left)).toBeLessThanOrEqual(room);
+  });
+
+  it('measures a color conflict as the page draws it (a head, then padded rows with the source in its own cell), so the overfull record’s six stop above the accepted box', () => {
+    const c = BRAND_KIT_PORTRAIT_SOURCES;
+    const room = c.acceptedTop - c.gap - c.top;
+    const width = c.width - c.indent;
+    const overfull = brandKitPortraitSources(buildBrandKitBookView(brandKitOverfullFixture(), 4));
+    expect(overfull.conflicts).toHaveLength(6);
+    const fit = brandKitPortraitSourcesFit(overfull, true);
+    // Six conflicts of three values: eighteen padded rows and six heads. As plain 20 px lines they would read as fitting
+    // at a larger size; as drawn (8 px over each table, 11 px of padding and rule a row, the source wrapping in its cell)
+    // they hold only set smaller, and the column's drawn height ends inside the room.
+    expect(fit.scale).toBeLessThanOrEqual(0.76);
+    expect(fit.sources.conflicts).toHaveLength(6);
+    expect(fit.moreConflicts).toBe(0);
+    const k = c.conflict;
+    const labelWidth = (label: string) => (label.length * width) / mktgPortraitCharsPerLine(width, c.item.size, { weight: 600 });
+    const drawn = fit.sources.conflicts.flatMap((conflict) => [
+      { text: conflict.name, ...k.name, above: k.above },
+      ...conflict.values.map((value, index) => ({
+        text: value.source,
+        ...c.item,
+        above: k.rowPad + (index === 0 ? k.headBelow : 0),
+        indent: k.swatch + k.cellGap + labelWidth(value.label) + k.cellGap,
+      })),
+    ]);
+    const right = [
+      ...(fit.sources.missing.length ? [{ text: 'Missing', ...c.label }] : []),
+      ...fit.sources.missing.map((entry, index) => ({ text: `${entry.asset} — ${entry.reason}`, ...c.item, above: index === 0 ? c.listAbove : 0 })),
+      { text: 'Color conflicts', ...c.label, above: fit.sources.missing.length ? c.blockGap : 0 },
+      ...drawn,
+    ];
+    expect(mktgPortraitBlockHeight(mktgPortraitScaleBlock({ paras: right }, fit.scale), width)).toBeLessThanOrEqual(room);
+    // Long sources in the cells: more rows than the room holds even smallest, so conflicts are counted, never run under the box.
+    const wordy = brandKitPortraitSources({
+      ...buildBrandKitBookView(brandKitOverfullFixture(), 4),
+      report: {
+        ...buildBrandKitBookView(brandKitOverfullFixture(), 4).report,
+        color_conflicts: Array.from({ length: 8 }, (_, index) => ({
+          name: `Color ${index + 1}`,
+          values: Array.from({ length: 4 }, (_, v) => ({
+            hex: `#11223${v}`,
+            source: `https://one.example.org/brand/guidelines/section-${index + 1}/colour-${v + 1}`,
+          })),
+          chosen: '#112230',
+        })),
+      },
+    });
+    const counted = brandKitPortraitSourcesFit(wordy, true);
+    expect(counted.scale).toBe(0.72);
+    expect(counted.moreConflicts).toBeGreaterThan(0);
+    expect(counted.sources.conflicts.length + counted.moreConflicts).toBe(8);
   });
 });

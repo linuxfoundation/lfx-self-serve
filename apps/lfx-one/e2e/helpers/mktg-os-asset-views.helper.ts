@@ -54,6 +54,9 @@ export const ASSET_PROJECT: Project = {
   mailing_list_count: 0,
 };
 
+/** When the fixture's stored revision was written: the summary's nullable `createdAt`, and the current record's and run's dates, which the contract types as strings. */
+const FIXTURE_REVISION_CREATED_AT = '2026-10-19T10:00:00Z';
+
 /** Header/approval scenarios reuse main's canonical FAQ envelope, not a second FAQ contract fixture. */
 export function nativeAssetRevisionResponse(key: 'faq' | 'boilerplates', unreadable = false): MktgRevisionResponse {
   const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === key);
@@ -61,7 +64,7 @@ export function nativeAssetRevisionResponse(key: 'faq' | 'boilerplates', unreada
   const revision: MktgRevisionSummary = {
     id: `000001-${'a'.repeat(64)}`,
     number: 1,
-    createdAt: '2026-10-19T10:00:00Z',
+    createdAt: FIXTURE_REVISION_CREATED_AT,
     origin: 'generated',
     restoredFromNumber: null,
     intakeMode: 'form',
@@ -422,13 +425,73 @@ export function overfullFrameworkRevisionResponse(): MktgRevisionResponse {
   };
   const report = {
     ...framework.report,
-    sources_read: Array.from({ length: 60 }, (_, n) => `https://www.example.org/synthetic/source/${n + 1}/with-a-long-path-that-wraps-in-the-column`),
+    // Sixty hosts: the pages of one host print as one counted row, and the cut list needs sixty rows.
+    sources_read: Array.from({ length: 60 }, (_, n) => `https://synthetic-source-${n + 1}.example.org/with-a-long-path-that-wraps-in-the-column`),
     gaps: Array.from({ length: 40 }, (_, n) => `Synthetic gap ${n + 1}: no source states the figure the framework needs here.`),
   };
   return {
     ...columnAssetRevisionResponse('foundation-message'),
     markdown: JSON.stringify(content),
     sidecar: { mode: framework.mode, report, checks: framework.checks },
+  };
+}
+
+/** The overfull record's goal titles as the editor read them: words the matrix's eight 57 px columns cannot hold, so the matrix breaks into bands. */
+export const OVERFULL_GOAL_TITLES = ['Adoption', 'Contributors', 'Certification', 'End users', 'Events', 'Security', 'Membership', 'Education'];
+
+/**
+ * The framework record at the goals' cap (`FOUNDATION_MESSAGE_CONTENT_LIMITS.goals.max`: eight goals, four proofs each, long
+ * cells), so the framework page's matrix has 57 px columns and must fit its text cells and cut every proof cell to its
+ * first proof and the note (editor F3: never only the note) to end above the footer; the rest of the record is the
+ * real-shaped asset's. With `titles`, the goals take those
+ * (the overfull record's: the strip cannot hold their words, so the matrix prints as two bands of four).
+ */
+export function capGoalsFrameworkRevisionResponse(titles?: readonly string[]): MktgRevisionResponse {
+  const framework = realShapedFrameworkAsset();
+  const sentence =
+    'A long cell that says what the goal does for the people it serves, across several lines of a narrow column, with a second sentence after it.';
+  const [first] = framework.content.mf.goals;
+  const goals = Array.from({ length: 8 }, (_, index) => ({
+    ...first,
+    id: `goal-${index + 1}`,
+    n: index + 1,
+    t: titles?.[index] ?? `Goal ${index + 1} title`,
+    vp: sentence,
+    key: sentence,
+    bite: 'A sound bite that is a sentence long, as the record allows.',
+    proof: Array.from({ length: 4 }, (_, n): [string, string] => [`${sentence} (${n + 1})`, 'Report']),
+  }));
+  const content = { ...framework.content, mf: { ...framework.content.mf, goals } };
+  return {
+    ...columnAssetRevisionResponse('foundation-message'),
+    markdown: JSON.stringify(content),
+    sidecar: { mode: framework.mode, report: framework.report, checks: framework.checks },
+  };
+}
+
+/**
+ * The real-shaped framework record with six profiles, every one served by the first goal, each with a long need and a
+ * long ask: more than the goal page's "Who it's for" row holds (four cards), so the row prints its note and the four
+ * cards' lines are fitted into the room the note leaves above the footer rule.
+ */
+export function servedSixFrameworkRevisionResponse(): MktgRevisionResponse {
+  const framework = realShapedFrameworkAsset();
+  const [profile] = framework.content.icp;
+  const line = 'a line long enough to wrap several times inside a quarter-width card, with a second clause that runs on past the first.';
+  const icp = Array.from({ length: 6 }, (_, index) => ({
+    ...profile,
+    id: `profile-${index + 1}`,
+    name: `Profile ${index + 1}`,
+    goals: [framework.content.mf.goals[0].id],
+    need: line,
+    cta: line,
+  }));
+  const goals = framework.content.mf.goals.map((goal, index) => (index === 0 ? { ...goal, icps: icp.map((entry) => entry.id) } : goal));
+  const content = { ...framework.content, mf: { ...framework.content.mf, goals }, icp };
+  return {
+    ...columnAssetRevisionResponse('foundation-message'),
+    markdown: JSON.stringify(content),
+    sidecar: { mode: framework.mode, report: framework.report, checks: framework.checks },
   };
 }
 
@@ -496,7 +559,7 @@ export async function openDraftAssetRun(page: Page, immediateReceipt = true) {
   const response: MktgRevisionResponse = {
     ...base,
     type,
-    current: { revisionId, changedAt: base.revision.createdAt, changedBy: null },
+    current: { revisionId, changedAt: FIXTURE_REVISION_CREATED_AT, changedBy: null },
     markdown: JSON.stringify(asset.content),
     sidecar: { content: asset.content, report: asset.report, checks: asset.checks, mode: asset.mode },
     runs: [],
@@ -510,7 +573,7 @@ export async function openDraftAssetRun(page: Page, immediateReceipt = true) {
         documentId: 'living',
         runId,
         state: state.finished ? 'storing' : 'writing',
-        startedAt: base.revision.createdAt,
+        startedAt: FIXTURE_REVISION_CREATED_AT,
       },
     ];
   };
@@ -614,9 +677,16 @@ export function brandKitSidecar(kit: BrandKitRevision): Record<string, unknown> 
   };
 }
 
+/** How the stored Brand Kit read answers: held until `hold` resolves (a late read), or failing with `status` on every try. */
+export interface AssetKitReadOptions {
+  hold?: Promise<void>;
+  status?: number;
+}
+
 /**
  * Stub native asset reads; cookie suppression precedes every navigation. `kit` is the project's stored Brand Kit the
  * framework print is set in (its stored endpoint answers with the kit's sidecar); none, and the print takes the LF look.
+ * `kitRead` holds that answer back or fails it, for the print's wait on the read.
  */
 export async function openAssetDocument(
   page: Page,
@@ -625,7 +695,8 @@ export async function openAssetDocument(
   writer = true,
   unreadable = false,
   responseOverride?: MktgRevisionResponse,
-  kit: BrandKitRevision | null = null
+  kit: BrandKitRevision | null = null,
+  kitRead: AssetKitReadOptions = {}
 ): Promise<void> {
   await suppressCookieBanner(page);
   mockProjects[ASSET_PROJECT.slug] = ASSET_PROJECT;
@@ -658,8 +729,10 @@ export async function openAssetDocument(
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ json: { project: ASSET_PROJECT.uid, groups: [] } });
   });
-  await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, (route) =>
-    kit
+  await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, async (route) => {
+    if (kitRead.hold) await kitRead.hold;
+    if (kitRead.status) return route.fulfill({ status: kitRead.status, json: { error: 'Synthetic brand kit read failure' } });
+    return kit
       ? route.fulfill({
           json: {
             documentMarkdown: '',
@@ -674,8 +747,8 @@ export async function openAssetDocument(
             sidecar: brandKitSidecar(kit),
           },
         })
-      : route.fulfill({ status: 404, json: { error: 'No approved branding' } })
-  );
+      : route.fulfill({ status: 404, json: { error: 'No approved branding' } });
+  });
   await page.route(`**/api/mktg-agents/documents/${key}/living/revisions/*/approve?*`, (route) => {
     const approval = { approvedAt: '2026-10-19T11:00:00Z', approvedBy: { name: 'Project writer' } };
     const revision = { ...response.revision, approval };

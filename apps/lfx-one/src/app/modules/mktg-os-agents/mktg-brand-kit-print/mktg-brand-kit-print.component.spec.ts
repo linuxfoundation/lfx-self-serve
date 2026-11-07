@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_PRINT_REVERSED_FILTER } from '@lfx-one/shared/constants';
 import { MktgPortraitBook } from '@lfx-one/shared/interfaces';
 import { buildBrandKitBookView, mktgPrintBrand } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
@@ -105,13 +104,19 @@ describe('the portrait book', () => {
   });
 
   it('opens on the cover with the version and date on the strip and closes on the back cover with the brand line, the host, the version and the notice', async () => {
-    const { root, view } = await setup();
+    const { root, view, fixture } = await setup();
     const frames = root.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]');
     const cover = frames[0];
     expect(cover.querySelector('[data-testid="mktg-portrait-cover-title"]')?.textContent).toBe('Brand Kit');
     expect(cover.querySelector('[data-testid="mktg-portrait-cover-lede"]')?.textContent).toContain(
       'Open standards for one computing. Logos, color, type and usage'
     );
+    // A brand line that already ends a sentence ("Build together!") takes no second stop.
+    fixture.componentRef.setInput('view', { ...view, voice: { ...view.voice, line: 'Build together!' } });
+    await fixture.whenStable();
+    expect(cover.querySelector('[data-testid="mktg-portrait-cover-lede"]')?.textContent).toContain('Build together! Logos, color, type and usage');
+    fixture.componentRef.setInput('view', view);
+    await fixture.whenStable();
     expect(cover.querySelector('[data-testid="mktg-portrait-cover-strip"]')?.textContent).toContain('one.example.org · V3.0 · October 2026');
     expect(cover.querySelector('[data-testid="mktg-portrait-cover-logo"]')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
     const back = frames[15];
@@ -121,8 +126,8 @@ describe('the portrait book', () => {
     expect(back.querySelector('[data-testid="mktg-portrait-back-cover-url"]')?.textContent).toBe('one.example.org');
     expect(back.querySelector('[data-testid="mktg-portrait-back-cover-version"]')?.textContent).toBe('V3.0 · October 2026');
     expect(back.querySelector('[data-testid="mktg-portrait-back-cover-notice"]')?.textContent).toBe(view.backCoverNotice);
-    // The contents page lists the plan's pages, the Sources page at 15 and the back cover at 16.
-    expect(frames[1].querySelectorAll('.kp-contents-row')).toHaveLength(14);
+    // The contents page lists the plan's content pages (3 to the Sources page at 15); the back cover is not listed.
+    expect(frames[1].querySelectorAll('.kp-contents-row')).toHaveLength(13);
     expect(frames[1].querySelector('[data-testid="brand-kit-contents-approval"]')).toBeNull();
   });
 
@@ -196,18 +201,23 @@ describe('the portrait book', () => {
     expect(root.textContent).not.toMatch(/\[[^\]]+\]/);
   });
 
-  it('inks the social card on the accent by the shared rule: the kit’s dark and the full-colour lockup when white fails AA there, white and the reversed lockup when it passes', async () => {
-    const { root, brand, fixture } = await setup();
+  it('sets the social card by the one accent-moment rule: a white card under an accent rule when nothing reads on the accent, text on the accent when something does; never a logo on the accent', async () => {
+    const { root, view, fixture } = await setup();
     const social = () => root.querySelector<HTMLElement>('.kp-usage-frame--social');
-    // The fixture's orange accent reads 2.8:1 against white, as its own contrast table would grade it.
-    expect(social()?.style.background).toBe(colour(brand.accent));
-    expect(social()?.style.color).toBe(colour(brand.dark));
-    expect(social()?.querySelector('img')?.style.filter).toBe('');
-    // A dark accent that passes AA against white: white ink and the reversed lockup.
-    fixture.componentRef.setInput('brand', { ...brand, accent: '#1F4E79' });
+    // The fixture's orange: white reads 2.8:1 on it and Charcoal 2.9:1, both failing AA as its own matrix grades them,
+    // so no text goes on the accent: a white card, the kit's dark, the accent as the top rule, the lockup as on any white.
+    expect(social()?.style.background).toBe(colour('#FFFFFF'));
+    expect(social()?.style.color).toBe(colour(view.dark));
+    expect(social()?.classList.contains('kp-usage-frame--social-rule')).toBe(true);
+    expect(social()?.querySelector('img')).not.toBeNull();
+    expect(social()?.querySelector('[data-testid="brand-kit-usage-social-note"]')).toBeNull();
+    // A navy accent white reads on (10.3:1): text in white on the accent, and no lockup there.
+    fixture.componentRef.setInput('view', { ...view, accent: '#1F4E79' });
     await fixture.whenStable();
     expect(social()?.style.background).toBe(colour('#1F4E79'));
     expect(social()?.style.color).toBe(colour('white'));
-    expect(social()?.querySelector('img')?.style.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+    expect(social()?.classList.contains('kp-usage-frame--social-rule')).toBe(false);
+    expect(social()?.querySelector('img')).toBeNull();
+    expect(social()?.querySelector('[data-testid="brand-kit-usage-social-note"]')?.textContent).toBe('No logo on the accent');
   });
 });

@@ -11,9 +11,12 @@ import { describe, expect, it } from 'vitest';
 import { BrandKitLogoRef, BrandKitRevision } from '../interfaces/brand-kit.interface';
 import {
   brandKitArtworkInWords,
+  brandKitBestInkOn,
   brandKitBuiltFrom,
   brandKitChapterSummaries,
+  brandKitColorwayTiles,
   brandKitContrastRatio,
+  brandKitDerivable,
   brandKitFoundIn,
   brandKitInkOnAccent,
   brandKitLabelInk,
@@ -21,7 +24,8 @@ import {
   brandKitRatioLabel,
   buildBrandKitBookView,
 } from './brand-kit-book.utils';
-import { brandKitLogoFileName } from './brand-kit.utils';
+import { brandKitLogoFileName, brandKitLogoImage } from './brand-kit.utils';
+import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
 
 /** A logo uploaded to a CDN that names files by a content hash and the image size: one long unbroken token. */
 const CDN_LOGO_URL = 'https://cdn.sanity.io/images/p4x9k2m1/production/0f3e9c2b8a7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f-838x203.svg';
@@ -169,8 +173,13 @@ describe('the book’s view model', () => {
     expect(brandKitRatioLabel(8.35)).toBe('8.3');
     expect(brandKitRatioLabel(21)).toBe('21.0');
     const kit = kitWith({});
-    kit.chapters.color.contrast.pairs = [{ foreground: 'Ink', background: 'White', ratio: 2.86, grade: 'Large text only' }];
-    expect(buildBrandKitBookView(kit).contrast[0].ratio).toBe('2.8:1');
+    // A pair naming a colour the palette does not hold keeps the record's ratio and grade, cut not rounded.
+    kit.chapters.color.contrast.pairs = [{ foreground: 'Ink', background: 'Paper', ratio: 2.86, grade: 'Large text only' }];
+    expect(buildBrandKitBookView(kit).contrast[0]).toMatchObject({ ratio: '2.8:1', grade: 'Large text only', passes: false });
+    // A pair of two palette colours is measured from their hex values and graded unrounded, as the book's matrix does:
+    // the record's 4.6 for a pair the hexes put at 4.5x prints 4.5 and AA, the same figure in both places.
+    kit.chapters.color.contrast.pairs = [{ foreground: 'Ink', background: 'White', ratio: 4.6, grade: 'AA' }];
+    expect(buildBrandKitBookView(kit).contrast[0]).toMatchObject({ ratio: '15.7:1', grade: 'AAA', passes: true });
   });
 
   it('carries the iconography samples’ colours, the same three roles the web card, the print and the export draw with', () => {
@@ -193,7 +202,54 @@ describe('the book’s view model', () => {
     // The symbol is never the supplied reversed lockup: the reversed tile still turns a dark symbol white.
     expect(supplied.map((tile) => tile.symbolFilter)).toEqual(['', 'brightness(0) invert(1)', '', 'brightness(0)']);
     const fallback = buildBrandKitBookView(withColorways(kitWith({ primary }))).colorways[1];
-    expect([fallback.logo?.name, fallback.logoFilter]).toEqual(['orbit-horizontal.svg', 'brightness(0) invert(1)']);
+    expect([fallback.logo?.name, fallback.logoFilter, fallback.missing]).toEqual(['orbit-horizontal.svg', 'brightness(0) invert(1)', '']);
+    expect(supplied.every((tile) => tile.missing === '')).toBe(true);
+  });
+
+  it('never filters a multi-colour primary: its dark grounds draw it in full colour and the derived tiles say "Not supplied"', () => {
+    const colorways = ['Full colour', 'Reversed', 'On the tint', 'One colour'].map((name) => ({ name, ground: 'x', logo: 'x' }));
+    const withColorways = (kit: BrandKitRevision): BrandKitRevision => ({ ...kit, chapters: { ...kit.chapters, logo: { ...kit.chapters.logo, colorways } } });
+    const twoColours =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><rect fill="#1D4ED8" width="3" height="3"/><path fill="#fff" d="M1 1h1v1z"/><rect fill="#111827" x="4" width="6" height="3"/></svg>';
+    const primary = { ref: 'orbit-horizontal.svg', svg: twoColours };
+    const view = buildBrandKitBookView(withColorways(kitWith({ primary })));
+    expect(view.derivable).toEqual({ lockup: false, symbol: false });
+    expect(view.colorways.map((tile) => [tile.logo?.name ?? null, tile.logoFilter, tile.missing])).toEqual([
+      ['orbit-horizontal.svg', '', ''],
+      [null, '', 'Not supplied'],
+      ['orbit-horizontal.svg', '', ''],
+      [null, '', 'Not supplied'],
+    ]);
+    // A supplied reversed file is drawn as it is whatever the primary's colours.
+    const supplied = buildBrandKitBookView(withColorways(kitWith({ primary, reversed: { ref: 'orbit-reversed.svg', svg: SVG } }))).colorways[1];
+    expect([supplied.logo?.name, supplied.logoFilter, supplied.missing]).toEqual(['orbit-reversed.svg', '', '']);
+    // The family's and the document's print look reverse by filter only a one-colour primary.
+    expect(buildBrandKitBookView(kitWith({ primary: { ref: 'one.svg', svg: SVG } })).derivable).toEqual({ lockup: true, symbol: true });
+  });
+
+  it('reads derivability per slot: the symbol from its own file, else from the primary it is cropped out of', () => {
+    const twoColours =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><rect fill="#1D4ED8" width="3" height="3"/><rect fill="#111827" x="4" width="6" height="3"/></svg>';
+    const one = { ref: 'one.svg', svg: SVG };
+    const two = { ref: 'two.svg', svg: twoColours };
+    // A one-ink primary with a multi-colour symbol: the lockup reverses by filter, the symbol never.
+    expect(brandKitDerivable({ primary: one, reversed: null, symbol: two, stacked: null })).toEqual({ lockup: true, symbol: false });
+    // A multi-colour primary with a one-ink symbol: the symbol reverses by filter, the lockup never.
+    expect(brandKitDerivable({ primary: two, reversed: null, symbol: one, stacked: null })).toEqual({ lockup: false, symbol: true });
+    // No symbol file: the symbol is the primary's crop and follows it.
+    expect(brandKitDerivable({ primary: one, reversed: null, symbol: null, stacked: null })).toEqual({ lockup: true, symbol: true });
+    // A PNG cannot be read: never derived from.
+    expect(brandKitDerivable({ primary: one, reversed: null, symbol: { ref: 's.png', svg: null }, stacked: null })).toEqual({ lockup: true, symbol: false });
+    expect(brandKitDerivable({ primary: null, reversed: null, symbol: null, stacked: null })).toEqual({ lockup: false, symbol: false });
+    // The colorway tiles' symbol filter follows the symbol slot alone.
+    const logos = { primary: brandKitLogoImage(one), reversed: null, symbol: brandKitLogoImage(two), stacked: null };
+    const tiles = brandKitColorwayTiles(brandKitTestRevision(), '#eee', logos, { lockup: true, symbol: false });
+    expect(tiles.map((tile) => [tile.logoFilter, tile.symbolFilter, tile.missing])).toEqual([
+      ['', '', ''],
+      ['brightness(0) invert(1)', '', ''],
+      ['', '', ''],
+      ['brightness(0)', '', ''],
+    ]);
   });
 
   it('says where each palette value was found without a raw URL: the logo by name, a stylesheet by its site', () => {
@@ -266,6 +322,25 @@ describe('the book’s view model', () => {
     // The edges: a white accent takes the dark; a black one white.
     expect(brandKitInkOnAccent('#FFFFFF', '#20232A')).toBe('#20232A');
     expect(brandKitInkOnAccent('#000000', '#20232A')).toBe('white');
+  });
+
+  it('chooses the ink with the highest contrast on a ground from named candidates, white first among equals, readable only from AA', () => {
+    const palette = [
+      { name: 'White', hex: '#FFFFFF' },
+      { name: 'Charcoal', hex: '#4D4E4E' },
+      { name: 'Mid gray', hex: '#767576' },
+    ];
+    // On the kit's orange nothing reaches 4.5:1: Charcoal comes closest (2.9:1), and the caller sets no text on it.
+    const onOrange = brandKitBestInkOn('#F37625', palette);
+    expect(onOrange).toMatchObject({ name: 'Charcoal', hex: '#4D4E4E', readable: false });
+    expect(onOrange.ratio).toBeGreaterThan(2.9);
+    expect(onOrange.ratio).toBeLessThan(3);
+    // On a navy, white: 10.3:1, readable.
+    expect(brandKitBestInkOn('#1E3A8A', palette)).toMatchObject({ name: 'White', readable: true });
+    expect(brandKitBestInkOn('#1E3A8A', palette).ratio).toBeGreaterThan(10);
+    // One candidate: itself, graded.
+    expect(brandKitBestInkOn('#4D4E4E', [{ name: 'Orange', hex: '#F37625' }])).toMatchObject({ name: 'Orange', readable: false });
+    expect(brandKitBestInkOn('#4D4E4E', [{ name: 'White', hex: '#FFFFFF' }])).toMatchObject({ name: 'White', readable: true });
   });
 
   it('prints the version the page shows, the kit’s own draft version when none is given', () => {

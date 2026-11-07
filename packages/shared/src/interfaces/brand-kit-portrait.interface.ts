@@ -8,6 +8,7 @@
  */
 
 import type { BrandKitContrastGrade, BrandKitLogoSlot, BrandKitTypeStep, BrandKitUsageView } from './brand-kit.interface';
+import type { MktgPortraitNoun } from './mktg-portrait-print.interface';
 
 /** How a page draws the artwork: as supplied, reversed to white, or one-colour black. */
 export type BrandKitPortraitArtworkMode = 'full' | 'reversed' | 'mono';
@@ -58,6 +59,28 @@ export interface BrandKitPortraitContentsLayout {
   columns: 1 | 2;
   /** The lower blocks' top: the mock's y 690, or lower when the list needs the room, never past where they would cross the footer's room. */
   blocksTop: number;
+}
+
+/**
+ * The book's one accent moment (the imagery call-out and the usage page's
+ * social card), resolved once from the kit's own contrast
+ * (`brandKitPortraitAccentMoment`): text on the accent in the ink that reads
+ * there at AA, or, when neither white nor any palette colour does, a white
+ * card under an accent top rule in the kit's dark; and the reason, in the
+ * values the contrast matrix prints, so a caption never claims a pairing the
+ * matrix grades as failing.
+ */
+export interface BrandKitPortraitAccentMoment {
+  /** `accent`: text on the accent fill; `white`: a white card with an accent top rule. The usage table's ground word. */
+  ground: 'accent' | 'white';
+  /** The CSS ground and ink the card is drawn with. */
+  background: string;
+  ink: string;
+  /** The ink's name, and its contrast on the ground it sits on (`brandKitRatioLabel`). */
+  inkName: string;
+  ratioLabel: string;
+  /** Why, from the matrix: `text in White (4.5:1 on Orange)`, or that nothing reads on the accent and what came closest. */
+  reason: string;
 }
 
 /** One of the four usage cards: its layout, the line it carries, its caption and the accent moment the table names. */
@@ -133,7 +156,6 @@ export interface BrandKitPortraitTypeLayout {
   rules: BrandKitPortraitRulesFit;
 }
 
-/** The Voice page's attributes fitted to their grid's room: the share of the type size they are set at, whether a line had to be cut, and the attributes as printed. */
 /** The Voice page's two messages fitted to their block: the share of their sizes they are set at, whether one was cut, and the texts as printed. */
 export interface BrandKitPortraitVoiceMessagesFit {
   scale: number;
@@ -155,6 +177,8 @@ export interface BrandKitPortraitRuleListRoom {
   above: number;
   /** Space between the label and the first item, px. */
   listAbove: number;
+  /** What the list counts in its `+N more` line: `rule` / `rules`, `item to avoid` / `items to avoid`. */
+  noun: MktgPortraitNoun;
 }
 
 /** A rule list fitted to its room: set smaller when it had to be, cut at a sentence when that was not enough, its last rules counted when even the cut ran past the room. */
@@ -166,6 +190,8 @@ export interface BrandKitPortraitRulesFit {
   rules: string[];
   /** The rules the room does not hold: the `+N more rules, in LFX One` line's N (0: none). */
   more: number;
+  /** That line as the page prints it (`mktgPortraitMoreLine`), '' at none. */
+  moreLine: string;
 }
 
 /** The Color contrast page's layout from the palette's size and the kit's pairs: where the pairs start and how many print. */
@@ -180,8 +206,11 @@ export interface BrandKitPortraitContrastLayout {
   pairsKept: number;
   /** The pairs the room does not hold: the `+N more pairs, in LFX One` line's N (0: none). */
   more: number;
+  /** That line as the page prints it, '' at none. */
+  moreLine: string;
 }
 
+/** The Voice page's attributes fitted to their grid's room: the share of the type size they are set at, whether a line had to be cut, and the attributes as printed. */
 export interface BrandKitPortraitAttributesFit {
   /** The share of the preferred size the grid is set at (1 when it fits as written). */
   scale: number;
@@ -206,6 +235,10 @@ export interface BrandKitPortraitSourcesFit {
   moreGaps: number;
   /** Colour conflicts the right column does not hold even cut: the `+N more color conflicts, in LFX One` line's N (0: none). */
   moreConflicts: number;
+  /** The three `+N more` lines as the page prints them (`mktgPortraitMoreLine`), '' at none. */
+  moreReadLine: string;
+  moreGapsLine: string;
+  moreConflictsLine: string;
 }
 
 /** Everything the Sources page prints, read from the revision's own run record; a list the record lacks is empty. */

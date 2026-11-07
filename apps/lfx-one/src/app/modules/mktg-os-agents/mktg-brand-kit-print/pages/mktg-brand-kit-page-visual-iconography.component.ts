@@ -8,7 +8,7 @@ import {
   BRAND_KIT_PORTRAIT_ICON_SIZES_PX,
   BRAND_KIT_PORTRAIT_RULE_LISTS,
 } from '@lfx-one/shared/constants';
-import { brandKitPortraitRulesFit } from '@lfx-one/shared/utils';
+import { brandKitPortraitRulesFit, mktgPortraitMeasure } from '@lfx-one/shared/utils';
 import { MktgBrandKitIconComponent } from '../../components/mktg-brand-kit-icon/mktg-brand-kit-icon.component';
 import { MktgBrandKitIconSamplesComponent } from '../../components/mktg-brand-kit-icon-samples/mktg-brand-kit-icon-samples.component';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
@@ -29,13 +29,15 @@ import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-po
 })
 export class MktgBrandKitPageVisualIconographyComponent extends MktgBrandKitPageBase {
   protected readonly sizes = BRAND_KIT_PORTRAIT_ICON_SIZES_PX;
+  /** A measure in the pages' one format (`24 px`). */
+  protected readonly measure = mktgPortraitMeasure;
   /** The strip's highlighted icon, the one the sizes row scales. */
   protected readonly sizedIcon = BRAND_KIT_ICON_SAMPLES[BRAND_KIT_ICON_HIGHLIGHT_INDEX];
   /** The recommended set's labelled sample: the verified mark when the set has one, else the first icon. */
   protected readonly labelledIcon = BRAND_KIT_ICON_SAMPLES.find((icon) => icon.id === 'verified') ?? BRAND_KIT_ICON_SAMPLES[0];
-  /** The highlight colour's name in the palette, for the strip's caption; the accent's name when the palette does not hold it. */
   /** The four rules fitted to the room above the Sizes block (set smaller, cut at a sentence, the last ones counted when even that runs past). */
   protected readonly rules = computed(() => brandKitPortraitRulesFit(this.view().visual.icons.rules, BRAND_KIT_PORTRAIT_RULE_LISTS.iconography));
+  /** The highlight colour's name in the palette, for the strip's caption; the accent's name when the palette does not hold it. */
   protected readonly highlightName = computed(() => {
     const view = this.view();
     const highlight = view.iconColours.highlight.toLowerCase();

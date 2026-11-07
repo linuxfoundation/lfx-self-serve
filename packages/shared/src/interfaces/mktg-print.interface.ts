@@ -6,6 +6,7 @@
 // template binds it.
 
 import type { BoilerplatesLengthRow } from './boilerplates.interface';
+import type { BrandKitRevision } from './brand-kit.interface';
 import type { FaqGroupView } from './faq.interface';
 import type {
   FoundationMessageAudienceRow,
@@ -18,7 +19,6 @@ import type {
   FoundationMessagePillarView,
   FoundationMessageProofView,
   FoundationMessageReport,
-  FoundationMessageViewTab,
 } from './foundation-message.interface';
 import type { MktgPortraitPlanPage } from './mktg-portrait-print.interface';
 
@@ -44,6 +44,26 @@ export interface MktgPrintLogo {
   alt: string;
   /** CSS filter on the image: the reversed (white) rendering of a full-color lockup, or '' to draw it as it is. */
   filter: string;
+  /**
+   * True when the artwork is drawn in full colour on a dark ground because
+   * the kit supplied no reversed file and the artwork cannot be derived from
+   * by filter: it then sits on a white rounded plate, padded by half the
+   * drawn height (`mktgPortraitPlatePadding`). Absent or false: no plate.
+   */
+  plate?: boolean;
+}
+
+/**
+ * The print's read of the project's Brand Kit, as the print page holds it: not
+ * settled until the kit, or a definite "none stored", has arrived (a print made
+ * before that would be the LF default for a project that has a kit); `failed`
+ * when the read errored, which is never the LF look either — the print waits
+ * and says so. The LF look is for a project with no kit stored, nothing else.
+ */
+export interface MktgPrintKitRead {
+  settled: boolean;
+  kit: BrandKitRevision | null;
+  failed: boolean;
 }
 
 /** The brand a print is set in: colors, typeface and logo. */
@@ -67,14 +87,6 @@ export interface MktgPrintBrand {
   logoOnLight: MktgPrintLogo | null;
 }
 
-/** One section of the framework print, as the cover lists it. */
-export interface FoundationMessagePrintSection {
-  id: FoundationMessageViewTab;
-  /** `01`. */
-  number: string;
-  title: string;
-}
-
 /** One goal column as the print binds it: the view's column, with its segments as one line. */
 export interface FoundationMessagePrintGoal extends FoundationMessageGoalView {
   /** `End users, Maintainers`: the segment names joined, '' when the column names none. */
@@ -89,6 +101,8 @@ export interface FoundationMessagePrintIcp extends FoundationMessageIcpView {
   channelsLabel: string;
   /** `Goal 1`, `Goal 4`: one chip per goal the segment serves, by the goal's rank, in the framework's order. */
   goalChips: string[];
+  /** `Maintainer · Wants less toil`: each persona's role and what they care about as one printed line (mktgPrintJoin, so an empty part leaves no dot). */
+  personaLines: string[];
   /** The width of the profile's name-and-tags column, px: the board's 190, grown so the kind and goal tags hold one line (frameworkPortraitIcpWhoWidth). */
   whoWidth: number;
 }
@@ -129,18 +143,17 @@ export interface FoundationMessagePrintFittedTitle extends FoundationMessagePrin
 export interface FoundationMessagePrintGoalProof {
   fact: string;
   source: string;
+  /** The row's own type size, px, when the matrix set a cell's first proof smaller to keep it (frameworkPortraitMatrix); absent, the list's type. */
+  size?: number;
 }
 
-/** One "Who it's for" card of a goal page: the profile's name, its need and its call to action, fitted to the card. */
+/** One "Who it's for" card of a goal page: the profile's name, its need and its call to action, fitted to the card together. */
 export interface FoundationMessagePrintServedCard {
   id: string;
-  name: string;
+  name: FoundationMessagePrintFittedText;
   need: FoundationMessagePrintFittedText;
   cta: FoundationMessagePrintFittedText;
 }
-
-/** The on-screen tab a cut list's note sends the reader to: the Framework tab for proof points and the facts table, the Sources tab for the Sources & gaps lists. */
-export type FoundationMessagePrintCutTab = 'Framework' | 'Sources';
 
 /** A list cut to the rows that fit its room: the rows kept, how many were left off (the muted line under the list says so), and whether the list was tightened first. */
 export interface FoundationMessagePrintCutList<T> {
@@ -149,7 +162,7 @@ export interface FoundationMessagePrintCutList<T> {
   cut: number;
   /** True when the list is set in its tight type and padding (tried before any cut). */
   tight: boolean;
-  /** The muted line under a cut list, `+N more on the framework's <Framework | Sources> tab in LFX One`; '' when nothing was cut. */
+  /** The muted caption line under a cut list, `+N more in LFX One`; '' when nothing was cut. */
   note: string;
 }
 
@@ -166,8 +179,8 @@ export interface FoundationMessagePrintGoalPage {
   proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>;
   /** The sound bite in quotes, fitted; null when the goal has none. */
   bite: FoundationMessagePrintFittedText | null;
-  /** The profiles the goal's messaging is written for, in the goal's order. */
-  served: FoundationMessagePrintServedCard[];
+  /** The profiles the goal's messaging is written for, in the goal's order, as many as hold at the board's narrowest card (frameworkPortraitServedCount); the rest in the note. */
+  served: FoundationMessagePrintCutList<FoundationMessagePrintServedCard>;
 }
 
 /** An ICP page as the print lays it out: the profiles it holds, its intro, the rows' top, and the goals × profiles matrix when it has room. */
@@ -180,6 +193,8 @@ export interface FoundationMessagePrintIcpPage {
   icps: FoundationMessagePrintIcp[];
   /** The profile fields set at the tight measure: one card alone outran the page at the normal one. */
   tight: boolean;
+  /** The lone card's longest texts were cut past the tight measure (each ends in the ellipsis); the rows carry `data-cut` for the e2e and QA. */
+  cut: boolean;
   /** Goals × profiles, on a page that holds one profile and has the room for it under the card; empty elsewhere. */
   matrix: FoundationMessagePrintMatrixRow[];
   /** The matrix's top, px: the design's, or under the card when it runs lower. */
@@ -254,14 +269,22 @@ export interface FoundationMessagePrintSourcesPage {
   approvalNote: string;
 }
 
-/** One entry of the cover's contents: a page after the cover with its book page number. */
+/** One entry of the cover's contents: a page after the cover with its book page number, or a run of pages (the goals, the profiles) with their range. */
 export interface FoundationMessagePrintContentsEntry {
   id: string;
   title: string;
-  /** The book page number. */
+  /** The book page number (a run's first). */
   number: number;
-  /** `02`: the number as the contents print it. */
+  /** `02`, or a run's `03–10`: the number as the contents print it. */
   numberLabel: string;
+}
+
+/** The cover's contents as the layout bounds them (frameworkPortraitContents): the rows at the normal or the tight measure, the runs collapsed to ranges when the plan runs long. */
+export interface FoundationMessagePrintContents {
+  rows: FoundationMessagePrintContentsEntry[];
+  tight: boolean;
+  /** Repeated pages (the goals, the profiles, a continued table) listed as one row each with a page range. */
+  collapsed: boolean;
 }
 
 /** One anchor question as the say-and-avoid page numbers it. */
@@ -274,14 +297,43 @@ export interface FoundationMessagePrintAnchorRow {
 
 /** The framework page's goal matrix, bounded: each goal's proof cell as a cut list, in the goals' order (frameworkPortraitMatrix). */
 export interface FoundationMessagePrintMatrix {
+  /** Each goal's value proposition, key message and sound bite as the matrix sets them: fitted (smaller first, then cut at a sentence) where the rows would not leave the proofs their room. In the goals' order across the bands. */
+  cells: FoundationMessagePrintMatrixCell[];
   proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>[];
+  /** The strip, or the bands of the board's four columns the goals break into where the strip's columns cannot hold the titles (frameworkPortraitMatrixColumns), each saying where in the goals it starts. */
+  bands: FoundationMessagePrintMatrixBand[];
+  /** The matrix's measured height, px, from its first row's top to the crosscut's end: at most the room it was given. */
+  height: number;
+}
+
+/** One band of the goal matrix: the goals from `offset`, `count` of them, laid in `columns` grid columns (the last band of an odd count leaves columns empty). */
+export interface FoundationMessagePrintMatrixBand {
+  offset: number;
+  count: number;
+  columns: number;
+}
+
+/** A matrix band with its goals, as the framework page prints it: the band's goals in order, each cell read at `offset + index` of the matrix's `cells` and `proofs`. */
+export interface FoundationMessagePrintMatrixBandGoals extends FoundationMessagePrintMatrixBand {
+  goals: FoundationMessagePrintGoal[];
+}
+
+/** One goal's text cells in the framework page's matrix (frameworkPortraitMatrix): its title in the head row, fitted into the board's two lines, and its three text rows. */
+export interface FoundationMessagePrintMatrixCell {
+  title: FoundationMessagePrintFittedText;
+  vp: FoundationMessagePrintFittedText;
+  key: FoundationMessagePrintFittedText;
+  bite: FoundationMessagePrintFittedText | null;
 }
 
 /** One ICP page's profiles as the layout packs them (frameworkPortraitIcpPages): the cards that end above the footer with their room, at the tight measure when one card alone needed it. */
 export interface FoundationMessagePrintIcpPageRows {
+  /** The page's profiles; a lone card that outran the page at the tight measure carries its longest texts cut (frameworkPortraitIcpIn). */
   icps: FoundationMessagePrintIcp[];
   /** The fields set at FRAMEWORK_PORTRAIT_TYPE.icpFieldTight: a lone card outran the page at the normal measure. */
   tight: boolean;
+  /** True when the lone card's texts had to be cut past the tight measure. */
+  cut: boolean;
   /** The measured height of the page's cards, px. */
   height: number;
 }
@@ -309,8 +361,8 @@ export interface FoundationMessagePrintFrame extends MktgPortraitPlanPage {
   /** The running head's section label as printed (`01 Framework`; `Messaging framework · Framework` inside the family). */
   label: string;
   band: boolean;
-  /** The cover's contents, on the cover; empty elsewhere. */
-  contents: FoundationMessagePrintContentsEntry[];
+  /** The cover's contents, on the cover; null elsewhere. */
+  contents: FoundationMessagePrintContents | null;
   /** The four statements, fitted to their cards, on the framework page. */
   statements: {
     vision: FoundationMessagePrintFittedText;
@@ -322,6 +374,8 @@ export interface FoundationMessagePrintFrame extends MktgPortraitPlanPage {
   titleFit: FoundationMessagePrintFittedTitle;
   /** The goal matrix's proof cells, bounded, on the framework page. */
   matrix: FoundationMessagePrintMatrix | null;
+  /** The matrix's bands with their goals, so the template loops a band's goals without slicing (frameworkPortraitMatrix's `bands`). */
+  matrixBands: FoundationMessagePrintMatrixBandGoals[];
   /** The say-and-avoid page's intro, counting its anchor questions ('' on the other pages). */
   anchorIntro: string;
   /** The say pills and the avoid rows, cut to their columns, on the say-and-avoid page. */
@@ -359,7 +413,6 @@ export interface FoundationMessagePrintView {
   report: FoundationMessageReport | null;
   /** `Jupyter Foundation Messaging Framework`. */
   runningHead: string;
-  sections: FoundationMessagePrintSection[];
   /** Every goal's proof points with their sources, for the key numbers page. */
   facts: FoundationMessagePrintFactRow[];
   mf: FoundationMessageMf;

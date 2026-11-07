@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { brandKitOverfullFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
-import { buildBrandKitBookView } from '@lfx-one/shared/utils';
+import { buildBrandKitBookView, mktgNoWidow } from '@lfx-one/shared/utils';
 import { MktgBrandKitPageUsageComponent } from './mktg-brand-kit-page-usage.component';
 import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -24,25 +24,31 @@ describe('the Example usage page', () => {
       'Report cover · letter',
       'Announcement header · 1600×900',
     ]);
-    expect(layouts[0].querySelector('.kp-usage-keynote-text')?.textContent).toBe(view.voice.line);
-    expect(layouts[1].querySelector('.kp-usage-social-text')?.textContent).toBe(view.voice.line);
+    // The card lines carry the brand line with its last two words joined (no widow).
+    expect(layouts[0].querySelector('.kp-usage-keynote-text')?.textContent).toBe(mktgNoWidow(view.voice.line));
+    expect(layouts[1].querySelector('.kp-usage-social-text')?.textContent).toBe(mktgNoWidow(view.voice.line));
     expect(layouts[1].querySelector('.kp-button--tiny')?.textContent).toBe('one.example.org');
     // The report cover's year is the recorded approval's; without one the line carries no year.
-    expect(layouts[2].querySelector('.kp-usage-report-text')?.textContent).toBe('Project One annual report');
-    expect(layouts[3].querySelector('.kp-usage-announcement-text')?.textContent).toBe('New members join Project One');
+    expect(layouts[2].querySelector('.kp-usage-report-text')?.textContent).toBe('Project\u00a0One annual report');
+    // The project's name stays on one line in every card; the report line keeps its year as a word of its own.
+    expect(layouts[3].querySelector('.kp-usage-announcement-text')?.textContent).toBe(mktgNoWidow('New members join Project One'));
+    expect(layouts[3].querySelector('.kp-usage-announcement-text')?.textContent).toBe('New members join Project\u00a0One');
     fixture.componentRef.setInput('approval', { approvedAt: '2026-11-06T10:00:00Z', approvedBy: null });
     await fixture.whenStable();
-    expect(layouts[2].querySelector('.kp-usage-report-text')?.textContent).toBe('Project One annual report 2026');
-    // The reversed lockup on the dark grounds, the full-colour one on the report; the social card, on the accent, carries
-    // none (the Symbol page's rule: accent colors are not logo colors) and says so where the lockup would sit.
-    expect(layouts.map((card) => card.querySelectorAll('img').length)).toEqual([1, 0, 1, 1]);
-    expect(layouts[1].querySelector('[data-testid="brand-kit-usage-social-note"]')?.textContent).toBe('No logo on the accent');
+    expect(layouts[2].querySelector('.kp-usage-report-text')?.textContent).toBe('Project\u00a0One annual report 2026');
+    // The reversed lockup on the dark grounds, the full-colour one on the report and on the social card, which keeps a
+    // white ground under an accent rule because nothing in this kit reads on its orange (the accent-moment rule).
+    expect(layouts.map((card) => card.querySelectorAll('img').length)).toEqual([1, 1, 1, 1]);
+    expect(layouts[1].querySelector('.kp-usage-frame')?.classList.contains('kp-usage-frame--social-rule')).toBe(true);
+    expect(layouts[1].querySelector('[data-testid="brand-kit-usage-social-note"]')).toBeNull();
     const table = frame.querySelector('[data-testid="brand-kit-usage-table"]');
     expect(rectOf(table)).toEqual({ left: '56px', top: '740px', width: '704px' });
     expect(Array.from(table?.querySelectorAll('thead th') ?? [], (th) => th.textContent)).toEqual(['Example', 'Format', 'Ground', 'Accent moment']);
     const rows = Array.from(table?.querySelectorAll('tbody tr') ?? [], (row) => Array.from(row.querySelectorAll('td'), (td) => td.textContent));
     expect(rows).toHaveLength(4);
-    expect(rows.map((row) => row[3])).toEqual(['none (grid ground)', 'the card itself', 'none', 'the top rule']);
+    // The table reads the card's resolved ground, not the record's word for it: white, under the accent as its top rule.
+    expect(rows.map((row) => row[2])).toEqual(['dark', 'white', 'white', 'dark']);
+    expect(rows.map((row) => row[3])).toEqual(['none (grid ground)', 'the top rule', 'none', 'the top rule']);
     expect(rows[0].slice(0, 3)).toEqual(['Keynote slide', '16:9', 'dark']);
     expect(frame.textContent).not.toMatch(/\[[^\]]+\]/);
   });

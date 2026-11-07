@@ -35,8 +35,21 @@ export class MktgBrandKitPageLogoSystemComponent extends MktgBrandKitPageBase {
   /** The files table under the tiles, or up where the hero would start when there is nothing to draw above it. */
   protected readonly filesTop = computed(() => (this.hasArtwork() ? 716 : 300));
   protected readonly hasSymbol = computed(() => !!this.view().symbol?.src);
-  protected readonly symbolSupplied = computed(() => !!this.view().logos.symbol);
-  protected readonly reversedSupplied = computed(() => !!this.view().logos.reversed);
+  /**
+   * The captions name what the tile draws, as `brandKitPortraitArtwork` resolves it: a supplied file only when its own
+   * artwork is drawable (an uploaded PNG has no `src`, so the symbol tile crops the lockup and the reversed tile derives
+   * from it; the files table still lists the upload).
+   */
+  protected readonly symbolSupplied = computed(() => !!this.view().logos.symbol?.src);
+  protected readonly reversedSupplied = computed(() => !!this.view().logos.reversed?.src);
+  /**
+   * The dark tile's caption: the supplied reversed file, the one derived by filter from a one-colour lockup, or (a
+   * multi-colour lockup, which a filter would flatten) the full-colour lockup drawn on the dark as it is.
+   */
+  protected readonly reversedCaption = computed(() => {
+    if (this.reversedSupplied()) return 'Reversed · supplied file';
+    return this.view().derivable.lockup ? 'Reversed · derived from the horizontal file' : 'On the dark · full color on a white plate (no reversed file)';
+  });
   protected readonly hasStacked = computed(() => !!this.view().logos.stacked?.src);
   /** The intro at most three lines of its 600 px: whole sentences that fit, or the first shortened (`brandKitPortraitIntro`). */
   protected readonly intro = computed(() => brandKitPortraitIntro(this.view().logo.system));

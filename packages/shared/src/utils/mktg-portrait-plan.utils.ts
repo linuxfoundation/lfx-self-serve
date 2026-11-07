@@ -24,8 +24,10 @@ export function mktgPortraitFootLeft(projectName: string): string {
 /**
  * Whether the kit has any logo artwork the pages can draw: a file with an
  * inline `src` (the book inlines SVG only) or the symbol cropped out of one.
- * A kit whose files are all bitmaps has nothing to draw, so its logo pages
- * are planned away rather than printed with empty tiles.
+ * The Logo system page reads it to place its hero and tiles, or its files
+ * table alone when nothing is drawable; the plan gates each Logo page on the
+ * artwork that page's own tiles draw (`brandKitPortraitHasPrimaryLogo`,
+ * `brandKitPortraitHasColorwayTiles`, `brandKitPortraitHasSymbol`).
  */
 export function brandKitPortraitHasLogoFiles(view: BrandKitBookView): boolean {
   return Object.values(view.logos).some((file) => !!file?.src) || !!view.symbol?.src;

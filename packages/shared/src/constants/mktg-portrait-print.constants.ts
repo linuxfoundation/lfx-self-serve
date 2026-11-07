@@ -34,6 +34,15 @@ export const MKTG_PORTRAIT_PAGE = {
 } as const;
 
 /**
+ * The white plate under artwork a dark ground cannot reverse (no reversed
+ * file, more than one ink): its padding is this fraction of the lockup's
+ * drawn height (the editor's rule, book and deck alike).
+ */
+export const MKTG_PORTRAIT_PLATE = {
+  paddingOfHeight: 0.5,
+} as const;
+
+/**
  * The columns of the 704 px content column: halves 340 + 24 + 340, thirds
  * 224 + 16 + 224 + 16 + 224, quarters 164 + 16 … (the icon tiles).
  */
@@ -77,6 +86,24 @@ export const MKTG_PORTRAIT_INKS = {
  * names) and `@page mktg-portrait { … }` (Chromium).
  */
 export const MKTG_PORTRAIT_PAGE_NAME = 'mktg-portrait';
+
+/**
+ * The cover's bottom strip: two halves on one 10 px line (caps, 0.1 em
+ * tracking) 24 px apart in the frame's 672 px, at y 984. A half that does
+ * not fit loses words from its first segment (the project name, the host)
+ * with an ellipsis; when even that cannot hold both, the strip wraps at
+ * 1.4 leading and moves up by the extra line, so it ends where the one
+ * line did (above the 750 pt line).
+ */
+export const MKTG_PORTRAIT_COVER_STRIP = {
+  top: 984,
+  size: 10,
+  tracking: 0.1,
+  gap: 24,
+  lineHeight: 1.4,
+  /** The halves' segments are joined by this. */
+  separator: ' · ',
+} as const;
 
 /**
  * The portrait frames' page setup, as `MKTG_PRINT_PAGE_SETUPS` carries it
@@ -140,6 +167,30 @@ export const MKTG_PORTRAIT_HEX_REGEX = /^#[0-9a-f]{6}$/i;
  * `minScale` of its preferred size in steps of `scaleStep`, and one that
  * still does not fit is cut at a sentence.
  */
+/**
+ * The `+N more <noun>, in LFX One` line a bounded list prints for the items
+ * its room does not hold: the nouns, singular at one.
+ */
+export const MKTG_PORTRAIT_MORE_LINE = {
+  /** After the noun: where the rest is read. */
+  suffix: ', in LFX One',
+  nouns: {
+    rule: { one: 'rule', many: 'rules' },
+    avoid: { one: 'item to avoid', many: 'items to avoid' },
+    pair: { one: 'pair', many: 'pairs' },
+    sourceRead: { one: 'source read', many: 'sources read' },
+    gap: { one: 'gap', many: 'gaps' },
+    colorConflict: { one: 'color conflict', many: 'color conflicts' },
+    weight: { one: 'weight', many: 'weights' },
+  },
+} as const;
+
+/**
+ * The function words a cut never ends on ("… goes first and", "… so"): after
+ * a cut at a word the trailing ones are dropped, at least one word kept.
+ */
+export const MKTG_PORTRAIT_CUT_STOP_WORDS = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'so', 'for', 'of', 'to', 'in', 'on', 'with', 'at', 'by']);
+
 export const MKTG_PORTRAIT_FIT = {
   charEm: 0.55,
   charEmBold: 0.6,
@@ -295,6 +346,8 @@ export const MKTG_PORTRAIT_FAMILY_WIDTH: Readonly<Record<string, number>> = {
   'dm sans': 1.02,
   manrope: 1.05,
   'nunito sans': 1.02,
+  /** The Watch-outs page's retyped sample (a bold italic serif). */
+  georgia: 1.1,
 };
 
 export const MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT = 1.08;

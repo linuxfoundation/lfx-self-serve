@@ -17,10 +17,14 @@ describe('the Partnership lockup page', () => {
     expect(rectOf(dark)).toEqual({ left: '56px', top: '486px', width: '704px' });
     expect(light?.querySelector<HTMLElement>('img')?.style.height).toBe('64px');
     // The same lockup size and bar on both tiles (the editor's ruling: the mock's smaller dark lockup read as a size change).
-    expect(dark?.querySelector<HTMLElement>('img')?.style.height).toBe('64px');
-    expect(light?.querySelector('.kp-bar')?.classList.contains('h-[96px]')).toBe(true);
-    expect(dark?.querySelector('.kp-bar')?.classList.contains('h-[96px]')).toBe(true);
-    expect(dark?.querySelector<HTMLElement>('img')?.style.filter).toBe('brightness(0) invert(1)');
+    // The dark tile's plated lockup is fitted to the 64 px box: drawn at 32, padded by 16.
+    expect(dark?.querySelector<HTMLElement>('img')?.style.height).toBe('32px');
+    // The 96 px bar is the grammar class `kp-bar--partnership` on both tiles (no Tailwind utility inside a frame).
+    expect(light?.querySelector('.kp-bar')?.classList.contains('kp-bar--partnership')).toBe(true);
+    expect(dark?.querySelector('.kp-bar')?.classList.contains('kp-bar--partnership')).toBe(true);
+    // The three-colour fixture lockup is never filtered: the dark tile draws it in full colour on the white plate.
+    expect(dark?.querySelector<HTMLElement>('img')?.style.filter).toBe('');
+    expect(dark?.querySelector<HTMLElement>('.pp-plate')?.style.padding).toBe('16px');
     expect(light?.querySelector('.kp-partner')?.textContent).toBe('Partner logo');
     expect(light?.parentElement?.querySelector('.pp-cap')?.textContent).toBe('On light grounds · Charcoal bar');
     expect(dark?.parentElement?.querySelector('.pp-cap')?.textContent).toBe('On dark grounds · white bar');

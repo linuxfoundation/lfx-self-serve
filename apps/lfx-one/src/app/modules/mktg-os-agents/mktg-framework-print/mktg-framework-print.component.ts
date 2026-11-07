@@ -4,6 +4,7 @@
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
+  FOUNDATION_MESSAGE_INTAKE,
   FOUNDATION_MESSAGE_PRINT_NO_GAP_MESSAGE,
   FRAMEWORK_PORTRAIT_FACT_COLUMNS,
   FRAMEWORK_PORTRAIT_NUMBER_COLUMNS,
@@ -17,10 +18,10 @@ import {
   MKTG_PORTRAIT_COLUMNS,
   MKTG_PORTRAIT_PAGE,
   MKTG_PRINT_DOT,
-  mktgPrintJoin,
 } from '@lfx-one/shared/constants';
 import {
   FoundationMessagePrintFittedText,
+  FoundationMessageProofView,
   FoundationMessagePrintFrame,
   FoundationMessagePrintGoal,
   FoundationMessagePrintGoalPage,
@@ -36,25 +37,34 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   foundationMessagePrintAnchorIntro,
+  foundationMessagePrintCutNote,
+  foundationMessagePrintIcpPageIntro,
   foundationMessagePrintMatrix,
   foundationMessagePrintReportText,
   foundationMessagePrintSourceLabel,
+  foundationMessagePrintSourceRows,
   frameworkPortraitAnchors,
   frameworkPortraitAvoidList,
   frameworkPortraitBodyTop,
   frameworkPortraitCutList,
+  frameworkPortraitChipHeight,
+  frameworkPortraitContents,
+  frameworkPortraitCutNoteHeightIn,
   frameworkPortraitHouse,
   frameworkPortraitIcpMatrixHeight,
   frameworkPortraitIcpPages,
   frameworkPortraitMatrix,
   frameworkPortraitNumbersPages,
+  frameworkPortraitServedCount,
   frameworkPortraitPillList,
   frameworkPortraitPlan,
   frameworkPortraitSayRoom,
   frameworkPortraitStatementWidth,
   frameworkPortraitTaglineSize,
   frameworkPortraitTitle,
+  frameworkPortraitTitlesAtOneSize,
   mktgPortraitDocumentName,
+  mktgNoWidow,
   mktgPortraitFitBlock,
   mktgPortraitFootLeft,
   mktgPortraitLook,
@@ -62,10 +72,12 @@ import {
   mktgPortraitPageNumber,
   mktgPortraitParaHeight,
   mktgPortraitSectionLabel,
+  mktgPrintJoin,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { distinctUntilChanged, filter } from 'rxjs';
 
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../components/mktg-portrait/mktg-portrait-host';
 import { MktgPortraitPageComponent } from '../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../components/mktg-portrait/mktg-portrait-rect.directive';
 
@@ -76,43 +88,55 @@ const ROOM = FRAMEWORK_PORTRAIT_ROOM;
 // a portrait book on the portrait print grammar (lfx-mktg-portrait-*), one
 // fixed US Letter frame (816×1056 px) per page, placed by the design's
 // measurements so Chromium and WebKit paginate one frame per sheet and
-// nothing flows across a page edge (CSS Paged Media: `@page` Letter with no
-// margin, `break-after: page` per frame). The pages are the plan's
+// nothing flows across a page edge (CSS Paged Media: the grammar's `.pp-page`
+// is the named Letter page with no margin and carries the one break per
+// frame, `break-before: page; break-after: auto`; this component sets no
+// page and no break; its one component style is the grammar's
+// MKTG_PORTRAIT_BLOCK_HOST, `:host { display: block }`, so Google Chrome adds
+// no sheet at an inline host). The pages are the plan's
 // (`frameworkPortraitPlan`): a cover with the contents; 01 Framework (the
 // statements and the goal matrix, one page per goal, say and avoid with the
-// anchor questions); 02 ICPs, two a page; 03 Message house; 04 Key numbers
-// with their sources; 05 Sources & gaps (the run's report). The
-// reviewer's note stays on screen. These blocks are bounded so they stop at
-// the next block's top or the footer: the four statements, a goal page's
-// value proposition, key message, sound bite and "who it's for" lines by the
-// portrait fit model (set smaller down to 72 %, then cut at a sentence); a
-// goal page's proof rows, the facts table and the Sources & gaps lists by
-// the design reader's list rule (tightened first, then cut to whole rows,
-// with a muted "+N more" line under the cut, never silently). The key
+// anchor questions); 02 ICPs, by their measured cards, two a page at most;
+// 03 Message house; 04 Key numbers with their sources; 05 Sources & gaps (the
+// run's report). The reviewer's note stays on screen. Every block whose
+// height follows the data is bounded in the shared layout utils
+// (`mktg-framework-portrait-layout.utils.ts`), never in the template, so it
+// stops at the next block's top or the footer: text (the statements, a page
+// title, a goal page's value proposition, key message, sound bite and "who
+// it's for" lines, the matrix cells, a tile's figure and label, the house's
+// Why now) by the portrait fit model (set smaller first, then cut at a
+// sentence); lists (a goal page's proof rows and "who it's for" cards, the
+// matrix's proofs, the say pills and avoid rows, the pillars' proofs, the
+// audiences, the facts table and the Sources & gaps lists) by the design
+// reader's list rule (tightened first, then cut to whole rows, with a muted
+// "+N more" line under the cut, never silently); the cover's contents
+// tightened, then its repeated runs collapsed to one row with a page range
+// (never cut, every page listed); the profile cards by their
+// measured height (a page holds the cards that end above the footer, a lone
+// card past the room is set tight and its long fields fitted). The key
 // numbers print as tiles up to FRAMEWORK_PORTRAIT_MAX_TILES by the count's
-// layout, past that as a table of every figure continued on more pages
-// (`frameworkPortraitNumbersPages`). The other fixed-top blocks (the framework page's goal matrix,
-// say and avoid, the anchor questions, the message house's pillars and
-// audiences, the ICP rows) are sized for the live data and are not bounded
-// yet (a follow-up); past their room the frame clips them. The type the fit
-// model measures is FRAMEWORK_PORTRAIT_TYPE, bound on the root as `--fwp-*`
-// custom properties the stylesheet reads, so measured and printed type are
-// one value. Set in the project's brand when it has a Brand Kit (its
-// colors, typeface and logo), in the LF look otherwise. Standalone it is
-// its own book (`book` null); inside the family export the family's book
-// sets the running head, the footer and the first page number and drops the
-// cover and the band. On screen the framework is its app page
-// (lfx-mktg-framework-view), which holds this document in a
-// print-only wrapper and prints it with Download PDF (the browser's print,
-// from the print service's frame; the global print rules in styles.scss show
-// it alone). The frames' measurements are the design's, in the component's
-// stylesheet, the `[lfxPpRect]` placements, FRAMEWORK_PORTRAIT_TOPS and
-// FRAMEWORK_PORTRAIT_ROOM.
+// layout, past that (or when a figure would not hold a tile) as a table of
+// every figure continued on more pages (`frameworkPortraitNumbersPages`).
+// The type the fit model measures is FRAMEWORK_PORTRAIT_TYPE, bound on the
+// root as `--fwp-*` custom properties the stylesheet reads, so measured and
+// printed type are one value. Set in the project's brand when it has a Brand
+// Kit (its colors, typeface and logo), in the LF look otherwise. Standalone
+// it is its own book (`book` null); inside the family export the family's
+// book sets the running head, the footer and the first page number and drops
+// the cover and the band. On screen the framework is its app page
+// (lfx-mktg-framework-view), which holds this document in a print-only
+// wrapper and prints it with Download PDF (the browser's print, from the
+// print service's frame; the global print rules in styles.scss show it
+// alone). The frames' measurements are the design's, in the `[lfxPpRect]`
+// placements, FRAMEWORK_PORTRAIT_TOPS and FRAMEWORK_PORTRAIT_ROOM; the pages'
+// styles are the global partial `_mktg-framework-print-pages.scss` beside
+// this file, `@use`d from styles.scss, scoped to this book's root (no
+// component stylesheet: the host rule above is the component's whole style).
 @Component({
   selector: 'lfx-mktg-framework-print',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],
   templateUrl: './mktg-framework-print.component.html',
-  styleUrl: './mktg-framework-print.component.scss',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgFrameworkPrintComponent {
   // === Injections ===
@@ -183,9 +207,11 @@ export class MktgFrameworkPrintComponent {
   /** The cover's bottom strip, right: `aaif.io · V1.0 · 6 Nov 2026`, less any part the revision lacks. */
   protected readonly coverStripRight = computed(() => mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel]));
   /** The cover's umbrella, fitted to the dark band's room under the lockup and the tagline. */
-  protected readonly coverUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.coverUmbrella, 640, 160));
+  protected readonly coverUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.coverUmbrella, ROOM.coverUmbrellaWidth, ROOM.coverUmbrellaRoom));
   /** The message house's umbrella bar, fitted to three lines. */
-  protected readonly houseUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.houseUmbrella, this.page.contentWidth - 56, 84));
+  protected readonly houseUmbrella = computed(() =>
+    this.fit(this.view().mh.umbrella, TYPE.houseUmbrella, this.page.contentWidth - ROOM.houseUmbrellaPaddingAcross, ROOM.houseUmbrellaRoom)
+  );
   /** The Google Fonts stylesheet of the brand's typeface, when the kit says it is there (null otherwise). */
   private readonly fontUrl$ = toObservable(computed(() => this.view().brand.fontUrl));
 
@@ -211,10 +237,10 @@ export class MktgFrameworkPrintComponent {
       const plan = frameworkPortraitPlan(view, { inFamily: book.inFamily });
       const icpPages = frameworkPortraitIcpPages(view.icps);
       const numbersPages = frameworkPortraitNumbersPages(view);
-      const contents = plan
-        .map((page, index) => ({ id: page.id, title: page.title, number: book.firstPage + index }))
-        .filter((entry) => entry.id !== this.ids.cover)
-        .map((entry) => ({ ...entry, numberLabel: mktgPortraitPageNumber(entry.number) }));
+      const contents = frameworkPortraitContents(plan, book.firstPage);
+      // The goal pages' titles at one size across the set (the editor's rule), the smallest any of them needs; the other pages fit their own.
+      const goalPages = plan.filter((page) => /^goal-\d+$/.test(page.id));
+      const goalTitles = new Map(frameworkPortraitTitlesAtOneSize(goalPages.map((page) => page.title)).map((fit, at) => [goalPages[at].id, fit]));
       return plan.map((page, index) => {
         const goal = /^goal-\d+$/.test(page.id) ? (view.goals.find((entry) => `goal-${entry.n}` === page.id) ?? null) : null;
         const icpIndex = /^icps-\d+$/.test(page.id) ? Number(page.id.slice('icps-'.length)) : 0;
@@ -222,16 +248,19 @@ export class MktgFrameworkPrintComponent {
         const sayAvoid = page.id === this.ids.sayAvoid;
         // The anchors never move; their questions are set smaller, then cut, until they and the crosscut box end above the footer.
         const anchors = sayAvoid ? frameworkPortraitAnchors(view.mf.anchor, view.mf.crosscut) : { anchors: [], crosscutTop: 0 };
-        const titleFit = frameworkPortraitTitle(page.title);
+        const titleFit = goalTitles.get(page.id) ?? frameworkPortraitTitle(page.title);
+        const matrix = page.id === this.ids.framework ? frameworkPortraitMatrix(view.goals, view.mf.crosscut, this.tops.footer - this.tops.matrix) : null;
         return {
           ...page,
           number: book.firstPage + index,
-          label: mktgPortraitSectionLabel(page.section, book.inFamily, 'Messaging framework'),
+          label: mktgPortraitSectionLabel(page.section, book.inFamily, FOUNDATION_MESSAGE_INTAKE.documentName),
           band: !book.inFamily && mktgPortraitOpensChapter(plan, index),
           titleFit,
-          contents: page.id === this.ids.cover ? contents : [],
+          contents: page.id === this.ids.cover ? contents : null,
           statements: page.id === this.ids.framework ? this.statements(view) : null,
-          matrix: page.id === this.ids.framework ? frameworkPortraitMatrix(view.goals, view.mf.crosscut, this.tops.footer - this.tops.matrix) : null,
+          matrix,
+          // The matrix's bands with their goals (one strip, or bands of the board's four columns where the strip cannot hold the titles).
+          matrixBands: matrix ? matrix.bands.map((band) => ({ ...band, goals: view.goals.slice(band.offset, band.offset + band.count) })) : [],
           anchorIntro: sayAvoid ? foundationMessagePrintAnchorIntro(view.mf.anchor.length) : '',
           sayAvoid: sayAvoid
             ? {
@@ -260,10 +289,25 @@ export class MktgFrameworkPrintComponent {
   private statements(view: FoundationMessagePrintView): FoundationMessagePrintFrame['statements'] {
     const cardsHeight = this.tops.matrix - this.page.bodyTop - ROOM.gap - ROOM.cardPadding - ROOM.label;
     const taglineWidth = frameworkPortraitStatementWidth(this.shares.tagline, true);
+    // The three statements at ONE size (the editor's rule: never one card shrunk alone): each fitted to its card first, then every one set
+    // at the smallest size any needed; a card already at the floor keeps the cut the fit gave it. The row is the board's box, the tallest card's.
+    const cards = {
+      vision: { text: view.mf.vision, width: frameworkPortraitStatementWidth(this.shares.vision) },
+      mission: { text: view.mf.mission, width: frameworkPortraitStatementWidth(this.shares.mission) },
+      positioning: { text: view.mf.positioning, width: frameworkPortraitStatementWidth(this.shares.positioning) },
+    };
+    const own = {
+      vision: this.fit(cards.vision.text, TYPE.statement, cards.vision.width, cardsHeight),
+      mission: this.fit(cards.mission.text, TYPE.statement, cards.mission.width, cardsHeight),
+      positioning: this.fit(cards.positioning.text, TYPE.statement, cards.positioning.width, cardsHeight),
+    };
+    const size = Math.min(own.vision.size, own.mission.size, own.positioning.size);
+    const atOne = (card: keyof typeof cards): FoundationMessagePrintFittedText =>
+      own[card].size === size ? own[card] : this.fit(own[card].text, { ...TYPE.statement, size }, cards[card].width, cardsHeight);
     return {
-      vision: this.fit(view.mf.vision, TYPE.statement, frameworkPortraitStatementWidth(this.shares.vision), cardsHeight),
-      mission: this.fit(view.mf.mission, TYPE.statement, frameworkPortraitStatementWidth(this.shares.mission), cardsHeight),
-      positioning: this.fit(view.mf.positioning, TYPE.statement, frameworkPortraitStatementWidth(this.shares.positioning), cardsHeight),
+      vision: atOne('vision'),
+      mission: atOne('mission'),
+      positioning: atOne('positioning'),
       tagline: this.fit(view.mf.tagline, { ...TYPE.tagline, size: frameworkPortraitTaglineSize(view.mf.tagline, taglineWidth) }, taglineWidth, cardsHeight),
     };
   }
@@ -272,47 +316,84 @@ export class MktgFrameworkPrintComponent {
   private goalPage(goal: FoundationMessagePrintGoal, view: FoundationMessagePrintView, leadTop: number): FoundationMessagePrintGoalPage {
     const tops = this.tops;
     const width = this.page.contentWidth;
-    const proofsRoom = tops.goalBite - tops.goalProofs - ROOM.label - 6 - ROOM.gap;
-    // A proof row is the fact beside its chip: the chip is capped at ROOM.chip (`.fwp-chip-wrap`), so the fact measures against the rest;
-    // the list is tightened before it is cut, and the cut is said under it.
+    const proofsRoom = tops.goalBite - tops.goalProofs - ROOM.label - ROOM.proofListTop - ROOM.gap;
+    // A proof row is the fact beside its chip: the chip is capped at ROOM.chip (`.fwp-chip-wrap`) and wraps inside it, so the row is the
+    // taller of the fact (measured against the rest) and the chip; the list is tightened before it is cut, and the cut is said under it.
+    const factWidth = width - ROOM.chip - ROOM.proofGap;
+    const proofRow = (proof: FoundationMessageProofView, type: FoundationMessagePrintType): number =>
+      Math.max(this.paraHeight(proof.fact, type, factWidth), frameworkPortraitChipHeight(proof.source, ROOM.chip));
     const proofs = frameworkPortraitCutList(
       goal.proofRows,
       proofsRoom,
-      'Framework',
-      (proof) => this.paraHeight(proof.fact, TYPE.goalProof, width - ROOM.chip - ROOM.proofGap) + ROOM.proofRow,
-      (proof) => this.paraHeight(proof.fact, TYPE.goalProofTight, width - ROOM.chip - ROOM.proofGap) + ROOM.proofRowTight
+      (proof) => proofRow(proof, TYPE.goalProof) + ROOM.proofRow,
+      (proof) => proofRow(proof, TYPE.goalProofTight) + ROOM.proofRowTight
     );
-    const served = goal.icps.map((id) => view.icps.find((icp) => icp.id === id)).filter((icp): icp is FoundationMessagePrintIcp => !!icp);
-    const cardWidth = served.length ? (width - (served.length - 1) * 16) / served.length - 32 : width;
-    const cardRoom = tops.footer - tops.goalServed - ROOM.label - 8 - ROOM.cardPadding - 17 - 6;
+    // The "Who it's for" row holds as many cards as the board's narrowest card allows (four across); the rest are said under the row.
+    const servedAll = goal.icps.map((id) => view.icps.find((icp) => icp.id === id)).filter((icp): icp is FoundationMessagePrintIcp => !!icp);
+    const served = servedAll.slice(0, frameworkPortraitServedCount(width));
+    const servedCut = servedAll.length - served.length;
+    const cardWidth = served.length ? (width - (served.length - 1) * ROOM.servedGap) / served.length - ROOM.cardPaddingSide : width;
+    // The cards' room: under the label and the row's margin, inside a card's padding and border, above the note the cut profiles take,
+    // less the two fixed gaps between a card's lines (the stylesheet's margins, which the fit model's scale does not reach).
+    const servedNote = servedCut > 0 ? frameworkPortraitCutNoteHeightIn(servedCut, width) : 0;
+    const cardRoom =
+      tops.footer - tops.goalServed - ROOM.label - ROOM.servedTop - ROOM.cardPadding - ROOM.cardBorder - servedNote - ROOM.servedLineTop - ROOM.servedLineGap;
     return {
       goal,
       numberLabel: mktgPortraitPageNumber(goal.n),
       leadTop,
-      value: this.fit(goal.vp, TYPE.goalValue, width - 150 - 28, tops.goalKey - leadTop - ROOM.label - 12 - ROOM.gap),
-      key: this.fit(goal.key, TYPE.goalKey, width - 56 - 22 - 90, tops.goalProofs - tops.goalKey - 48 - ROOM.gap),
+      value: this.fit(
+        goal.vp,
+        TYPE.goalValue,
+        width - ROOM.goalNumberWidth - ROOM.goalLeadGap,
+        tops.goalKey - leadTop - ROOM.label - ROOM.goalValueTop - ROOM.gap
+      ),
+      key: this.fit(
+        goal.key,
+        TYPE.goalKey,
+        width - ROOM.goalKeyPaddingAcross - ROOM.goalKeyGap - ROOM.goalKeyLabel,
+        tops.goalProofs - tops.goalKey - ROOM.goalKeyPaddingDown - ROOM.gap
+      ),
       proofs,
-      bite: goal.bite ? this.fit(`“${goal.bite}”`, TYPE.goalBite, width, tops.goalServed - tops.goalBite - ROOM.label - 10 - ROOM.gap) : null,
-      served: served.map((icp) => {
-        const lines = mktgPortraitFitBlock(
-          { paras: [this.para(`Needs ${icp.need}`, TYPE.servedLine), this.para(`Ask them to ${icp.cta}`, TYPE.servedLine, 4)] },
-          cardWidth,
-          cardRoom
-        );
-        const [need, cta] = lines.block.paras;
-        return {
-          id: icp.id,
-          name: icp.name,
-          need: { text: need.text.replace(/^Needs /, ''), size: need.size },
-          cta: { text: cta.text.replace(/^Ask them to /, ''), size: cta.size },
-        };
-      }),
+      // The sound bite at the board's fixed top (TOPS.goalBite, the mock's 690) on every goal page, fitted to the room above the served row;
+      // its last two words joined (the grammar's widow rule), so a line never ends on one short word alone.
+      bite: goal.bite
+        ? this.noWidow(
+            this.quoted(this.fit(`“${goal.bite}”`, TYPE.goalBite, width, tops.goalServed - tops.goalBite - ROOM.label - ROOM.goalBiteTop - ROOM.gap))
+          )
+        : null,
+      served: {
+        rows: served.map((icp) => {
+          // The name and the two lines fitted to the card together, so a long name is measured with them.
+          const lines = mktgPortraitFitBlock(
+            {
+              paras: [
+                this.para(icp.name, TYPE.servedName),
+                this.para(`Needs ${icp.need}`, TYPE.servedLine),
+                this.para(`Ask them to ${icp.cta}`, TYPE.servedLine),
+              ],
+            },
+            cardWidth,
+            cardRoom
+          );
+          const [name, need, cta] = lines.block.paras;
+          return {
+            id: icp.id,
+            name: { text: name.text, size: name.size },
+            need: { text: need.text.replace(/^Needs /, ''), size: need.size },
+            cta: { text: cta.text.replace(/^Ask them to /, ''), size: cta.size },
+          };
+        }),
+        cut: servedCut,
+        tight: false,
+        note: servedCut > 0 ? foundationMessagePrintCutNote(servedCut) : '',
+      },
     };
   }
 
   /** An ICP page: its profiles, its intro, the rows' top (under the long intro on the first page), the matrix when it holds one profile. */
   private icpPage(index: number, pages: FoundationMessagePrintIcpPageRows[], view: FoundationMessagePrintView): FoundationMessagePrintIcpPage {
-    const rows = pages[index - 1] ?? { icps: [], tight: false, height: 0 };
+    const rows = pages[index - 1] ?? { icps: [], tight: false, cut: false, height: 0 };
     const total = view.icps.length;
     const project = view.projectName || 'the project';
     const start = pages.slice(0, index - 1).reduce((count, page) => count + page.icps.length, 0);
@@ -325,10 +406,11 @@ export class MktgFrameworkPrintComponent {
       intro:
         index === 1
           ? `${total} ${total === 1 ? 'profile' : 'profiles'}. Each names who they are, what they need, what ${project} gives them, the lead message, the call to action, the objection to expect and where to reach them. Goal numbers refer to the goal pages.`
-          : `Profiles ${start + 1}–${start + rows.icps.length} of ${total}.`,
+          : foundationMessagePrintIcpPageIntro(start + 1, rows.icps.length, total),
       rowsTop,
       icps: rows.icps,
       tight: rows.tight,
+      cut: rows.cut,
       matrix: matrixFits ? foundationMessagePrintMatrix(view.goals, view.icps) : [],
       matrixTop,
     };
@@ -338,11 +420,12 @@ export class MktgFrameworkPrintComponent {
   private sourcesPage(view: FoundationMessagePrintView): FoundationMessagePrintSourcesPage {
     const date = view.dateReadLabel;
     const report = view.report;
-    const listWidth = this.columns.half;
+    // A row's text width: the column less the bullet's indent (`.fwp-source-list`, ROOM.sourceBullet).
+    const listWidth = this.columns.half - ROOM.sourceBullet;
     const columnRoom = this.tops.sourcesApproval - this.tops.sourcesLists - ROOM.gap;
     const rowHeight = (text: string): number => this.paraHeight(text, TYPE.source, listWidth);
     const tightHeight = (text: string): number => this.paraHeight(text, TYPE.sourceTight, listWidth);
-    const list = (rows: readonly string[], room: number) => frameworkPortraitCutList(rows, room, 'Sources', rowHeight, tightHeight);
+    const list = (rows: readonly string[], room: number) => frameworkPortraitCutList(rows, room, rowHeight, tightHeight);
     let lists: FoundationMessagePrintSourcesPage['report'] = null;
     if (report) {
       const failedAll = report.sources_failed.map(
@@ -355,7 +438,7 @@ export class MktgFrameworkPrintComponent {
         intro: date
           ? `What the framework was built from on ${date}, what could not be read, and what is still open.`
           : 'What the framework was built from, what could not be read, and what is still open.',
-        read: list(report.sources_read.map(foundationMessagePrintSourceLabel), columnRoom - ROOM.label - Math.min(failedHeight, columnRoom / 2)),
+        read: list(foundationMessagePrintSourceRows(report.sources_read), columnRoom - ROOM.label - Math.min(failedHeight, columnRoom / 2)),
         failed: list(failedAll, columnRoom / 2 - ROOM.blockAfter - ROOM.label),
         failedCount: report.sources_failed.length,
         gaps: list(report.gaps.map(foundationMessagePrintReportText), columnRoom - ROOM.label),
@@ -384,12 +467,22 @@ export class MktgFrameworkPrintComponent {
     return para ? { text: para.text, size: para.size } : { text, size: type.size };
   }
 
+  /** A fitted quotation with its closing mark restored when the cut at a sentence dropped it (the mark is one character past a sentence end, inside the slack the cut leaves). */
+  private quoted(fitted: FoundationMessagePrintFittedText): FoundationMessagePrintFittedText {
+    return fitted.text.endsWith('”') ? fitted : { text: `${fitted.text}”`, size: fitted.size };
+  }
+
+  /** A fitted headline with its last two words joined (the grammar's widow rule): the measure is the same, the break before the last word is not. */
+  private noWidow(fitted: FoundationMessagePrintFittedText): FoundationMessagePrintFittedText {
+    return { text: mktgNoWidow(fitted.text), size: fitted.size };
+  }
+
   /** The height a paragraph takes at its type in a column, px (the fit model's measure). */
   private paraHeight(text: string, type: FoundationMessagePrintType, width: number): number {
     return mktgPortraitParaHeight(this.para(text, type), width);
   }
 
-  private para(text: string, type: FoundationMessagePrintType, above = 0): MktgPortraitFitPara {
-    return { text, size: type.size, line: type.line, weight: type.weight, above };
+  private para(text: string, type: FoundationMessagePrintType): MktgPortraitFitPara {
+    return { text, size: type.size, line: type.line, weight: type.weight };
   }
 }

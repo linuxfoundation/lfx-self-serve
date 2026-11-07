@@ -18,13 +18,6 @@ export const FOUNDATION_MESSAGE_PRINT_BODY_CLASS = 'lfx-print-framework';
 /** The class of the framework print document's wrapper: never shown on screen, shown only while the framework prints (see styles.scss). */
 export const FOUNDATION_MESSAGE_PRINT_ONLY_CLASS = 'lfx-framework-print-only';
 
-/**
- * The framework view's tabs that print, in order: the framework and the key
- * numbers. The run's sources and gaps (and the
- * reviewer's note) stay on screen: they are for the reviewer, not the reader.
- */
-export const FOUNDATION_MESSAGE_PRINT_TAB_IDS = ['framework', 'numbers'] as const;
-
 /** Printed marker for an unanswered FAQ; independent of the screen's tab labels. */
 export const MKTG_FAQ_PRINT_UNANSWERED = 'Needs an answer';
 
@@ -68,9 +61,9 @@ export const FRAMEWORK_PORTRAIT_TITLES = {
 } as const;
 
 /**
- * The key numbers page's tiles, px: 140 high on a six-track grid (each tile's
+ * The key numbers page's tiles, px: 156 high on a six-track grid (each tile's
  * share of a row is FRAMEWORK_PORTRAIT_TILE_SHARES'; 344 wide as a half), a 16
- * gap, the first row at 210; the "Figures and their sources" table 28 under
+ * gap, the first row at 210; the "Figures and their sources" table 22 under
  * the last row. The table of every figure (past six) starts at the same top.
  */
 export const FRAMEWORK_PORTRAIT_NUMBER_TILE = {
@@ -91,13 +84,6 @@ export const FRAMEWORK_PORTRAIT_NUMBER_TILE = {
 } as const;
 
 /**
- * The fixed tops of the framework's portrait pages whose blocks the fit
- * model bounds (the design's R(x, y) values, px): a goal page's key-message
- * bar, proof list, sound bite and "Who it's for" cards; the Sources & gaps
- * page's lists and approval card; and where the footer begins, which no
- * block may pass.
- */
-/**
  * The framework page's four statement cards' shares of the row (their flex). The design's are 0.85 / 1.05 / 1.4 / 0.7; the
  * tagline's column is widened from the vision's and the positioning's so the tagline holds two words a line (the editor's
  * read, 7 Nov 2026: no one-word lines; the design's own board shows them).
@@ -109,7 +95,18 @@ export const FRAMEWORK_PORTRAIT_STATEMENT_SHARES = {
   tagline: 1.05,
 } as const;
 
+/**
+ * The fixed tops of the framework's portrait pages (the design's R(x, y) values, px): the cover's title, contents and
+ * strip; the framework page's matrix; a goal page's key-message bar, proof list, sound bite and "Who it's for" cards;
+ * the say-and-avoid page's lists, anchors and crosscut; the Sources & gaps page's lists and approval card; the house's
+ * umbrella; the ICP pages' rows and matrix; a numbers continuation's table; and where the footer begins, which no block
+ * may pass. The layout utils bound every block that follows the data between its top and the next block's, or the footer.
+ */
 export const FRAMEWORK_PORTRAIT_TOPS = {
+  /** The cover: the title block, the contents list, and the strip at the foot (the contents end above it). */
+  coverTitle: 470,
+  coverContents: 620,
+  coverStrip: 984,
   /** The framework page's goal matrix, under the statement cards (which close 16 px above it). */
   matrix: 336,
   goalKey: 330,
@@ -150,6 +147,8 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   /** A goal's proof rows when they must be tightened before a cut (the design reader's rule). */
   goalProofTight: { size: 14, line: 1.45, weight: 400 },
   goalBite: { size: 34, line: 1.2, weight: 500 },
+  /** A "Who it's for" card's name and its two lines, fitted to the card together. */
+  servedName: { size: 13, line: 1.3, weight: 600 },
   servedLine: { size: 11.5, line: 1.5, weight: 400 },
   fact: { size: 11, line: 1.3, weight: 400 },
   source: { size: 12, line: 1.6, weight: 400 },
@@ -167,7 +166,7 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   pageTitle: { size: 34, line: 1.1, weight: 500 },
   /** An anchor question (`.fwp-anchor-question`) and its number; the crosscut box's text. */
   anchorQuestion: { size: 22, line: 1.3, weight: 500 },
-  anchorNumber: { size: 26, line: 1.2, weight: 500 },
+  anchorNumber: { size: 26, line: 1, weight: 500 },
   crosscutText: { size: 13, line: 1.6, weight: 400 },
   /** A profile card: its name, kind and goal chips line, who text and persona rows; a field's eyebrow and text (and the text's tight measure, taken when one card alone outruns its page). */
   icpName: { size: 15, line: 1.3, weight: 600 },
@@ -188,28 +187,65 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   whyNow: { size: 13, line: 1.55, weight: 400 },
   audienceRow: { size: 11.5, line: 1.45, weight: 400 },
   audienceRowTight: { size: 11, line: 1.4, weight: 400 },
+  /** The audience's name, bold at the row's size (`.fwp-audience-row strong`: only its weight is read; the row's size and line are the row's). */
+  audienceName: { size: 11.5, line: 1.45, weight: 600 },
   /** The say pills and the avoid rows, and their tight measures. */
   sayPill: { size: 13, line: 1.2, weight: 500 },
   sayPillTight: { size: 12, line: 1.2, weight: 500 },
   avoidRow: { size: 13, line: 1.5, weight: 400 },
   avoidRowTight: { size: 12, line: 1.4, weight: 400 },
-  /** The muted line under a cut list: `+N more on the framework's Framework tab in LFX One` (the Sources tab for the Sources & gaps lists). */
+  /** The muted caption line under a cut list: `+N more in LFX One` (MKTG_PRINT_CUT_NOTE). */
   cutNote: { size: 10.5, line: 1.4, weight: 400 },
-  /** A key number tile's figure (`.fwp-number`), stepped down in whole px to one line of the tile, to a floor of half its size; a longer figure overflows the tile (follow-up). */
+  /** A key number tile's figure (`.fwp-number`), stepped down in whole px to one line of the tile, to a floor of half its size; when the floor does not hold a figure the numbers print as the table instead (frameworkPortraitNumberTiles). */
   tileFigure: { size: 54, line: 1, weight: 500 },
   /** A key number tile's label (`.fwp-number-label`), fitted to the room under the figure. */
   tileLabel: { size: 14, line: 1.4, weight: 400 },
+  /** The cover's contents rows (`.fwp-contents-row`), and their tight measure when the plan runs long. */
+  contentsRow: { size: 13, line: 1.3, weight: 400 },
+  contentsRowTight: { size: 12, line: 1.3, weight: 400 },
 } as const satisfies Record<string, FoundationMessagePrintType>;
 
 /**
- * The room the framework print's stylesheet takes around a fitted block, px, which the component subtracts from a
- * block's box before it fits the text. Each value names the stylesheet rule it mirrors (mktg-framework-print.component.scss).
+ * The room the framework print's stylesheet takes around a fitted block, px, which the layout utils subtract from a
+ * block's box before they fit the text. Each value names the stylesheet rule it mirrors (the global partial
+ * `_mktg-framework-print-pages.scss`).
  */
 export const FRAMEWORK_PORTRAIT_ROOM = {
   /** A `pp-lab` eyebrow (the grammar's) and the gap under it. */
   label: 26,
-  /** `.fwp-card` padding, top and bottom together (14 + 14). */
+  /** The cover's contents list: its margin under the eyebrow; a row's padding (8 + 8) and hairline, and the tight row's (5 + 5); the list's two columns and their gap. */
+  contentsTop: 8,
+  contentsRow: 17,
+  contentsRowTight: 11,
+  contentsColumns: 2,
+  contentsColumnGap: 24,
+  /** `.fwp-contents-number`'s width: the room a row's title has is its column less this. */
+  contentsNumber: 30,
+  /** `.fwp-card` padding, top and bottom together (14 + 14), and across (16 + 16); its hairline border above and below (1 + 1). */
   cardPadding: 28,
+  cardBorder: 2,
+  cardPaddingSide: 32,
+  /** The "Who it's for" row: `.fwp-served-cards`' margin above and gap between cards, the name's margin to its first line and between the lines, and the narrowest card the board draws (four across 704 px): more profiles than hold at it are cut, the note under the row. */
+  servedTop: 8,
+  servedGap: 16,
+  servedLineTop: 6,
+  servedLineGap: 4,
+  servedCardMin: 164,
+  /** The cover's umbrella: its measure (`.fwp-cover-umbrella` max-width) and the room the dark band gives it under the lockup and the tagline (four lines of 32/1.18, 151, kept with air). */
+  coverUmbrellaWidth: 640,
+  coverUmbrellaRoom: 160,
+  /** The house's umbrella bar: the room for its text, three lines of 19/1.4 (79.8), kept whole. */
+  houseUmbrellaRoom: 84,
+  /** A goal page: the lead's gap between the number and the value (`.fwp-goal-lead`), the number's width (`.fwp-goal-number`), the value block's top padding (`.fwp-goal-vp-block`); the key bar's padding down (24 + 24) and across (28 + 28), its gap and about how wide its "Key message" label sets (`.fwp-goal-key`, `.fwp-goal-key-label`); the proof list's margin under its eyebrow (`.fwp-proof-list`); the sound bite's margin (`.fwp-goal-bite-text`). */
+  goalLeadGap: 28,
+  goalNumberWidth: 150,
+  goalValueTop: 12,
+  goalKeyPaddingDown: 48,
+  goalKeyPaddingAcross: 56,
+  goalKeyGap: 22,
+  goalKeyLabel: 90,
+  proofListTop: 6,
+  goalBiteTop: 10,
   /** `.fwp-proof-row` padding (13 + 13) and its hairline. */
   proofRow: 27,
   /** `.fwp-proof-list-tight .fwp-proof-row` padding (9 + 9) and its hairline. */
@@ -235,9 +271,10 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   /** `.fwp-icp-who`: the profile's name-and-tags column, px (the board's), and the most it grows so a row of tags never wraps. */
   icpWho: 190,
   icpWhoMax: 300,
-  /** The grammar's `.pp-chip`: its type size, its padding and border across (7 + 7 + 1 + 1), and `.fwp-icp-chips`' gap between tags. */
+  /** The grammar's `.pp-chip`: its type size, its padding and border across (7 + 7 + 1 + 1) and down (3 + 3 + 1 + 1), and `.fwp-icp-chips`' gap between tags. */
   chipSize: 8.5,
   chipPadding: 16,
+  chipVertical: 8,
   chipGap: 4,
   /** A profile card: its hairline and padding (1 + 20 + 28); the gap between its two columns; the chips line's margin above and its height (8.5 px type on one line, 3 + 3 padding, 2 border); the who text's and the personas' margins above; a field's gap under its eyebrow; the fields grid's row and column gaps; the proof list's margin above; the least room every card keeps above the footer rule (the harness's A4 finding: ≥ 4 px, so a 0.974 scale cannot cross it); the matrix's note margin, its table margin, its head row (6 + 6 padding, 1 rule, two lines of 9.5 type) and a cell row (9 + 9 padding, 1 hairline). */
   icpRow: 49,
@@ -255,6 +292,13 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   matrixTableTop: 12,
   matrixHeadRow: 13,
   matrixCellRow: 19,
+  /** The lines a goal's title has in the matrix's head row (the board's two): a longer title is fitted into them, smaller first, then cut. */
+  matrixGoalLines: 2,
+  /** The least size a matrix head title prints at, px: under it the strip is too narrow for the titles and the matrix breaks into bands (frameworkPortraitMatrixColumns). */
+  matrixTitleMin: 9,
+  /** The board's column count, the bands' width when the matrix breaks, and `.fwp-matrix-band + .fwp-matrix-band`'s gap, px. */
+  matrixBandColumns: 4,
+  matrixBandGap: 16,
   /** The message house: the umbrella bar's padding (24 + 24) and its padding across (28 + 28); the brand line's margins (14 + 22); the pillars' gap; a pillar's rule and padding (3 + 12), its message's margin above, its proof list's margin above, a proof row's hairline and padding (1 + 16) and its source chip's line (4 + 16.5); the gap the lower blocks keep under the pillars and the least room they keep above the footer (the pillars' proofs are cut to leave it); the Why now column and the audiences column and its left; the Why now text's margin above; the audience list's margin above and a row's hairline and padding (1 + 14; tight 1 + 10). */
   houseUmbrellaPadding: 48,
   houseUmbrellaPaddingAcross: 56,
@@ -264,7 +308,8 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   pillarMessageTop: 8,
   pillarProofsTop: 12,
   pillarProofRow: 17,
-  pillarProofChip: 20.5,
+  /** `.fwp-pillar-source`'s margin above the chip (the chip's own height is measured, frameworkPortraitChipHeight). */
+  pillarProofChipTop: 4,
   houseLowerGap: 32,
   houseLowerMin: 80,
   whyNowColumn: 300,
@@ -308,6 +353,8 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   crosscutPadding: 36,
   crosscutPaddingAcross: 44,
   crosscutTextTop: 8,
+  /** The sources page's lists: the indent their bullets take (`.fwp-source-list`'s padding-left, the design's 16), off the rows' measured width. */
+  sourceBullet: 16,
 } as const;
 
 /** The key numbers facts table's `<colgroup>` widths, %: the fact, its source, the goal that uses it (`table-layout: fixed` reads them). */
@@ -347,17 +394,31 @@ export const FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES = ['Website', 'Link', 'Press 
  * The one middle-dot separator every printed line joins its parts with (the editor's rule, 7 November 2026: one
  * spacing everywhere): a plain space, the middle dot, a plain space, as the grammar's footer sets it. The document
  * title, the cover's edition and strip lines, the house's brand line, a goal's `Goal 1 · Events`, the channels, the
- * personas and the facts' "used by" all join with it; no thin or hair space anywhere.
+ * personas and the facts' "used by" all join with it (mktgPrintJoin, mktg-print-text.utils.ts); no thin or hair space anywhere.
  */
 export const MKTG_PRINT_DOT = ' · ';
 
-/** Parts joined with the one middle dot, the empty ones left out. */
-export function mktgPrintJoin(parts: readonly string[]): string {
-  return parts.filter((part) => part !== '').join(MKTG_PRINT_DOT);
-}
+/**
+ * The one line under a cut list, everywhere a framework print cuts one (the
+ * matrix's and a goal's proofs, the house's audiences, the sources, the family
+ * chapter): `+3 more in LFX One`, the editor's form (7 November 2026), set at
+ * the caption size (`FRAMEWORK_PORTRAIT_TYPE.cutNote`).
+ */
+export const MKTG_PRINT_CUT_NOTE = { prefix: '+', suffix: ' more in LFX One' } as const;
 
-/** The fixed three-letter month names the prints date with (UTC), the same in every engine and locale. */
-export const MKTG_PRINT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+/** The Brand Kit read as a print starts: open, nothing known yet (`MktgPrintKitRead`). */
+export const MKTG_PRINT_KIT_READ_PENDING = { settled: false, kit: null, failed: false } as const;
+/** A print with no kit read at all (a host that passes none): settled, the LF look. */
+export const MKTG_PRINT_KIT_READ_NONE = { settled: true, kit: null, failed: false } as const;
+/**
+ * Why Download PDF is disabled while the project's Brand Kit is being read, or
+ * after the read failed: the print never prints the LF default in either case
+ * (the LF look is for a project with no kit stored), so the button says why.
+ */
+export const MKTG_PRINT_KIT_READ_NOTES = {
+  pending: 'Reading the project’s Brand Kit…',
+  failed: 'The project’s Brand Kit could not be read. Reload the page to try again.',
+} as const;
 
 /**
  * The LF look: what a print uses when the project has no Brand Kit yet. The
@@ -421,34 +482,36 @@ export const MKTG_PRINT_FRAME_PAPER_IN = { width: 8.5, height: 10.9 } as const;
  * The page setups the print frame writes as the ONE unnamed `@page` rule of
  * its document (WebKit's support for named pages is doubtful, and on the
  * browser's default margins a cover sized to the page area spills a blank
- * sheet). `brand-kit` is the legacy landscape book; `mktg-framework` every
- * portrait document (the brand kit's own portrait print included) in
- * Chromium and every other non-WebKit engine, mirrored by the named
- * `@page mktg-framework` in styles.scss, which a matched named rule outranks
- * in Chrome with the same values. Both print with `margin: 0`: the browser
- * draws its header and footer (date, title, URL, page numbers) only in the
- * page margin area, so no margin is the standard way to keep them off a saved
- * PDF, and the room the portrait pages used to take from the margin (0.55in
- * top and bottom, 0.6in at the sides) is inside the documents, repeated per
- * page by their table head and foot groups (lfx-mktg-print-sheet, the kit's
- * chapters). WebKit does not repeat a table's head and foot on every printed
- * page (bug 17205, open), so in Safari the portrait documents print on
- * `mktg-framework-page-margins`, exactly the margins they had before, with
- * that in-document room collapsed under `MKTG_PRINT_PAGE_MARGINS_CLASS`: the
- * browser's header and footer stay, as before, and the user unticks them in
- * Safari's print dialog. `mktg-portrait` is the fixed-frame portrait book
- * (`MKTG_PORTRAIT_PRINT_CLASS`: the kit's 17 pages, and every document built
- * of `lfx-mktg-portrait-page` frames): the page box is the PAPER the dialog
- * chose (`size: auto`), with no margin in BOTH engines, since each frame is
- * the whole sheet and carries its own room. The frame is drawn for US Letter
- * (816 × 1056 px) and the grammar scales it to a narrower paper itself
- * (`_mktg-portrait.scss`: A4 zooms every frame by 210 mm / 8.5 in and grows
- * its ground to the paper's height), where a fixed `size: 8.5in 11in` let
- * Chrome scale the page box onto A4 and print its headers and footers into
- * the bands that left (the margin of 0 is what keeps them off the sheet).
- * The print frame writes the setup unnamed (WebKit) and as `@page
- * mktg-portrait`, the print's one named page. Keep these in step with
- * styles.scss and `_mktg-portrait.scss`, which cannot read them.
+ * sheet). `brand-kit` is the legacy landscape book. `mktg-framework` is the
+ * FLOWING documents' setup (the FAQ, the boilerplates and the AEO/GEO report,
+ * which run from page to page through the shared sheet) in Chromium and every
+ * other non-WebKit engine: no paper size, `margin: 0`, since the browser draws
+ * its header and footer (date, title, URL, page numbers) only in the page
+ * margin area, so no margin is the standard way to keep them off a saved PDF,
+ * and the room those documents used to take from the margin (0.55in top and
+ * bottom, 0.6in at the sides) is inside them, repeated per page by their
+ * table head and foot groups (lfx-mktg-print-sheet). WebKit does not repeat a
+ * table's head and foot on every printed page (bug 17205, open), so in Safari
+ * the flowing documents print on `mktg-framework-page-margins`, exactly the
+ * margins they had before, with that in-document room collapsed under
+ * `MKTG_PRINT_PAGE_MARGINS_CLASS`: the browser's header and footer stay, as
+ * before, and the user unticks them in Safari's print dialog; the frame
+ * restates styles.scss's named `@page mktg-framework` with those margins for
+ * it (no element names that page any more: it is a shared-mechanism
+ * clean-up). `mktg-portrait` is the fixed-frame portrait book
+ * (`MKTG_PORTRAIT_PRINT_CLASS`: the kit's pages and the framework's, every
+ * document built of `lfx-mktg-portrait-page` frames): the page box is the
+ * PAPER the dialog chose (`size: auto`), with no margin in BOTH engines, since
+ * each frame is the whole sheet and carries its own room. The frame is drawn
+ * for US Letter (816 × 1056 px) and the grammar scales it to a narrower paper
+ * itself (`_mktg-portrait.scss`: A4 zooms every frame by 210 mm / 8.5 in and
+ * grows its ground to the paper's height), where a fixed `size: 8.5in 11in`
+ * let Chrome scale the page box onto A4 and print its headers and footers
+ * into the bands that left (the margin of 0 is what keeps them off the
+ * sheet). The print frame writes the setup unnamed (WebKit) and as `@page
+ * mktg-portrait`, the print's one named page, and the grammar's `.pp-page`
+ * names it. Keep these in step with styles.scss and `_mktg-portrait.scss`,
+ * which cannot read them.
  */
 export const MKTG_PRINT_PAGE_SETUPS = {
   'brand-kit': 'size: letter landscape; margin: 0;',

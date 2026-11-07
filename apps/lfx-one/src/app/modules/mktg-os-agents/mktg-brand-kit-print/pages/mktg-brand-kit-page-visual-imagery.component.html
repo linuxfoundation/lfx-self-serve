@@ -12,21 +12,27 @@
   [band]="page().band">
   <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-imagery-intro">{{ intro() }}</p>
   <div [lfxPpRect]="[x, 220, w]" data-testid="brand-kit-imagery-ground">
-    <div class="pp-grid-ground kp-ground"></div>
+    <div class="pp-grid-ground kp-ground" data-testid="brand-kit-imagery-grid-ground"></div>
     <div class="pp-cap">Default ground: a quiet grid on {{ v.darkName }}, lit softly from one side</div>
   </div>
   <div [lfxPpRect]="[x, 600, w]" data-testid="brand-kit-imagery-elements">
     <div class="kp-elements">
-      <div class="kp-element kp-element--eyebrow">
+      <div class="kp-element kp-element--eyebrow" data-element="eyebrow" data-testid="brand-kit-imagery-element">
         <div class="pp-lab pp-lab--dark">Umbrella message</div>
         <div class="kp-element-message" [style.font-size.px]="message().size" data-testid="brand-kit-imagery-message">{{ message().text }}</div>
       </div>
-      <div class="kp-element kp-element--buttons">
+      <div class="kp-element kp-element--buttons" data-element="buttons" data-testid="brand-kit-imagery-element">
         <span class="kp-button kp-button--primary">Primary button</span>
         <span class="kp-button kp-button--secondary">Secondary</span>
       </div>
-      <div class="kp-element kp-element--callout" [style.background]="look().accent" [style.color]="look().onAccent">
-        <div class="pp-lab" [style.color]="look().onAccent">Call-out card</div>
+      <div
+        class="kp-element kp-element--callout"
+        [class.kp-element--callout-rule]="moment().ground === 'white'"
+        [style.background]="moment().background"
+        [style.color]="moment().ink"
+        data-element="callout"
+        data-testid="brand-kit-imagery-element">
+        <div class="pp-lab" [style.color]="moment().ink">Call-out card</div>
         <div class="kp-element-callout-text">One per view, for the main call to action.</div>
         @if (v.host) {
           <span class="kp-button kp-button--small">{{ v.host }}</span>
@@ -47,8 +53,8 @@
           <li>{{ item }}</li>
         }
       </ul>
-      @if (avoid().more; as more) {
-        <div class="kp-list-more" data-testid="brand-kit-imagery-avoid-more">+{{ more }} more rules, in LFX One</div>
+      @if (avoid().more) {
+        <div class="kp-list-more" data-testid="brand-kit-imagery-avoid-more">{{ avoid().moreLine }}</div>
       }
     </div>
   }

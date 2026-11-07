@@ -3,13 +3,7 @@
 
 import { Component, computed } from '@angular/core';
 import { BRAND_KIT_PORTRAIT_RULE_LISTS } from '@lfx-one/shared/constants';
-import {
-  brandKitPortraitIntro,
-  brandKitPortraitMessageCard,
-  brandKitPortraitRatioLabel,
-  brandKitPortraitRulesFit,
-  brandKitPortraitWhiteContrast,
-} from '@lfx-one/shared/utils';
+import { brandKitPortraitAccentMoment, brandKitPortraitIntro, brandKitPortraitMessageCard, brandKitPortraitRulesFit } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
@@ -33,12 +27,15 @@ export class MktgBrandKitPageVisualImageryComponent extends MktgBrandKitPageBase
   /** The avoid list fitted to the room under the elements (set smaller, cut at a sentence, the last ones counted when even that runs past y 990). */
   protected readonly avoid = computed(() => brandKitPortraitRulesFit(this.view().visual.imagery.avoid, BRAND_KIT_PORTRAIT_RULE_LISTS.imageryAvoid));
 
-  /** The call-out's caption: the ink the shared rule chose, and why when it is not white. */
+  /**
+   * The accent moment as the shared rule resolves it from the kit's own contrast: text on the accent in the ink that
+   * reads there, or a white card under an accent top rule when none does (`brandKitPortraitAccentMoment`).
+   */
+  protected readonly moment = computed(() => brandKitPortraitAccentMoment(this.view()));
+  /** The call-out's caption: the moment's reason, in the matrix's own ratios. */
   protected readonly calloutCaption = computed(() => {
-    const view = this.view();
-    const white = this.look().onAccent === 'white' || this.look().onAccent.toLowerCase() === this.inks.white.toLowerCase();
-    if (white) return 'Call-out · the one accent moment; text in white';
-    return `Call-out · the one accent moment; text in ${view.darkName} (white on ${view.accentName} fails AA, ${brandKitPortraitRatioLabel(brandKitPortraitWhiteContrast(view.accent))}:1)`;
+    const moment = this.moment();
+    return moment.ground === 'accent' ? `Call-out · the one accent moment; ${moment.reason}` : `Call-out · the accent as a top rule; ${moment.reason}`;
   });
   /** The intro at most three lines of its 600 px: whole sentences that fit, or the first shortened (`brandKitPortraitIntro`). */
   protected readonly intro = computed(() => brandKitPortraitIntro(this.view().visual.imagery.rule));

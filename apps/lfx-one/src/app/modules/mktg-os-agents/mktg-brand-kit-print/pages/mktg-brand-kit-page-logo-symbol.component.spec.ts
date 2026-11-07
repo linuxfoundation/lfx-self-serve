@@ -17,7 +17,13 @@ describe('the Symbol & symbol in shape page', () => {
     expect(frame.querySelector('[data-testid="brand-kit-symbol-intro"]')?.textContent).toBe('The symbol.');
     const variants = frame.querySelector('[data-testid="brand-kit-symbol-variants"]');
     expect(rectOf(variants)).toEqual({ left: '56px', top: '250px', width: '704px' });
-    expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['', 'brightness(0) invert(1)', 'brightness(0)']);
+    // The symbol comes from a three-colour kit, which no filter may derive from: the full-colour variant draws it, and
+    // the reversed and one-colour tiles say "Not supplied" rather than draw a full-colour symbol under a false label.
+    expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['']);
+    expect(Array.from(variants?.querySelectorAll('[data-testid="brand-kit-symbol-variant-missing"]') ?? [], (tile) => tile.textContent)).toEqual([
+      'Not supplied',
+      'Not supplied',
+    ]);
     expect(Array.from(variants?.querySelectorAll('.pp-cap') ?? [], (cap) => cap.textContent)).toEqual(['Full color', 'Reversed', 'One-color black']);
     const shapes = Array.from(frame.querySelectorAll('[data-testid="brand-kit-symbol-shapes"] > div'));
     expect(shapes).toHaveLength(4);
@@ -26,7 +32,8 @@ describe('the Symbol & symbol in shape page', () => {
     expect(shapes[0].querySelector<HTMLElement>('.kp-shape')?.style.width).toBe('158px');
     expect(shapes[3].querySelector<HTMLElement>('.kp-shape')?.style.width).toBe('126px');
     expect(shapes[3].querySelector('.kp-shape-stage')?.classList.contains('kp-shape-stage--mist')).toBe(true);
-    expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] img')?.style.height).toBe('100px');
+    // The three-colour symbol is plated on the demo's dark stage, the plate fitted to the 100 px box: the mark at 50.
+    expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] img')?.style.height).toBe('50px');
     const ruleBlock = frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-rule"]');
     // The 8 px under the label comes from a grammar class: a Tailwind margin utility is beaten by the frame's reset (rv3 F7).
     expect(ruleBlock?.classList.contains('pp-body-gap-tight')).toBe(true);
@@ -35,6 +42,49 @@ describe('the Symbol & symbol in shape page', () => {
     expect(rule).toBe(
       'One X of padding from the symbol to the edge of the circle or rounded square, where X is the height of the symbol. Never put the symbol on the accent: accent colors are not logo colors, and white on Orange fails AA (2.8:1).'
     );
+  });
+
+  it('derives the reversed and one-colour variants by filter from a one-ink symbol, whatever the lockup is drawn in', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
+      ...view,
+      derivable: { lockup: false, symbol: true },
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
+    }));
+    const variants = frame.querySelector('[data-testid="brand-kit-symbol-variants"]');
+    expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['', 'brightness(0) invert(1)', 'brightness(0)']);
+    expect(variants?.querySelector('[data-testid="brand-kit-symbol-variant-missing"]')).toBeNull();
+  });
+
+  it('says "Not supplied" on the two variant tiles for a multi-colour symbol even when the lockup is one ink', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
+      ...view,
+      derivable: { lockup: true, symbol: false },
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
+    }));
+    const variants = frame.querySelector('[data-testid="brand-kit-symbol-variants"]');
+    expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['']);
+    expect(variants?.querySelectorAll('[data-testid="brand-kit-symbol-variant-missing"]')).toHaveLength(2);
+  });
+
+  it('fits a plated symbol inside its shape and stage: drawn + 2 × padding = the box the page sizes for the bare mark', async () => {
+    // A three-colour symbol cannot be reversed: on the dark shapes and the padding demo it sits on the white plate,
+    // fitted to the box (76 px sample → 38 drawn in 19 of white; 100 px demo → 50 in 25), never spilling out.
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
+      ...view,
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
+    }));
+    const plates = Array.from(
+      frame.querySelectorAll<HTMLElement>('[data-testid="brand-kit-symbol-shapes"] .pp-plate, [data-testid="brand-kit-symbol-padding"] .pp-plate')
+    );
+    expect(plates.length).toBeGreaterThan(0);
+    for (const plate of plates) {
+      const drawn = parseFloat(plate.querySelector<HTMLElement>('img')?.style.height ?? '');
+      const padding = parseFloat(plate.style.padding);
+      expect(padding).toBe(drawn / 2);
+      expect([76, 100]).toContain(drawn + 2 * padding);
+    }
+    expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] .pp-plate img')?.style.height).toBe('50px');
+    expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] .pp-plate')?.style.padding).toBe('25px');
   });
 
   it('keeps the rule without the AA figure when white reads on the accent', async () => {

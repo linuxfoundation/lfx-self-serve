@@ -14,8 +14,8 @@ import {
   MKTG_PRINT_INK_ON_LIGHT,
   MKTG_PRINT_LF_LOOK,
   MKTG_PRINT_REVERSED_FILTER,
-  mktgPrintJoin,
 } from '../constants/mktg-print.constants';
+import { mktgPrintJoin } from './mktg-print-text.utils';
 import { MKTG_READABLE_SOURCE } from '../constants/mktg-readable-source.constants';
 import { BrandKitLogoRef, BrandKitRevision } from '../interfaces/brand-kit.interface';
 import { FoundationMessageContent, FoundationMessageReport } from '../interfaces/foundation-message.interface';
@@ -24,16 +24,17 @@ import {
   buildFaqPrintView,
   buildFoundationMessagePrintView,
   foundationMessagePrintAnchorIntro,
+  foundationMessagePrintIcpPageIntro,
   foundationMessagePrintMatrix,
   foundationMessagePrintNumbers,
-  foundationMessagePrintSections,
   foundationMessagePrintReportText,
   foundationMessagePrintSourceLabel,
-  mktgPrintApprovedDate,
+  foundationMessagePrintSourceRows,
   mktgPrintBrand,
   mktgPrintDocumentTitle,
   mktgPrintIsWebKit,
 } from './mktg-print.utils';
+import { brandKitPortraitDate } from './brand-kit-portrait.utils';
 import boilerplatesEnvelope from './__fixtures__/boilerplates.envelope.json';
 import faqEnvelope from './__fixtures__/faq-envelope.json';
 import { brandKitLogolessFixture } from './__fixtures__/brand-kit-revision.fixture';
@@ -210,6 +211,10 @@ describe('the print’s brand', () => {
 
   it('draws the primary lockup white on the cover when there is no reversed artwork, and leaves out a logo it cannot draw', () => {
     expect(mktgPrintBrand(kitWith({ primary: { ref: 'orbit.svg', svg: SVG } })).logoOnDark?.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+    // A multi-colour primary is never filtered (it would flatten to one shape): the dark ground draws it in full colour.
+    const twoColours =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><rect fill="#1D4ED8" width="3" height="3"/><rect fill="#111827" x="4" width="6" height="3"/></svg>';
+    expect(mktgPrintBrand(kitWith({ primary: { ref: 'orbit.svg', svg: twoColours } })).logoOnDark?.filter).toBe('');
     // A PNG the envelope carries no bytes for, or the kit's placeholder marks: no logo rather than a broken image.
     const png = mktgPrintBrand(kitWith({ primary: { ref: 'orbit.png', svg: null } }));
     expect([png.logoOnDark, png.logoOnLight]).toEqual([null, null]);
@@ -247,13 +252,6 @@ describe('the print’s brand', () => {
 });
 
 describe('the framework’s print', () => {
-  it('holds the framework and the key numbers — never the hidden ICPs and message house, nor the run’s sources and gaps', () => {
-    expect(foundationMessagePrintSections()).toEqual([
-      { id: 'framework', number: '01', title: 'Framework' },
-      { id: 'numbers', number: '02', title: 'Key numbers' },
-    ]);
-  });
-
   it('says what the screen says: the project, the version on the page, the approval’s date, the run’s report and read date, the framework’s own rows', () => {
     const report: FoundationMessageReport = { sources_read: ['Website: https://orbit.example.org'], sources_failed: [], gaps: ['A gap.'], notes: 'A note.' };
     const view = buildFoundationMessagePrintView(CONTENT, ' TestOrbit ', 4, null, '2026-11-06T23:30:00Z', report, '2026-11-04');
@@ -269,6 +267,13 @@ describe('the framework’s print', () => {
     expect(view.icps[0].goalTitles).toEqual(['Adoption']);
     expect(view.icps[0].goalChips).toEqual(['Goal 1']);
     expect([view.goals[0].segmentLabel, view.icps[0].goalLabel, view.icps[0].channelsLabel]).toEqual(['End users', 'Adoption', 'Docs']);
+    // A continuation page's intro counts its cards: one card is "Profile N of M", a pair "Profiles N–M of T".
+    expect(foundationMessagePrintIcpPageIntro(3, 2, 10)).toBe('Profiles 3–4 of 10.');
+    expect(foundationMessagePrintIcpPageIntro(2, 1, 10)).toBe('Profile 2 of 10.');
+    // A persona prints as one joined line, so an empty part leaves no trailing dot.
+    expect(view.icps[0].personaLines).toEqual(['SRE · uptime']);
+    const bare = buildFoundationMessagePrintView({ ...CONTENT, icp: [{ ...CONTENT.icp[0], personas: [['SRE', ' ']] }] }, 'TestOrbit', 1, null);
+    expect(bare.icps[0].personaLines).toEqual(['SRE']);
     expect(view.avoidRows).toEqual([{ avoid: 'synergy', instead: 'working together' }]);
     expect(view.numbers).toEqual([{ number: '1,200', label: 'members', source: 'Website' }]);
     expect(view.audiences).toEqual([{ name: 'End users', lead: 'Ship with confidence.' }]);
@@ -282,14 +287,19 @@ describe('the framework’s print', () => {
     expect(withKit.brand.source).toBe('kit');
   });
 
-  it('dates the approval and the read as the deck does, in UTC, and leaves a date out when there is none or it cannot be read', () => {
-    expect(mktgPrintApprovedDate('2026-11-06T23:30:00Z')).toBe('6 Nov 2026');
-    expect(mktgPrintApprovedDate('2026-01-01T00:00:00Z')).toBe('1 Jan 2026');
-    expect(mktgPrintApprovedDate('2026-11-04')).toBe('4 Nov 2026');
-    expect(mktgPrintApprovedDate(null)).toBe('');
-    expect(mktgPrintApprovedDate('not a date')).toBe('');
+  it('dates the approval and the read as the brand kit’s book does (one shared date rule, UTC), and leaves a date out when there is none or it cannot be read', () => {
+    const dated = (approvedAt: string | null, dateRead: string | null) =>
+      buildFoundationMessagePrintView(CONTENT, 'TestOrbit', 1, null, approvedAt, null, dateRead);
+    expect(dated('2026-11-06T23:30:00Z', '2026-11-04')).toMatchObject({
+      dateLabel: '6 Nov 2026',
+      dateReadLabel: '4 Nov 2026',
+      approvedLabel: 'Approved 6 Nov 2026',
+    });
+    expect(dated('2026-01-01T00:00:00Z', null)).toMatchObject({ dateLabel: '1 Jan 2026', dateReadLabel: '' });
+    expect(dated(null, 'not a date')).toMatchObject({ dateLabel: '', dateReadLabel: '', approvedLabel: '' });
+    expect(dated('2026-11-06T23:30:00Z', null).dateLabel).toBe(brandKitPortraitDate('2026-11-06T23:30:00Z'));
     // Every month, in UTC, the day without a leading zero: no locale call, so the same in every runtime.
-    expect(Array.from({ length: 12 }, (_, month) => mktgPrintApprovedDate(`2026-${String(month + 1).padStart(2, '0')}-09T12:00:00Z`))).toEqual([
+    expect(Array.from({ length: 12 }, (_, month) => dated(`2026-${String(month + 1).padStart(2, '0')}-09T12:00:00Z`, null).dateLabel)).toEqual([
       '9 Jan 2026',
       '9 Feb 2026',
       '9 Mar 2026',
@@ -308,14 +318,43 @@ describe('the framework’s print', () => {
   it('names a read source as the run stored it, with only its type prefix taken off', () => {
     // A URL as its address (the grammar's readable name: no scheme, no www., no query), a remark after it kept.
     expect(foundationMessagePrintSourceLabel('Website: https://orbit.example.org')).toBe('orbit.example.org');
-    expect(foundationMessagePrintSourceLabel('Website: https://www.orbit.example.org/ (home)')).toBe('orbit.example.org (home)');
-    expect(foundationMessagePrintSourceLabel('Link: https://orbit.example.org/about?utm=x')).toBe('orbit.example.org/about');
-    expect(foundationMessagePrintSourceLabel('Link: https://github.com/orbit (org page and repos API)')).toBe('github.com/orbit (org page and repos API)');
-    // A press release as the mock names it: "The press release" with the site's press address, never the headline's slug.
+    // Never a path (the editor's rule): the host, with the record's own remark after the dot when it wrote one; no word invented for a title.
+    expect(foundationMessagePrintSourceLabel('Website: https://www.orbit.example.org/ (home)')).toBe('orbit.example.org · home');
+    expect(foundationMessagePrintSourceLabel('Link: https://orbit.example.org/about?utm=x')).toBe('orbit.example.org');
+    expect(foundationMessagePrintSourceLabel('Link: https://github.com/orbit (org page and repos API)')).toBe('github.com · org page and repos API');
+    expect(foundationMessagePrintSourceLabel('orbit.example.org/md/about')).toBe('orbit.example.org');
+    expect(foundationMessagePrintSourceLabel('docs.orbit.example.org')).toBe('docs.orbit.example.org');
+    expect(foundationMessagePrintSourceLabel('orbit.example.org (home)')).toBe('orbit.example.org · home');
+    // A bare file name, an archive member or a hashed name is never an address: the grammar's words (the editor's "never a hashed
+    // file name"); a dotted name followed by words is a phrase, as written.
+    expect(foundationMessagePrintSourceLabel('a1b2c3d4e5f6a7b8c9d0.svg')).toBe(MKTG_READABLE_SOURCE.uploadedFiles);
+    expect(foundationMessagePrintSourceLabel('Link: brand-guide.pdf')).toBe(MKTG_READABLE_SOURCE.uploadedFiles);
+    expect(foundationMessagePrintSourceLabel('brand.zip/logo.svg')).toBe(MKTG_READABLE_SOURCE.uploadedPackage);
+    expect(foundationMessagePrintSourceLabel('logo.svg')).toBe(MKTG_READABLE_SOURCE.uploadedFiles);
+    expect(foundationMessagePrintSourceLabel('Node.js docs')).toBe('Node.js docs');
+    expect(foundationMessagePrintSourceRows(['logo.svg', 'a1b2c3d4e5f6a7b8c9d0.svg'])).toEqual([
+      MKTG_READABLE_SOURCE.uploadedFiles,
+      MKTG_READABLE_SOURCE.uploadedFiles,
+    ]);
+    // A press release as the mock names it, "The press release" with the site's host (its press path goes with every other path).
     expect(foundationMessagePrintSourceLabel('Press release: https://www.linuxfoundation.org/press/linux-foundation-announces-orbit')).toBe(
-      'The press release (linuxfoundation.org/press)'
+      'The press release (linuxfoundation.org)'
     );
     expect(foundationMessagePrintSourceLabel('Press release: https://orbit.example.org')).toBe('The press release (orbit.example.org)');
+    // The Read list's rows: the pages of one host gathered into one counted row, in the first one's place; a lone page keeps its remark.
+    expect(
+      foundationMessagePrintSourceRows([
+        'Website: https://orbit.example.org (home)',
+        'Website: https://orbit.example.org/md/about',
+        'Link: https://github.com/orbit (org page and repos API)',
+        'Website: https://orbit.example.org/md/members',
+        'LFX record orbit and standard metrics',
+        'LFX Insights: members',
+      ])
+    ).toEqual(['orbit.example.org · 3 pages', 'github.com · org page and repos API', MKTG_READABLE_SOURCE.lfxRecord, 'LFX Insights: members']);
+    expect(foundationMessagePrintSourceRows(['Docs', 'Docs'])).toEqual(['Docs', 'Docs']);
+    for (const row of foundationMessagePrintSourceRows(['Website: https://a.example.org/x/y', 'Link: https://b.example.org/z (notes)']))
+      expect(row).not.toContain('/');
     // The LFX record by the grammar's name, never its slug; an image URL as the grammar's words.
     expect(foundationMessagePrintSourceLabel('LFX record agentic-ai-foundation and standard metrics')).toBe(MKTG_READABLE_SOURCE.lfxRecord);
     expect(foundationMessagePrintSourceLabel('Link: https://cdn.example.org/a1b2c3d4e5f6a7b8.svg')).toBe(MKTG_READABLE_SOURCE.linkedImage);
@@ -406,6 +445,12 @@ describe('the framework’s print', () => {
       facts
     );
     expect(numbers.map((row) => row.source)).toEqual(['LFX field', 'Press release', 'LFX field', 'LFX field', '', '', '', '', 'Website']);
+    // A figure prints with its thousands separators (the editor's rule), and a fact that states it either way names its source.
+    expect(foundationMessagePrintNumbers([{ number: '4370', label: 'registrations, stored without the separator' }], facts)).toEqual([
+      { number: '4,370', label: 'registrations, stored without the separator', source: '' },
+    ]);
+    expect(foundationMessagePrintNumbers([{ number: '10000+', label: 'servers' }], facts)[0]).toMatchObject({ number: '10,000+', source: 'Press release' });
+    expect(foundationMessagePrintNumbers([{ number: '96%', label: 'a share' }], [])[0].number).toBe('96%');
     // The stored record's key numbers carry no source of their own: the view's come from the facts, never from the pair.
     expect(buildFoundationMessagePrintView({ ...CONTENT, nums: [['7', 'wonders']] }, 'TestOrbit', 1, null).numbers).toEqual([
       { number: '7', label: 'wonders', source: '' },

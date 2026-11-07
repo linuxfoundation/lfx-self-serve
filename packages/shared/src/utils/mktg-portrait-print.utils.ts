@@ -9,19 +9,31 @@
 
 import {
   MKTG_PORTRAIT_CAPS_TRACKING_EM,
+  MKTG_PORTRAIT_COVER_STRIP,
+  MKTG_PORTRAIT_CUT_STOP_WORDS,
   MKTG_PORTRAIT_FAMILY_WIDTH,
   MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT,
   MKTG_PORTRAIT_FIT,
-  MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
   MKTG_PORTRAIT_GLYPH_WIDTHS,
+  MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
   MKTG_PORTRAIT_HEX_REGEX,
   MKTG_PORTRAIT_INKS,
+  MKTG_PORTRAIT_MORE_LINE,
   MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
+  MKTG_PORTRAIT_PLATE,
   MKTG_PORTRAIT_WEIGHT_WIDTH,
 } from '../constants/mktg-portrait-print.constants';
 import type { MktgPrintBrand } from '../interfaces/mktg-print.interface';
-import type { MktgPortraitFitBlock, MktgPortraitFitPara, MktgPortraitFitResult, MktgPortraitLook } from '../interfaces/mktg-portrait-print.interface';
-import { brandKitContrastRatio, brandKitInkOnAccent, brandKitLuminance } from './brand-kit-book.utils';
+import type {
+  MktgPortraitFitBlock,
+  MktgPortraitFitPara,
+  MktgPortraitFitResult,
+  MktgPortraitLook,
+  MktgPortraitCoverStrip,
+  MktgPortraitNoun,
+} from '../interfaces/mktg-portrait-print.interface';
+import { BRAND_KIT_CONTRAST_AA } from '../constants/brand-kit.constants';
+import { brandKitBestInkOn, brandKitContrastRatio, brandKitInkOnAccent, brandKitLuminance } from './brand-kit-book.utils';
 
 /**
  * The look of a portrait document from the print's brand: the kit's dark
@@ -48,9 +60,115 @@ export function mktgPortraitLook(brand: MktgPrintBrand, spark: string | null = n
  */
 export function mktgNoWidow(text: string): string {
   const trimmed = text.trim();
-  const at = trimmed.search(/\s+\S+$/);
-  if (at <= 0) return trimmed;
-  return `${trimmed.slice(0, at)}\u00a0${trimmed.slice(at).trimStart()}`;
+  // One backward walk (no regex over the input): past the last word, then past the gap before it.
+  let wordStart = trimmed.length;
+  while (wordStart > 0 && !isWhitespace(trimmed[wordStart - 1])) wordStart -= 1;
+  let gapStart = wordStart;
+  while (gapStart > 0 && isWhitespace(trimmed[gapStart - 1])) gapStart -= 1;
+  if (gapStart === 0) return trimmed;
+  return `${trimmed.slice(0, gapStart)}\u00a0${trimmed.slice(wordStart)}`;
+}
+
+/**
+ * The white plate's padding for artwork drawn at `height` px: half the
+ * drawn height (`MKTG_PORTRAIT_PLATE.paddingOfHeight`), so a cover's 84 px
+ * lockup sits in 42 px of white.
+ */
+export function mktgPortraitPlatePadding(height: number): number {
+  return height * MKTG_PORTRAIT_PLATE.paddingOfHeight;
+}
+
+/**
+ * Plated artwork fitted to a box of `box` px (a tile, a sample circle, a
+ * stage): the drawn height and the padding such that drawn + 2 × padding =
+ * box, the padding still half the drawn height. A 40 px tile draws the mark
+ * at 20 px in 10 px of white; nothing spills out of its container.
+ */
+export function mktgPortraitPlateFit(box: number): { height: number; padding: number } {
+  const height = box / (1 + 2 * MKTG_PORTRAIT_PLATE.paddingOfHeight);
+  return { height, padding: mktgPortraitPlatePadding(height) };
+}
+
+/**
+ * A name kept on one line: each run of spaces inside `text` set as one
+ * no-break space ("Agentic AI Foundation" never breaks after "Agentic").
+ * `mktgNoWidow` reads the no-break spaces as gaps too, so a headline ending
+ * in such a name breaks before the whole name, never inside it.
+ */
+export function mktgNoBreak(text: string): string {
+  const trimmed = text.trim();
+  let out = '';
+  let inGap = false;
+  for (const char of trimmed) {
+    if (isWhitespace(char)) {
+      if (!inGap) out += '\u00a0';
+      inGap = true;
+    } else {
+      out += char;
+      inGap = false;
+    }
+  }
+  return out;
+}
+
+/**
+ * `text` with every occurrence of `name` kept on one line (`mktgNoBreak`); as
+ * it is when the name has no space, or, given the `line` it is set on, when
+ * the name alone does not fit one line of it (a name kept together there
+ * would overflow the card, "Cloud Native Computing Foundatio": it wraps as
+ * plain words instead).
+ */
+export function mktgKeepName(text: string, name: string, line?: { width: number; size: number } & Pick<MktgPortraitFitPara, 'weight' | 'family'>): string {
+  const trimmedName = name.trim();
+  if (!trimmedName || !/\s/.test(trimmedName) || !text.includes(trimmedName)) return text;
+  if (line && !mktgPortraitLineFits(trimmedName, line.width, line.size, { weight: line.weight, family: line.family })) return text;
+  return text.split(trimmedName).join(mktgNoBreak(trimmedName));
+}
+
+/**
+ * Whether `text` already says `phrase`, read as words (case folded, punctuation
+ * and separators ignored): "Full color · on white" says "on white", so a
+ * caption or a lead built from a record's name and its ground prints the
+ * ground once, not "on white · on white".
+ */
+export function mktgPortraitSaysAlready(text: string, phrase: string): boolean {
+  const words = (value: string): string =>
+    ` ${value
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim()} `;
+  const said = words(phrase);
+  return said.trim() !== '' && words(text).includes(said);
+}
+
+/** The clause to print after `text`: `leadIn` and `tail` (" · ", "on white"), or '' when the text already says the tail. */
+export function mktgPortraitTailFor(text: string, leadIn: string, tail: string): string {
+  return mktgPortraitSaysAlready(text, tail) ? '' : `${leadIn}${tail}`;
+}
+
+/** `text` with its clause (`mktgPortraitTailFor`): "Full color · on white" stays as it is, "Reversed" becomes "Reversed · on Charcoal". */
+export function mktgPortraitWithTail(text: string, leadIn: string, tail: string): string {
+  return `${text}${mktgPortraitTailFor(text, leadIn, tail)}`;
+}
+
+/** One character's whitespace test, as `\s` reads it (a trimmed string has none at its ends). */
+function isWhitespace(char: string): boolean {
+  return char.trim() === '';
+}
+
+/**
+ * The line a bounded list prints for the items its room does not hold:
+ * `+1 more rule, in LFX One`, `+3 more rules, in LFX One`; '' at none. The
+ * fit models measure this same string.
+ */
+export function mktgPortraitMoreLine(count: number, noun: MktgPortraitNoun): string {
+  if (count <= 0) return '';
+  return `+${count} more ${count === 1 ? noun.one : noun.many}${MKTG_PORTRAIT_MORE_LINE.suffix}`;
+}
+
+/** A count with its noun, singular at one: `1 weight`, `3 weights` (`MKTG_PORTRAIT_MORE_LINE.nouns`). */
+export function mktgPortraitCount(count: number, noun: MktgPortraitNoun): string {
+  return `${count} ${count === 1 ? noun.one : noun.many}`;
 }
 
 /** The footer's page number: `03`. */
@@ -146,7 +264,7 @@ export function mktgPortraitWrapLines(text: string, max: number): number {
 
 /** The height of one paragraph in a column `width` px wide, its space above included. */
 export function mktgPortraitParaHeight(para: MktgPortraitFitPara, width: number): number {
-  const lines = mktgPortraitWrapLines(para.text, mktgPortraitCharsPerLine(width, para.size, para));
+  const lines = mktgPortraitWrapLines(para.text, mktgPortraitCharsPerLine(Math.max(1, width - (para.indent ?? 0)), para.size, para));
   return (para.above ?? 0) + lines * para.size * para.line;
 }
 
@@ -186,13 +304,43 @@ export function mktgPortraitCutText(text: string, max: number): string {
     out = next;
   }
   if (out !== '') return out;
-  out = '';
+  const words: string[] = [];
+  let length = 0;
   for (const word of text.split(/\s+/)) {
-    const next = out ? `${out} ${word}` : word;
-    if (next.length + 1 > max) break;
-    out = next;
+    const next = length === 0 ? word.length : length + 1 + word.length;
+    if (next + 1 > max) break;
+    words.push(word);
+    length = next;
   }
-  return `${mktgPortraitTrimTail(out || text.slice(0, Math.max(1, max - 1)))}…`;
+  const kept = mktgPortraitTrimStopWords(words).join(' ');
+  return `${mktgPortraitTrimTail(kept || text.slice(0, Math.max(1, max - 1)))}…`;
+}
+
+/**
+ * The words of a cut without the function words it would end on ("… goes
+ * first and" → "… goes first"), the first word always kept; a word is read
+ * without its trailing punctuation and case.
+ */
+export function mktgPortraitTrimStopWords(words: readonly string[]): string[] {
+  let end = words.length;
+  while (end > 1 && MKTG_PORTRAIT_CUT_STOP_WORDS.has(mktgPortraitTrimTail(words[end - 1]).toLowerCase())) end -= 1;
+  return words.slice(0, end);
+}
+
+/**
+ * The largest count in `[1, max]` for which `fits(count)` holds, by bisection
+ * (`fits` is monotone: a longer prefix is wider); 1 when none does. The word
+ * cuts measure O(log n) prefixes of a long line instead of every one.
+ */
+export function mktgPortraitLargestFitting(max: number, fits: (count: number) => boolean): number {
+  let low = 1;
+  let high = max;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (fits(middle)) low = middle;
+    else high = middle - 1;
+  }
+  return low;
 }
 
 /** The characters an ellipsis replaces at the end of a cut: spaces and the punctuation a cut sentence or word leaves behind. */
@@ -236,6 +384,59 @@ export function mktgPortraitFitBlock(block: MktgPortraitFitBlock, width: number,
   return { block: current, scale: minScale, cut: true };
 }
 
+/**
+ * The cover strip's halves on one line: as written when both fit the width
+ * with the gap between them; else the left half first drops its segments
+ * after the project's name, last first ("· A Linux Foundation project" goes,
+ * the name keeps whole; the right half's host, version and date are data and
+ * stay); then the longer half loses words from its first segment (the
+ * project name, or the host) with an ellipsis until both fit, then the other
+ * half the same way; when one word each still does not fit, both halves print
+ * whole and the strip wraps (`wraps`), the cover moving it up one line. The
+ * size never changes.
+ */
+export function mktgPortraitCoverStrip(left: string, right: string, width: number, family?: string): MktgPortraitCoverStrip {
+  const c = MKTG_PORTRAIT_COVER_STRIP;
+  const para = { caps: true, tracking: c.tracking, family };
+  const fits = (first: string, second: string): boolean =>
+    mktgPortraitTextWidth(first, c.size, para) + c.gap + mktgPortraitTextWidth(second, c.size, para) <= width + 0.01;
+  if (fits(left, right)) return { left, right, wraps: false };
+  // The left half gives up its segments after the name, last first, before a word of the name or the host is touched.
+  const segments = left.split(c.separator);
+  for (let keep = segments.length - 1; keep >= 1; keep--) {
+    const fewer = segments.slice(0, keep).join(c.separator);
+    if (fits(fewer, right)) return { left: fewer, right, wraps: false };
+  }
+  const shortened = mktgPortraitCoverStripShortened(segments[0], right, width, family);
+  return shortened.wraps ? { left, right, wraps: true } : shortened;
+}
+
+/** The strip once a half is down to its first segment: words come off the longer half, then the other, else it wraps. */
+function mktgPortraitCoverStripShortened(left: string, right: string, width: number, family?: string): MktgPortraitCoverStrip {
+  const c = MKTG_PORTRAIT_COVER_STRIP;
+  const para = { caps: true, tracking: c.tracking, family };
+  const fits = (first: string, second: string): boolean =>
+    mktgPortraitTextWidth(first, c.size, para) + c.gap + mktgPortraitTextWidth(second, c.size, para) <= width + 0.01;
+  if (fits(left, right)) return { left, right, wraps: false };
+  const shortened = (half: string, count: number): string => {
+    const [head, ...rest] = half.split(c.separator);
+    const words = head.split(' ');
+    const kept = count >= words.length ? head : `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(words.slice(0, count)).join(' '))}…`;
+    return [kept, ...rest].join(c.separator);
+  };
+  const wordsOf = (half: string): number => half.split(c.separator)[0].split(' ').length;
+  const longerFirst = mktgPortraitTextWidth(left, c.size, para) >= mktgPortraitTextWidth(right, c.size, para);
+  const [longer, shorter] = longerFirst ? [left, right] : [right, left];
+  const pair = (first: string, second: string): MktgPortraitCoverStrip =>
+    longerFirst ? { left: first, right: second, wraps: false } : { left: second, right: first, wraps: false };
+  const longerCount = mktgPortraitLargestFitting(wordsOf(longer) - 1, (count) => fits(shortened(longer, count), shorter));
+  if (fits(shortened(longer, longerCount), shorter)) return pair(shortened(longer, longerCount), shorter);
+  const least = shortened(longer, 1);
+  const shorterCount = mktgPortraitLargestFitting(wordsOf(shorter) - 1, (count) => fits(least, shortened(shorter, count)));
+  if (fits(least, shortened(shorter, shorterCount))) return pair(least, shortened(shorter, shorterCount));
+  return { left, right, wraps: true };
+}
+
 /** A text cut to fit one line `width` px wide at `size` px (unchanged when it already fits). */
 export function mktgPortraitOneLine(text: string, width: number, size: number, para: Pick<MktgPortraitFitPara, 'weight' | 'caps'> = {}): string {
   const max = mktgPortraitCharsPerLine(width, size, para);
@@ -261,8 +462,15 @@ export function mktgPortraitPaginate<T>(items: readonly T[], fitsPage: (page: T[
 
 // ---------- the text accent ----------
 
-/** WCAG 1.4.3's threshold for ordinary text, the ratio `mktgPortraitAccentText` reaches. */
-export const MKTG_PORTRAIT_TEXT_CONTRAST = 4.5;
+/**
+ * The accent as TEXT on the dark ground: the accent itself where it reaches WCAG AA there (≥ 4.5:1), else the ink on
+ * the dark (white), so a back cover never sets its brand line in an orange its own matrix grades as failing on the
+ * charcoal. Bound on every frame as `--pp-accent-on-dark`; anything that is not a six-digit hex is returned as it is.
+ */
+export function mktgPortraitAccentOnDark(look: Pick<MktgPortraitLook, 'accent' | 'dark' | 'onDark'>): string {
+  if (!MKTG_PORTRAIT_HEX_REGEX.test(look.accent) || !MKTG_PORTRAIT_HEX_REGEX.test(look.dark)) return look.accent;
+  return brandKitBestInkOn(look.dark, [{ name: 'Accent', hex: look.accent }]).readable ? look.accent : look.onDark;
+}
 
 /**
  * The accent as TEXT on a light page: the kit's accent darkened, in OKLab (lightness alone, the hue and chroma kept as
@@ -274,7 +482,7 @@ export const MKTG_PORTRAIT_TEXT_CONTRAST = 4.5;
 export function mktgPortraitAccentText(accent: string, paper: string = MKTG_PORTRAIT_INKS.white): string {
   if (!MKTG_PORTRAIT_HEX_REGEX.test(accent) || !MKTG_PORTRAIT_HEX_REGEX.test(paper)) return accent;
   const paperLuminance = brandKitLuminance(paper);
-  const reads = (hex: string): boolean => brandKitContrastRatio(paperLuminance, brandKitLuminance(hex)) >= MKTG_PORTRAIT_TEXT_CONTRAST;
+  const reads = (hex: string): boolean => brandKitContrastRatio(paperLuminance, brandKitLuminance(hex)) >= BRAND_KIT_CONTRAST_AA;
   if (reads(accent)) return accent;
   const [lightness, a, b] = mktgPortraitOklab(accent);
   for (let l = lightness - 0.005; l > 0; l -= 0.005) {

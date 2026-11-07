@@ -11,6 +11,9 @@ import {
   BRAND_KIT_BACK_COVER_NOTICE,
   BRAND_KIT_BOOK_PAGES,
   BRAND_KIT_CHAPTERS,
+  BRAND_KIT_CONTRAST_AA,
+  BRAND_KIT_CONTRAST_AAA,
+  BRAND_KIT_CONTRAST_LARGE_TEXT,
   BRAND_KIT_LABEL_MIN_CONTRAST,
   BRAND_KIT_TYPE_SPECIMEN,
   BRAND_KIT_WEIGHT_NAMES,
@@ -18,14 +21,19 @@ import {
 import { MKTG_PRINT_REVERSED_FILTER } from '../constants/mktg-print.constants';
 import {
   BrandKitBookView,
+  BrandKitChapters,
   BrandKitChapterSummary,
   BrandKitColorwayTile,
+  BrandKitContrastGrade,
+  BrandKitDerivable,
   BrandKitContrastView,
+  BrandKitInkCandidate,
   BrandKitLogoImage,
   BrandKitLogoSlot,
   BrandKitPaletteCard,
   BrandKitPaletteEntry,
   BrandKitRevision,
+  BrandKitTextInk,
   BrandKitTypeScaleView,
   BrandKitUsageView,
   BrandKitWatchoutView,
@@ -40,11 +48,13 @@ import {
   brandKitLogoImage,
   brandKitMonthYear,
   brandKitPageNumber,
+  brandKitSvgIsMonochrome,
   brandKitSymbolImage,
   brandKitWebsiteHost,
   brandKitWeights,
 } from './brand-kit.utils';
 import { brandKitIconColours } from './brand-kit-icons.utils';
+import { mktgPortraitMeasure } from './mktg-measure.utils';
 
 /** A letter page is 11 in wide: 1056 px at 96 dpi, which is what the type scale's px sizes are drawn against. */
 const PAGE_WIDTH_PX = 1056;
@@ -83,6 +93,28 @@ export function brandKitLabelInk(hex: string, dark: string): string {
 }
 
 /**
+ * The text ink for a ground, from named candidates (white and the kit's
+ * palette, say): the one with the highest WCAG contrast there, `readable`
+ * when it reaches AA (4.5:1, normal text). One rule for every sample a book
+ * sets on a colour, so a print never draws a pairing its own contrast table
+ * grades as failing, and never claims one. The first of equal ratios wins,
+ * so white, named first, is preferred where it reads as well.
+ */
+export function brandKitBestInkOn(ground: string, candidates: readonly BrandKitInkCandidate[]): BrandKitTextInk {
+  const groundLuminance = brandKitLuminance(ground);
+  let best: BrandKitTextInk = { name: 'Black', hex: '#000000', ratio: brandKitContrastRatio(groundLuminance, 0), readable: false };
+  let found = false;
+  for (const candidate of candidates) {
+    const ratio = brandKitContrastRatio(groundLuminance, brandKitLuminance(candidate.hex));
+    if (!found || ratio > best.ratio) {
+      best = { ...candidate, ratio, readable: false };
+      found = true;
+    }
+  }
+  return { ...best, readable: best.ratio >= BRAND_KIT_LABEL_MIN_CONTRAST };
+}
+
+/**
  * The ink of text set on the kit's accent, as the upstream Brand Kit renderer
  * and the deck ink their Social card: white only when it reaches WCAG AA on
  * the accent (4.5:1, normal text), else the kit's dark. One rule for every
@@ -109,18 +141,42 @@ export function brandKitTint(dark: string): string {
  * reversed tile draws the supplied reversed artwork as it is; only without
  * one does it filter the primary lockup to white.
  */
-export function brandKitColorwayTiles(kit: BrandKitRevision, tint: string, logos: Record<BrandKitLogoSlot, BrandKitLogoImage | null>): BrandKitColorwayTile[] {
+export function brandKitColorwayTiles(
+  kit: BrandKitRevision,
+  tint: string,
+  logos: Record<BrandKitLogoSlot, BrandKitLogoImage | null>,
+  derivable: BrandKitDerivable = { lockup: true, symbol: true }
+): BrandKitColorwayTile[] {
   const primary = logos.primary;
-  const reversed = logos.reversed ? { logo: logos.reversed, logoFilter: '' } : { logo: primary, logoFilter: MKTG_PRINT_REVERSED_FILTER };
-  // The symbol is never the supplied reversed lockup, so it always takes the tile's own filter.
+  // A colorway the kit did not supply is derived from the primary only when that is one ink; else the tile says so.
+  const derived = (filter: string) =>
+    derivable.lockup ? { logo: primary, logoFilter: filter, missing: '' } : { logo: null, logoFilter: '', missing: BRAND_KIT_NOT_SUPPLIED };
+  const reversed = logos.reversed ? { logo: logos.reversed, logoFilter: '', missing: '' } : derived(MKTG_PRINT_REVERSED_FILTER);
+  // The symbol is never the supplied reversed lockup: it takes the tile's own filter when its own artwork is one ink.
+  const symbolFilter = (filter: string) => (derivable.symbol ? filter : '');
   const grounds = [
-    { ground: 'white', light: true, logo: primary, logoFilter: '', symbolFilter: '' },
-    { ground: kit.kit.dark, light: false, ...reversed, symbolFilter: MKTG_PRINT_REVERSED_FILTER },
-    { ground: tint, light: true, logo: primary, logoFilter: '', symbolFilter: '' },
-    { ground: 'white', light: true, logo: primary, logoFilter: 'brightness(0)', symbolFilter: 'brightness(0)' },
+    { ground: 'white', light: true, logo: primary, logoFilter: '', symbolFilter: '', missing: '' },
+    { ground: kit.kit.dark, light: false, ...reversed, symbolFilter: symbolFilter(MKTG_PRINT_REVERSED_FILTER) },
+    { ground: tint, light: true, logo: primary, logoFilter: '', symbolFilter: '', missing: '' },
+    { ground: 'white', light: true, ...derived('brightness(0)'), symbolFilter: symbolFilter('brightness(0)') },
   ];
   return kit.chapters.logo.colorways.map((colorway, index) => ({ name: colorway.name, ...(grounds[index] ?? grounds[0]) }));
 }
+
+/**
+ * Which slots the book may derive a reversed or one-colour mark from by
+ * filter: the lockup from the primary file, the symbol from its own file or,
+ * cropped, from the primary. Each only when that artwork is one resolvable
+ * ink with no background (`brandKitSvgIsMonochrome`); a PNG never is.
+ */
+export function brandKitDerivable(files: BrandKitChapters['logo']['files']): BrandKitDerivable {
+  const lockup = !!files.primary?.svg && brandKitSvgIsMonochrome(files.primary.svg);
+  const symbol = files.symbol ? !!files.symbol.svg && brandKitSvgIsMonochrome(files.symbol.svg) : lockup;
+  return { lockup, symbol };
+}
+
+/** The plain line of a logo slot the kit has no file for, in the files table and on a tile the book cannot derive. */
+export const BRAND_KIT_NOT_SUPPLIED = 'Not supplied';
 
 /** The six watchout tiles: the rule, the distortion each tile shows (`kind`) and the on-screen draw of it. */
 export function brandKitWatchoutTiles(kit: BrandKitRevision): BrandKitWatchoutView[] {
@@ -178,18 +234,38 @@ export function brandKitRatioLabel(ratio: number): string {
   return (Math.floor(ratio * 10 + 1e-9) / 10).toFixed(1);
 }
 
-/** The contrast table with the colours to draw each sample. */
+/** The grade of an unrounded contrast ratio, in the kit's own words: AAA from 7, AA from 4.5, large text only from 3, else a fail. */
+export function brandKitContrastGradeOf(ratio: number): BrandKitContrastGrade {
+  if (ratio >= BRAND_KIT_CONTRAST_AAA) return 'AAA';
+  if (ratio >= BRAND_KIT_CONTRAST_AA) return 'AA';
+  if (ratio >= BRAND_KIT_CONTRAST_LARGE_TEXT) return 'Large text only';
+  return 'Fails';
+}
+
+/**
+ * The contrast table with the colours to draw each sample. A pair of two
+ * palette colours takes its ratio and grade from the hex values, unrounded,
+ * as the book's matrix does (one source: the matrix once read Mid gray on
+ * White 4.5 where the record's pair said 4.6); a pair naming a colour the
+ * palette does not hold keeps the record's ratio and grade.
+ */
 export function brandKitContrastRows(kit: BrandKitRevision): BrandKitContrastView[] {
   const hexByName = new Map(kit.chapters.color.palette.map((entry) => [entry.name, entry.hex]));
-  return kit.chapters.color.contrast.pairs.map((pair) => ({
-    foreground: pair.foreground,
-    background: pair.background,
-    foregroundHex: hexByName.get(pair.foreground) ?? kit.kit.dark,
-    backgroundHex: hexByName.get(pair.background) ?? 'white',
-    ratio: `${brandKitRatioLabel(pair.ratio)}:1`,
-    grade: pair.grade,
-    passes: pair.grade === 'AAA' || pair.grade === 'AA',
-  }));
+  return kit.chapters.color.contrast.pairs.map((pair) => {
+    const foregroundHex = hexByName.get(pair.foreground);
+    const backgroundHex = hexByName.get(pair.background);
+    const measured = foregroundHex && backgroundHex ? brandKitContrastRatio(brandKitLuminance(backgroundHex), brandKitLuminance(foregroundHex)) : null;
+    const grade = measured === null ? pair.grade : brandKitContrastGradeOf(measured);
+    return {
+      foreground: pair.foreground,
+      background: pair.background,
+      foregroundHex: foregroundHex ?? kit.kit.dark,
+      backgroundHex: backgroundHex ?? 'white',
+      ratio: `${brandKitRatioLabel(measured ?? pair.ratio)}:1`,
+      grade,
+      passes: grade === 'AAA' || grade === 'AA',
+    };
+  });
 }
 
 /** The type scale rows with the CSS that draws them: sizes in page units, the line height as a ratio. */
@@ -217,11 +293,11 @@ export function brandKitUsageTiles(kit: BrandKitRevision): BrandKitUsageView[] {
 }
 
 /** Items in words: `a`, `a and b`, `a, b and c`. */
-/** Items in words: `a`, `a and b`, `a, b and c`. */
 export function brandKitInWords(items: readonly string[]): string {
   return inWords([...items]);
 }
 
+/** The items joined for reading, the last with "and" (an empty list is ''). */
 function inWords(items: string[]): string {
   if (items.length <= 1) {
     return items.join('');
@@ -298,6 +374,7 @@ export function buildBrandKitBookView(kit: BrandKitRevision, version?: number | 
     (Object.keys(kit.chapters.logo.files) as BrandKitLogoSlot[]).map((slot) => [slot, brandKitLogoImage(kit.chapters.logo.files[slot])])
   ) as BrandKitBookView['logos'];
   const monthYear = brandKitMonthYear(kit.generatedAt);
+  const derivable = brandKitDerivable(kit.chapters.logo.files);
   return {
     projectName: kit.projectName,
     projectCaps: kit.projectName.toUpperCase(),
@@ -320,14 +397,11 @@ export function buildBrandKitBookView(kit: BrandKitRevision, version?: number | 
     builtFrom: brandKitBuiltFrom(kit),
     logos,
     symbol: brandKitSymbolImage(kit.chapters.logo.files, kit.chapters.logo.symbol_viewbox),
+    derivable,
     placeholder: kit.chapters.logo.placeholder,
     logo: kit.chapters.logo,
-    colorways: brandKitColorwayTiles(kit, tint, logos),
-    minimumSizes: [
-      { label: '48 px', px: 48 },
-      { label: '40 px', px: 40 },
-      { label: `${kit.chapters.logo.minimum_size.screen_px} px`, px: kit.chapters.logo.minimum_size.screen_px },
-    ],
+    colorways: brandKitColorwayTiles(kit, tint, logos, derivable),
+    minimumSizes: [48, 40, kit.chapters.logo.minimum_size.screen_px].map((px) => ({ label: mktgPortraitMeasure(px, 'px'), px })),
     watchouts: brandKitWatchoutTiles(kit),
     color: kit.chapters.color,
     palette: brandKitPaletteCards(kit),

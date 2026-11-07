@@ -54,25 +54,32 @@
               </p>
             }
           </div>
-          <div [lfxPpRect]="[page.margin, 470, page.contentWidth]">
+          <div [lfxPpRect]="[page.margin, tops.coverTitle, page.contentWidth]">
             <h1 class="fwp-cover-title" data-testid="mktg-framework-print-title">{{ v.title }}</h1>
             @if (coverVersionLine(); as edition) {
               <p class="fwp-cover-edition" data-testid="mktg-framework-print-version">{{ edition }}</p>
             }
           </div>
-          <div [lfxPpRect]="[page.margin, 620, page.contentWidth]">
+          <div [lfxPpRect]="[page.margin, tops.coverContents, page.contentWidth]">
             <span class="pp-lab pp-lab--dark">Contents</span>
-            <!-- Each row's page number once, as the "02" leader the design draws (the editor's read, 7 Nov: no trailing duplicate). -->
-            <ol class="fwp-contents" data-testid="mktg-framework-print-contents">
-              @for (entry of frame.contents; track entry.id) {
-                <li class="fwp-contents-row">
-                  <span class="fwp-contents-number">{{ entry.numberLabel }}</span>
-                  <span>{{ entry.title }}</span>
-                </li>
-              }
-            </ol>
+            <!-- Each row's page number once, as the "02" leader the design draws (the editor's read, 7 Nov: no trailing duplicate). The list is bounded
+                 above the strip (frameworkPortraitContents): tightened when the plan runs long, its runs collapsed to one row with a page range past that. -->
+            @if (frame.contents; as contents) {
+              <ol
+                class="fwp-contents"
+                [class.fwp-contents--tight]="contents.tight"
+                [attr.data-collapsed]="contents.collapsed ? 'true' : null"
+                data-testid="mktg-framework-print-contents">
+                @for (entry of contents.rows; track entry.id) {
+                  <li class="fwp-contents-row" data-testid="mktg-framework-print-contents-row">
+                    <span class="fwp-contents-number">{{ entry.numberLabel }}</span>
+                    <span class="fwp-contents-title">{{ entry.title }}</span>
+                  </li>
+                }
+              </ol>
+            }
           </div>
-          <div class="fwp-cover-strip" [lfxPpRect]="[page.margin, 984, page.contentWidth]" data-testid="mktg-framework-print-cover-strip">
+          <div class="fwp-cover-strip" [lfxPpRect]="[page.margin, tops.coverStrip, page.contentWidth]" data-testid="mktg-framework-print-cover-strip">
             <span>{{ pageBook.footLeft }}</span>
             <span>{{ coverStripRight() }}</span>
           </div>
@@ -114,62 +121,78 @@
               }
             </div>
           }
-          <div
-            class="fwp-matrix"
-            [lfxPpRect]="[page.margin, tops.matrix, page.contentWidth]"
-            [style.--fwp-goal-count]="v.goals.length"
-            data-testid="mktg-framework-print-goals">
-            <div class="fwp-matrix-row fwp-matrix-head">
-              <div></div>
-              @for (goal of v.goals; track goal.id) {
-                <div>
-                  <span class="pp-lab">Goal {{ goal.n }}</span>
-                  <span class="fwp-matrix-goal">{{ goal.t }}</span>
+          <div class="fwp-matrix" [lfxPpRect]="[page.margin, tops.matrix, page.contentWidth]" data-testid="mktg-framework-print-goals">
+            <!-- The goals in one strip, or in bands of the board's four columns where the strip's columns cannot hold the titles (frameworkPortraitMatrix). -->
+            @for (band of frame.matrixBands; track band.offset) {
+              <div class="fwp-matrix-band" [style.--fwp-goal-count]="band.columns" [attr.data-testid]="'mktg-framework-print-goals-band-' + $index">
+                <!-- The head row's titles at the one size the layout set them, wrapped to the board's two lines and cut at a word past them. -->
+                <div class="fwp-matrix-row fwp-matrix-head">
+                  <div></div>
+                  @for (goal of band.goals; track goal.id; let index = $index) {
+                    <div>
+                      <span class="pp-lab">Goal {{ goal.n }}</span>
+                      <span
+                        class="fwp-matrix-goal"
+                        [style.font-size.px]="frame.matrix?.cells?.[band.offset + index]?.title?.size"
+                        data-testid="mktg-framework-print-matrix-title">
+                        {{ frame.matrix?.cells?.[band.offset + index]?.title?.text ?? goal.t }}
+                      </span>
+                    </div>
+                  }
                 </div>
-              }
-            </div>
-            <div class="fwp-matrix-row">
-              <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Value proposition</span>
-              @for (goal of v.goals; track goal.id) {
-                <p class="fwp-matrix-vp">{{ goal.vp }}</p>
-              }
-            </div>
-            <div class="fwp-matrix-row">
-              <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Key message</span>
-              @for (goal of v.goals; track goal.id) {
-                <p class="fwp-matrix-key">{{ goal.key }}</p>
-              }
-            </div>
-            <div class="fwp-matrix-row">
-              <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Proof</span>
-              <!-- Each goal's proof cell is a cut list in the row's room: tightened first, then whole rows and the muted line (frameworkPortraitMatrix). -->
-              @for (goal of v.goals; track goal.id; let column = $index) {
-                @if (frame.matrix?.proofs?.[column]; as cell) {
-                  <div>
-                    <ul class="fwp-matrix-proofs" [class.fwp-matrix-proofs--tight]="cell.tight">
-                      @for (proof of cell.rows; track $index) {
-                        <li>
-                          {{ proof.fact }} <span class="fwp-matrix-source">{{ proof.source }}</span>
-                        </li>
-                      }
-                    </ul>
-                    @if (cell.cut > 0) {
-                      <p class="fwp-cut-note" data-testid="mktg-framework-print-matrix-proofs-cut">{{ cell.note }}</p>
+                <!-- The text cells print as the layout fitted them (frameworkPortraitMatrix): at their type where the rows leave the proofs their room, smaller or cut at a sentence otherwise. -->
+                <div class="fwp-matrix-row">
+                  <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Value proposition</span>
+                  @for (goal of band.goals; track goal.id; let index = $index) {
+                    <p
+                      class="fwp-matrix-vp"
+                      [style.font-size.px]="frame.matrix?.cells?.[band.offset + index]?.vp?.size"
+                      data-testid="mktg-framework-print-matrix-vp">
+                      {{ frame.matrix?.cells?.[band.offset + index]?.vp?.text ?? goal.vp }}
+                    </p>
+                  }
+                </div>
+                <div class="fwp-matrix-row">
+                  <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Key message</span>
+                  @for (goal of band.goals; track goal.id; let index = $index) {
+                    <p class="fwp-matrix-key" [style.font-size.px]="frame.matrix?.cells?.[band.offset + index]?.key?.size">
+                      {{ frame.matrix?.cells?.[band.offset + index]?.key?.text ?? goal.key }}
+                    </p>
+                  }
+                </div>
+                <div class="fwp-matrix-row">
+                  <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Proof</span>
+                  <!-- Each goal's proof cell is a cut list in the row's room: tightened first, then whole rows and the muted line (frameworkPortraitMatrix). -->
+                  @for (goal of band.goals; track goal.id; let index = $index) {
+                    @if (frame.matrix?.proofs?.[band.offset + index]; as cell) {
+                      <div>
+                        <ul class="fwp-matrix-proofs" [class.fwp-matrix-proofs--tight]="cell.tight" data-testid="mktg-framework-print-matrix-proof-cell">
+                          @for (proof of cell.rows; track $index) {
+                            <!-- A cell's first proof kept set smaller carries its own size (editor F3: never only the note). -->
+                            <li [style.font-size.px]="proof.size ?? null" data-testid="mktg-framework-print-matrix-proof">
+                              {{ proof.fact }} <span class="fwp-matrix-source">{{ proof.source }}</span>
+                            </li>
+                          }
+                        </ul>
+                        @if (cell.cut > 0) {
+                          <p class="fwp-cut-note" data-testid="mktg-framework-print-matrix-proofs-cut">{{ cell.note }}</p>
+                        }
+                      </div>
                     }
-                  </div>
-                }
-              }
-            </div>
-            <div class="fwp-matrix-row">
-              <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Sound bite</span>
-              @for (goal of v.goals; track goal.id) {
-                @if (goal.bite) {
-                  <p class="fwp-matrix-bite">“{{ goal.bite }}”</p>
-                } @else {
-                  <p class="fwp-matrix-bite fwp-matrix-bite-none"></p>
-                }
-              }
-            </div>
+                  }
+                </div>
+                <div class="fwp-matrix-row">
+                  <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Sound bite</span>
+                  @for (goal of band.goals; track goal.id; let index = $index) {
+                    @if (frame.matrix?.cells?.[band.offset + index]?.bite; as bite) {
+                      <p class="fwp-matrix-bite" [style.font-size.px]="bite.size">“{{ bite.text }}”</p>
+                    } @else {
+                      <p class="fwp-matrix-bite fwp-matrix-bite-none"></p>
+                    }
+                  }
+                </div>
+              </div>
+            }
             @if (v.mf.crosscut) {
               <p class="fwp-matrix-crosscut">{{ v.mf.crosscut }}</p>
             }
@@ -181,23 +204,26 @@
           <p class="pp-body fwp-intro-say" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">{{ frame.anchorIntro }}</p>
           <!-- The two lists are cut to their columns above the anchors: tightened first, then whole rows with the muted line (frameworkPortraitPillList, frameworkPortraitAvoidList). -->
           @if (frame.sayAvoid; as lists) {
-            <div [lfxPpRect]="[page.margin, tops.sayLists, room.sayColumn]">
-              <span class="pp-lab pp-lab--dark">Say</span>
-              <ul class="fwp-say-list" [class.fwp-say-list--tight]="lists.say.tight" data-testid="mktg-framework-print-say">
-                @for (phrase of lists.say.rows; track phrase) {
-                  <li class="fwp-say-pill">{{ phrase }}</li>
+            <!-- No "Say" over nothing: the heading prints with its list (the record keeps at least one phrase; this is the rule, not a guess). -->
+            @if (lists.say.rows.length > 0 || lists.say.cut > 0) {
+              <div [lfxPpRect]="[page.margin, tops.sayLists, room.sayColumn]">
+                <span class="pp-lab pp-lab--dark">Say</span>
+                <ul class="fwp-say-list" [class.fwp-say-list--tight]="lists.say.tight" data-testid="mktg-framework-print-say">
+                  @for (phrase of lists.say.rows; track phrase) {
+                    <li class="fwp-say-pill" data-testid="mktg-framework-print-say-row">{{ phrase }}</li>
+                  }
+                </ul>
+                @if (lists.say.cut > 0) {
+                  <p class="fwp-cut-note" data-testid="mktg-framework-print-say-cut">{{ lists.say.note }}</p>
                 }
-              </ul>
-              @if (lists.say.cut > 0) {
-                <p class="fwp-cut-note" data-testid="mktg-framework-print-say-cut">{{ lists.say.note }}</p>
-              }
-            </div>
+              </div>
+            }
             <div [lfxPpRect]="[page.margin + room.avoidLeft, tops.sayLists, room.avoidColumn]">
               <span class="pp-lab pp-lab--dark">Avoid → say instead</span>
               @if (v.avoidRows.length > 0) {
                 <ul class="fwp-avoid-list" [class.fwp-avoid-list--tight]="lists.avoid.tight" data-testid="mktg-framework-print-avoid">
                   @for (row of lists.avoid.rows; track row.avoid) {
-                    <li class="fwp-avoid-row">
+                    <li class="fwp-avoid-row" data-testid="mktg-framework-print-avoid-row">
                       <span class="fwp-avoid-word">{{ row.avoid }}</span>
                       <span class="fwp-avoid-arrow" aria-hidden="true">→</span>
                       <span class="fwp-avoid-instead">{{ row.instead }}</span>
@@ -218,7 +244,7 @@
               <span class="pp-lab pp-lab--dark">Every piece of content answers</span>
               <ol class="fwp-anchor-list" data-testid="mktg-framework-print-anchor">
                 @for (anchor of frame.anchors; track anchor.numberLabel) {
-                  <li class="fwp-anchor-row">
+                  <li class="fwp-anchor-row" data-testid="mktg-framework-print-anchor-row">
                     <span class="fwp-anchor-number">{{ anchor.numberLabel }}</span>
                     <span class="fwp-anchor-question" [style.font-size.px]="anchor.size">{{ anchor.question }}</span>
                   </li>
@@ -255,7 +281,7 @@
                     @if (proofs.rows.length > 0) {
                       <ul class="fwp-pillar-proofs">
                         @for (proof of proofs.rows; track $index) {
-                          <li>
+                          <li data-testid="mktg-framework-print-pillar-proof">
                             {{ proof.fact }}
                             <span class="fwp-pillar-source"
                               ><span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span></span
@@ -285,7 +311,7 @@
                 <span class="pp-lab pp-lab--dark">Audiences</span>
                 <ul class="fwp-audience-list" [class.fwp-audience-list--tight]="house.audiences.tight" data-testid="mktg-framework-print-audiences">
                   @for (audience of house.audiences.rows; track audience.name) {
-                    <li class="fwp-audience-row">
+                    <li class="fwp-audience-row" data-testid="mktg-framework-print-audience-row">
                       <strong>{{ audience.name }}.</strong>
                       @if (audience.lead) {
                         {{ audience.lead }}
@@ -313,7 +339,7 @@
                   <span class="pp-lab pp-lab--dark">Read</span>
                   <ul class="fwp-source-list" [class.fwp-source-list-tight]="report.read.tight" data-testid="mktg-framework-print-sources-read">
                     @for (source of report.read.rows; track $index) {
-                      <li>{{ source }}</li>
+                      <li data-testid="mktg-framework-print-sources-read-row">{{ source }}</li>
                     }
                   </ul>
                   @if (report.read.cut > 0) {
@@ -325,7 +351,7 @@
                 @if (report.failedCount > 0) {
                   <ul class="fwp-source-list" [class.fwp-source-list-tight]="report.failed.tight" data-testid="mktg-framework-print-sources-failed">
                     @for (source of report.failed.rows; track $index) {
-                      <li>{{ source }}</li>
+                      <li data-testid="mktg-framework-print-sources-failed-row">{{ source }}</li>
                     }
                   </ul>
                   @if (report.failed.cut > 0) {
@@ -340,7 +366,7 @@
                 @if (report.gapsCount > 0) {
                   <ul class="fwp-source-list" [class.fwp-source-list-tight]="report.gaps.tight" data-testid="mktg-framework-print-gaps">
                     @for (gap of report.gaps.rows; track $index) {
-                      <li>{{ gap }}</li>
+                      <li data-testid="mktg-framework-print-gaps-row">{{ gap }}</li>
                     }
                   </ul>
                   @if (report.gaps.cut > 0) {
@@ -402,8 +428,8 @@
                       <th scope="col" class="fwp-grid-th">What it counts</th>
                     </tr>
                     @for (row of numbers.numbersTable; track $index) {
-                      <tr data-testid="mktg-framework-print-number-row">
-                        <td class="fwp-fact fwp-number-cell">{{ row.number }}</td>
+                      <tr [attr.data-testid]="'mktg-framework-print-number-row-' + $index">
+                        <td class="fwp-fact fwp-number-cell" data-testid="mktg-framework-print-number-figure">{{ row.number }}</td>
                         <td class="fwp-fact-used">{{ row.label }}</td>
                       </tr>
                     }
@@ -473,7 +499,7 @@
                 <span class="pp-lab pp-lab--dark">Proof points</span>
                 <ul class="fwp-proof-list" [class.fwp-proof-list-tight]="goalPage.proofs.tight">
                   @for (proof of goalPage.proofs.rows; track $index) {
-                    <li class="fwp-proof-row">
+                    <li class="fwp-proof-row" data-testid="mktg-framework-print-proof-row">
                       <span>{{ proof.fact }}</span>
                       <span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span>
                     </li>
@@ -490,13 +516,13 @@
                 <p class="fwp-goal-bite-text" [style.font-size.px]="bite.size">{{ bite.text }}</p>
               </div>
             }
-            @if (goalPage.served.length > 0) {
-              <div [lfxPpRect]="[page.margin, tops.goalServed, page.contentWidth]">
+            @if (goalPage.served.rows.length > 0) {
+              <div [lfxPpRect]="[page.margin, tops.goalServed, page.contentWidth]" data-testid="mktg-framework-print-served">
                 <span class="pp-lab pp-lab--dark">Who it's for</span>
                 <div class="fwp-served-cards">
-                  @for (card of goalPage.served; track card.id) {
-                    <div class="fwp-card fwp-served-card">
-                      <span class="fwp-served-name">{{ card.name }}</span>
+                  @for (card of goalPage.served.rows; track card.id) {
+                    <div class="fwp-card fwp-served-card" data-testid="mktg-framework-print-served-card">
+                      <span class="fwp-served-name" [style.font-size.px]="card.name.size">{{ card.name.text }}</span>
                       @if (card.need.text) {
                         <p class="fwp-served-line" [style.font-size.px]="card.need.size"><strong>Needs</strong> {{ card.need.text }}</p>
                       }
@@ -506,6 +532,9 @@
                     </div>
                   }
                 </div>
+                @if (goalPage.served.cut > 0) {
+                  <p class="fwp-cut-note" data-testid="mktg-framework-print-served-cut">{{ goalPage.served.note }}</p>
+                }
               </div>
             }
           } @else if (frame.icpPage; as icpPage) {
@@ -515,29 +544,31 @@
             <div
               [lfxPpRect]="[page.margin, icpPage.rowsTop, page.contentWidth]"
               [class.fwp-icp-rows--tight]="icpPage.tight"
+              [attr.data-cut]="icpPage.cut ? 'true' : null"
               data-testid="mktg-framework-print-icp-rows">
               @for (icp of icpPage.icps; track icp.id) {
                 <article class="fwp-icp-row" [attr.data-testid]="'mktg-framework-print-icp-' + icp.id">
-                  <!-- The name-and-tags column: the board's 190 px, grown so the kind and goal tags hold one line (the editor's rule). -->
-                  <div class="fwp-icp-who" [style.width.px]="icp.whoWidth">
+                  <!-- The name-and-tags column: the board's 190 px, grown so the kind and goal tags hold one line, ONE width for every card in the
+                       book (frameworkPortraitIcpsAligned), so the fields start at one x on every profile page (the editor's rules). -->
+                  <div class="fwp-icp-who" [style.width.px]="icp.whoWidth" data-testid="mktg-framework-print-icp-who">
                     <span class="fwp-icp-name">{{ icp.name }}</span>
-                    <div class="fwp-icp-chips">
-                      <span class="pp-chip">{{ icp.kind }}</span>
+                    <div class="fwp-icp-chips" data-testid="mktg-framework-print-icp-chips">
+                      <span class="pp-chip" data-testid="mktg-framework-print-icp-chip">{{ icp.kind }}</span>
                       @for (chip of icp.goalChips; track chip) {
-                        <span class="pp-chip">{{ chip }}</span>
+                        <span class="pp-chip" data-testid="mktg-framework-print-icp-chip">{{ chip }}</span>
                       }
                     </div>
                     @if (icp.who) {
                       <p class="fwp-icp-who-text">{{ icp.who }}</p>
                     }
                     <ul class="fwp-icp-personas">
-                      @for (persona of icp.personaRows; track persona.role) {
-                        <li>{{ persona.role }}{{ dot }}{{ persona.cares }}</li>
+                      @for (line of icp.personaLines; track $index) {
+                        <li data-testid="mktg-framework-print-icp-persona">{{ line }}</li>
                       }
                     </ul>
                   </div>
                   <!-- Each field prints with its eyebrow only when the profile has it: no label over nothing. -->
-                  <dl class="fwp-icp-fields">
+                  <dl class="fwp-icp-fields" data-testid="mktg-framework-print-icp-fields">
                     @if (icp.need) {
                       <div>
                         <dt>Need</dt>
@@ -585,7 +616,7 @@
                           @if (icp.proofRows.length > 0) {
                             <ul class="fwp-icp-proofs">
                               @for (proof of icp.proofRows; track $index) {
-                                <li>
+                                <li data-testid="mktg-framework-print-icp-proof">
                                   {{ proof.fact }} <span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span>
                                 </li>
                               }

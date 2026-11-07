@@ -92,22 +92,6 @@ export async function layoutMktgPrintFrame(page: Page): Promise<FrameLocator> {
 }
 
 /**
- * The portrait page setup the frame wrote, per engine: Chromium prints with no margin (no browser header or footer)
- * and the document's own room, 0.6in of it at the root's sides; WebKit, which prints a table's head and foot once,
- * prints on the page margins it had before, the named rule restated with them, the room collapsed under the body
- * class. Playwright's webkit project is the proof of the split.
- */
-export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locator, browserName: string): Promise<void> {
-  const webkit = browserName === 'webkit';
-  const setup = webkit ? MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'] : MKTG_PRINT_PAGE_SETUPS['mktg-framework'];
-  expect(await frame.locator('head style').last().textContent()).toBe(webkit ? `@page { ${setup} }\n@page mktg-framework { ${setup} }` : `@page { ${setup} }`);
-  expect(setup).toBe(webkit ? 'size: portrait; margin: 0.55in 0.6in;' : 'size: portrait; margin: 0;');
-  const marked = frame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`);
-  await expect(marked).toHaveCount(webkit ? 1 : 0);
-  await expect(root).toHaveCSS('padding-left', webkit ? '0px' : '57.6px');
-}
-
-/**
  * The page setup of a document of portrait frames: US Letter with no margin in both engines, written unnamed and as
  * the frames' own named page, and never the page margins (a frame is the whole sheet). Given the document's `root`,
  * also its frames: the root lifts the flowing documents' side padding, and every frame (the grammar's
@@ -216,7 +200,9 @@ export async function printMktgFrameWithChrome(frame: FrameLocator): Promise<Mkt
             await page.pdf({
               format: paper,
               preferCSSPageSize: false,
-              margin: { top: 0, right: 0, bottom: 0, left: 0 },
+              // No margin option: the page's own CSS (`@page mktg-portrait { margin: 0 }`) decides, as the dialog does. With the
+              // option at 0 the browser's header and footer would have no room whatever the CSS said, and the
+              // "headers-on prints the same text as headers-off" check could not fail.
               printBackground: background,
               displayHeaderFooter: headers,
             })

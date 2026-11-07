@@ -195,7 +195,8 @@ stylesheet `_mktg-portrait.scss` with the `pp-` class prefix; tokens and types i
   covers inset 72 px), `position: relative; overflow: hidden`, a block in normal flow;
   nothing fragments inside a frame and no wrapper between the body and a frame is padded
   or positioned. Content is placed absolutely with the `[lfxPpRect]="[x, y, w, h?]"`
-  directive (the mock's `R(x, y, w, h)`).
+  directive (the mock's `R(x, y, w, h)`), whose host carries `data-pp-rect`: the e2e
+  specs' handle on every placed box (the bounded-page check reads their bottoms).
 - **One break per sheet, owned by the frame that starts it.** Every frame carries
   `break-before: page` and no frame carries a `break-after`. The engine suppresses a
   forced break at the very start of the print and merges two forced breaks at one boundary
@@ -216,10 +217,12 @@ page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's S
   host puts around a block frame, which is where the blank sheets came from. Every grammar
   and book component (`lfx-mktg-portrait-page`, cover, opener, back cover, the kit print
   host and each kit page host) sets `:host { display: block }` in its own styles
-  (`MKTG_PORTRAIT_BLOCK_HOST`, `components/mktg-portrait/mktg-portrait-host.ts`; the
-  framework print host has the rule in its stylesheet), so it holds in any document the
-  component is cloned into; each component's spec asserts the computed display, the pdf
-  e2e asserts it on every host between the body and a frame, and its Chrome proof (`printMktgFrameWithChrome`: Playwright's `channel:
+  (`MKTG_PORTRAIT_BLOCK_HOST`, `components/mktg-portrait/mktg-portrait-host.ts`); the
+  framework, FAQ and boilerplates print hosts take the same constant through `styles:
+  [MKTG_PORTRAIT_BLOCK_HOST]`, so it holds in any document the component is cloned into.
+  The e2e asserts the computed display: the framework's on every host between the body and
+  a frame (`mktg-os-asset-views.spec.ts`, the page-break test), the FAQ's on its host inside
+  the family document (`mktg-os-faq-answers.spec.ts`); the pdf e2e's Chrome proof (`printMktgFrameWithChrome`: Playwright's `channel:
   'chrome'`, `Page.printToPDF` on the frame document as the service built it, headers on
   and off, Letter and A4) asserts exactly the planned page count with no blank page.
 - **Head, title, foot, band.** Every content page carries the running head at y 36
@@ -250,13 +253,16 @@ page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's S
   Chromium adds an empty page per `tfoot` and WebKit repeats neither.
 - **Inks and look.** The kit's dark, accent, spark, the ink on the accent and the font
   come from the kit (`MktgPortraitLook`, `mktgPortraitLook(brand, spark)`); the page writes
-  them as `--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`, `--pp-font`, and
-  `--pp-accent-text`: the accent darkened in OKLab until it reads on the page white at WCAG
-  AA for ordinary text (`mktgPortraitAccentText(accent, paper)`, ≥ 4.5:1; an accent that
-  already does is itself). Every TEXT set in the accent on a light page reads that token
-  (the section label under the band, the Logo system page's rule numbers, numerals in the
-  framework and family books); fills, bands, rules and the accent on a dark page keep
-  `--pp-accent`. The
+  them as `--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`, `--pp-font`,
+  `--pp-accent-text` and `--pp-accent-on-dark`. `--pp-accent-text` is the accent darkened
+  in OKLab until it reads on the page white at WCAG AA for ordinary text
+  (`mktgPortraitAccentText(accent, paper)`, ≥ 4.5:1; an accent that already does is
+  itself): every TEXT set in the accent on a light page reads it (the section label under
+  the band, the Logo system page's rule numbers, numerals in the framework and family
+  books). `--pp-accent-on-dark` is the accent where it reads on the kit's dark at AA, else
+  the ink on the dark (`mktgPortraitAccentOnDark(look)`): every TEXT set in the accent on
+  a dark page reads it (the back cover's brand line). Fills, bands and rules keep
+  `--pp-accent` on either ground. The
   design's neutral inks (`MKTG_PORTRAIT_INKS`: ink, muted, hairline, mist, white, fail) are
   written once, as `--pp-ink` …, and the print stylesheets read only those custom
   properties (see [the styling system's print-ink exception](styling-system.md#print-inks)).
@@ -264,6 +270,19 @@ page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's S
   dark, a radial accent glow and a 32 px accent grid), `lfx-mktg-portrait-opener` (the
   family's chapter opener) and `lfx-mktg-portrait-back-cover` (the reversed lockup, brand
   line, url, version line and the trademark notice).
+- **Artwork on a dark ground: supplied, derived, or on the plate.** A dark ground draws
+  the kit's reversed file when one is supplied; else, when the slot's own SVG is one
+  resolvable ink with no background (`brandKitDerivable`, per slot: lockup and symbol), the
+  full-colour file reversed by filter; else the full-colour artwork on the white plate
+  (`.pp-plate`, `MktgPrintLogo.plate`): one shared rounded span whose padding is half the
+  artwork's drawn height (`mktgPortraitPlatePadding(height)`,
+  `MKTG_PORTRAIT_PLATE.paddingOfHeight`), drawn by the kit's artwork component and the
+  covers, never per page. The plate's outer box is laid out, not the bare artwork's: a
+  tile, sample circle or stage fits the plate inside its own box (`mktgPortraitPlateFit`:
+  the mark drawn at half the box, the padding a quarter), and the covers start the plated
+  block one padding higher so the lockup stays where the design draws it and the plate
+  ends clear of the text below. A kit with a reversed file or a derivable slot draws no
+  plate.
 - **The fit model.** `mktgPortraitFitBlock`, `brandKitPortraitShortenLine` and
   `brandKitPortraitShortenParagraph` (shared utils) fit variable text to its box. A
   one-line sample (the Type page's specimen and scale steps, the H1) prints at the kit's
@@ -333,7 +352,9 @@ derives the head `<Project> brand kit`, the footer, first page 1, the band on); 
 family the section label reads `Brand kit · <section>`, the head right is the family's
 document name, no band, no cover, contents or back cover, and the footer numbers run from
 `firstPage`. The frame's e2e contract: `data-testid="lfx-mktg-portrait-page"`,
-`data-page-id`, `data-page`, `data-section`. The hidden print frame builds its title as
+`data-page-id`, `data-page`, `data-section`; inside a page the specs read the
+`brand-kit-*` test ids (a row, a cell, a card, a sample, a `+N more` line), never a
+grammar class. The hidden print frame builds its title as
 before (#5224).
 
 ## Routing and verification

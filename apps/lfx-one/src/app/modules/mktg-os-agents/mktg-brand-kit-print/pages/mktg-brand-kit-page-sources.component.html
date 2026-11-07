@@ -24,13 +24,13 @@
       <div class="kp-block" data-testid="brand-kit-sources-read">
         <div class="pp-lab pp-lab--dark">Read</div>
         <ul class="kp-list">
-          @for (source of s.read; track source) {
+          @for (source of s.read; track $index) {
             <li>{{ source }}</li>
           }
         </ul>
         <!-- The sources the column does not hold even cut are counted, never dropped in silence. -->
-        @if (fit().moreRead; as more) {
-          <div class="kp-list kp-muted" data-testid="brand-kit-sources-read-more">+{{ more }} more sources read, in LFX One</div>
+        @if (fit().moreRead) {
+          <div class="kp-list kp-muted" data-testid="brand-kit-sources-read-more">{{ fit().moreReadLine }}</div>
         }
       </div>
     }
@@ -68,8 +68,8 @@
             <li>{{ s.notes }}</li>
           }
         </ul>
-        @if (fit().moreGaps; as more) {
-          <div class="kp-list kp-muted" data-testid="brand-kit-sources-gaps-more">+{{ more }} more gaps, in LFX One</div>
+        @if (fit().moreGaps) {
+          <div class="kp-list kp-muted" data-testid="brand-kit-sources-gaps-more">{{ fit().moreGapsLine }}</div>
         }
       </div>
     }
@@ -116,8 +116,8 @@
             </tbody>
           </table>
         }
-        @if (fit().moreConflicts; as more) {
-          <div class="kp-list kp-muted" data-testid="brand-kit-sources-conflicts-more">+{{ more }} more color conflicts, in LFX One</div>
+        @if (fit().moreConflicts) {
+          <div class="kp-list kp-muted" data-testid="brand-kit-sources-conflicts-more">{{ fit().moreConflictsLine }}</div>
         }
       </div>
     }

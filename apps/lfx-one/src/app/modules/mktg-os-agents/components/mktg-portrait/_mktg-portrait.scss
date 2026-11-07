@@ -11,8 +11,9 @@
    stylesheet cannot read: keep them in step. The kit's dark, accent, spark and typeface are the frame's
    custom properties (`--pp-dark`, `--pp-accent`, `--pp-accent-text`, `--pp-spark`, `--pp-on-accent`, `--pp-font`),
    bound by `lfx-mktg-portrait-page` from the document's look; `--pp-accent-text` is the accent darkened until it reads
-   on the page white at WCAG AA (mktgPortraitAccentText), for every TEXT set in the accent on a light page; fills,
-   bands, rules and the accent on a dark page keep `--pp-accent`. */
+   on the page white at WCAG AA (mktgPortraitAccentText), for every TEXT set in the accent on a light page;
+   `--pp-accent-on-dark` is the accent where it reads on the dark at AA, else the ink on the dark
+   (mktgPortraitAccentOnDark), for text set in the accent on a dark page; fills, bands and rules keep `--pp-accent`. */
 
 @use 'sass:math';
 
@@ -74,7 +75,7 @@ $pp-band-height: 4px;
   -webkit-print-color-adjust: exact;
 
   /* The neutral inks (--pp-ink, --pp-muted, --pp-hairline, --pp-mist, --pp-white, --pp-fail) and the look's
-     (--pp-dark, --pp-accent, --pp-spark, --pp-on-accent, --pp-font) are set on the frame by the page component
+     (--pp-dark, --pp-accent, --pp-accent-text, --pp-accent-on-dark, --pp-spark, --pp-on-accent, --pp-font) are set on the frame by the page component
      from MKTG_PORTRAIT_INKS and MktgPortraitLook; every rule below reads them. */
 
   * {
@@ -297,6 +298,14 @@ $pp-band-height: 4px;
   background: var(--pp-dark);
 }
 
+/* The white plate under full-colour artwork on a dark ground (the tile's radius; the padding, half the drawn height, is set inline). */
+.pp-plate {
+  display: inline-block;
+  border-radius: 10px;
+  background: var(--pp-white);
+  line-height: 0;
+}
+
 .pp-tile--mist {
   border: 0;
   background: var(--pp-mist);
@@ -341,6 +350,7 @@ $pp-band-height: 4px;
 .pp-cover-strip {
   display: flex;
   justify-content: space-between;
+  column-gap: 24px;
   border-top: 1px solid rgba(255, 255, 255, 0.25);
   padding-top: 10px;
   font-size: 10px;
@@ -349,6 +359,21 @@ $pp-band-height: 4px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.6);
+}
+
+/* The strip's halves share one line (nowrap, 24 px apart); only when one word each still does not fit does it wrap,
+   at the grammar's leading, the cover having moved it up one line. */
+.pp-cover-strip > span {
+  white-space: nowrap;
+}
+
+.pp-cover-strip--wrapped {
+  flex-wrap: wrap;
+  line-height: 1.4;
+}
+
+.pp-cover-strip--wrapped > span {
+  white-space: normal;
 }
 
 /* ---------- the chapter opener (the family's) ---------- */
@@ -417,7 +442,8 @@ $pp-band-height: 4px;
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--pp-accent);
+  /* The accent where it reads on the dark (AA), else the ink on the dark: never a pairing the matrix grades as failing. */
+  color: var(--pp-accent-on-dark);
 }
 
 .pp-back-url {

@@ -436,16 +436,20 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-lockups')?.querySelectorAll('img').length).toBeGreaterThan(0);
       expect(query('brand-kit-web-view-lockups')?.textContent).toContain('logo.svg');
       const colorways = queryAll('brand-kit-web-view-colorway');
-      expect(colorways.map((element) => element.textContent?.trim())).toEqual([
+      // The caption under each tile (the tile itself may hold a "Not supplied" line).
+      expect(colorways.map((element) => element.lastElementChild?.textContent?.trim())).toEqual([
         'Full color · on white',
         'Reversed · on Charcoal',
         'Full color · on light tint',
         'One-color black · print only',
       ]);
-      // The reversed tile sits on the kit's dark and draws the logo white.
+      // The reversed tile sits on the kit's dark; the fixture's three-colour lockup cannot be reversed by filter (it
+      // would flatten), so the tile says "Not supplied" instead of a filtered image.
       const reversed = colorways[1].firstElementChild as HTMLElement;
       expect(reversed.style.background).toContain('rgb(77, 78, 78)');
-      expect((reversed.firstElementChild as HTMLElement).style.filter).toBe('brightness(0) invert(1)');
+      expect((reversed.firstElementChild as HTMLElement).style.filter).toBe('');
+      expect(reversed.textContent?.trim()).toBe('Not supplied');
+      expect(reversed.querySelector('img')).toBeNull();
       expect(query('brand-kit-web-view-clear-space')?.textContent).toContain('X on every side.');
       expect(query('brand-kit-web-view-minimum-size')?.textContent).toContain('32 px tall on screen, 10 mm in print.');
       expect(queryAll('brand-kit-web-view-watchout')).toHaveLength(6);
@@ -730,11 +734,13 @@ describe('BrandKitWebViewComponent', () => {
       fixture.componentRef.setInput('version', 2);
       fixture.componentRef.setInput('approval', null);
       fixture.componentRef.setInput('approvedVersion', 1);
-      fixture.componentRef.setInput('approvedApproval', { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Dana Reviewer' } });
+      fixture.componentRef.setInput('approvedApproval', { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Synthetic Approver' } });
       await fixture.whenStable();
       button('brand-kit-web-view-download-pdf')?.click();
       const frame = document.querySelector<HTMLIFrameElement>('[data-testid="lfx-print-frame"]');
-      expect(frame?.contentDocument?.querySelector('[data-testid="brand-kit-contents-approval"]')?.textContent).toBe('Approved 19 Oct 2026 by Dana Reviewer');
+      expect(frame?.contentDocument?.querySelector('[data-testid="brand-kit-contents-approval"]')?.textContent).toBe(
+        'Approved 19 Oct 2026 by Synthetic Approver'
+      );
       frame?.contentWindow?.dispatchEvent(new Event('afterprint'));
     });
 

@@ -14,7 +14,7 @@
           [page]="page.number"
           [title]="coverTitle"
           [lede]="coverLede()"
-          [logo]="brand().logoOnDark"
+          [logo]="coverLogo()"
           [stripLeft]="resolvedBook().footLeft"
           [stripRight]="coverStripRight()" />
       }
@@ -75,8 +75,8 @@
           [look]="look()"
           [book]="resolvedBook()"
           [page]="page.number"
-          [logo]="brand().logoOnDark"
-          [line]="v.voice.line"
+          [logo]="coverLogo()"
+          [line]="backCoverLine()"
           [url]="v.host"
           [version]="versionLine()"
           [notice]="v.backCoverNotice" />

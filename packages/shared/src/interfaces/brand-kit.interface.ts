@@ -637,12 +637,30 @@ export interface BrandKitColorwayTile {
   ground: string;
   /** True when the tile is white or light and needs a hairline border. */
   light: boolean;
-  /** The artwork drawn on the tile: the supplied reversed file on the reversed tile when there is one, else the primary lockup. */
+  /** The artwork drawn on the tile: the supplied reversed file on the reversed tile when there is one, else the primary lockup; null when the tile's colorway is neither supplied nor derivable. */
   logo: BrandKitLogoImage | null;
+  /** The plain line a tile prints in place of artwork it has none of ("Not supplied"); '' when it draws its logo. */
+  missing: string;
   /** CSS filter drawing the primary lockup reversed (white) or one-colour black; '' for full colour or supplied reversed artwork. */
   logoFilter: string;
   /** CSS filter for the symbol on this tile: the symbol is never the supplied reversed lockup, so it keeps the tile's reversal or one-colour filter. */
   symbolFilter: string;
+}
+
+/** A named colour a text ink is chosen from (`brandKitBestInkOn`): white, or a palette entry. */
+export interface BrandKitInkCandidate {
+  name: string;
+  hex: string;
+}
+
+/**
+ * The text ink chosen for a ground (`brandKitBestInkOn`): the candidate with
+ * the highest WCAG contrast there, and whether it reaches AA (4.5:1). `ratio`
+ * is unrounded: compared as it is, printed through `brandKitRatioLabel`.
+ */
+export interface BrandKitTextInk extends BrandKitInkCandidate {
+  ratio: number;
+  readable: boolean;
 }
 
 /** One palette card of the book. */
@@ -696,10 +714,10 @@ export interface BrandKitTypeScaleView {
   letterSpacing: string;
 }
 
-/** One watchout tile: the rule and the illustrative distortion the tile draws. */
 /** The distortion a watchout tile shows, in the mock's order: the print keys its own draw by it, never by the screen's CSS. */
 export type BrandKitWatchoutKind = 'stretched' | 'recolored' | 'rotated' | 'shadowed' | 'busy' | 'retyped';
 
+/** One watchout tile: the rule and the illustrative distortion the tile draws. */
 export interface BrandKitWatchoutView {
   label: string;
   /** The distortion the tile shows. */
@@ -746,6 +764,14 @@ export interface BrandKitWebViewTab {
  * The book as the kit view lays it out: every string and colour the 16 pages
  * bind, computed once from the kit so the template binds properties only.
  */
+/** Which of the book's filtered slots may be derived from by filter (`BrandKitBookView.derivable`). */
+export interface BrandKitDerivable {
+  /** The horizontal lockup: the primary file. */
+  lockup: boolean;
+  /** The symbol: its own file, or the primary it is cropped out of. */
+  symbol: boolean;
+}
+
 export interface BrandKitBookView {
   projectName: string;
   /** The project name in capitals, for the covers' eyebrows. */
@@ -780,6 +806,16 @@ export interface BrandKitBookView {
   logos: Record<BrandKitLogoSlot, BrandKitLogoImage | null>;
   /** The symbol as drawn: the symbol file, or the primary lockup cropped to the symbol. */
   symbol: BrandKitLogoImage | null;
+  /**
+   * Per slot, whether a reversed or one-colour mark the kit did not supply
+   * may be derived from the slot's own artwork by filter: true when that
+   * artwork is one resolvable ink with no background (`brandKitSvgIsMonochrome`).
+   * The book never filters artwork that is not (it would flatten to one
+   * shape): dark grounds then draw it in full colour and the derived tiles
+   * say "Not supplied". `lockup` reads the primary file; `symbol` the symbol
+   * file, or the primary it is cropped from.
+   */
+  derivable: BrandKitDerivable;
   placeholder: boolean;
   logo: BrandKitLogoChapter;
   colorways: BrandKitColorwayTile[];
