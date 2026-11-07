@@ -421,15 +421,17 @@ describe('mktgFamilyPrintPlan', () => {
     expect(plan.faqPages).toHaveLength(2);
     expect(plan.faqPages[0].columns[0][0]).toEqual({ group: 0, question: 0, heading: true });
     expect(plan.pages.find((page) => page.kind === 'opener')?.section).toBe('01 Messaging framework');
-    // The family's own content pages carry the document's name alone in the running head, like Contents and Sources: one style.
+    // The board's running heads: every document's pages carry its numbered chapter from the contents order (the family's
+    // own content pages print it; a mounted print's pages print their own heads, `Brand kit · Logo`), Contents and Sources
+    // their name.
     expect(plan.pages.filter((page) => page.kind !== 'opener').map((page) => page.section)).toEqual([
       'Cover',
       'Contents',
-      'Messaging framework',
-      'Brand kit',
-      'Boilerplates',
-      'FAQ',
-      'FAQ',
+      '01 Messaging framework',
+      '02 Brand kit',
+      '03 Boilerplates',
+      '04 FAQ',
+      '04 FAQ',
       'Sources',
       'Back cover',
     ]);

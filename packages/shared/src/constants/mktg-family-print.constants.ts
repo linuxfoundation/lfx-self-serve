@@ -141,7 +141,7 @@ export const MKTG_FAMILY_PRINT_LABEL_STOP_WORDS: readonly string[] = [
   'years',
 ];
 
-/** The running head's left label and the title of the family's own pages. */
+/** The running head's left label and the title of the family's own pages (the board's: `Contents`, `Sources`; a document's pages carry its numbered chapter). */
 export const MKTG_FAMILY_PRINT_LABELS = {
   cover: 'Cover',
   contents: 'Contents',

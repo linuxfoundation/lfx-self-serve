@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import {
   MKTG_FAMILY_EXPORT_API_PATH,
   MKTG_FAMILY_PRINT_BODY_CLASS,
+  MKTG_FAMILY_PRINT_LABELS,
   MKTG_PORTRAIT_PAGE_NAME,
   MKTG_PRINT_PAGE_SETUPS,
 } from '../../../packages/shared/src/constants';
@@ -221,9 +222,14 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(openerMeta).toContainText('Version');
   await expect(openerMeta).toContainText('Pages');
   await expect(openerMeta.locator('dd').nth(1)).toHaveText(/^\d{1,2} [A-Z][a-z]{2} \d{4}$/);
-  // The running head names the chapter left and the family right on every content page; no page is hand-numbered.
+  // The running heads are the board's: the family's own content pages carry their numbered chapter from the contents
+  // order left (the mounted prints' pages print `Document · Section` themselves), the family right on every content page;
+  // no page is hand-numbered.
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-doc')).toHaveText(/positioning & brand$/);
-  await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-section')).toHaveText('Boilerplates');
+  await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-section')).toHaveText('03 Boilerplates');
+  await expect(frames.byId('faq-1').getByTestId('mktg-portrait-page-section')).toHaveText('04 FAQ');
+  await expect(frames.byId('contents').getByTestId('mktg-portrait-page-section')).toHaveText(MKTG_FAMILY_PRINT_LABELS.contents);
+  await expect(frames.byId('sources').getByTestId('mktg-portrait-page-section')).toHaveText(MKTG_FAMILY_PRINT_LABELS.sources);
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-number')).toHaveText(String(frames.byIdPage('boilerplates')).padStart(2, '0'));
   // The framework in the family's book: the pages of its family plan for this fixture (one goal, one ICP), no cover of
   // its own and no band, each under the family's running head, numbered on from its opener, on the kit's look.

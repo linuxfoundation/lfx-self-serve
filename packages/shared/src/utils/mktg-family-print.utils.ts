@@ -358,8 +358,11 @@ export function mktgFamilyPrintOpenItemText(text: string): string {
  * one page of cards, the FAQ its paginated grid), the Sources page and the
  * back cover (the Sources page only when a conflict or an open item exists).
  * A document with nothing to print is dropped with its opener. The
- * running head of the family's own content pages is the document's name
- * alone, one style with the Contents and Sources pages.
+ * running heads are the board's (mock/family/family.html): a mounted
+ * print's pages print `Document · Section` themselves (`Brand kit · Logo`);
+ * the family's own content pages carry their document's numbered chapter
+ * from the contents order (`03 Boilerplates`, `04 FAQ`), the Contents and
+ * Sources pages their name.
  * Page numbers are 1-based and the only numbering the pages print.
  */
 export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[], conflictCount = 0): MktgFamilyPrintPlan {
@@ -386,10 +389,10 @@ export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[], confli
   for (const member of members) {
     const { document } = member;
     const kind = MKTG_FAMILY_EXPORT_KINDS[document.agentKey];
-    // The opener's section names the numbered chapter; the family's own content pages print the document's name alone in
-    // the running head, one style with the Contents and Sources pages (a mounted print's pages print their own heads).
+    // The opener and the family's own content pages carry the numbered chapter from the contents order in the running
+    // head (`03 Boilerplates`, the board's); a mounted print's pages print their own heads.
     const section = `${document.number} ${document.title}`;
-    const headSection = document.title;
+    const headSection = section;
     const entries: MktgFamilyPrintContentsEntry[] = [];
     const openerPage = n + 1;
     const first = openerPage + 1;
@@ -401,14 +404,30 @@ export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[], confli
       (titles.length ? titles : [document.title]).forEach((title, index) => entries.push({ title, n: first + index }));
     } else if (kind === 'boilerplates') {
       if ((member.boilerplateCount ?? 0) > 0) {
-        content.push({ id: kind, kind, section: headSection, title: MKTG_FAMILY_PRINT_LABELS.boilerplates, agentKey: document.agentKey, index: 0, span: 1 });
+        content.push({
+          id: kind,
+          kind,
+          section: headSection,
+          title: MKTG_FAMILY_PRINT_LABELS.boilerplates,
+          agentKey: document.agentKey,
+          index: 0,
+          span: 1,
+        });
         entries.push({ title: MKTG_FAMILY_PRINT_LABELS.boilerplates, n: first });
       }
     } else {
       faqPages = mktgFamilyPrintFaqPages(member.faqGroups ?? []);
       faqPages.forEach((_, index) => {
         const title = index === 0 ? MKTG_FAMILY_PRINT_LABELS.faq : `${MKTG_FAMILY_PRINT_LABELS.faq} (${index + 1})`;
-        content.push({ id: `${kind}-${index + 1}`, kind, section: headSection, title, agentKey: document.agentKey, index, span: 1 });
+        content.push({
+          id: `${kind}-${index + 1}`,
+          kind,
+          section: headSection,
+          title,
+          agentKey: document.agentKey,
+          index,
+          span: 1,
+        });
         entries.push({ title, n: first + index });
       });
     }
