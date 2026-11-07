@@ -8,8 +8,8 @@ import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
-import { MktgRevisionResponse, ProjectContext } from '@lfx-one/shared/interfaces';
+import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { BrandKitRevision, MktgRevisionResponse, ProjectContext } from '@lfx-one/shared/interfaces';
 import { mktgPrintBrand } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 // package-architecture.md § Import Patterns: fixtures are intentionally not re-exported by the production utils barrel.
@@ -29,7 +29,7 @@ import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-serv
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { NEVER, of } from 'rxjs';
+import { NEVER, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
 
@@ -227,6 +227,46 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
     expect(overall.compareDocumentPosition(markdown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // The running head still rides in the sheet's head group.
     expect(article.querySelector('[data-testid="mktg-print-sheet-head"] [data-testid="mktg-print-running-head"]')?.textContent).toContain('AEO/GEO report');
+  });
+
+  it('waits for the Brand Kit read before printing: a press while the read is open prints once, in the kit look, when it settles', async () => {
+    const kitRead = new Subject<BrandKitRevision | null>();
+    resolveBrandKit.mockReturnValue(kitRead);
+    await render();
+    const print = TestBed.inject(MktgPrintService);
+    const button = query('mktg-document-view-download')?.querySelector('button');
+    if (!button) throw new Error('Missing synthetic Download PDF button');
+    // The button stays enabled while the kit is read; the press is kept, not printed yet (it would be the LF-default PDF).
+    expect(button.disabled).toBe(false);
+    button.click();
+    button.click();
+    expect(print.printNow).not.toHaveBeenCalled();
+    const kit = brandKitTestRevision();
+    kitRead.next(kit);
+    kitRead.complete();
+    harness.detectChanges();
+    // One print for the two presses, with the kit's brand on the running head.
+    expect(print.printNow).toHaveBeenCalledTimes(1);
+    expect(print.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, `${PROJECT.name} · AEO/GEO report · v1 · 2026-10-15`);
+    const runningHead = printArticle().querySelector('[data-testid="mktg-print-sheet-head"] [data-testid="mktg-print-running-head"]');
+    const brand = mktgPrintBrand(kit);
+    if (brand.logoOnLight) expect(runningHead?.querySelector('img')?.getAttribute('src')).toBe(brand.logoOnLight.src);
+    else expect(runningHead?.querySelector('img')).toBeNull();
+    // Settled, a later press prints at once.
+    button.click();
+    expect(print.printNow).toHaveBeenCalledTimes(2);
+  });
+
+  it('prints at once when the Brand Kit read has failed (null), never dropping the press', async () => {
+    // resolveBrandKit turns a 404 or an error into null before it reaches the view; here that null arrives after the press.
+    const kitRead = new Subject<BrandKitRevision | null>();
+    resolveBrandKit.mockReturnValue(kitRead);
+    await render();
+    const print = TestBed.inject(MktgPrintService);
+    query('mktg-document-view-download')?.querySelector('button')?.click();
+    expect(print.printNow).not.toHaveBeenCalled();
+    kitRead.next(null);
+    expect(print.printNow).toHaveBeenCalledTimes(1);
   });
 
   it('wears the project kit brand on the running head once the kit resolves', async () => {
