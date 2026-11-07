@@ -346,6 +346,18 @@ describe('the framework portrait book’s bounded blocks', () => {
     expect(strip.bands).toEqual([{ offset: 0, count: 8, columns: 8 }]);
     expect(new Set(strip.cells.map((cell) => cell.title.size)).size).toBe(1);
     expect(strip.cells[0].title.size).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin);
+    // At the board's count or fewer the strip is the widest shape: three goals, one with a 40-character word, stay three columns
+    // (a band of four would be narrower), the title at the floor and cut at a word.
+    const wordy = [goal(1, { id: 'w1', n: 1, t: 'Events' }), goal(1, { id: 'w2', n: 2, t: 'A'.repeat(40) }), goal(1, { id: 'w3', n: 3, t: 'Adoption' })];
+    expect(frameworkPortraitMatrixColumns(wordy)).toBe(3);
+    const three = frameworkPortraitMatrix(wordy, '', 664);
+    expect(three.bands).toEqual([{ offset: 0, count: 3, columns: 3 }]);
+    expect(three.cells.map((cell) => cell.title.size)).toEqual([
+      FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin,
+      FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin,
+      FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin,
+    ]);
+    expect(three.cells[1].title.text.endsWith('…')).toBe(true);
     // Seven goals in bands: the second band holds three in four columns.
     expect(frameworkPortraitMatrix(goals.slice(0, 7), '', 664).bands).toEqual([
       { offset: 0, count: 4, columns: 4 },

@@ -134,8 +134,9 @@ export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
   const type = kit.chapters.type;
   const fontUrl = brandKitGoogleFontsUrl(type.family, brandKitWeights(type.weights), type.google_fonts);
   // The logo a print draws is the portrait grammar's lockup artwork (brandKitPortraitArtwork: the supplied reversed
-  // file on a dark ground, else the primary filtered to white; the primary as it is on a light one; null when the kit
-  // has no drawable file for it), named for the project; the kit's placeholder flag draws none.
+  // file on a dark ground, else the primary filtered to white only when it is one colour — a multi-colour primary is
+  // drawn in full colour, never flattened to one shape; the primary as it is on a light one; null when the kit has no
+  // drawable file for it), named for the project; the kit's placeholder flag draws none.
   const alt = `${kit.projectName} logo`;
   const artwork = (mode: 'full' | 'reversed'): MktgPrintLogo | null => {
     const logo = kit.chapters.logo.placeholder ? null : brandKitPortraitArtwork(buildBrandKitBookView(kit), 'lockup', mode);

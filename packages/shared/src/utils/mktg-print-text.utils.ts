@@ -3,9 +3,9 @@
 
 // The text rules every marketing print shares: parts joined with the middle
 // dot (MKTG_PRINT_DOT), and a figure printed with its thousands separators.
-// On its own so the constants file exports values only and the layout utils
+// On its own so the constants file exports values only and the plan utils
 // and the print utils both import it without a cycle (mktg-print.utils.ts
-// imports the layout utils).
+// imports the layout utils, which must not import the print utils back).
 
 import { MKTG_PRINT_DOT } from '../constants/mktg-print.constants';
 

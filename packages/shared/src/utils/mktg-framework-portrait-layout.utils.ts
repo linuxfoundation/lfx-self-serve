@@ -25,7 +25,6 @@ import {
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
 } from '../constants/mktg-print.constants';
-import { mktgPrintJoin } from './mktg-print-text.utils';
 import { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 import { MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
@@ -291,18 +290,23 @@ export function frameworkPortraitMatrixTitleSize(titles: readonly string[], colu
 /**
  * How many columns the goal matrix's strip holds: every goal in one strip where the head titles stay readable there (at
  * `ROOM.matrixTitleMin` or above, `frameworkPortraitMatrixTitleSize`), else the board's four (`ROOM.matrixBandColumns`),
- * the goals in bands of four under each other (the editor's second shape, when wrapping cannot fit the titles).
+ * the goals in bands of four under each other (the editor's second shape, when wrapping cannot fit the titles). At the
+ * board's count or fewer the strip IS the widest shape (a band of four would be narrower than a strip of three), so it
+ * stays one strip whatever the titles.
  */
 export function frameworkPortraitMatrixColumns(goals: readonly Pick<FoundationMessagePrintGoal, 't'>[]): number {
+  if (goals.length <= ROOM.matrixBandColumns) return Math.max(1, goals.length);
   const titles = goals.map((goal) => goal.t);
-  if (frameworkPortraitMatrixTitleSize(titles, frameworkPortraitMatrixColumn(goals.length)) >= ROOM.matrixTitleMin) return Math.max(1, goals.length);
+  if (frameworkPortraitMatrixTitleSize(titles, frameworkPortraitMatrixColumn(goals.length)) >= ROOM.matrixTitleMin) return goals.length;
   return ROOM.matrixBandColumns;
 }
 
 /**
  * The framework page's goal matrix, bounded in its `room`: the goals in one strip, or in bands of the board's four
  * columns where the strip's columns cannot hold the titles (`frameworkPortraitMatrixColumns`); every head title at ONE
- * size, the largest whose longest word fits the column (`frameworkPortraitMatrixTitleSize`), wrapped to the board's
+ * size, the largest whose longest word fits the column (`frameworkPortraitMatrixTitleSize`), floored at
+ * `ROOM.matrixTitleMin`: below that floor the bands take over (at more goals than the board's four), or, at four or
+ * fewer, the title prints at the floor and is cut at a word, wrapped to the board's
  * two lines (`ROOM.matrixGoalLines`) and cut at a word past them; the crosscut measured once at its type under the
  * last band. In each band: the value, key message and sound bite rows at their type where the three leave the proofs
  * row at least its note (the muted line at the count every proof would make), else each cell fitted by the portrait
@@ -353,11 +357,18 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
 
 /**
  * A text cut at a word to `lines` lines of `perLine` characters, with an ellipsis whenever a word is dropped (the words wrap as the
- * fit model wraps them, so a cut title's line count is the one the head row measures); a text that fits is returned as it is.
+ * fit model wraps them, so a cut title's line count is the one the head row measures); a text that fits is returned as it is. A
+ * word longer than a line (the head never breaks a word, so it would overflow its column) is cut inside itself to the line with
+ * the ellipsis first.
  */
 function frameworkPortraitLinesCut(text: string, perLine: number, lines: number): string {
-  if (mktgPortraitWrapLines(text, perLine) <= lines) return text;
-  const words = text.split(/\s+/).filter((word) => word !== '');
+  const whole = text
+    .split(/\s+/)
+    .filter((word) => word !== '')
+    .map((word) => (word.length > perLine ? `${word.slice(0, Math.max(1, perLine - 1))}…` : word))
+    .join(' ');
+  if (mktgPortraitWrapLines(whole, perLine) <= lines) return whole;
+  const words = whole.split(' ');
   for (let keep = words.length - 1; keep > 0; keep -= 1) {
     const cut = `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(words.slice(0, keep)).join(' '))}…`;
     if (mktgPortraitWrapLines(cut, perLine) <= lines) return cut;
@@ -379,7 +390,6 @@ function frameworkPortraitMatrixBand(
     TYPE.cutNote.size * TYPE.cutNote.line +
     3 +
     tallest(titles.map((title) => frameworkPortraitTextHeight(title.text, { ...TYPE.matrixGoal, size: title.size }, column)));
-  const note = 0;
   const proofRow = (proof: FoundationMessagePrintGoalProof, type: FoundationMessagePrintType): number =>
     frameworkPortraitTextHeight(`${proof.fact} ${proof.source}`, { ...type, size: proof.size ?? type.size }, column) + ROOM.matrixProofGap;
   const noteIn = (cut: number): number => (cut > 0 ? frameworkPortraitCutNoteHeightIn(cut, 'framework', column) : 0);
@@ -405,7 +415,7 @@ function frameworkPortraitMatrixBand(
     bite: goal.bite ? { text: goal.bite, size: TYPE.matrixBite.size } : null,
   }));
   let rows = measure(cells);
-  const textRoom = room - head - note - proofsLeast;
+  const textRoom = room - head - proofsLeast;
   const natural = rows.value + rows.key + rows.bite;
   if (natural > textRoom) {
     // Each row's text gets its share of the room that stays, by its natural height; the cells are fitted into it.
@@ -424,7 +434,7 @@ function frameworkPortraitMatrixBand(
     }));
     rows = measure(cells);
   }
-  const proofsRoom = Math.max(proofsLeast - ROOM.matrixRow, room - head - note - ROOM.matrixRow - rows.value - rows.key - rows.bite);
+  const proofsRoom = Math.max(proofsLeast - ROOM.matrixRow, room - head - ROOM.matrixRow - rows.value - rows.key - rows.bite);
   const proofs = goals.map((goal): FoundationMessagePrintCutList<FoundationMessagePrintGoalProof> => {
     const list = frameworkPortraitCutList(
       goal.proofRows,
@@ -462,7 +472,7 @@ function frameworkPortraitMatrixBand(
           (cell.cut > 0 ? frameworkPortraitCutNoteHeightIn(cell.cut, 'framework', column) : 0)
       )
     );
-  return { cells, proofs, height: head + rows.value + rows.key + rows.bite + proofsHeight + note };
+  return { cells, proofs, height: head + rows.value + rows.key + rows.bite + proofsHeight };
 }
 
 /** The room the cover's contents list has, px: from its eyebrow's top to the cover strip, less the eyebrow and the list's margin. */

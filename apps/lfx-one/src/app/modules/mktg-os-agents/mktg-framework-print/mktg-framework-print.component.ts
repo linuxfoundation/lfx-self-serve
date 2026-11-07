@@ -483,7 +483,7 @@ export class MktgFrameworkPrintComponent {
     return mktgPortraitParaHeight(this.para(text, type), width);
   }
 
-  private para(text: string, type: FoundationMessagePrintType, above = 0): MktgPortraitFitPara {
-    return { text, size: type.size, line: type.line, weight: type.weight, above };
+  private para(text: string, type: FoundationMessagePrintType): MktgPortraitFitPara {
+    return { text, size: type.size, line: type.line, weight: type.weight };
   }
 }
