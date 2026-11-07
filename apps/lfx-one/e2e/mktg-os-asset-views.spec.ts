@@ -16,7 +16,6 @@ import {
   layoutMktgPrintFrame,
   PRINT_FRAME_LETTER,
   stubMktgPrintFrame,
-  expectMktgPortraitPageSetup,
   expectMktgPrintPageSetup,
   mktgPrintComputedPx,
 } from './helpers/mktg-print.helper';
