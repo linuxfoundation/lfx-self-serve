@@ -330,21 +330,31 @@ const CAVEAT_MAX_CHARS = 4000;
 const CAVEAT_ABBREVIATION = /\b(e\.g|i\.e|etc|vs|cf|approx|no)\.(?= )/gi;
 const CAVEAT_ABBREVIATION_MARK = '\u0001';
 // A boundary is . ! or ? (with closing quotes or brackets) before whitespace and any non-space, so "robots.txt …" is its own sentence.
+// The whitespace inside a quoted span is masked first, so a quoted title ("What is AEO?") or a provider's
+// multi-sentence message stays one unit.
 const CAVEAT_SENTENCE_BOUNDARY = /([.!?]['"\u2018\u2019\u201c\u201d`)\]]*)\s+(?=\S)/g;
 const CAVEAT_SENTENCE_MARK = '\u0000';
+const CAVEAT_QUOTE_SPACE_MARK = '\u0002';
+// A stop inside a closing quote followed by a lowercase word continues the sentence ("What is AEO?" as its first result).
+const CAVEAT_QUOTE_CONTINUATION = /([.!?]['"\u2019\u201d`]+)(\s+)(?=\p{Ll})/gu;
 const CAVEAT_PARENTHETICAL = /\(([^()]*)\)/g;
 const CAVEAT_WORD_CHARACTER = /[\p{L}\p{N}]/u;
 // The classifier decides by the sentence's SUBJECT. A provider subject (a search, the provider, the API, a lookup)
-// that quotes a message after returned/responded/failed/error/message, or names a credits or quota limit, is a
-// provider failure: a search subject maps to one fixed sentence, another provider subject is left out. A quoted
-// result title is never a failure, and a sentence about the audited site (its pages, fetches, statuses, rate
-// limiting) passes verbatim.
+// that names a credits or quota limit, or quotes a message after returned/responded/failed/error/message with
+// evidence of failure (a failure word or an HTTP status, inside the quotes or outside them), is a provider
+// failure: a search subject maps to one fixed sentence, another provider subject is left out. A quoted successful
+// result or result title is never a failure, and a sentence about the audited site (its pages, fetches,
+// statuses, rate limiting) passes verbatim.
 const CAVEAT_NAME_SEARCH = /\bname search\b/i;
 const CAVEAT_SEARCH_SUBJECT = /^(?:(?:the|our|a|an)\s+)?(?:(?:web|third[- ]party)[\s-]+)?search(?:es)?(?:\s+(?:provider|service|API|engine))?\b/i;
 const CAVEAT_PROVIDER_SUBJECT = /^(?:(?:the|our|a|an)\s+)?(?:provider|API|lookup)\b/i;
 const CAVEAT_LFX_RECORD = /LFX record could not be read/i;
 const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exceeded|exhausted)/i;
 const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u201c`]/i;
+// Failure evidence: inside the quotes a bare three-digit status counts; outside them only after HTTP or status ("the first 60 KB" is no status).
+const CAVEAT_FAILURE_WORDS = 'unavailable|error|denied|unauthori[sz]ed|forbidden|exceeded|limit|timeout|timed out|quota|credits?|rate[- ]limited';
+const CAVEAT_FAILURE_IN_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|\\d{3})\\b`, 'i');
+const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:HTTP|status)\\s*\\d{3})\\b`, 'i');
 const CAVEAT_RESULT_TITLE = [
   /['"\u2018\u201c`][^'"\u2019\u201d`]*['"\u2019\u201d`]\s+as (?:its|the) (?:top|first|best|second|leading)\b[^.]*\bresult/i,
   /\b(?:titled|entitled|called|named)\s*['"\u2018\u201c`]/i,
@@ -364,19 +374,19 @@ const CAVEAT_IDENTIFIERS = [
  * search and an LFX record that could not be read map to fixed wording; a parenthetical that carries plumbing
  * is removed; a sentence that still carries plumbing is left out. Plumbing is the known shapes: a snake_case
  * field name, a slug, a uid, a credits or quota phrase, or a provider subject (a search, the provider, the API,
- * a lookup) quoting its message. A quoted result title and any sentence about the audited site pass through
- * unchanged, as does a caveat with nothing to map (returned as is); an emptied caveat, or one above 4,000
- * characters, becomes one fixed sentence.
+ * a lookup) quoting a failure. A quoted result, a quoted title and any sentence about the audited site pass
+ * through unchanged, as does a caveat with nothing to map (returned as is); a quotation is never split into
+ * sentences; an emptied caveat, or one above 4,000 characters, becomes one fixed sentence.
  */
 export function aeoGeoReaderCaveat(caveat: string): string {
   if (caveat.length > CAVEAT_MAX_CHARS) {
     return AEO_GEO_READER_CAVEATS.inputs_unavailable;
   }
-  const sentences = caveat
+  const sentences = maskQuotedSpaces(caveat)
     .replace(CAVEAT_ABBREVIATION, `$1${CAVEAT_ABBREVIATION_MARK}`)
     .replace(CAVEAT_SENTENCE_BOUNDARY, `$1${CAVEAT_SENTENCE_MARK}`)
     .split(CAVEAT_SENTENCE_MARK)
-    .map((sentence) => sentence.split(CAVEAT_ABBREVIATION_MARK).join('.').trim())
+    .map((sentence) => sentence.split(CAVEAT_ABBREVIATION_MARK).join('.').split(CAVEAT_QUOTE_SPACE_MARK).join(' ').trim())
     .filter((sentence) => sentence.length > 0);
   // A sentence scrubbed to nothing but punctuation (a caveat that was only a plumbing parenthetical) is left out, never an empty bullet.
   const kept = sentences.map(readerSentence).filter((sentence) => CAVEAT_WORD_CHARACTER.test(sentence) && !carriesPlumbing(sentence));
@@ -417,13 +427,19 @@ function carriesPlumbing(text: string): boolean {
   return CAVEAT_IDENTIFIERS.some((pattern) => pattern.test(text)) || carriesProviderFailure(text);
 }
 
-/** A credits/quota phrase (outside a quoted result title), or a provider subject quoting its message. */
+/**
+ * A credits/quota phrase (outside a quoted result title), or a provider subject quoting its message with evidence
+ * of failure in or around the quotes; a quoted successful result ("Example Foundation") is audit content.
+ */
 function carriesProviderFailure(sentence: string): boolean {
   const title = CAVEAT_RESULT_TITLE.some((pattern) => pattern.test(sentence));
   if (CAVEAT_PROVIDER_WORDS.test(title ? outsideQuotes(sentence) : sentence)) {
     return true;
   }
-  return !title && providerSubject(sentence) !== null && CAVEAT_QUOTED_MESSAGE.test(sentence);
+  if (title || providerSubject(sentence) === null || !CAVEAT_QUOTED_MESSAGE.test(sentence)) {
+    return false;
+  }
+  return CAVEAT_FAILURE_IN_QUOTES.test(insideQuotes(sentence)) || CAVEAT_FAILURE_OUTSIDE_QUOTES.test(outsideQuotes(sentence));
 }
 
 function providerSubject(sentence: string): 'search' | 'provider' | null {
@@ -434,6 +450,25 @@ function providerSubject(sentence: string): 'search' | 'provider' | null {
     return 'search';
   }
   return CAVEAT_PROVIDER_SUBJECT.test(sentence) ? 'provider' : null;
+}
+
+/** The quoted spans' text, joined; the single-quote rule's leading character is not part of its span. */
+function insideQuotes(text: string): string {
+  return CAVEAT_QUOTED_SPANS.flatMap((span) =>
+    Array.from(text.matchAll(span), (match) => (typeof match[1] === 'string' ? match[0].slice(match[1].length) : match[0]))
+  ).join(' ');
+}
+
+/** Whitespace inside a quoted span, and after a quote-closed stop the sentence continues past, is masked so the split never breaks a quotation. */
+function maskQuotedSpaces(text: string): string {
+  return CAVEAT_QUOTED_SPANS.reduce(
+    (rest, span) =>
+      rest.replace(span, (match, lead: unknown) => {
+        const keep = typeof lead === 'string' ? lead : '';
+        return keep + match.slice(keep.length).replace(/\s/g, CAVEAT_QUOTE_SPACE_MARK);
+      }),
+    text
+  ).replace(CAVEAT_QUOTE_CONTINUATION, (_match, quote: string, spaces: string) => quote + spaces.replace(/\s/g, CAVEAT_QUOTE_SPACE_MARK));
 }
 
 function outsideQuotes(text: string): string {

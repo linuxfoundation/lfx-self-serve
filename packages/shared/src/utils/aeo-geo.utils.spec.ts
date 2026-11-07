@@ -382,6 +382,42 @@ describe('AEO/GEO reader caveats', () => {
     );
   });
 
+  it('needs evidence of failure beside the provider subject: a quoted successful result passes, a quoted failure maps', () => {
+    // The quoted text is what the search returned, and it is a result, not a failure, in any phrasing.
+    expect(aeoGeoReaderCaveat('The search returned "Example Foundation" for both queries.')).toBe('The search returned "Example Foundation" for both queries.');
+    expect(aeoGeoReaderCaveat('Web search for "aaif" returned "Agentic AI Foundation" first.')).toBe(
+      'Web search for "aaif" returned "Agentic AI Foundation" first.'
+    );
+    // A failure word or an HTTP status inside the quotes, or a failure word outside them, is the evidence.
+    expect(aeoGeoReaderCaveat('The search provider responded with "502 Bad Gateway" for every query.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat("Search failed with 'Unauthorized'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat("Web search returned 'Service unavailable'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat('The search returned "nothing useful" with HTTP 500 for both queries.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    // A bare number outside the quotes is not a status.
+    expect(aeoGeoReaderCaveat('The search returned "Example Foundation" within the first 100 results.')).toBe(
+      'The search returned "Example Foundation" within the first 100 results.'
+    );
+  });
+
+  it('never splits a sentence inside its quotes, so a quoted title stays whole and a multi-sentence provider error maps as one', () => {
+    for (const caveat of [
+      'Search returned "What is AEO?" as its first result.',
+      'Search returned "Really? Yes!" as its top result.',
+      'The search returned "v2.0 release notes" as its top result.',
+      'Search returned "Is the API unavailable?" as its first result.',
+      'The search returned "No results. Try a broader query." for the project name. Coverage was not verified.',
+    ]) {
+      expect(aeoGeoReaderCaveat(caveat)).toBe(caveat);
+    }
+    // The provider's whole message maps with the sentence that quotes it; none of its later sentences leaks.
+    expect(aeoGeoReaderCaveat('Web search returned "Quota exceeded. Try again later." for both queries.')).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
+    expect(aeoGeoReaderCaveat("Web search returned 'Quota exceeded. Try again later.' for both queries. No coverage was verified.")).toBe(
+      `${AEO_GEO_READER_CAVEATS.search_unavailable} No coverage was verified.`
+    );
+    // A quotation that closes a sentence is still a boundary when the next sentence starts in uppercase.
+    expect(aeoGeoReaderCaveat('The page says "Welcome." The project_uid was not read.')).toBe('The page says "Welcome."');
+  });
+
   it('names no field, slug, uid or access error for an LFX record that could not be read, and keeps the clean sentences', () => {
     const caveat =
       "The LFX record could not be read by the form's project_uid (access error). " +

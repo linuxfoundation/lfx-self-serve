@@ -92,7 +92,7 @@ surfaces, in the report's own type; scorecard summaries stay plain text, and
 each caveat renders as the reader sentences of `aeoGeoReaderCaveat` (shared
 utils): a failed third-party search and an LFX record the agent could not read
 map to fixed wording, and the known plumbing shapes (a snake_case field name, a
-slug, a uid, a credits or quota phrase, a provider subject quoting its message)
+slug, a uid, a credits or quota phrase, a provider subject quoting a failure)
 are left out of the sentence that carries them; a quoted result title and any
 sentence about the audited site pass through unchanged — the stored report is
 unchanged, a report with no caveats prints no Caveats section, and two caveats
