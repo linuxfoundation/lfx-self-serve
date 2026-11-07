@@ -14,7 +14,8 @@
 }
 
 .fpc-tagline {
-  font: 500 11.5px/1 var(--pp-font);
+  /* A tagline longer than the measure wraps (printed as stored, never cut); the lines keep their own room. */
+  font: 500 11.5px/1.5 var(--pp-font);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--pp-accent);
