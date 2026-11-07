@@ -265,6 +265,37 @@ describe('the framework portrait book’s bounded blocks', () => {
     }
   });
 
+  it('never leaves a matrix proof cell with only its note: the first proof stays, set smaller to the room above the note (editor F3)', () => {
+    // The editor's shapes: a goal whose proofs are long sentences beside goals with short ones, in a matrix whose text rows take the room.
+    const sentence = `${long.trim()}. ${long.trim()}.`;
+    const column = frameworkPortraitMatrixColumn(4);
+    const goals = [
+      goal(4, { id: 'g1', n: 1, vp: long.repeat(3).trim(), key: long.repeat(3).trim(), bite: long.trim() }),
+      goal(1, { id: 'g2', n: 2 }),
+      goal(1, { id: 'g3', n: 3 }),
+      goal(4, { id: 'g4', n: 4, vp: long.repeat(3).trim(), key: long.repeat(3).trim(), bite: long.trim() }),
+    ].map((entry, index) => (index === 0 || index === 3 ? { ...entry, proofRows: entry.proofRows.map((proof) => ({ ...proof, fact: sentence })) } : entry));
+    const matrix = frameworkPortraitMatrix(goals, 'Across the goals.', 400);
+    expect(matrix.height).toBeLessThanOrEqual(400);
+    for (const [index, cell] of matrix.proofs.entries()) {
+      expect(cell.rows.length).toBeGreaterThan(0);
+      expect(cell.rows.length + cell.cut).toBe(goals[index].proofRows.length);
+      // The first row is the goal's first proof: as written, or its opening cut at a sentence; smaller than the tight type when it had to be.
+      expect(goals[index].proofRows[0].fact.startsWith(cell.rows[0].fact.replace(/…$/, ''))).toBe(true);
+      expect(cell.rows[0].size ?? FRAMEWORK_PORTRAIT_TYPE.matrixProofTight.size).toBeLessThanOrEqual(FRAMEWORK_PORTRAIT_TYPE.matrixProofTight.size);
+    }
+    // The long goals kept one proof, smaller or cut, with the note counting the three left off; the short goals print theirs whole.
+    for (const index of [0, 3]) {
+      const cell = matrix.proofs[index];
+      expect(cell.cut).toBe(3);
+      expect(cell.note).toBe("+3 more on the framework's Framework tab in LFX One");
+      expect((cell.rows[0].size ?? 10.5) < 10.5 || cell.rows[0].fact.length < sentence.length).toBe(true);
+      const type = { ...FRAMEWORK_PORTRAIT_TYPE.matrixProofTight, size: cell.rows[0].size ?? 10.5 };
+      expect(frameworkPortraitTextHeight(`${cell.rows[0].fact} ${cell.rows[0].source}`, type, column)).toBeLessThan(400);
+    }
+    expect(matrix.proofs[1]).toMatchObject({ cut: 0, rows: goals[1].proofRows });
+  });
+
   it('packs the say pills into their column and cuts them from the end, tight first; cuts the avoid rows to whole rows', () => {
     const pills = Array.from({ length: 12 }, (_, index) => `${long.slice(0, 40).trim()} ${index}`);
     expect(frameworkPortraitPillsHeight(['open'], 320, false)).toBe(13 * 1.2 + 18);

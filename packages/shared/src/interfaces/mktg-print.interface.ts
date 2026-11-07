@@ -123,6 +123,8 @@ export interface FoundationMessagePrintFittedTitle extends FoundationMessagePrin
 export interface FoundationMessagePrintGoalProof {
   fact: string;
   source: string;
+  /** The row's own type size, px, when the matrix set a cell's first proof smaller to keep it (frameworkPortraitMatrix); absent, the list's type. */
+  size?: number;
 }
 
 /** One "Who it's for" card of a goal page: the profile's name, its need and its call to action, fitted to the card together. */

@@ -163,7 +163,8 @@
                   <div>
                     <ul class="fwp-matrix-proofs" [class.fwp-matrix-proofs--tight]="cell.tight">
                       @for (proof of cell.rows; track $index) {
-                        <li>
+                        <!-- A cell's first proof kept set smaller carries its own size (editor F3: never only the note). -->
+                        <li [style.font-size.px]="proof.size ?? null">
                           {{ proof.fact }} <span class="fwp-matrix-source">{{ proof.source }}</span>
                         </li>
                       }

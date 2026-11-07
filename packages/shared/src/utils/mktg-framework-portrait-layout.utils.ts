@@ -266,8 +266,11 @@ function fitText(text: string, type: FoundationMessagePrintType, width: number, 
  * value, key message and sound bite rows at their type where the three leave the proofs row at least its note (the
  * muted line at the count every proof would make), else each cell fitted by the portrait fit model (smaller first,
  * then cut at a sentence) into the rows' share of the room that stays; then each goal's proof cell a cut list in the
- * room the fitted rows leave (tightened first, then whole rows with the muted line). The matrix's height is returned
- * with it, and is at most the room, so the sound bite row stays above the footer whatever the record runs to.
+ * room the fitted rows leave (tightened first, then whole rows with the muted line). A proof cell never holds only
+ * the note (the editor's rule): the proofs row is floored at every goal's first proof (at the fit model's floor) with
+ * the note counting the rest, and a cell whose rows would all be cut keeps its first proof, set smaller (then cut at
+ * a sentence) to the room above its note. The matrix's height is returned with it, and is at most the room, so the
+ * sound bite row stays above the footer whatever the record runs to.
  */
 export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGoal[], crosscut: string, room: number): FoundationMessagePrintMatrix {
   const column = frameworkPortraitMatrixColumn(goals.length);
@@ -281,9 +284,14 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
     3 +
     tallest(titles.map((title) => frameworkPortraitTextHeight(title.text, { ...TYPE.matrixGoal, size: title.size }, column)));
   const note = crosscut ? ROOM.matrixCrosscutGap + frameworkPortraitTextHeight(crosscut, TYPE.matrixCrosscut, PAGE.contentWidth - ROOM.matrixPadding) : 0;
-  // The proofs row keeps at least its chrome and the note at the count every proof would make: never less, whatever the text rows run to.
-  const mostProofs = tallest(goals.map((goal) => goal.proofRows.length));
-  const proofsLeast = ROOM.matrixRow + (mostProofs > 0 ? frameworkPortraitCutNoteHeightIn(mostProofs, 'framework', column) : 0);
+  const proofRow = (proof: FoundationMessagePrintGoalProof, type: FoundationMessagePrintType): number =>
+    frameworkPortraitTextHeight(`${proof.fact} ${proof.source}`, { ...type, size: proof.size ?? type.size }, column) + ROOM.matrixProofGap;
+  const noteIn = (cut: number): number => (cut > 0 ? frameworkPortraitCutNoteHeightIn(cut, 'framework', column) : 0);
+  // The proofs row keeps at least its chrome, every goal's first proof at the fit model's floor and the note counting the rest
+  // (never only the note, the editor's rule): never less, whatever the text rows run to.
+  const floorType: FoundationMessagePrintType = { ...TYPE.matrixProofTight, size: TYPE.matrixProofTight.size * FIT.minScale };
+  const proofsLeast =
+    ROOM.matrixRow + tallest(goals.map((goal) => (goal.proofRows.length ? proofRow(goal.proofRows[0], floorType) + noteIn(goal.proofRows.length - 1) : 0)));
   const quoted = (bite: string): string => `“${bite}”`;
   const measure = (cells: readonly FoundationMessagePrintMatrixCell[]): { value: number; key: number; bite: number } => ({
     value: ROOM.matrixRow + tallest(cells.map((cell) => frameworkPortraitTextHeight(cell.vp.text, { ...TYPE.matrixCell, size: cell.vp.size }, column))),
@@ -321,18 +329,34 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
     rows = measure(cells);
   }
   const proofsRoom = Math.max(proofsLeast - ROOM.matrixRow, room - head - note - ROOM.matrixRow - rows.value - rows.key - rows.bite);
-  const proofRow = (proof: FoundationMessagePrintGoalProof, type: FoundationMessagePrintType): number =>
-    frameworkPortraitTextHeight(`${proof.fact} ${proof.source}`, type, column) + ROOM.matrixProofGap;
-  const proofs = goals.map((goal) =>
-    frameworkPortraitCutList(
+  const proofs = goals.map((goal): FoundationMessagePrintCutList<FoundationMessagePrintGoalProof> => {
+    const list = frameworkPortraitCutList(
       goal.proofRows,
       proofsRoom,
       'framework',
       (proof) => proofRow(proof, TYPE.matrixProof),
       (proof) => proofRow(proof, TYPE.matrixProofTight),
       frameworkPortraitCutNoteHeightIn(1, 'framework', column)
-    )
-  );
+    );
+    if (list.rows.length > 0 || goal.proofRows.length === 0) return list;
+    // Every row would be cut: the first proof stays, set smaller in the fit model's steps to the room above the note, then cut at a sentence.
+    const [first] = goal.proofRows;
+    const cut = goal.proofRows.length - 1;
+    const firstRoom = proofsRoom - noteIn(cut);
+    const fits = (proof: FoundationMessagePrintGoalProof): boolean => proofRow(proof, TYPE.matrixProofTight) <= firstRoom;
+    let kept: FoundationMessagePrintGoalProof = { ...first, size: TYPE.matrixProofTight.size };
+    for (let step = 1; !fits(kept); step += 1) {
+      const scale = Math.round((1 - step * FIT.scaleStep) * 100) / 100;
+      if (scale < FIT.minScale - 1e-9) break;
+      kept = { ...first, size: TYPE.matrixProofTight.size * scale };
+    }
+    for (let guard = 0; guard < FIT.maxCuts && !fits(kept); guard++) {
+      const fact = mktgPortraitCutText(kept.fact, Math.floor(kept.fact.length * FIT.cutShare));
+      if (fact === kept.fact || fact.length >= kept.fact.length) break;
+      kept = { ...kept, fact };
+    }
+    return { rows: [kept], cut, tight: true, note: foundationMessagePrintCutNote(cut, 'framework') };
+  });
   const proofsHeight =
     ROOM.matrixRow +
     tallest(
