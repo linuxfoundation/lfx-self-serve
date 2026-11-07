@@ -7,10 +7,21 @@
 // sentence (the Google Slides exporter's model, in px). A document's page
 // plan is `mktg-portrait-plan.utils.ts`.
 
-import { MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_PAGE_NUMBER_DIGITS } from '../constants/mktg-portrait-print.constants';
+import {
+  MKTG_PORTRAIT_CAPS_TRACKING_EM,
+  MKTG_PORTRAIT_FAMILY_WIDTH,
+  MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT,
+  MKTG_PORTRAIT_FIT,
+  MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
+  MKTG_PORTRAIT_GLYPH_WIDTHS,
+  MKTG_PORTRAIT_HEX_REGEX,
+  MKTG_PORTRAIT_INKS,
+  MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
+  MKTG_PORTRAIT_WEIGHT_WIDTH,
+} from '../constants/mktg-portrait-print.constants';
 import type { MktgPrintBrand } from '../interfaces/mktg-print.interface';
 import type { MktgPortraitFitBlock, MktgPortraitFitPara, MktgPortraitFitResult, MktgPortraitLook } from '../interfaces/mktg-portrait-print.interface';
-import { brandKitInkOnAccent } from './brand-kit-book.utils';
+import { brandKitContrastRatio, brandKitInkOnAccent, brandKitLuminance } from './brand-kit-book.utils';
 
 /**
  * The look of a portrait document from the print's brand: the kit's dark
@@ -44,6 +55,46 @@ export function mktgPortraitIsChapter(section: string): boolean {
 export function mktgPortraitCharEm(para: Pick<MktgPortraitFitPara, 'weight' | 'caps'>): number {
   if (para.caps) return MKTG_PORTRAIT_FIT.charEmCaps;
   return (para.weight ?? 400) >= 600 ? MKTG_PORTRAIT_FIT.charEmBold : MKTG_PORTRAIT_FIT.charEm;
+}
+
+/** The first family of a CSS font stack, lowercased and unquoted: `'Instrument Sans', sans-serif` → `instrument sans`. */
+function firstFamily(stack: string | undefined): string {
+  return (stack ?? '').split(',')[0].replace(/['"]/g, '').trim().toLowerCase();
+}
+
+/** How much wider than the table a weight sets a line: the nearest named weight at or below it. */
+function weightWidth(weight: number): number {
+  const named = Object.keys(MKTG_PORTRAIT_WEIGHT_WIDTH)
+    .map(Number)
+    .filter((named) => named <= weight)
+    .sort((a, b) => b - a)[0];
+  return MKTG_PORTRAIT_WEIGHT_WIDTH[named ?? 400] ?? 1;
+}
+
+/**
+ * The width one line of `text` takes at `size` px, measured glyph by glyph
+ * (the sans table, widened for the family and the weight; capitals with their
+ * tracking): the measure for a line that must stay whole at its real size.
+ * It is not the paragraph model's flat average, which wraps safely but
+ * would shrink a line that fits.
+ */
+export function mktgPortraitTextWidth(text: string, size: number, para: Pick<MktgPortraitFitPara, 'weight' | 'caps' | 'family' | 'tracking'> = {}): number {
+  const shown = para.caps ? text.toUpperCase() : text;
+  const glyphs = Array.from(shown).reduce((sum, char) => sum + (MKTG_PORTRAIT_GLYPH_WIDTHS[char] ?? MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT), 0) / 1000;
+  const trackingEm = para.tracking ?? (para.caps ? MKTG_PORTRAIT_CAPS_TRACKING_EM : 0);
+  const tracking = Math.max(0, Array.from(shown).length - 1) * trackingEm;
+  const family = MKTG_PORTRAIT_FAMILY_WIDTH[firstFamily(para.family)] ?? MKTG_PORTRAIT_FAMILY_WIDTH_DEFAULT;
+  return (glyphs * family * weightWidth(para.weight ?? 400) + tracking) * size;
+}
+
+/** Whether one line of `text` fits `width` px at `size` px, by the measured width. */
+export function mktgPortraitLineFits(
+  text: string,
+  width: number,
+  size: number,
+  para: Pick<MktgPortraitFitPara, 'weight' | 'caps' | 'family' | 'tracking'> = {}
+): boolean {
+  return mktgPortraitTextWidth(text, size, para) <= width + 0.01;
 }
 
 /** Characters per line in a column `width` px wide at `size` px. */
@@ -129,7 +180,17 @@ export function mktgPortraitCutText(text: string, max: number): string {
     if (next.length + 1 > max) break;
     out = next;
   }
-  return `${(out || text.slice(0, Math.max(1, max - 1))).replace(/[\s,;:.—-]+$/, '')}…`;
+  return `${mktgPortraitTrimTail(out || text.slice(0, Math.max(1, max - 1)))}…`;
+}
+
+/** The characters an ellipsis replaces at the end of a cut: spaces and the punctuation a cut sentence or word leaves behind. */
+const CUT_TAIL = new Set([' ', '\t', '\n', '\r', '\f', '\v', '\u00a0', ',', ';', ':', '.', '—', '-']);
+
+/** A cut's text without its trailing spaces and punctuation, read from the end one character at a time (linear, whatever the text). */
+function mktgPortraitTrimTail(text: string): string {
+  let end = text.length;
+  while (end > 0 && CUT_TAIL.has(text[end - 1])) end -= 1;
+  return text.slice(0, end);
 }
 
 /**
@@ -180,4 +241,61 @@ export function mktgPortraitPaginate<T>(items: readonly T[], fitsPage: (page: T[
   }
   if (current.length) pages.push(current);
   return pages;
+}
+
+// ---------- the text accent ----------
+
+/** WCAG 1.4.3's threshold for ordinary text, the ratio `mktgPortraitAccentText` reaches. */
+export const MKTG_PORTRAIT_TEXT_CONTRAST = 4.5;
+
+/**
+ * The accent as TEXT on a light page: the kit's accent darkened, in OKLab (lightness alone, the hue and chroma kept as
+ * far as the gamut allows), until it reads on the paper at WCAG AA for ordinary text (≥ 4.5:1); an accent that already
+ * does is returned as it is, as is anything that is not a six-digit hex. Bound on every frame as `--pp-accent-text`
+ * and used for every text set in the accent (the section label under the band, rule numbers, numerals); fills, bands
+ * and rules keep the accent itself, which the editor measured at 2.76:1 as text.
+ */
+export function mktgPortraitAccentText(accent: string, paper: string = MKTG_PORTRAIT_INKS.white): string {
+  if (!MKTG_PORTRAIT_HEX_REGEX.test(accent) || !MKTG_PORTRAIT_HEX_REGEX.test(paper)) return accent;
+  const paperLuminance = brandKitLuminance(paper);
+  const reads = (hex: string): boolean => brandKitContrastRatio(paperLuminance, brandKitLuminance(hex)) >= MKTG_PORTRAIT_TEXT_CONTRAST;
+  if (reads(accent)) return accent;
+  const [lightness, a, b] = mktgPortraitOklab(accent);
+  for (let l = lightness - 0.005; l > 0; l -= 0.005) {
+    const hex = mktgPortraitOklabHex(l, a, b);
+    if (reads(hex)) return hex;
+  }
+  return '#000000';
+}
+
+/** A six-digit hex in OKLab (Björn Ottosson's matrices), for perceptual darkening. */
+function mktgPortraitOklab(hex: string): [number, number, number] {
+  const linear = (offset: number): number => {
+    const value = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const [r, g, b] = [linear(1), linear(3), linear(5)];
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+
+/** An OKLab colour back as a six-digit hex, each channel clipped to the sRGB gamut. */
+function mktgPortraitOklabHex(lightness: number, a: number, b: number): string {
+  const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const channel = (linear: number): string => {
+    const clipped = Math.min(1, Math.max(0, linear));
+    const srgb = clipped <= 0.0031308 ? 12.92 * clipped : 1.055 * clipped ** (1 / 2.4) - 0.055;
+    return Math.round(srgb * 255)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${channel(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s)}${channel(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s)}${channel(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s)}`;
 }

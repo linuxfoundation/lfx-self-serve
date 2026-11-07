@@ -23,10 +23,10 @@ describe('the Logo system page', () => {
     expect(tiles?.textContent).toContain('Reversed · derived from the horizontal file');
     const rows = Array.from(frame.querySelectorAll('[data-testid="brand-kit-logo-system-files"] tbody tr'), (row) => wordsOf(row));
     expect(rows).toEqual([
-      'Horizontal lockup SVG Full colour Supplied',
+      'Horizontal lockup SVG Full color Supplied',
       'Reversed (white) — White Not supplied: this book derives it from the horizontal file',
-      'Symbol — Full colour Not supplied',
-      'Stacked lockup — Full colour Not supplied',
+      'Symbol — Full color Not supplied',
+      'Stacked lockup — Full color Not supplied',
     ]);
     expect(frame.textContent).not.toContain('logo.svg');
   });

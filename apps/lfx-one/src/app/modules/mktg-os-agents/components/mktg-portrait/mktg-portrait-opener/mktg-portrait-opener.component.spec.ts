@@ -14,7 +14,9 @@ const BOOK: MktgPortraitBook = {
   firstPage: 17,
 };
 
-async function setup(meta: { version?: string; approved?: string; pages?: string } = { version: 'V4.0', approved: '6 Nov 2026', pages: '17–30' }) {
+async function setup(
+  meta: { version?: string; approved?: string; pages?: string; approver?: string | null } = { version: 'V4.0', approved: '6 Nov 2026', pages: '17–30' }
+) {
   const fixture = TestBed.createComponent(MktgPortraitOpenerComponent);
   fixture.componentRef.setInput('look', mktgPortraitLook(mktgPrintBrand(null)));
   fixture.componentRef.setInput('book', BOOK);
@@ -26,9 +28,12 @@ async function setup(meta: { version?: string; approved?: string; pages?: string
   fixture.componentRef.setInput('version', meta.version ?? '');
   fixture.componentRef.setInput('approved', meta.approved ?? '');
   fixture.componentRef.setInput('pages', meta.pages ?? '');
+  fixture.componentRef.setInput('approver', meta.approver ?? null);
   await fixture.whenStable();
   const page = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]');
   if (!page) throw new Error('Missing synthetic opener');
+  // A block host (MKTG_PORTRAIT_BLOCK_HOST): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+  expect(getComputedStyle(fixture.nativeElement as HTMLElement).display).toBe('block');
   return { fixture, page };
 }
 
@@ -62,5 +67,18 @@ describe('lfx-mktg-portrait-opener', () => {
     expect(page.textContent).not.toContain('[');
     const { page: none } = await setup({});
     expect(none.querySelector('[data-testid="mktg-portrait-opener-meta"]')).toBeNull();
+  });
+
+  it('prints the approver on its own body-size line under the date when the store names one, and nothing when it does not', async () => {
+    const { page } = await setup({ version: 'V4.0', approved: '6 Nov 2026', pages: '17–30', approver: 'by Synthetic Approver' });
+    const note = page.querySelector<HTMLElement>('[data-testid="mktg-portrait-opener-approver"]');
+    expect(note?.textContent).toBe('by Synthetic Approver');
+    expect(note?.classList.contains('pp-opener-meta-note')).toBe(true);
+    expect(note?.previousElementSibling?.textContent).toBe('6 Nov 2026');
+    expect(note?.classList.contains('pp-opener-meta-value')).toBe(false);
+    const { page: unnamed } = await setup();
+    expect(unnamed.querySelector('[data-testid="mktg-portrait-opener-approver"]')).toBeNull();
+    const { page: blank } = await setup({ approved: '6 Nov 2026', approver: '  ' });
+    expect(blank.querySelector('[data-testid="mktg-portrait-opener-approver"]')).toBeNull();
   });
 });

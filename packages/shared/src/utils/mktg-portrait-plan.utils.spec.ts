@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
+import { brandKitLogolessFixture, brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
 import { buildBrandKitBookView } from './brand-kit-book.utils';
 import {
   brandKitPortraitPlan,
@@ -74,11 +74,48 @@ describe('brandKitPortraitPlan', () => {
   });
 
   it('keeps only the Logo chapter’s first page for a kit without logo files, so no frame prints empty', () => {
-    const none = { ...view, logos: { primary: null, stacked: null, symbol: null, reversed: null }, symbol: null };
+    // No file, so no colorway tile has artwork either (the view builder derives the tiles from the files).
+    const none = {
+      ...view,
+      logos: { primary: null, stacked: null, symbol: null, reversed: null },
+      symbol: null,
+      colorways: view.colorways.map((tile) => ({ ...tile, logo: null })),
+    };
     const plan = brandKitPortraitPlan(none, { inFamily: false });
     expect(plan).toHaveLength(12);
     expect(plan.filter((page) => page.section === '01 Logo').map((page) => page.id)).toEqual(['logo-system']);
     expect(plan[3].id).toBe('color-palette');
+    // A kit whose only files are bitmaps (no inline src) has nothing the pages can draw: planned the same way.
+    const bitmaps = { ...none, logos: { ...none.logos, primary: { ref: 'logo.png', name: 'logo.png', src: null } } };
+    expect(brandKitPortraitPlan(bitmaps, { inFamily: false })).toHaveLength(12);
+    // The shared logo-less fixture (the one the print-QA harness seeds) plans the same twelve pages.
+    const logoless = brandKitPortraitPlan(buildBrandKitBookView(brandKitLogolessFixture(), 4), { inFamily: false });
+    expect(logoless).toHaveLength(12);
+    expect(logoless.filter((page) => page.section === '01 Logo').map((page) => page.id)).toEqual(['logo-system']);
+  });
+
+  it('plans each Logo page on the artwork its tiles draw: a stacked lockup alone keeps only the first page, a horizontal lockup the pages it fills', () => {
+    const stackedOnly = {
+      ...view,
+      logos: { primary: null, stacked: { ref: 'stacked.svg', name: 'stacked.svg', src: SVG }, symbol: null, reversed: null },
+      symbol: null,
+      colorways: view.colorways.map((tile) => ({ ...tile, logo: null })),
+    };
+    expect(
+      brandKitPortraitPlan(stackedOnly, { inFamily: false })
+        .filter((page) => page.section === '01 Logo')
+        .map((page) => page.id)
+    ).toEqual(['logo-system']);
+    // The horizontal lockup alone: Colorways (its tiles draw it), Clear space, Partnership and Watchouts; no symbol page.
+    const primaryOnly = { ...view, logos: { ...view.logos, symbol: null, stacked: null, reversed: null }, symbol: null };
+    expect(
+      brandKitPortraitPlan(primaryOnly, { inFamily: false })
+        .filter((page) => page.section === '01 Logo')
+        .map((page) => page.id)
+    ).toEqual(['logo-system', 'logo-colorways', 'logo-clear-space', 'logo-partnership', 'logo-watchouts']);
+    expect(
+      brandKitPortraitPlan({ ...view, logos: { ...view.logos, symbol: { ref: 'symbol.png', name: 'symbol.png', src: null } } }, { inFamily: false })
+    ).toHaveLength(16);
   });
 
   it('inside the family drops the cover, the contents and the back cover: fourteen pages', () => {

@@ -4,20 +4,25 @@
 import { describe, expect, it } from 'vitest';
 import { MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_INKS, MKTG_PORTRAIT_PAGE, MKTG_PORTRAIT_PAGE_SETUP } from '../constants/mktg-portrait-print.constants';
 import { MKTG_PRINT_PAGE_SETUPS } from '../constants/mktg-print.constants';
+import { lfxColors } from '../constants/colors.constants';
 import type { MktgPortraitFitBlock } from '../interfaces/mktg-portrait-print.interface';
+import { brandKitContrastRatio, brandKitLuminance } from './brand-kit-book.utils';
 import {
+  mktgPortraitAccentText,
   mktgPortraitBlockHeight,
   mktgPortraitCharsPerLine,
   mktgPortraitCutText,
   mktgPortraitFitBlock,
   mktgPortraitFits,
   mktgPortraitIsChapter,
+  mktgPortraitLineFits,
   mktgPortraitLook,
   mktgPortraitOneLine,
   mktgPortraitPageNumber,
   mktgPortraitPaginate,
   mktgPortraitScaleBlock,
   mktgPortraitSentences,
+  mktgPortraitTextWidth,
   mktgPortraitWrapLines,
 } from './mktg-portrait-print.utils';
 import { mktgPrintBrand } from './mktg-print.utils';
@@ -37,8 +42,15 @@ describe('the portrait page geometry', () => {
     expect(MKTG_PORTRAIT_PAGE_SETUP).toBe('size: 8.5in 11in; margin: 0;');
   });
 
-  it('keeps the neutral inks as the design sets them', () => {
-    expect(MKTG_PORTRAIT_INKS).toEqual({ ink: '#1F2937', muted: '#6B7280', hairline: '#E5E7EB', mist: '#F3F4F6', white: '#FFFFFF' });
+  it('keeps the four neutral inks as the design sets them, and takes white and the fail ink from the app’s scales', () => {
+    expect(MKTG_PORTRAIT_INKS).toEqual({
+      ink: '#1F2937',
+      muted: '#6B7280',
+      hairline: '#E5E7EB',
+      mist: '#F3F4F6',
+      white: lfxColors.white,
+      fail: lfxColors.red[600],
+    });
   });
 });
 
@@ -77,6 +89,25 @@ describe('the fit model', () => {
     expect(mktgPortraitCharsPerLine(1, 100)).toBe(1);
   });
 
+  it('measures one line glyph by glyph in the kit’s face, so a line that fits its measure is left at its real size', () => {
+    // A live foundation's display line at 64 px in a face of ordinary width is narrower than the 704 px column …
+    const sans = { weight: 500, family: "'Instrument Sans', sans-serif" };
+    const display = mktgPortraitTextWidth('Agentic AI Foundation', 64, sans);
+    expect(display).toBeGreaterThan(560);
+    expect(display).toBeLessThan(704);
+    expect(mktgPortraitLineFits('Agentic AI Foundation', 704, 64, sans)).toBe(true);
+    // … where the flat paragraph average (0.6 em a character for a medium weight) would call it too wide.
+    expect('Agentic AI Foundation'.length * 64 * MKTG_PORTRAIT_FIT.charEmBold).toBeGreaterThan(704);
+    // The same words set wider: a wide face (Montserrat), a bolder weight, capitals with their tracking.
+    expect(mktgPortraitTextWidth('Agentic AI Foundation', 64, { weight: 500, family: 'Montserrat' })).toBeGreaterThan(display);
+    expect(mktgPortraitTextWidth('Agentic AI Foundation', 64, { weight: 700, family: sans.family })).toBeGreaterThan(display);
+    expect(mktgPortraitTextWidth('Agentic AI Foundation', 64, { ...sans, caps: true })).toBeGreaterThan(display);
+    // An unknown face measures as a face of average width; a narrow i and a wide W are not the same glyph.
+    expect(mktgPortraitTextWidth('iiii', 10)).toBeLessThan(mktgPortraitTextWidth('WWWW', 10));
+    expect(mktgPortraitTextWidth('', 10)).toBe(0);
+    expect(mktgPortraitLineFits('Agentic AI Foundation', 400, 64, sans)).toBe(false);
+  });
+
   it('wraps greedily by words, a hard line on its own, a long word broken', () => {
     expect(mktgPortraitWrapLines('one two three', 20)).toBe(1);
     expect(mktgPortraitWrapLines('one two three', 7)).toBe(2);
@@ -107,6 +138,18 @@ describe('the fit model', () => {
     expect(mktgPortraitCutText('One sentence. Another one here.', 14)).toBe('One sentence.');
     expect(mktgPortraitCutText('No stop in this long line of words', 12)).toBe('No stop in…');
     expect(mktgPortraitCutText('short', 12)).toBe('short');
+    expect(mktgPortraitCutText('A word, —  and more words after it', 9)).toBe('A word…');
+  });
+
+  it('cuts a hostile text of ten thousand tabs in linear time', () => {
+    // A first word longer than the room, after ten thousand tabs: the cut falls back to the raw slice and trims its tail.
+    const tabs = '\t'.repeat(10000);
+    const started = performance.now();
+    const slice = mktgPortraitCutText(`${tabs}x${'y'.repeat(20000)}`, 15000);
+    const words = mktgPortraitCutText(`${tabs}x`, 20);
+    expect(performance.now() - started).toBeLessThan(250);
+    expect(slice).toBe(`${tabs}x${'y'.repeat(4998)}…`);
+    expect(words).toBe('x');
   });
 
   it('keeps a block that fits as written, shrinks one that does not, and cuts the longest paragraph as the last resort', () => {
@@ -134,5 +177,29 @@ describe('the fit model', () => {
     expect(mktgPortraitPaginate([1, 2, 3, 4, 5], (page) => page.length <= 2)).toEqual([[1, 2], [3, 4], [5]]);
     expect(mktgPortraitPaginate([1, 2], () => false)).toEqual([[1], [2]]);
     expect(mktgPortraitPaginate([], () => true)).toEqual([]);
+  });
+});
+
+describe('mktgPortraitAccentText', () => {
+  const onWhite = (hex: string): number => brandKitContrastRatio(1, brandKitLuminance(hex));
+
+  it('darkens a light accent until it reads on the page white at WCAG AA, keeping its hue, and returns a dark one as it is', () => {
+    const coral = mktgPortraitAccentText('#FF702D');
+    expect(onWhite('#FF702D')).toBeLessThan(3);
+    expect(onWhite(coral)).toBeGreaterThanOrEqual(4.5);
+    expect(onWhite(coral)).toBeLessThan(4.8);
+    // Still an orange: red first, then green, little blue.
+    const [r, g, b] = [1, 3, 5].map((offset) => Number.parseInt(coral.slice(offset, offset + 2), 16));
+    expect(r).toBeGreaterThan(g);
+    expect(g).toBeGreaterThan(b);
+    expect(onWhite(mktgPortraitAccentText('#F37625'))).toBeGreaterThanOrEqual(4.5);
+    expect(onWhite(mktgPortraitAccentText('#FFD400'))).toBeGreaterThanOrEqual(4.5);
+    expect(mktgPortraitAccentText('#1E3A8A')).toBe('#1E3A8A');
+    expect(mktgPortraitAccentText('#4D4E4E')).toBe('#4D4E4E');
+  });
+
+  it('leaves anything that is not a six-digit hex alone', () => {
+    expect(mktgPortraitAccentText('coral')).toBe('coral');
+    expect(mktgPortraitAccentText('#FFF')).toBe('#FFF');
   });
 });

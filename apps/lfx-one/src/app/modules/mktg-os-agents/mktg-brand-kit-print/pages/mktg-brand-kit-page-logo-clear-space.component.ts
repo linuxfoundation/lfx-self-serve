@@ -6,6 +6,7 @@ import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-p
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitArtworkComponent } from './mktg-brand-kit-artwork.component';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../components/mktg-portrait/mktg-portrait-host';
 
 /**
  * The Clear space & minimum size page (mock 05): the rule, the lockup inside its dashed X box on the mist stage with the four X badges, the scaling row (48, 40, 32 px lockups and the symbol at its minimum), and the three minimum-size cards (screen, print, symbol).
@@ -14,6 +15,7 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
   selector: 'lfx-mktg-brand-kit-page-logo-clear-space',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective, MktgBrandKitArtworkComponent],
   templateUrl: './mktg-brand-kit-page-logo-clear-space.component.html',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
 })
 export class MktgBrandKitPageLogoClearSpaceComponent extends MktgBrandKitPageBase {
   protected readonly minimum = computed(() => this.view().logo.minimum_size);
