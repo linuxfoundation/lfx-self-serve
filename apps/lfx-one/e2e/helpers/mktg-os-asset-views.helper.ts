@@ -10,7 +10,7 @@ import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slid
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants/persona.constants';
 import { SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants/project-context.constants';
 import type { BoilerplatesEnvelope } from '@lfx-one/shared/interfaces/boilerplates.interface';
-import type { BrandKitReport } from '@lfx-one/shared/interfaces';
+import type { BrandKitReport, BrandKitRevision } from '@lfx-one/shared/interfaces';
 import type { FaqEnvelope } from '@lfx-one/shared/interfaces/faq.interface';
 import type { FoundationMessageGoal } from '@lfx-one/shared/interfaces/foundation-message.interface';
 import type { MktgFrameworkAsset, MktgRunResultResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
@@ -403,20 +403,22 @@ export function realShapedFrameworkRevisionResponse(): MktgRevisionResponse {
 }
 
 /**
- * The approved framework document with more than the portrait book's pages hold at their measure: nine figures (past the six
- * tiles hold), fourteen long proof points on the first goal, sixty sources read and forty gaps, so the print's key numbers table
- * and its cut lists print on the fixture. Synthetic throughout.
+ * The largest framework record the validator takes (`FOUNDATION_MESSAGE_CONTENT_LIMITS`: 8 figures, 4 proofs a goal; the
+ * report's lists are unbounded) that still fills the book past its rooms: eight figures with long labels (no tiles past
+ * six, a Key numbers table that continues on `key-numbers-2`), four proof points on the first goal (cut to the rows that
+ * fit, with the +N line), sixty sources read and forty gaps (cut lists on the Sources & gaps page).
  */
 export function overfullFrameworkRevisionResponse(): MktgRevisionResponse {
   const framework = realShapedFrameworkAsset();
   const sentence = 'A long proof sentence that runs across most of the column and asks the list for a second line of room.';
+  const labelTail = Array.from({ length: 5 }, () => 'counted across the synthetic record so the label needs several lines of its column').join(', ');
   const goals = framework.content.mf.goals.map((goal, index) =>
-    index === 0 ? { ...goal, proof: Array.from({ length: 14 }, (_, n): [string, string] => [`${sentence} (${n + 1})`, 'Report']) } : goal
+    index === 0 ? { ...goal, proof: Array.from({ length: 4 }, (_, n): [string, string] => [`${sentence} (${n + 1})`, 'Report']) } : goal
   );
   const content = {
     ...framework.content,
     mf: { ...framework.content.mf, goals },
-    nums: Array.from({ length: 9 }, (_, n): [string, string] => [`${(n + 1) * 1000}`, `synthetic figure ${n + 1}`]),
+    nums: Array.from({ length: 8 }, (_, n): [string, string] => [`${(n + 1) * 1000}`, `synthetic figure ${n + 1}, ${labelTail}`]),
   };
   const report = {
     ...framework.report,
@@ -589,14 +591,41 @@ export async function openDraftAssetRun(page: Page, immediateReceipt = true) {
   };
 }
 
-/** Stub native asset reads; cookie suppression precedes every navigation. */
+/** A `#RRGGBB` as the browser reports it on a computed style. */
+export function cssRgb(hex: string): string {
+  const [r, g, b] = [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/** A kit's sidecar as the document store keeps it: the v2 envelope minus the Markdown (what `readBrandKitRevision` reads back). */
+export function brandKitSidecar(kit: BrandKitRevision): Record<string, unknown> {
+  return {
+    contract: BRAND_KIT_CONTRACT_ID,
+    project_name: kit.projectName,
+    project: kit.project,
+    version: kit.version,
+    mode: kit.mode,
+    kit: kit.kit,
+    chapters: kit.chapters,
+    report: kit.report,
+    inputs: { website_url: kit.websiteUrl },
+    generated_at: kit.generatedAt,
+    agent: { agent_version: kit.agentVersion },
+  };
+}
+
+/**
+ * Stub native asset reads; cookie suppression precedes every navigation. `kit` is the project's stored Brand Kit the
+ * framework print is set in (its stored endpoint answers with the kit's sidecar); none, and the print takes the LF look.
+ */
 export async function openAssetDocument(
   page: Page,
   key: 'faq' | 'boilerplates' | 'foundation-message' | 'brand-kit',
   status = 200,
   writer = true,
   unreadable = false,
-  responseOverride?: MktgRevisionResponse
+  responseOverride?: MktgRevisionResponse,
+  kit: BrandKitRevision | null = null
 ): Promise<void> {
   await suppressCookieBanner(page);
   mockProjects[ASSET_PROJECT.slug] = ASSET_PROJECT;
@@ -629,7 +658,24 @@ export async function openAssetDocument(
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ json: { project: ASSET_PROJECT.uid, groups: [] } });
   });
-  await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, (route) => route.fulfill({ status: 404, json: { error: 'No approved branding' } }));
+  await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, (route) =>
+    kit
+      ? route.fulfill({
+          json: {
+            documentMarkdown: '',
+            receipt: {
+              s3_key: `marketing/${ASSET_PROJECT.uid}/brand-kit/v${kit.version}.md`,
+              content_sha256: 'e2e',
+              project: ASSET_PROJECT.uid,
+              version: kit.version,
+              intake_mode: 'form',
+            },
+            revisionNumber: kit.version,
+            sidecar: brandKitSidecar(kit),
+          },
+        })
+      : route.fulfill({ status: 404, json: { error: 'No approved branding' } })
+  );
   await page.route(`**/api/mktg-agents/documents/${key}/living/revisions/*/approve?*`, (route) => {
     const approval = { approvedAt: '2026-10-19T11:00:00Z', approvedBy: { name: 'Project writer' } };
     const revision = { ...response.revision, approval };

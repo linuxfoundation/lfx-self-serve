@@ -13,6 +13,7 @@ import { faqGroupViews } from './faq.utils';
 import { BRAND_KIT_HEX_REGEX } from '../constants/brand-kit.constants';
 import { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 import {
+  FOUNDATION_MESSAGE_PRINT_COUNT_WORDS,
   FOUNDATION_MESSAGE_PRINT_TAB_IDS,
   FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES,
   FOUNDATION_MESSAGE_PRINT_TITLE,
@@ -21,22 +22,26 @@ import {
   MKTG_PRINT_INK_ON_LIGHT,
   MKTG_PRINT_LF_LOOK,
   MKTG_PRINT_MONTHS,
-  MKTG_PRINT_REVERSED_FILTER,
+  mktgPrintJoin,
 } from '../constants/mktg-print.constants';
 import type { BrandKitRevision } from '../interfaces/brand-kit.interface';
-import type { FoundationMessageContent, FoundationMessageReport } from '../interfaces/foundation-message.interface';
+import type { FoundationMessageContent, FoundationMessageNumberRow, FoundationMessageReport } from '../interfaces/foundation-message.interface';
 import type {
   FoundationMessagePrintFactRow,
   FoundationMessagePrintGoal,
   FoundationMessagePrintIcp,
   FoundationMessagePrintMatrixRow,
+  FoundationMessagePrintNumber,
   FoundationMessagePrintSection,
   FoundationMessagePrintView,
   MktgPrintBrand,
   MktgPrintLogo,
 } from '../interfaces/mktg-print.interface';
-import { brandKitContrastRatio, brandKitLuminance, brandKitTint } from './brand-kit-book.utils';
-import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitLogoImage, brandKitWebsiteHost, brandKitWeights } from './brand-kit.utils';
+import { brandKitContrastRatio, brandKitLuminance, brandKitTint, buildBrandKitBookView } from './brand-kit-book.utils';
+import { brandKitPortraitArtwork } from './brand-kit-portrait.utils';
+import { mktgReadableSourceName, mktgReadableSourceText } from './mktg-readable-source.utils';
+import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitWebsiteHost, brandKitWeights } from './brand-kit.utils';
+import { frameworkPortraitIcpWhoWidth } from './mktg-framework-portrait-layout.utils';
 import {
   foundationMessageAudienceRows,
   foundationMessageAvoidRows,
@@ -67,8 +72,7 @@ export function buildFaqPrintView(asset: MktgFaqAsset, brand: MktgPrintBrand): F
 export function mktgPrintDocumentTitle(projectName: string, asset: string, version: number | null, revisionAt: string | null): string {
   const time = Date.parse(revisionAt ?? '');
   const date = Number.isNaN(time) ? '' : new Date(time).toISOString().slice(0, 10);
-  const parts = [projectName.trim(), asset.trim(), version === null ? '' : `v${version}`, date];
-  return parts.filter((part) => part !== '').join(' · ');
+  return mktgPrintJoin([projectName.trim(), asset.trim(), version === null ? '' : `v${version}`, date]);
 }
 
 /** The LF look, for a project with no Brand Kit. */
@@ -131,16 +135,15 @@ export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
   const { dark, accent } = kit.kit;
   const type = kit.chapters.type;
   const fontUrl = brandKitGoogleFontsUrl(type.family, brandKitWeights(type.weights), type.google_fonts);
-  const files = kit.chapters.logo.files;
+  // The logo a print draws is the portrait grammar's lockup artwork (brandKitPortraitArtwork: the supplied reversed
+  // file on a dark ground, else the primary filtered to white; the primary as it is on a light one; null when the kit
+  // has no drawable file for it), named for the project; the kit's placeholder flag draws none.
   const alt = `${kit.projectName} logo`;
-  const primary = kit.chapters.logo.placeholder ? null : brandKitLogoImage(files.primary);
-  const reversed = kit.chapters.logo.placeholder ? null : brandKitLogoImage(files.reversed);
-  let logoOnDark: MktgPrintLogo | null = null;
-  if (reversed?.src) {
-    logoOnDark = { src: reversed.src, alt, filter: '' };
-  } else if (primary?.src) {
-    logoOnDark = { src: primary.src, alt, filter: MKTG_PRINT_REVERSED_FILTER };
-  }
+  const artwork = (mode: 'full' | 'reversed'): MktgPrintLogo | null => {
+    const logo = kit.chapters.logo.placeholder ? null : brandKitPortraitArtwork(buildBrandKitBookView(kit), 'lockup', mode);
+    return logo ? { ...logo, alt } : null;
+  };
+  const logoOnDark = artwork('reversed');
   const darkIsHex = BRAND_KIT_HEX_REGEX.test(dark);
   // Text on the kit's dark panels takes whichever ink reads better against it:
   // a mid-gray "dark" can be too light for white text yet not light enough to count as light.
@@ -157,7 +160,7 @@ export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
     fontUrl,
     fontFamily: fontUrl ? type.family.trim() : null,
     logoOnDark,
-    logoOnLight: primary?.src ? { src: primary.src, alt, filter: '' } : null,
+    logoOnLight: artwork('full'),
   };
 }
 
@@ -173,17 +176,25 @@ export function foundationMessagePrintSections(): FoundationMessagePrintSection[
 
 /** The goal columns with their segments as one line, so the template joins nothing. */
 export function foundationMessagePrintGoals(content: FoundationMessageContent): FoundationMessagePrintGoal[] {
-  return foundationMessageGoalViews(content).map((goal) => ({ ...goal, segmentLabel: goal.segmentNames.join(', ') }));
+  // The references are trimmed once here, as the screen's views trim them to resolve names: the validator tolerates
+  // padding on a reference (a hand-edited version), and every print match (the served cards, the matrix) reads these.
+  return foundationMessageGoalViews(content).map((goal) => ({ ...goal, icps: goal.icps.map((id) => id.trim()), segmentLabel: goal.segmentNames.join(', ') }));
 }
 
 /** The segments with their goals and channels as one line each, and a `Goal n` chip per goal served, so the template joins nothing. */
 export function foundationMessagePrintIcps(content: FoundationMessageContent): FoundationMessagePrintIcp[] {
-  return foundationMessageIcpViews(content).map((icp) => ({
-    ...icp,
-    goalLabel: icp.goalTitles.join(', '),
-    channelsLabel: icp.channels.join(' · '),
-    goalChips: content.mf.goals.filter((goal) => icp.goals.includes(goal.id)).map((goal) => `Goal ${goal.n}`),
-  }));
+  return foundationMessageIcpViews(content).map((icp) => {
+    const goals = icp.goals.map((id) => id.trim());
+    const goalChips = content.mf.goals.filter((goal) => goals.includes(goal.id)).map((goal) => `Goal ${goal.n}`);
+    return {
+      ...icp,
+      goals,
+      goalLabel: icp.goalTitles.join(', '),
+      channelsLabel: mktgPrintJoin(icp.channels),
+      goalChips,
+      whoWidth: frameworkPortraitIcpWhoWidth([icp.kind, ...goalChips]),
+    };
+  });
 }
 
 /** The approval's date as the cover prints it (`6 Nov 2026`, UTC), '' when there is none to read. */
@@ -195,19 +206,60 @@ export function mktgPrintApprovedDate(approvedAt: string | null): string {
 }
 
 /**
- * A source as the Sources & gaps page prints it: as the run stored it, with
- * only its type prefix (`Website: `, `Link: `, `Press release: `) taken off.
- * Nothing is renamed or invented: a URL prints as the URL.
+ * A source as the Sources & gaps page prints it, in words a reader knows (the
+ * editor's rule, 7 November 2026, through the grammar's shared
+ * `mktgReadableSourceName`): its type prefix (`Website: `, `Link: `,
+ * `Press release: `) taken off; a press release named as the design's mock
+ * names it, "The press release" with the site's press address; any other URL
+ * as its address without scheme, `www.` or query, a remark after it kept
+ * (`aaif.io (home)`); the LFX record by name, never its slug.
  */
 export function foundationMessagePrintSourceLabel(source: string): string {
   const trimmed = source.trim();
   const type = FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES.find((prefix) => trimmed.startsWith(`${prefix}: `));
-  return type ? trimmed.slice(type.length + 2).trim() : trimmed;
+  const rest = type ? trimmed.slice(type.length + 2).trim() : trimmed;
+  const url = rest.match(/^(https?:\/\/\S+)(.*)$/);
+  if (!url) return mktgReadableSourceName(rest);
+  const [, address, remark] = url;
+  if (type === 'Press release') {
+    const [host, section] = mktgReadableSourceName(address).split('/');
+    return `The press release (${section ? `${host}/${section}` : host})${remark}`;
+  }
+  return `${mktgReadableSourceName(address)}${remark}`;
+}
+
+/** A sentence of the report (a failed source's reason, a gap) with every URL and file name in it in a reader's words (the grammar's rule). */
+export function foundationMessagePrintReportText(text: string): string {
+  return mktgReadableSourceText(text.trim());
+}
+
+/** The say-and-avoid page's intro, counting the anchor questions as the mock's sentence does ("the three questions every piece of content answers"). */
+export function foundationMessagePrintAnchorIntro(count: number): string {
+  const words = FOUNDATION_MESSAGE_PRINT_COUNT_WORDS[count] ?? String(count);
+  return `The words the framework uses, the ones it replaces, and the ${words} question${count === 1 ? '' : 's'} every piece of content answers.`;
 }
 
 /** Every goal's proof points with their sources and the goal that uses each, in the framework's order. */
 export function foundationMessagePrintFacts(goals: FoundationMessagePrintGoal[]): FoundationMessagePrintFactRow[] {
-  return goals.flatMap((goal) => goal.proofRows.map((proof) => ({ fact: proof.fact, source: proof.source, usedBy: `Goal ${goal.n} · ${goal.t}` })));
+  return goals.flatMap((goal) =>
+    goal.proofRows.map((proof) => ({ fact: proof.fact, source: proof.source, usedBy: mktgPrintJoin([`Goal ${goal.n}`, goal.t]) }))
+  );
+}
+
+/**
+ * The key numbers with each figure's source: the source of the proof points that state the figure as a whole number (`299` in
+ * `299 member organizations`, `10,000+` in `More than 10,000 published MCP servers`; never `8` in `188`, `299` in `299.5` or
+ * `1,299`, while a sentence's own comma or period after the figure is no part of it), when they agree on one. A figure no
+ * proof point states, or that proof points source differently, carries '' and prints no pill: the record's own key numbers
+ * have no source of their own, and none is invented.
+ */
+export function foundationMessagePrintNumbers(numbers: FoundationMessageNumberRow[], facts: FoundationMessagePrintFactRow[]): FoundationMessagePrintNumber[] {
+  return numbers.map((row) => {
+    const figure = row.number.trim().replace(/\+$/, '');
+    const token = new RegExp(`(?:^|[^\\d,.])${figure.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d|[,.]\\d)`);
+    const sources = new Set(facts.filter((fact) => figure !== '' && token.test(fact.fact)).map((fact) => fact.source));
+    return { ...row, source: sources.size === 1 ? [...sources][0] : '' };
+  });
 }
 
 /** Goals × profiles: one row per profile, a cell per goal (in the framework's order), true where the goal's messaging is written for the profile. */
@@ -239,12 +291,13 @@ export function buildFoundationMessagePrintView(
   const name = projectName.trim();
   const goals = foundationMessagePrintGoals(content);
   const icps = foundationMessagePrintIcps(content);
+  const facts = foundationMessagePrintFacts(goals);
   const dateLabel = mktgPrintApprovedDate(approvedAt);
   const dateReadLabel = mktgPrintApprovedDate(dateRead);
   return {
     brand: mktgPrintBrand(kit),
     projectName: name,
-    eyebrow: name ? `${name} · a Linux Foundation project` : 'A Linux Foundation project',
+    eyebrow: name ? mktgPrintJoin([name, 'a Linux Foundation project']) : 'A Linux Foundation project',
     title: FOUNDATION_MESSAGE_PRINT_TITLE,
     versionLabel: version === null ? '' : `V${version}.0`,
     approvedLabel: dateLabel ? `Approved ${dateLabel}` : '',
@@ -254,14 +307,14 @@ export function buildFoundationMessagePrintView(
     report,
     runningHead: `${name} ${FOUNDATION_MESSAGE_PRINT_TITLE}`.trim(),
     sections: foundationMessagePrintSections(),
-    facts: foundationMessagePrintFacts(goals),
+    facts,
     mf: content.mf,
     mh: content.mh,
     goals,
     icps,
     pillars: foundationMessagePillarViews(content),
     avoidRows: foundationMessageAvoidRows(content),
-    numbers: foundationMessageNumberRows(content),
+    numbers: foundationMessagePrintNumbers(foundationMessageNumberRows(content), facts),
     audiences: foundationMessageAudienceRows(content),
   };
 }

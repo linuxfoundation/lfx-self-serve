@@ -17,16 +17,21 @@ import {
   layoutMktgPrintFrame,
   mktgPrintComputedPx,
   PRINT_FRAME_LETTER,
+  printMktgFrameWithChrome,
   stubMktgPrintFrame,
 } from './helpers/mktg-print.helper';
 
+import { brandKitLogolessFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { mktgPortraitAccentText } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
 import {
   columnAssetRevisionResponse,
+  cssRgb,
   nativeAssetRevisionResponse,
   openAssetDocument,
   openDraftAssetRun,
   openUnapprovedAssetDocument,
   overfullFrameworkRevisionResponse,
+  realShapedFrameworkRevisionResponse,
 } from './helpers/mktg-os-asset-views.helper';
 
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -275,10 +280,36 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       // The framework prints as a portrait book of fixed Letter frames on the portrait grammar, one per plan page, on its
       // own margin-less setup in both engines: nothing flows across a page edge, so no sheet tables, no head or foot groups.
       await expectMktgPortraitPageSetup(frame, print);
+      // One named page on the whole print path, the grammar's, set by the frames alone: the root names none, and no element above a frame
+      // does (a change of page name forces a break, which is a blank sheet). One break per boundary, owned by the frame that starts the
+      // page: `break-before: page` on every frame, `break-after` on none.
+      expect(['', 'auto', 'mktg-portrait']).toContain(await print.evaluate((root) => getComputedStyle(root).getPropertyValue('page')));
+      expect(
+        await frame
+          .locator('body *:has(> [data-testid="lfx-mktg-portrait-page"])')
+          .evaluateAll((parents) =>
+            parents.map((parent) => getComputedStyle(parent).getPropertyValue('page')).filter((name) => name && name !== 'auto' && name !== 'mktg-portrait')
+          )
+      ).toEqual([]);
+      expect(
+        await print
+          .getByTestId('lfx-mktg-portrait-page')
+          .evaluateAll((sections) => sections.map((section) => [getComputedStyle(section).breakBefore, getComputedStyle(section).breakAfter].join(' ')))
+      ).toEqual(Array.from({ length: 8 }, () => 'page auto'));
       await expect(print.locator('lfx-mktg-print-sheet, thead, tfoot')).toHaveCount(0);
       await expect(print).toHaveCSS('position', 'static');
       await expect(print).toHaveCSS('display', 'block');
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
+      // Every Angular host on the print path is a block: Google Chrome breaks a page at an inline host that wraps a frame
+      // carrying a break (one blank page per host), where Playwright's Chromium does not. And the frames are siblings
+      // under one parent, so the grammar's `.pp-page + .pp-page` break rule reaches every page boundary.
+      const hosts = frame.locator('lfx-mktg-framework-print, lfx-mktg-portrait-page');
+      expect(await hosts.evaluateAll((elements) => elements.map((element) => getComputedStyle(element).display))).toEqual(
+        Array.from({ length: 9 }, () => 'block')
+      );
+      expect(await print.getByTestId('lfx-mktg-portrait-page').evaluateAll((sections) => new Set(sections.map((section) => section.parentElement)).size)).toBe(
+        1
+      );
       // One goal and one profile: the cover, the framework, the goal, say and avoid, the profiles, the house, the numbers, sources and gaps.
       const pages = print.getByTestId('lfx-mktg-portrait-page');
       await expect(pages).toHaveCount(8);
@@ -308,6 +339,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(frame.getByTestId('mktg-framework-print-umbrella')).toHaveText('Open collaboration.');
       await expect(frame.getByTestId('mktg-framework-print-title')).toHaveText('Messaging Framework');
       await expect(frame.getByTestId('mktg-framework-print-version')).toHaveText('V1.0 · Approved 19 Oct 2026');
+      // The editor's gap under the cover title: 16–24 px, set at 18 (the framework pages' global partial).
+      await expect(frame.getByTestId('mktg-framework-print-version')).toHaveCSS('margin-top', '18px');
       await expect(frame.getByTestId('mktg-framework-print-contents').locator('li')).toHaveCount(7);
       await expect(frame.getByTestId('mktg-framework-print-contents').locator('li').first()).toContainText('Framework');
       await expect(frame.getByTestId('mktg-framework-print-contents').locator('li').last()).toContainText('Sources & gaps');
@@ -341,9 +374,18 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
         });
         expect(tracking).toBeCloseTo(0.12);
       }
+      // The matrix's source tag is the fixed vocabulary, kept whole as the mock's: the fact before it wraps, never the tag.
+      await expect(print.locator('.fwp-matrix-source').first()).toHaveCSS('white-space', 'nowrap');
       // The goal's page, the profile with the goals × profiles matrix (one profile: the page has room), the house, the numbers.
       await expect(print.getByTestId('mktg-framework-print-goal-1')).toContainText('01');
-      await expect(print.getByTestId('mktg-framework-print-icp-users')).toContainText('End users');
+      const icpRow = print.getByTestId('mktg-framework-print-icp-users');
+      await expect(icpRow).toContainText('End users');
+      // The board's card: six fields in two rows of three, the proof figures under the channels; an objection without a response
+      // prints its question alone (the editor's rule); the kind and goal tags hold one line.
+      await expect(icpRow.locator('dt')).toHaveText(['Need', 'Value', 'Lead message', 'Call to action', 'Objection', 'Channels']);
+      await expect(icpRow.locator('dd').nth(4)).toHaveText('“Too early?”');
+      await expect(icpRow.locator('dd').nth(5).locator('.fwp-icp-proofs li')).toHaveCount(1);
+      await expect(icpRow.locator('.fwp-icp-chips')).toHaveCSS('flex-wrap', 'nowrap');
       await expect(print.getByTestId('mktg-framework-print-matrix-row')).toHaveCount(1);
       await expect(print.getByTestId('mktg-framework-print-matrix-dot')).toHaveCount(1);
       await expect(print.getByTestId('mktg-framework-print-pillars')).toContainText('Open');
@@ -351,6 +393,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       // One number: its tile spans the column (no orphan half-tile); the facts table lists the fixture's one proof point, whole, with no cut line.
       await expect(print.getByTestId('mktg-framework-print-number-tile-0')).toHaveAttribute('data-wide', 'true');
       await expect(print.locator('[data-testid^="mktg-framework-print-number-tile-"]')).toHaveCount(1);
+      // The tile's source pill: the goal's proof point states the figure ("1,200 contributors", Website), so the tile carries it.
+      await expect(print.getByTestId('mktg-framework-print-number-tile-0').getByTestId('mktg-framework-print-number-source')).toHaveText('Website');
       await expect(print.getByTestId('mktg-framework-print-numbers-table')).toHaveCount(0);
       await expect(print.getByTestId('mktg-framework-print-facts')).toContainText('Figures and their sources');
       await expect(print.locator('[data-testid^="mktg-framework-print-fact-"]')).toHaveCount(1);
@@ -462,7 +506,9 @@ for (const immediateReceipt of [true, false]) {
   });
 }
 
-test('the framework print lists every figure past six as a table and says how many rows a cut list left off', async ({ page }, info) => {
+test('the framework print lists every figure past six as a table, continued on a second page, and says how many rows a cut list left off', async ({
+  page,
+}, info) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await stubMktgPrintFrame(page);
   await openAssetDocument(page, 'foundation-message', 200, true, false, overfullFrameworkRevisionResponse());
@@ -471,20 +517,26 @@ test('the framework print lists every figure past six as a table and says how ma
   const frame = await layoutMktgPrintFrame(page);
   const print = frame.getByTestId('mktg-framework-print');
   await expect(print).toBeVisible();
-  // Nine figures: no tiles, the key numbers table lists all nine on one page under the intro, the facts table after it.
+  // Eight figures (the record's cap) with long labels: no tiles, a key numbers table under the intro that lists every figure, whole
+  // rows to the footer and the rest on `key-numbers-2` (never a figure dropped), the facts table after the last row.
   await expect(print.locator('[data-testid^="mktg-framework-print-number-tile-"]')).toHaveCount(0);
   const numbersPage = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="key-numbers"]');
-  await expect(numbersPage.getByTestId('mktg-framework-print-number-row')).toHaveCount(9);
-  await expect(numbersPage.getByTestId('mktg-framework-print-number-row').last()).toContainText('synthetic figure 9');
-  await expect(print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="key-numbers-2"]')).toHaveCount(0);
-  await expect(numbersPage.getByTestId('mktg-framework-print-facts')).toContainText('Figures and their sources');
-  // Fourteen long proof points on the first goal: tightened, then cut to whole rows, with the muted "+N more" line under them.
+  const numbersPage2 = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="key-numbers-2"]');
+  await expect(numbersPage2).toHaveCount(1);
+  await expect(numbersPage.getByTestId('mktg-framework-print-number-row').first()).toContainText('synthetic figure 1');
+  await expect(numbersPage2.getByTestId('mktg-framework-print-number-row').last()).toContainText('synthetic figure 8');
+  await expect(print.getByTestId('mktg-framework-print-number-row')).toHaveCount(8);
+  await expect(numbersPage.getByTestId('mktg-framework-print-facts')).toHaveCount(0);
+  await expect(numbersPage2.getByTestId('mktg-framework-print-facts')).toContainText('Figures and their sources');
+  // The last of the record's 13 frames: cover, framework, goal-1…4, say-avoid, icps-1, icps-2, message-house, key-numbers, key-numbers-2, sources.
+  await expect(print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="sources"]')).toHaveAttribute('data-page', '13');
+  // Four long proof points (the record's cap) on the first goal: tightened, then cut to whole rows, with the muted "+N more" line.
   const goalPage = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="goal-1"]');
   const proofRows = goalPage.locator('.fwp-proof-row');
   const kept = await proofRows.count();
   expect(kept).toBeGreaterThan(0);
-  expect(kept).toBeLessThan(14);
-  await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveText(`+${14 - kept} more on the framework's Framework tab in LFX One`);
+  expect(kept).toBeLessThan(4);
+  await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveText(`+${4 - kept} more on the framework's Framework tab in LFX One`);
   await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveCSS('color', 'rgb(107, 114, 128)');
   await expect(goalPage.getByTestId('mktg-framework-print-proofs-cut')).toHaveCSS('font-size', '10.5px');
   // Sixty sources read and forty gaps: each list cut to its column with its own line, the counts from the report.
@@ -493,12 +545,164 @@ test('the framework print lists every figure past six as a table and says how ma
   expect(readKept).toBeGreaterThan(0);
   expect(readKept).toBeLessThan(60);
   await expect(print.getByTestId('mktg-framework-print-sources-read-cut')).toHaveText(`+${60 - readKept} more on the framework's Sources tab in LFX One`);
+  // The failed source in a reader's words: the sign-in-walled recordings page as its address, no scheme or www., the reason after the dash.
+  await expect(print.getByTestId('mktg-framework-print-sources-failed').locator('li').first()).toContainText(
+    'example.org/summit/2026/roadmap-sessions/recordings — '
+  );
+  await expect(print.getByTestId('mktg-framework-print-sources-failed')).not.toContainText('https://');
+  await expect(print.getByTestId('mktg-framework-print-sources-read')).not.toContainText('https://');
   const gaps = print.getByTestId('mktg-framework-print-gaps').locator('li');
   const gapsKept = await gaps.count();
   expect(gapsKept).toBeLessThan(40);
   await expect(print.getByTestId('mktg-framework-print-gaps-cut')).toHaveText(`+${40 - gapsKept} more on the framework's Sources tab in LFX One`);
   await expect(print.getByTestId('mktg-framework-print-sources-failed-cut')).toHaveCount(0);
+  // Every variable-length block bounded (the design reader's rule): on every frame, every placed block ends at or above the footer's
+  // room (1019 in the frame's coordinates) and no block passes the next one's top; the goal pages' titles whole, the lead under them;
+  // the say pills and the avoid rows end above the anchors, and the anchors above the crosscut box.
+  const frames = print.getByTestId('lfx-mktg-portrait-page');
+  const overflow = await frames.evaluateAll((pages) =>
+    pages.flatMap((frame) => {
+      const frameTop = frame.getBoundingClientRect().top;
+      return Array.from(frame.querySelectorAll<HTMLElement>('[style*="top:"]'))
+        .map((block) => ({
+          page: frame.getAttribute('data-page-id'),
+          className: block.className,
+          bottom: Math.round(block.getBoundingClientRect().bottom - frameTop),
+        }))
+        .filter((block) => block.bottom > 1019);
+    })
+  );
+  expect(overflow).toEqual([]);
+  const goalTitles = await print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id^="goal-"]').evaluateAll((pages) =>
+    pages.map((frame) => {
+      const title = frame.querySelector('.pp-title')?.getBoundingClientRect();
+      const lead = frame.querySelector('.fwp-goal-lead')?.getBoundingClientRect();
+      return { text: frame.querySelector('.pp-title')?.textContent?.trim(), underLead: !!title && !!lead && title.bottom <= lead.top };
+    })
+  );
+  expect(goalTitles.map((title) => title.underLead)).toEqual([true, true, true, true]);
+  expect(goalTitles[3].text).toBe('Goal 4 · Events where the roadmap is decided in the open');
+  const sayAvoid = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="say-avoid"]');
+  const order = await sayAvoid.evaluate((frame) => {
+    const bottom = (selector: string): number => frame.querySelector(selector)?.getBoundingClientRect().bottom ?? Number.NaN;
+    const top = (selector: string): number => frame.querySelector(selector)?.getBoundingClientRect().top ?? Number.NaN;
+    const anchorsTop = top('[data-testid="mktg-framework-print-anchor"]');
+    return {
+      sayAboveAnchors: bottom('[data-testid="mktg-framework-print-say"]') <= anchorsTop,
+      avoidAboveAnchors: bottom('[data-testid="mktg-framework-print-avoid"]') <= anchorsTop,
+      anchorsAboveCrosscut: bottom('[data-testid="mktg-framework-print-anchor"]') <= top('.fwp-crosscut-box'),
+    };
+  });
+  expect(order).toEqual({ sayAboveAnchors: true, avoidAboveAnchors: true, anchorsAboveCrosscut: true });
+  // Ten say phrases and five long avoid rows: each list tightened, then cut to what its column holds above the anchors, the cut said under it.
+  await expect(sayAvoid.getByTestId('mktg-framework-print-say').locator('li')).toHaveCount(7);
+  await expect(sayAvoid.getByTestId('mktg-framework-print-say-cut')).toHaveText("+3 more on the framework's Framework tab in LFX One");
+  await expect(sayAvoid.getByTestId('mktg-framework-print-avoid').locator('li')).toHaveCount(3);
+  await expect(sayAvoid.getByTestId('mktg-framework-print-avoid-cut')).toHaveText("+2 more on the framework's Framework tab in LFX One");
+  // Every profile card ends at least 4 px above the footer rule (the harness's A4 finding: at a 0.974 scale a card that touched the rule crossed it),
+  // and no profile page's cards are set tight (the record's cards fit at the normal measure).
+  const icpBottoms = await print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id^="icps-"]').evaluateAll((pages) =>
+    pages.map((frame) => {
+      const frameTop = frame.getBoundingClientRect().top;
+      const cards = Array.from(frame.querySelectorAll('.fwp-icp-row'));
+      const footer = frame.querySelector('[data-testid="mktg-portrait-page-foot"]')?.getBoundingClientRect();
+      return {
+        cards: cards.map((card) => Math.round(card.getBoundingClientRect().bottom - frameTop)),
+        footer: footer ? Math.round(footer.top - frameTop) : null,
+      };
+    })
+  );
+  expect(icpBottoms.length).toBeGreaterThan(0);
+  for (const page of icpBottoms) {
+    expect(page.footer).not.toBeNull();
+    for (const bottom of page.cards) expect(bottom).toBeLessThanOrEqual((page.footer ?? 0) - 4);
+  }
+  await expect(print.locator('.fwp-icp-rows--tight')).toHaveCount(0);
+  // The message house: Why now and the audiences sit a gap under the measured pillars, not at a fixed top that leaves a band; the two blocks share
+  // one top.
+  const house = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="message-house"]');
+  const houseLayout = await house.evaluate((frame) => {
+    const rect = (selector: string): DOMRect | undefined => frame.querySelector(selector)?.getBoundingClientRect();
+    const pillars = rect('[data-testid="mktg-framework-print-pillars"]');
+    const whyNow = rect('[data-testid="mktg-framework-print-why-now"]');
+    const audiences = frame.querySelector('[data-testid="mktg-framework-print-audiences"]')?.parentElement?.getBoundingClientRect();
+    return {
+      gapUnderPillars: pillars && whyNow ? Math.round(whyNow.top - pillars.bottom) : Number.NaN,
+      sameTop: !!whyNow && !!audiences && Math.abs(whyNow.top - audiences.top) < 1,
+    };
+  });
+  expect(houseLayout.gapUnderPillars).toBeGreaterThanOrEqual(28);
+  expect(houseLayout.gapUnderPillars).toBeLessThanOrEqual(36);
+  expect(houseLayout.sameTop).toBe(true);
   await page.screenshot({ path: info.outputPath('foundation-message-print-overfull.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);
 });
+
+test('the framework print set in the project’s kit: accent text darkened to read on the page, the cover logo skipped on a logo-less kit, the tiles’ figures on one line', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  // The grammar's logo-less kit, its accent the coral the editor measured at 2.76:1 as text on white.
+  const kit = brandKitLogolessFixture();
+  const accent = '#FF702D';
+  kit.kit.accent = accent;
+  await openAssetDocument(page, 'foundation-message', 200, true, false, realShapedFrameworkRevisionResponse(), kit);
+  await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+  await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+  const frame = await layoutMktgPrintFrame(page);
+  const print = frame.getByTestId('mktg-framework-print');
+  await expect(print).toHaveAttribute('data-brand', 'kit');
+  // The logo-less record plans the AAIF record's twelve frames (four goals, four profiles two a page, four figures): the kit changes no page.
+  await expect(print.getByTestId('lfx-mktg-portrait-page')).toHaveCount(12);
+  // No drawable artwork: the cover keeps its band, tagline and title, and prints no logo block (K's gating rule through mktgPrintBrand).
+  await expect(print.getByTestId('mktg-framework-print-cover-logo')).toHaveCount(0);
+  await expect(print.getByTestId('mktg-framework-print-cover')).toHaveCSS('background-color', cssRgb(kit.kit.dark));
+  expect(await print.getByTestId('mktg-framework-print-cover').boundingBox()).toMatchObject({ x: 0, y: 0, width: 816, height: 420 });
+  // Accent TEXT on the page white reads through the grammar's darkened text accent (--pp-accent-text): the goal numerals and the anchor numbers;
+  // the accent itself stays on fills and on text over a dark ground (the key message bar's label, the cover's eyebrow).
+  const textAccent = cssRgb(mktgPortraitAccentText(accent));
+  expect(textAccent).not.toBe(cssRgb(accent));
+  await expect(print.locator('.fwp-goal-number').first()).toHaveCSS('color', textAccent);
+  await expect(print.locator('.fwp-anchor-number').first()).toHaveCSS('color', textAccent);
+  await expect(print.locator('.fwp-goal-key-label').first()).toHaveCSS('color', cssRgb(accent));
+  await expect(print.getByTestId('mktg-framework-print-tagline')).toHaveCSS('color', cssRgb(accent));
+  await expect(print.locator('.fwp-number-tile-lead')).toHaveCSS('border-top-color', cssRgb(accent));
+  // Four figures in two rows of two: the lead tile's accent bar does not push its figure below its neighbor's.
+  const figureTops = await print
+    .locator('[data-testid^="mktg-framework-print-number-tile-"] .fwp-number')
+    .evaluateAll((figures) => figures.map((figure) => Math.round(figure.getBoundingClientRect().top)));
+  expect(figureTops).toHaveLength(4);
+  expect(figureTops[0]).toBe(figureTops[1]);
+  await page.screenshot({ path: info.outputPath('foundation-message-print-kit.png'), fullPage: true });
+  await page.emulateMedia({ media: 'screen' });
+  await finishMktgPrintFrame(page);
+});
+
+// The synthetic approved record plans eight frames (one goal, one profile); the overfull one thirteen (four goals, the profiles two a page, the
+// key numbers continued). The twelve of the AAIF record are QA's walk of the served build.
+for (const [name, response, planned] of [
+  ['the approved framework', columnAssetRevisionResponse('foundation-message'), 8],
+  ['an overfull framework', overfullFrameworkRevisionResponse(), 13],
+] as const) {
+  test(`Google Chrome saves ${name} as exactly its ${planned} planned frames, none blank, under each dialog default`, async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'The proof is the Chrome engine; one run of it is enough');
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await stubMktgPrintFrame(page);
+    await openAssetDocument(page, 'foundation-message', 200, true, false, response);
+    await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+    await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+    const frame = await layoutMktgPrintFrame(page);
+    await expect(frame.getByTestId('mktg-framework-print').getByTestId('lfx-mktg-portrait-page')).toHaveCount(planned);
+    // Google Chrome's own Page.printToPDF on the frame document (the editor's engine: the bundled Chromium does not reproduce the blank sheet an
+    // inline host cost in Chrome 156), headers on and off, Letter and A4: the planned count, no blank page.
+    const prints = await printMktgFrameWithChrome(frame);
+    test.skip(prints.length === 0, 'Google Chrome is not installed here; the bundled Chromium does not reproduce the blank sheet');
+    for (const print of prints) {
+      expect(print, print.setup).toEqual({ setup: print.setup, pages: planned, blank: [] });
+    }
+    await page.emulateMedia({ media: 'screen' });
+    await finishMktgPrintFrame(page);
+  });
+}

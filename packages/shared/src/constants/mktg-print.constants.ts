@@ -75,15 +75,19 @@ export const FRAMEWORK_PORTRAIT_TITLES = {
  */
 export const FRAMEWORK_PORTRAIT_NUMBER_TILE = {
   width: 344,
-  height: 140,
+  /** The mock's tile as drawn: 22 + the 54 figure + 10 + a 14/1.4 label line (20) + 10 + the 17 source pill + 22. */
+  height: 156,
   gap: 16,
   top: 210,
-  tableGap: 28,
+  /** Under two rows of tiles the facts table starts where the mock draws it: 210 + 2 × 156 + 16 + 22 = 560. */
+  tableGap: 22,
   /** `.fwp-number-tile` padding: 22 above and below, 24 at the sides (the figure and the label fit the width inside). */
   paddingTop: 22,
   paddingSide: 24,
-  /** `.fwp-number-label` margin-top. */
+  /** `.fwp-number-label` and `.fwp-number-source` margin-top. */
   labelGap: 10,
+  /** The grammar's `.pp-chip` as the tile's source pill: 8.5 px type on one line, 3 px padding and a 1 px border above and below (16.5, kept whole). */
+  sourceHeight: 17,
 } as const;
 
 /**
@@ -93,6 +97,18 @@ export const FRAMEWORK_PORTRAIT_NUMBER_TILE = {
  * page's lists and approval card; and where the footer begins, which no
  * block may pass.
  */
+/**
+ * The framework page's four statement cards' shares of the row (their flex). The design's are 0.85 / 1.05 / 1.4 / 0.7; the
+ * tagline's column is widened from the vision's and the positioning's so the tagline holds two words a line (the editor's
+ * read, 7 Nov 2026: no one-word lines; the design's own board shows them).
+ */
+export const FRAMEWORK_PORTRAIT_STATEMENT_SHARES = {
+  vision: 0.7,
+  mission: 1,
+  positioning: 1.25,
+  tagline: 1.05,
+} as const;
+
 export const FRAMEWORK_PORTRAIT_TOPS = {
   /** The framework page's goal matrix, under the statement cards (which close 16 px above it). */
   matrix: 336,
@@ -100,8 +116,14 @@ export const FRAMEWORK_PORTRAIT_TOPS = {
   goalProofs: 450,
   goalBite: 690,
   goalServed: 810,
+  /** The say-and-avoid page: the two lists, the anchor questions (never moved), the crosscut box's least top (it follows the anchors when they run longer). */
+  sayLists: 200,
+  anchors: 470,
+  sayCrosscut: 760,
   sourcesLists: 210,
   sourcesApproval: 880,
+  /** The message house's umbrella top; Why now and the audiences follow the measured pillars (the design's fixed 780 left an empty band). */
+  house: 140,
   /** The first ICP page's rows start under the long intro; the later pages' under the short one. */
   icpRowsFirst: 214,
   icpRows: 190,
@@ -133,6 +155,44 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   source: { size: 12, line: 1.6, weight: 400 },
   /** A sources list when it must be tightened before a cut. */
   sourceTight: { size: 11.5, line: 1.5, weight: 400 },
+  /** The framework page's goal matrix: a goal's title in the head row, a cell's text, the key message's, a proof row (and its tight measure), the sound bite's, the crosscut's. */
+  matrixGoal: { size: 15, line: 1.2, weight: 600 },
+  matrixCell: { size: 11, line: 1.4, weight: 400 },
+  matrixKey: { size: 11, line: 1.4, weight: 600 },
+  matrixProof: { size: 11, line: 1.4, weight: 400 },
+  matrixProofTight: { size: 10.5, line: 1.35, weight: 400 },
+  matrixBite: { size: 12.5, line: 1.3, weight: 500 },
+  matrixCrosscut: { size: 11, line: 1.5, weight: 400 },
+  /** A page's title in the grammar's type (`.pp-title`, 34/1.1/500), fitted to one line on the goal pages. */
+  pageTitle: { size: 34, line: 1.1, weight: 500 },
+  /** An anchor question (`.fwp-anchor-question`) and its number; the crosscut box's text. */
+  anchorQuestion: { size: 22, line: 1.3, weight: 500 },
+  anchorNumber: { size: 26, line: 1.2, weight: 500 },
+  crosscutText: { size: 13, line: 1.6, weight: 400 },
+  /** A profile card: its name, kind and goal chips line, who text and persona rows; a field's eyebrow and text (and the text's tight measure, taken when one card alone outruns its page). */
+  icpName: { size: 15, line: 1.3, weight: 600 },
+  icpWho: { size: 11.5, line: 1.5, weight: 400 },
+  icpPersona: { size: 10.5, line: 1.5, weight: 400 },
+  icpEyebrow: { size: 9.5, line: 1.2, weight: 600 },
+  icpField: { size: 12.5, line: 1.5, weight: 400 },
+  icpFieldTight: { size: 11.5, line: 1.45, weight: 400 },
+  /** The goals × profiles matrix under a lone profile: its note, its head row and its cells. */
+  matrixNote: { size: 11.5, line: 1.5, weight: 400 },
+  matrixHead: { size: 9.5, line: 1.4, weight: 600 },
+  matrixCellText: { size: 12, line: 1.4, weight: 400 },
+  /** The message house's brand line, a pillar's title, message and proof row, the Why now text, an audience row (and its tight measure). */
+  houseLine: { size: 13, line: 1.3, weight: 600 },
+  pillarTitle: { size: 16, line: 1.25, weight: 600 },
+  pillarMessage: { size: 12.5, line: 1.5, weight: 400 },
+  pillarProof: { size: 11.5, line: 1.45, weight: 400 },
+  whyNow: { size: 13, line: 1.55, weight: 400 },
+  audienceRow: { size: 11.5, line: 1.45, weight: 400 },
+  audienceRowTight: { size: 11, line: 1.4, weight: 400 },
+  /** The say pills and the avoid rows, and their tight measures. */
+  sayPill: { size: 13, line: 1.2, weight: 500 },
+  sayPillTight: { size: 12, line: 1.2, weight: 500 },
+  avoidRow: { size: 13, line: 1.5, weight: 400 },
+  avoidRowTight: { size: 12, line: 1.4, weight: 400 },
   /** The muted line under a cut list: `+N more on the framework's Framework tab in LFX One` (the Sources tab for the Sources & gaps lists). */
   cutNote: { size: 10.5, line: 1.4, weight: 400 },
   /** A key number tile's figure (`.fwp-number`), stepped down in whole px to one line of the tile, to a floor of half its size; a longer figure overflows the tile (follow-up). */
@@ -172,6 +232,82 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   gap: 16,
   /** `.fwp-chip-wrap` max-width: a proof chip's cap, px, so a fact's measuring width is the row less the chip. */
   chip: 140,
+  /** `.fwp-icp-who`: the profile's name-and-tags column, px (the board's), and the most it grows so a row of tags never wraps. */
+  icpWho: 190,
+  icpWhoMax: 300,
+  /** The grammar's `.pp-chip`: its type size, its padding and border across (7 + 7 + 1 + 1), and `.fwp-icp-chips`' gap between tags. */
+  chipSize: 8.5,
+  chipPadding: 16,
+  chipGap: 4,
+  /** A profile card: its hairline and padding (1 + 20 + 28); the gap between its two columns; the chips line's margin above and its height (8.5 px type on one line, 3 + 3 padding, 2 border); the who text's and the personas' margins above; a field's gap under its eyebrow; the fields grid's row and column gaps; the proof list's margin above; the least room every card keeps above the footer rule (the harness's A4 finding: ≥ 4 px, so a 0.974 scale cannot cross it); the matrix's note margin, its table margin, its head row (6 + 6 padding, 1 rule, two lines of 9.5 type) and a cell row (9 + 9 padding, 1 hairline). */
+  icpRow: 49,
+  icpColumnGap: 24,
+  icpChipsTop: 8,
+  icpChipLine: 16.5,
+  icpWhoTextTop: 10,
+  icpPersonasTop: 8,
+  icpFieldGap: 4,
+  icpGridRowGap: 18,
+  icpGridColumnGap: 20,
+  icpProofsTop: 4,
+  icpFooterRoom: 4,
+  matrixNoteTop: 4,
+  matrixTableTop: 12,
+  matrixHeadRow: 13,
+  matrixCellRow: 19,
+  /** The message house: the umbrella bar's padding (24 + 24) and its padding across (28 + 28); the brand line's margins (14 + 22); the pillars' gap; a pillar's rule and padding (3 + 12), its message's margin above, its proof list's margin above, a proof row's hairline and padding (1 + 16) and its source chip's line (4 + 16.5); the gap the lower blocks keep under the pillars and the least room they keep above the footer (the pillars' proofs are cut to leave it); the Why now column and the audiences column and its left; the Why now text's margin above; the audience list's margin above and a row's hairline and padding (1 + 14; tight 1 + 10). */
+  houseUmbrellaPadding: 48,
+  houseUmbrellaPaddingAcross: 56,
+  houseLineMargins: 36,
+  pillarGap: 20,
+  pillarTop: 15,
+  pillarMessageTop: 8,
+  pillarProofsTop: 12,
+  pillarProofRow: 17,
+  pillarProofChip: 20.5,
+  houseLowerGap: 32,
+  houseLowerMin: 80,
+  whyNowColumn: 300,
+  audiencesColumn: 360,
+  audiencesLeft: 344,
+  whyNowTextTop: 8,
+  audienceListTop: 4,
+  audienceRow: 15,
+  audienceRowTight: 11,
+  /** The statement cards: the gap between them, their padding across (16 + 16), the tagline's rule and its padding (3 + 10). */
+  statementGap: 12,
+  statementPadding: 32,
+  taglineInset: 13,
+  /** The goal matrix (`.fwp-matrix-row`): a row's padding (10 + 10) and hairline; its side padding (12 + 12); the label column; the column gap; a proof row's margin under it; the sound bite's rule and padding (2 + 10); the crosscut's margin above. */
+  matrixRow: 21,
+  matrixPadding: 24,
+  matrixLabelColumn: 96,
+  matrixGap: 16,
+  matrixProofGap: 5,
+  matrixBiteInset: 12,
+  matrixCrosscutGap: 8,
+  /** The say list: its margin above, a pill's padding and border around (8 + 8 + 1 + 1 down, 14 + 14 + 1 + 1 across; tight 6 + 6 / 10 + 10), the gap between pills; the say column's and the avoid column's widths and the avoid column's left. */
+  sayListTop: 10,
+  sayPillPadding: 18,
+  sayPillPaddingAcross: 30,
+  sayPillPaddingTight: 14,
+  sayPillPaddingAcrossTight: 22,
+  sayPillGap: 8,
+  sayColumn: 320,
+  avoidColumn: 360,
+  avoidLeft: 344,
+  /** The avoid list: a row's padding (10 + 10; tight 7 + 7) and hairline, the gaps around its arrow (12 + 12) and the arrow's own width. */
+  avoidRow: 21,
+  avoidRowTight: 15,
+  avoidArrow: 34,
+  /** The anchor list: its margin above, a row's padding (16 + 16) and hairline, its number column and the gap after it. The crosscut box: its padding down (18 + 18) and across (22 + 22), its text's margin above. */
+  anchorListTop: 10,
+  anchorRow: 33,
+  anchorNumber: 44,
+  anchorGap: 22,
+  crosscutPadding: 36,
+  crosscutPaddingAcross: 44,
+  crosscutTextTop: 8,
 } as const;
 
 /** The key numbers facts table's `<colgroup>` widths, %: the fact, its source, the goal that uses it (`table-layout: fixed` reads them). */
@@ -198,11 +334,27 @@ export const FRAMEWORK_PORTRAIT_TILE_SHARES = {
 /** The most figures the key numbers page prints as tiles; past it, the table lists them all. */
 export const FRAMEWORK_PORTRAIT_MAX_TILES = 6;
 
+/** A count in words for the print's sentences, up to the anchor questions' limit (FOUNDATION_MESSAGE_CONTENT_LIMITS.anchor.max); a count past it prints as digits. */
+export const FOUNDATION_MESSAGE_PRINT_COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five'] as const;
+
 /** The on-screen Sources card's empty state for the gaps, printed verbatim on the Sources & gaps page. */
 export const FOUNDATION_MESSAGE_PRINT_NO_GAP_MESSAGE = 'The sources left no gap.';
 
 /** The source types a run writes before a source (`Website: https://…`); the Sources & gaps page prints the source without the type. */
 export const FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES = ['Website', 'Link', 'Press release'] as const;
+
+/**
+ * The one middle-dot separator every printed line joins its parts with (the editor's rule, 7 November 2026: one
+ * spacing everywhere): a plain space, the middle dot, a plain space, as the grammar's footer sets it. The document
+ * title, the cover's edition and strip lines, the house's brand line, a goal's `Goal 1 · Events`, the channels, the
+ * personas and the facts' "used by" all join with it; no thin or hair space anywhere.
+ */
+export const MKTG_PRINT_DOT = ' · ';
+
+/** Parts joined with the one middle dot, the empty ones left out. */
+export function mktgPrintJoin(parts: readonly string[]): string {
+  return parts.filter((part) => part !== '').join(MKTG_PRINT_DOT);
+}
 
 /** The fixed three-letter month names the prints date with (UTC), the same in every engine and locale. */
 export const MKTG_PRINT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;

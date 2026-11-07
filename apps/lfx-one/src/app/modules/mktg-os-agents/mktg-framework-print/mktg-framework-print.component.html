@@ -29,7 +29,8 @@
       [pageId]="frame.id"
       [page]="frame.number"
       [section]="frame.label"
-      [title]="frame.title"
+      [title]="frame.titleFit.text"
+      [style.--fwp-title-size.px]="frame.titleFit.size"
       [band]="frame.band"
       [bare]="frame.id === ids.cover">
       @switch (frame.id) {
@@ -61,14 +62,12 @@
           </div>
           <div [lfxPpRect]="[page.margin, 620, page.contentWidth]">
             <span class="pp-lab pp-lab--dark">Contents</span>
+            <!-- Each row's page number once, as the "02" leader the design draws (the editor's read, 7 Nov: no trailing duplicate). -->
             <ol class="fwp-contents" data-testid="mktg-framework-print-contents">
               @for (entry of frame.contents; track entry.id) {
                 <li class="fwp-contents-row">
-                  <span
-                    ><span class="fwp-contents-number">{{ entry.numberLabel }}</span
-                    >{{ entry.title }}</span
-                  >
-                  <span class="fwp-contents-page">{{ entry.number }}</span>
+                  <span class="fwp-contents-number">{{ entry.numberLabel }}</span>
+                  <span>{{ entry.title }}</span>
                 </li>
               }
             </ol>
@@ -82,27 +81,28 @@
         <!-- 01 FRAMEWORK: the four statements in cards of one height, then the goal matrix (one column per goal) -->
         @case (ids.framework) {
           @if (frame.statements; as statements) {
+            <!-- The four cards share the row by FRAMEWORK_PORTRAIT_STATEMENT_SHARES (the tagline's widened so it holds two words a line). -->
             <div class="fwp-statements" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]" data-testid="mktg-framework-print-statements">
               @if (statements.vision.text) {
-                <div class="fwp-card fwp-statement-vision">
+                <div class="fwp-card fwp-statement-vision" [style.flex]="shares.vision">
                   <span class="pp-lab">Vision</span>
                   <p class="fwp-statement" [style.font-size.px]="statements.vision.size">{{ statements.vision.text }}</p>
                 </div>
               }
               @if (statements.mission.text) {
-                <div class="fwp-card fwp-statement-mission">
+                <div class="fwp-card fwp-statement-mission" [style.flex]="shares.mission">
                   <span class="pp-lab">Mission</span>
                   <p class="fwp-statement" [style.font-size.px]="statements.mission.size">{{ statements.mission.text }}</p>
                 </div>
               }
               @if (statements.positioning.text) {
-                <div class="fwp-card fwp-statement-positioning">
+                <div class="fwp-card fwp-statement-positioning" [style.flex]="shares.positioning">
                   <span class="pp-lab">Positioning statement</span>
                   <p class="fwp-statement" [style.font-size.px]="statements.positioning.size">{{ statements.positioning.text }}</p>
                 </div>
               }
               @if (statements.tagline.text) {
-                <div class="fwp-card fwp-card-mist fwp-statement-tagline">
+                <div class="fwp-card fwp-card-mist fwp-statement-tagline" [style.flex]="shares.tagline">
                   <span class="pp-lab">Tagline</span>
                   <p
                     class="fwp-statement fwp-statement-accent"
@@ -142,14 +142,22 @@
             </div>
             <div class="fwp-matrix-row">
               <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Proof</span>
-              @for (goal of v.goals; track goal.id) {
-                <ul class="fwp-matrix-proofs">
-                  @for (proof of goal.proofRows; track $index) {
-                    <li>
-                      {{ proof.fact }} <span class="fwp-matrix-source">{{ proof.source }}</span>
-                    </li>
-                  }
-                </ul>
+              <!-- Each goal's proof cell is a cut list in the row's room: tightened first, then whole rows and the muted line (frameworkPortraitMatrix). -->
+              @for (goal of v.goals; track goal.id; let column = $index) {
+                @if (frame.matrix?.proofs?.[column]; as cell) {
+                  <div>
+                    <ul class="fwp-matrix-proofs" [class.fwp-matrix-proofs--tight]="cell.tight">
+                      @for (proof of cell.rows; track $index) {
+                        <li>
+                          {{ proof.fact }} <span class="fwp-matrix-source">{{ proof.source }}</span>
+                        </li>
+                      }
+                    </ul>
+                    @if (cell.cut > 0) {
+                      <p class="fwp-cut-note" data-testid="mktg-framework-print-matrix-proofs-cut">{{ cell.note }}</p>
+                    }
+                  </div>
+                }
               }
             </div>
             <div class="fwp-matrix-row">
@@ -170,48 +178,56 @@
 
         <!-- 01 SAY AND AVOID · ANCHOR QUESTIONS -->
         @case (ids.sayAvoid) {
-          <p class="pp-body fwp-intro-say" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">
-            The words the framework uses, the ones it replaces, and the questions every piece of content answers.
-          </p>
-          <div [lfxPpRect]="[page.margin, 200, 320]">
-            <span class="pp-lab pp-lab--dark">Say</span>
-            <ul class="fwp-say-list" data-testid="mktg-framework-print-say">
-              @for (phrase of v.mf.say; track phrase) {
-                <li class="fwp-say-pill">{{ phrase }}</li>
-              }
-            </ul>
-          </div>
-          <div [lfxPpRect]="[page.margin + 344, 200, 360]">
-            <span class="pp-lab pp-lab--dark">Avoid → say instead</span>
-            @if (v.avoidRows.length > 0) {
-              <ul class="fwp-avoid-list" data-testid="mktg-framework-print-avoid">
-                @for (row of v.avoidRows; track row.avoid) {
-                  <li class="fwp-avoid-row">
-                    <span class="fwp-avoid-word">{{ row.avoid }}</span>
-                    <span class="fwp-avoid-arrow" aria-hidden="true">→</span>
-                    <span class="fwp-avoid-instead">{{ row.instead }}</span>
-                  </li>
+          <p class="pp-body fwp-intro-say" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">{{ frame.anchorIntro }}</p>
+          <!-- The two lists are cut to their columns above the anchors: tightened first, then whole rows with the muted line (frameworkPortraitPillList, frameworkPortraitAvoidList). -->
+          @if (frame.sayAvoid; as lists) {
+            <div [lfxPpRect]="[page.margin, tops.sayLists, room.sayColumn]">
+              <span class="pp-lab pp-lab--dark">Say</span>
+              <ul class="fwp-say-list" [class.fwp-say-list--tight]="lists.say.tight" data-testid="mktg-framework-print-say">
+                @for (phrase of lists.say.rows; track phrase) {
+                  <li class="fwp-say-pill">{{ phrase }}</li>
                 }
               </ul>
-            } @else {
-              <p class="fwp-avoid-none" data-testid="mktg-framework-print-avoid-empty">Nothing to avoid was stated.</p>
-            }
-          </div>
+              @if (lists.say.cut > 0) {
+                <p class="fwp-cut-note" data-testid="mktg-framework-print-say-cut">{{ lists.say.note }}</p>
+              }
+            </div>
+            <div [lfxPpRect]="[page.margin + room.avoidLeft, tops.sayLists, room.avoidColumn]">
+              <span class="pp-lab pp-lab--dark">Avoid → say instead</span>
+              @if (v.avoidRows.length > 0) {
+                <ul class="fwp-avoid-list" [class.fwp-avoid-list--tight]="lists.avoid.tight" data-testid="mktg-framework-print-avoid">
+                  @for (row of lists.avoid.rows; track row.avoid) {
+                    <li class="fwp-avoid-row">
+                      <span class="fwp-avoid-word">{{ row.avoid }}</span>
+                      <span class="fwp-avoid-arrow" aria-hidden="true">→</span>
+                      <span class="fwp-avoid-instead">{{ row.instead }}</span>
+                    </li>
+                  }
+                </ul>
+                @if (lists.avoid.cut > 0) {
+                  <p class="fwp-cut-note" data-testid="mktg-framework-print-avoid-cut">{{ lists.avoid.note }}</p>
+                }
+              } @else {
+                <p class="fwp-avoid-none" data-testid="mktg-framework-print-avoid-empty">Nothing to avoid was stated.</p>
+              }
+            </div>
+          }
+          <!-- The anchors never move; their questions are set smaller, then cut, so they and the crosscut box end above the footer (frameworkPortraitAnchors). -->
           @if (frame.anchors.length > 0) {
-            <div [lfxPpRect]="[page.margin, 470, page.contentWidth]">
+            <div [lfxPpRect]="[page.margin, tops.anchors, page.contentWidth]">
               <span class="pp-lab pp-lab--dark">Every piece of content answers</span>
               <ol class="fwp-anchor-list" data-testid="mktg-framework-print-anchor">
                 @for (anchor of frame.anchors; track anchor.numberLabel) {
                   <li class="fwp-anchor-row">
                     <span class="fwp-anchor-number">{{ anchor.numberLabel }}</span>
-                    <span class="fwp-anchor-question">{{ anchor.question }}</span>
+                    <span class="fwp-anchor-question" [style.font-size.px]="anchor.size">{{ anchor.question }}</span>
                   </li>
                 }
               </ol>
             </div>
           }
           @if (v.mf.crosscut) {
-            <div class="fwp-crosscut-box" [lfxPpRect]="[page.margin, 760, page.contentWidth]">
+            <div class="fwp-crosscut-box" [lfxPpRect]="[page.margin, frame.crosscutTop, page.contentWidth]">
               <span class="pp-lab pp-lab--dark">Across the goals</span>
               <p class="fwp-crosscut-text">{{ v.mf.crosscut }}</p>
             </div>
@@ -220,54 +236,68 @@
 
         <!-- 03 MESSAGE HOUSE: the umbrella, the brand line, the pillars with their proofs, why now, the audiences -->
         @case (ids.messageHouse) {
-          <div [lfxPpRect]="[page.margin, 140, page.contentWidth]" data-testid="mktg-framework-print-house">
+          <div [lfxPpRect]="[page.margin, tops.house, page.contentWidth]" data-testid="mktg-framework-print-house">
             @if (houseUmbrella().text) {
               <p class="fwp-house-umbrella" [style.font-size.px]="houseUmbrella().size">{{ houseUmbrella().text }}</p>
             }
             @if (v.mh.line) {
-              <p class="fwp-house-line">Brand line · {{ v.mh.line }}</p>
+              <p class="fwp-house-line">Brand line{{ dot }}{{ v.mh.line }}</p>
             }
+            <!-- Each pillar's proofs cut to the room that leaves Why now and the audiences theirs (frameworkPortraitHouse). -->
             <div class="fwp-pillars" [style.--fwp-pillar-count]="v.pillars.length" data-testid="mktg-framework-print-pillars">
-              @for (pillar of v.pillars; track pillar.t) {
+              @for (pillar of v.pillars; track pillar.t; let index = $index) {
                 <div class="fwp-pillar" [class.fwp-pillar-spark]="$first">
                   <span class="fwp-pillar-title">{{ pillar.t }}</span>
                   @if (pillar.m) {
                     <p class="fwp-pillar-message">{{ pillar.m }}</p>
                   }
-                  <ul class="fwp-pillar-proofs">
-                    @for (proof of pillar.proofRows; track $index) {
-                      <li>
-                        {{ proof.fact }}
-                        <span class="fwp-pillar-source"
-                          ><span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span></span
-                        >
-                      </li>
+                  @if (frame.housePage?.pillars?.[index]; as proofs) {
+                    @if (proofs.rows.length > 0) {
+                      <ul class="fwp-pillar-proofs">
+                        @for (proof of proofs.rows; track $index) {
+                          <li>
+                            {{ proof.fact }}
+                            <span class="fwp-pillar-source"
+                              ><span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span></span
+                            >
+                          </li>
+                        }
+                      </ul>
                     }
-                  </ul>
+                    @if (proofs.cut > 0) {
+                      <p class="fwp-cut-note" data-testid="mktg-framework-print-pillar-proofs-cut">{{ proofs.note }}</p>
+                    }
+                  }
                 </div>
               }
             </div>
           </div>
-          @if (v.mh.found) {
-            <div [lfxPpRect]="[page.margin, 780, 300]" data-testid="mktg-framework-print-why-now">
-              <span class="pp-lab pp-lab--dark">Why now</span>
-              <p class="fwp-why-now-text">{{ v.mh.found }}</p>
-            </div>
-          }
-          @if (v.audiences.length > 0) {
-            <div [lfxPpRect]="[page.margin + 344, 780, 360]">
-              <span class="pp-lab pp-lab--dark">Audiences</span>
-              <ul class="fwp-audience-list" data-testid="mktg-framework-print-audiences">
-                @for (audience of v.audiences; track audience.name) {
-                  <li class="fwp-audience-row">
-                    <strong>{{ audience.name }}.</strong>
-                    @if (audience.lead) {
-                      {{ audience.lead }}
-                    }
-                  </li>
+          <!-- Why now and the audiences sit a gap under the measured pillars (frameworkPortraitHouse), the text fitted and the rows cut to the room. -->
+          @if (frame.housePage; as house) {
+            @if (house.whyNow; as whyNow) {
+              <div [lfxPpRect]="[page.margin, house.lowerTop, room.whyNowColumn]" data-testid="mktg-framework-print-why-now">
+                <span class="pp-lab pp-lab--dark">Why now</span>
+                <p class="fwp-why-now-text" [style.font-size.px]="whyNow.size">{{ whyNow.text }}</p>
+              </div>
+            }
+            @if (v.audiences.length > 0) {
+              <div [lfxPpRect]="[page.margin + room.audiencesLeft, house.lowerTop, room.audiencesColumn]">
+                <span class="pp-lab pp-lab--dark">Audiences</span>
+                <ul class="fwp-audience-list" [class.fwp-audience-list--tight]="house.audiences.tight" data-testid="mktg-framework-print-audiences">
+                  @for (audience of house.audiences.rows; track audience.name) {
+                    <li class="fwp-audience-row">
+                      <strong>{{ audience.name }}.</strong>
+                      @if (audience.lead) {
+                        {{ audience.lead }}
+                      }
+                    </li>
+                  }
+                </ul>
+                @if (house.audiences.cut > 0) {
+                  <p class="fwp-cut-note" data-testid="mktg-framework-print-audiences-cut">{{ house.audiences.note }}</p>
                 }
-              </ul>
-            </div>
+              </div>
+            }
           }
         }
 
@@ -349,6 +379,9 @@
                     [attr.data-testid]="'mktg-framework-print-number-tile-' + $index">
                     <span class="fwp-number" [style.font-size.px]="row.figureSize">{{ row.number }}</span>
                     <span class="fwp-number-label" [style.font-size.px]="row.labelSize">{{ row.labelText }}</span>
+                    @if (row.source) {
+                      <span class="pp-chip fwp-chip-wrap fwp-number-source" data-testid="mktg-framework-print-number-source">{{ row.source }}</span>
+                    }
                   </div>
                 }
               </div>
@@ -416,9 +449,10 @@
             }
           } @else if (frame.goalPage; as goalPage) {
             <!-- ONE PAGE PER GOAL: the number and the value proposition, the key message bar, the proof points, the sound bite, who it is for -->
+            <!-- The lead starts under the title: at the body top, or lower by the lines a long title takes (frameworkPortraitBodyTop). -->
             <div
               class="fwp-goal-lead"
-              [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]"
+              [lfxPpRect]="[page.margin, goalPage.leadTop, page.contentWidth]"
               [attr.data-testid]="'mktg-framework-print-goal-' + goalPage.goal.n">
               <span class="fwp-goal-number">{{ goalPage.numberLabel }}</span>
               @if (goalPage.value.text) {
@@ -477,10 +511,15 @@
           } @else if (frame.icpPage; as icpPage) {
             <!-- 02 IDEAL CUSTOMER PROFILES, two a page; the goals × profiles matrix where a page holds one -->
             <p class="pp-body fwp-intro-icps" [lfxPpRect]="[page.margin, page.bodyTop, page.contentWidth]">{{ icpPage.intro }}</p>
-            <div [lfxPpRect]="[page.margin, icpPage.rowsTop, page.contentWidth]">
+            <!-- The cards packed to the page by their measured height (frameworkPortraitIcpPages): never across the footer rule; a lone card that outruns the page sets its fields tight. -->
+            <div
+              [lfxPpRect]="[page.margin, icpPage.rowsTop, page.contentWidth]"
+              [class.fwp-icp-rows--tight]="icpPage.tight"
+              data-testid="mktg-framework-print-icp-rows">
               @for (icp of icpPage.icps; track icp.id) {
                 <article class="fwp-icp-row" [attr.data-testid]="'mktg-framework-print-icp-' + icp.id">
-                  <div class="fwp-icp-who">
+                  <!-- The name-and-tags column: the board's 190 px, grown so the kind and goal tags hold one line (the editor's rule). -->
+                  <div class="fwp-icp-who" [style.width.px]="icp.whoWidth">
                     <span class="fwp-icp-name">{{ icp.name }}</span>
                     <div class="fwp-icp-chips">
                       <span class="pp-chip">{{ icp.kind }}</span>
@@ -493,7 +532,7 @@
                     }
                     <ul class="fwp-icp-personas">
                       @for (persona of icp.personaRows; track persona.role) {
-                        <li>{{ persona.role }} · {{ persona.cares }}</li>
+                        <li>{{ persona.role }}{{ dot }}{{ persona.cares }}</li>
                       }
                     </ul>
                   </div>
@@ -523,31 +562,35 @@
                         <dd>{{ icp.cta }}</dd>
                       </div>
                     }
-                    <!-- An objection prints only with its answer (the editor's rule: no placeholder for an unanswered one). -->
-                    @if (icp.objectionResponse) {
+                    <!-- The objection to expect prints as its question; its response follows only when the record has one
+                         (the editor's rule: the question stands alone, never a placeholder for a missing answer). -->
+                    @if (icp.objectionText) {
                       <div>
                         <dt>Objection</dt>
-                        <dd>“{{ icp.objectionText }}” — {{ icp.objectionResponse }}</dd>
+                        @if (icp.objectionResponse) {
+                          <dd>“{{ icp.objectionText }}” — {{ icp.objectionResponse }}</dd>
+                        } @else {
+                          <dd>“{{ icp.objectionText }}”</dd>
+                        }
                       </div>
                     }
-                    @if (icp.channelsLabel) {
+                    <!-- Channels, with the profile's proof figures under them, as the board's card draws it: six fields, two rows of three. -->
+                    @if (icp.channelsLabel || icp.proofRows.length > 0) {
                       <div>
-                        <dt>Channels</dt>
-                        <dd>{{ icp.channelsLabel }}</dd>
-                      </div>
-                    }
-                    <!-- The profile's proof figure under its own eyebrow (the editor's rule), not folded into the channels. -->
-                    @if (icp.proofRows.length > 0) {
-                      <div>
-                        <dt>Proof</dt>
+                        <dt>{{ icp.channelsLabel ? 'Channels' : 'Proof' }}</dt>
                         <dd>
-                          <ul class="fwp-icp-proofs">
-                            @for (proof of icp.proofRows; track $index) {
-                              <li>
-                                {{ proof.fact }} <span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span>
-                              </li>
-                            }
-                          </ul>
+                          @if (icp.channelsLabel) {
+                            {{ icp.channelsLabel }}
+                          }
+                          @if (icp.proofRows.length > 0) {
+                            <ul class="fwp-icp-proofs">
+                              @for (proof of icp.proofRows; track $index) {
+                                <li>
+                                  {{ proof.fact }} <span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span>
+                                </li>
+                              }
+                            </ul>
+                          }
                         </dd>
                       </div>
                     }
@@ -556,7 +599,7 @@
               }
             </div>
             @if (icpPage.matrix.length > 0) {
-              <div [lfxPpRect]="[page.margin, tops.icpMatrix, page.contentWidth]" data-testid="mktg-framework-print-matrix">
+              <div [lfxPpRect]="[page.margin, icpPage.matrixTop, page.contentWidth]" data-testid="mktg-framework-print-matrix">
                 <span class="pp-lab pp-lab--dark">Goals × profiles</span>
                 <p class="fwp-matrix-note">Which profiles each goal's messaging is written for, as the framework assigns them.</p>
                 <!-- A table of one frame: no head or foot group, which Chromium would paginate on. -->

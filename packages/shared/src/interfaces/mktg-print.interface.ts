@@ -16,6 +16,7 @@ import type {
   FoundationMessageMh,
   FoundationMessageNumberRow,
   FoundationMessagePillarView,
+  FoundationMessageProofView,
   FoundationMessageReport,
   FoundationMessageViewTab,
 } from './foundation-message.interface';
@@ -88,6 +89,8 @@ export interface FoundationMessagePrintIcp extends FoundationMessageIcpView {
   channelsLabel: string;
   /** `Goal 1`, `Goal 4`: one chip per goal the segment serves, by the goal's rank, in the framework's order. */
   goalChips: string[];
+  /** The width of the profile's name-and-tags column, px: the board's 190, grown so the kind and goal tags hold one line (frameworkPortraitIcpWhoWidth). */
+  whoWidth: number;
 }
 
 /** One row of the goals × profiles matrix: the profile, and whether each goal (in the framework's order) is written for it. */
@@ -115,6 +118,11 @@ export interface FoundationMessagePrintType {
 export interface FoundationMessagePrintFittedText {
   text: string;
   size: number;
+}
+
+/** A page's title as the print sets it: at the size that holds it on one line, or at the floor over the lines it needs (frameworkPortraitTitle). */
+export interface FoundationMessagePrintFittedTitle extends FoundationMessagePrintFittedText {
+  lines: number;
 }
 
 /** One proof point as a goal page lists it: the fact and its source, at the size the list is set at. */
@@ -150,6 +158,8 @@ export interface FoundationMessagePrintGoalPage {
   goal: FoundationMessagePrintGoal;
   /** `01`: the goal's number as the page prints it. */
   numberLabel: string;
+  /** The lead's top: the design's body top, lower when the title takes more than one line (frameworkPortraitBodyTop). */
+  leadTop: number;
   value: FoundationMessagePrintFittedText;
   key: FoundationMessagePrintFittedText;
   /** The proof points above the sound bite: tightened first, then cut to whole rows, in the goal's order. */
@@ -168,16 +178,28 @@ export interface FoundationMessagePrintIcpPage {
   /** The top of the profile rows, px: under the long intro on the first page, the short one after. */
   rowsTop: number;
   icps: FoundationMessagePrintIcp[];
-  /** Goals × profiles, on a page that holds one profile; empty elsewhere. */
+  /** The profile fields set at the tight measure: one card alone outran the page at the normal one. */
+  tight: boolean;
+  /** Goals × profiles, on a page that holds one profile and has the room for it under the card; empty elsewhere. */
   matrix: FoundationMessagePrintMatrixRow[];
+  /** The matrix's top, px: the design's, or under the card when it runs lower. */
+  matrixTop: number;
 }
 
 /**
  * One key number's tile: its share of a row (1 = the row, 2 = a half, 3 = a third; FRAMEWORK_PORTRAIT_TILE_SHARES), wide when it spans
  * the row; the figure's size stepped down in whole px to one line of the tile, to a floor of half its size (a longer figure overflows the
- * tile: follow-up), and the label fitted (smaller, then cut at a sentence) to the room under it.
+ * tile: follow-up), and the label fitted (smaller, then cut at a sentence) to the room under it, less the source pill's when one prints.
  */
-export interface FoundationMessagePrintNumberTile extends FoundationMessageNumberRow {
+/**
+ * A key number as the print carries it: the stored figure and label, and the source of the proof point that states the
+ * figure (the tile's pill), '' when no proof point states it or the ones that do disagree (then no pill: nothing is invented).
+ */
+export interface FoundationMessagePrintNumber extends FoundationMessageNumberRow {
+  source: string;
+}
+
+export interface FoundationMessagePrintNumberTile extends FoundationMessagePrintNumber {
   share: number;
   wide: boolean;
   figureSize: number;
@@ -246,6 +268,39 @@ export interface FoundationMessagePrintContentsEntry {
 export interface FoundationMessagePrintAnchorRow {
   numberLabel: string;
   question: string;
+  /** The question's size, px: the design's, or smaller when the anchors would pass the footer (frameworkPortraitAnchors). */
+  size: number;
+}
+
+/** The framework page's goal matrix, bounded: each goal's proof cell as a cut list, in the goals' order (frameworkPortraitMatrix). */
+export interface FoundationMessagePrintMatrix {
+  proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>[];
+}
+
+/** One ICP page's profiles as the layout packs them (frameworkPortraitIcpPages): the cards that end above the footer with their room, at the tight measure when one card alone needed it. */
+export interface FoundationMessagePrintIcpPageRows {
+  icps: FoundationMessagePrintIcp[];
+  /** The fields set at FRAMEWORK_PORTRAIT_TYPE.icpFieldTight: a lone card outran the page at the normal measure. */
+  tight: boolean;
+  /** The measured height of the page's cards, px. */
+  height: number;
+}
+
+/** The message house page's lower blocks as the print lays them out (frameworkPortraitHouse): their top under the measured pillars, the Why now text fitted, the audiences cut to whole rows. */
+export interface FoundationMessagePrintHousePage {
+  /** Each pillar's proof rows, cut to the room that leaves the lower blocks theirs, in the pillars' order. */
+  pillars: FoundationMessagePrintCutList<FoundationMessageProofView>[];
+  /** The top of Why now and the audiences: a gap under the measured pillars. */
+  lowerTop: number;
+  /** The Why now text fitted to its column's room; null when the record has none. */
+  whyNow: FoundationMessagePrintFittedText | null;
+  audiences: FoundationMessagePrintCutList<FoundationMessageAudienceRow>;
+}
+
+/** The say-and-avoid page's two lists, each a cut list in its column (frameworkPortraitPillList, frameworkPortraitAvoidList). */
+export interface FoundationMessagePrintSayAvoid {
+  say: FoundationMessagePrintCutList<string>;
+  avoid: FoundationMessagePrintCutList<FoundationMessageAvoidRow>;
 }
 
 /** One frame of the framework's portrait book: its plan page with its book number, printed section label, band, and the page's laid-out data. */
@@ -263,8 +318,20 @@ export interface FoundationMessagePrintFrame extends MktgPortraitPlanPage {
     positioning: FoundationMessagePrintFittedText;
     tagline: FoundationMessagePrintFittedText;
   } | null;
+  /** The page's title in the grammar's title room (frameworkPortraitTitle): its size and the lines it takes. */
+  titleFit: FoundationMessagePrintFittedTitle;
+  /** The goal matrix's proof cells, bounded, on the framework page. */
+  matrix: FoundationMessagePrintMatrix | null;
+  /** The say-and-avoid page's intro, counting its anchor questions ('' on the other pages). */
+  anchorIntro: string;
+  /** The say pills and the avoid rows, cut to their columns, on the say-and-avoid page. */
+  sayAvoid: FoundationMessagePrintSayAvoid | null;
   /** The anchor questions, numbered, on the say-and-avoid page. */
   anchors: FoundationMessagePrintAnchorRow[];
+  /** The crosscut box's top on the say-and-avoid page: the design's, or under the anchors when they run longer (0 elsewhere). */
+  crosscutTop: number;
+  /** The message house's lower blocks, laid out under the measured pillars. */
+  housePage: FoundationMessagePrintHousePage | null;
   goalPage: FoundationMessagePrintGoalPage | null;
   icpPage: FoundationMessagePrintIcpPage | null;
   numbersPage: FoundationMessagePrintNumbersPage | null;
@@ -301,6 +368,6 @@ export interface FoundationMessagePrintView {
   icps: FoundationMessagePrintIcp[];
   pillars: FoundationMessagePillarView[];
   avoidRows: FoundationMessageAvoidRow[];
-  numbers: FoundationMessageNumberRow[];
+  numbers: FoundationMessagePrintNumber[];
   audiences: FoundationMessageAudienceRow[];
 }

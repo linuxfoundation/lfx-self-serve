@@ -10,11 +10,14 @@ import {
   FRAMEWORK_PORTRAIT_NUMBER_TILE,
   FRAMEWORK_PORTRAIT_PAGE_IDS,
   FRAMEWORK_PORTRAIT_ROOM,
+  FRAMEWORK_PORTRAIT_STATEMENT_SHARES,
   FRAMEWORK_PORTRAIT_TOPS,
   FRAMEWORK_PORTRAIT_TYPE,
   MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
   MKTG_PORTRAIT_COLUMNS,
   MKTG_PORTRAIT_PAGE,
+  MKTG_PRINT_DOT,
+  mktgPrintJoin,
 } from '@lfx-one/shared/constants';
 import {
   FoundationMessagePrintFittedText,
@@ -23,6 +26,7 @@ import {
   FoundationMessagePrintGoalPage,
   FoundationMessagePrintIcp,
   FoundationMessagePrintIcpPage,
+  FoundationMessagePrintIcpPageRows,
   FoundationMessagePrintSourcesPage,
   FoundationMessagePrintType,
   FoundationMessagePrintView,
@@ -31,12 +35,25 @@ import {
   MktgPortraitLook,
 } from '@lfx-one/shared/interfaces';
 import {
+  foundationMessagePrintAnchorIntro,
   foundationMessagePrintMatrix,
+  foundationMessagePrintReportText,
   foundationMessagePrintSourceLabel,
+  frameworkPortraitAnchors,
+  frameworkPortraitAvoidList,
+  frameworkPortraitBodyTop,
   frameworkPortraitCutList,
+  frameworkPortraitHouse,
+  frameworkPortraitIcpMatrixHeight,
   frameworkPortraitIcpPages,
+  frameworkPortraitMatrix,
   frameworkPortraitNumbersPages,
+  frameworkPortraitPillList,
   frameworkPortraitPlan,
+  frameworkPortraitSayRoom,
+  frameworkPortraitStatementWidth,
+  frameworkPortraitTaglineSize,
+  frameworkPortraitTitle,
   mktgPortraitDocumentName,
   mktgPortraitFitBlock,
   mktgPortraitFootLeft,
@@ -120,6 +137,10 @@ export class MktgFrameworkPrintComponent {
   protected readonly page = MKTG_PORTRAIT_PAGE;
   protected readonly columns = MKTG_PORTRAIT_COLUMNS;
   protected readonly tops = FRAMEWORK_PORTRAIT_TOPS;
+  /** The blocks' measures the template places by (the say and avoid columns). */
+  protected readonly room = FRAMEWORK_PORTRAIT_ROOM;
+  /** The statement cards' shares of their row (their flex), one value for the fit model and the template. */
+  protected readonly shares = FRAMEWORK_PORTRAIT_STATEMENT_SHARES;
   protected readonly tile = FRAMEWORK_PORTRAIT_NUMBER_TILE;
   /** The facts table's `<colgroup>` widths, %: the fact, the source, the goal that uses it (the layout measures the rows by these). */
   protected readonly factColumns = FRAMEWORK_PORTRAIT_FACT_COLUMNS;
@@ -150,17 +171,17 @@ export class MktgFrameworkPrintComponent {
         firstPage: 1,
       }
   );
+  /** The one middle-dot separator the template joins a line's parts with (MKTG_PRINT_DOT). */
+  protected readonly dot = MKTG_PRINT_DOT;
   /** The frames, in the plan's order, each with its book page number, printed section label, band and laid-out data. */
   protected readonly frames = this.initFrames();
   /** The cover's edition line: `V1.0 · Approved 6 Nov 2026 · figures as of 4 Nov 2026`, less any clause the revision lacks. */
   protected readonly coverVersionLine = computed(() => {
     const view = this.view();
-    return [view.versionLabel, view.approvedLabel, view.dateReadLabel ? `figures as of ${view.dateReadLabel}` : ''].filter((part) => part !== '').join(' · ');
+    return mktgPrintJoin([view.versionLabel, view.approvedLabel, view.dateReadLabel ? `figures as of ${view.dateReadLabel}` : '']);
   });
   /** The cover's bottom strip, right: `aaif.io · V1.0 · 6 Nov 2026`, less any part the revision lacks. */
-  protected readonly coverStripRight = computed(() =>
-    [this.view().website, this.view().versionLabel, this.view().dateLabel].filter((part) => part !== '').join(' · ')
-  );
+  protected readonly coverStripRight = computed(() => mktgPrintJoin([this.view().website, this.view().versionLabel, this.view().dateLabel]));
   /** The cover's umbrella, fitted to the dark band's room under the lockup and the tagline. */
   protected readonly coverUmbrella = computed(() => this.fit(this.view().mh.umbrella, TYPE.coverUmbrella, 640, 160));
   /** The message house's umbrella bar, fitted to three lines. */
@@ -198,18 +219,33 @@ export class MktgFrameworkPrintComponent {
         const goal = /^goal-\d+$/.test(page.id) ? (view.goals.find((entry) => `goal-${entry.n}` === page.id) ?? null) : null;
         const icpIndex = /^icps-\d+$/.test(page.id) ? Number(page.id.slice('icps-'.length)) : 0;
         const numbersIndex = this.pageIndex(page.id, this.ids.keyNumbers);
+        const sayAvoid = page.id === this.ids.sayAvoid;
+        // The anchors never move; their questions are set smaller, then cut, until they and the crosscut box end above the footer.
+        const anchors = sayAvoid ? frameworkPortraitAnchors(view.mf.anchor, view.mf.crosscut) : { anchors: [], crosscutTop: 0 };
+        const titleFit = frameworkPortraitTitle(page.title);
         return {
           ...page,
           number: book.firstPage + index,
           label: mktgPortraitSectionLabel(page.section, book.inFamily, 'Messaging framework'),
           band: !book.inFamily && mktgPortraitOpensChapter(plan, index),
+          titleFit,
           contents: page.id === this.ids.cover ? contents : [],
           statements: page.id === this.ids.framework ? this.statements(view) : null,
-          anchors: page.id === this.ids.sayAvoid ? view.mf.anchor.map((question, rank) => ({ numberLabel: mktgPortraitPageNumber(rank + 1), question })) : [],
-          goalPage: goal ? this.goalPage(goal, view) : null,
+          matrix: page.id === this.ids.framework ? frameworkPortraitMatrix(view.goals, view.mf.crosscut, this.tops.footer - this.tops.matrix) : null,
+          anchorIntro: sayAvoid ? foundationMessagePrintAnchorIntro(view.mf.anchor.length) : '',
+          sayAvoid: sayAvoid
+            ? {
+                say: frameworkPortraitPillList(view.mf.say, ROOM.sayColumn, frameworkPortraitSayRoom()),
+                avoid: frameworkPortraitAvoidList(view.avoidRows, ROOM.avoidColumn, frameworkPortraitSayRoom()),
+              }
+            : null,
+          anchors: anchors.anchors,
+          crosscutTop: anchors.crosscutTop,
+          goalPage: goal ? this.goalPage(goal, view, frameworkPortraitBodyTop(titleFit)) : null,
           icpPage: icpIndex ? this.icpPage(icpIndex, icpPages, view) : null,
           numbersPage: numbersIndex ? (numbersPages[numbersIndex - 1] ?? null) : null,
           sourcesPage: page.id === this.ids.sources ? this.sourcesPage(view) : null,
+          housePage: page.id === this.ids.messageHouse ? frameworkPortraitHouse(view, this.houseUmbrella()) : null,
         };
       });
     });
@@ -217,20 +253,23 @@ export class MktgFrameworkPrintComponent {
 
   // === Private helpers ===
 
-  /** The framework page's four statements, each fitted to its card (the cards share 704 less three 12 gaps by the design's flex ratios). */
+  /**
+   * The framework page's four statements, each fitted to its card (the cards share the row by FRAMEWORK_PORTRAIT_STATEMENT_SHARES);
+   * the tagline first at the size whose line holds two of its words, then to the card's height.
+   */
   private statements(view: FoundationMessagePrintView): FoundationMessagePrintFrame['statements'] {
     const cardsHeight = this.tops.matrix - this.page.bodyTop - ROOM.gap - ROOM.cardPadding - ROOM.label;
-    const column = (share: number): number => ((this.page.contentWidth - 3 * 12) * share) / 4 - 32;
+    const taglineWidth = frameworkPortraitStatementWidth(this.shares.tagline, true);
     return {
-      vision: this.fit(view.mf.vision, TYPE.statement, column(0.85), cardsHeight),
-      mission: this.fit(view.mf.mission, TYPE.statement, column(1.05), cardsHeight),
-      positioning: this.fit(view.mf.positioning, TYPE.statement, column(1.4), cardsHeight),
-      tagline: this.fit(view.mf.tagline, TYPE.tagline, column(0.7) - 13, cardsHeight),
+      vision: this.fit(view.mf.vision, TYPE.statement, frameworkPortraitStatementWidth(this.shares.vision), cardsHeight),
+      mission: this.fit(view.mf.mission, TYPE.statement, frameworkPortraitStatementWidth(this.shares.mission), cardsHeight),
+      positioning: this.fit(view.mf.positioning, TYPE.statement, frameworkPortraitStatementWidth(this.shares.positioning), cardsHeight),
+      tagline: this.fit(view.mf.tagline, { ...TYPE.tagline, size: frameworkPortraitTaglineSize(view.mf.tagline, taglineWidth) }, taglineWidth, cardsHeight),
     };
   }
 
   /** A goal's page: the value, the key message and the sound bite fitted to the room their fixed tops leave, the proof rows cut to what fits above the bite, the served cards' lines fitted. */
-  private goalPage(goal: FoundationMessagePrintGoal, view: FoundationMessagePrintView): FoundationMessagePrintGoalPage {
+  private goalPage(goal: FoundationMessagePrintGoal, view: FoundationMessagePrintView, leadTop: number): FoundationMessagePrintGoalPage {
     const tops = this.tops;
     const width = this.page.contentWidth;
     const proofsRoom = tops.goalBite - tops.goalProofs - ROOM.label - 6 - ROOM.gap;
@@ -249,7 +288,8 @@ export class MktgFrameworkPrintComponent {
     return {
       goal,
       numberLabel: mktgPortraitPageNumber(goal.n),
-      value: this.fit(goal.vp, TYPE.goalValue, width - 150 - 28, tops.goalKey - this.page.bodyTop - ROOM.label - 12 - ROOM.gap),
+      leadTop,
+      value: this.fit(goal.vp, TYPE.goalValue, width - 150 - 28, tops.goalKey - leadTop - ROOM.label - 12 - ROOM.gap),
       key: this.fit(goal.key, TYPE.goalKey, width - 56 - 22 - 90, tops.goalProofs - tops.goalKey - 48 - ROOM.gap),
       proofs,
       bite: goal.bite ? this.fit(`“${goal.bite}”`, TYPE.goalBite, width, tops.goalServed - tops.goalBite - ROOM.label - 10 - ROOM.gap) : null,
@@ -271,20 +311,26 @@ export class MktgFrameworkPrintComponent {
   }
 
   /** An ICP page: its profiles, its intro, the rows' top (under the long intro on the first page), the matrix when it holds one profile. */
-  private icpPage(index: number, pages: FoundationMessagePrintIcp[][], view: FoundationMessagePrintView): FoundationMessagePrintIcpPage {
-    const icps = pages[index - 1] ?? [];
+  private icpPage(index: number, pages: FoundationMessagePrintIcpPageRows[], view: FoundationMessagePrintView): FoundationMessagePrintIcpPage {
+    const rows = pages[index - 1] ?? { icps: [], tight: false, height: 0 };
     const total = view.icps.length;
     const project = view.projectName || 'the project';
-    const start = pages.slice(0, index - 1).reduce((count, page) => count + page.length, 0);
+    const start = pages.slice(0, index - 1).reduce((count, page) => count + page.icps.length, 0);
+    const rowsTop = index === 1 ? this.tops.icpRowsFirst : this.tops.icpRows;
+    // The goals × profiles matrix under a lone card: at the design's top, or under the card when it runs lower, and only where it ends above the footer.
+    const matrixTop = Math.max(this.tops.icpMatrix, rowsTop + rows.height + ROOM.gap);
+    const matrixFits = rows.icps.length === 1 && matrixTop + frameworkPortraitIcpMatrixHeight(view.icps.length) <= this.tops.footer - ROOM.icpFooterRoom;
     return {
       index,
       intro:
         index === 1
           ? `${total} ${total === 1 ? 'profile' : 'profiles'}. Each names who they are, what they need, what ${project} gives them, the lead message, the call to action, the objection to expect and where to reach them. Goal numbers refer to the goal pages.`
-          : `Profiles ${start + 1}–${start + icps.length} of ${total}.`,
-      rowsTop: index === 1 ? this.tops.icpRowsFirst : this.tops.icpRows,
-      icps,
-      matrix: icps.length === 1 ? foundationMessagePrintMatrix(view.goals, view.icps) : [],
+          : `Profiles ${start + 1}–${start + rows.icps.length} of ${total}.`,
+      rowsTop,
+      icps: rows.icps,
+      tight: rows.tight,
+      matrix: matrixFits ? foundationMessagePrintMatrix(view.goals, view.icps) : [],
+      matrixTop,
     };
   }
 
@@ -292,14 +338,16 @@ export class MktgFrameworkPrintComponent {
   private sourcesPage(view: FoundationMessagePrintView): FoundationMessagePrintSourcesPage {
     const date = view.dateReadLabel;
     const report = view.report;
-    const listWidth = this.columns.half - 16;
+    const listWidth = this.columns.half;
     const columnRoom = this.tops.sourcesApproval - this.tops.sourcesLists - ROOM.gap;
     const rowHeight = (text: string): number => this.paraHeight(text, TYPE.source, listWidth);
     const tightHeight = (text: string): number => this.paraHeight(text, TYPE.sourceTight, listWidth);
     const list = (rows: readonly string[], room: number) => frameworkPortraitCutList(rows, room, 'Sources', rowHeight, tightHeight);
     let lists: FoundationMessagePrintSourcesPage['report'] = null;
     if (report) {
-      const failedAll = report.sources_failed.map((source) => `${source.name} — ${source.reason}`);
+      const failedAll = report.sources_failed.map(
+        (source) => `${foundationMessagePrintSourceLabel(source.name)} — ${foundationMessagePrintReportText(source.reason)}`
+      );
       // The left column holds Read, then Could not be read: the failed list keeps its rows first (it is the shorter, and the gap it fills is the editor's), the read list takes what is left.
       const failedHeight =
         ROOM.blockAfter + ROOM.label + (failedAll.length ? failedAll.reduce((sum, row) => sum + rowHeight(row), 0) : rowHeight(this.noSourceFailed));
@@ -310,7 +358,7 @@ export class MktgFrameworkPrintComponent {
         read: list(report.sources_read.map(foundationMessagePrintSourceLabel), columnRoom - ROOM.label - Math.min(failedHeight, columnRoom / 2)),
         failed: list(failedAll, columnRoom / 2 - ROOM.blockAfter - ROOM.label),
         failedCount: report.sources_failed.length,
-        gaps: list(report.gaps, columnRoom - ROOM.label),
+        gaps: list(report.gaps.map(foundationMessagePrintReportText), columnRoom - ROOM.label),
         gapsCount: report.gaps.length,
       };
     }
@@ -318,7 +366,7 @@ export class MktgFrameworkPrintComponent {
     const gapsClause = view.approvedLabel && (report?.gaps.length ?? 0) > 0 ? 'The gaps above were open at approval. ' : '';
     return {
       report: lists,
-      approvalLead: lead.length ? `${lead.join(' · ')}.` : '',
+      approvalLead: lead.length ? `${mktgPrintJoin(lead)}.` : '',
       approvalNote: `${gapsClause}A later run re-reads the sources and refreshes the LFX figures.`,
     };
   }
