@@ -586,12 +586,13 @@ describe('Family export slot', () => {
       `Version V3.0 Approved 6 Nov 2026 Pages ${kitLast + 2}`,
       `Version V4.0 Approved 6 Nov 2026 Pages ${kitLast + 4}`,
     ]);
-    // The running head names the document left (one style on the family's own pages: the document name alone, as the
-    // framework's and the kit's pages inside the book name theirs) and the family right; nothing is hand-numbered.
+    // The running head names the chapter left (the family's own pages carry the chapter's number and document name,
+    // `03 Boilerplates`, as the shared family plan labels them; the framework's and the kit's pages inside the book name
+    // theirs `Document · Section`) and the family right.
     const boilerplatesPage = frames.find((frame) => frame.dataset['pageId'] === 'boilerplates');
     expect(
       Array.from(boilerplatesPage?.querySelectorAll('[data-testid="mktg-portrait-page-head"] > span') ?? []).map((span) => span.textContent?.trim())
-    ).toEqual(['Boilerplates', 'Synthetic project positioning & brand']);
+    ).toEqual(['03 Boilerplates', 'Synthetic project positioning & brand']);
     expect(book.querySelectorAll('[data-testid="family-print-boilerplate-card"]')).toHaveLength(4);
     // The kit's pages inside the family print what the standalone kit print prints from the same record: its recorded
     // approval reaches the kit renderer (the Sources page's acceptance card; the usage page's report year).
