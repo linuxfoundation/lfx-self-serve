@@ -41,7 +41,6 @@ function view(): MktgFamilyPrintView {
     ],
     tagline: '',
     websiteLabel: '',
-    boilerplatesNotes: [],
     boilerplatesSources: [],
     conflicts: [],
   };
@@ -92,11 +91,18 @@ describe('MktgFamilyPrintComponent', () => {
         .map((cell) => cell.textContent?.trim())
         .join(' ')
     );
-    expect(openerMeta).toEqual(['Version V2.0 Approved 6 Nov 2026 · Synthetic Approver Pages 4', 'Version V16.0 Approved 6 Nov 2026 Pages 6']);
+    // The Approved cell is the date alone; the approver's name is the kit's own Sources page's.
+    expect(openerMeta).toEqual(['Version V2.0 Approved 6 Nov 2026 Pages 4', 'Version V16.0 Approved 6 Nov 2026 Pages 6']);
     expect(root.querySelector('[data-testid="family-print-contents-sources"]')?.textContent).toContain('7');
+    // One version format everywhere: the contents rows and the cover's tiles (version and date in one line).
+    expect(root.querySelector('[data-testid="family-print-contents-chapter"]')?.textContent).toContain('V2.0');
+    expect(Array.from(root.querySelectorAll('[data-testid="family-print-cover-documents"] .fpc-doc__meta')).map((meta) => meta.textContent)).toEqual([
+      'V2.0 · 6 Nov 2026',
+      'V16.0 · 6 Nov 2026',
+    ]);
   });
 
-  it('omits what the view does not give: no tagline, no site, no approver, no conflicts; the back cover keeps the notice', async () => {
+  it('omits what the view does not give: no tagline, no site, no conflicts; the back cover keeps the notice', async () => {
     const root = await render(view());
     expect(root.querySelector('[data-testid="family-print-cover-tagline"]')).toBeNull();
     expect(root.querySelector('[data-testid="family-print-cover-logo"]')?.getAttribute('src')).toBe(mktgPrintBrand(null).logoOnDark?.src);

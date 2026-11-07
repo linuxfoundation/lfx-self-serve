@@ -2,16 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, Signal } from '@angular/core';
-import { MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_LABELS, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
-import { MktgFamilyPrintChapter, MktgFamilyPrintConflict, MktgFamilyPrintOpenItem } from '@lfx-one/shared/interfaces';
-import { mktgFamilyPrintOpenItems } from '@lfx-one/shared/utils';
+import { MKTG_FAMILY_PRINT_COPY, MKTG_FAMILY_PRINT_LABELS, MKTG_FAMILY_PRINT_SOURCES_LAYOUT, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
+import { MktgFamilyPrintChapter, MktgFamilyPrintConflict, MktgFamilyPrintSourcesLayout } from '@lfx-one/shared/interfaces';
+import { mktgFamilyPrintOpenItems, mktgFamilyPrintSourcesLayout } from '@lfx-one/shared/utils';
 import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 
 /**
- * The family book's one cross-document Sources page: the version and
- * approval of each document in the book, where the documents disagree (only
- * what the store names) and what their runs left open. A block with nothing
- * to print is omitted, never filled.
+ * The family book's one cross-document Sources page, the board's three
+ * blocks: the version, approval and data date of each document in the book;
+ * where the documents disagree (the store's own conflicts and the
+ * framework's key numbers read against the other documents' text, each row
+ * naming the document to re-run); and what their runs left open. Each list
+ * holds the whole rows that fit its block above the footer, nothing added;
+ * a block with nothing to print is omitted, never filled.
  */
 @Component({
   selector: 'lfx-mktg-family-print-sources-page',
@@ -26,11 +29,12 @@ export class MktgFamilyPrintSourcesPageComponent {
   public readonly labels = MKTG_FAMILY_PRINT_LABELS;
   public readonly intro = MKTG_FAMILY_PRINT_COPY.sourcesIntro;
   public readonly geometry = MKTG_PORTRAIT_PAGE;
+  public readonly layout = MKTG_FAMILY_PRINT_SOURCES_LAYOUT;
   public readonly column: readonly [number, number] = [MKTG_PORTRAIT_PAGE.margin, MKTG_PORTRAIT_PAGE.contentWidth];
 
-  public readonly openItems: Signal<MktgFamilyPrintOpenItem[]> = this.initOpenItems();
+  public readonly lists: Signal<MktgFamilyPrintSourcesLayout> = this.initLists();
 
-  private initOpenItems(): Signal<MktgFamilyPrintOpenItem[]> {
-    return computed(() => mktgFamilyPrintOpenItems(this.chapters()));
+  private initLists(): Signal<MktgFamilyPrintSourcesLayout> {
+    return computed(() => mktgFamilyPrintSourcesLayout(this.conflicts(), mktgFamilyPrintOpenItems(this.chapters())));
   }
 }

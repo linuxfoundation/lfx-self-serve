@@ -32,33 +32,46 @@ const groups: FaqGroupView[] = [
 ];
 
 describe('MktgFamilyPrintFaqPageComponent', () => {
-  it('prints the page’s answered questions as a grid of question, answer and source chip, counting the whole FAQ on the first page', async () => {
+  it('prints the plan’s two columns of question, answer and source chip under their group headings, counting the whole FAQ on the first page', async () => {
     const fixture = TestBed.createComponent(MktgFamilyPrintFaqPageComponent);
     fixture.componentRef.setInput('groups', groups);
-    fixture.componentRef.setInput('pageGroups', [0, 1, 3]);
+    fixture.componentRef.setInput('columns', [
+      [{ group: 0, question: 0, heading: true }],
+      [
+        { group: 1, question: 0, heading: true },
+        // An unanswered question or one the FAQ has not got is not an entry, whatever the plan says.
+        { group: 3, question: 0, heading: true },
+        { group: 7, question: 0, heading: true },
+      ],
+    ]);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    // Unanswered questions do not print, nor a group left with none, and the count is of what prints.
+    // The count is of what prints: answered questions, in groups left with one.
     expect(root.querySelector('[data-testid="family-print-faq-intro"]')?.textContent).toBe(
       '2 questions in 2 groups, each answered from the framework or a source it names.'
     );
-    expect(root.querySelectorAll('[data-testid="family-print-faq-group"]')).toHaveLength(2);
+    const columns = Array.from(root.querySelectorAll('.fpq-column'));
+    expect(columns).toHaveLength(2);
+    expect(columns.map((column) => column.querySelectorAll('[data-testid="family-print-faq-entry"]').length)).toEqual([1, 1]);
+    expect(Array.from(root.querySelectorAll('[data-testid="family-print-faq-group"]')).map((heading) => heading.textContent)).toEqual(['About', 'Joining']);
     const entries = Array.from(root.querySelectorAll('[data-testid="family-print-faq-entry"]'));
     expect(entries.map((entry) => entry.querySelector('.fpq-entry__question')?.textContent)).toEqual(['What is it?', 'How do I join?']);
     expect(entries[0].querySelector('.fpq-entry__answer')?.textContent).toBe('A synthetic project.');
     expect(entries[0].querySelector('.pp-chip')?.textContent).toBe('Framework');
+    // The run's `Notes` source is the project's notes to a reader of the book.
+    expect(entries[1].querySelector('.pp-chip')?.textContent).toBe('Project notes');
     expect(root.textContent).not.toContain('Who runs it?');
     expect(root.textContent).not.toContain('Open');
   });
 
-  it('names its groups on a later page and ignores an index the FAQ has not got', async () => {
+  it('repeats a heading only where the plan opens the group, and names its groups on a later page', async () => {
     const fixture = TestBed.createComponent(MktgFamilyPrintFaqPageComponent);
     fixture.componentRef.setInput('groups', groups);
-    fixture.componentRef.setInput('pageGroups', [1, 7]);
+    fixture.componentRef.setInput('columns', [[{ group: 0, question: 0, heading: false }], [{ group: 1, question: 0, heading: true }]]);
     fixture.componentRef.setInput('index', 1);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    expect(root.querySelector('[data-testid="family-print-faq-intro"]')?.textContent).toBe('Joining.');
-    expect(root.querySelectorAll('[data-testid="family-print-faq-group"]')).toHaveLength(1);
+    expect(root.querySelector('[data-testid="family-print-faq-intro"]')?.textContent).toBe('About · Joining.');
+    expect(Array.from(root.querySelectorAll('[data-testid="family-print-faq-group"]')).map((heading) => heading.textContent)).toEqual(['Joining']);
   });
 });

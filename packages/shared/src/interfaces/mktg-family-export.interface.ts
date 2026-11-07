@@ -16,6 +16,8 @@ import type {
 } from './mktg-slides-export.interface';
 
 export type MktgFamilyExportAgentKey = keyof typeof MKTG_FAMILY_EXPORT_KINDS;
+/** What a member is to the family's book (framework, kit, boilerplates, FAQ): the kind its reader and its pages go by. */
+export type MktgFamilyExportKind = (typeof MKTG_FAMILY_EXPORT_KINDS)[MktgFamilyExportAgentKey];
 
 export interface MktgFamilyExportTarget {
   project: string;
@@ -100,10 +102,12 @@ export interface MktgFamilyPrintView {
   tagline: string;
   /** The project's site as the kit read it (`aaif.io`), '' when the family has no kit or it names none. */
   websiteLabel: string;
-  /** The boilerplates run's notes and the sources it read, both [] when the revision carries no report: the blocks are omitted then. */
-  boilerplatesNotes: string[];
+  /** The sources the boilerplates run read, [] when the revision carries no report: the Built from block is omitted then. */
   boilerplatesSources: string[];
-  /** Where the documents disagree, as the store names it (mktgFamilyPrintConflicts); [] omits the block. */
+  /**
+   * Where the documents disagree: the framework's key numbers read against the FAQ's and the boilerplates' own text
+   * (mktgFamilyPrintNumberConflicts), then what the store names (mktgFamilyPrintConflicts); [] omits the block.
+   */
   conflicts: MktgFamilyPrintConflict[];
 }
 

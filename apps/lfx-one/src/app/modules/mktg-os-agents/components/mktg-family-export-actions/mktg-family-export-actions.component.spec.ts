@@ -33,6 +33,7 @@ import {
   buildFoundationMessagePrintView,
   faqAssetOfRevision,
   mktgFamilyPrintDocument,
+  mktgFamilyPrintSourceLabel,
   mktgPrintBrand,
 } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
@@ -79,7 +80,6 @@ describe('Family export slot', () => {
         documents: [],
         tagline: '',
         websiteLabel: '',
-        boilerplatesNotes: [],
         boilerplatesSources: [],
         conflicts: [],
       } satisfies MktgFamilyPrintView)
@@ -452,9 +452,15 @@ describe('Family export slot', () => {
         documents,
         tagline: 'Synthetic tagline',
         websiteLabel: 'one.example.org',
-        boilerplatesNotes: [],
         boilerplatesSources: boilerplates.report.sources_read,
-        conflicts: [{ topic: 'Brand line', text: 'The brand kit carries “A”; the framework’s tagline is “B”.', rerun: 'Re-run the brand kit.' }],
+        conflicts: [
+          {
+            id: 'Brand line · Brand kit',
+            topic: 'Brand line',
+            text: 'The brand kit carries “A”; the framework’s tagline is “B”.',
+            rerun: 'Re-run the brand kit.',
+          },
+        ],
       })
     );
     const { fixture, root, button } = await setup();
@@ -552,10 +558,10 @@ describe('Family export slot', () => {
           .join(' ')
       )
     ).toEqual([
-      `Version V1.0 Approved 6 Nov 2026 · Synthetic Approver Pages 4–${3 + frameworkPages}`,
-      `Version V2.0 Approved 6 Nov 2026 · Synthetic Approver Pages ${kitFirst}–${kitLast}`,
-      `Version V3.0 Approved 6 Nov 2026 · Synthetic Approver Pages ${kitLast + 2}`,
-      `Version V4.0 Approved 6 Nov 2026 · Synthetic Approver Pages ${kitLast + 4}`,
+      `Version V1.0 Approved 6 Nov 2026 Pages 4–${3 + frameworkPages}`,
+      `Version V2.0 Approved 6 Nov 2026 Pages ${kitFirst}–${kitLast}`,
+      `Version V3.0 Approved 6 Nov 2026 Pages ${kitLast + 2}`,
+      `Version V4.0 Approved 6 Nov 2026 Pages ${kitLast + 4}`,
     ]);
     // The running head names the chapter left and the family right; nothing in the book is hand-numbered.
     const boilerplatesPage = frames.find((frame) => frame.dataset['pageId'] === 'boilerplates');
@@ -563,9 +569,12 @@ describe('Family export slot', () => {
       Array.from(boilerplatesPage?.querySelectorAll('[data-testid="mktg-portrait-page-head"] > span') ?? []).map((span) => span.textContent?.trim())
     ).toEqual(['03 Boilerplates', 'Synthetic project positioning & brand']);
     expect(book.querySelectorAll('[data-testid="family-print-boilerplate-card"]')).toHaveLength(4);
-    // The run's two blocks print both or neither: this record has sources and no notes.
-    expect(book.querySelector('[data-testid="family-print-boilerplate-sources"]')).toBeNull();
+    // What the run was built from, each source as a short readable name; the run's notes never print.
+    expect(Array.from(book.querySelectorAll('[data-testid="family-print-boilerplate-sources"] li')).map((item) => item.textContent)).toEqual(
+      boilerplates.report.sources_read.map(mktgFamilyPrintSourceLabel)
+    );
     expect(book.querySelector('[data-testid="family-print-boilerplate-notes"]')).toBeNull();
+    expect(book.textContent).not.toContain('Notes from the run');
     // Answered questions only, and only the groups left with one.
     const answeredGroups = faqView.groups.map((group) => group.questions.filter((entry) => entry.answered).length).filter((size) => size > 0);
     expect(book.querySelectorAll('[data-testid="family-print-faq-group"]')).toHaveLength(answeredGroups.length);
@@ -623,7 +632,6 @@ describe('Family export slot', () => {
       documents: [],
       tagline: '',
       websiteLabel: '',
-      boilerplatesNotes: [],
       boilerplatesSources: [],
       conflicts: [],
     });

@@ -24,14 +24,14 @@ export interface MktgFamilyPrintDocument {
   number: string;
   /** The family asset's label, e.g. `Messaging framework`. */
   title: string;
-  /** The family asset's description: the opener's one line on what the document holds. */
+  /** The opener's one line on what the document holds: the family asset's `bookSummary`, its `description` when it has none. */
   summary: string;
   /** `V4.0` (one format across the book), '' when the revision carries no number. */
   versionLabel: string;
-  /** The approval's date as printed (`6 Nov 2026`), '' when the store gives none. */
+  /** The approval's date as printed (`6 Nov 2026`), '' when the store gives none: the openers' cell is omitted then. */
   approvedLabel: string;
-  /** The approver's display name, null when the store gives none: the line is omitted then. */
-  approvedBy: string | null;
+  /** The Sources table's Data cell: the date the run read its figures (`figures as of 6 Nov 2026`), else the revision's date; '' when neither is known. */
+  dataLabel: string;
   /** The run report's open items (its gaps, a missing asset), for the Sources page's Still open list. */
   openItems: string[];
 }
@@ -71,10 +71,22 @@ export interface MktgFamilyPrintContentsEntry {
   n: number;
 }
 
-/** The FAQ as the book paginates it: the groups of each FAQ page. */
+/** One entry of an FAQ page: a question of the view (`groups[group].questions[question]`), with its group's heading above it when it opens the group on this column. */
+export interface MktgFamilyPrintFaqItem {
+  group: number;
+  question: number;
+  heading: boolean;
+}
+
+/** The FAQ as the book paginates it by height: the two columns of each FAQ page, filled in order, a group split where its column ends. */
 export interface MktgFamilyPrintFaqPage {
-  /** Indices into the view's groups. */
-  groups: number[];
+  columns: MktgFamilyPrintFaqItem[][];
+}
+
+/** What the plan reads of one FAQ group to paginate it: its name and its answered questions' text. */
+export interface MktgFamilyPrintFaqPlanGroup {
+  name: string;
+  questions: { question: string; answer: string; source: string }[];
 }
 
 /** The whole book as planned: every frame in order, the chapters, the total. */
@@ -96,18 +108,40 @@ export interface MktgFamilyPrintPlanMember {
   document: MktgFamilyPrintDocument;
   /** For a mounted inner print (stage 1: the framework and the kit): one title per printed page. */
   innerPageTitles?: string[];
-  /** For the FAQ: how many questions each group holds, in order. */
-  faqGroupSizes?: number[];
+  /** For the FAQ: its groups with their answered questions, in order (unanswered questions do not print). */
+  faqGroups?: MktgFamilyPrintFaqPlanGroup[];
   /** For the boilerplates: how many lengths carry text. */
   boilerplateCount?: number;
 }
 
-/** One row of the Sources page's "Where the documents disagree": a real conflict the store names, with the document to re-run. */
+/**
+ * One row of the Sources page's "Where the documents disagree": a real
+ * conflict, with the document to re-run. Two producers: the store's own
+ * (the kit's line against the framework's tagline, the kit report's colour
+ * conflicts: mktgFamilyPrintConflicts) and the framework's key numbers read
+ * against the FAQ's and the boilerplates' own text (mktgFamilyPrintNumberConflicts).
+ */
 export interface MktgFamilyPrintConflict {
+  /** Unique on the page: the topic and the document it was read in. */
+  id: string;
   topic: string;
   text: string;
-  /** `Re-run the messaging framework.` */
+  /** `Re-run the FAQ so it reads the approved framework.`; '' when the row names no document to re-run. */
   rerun: string;
+}
+
+/** A document's own text as the Sources page reads it against the others': its title in the book and what it says. */
+export interface MktgFamilyPrintTextSource {
+  title: string;
+  texts: string[];
+}
+
+/** The Sources page's rows as they fit its fixed blocks: whole rows above the footer, nothing added. */
+export interface MktgFamilyPrintSourcesLayout {
+  conflicts: MktgFamilyPrintConflict[];
+  openItems: MktgFamilyPrintOpenItem[];
+  /** The Still open block's y: under the conflicts, or in their place when there are none. */
+  openTop: number;
 }
 
 /** One line of the Sources page's "Still open": the document and the open item. */
@@ -122,8 +156,6 @@ export interface MktgFamilyPrintBoilerplateCard {
   text: string;
   /** `48 words · max 50`. */
   count: string;
-  /** The words as a percentage of the limit, uncapped. */
-  percent: number;
   /** The fill bar's width, capped at 100. */
   fill: number;
   /** `96 % of the limit`, '' without a limit. */

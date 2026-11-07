@@ -2,23 +2,23 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <p class="pp-body pp-body--wide" [lfxPpRect]="[column[0], geometry.bodyTop, column[1]]" data-testid="family-print-faq-intro">{{ intro() }}</p>
-<div class="fpq-grid" [lfxPpRect]="[column[0], 200, column[1]]" data-testid="family-print-faq-grid">
-  @for (group of shown(); track group.path) {
-    <section class="fpq-group" data-testid="family-print-faq-group">
-      <h2 class="pp-lab pp-lab--dark">{{ group.name }}</h2>
-      <div class="fpq-group__list">
-        @for (entry of group.questions; track entry.path) {
-          <article class="fpq-entry" data-testid="family-print-faq-entry">
-            <h3 class="fpq-entry__question">{{ entry.question }}</h3>
-            <p class="fpq-entry__answer">{{ entry.answer }}</p>
-            @if (entry.source) {
-              <p class="fpq-entry__source">
-                <span class="pp-chip">{{ entry.source }}</span>
-              </p>
-            }
-          </article>
+<div class="fpq-grid" [lfxPpRect]="[column[0], layout.top, column[1]]" data-testid="family-print-faq-grid">
+  @for (entries of shown(); track $index) {
+    <div class="fpq-column">
+      @for (shown of entries; track shown.key) {
+        @if (shown.heading) {
+          <h2 class="pp-lab pp-lab--dark fpq-heading" data-testid="family-print-faq-group">{{ shown.heading }}</h2>
         }
-      </div>
-    </section>
+        <article class="fpq-entry" data-testid="family-print-faq-entry">
+          <h3 class="fpq-entry__question">{{ shown.entry.question }}</h3>
+          <p class="fpq-entry__answer">{{ shown.entry.answer }}</p>
+          @if (shown.source) {
+            <p class="fpq-entry__source">
+              <span class="pp-chip">{{ shown.source }}</span>
+            </p>
+          }
+        </article>
+      }
+    </div>
   }
 </div>

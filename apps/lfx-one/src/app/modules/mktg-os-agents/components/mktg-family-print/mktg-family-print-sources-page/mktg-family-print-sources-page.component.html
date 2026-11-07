@@ -1,6 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+@let shown = lists();
 <p class="pp-body pp-body--wide" [lfxPpRect]="[column[0], geometry.bodyTop, column[1]]">{{ intro }}</p>
 <section [lfxPpRect]="[column[0], 210, column[1]]" data-testid="family-print-sources-table">
   <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.inThisBook }}</h2>
@@ -10,7 +11,7 @@
         <th>{{ labels.document }}</th>
         <th>{{ labels.version }}</th>
         <th>{{ labels.approved }}</th>
-        <th>{{ labels.pages }}</th>
+        <th>{{ labels.data }}</th>
       </tr>
     </thead>
     <tbody>
@@ -19,17 +20,17 @@
           <td class="fps-table__name">{{ chapter.document.title }}</td>
           <td>{{ chapter.document.versionLabel }}</td>
           <td>{{ chapter.document.approvedLabel }}</td>
-          <td class="fps-table__muted">{{ chapter.openerPage }}–{{ chapter.last }}</td>
+          <td class="fps-table__muted">{{ chapter.document.dataLabel }}</td>
         </tr>
       }
     </tbody>
   </table>
 </section>
-@if (conflicts().length) {
-  <section [lfxPpRect]="[column[0], 410, column[1]]" data-testid="family-print-sources-conflicts">
+@if (shown.conflicts.length) {
+  <section [lfxPpRect]="[column[0], layout.conflictsTop, column[1]]" data-testid="family-print-sources-conflicts">
     <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.disagree }}</h2>
     <div class="fps-rows">
-      @for (conflict of conflicts(); track conflict.topic) {
+      @for (conflict of shown.conflicts; track conflict.id) {
         <div class="fps-row">
           <span class="fps-row__topic">{{ conflict.topic }}</span>
           <span>
@@ -43,17 +44,15 @@
     </div>
   </section>
 }
-@if (openItems().length) {
-  <section [lfxPpRect]="[column[0], conflicts().length ? 690 : 410, column[1]]" data-testid="family-print-sources-open">
+@if (shown.openItems.length) {
+  <section [lfxPpRect]="[column[0], shown.openTop, column[1]]" data-testid="family-print-sources-open">
     <h2 class="pp-lab pp-lab--dark fps-label">{{ labels.stillOpen }}</h2>
-    <div class="fps-rows">
-      @for (item of openItems(); track $index) {
-        <div class="fps-row fps-row--open">
-          <span class="fps-row__chip"
-            ><span class="pp-chip">{{ item.document }}</span></span
-          >
-          <span>{{ item.text }}</span>
-        </div>
+    <div class="fps-open">
+      @for (item of shown.openItems; track item.document + item.text) {
+        <span class="fps-open__chip"
+          ><span class="pp-chip">{{ item.document }}</span></span
+        >
+        <span class="fps-open__text">{{ item.text }}</span>
       }
     </div>
   </section>

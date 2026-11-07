@@ -22,19 +22,11 @@
     </article>
   }
 </div>
-@if (runBlocks()) {
-  <section class="fpb-foot" [lfxPpRect]="[column[0], 912, columns.half]" data-testid="family-print-boilerplate-notes">
-    <h2 class="pp-lab pp-lab--dark">{{ labels.notesFromTheRun }}</h2>
-    <ul class="fpb-foot__list">
-      @for (note of notes(); track $index) {
-        <li>{{ note }}</li>
-      }
-    </ul>
-  </section>
-  <section class="fpb-foot" [lfxPpRect]="[column[0] + columns.half + columns.halfGap, 912, columns.half]" data-testid="family-print-boilerplate-sources">
+@if (shownSources().length) {
+  <section class="fpb-foot" [lfxPpRect]="[column[0], runLayout.top, columns.half]" data-testid="family-print-boilerplate-sources">
     <h2 class="pp-lab pp-lab--dark">{{ labels.builtFrom }}</h2>
     <ul class="fpb-foot__list">
-      @for (source of sources(); track $index) {
+      @for (source of shownSources(); track source) {
         <li>{{ source }}</li>
       }
     </ul>

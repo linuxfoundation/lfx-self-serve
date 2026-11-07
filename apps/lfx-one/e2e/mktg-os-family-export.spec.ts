@@ -207,12 +207,14 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   const contents = frames.byId('contents');
   const openerPages = await contents.getByTestId('family-print-contents-opener-page').allTextContents();
   expect(openerPages.map((text) => text.trim())).toEqual(frames.openers.map((opener) => String(opener.page)));
-  await expect(contents.getByTestId('family-print-contents-intro')).toHaveText(`4 documents, ${frames.total} pages.`);
+  await expect(contents.getByTestId('family-print-contents-intro')).toContainText(`4 documents, ${frames.total} pages.`);
   await expect(contents.getByTestId('family-print-contents-sources')).toContainText(String(frames.byIdPage('sources')));
-  // The openers, in exporter order, each with its version and page range.
+  // The openers, in exporter order, each with its version, its approval date alone and its page range.
   await expect(book.locator('[data-testid="mktg-portrait-opener-title"]')).toHaveText(['Messaging framework', 'Brand kit', 'Boilerplates', 'FAQ']);
-  await expect(book.locator('[data-testid="mktg-portrait-opener-meta"]').first()).toContainText('Version');
-  await expect(book.locator('[data-testid="mktg-portrait-opener-meta"]').first()).toContainText('Pages');
+  const openerMeta = book.locator('[data-testid="mktg-portrait-opener-meta"]').first();
+  await expect(openerMeta).toContainText('Version');
+  await expect(openerMeta).toContainText('Pages');
+  await expect(openerMeta.locator('dd').nth(1)).toHaveText(/^\d{1,2} [A-Z][a-z]{2} \d{4}$/);
   // The running head names the chapter left and the family right on every content page; no page is hand-numbered.
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-doc')).toHaveText(/positioning & brand$/);
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-section')).toHaveText('03 Boilerplates');
@@ -233,8 +235,16 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   const faq = frames.byId('faq-1');
   await expect(faq.getByTestId('family-print-faq-entry')).toHaveCount(3);
   await expect(faq).not.toContainText('Needs an answer');
-  // The Sources page: the four documents' versions and pages; no placeholder, note or bracketed template text anywhere.
-  await expect(frames.byId('sources').getByTestId('family-print-sources-row')).toHaveCount(4);
+  // Built from: each source as a short readable name (the host, never a raw URL); the run's notes never print.
+  await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-sources')).toContainText('acme-mesh.example');
+  await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-sources')).not.toContainText('https://');
+  await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-notes')).toHaveCount(0);
+  // The Sources page (the fixture's run left a gap): the four documents' version, approval and data date; the open
+  // item under its document's chip; no placeholder, note or bracketed template text anywhere.
+  const sources = frames.byId('sources');
+  await expect(sources.getByTestId('family-print-sources-row')).toHaveCount(4);
+  await expect(sources.getByTestId('family-print-sources-row').first().locator('td').nth(3)).toContainText('figures as of');
+  await expect(sources.getByTestId('family-print-sources-open')).toContainText('The launch year is not stated.');
   await expect(book).not.toContainText(/\[[A-Z][a-z]+\]/);
   await expect(book).not.toContainText('SVG supplied');
   // The back cover: the kit's dark, the trademark notice.

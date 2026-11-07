@@ -19,8 +19,11 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
       row(2, '50 words', 48, 50),
       row(3, '100 words', 0, 100, '   '),
     ]);
-    fixture.componentRef.setInput('notes', ['Figures from the press release.']);
-    fixture.componentRef.setInput('sources', ['https://acme-mesh.example']);
+    fixture.componentRef.setInput('sources', [
+      'https://acme-mesh.example/press/launch (press release)',
+      'https://acme-mesh.example',
+      'LFX project record acme-mesh (uid 00000000-0000-4000-8000-000000000000)',
+    ]);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const cards = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="family-print-boilerplate-card"]'));
@@ -36,21 +39,29 @@ describe('MktgFamilyPrintBoilerplatesPageComponent', () => {
     expect(cards[1].querySelector<HTMLElement>('.fpb-card__fill')?.style.width).toBe('100%');
     expect(cards[1].querySelector('.fpb-card__fill')?.classList.contains('fpb-card__fill--over')).toBe(true);
     expect(cards.map((card) => card.querySelector<HTMLElement>('.fpb-card__text')?.style.fontSize)).toEqual(['16.5px', '16.5px', '14px']);
-    expect(root.querySelector('[data-testid="family-print-boilerplate-notes"]')?.textContent).toContain('Figures from the press release.');
-    expect(root.querySelector('[data-testid="family-print-boilerplate-sources"]')?.textContent).toContain('https://acme-mesh.example');
+    // Built from, as the board prints it: each source by its label or host, no record id; the run's notes never print.
+    expect(root.querySelector('[data-testid="family-print-boilerplate-notes"]')).toBeNull();
+    expect(Array.from(root.querySelectorAll('[data-testid="family-print-boilerplate-sources"] li')).map((item) => item.textContent)).toEqual([
+      'press release',
+      'acme-mesh.example',
+      'LFX project record acme-mesh',
+    ]);
   });
 
-  it('prints the notes and sources blocks both or neither: none when the run left none, none when it left only one', async () => {
+  it('omits the Built from block when the run read nothing it can name, and keeps the whole rows that fit', async () => {
     const fixture = TestBed.createComponent(MktgFamilyPrintBoilerplatesPageComponent);
     fixture.componentRef.setInput('lengths', [row(0, 'One-liner', 14, 15)]);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    expect(root.querySelector('[data-testid="family-print-boilerplate-notes"]')).toBeNull();
-    expect(root.querySelector('[data-testid="family-print-boilerplate-sources"]')).toBeNull();
-    fixture.componentRef.setInput('sources', ['https://acme-mesh.example']);
-    await fixture.whenStable();
-    expect(root.querySelector('[data-testid="family-print-boilerplate-notes"]')).toBeNull();
     expect(root.querySelector('[data-testid="family-print-boilerplate-sources"]')).toBeNull();
     expect(root.querySelectorAll('[data-testid="family-print-boilerplate-card"]')).toHaveLength(1);
+    fixture.componentRef.setInput(
+      'sources',
+      Array.from({ length: 12 }, (_, index) => `https://acme-mesh.example/page-${index} (source ${index + 1})`)
+    );
+    await fixture.whenStable();
+    const shown = root.querySelectorAll('[data-testid="family-print-boilerplate-sources"] li').length;
+    expect(shown).toBeGreaterThan(0);
+    expect(shown).toBeLessThan(12);
   });
 });

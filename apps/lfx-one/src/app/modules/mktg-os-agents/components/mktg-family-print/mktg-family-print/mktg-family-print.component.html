@@ -2,7 +2,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @let document = view();
-@for (page of plan().pages; track page.id) {
+@for (frame of frames(); track frame.page.id) {
+  @let page = frame.page;
+  @let chapter = frame.chapter;
   @switch (page.kind) {
     @case ('cover') {
       <!-- Composed on the grammar's page: the grammar's cover carries one title and lede, not the tagline and the document tiles.
@@ -21,14 +23,14 @@
           <h1 class="fpc-title" data-testid="family-print-cover-title">{{ familyName() }}</h1>
           <p class="fpc-purpose">{{ coverPurpose() }}</p>
         </div>
-        @if (plan().chapters.length) {
+        @if (coverTiles().length) {
           <div class="fpc-docs" [lfxPpRect]="[inset[0], 800, inset[1]]" data-testid="family-print-cover-documents">
-            @for (chapter of plan().chapters; track chapter.document.agentKey) {
+            @for (tile of coverTiles(); track tile.document.agentKey) {
               <div class="fpc-doc">
-                <p class="pp-lab pp-lab--accent">{{ chapter.document.number }}</p>
-                <p class="fpc-doc__title">{{ chapter.document.title }}</p>
-                @if (metaOf(chapter.document); as meta) {
-                  <p class="fpc-doc__meta">{{ meta }}</p>
+                <p class="pp-lab pp-lab--accent">{{ tile.document.number }}</p>
+                <p class="fpc-doc__title">{{ tile.document.title }}</p>
+                @if (tile.meta) {
+                  <p class="fpc-doc__meta">{{ tile.meta }}</p>
                 }
               </div>
             }
@@ -85,7 +87,8 @@
       </lfx-mktg-portrait-page>
     }
     @case ('opener') {
-      @if (chapterOf(page.agentKey); as chapter) {
+      @if (chapter) {
+        <!-- The Approved cell is the date alone, as the board prints it; no date, no cell. -->
         <lfx-mktg-portrait-opener
           [look]="look()"
           [book]="book()"
@@ -95,14 +98,14 @@
           [title]="chapter.document.title"
           [purpose]="chapter.document.summary"
           [version]="chapter.document.versionLabel"
-          [approved]="approvedOf(chapter.document)"
-          [pages]="pageRange(chapter)" />
+          [approved]="chapter.document.approvedLabel"
+          [pages]="frame.range" />
       }
     }
     @case ('framework') {
       @if (document.framework; as framework) {
         <!-- Stage 1: main's flowing framework print in the chapter's place; its portrait pages replace it. -->
-        <lfx-mktg-framework-print [view]="framework" [number]="chapterOf(page.agentKey)?.document?.number ?? ''" />
+        <lfx-mktg-framework-print [view]="framework" [number]="chapter?.document?.number ?? ''" />
       }
     }
     @case ('kit') {
@@ -112,25 +115,24 @@
           [view]="kit"
           [brand]="document.brand"
           [projectName]="document.projectName"
-          [number]="chapterOf(page.agentKey)?.document?.number ?? ''"
-          [book]="innerBook(chapterOf(page.agentKey))" />
+          [number]="chapter?.document?.number ?? ''"
+          [book]="frame.innerBook" />
       }
     }
     @case ('boilerplates') {
       @if (document.boilerplates; as boilerplates) {
         <lfx-mktg-portrait-page [look]="look()" [book]="book()" [pageId]="page.id" [page]="page.n" [section]="page.section" [title]="page.title">
-          <lfx-mktg-family-print-boilerplates-page
-            [lengths]="boilerplates.lengths"
-            [notes]="document.boilerplatesNotes"
-            [sources]="document.boilerplatesSources" />
+          <lfx-mktg-family-print-boilerplates-page [lengths]="boilerplates.lengths" [sources]="document.boilerplatesSources" />
         </lfx-mktg-portrait-page>
       }
     }
     @case ('faq') {
       @if (document.faq; as faq) {
-        <lfx-mktg-portrait-page [look]="look()" [book]="book()" [pageId]="page.id" [page]="page.n" [section]="page.section" [title]="page.title">
-          <lfx-mktg-family-print-faq-page [groups]="faq.groups" [pageGroups]="plan().faqPages[page.index]?.groups ?? []" [index]="page.index" />
-        </lfx-mktg-portrait-page>
+        @if (frame.faqPage; as faqPage) {
+          <lfx-mktg-portrait-page [look]="look()" [book]="book()" [pageId]="page.id" [page]="page.n" [section]="page.section" [title]="page.title">
+            <lfx-mktg-family-print-faq-page [groups]="faq.groups" [columns]="faqPage.columns" [index]="page.index" />
+          </lfx-mktg-portrait-page>
+        }
       }
     }
     @case ('sources') {

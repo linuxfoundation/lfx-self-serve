@@ -3,17 +3,21 @@
 
 /* The FAQ grid: two columns, 32px gutter, groups unbroken (the design board's exact px). */
 .fpq-grid {
-  columns: 2;
-  column-gap: 32px;
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
 }
 
-.fpq-group {
-  break-inside: avoid-column;
-  margin-bottom: 18px;
+.fpq-column {
+  flex: 1 1 0;
+  min-width: 0;
+}
 
-  &__list {
-    margin-top: 6px;
-  }
+/* A group's label: 26px with its gap, as the plan budgets it (MKTG_FAMILY_PRINT_FAQ_LAYOUT.heading). */
+.fpq-heading {
+  display: block;
+  height: 20px;
+  margin-bottom: 6px;
 }
 
 .fpq-entry {

@@ -173,20 +173,14 @@ describe('Family export client', () => {
     expect(view?.fontFamily).toBe('Montserrat');
     // The newest dated member revision names the family PDF; a member without a date is passed over.
     expect(view?.newestRevisionAt).toBe('2026-10-28T09:00:00Z');
-    // The book's chapters, in the family's asset order, named from the kit catalogue with the approval as printed.
+    // The book's chapters, in the family's asset order, named from the kit catalogue with the approval as printed and
+    // the data date from the run's record (the kit's record has none: its generation date stands in).
     expect(
-      view?.documents.map((document) => [
-        document.number,
-        document.agentKey,
-        document.title,
-        document.versionLabel,
-        document.approvedLabel,
-        document.approvedBy,
-      ])
+      view?.documents.map((document) => [document.number, document.agentKey, document.title, document.versionLabel, document.approvedLabel, document.dataLabel])
     ).toEqual([
-      ['01', 'brand-kit', 'Brand kit', 'V1.0', '20 Oct 2026', null],
-      ['02', 'boilerplates', 'Boilerplates', 'V1.0', '20 Oct 2026', null],
-      ['03', 'faq', 'FAQ', 'V1.0', '20 Oct 2026', null],
+      ['01', 'brand-kit', 'Brand kit', 'V1.0', '20 Oct 2026', 'figures as of 17 Oct 2026'],
+      ['02', 'boilerplates', 'Boilerplates', 'V1.0', '20 Oct 2026', 'figures as of 19 Oct 2026'],
+      ['03', 'faq', 'FAQ', 'V1.0', '20 Oct 2026', 'figures as of 19 Oct 2026'],
     ]);
     expect(view?.tagline).toBe('');
     expect(view?.websiteLabel).toBe('one.example.org');

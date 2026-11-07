@@ -13,11 +13,91 @@ export const MKTG_FAMILY_PRINT_WARN_INK = lfxColors.amber[700];
 /** What a frame of the book holds; `framework` and `kit` are the mounted inner prints (stage 1) or their portrait pages. */
 export const MKTG_FAMILY_PRINT_PAGE_KINDS = ['cover', 'contents', 'opener', 'framework', 'kit', 'boilerplates', 'faq', 'sources', 'back'] as const;
 
-/** The FAQ prints on one two-column page up to this many questions; past it, two groups a page. */
-export const MKTG_FAMILY_PRINT_FAQ_SINGLE_PAGE_MAX = 8;
+/**
+ * The FAQ grid's budget per page (px of the frame): two columns from `top` to
+ * `bottom`, each entry's padding and its group heading's height, and the
+ * type the fit model measures (MKTG_PORTRAIT_FIT): the plan fills the columns
+ * in order and opens a new page when both are full, so nothing is cut.
+ */
+export const MKTG_FAMILY_PRINT_FAQ_LAYOUT = {
+  top: 200,
+  bottom: 1000,
+  columnGap: 32,
+  /** The group's label and the gap under it. */
+  heading: 26,
+  /** The entry's padding above and below its text. */
+  entryPadding: 26,
+  question: { size: 13.5, line: 1.35, weight: 600 },
+  answer: { size: 12, line: 1.55, above: 6 },
+  /** The source chip's line. */
+  source: 24,
+} as const;
 
-/** The FAQ's groups per page once it paginates. */
-export const MKTG_FAMILY_PRINT_FAQ_GROUPS_PER_PAGE = 2;
+/** The Sources page's fixed blocks: the conflicts' y and the Still open block's two y's, the page's bottom, and the rows' type for the fit model. */
+export const MKTG_FAMILY_PRINT_SOURCES_LAYOUT = {
+  conflictsTop: 410,
+  openTop: 690,
+  bottom: 1000,
+  heading: 26,
+  topicWidth: 130,
+  gap: 18,
+  conflict: { size: 12, line: 1.45, padding: 16 },
+  open: { size: 11.5, line: 1.45, padding: 14 },
+  /** The document chip's type (the grammar's `pp-chip`) and its horizontal padding. */
+  chip: { size: 8.5, padding: 14 },
+} as const;
+
+/** The boilerplates page's two run blocks at the foot: their y and bottom, the heading and the list's type. */
+export const MKTG_FAMILY_PRINT_RUN_BLOCKS_LAYOUT = {
+  top: 912,
+  bottom: 1000,
+  heading: 26,
+  /** The list's indent. */
+  indent: 16,
+  item: { size: 11, line: 1.55 },
+} as const;
+
+/** Words before a figure that round it (`over 7,000 code contributors`): such a figure is no other count of the measure. */
+export const MKTG_FAMILY_PRINT_ROUNDING_WORDS: readonly string[] = [
+  'over',
+  'more than',
+  'nearly',
+  'almost',
+  'about',
+  'around',
+  'some',
+  'roughly',
+  'at least',
+  'up to',
+  'close to',
+];
+
+/**
+ * A FAQ answer's source as the family book's chip prints it, by the stored word in lower case: the run's `Notes` are
+ * the project's notes to a reader of the book (the editor's round of 7 Nov 2026). A source not named here prints as stored.
+ */
+export const MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS: Readonly<Record<string, string>> = { notes: 'Project notes' };
+
+/** Words of a key number's label that name no thing to count. */
+export const MKTG_FAMILY_PRINT_LABEL_STOP_WORDS: readonly string[] = [
+  'more',
+  'than',
+  'over',
+  'with',
+  'from',
+  'since',
+  'total',
+  'active',
+  'across',
+  'about',
+  'nearly',
+  'almost',
+  'around',
+  'last',
+  'past',
+  'months',
+  'years',
+];
 
 /** The running head's left label and the title of the family's own pages. */
 export const MKTG_FAMILY_PRINT_LABELS = {
@@ -34,22 +114,19 @@ export const MKTG_FAMILY_PRINT_LABELS = {
   inThisBook: 'In this book',
   disagree: 'Where the documents disagree',
   stillOpen: 'Still open',
-  notesFromTheRun: 'Notes from the run',
   builtFrom: 'Built from',
   document: 'Document',
-  linuxFoundationProject: 'a Linux Foundation project',
+  data: 'Data',
 } as const;
 
 /** The copy of the family's own pages; `[Project]` is the project's name, counts are filled by the plan. */
 export const MKTG_FAMILY_PRINT_COPY = {
   coverPurpose:
     'The living documents of [Project] in one reference: what we say, how it looks, the approved descriptions, and the answers to common questions.',
-  /** `[Documents]` and `[Pages]` are the counts. */
-  contentsIntro:
-    '[Documents] documents, [Pages] pages. Each opens on a chapter page that names its version and approval date; each keeps its own Sources page, and the last page checks them against one another.',
+  /** `[Documents]` and `[Pages]` are the counts (the editor's round of 7 Nov 2026 cut the sentence on the openers and the running head). */
+  contentsIntro: '[Documents] documents, [Pages] pages.',
   /** `[Date]` is the printed date. */
-  contentsNote:
-    'Versions are the approved revisions in LFX One on [Date]. A page’s running head names its document; the footer carries the book’s page number.',
+  contentsNote: 'Versions are the approved revisions in LFX One on [Date].',
   boilerplatesIntro: 'Approved lengths of the same description. Use them as written; cut from the end, never rephrase.',
   /** `[Questions]` and `[Groups]` are the counts. */
   faqIntro: '[Questions] questions in [Groups] groups, each answered from the framework or a source it names.',
@@ -63,6 +140,21 @@ export const MKTG_FAMILY_PRINT_COPY = {
   overBy: 'over by [Over]',
   /** The back cover's provenance line, after the trademark notice. */
   backCoverProvenance: 'Generated from the approved documents listed on the Sources page; versions and dates are on each opener.',
+  /** The Sources table's Data cell: `[Date]` is the date the run read its figures, or the revision's. */
+  figuresAsOf: 'figures as of [Date]',
+  /** A key-number conflict: `[Number]` and `[Label]` are the framework's, `[Document]` the other document's title, `[Sentence]` what it says. */
+  numberConflict: 'The framework’s key numbers say [Number] [Label]; the [Document] says “[Sentence]”',
+  /** The brand-line conflict: `[Line]` is the kit's, `[Tagline]` the framework's. */
+  brandLineConflict: 'The brand kit carries “[Line]”; the framework’s tagline is “[Tagline]”.',
+  /** A colour conflict: `[Values]` lists each source's value, `[Chosen]` is the kit's. */
+  /** A colour the kit read with two values: `[Values]` is `#FF702D on the brand page and #FF7D2D in the site css`. */
+  colorConflict: 'The [Kit] reads [Name] as [Values]; it keeps [Chosen].',
+  /** One of a colour's readings: `[Hex]` and where the kit read it (omitted when the record names no readable source). */
+  colorReading: '[Hex] from the [Source]',
+  /** The document to re-run after a conflict with the framework: `[Document]`. */
+  rerunAgainstFramework: 'Re-run the [Document] so it reads the approved framework.',
+  /** The topic of the brand-line conflict. */
+  brandLineTopic: 'Brand line',
 } as const;
 
 /** The body text sizes of the four boilerplate cards, longest last, and the cards' minimum heights (px). */

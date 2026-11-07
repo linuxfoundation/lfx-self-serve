@@ -8,12 +8,16 @@
 
 import { MKTG_FAMILY_EXPORT_KINDS } from '../constants/mktg-family-export.constants';
 import {
-  MKTG_FAMILY_PRINT_FAQ_GROUPS_PER_PAGE,
-  MKTG_FAMILY_PRINT_FAQ_SINGLE_PAGE_MAX,
+  MKTG_FAMILY_PRINT_COPY,
+  MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_LABELS,
+  MKTG_FAMILY_PRINT_LABEL_STOP_WORDS,
+  MKTG_FAMILY_PRINT_ROUNDING_WORDS,
+  MKTG_FAMILY_PRINT_RUN_BLOCKS_LAYOUT,
+  MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
 } from '../constants/mktg-family-print.constants';
-import { mktgPortraitPageNumber } from './mktg-portrait-print.utils';
 import { MKTG_KIT_FAMILIES } from '../constants/mktg-kit.constants';
+import { MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import type { BrandKitReportColorConflict } from '../interfaces/brand-kit.interface';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
 import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.interface';
@@ -23,12 +27,18 @@ import type {
   MktgFamilyPrintConflict,
   MktgFamilyPrintContentsEntry,
   MktgFamilyPrintDocument,
+  MktgFamilyPrintFaqItem,
   MktgFamilyPrintFaqPage,
+  MktgFamilyPrintFaqPlanGroup,
+  MktgFamilyPrintTextSource,
   MktgFamilyPrintOpenItem,
   MktgFamilyPrintPage,
   MktgFamilyPrintPlan,
   MktgFamilyPrintPlanMember,
+  MktgFamilyPrintSourcesLayout,
 } from '../interfaces/mktg-family-print.interface';
+import type { MktgPortraitFitPara } from '../interfaces/mktg-portrait-print.interface';
+import { mktgPortraitPageNumber, mktgPortraitParaHeight } from './mktg-portrait-print.utils';
 
 /** One version format across the book, the kit cover's: `V4.0`; '' when the revision carries no number. */
 export function mktgFamilyPrintVersionLabel(version: number | null | undefined): string {
@@ -54,9 +64,10 @@ export function mktgFamilyPrintFill(template: string, values: Record<string, str
 
 /**
  * One member document as the book names it: the chapter number in exporter
- * order, the family asset's label and description (the product's own words
- * for the document, never a literal per agent), the revision's version and
- * approval as printed, and the run report's open items.
+ * order, the family asset's label and its `bookSummary` (the opener's line;
+ * the asset's description when it has none: the product's own words for the
+ * document, never a literal per agent), the revision's version and approval
+ * as printed, the date its figures were read, and the run report's open items.
  */
 export function mktgFamilyPrintDocument(
   familyId: string,
@@ -64,9 +75,11 @@ export function mktgFamilyPrintDocument(
   number: number,
   version: number | null | undefined,
   approval: MktgRevisionApproval | null,
-  openItems: string[]
+  openItems: string[],
+  dataReadAt: string | null = null
 ): MktgFamilyPrintDocument {
   const asset = MKTG_KIT_FAMILIES.find((family) => family.id === familyId)?.assets.find((entry) => entry.agentKey === agentKey);
+  const dataDate = mktgFamilyPrintDate(dataReadAt);
   return {
     agentKey,
     number: mktgPortraitPageNumber(number),
@@ -74,36 +87,144 @@ export function mktgFamilyPrintDocument(
     summary: asset?.bookSummary ?? asset?.description ?? '',
     versionLabel: mktgFamilyPrintVersionLabel(version),
     approvedLabel: mktgFamilyPrintDate(approval?.approvedAt),
-    approvedBy: approval?.approvedBy?.name?.trim() || null,
-    openItems: openItems.map((item) => item.trim()).filter(Boolean),
+    dataLabel: dataDate ? mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.figuresAsOf, { Date: dataDate }) : '',
+    openItems: openItems.map(mktgFamilyPrintOpenItemText).filter(Boolean),
   };
 }
 
+/** The height one FAQ entry takes in a column `width` px wide: its padding, the question, the answer and the source chip's line. */
+export function mktgFamilyPrintFaqEntryHeight(entry: MktgFamilyPrintFaqPlanGroup['questions'][number], width: number): number {
+  const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
+  const paras: MktgPortraitFitPara[] = [
+    { text: entry.question, ...layout.question },
+    { text: entry.answer, ...layout.answer },
+  ];
+  const text = paras.reduce((height, para) => height + mktgPortraitParaHeight(para, width), 0);
+  return layout.entryPadding + text + (entry.source.trim() ? layout.source : 0);
+}
+
 /**
- * The FAQ's pages: every group on one two-column page while the FAQ holds at
- * most MKTG_FAMILY_PRINT_FAQ_SINGLE_PAGE_MAX questions, else two groups a page.
- * Empty groups are not printed. No page with no questions.
+ * The FAQ's pages, filled by height: the answered questions in order, each
+ * under its group's heading, into the page's two columns one after the
+ * other; when both are full the next page opens, a group split where its
+ * column ended (its heading repeats). An entry taller than a column stands
+ * alone in one. Empty groups are not printed. No page with no questions.
  */
-export function mktgFamilyPrintFaqPages(groupSizes: number[]): MktgFamilyPrintFaqPage[] {
-  const groups = groupSizes.map((size, index) => ({ size, index })).filter((group) => group.size > 0);
-  const total = groups.reduce((sum, group) => sum + group.size, 0);
-  if (total === 0) return [];
-  if (total <= MKTG_FAMILY_PRINT_FAQ_SINGLE_PAGE_MAX) return [{ groups: groups.map((group) => group.index) }];
+export function mktgFamilyPrintFaqPages(groups: MktgFamilyPrintFaqPlanGroup[]): MktgFamilyPrintFaqPage[] {
+  const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
+  const budget = layout.bottom - layout.top;
+  const width = (MKTG_PORTRAIT_PAGE.contentWidth - layout.columnGap) / 2;
   const pages: MktgFamilyPrintFaqPage[] = [];
-  for (let start = 0; start < groups.length; start += MKTG_FAMILY_PRINT_FAQ_GROUPS_PER_PAGE) {
-    pages.push({ groups: groups.slice(start, start + MKTG_FAMILY_PRINT_FAQ_GROUPS_PER_PAGE).map((group) => group.index) });
-  }
+  let columns: MktgFamilyPrintFaqItem[][] = [[], []];
+  let column = 0;
+  let used = 0;
+  let lastGroup = -1;
+  const open = (): void => {
+    if (columns[0].length) pages.push({ columns });
+    columns = [[], []];
+    column = 0;
+    used = 0;
+    lastGroup = -1;
+  };
+  groups.forEach((group, groupIndex) => {
+    group.questions.forEach((entry, questionIndex) => {
+      const entryHeight = mktgFamilyPrintFaqEntryHeight(entry, width);
+      let heading = lastGroup !== groupIndex;
+      let height = entryHeight + (heading ? layout.heading : 0);
+      if (used > 0 && used + height > budget) {
+        if (column === 0) {
+          column = 1;
+        } else {
+          open();
+        }
+        used = 0;
+        heading = true;
+        height = entryHeight + layout.heading;
+      }
+      columns[column].push({ group: groupIndex, question: questionIndex, heading });
+      used += height;
+      lastGroup = groupIndex;
+    });
+  });
+  open();
   return pages;
+}
+
+/** The rows of a fixed block that fit above its bottom, whole rows only, nothing added: `budget` px for rows of `size`/`line` text plus `padding` each, in a column `width` wide. */
+export function mktgFamilyPrintFitRows<T>(
+  rows: readonly T[],
+  text: (row: T) => string,
+  width: number,
+  size: number,
+  line: number,
+  padding: number,
+  budget: number
+): T[] {
+  const kept: T[] = [];
+  let used = 0;
+  for (const row of rows) {
+    used += padding + mktgPortraitParaHeight({ text: text(row), size, line }, width);
+    if (used > budget) break;
+    kept.push(row);
+  }
+  return kept;
+}
+
+/** A run block of the boilerplates page as it fits under the cards: whole rows above the footer, in a list column `width` wide. */
+export function mktgFamilyPrintFitRunBlock(rows: readonly string[], width: number): string[] {
+  const layout = MKTG_FAMILY_PRINT_RUN_BLOCKS_LAYOUT;
+  return mktgFamilyPrintFitRows(rows, (row) => row, width - layout.indent, layout.item.size, layout.item.line, 0, layout.bottom - layout.top - layout.heading);
+}
+
+/**
+ * A source the run read, as the board prints it: a URL followed by its label
+ * in parentheses becomes the label, a bare URL its host, and an internal
+ * record id (` (uid …)`) is dropped: nothing internal reaches a printed page.
+ */
+export function mktgFamilyPrintSourceLabel(source: string): string {
+  const trimmed = source.trim().replace(/ \(uid [^)]+\)/g, '');
+  const labelled = /^https?:\/\/\S+ \((.+)\)$/.exec(trimmed);
+  if (labelled) return labelled[1];
+  const url = /^https?:\/\/([^/\s]+)\S*$/.exec(trimmed);
+  return url ? url[1] : trimmed;
+}
+
+/**
+ * Where a record read something, in words: a `brand_page: https://…` source
+ * is `brand page`, a bare URL its host, a label its own words; a field name
+ * with nothing readable in it ('' or `site_css` alone) gives ''. Nothing a
+ * reader would take for an identifier reaches the page.
+ */
+export function mktgFamilyPrintReadableSource(source: string): string {
+  const named = /^([A-Za-z][\w ]*?)\s*:\s*https?:\/\//.exec(source.trim());
+  const label = named ? named[1] : mktgFamilyPrintSourceLabel(source);
+  return label.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * A run's open item as the page prints it: the record's sentence without a
+ * hashed file name (`(16dd7d82…-838x203.svg)`), which names nothing to a
+ * reader; the sentence around it stands, and an item left with no words is
+ * dropped by the caller.
+ */
+export function mktgFamilyPrintOpenItemText(text: string): string {
+  return text
+    .replace(/\s*\([^()]*\b[0-9a-f]{12,}[^()]*\)/g, '')
+    .replace(/\b[0-9a-f]{12,}[-\w]*\.\w{2,5}\b/g, '')
+    .replace(/\s+([,.;:])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 /**
  * The book's plan: cover, contents, then per member document an opener and
  * its pages (a mounted inner print counts its page titles, the boilerplates
  * one page of cards, the FAQ its paginated grid), the Sources page and the
- * back cover. A document with nothing to print is dropped with its opener.
+ * back cover (the Sources page only when a conflict or an open item exists).
+ * A document with nothing to print is dropped with its opener.
  * Page numbers are 1-based and the only numbering the pages print.
  */
-export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[]): MktgFamilyPrintPlan {
+export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[], conflictCount = 0): MktgFamilyPrintPlan {
   const pages: MktgFamilyPrintPage[] = [];
   const chapters: MktgFamilyPrintChapter[] = [];
   let faqPages: MktgFamilyPrintFaqPage[] = [];
@@ -143,7 +264,7 @@ export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[]): MktgF
         entries.push({ title: MKTG_FAMILY_PRINT_LABELS.boilerplates, n: first });
       }
     } else {
-      faqPages = mktgFamilyPrintFaqPages(member.faqGroupSizes ?? []);
+      faqPages = mktgFamilyPrintFaqPages(member.faqGroups ?? []);
       faqPages.forEach((_, index) => {
         const title = index === 0 ? MKTG_FAMILY_PRINT_LABELS.faq : `${MKTG_FAMILY_PRINT_LABELS.faq} (${index + 1})`;
         content.push({ id: `${kind}-${index + 1}`, kind, section, title, agentKey: document.agentKey, index, span: 1 });
@@ -155,8 +276,9 @@ export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[]): MktgF
     content.forEach(push);
     chapters.push({ document, openerPage, first, last: n, entries });
   }
+  // The cross-check prints when there is something to check: a real conflict, or an item a run left open.
   let sourcesPage = 0;
-  if (chapters.length) {
+  if (chapters.length && (conflictCount > 0 || chapters.some((chapter) => chapter.document.openItems.length > 0))) {
     sourcesPage = push({
       id: 'sources',
       kind: 'sources',
@@ -176,28 +298,48 @@ export function mktgFamilyPrintOpenItems(chapters: MktgFamilyPrintChapter[]): Mk
   return chapters.flatMap((chapter) => chapter.document.openItems.map((text) => ({ document: chapter.document.title, text })));
 }
 
-/** A document's text the framework's key numbers are read against: its title in the book and what it says. */
-export interface MktgFamilyPrintNumberSource {
-  title: string;
-  texts: string[];
+/**
+ * The Sources page's two lists as they fit their fixed blocks: the conflicts
+ * from y 410 to the Still open block, the open items from there to the
+ * page's bottom (from y 410 when there are no conflicts); whole rows only,
+ * nothing added. The open rows' text column starts after the widest
+ * document chip, so the chips align whatever the longest document name.
+ */
+export function mktgFamilyPrintSourcesLayout(conflicts: MktgFamilyPrintConflict[], openItems: MktgFamilyPrintOpenItem[]): MktgFamilyPrintSourcesLayout {
+  const layout = MKTG_FAMILY_PRINT_SOURCES_LAYOUT;
+  const width = MKTG_PORTRAIT_PAGE.contentWidth;
+  const keptConflicts = mktgFamilyPrintFitRows(
+    conflicts,
+    (row) => [row.text, row.rerun].filter(Boolean).join(' → '),
+    width - layout.topicWidth - layout.gap,
+    layout.conflict.size,
+    layout.conflict.line,
+    layout.conflict.padding,
+    layout.openTop - layout.conflictsTop - layout.heading
+  );
+  const openTop = keptConflicts.length ? layout.openTop : layout.conflictsTop;
+  const chipWidth = Math.max(0, ...openItems.map((item) => item.document.length)) * layout.chip.size * MKTG_PORTRAIT_FIT.charEmCaps + layout.chip.padding;
+  const keptOpen = mktgFamilyPrintFitRows(
+    openItems,
+    (row) => row.text,
+    width - chipWidth - layout.gap,
+    layout.open.size,
+    layout.open.line,
+    layout.open.padding,
+    layout.bottom - openTop - layout.heading
+  );
+  return { conflicts: keptConflicts, openItems: keptOpen, openTop };
 }
 
-/** Words of a key number's label that name no thing to count. */
-const MKTG_FAMILY_PRINT_LABEL_STOP_WORDS = new Set([
-  'more',
-  'than',
-  'over',
-  'with',
-  'from',
-  'since',
-  'total',
-  'active',
-  'across',
-  'about',
-  'nearly',
-  'almost',
-  'around',
-]);
+/** The key-number label's measure phrase (`Member organizations` → `member organizations`): its words to the first comma or bracket, less the stop words; '' when none is left. */
+function mktgFamilyPrintMeasurePhrase(label: string): string {
+  return label
+    .toLocaleLowerCase()
+    .split(/[,(]/)[0]
+    .split(/[^a-z]+/)
+    .filter((word) => word.length >= 3 && !MKTG_FAMILY_PRINT_LABEL_STOP_WORDS.includes(word))
+    .join(' ');
+}
 
 /** The digits of a figure as text: `$10,000` → `10000`, `1.2M` → `1.2`; '' when it holds none. */
 function mktgFamilyPrintFigure(text: string): string {
@@ -205,44 +347,54 @@ function mktgFamilyPrintFigure(text: string): string {
   return match ? match[0].replace(/,/g, '') : '';
 }
 
-/** The stem of the label's first counting word (`members` → `member`), '' when the label has none. */
-function mktgFamilyPrintLabelStem(label: string): string {
-  const word = label
-    .toLocaleLowerCase()
-    .split(/[^a-z]+/)
-    .find((candidate) => candidate.length >= 4 && !MKTG_FAMILY_PRINT_LABEL_STOP_WORDS.has(candidate));
-  return word ? word.replace(/s$/, '') : '';
-}
-
 /**
- * The framework's key numbers read against the other documents' own text:
- * a sentence that names the same thing (the label's counting word) with a
- * different figure, and not the framework's, is a row, quoting both. One
- * row per key number and document; a figure the texts repeat is not one.
- * The document to re-run is the other one: the framework is the source.
+ * The framework's key numbers read against the other documents' own text: a
+ * sentence that gives the same measure (the label's whole phrase, a word
+ * boundary on each side, plural or singular) a different count, the figure
+ * standing right before the phrase (`308 member organizations`, `over 300
+ * member organizations`), is a row quoting both. A figure of another kind
+ * (a price, a percentage, a year) is no count of the measure; a word that
+ * only starts with the phrase (`membership`) is not the measure. One row per
+ * key number and document. The document to re-run is the other one: the
+ * framework is the source.
  */
-export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberRow[], sources: MktgFamilyPrintNumberSource[]): MktgFamilyPrintConflict[] {
+export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberRow[], sources: MktgFamilyPrintTextSource[]): MktgFamilyPrintConflict[] {
   const conflicts: MktgFamilyPrintConflict[] = [];
   for (const row of numbers) {
     const figure = mktgFamilyPrintFigure(row.number);
-    const stem = mktgFamilyPrintLabelStem(row.label);
-    if (!figure || !stem) continue;
-    const stemPattern = new RegExp(`\\b${stem}`, 'i');
+    const phrase = mktgFamilyPrintMeasurePhrase(row.label);
+    if (!figure || !phrase || /[$€£%]/.test(row.number)) continue;
+    // `[qualifier] <figure>[+] [up to two words] <phrase>[s]`: the figure must count the measure, not sit elsewhere in
+    // the sentence; a rounded figure under a qualifier (`over 7,000 code contributors`) is no other count of it.
+    const pattern = new RegExp(
+      `(?:(${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(?<![$€£\\d,.])(\\d[\\d,]*(?:\\.\\d+)?)\\+?(?:\\s+[a-z-]+){0,2}\\s+${phrase.replace(/ /g, '\\s+')}s?\\b`,
+      'gi'
+    );
     for (const source of sources) {
       const sentence = source.texts
         .flatMap((text) => text.split(/(?<=[.!?])\s+/))
         .map((part) => part.trim())
-        .find((part) => {
-          if (!stemPattern.test(part)) return false;
-          const figures = (part.match(/\$?\d[\d,]*(?:\.\d+)?/g) ?? []).map(mktgFamilyPrintFigure);
-          return figures.length > 0 && !figures.includes(figure);
-        });
+        .find((part) =>
+          Array.from(part.matchAll(pattern)).some((match) => {
+            const found = match[2].replace(/,/g, '');
+            return !match[1] && !/^(?:19|20)\d\d$/.test(found) && found !== figure;
+          })
+        );
       if (!sentence) continue;
       const label = row.label.trim();
+      const topic = label.charAt(0).toLocaleUpperCase() + label.slice(1);
+      // In the sentence the label reads on from the figure (`299 member organizations`); an acronym keeps its case.
+      const inSentence = /^[A-Z][a-z]/.test(label) ? label.charAt(0).toLocaleLowerCase() + label.slice(1) : label;
       conflicts.push({
-        topic: label.charAt(0).toLocaleUpperCase() + label.slice(1),
-        text: `The framework's key numbers say ${row.number.trim()} ${label}; the ${source.title} says “${sentence}”`,
-        rerun: `Re-run the ${source.title} so it reads the approved framework.`,
+        id: `${topic} · ${source.title}`,
+        topic,
+        text: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.numberConflict, {
+          Number: row.number.trim(),
+          Label: inSentence,
+          Document: source.title,
+          Sentence: sentence,
+        }),
+        rerun: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.rerunAgainstFramework, { Document: source.title }),
       });
     }
   }
@@ -250,29 +402,47 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
 }
 
 /**
- * The Sources page's "Where the documents disagree": only what the store
- * names. The kit's brand line against the framework's tagline when both
- * exist and differ, and the kit report's colour conflicts (one colour read
- * with two values); the key numbers' rows are mktgFamilyPrintNumberConflicts.
- * Nothing else is a conflict the book may claim.
+ * The Sources page's "Where the documents disagree", as the store names it:
+ * the kit's brand line against the framework's tagline when both exist and
+ * differ, and the kit report's colour conflicts (one colour read with two
+ * values). The key numbers' rows are mktgFamilyPrintNumberConflicts. Nothing
+ * else is a conflict the book may claim.
  */
-export function mktgFamilyPrintConflicts(tagline: string, kitLine: string, colorConflicts: BrandKitReportColorConflict[]): MktgFamilyPrintConflict[] {
+export function mktgFamilyPrintConflicts(
+  tagline: string,
+  kitLine: string,
+  colorConflicts: BrandKitReportColorConflict[],
+  kitTitle: string
+): MktgFamilyPrintConflict[] {
   const conflicts: MktgFamilyPrintConflict[] = [];
   const line = kitLine.trim();
   const tag = tagline.trim();
   if (line && tag && line.toLocaleLowerCase() !== tag.toLocaleLowerCase()) {
+    const topic = MKTG_FAMILY_PRINT_COPY.brandLineTopic;
     conflicts.push({
-      topic: 'Brand line',
-      text: `The brand kit carries “${line}”; the framework’s tagline is “${tag}”.`,
-      rerun: 'Re-run the brand kit so it reads the approved framework.',
+      id: `${topic} · ${kitTitle}`,
+      topic,
+      text: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.brandLineConflict, { Line: line, Tagline: tag }),
+      rerun: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.rerunAgainstFramework, { Document: kitTitle }),
     });
   }
   for (const conflict of colorConflicts) {
     const values = conflict.values.filter((value) => value.hex.trim());
     if (values.length < 2) continue;
+    // A reading names where the kit read it in words (`brand page`), never a field name, a URL or a file.
+    const readings = values.map((value) => {
+      const source = mktgFamilyPrintReadableSource(value.source);
+      return source ? mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.colorReading, { Hex: value.hex.toUpperCase(), Source: source }) : value.hex.toUpperCase();
+    });
     conflicts.push({
+      id: `${conflict.name} · ${kitTitle}`,
       topic: conflict.name,
-      text: values.map((value) => `${value.source} ${value.hex.toUpperCase()}`).join('; ') + `. The kit keeps ${conflict.chosen.toUpperCase()}.`,
+      text: mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.colorConflict, {
+        Kit: kitTitle,
+        Name: conflict.name,
+        Values: readings.slice(0, -1).join(', ') + (readings.length > 1 ? ` and ${readings[readings.length - 1]}` : ''),
+        Chosen: conflict.chosen.toUpperCase(),
+      }),
       rerun: '',
     });
   }
