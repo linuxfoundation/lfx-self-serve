@@ -350,6 +350,11 @@ describe('AEO/GEO reader caveats', () => {
       'A name search returned "Example Foundation" as the top result.'
     );
     expect(aeoGeoReaderCaveat('The search returned three results for the project name.')).toBe('The search returned three results for the project name.');
+    // A failure word inside the quoted title is audit content; outside the quotes it is the provider's failure.
+    expect(aeoGeoReaderCaveat('The search returned "Error handling guide" as its top result.')).toBe(
+      'The search returned "Error handling guide" as its top result.'
+    );
+    expect(aeoGeoReaderCaveat("Search failed with 'Unauthorized'.")).toBe(AEO_GEO_READER_CAVEATS.search_unavailable);
   });
 
   it('names no field, slug, uid or access error for an LFX record that could not be read, and keeps the clean sentences', () => {
@@ -373,6 +378,11 @@ describe('AEO/GEO reader caveats', () => {
     expect(aeoGeoReaderCaveat('Record 3f2504e0-4f89-11d3-9a0c-0305e82c3301 was unavailable.')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
     expect(aeoGeoReaderCaveat("The provider said 'quota exhausted' for the lookup.")).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
     expect(aeoGeoReaderCaveat("The provider failed with 'Service unavailable' for the lookup.")).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    expect(aeoGeoReaderCaveat("The provider returned 'quota exceeded' after three retries.")).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    expect(aeoGeoReaderCaveat('failed: You have exceeded your credits limit.')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    // A caveat that is only a plumbing parenthetical is never an empty bullet; a plumbing parenthetical inside a sentence is just removed.
+    expect(aeoGeoReaderCaveat('(project_uid unavailable)')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
+    expect(aeoGeoReaderCaveat('Metrics (project_uid) were not read.')).toBe('Metrics were not read.');
     expect(aeoGeoReaderCaveat('The project_name lookup was skipped.')).toBe(AEO_GEO_READER_CAVEATS.inputs_unavailable);
     // An id with a value is an identifier shape whatever its registry: the sentence is left out (named residual).
     expect(aeoGeoReaderCaveat('The organization has Wikidata ID Q12345. The entity is otherwise well described.')).toBe(
@@ -385,6 +395,8 @@ describe('AEO/GEO reader caveats', () => {
     for (const caveat of [
       'A direct fetch of the Wikipedia article returned HTTP 403 (bot policy), so it was not audited.',
       'The homepage returned HTTP 200 but llms.txt returned HTTP 404.',
+      'The homepage returned "403 Forbidden".',
+      'The website enforces a rate limit on crawlers.',
       'Pages fetched were truncated at 20–60 KB, so lower-page content (e.g. the full About body and Projects grid) was not fully inspected. llms.txt and sitemap.xml were also truncated at 30 KB.',
       '/md/about returns `x-robots-tag: noindex`. This seems intended, to avoid duplicating the HTML pages, and is not counted as a problem.',
       'The homepage at https://project.example/ declares ai-train=yes. Both key pages declare index, follow.',

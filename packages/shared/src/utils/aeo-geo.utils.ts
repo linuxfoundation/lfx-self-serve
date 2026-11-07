@@ -337,8 +337,10 @@ const CAVEAT_SEARCH = /\bsearch(?:es)?\b/i;
 const CAVEAT_NAME_SEARCH = /\bname search\b/i;
 const CAVEAT_LFX_RECORD = /LFX record could not be read/i;
 const CAVEAT_FAILURE_WORD = /\b(?:exceeded|credits?|quota|limit|unavailable|failed|error|denied|unauthori[sz]ed|forbidden)\b/i;
-const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exceeded|exhausted)|rate limit/i;
-// A provider's message quoted raw after a verb; it counts only beside a failure word (a quoted search result is audit content).
+const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exceeded|exhausted)|rate limit (?:exceeded|reached|hit)|rate-limited\b/i;
+// Quoted spans are blanked before the failure-word test: a failure word inside a quoted title or response is audit content.
+const CAVEAT_QUOTED_SPANS = [/"[^"]*"/g, /`[^`]*`/g, /\u201c[^\u201d]*\u201d/g, /\u2018[^\u2019]*\u2019/g, /(^|[\s(])'[^']*'(?=$|[\s).,;:!?])/g];
+// A provider's message quoted raw after a verb; it counts only beside a failure word outside the quotes (a quoted search result is audit content).
 const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u2019\u201c\u201d`]/i;
 const CAVEAT_IDENTIFIERS = [
   // a snake_case field name as a standalone token: not part of a file name, a path, an og: property or a code span
@@ -366,7 +368,8 @@ export function aeoGeoReaderCaveat(caveat: string): string {
     .split(CAVEAT_SENTENCE_MARK)
     .map((sentence) => sentence.split(CAVEAT_ABBREVIATION_MARK).join('.').trim())
     .filter((sentence) => sentence.length > 0);
-  const kept = sentences.map(readerSentence).filter((sentence) => !carriesPlumbing(sentence));
+  // A sentence scrubbed to nothing (a caveat that was only a plumbing parenthetical) is left out, never an empty bullet.
+  const kept = sentences.map(readerSentence).filter((sentence) => sentence.length > 0 && !carriesPlumbing(sentence));
   if (!kept.length) {
     return AEO_GEO_READER_CAVEATS.inputs_unavailable;
   }
@@ -375,12 +378,7 @@ export function aeoGeoReaderCaveat(caveat: string): string {
 }
 
 function readerSentence(sentence: string): string {
-  if (
-    CAVEAT_SEARCH.test(sentence) &&
-    !CAVEAT_NAME_SEARCH.test(sentence) &&
-    CAVEAT_FAILURE_WORD.test(sentence) &&
-    (CAVEAT_QUOTED_MESSAGE.test(sentence) || CAVEAT_PROVIDER_WORDS.test(sentence))
-  ) {
+  if (CAVEAT_SEARCH.test(sentence) && !CAVEAT_NAME_SEARCH.test(sentence) && carriesProviderFailure(sentence)) {
     return AEO_GEO_READER_CAVEATS.search_unavailable;
   }
   if (CAVEAT_LFX_RECORD.test(sentence)) {
@@ -398,11 +396,17 @@ function readerSentence(sentence: string): string {
 }
 
 function carriesPlumbing(text: string): boolean {
-  return (
-    CAVEAT_IDENTIFIERS.some((pattern) => pattern.test(text)) ||
-    CAVEAT_PROVIDER_WORDS.test(text) ||
-    (CAVEAT_QUOTED_MESSAGE.test(text) && CAVEAT_FAILURE_WORD.test(text))
-  );
+  return CAVEAT_IDENTIFIERS.some((pattern) => pattern.test(text)) || carriesProviderFailure(text);
+}
+
+/** Well-known provider words anywhere, or a message quoted after a verb with a failure word outside the quotes. */
+function carriesProviderFailure(text: string): boolean {
+  return CAVEAT_PROVIDER_WORDS.test(text) || (CAVEAT_QUOTED_MESSAGE.test(text) && CAVEAT_FAILURE_WORD.test(outsideQuotes(text)));
+}
+
+function outsideQuotes(text: string): string {
+  // Only the straight-single-quote span captures its leading character; the others have no group.
+  return CAVEAT_QUOTED_SPANS.reduce((rest, span) => rest.replace(span, (_match, lead: unknown) => (typeof lead === 'string' ? lead : '') + ' '), text);
 }
 
 /** Frozen report fields are required; additional presentation fields remain forward compatible. */
