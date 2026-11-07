@@ -49,6 +49,7 @@ import {
   frameworkPortraitAvoidList,
   frameworkPortraitBodyTop,
   frameworkPortraitCutList,
+  frameworkPortraitCutNoteHeight,
   frameworkPortraitChipHeight,
   frameworkPortraitContents,
   frameworkPortraitCutNoteHeightIn,
@@ -451,12 +452,22 @@ export class MktgFrameworkPrintComponent {
       // The left column holds Read, then Could not be read: the failed list keeps its rows first (it is the shorter, and the gap it fills is the editor's), the read list takes what is left.
       const failedHeight =
         ROOM.blockAfter + ROOM.label + (failedAll.length ? failedAll.reduce((sum, row) => sum + rowHeight(row), 0) : rowHeight(this.noSourceFailed));
+      const read = list(foundationMessagePrintSourceRows(report.sources_read), columnRoom - ROOM.label - Math.min(failedHeight, columnRoom / 2));
+      // Then the failed list takes what the Read block leaves as it prints (its heading, its rows at the measure they print at, its cut
+      // note and the gap under it, each only when present): a short or empty Read block leaves the failures the whole column, never half by rule.
+      const readPrinted = read.rows.length > 0 || read.cut > 0;
+      const readHeight = readPrinted
+        ? ROOM.label +
+          read.rows.reduce((sum, row) => sum + (read.tight ? tightHeight(row) : rowHeight(row)), 0) +
+          (read.cut > 0 ? frameworkPortraitCutNoteHeight() : 0) +
+          ROOM.blockAfter
+        : 0;
       lists = {
         intro: date
           ? `What the framework was built from on ${date}, what could not be read, and what is still open.`
           : 'What the framework was built from, what could not be read, and what is still open.',
-        read: list(foundationMessagePrintSourceRows(report.sources_read), columnRoom - ROOM.label - Math.min(failedHeight, columnRoom / 2)),
-        failed: list(failedAll, columnRoom / 2 - ROOM.blockAfter - ROOM.label),
+        read,
+        failed: list(failedAll, columnRoom - readHeight - ROOM.label),
         failedCount: report.sources_failed.length,
         gaps: list(report.gaps.map(foundationMessagePrintReportText), columnRoom - ROOM.label),
         gapsCount: report.gaps.length,

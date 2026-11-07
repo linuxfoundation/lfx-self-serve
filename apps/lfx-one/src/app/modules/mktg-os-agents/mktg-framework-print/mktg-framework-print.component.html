@@ -497,10 +497,7 @@
           } @else if (frame.goalPage; as goalPage) {
             <!-- ONE PAGE PER GOAL: the number and the value proposition, the key message bar, the proof points, the sound bite, who it is for -->
             <!-- The lead starts under the title: at the body top, or lower by the lines a long title takes (frameworkPortraitBodyTop). -->
-            <div
-              class="fwp-goal-lead"
-              [lfxPpRect]="[page.margin, goalPage.leadTop, page.contentWidth]"
-              [attr.data-testid]="'mktg-framework-print-goal-' + goalPage.goal.n">
+            <div class="fwp-goal-lead" [lfxPpRect]="[page.margin, goalPage.leadTop, page.contentWidth]" [attr.data-testid]="'mktg-framework-print-' + frame.id">
               <span class="fwp-goal-number">{{ goalPage.numberLabel }}</span>
               @if (goalPage.value.text) {
                 <div class="fwp-goal-vp-block">
