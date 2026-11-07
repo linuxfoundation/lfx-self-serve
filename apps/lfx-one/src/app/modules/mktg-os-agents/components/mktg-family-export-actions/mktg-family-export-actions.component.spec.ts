@@ -234,6 +234,32 @@ describe('Family export slot', () => {
     }
   });
 
+  it('cancels a pending focus request when a Slides export starts, never focusing Download PDF once it is printable', async () => {
+    let ready: () => void = () => undefined;
+    print.prepare.mockReturnValue(new Promise<void>((resolve) => (ready = resolve)));
+    const { fixture, root, button } = await setup();
+    root.scrollIntoView = vi.fn();
+    const pdf = button('pdf');
+    if (!pdf) throw new Error('Missing synthetic PDF action');
+    const focus = vi.spyOn(pdf, 'focus');
+    fixture.componentInstance.focusDownload();
+    await fixture.whenStable();
+    expect(button('pdf')?.disabled).toBe(true);
+    expect(fixture.componentInstance['focusRequested']()).toBe(true);
+    button('slides')?.click();
+    await fixture.whenStable();
+    expect(root.textContent).toContain('Exporting the family');
+    expect(fixture.componentInstance['focusRequested']()).toBe(false);
+    ready();
+    await Promise.resolve();
+    await fixture.whenStable();
+    run.next({ mode: 'create', logoNote: null, skippedMembers: [], result: { status: 'ready', record: familyExportRecord() } });
+    await fixture.whenStable();
+    expect(button('pdf')?.disabled).toBe(false);
+    expect(focus).not.toHaveBeenCalled();
+    expect(print.printNow).not.toHaveBeenCalled();
+  });
+
   it('focuses an already printable PDF on request without a reason line', async () => {
     const { fixture, root, button } = await setup();
     root.scrollIntoView = vi.fn();

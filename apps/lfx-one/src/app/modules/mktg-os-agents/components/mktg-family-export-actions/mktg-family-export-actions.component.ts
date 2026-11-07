@@ -93,7 +93,7 @@ export class MktgFamilyExportActionsComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      combineLatest([toObservable(this.focusRequested), toObservable(this.checking), toObservable(this.canPrint)])
+      combineLatest([toObservable(this.focusRequested), toObservable(this.checking), toObservable(this.canPrint), toObservable(this.canExport)])
         .pipe(takeUntilDestroyed())
         .subscribe(([requested]) => {
           if (!requested || !this.focusRequested()) return;
