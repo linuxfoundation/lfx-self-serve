@@ -9,6 +9,7 @@ import {
   MKTG_PRINT_PAGE_SETUPS,
 } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
 import { expectFamilyBookFrames, openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
@@ -175,16 +176,16 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   const printFrame = await layoutMktgPrintFrame(page);
   const printDocument = printFrame.getByTestId('family-export-print-document');
   // The family prints as one book of the portrait grammar's frames (CSS Paged Media Level 3: `@page { size: 8.5in 11in;
-  // margin: 0 }`, one fixed 816×1056 frame per page): the family's own pages, main's flowing framework print in its
-  // chapter's place (stage 1) and the kit's portrait pages in the family's book.
+  // margin: 0 }`, one fixed 816×1056 frame per page): the family's own pages, and the framework's and the kit's
+  // portrait pages in the family's book.
   const book = printDocument.locator('lfx-mktg-family-print');
   await expect(book).toHaveCount(1);
   await expect(book).toHaveClass(/lfx-mktg-portrait/);
   await expect(printDocument.locator('lfx-mktg-framework-print')).toHaveCount(1);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print')).toHaveCount(1);
   await expect(printDocument.locator('lfx-mktg-boilerplates-print, lfx-mktg-faq-print, tfoot')).toHaveCount(0);
-  // Main's sheets print only inside the framework's chapter (stage 1).
-  await expect(printDocument.locator('lfx-mktg-print-sheet:not(lfx-mktg-framework-print lfx-mktg-print-sheet)')).toHaveCount(0);
+  // No sheet of main's flowing prints anywhere in the book.
+  await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(0);
   // Only the wrapper travels: the card's controls are not in the frame.
   await expect(printFrame.getByTestId('family-export-actions')).toHaveCount(0);
   const frames = await expectFamilyBookFrames(book);
@@ -217,10 +218,32 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-doc')).toHaveText(/positioning & brand$/);
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-section')).toHaveText('03 Boilerplates');
   await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-number')).toHaveText(String(frames.byIdPage('boilerplates')).padStart(2, '0'));
-  // Main's framework print, numbered by the plan's chapter, inside the book (stage 1).
-  await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2']);
-  await expect(printDocument.getByTestId('mktg-framework-print-goals')).toBeVisible();
-  await expect(printFrame.getByTestId('mktg-framework-print-cover')).toBeHidden();
+  // The framework in the family's book: the pages of its family plan for this fixture (one goal, one ICP), no cover of
+  // its own and no band, each under the family's running head, numbered on from its opener, on the kit's look.
+  const frameworkPrint = printDocument.locator('lfx-mktg-framework-print');
+  const frameworkFrames = frameworkPrint.locator('[data-testid="lfx-mktg-portrait-page"]');
+  await expect(frameworkFrames).toHaveCount(frames.frameworkPages);
+  expect(await frameworkFrames.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-page-id')))).toEqual([
+    'framework',
+    'goal-1',
+    'say-avoid',
+    'icps-1',
+    'message-house',
+    'key-numbers',
+    'sources',
+  ]);
+  await expect(frameworkFrames.first()).toHaveAttribute('data-page', '4');
+  await expect(frameworkFrames.first()).toHaveAttribute('data-section', 'Messaging framework · Framework');
+  await expect(frameworkFrames.first().getByTestId('mktg-portrait-page-number')).toHaveText('04');
+  await expect(frameworkPrint.getByTestId('mktg-portrait-page-doc')).toHaveText(
+    Array(frames.frameworkPages).fill(`${DOCUMENT_PROJECT.name} positioning & brand`)
+  );
+  await expect(
+    frameworkPrint.locator('[data-page-id="cover"], [data-testid="mktg-framework-print-cover"], [data-testid="mktg-portrait-page-band"]')
+  ).toHaveCount(0);
+  await expect(frameworkPrint.getByTestId('mktg-framework-print-goals')).toBeVisible();
+  await expect(frameworkPrint.getByTestId('mktg-framework-print-pillars')).toHaveCount(1);
+  await expect(frameworkPrint.locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(1);
   // The kit in the family's book: no cover, contents or back cover of its own; its frames (the pages of its plan on the
   // grammar at this head) carry the family's head.
   const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');

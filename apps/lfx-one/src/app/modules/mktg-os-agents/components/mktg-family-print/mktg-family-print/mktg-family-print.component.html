@@ -101,13 +101,17 @@
     }
     @case ('framework') {
       @if (document.framework; as framework) {
-        <!-- Stage 1: main's flowing framework print in the chapter's place; its portrait pages replace it. -->
-        <lfx-mktg-framework-print [view]="framework" [number]="chapterOf(page.agentKey)?.document?.number ?? ''" />
+        <!-- The framework's portrait pages in the family's book (its own plan numbers its frames from the chapter's first page), on the kit's look. -->
+        <lfx-mktg-framework-print
+          [view]="framework"
+          [number]="chapterOf(page.agentKey)?.document?.number ?? ''"
+          [book]="innerBook(chapterOf(page.agentKey))"
+          [look]="look()" />
       }
     }
     @case ('kit') {
       @if (document.kit; as kit) {
-        <!-- Stage 1: the kit print in the family's book (its own plan numbers its frames from the chapter's first page). -->
+        <!-- The kit's portrait pages in the family's book (its own plan numbers its frames from the chapter's first page). -->
         <lfx-mktg-brand-kit-print
           [view]="kit"
           [brand]="document.brand"

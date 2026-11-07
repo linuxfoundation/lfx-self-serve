@@ -20,6 +20,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   brandKitPortraitPlan,
+  frameworkPortraitPlan,
   mktgFamilyPrintDate,
   mktgFamilyPrintFill,
   mktgFamilyPrintPageRange,
@@ -42,10 +43,10 @@ import { MktgFamilyPrintSourcesPageComponent } from '../mktg-family-print-source
  * The family's Download PDF as a portrait book: the plan's frames in order
  * (cover, contents, an opener and its pages per member document, the
  * Sources page, the back cover), each a page of the portrait grammar
- * (`lfx-mktg-portrait-page`), numbered by one plan over the view. Stage 1:
- * the framework and the brand kit print as main's flowing documents in
- * their chapters' place, counted by the kit's own portrait plan and the
- * framework's sections; their portrait pages replace them.
+ * (`lfx-mktg-portrait-page`), numbered by one plan over the view. The
+ * framework and the brand kit print their own portrait pages in their
+ * chapters' place, on the family's book and the kit's look, each counted by
+ * its own portrait plan.
  */
 @Component({
   selector: 'lfx-mktg-family-print',
@@ -118,7 +119,7 @@ export class MktgFamilyPrintComponent {
       const members: MktgFamilyPrintPlanMember[] = view.documents.map((document) => {
         switch (document.agentKey) {
           case 'foundation-message':
-            return { document, innerPageTitles: view.framework?.sections.map((section) => section.title) ?? [] };
+            return { document, innerPageTitles: view.framework ? frameworkPortraitPlan(view.framework, { inFamily: true }).map((page) => page.title) : [] };
           case 'brand-kit':
             return { document, innerPageTitles: view.kit ? brandKitPortraitPlan(view.kit, { inFamily: true }).map((page) => page.title) : [] };
           case 'boilerplates':

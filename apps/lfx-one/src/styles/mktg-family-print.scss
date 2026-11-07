@@ -37,10 +37,8 @@
 
   body.lfx-print-family,
   body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
-    /* One cover and one contents list for the family, not a second per asset. The framework's cover goes with
-       its whole sheet: a sheet left behind would print its 1.1in of head and foot room alone on a blank page. */
-    lfx-mktg-print-sheet:has([data-testid='mktg-framework-print-cover']),
-    [data-testid='mktg-framework-print-cover'],
+    /* One cover and one contents list for the family, not a second per asset (the framework, on the family's book,
+       prints no cover of its own). */
     [data-testid='brand-kit-page-cover'],
     [data-testid='brand-kit-page-contents'],
     [data-testid='brand-kit-page-back-cover'] {

@@ -69,10 +69,11 @@ test('Family PDF book structure: the portrait grammar’s frames with the family
   await expect(frames.byId('sources').getByTestId('family-print-sources-row')).toHaveCount(4);
   // Every content frame has the grammar's head, title and numbered footer; the cover, openers and back cover none.
   const bare = ['cover', 'back-cover', ...frames.openers.map((opener) => opener.id)];
-  for (const frame of frames.frames) {
+  const pages = book.locator('[data-testid="lfx-mktg-portrait-page"]');
+  for (const [index, frame] of frames.frames.entries()) {
     const count = bare.includes(frame.id) ? 0 : 1;
-    await expect(frames.byId(frame.id).getByTestId('mktg-portrait-page-head')).toHaveCount(count);
-    await expect(frames.byId(frame.id).getByTestId('mktg-portrait-page-number')).toHaveCount(count);
+    await expect(pages.nth(index).getByTestId('mktg-portrait-page-head')).toHaveCount(count);
+    await expect(pages.nth(index).getByTestId('mktg-portrait-page-number')).toHaveCount(count);
   }
   await page.screenshot({ path: info.outputPath('family-book-structure.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
