@@ -243,13 +243,13 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     if (!box) throw new Error('The approved print document must be rendered');
     expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: PRINT_FRAME_LETTER.width });
     if (key === 'brand-kit') {
-      // The kit is a portrait book: US Letter frames, no page margin in either engine, the cover, contents, Logo chapter
-      // and palette as frames (no symbol page: the synthetic kit has no symbol), each 816×1056 at the sheet's edge, then
-      // the chapters still flowing after them.
+      // The kit is a portrait book: US Letter frames, no page margin in either engine, sixteen frames in the mock's order
+      // (no symbol page: the synthetic kit has no symbol), each 816×1056 at the sheet's edge, and nothing flowing.
       await expectMktgPortraitPageSetup(frame);
       const frames = print.getByTestId('lfx-mktg-portrait-page');
-      await expect(frames).toHaveCount(8);
+      await expect(frames).toHaveCount(16);
       await expect(frames.first()).toHaveAttribute('data-page-id', 'cover');
+      await expect(frames.last()).toHaveAttribute('data-page-id', 'back-cover');
       await expect(frames.first()).toHaveCSS('page', 'mktg-portrait');
       await expect(frames.first()).toHaveCSS('break-after', 'page');
       const coverBox = await frames.first().boundingBox();
@@ -262,16 +262,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
         height: 1056,
       });
       await expect(print.getByTestId('mktg-portrait-cover-title')).toHaveText('Brand Kit');
-      await expect(print.locator('.kit-chapter')).toHaveCount(4);
-      await expect(print.locator('lfx-mktg-print-chapter-header h2 > span')).toHaveText(['2', '3', '4', '5']);
-      await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
-      await expect(print.getByTestId('mktg-brand-kit-print-chapters')).toHaveCSS('page', 'mktg-framework');
-      await expect(print.getByTestId('kit-print-type')).toContainText('Typography');
-      // No footer group (Chromium prints an empty page per table for one): the bottom room is the last row's,
-      // calc(10pt + 0.55in) = 66.13px in both engines now the frames keep the page's margin at 0; to a tenth.
-      await expect(print.locator('.kit-chapter > tfoot')).toHaveCount(0);
-      await expect(print.locator('.kit-chapter > tbody > tr:last-child > td')).toHaveCount(4);
-      expect(await mktgPrintComputedPx(print.locator('.kit-chapter > tbody > tr:last-child > td').first(), 'padding-bottom')).toBeCloseTo(66.133, 1);
+      await expect(print.locator('.kit-chapter, lfx-mktg-print-chapter-header, .lfx-brand-kit-page, tfoot')).toHaveCount(0);
+      await expect(print.getByTestId('mktg-portrait-page-number')).toHaveText(Array.from({ length: 14 }, (_, index) => String(index + 2)));
     } else {
       await expectMktgPrintPageSetup(frame, print, browserName);
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');

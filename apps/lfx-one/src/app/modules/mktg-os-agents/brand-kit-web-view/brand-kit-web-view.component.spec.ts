@@ -303,13 +303,14 @@ describe('BrandKitWebViewComponent', () => {
       expect(wrapper?.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V1.0');
     });
 
-    it('keeps the shared native portrait chapters in the print-only wrapper without changing screen content', () => {
+    it('keeps the portrait book in the print-only wrapper without changing screen content', () => {
       const wrapper = query('brand-kit-web-view-print');
       expect(wrapper?.classList.contains(BRAND_KIT_PRINT_ONLY_CLASS)).toBe(true);
       expect(wrapper?.classList.contains(FOUNDATION_MESSAGE_PRINT_ONLY_CLASS)).toBe(true);
-      expect(wrapper?.querySelector('.lfx-framework-print.lfx-brand-kit-portrait')).not.toBeNull();
-      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
-      expect(wrapper?.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
+      // The kit's portrait book: one frame per plan page (the synthetic kit has no symbol, so sixteen), on the portrait root.
+      expect(wrapper?.querySelector('.lfx-brand-kit-portrait.lfx-mktg-portrait')).not.toBeNull();
+      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]')).toHaveLength(16);
+      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="mktg-portrait-page-head"]')).toHaveLength(14);
       expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(0);
       expect(host().querySelector(`.${BRAND_KIT_PRINT_ONLY_CLASS}`)?.contains(query('mktg-brand-kit-print'))).toBe(true);
       // The book brings no toolbar of its own: the actions are the web view's.
@@ -750,9 +751,9 @@ describe('BrandKitWebViewComponent', () => {
   describe('on the server', () => {
     beforeEach(async () => configure('server'));
 
-    it('renders the page and hidden portrait chapters, and never prints on the server', async () => {
+    it('renders the page and the hidden portrait book, and never prints on the server', async () => {
       expect(query('brand-kit-web-view-panel-overview')).not.toBeNull();
-      expect(query('brand-kit-web-view-print')?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
+      expect(query('brand-kit-web-view-print')?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]')).toHaveLength(16);
 
       button('brand-kit-web-view-download-pdf')?.click();
       await fixture.whenStable();

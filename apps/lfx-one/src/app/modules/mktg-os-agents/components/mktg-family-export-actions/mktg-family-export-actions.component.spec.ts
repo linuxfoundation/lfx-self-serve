@@ -491,41 +491,43 @@ describe('Family export slot', () => {
     body.classList.add(MKTG_FAMILY_PRINT_BODY_CLASS);
     try {
       expect(document.classList.contains(MKTG_FAMILY_PRINT_ONLY_CLASS)).toBe(true);
-      const frames = document.querySelectorAll<HTMLElement>('lfx-mktg-brand-kit-print .kit-usage-frame');
-      expect(frames).toHaveLength(4);
+      // The kit's frames print inside the family's print-only document (their geometry is the global grammar's, proven
+      // in the e2e specs).
+      const frames = document.querySelectorAll<HTMLElement>('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]');
+      expect(frames).toHaveLength(13);
       frames.forEach((frame) => {
         expect(frame.closest(`.${MKTG_FAMILY_PRINT_ONLY_CLASS}`)).toBe(document);
         expect(frame.closest(`body.${MKTG_FAMILY_PRINT_BODY_CLASS}`)).toBe(body);
-        expect(getComputedStyle(frame).position).toBe('relative');
-        expect(getComputedStyle(frame).overflow).toBe('hidden');
-        expect(getComputedStyle(frame).breakInside).toBe('avoid');
-        const inner = frame.querySelector('.kit-usage-inner');
-        if (!inner) throw new Error('Missing synthetic family-frame content box');
-        expect(getComputedStyle(inner).position).toBe('absolute');
-        inner.querySelectorAll('img, p').forEach((child) => {
-          expect(child.closest('.kit-usage-frame')).toBe(frame);
-          expect(getComputedStyle(child).position).toBe('absolute');
-        });
+        expect(frame.classList.contains('pp-page')).toBe(true);
       });
     } finally {
       if (!wasPrinting) body.classList.remove(MKTG_FAMILY_PRINT_BODY_CLASS);
     }
-    // The kit's Logo chapter and palette are portrait frames inside the family (no cover, contents or back cover); the
-    // chapters not yet on the grammar still flow as numbered chapters.
-    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]')).toHaveLength(6);
-    expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="mktg-portrait-cover-title"]')).toBeNull();
-    expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]')?.getAttribute('data-section')).toBe('Brand kit · Logo');
-    expect(document.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(4);
-    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveLength(4);
-    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print lfx-mktg-print-chapter-header')).toHaveLength(4);
-    expect(document?.querySelector('lfx-brand-kit-view')).toBeNull();
-    expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project Brand kit');
-    expect(Array.from(document?.querySelectorAll('lfx-mktg-brand-kit-print h2 > span') ?? []).map((span) => span.textContent?.trim())).toEqual([
-      '02.2',
-      '02.3',
-      '02.4',
-      '02.5',
+    // The kit is thirteen portrait frames inside the family (no cover, contents or back cover), the family's name in
+    // their running head; nothing of it flows as a numbered chapter.
+    const kitFrames = Array.from(document?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]') ?? []);
+    expect(kitFrames.map((frame) => frame.getAttribute('data-page-id'))).toEqual([
+      'logo-system',
+      'logo-colorways',
+      'logo-clear-space',
+      'logo-partnership',
+      'logo-watchouts',
+      'color-palette',
+      'color-contrast',
+      'type',
+      'visual-iconography',
+      'visual-imagery',
+      'usage',
+      'voice',
+      'sources',
     ]);
+    expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="mktg-portrait-cover-title"]')).toBeNull();
+    expect(kitFrames[0].getAttribute('data-section')).toBe('Brand kit · Logo');
+    expect(kitFrames[0].querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent).toContain('Synthetic project positioning & brand');
+    expect(document.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter, lfx-mktg-brand-kit-print lfx-mktg-print-chapter-header')).toHaveLength(0);
+    expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="mktg-print-running-head"]')).toBeNull();
+    expect(document?.querySelector('lfx-brand-kit-view')).toBeNull();
+    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print h2 > span')).toHaveLength(0);
     const numbers = Array.from(cover?.querySelectorAll('dt') ?? []).map((entry) => entry.textContent?.trim());
     expect(numbers).toEqual(['01', '02', '03', '04']);
     const sectionNumbers = Array.from(document?.querySelectorAll('lfx-mktg-framework-print h2 > span') ?? []).map((span) => span.textContent?.trim());

@@ -1,0 +1,52 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-imagery-intro">{{ v.visual.imagery.rule }}</p>
+  <div [lfxPpRect]="[x, 220, w]" data-testid="brand-kit-imagery-ground">
+    <div class="pp-grid-ground kp-ground"></div>
+    <div class="pp-cap">Default ground: a quiet grid on {{ v.darkName }}, lit softly from one side</div>
+  </div>
+  <div [lfxPpRect]="[x, 600, w]" data-testid="brand-kit-imagery-elements">
+    <div class="kp-elements">
+      <div class="kp-element kp-element--eyebrow">
+        <div class="pp-lab pp-lab--dark">Umbrella message</div>
+        <div class="kp-element-message">{{ v.voice.umbrella }}</div>
+      </div>
+      <div class="kp-element kp-element--buttons">
+        <span class="kp-button kp-button--primary">Primary button</span>
+        <span class="kp-button kp-button--secondary">Secondary</span>
+      </div>
+      <div class="kp-element kp-element--callout" [style.background]="look().accent" [style.color]="look().onAccent">
+        <div class="pp-lab" [style.color]="look().onAccent">Call-out card</div>
+        <div class="kp-element-callout-text">One per view, for the main call to action.</div>
+        @if (v.host) {
+          <span class="kp-button kp-button--small">{{ v.host }}</span>
+        }
+      </div>
+    </div>
+    <div class="kp-element-captions">
+      <span>Eyebrow card</span>
+      <span>Buttons · pill, 12px semibold</span>
+      <span data-testid="brand-kit-imagery-callout-caption">{{ calloutCaption() }}</span>
+    </div>
+  </div>
+  @if (v.visual.imagery.avoid.length) {
+    <div [lfxPpRect]="[x, 900, w]" data-testid="brand-kit-imagery-avoid">
+      <div class="pp-lab pp-lab--dark">Avoid</div>
+      <ul class="kp-list kp-list--loose kp-list--columns">
+        @for (item of v.visual.imagery.avoid; track $index) {
+          <li>{{ item }}</li>
+        }
+      </ul>
+    </div>
+  }
+</lfx-mktg-portrait-page>

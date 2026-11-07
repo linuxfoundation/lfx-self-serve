@@ -1,0 +1,38 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  @if (intro()) {
+    <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-voice-intro">{{ intro() }}</p>
+  }
+  <div [lfxPpRect]="[x, 212, w]" data-testid="brand-kit-voice-messages">
+    @if (v.voice.umbrella) {
+      <div class="pp-lab">Umbrella message</div>
+      <div class="kp-voice-umbrella">{{ v.voice.umbrella }}</div>
+    }
+    @if (v.voice.line) {
+      <div class="kp-voice-line-block">
+        <div class="pp-lab">Brand line</div>
+        <div class="kp-voice-line">{{ v.voice.line }}</div>
+      </div>
+    }
+  </div>
+  @if (v.voice.attributes.length) {
+    <div class="kp-attributes" [lfxPpRect]="[x, 486, w]" data-testid="brand-kit-voice-attributes">
+      @for (attribute of v.voice.attributes; track $index; let first = $first) {
+        <div class="kp-attribute" [style.border-top-color]="first ? look().spark : look().accent">
+          <div class="kp-attribute-name">{{ attribute.name }}</div>
+          <div class="kp-attribute-line">{{ attribute.line }}</div>
+        </div>
+      }
+    </div>
+  }
+</lfx-mktg-portrait-page>
