@@ -219,7 +219,8 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   // The cover's whole sheet goes with it: its head and foot room alone would print as a blank page.
   await expect(printDocument.locator('lfx-mktg-print-sheet:has([data-testid="mktg-framework-print-cover"])')).toBeHidden();
   // The kit is thirteen portrait frames inside the family (no cover, contents or back cover; no symbol page: the
-  // synthetic kit has no symbol), one frame one sheet, numbered on from the framework's pages; nothing of it flows.
+  // synthetic kit has no symbol), one frame one sheet; nothing of it flows. Its frames are numbered from 1 until the
+  // family passes its own book (the family lane's fold-in gives the kit its first page number).
   const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');
   await expect(kitPrint.locator('[data-testid="lfx-mktg-portrait-page"]')).toHaveCount(13);
   await expect(kitPrint.locator('.kit-chapter, lfx-mktg-print-chapter-header, .lfx-brand-kit-page')).toHaveCount(0);
