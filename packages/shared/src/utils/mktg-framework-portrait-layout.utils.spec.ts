@@ -18,6 +18,7 @@ import {
   FRAMEWORK_PORTRAIT_TYPE,
   MKTG_PRINT_OBJECTION_DASH,
 } from '../constants/mktg-print.constants';
+import { MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
 import { MKTG_READABLE_SOURCE } from '../constants/mktg-readable-source.constants';
 import { FoundationMessageContent } from '../interfaces/foundation-message.interface';
 import { FoundationMessagePrintNumber } from '../interfaces/mktg-print.interface';
@@ -60,6 +61,7 @@ import {
   frameworkPortraitPillarProofHeight,
   frameworkPortraitPillsHeight,
   frameworkPortraitSayRoom,
+  frameworkPortraitServedCards,
   frameworkPortraitServedCount,
   frameworkPortraitStatementWidth,
   frameworkPortraitTaglineSize,
@@ -76,7 +78,7 @@ import type {
 } from '../interfaces/mktg-print.interface';
 import type { FoundationMessagePillarView } from '../interfaces/foundation-message.interface';
 import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
-import { mktgPortraitCharEm, mktgPortraitCharsPerLine, mktgPortraitWrapLines } from './mktg-portrait-print.utils';
+import { mktgPortraitCharEm, mktgPortraitCharsPerLine, mktgPortraitParaHeight, mktgPortraitWrapLines } from './mktg-portrait-print.utils';
 import { buildFoundationMessagePrintView } from './mktg-print.utils';
 
 const pair = (a: string, b: string): [string, string] => [a, b];
@@ -1165,5 +1167,83 @@ describe('the framework portrait book’s goal matrix proof row (editor W4)', ()
         expect(cell.rows.length + cell.cut).toBe(4);
       }
     }
+  });
+});
+
+// The overfull record's Goal 1 "Who it's for" cards (synthetic profiles): two long cards beside "Vendors and cloud providers", whose
+// lines are short enough to hold the card at the type's size while its siblings are set smaller (the editor's S-a).
+const servedProfiles = [
+  {
+    id: 'platform-teams',
+    name: 'Platform engineering teams',
+    need: 'A platform built from projects every vendor supports, so no supplier can hold the roadmap or the price.',
+    cta: 'Join the end user community and bring your production needs to the roadmap.',
+  },
+  {
+    id: 'security-teams',
+    name: 'Security and compliance teams',
+    need: 'Projects that meet a security bar they can cite, with audits, a disclosure process and a verifiable supply chain.',
+    cta: 'Read the security audits and join the security technical advisory group.',
+  },
+  {
+    id: 'vendors',
+    name: 'Vendors and cloud providers',
+    need: 'A level field, a visible seat in the community and a membership that pays back.',
+    cta: 'Explore membership and the program committees your team can join.',
+  },
+];
+
+describe('the framework portrait book’s "Who it’s for" cards (editor S-a)', () => {
+  const type = FRAMEWORK_PORTRAIT_TYPE;
+  const width = MKTG_PORTRAIT_PAGE.contentWidth;
+  // Three cards across the page: a card's text width, and the room the goal page leaves a card's three lines (the component's measure:
+  // under the label and the row's margin, inside the card's padding and border, less the two fixed gaps between the lines).
+  const cardWidth = (width - 2 * FRAMEWORK_PORTRAIT_ROOM.servedGap) / 3 - FRAMEWORK_PORTRAIT_ROOM.cardPaddingSide;
+  const room =
+    FRAMEWORK_PORTRAIT_TOPS.footer -
+    FRAMEWORK_PORTRAIT_TOPS.goalServed -
+    FRAMEWORK_PORTRAIT_ROOM.label -
+    FRAMEWORK_PORTRAIT_ROOM.servedTop -
+    FRAMEWORK_PORTRAIT_ROOM.cardPadding -
+    FRAMEWORK_PORTRAIT_ROOM.cardBorder -
+    FRAMEWORK_PORTRAIT_ROOM.servedLineTop -
+    FRAMEWORK_PORTRAIT_ROOM.servedLineGap;
+  const height = (card: { name: { text: string; size: number }; need: { text: string; size: number }; cta: { text: string; size: number } }) =>
+    mktgPortraitParaHeight({ text: card.name.text, size: card.name.size, line: type.servedName.line, weight: type.servedName.weight }, cardWidth) +
+    mktgPortraitParaHeight({ text: `Needs ${card.need.text}`, size: card.need.size, line: type.servedLine.line }, cardWidth) +
+    mktgPortraitParaHeight({ text: `Ask them to ${card.cta.text}`, size: card.cta.size, line: type.servedLine.line }, cardWidth);
+
+  it('sets every card of the row at the one size the longest card needs, never one card larger than its siblings', () => {
+    // The record's Goal 1 at the goal page's room: alone, "Vendors and cloud providers" holds a larger size than the two long cards
+    // (the editor's S-a on p03/p06/p09); in the row it takes theirs.
+    const alone = frameworkPortraitServedCards([servedProfiles[2]], cardWidth, room);
+    const cards = frameworkPortraitServedCards(servedProfiles, cardWidth, room);
+    expect(cards.map((card) => card.id)).toEqual(['platform-teams', 'security-teams', 'vendors']);
+    expect(cards[0].need.size).toBeLessThan(type.servedLine.size);
+    expect(alone[0].need.size).toBeGreaterThan(cards[0].need.size);
+    // One size across the row: the name's, the need's and the ask's, each the same on every card, the short card's with them.
+    expect(new Set(cards.map((card) => card.name.size)).size).toBe(1);
+    expect(new Set(cards.map((card) => card.need.size)).size).toBe(1);
+    expect(new Set(cards.map((card) => card.cta.size)).size).toBe(1);
+    expect(cards[2].need.size).toBe(cards[0].need.size);
+    expect(cards[2].name.size).toBe(cards[0].name.size);
+    // Nothing is cut and every card holds its room at the row's size; the leads the template sets in bold are not in the text.
+    expect(cards.map((card) => card.need.text)).toEqual(servedProfiles.map((profile) => profile.need));
+    expect(cards.map((card) => card.cta.text)).toEqual(servedProfiles.map((profile) => profile.cta));
+    for (const card of cards) expect(height(card)).toBeLessThanOrEqual(room + 0.01);
+  });
+
+  it('leaves a row that fits as written at the type’s size, and at the floor cuts only the cards that need it', () => {
+    const roomy = frameworkPortraitServedCards(servedProfiles, cardWidth, 1000);
+    expect(roomy.map((card) => [card.name.size, card.need.size, card.cta.size])).toEqual(
+      servedProfiles.map(() => [type.servedName.size, type.servedLine.size, type.servedLine.size])
+    );
+    expect(roomy.map((card) => card.name.text)).toEqual(servedProfiles.map((profile) => profile.name));
+    // A row at the fit model's floor: the two long cards are cut at a sentence; the short one, set at the floor with them, prints whole.
+    const floor = frameworkPortraitServedCards(servedProfiles, cardWidth, 60);
+    expect(new Set(floor.map((card) => card.need.size)).size).toBe(1);
+    expect(floor.map((card) => card.need.text.endsWith('…'))).toEqual([true, true, false]);
+    expect(floor[2].need.text).toBe(servedProfiles[2].need);
+    expect(frameworkPortraitServedCards([], cardWidth, 100)).toEqual([]);
   });
 });

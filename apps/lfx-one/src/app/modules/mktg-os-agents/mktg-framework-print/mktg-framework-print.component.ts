@@ -57,6 +57,7 @@ import {
   frameworkPortraitIcpPages,
   frameworkPortraitMatrix,
   frameworkPortraitNumbersPages,
+  frameworkPortraitServedCards,
   frameworkPortraitServedCount,
   frameworkPortraitPillList,
   frameworkPortraitPlan,
@@ -394,27 +395,8 @@ export class MktgFrameworkPrintComponent {
           )
         : null,
       served: {
-        rows: served.map((icp) => {
-          // The name and the two lines fitted to the card together, so a long name is measured with them.
-          const lines = mktgPortraitFitBlock(
-            {
-              paras: [
-                this.para(icp.name, TYPE.servedName),
-                this.para(`Needs ${icp.need}`, TYPE.servedLine),
-                this.para(`Ask them to ${icp.cta}`, TYPE.servedLine),
-              ],
-            },
-            cardWidth,
-            cardRoom
-          );
-          const [name, need, cta] = lines.block.paras;
-          return {
-            id: icp.id,
-            name: { text: name.text, size: name.size },
-            need: { text: need.text.replace(/^Needs /, ''), size: need.size },
-            cta: { text: cta.text.replace(/^Ask them to /, ''), size: cta.size },
-          };
-        }),
+        // The cards at one size across the row (the editor's S-a): each fitted with its name, then every one set at the smallest scale any needed.
+        rows: frameworkPortraitServedCards(served, cardWidth, cardRoom),
         cut: servedCut,
         tight: false,
         note: servedCut > 0 ? foundationMessagePrintCutNote(servedCut) : '',

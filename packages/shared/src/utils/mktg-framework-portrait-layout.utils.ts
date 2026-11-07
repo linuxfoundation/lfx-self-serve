@@ -56,10 +56,11 @@ import type {
   FoundationMessagePrintFactRow,
   FoundationMessagePrintNumbersPage,
   FoundationMessagePrintNumberTile,
+  FoundationMessagePrintServedCard,
   FoundationMessagePrintType,
   FoundationMessagePrintView,
 } from '../interfaces/mktg-print.interface';
-import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
+import type { MktgPortraitFitBlock, MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
 import { MKTG_PORTRAIT_FIT } from '../constants/mktg-portrait-print.constants';
 import {
   mktgPortraitCharEm,
@@ -68,6 +69,7 @@ import {
   mktgPortraitFitBlock,
   mktgPortraitPageNumber,
   mktgPortraitParaHeight,
+  mktgPortraitScaleBlock,
   mktgPortraitTrimStopWords,
   mktgPortraitTrimTail,
   mktgPortraitWrapLines,
@@ -979,6 +981,41 @@ export function frameworkPortraitIcpPages(icps: readonly FoundationMessagePrintI
 /** How many "Who it's for" cards a goal page's row holds at the board's narrowest card (ROOM.servedCardMin) with the row's gaps: four across the page. */
 export function frameworkPortraitServedCount(width: number = PAGE.contentWidth): number {
   return Math.max(1, Math.floor((width + ROOM.servedGap) / (ROOM.servedCardMin + ROOM.servedGap)));
+}
+
+/** The "Needs" and "Ask them to" lines a served card prints: the lead words the template sets in bold, fitted with the text so a wrap counts them. */
+const SERVED_LEADS = { need: 'Needs ', cta: 'Ask them to ' } as const;
+
+/**
+ * A goal page's "Who it's for" cards at ONE size across the row (the editor's S-a, 7 Nov 2026: never one card set larger than its
+ * siblings, as the statement cards): each card's name and two lines fitted to the card together by the fit model (smaller first, then
+ * cut at a sentence), then every card set at the smallest scale any of them needed, so the row reads at one size; a card already at
+ * the floor keeps the cut the fit gave it. `cardWidth` is a card's text width and `cardRoom` the room its three lines share.
+ */
+export function frameworkPortraitServedCards(
+  served: readonly Pick<FoundationMessagePrintIcp, 'id' | 'name' | 'need' | 'cta'>[],
+  cardWidth: number,
+  cardRoom: number
+): FoundationMessagePrintServedCard[] {
+  const para = (text: string, type: FoundationMessagePrintType) => ({ text, size: type.size, line: type.line, weight: type.weight });
+  const blocks: MktgPortraitFitBlock[] = served.map((icp) => ({
+    paras: [para(icp.name, TYPE.servedName), para(`${SERVED_LEADS.need}${icp.need}`, TYPE.servedLine), para(`${SERVED_LEADS.cta}${icp.cta}`, TYPE.servedLine)],
+  }));
+  const own = blocks.map((block) => mktgPortraitFitBlock(block, cardWidth, cardRoom));
+  const rowScale = own.reduce((scale, fit) => Math.min(scale, fit.scale), 1);
+  return served.map((icp, index) => {
+    // A card that fit at a larger scale is set at the row's: the smaller block fits where the larger did, so the fit model returns it as it is.
+    const block =
+      own[index].scale === rowScale ? own[index].block : mktgPortraitFitBlock(mktgPortraitScaleBlock(blocks[index], rowScale), cardWidth, cardRoom).block;
+    const [name, need, cta] = block.paras;
+    const lead = (text: string, prefix: string): string => (text.startsWith(prefix) ? text.slice(prefix.length) : text);
+    return {
+      id: icp.id,
+      name: { text: name.text, size: name.size },
+      need: { text: lead(need.text, SERVED_LEADS.need), size: need.size },
+      cta: { text: lead(cta.text, SERVED_LEADS.cta), size: cta.size },
+    };
+  });
 }
 
 /** The height the goals × profiles matrix takes under a lone card: its label, note, head row and one cell row per profile. */
