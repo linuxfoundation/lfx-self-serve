@@ -1038,7 +1038,7 @@ describe('the book', () => {
     expect(brandKitSymbolImage({ primary: { ref: 'logo.png', svg: null }, stacked: null, symbol: null, reversed: null }, '0 0 60 60')).toBeNull();
   });
 
-  it('derives only from one resolvable ink with no background: default black counts, white marks are ignored, backgrounds, gradients, sheets and two inks are not derivable', () => {
+  it('derives only from one resolvable ink with no background: default black and rendered white count, backgrounds, gradients, sheets and two inks are not derivable', () => {
     const cases: [string, boolean][] = [
       // One explicit fill.
       ['<svg viewBox="0 0 10 10"><path fill="#4D4E4E" d="M0 0h10v10z"/></svg>', true],
@@ -1049,9 +1049,13 @@ describe('the book', () => {
       // A white background rect under a black mark: inverting would set the mark in a white box.
       ['<svg viewBox="0 0 10 10"><rect fill="#fff" width="10" height="10"/><path d="M2 2h6v6z"/></svg>', false],
       ['<svg viewBox="0 0 10 10"><rect fill="white" width="100%" height="100%"/><path fill="#000" d="M2 2h6v6z"/></svg>', false],
-      // A white part of a mark, wherever it comes in the markup, is the ground a reversal removes.
-      ['<svg viewBox="0 0 10 10"><circle fill="#4D4E4E" cx="5" cy="5" r="5"/><path fill="#FFF" d="M4 4h2v2z"/></svg>', true],
-      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><circle fill="#4D4E4E" cx="5" cy="5" r="5"/></svg>', true],
+      // Rendered white is an ink like any other (the editor's rule): a dark tile with a white glyph or knock-out, in either
+      // order, is two inks, since reversing it would turn the tile white and lose the glyph; so is a white stroke on a dark path.
+      ['<svg viewBox="0 0 10 10"><rect fill="#000" rx="2" width="8" height="8" x="1" y="1"/><path fill="#FFF" d="M4 4h2v2z"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><circle fill="#4D4E4E" cx="5" cy="5" r="5"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path fill="#000" stroke="white" stroke-width="1" d="M1 1h8v8z"/></svg>', false],
+      // A white mark alone is one ink.
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><path fill="white" d="M0 0h2v2z"/></svg>', true],
       // A rendered full-canvas rect in the mark's own ink is a background too: a second ink; alone, it is one ink.
       ['<svg viewBox="0 0 10 10"><rect fill="#4D4E4E" width="10" height="10"/><path fill="#4D4E4E" d="M2 2h6v6z"/></svg>', false],
       ['<svg viewBox="0 0 10 10"><path fill="#4D4E4E" d="M2 2h6v6z"/><rect fill="#fff" width="10" height="10"/></svg>', false],
@@ -1090,12 +1094,13 @@ describe('the book', () => {
       ],
       // The shared fixture lockup draws three inks.
       [BRAND_KIT_FIXTURE_LOCKUP_SVG, false],
-      // One ink spelled four ways is one ink; a short hex white is white.
+      // One ink spelled four ways is one ink; a short hex white is the same ink as a long one, and a second beside the dark.
       [
         '<svg viewBox="0 0 10 10"><path fill="black" d="M0 0h10"/><path fill="#000" d="M0 2h10"/><path fill="#000000" d="M0 4h10"/><path fill="rgb(0, 0, 0)" d="M0 6h10"/></svg>',
         true,
       ],
-      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><path fill="#4d4e4e" d="M0 0h10"/><path fill="#4D4E4E" d="M0 5h10"/></svg>', true],
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><path fill="#ffffff" d="M0 0h2v2z"/></svg>', true],
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><path fill="#4d4e4e" d="M0 0h10"/><path fill="#4D4E4E" d="M0 5h10"/></svg>', false],
       // Nothing drawn: nothing a filter could flatten.
       ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"/>', true],
     ];
