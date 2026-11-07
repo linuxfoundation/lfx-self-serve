@@ -78,6 +78,13 @@ describe('mktgReadableSourceText', () => {
     );
   });
 
+  it('rewrites a file name the sentence ends on (a full stop after the extension), and still reads a name that goes on past a dot', () => {
+    expect(mktgReadableSourceText('Could not read logo.svg.')).toBe('Could not read an uploaded logo file.');
+    expect(mktgReadableSourceText('Could not read logo.svg, then logo.png.')).toBe('Could not read an uploaded logo file, then an uploaded logo file.');
+    expect(mktgReadableSourceText('The file logo.svg.bak was skipped.')).toBe('The file logo.svg.bak was skipped.');
+    expect(mktgReadableSourceText('Read archive.zip.')).toBe('Read the uploaded logo package.');
+  });
+
   it('reads a hostile run record in linear time: many addresses, many marks, many query signs', () => {
     const started = performance.now();
     const addresses = mktgReadableSourceText('http://'.repeat(2000));

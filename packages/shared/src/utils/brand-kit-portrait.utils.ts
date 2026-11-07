@@ -191,9 +191,12 @@ export function brandKitPortraitBuiltFrom(view: BrandKitBookView): string {
     : 'Built from the messaging framework and the brand colors the run found.';
 }
 
-/** The WCAG contrast of white on a colour, one decimal (`2.8`), for the symbol page's rule. */
+/**
+ * The WCAG contrast of white on a colour, unrounded, for the symbol page's AA clause and the imagery call-out's caption:
+ * a page compares it with 4.5 as it is and prints it through `brandKitPortraitRatioLabel`, so a 4.48 never reads as a pass.
+ */
 export function brandKitPortraitWhiteContrast(hex: string): number {
-  return Math.round(brandKitContrastRatio(brandKitLuminance(lfxColors.white), brandKitLuminance(hex)) * 10) / 10;
+  return brandKitContrastRatio(brandKitLuminance(lfxColors.white), brandKitLuminance(hex));
 }
 
 // ---------- Color contrast (page 10) ----------
@@ -231,7 +234,7 @@ export function brandKitPortraitContrastMatrix(view: BrandKitBookView): BrandKit
 }
 
 /** A ratio's label to one decimal, cut not rounded (`4.46` → `4.4`): WCAG 1.4.3 never rounds a ratio up to a threshold. */
-function brandKitPortraitRatioLabel(ratio: number): string {
+export function brandKitPortraitRatioLabel(ratio: number): string {
   return (Math.floor(ratio * 10) / 10).toFixed(1);
 }
 

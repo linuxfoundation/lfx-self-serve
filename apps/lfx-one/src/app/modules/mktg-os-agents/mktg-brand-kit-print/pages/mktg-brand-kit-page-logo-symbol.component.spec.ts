@@ -43,4 +43,14 @@ describe('the Symbol & symbol in shape page', () => {
     expect(frame.querySelector('[data-testid="brand-kit-symbol-rule"]')?.textContent).not.toContain('fails AA');
     expect(frame.querySelector('[data-testid="brand-kit-symbol-rule"]')?.textContent).toContain('accent colors are not logo colors.');
   });
+
+  it('prints the AA figure for an accent white fails on by a hair (4.48:1), cut to 4.4, never rounded up to a pass', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
+      ...view,
+      accent: '#777777',
+      accentName: 'Grey',
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
+    }));
+    expect(frame.querySelector('[data-testid="brand-kit-symbol-rule"]')?.textContent).toContain('white on Grey fails AA (4.4:1).');
+  });
 });

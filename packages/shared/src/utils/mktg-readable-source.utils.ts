@@ -19,8 +19,11 @@ const REPEATED_PARENTHETICAL_REGEX = new RegExp(
   'gi'
 );
 
-/** A bare file name (no `/` before it) with an image, archive or document extension, as the record names uploads and site files. */
-const FILE_NAME_SOURCE = '(?<![\\w/.%-])[\\w.%-]+\\.(?:svg|png|jpe?g|webp|gif|pdf|eps|ai|zip|tar\\.gz|7z|rar)(?![\\w.%-])';
+/**
+ * A bare file name (no `/` before it) with an image, archive or document extension, as the record names uploads and site
+ * files; a full stop after the extension is the sentence's own (`Could not read logo.svg.`) unless a name goes on after it.
+ */
+const FILE_NAME_SOURCE = '(?<![\\w/.%-])[\\w.%-]+\\.(?:svg|png|jpe?g|webp|gif|pdf|eps|ai|zip|tar\\.gz|7z|rar)(?![\\w%-])(?!\\.[\\w%-])';
 const FILE_NAME_REGEX = new RegExp(FILE_NAME_SOURCE, 'gi');
 const WHOLE_FILE_NAME_REGEX = new RegExp(`^${FILE_NAME_SOURCE}$`, 'i');
 

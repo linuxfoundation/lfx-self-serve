@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed } from '@angular/core';
-import { brandKitPortraitMessageCard, brandKitPortraitWhiteContrast } from '@lfx-one/shared/utils';
+import { brandKitPortraitMessageCard, brandKitPortraitRatioLabel, brandKitPortraitWhiteContrast } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
@@ -27,6 +27,6 @@ export class MktgBrandKitPageVisualImageryComponent extends MktgBrandKitPageBase
     const view = this.view();
     const white = this.look().onAccent === 'white' || this.look().onAccent.toLowerCase() === this.inks.white.toLowerCase();
     if (white) return 'Call-out · the one accent moment; text in white';
-    return `Call-out · the one accent moment; text in ${view.darkName} (white on ${view.accentName} fails AA, ${brandKitPortraitWhiteContrast(view.accent).toFixed(1)}:1)`;
+    return `Call-out · the one accent moment; text in ${view.darkName} (white on ${view.accentName} fails AA, ${brandKitPortraitRatioLabel(brandKitPortraitWhiteContrast(view.accent))}:1)`;
   });
 }

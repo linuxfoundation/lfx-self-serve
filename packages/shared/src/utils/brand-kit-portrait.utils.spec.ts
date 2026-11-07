@@ -35,6 +35,7 @@ import {
   brandKitPortraitTypeSource,
   brandKitPortraitUsageCards,
   brandKitPortraitWeightName,
+  brandKitPortraitRatioLabel,
   brandKitPortraitWhiteContrast,
 } from './brand-kit-portrait.utils';
 import { mktgPortraitLineFits } from './mktg-portrait-print.utils';
@@ -102,9 +103,14 @@ describe('the palette page’s strings', () => {
     expect(brandKitPortraitShare(view, '#000000')).toBeNull();
   });
 
-  it('rounds the contrast of white on a colour to a decimal', () => {
-    expect(brandKitPortraitWhiteContrast('#F37625')).toBe(2.8);
-    expect(brandKitPortraitWhiteContrast('#1E3A8A')).toBe(10.4);
+  it('reads the contrast of white on a colour unrounded, and labels it cut to one decimal, so a 4.48 never passes as 4.5', () => {
+    expect(brandKitPortraitWhiteContrast('#F37625')).toBeCloseTo(2.83, 2);
+    expect(brandKitPortraitRatioLabel(brandKitPortraitWhiteContrast('#F37625'))).toBe('2.8');
+    expect(brandKitPortraitRatioLabel(brandKitPortraitWhiteContrast('#1E3A8A'))).toBe('10.3');
+    const grey = brandKitPortraitWhiteContrast('#777777');
+    expect(grey).toBeLessThan(4.5);
+    expect(brandKitPortraitRatioLabel(grey)).toBe('4.4');
+    expect(brandKitPortraitContrastGrade(grey)).toBe('Large text only');
   });
 });
 
