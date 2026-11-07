@@ -560,9 +560,11 @@ describe('mktgFamilyPrintConflicts', () => {
       ],
       'Brand kit'
     );
-    expect(coral.text).toBe('The brand kit reads Coral as #FF702D from the brand page, #FF7D2D from the site css and #FF8A2D; it keeps #FF702D.');
+    expect(coral.text).toBe('The brand kit reads Coral as #FF702D from the brand page, #FF7D2D from the site stylesheet and #FF8A2D; it keeps #FF702D.');
     expect(coral.text).not.toMatch(/https?:|_/);
     expect(mktgFamilyPrintReadableSource('brand_page: https://aaif.io/brand')).toBe('brand page');
+    expect(mktgFamilyPrintReadableSource('site_css: https://aaif.io/_next/static/chunks/x.css')).toBe('site stylesheet');
+    expect(mktgFamilyPrintReadableSource('press_kit: https://aaif.io/press')).toBe('press kit');
     expect(mktgFamilyPrintReadableSource('https://aaif.io/brand')).toBe('aaif.io');
     expect(mktgFamilyPrintReadableSource('the press release')).toBe('the press release');
     expect(mktgFamilyPrintReadableSource('')).toBe('');

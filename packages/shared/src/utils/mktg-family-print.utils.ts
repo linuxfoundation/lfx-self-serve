@@ -18,6 +18,7 @@ import {
   MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS,
   MKTG_FAMILY_PRINT_RERUN_ON_COLOR,
   MKTG_FAMILY_PRINT_ROUNDING_WORDS,
+  MKTG_FAMILY_PRINT_SOURCE_FIELD_WORDS,
   MKTG_FAMILY_PRINT_RUN_BLOCK_LAYOUT,
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
 } from '../constants/mktg-family-print.constants';
@@ -319,14 +320,14 @@ export function mktgFamilyPrintBuiltFromLabel(source: string): string {
 
 /**
  * Where a record read something, in words: a `brand_page: https://…` source
- * is `brand page`, a bare URL its host, a label its own words; a field name
+ * is `brand page` and `site_css: …` the `site stylesheet`, a bare URL its host, a label its own words; a field name
  * with nothing readable in it ('' or `site_css` alone) gives ''. Nothing a
  * reader would take for an identifier reaches the page.
  */
 export function mktgFamilyPrintReadableSource(source: string): string {
   const named = /^([A-Za-z][\w ]*?)\s*:\s*https?:\/\//.exec(source.trim());
-  const label = named ? named[1] : mktgFamilyPrintSourceLabel(source);
-  return label.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+  if (named) return MKTG_FAMILY_PRINT_SOURCE_FIELD_WORDS[named[1].toLocaleLowerCase()] ?? named[1].replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+  return mktgFamilyPrintSourceLabel(source).replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 /**

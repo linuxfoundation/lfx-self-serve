@@ -107,6 +107,12 @@ export const MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS: Readonly<Record<string, string
  */
 export const MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS: readonly string[] = ['intake'];
 
+/**
+ * A record's source field, in the words a reader uses for it, by the field's name in lower case (`site_css` is the
+ * site's stylesheet, not "site css"); a field not named here prints its words with the underscores as spaces.
+ */
+export const MKTG_FAMILY_PRINT_SOURCE_FIELD_WORDS: Readonly<Record<string, string>> = { site_css: 'site stylesheet', brand_page: 'brand page' };
+
 /** Words of a key number's label that name no thing to count. */
 export const MKTG_FAMILY_PRINT_LABEL_STOP_WORDS: readonly string[] = [
   'more',
@@ -181,7 +187,7 @@ export const MKTG_FAMILY_PRINT_COPY = {
   numberConflict: 'The framework’s key numbers say [Number] [Label]; the [Document] says “[Sentence]”',
   /** The brand-line conflict: `[Line]` is the kit's, `[Tagline]` the framework's. */
   brandLineConflict: 'The brand kit carries “[Line]”; the framework’s tagline is “[Tagline]”.',
-  /** A color the kit read with two values: `[Values]` is `#FF702D from the brand page and #FF7D2D from the site css`. */
+  /** A color the kit read with two values: `[Values]` is `#FF702D from the brand page and #FF7D2D from the site stylesheet`. */
   colorConflict: 'The [Kit] reads [Name] as [Values]; it keeps [Chosen].',
   /** One of a color's readings: `[Hex]` and where the kit read it (omitted when the record names no readable source). */
   colorReading: '[Hex] from the [Source]',
