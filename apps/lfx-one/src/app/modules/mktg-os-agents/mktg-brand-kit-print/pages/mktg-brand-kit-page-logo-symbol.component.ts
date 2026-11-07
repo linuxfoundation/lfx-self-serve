@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed } from '@angular/core';
-import { brandKitPortraitRatioLabel, brandKitPortraitWhiteContrast } from '@lfx-one/shared/utils';
+import { brandKitPortraitIntro, brandKitPortraitRatioLabel, brandKitPortraitWhiteContrast } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitArtworkComponent } from './mktg-brand-kit-artwork.component';
@@ -36,4 +36,6 @@ export class MktgBrandKitPageLogoSymbolComponent extends MktgBrandKitPageBase {
       ? ` Never put the symbol on the accent: accent colors are not logo colors, and white on ${this.view().accentName} fails AA (${brandKitPortraitRatioLabel(ratio)}:1).`
       : ' Never put the symbol on the accent: accent colors are not logo colors.';
   });
+  /** The intro at most three lines of its 600 px: whole sentences that fit, or the first shortened (`brandKitPortraitIntro`). */
+  protected readonly intro = computed(() => brandKitPortraitIntro(this.view().logo.symbol));
 }

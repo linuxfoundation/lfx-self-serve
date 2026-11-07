@@ -3,7 +3,7 @@
 
 import { Component, computed, input } from '@angular/core';
 import { MktgPortraitPlacedPage, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
-import { brandKitPortraitApprovalLine, brandKitPortraitBuiltFrom, brandKitPortraitContentsLayout, mktgPortraitPageNumber } from '@lfx-one/shared/utils';
+import { brandKitPortraitApprovalLine, brandKitPortraitBuiltFrom, brandKitPortraitContentsLayout } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitArtworkComponent } from './mktg-brand-kit-artwork.component';
@@ -24,11 +24,11 @@ export class MktgBrandKitPageContentsComponent extends MktgBrandKitPageBase {
   public readonly pages = input.required<readonly MktgPortraitPlacedPage[]>();
   /** The approved revision's approval, when the document has it; null leaves the line out. */
   public readonly approval = input<MktgRevisionApproval | null>(null);
-  /** The pages after this one, as the list prints them. */
+  /** The content pages after this one, as the list prints them: the back cover is not a content page (the editor's ruling) and is not listed. */
   protected readonly entries = computed(() => {
     const pages = this.pages();
     const index = pages.findIndex((page) => page.id === this.page().id);
-    return pages.slice(index + 1).map((entry) => ({ ...entry, padded: mktgPortraitPageNumber(entry.number) }));
+    return pages.slice(index + 1).filter((entry) => entry.id !== 'back-cover');
   });
   /** One or two columns and the lower blocks' top, from the number of rows. */
   protected readonly layout = computed(() => brandKitPortraitContentsLayout(this.entries().length));

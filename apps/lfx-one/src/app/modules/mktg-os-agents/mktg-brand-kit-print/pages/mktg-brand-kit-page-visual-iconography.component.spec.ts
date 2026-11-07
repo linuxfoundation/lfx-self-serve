@@ -3,6 +3,8 @@
 
 import { BRAND_KIT_ICON_SAMPLES } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
+import { brandKitOverfullFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils';
 import { MktgBrandKitPageVisualIconographyComponent } from './mktg-brand-kit-page-visual-iconography.component';
 import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -31,5 +33,17 @@ describe('the Iconography page', () => {
     expect(rectOf(sizes)).toEqual({ left: '56px', top: '870px', width: '704px' });
     expect(Array.from(sizes?.querySelectorAll('svg') ?? [], (svg) => svg.getAttribute('width'))).toEqual(['16', '24', '32', '48']);
     expect(Array.from(sizes?.querySelectorAll('.kp-icon-size-label') ?? [], (label) => label.textContent)).toEqual(['16 px', '24 px', '32 px', '48 px']);
+  });
+
+  it('keeps four 300-character rules above the Sizes block: smaller, cut at a sentence, the rules the room cannot hold counted in a line', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageVisualIconographyComponent, 'visual-iconography', () =>
+      buildBrandKitBookView(brandKitOverfullFixture(), 4)
+    );
+    const rules = frame.querySelector<HTMLElement>('[data-testid="brand-kit-iconography-rules"]');
+    expect(rules?.style.getPropertyValue('--kp-fit')).toBe('0.72');
+    const items = rules?.querySelectorAll('li') ?? [];
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.length).toBeLessThan(4);
+    expect(rules?.querySelector('[data-testid="brand-kit-iconography-rules-more"]')?.textContent).toBe(`+${4 - items.length} more rules, in LFX One`);
   });
 });

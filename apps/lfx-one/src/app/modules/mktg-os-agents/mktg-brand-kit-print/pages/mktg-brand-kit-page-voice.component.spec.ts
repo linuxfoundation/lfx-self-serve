@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
+import { brandKitOverfullFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils';
 import { MktgBrandKitPageVoiceComponent } from './mktg-brand-kit-page-voice.component';
 import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -46,7 +48,9 @@ describe('the Voice in brief page', () => {
 
   it('keeps four attributes at full size and sets a grid of eight long ones smaller together, inside the frame', async () => {
     const { frame } = await mountBrandKitPage(MktgBrandKitPageVoiceComponent, 'voice');
-    expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-voice-attributes"]')?.style.getPropertyValue('--kp-fit')).toBe('1');
+    const fitOf = (grid: HTMLElement | null | undefined) => grid?.closest<HTMLElement>('.pp-r')?.style.getPropertyValue('--kp-fit');
+    expect(fitOf(frame.querySelector<HTMLElement>('[data-testid="brand-kit-voice-attributes"]'))).toBe('1');
+    expect(frame.querySelector('[data-testid="brand-kit-voice-attributes-more"]')).toBeNull();
     const line = 'Every claim names its number and its source, in the words the reader would use, and never a superlative the record cannot back.';
     const { frame: crowded } = await mountBrandKitPage(MktgBrandKitPageVoiceComponent, 'voice', (view) => ({
       ...view,
@@ -54,9 +58,39 @@ describe('the Voice in brief page', () => {
     }));
     const grid = crowded.querySelector<HTMLElement>('[data-testid="brand-kit-voice-attributes"]');
     expect(grid?.querySelectorAll('.kp-attribute')).toHaveLength(8);
-    const scale = Number(grid?.style.getPropertyValue('--kp-fit'));
+    const scale = Number(fitOf(grid));
     expect(scale).toBeLessThan(1);
     expect(scale).toBeGreaterThanOrEqual(0.72);
     expect(grid?.querySelector('.kp-attribute-line')?.textContent).toBe(line);
+    expect(crowded.querySelector('[data-testid="brand-kit-voice-attributes-more"]')).toBeNull();
+  });
+
+  it('counts the attributes the room cannot hold in a "+N more" line instead of dropping them in silence', async () => {
+    const line = 'Every claim names its number and its source, in the words the reader would use, and never a superlative the record cannot back.';
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageVoiceComponent, 'voice', (view) => ({
+      ...view,
+      voice: { ...view.voice, attributes: Array.from({ length: 20 }, (_, index) => ({ name: `Attribute ${index + 1}`, line: `${line} ${line}` })) },
+    }));
+    const grid = frame.querySelector<HTMLElement>('[data-testid="brand-kit-voice-attributes"]');
+    const printed = grid?.querySelectorAll('.kp-attribute').length ?? 0;
+    expect(printed).toBeGreaterThan(0);
+    expect(printed).toBeLessThan(20);
+    expect(printed % 2).toBe(0);
+    expect(frame.querySelector('[data-testid="brand-kit-voice-attributes-more"]')?.textContent).toBe(`+${20 - printed} more on the Voice tab in LFX One`);
+    // Names print whole; the lines are cut at a sentence (the first of the two).
+    expect(grid?.querySelector('.kp-attribute-name')?.textContent).toBe('Attribute 1');
+    expect(grid?.querySelector('.kp-attribute-line')?.textContent).toBe(line);
+  });
+
+  it('sets a 300-character umbrella and brand line smaller together above the attributes, the umbrella cut at a sentence', async () => {
+    const { frame, view } = await mountBrandKitPage(MktgBrandKitPageVoiceComponent, 'voice', () => buildBrandKitBookView(brandKitOverfullFixture(), 4));
+    const messages = frame.querySelector<HTMLElement>('[data-testid="brand-kit-voice-messages"]');
+    expect(messages?.style.getPropertyValue('--kp-fit')).toBe('0.72');
+    const umbrella = messages?.querySelector('.kp-voice-umbrella')?.textContent ?? '';
+    expect(umbrella.length).toBeLessThan(view.voice.umbrella.length);
+    expect(view.voice.umbrella.startsWith(umbrella)).toBe(true);
+    expect(messages?.querySelector('.kp-voice-line')?.textContent).toBe(view.voice.line);
+    // The intro (the source, then a 300-character note) keeps its whole sentences that fit three lines.
+    expect((frame.querySelector('[data-testid="brand-kit-voice-intro"]')?.textContent ?? '').length).toBeLessThan(300);
   });
 });

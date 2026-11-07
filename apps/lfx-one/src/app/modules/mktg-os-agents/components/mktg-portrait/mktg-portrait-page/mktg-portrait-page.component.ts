@@ -40,6 +40,7 @@ import { MKTG_PORTRAIT_BLOCK_HOST } from '../mktg-portrait-host';
     '[style.--pp-on-dark]': 'look().onDark',
     '[style.--pp-font]': 'look().fontStack',
     '[style.--pp-glow]': 'glow()',
+    '[style.--pp-glow-print]': 'glowPrint()',
     '[style.--pp-grid]': 'grid()',
     '[style.--pp-ink]': 'inks.ink',
     '[style.--pp-muted]': 'inks.muted',
@@ -73,6 +74,8 @@ export class MktgPortraitPageComponent {
   /** The accent as text on the page white, readable at WCAG AA: `--pp-accent-text`, for every text set in the accent. */
   protected readonly accentText = computed(() => mktgPortraitAccentText(this.look().accent, this.inks.white));
   protected readonly glow = computed(() => this.accentAlpha(MKTG_PORTRAIT_GRID_GROUND.glowAlpha));
+  /** The glow as the print draws it, stronger than the screen's: on paper the 33 % glow is almost invisible. */
+  protected readonly glowPrint = computed(() => this.accentAlpha(MKTG_PORTRAIT_GRID_GROUND.glowPrintAlpha));
   protected readonly grid = computed(() => this.accentAlpha(MKTG_PORTRAIT_GRID_GROUND.gridAlpha));
 
   /** The accent with an alpha, for the grid ground; the accent as it is when it is not a 6-digit hex. */

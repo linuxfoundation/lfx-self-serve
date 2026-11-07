@@ -48,6 +48,19 @@ describe('mktgReadableSourceName', () => {
     // A kind with nothing a reader could look up keeps its word; a URL's own scheme is not a kind.
     expect(mktgReadableSourceName('page')).toBe('page');
     expect(mktgReadableSourceName('https://one.example.org/brand')).toBe('one.example.org/brand');
+    // Only the kit's provenance kinds are read past: the record's own "Note:" is kept (rv3 F9).
+    expect(mktgReadableSourceName('Note: the requester said so')).toBe('Note: the requester said so');
+  });
+
+  it('reads a file extension on the pathname only: a .ai site is a site, a .ai file a file (rv2, the TLD)', () => {
+    expect(mktgReadableSourceName('https://agntcy.ai')).toBe('agntcy.ai');
+    expect(mktgReadableSourceName('https://agntcy.ai/')).toBe('agntcy.ai');
+    expect(mktgReadableSourceName('https://agntcy.ai/brand/logo.ai')).toBe(MKTG_READABLE_SOURCE.linkedImage);
+    expect(mktgReadableSourceName('https://agntcy.ai/brand/kit.zip')).toBe(MKTG_READABLE_SOURCE.linkedPackage);
+    // A bare host-shaped token is not an upload; a file the record wrote as one is.
+    expect(mktgReadableSourceName('agentic.ai')).toBe('agentic.ai');
+    expect(mktgReadableSourceName('logo_v2.ai', 'one')).toBe(MKTG_READABLE_SOURCE.uploadedFile);
+    expect(mktgReadableSourceName('16dd7d8270b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5.ai', 'one')).toBe(MKTG_READABLE_SOURCE.uploadedFile);
   });
 });
 
@@ -105,5 +118,18 @@ describe('mktgReadableSourceText', () => {
     expect(mktgReadableSourceText('The header logo (16dd7d8270b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5-838x203.svg, a bitmap) is small.')).toBe(
       'The header logo (a logo image linked from the site, a bitmap) is small.'
     );
+    // Only a parenthetical the rewrite produced is dropped: one the record wrote in words stays (rv3 F10).
+    expect(mktgReadableSourceText('Read the guide (The LFX project record) first.')).toBe('Read the guide (The LFX project record) first.');
+    expect(mktgReadableSourceText('A logo from the site (the uploaded logo files) was used.')).toBe('A logo from the site (the uploaded logo files) was used.');
+    // A parenthetical around a page URL keeps the address: it is not only a source's words.
+    expect(mktgReadableSourceText('See the brand page (https://one.example.org/brand) for the rest.')).toBe(
+      'See the brand page (one.example.org/brand) for the rest.'
+    );
+    expect(mktgReadableSourceText('The site (https://one.example.org/img/logo.svg) links it.')).toBe('The site links it.');
+  });
+
+  it('leaves a host-shaped token in prose as written: a .ai site is not an uploaded file', () => {
+    expect(mktgReadableSourceText('The colors were read on agentic.ai and on https://agntcy.ai.')).toBe('The colors were read on agentic.ai and on agntcy.ai.');
+    expect(mktgReadableSourceText('Could not open logo_v2.ai.')).toBe('Could not open an uploaded logo file.');
   });
 });

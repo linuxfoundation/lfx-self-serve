@@ -65,6 +65,8 @@ describe('lfx-mktg-portrait-page', () => {
     expect(page.style.getPropertyValue('--pp-font')).toBe(LOOK.fontStack);
     // The grid ground's glow and grid: the accent with its alpha.
     expect(page.style.getPropertyValue('--pp-glow')).toBe('#FF702D55');
+    // The print's glow is the stronger one (on paper the screen's is almost invisible), the same accent.
+    expect(page.style.getPropertyValue('--pp-glow-print')).toBe('#FF702D88');
     expect(page.style.getPropertyValue('--pp-grid')).toBe('#FF702D22');
     expect(MKTG_PORTRAIT_PAGE).toMatchObject({ width: 816, height: 1056 });
   });
@@ -132,6 +134,7 @@ describe('lfx-mktg-portrait-page', () => {
     await fixture.whenStable();
     const page: HTMLElement = fixture.nativeElement;
     expect(page.style.getPropertyValue('--pp-glow')).toBe('rebeccapurple');
+    expect(page.style.getPropertyValue('--pp-glow-print')).toBe('rebeccapurple');
     expect(page.getAttribute('data-testid')).toBe('lfx-mktg-portrait-page');
   });
 });

@@ -19,17 +19,19 @@
       </div>
       <div class="pp-cap">On light grounds · {{ v.darkName }} bar</div>
     </div>
+    <!-- The dark tile draws the lockup and the bar at the light tile's sizes (64 and 96; the mock's 58 and 88 read as a
+         smaller logo — the editor's ruling), the same clear space either side. -->
     <div [lfxPpRect]="[x, 486, w]">
       <div class="kp-hero kp-hero--dark h-[280px] gap-[44px]" data-testid="brand-kit-partnership-dark">
-        <lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="58" />
-        <span class="kp-bar kp-bar--white h-[88px]"></span>
+        <lfx-mktg-brand-kit-artwork [view]="v" mode="reversed" [height]="64" />
+        <span class="kp-bar kp-bar--white h-[96px]"></span>
         <span class="kp-partner kp-partner--dark">Partner logo</span>
       </div>
       <div class="pp-cap">On dark grounds · white bar</div>
     </div>
   }
   @if (rules().length) {
-    <div [lfxPpRect]="[x, 806, w]">
+    <div class="kp-fit-list" [style.--kp-fit]="fit().scale" [lfxPpRect]="[x, 806, w]">
       <div class="pp-lab pp-lab--dark">Rules</div>
       <ol class="kp-rules" data-testid="brand-kit-partnership-rules">
         @for (rule of rules(); track rule.number) {
@@ -39,6 +41,9 @@
           </li>
         }
       </ol>
+      @if (fit().more; as more) {
+        <div class="kp-list-more" data-testid="brand-kit-partnership-rules-more">+{{ more }} more rules, in LFX One</div>
+      }
     </div>
   }
 </lfx-mktg-portrait-page>

@@ -88,6 +88,19 @@ export const MKTG_PORTRAIT_PAGE_NAME = 'mktg-portrait';
 export const MKTG_PORTRAIT_PAGE_SETUP = MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
 
 /**
+ * The papers a portrait book prints on, in CSS px (96 per inch). The frame is
+ * drawn for US Letter; on A4 the grammar zooms every frame by `a4.width /
+ * letter.width` (210 mm over 8.5 in, ≈ 0.9727) and grows its ground to the
+ * paper's height (`_mktg-portrait.scss`, which computes the same numbers), so
+ * the dialog's paper is the page box and nothing is left for the browser's
+ * headers and footers to print into. The e2e Chrome proof reads these.
+ */
+export const MKTG_PORTRAIT_PAPERS = {
+  letter: { width: 816, height: 1056 },
+  a4: { width: 793.7007874, height: 1122.519685 },
+} as const;
+
+/**
  * The class of a print root made of portrait frames (the kit's book, and the
  * framework's and the family's pages once they are frames too), as against
  * the flowing portrait documents on the `mktg-framework` page: the print
@@ -104,12 +117,15 @@ export const MKTG_PORTRAIT_FRAME_CLASS = 'pp-page';
 export const MKTG_PORTRAIT_PAGE_NUMBER_DIGITS = 2;
 
 /**
- * The accent's share of a chapter opener's grid ground, as two hex digits
- * of alpha appended to the kit's accent: the radial glow at 33 % and the
- * 32 px grid lines at 13 %.
+ * The accent's share of a grid ground (the covers, the openers and the
+ * imagery hero), as two hex digits of alpha appended to the kit's accent:
+ * the radial glow at 33 % on screen and 53 % in print (on paper the screen's
+ * glow is almost invisible: the editor's p13), and the 32 px grid lines at
+ * 13 %.
  */
 export const MKTG_PORTRAIT_GRID_GROUND = {
   glowAlpha: '55',
+  glowPrintAlpha: '88',
   gridAlpha: '22',
   gridSize: 32,
 } as const;

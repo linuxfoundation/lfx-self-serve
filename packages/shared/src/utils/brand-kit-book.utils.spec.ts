@@ -18,6 +18,7 @@ import {
   brandKitInkOnAccent,
   brandKitLabelInk,
   brandKitLuminance,
+  brandKitRatioLabel,
   buildBrandKitBookView,
 } from './brand-kit-book.utils';
 import { brandKitLogoFileName } from './brand-kit.utils';
@@ -158,6 +159,18 @@ describe('the book’s view model', () => {
     expect(view.logos.primary?.name).toBe('the logo you supplied');
     expect(view.logos.stacked?.name).toBe('orbit-stacked.png');
     expect(view.builtFrom).not.toContain('https://');
+  });
+
+  it('labels every contrast ratio with the one cut rounding (never up to a threshold), on screen as in the book', () => {
+    expect(brandKitRatioLabel(2.83)).toBe('2.8');
+    expect(brandKitRatioLabel(2.06)).toBe('2.0');
+    expect(brandKitRatioLabel(4.46)).toBe('4.4');
+    expect(brandKitRatioLabel(4.5)).toBe('4.5');
+    expect(brandKitRatioLabel(8.35)).toBe('8.3');
+    expect(brandKitRatioLabel(21)).toBe('21.0');
+    const kit = kitWith({});
+    kit.chapters.color.contrast.pairs = [{ foreground: 'Ink', background: 'White', ratio: 2.86, grade: 'Large text only' }];
+    expect(buildBrandKitBookView(kit).contrast[0].ratio).toBe('2.8:1');
   });
 
   it('carries the iconography samples’ colours, the same three roles the web card, the print and the export draw with', () => {

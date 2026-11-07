@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
+import { brandKitOverfullFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils';
 import { MktgBrandKitPageUsageComponent } from './mktg-brand-kit-page-usage.component';
 import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -31,8 +33,10 @@ describe('the Example usage page', () => {
     fixture.componentRef.setInput('approval', { approvedAt: '2026-11-06T10:00:00Z', approvedBy: null });
     await fixture.whenStable();
     expect(layouts[2].querySelector('.kp-usage-report-text')?.textContent).toBe('Project One annual report 2026');
-    // The reversed lockup on the dark grounds, the full-colour one on the report; every card carries one.
-    expect(layouts.map((card) => card.querySelectorAll('img').length)).toEqual([1, 1, 1, 1]);
+    // The reversed lockup on the dark grounds, the full-colour one on the report; the social card, on the accent, carries
+    // none (the Symbol page's rule: accent colors are not logo colors) and says so where the lockup would sit.
+    expect(layouts.map((card) => card.querySelectorAll('img').length)).toEqual([1, 0, 1, 1]);
+    expect(layouts[1].querySelector('[data-testid="brand-kit-usage-social-note"]')?.textContent).toBe('No logo on the accent');
     const table = frame.querySelector('[data-testid="brand-kit-usage-table"]');
     expect(rectOf(table)).toEqual({ left: '56px', top: '740px', width: '704px' });
     expect(Array.from(table?.querySelectorAll('thead th') ?? [], (th) => th.textContent)).toEqual(['Example', 'Format', 'Ground', 'Accent moment']);
@@ -52,5 +56,18 @@ describe('the Example usage page', () => {
     expect(frame.querySelector('[data-testid="brand-kit-usage-intro"]')).not.toBeNull();
     expect(frame.querySelector('[data-testid="brand-kit-usage-cards"]')).toBeNull();
     expect(frame.querySelector('[data-testid="brand-kit-usage-table"]')).toBeNull();
+  });
+
+  it('shortens a 300-character brand line to the lines the keynote and social cards hold, at a word with an ellipsis, never set smaller', async () => {
+    const { frame, view } = await mountBrandKitPage(MktgBrandKitPageUsageComponent, 'usage', () => buildBrandKitBookView(brandKitOverfullFixture(), 4));
+    const keynote = frame.querySelector('.kp-usage-keynote-text')?.textContent ?? '';
+    const social = frame.querySelector('.kp-usage-social-text')?.textContent ?? '';
+    for (const text of [keynote, social]) {
+      expect(text.endsWith('…')).toBe(true);
+      expect(text.length).toBeLessThan(view.voice.line.length);
+      expect(view.voice.line.startsWith(text.slice(0, 20))).toBe(true);
+    }
+    expect(social.length).toBeLessThan(keynote.length);
+    expect(frame.querySelector('.kp-usage-keynote-text')?.getAttribute('style')).toBeNull();
   });
 });
