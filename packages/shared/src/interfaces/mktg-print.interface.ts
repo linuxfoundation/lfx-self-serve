@@ -16,6 +16,7 @@ import type {
   FoundationMessageMh,
   FoundationMessageNumberRow,
   FoundationMessagePillarView,
+  FoundationMessageReport,
   FoundationMessageViewTab,
 } from './foundation-message.interface';
 
@@ -84,6 +85,22 @@ export interface FoundationMessagePrintIcp extends FoundationMessageIcpView {
   goalLabel: string;
   /** `Docs · Slack`: the channels joined. */
   channelsLabel: string;
+  /** `Goal 1`, `Goal 4`: one chip per goal the segment serves, by the goal's rank, in the framework's order. */
+  goalChips: string[];
+}
+
+/** One row of the goals × profiles matrix: the profile, and whether each goal (in the framework's order) is written for it. */
+export interface FoundationMessagePrintMatrixRow {
+  name: string;
+  cells: boolean[];
+}
+
+/** One proof point as the key numbers page lists it: the fact, its source and the goal that uses it. */
+export interface FoundationMessagePrintFactRow {
+  fact: string;
+  source: string;
+  /** `Goal 2 · Adoption`. */
+  usedBy: string;
 }
 
 /** The Messaging Framework as its print lays it out: every string and colour the document binds. */
@@ -93,11 +110,25 @@ export interface FoundationMessagePrintView {
   /** `Jupyter Foundation · a Linux Foundation project`, over the title and in the footers. */
   eyebrow: string;
   title: string;
-  /** `Version 3`, '' when the page shows no version. */
+  /** `V3.0`, '' when the page shows no version (the one format every document of the family prints). */
   versionLabel: string;
+  /** `Approved 6 Nov 2026`, '' when the approval's date is not known. */
+  approvedLabel: string;
+  /** `6 Nov 2026`: the approval's date, '' when not known. */
+  dateLabel: string;
+  /** The project's web host (`aaif.io`) from its Brand Kit; '' without one. */
+  website: string;
+  /** The day the run read its sources (`2026-11-04`, from the stored record), null when the revision does not carry one. */
+  dateRead: string | null;
+  /** `4 Nov 2026`: `dateRead` as the pages print it, '' when null. */
+  dateReadLabel: string;
+  /** The run's report, as the Sources & gaps page prints it: what was read, what could not be, the gaps and the notes. */
+  report: FoundationMessageReport;
   /** `Jupyter Foundation Messaging Framework`. */
   runningHead: string;
   sections: FoundationMessagePrintSection[];
+  /** Every goal's proof points with their sources, for the key numbers page. */
+  facts: FoundationMessagePrintFactRow[];
   mf: FoundationMessageMf;
   mh: FoundationMessageMh;
   goals: FoundationMessagePrintGoal[];

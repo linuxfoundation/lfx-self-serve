@@ -30,6 +30,13 @@ export const MKTG_FAQ_PRINT_UNANSWERED = 'Needs an answer';
 export const FOUNDATION_MESSAGE_PRINT_TITLE = 'Messaging Framework';
 
 /**
+ * The framework's portrait book: how many ideal customer profiles one page
+ * holds (two full profile rows at reading size), so the page count follows
+ * the data and no profile flows across a page edge.
+ */
+export const FOUNDATION_MESSAGE_PRINT_ICPS_PER_PAGE = 2;
+
+/**
  * The LF look: what a print uses when the project has no Brand Kit yet. The
  * LF navy as the dark, the LF blue as the accent, Inter (which the app
  * already loads), and the Linux Foundation logo from the app's own images.
