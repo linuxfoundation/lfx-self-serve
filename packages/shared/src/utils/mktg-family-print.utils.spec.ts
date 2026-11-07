@@ -23,6 +23,7 @@ import {
   mktgFamilyPrintFill,
   mktgFamilyPrintFitRows,
   mktgFamilyPrintFitRunBlock,
+  mktgFamilyPrintFigure,
   mktgFamilyPrintNumberConflicts,
   mktgFamilyPrintOpenItemText,
   mktgFamilyPrintOpenItems,
@@ -448,6 +449,24 @@ describe('mktgFamilyPrintConflicts', () => {
   });
 });
 
+describe('mktgFamilyPrintFigure', () => {
+  it('reads a key number whole, with its magnitude, and refuses what it cannot interpret', () => {
+    expect(['299', '7,181', '10,000+', '1.2M', '2bn', '3 thousand', 'over 300', '$10,000', '12%', '1.2M a day', 'many'].map(mktgFamilyPrintFigure)).toEqual([
+      299,
+      7181,
+      10000,
+      1200000,
+      2000000000,
+      3000,
+      300,
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+});
+
 describe('mktgFamilyPrintNumberConflicts', () => {
   const numbers = [
     { number: '299', label: 'Member organizations' },
@@ -508,6 +527,16 @@ describe('mktgFamilyPrintNumberConflicts', () => {
         [{ title: 'FAQ', texts: ['308 members. 12 over.'] }]
       )
     ).toEqual([]);
+    // A figure's magnitude is read on both sides: `1.2M` downloads and `1,200,000 downloads` agree; `1.5 million
+    // downloads` is another count. A key number the reader cannot interpret whole is skipped, not compared.
+    const downloads = [{ number: '1.2M', label: 'Downloads' }];
+    expect(
+      mktgFamilyPrintNumberConflicts(downloads, [{ title: 'FAQ', texts: ['The project has 1,200,000 downloads.', 'Some 1.3M downloads a year.'] }])
+    ).toEqual([]);
+    expect(mktgFamilyPrintNumberConflicts(downloads, [{ title: 'FAQ', texts: ['It counts 1.5 million downloads.'] }])).toMatchObject([
+      { text: 'The framework’s key numbers say 1.2M downloads; the FAQ says “It counts 1.5 million downloads.”' },
+    ]);
+    expect(mktgFamilyPrintNumberConflicts([{ number: '1.2M a day', label: 'Downloads' }], [{ title: 'FAQ', texts: ['It counts 900 downloads.'] }])).toEqual([]);
     // A short word in the label is part of the measure (`MCP servers at launch`), not a stop word.
     expect(
       mktgFamilyPrintNumberConflicts(

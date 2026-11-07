@@ -400,10 +400,38 @@ export function mktgFamilyPrintInSentence(name: string): string {
   return /^[A-Z][a-z]/.test(trimmed) ? trimmed.charAt(0).toLocaleLowerCase() + trimmed.slice(1) : trimmed;
 }
 
-/** The digits of a figure as text: `$10,000` → `10000`, `1.2M` → `1.2`; '' when it holds none. */
-function mktgFamilyPrintFigure(text: string): string {
-  const match = /\d[\d,]*(?:\.\d+)?/.exec(text);
-  return match ? match[0].replace(/,/g, '') : '';
+/** A magnitude written after a figure (`1.2M`, `3 thousand`, `2bn`), case-insensitively, and its factor. */
+const MKTG_FAMILY_PRINT_MAGNITUDES: Readonly<Record<string, number>> = {
+  k: 1e3,
+  thousand: 1e3,
+  m: 1e6,
+  mn: 1e6,
+  million: 1e6,
+  b: 1e9,
+  bn: 1e9,
+  billion: 1e9,
+};
+const MKTG_FAMILY_PRINT_MAGNITUDE = '(?:\\s*(k|m|mn|b|bn)\\b|\\s+(thousand|million|billion)\\b)?';
+
+/** A figure and its magnitude as one number: `1,200,000` → 1200000, `1.2M` → 1200000, `3 thousand` → 3000. */
+function mktgFamilyPrintFigureValue(digits: string, magnitude: string | undefined): number {
+  return Number(digits.replace(/,/g, '')) * (magnitude ? (MKTG_FAMILY_PRINT_MAGNITUDES[magnitude.toLocaleLowerCase()] ?? 1) : 1);
+}
+
+/**
+ * A key number's figure as a value: the whole number read as `[qualifier] <figure>[ magnitude][+]`, so `1.2M` is
+ * 1200000 and `7,000+` is 7000; null when the number holds no figure, holds a currency or a percentage, or carries
+ * words the reader cannot interpret whole (`1.2M a day`): then nothing is compared and no re-run is asked for.
+ */
+export function mktgFamilyPrintFigure(text: string): number | null {
+  if (/[$€£%]/.test(text)) return null;
+  const match = new RegExp(
+    `^\\s*(?:(?:${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(\\d[\\d,]*(?:\\.\\d+)?)${MKTG_FAMILY_PRINT_MAGNITUDE}\\+?\\s*$`,
+    'i'
+  ).exec(text);
+  if (!match) return null;
+  const value = mktgFamilyPrintFigureValue(match[1], match[2] ?? match[3]);
+  return Number.isFinite(value) ? value : null;
 }
 
 /**
@@ -425,12 +453,13 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
   for (const row of numbers) {
     const figure = mktgFamilyPrintFigure(row.number);
     const phrase = mktgFamilyPrintMeasurePhrase(row.label);
-    if (!figure || !phrase || /[$€£%]/.test(row.number)) continue;
-    // `[qualifier] <figure>[+] <phrase>[s]`: the figure right before the measure counts it; one under a qualifier or with
-    // a trailing `+` is rounded, and a year is a date. Nothing between the figure and the phrase: `18 new member
-    // organizations` counts a part of the measure, not the measure.
+    if (figure === null || !phrase) continue;
+    // `[qualifier] <figure>[ magnitude][+] <phrase>[s]`: the figure right before the measure counts it, its magnitude
+    // read (`1.2M downloads` is 1,200,000 downloads); one under a qualifier or with a trailing `+` is rounded, and a
+    // year is a date. Nothing else between the figure and the phrase: `18 new member organizations` counts a part of
+    // the measure, not the measure.
     const pattern = new RegExp(
-      `(?:(${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(?<![$€£\\d,.])(\\d[\\d,]*(?:\\.\\d+)?)(\\+?)\\s+${phrase.replace(/ /g, '\\s+')}s?\\b`,
+      `(?:(${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(?<![$€£\\d,.])(\\d[\\d,]*(?:\\.\\d+)?)${MKTG_FAMILY_PRINT_MAGNITUDE}(\\+?)\\s+${phrase.replace(/ /g, '\\s+')}s?\\b`,
       'gi'
     );
     for (const source of sources) {
@@ -439,8 +468,8 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
         .map((part) => part.trim())
         .find((part) => {
           const counts = Array.from(part.matchAll(pattern))
-            .filter((match) => !match[1] && !match[3] && !/^(?:19|20)\d\d$/.test(match[2].replace(/,/g, '')))
-            .map((match) => match[2].replace(/,/g, ''));
+            .filter((match) => !match[1] && !match[5] && !/^(?:19|20)\d\d$/.test(match[2].replace(/,/g, '')))
+            .map((match) => mktgFamilyPrintFigureValue(match[2], match[3] ?? match[4]));
           // A sentence that states the framework's own figure agrees with it, whatever else it counts.
           return counts.length > 0 && !counts.includes(figure);
         });
