@@ -6,15 +6,218 @@
   display: none;
 }
 
-.lfx-family-print-cover {
-  /* Readable with Background graphics ON or OFF: ink and logo are for white. */
-  background-color: white;
-  color: var(--mfp-ink);
-  border: 1pt solid var(--mfp-dark);
+/* ---------------------------------------------------------------------------
+   The family book (lfx-mktg-family-print): one fixed US Letter frame per page,
+   816 × 1056 px at 96 dpi with 56 px margins, every measurement the design
+   board's (an exact-pixel print design; the px values are the accepted
+   deviation styling.md names). The brand (--fp-dark, --fp-accent, --fp-on-dark,
+   --fp-font) and the neutral inks (--fp-ink, --fp-muted, --fp-hair, --fp-mist,
+   from MKTG_FAMILY_PRINT_NEUTRALS) are set on each frame by its component.
+   --------------------------------------------------------------------------- */
+.fp-frame {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: white;
+  color: var(--fp-ink);
+  font-family: var(--fp-font);
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  p,
+  ul,
+  h1,
+  h2 {
+    margin: 0;
+  }
+
+  ul {
+    padding-left: 16px;
+  }
+
+  &--dark {
+    background: var(--fp-dark);
+    color: var(--fp-on-dark);
+  }
+}
+
+/* The running head: section left, the family right, a 1px ink rule under, at top 36. */
+.fp-head {
+  position: absolute;
+  left: 56px;
+  right: 56px;
+  top: 36px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--fp-ink);
+
+  &__section {
+    color: var(--fp-dark);
+  }
+}
+
+/* The page title: 34/1.1 500 −0.01em in the dark, at top 84. */
+.fp-title {
+  position: absolute;
+  left: 56px;
+  top: 84px;
+  width: 704px;
+  font: 500 34px/1.1 var(--fp-font);
+  letter-spacing: -0.01em;
+  color: var(--fp-dark);
+}
+
+/* The footer at bottom 28: the project left, the two-digit page number right. */
+.fp-foot {
+  position: absolute;
+  left: 56px;
+  right: 56px;
+  bottom: 28px;
+  display: flex;
+  justify-content: space-between;
+  font: 400 9.5px/1 var(--fp-font);
+  color: var(--fp-muted);
+}
+
+/* The book's type: eyebrow 10/1.2 600 caps +0.12em; body 12.5/1.6; caption 11/1.4; chip 8.5/1 600 caps hairline pill. */
+.fp-eyebrow {
+  font: 600 10px/1.2 var(--fp-font);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fp-muted);
+
+  &--dark {
+    color: var(--fp-dark);
+  }
+
+  &--accent {
+    color: var(--fp-accent);
+  }
+}
+
+.fp-body {
+  font: 400 12.5px/1.6 var(--fp-font);
+  color: var(--fp-ink);
+}
+
+.fp-cap {
+  font: 400 11px/1.4 var(--fp-font);
+  color: var(--fp-muted);
+}
+
+.fp-chip {
+  display: inline-block;
+  font: 600 8.5px/1 var(--fp-font);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fp-muted);
+  border: 1px solid var(--fp-hair);
+  border-radius: 999px;
+  padding: 3px 7px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* An absolutely placed block of the frame: left/top/width come from the template's style bindings. */
+.fp-at {
+  position: absolute;
+}
+
+/* The content column: x 56, 704 wide; the intro at top 136, the first block at 210. */
+.fp-col {
+  position: absolute;
+  left: 56px;
+  width: 704px;
+}
+
+.fp-intro {
+  top: 136px;
+  max-width: 640px;
+}
+
+/* A labelled block: the eyebrow in the dark, then its content. */
+.fp-block {
+  &__label {
+    font: 600 10px/1.2 var(--fp-font);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--fp-dark);
+  }
+}
+
+/* A hairline-ruled row (the Sources page's conflicts and open items, the FAQ's questions). */
+.fp-row {
+  display: flex;
+  gap: 18px;
+  border-top: 1px solid var(--fp-hair);
+  padding: 8px 0;
+  font: 400 12px/1.45 var(--fp-font);
+  color: var(--fp-ink);
+
+  &__topic {
+    width: 130px;
+    flex: none;
+    font-weight: 600;
+    color: var(--fp-dark);
+  }
+
+  &__chip {
+    width: 110px;
+    flex: none;
+  }
+}
+
+/* The dark pages' text (cover, openers, back cover): white on the kit's dark, dimmed by opacity, never a second ink. */
+.fp-dark-text {
+  color: var(--fp-on-dark);
+
+  &--75 {
+    opacity: 0.75;
+  }
+
+  &--60 {
+    opacity: 0.6;
+  }
+
+  &--50 {
+    opacity: 0.5;
+  }
+}
+
+.fp-dark-rule {
+  border-top: 1px solid var(--fp-on-dark);
+  opacity: 0.3;
+}
+
+/* Paul's grid ground on the cover: the dark, a radial accent glow and a 32px accent grid at low alpha. */
+.fp-grid-ground {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 78% 22%, color-mix(in srgb, var(--fp-accent) 33%, transparent), transparent 55%), var(--fp-dark);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--fp-accent) 13%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--fp-accent) 13%, transparent) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
 }
 
 @layer tailwind-base {
-  .lfx-family-print-cover :is(h1, p) {
+  .fp-frame :is(h1, h2, p) {
     font-family: inherit;
   }
 }
@@ -48,28 +251,34 @@
     background: white !important;
   }
 
+  /* The family book: every frame is one named page of its own size (MKTG_PRINT_PAGE_SETUPS['mktg-family-portrait'],
+     mirrored here as the named rule: Chromium honours the body's inherited page name over an unnamed rule, WebKit
+     ignores names and reads the frame's unnamed rule). A frame is the page: no margin, nothing flows across it. */
+  @page mktg-family-portrait {
+    size: 8.5in 11in;
+    margin: 0;
+  }
+
+  body.lfx-print-family {
+    page: mktg-family-portrait;
+
+    .fp-frame {
+      margin: 0;
+      box-shadow: none;
+      break-after: page;
+      page-break-after: always;
+      break-inside: avoid;
+    }
+
+    /* The back cover is the last frame: no blank page after it. */
+    .fp-frame:last-child {
+      break-after: auto;
+      page-break-after: auto;
+    }
+  }
+
   body.lfx-print-family,
   body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
-    page: mktg-framework;
-
-    .lfx-family-print-cover {
-      /* The sheet's head and foot take 1.1in of the page; 0.1in of slack under that keeps a fraction of
-         rounding off a blank sheet. Grid without a viewport-height flex-growing child keeps
-         title/contents together on either paper size. */
-      min-height: calc(100vh - 1.2in);
-      align-content: space-between;
-      print-color-adjust: exact;
-      -webkit-print-color-adjust: exact;
-    }
-
-    /* On the page margins (WebKit: MKTG_PRINT_PAGE_MARGINS_CLASS on the frame's body) the cover is the page
-       area under the 0.55in margins, and the 0.6in at its sides is the margin's, not its own. */
-    &.lfx-print-page-margins .lfx-family-print-cover {
-      min-height: calc(100vh - 1.1in);
-      margin-left: 0;
-      margin-right: 0;
-    }
-
     /* One cover and one contents list for the family, not a second per asset. The framework's cover goes with
        its whole sheet: a sheet left behind would print its 1.1in of head and foot room alone on a blank page. */
     lfx-mktg-print-sheet:has([data-testid='mktg-framework-print-cover']),
@@ -84,10 +293,13 @@
   /* :has raises specificity above the legacy body height:0/overflow:hidden
      rules emitted after this partial by styles.scss. */
   body.lfx-print-framework:has(.lfx-framework-print),
-  body.lfx-print-family,
   body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
     page: mktg-framework;
+  }
 
+  body.lfx-print-framework:has(.lfx-framework-print),
+  body.lfx-print-family,
+  body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
     /* Named pages require in-flow boxes. Keep only the document's ancestor chain
        and its contents; hidden siblings must not reserve blank printed space. */
     *:not(:has(:is(.lfx-framework-print-only, .lfx-family-print-only, .lfx-brand-kit-print-only))):not(

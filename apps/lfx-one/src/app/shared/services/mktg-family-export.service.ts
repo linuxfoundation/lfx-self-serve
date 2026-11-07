@@ -25,6 +25,7 @@ import {
   faqAssetOfRevision,
   isFoundationMessageReport,
   mktgFamilyExportAgentKeys,
+  mktgFamilyPrintConflicts,
   mktgFamilyPrintDocument,
   mktgPrintBrand,
   readBrandKitRevision,
@@ -188,6 +189,7 @@ export class MktgFamilyExportService {
             .map((line) => line.trim())
             .filter(Boolean),
           boilerplatesSources: boilerplates?.report.sources_read.map((source) => source.trim()).filter(Boolean) ?? [],
+          conflicts: mktgFamilyPrintConflicts(content?.mf.tagline ?? '', kit?.chapters.voice.line ?? '', kit?.report.color_conflicts ?? []),
         };
       })
     );

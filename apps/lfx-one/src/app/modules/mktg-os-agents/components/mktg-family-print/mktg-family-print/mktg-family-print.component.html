@@ -1,0 +1,175 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let document = view();
+@let brand = document.brand;
+@for (page of plan().pages; track page.n) {
+  @switch (page.kind) {
+    @case ('cover') {
+      <lfx-mktg-family-print-frame [page]="page" [brand]="brand" [dark]="true" [bare]="true" data-testid="family-print-cover">
+        <div class="fp-grid-ground" aria-hidden="true"></div>
+        @if (brand.logoOnDark; as logo) {
+          <img
+            class="fp-at fpc-logo"
+            style="left: 72px; top: 240px"
+            [src]="logo.src"
+            [alt]="logo.alt"
+            [style.filter]="logo.filter || null"
+            data-testid="family-print-cover-logo" />
+        }
+        <div class="fp-at" style="left: 72px; top: 500px; width: 672px">
+          @if (document.tagline) {
+            <p class="fpc-tagline" data-testid="family-print-cover-tagline">{{ document.tagline }}</p>
+          }
+          <h1 class="fpc-title" data-testid="family-print-cover-title">{{ familyName() }}</h1>
+          <p class="fpc-purpose fp-dark-text fp-dark-text--75">{{ coverPurpose() }}</p>
+        </div>
+        <div class="fp-at fpc-docs" style="left: 72px; top: 800px; width: 672px" data-testid="family-print-cover-documents">
+          @for (chapter of plan().chapters; track chapter.document.agentKey) {
+            <div class="fpc-doc">
+              <p class="fp-eyebrow fp-eyebrow--accent">{{ chapter.document.number }}</p>
+              <p class="fpc-doc__title">{{ chapter.document.title }}</p>
+              @if (metaOf(chapter.document); as meta) {
+                <p class="fpc-doc__meta fp-dark-text fp-dark-text--60">{{ meta }}</p>
+              }
+            </div>
+          }
+        </div>
+        <div class="fp-at fpc-foot fp-dark-text fp-dark-text--60" style="left: 72px; top: 984px; width: 672px">
+          <span>{{ footLeft() }}</span>
+          <span>{{ coverFootRight() }}</span>
+        </div>
+      </lfx-mktg-family-print-frame>
+    }
+    @case ('contents') {
+      <lfx-mktg-family-print-frame [page]="page" [brand]="brand" [headRight]="headRight()" [footLeft]="footLeft()" data-testid="family-print-contents">
+        <p class="fp-col fp-intro fp-body" style="max-width: 620px" data-testid="family-print-contents-intro">{{ contentsIntro() }}</p>
+        <div class="fp-col fpt-columns" style="top: 210px">
+          @for (column of contentsColumns(); track $index; let lastColumn = $last) {
+            <div class="fpt-column">
+              @for (chapter of column; track chapter.document.agentKey) {
+                <div class="fpt-chapter" data-testid="family-print-contents-chapter">
+                  <div class="fpt-chapter__row">
+                    <span>
+                      <span class="fpt-chapter__number">{{ chapter.document.number }}</span>
+                      <span class="fpt-chapter__title">{{ chapter.document.title }}</span>
+                      @if (chapter.document.versionLabel) {
+                        <span class="fpt-chapter__version">{{ chapter.document.versionLabel }}</span>
+                      }
+                    </span>
+                    <span class="fpt-chapter__page" data-testid="family-print-contents-opener-page">{{ chapter.openerPage }}</span>
+                  </div>
+                  @for (entry of chapter.entries; track entry.n) {
+                    <div class="fpt-entry" data-testid="family-print-contents-entry">
+                      <span>{{ entry.title }}</span>
+                      <span class="fpt-entry__page">{{ entry.n }}</span>
+                    </div>
+                  }
+                </div>
+              }
+              @if (lastColumn) {
+                @if (plan().sourcesPage) {
+                  <div class="fpt-chapter__row fpt-chapter__row--tail" data-testid="family-print-contents-sources">
+                    <span class="fpt-chapter__title">{{ labels.sourcesTitle }}</span>
+                    <span class="fpt-chapter__page">{{ plan().sourcesPage }}</span>
+                  </div>
+                }
+                <p class="fpt-note fp-cap">{{ contentsNote() }}</p>
+              }
+            </div>
+          }
+        </div>
+      </lfx-mktg-family-print-frame>
+    }
+    @case ('opener') {
+      @if (chapterOf(page.agentKey); as chapter) {
+        <lfx-mktg-family-print-frame [page]="page" [brand]="brand" [dark]="true" [bare]="true" data-testid="family-print-opener">
+          <p class="fp-at fpo-number" style="left: 72px; top: 120px" aria-hidden="true">{{ chapter.document.number }}</p>
+          <div class="fp-at" style="left: 72px; top: 420px; width: 672px">
+            <h1 class="fpo-title" data-testid="family-print-opener-title">{{ chapter.document.title }}</h1>
+            @if (chapter.document.summary) {
+              <p class="fpo-summary fp-dark-text fp-dark-text--75">{{ chapter.document.summary }}</p>
+            }
+          </div>
+          <dl class="fp-at fpo-facts" style="left: 72px; top: 836px; width: 672px">
+            @if (chapter.document.versionLabel) {
+              <div>
+                <dt class="fp-eyebrow fp-eyebrow--accent">{{ labels.version }}</dt>
+                <dd class="fpo-facts__value" data-testid="family-print-opener-version">{{ chapter.document.versionLabel }}</dd>
+              </div>
+            }
+            @if (chapter.document.approvedLabel) {
+              <div>
+                <dt class="fp-eyebrow fp-eyebrow--accent">{{ labels.approved }}</dt>
+                <dd class="fpo-facts__value" data-testid="family-print-opener-approved">{{ chapter.document.approvedLabel }}</dd>
+                @if (chapter.document.approvedBy) {
+                  <dd class="fpo-facts__by fp-dark-text fp-dark-text--75" data-testid="family-print-opener-approver">{{ chapter.document.approvedBy }}</dd>
+                }
+              </div>
+            }
+            <div>
+              <dt class="fp-eyebrow fp-eyebrow--accent">{{ labels.pages }}</dt>
+              <dd class="fpo-facts__value" data-testid="family-print-opener-pages">{{ pageRange(chapter) }}</dd>
+            </div>
+          </dl>
+        </lfx-mktg-family-print-frame>
+      }
+    }
+    @case ('framework') {
+      @if (document.framework; as framework) {
+        <!-- Stage 1: main's flowing framework print in the chapter's place; its portrait pages replace it. -->
+        <lfx-mktg-framework-print [view]="framework" [number]="chapterOf(page.agentKey)?.document?.number ?? ''" />
+      }
+    }
+    @case ('kit') {
+      @if (document.kit; as kit) {
+        <!-- Stage 1: main's flowing brand kit print in the chapter's place; its portrait pages replace it. -->
+        <lfx-mktg-brand-kit-print
+          [view]="kit"
+          [brand]="brand"
+          [projectName]="document.projectName"
+          [number]="chapterOf(page.agentKey)?.document?.number ?? ''" />
+      }
+    }
+    @case ('boilerplates') {
+      @if (document.boilerplates; as boilerplates) {
+        <lfx-mktg-family-print-frame [page]="page" [brand]="brand" [headRight]="headRight()" [footLeft]="footLeft()" data-testid="family-print-boilerplates">
+          <lfx-mktg-family-print-boilerplates-page
+            [lengths]="boilerplates.lengths"
+            [notes]="document.boilerplatesNotes"
+            [sources]="document.boilerplatesSources" />
+        </lfx-mktg-family-print-frame>
+      }
+    }
+    @case ('faq') {
+      @if (document.faq; as faq) {
+        <lfx-mktg-family-print-frame [page]="page" [brand]="brand" [headRight]="headRight()" [footLeft]="footLeft()" data-testid="family-print-faq">
+          <lfx-mktg-family-print-faq-page [groups]="faq.groups" [pageGroups]="plan().faqPages[page.index]?.groups ?? []" [index]="page.index" />
+        </lfx-mktg-family-print-frame>
+      }
+    }
+    @case ('sources') {
+      <lfx-mktg-family-print-frame [page]="page" [brand]="brand" [headRight]="headRight()" [footLeft]="footLeft()" data-testid="family-print-sources">
+        <lfx-mktg-family-print-sources-page [chapters]="plan().chapters" [conflicts]="document.conflicts" />
+      </lfx-mktg-family-print-frame>
+    }
+    @case ('back') {
+      <lfx-mktg-family-print-frame [page]="page" [brand]="brand" [dark]="true" [bare]="true" data-testid="family-print-back-cover">
+        <div class="fp-at fpk-centre" style="left: 0; top: 440px; width: 816px">
+          @if (brand.logoOnDark; as logo) {
+            <img class="fpk-logo" [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" />
+          }
+          @if (document.tagline) {
+            <p class="fpc-tagline fpk-tagline">{{ document.tagline }}</p>
+          }
+          @if (document.websiteLabel) {
+            <p class="fpk-site fp-dark-text fp-dark-text--60">{{ document.websiteLabel }}</p>
+          }
+        </div>
+        <p class="fp-at fpk-notice fp-dark-text fp-dark-text--50" style="left: 72px; top: 960px; width: 672px" data-testid="family-print-back-cover-notice">
+          {{ backCoverNotice() }}
+        </p>
+      </lfx-mktg-family-print-frame>
+    }
+  }
+}

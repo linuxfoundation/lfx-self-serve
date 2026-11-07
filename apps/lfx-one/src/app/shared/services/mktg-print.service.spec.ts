@@ -11,6 +11,7 @@ import {
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_ONLY_CLASS,
+  MKTG_FAMILY_PRINT_PAGE_NAME,
   MKTG_PRINT_FONT_LINK_ID_PREFIX,
   MKTG_PRINT_FONT_WAIT_MS,
   MKTG_PRINT_FRAME_LINGER_MS,
@@ -103,7 +104,6 @@ describe('MktgPrintService isolated frame', () => {
   it.each([
     [FOUNDATION_MESSAGE_PRINT_BODY_CLASS, FOUNDATION_MESSAGE_PRINT_ONLY_CLASS, MKTG_PRINT_PAGE_SETUPS['mktg-framework']],
     [BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS, MKTG_PRINT_PAGE_SETUPS['brand-kit']],
-    [MKTG_FAMILY_PRINT_BODY_CLASS, MKTG_FAMILY_PRINT_ONLY_CLASS, MKTG_PRINT_PAGE_SETUPS['mktg-framework']],
   ])('creates only the %s print root immediately, then prints the idle frame, never the app window', async (bodyClass, wrapper, pageSetup) => {
     root.className = wrapper;
     root.innerHTML += '<script type="text/plain">not copied</script><img onerror="window.synthetic = true">';
@@ -131,6 +131,17 @@ describe('MktgPrintService isolated frame', () => {
     expect(parentPrint).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])('gives the family book its fixed US Letter frame, named and unnamed, in every engine (WebKit: %s)', (webKit) => {
+    if (webKit) printAs(SAFARI_UA);
+    root.className = MKTG_FAMILY_PRINT_ONLY_CLASS;
+    configure().printNow(MKTG_FAMILY_PRINT_BODY_CLASS);
+    const setup = MKTG_PRINT_PAGE_SETUPS['mktg-family-portrait'];
+    expect(setup).toBe('size: 8.5in 11in; margin: 0;');
+    expect(framePageRule()).toBe(`@page { ${setup} }\n@page ${MKTG_FAMILY_PRINT_PAGE_NAME} { ${setup} }`);
+    // The frames carry their own margins: the page margins class never collapses their room.
+    expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(false);
+  });
+
   it('gives the brand kit portrait print the framework page setup, as the stylesheets do, not the landscape book', () => {
     root.className = BRAND_KIT_PRINT_ONLY_CLASS;
     root.innerHTML = `<section class="${BRAND_KIT_PORTRAIT_PRINT_CLASS}" data-testid="synthetic-print">Synthetic print</section>`;
@@ -148,20 +159,20 @@ describe('MktgPrintService isolated frame', () => {
     expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(false);
   });
 
-  it.each([
-    [FOUNDATION_MESSAGE_PRINT_BODY_CLASS, FOUNDATION_MESSAGE_PRINT_ONLY_CLASS],
-    [MKTG_FAMILY_PRINT_BODY_CLASS, MKTG_FAMILY_PRINT_ONLY_CLASS],
-  ])('in WebKit, which prints a table head and foot once, gives the %s print its page margins and collapses the room', (bodyClass, wrapper) => {
-    printAs(SAFARI_UA);
-    root.className = wrapper;
-    configure().printNow(bodyClass);
-    const setup = MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'];
-    expect(setup).toBe('size: portrait; margin: 0.55in 0.6in;');
-    // The unnamed rule, and the named one restated after the cloned sheets: no engine prints the margin-less setup.
-    expect(framePageRule()).toBe(`@page { ${setup} }\n@page mktg-framework { ${setup} }`);
-    expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(true);
-    expect(document.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(false);
-  });
+  it.each([[FOUNDATION_MESSAGE_PRINT_BODY_CLASS, FOUNDATION_MESSAGE_PRINT_ONLY_CLASS]])(
+    'in WebKit, which prints a table head and foot once, gives the %s print its page margins and collapses the room',
+    (bodyClass, wrapper) => {
+      printAs(SAFARI_UA);
+      root.className = wrapper;
+      configure().printNow(bodyClass);
+      const setup = MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'];
+      expect(setup).toBe('size: portrait; margin: 0.55in 0.6in;');
+      // The unnamed rule, and the named one restated after the cloned sheets: no engine prints the margin-less setup.
+      expect(framePageRule()).toBe(`@page { ${setup} }\n@page mktg-framework { ${setup} }`);
+      expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(true);
+      expect(document.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(false);
+    }
+  );
 
   it("in WebKit keeps the kit's legacy book on its own landscape setup, never restated into the framework's page", () => {
     printAs(SAFARI_UA);

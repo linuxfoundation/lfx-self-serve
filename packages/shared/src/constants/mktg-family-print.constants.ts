@@ -43,6 +43,8 @@ export const MKTG_FAMILY_PRINT_NEUTRALS = {
   muted: lfxColors.gray[500],
   hairline: lfxColors.gray[200],
   mist: lfxColors.gray[100],
+  /** The one warning ink: a boilerplate over its limit. */
+  warn: lfxColors.amber[700],
 } as const;
 
 /** What a frame of the book holds; `framework` and `kit` are the mounted inner prints (stage 1) or their portrait pages. */

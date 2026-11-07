@@ -13,10 +13,12 @@ import {
   MKTG_FAMILY_PRINT_LABELS,
 } from '../constants/mktg-family-print.constants';
 import { MKTG_KIT_FAMILIES } from '../constants/mktg-kit.constants';
+import type { BrandKitReportColorConflict } from '../interfaces/brand-kit.interface';
 import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.interface';
 import type { MktgFamilyExportAgentKey } from '../interfaces/mktg-family-export.interface';
 import type {
   MktgFamilyPrintChapter,
+  MktgFamilyPrintConflict,
   MktgFamilyPrintContentsEntry,
   MktgFamilyPrintDocument,
   MktgFamilyPrintFaqPage,
@@ -72,7 +74,7 @@ export function mktgFamilyPrintDocument(
     agentKey,
     number: mktgFamilyPrintPad(number),
     title: asset?.label ?? agentKey,
-    summary: asset?.description ?? '',
+    summary: asset?.bookSummary ?? asset?.description ?? '',
     versionLabel: mktgFamilyPrintVersionLabel(version),
     approvedLabel: mktgFamilyPrintDate(approval?.approvedAt),
     approvedBy: approval?.approvedBy?.name?.trim() || null,
@@ -166,4 +168,33 @@ export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[]): MktgF
 /** The Sources page's Still open list: each chapter's open items, in chapter order, with the document's title. */
 export function mktgFamilyPrintOpenItems(chapters: MktgFamilyPrintChapter[]): MktgFamilyPrintOpenItem[] {
   return chapters.flatMap((chapter) => chapter.document.openItems.map((text) => ({ document: chapter.document.title, text })));
+}
+
+/**
+ * The Sources page's "Where the documents disagree": only what the store
+ * names. The kit's brand line against the framework's tagline when both
+ * exist and differ, and the kit report's colour conflicts (one colour read
+ * with two values). Nothing else is a conflict the book may claim.
+ */
+export function mktgFamilyPrintConflicts(tagline: string, kitLine: string, colorConflicts: BrandKitReportColorConflict[]): MktgFamilyPrintConflict[] {
+  const conflicts: MktgFamilyPrintConflict[] = [];
+  const line = kitLine.trim();
+  const tag = tagline.trim();
+  if (line && tag && line.toLocaleLowerCase() !== tag.toLocaleLowerCase()) {
+    conflicts.push({
+      topic: 'Brand line',
+      text: `The brand kit carries “${line}”; the framework’s tagline is “${tag}”.`,
+      rerun: 'Re-run the brand kit so it reads the approved framework.',
+    });
+  }
+  for (const conflict of colorConflicts) {
+    const values = conflict.values.filter((value) => value.hex.trim());
+    if (values.length < 2) continue;
+    conflicts.push({
+      topic: conflict.name,
+      text: values.map((value) => `${value.source} ${value.hex.toUpperCase()}`).join('; ') + `. The kit keeps ${conflict.chosen.toUpperCase()}.`,
+      rerun: '',
+    });
+  }
+  return conflicts;
 }

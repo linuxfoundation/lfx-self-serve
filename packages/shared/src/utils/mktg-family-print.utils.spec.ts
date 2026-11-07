@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { MKTG_KIT_POSITIONING_FAMILY_ID } from '../constants/mktg-kit.constants';
 import type { MktgFamilyPrintDocument, MktgFamilyPrintPlanMember } from '../interfaces/mktg-family-print.interface';
 import {
+  mktgFamilyPrintConflicts,
   mktgFamilyPrintDate,
   mktgFamilyPrintDocument,
   mktgFamilyPrintFaqPages,
@@ -42,7 +43,7 @@ describe('mktgFamilyPrintDocument', () => {
       agentKey: 'brand-kit',
       number: '02',
       title: 'Brand kit',
-      summary: 'Colours, typeface, logo system, voice · the book as a print page',
+      summary: 'The logo and its rules, colour and contrast, type, iconography and imagery, example usage, and the voice in brief.',
       versionLabel: 'V4.0',
       approvedLabel: '6 Nov 2026',
       approvedBy: 'A. Reviewer',
@@ -177,5 +178,32 @@ describe('mktgFamilyPrintOpenItems', () => {
       { document: 'Messaging framework', text: 'Regulated industries: no answer yet' },
       { document: 'Brand kit', text: 'No stacked lockup among the logo files uploaded.' },
     ]);
+  });
+});
+
+describe('mktgFamilyPrintConflicts', () => {
+  it('names the brand line against the tagline only when both exist and differ, and a colour read with two values', () => {
+    expect(mktgFamilyPrintConflicts('Open source for AI', 'Open source for AI', [])).toEqual([]);
+    expect(mktgFamilyPrintConflicts('', 'Agents in the open', [])).toEqual([]);
+    expect(mktgFamilyPrintConflicts('Open source for AI', 'Agents in the open', [])).toEqual([
+      {
+        topic: 'Brand line',
+        text: 'The brand kit carries “Agents in the open”; the framework’s tagline is “Open source for AI”.',
+        rerun: 'Re-run the brand kit so it reads the approved framework.',
+      },
+    ]);
+    expect(
+      mktgFamilyPrintConflicts('', '', [
+        {
+          name: 'Coral',
+          values: [
+            { hex: '#ff702d', source: 'brand page' },
+            { hex: '#FF7D2D', source: 'site buttons' },
+          ],
+          chosen: '#ff702d',
+        },
+        { name: 'Ink', values: [{ hex: '#111111', source: 'brand page' }], chosen: '#111111' },
+      ])
+    ).toEqual([{ topic: 'Coral', text: 'brand page #FF702D; site buttons #FF7D2D. The kit keeps #FF702D.', rerun: '' }]);
   });
 });

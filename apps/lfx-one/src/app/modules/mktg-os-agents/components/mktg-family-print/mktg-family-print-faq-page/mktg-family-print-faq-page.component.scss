@@ -1,0 +1,40 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The FAQ grid: two columns, 32px gutter, groups unbroken (the design board's exact px). */
+.fpq-grid {
+  columns: 2;
+  column-gap: 32px;
+}
+
+.fpq-group {
+  break-inside: avoid-column;
+  margin-bottom: 18px;
+
+  &__list {
+    margin-top: 6px;
+  }
+}
+
+.fpq-entry {
+  break-inside: avoid;
+  border-top: 1px solid var(--fp-hair);
+  padding: 12px 0 14px;
+
+  &__question {
+    margin: 0;
+    font: 600 13.5px/1.35 var(--fp-font);
+    color: var(--fp-dark);
+  }
+
+  &__answer {
+    margin-top: 6px;
+    font: 400 12px/1.55 var(--fp-font);
+    color: var(--fp-ink);
+    white-space: pre-line;
+  }
+
+  &__source {
+    margin-top: 6px;
+  }
+}

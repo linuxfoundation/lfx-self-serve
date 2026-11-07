@@ -1,0 +1,21 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (!bare()) {
+  <header class="fp-head" data-testid="family-print-running-head">
+    <span class="fp-eyebrow fp-head__section">{{ page().section }}</span>
+    @if (headRight()) {
+      <span class="fp-eyebrow fp-head__right">{{ headRight() }}</span>
+    }
+  </header>
+  @if (page().title) {
+    <h1 class="fp-title" data-testid="family-print-page-title">{{ page().title }}</h1>
+  }
+}
+<ng-content />
+@if (!bare()) {
+  <footer class="fp-foot" data-testid="family-print-footer">
+    <span>{{ footLeft() }}</span>
+    <span data-testid="family-print-page-number">{{ pageNumber() }}</span>
+  </footer>
+}

@@ -1,0 +1,49 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The Sources page's table and rows (the design board's exact px). */
+.fps-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font: 400 12.5px/1.4 var(--fp-font);
+  color: var(--fp-ink);
+
+  th {
+    padding: 6px 12px 6px 0;
+    text-align: left;
+    font: 600 9.5px/1.2 var(--fp-font);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fp-muted);
+    border-bottom: 1px solid var(--fp-ink);
+  }
+
+  td {
+    padding: 9px 12px 9px 0;
+    border-bottom: 1px solid var(--fp-hair);
+  }
+
+  &__name {
+    font-weight: 500;
+    color: var(--fp-dark);
+  }
+
+  &__muted {
+    color: var(--fp-muted);
+  }
+}
+
+.fps-rows {
+  margin-top: 6px;
+}
+
+.fp-row--open {
+  padding: 7px 0;
+  font-size: 11.5px;
+}
+
+.fps-rerun {
+  font-weight: 500;
+  color: var(--fp-dark);
+}

@@ -113,3 +113,21 @@ export interface MktgFamilyPrintOpenItem {
   document: string;
   text: string;
 }
+
+/** One boilerplate card as the book prints it: the length's label and text, the count against the limit, the fill bar's values and the card's size. */
+export interface MktgFamilyPrintBoilerplateCard {
+  label: string;
+  text: string;
+  /** `48 words · max 50`. */
+  count: string;
+  /** The words as a percentage of the limit, uncapped. */
+  percent: number;
+  /** The fill bar's width, capped at 100. */
+  fill: number;
+  /** `96 % of the limit`, '' without a limit. */
+  percentLabel: string;
+  /** `over by 3`, '' within the limit. */
+  overLabel: string;
+  fontSize: number;
+  minHeight: number;
+}
