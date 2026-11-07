@@ -594,8 +594,8 @@ describe('Family export slot', () => {
     expect(book.querySelector('[data-testid="family-print-faq-intro"]')?.textContent).toContain(
       `${answeredGroups.reduce((sum, size) => sum + size, 0)} questions in ${answeredGroups.length} groups`
     );
-    // The family's own Sources page, not the framework's `sources` frame of the same plan id.
-    const sources = frames.find((frame) => frame.dataset['pageId'] === 'sources' && !frame.closest('lfx-mktg-framework-print'));
+    // The family's own Sources page, not the framework's or the kit's `sources` frame of the same plan id.
+    const sources = frames.find((frame) => frame.dataset['pageId'] === 'sources' && !frame.closest('lfx-mktg-framework-print, lfx-mktg-brand-kit-print'));
     expect(sources?.querySelectorAll('[data-testid="family-print-sources-row"]')).toHaveLength(4);
     expect(sources?.querySelector('[data-testid="family-print-sources-conflicts"]')?.textContent).toContain('Brand line');
     expect(sources?.querySelector('[data-testid="family-print-sources-open"]')?.textContent).toContain('How much does membership cost?');
