@@ -4,7 +4,7 @@
 import { Component, computed, input } from '@angular/core';
 import { BrandKitBookView } from '@lfx-one/shared/interfaces';
 import { BrandKitPortraitArtworkMode } from '@lfx-one/shared/interfaces';
-import { brandKitPortraitArtwork, mktgPortraitPlateFit } from '@lfx-one/shared/utils';
+import { brandKitPortraitArtwork, mktgPortraitPlateFitIn } from '@lfx-one/shared/utils';
 import { MktgPortraitPlateDirective } from '../../components/mktg-portrait/mktg-portrait-plate.directive';
 
 /**
@@ -29,7 +29,17 @@ export class MktgBrandKitArtworkComponent {
   public readonly mode = input<BrandKitPortraitArtworkMode>('full');
   /** The box's height in px: the artwork's, or the plate's outer box when the artwork sits on one. */
   public readonly height = input.required<number>();
+  /** The width the plate must fit inside (a shape's inner box, a tile's clear width), or null for no width bound. */
+  public readonly innerWidth = input<number | null>(null);
   protected readonly image = computed(() => brandKitPortraitArtwork(this.view(), this.kind(), this.mode()));
-  /** The drawn height: the bare height, or the artwork fitted inside the plate (the plate pads and rounds itself). */
-  protected readonly fit = computed(() => (this.image()?.plate ? mktgPortraitPlateFit(this.height()) : { height: this.height(), padding: 0 }));
+  /**
+   * The drawn height and the plate's outer height: the bare height, or the artwork fitted inside the plate, which fits
+   * the box by height and, when the artwork's aspect is known, `innerWidth` by width (a wide mark is sized down so its
+   * plate stays inside the shape); the plate pads and rounds itself from its outer height.
+   */
+  protected readonly fit = computed(() => {
+    const image = this.image();
+    if (!image?.plate) return { height: this.height(), padding: 0, plate: null };
+    return mktgPortraitPlateFitIn(this.height(), this.innerWidth(), image.aspect ?? null);
+  });
 }

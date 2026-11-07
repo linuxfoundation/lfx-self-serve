@@ -42,6 +42,8 @@ export const MKTG_PORTRAIT_PAGE = {
 export const MKTG_PORTRAIT_PLATE = {
   paddingOfHeight: 0.5,
   radiusOfShortSide: 1 / 6,
+  /** A rounded square's clear inset on each side, as a fraction of its side (the padding demo's dashed box: 40 of 200). */
+  shapeInsetOfSide: 0.2,
 } as const;
 
 /**

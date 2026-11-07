@@ -44,6 +44,8 @@ export interface MktgPrintLogo {
   alt: string;
   /** CSS filter on the image: the reversed (white) rendering of a full-color lockup, or '' to draw it as it is. */
   filter: string;
+  /** The artwork's width over its height from its viewBox, for fitting a plate inside a shape; null or absent when unknown. */
+  aspect?: number | null;
   /**
    * True when the artwork is drawn in full colour on a dark ground because
    * the kit supplied no reversed file and the artwork cannot be derived from

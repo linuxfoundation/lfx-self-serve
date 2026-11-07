@@ -90,6 +90,31 @@ export function mktgPortraitPlateFit(box: number): { height: number; padding: nu
 }
 
 /**
+ * Plated artwork fitted to a box of `box` px tall AND inside `innerWidth` px
+ * when the artwork's aspect (width over height) is known: the plate is
+ * `(aspect + 1) × h` wide and `2h` tall, so a wide mark (a lockup drawn as
+ * the symbol) is sized down until its plate sits inside the shape instead
+ * of running out of it as a band; a square-ish mark comes out as
+ * `mktgPortraitPlateFit(box)`. `plate` is the plate's outer height.
+ */
+export function mktgPortraitPlateFitIn(box: number, innerWidth: number | null, aspect: number | null): { height: number; padding: number; plate: number } {
+  const byHeight = mktgPortraitPlateFit(box).height;
+  const byWidth = innerWidth !== null && aspect !== null && aspect > 0 ? innerWidth / (aspect + 2 * MKTG_PORTRAIT_PLATE.paddingOfHeight) : byHeight;
+  const height = Math.min(byHeight, byWidth);
+  const padding = mktgPortraitPlatePadding(height);
+  return { height, padding, plate: height + 2 * padding };
+}
+
+/**
+ * The width a plate may take inside a shape of `side` px: a circle's
+ * inscribed square (`side / √2`), a rounded square's side less its clear
+ * inset on both sides (`MKTG_PORTRAIT_PLATE.shapeInsetOfSide`).
+ */
+export function mktgPortraitShapeInnerWidth(side: number, shape: 'circle' | 'square'): number {
+  return shape === 'circle' ? side / Math.SQRT2 : side * (1 - 2 * MKTG_PORTRAIT_PLATE.shapeInsetOfSide);
+}
+
+/**
  * The plate's corner radius for its outer box of `width` × `height` px: a
  * sixth of the shorter side (`MKTG_PORTRAIT_PLATE.radiusOfShortSide`), as a
  * slide's rounded rectangle draws it. A plate wider than tall takes its
