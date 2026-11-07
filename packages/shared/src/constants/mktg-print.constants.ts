@@ -176,6 +176,13 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   gap: 16,
   /** `.fwp-chip-wrap` max-width: a proof chip's cap, px, so a fact's measuring width is the row less the chip. */
   chip: 140,
+  /** `.fwp-icp-who`: the profile's name-and-tags column, px (the board's), and the most it grows so a row of tags never wraps. */
+  icpWho: 190,
+  icpWhoMax: 300,
+  /** The grammar's `.pp-chip`: its type size, its padding and border across (7 + 7 + 1 + 1), and `.fwp-icp-chips`' gap between tags. */
+  chipSize: 8.5,
+  chipPadding: 16,
+  chipGap: 4,
 } as const;
 
 /** The key numbers facts table's `<colgroup>` widths, %: the fact, its source, the goal that uses it (`table-layout: fixed` reads them). */

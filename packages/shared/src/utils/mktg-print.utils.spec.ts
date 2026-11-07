@@ -334,6 +334,7 @@ describe('the framework’s print', () => {
     expect(view.goals[0].icps).toEqual(['end-users']);
     expect(view.icps[0].goals).toEqual(['adoption']);
     expect(view.icps[0].goalChips).toEqual(['Goal 1']);
+    expect(view.icps[0].whoWidth).toBe(190);
     expect(foundationMessagePrintMatrix(view.goals, view.icps)).toEqual([{ name: 'End users', cells: [true] }]);
   });
 

@@ -23,6 +23,8 @@ import {
   frameworkPortraitFigureSize,
   frameworkPortraitNumberTiles,
   frameworkPortraitNumbersPages,
+  frameworkPortraitChipWidth,
+  frameworkPortraitIcpWhoWidth,
 } from './mktg-framework-portrait-layout.utils';
 import { buildFoundationMessagePrintView } from './mktg-print.utils';
 
@@ -88,6 +90,19 @@ describe('the framework portrait book’s cut lists', () => {
   it('words the note from the count and the tab the rows live on', () => {
     expect(foundationMessagePrintCutNote(3, 'Sources')).toBe("+3 more on the framework's Sources tab in LFX One");
     expect(foundationMessagePrintCutNote(1, 'Framework')).toBe("+1 more on the framework's Framework tab in LFX One");
+  });
+});
+
+describe('the framework portrait book’s profile rows', () => {
+  it('sizes the name-and-tags column to hold the kind and goal tags on one line, from the board’s 190 to a cap', () => {
+    // Two short tags fit the board's column; four grow it to what they measure; past the cap the column stops growing.
+    expect(frameworkPortraitChipWidth('Goal 1')).toBe(Math.ceil(6 * 8.5 * 0.72) + 16);
+    expect(frameworkPortraitIcpWhoWidth(['Individual', 'Goal 1'])).toBe(190);
+    const four = frameworkPortraitIcpWhoWidth(['Individual', 'Goal 1', 'Goal 2', 'Goal 3']);
+    expect(four).toBe(frameworkPortraitChipWidth('Individual') + 3 * frameworkPortraitChipWidth('Goal 1') + 3 * 4);
+    expect(four).toBeGreaterThan(190);
+    expect(four).toBeLessThan(300);
+    expect(frameworkPortraitIcpWhoWidth(['Member companies and prospects', 'Goal 1', 'Goal 2', 'Goal 3', 'Goal 4'])).toBe(300);
   });
 });
 

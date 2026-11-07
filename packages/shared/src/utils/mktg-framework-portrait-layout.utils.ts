@@ -34,7 +34,7 @@ import type {
   FoundationMessagePrintType,
   FoundationMessagePrintView,
 } from '../interfaces/mktg-print.interface';
-import { mktgPortraitCharsPerLine, mktgPortraitFitBlock, mktgPortraitParaHeight } from './mktg-portrait-print.utils';
+import { mktgPortraitCharEm, mktgPortraitCharsPerLine, mktgPortraitFitBlock, mktgPortraitParaHeight } from './mktg-portrait-print.utils';
 
 const ROOM = FRAMEWORK_PORTRAIT_ROOM;
 const TYPE = FRAMEWORK_PORTRAIT_TYPE;
@@ -116,6 +116,20 @@ function numbersRowHeight(row: FoundationMessageNumberRow, tight: boolean): numb
     Math.max(frameworkPortraitTextHeight(row.number, TYPE.fact, figure), frameworkPortraitTextHeight(row.label, TYPE.fact, label)) +
     (tight ? ROOM.factRowTight : ROOM.factRow)
   );
+}
+
+/** The width a chip takes, px: its text in the grammar's capitals at `.pp-chip`'s size, plus its padding and border. */
+export function frameworkPortraitChipWidth(text: string): number {
+  return Math.ceil(text.trim().length * ROOM.chipSize * mktgPortraitCharEm({ caps: true })) + ROOM.chipPadding;
+}
+
+/**
+ * The width of a profile's name-and-tags column, px: the board's 190, grown to hold the kind and goal tags on one line (they never
+ * wrap, the editor's rule), to a cap that leaves the fields their three columns.
+ */
+export function frameworkPortraitIcpWhoWidth(chips: readonly string[]): number {
+  const tags = chips.reduce((width, chip) => width + frameworkPortraitChipWidth(chip), 0) + Math.max(0, chips.length - 1) * ROOM.chipGap;
+  return Math.min(ROOM.icpWhoMax, Math.max(ROOM.icpWho, tags));
 }
 
 /** The height of a facts table row: the tallest of its three cells at the `<colgroup>` widths, with the row's padding and hairline. */

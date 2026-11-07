@@ -481,7 +481,8 @@
             <div [lfxPpRect]="[page.margin, icpPage.rowsTop, page.contentWidth]">
               @for (icp of icpPage.icps; track icp.id) {
                 <article class="fwp-icp-row" [attr.data-testid]="'mktg-framework-print-icp-' + icp.id">
-                  <div class="fwp-icp-who">
+                  <!-- The name-and-tags column: the board's 190 px, grown so the kind and goal tags hold one line (the editor's rule). -->
+                  <div class="fwp-icp-who" [style.width.px]="icp.whoWidth">
                     <span class="fwp-icp-name">{{ icp.name }}</span>
                     <div class="fwp-icp-chips">
                       <span class="pp-chip">{{ icp.kind }}</span>
@@ -524,31 +525,35 @@
                         <dd>{{ icp.cta }}</dd>
                       </div>
                     }
-                    <!-- An objection prints only with its answer (the editor's rule: no placeholder for an unanswered one). -->
-                    @if (icp.objectionResponse) {
+                    <!-- The objection to expect prints as its question; its response follows only when the record has one
+                         (the editor's rule: the question stands alone, never a placeholder for a missing answer). -->
+                    @if (icp.objectionText) {
                       <div>
                         <dt>Objection</dt>
-                        <dd>“{{ icp.objectionText }}” — {{ icp.objectionResponse }}</dd>
+                        @if (icp.objectionResponse) {
+                          <dd>“{{ icp.objectionText }}” — {{ icp.objectionResponse }}</dd>
+                        } @else {
+                          <dd>“{{ icp.objectionText }}”</dd>
+                        }
                       </div>
                     }
-                    @if (icp.channelsLabel) {
+                    <!-- Channels, with the profile's proof figures under them, as the board's card draws it: six fields, two rows of three. -->
+                    @if (icp.channelsLabel || icp.proofRows.length > 0) {
                       <div>
-                        <dt>Channels</dt>
-                        <dd>{{ icp.channelsLabel }}</dd>
-                      </div>
-                    }
-                    <!-- The profile's proof figure under its own eyebrow (the editor's rule), not folded into the channels. -->
-                    @if (icp.proofRows.length > 0) {
-                      <div>
-                        <dt>Proof</dt>
+                        <dt>{{ icp.channelsLabel ? 'Channels' : 'Proof' }}</dt>
                         <dd>
-                          <ul class="fwp-icp-proofs">
-                            @for (proof of icp.proofRows; track $index) {
-                              <li>
-                                {{ proof.fact }} <span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span>
-                              </li>
-                            }
-                          </ul>
+                          @if (icp.channelsLabel) {
+                            {{ icp.channelsLabel }}
+                          }
+                          @if (icp.proofRows.length > 0) {
+                            <ul class="fwp-icp-proofs">
+                              @for (proof of icp.proofRows; track $index) {
+                                <li>
+                                  {{ proof.fact }} <span class="pp-chip fwp-chip-wrap">{{ proof.source }}</span>
+                                </li>
+                              }
+                            </ul>
+                          }
                         </dd>
                       </div>
                     }

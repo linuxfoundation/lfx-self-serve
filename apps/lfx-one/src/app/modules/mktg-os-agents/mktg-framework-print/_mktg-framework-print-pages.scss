@@ -529,7 +529,7 @@
 
   .fwp-icp-who {
     flex: none;
-    width: 190px;
+    width: 190px; /* FRAMEWORK_PORTRAIT_ROOM.icpWho; the component sets the row's own, grown for its tags (frameworkPortraitIcpWhoWidth) */
   }
 
   .fwp-icp-name {
@@ -540,11 +540,17 @@
     color: var(--pp-dark);
   }
 
+  /* The kind and goal tags on one line, never wrapped (the editor's rule): the column is sized to hold them. */
   .fwp-icp-chips {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
+    flex-wrap: nowrap;
+    gap: 4px; /* FRAMEWORK_PORTRAIT_ROOM.chipGap */
     margin-top: 8px;
+
+    .pp-chip {
+      flex: none;
+      white-space: nowrap;
+    }
   }
 
   .fwp-icp-who-text {

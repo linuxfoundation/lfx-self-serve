@@ -39,6 +39,7 @@ import type {
 } from '../interfaces/mktg-print.interface';
 import { brandKitContrastRatio, brandKitLuminance, brandKitTint } from './brand-kit-book.utils';
 import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitLogoImage, brandKitWebsiteHost, brandKitWeights } from './brand-kit.utils';
+import { frameworkPortraitIcpWhoWidth } from './mktg-framework-portrait-layout.utils';
 import {
   foundationMessageAudienceRows,
   foundationMessageAvoidRows,
@@ -184,12 +185,14 @@ export function foundationMessagePrintGoals(content: FoundationMessageContent): 
 export function foundationMessagePrintIcps(content: FoundationMessageContent): FoundationMessagePrintIcp[] {
   return foundationMessageIcpViews(content).map((icp) => {
     const goals = icp.goals.map((id) => id.trim());
+    const goalChips = content.mf.goals.filter((goal) => goals.includes(goal.id)).map((goal) => `Goal ${goal.n}`);
     return {
       ...icp,
       goals,
       goalLabel: icp.goalTitles.join(', '),
       channelsLabel: icp.channels.join(' · '),
-      goalChips: content.mf.goals.filter((goal) => goals.includes(goal.id)).map((goal) => `Goal ${goal.n}`),
+      goalChips,
+      whoWidth: frameworkPortraitIcpWhoWidth([icp.kind, ...goalChips]),
     };
   });
 }

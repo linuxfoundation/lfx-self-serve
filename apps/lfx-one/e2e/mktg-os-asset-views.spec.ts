@@ -339,7 +339,14 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.locator('.fwp-matrix-source').first()).toHaveCSS('white-space', 'nowrap');
       // The goal's page, the profile with the goals × profiles matrix (one profile: the page has room), the house, the numbers.
       await expect(print.getByTestId('mktg-framework-print-goal-1')).toContainText('01');
-      await expect(print.getByTestId('mktg-framework-print-icp-users')).toContainText('End users');
+      const icpRow = print.getByTestId('mktg-framework-print-icp-users');
+      await expect(icpRow).toContainText('End users');
+      // The board's card: six fields in two rows of three, the proof figures under the channels; an objection without a response
+      // prints its question alone (the editor's rule); the kind and goal tags hold one line.
+      await expect(icpRow.locator('dt')).toHaveText(['Need', 'Value', 'Lead message', 'Call to action', 'Objection', 'Channels']);
+      await expect(icpRow.locator('dd').nth(4)).toHaveText('“Too early?”');
+      await expect(icpRow.locator('dd').nth(5).locator('.fwp-icp-proofs li')).toHaveCount(1);
+      await expect(icpRow.locator('.fwp-icp-chips')).toHaveCSS('flex-wrap', 'nowrap');
       await expect(print.getByTestId('mktg-framework-print-matrix-row')).toHaveCount(1);
       await expect(print.getByTestId('mktg-framework-print-matrix-dot')).toHaveCount(1);
       await expect(print.getByTestId('mktg-framework-print-pillars')).toContainText('Open');

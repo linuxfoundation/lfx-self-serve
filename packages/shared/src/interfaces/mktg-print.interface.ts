@@ -88,6 +88,8 @@ export interface FoundationMessagePrintIcp extends FoundationMessageIcpView {
   channelsLabel: string;
   /** `Goal 1`, `Goal 4`: one chip per goal the segment serves, by the goal's rank, in the framework's order. */
   goalChips: string[];
+  /** The width of the profile's name-and-tags column, px: the board's 190, grown so the kind and goal tags hold one line (frameworkPortraitIcpWhoWidth). */
+  whoWidth: number;
 }
 
 /** One row of the goals × profiles matrix: the profile, and whether each goal (in the framework's order) is written for it. */

@@ -363,6 +363,7 @@ describe('MktgFrameworkPrintComponent', () => {
     const rows = Array.from(page?.querySelectorAll('.fwp-icp-row') ?? []);
     expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual(['mktg-framework-print-icp-users', 'mktg-framework-print-icp-maintainers']);
     expect(Array.from(rows[0].querySelectorAll('.fwp-icp-chips .pp-chip')).map((chip) => chip.textContent?.trim())).toEqual(['Individual', 'Goal 1']);
+    // The board's six fields, two rows of three: the proof figures sit under the channels, as its card draws them.
     expect(Array.from(rows[0].querySelectorAll('dt')).map((term) => term.textContent?.trim())).toEqual([
       'Need',
       'Value',
@@ -370,25 +371,26 @@ describe('MktgFrameworkPrintComponent', () => {
       'Call to action',
       'Objection',
       'Channels',
-      'Proof',
     ]);
     expect(rows[0].querySelector('.fwp-icp-lead')?.textContent?.trim()).toBe('Ship with confidence.');
     expect(text(rows[0].querySelectorAll('dd')[4])).toBe('“Too early?” — Not at all.');
-    // The channels alone; the profile's proof figure under its own eyebrow (the editor's rule).
-    expect(text(rows[0].querySelectorAll('dd')[5])).toBe('Docs · Slack');
-    expect(text(rows[0].querySelectorAll('dd')[6])).toBe('A fact Docs');
+    expect(text(rows[0].querySelectorAll('dd')[5])).toBe('Docs · Slack A fact Docs');
+    expect(rows[0].querySelector('.fwp-icp-proofs')?.parentElement?.previousElementSibling?.textContent?.trim()).toBe('Channels');
     expect(rows[0].querySelector('.fwp-icp-personas')?.textContent?.trim()).toBe('SRE · uptime');
-    // An objection without an answer is not printed, question included; the profile's other fields stand (the editor's rule).
+    // An objection without a response prints its question alone: no dash, no placeholder (the editor's rule, 7 Nov).
     expect(Array.from(rows[1].querySelectorAll('dt')).map((term) => term.textContent?.trim())).toEqual([
       'Need',
       'Value',
       'Lead message',
       'Call to action',
+      'Objection',
       'Channels',
-      'Proof',
     ]);
-    expect(rows[1].textContent).not.toContain('Too early?');
+    expect(text(rows[1].querySelectorAll('dd')[4])).toBe('“Too early?”');
     expect(host().textContent).not.toContain('no answer');
+    expect(host().textContent).not.toContain('” —  ');
+    // The name-and-tags column: the board's 190 px, grown so the tags hold one line; here two short tags fit the board's width.
+    expect((rows[0].querySelector('.fwp-icp-who') as HTMLElement).style.width).toBe('190px');
     // The first profile page's rows start under the intro at 214 (the chapter's first page).
     expect(rows[0].parentElement?.getAttribute('style')).toContain('top: 214px');
     expect(query('mktg-framework-print-matrix')).toBeNull();
@@ -663,7 +665,6 @@ describe('MktgFrameworkPrintComponent', () => {
       'Call to action',
       'Objection',
       'Channels',
-      'Proof',
     ]);
     expect(frame('say-avoid')?.textContent).not.toContain('Every piece of content answers');
     expect(frame('message-house')?.textContent).not.toContain('Audiences');
