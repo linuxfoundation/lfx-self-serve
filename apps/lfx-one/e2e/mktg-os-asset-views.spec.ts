@@ -478,7 +478,8 @@ test('the framework print lists every figure past six as a table, continued on a
   await expect(print.getByTestId('mktg-framework-print-number-row')).toHaveCount(8);
   await expect(numbersPage.getByTestId('mktg-framework-print-facts')).toHaveCount(0);
   await expect(numbersPage2.getByTestId('mktg-framework-print-facts')).toContainText('Figures and their sources');
-  await expect(print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="sources"]')).toHaveAttribute('data-page', '9');
+  // The last of the record's 13 frames: cover, framework, goal-1…4, say-avoid, icps-1, icps-2, message-house, key-numbers, key-numbers-2, sources.
+  await expect(print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="sources"]')).toHaveAttribute('data-page', '13');
   // Four long proof points (the record's cap) on the first goal: tightened, then cut to whole rows, with the muted "+N more" line.
   const goalPage = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="goal-1"]');
   const proofRows = goalPage.locator('.fwp-proof-row');
