@@ -266,6 +266,8 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
     query('mktg-document-view-download')?.querySelector('button')?.click();
     expect(print.printNow).not.toHaveBeenCalled();
     kitRead.next(null);
+    // The settled signal reaches the waiting press through an effect, i.e. on the change detection the response triggers.
+    harness.detectChanges();
     expect(print.printNow).toHaveBeenCalledTimes(1);
   });
 
