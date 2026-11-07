@@ -18,7 +18,7 @@ export class AeoGeoReportComponent {
   public readonly showHeadline = input(true);
   protected readonly findings = this.initFindings();
   protected readonly sources = computed(() => this.report().sources.map((source) => ({ ...source, href: aeoGeoHttpLink(source.url) })));
-  // Reader sentences: the agent's caveats name fields, slugs, uids and raw provider errors, and the report prints none of them.
+  // Reader sentences: the known plumbing shapes in a caveat (a snake_case field name, a slug, a uid, a quoted or well-known provider error) are mapped or left out; other text passes through unchanged.
   protected readonly caveats = computed(() => this.report().caveats.map(aeoGeoReaderCaveat));
 
   private initFindings() {

@@ -322,56 +322,87 @@ export function aeoGeoHttpLink(value: string): string | null {
   }
 }
 
-// A boundary is . ! or ? (with a closing quote or bracket) before whitespace and a capital, so "e.g. the" and URLs stay whole.
-const CAVEAT_SENTENCE_BOUNDARY = /([.!?]['"\u201d)\]]*)\s+(?=[A-Z])/g;
+// Reader caveats. Every pattern below is linear in the input (one quantified run per anchor), and a caveat
+// above CAVEAT_MAX_CHARS is not scanned at all. No lookbehind: Safari before 16.4 has none.
+const CAVEAT_MAX_CHARS = 4000;
+// Quote class: straight, curly (U+2018/2019/201C/201D) and backtick.
+// An abbreviation's period is masked before the split and restored after, so "e.g. the" is not a boundary.
+const CAVEAT_ABBREVIATION = /\b(e\.g|i\.e|etc|vs|cf|approx|no)\.(?= )/gi;
+const CAVEAT_ABBREVIATION_MARK = '\u0001';
+// A boundary is . ! or ? (with closing quotes or brackets) before whitespace and any non-space, so "robots.txt …" is its own sentence.
+const CAVEAT_SENTENCE_BOUNDARY = /([.!?]['"\u2018\u2019\u201c\u201d`)\]]*)\s+(?=\S)/g;
+const CAVEAT_SENTENCE_MARK = '\u0000';
+const CAVEAT_PARENTHETICAL = /\(([^()]*)\)/g;
+const CAVEAT_SEARCH = /\bsearch(?:es)?\b/i;
+const CAVEAT_NAME_SEARCH = /\bname search\b/i;
+const CAVEAT_LFX_RECORD = /LFX record could not be read/i;
+const CAVEAT_FAILURE_WORD = /\b(?:exceeded|credits?|quota|limit|unavailable|failed|error|denied|unauthori[sz]ed|forbidden)\b/i;
+const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exceeded|exhausted)|rate limit/i;
+// A provider's message quoted raw after a verb; it counts only beside a failure word (a quoted search result is audit content).
+const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u2019\u201c\u201d`]/i;
 const CAVEAT_IDENTIFIERS = [
-  /\b[a-z]+(?:_[a-z0-9]+)+\b/, // a snake_case field name
+  // a snake_case field name as a standalone token: not part of a file name, a path, an og: property or a code span
+  /(?:^|[^:/.\-`\w])[a-z]+(?:_[a-z0-9]+)+(?![./\-`\w])/,
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i, // a UUID
-  /\bslug\s+\S+/i,
-  /\b(?:uid|id)\b\s*[:=]?\s*['"\u201c]?[a-z0-9_-]*\d[a-z0-9_-]*/i, // uid/id followed by a value
-  /\b(?:returned|error|said)\b\s*:?\s*['"\u201c]/i, // a provider's words, quoted raw
+  /\bslug\s+[a-z0-9]+(?:-[a-z0-9]+)+\b/i, // a hyphenated slug token
+  /\b(?:uid|id)\b(?!=['"])\s*(?:[:=]\s*)?['"\u2018\u2019\u201c\u201d`]?[a-z0-9_-]*\d[a-z0-9_-]*/i, // uid/id with a value, not an HTML attribute
 ];
-const CAVEAT_HTTP_STATUS = /returned HTTP (\d{3})(?:\s*\([^()]*\))?/;
-const CAVEAT_PARENTHETICAL = /\s*\([^()]*\)/g;
 
 /**
- * The agent's caveats as reader sentences (web view and print): the known shapes map to fixed
- * wording, a parenthetical that carries an identifier is dropped, and a sentence that still names
- * a field, slug, uid or raw provider error is left out. Audit content such as a header value passes verbatim.
+ * The agent's caveats as reader sentences (web view and print). Sentence by sentence: a failed third-party
+ * search and an LFX record that could not be read map to fixed wording; a parenthetical that carries plumbing
+ * is removed; a sentence that still carries plumbing is left out. Plumbing is the known shapes: a snake_case
+ * field name, a slug, a uid, a quoted or well-known provider error. Other text passes through unchanged (a
+ * caveat with nothing to map is returned as is); an emptied caveat, or one above 4,000 characters, becomes
+ * one fixed sentence.
  */
 export function aeoGeoReaderCaveat(caveat: string): string {
+  if (caveat.length > CAVEAT_MAX_CHARS) {
+    return AEO_GEO_READER_CAVEATS.inputs_unavailable;
+  }
   const sentences = caveat
-    .trim()
-    .replace(CAVEAT_SENTENCE_BOUNDARY, '$1\u0000')
-    .split('\u0000')
-    .map((sentence) => readerSentence(sentence.trim()))
-    .filter((sentence) => sentence.length > 0 && !carriesIdentifier(sentence));
-  return sentences.length ? sentences.join(' ') : AEO_GEO_READER_CAVEATS.inputs_unavailable;
+    .replace(CAVEAT_ABBREVIATION, `$1${CAVEAT_ABBREVIATION_MARK}`)
+    .replace(CAVEAT_SENTENCE_BOUNDARY, `$1${CAVEAT_SENTENCE_MARK}`)
+    .split(CAVEAT_SENTENCE_MARK)
+    .map((sentence) => sentence.split(CAVEAT_ABBREVIATION_MARK).join('.').trim())
+    .filter((sentence) => sentence.length > 0);
+  const kept = sentences.map(readerSentence).filter((sentence) => !carriesPlumbing(sentence));
+  if (!kept.length) {
+    return AEO_GEO_READER_CAVEATS.inputs_unavailable;
+  }
+  const changed = kept.length !== sentences.length || kept.some((sentence, index) => sentence !== sentences[index]);
+  return changed ? kept.join(' ') : caveat;
 }
 
 function readerSentence(sentence: string): string {
-  if (/\bsearch\b/i.test(sentence) && /\breturned\s+['"\u201c]/i.test(sentence)) {
+  if (
+    CAVEAT_SEARCH.test(sentence) &&
+    !CAVEAT_NAME_SEARCH.test(sentence) &&
+    CAVEAT_FAILURE_WORD.test(sentence) &&
+    (CAVEAT_QUOTED_MESSAGE.test(sentence) || CAVEAT_PROVIDER_WORDS.test(sentence))
+  ) {
     return AEO_GEO_READER_CAVEATS.search_unavailable;
   }
-  if (/LFX record could not be read/i.test(sentence)) {
+  if (CAVEAT_LFX_RECORD.test(sentence)) {
     return AEO_GEO_READER_CAVEATS.lfx_record_unread;
   }
-  const status = sentence.match(CAVEAT_HTTP_STATUS);
-  if (status) {
-    return sentence.replace(CAVEAT_HTTP_STATUS, status[1].startsWith('4') ? AEO_GEO_READER_CAVEATS.fetch_refused : AEO_GEO_READER_CAVEATS.fetch_failed);
-  }
-  const kept = sentence.replace(CAVEAT_PARENTHETICAL, (parenthetical) => (carriesIdentifier(parenthetical) ? '' : parenthetical));
-  // Only a sentence that lost a parenthetical has its whitespace normalised; a clean one passes byte for byte.
-  return kept === sentence
+  const scrubbed = sentence.replace(CAVEAT_PARENTHETICAL, (parenthetical, inner: string) => (carriesPlumbing(inner) ? '' : parenthetical));
+  // Only a sentence that lost a parenthetical has its whitespace normalised.
+  return scrubbed === sentence
     ? sentence
-    : kept
-        .replace(/\s+([.,;:!?])/g, '$1')
-        .replace(/\s{2,}/g, ' ')
+    : scrubbed
+        .split(/\s+/)
+        .join(' ')
+        .replace(/ ([.,;:!?])/g, '$1')
         .trim();
 }
 
-function carriesIdentifier(text: string): boolean {
-  return CAVEAT_IDENTIFIERS.some((pattern) => pattern.test(text));
+function carriesPlumbing(text: string): boolean {
+  return (
+    CAVEAT_IDENTIFIERS.some((pattern) => pattern.test(text)) ||
+    CAVEAT_PROVIDER_WORDS.test(text) ||
+    (CAVEAT_QUOTED_MESSAGE.test(text) && CAVEAT_FAILURE_WORD.test(text))
+  );
 }
 
 /** Frozen report fields are required; additional presentation fields remain forward compatible. */

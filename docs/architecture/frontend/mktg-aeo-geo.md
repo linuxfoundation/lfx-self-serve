@@ -90,9 +90,10 @@ detail renders through the shared `MarkdownRendererComponent` in restricted mode
 so the agent's inline code spans render as code (not as literal backticks) on both
 surfaces, in the report's own type; scorecard summaries stay plain text, and
 each caveat renders as the reader sentences of `aeoGeoReaderCaveat` (shared
-utils), which map the agent's known shapes (a failed third-party search, an LFX
-record it could not read, an HTTP status) to fixed wording and leave out any
-sentence that still names a field, slug, uid or raw provider error — the stored
+utils): a failed third-party search and an LFX record the agent could not read
+map to fixed wording, and the known plumbing shapes (a snake_case field name, a
+slug, a uid, a quoted or well-known provider error) are left out of the sentence
+that carries them; other text passes through unchanged — the stored
 report is unchanged. The print of a typed report opens with the report's title and facts, then
 the score card, then the report without a second headline, and its headings,
 scorecard rows, findings, recommendations and list items carry CSS Fragmentation
