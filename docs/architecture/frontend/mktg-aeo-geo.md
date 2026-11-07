@@ -87,9 +87,7 @@ The server projects it through the existing optional `aeoGeoReport` field;
 no browser input becomes a report sidecar. The guard mirrors the frozen min-length/HTTP-regex gates; link safety is separately enforced by the renderer. The Document view uses
 `AeoGeoReportComponent` for both web and print. A 1.0 report without that field
 uses the original Markdown renderer without a special legacy label; a malformed
-typed report is not silently treated as legacy. Download PDF renders only while the
-`mktg-os-pdf-download-enabled` flag is on (#5302, default off; the report row keeps
-Audit again alone otherwise) and uses the shared
+typed report is not silently treated as legacy. Download PDF uses the shared
 `MktgPrintService` browser dialog (Save as PDF) and the asset pages' print-only
 CSS. Only the validated report prints, never
 the navigation, and a scope change or destruction cancels a pending print.

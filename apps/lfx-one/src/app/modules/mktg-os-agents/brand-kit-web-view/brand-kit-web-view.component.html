@@ -46,29 +46,27 @@
         <lfx-button
           label="Export to Google Slides"
           icon="fa-light fa-presentation-screen"
-          [outlined]="pdfEnabled()"
+          [outlined]="true"
           [loading]="slidesExport.busy()"
           [disabled]="!slidesExport.canExport()"
           ariaLabel="Export the brand kit to Google Slides"
           data-testid="brand-kit-web-view-export-slides"
           (onClick)="slidesExport.onExport()" />
       </span>
-      @if (pdfEnabled()) {
-        <span
-          [pTooltip]="pdfTooltip()"
-          tooltipPosition="bottom"
-          tooltipEvent="both"
-          [attr.aria-label]="pdfTooltip() || null"
-          [attr.tabindex]="pdfTooltip() ? 0 : null">
-          <lfx-button
-            label="Download PDF"
-            icon="fa-light fa-file-pdf"
-            [disabled]="!printView()"
-            ariaLabel="Download the approved current brand kit as a PDF"
-            data-testid="brand-kit-web-view-download-pdf"
-            (onClick)="onDownloadPdf()" />
-        </span>
-      }
+      <span
+        [pTooltip]="pdfTooltip()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="pdfTooltip() || null"
+        [attr.tabindex]="pdfTooltip() ? 0 : null">
+        <lfx-button
+          label="Download PDF"
+          icon="fa-light fa-file-pdf"
+          [disabled]="!printView()"
+          ariaLabel="Download the approved current brand kit as a PDF"
+          data-testid="brand-kit-web-view-download-pdf"
+          (onClick)="onDownloadPdf()" />
+      </span>
     }
   </ng-template>
 
@@ -923,12 +921,10 @@
     }
   }
 
-  <!-- Footer: what Download PDF (while its flag is on) and the Google Slides export give you. The PDF sentence carries the space that joins the two. -->
+  <!-- Footer: what Download PDF and the Google Slides export give you -->
   <p class="px-1 text-xs text-gray-500" data-testid="brand-kit-web-view-footer">
-    @if (pdfEnabled()) {
-      <span data-testid="brand-kit-web-view-footer-pdf">PDF in portrait pages: logo, colour, typography, visual and voice. </span>
-    }
-    Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.
+    PDF in portrait pages: logo, colour, typography, visual and voice. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours,
+    typeface and logo.
   </p>
 
   <!-- The same native portrait chapters as the family PDF; the screen view stays unchanged. -->

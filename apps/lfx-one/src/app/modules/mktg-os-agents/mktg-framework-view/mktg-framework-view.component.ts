@@ -30,7 +30,6 @@ import {
   FOUNDATION_MESSAGE_VIEW_TABS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
   MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
-  MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
   MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS,
 } from '@lfx-one/shared/constants';
 import {
@@ -56,7 +55,6 @@ import {
   foundationMessageNumberRows,
   mktgPrintDocumentTitle,
 } from '@lfx-one/shared/utils';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
@@ -203,8 +201,6 @@ export class MktgFrameworkViewComponent {
   });
   /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
   protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
-  /** Download PDF renders only while the flag is on (#5302); off, Export to Google Slides is the row's one action and takes its solid style. */
-  protected readonly pdfEnabled = inject(FeatureFlagService).getBooleanFlag(MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, false);
   protected readonly printOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   /** The report's notes as lines (a check writes one issue per line). */
   protected readonly reportNotes = computed(() =>

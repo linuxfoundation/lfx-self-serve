@@ -13,11 +13,8 @@ import {
   MKTG_SLIDES_EXPORT_START_MESSAGES,
   MKTG_FAMILY_EXPORT_HIGHLIGHT_MS,
   MKTG_FAMILY_EXPORT_FORMAT_HINT,
-  MKTG_FAMILY_EXPORT_FORMAT_HINT_SLIDES_ONLY,
-  MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE_SLIDES_ONLY,
 } from '@lfx-one/shared/constants';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { familyExportMember, familyExportRecord } from '@shared/testing/mktg-family-export-test-data';
@@ -54,14 +51,11 @@ describe('Family export slot', () => {
   });
   const api = { last: vi.fn(), running: vi.fn(), run: vi.fn(), printView: vi.fn() };
   const print = { prepare: vi.fn(), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
-  /** The Download PDF flag (#5302), pinned on so the PDF tests see today's card; one test turns it off. */
-  const pdfFlag = signal(true);
   /** The frame's title names the saved PDF like the deck: the project, the family, the newest member revision's date; no version, as the family binds several revisions. */
   const pdfTitle = 'Synthetic project · Positioning & brand · 2026-10-21';
   beforeEach(() => {
     vi.clearAllMocks();
     writer.set(true);
-    pdfFlag.set(true);
     activeContext.set({ uid: 'synthetic-project', name: 'Synthetic project' });
     run = new Subject();
     api.last.mockReturnValue(of(lookup()));
@@ -94,7 +88,6 @@ describe('Family export slot', () => {
         { provide: ProjectContextService, useValue: { activeContext, canWrite: writer } },
         { provide: MktgFamilyExportService, useValue: api },
         { provide: MktgPrintService, useValue: print },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => pdfFlag } },
       ],
     });
   });
@@ -113,6 +106,10 @@ describe('Family export slot', () => {
     expect(root.querySelector('h2')?.textContent).toBe('Export the family');
     expect(root.textContent).toContain('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
     expect(root.textContent).toContain('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
+    expect(Array.from(root.querySelectorAll('section > lfx-button'), (element) => element.textContent?.trim())).toEqual([
+      'Download PDF',
+      'Export to Google Slides',
+    ]);
     for (const action of ['pdf', 'slides']) expect(button(action)?.classList.contains('p-button-outlined')).toBe(true);
     button('slides')?.click();
     await fixture.whenStable();
@@ -696,57 +693,6 @@ describe('Family export slot', () => {
     await setup();
     expect(api.last).toHaveBeenCalledWith({ project: 'synthetic-project', familyId: 'positioning-brand' }, true);
     expect(api.run).not.toHaveBeenCalled();
-  });
-
-  it('hides Download PDF and its note while its flag is off, Export to Google Slides keeping the card’s outlined style, and restores both when it turns on (#5302)', async () => {
-    pdfFlag.set(false);
-    const { fixture, root, button } = await setup();
-    expect(button('pdf')).toBeNull();
-    expect(root.querySelector('[data-testid="family-export-pdf-note"]')).toBeNull();
-    expect(root.textContent).not.toContain('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
-    expect(Array.from(root.querySelectorAll('section > lfx-button'), (element) => element.textContent?.trim())).toEqual(['Export to Google Slides']);
-    expect(button('slides')?.classList.contains('p-button-outlined')).toBe(true);
-    expect(button('slides')?.disabled).toBe(false);
-    expect(root.textContent).toContain('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
-    // Nothing reads the prepared print document while the button is hidden: no preparation starts, no checking line holds, no PDF error can show.
-    expect(api.printView).not.toHaveBeenCalled();
-    expect(root.querySelector('[data-testid="family-export-loading"]')).toBeNull();
-    expect(root.querySelector('[data-testid="family-export-print-document"]')?.getAttribute('data-prepared')).toBe('false');
-    pdfFlag.set(true);
-    await fixture.whenStable();
-    expect(api.printView).toHaveBeenCalledOnce();
-    expect(Array.from(root.querySelectorAll('section > lfx-button'), (element) => element.textContent?.trim())).toEqual([
-      'Download PDF',
-      'Export to Google Slides',
-    ]);
-    expect(root.querySelector('[data-testid="family-export-pdf-note"]')?.textContent).toBe(
-      'PDF: framework, brand kit, boilerplates and FAQ (approved current).'
-    );
-    for (const action of ['pdf', 'slides']) expect(button(action)?.classList.contains('p-button-outlined')).toBe(true);
-  });
-
-  it('reads the Slides-only approval note and format hint while Download PDF is behind its flag, the reveal landing on Export to Google Slides (#5302)', async () => {
-    pdfFlag.set(false);
-    api.last.mockReturnValue(of({ ...lookup(), currentMembers: [] }));
-    const { fixture, root, button } = await setup();
-    expect(root.querySelector('[data-testid="family-export-empty"]')?.textContent).toBe(MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE_SLIDES_ONLY);
-    expect(root.textContent).not.toContain('PDF');
-    api.last.mockReturnValue(of(lookup()));
-    writer.set(false);
-    await fixture.whenStable();
-    writer.set(true);
-    await fixture.whenStable();
-    root.scrollIntoView = vi.fn();
-    const slides = button('slides');
-    if (!slides) throw new Error('Missing synthetic Slides action');
-    const focus = vi.spyOn(slides, 'focus');
-    fixture.componentInstance.focusDownload();
-    await fixture.whenStable();
-    expect(root.querySelector('[data-testid="family-export-format-hint"]')?.textContent).toBe(MKTG_FAMILY_EXPORT_FORMAT_HINT_SLIDES_ONLY);
-    expect(focus).toHaveBeenCalledOnce();
-    expect(fixture.componentInstance['focusRequested']()).toBe(false);
-    expect(api.printView).not.toHaveBeenCalled();
-    expect(print.printNow).not.toHaveBeenCalled();
   });
 
   it('unsupported families show the title and one line, without buttons, PDF or Drive notes', async () => {

@@ -10,7 +10,6 @@ import { FOUNDATION_MESSAGE_CONTENT_LIMITS, FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
 import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgPrintService } from '@services/mktg-print.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { isMktgDocumentCommentAnchor } from '@lfx-one/shared/utils';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
@@ -138,8 +137,6 @@ describe('MktgFrameworkViewComponent', () => {
   let host: HostComponent;
   let printer: { prepare: Mock; printNow: Mock; clear: Mock; ensureFontStylesheet: Mock };
   let slidesExport: { last: Mock; start: Mock; poll: Mock };
-  /** The Download PDF flag (#5302), pinned on so the PDF tests see today's screens; one test turns it off. */
-  const pdfFlag = signal(true);
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => element().querySelector(`[data-testid="${testId}"]`);
@@ -149,7 +146,6 @@ describe('MktgFrameworkViewComponent', () => {
   };
 
   beforeEach(async () => {
-    pdfFlag.set(true);
     printer = { prepare: vi.fn(() => Promise.resolve()), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
     slidesExport = {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
@@ -165,7 +161,6 @@ describe('MktgFrameworkViewComponent', () => {
         provideMktgSlidesExportStub(slidesExport),
         provideMktgCommentsStub(),
         { provide: MktgDependencyService, useValue: { documentsChanged$: NEVER } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => pdfFlag } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
@@ -514,21 +509,13 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-print')?.textContent).not.toContain('New draft only');
   });
 
-  it('hides Download PDF while its flag is off and gives Export to Google Slides the row’s solid style, restoring both when it turns on (#5302)', async () => {
+  it('offers Export to Google Slides outlined and Download PDF solid beside it with an approved current', async () => {
     host.asset.set(ASSET);
     host.state.set('ready');
     host.approvedAsset.set(ASSET);
     host.approvedVersion.set(1);
-    pdfFlag.set(false);
     await fixture.whenStable();
     const actions = query('mktg-framework-view-actions');
-    expect(query('mktg-framework-view-download-pdf')).toBeNull();
-    expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual(['Export to Google Slides']);
-    expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(false);
-    // The print rendering stays mounted: only the entry button is gated.
-    expect(query('mktg-framework-view-print')).not.toBeNull();
-    pdfFlag.set(true);
-    await fixture.whenStable();
     expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual([
       'Export to Google Slides',
       'Download PDF',

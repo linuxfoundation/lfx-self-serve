@@ -30,7 +30,6 @@ export const MKTG_KIT_FAMILIES: MktgKitFamily[] = [
     leadSummary: 'Messaging Framework, Boilerplates, FAQ, Brand Kit',
     description: 'The messaging framework, boilerplates, FAQ and brand kit.',
     intro: 'The framework comes first; boilerplates, FAQ and the brand kit read it. Any asset, or the whole family, exports to PDF or Google Slides.',
-    introSlidesOnly: 'The framework comes first; boilerplates, FAQ and the brand kit read it. Any asset, or the whole family, exports to Google Slides.',
     assets: [
       {
         id: 'messaging-framework',

@@ -10,9 +10,7 @@ import { MessageComponent } from '@components/message/message.component';
 import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
-  MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE_SLIDES_ONLY,
   MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS,
-  MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
   MKTG_SLIDES_EXPORT_ASSET_LABELS,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
@@ -31,7 +29,6 @@ import {
   MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
 import { isMktgSlidesExportStale, mktgSlidesExportBrandSummary } from '@lfx-one/shared/utils';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
 import { catchError, distinctUntilChanged, filter, merge, Observable, of, startWith, Subject, Subscription, switchMap, tap } from 'rxjs';
@@ -62,8 +59,6 @@ export class MktgSlidesExportComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly exportService = inject(MktgSlidesExportService);
   private readonly platformId = inject(PLATFORM_ID);
-  /** While Download PDF is behind its flag (#5302), the header's disabled reason names Slides alone: no PDF is promised next to no PDF button. */
-  private readonly pdfEnabled = inject(FeatureFlagService).getBooleanFlag(MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, false);
 
   // === Inputs ===
   /** The stored revision to export; null when there is none (no project, or nothing stored yet). */
@@ -121,7 +116,7 @@ export class MktgSlidesExportComponent {
   /** Why the header's Slides button is greyed out, for its tooltip; empty while it takes a click. */
   public readonly disabledReason = computed(() => {
     if (this.canExport()) return '';
-    if (!this.target()) return this.pdfEnabled() ? MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE : MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE_SLIDES_ONLY;
+    if (!this.target()) return MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
     if (this.busy()) return 'An export is already running';
     if (this.lookupFailed()) {
       if (this.lookupTarget() && !this.last() && !this.historyWaitExpired()) return 'Could not check the last export.';

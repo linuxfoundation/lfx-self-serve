@@ -3,17 +3,16 @@
 
 /**
  * The Brand Kit's PDF as the portrait book (#5341): the design mock's seventeen US Letter pages, drawn from the kit's
- * own record behind `mktg-os-pdf-download-enabled`. Content spec: what each page says and how it sits on its frame.
+ * own record. Content spec: what each page says and how it sits on its frame.
  * The structural pair (`mktg-os-brand-kit-pdf-robust.spec.ts`) pins the `data-testid` contract.
  */
 
-import { BRAND_KIT_PRINT_BODY_CLASS, MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { BRAND_KIT_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
 import { MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { expect, FrameLocator, Locator, Page, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { columnAssetRevisionResponse, openAssetDocument } from './helpers/mktg-os-asset-views.helper';
-import { pinMktgOsFlags } from './helpers/mktg-os-flags.helper';
 import { expectMktgPortraitPageSetup, expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 /** The synthetic kit's plan: no symbol file, so no symbol page; sixteen frames. */
@@ -273,14 +272,5 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await page.screenshot({ path: info.outputPath('logo-system-no-files.png'), fullPage: false });
     await page.emulateMedia({ media: 'screen' });
     await finishMktgPrintFrame(page);
-  });
-
-  test('with the PDF flag off there is no Download PDF and no book in the page', async ({ page }, info) => {
-    await pinMktgOsFlags(page, { [MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG]: false });
-    await openAssetDocument(page, 'brand-kit', 200, true, false, columnAssetRevisionResponse('brand-kit'));
-    await expect(page.getByTestId('brand-kit-web-view')).toBeVisible();
-    await expect(page.getByTestId('brand-kit-web-view-download-pdf')).toHaveCount(0);
-    await expect(page.getByTestId('lfx-mktg-portrait-page')).toHaveCount(0);
-    await page.screenshot({ path: info.outputPath('flag-off.png'), fullPage: true });
   });
 });
