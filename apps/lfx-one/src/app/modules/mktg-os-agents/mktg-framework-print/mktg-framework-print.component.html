@@ -186,7 +186,8 @@
                               </li>
                             }
                           </ul>
-                          @if (cell.cut > 0) {
+                          <!-- The cell's own "+N more" line; empty when the bands folded it into the caption under them (the ladder's step before a drop). -->
+                          @if (cell.note) {
                             <p class="fwp-cut-note" data-testid="mktg-framework-print-matrix-proofs-cut">{{ cell.note }}</p>
                           }
                         </div>

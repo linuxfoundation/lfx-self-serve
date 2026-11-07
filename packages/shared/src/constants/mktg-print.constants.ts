@@ -359,6 +359,8 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   matrixProofGap: 5,
   matrixBiteInset: 12,
   matrixCrosscutGap: 8,
+  /** The least room a banded matrix leaves under itself, above the footer gap, for its proof row to print (the editor's allowance for a browser setting the face wider; a smaller margin drops the row). */
+  matrixBuffer: 12,
   /** The say list: its margin above, a pill's padding and border around (8 + 8 + 1 + 1 down, 14 + 14 + 1 + 1 across; tight 6 + 6 / 10 + 10), the gap between pills; the say column's and the avoid column's widths and the avoid column's left. */
   sayListTop: 10,
   sayPillPadding: 18,
@@ -415,6 +417,11 @@ export const FRAMEWORK_PORTRAIT_MAX_TILES = 6;
  */
 export const FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES = {
   goalPages: 'Value propositions and sound bites are on each goal page.',
+  /**
+   * The bands kept their proof row by folding each cell's "+N more in LFX One" line into this caption (the editor's wording, order 43
+   * addendum 14, 7 Nov 2026: the drop note as is plus one sentence, no number, on the one line): one whole first proof a goal.
+   */
+  goalPagesFold: 'Value propositions and sound bites are on each goal page. More proofs for each goal are in LFX One.',
   /** The bands dropped the proof row as well (the editor's FA1b): its cells would have printed below the tight floor. */
   goalPagesAll: 'Value propositions, sound bites and proofs are on each goal page.',
 } as const;
