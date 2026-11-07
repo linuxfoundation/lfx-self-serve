@@ -300,6 +300,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(frame.getByTestId('mktg-framework-print-umbrella')).toHaveText('Open collaboration.');
       await expect(frame.getByTestId('mktg-framework-print-title')).toHaveText('Messaging Framework');
       await expect(frame.getByTestId('mktg-framework-print-version')).toHaveText('V1.0 · Approved 19 Oct 2026');
+      // The editor's gap under the cover title: 16–24 px, set at 18 (the framework pages' global partial).
+      await expect(frame.getByTestId('mktg-framework-print-version')).toHaveCSS('margin-top', '18px');
       await expect(frame.getByTestId('mktg-framework-print-contents').locator('li')).toHaveCount(7);
       await expect(frame.getByTestId('mktg-framework-print-contents').locator('li').first()).toContainText('Framework');
       await expect(frame.getByTestId('mktg-framework-print-contents').locator('li').last()).toContainText('Sources & gaps');
@@ -333,6 +335,8 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
         });
         expect(tracking).toBeCloseTo(0.12);
       }
+      // The matrix's source tag is the fixed vocabulary, kept whole as the mock's: the fact before it wraps, never the tag.
+      await expect(print.locator('.fwp-matrix-source').first()).toHaveCSS('white-space', 'nowrap');
       // The goal's page, the profile with the goals × profiles matrix (one profile: the page has room), the house, the numbers.
       await expect(print.getByTestId('mktg-framework-print-goal-1')).toContainText('01');
       await expect(print.getByTestId('mktg-framework-print-icp-users')).toContainText('End users');

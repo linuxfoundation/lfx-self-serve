@@ -243,9 +243,9 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(query('mktg-framework-print-umbrella')?.textContent?.trim()).toBe('Umbrella.');
     expect(query('mktg-framework-print-title')?.textContent?.trim()).toBe('Messaging Framework');
     expect(query('mktg-framework-print-version')?.textContent?.trim()).toBe('V2.0 · Approved 6 Nov 2026 · figures as of 4 Nov 2026');
-    // The editor's gap under the cover title: 16–24 px, set at 18.
-    const edition = query('mktg-framework-print-version');
-    expect(edition && getComputedStyle(edition).marginTop).toBe('18px');
+    // The editor's gap under the cover title (16–24 px, set at 18) is the global partial's `.fwp-cover-edition` rule, which the
+    // unit build does not load: the class is asserted here, the computed gap in the e2e (mktg-os-asset-views.spec.ts).
+    expect(query('mktg-framework-print-version')?.classList.contains('fwp-cover-edition')).toBe(true);
     const rows = Array.from(cover?.querySelectorAll('[data-testid="mktg-framework-print-contents"] li') ?? []);
     expect(rows.map((row) => text(row))).toEqual([
       '02 Framework 2',
@@ -291,7 +291,8 @@ describe('MktgFrameworkPrintComponent', () => {
     // The source tag is the fixed vocabulary, kept whole as the mock's: the fact before it wraps, never the tag ("LFX / FIELD").
     const tag = matrix?.querySelector('.fwp-matrix-source');
     expect(tag?.textContent?.trim()).toBe('Website');
-    expect(tag && getComputedStyle(tag).whiteSpace).toBe('nowrap');
+    // Its `white-space: nowrap` is the global partial's rule, asserted computed in the e2e (mktg-os-asset-views.spec.ts).
+    expect(tag?.classList.contains('fwp-matrix-source')).toBe(true);
     expect(matrix?.querySelector('.fwp-matrix-bite')?.textContent?.trim()).toBe('“In the open”');
     expect(matrix?.querySelector('.fwp-matrix-crosscut')?.textContent?.trim()).toBe('Every column grows the audience.');
     // Segments belong to the profile pages: the matrix does not name them.
