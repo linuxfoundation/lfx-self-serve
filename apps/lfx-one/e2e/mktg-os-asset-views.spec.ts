@@ -696,6 +696,18 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   const print = frame.getByTestId('mktg-framework-print');
   // Eight goals: cover, framework, goal-1…8, say-avoid, the four profiles two a page, the house, the numbers, the sources.
   await expect(print.getByTestId('lfx-mktg-portrait-page')).toHaveCount(16);
+  // The cover lists all fifteen pages after it, one row each, and the list ends above the cover strip (the design reader's list rule
+  // bounds it: tightened past twelve pairs, the runs collapsed to ranges past that; fifteen rows need neither).
+  const contents = print.getByTestId('mktg-framework-print-contents');
+  await expect(contents.locator('li')).toHaveCount(15);
+  await expect(contents.locator('li').nth(1)).toContainText('03 Goal 1 · Goal 1 title');
+  await expect(contents.locator('li').nth(8)).toContainText('10 Goal 8 · Goal 8 title');
+  const contentsFit = await contents.evaluate((list) => {
+    const frame = list.closest('[data-testid="lfx-mktg-portrait-page"]') as HTMLElement;
+    const strip = frame.querySelector('[data-testid="mktg-framework-print-cover-strip"]') as HTMLElement;
+    return { aboveStrip: list.getBoundingClientRect().bottom <= strip.getBoundingClientRect().top, tight: list.classList.contains('fwp-contents--tight') };
+  });
+  expect(contentsFit).toEqual({ aboveStrip: true, tight: false });
   const framework = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="framework"]');
   const matrix = framework.getByTestId('mktg-framework-print-goals');
   await expect(matrix.locator('.fwp-matrix-vp')).toHaveCount(8);

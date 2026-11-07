@@ -54,25 +54,32 @@
               </p>
             }
           </div>
-          <div [lfxPpRect]="[page.margin, 470, page.contentWidth]">
+          <div [lfxPpRect]="[page.margin, tops.coverTitle, page.contentWidth]">
             <h1 class="fwp-cover-title" data-testid="mktg-framework-print-title">{{ v.title }}</h1>
             @if (coverVersionLine(); as edition) {
               <p class="fwp-cover-edition" data-testid="mktg-framework-print-version">{{ edition }}</p>
             }
           </div>
-          <div [lfxPpRect]="[page.margin, 620, page.contentWidth]">
+          <div [lfxPpRect]="[page.margin, tops.coverContents, page.contentWidth]">
             <span class="pp-lab pp-lab--dark">Contents</span>
-            <!-- Each row's page number once, as the "02" leader the design draws (the editor's read, 7 Nov: no trailing duplicate). -->
-            <ol class="fwp-contents" data-testid="mktg-framework-print-contents">
-              @for (entry of frame.contents; track entry.id) {
-                <li class="fwp-contents-row">
-                  <span class="fwp-contents-number">{{ entry.numberLabel }}</span>
-                  <span>{{ entry.title }}</span>
-                </li>
-              }
-            </ol>
+            <!-- Each row's page number once, as the "02" leader the design draws (the editor's read, 7 Nov: no trailing duplicate). The list is bounded
+                 above the strip (frameworkPortraitContents): tightened when the plan runs long, its runs collapsed to one row with a page range past that. -->
+            @if (frame.contents; as contents) {
+              <ol
+                class="fwp-contents"
+                [class.fwp-contents--tight]="contents.tight"
+                [attr.data-collapsed]="contents.collapsed ? 'true' : null"
+                data-testid="mktg-framework-print-contents">
+                @for (entry of contents.rows; track entry.id) {
+                  <li class="fwp-contents-row">
+                    <span class="fwp-contents-number">{{ entry.numberLabel }}</span>
+                    <span>{{ entry.title }}</span>
+                  </li>
+                }
+              </ol>
+            }
           </div>
-          <div class="fwp-cover-strip" [lfxPpRect]="[page.margin, 984, page.contentWidth]" data-testid="mktg-framework-print-cover-strip">
+          <div class="fwp-cover-strip" [lfxPpRect]="[page.margin, tops.coverStrip, page.contentWidth]" data-testid="mktg-framework-print-cover-strip">
             <span>{{ pageBook.footLeft }}</span>
             <span>{{ coverStripRight() }}</span>
           </div>

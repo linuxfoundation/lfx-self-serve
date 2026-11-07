@@ -98,6 +98,8 @@
     color: var(--pp-muted);
   }
 
+  /* FRAMEWORK_PORTRAIT_ROOM.contentsTop / contentsColumns / contentsColumnGap; a row is ROOM.contentsRow (8 + 8 + 1) at
+     TYPE.contentsRow, and ROOM.contentsRowTight (5 + 5 + 1) at TYPE.contentsRowTight when the plan runs long. */
   .fwp-contents {
     margin-top: 8px;
     padding: 0;
@@ -110,10 +112,16 @@
     display: flex;
     border-top: 1px solid var(--pp-hairline);
     padding: 8px 0;
-    font-size: 13px;
-    line-height: 1.3;
+    font-size: var(--fwp-contents-row-size, 13px);
+    line-height: var(--fwp-contents-row-line, 1.3);
     color: var(--pp-ink);
     break-inside: avoid;
+  }
+
+  .fwp-contents--tight .fwp-contents-row {
+    padding: 5px 0;
+    font-size: var(--fwp-contents-row-tight-size, 12px);
+    line-height: var(--fwp-contents-row-tight-line, 1.3);
   }
 
   .fwp-contents-number {

@@ -43,6 +43,7 @@ import {
   frameworkPortraitAvoidList,
   frameworkPortraitBodyTop,
   frameworkPortraitCutList,
+  frameworkPortraitContents,
   frameworkPortraitHouse,
   frameworkPortraitIcpMatrixHeight,
   frameworkPortraitIcpPages,
@@ -219,10 +220,7 @@ export class MktgFrameworkPrintComponent {
       const plan = frameworkPortraitPlan(view, { inFamily: book.inFamily });
       const icpPages = frameworkPortraitIcpPages(view.icps);
       const numbersPages = frameworkPortraitNumbersPages(view);
-      const contents = plan
-        .map((page, index) => ({ id: page.id, title: page.title, number: book.firstPage + index }))
-        .filter((entry) => entry.id !== this.ids.cover)
-        .map((entry) => ({ ...entry, numberLabel: mktgPortraitPageNumber(entry.number) }));
+      const contents = frameworkPortraitContents(plan, book.firstPage);
       return plan.map((page, index) => {
         const goal = /^goal-\d+$/.test(page.id) ? (view.goals.find((entry) => `goal-${entry.n}` === page.id) ?? null) : null;
         const icpIndex = /^icps-\d+$/.test(page.id) ? Number(page.id.slice('icps-'.length)) : 0;
@@ -237,7 +235,7 @@ export class MktgFrameworkPrintComponent {
           label: mktgPortraitSectionLabel(page.section, book.inFamily, 'Messaging framework'),
           band: !book.inFamily && mktgPortraitOpensChapter(plan, index),
           titleFit,
-          contents: page.id === this.ids.cover ? contents : [],
+          contents: page.id === this.ids.cover ? contents : null,
           statements: page.id === this.ids.framework ? this.statements(view) : null,
           matrix: page.id === this.ids.framework ? frameworkPortraitMatrix(view.goals, view.mf.crosscut, this.tops.footer - this.tops.matrix) : null,
           anchorIntro: sayAvoid ? foundationMessagePrintAnchorIntro(view.mf.anchor.length) : '',

@@ -258,8 +258,12 @@ describe('MktgFrameworkPrintComponent', () => {
     // The editor's gap under the cover title (16–24 px, set at 18) is the global partial's `.fwp-cover-edition` rule, which the
     // unit build does not load: the class is asserted here, the computed gap in the e2e (mktg-os-asset-views.spec.ts).
     expect(query('mktg-framework-print-version')?.classList.contains('fwp-cover-edition')).toBe(true);
-    // Each row's page number once, as the two-digit leader (the editor's read: no trailing duplicate).
-    const rows = Array.from(cover?.querySelectorAll('[data-testid="mktg-framework-print-contents"] li') ?? []);
+    // Each row's page number once, as the two-digit leader (the editor's read: no trailing duplicate); a short book's rows at the design's
+    // measure, not tightened, no run collapsed (frameworkPortraitContents bounds the list above the strip).
+    const list = cover?.querySelector('[data-testid="mktg-framework-print-contents"]');
+    expect(list?.classList.contains('fwp-contents--tight')).toBe(false);
+    expect(list?.getAttribute('data-collapsed')).toBeNull();
+    const rows = Array.from(list?.querySelectorAll('li') ?? []);
     expect(rows.map((row) => text(row))).toEqual([
       '02 Framework',
       '03 Goal 1 · Adoption',

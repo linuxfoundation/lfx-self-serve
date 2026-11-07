@@ -18,6 +18,7 @@ import {
   FRAMEWORK_PORTRAIT_MAX_TILES,
   FRAMEWORK_PORTRAIT_NUMBER_COLUMNS,
   FRAMEWORK_PORTRAIT_NUMBER_TILE,
+  FRAMEWORK_PORTRAIT_PAGE_IDS,
   FRAMEWORK_PORTRAIT_ROOM,
   FRAMEWORK_PORTRAIT_STATEMENT_SHARES,
   FRAMEWORK_PORTRAIT_TILE_SHARES,
@@ -44,6 +45,8 @@ import type {
   FoundationMessagePrintHousePage,
   FoundationMessagePrintIcp,
   FoundationMessagePrintIcpPageRows,
+  FoundationMessagePrintContents,
+  FoundationMessagePrintContentsEntry,
   FoundationMessagePrintMatrix,
   FoundationMessagePrintMatrixCell,
   FoundationMessagePrintNumber,
@@ -53,6 +56,7 @@ import type {
   FoundationMessagePrintType,
   FoundationMessagePrintView,
 } from '../interfaces/mktg-print.interface';
+import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
 import { MKTG_PORTRAIT_FIT } from '../constants/mktg-portrait-print.constants';
 import {
   mktgPortraitCharEm,
@@ -284,6 +288,54 @@ export function frameworkPortraitMatrix(goals: readonly FoundationMessagePrintGo
       )
     );
   return { cells, proofs, height: head + rows.value + rows.key + rows.bite + proofsHeight + note };
+}
+
+/** The room the cover's contents list has, px: from its eyebrow's top to the cover strip, less the eyebrow and the list's margin. */
+export function frameworkPortraitContentsRoom(): number {
+  return TOPS.coverStrip - TOPS.coverContents - ROOM.label - ROOM.contentsTop;
+}
+
+/** The height a contents list of `count` rows takes in its columns at the normal or the tight measure: one line a row, the rows split across the columns. */
+export function frameworkPortraitContentsHeight(count: number, tight: boolean): number {
+  const type = tight ? TYPE.contentsRowTight : TYPE.contentsRow;
+  const row = type.size * type.line + (tight ? ROOM.contentsRowTight : ROOM.contentsRow);
+  return Math.ceil(count / ROOM.contentsColumns) * row;
+}
+
+/** The run a planned page belongs to (`goal`, `icps`, `key-numbers`) when its id is one of a numbered series, else null. */
+function contentsRunOf(id: string): string | null {
+  const match = /^(goal|icps|key-numbers)-\d+$/.exec(id);
+  if (match) return match[1];
+  return id === FRAMEWORK_PORTRAIT_PAGE_IDS.keyNumbers ? 'key-numbers' : null;
+}
+
+/**
+ * The cover's contents, bounded in the room above the cover strip (the design reader's list rule): every page after the
+ * cover, one row each at the design's measure where they fit; tightened where they do not; and where the tight rows still
+ * run past the strip, each run of repeated pages (the goals, the profiles, a continued key-numbers table) collapsed to
+ * ONE row with its page range (`Goals 1–8 · 03–10`), so every page stays listed and nothing is dropped. A provisional
+ * call: the design's board shows the short book only.
+ */
+export function frameworkPortraitContents(plan: readonly MktgPortraitPlanPage[], firstPage: number): FoundationMessagePrintContents {
+  const entries = plan
+    .map((page, index) => ({ id: page.id, title: page.title, number: firstPage + index, numberLabel: mktgPortraitPageNumber(firstPage + index) }))
+    .filter((entry) => entry.id !== FRAMEWORK_PORTRAIT_PAGE_IDS.cover);
+  const room = frameworkPortraitContentsRoom();
+  if (frameworkPortraitContentsHeight(entries.length, false) <= room) return { rows: entries, tight: false, collapsed: false };
+  if (frameworkPortraitContentsHeight(entries.length, true) <= room) return { rows: entries, tight: true, collapsed: false };
+  const rows: FoundationMessagePrintContentsEntry[] = [];
+  for (const entry of entries) {
+    const run = contentsRunOf(entry.id);
+    const last = rows[rows.length - 1];
+    if (run && last && contentsRunOf(last.id) === run) {
+      const first = last.number;
+      const title = run === 'goal' ? `Goals 1–${entry.number - first + 1}` : last.title.replace(/ \(\d+\)$/, '');
+      rows[rows.length - 1] = { ...last, title, numberLabel: `${mktgPortraitPageNumber(first)}–${entry.numberLabel}` };
+    } else {
+      rows.push(entry);
+    }
+  }
+  return { rows, tight: frameworkPortraitContentsHeight(rows.length, false) > room, collapsed: true };
 }
 
 /** The width a say pill takes, px: its text at the pill's type plus its padding and border, at the normal or the tight measure. */

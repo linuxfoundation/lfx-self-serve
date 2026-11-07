@@ -28,6 +28,9 @@ import {
   frameworkPortraitAnchors,
   frameworkPortraitAvoidList,
   frameworkPortraitBodyTop,
+  frameworkPortraitContents,
+  frameworkPortraitContentsHeight,
+  frameworkPortraitContentsRoom,
   frameworkPortraitCutNoteHeightIn,
   frameworkPortraitHouse,
   frameworkPortraitIcpHeight,
@@ -48,6 +51,7 @@ import {
 } from './mktg-framework-portrait-layout.utils';
 import type { FoundationMessagePrintGoal, FoundationMessagePrintIcp, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import type { FoundationMessagePillarView } from '../interfaces/foundation-message.interface';
+import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
 import { mktgPortraitCharsPerLine } from './mktg-portrait-print.utils';
 import { buildFoundationMessagePrintView } from './mktg-print.utils';
 
@@ -302,6 +306,63 @@ describe('the framework portrait book’s message house', () => {
     expect(tall.audiences.rows.length).toBeGreaterThan(0);
     expect(tall.audiences.note).toBe(`+${6 - tall.audiences.rows.length} more on the framework's Framework tab in LFX One`);
     expect(frameworkPortraitHouse(view([pillar(1)], 0, ''), { text: '', size: 19 }).whyNow).toBeNull();
+  });
+});
+
+describe('the framework portrait book’s cover contents', () => {
+  const plan = (goals: number, icpPages: number, numbersPages = 1): MktgPortraitPlanPage[] => [
+    { id: 'cover', section: 'Cover', title: 'Cover' },
+    { id: 'framework', section: '01 Framework', title: 'Framework' },
+    ...Array.from({ length: goals }, (_, index) => ({ id: `goal-${index + 1}`, section: '01 Framework', title: `Goal ${index + 1} · Title` })),
+    { id: 'say-avoid', section: '01 Framework', title: 'Say and avoid' },
+    ...Array.from({ length: icpPages }, (_, index) => ({
+      id: `icps-${index + 1}`,
+      section: '02 ICPs',
+      title: index === 0 ? 'Ideal customer profiles' : `Ideal customer profiles (${index + 1})`,
+    })),
+    { id: 'message-house', section: '03 Message house', title: 'Message house' },
+    ...Array.from({ length: numbersPages }, (_, index) => ({
+      id: index === 0 ? 'key-numbers' : `key-numbers-${index + 1}`,
+      section: '04 Key numbers',
+      title: index === 0 ? 'Key numbers' : `Key numbers (${index + 1})`,
+    })),
+    { id: 'sources', section: '05 Sources', title: 'Sources & gaps' },
+  ];
+
+  it('lists every page after the cover at the design’s measure while the rows end above the strip, tight past that', () => {
+    expect(frameworkPortraitContentsRoom()).toBe(984 - 620 - 26 - 8);
+    expect(frameworkPortraitContentsHeight(12, false)).toBe(6 * (13 * 1.3 + 17));
+    expect(frameworkPortraitContentsHeight(23, true)).toBe(12 * (12 * 1.3 + 11));
+    const short = frameworkPortraitContents(plan(4, 2), 1);
+    expect(short).toMatchObject({ tight: false, collapsed: false });
+    expect(short.rows.map((row) => row.numberLabel)).toEqual(['02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']);
+    expect(short.rows[0]).toEqual({ id: 'framework', title: 'Framework', number: 2, numberLabel: '02' });
+    // The record's cap: eight goals, ten profile pages, two numbers pages, 25 frames: 24 rows in twelve pairs, tight, every page listed.
+    const cap = frameworkPortraitContents(plan(8, 10, 2), 1);
+    expect(frameworkPortraitContentsHeight(24, false)).toBeGreaterThan(frameworkPortraitContentsRoom());
+    expect(cap).toMatchObject({ tight: true, collapsed: false });
+    expect(cap.rows).toHaveLength(24);
+    expect(frameworkPortraitContentsHeight(cap.rows.length, true)).toBeLessThanOrEqual(frameworkPortraitContentsRoom());
+  });
+
+  it('collapses each run of repeated pages to one row with its page range when the tight rows still pass the strip, dropping no page', () => {
+    // Beyond the record (41 frames): the goals, the profile pages and the continued table each become one row with a range.
+    const long = frameworkPortraitContents(plan(8, 24, 4), 1);
+    expect(frameworkPortraitContentsHeight(40, true)).toBeGreaterThan(frameworkPortraitContentsRoom());
+    expect(long.collapsed).toBe(true);
+    expect(long.rows.map((row) => [row.title, row.numberLabel])).toEqual([
+      ['Framework', '02'],
+      ['Goals 1–8', '03–10'],
+      ['Say and avoid', '11'],
+      ['Ideal customer profiles', '12–35'],
+      ['Message house', '36'],
+      ['Key numbers', '37–40'],
+      ['Sources & gaps', '41'],
+    ]);
+    expect(long.tight).toBe(false);
+    expect(frameworkPortraitContentsHeight(long.rows.length, false)).toBeLessThanOrEqual(frameworkPortraitContentsRoom());
+    // Inside the family (no cover, first page 5) the numbers follow the family's.
+    expect(frameworkPortraitContents(plan(1, 1).slice(1), 5).rows.map((row) => row.numberLabel)).toEqual(['05', '06', '07', '08', '09', '10', '11']);
   });
 });
 

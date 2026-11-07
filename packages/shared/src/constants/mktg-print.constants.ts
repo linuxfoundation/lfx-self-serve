@@ -91,13 +91,6 @@ export const FRAMEWORK_PORTRAIT_NUMBER_TILE = {
 } as const;
 
 /**
- * The fixed tops of the framework's portrait pages whose blocks the fit
- * model bounds (the design's R(x, y) values, px): a goal page's key-message
- * bar, proof list, sound bite and "Who it's for" cards; the Sources & gaps
- * page's lists and approval card; and where the footer begins, which no
- * block may pass.
- */
-/**
  * The framework page's four statement cards' shares of the row (their flex). The design's are 0.85 / 1.05 / 1.4 / 0.7; the
  * tagline's column is widened from the vision's and the positioning's so the tagline holds two words a line (the editor's
  * read, 7 Nov 2026: no one-word lines; the design's own board shows them).
@@ -109,7 +102,18 @@ export const FRAMEWORK_PORTRAIT_STATEMENT_SHARES = {
   tagline: 1.05,
 } as const;
 
+/**
+ * The fixed tops of the framework's portrait pages (the design's R(x, y) values, px): the cover's title, contents and
+ * strip; the framework page's matrix; a goal page's key-message bar, proof list, sound bite and "Who it's for" cards;
+ * the say-and-avoid page's lists, anchors and crosscut; the Sources & gaps page's lists and approval card; the house's
+ * umbrella; the ICP pages' rows and matrix; a numbers continuation's table; and where the footer begins, which no block
+ * may pass. The layout utils bound every block that follows the data between its top and the next block's, or the footer.
+ */
 export const FRAMEWORK_PORTRAIT_TOPS = {
+  /** The cover: the title block, the contents list, and the strip at the foot (the contents end above it). */
+  coverTitle: 470,
+  coverContents: 620,
+  coverStrip: 984,
   /** The framework page's goal matrix, under the statement cards (which close 16 px above it). */
   matrix: 336,
   goalKey: 330,
@@ -199,15 +203,25 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   tileFigure: { size: 54, line: 1, weight: 500 },
   /** A key number tile's label (`.fwp-number-label`), fitted to the room under the figure. */
   tileLabel: { size: 14, line: 1.4, weight: 400 },
+  /** The cover's contents rows (`.fwp-contents-row`), and their tight measure when the plan runs long. */
+  contentsRow: { size: 13, line: 1.3, weight: 400 },
+  contentsRowTight: { size: 12, line: 1.3, weight: 400 },
 } as const satisfies Record<string, FoundationMessagePrintType>;
 
 /**
- * The room the framework print's stylesheet takes around a fitted block, px, which the component subtracts from a
- * block's box before it fits the text. Each value names the stylesheet rule it mirrors (mktg-framework-print.component.scss).
+ * The room the framework print's stylesheet takes around a fitted block, px, which the layout utils subtract from a
+ * block's box before they fit the text. Each value names the stylesheet rule it mirrors (the global partial
+ * `_mktg-framework-print-pages.scss`).
  */
 export const FRAMEWORK_PORTRAIT_ROOM = {
   /** A `pp-lab` eyebrow (the grammar's) and the gap under it. */
   label: 26,
+  /** The cover's contents list: its margin under the eyebrow; a row's padding (8 + 8) and hairline, and the tight row's (5 + 5); the list's two columns and their gap. */
+  contentsTop: 8,
+  contentsRow: 17,
+  contentsRowTight: 11,
+  contentsColumns: 2,
+  contentsColumnGap: 24,
   /** `.fwp-card` padding, top and bottom together (14 + 14). */
   cardPadding: 28,
   /** `.fwp-proof-row` padding (13 + 13) and its hairline. */

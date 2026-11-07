@@ -254,14 +254,22 @@ export interface FoundationMessagePrintSourcesPage {
   approvalNote: string;
 }
 
-/** One entry of the cover's contents: a page after the cover with its book page number. */
+/** One entry of the cover's contents: a page after the cover with its book page number, or a run of pages (the goals, the profiles) with their range. */
 export interface FoundationMessagePrintContentsEntry {
   id: string;
   title: string;
-  /** The book page number. */
+  /** The book page number (a run's first). */
   number: number;
-  /** `02`: the number as the contents print it. */
+  /** `02`, or a run's `03–10`: the number as the contents print it. */
   numberLabel: string;
+}
+
+/** The cover's contents as the layout bounds them (frameworkPortraitContents): the rows at the normal or the tight measure, the runs collapsed to ranges when the plan runs long. */
+export interface FoundationMessagePrintContents {
+  rows: FoundationMessagePrintContentsEntry[];
+  tight: boolean;
+  /** Repeated pages (the goals, the profiles, a continued table) listed as one row each with a page range. */
+  collapsed: boolean;
 }
 
 /** One anchor question as the say-and-avoid page numbers it. */
@@ -320,8 +328,8 @@ export interface FoundationMessagePrintFrame extends MktgPortraitPlanPage {
   /** The running head's section label as printed (`01 Framework`; `Messaging framework · Framework` inside the family). */
   label: string;
   band: boolean;
-  /** The cover's contents, on the cover; empty elsewhere. */
-  contents: FoundationMessagePrintContentsEntry[];
+  /** The cover's contents, on the cover; null elsewhere. */
+  contents: FoundationMessagePrintContents | null;
   /** The four statements, fitted to their cards, on the framework page. */
   statements: {
     vision: FoundationMessagePrintFittedText;
