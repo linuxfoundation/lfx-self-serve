@@ -92,6 +92,8 @@ export interface MktgPortraitFitPara {
   tracking?: number;
   /** Space above the paragraph, px. */
   above?: number;
+  /** Px the box's width is narrowed by for this paragraph alone (a table cell beside a swatch and a label), unscaled. */
+  indent?: number;
 }
 
 /** A block of paragraphs the fit model fits to a box. */

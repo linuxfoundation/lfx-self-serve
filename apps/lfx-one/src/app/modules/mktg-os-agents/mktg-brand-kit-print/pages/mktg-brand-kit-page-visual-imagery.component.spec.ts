@@ -29,29 +29,36 @@ describe('the Imagery & graphic elements page', () => {
       'Primary button',
       'Secondary',
     ]);
-    // The orange accent fails AA with white, so the call-out's text is the kit's dark and the caption says why.
+    // Nothing in the kit reads on its orange (white 2.8:1, Charcoal 2.9:1), so no text goes on the accent: the call-out
+    // is a white card in the kit's dark under an accent rule, and the caption says why in the matrix's ratios.
     const callout = elements?.querySelector<HTMLElement>('.kp-element--callout');
     expect(callout?.style.color).toBe('rgb(77, 78, 78)');
+    expect(callout?.style.background).toBe('rgb(255, 255, 255)');
+    expect(callout?.classList.contains('kp-element--callout-rule')).toBe(true);
     expect(callout?.querySelector('.kp-button--small')?.textContent).toBe('one.example.org');
     expect(frame.querySelector('[data-testid="brand-kit-imagery-callout-caption"]')?.textContent).toBe(
-      'Call-out · the one accent moment; text in Charcoal (white on Orange fails AA, 2.8:1)'
+      'Call-out · the accent as a top rule; no palette color reaches AA on Orange (Charcoal 2.9:1 at best), so the card keeps a white ground under an accent rule'
     );
     const avoid = frame.querySelector('[data-testid="brand-kit-imagery-avoid"]');
     expect(rectOf(avoid)).toEqual({ left: '56px', top: '900px', width: '704px' });
     expect(Array.from(avoid?.querySelectorAll('li') ?? [], (li) => li.textContent)).toEqual(view.visual.imagery.avoid);
   });
 
-  it('says the call-out’s text is white on an accent that passes AA, and leaves the avoid list out when the kit has none', async () => {
+  it('sets the call-out’s text in white on an accent white reads on, with the matrix’s ratio, and leaves the avoid list out when the kit has none', async () => {
     const { frame, fixture, look } = await mountBrandKitPage(MktgBrandKitPageVisualImageryComponent, 'visual-imagery', (view) => ({
       ...view,
       accent: '#1E3A8A',
       visual: { ...view.visual, imagery: { ...view.visual.imagery, avoid: [] } },
     }));
-    // The look follows the brand: on this accent the shared ink rule puts white on it.
-    fixture.componentRef.setInput('look', { ...look, accent: '#1E3A8A', onAccent: 'white' });
+    // The look follows the brand; the moment follows the view's own contrast: white reads 10.3:1 on this navy.
+    fixture.componentRef.setInput('look', { ...look, accent: '#1E3A8A' });
     await fixture.whenStable();
     expect(frame.querySelector('[data-testid="brand-kit-imagery-avoid"]')).toBeNull();
-    expect(frame.querySelector('[data-testid="brand-kit-imagery-callout-caption"]')?.textContent).toBe('Call-out · the one accent moment; text in white');
+    expect(frame.querySelector('[data-testid="brand-kit-imagery-callout-caption"]')?.textContent).toBe(
+      'Call-out · the one accent moment; text in White (10.3:1 on Orange)'
+    );
+    const callout = frame.querySelector<HTMLElement>('[data-element="callout"]');
+    expect(callout?.classList.contains('kp-element--callout-rule')).toBe(false);
   });
 
   it('cuts a 300-character imagery rule to the intro’s three lines and counts the avoid items its 90 px cannot hold', async () => {

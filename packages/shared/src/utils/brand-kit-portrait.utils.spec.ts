@@ -17,8 +17,10 @@ import {
 import { lfxColors } from '../constants/colors.constants';
 import { buildBrandKitBookView } from './brand-kit-book.utils';
 import {
+  brandKitPortraitAccentMoment,
   brandKitPortraitApprovalLine,
   brandKitPortraitArtwork,
+  brandKitPortraitBackCoverLine,
   brandKitPortraitBuiltFrom,
   brandKitPortraitContrast,
   brandKitPortraitContrastGrade,
@@ -239,24 +241,24 @@ describe('the type page’s strings', () => {
     expect(samples).toEqual(['Project One', view.voice.line, view.voice.line, view.voice.line, view.voice.umbrella, view.footer]);
     expect(brandKitPortraitTypeSample({ ...view, voice: { ...view.voice, umbrella: '' } }, view.type.scale[4])).toBe(view.voice.line);
     // A sample is never set smaller than its step (the editor's rule): a line that fits its measure at the step's size
-    // prints whole, one that would not is shortened at a word, no ellipsis — as the served AAIF book needs (QA round 1,
-    // p11): the display line at 64 fits 704, the tracked specimen (-0.015em) at 48 fits 704, the untracked H2 line at 32
-    // wraps the 480 px column (so it loses its last word), the H3 at 24 fits …
+    // prints whole, one that would not is shortened at a word with an ellipsis (never a bare cut) — as the served AAIF
+    // book needs (QA round 1, p11): the display line at 64 fits 704, the tracked specimen (-0.015em) at 48 fits 704, the
+    // untracked H2 line at 32 wraps the 480 px column (so it loses its last word), the H3 at 24 fits …
     const sans = { weight: 500, family: 'Instrument Sans' };
     expect(brandKitPortraitShortenLine('Agentic AI Foundation', 704, 64, sans)).toBe('Agentic AI Foundation');
     expect(brandKitPortraitShortenLine('Open foundations for agentic AI.', 704, 48, { ...sans, tracking: BRAND_KIT_PORTRAIT_TYPE_SAMPLE_TRACKING_EM })).toBe(
       'Open foundations for agentic AI.'
     );
     expect(mktgPortraitLineFits('Open foundations for agentic AI.', 480, 32, sans)).toBe(false);
-    expect(brandKitPortraitShortenLine('Open foundations for agentic AI.', 480, 32, sans)).toBe('Open foundations for agentic');
+    expect(brandKitPortraitShortenLine('Open foundations for agentic AI.', 480, 32, sans)).toBe('Open foundations for agentic…');
     expect(brandKitPortraitShortenLine('Open foundations for agentic AI.', 480, 24, sans)).toBe('Open foundations for agentic AI.');
     // … while the synthetic line in Montserrat, a wide face, loses words in the 480 px H2 column and at the 48 px specimen.
     const montserrat = { weight: 500, family: view.type.family };
     expect(brandKitPortraitShortenLine('Project One', 704, 64, montserrat)).toBe('Project One');
-    expect(brandKitPortraitShortenLine(view.voice.line, 480, 32, montserrat)).toBe('Open standards for one');
-    expect(brandKitPortraitShortenLine(view.voice.line, 704, 48, montserrat)).toBe('Open standards for one');
+    expect(brandKitPortraitShortenLine(view.voice.line, 480, 32, montserrat)).toBe('Open standards for one…');
+    expect(brandKitPortraitShortenLine(view.voice.line, 704, 48, montserrat)).toBe('Open standards for one…');
     // At least the first word, whatever the measure; spaces never count.
-    expect(brandKitPortraitShortenLine('  Interoperability   everywhere ', 40, 64, { weight: 500 })).toBe('Interoperability');
+    expect(brandKitPortraitShortenLine('  Interoperability   everywhere ', 40, 64, { weight: 500 })).toBe('Interoperability…');
     expect(brandKitPortraitShortenLine('', 400, 64, {})).toBe('');
     // A shortened sample never ends on a function word: the overfull H3 loses "and" with the word after it.
     const clause = 'The name of the project goes first and the rest of the sentence follows at the same weight.';
@@ -293,7 +295,7 @@ describe('the type page’s strings', () => {
     expect(short.steps.map((step) => step.step)).toEqual(['display', 'h2', 'h3', 'eyebrow', 'body', 'caption']);
     expect(short.steps.map((step) => step.size)).toEqual(view.type.scale.map((step) => step.size));
     expect(short.steps.map((step) => step.spec)).toEqual(view.type.scale.map((step) => `${step.weight} · ${step.size}/${step.line_height}`));
-    expect(short.steps[1]).toMatchObject({ sample: 'Open standards for one', shortened: true, size: 32 });
+    expect(short.steps[1]).toMatchObject({ sample: 'Open standards for one…', shortened: true, size: 32 });
     expect(short.steps[4]).toMatchObject({ sample: view.voice.umbrella, size: 18, line_height: 30, spec: '400 · 18/30', shortened: false });
     expect(short.scaleEnd).toBeLessThan(c.lowerTop - c.lowerGap);
     expect(short).toMatchObject({ lowerTop: 830, bodyLines: 3 });
@@ -326,7 +328,7 @@ describe('the type page’s strings', () => {
     );
     expect(aaif.steps.map((step) => [step.step, step.size, step.spec, step.sample])).toEqual([
       ['display', 64, '500 · 64/72', 'Project One'],
-      ['h2', 32, '500 · 32/40', 'Open foundations for agentic'],
+      ['h2', 32, '500 · 32/40', 'Open foundations for agentic…'],
       ['h3', 24, '500 · 24/32', 'Open foundations for agentic AI.'],
       ['eyebrow', 14, '500 · 14/20', 'Open foundations for agentic AI.'],
       ['body', 18, '400 · 18/30', umbrella],
@@ -362,12 +364,60 @@ describe('the usage page’s cards', () => {
     // The headlines keep their last two words together (a no-break space), so no card ends on one word alone.
     const line = mktgNoWidow(view.voice.line);
     expect(line).toBe(view.voice.line.replace(/ (\S+)$/, '\u00a0$1'));
-    expect(cards.map((card) => card.text)).toEqual([line, line, 'Project One annual report 2026', 'New members join Project\u00a0One']);
+    // The project's name stays on one line in every card (a no-break space inside it), and a header's name as a whole.
+    expect(cards.map((card) => card.text)).toEqual([line, line, 'Project\u00a0One annual report 2026', 'New members join Project\u00a0One']);
+    const foundation = brandKitPortraitUsageCards({ ...view, projectName: 'Agentic AI Foundation' });
+    expect(foundation[3].text).toBe('New members join Agentic\u00a0AI\u00a0Foundation');
     // Without a recorded approval the report cover carries no year: never a made-up one.
-    expect(brandKitPortraitUsageCards(view)[2].text).toBe('Project One annual report');
-    expect(cards.map((card) => card.accentMoment)).toEqual(['none (grid ground)', 'the card itself', 'none', 'the top rule']);
+    expect(brandKitPortraitUsageCards(view)[2].text).toBe('Project\u00a0One annual report');
+    // The social card's ground and moment are the accent-moment rule's, not the record's word ("dark"): on this kit's
+    // orange nothing reads, so the card is white under the accent as its top rule.
+    expect(cards.map((card) => card.accentMoment)).toEqual(['none (grid ground)', 'the top rule', 'none', 'the top rule']);
+    expect(cards.map((card) => card.ground)).toEqual(['dark', 'white', 'white', 'dark']);
     expect(cards[2]).toMatchObject({ name: 'Report cover', format: 'letter', ground: 'white' });
+    const onNavy = brandKitPortraitUsageCards({ ...view, accent: '#1E3A8A' });
+    expect(onNavy[1]).toMatchObject({ ground: 'accent', accentMoment: 'the card itself' });
     expect(brandKitPortraitUsageCards({ ...view, usageTiles: [] })).toEqual([]);
+  });
+});
+
+describe('brandKitPortraitBackCoverLine', () => {
+  it('keeps a brand line that sets in two lines of the content width, and shortens a longer one at a word with an ellipsis, never on a function word', () => {
+    expect(brandKitPortraitBackCoverLine(view.voice.line)).toBe(view.voice.line);
+    expect(brandKitPortraitBackCoverLine('  ')).toBe('');
+    const overfull = buildBrandKitBookView(brandKitOverfullFixture(), 4).voice.line;
+    const line = brandKitPortraitBackCoverLine(overfull, 'Montserrat, sans-serif');
+    expect(overfull.length).toBeGreaterThan(280);
+    expect(line.endsWith('…')).toBe(true);
+    expect(overfull.startsWith(line.slice(0, -1))).toBe(true);
+    // Two lines of 13 px capitals at +0.16em in the 704 px: about sixty characters a line.
+    expect(line.length).toBeLessThan(140);
+    expect(line.length).toBeGreaterThan(90);
+    expect(line).not.toMatch(/ (the|a|an|and|or|of|to|in|on|for|with|at|by)…$/);
+  });
+});
+
+describe('brandKitPortraitAccentMoment', () => {
+  it('sets no text on an accent nothing in the kit reads on, and says so in the matrix’s own ratios; text in the best readable ink where one does', () => {
+    // Every fixture shares the orange: white 2.8:1 and Charcoal 2.9:1 both fail, as the contrast matrix grades them.
+    for (const kit of [brandKitTestRevision(), brandKitOverfullFixture(), brandKitPngOnlyFixture()]) {
+      const moment = brandKitPortraitAccentMoment(buildBrandKitBookView(kit, 4));
+      expect(moment).toEqual({
+        ground: 'white',
+        background: '#FFFFFF',
+        ink: '#4D4E4E',
+        inkName: 'Charcoal',
+        ratioLabel: '8.3',
+        reason: 'no palette color reaches AA on Orange (Charcoal 2.9:1 at best), so the card keeps a white ground under an accent rule',
+      });
+    }
+    // A darker orange white just reads on (4.5:1 by the floor label, graded unrounded): white on the accent.
+    expect(brandKitPortraitAccentMoment({ ...view, accent: '#C95000' })).toMatchObject({ ground: 'accent', ink: 'white', inkName: 'White', ratioLabel: '4.5' });
+    expect(brandKitPortraitAccentMoment({ ...view, accent: '#C95000' }).reason).toBe('text in White (4.5:1 on Orange)');
+    // A pale accent: the kit's dark reads on it, and is named.
+    const onPale = brandKitPortraitAccentMoment({ ...view, accent: '#FFE8D6' });
+    expect(onPale).toMatchObject({ ground: 'accent', ink: '#4D4E4E', inkName: 'Charcoal' });
+    expect(onPale.reason).toMatch(/^text in Charcoal \(\d+\.\d:1 on Orange\)$/);
   });
 });
 
@@ -390,16 +440,17 @@ describe('the Voice page’s messages', () => {
   it('prints the umbrella and the brand line as written when they fit, and sets a long pair smaller together, cut at a sentence, above the attributes', () => {
     expect(brandKitPortraitVoiceMessagesFit(view)).toEqual({ scale: 1, cut: false, umbrella: view.voice.umbrella, line: view.voice.line });
     expect(brandKitPortraitVoiceMessagesFit({ voice: { ...view.voice, umbrella: '' } })).toMatchObject({ umbrella: '', line: view.voice.line, scale: 1 });
-    // The overfull record's pair (two 295-character lines) holds whole at the smallest step; a pair twice as long is
-    // cut at a sentence, the umbrella first (the longer paragraph), and the block still ends above the attributes.
+    // The overfull record's pair (two 295-character lines, the brand line at the umbrella's 1.3 leading) holds at the
+    // smallest step only with the umbrella cut at a sentence (the longer paragraph first); the brand line stays whole and
+    // the block still ends above the attributes.
     const long = buildBrandKitBookView(brandKitOverfullFixture(), 4);
-    expect(brandKitPortraitVoiceMessagesFit(long)).toMatchObject({ scale: 0.72, cut: false, umbrella: long.voice.umbrella, line: long.voice.line });
+    const fit = brandKitPortraitVoiceMessagesFit(long);
+    expect(fit).toMatchObject({ scale: 0.72, cut: true, line: long.voice.line });
+    expect(fit.umbrella.length).toBeLessThan(long.voice.umbrella.length);
+    expect(long.voice.umbrella.startsWith(fit.umbrella)).toBe(true);
+    expect(fit.umbrella.endsWith('.')).toBe(true);
     const doubled = { voice: { ...long.voice, umbrella: `${long.voice.umbrella} ${long.voice.umbrella}`, line: `${long.voice.line} ${long.voice.line}` } };
-    const fit = brandKitPortraitVoiceMessagesFit(doubled);
-    expect(fit.scale).toBe(0.72);
-    expect(fit.cut).toBe(true);
-    expect(fit.umbrella.length).toBeLessThan(doubled.voice.umbrella.length);
-    expect(doubled.voice.umbrella.startsWith(fit.umbrella)).toBe(true);
+    expect(brandKitPortraitVoiceMessagesFit(doubled)).toMatchObject({ scale: 0.72, cut: true });
     const c = BRAND_KIT_PORTRAIT_VOICE_MESSAGES;
     const height = mktgPortraitBlockHeight(
       mktgPortraitScaleBlock(
@@ -465,15 +516,16 @@ describe('the chapters’ rule lists', () => {
 
 describe('the Color contrast page’s layout', () => {
   it('keeps the pairs at the mock’s y 610 under four colours, lets a bigger matrix push them down, and counts the pairs the footer cannot hold', () => {
-    expect(brandKitPortraitContrastLayout(4, 1)).toEqual({ matrixHeight: 362, matrixMinHeight: 390, pairsTop: 610, pairsKept: 1, more: 0, moreLine: '' });
+    // The matrix block keeps the room above the pairs' 24 px gap, so the heading sits at 610 under four colours.
+    expect(brandKitPortraitContrastLayout(4, 1)).toEqual({ matrixHeight: 362, matrixMinHeight: 366, pairsTop: 610, pairsKept: 1, more: 0, moreLine: '' });
     // Seven pairs fill the room under four colours (990 − 610 − 20 = 360 ≥ 7 × 51); the eighth needs the line.
     expect(brandKitPortraitContrastLayout(4, 7)).toMatchObject({ pairsKept: 7, more: 0 });
     expect(brandKitPortraitContrastLayout(4, 8)).toMatchObject({ pairsKept: 6, more: 2 });
-    // Six colours: the matrix is 534 px, the pairs start at 754 and three of eight fit with the line; one always prints.
+    // Six colours: the matrix is 534 px, the pairs start at 778 (the gap kept) and three of eight fit with the line; one always prints.
     expect(brandKitPortraitContrastLayout(6, 8)).toEqual({
       matrixHeight: 534,
-      matrixMinHeight: 390,
-      pairsTop: 754,
+      matrixMinHeight: 366,
+      pairsTop: 778,
       pairsKept: 3,
       more: 5,
       moreLine: '+5 more pairs, in LFX One',
@@ -723,5 +775,57 @@ describe('the Sources page’s lists', () => {
       { text: fit.moreReadLine, ...item },
     ];
     expect(column(left)).toBeLessThanOrEqual(room);
+  });
+
+  it('measures a color conflict as the page draws it (a head, then padded rows with the source in its own cell), so the overfull record’s six stop above the accepted box', () => {
+    const c = BRAND_KIT_PORTRAIT_SOURCES;
+    const room = c.acceptedTop - c.gap - c.top;
+    const width = c.width - c.indent;
+    const overfull = brandKitPortraitSources(buildBrandKitBookView(brandKitOverfullFixture(), 4));
+    expect(overfull.conflicts).toHaveLength(6);
+    const fit = brandKitPortraitSourcesFit(overfull, true);
+    // Six conflicts of three values: eighteen padded rows and six heads. As plain 20 px lines they would read as fitting
+    // at a larger size; as drawn (8 px over each table, 11 px of padding and rule a row, the source wrapping in its cell)
+    // they hold only set smaller, and the column's drawn height ends inside the room.
+    expect(fit.scale).toBeLessThanOrEqual(0.76);
+    expect(fit.sources.conflicts).toHaveLength(6);
+    expect(fit.moreConflicts).toBe(0);
+    const k = c.conflict;
+    const labelWidth = (label: string) => (label.length * width) / mktgPortraitCharsPerLine(width, c.item.size, { weight: 600 });
+    const drawn = fit.sources.conflicts.flatMap((conflict) => [
+      { text: conflict.name, ...k.name, above: k.above },
+      ...conflict.values.map((value, index) => ({
+        text: value.source,
+        ...c.item,
+        above: k.rowPad + (index === 0 ? k.headBelow : 0),
+        indent: k.swatch + k.cellGap + labelWidth(value.label) + k.cellGap,
+      })),
+    ]);
+    const right = [
+      ...(fit.sources.missing.length ? [{ text: 'Missing', ...c.label }] : []),
+      ...fit.sources.missing.map((entry, index) => ({ text: `${entry.asset} — ${entry.reason}`, ...c.item, above: index === 0 ? c.listAbove : 0 })),
+      { text: 'Color conflicts', ...c.label, above: fit.sources.missing.length ? c.blockGap : 0 },
+      ...drawn,
+    ];
+    expect(mktgPortraitBlockHeight(mktgPortraitScaleBlock({ paras: right }, fit.scale), width)).toBeLessThanOrEqual(room);
+    // Long sources in the cells: more rows than the room holds even smallest, so conflicts are counted, never run under the box.
+    const wordy = brandKitPortraitSources({
+      ...buildBrandKitBookView(brandKitOverfullFixture(), 4),
+      report: {
+        ...buildBrandKitBookView(brandKitOverfullFixture(), 4).report,
+        color_conflicts: Array.from({ length: 8 }, (_, index) => ({
+          name: `Color ${index + 1}`,
+          values: Array.from({ length: 4 }, (_, v) => ({
+            hex: `#11223${v}`,
+            source: `https://one.example.org/brand/guidelines/section-${index + 1}/colour-${v + 1}`,
+          })),
+          chosen: '#112230',
+        })),
+      },
+    });
+    const counted = brandKitPortraitSourcesFit(wordy, true);
+    expect(counted.scale).toBe(0.72);
+    expect(counted.moreConflicts).toBeGreaterThan(0);
+    expect(counted.sources.conflicts.length + counted.moreConflicts).toBe(8);
   });
 });

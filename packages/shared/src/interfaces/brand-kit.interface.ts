@@ -645,6 +645,22 @@ export interface BrandKitColorwayTile {
   symbolFilter: string;
 }
 
+/** A named colour a text ink is chosen from (`brandKitBestInkOn`): white, or a palette entry. */
+export interface BrandKitInkCandidate {
+  name: string;
+  hex: string;
+}
+
+/**
+ * The text ink chosen for a ground (`brandKitBestInkOn`): the candidate with
+ * the highest WCAG contrast there, and whether it reaches AA (4.5:1). `ratio`
+ * is unrounded: compared as it is, printed through `brandKitRatioLabel`.
+ */
+export interface BrandKitTextInk extends BrandKitInkCandidate {
+  ratio: number;
+  readable: boolean;
+}
+
 /** One palette card of the book. */
 export interface BrandKitPaletteCard {
   name: string;

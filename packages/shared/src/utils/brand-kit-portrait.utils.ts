@@ -8,31 +8,26 @@
 
 import {
   BRAND_KIT_PORTRAIT_ATTRIBUTES,
+  BRAND_KIT_PORTRAIT_BACK_COVER_LINE,
   BRAND_KIT_PORTRAIT_CONTENTS,
   BRAND_KIT_PORTRAIT_CONTRAST,
-  BRAND_KIT_PORTRAIT_INTRO,
-  BRAND_KIT_PORTRAIT_USAGE_LINES,
-  BRAND_KIT_PORTRAIT_VOICE_MESSAGES,
-  BRAND_KIT_PORTRAIT_RULE_LISTS,
   BRAND_KIT_PORTRAIT_GRADE_INKS,
+  BRAND_KIT_PORTRAIT_INTRO,
   BRAND_KIT_PORTRAIT_MESSAGE_CARD,
   BRAND_KIT_PORTRAIT_MONO_FILTER,
   BRAND_KIT_PORTRAIT_MONTHS,
   BRAND_KIT_PORTRAIT_RECOLOR_FILTER,
+  BRAND_KIT_PORTRAIT_RULE_LISTS,
   BRAND_KIT_PORTRAIT_SCALE_META_PX,
   BRAND_KIT_PORTRAIT_SOURCES,
   BRAND_KIT_PORTRAIT_TYPE_PAGE,
   BRAND_KIT_PORTRAIT_USAGE_ACCENT_MOMENTS,
+  BRAND_KIT_PORTRAIT_USAGE_LINES,
+  BRAND_KIT_PORTRAIT_VOICE_MESSAGES,
   BRAND_KIT_PORTRAIT_WEIGHT_NAMES,
 } from '../constants/brand-kit-portrait.constants';
 import { lfxColors } from '../constants/colors.constants';
-import {
-  BRAND_KIT_CONTRAST_AA,
-  BRAND_KIT_CONTRAST_AAA,
-  BRAND_KIT_CONTRAST_LARGE_TEXT,
-  BRAND_KIT_FOUND_IN_LABELS,
-  BRAND_KIT_REPORT_ASSET_LABELS,
-} from '../constants/brand-kit.constants';
+import { BRAND_KIT_FOUND_IN_LABELS, BRAND_KIT_REPORT_ASSET_LABELS } from '../constants/brand-kit.constants';
 import { MKTG_PRINT_REVERSED_FILTER } from '../constants/mktg-print.constants';
 import { MKTG_PORTRAIT_FIT, MKTG_PORTRAIT_MORE_LINE } from '../constants/mktg-portrait-print.constants';
 import type {
@@ -46,6 +41,7 @@ import type {
   BrandKitWatchoutView,
 } from '../interfaces/brand-kit.interface';
 import type {
+  BrandKitPortraitAccentMoment,
   BrandKitPortraitArtworkMode,
   BrandKitPortraitAttributesFit,
   BrandKitPortraitContentsLayout,
@@ -67,8 +63,16 @@ import type {
 import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.interface';
 import type { MktgPrintLogo } from '../interfaces/mktg-print.interface';
 import type { MktgPortraitFitBlock, MktgPortraitFitPara } from '../interfaces/mktg-portrait-print.interface';
-import { brandKitContrastRatio, brandKitInWords, brandKitLuminance, brandKitRatioLabel } from './brand-kit-book.utils';
 import {
+  brandKitBestInkOn,
+  brandKitContrastGradeOf,
+  brandKitContrastRatio,
+  brandKitInWords,
+  brandKitLuminance,
+  brandKitRatioLabel,
+} from './brand-kit-book.utils';
+import {
+  mktgKeepName,
   mktgNoWidow,
   mktgPortraitBlockHeight,
   mktgPortraitCharsPerLine,
@@ -246,12 +250,9 @@ export function brandKitPortraitWhiteContrast(hex: string): number {
 
 // ---------- Color contrast (page 10) ----------
 
-/** The grade of an unrounded contrast ratio, in the kit's own words: AAA from 7, AA from 4.5, large text only from 3, else a fail. */
+/** The grade of an unrounded contrast ratio, in the kit's own words (`brandKitContrastGradeOf`: the one grader for the matrix and the kit's pairs). */
 export function brandKitPortraitContrastGrade(ratio: number): BrandKitContrastGrade {
-  if (ratio >= BRAND_KIT_CONTRAST_AAA) return 'AAA';
-  if (ratio >= BRAND_KIT_CONTRAST_AA) return 'AA';
-  if (ratio >= BRAND_KIT_CONTRAST_LARGE_TEXT) return 'Large text only';
-  return 'Fails';
+  return brandKitContrastGradeOf(ratio);
 }
 
 /** A grade's pill: its words and the app's semantic inks. */
@@ -362,10 +363,12 @@ export function brandKitPortraitMessageCard(view: BrandKitBookView): { text: str
 /**
  * A one-line sample shortened to its measure: `text` when it fits `width` in
  * one line at `size` (measured in the kit's face, `para.family`), else its
- * first words, as many as fit, cut at a word (never on a function word) with
- * no ellipsis (a type specimen shows letterforms, not a sentence); at least
- * the first word, which the measure may then clip. The size is never changed: the editor's rule for
- * the Typography page is "shorten the sample instead of shrinking".
+ * first words, as many as fit with the ellipsis after them, cut at a word
+ * (never on a function word) and marked with "…" so a shortened line never
+ * reads as a bare cut (the editor's reading of the H2 samples); at least the
+ * first word, which the measure may then clip. The size is never changed: the
+ * editor's rule for the Typography page is "shorten the sample instead of
+ * shrinking".
  */
 export function brandKitPortraitShortenLine(
   text: string,
@@ -375,12 +378,12 @@ export function brandKitPortraitShortenLine(
 ): string {
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return '';
-  const fits = (count: number): boolean => mktgPortraitLineFits(words.slice(0, count).join(' '), width, size, para);
-  if (fits(words.length)) return words.join(' ');
-  // The longest prefix that fits, found by bisection (a 30k-character line measures a dozen prefixes, not thousands),
-  // then without the function word it would end on.
-  const count = mktgPortraitLargestFitting(words.length - 1, fits);
-  return mktgPortraitTrimStopWords(words.slice(0, count)).join(' ');
+  if (mktgPortraitLineFits(words.join(' '), width, size, para)) return words.join(' ');
+  // The longest prefix that fits with its ellipsis, found by bisection (a 30k-character line measures a dozen prefixes,
+  // not thousands), then without the function word it would end on.
+  const shortened = (count: number): string => `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(words.slice(0, count)).join(' '))}…`;
+  const count = mktgPortraitLargestFitting(words.length - 1, (prefix) => mktgPortraitLineFits(shortened(prefix), width, size, para));
+  return shortened(count);
 }
 
 /**
@@ -403,6 +406,46 @@ export function brandKitPortraitShortenParagraph(
   if (words.length === 0) return '';
   const shortened = (count: number): string => `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(words.slice(0, count)).join(' '))}…`;
   const count = mktgPortraitLargestFitting(words.length - 1, (prefix) => mktgPortraitWrapLines(shortened(prefix), perLine) <= maxLines);
+  return shortened(count);
+}
+
+/** The lines `words` set in, wrapped greedily at `width` by the glyph measure (a word wider than the line stands alone). */
+function measuredLines(
+  words: readonly string[],
+  width: number,
+  size: number,
+  para: Pick<MktgPortraitFitPara, 'weight' | 'caps' | 'family' | 'tracking'>
+): number {
+  let lines = 0;
+  let line = '';
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (!line || mktgPortraitLineFits(candidate, width, size, para)) {
+      line = candidate;
+      continue;
+    }
+    lines += 1;
+    line = word;
+  }
+  return line ? lines + 1 : lines;
+}
+
+/**
+ * The back cover's brand line inside the frame's margins
+ * (`BRAND_KIT_PORTRAIT_BACK_COVER_LINE`): as written when it sets in at most
+ * two lines of the content width, measured glyph by glyph in the kit's face
+ * with its tracking; else its first words, cut at a word (never on a function
+ * word) with an ellipsis, at least the first. Never set smaller.
+ */
+export function brandKitPortraitBackCoverLine(text: string, family?: string): string {
+  const c = BRAND_KIT_PORTRAIT_BACK_COVER_LINE;
+  const para = { weight: c.weight, caps: true, tracking: c.tracking, family };
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  const linesOf = (line: string): number => measuredLines(line.split(' '), c.width, c.size, para);
+  if (linesOf(words.join(' ')) <= c.maxLines) return words.join(' ');
+  const shortened = (count: number): string => `${mktgPortraitTrimTail(mktgPortraitTrimStopWords(words.slice(0, count)).join(' '))}…`;
+  const count = mktgPortraitLargestFitting(words.length - 1, (prefix) => linesOf(shortened(prefix)) <= c.maxLines);
   return shortened(count);
 }
 
@@ -517,6 +560,52 @@ export function brandKitPortraitTypeLayout(view: BrandKitBookView, width: number
   return candidate;
 }
 
+// ---------- The accent moment (pages 12 and 14) ----------
+
+/**
+ * The book's one accent moment, resolved once for the imagery call-out and
+ * the social card: white or the palette colour with the highest contrast on
+ * the accent where one reaches AA (white preferred among equals), set on the
+ * accent fill; when none does, no text goes on the accent at all: the card
+ * keeps a white ground under an accent top rule, in the kit's dark. The
+ * reason quotes the same unrounded ratios the contrast matrix grades, through
+ * the one label helper, so the caption and the matrix never disagree (a
+ * caption once claimed Charcoal on Orange where the matrix read 2.9:1 Fails).
+ */
+export function brandKitPortraitAccentMoment(
+  view: Pick<BrandKitBookView, 'accent' | 'accentName' | 'dark' | 'darkName' | 'palette'>
+): BrandKitPortraitAccentMoment {
+  const white = lfxColors.white;
+  const isWhite = (hex: string): boolean => hex.toLowerCase() === white.toLowerCase();
+  const candidates = [
+    { name: 'White', hex: white },
+    ...view.palette
+      .filter((entry) => !isWhite(entry.hex) && entry.hex.toLowerCase() !== view.accent.toLowerCase())
+      .map((entry) => ({ name: entry.name, hex: entry.hex })),
+  ];
+  const best = brandKitBestInkOn(view.accent, candidates);
+  if (best.readable) {
+    const ratioLabel = brandKitRatioLabel(best.ratio);
+    return {
+      ground: 'accent',
+      background: view.accent,
+      ink: isWhite(best.hex) ? 'white' : best.hex,
+      inkName: best.name,
+      ratioLabel,
+      reason: `text in ${best.name} (${ratioLabel}:1 on ${view.accentName})`,
+    };
+  }
+  const darkOnWhite = brandKitBestInkOn(white, [{ name: view.darkName, hex: view.dark }]);
+  return {
+    ground: 'white',
+    background: white,
+    ink: view.dark,
+    inkName: view.darkName,
+    ratioLabel: brandKitRatioLabel(darkOnWhite.ratio),
+    reason: `no palette color reaches AA on ${view.accentName} (${best.name} ${brandKitRatioLabel(best.ratio)}:1 at best), so the card keeps a white ground under an accent rule`,
+  };
+}
+
 // ---------- Example usage (page 14) ----------
 
 /** The year of the recorded approval, `2026`, or '' without one the store can parse. */
@@ -532,20 +621,27 @@ function brandKitPortraitApprovalYear(approval: MktgRevisionApproval | null): st
  * social card, `<Project> annual report <year>` on the report cover (the
  * year of the recorded approval, left out without one), and the membership
  * headline `New members join <Project>` on the announcement header, the kit
- * holding no headline of its own. A headline keeps its last two words
- * together (`mktgNoWidow`): the brand line on the social card ended on
- * "AI." alone.
+ * holding no headline of its own. The project's name stays on one line
+ * (`mktgKeepName`) and a headline keeps its last two words together
+ * (`mktgNoWidow`): the brand line on the social card ended on "AI." alone,
+ * and a header broke "Agentic / AI Foundation". The social card's ground is the accent moment's decision
+ * (`brandKitPortraitAccentMoment`), not the record's word for it, so the
+ * table reads what the card draws.
  */
 export function brandKitPortraitUsageCards(view: BrandKitBookView, approval: MktgRevisionApproval | null = null): BrandKitPortraitUsageCard[] {
   const u = BRAND_KIT_PORTRAIT_USAGE_LINES;
   const shorten = (card: { size: number; weight: number; maxLines: number }) =>
     brandKitPortraitShortenParagraph(view.voice.line, u.width, card.size, { weight: card.weight }, card.maxLines);
+  // The project's name stays on one line in every card ("Agentic AI Foundation" once broke after "Agentic"), and a
+  // headline keeps its last two words together.
+  const keepName = (text: string): string => mktgKeepName(text, view.projectName);
   const lines: Record<BrandKitUsageView['layout'], string> = {
-    keynote: mktgNoWidow(shorten(u.keynote)),
-    social: mktgNoWidow(shorten(u.social)),
-    report: [view.projectName, 'annual report', brandKitPortraitApprovalYear(approval)].filter((part) => part !== '').join(' '),
-    announcement: mktgNoWidow(`New members join ${view.projectName}`),
+    keynote: mktgNoWidow(keepName(shorten(u.keynote))),
+    social: mktgNoWidow(keepName(shorten(u.social))),
+    report: keepName([view.projectName, 'annual report', brandKitPortraitApprovalYear(approval)].filter((part) => part !== '').join(' ')),
+    announcement: mktgNoWidow(keepName(`New members join ${view.projectName}`)),
   };
+  const moment = brandKitPortraitAccentMoment(view);
   return view.usageTiles.map((tile, index) => {
     const example = view.usage.examples[index];
     return {
@@ -553,8 +649,12 @@ export function brandKitPortraitUsageCards(view: BrandKitBookView, approval: Mkt
       text: lines[tile.layout],
       name: example?.name ?? '',
       format: example?.format ?? '',
-      ground: example?.ground ?? '',
-      accentMoment: BRAND_KIT_PORTRAIT_USAGE_ACCENT_MOMENTS[tile.layout],
+      ground: tile.layout === 'social' ? moment.ground : (example?.ground ?? ''),
+      // A social card that keeps a white ground carries the accent as its top rule, as the announcement does.
+      accentMoment:
+        tile.layout === 'social' && moment.ground === 'white'
+          ? BRAND_KIT_PORTRAIT_USAGE_ACCENT_MOMENTS.announcement
+          : BRAND_KIT_PORTRAIT_USAGE_ACCENT_MOMENTS[tile.layout],
     };
   });
 }
@@ -686,8 +786,8 @@ export function brandKitPortraitRulesFit(rules: readonly string[], room: BrandKi
 export function brandKitPortraitContrastLayout(colors: number, pairs: number): BrandKitPortraitContrastLayout {
   const c = BRAND_KIT_PORTRAIT_CONTRAST;
   const matrixHeight = c.header + colors * c.row;
-  const matrixMinHeight = c.pairsTop - c.matrixTop;
-  const pairsTop = c.matrixTop + Math.max(matrixMinHeight, matrixHeight);
+  const matrixMinHeight = c.pairsTop - c.matrixTop - c.pairsGap;
+  const pairsTop = c.matrixTop + Math.max(matrixMinHeight, matrixHeight) + c.pairsGap;
   const room = c.bottom - pairsTop - c.pairsLabel;
   if (pairs * c.pair <= room) return { matrixHeight, matrixMinHeight, pairsTop, pairsKept: pairs, more: 0, moreLine: '' };
   const pairsKept = Math.min(pairs, Math.max(1, Math.floor((room - c.more) / c.pair)));
@@ -843,6 +943,8 @@ interface SourcesLine {
 interface SourcesItem {
   text: string;
   prose?: SourcesLine['prose'];
+  /** How the page sets this item when not as a plain list line: a conflict's name head, or a value row in its cell. */
+  para?: Partial<Omit<MktgPortraitFitPara, 'text'>>;
 }
 
 /**
@@ -857,7 +959,9 @@ function sourcesColumn(blocks: { label: string; items: SourcesItem[]; more?: str
     .filter((block) => block.items.length > 0 || block.more)
     .forEach((block, blockIndex) => {
       lines.push({ para: { text: block.label, ...c.label, above: blockIndex === 0 ? 0 : c.blockGap } });
-      block.items.forEach((item, index) => lines.push({ para: { text: item.text, ...c.item, above: index === 0 ? c.listAbove : 0 }, prose: item.prose }));
+      block.items.forEach((item, index) =>
+        lines.push({ para: { text: item.text, ...c.item, above: index === 0 ? c.listAbove : 0, ...item.para }, prose: item.prose })
+      );
       if (block.more) lines.push({ para: { text: block.more, ...c.item, above: block.items.length === 0 ? c.listAbove : 0 } });
     });
   return lines;
@@ -878,8 +982,11 @@ function sourcesColumn(blocks: { label: string; items: SourcesItem[]; more?: str
 export function brandKitPortraitSourcesFit(sources: BrandKitPortraitSources, approved: boolean): BrandKitPortraitSourcesFit {
   const c = BRAND_KIT_PORTRAIT_SOURCES;
   const nouns = MKTG_PORTRAIT_MORE_LINE.nouns;
+  const k = c.conflict;
   const height = (approved ? c.acceptedTop - c.gap : c.bottom) - c.top;
   const width = c.width - c.indent;
+  /** The px a conflict value's label cell takes (`#654321 · kept`), by the fit model's own character width. */
+  const labelWidth = (label: string): number => (label.length * width) / mktgPortraitCharsPerLine(width, c.item.size, { weight: 600 });
   const fitted: BrandKitPortraitSources = {
     ...sources,
     read: [...sources.read],
@@ -935,8 +1042,12 @@ export function brandKitPortraitSourcesFit(sources: BrandKitPortraitSources, app
       {
         label: 'Color conflicts',
         items: fitted.conflicts.flatMap((conflict) => [
-          { text: conflict.name },
-          ...conflict.values.map((value) => ({ text: `${value.label} ${value.source}` })),
+          { text: conflict.name, para: { ...k.name, above: k.above } },
+          // A value row: the source wraps in its own cell, beside the swatch and the label, over the row's padding and rule.
+          ...conflict.values.map((value, index) => ({
+            text: value.source,
+            para: { above: k.rowPad + (index === 0 ? k.headBelow : 0), indent: k.swatch + k.cellGap + labelWidth(value.label) + k.cellGap },
+          })),
         ]),
         more: mktgPortraitMoreLine(more.conflicts, nouns.colorConflict),
       },

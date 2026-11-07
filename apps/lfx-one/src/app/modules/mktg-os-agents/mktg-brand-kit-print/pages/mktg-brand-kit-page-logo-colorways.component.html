@@ -13,13 +13,16 @@
   <div class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-colorways-intro">
     <p>
       @if (i.onWhite; as c) {
-        <b>{{ c.name }}</b> on {{ c.ground }}.
+        <b>{{ c.name }}</b
+        >{{ c.tail }}.
       }
       @if (i.reversed; as c) {
-        <b>{{ c.name }}</b> (white) on {{ c.ground }}.
+        <b>{{ c.name }}</b
+        >{{ c.tail }}.
       }
       @if (i.mono; as c) {
-        <b>{{ c.name }}</b> for {{ c.ground }}.
+        <b>{{ c.name }}</b
+        >{{ c.tail }}.
       }
     </p>
     <p class="pp-body-gap">Accent colors are never logo colors.</p>
@@ -40,7 +43,8 @@
       <ul class="kp-rules" data-testid="brand-kit-colorways-rules">
         @for (rule of rules(); track rule.name) {
           <li class="kp-rule">
-            <b>{{ rule.name }}</b> — {{ rule.logo }} on {{ rule.ground }}.
+            <b>{{ rule.name }}</b
+            >{{ rule.tail }}.
           </li>
         }
       </ul>

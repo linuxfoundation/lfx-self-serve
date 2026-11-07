@@ -740,6 +740,11 @@
 
 /* The kit's pairs: a 110 × 36 sample, the names, the ratio and the grade, over a hairline (51 px a pair:
    BRAND_KIT_PORTRAIT_CONTRAST.pair); the pairs the room does not hold are counted in the muted line under them. */
+/* The pairs under the matrix: the heading 24 px clear of it, under four colours as under a taller matrix. */
+.kp-pairs-block {
+  margin-top: 24px;
+}
+
 .kp-pairs {
   margin-top: 6px;
 }
@@ -982,6 +987,12 @@
   border: 0;
 }
 
+/* The call-out when nothing reads on the accent: a white card, the accent as its top rule. */
+.kp-element--callout-rule {
+  border: 1px solid var(--pp-hairline);
+  border-top: 6px solid var(--pp-accent);
+}
+
 .kp-element-callout-text {
   font-size: 18px;
   font-weight: 500;
@@ -1091,6 +1102,12 @@
   opacity: 0.8;
 }
 
+/* The social card when nothing reads on the accent: a white card, the accent as its top rule. */
+.kp-usage-frame--social-rule {
+  border: 1px solid var(--pp-hairline);
+  border-top: 6px solid var(--pp-accent);
+}
+
 .kp-usage-social-text {
   font-size: 22px;
   font-weight: 500;
@@ -1167,7 +1184,8 @@
   margin-top: 8px;
   font-size: calc(24px * var(--kp-fit, 1));
   font-weight: 500;
-  line-height: 1.2;
+  /* The umbrella's leading: a brand line that wraps read as set solid at the mock's unset (normal) line height. */
+  line-height: 1.3;
   color: var(--pp-dark);
 }
 
@@ -1235,6 +1253,17 @@
   .kp-conflict {
     margin-top: calc(8px * var(--kp-fit));
     font-size: calc(12.5px * var(--kp-fit));
+
+    /* The head and the rows' padding follow the fit too, as the fit model measures them. */
+    th {
+      padding-bottom: calc(4px * var(--kp-fit));
+      font-size: calc(12px * var(--kp-fit));
+    }
+
+    td {
+      padding-top: calc(5px * var(--kp-fit));
+      padding-bottom: calc(5px * var(--kp-fit));
+    }
   }
 }
 

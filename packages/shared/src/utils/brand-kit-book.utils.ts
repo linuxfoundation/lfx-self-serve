@@ -11,6 +11,9 @@ import {
   BRAND_KIT_BACK_COVER_NOTICE,
   BRAND_KIT_BOOK_PAGES,
   BRAND_KIT_CHAPTERS,
+  BRAND_KIT_CONTRAST_AA,
+  BRAND_KIT_CONTRAST_AAA,
+  BRAND_KIT_CONTRAST_LARGE_TEXT,
   BRAND_KIT_LABEL_MIN_CONTRAST,
   BRAND_KIT_TYPE_SPECIMEN,
   BRAND_KIT_WEIGHT_NAMES,
@@ -20,12 +23,15 @@ import {
   BrandKitBookView,
   BrandKitChapterSummary,
   BrandKitColorwayTile,
+  BrandKitContrastGrade,
   BrandKitContrastView,
+  BrandKitInkCandidate,
   BrandKitLogoImage,
   BrandKitLogoSlot,
   BrandKitPaletteCard,
   BrandKitPaletteEntry,
   BrandKitRevision,
+  BrandKitTextInk,
   BrandKitTypeScaleView,
   BrandKitUsageView,
   BrandKitWatchoutView,
@@ -80,6 +86,28 @@ export function brandKitLabelInk(hex: string, dark: string): string {
     return dark;
   }
   return brandKitContrastRatio(ground, 1) >= brandKitContrastRatio(ground, 0) ? 'white' : 'black';
+}
+
+/**
+ * The text ink for a ground, from named candidates (white and the kit's
+ * palette, say): the one with the highest WCAG contrast there, `readable`
+ * when it reaches AA (4.5:1, normal text). One rule for every sample a book
+ * sets on a colour, so a print never draws a pairing its own contrast table
+ * grades as failing, and never claims one. The first of equal ratios wins,
+ * so white, named first, is preferred where it reads as well.
+ */
+export function brandKitBestInkOn(ground: string, candidates: readonly BrandKitInkCandidate[]): BrandKitTextInk {
+  const groundLuminance = brandKitLuminance(ground);
+  let best: BrandKitTextInk = { name: 'Black', hex: '#000000', ratio: brandKitContrastRatio(groundLuminance, 0), readable: false };
+  let found = false;
+  for (const candidate of candidates) {
+    const ratio = brandKitContrastRatio(groundLuminance, brandKitLuminance(candidate.hex));
+    if (!found || ratio > best.ratio) {
+      best = { ...candidate, ratio, readable: false };
+      found = true;
+    }
+  }
+  return { ...best, readable: best.ratio >= BRAND_KIT_LABEL_MIN_CONTRAST };
 }
 
 /**
@@ -178,18 +206,38 @@ export function brandKitRatioLabel(ratio: number): string {
   return (Math.floor(ratio * 10 + 1e-9) / 10).toFixed(1);
 }
 
-/** The contrast table with the colours to draw each sample. */
+/** The grade of an unrounded contrast ratio, in the kit's own words: AAA from 7, AA from 4.5, large text only from 3, else a fail. */
+export function brandKitContrastGradeOf(ratio: number): BrandKitContrastGrade {
+  if (ratio >= BRAND_KIT_CONTRAST_AAA) return 'AAA';
+  if (ratio >= BRAND_KIT_CONTRAST_AA) return 'AA';
+  if (ratio >= BRAND_KIT_CONTRAST_LARGE_TEXT) return 'Large text only';
+  return 'Fails';
+}
+
+/**
+ * The contrast table with the colours to draw each sample. A pair of two
+ * palette colours takes its ratio and grade from the hex values, unrounded,
+ * as the book's matrix does (one source: the matrix once read Mid gray on
+ * White 4.5 where the record's pair said 4.6); a pair naming a colour the
+ * palette does not hold keeps the record's ratio and grade.
+ */
 export function brandKitContrastRows(kit: BrandKitRevision): BrandKitContrastView[] {
   const hexByName = new Map(kit.chapters.color.palette.map((entry) => [entry.name, entry.hex]));
-  return kit.chapters.color.contrast.pairs.map((pair) => ({
-    foreground: pair.foreground,
-    background: pair.background,
-    foregroundHex: hexByName.get(pair.foreground) ?? kit.kit.dark,
-    backgroundHex: hexByName.get(pair.background) ?? 'white',
-    ratio: `${brandKitRatioLabel(pair.ratio)}:1`,
-    grade: pair.grade,
-    passes: pair.grade === 'AAA' || pair.grade === 'AA',
-  }));
+  return kit.chapters.color.contrast.pairs.map((pair) => {
+    const foregroundHex = hexByName.get(pair.foreground);
+    const backgroundHex = hexByName.get(pair.background);
+    const measured = foregroundHex && backgroundHex ? brandKitContrastRatio(brandKitLuminance(backgroundHex), brandKitLuminance(foregroundHex)) : null;
+    const grade = measured === null ? pair.grade : brandKitContrastGradeOf(measured);
+    return {
+      foreground: pair.foreground,
+      background: pair.background,
+      foregroundHex: foregroundHex ?? kit.kit.dark,
+      backgroundHex: backgroundHex ?? 'white',
+      ratio: `${brandKitRatioLabel(measured ?? pair.ratio)}:1`,
+      grade,
+      passes: grade === 'AAA' || grade === 'AA',
+    };
+  });
 }
 
 /** The type scale rows with the CSS that draws them: sizes in page units, the line height as a ratio. */

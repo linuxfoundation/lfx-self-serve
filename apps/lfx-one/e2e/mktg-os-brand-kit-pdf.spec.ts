@@ -268,8 +268,9 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const type = pages.nth(9);
     const h1 = type.getByTestId('brand-kit-type-h1');
     // The specimen is set at the mock's 48 px always; a line that would not fit the column is shortened to the words
-    // that do (the editor: shorten, never shrink), never clipped: the fixture's line in Montserrat loses its last word.
-    await expect(h1).toHaveText('Open standards for one');
+    // that do, with an ellipsis (the editor: shorten, never shrink; never a bare cut): the fixture's line in Montserrat
+    // loses its last word.
+    await expect(h1).toHaveText('Open standards for one…');
     expect(kit.chapters.voice.line.startsWith('Open standards for one ')).toBe(true);
     await expect(h1).toHaveCSS('font-family', new RegExp(`^"?${kit.chapters.type.family}"?`));
     await expect(h1).toHaveCSS('font-size', '48px');
@@ -532,6 +533,10 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const sources = pages.nth(14);
     await expect(sources.getByTestId('brand-kit-sources-read').locator('li')).not.toHaveCount(0);
     await expect(sources.getByTestId('brand-kit-sources-conflicts').locator('table')).not.toHaveCount(0);
+    // The conflicts' last row ends above the accepted box (the fit measures the rows as drawn); nothing runs under it.
+    const acceptedTop = await sources.getByTestId('brand-kit-sources-accepted').evaluate((node) => node.getBoundingClientRect().top);
+    const conflictsBottom = await sources.getByTestId('brand-kit-sources-conflicts').evaluate((node) => node.getBoundingClientRect().bottom);
+    expect(conflictsBottom).toBeLessThanOrEqual(acceptedTop);
     await contrast.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('overfull-contrast.png'), fullPage: false });
     await page.emulateMedia({ media: 'screen' });

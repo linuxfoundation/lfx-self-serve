@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { BrandKitLogoRef, BrandKitRevision } from '../interfaces/brand-kit.interface';
 import {
   brandKitArtworkInWords,
+  brandKitBestInkOn,
   brandKitBuiltFrom,
   brandKitChapterSummaries,
   brandKitContrastRatio,
@@ -169,8 +170,13 @@ describe('the book’s view model', () => {
     expect(brandKitRatioLabel(8.35)).toBe('8.3');
     expect(brandKitRatioLabel(21)).toBe('21.0');
     const kit = kitWith({});
-    kit.chapters.color.contrast.pairs = [{ foreground: 'Ink', background: 'White', ratio: 2.86, grade: 'Large text only' }];
-    expect(buildBrandKitBookView(kit).contrast[0].ratio).toBe('2.8:1');
+    // A pair naming a colour the palette does not hold keeps the record's ratio and grade, cut not rounded.
+    kit.chapters.color.contrast.pairs = [{ foreground: 'Ink', background: 'Paper', ratio: 2.86, grade: 'Large text only' }];
+    expect(buildBrandKitBookView(kit).contrast[0]).toMatchObject({ ratio: '2.8:1', grade: 'Large text only', passes: false });
+    // A pair of two palette colours is measured from their hex values and graded unrounded, as the book's matrix does:
+    // the record's 4.6 for a pair the hexes put at 4.5x prints 4.5 and AA, the same figure in both places.
+    kit.chapters.color.contrast.pairs = [{ foreground: 'Ink', background: 'White', ratio: 4.6, grade: 'AA' }];
+    expect(buildBrandKitBookView(kit).contrast[0]).toMatchObject({ ratio: '15.7:1', grade: 'AAA', passes: true });
   });
 
   it('carries the iconography samples’ colours, the same three roles the web card, the print and the export draw with', () => {
@@ -266,6 +272,25 @@ describe('the book’s view model', () => {
     // The edges: a white accent takes the dark; a black one white.
     expect(brandKitInkOnAccent('#FFFFFF', '#20232A')).toBe('#20232A');
     expect(brandKitInkOnAccent('#000000', '#20232A')).toBe('white');
+  });
+
+  it('chooses the ink with the highest contrast on a ground from named candidates, white first among equals, readable only from AA', () => {
+    const palette = [
+      { name: 'White', hex: '#FFFFFF' },
+      { name: 'Charcoal', hex: '#4D4E4E' },
+      { name: 'Mid gray', hex: '#767576' },
+    ];
+    // On the kit's orange nothing reaches 4.5:1: Charcoal comes closest (2.9:1), and the caller sets no text on it.
+    const onOrange = brandKitBestInkOn('#F37625', palette);
+    expect(onOrange).toMatchObject({ name: 'Charcoal', hex: '#4D4E4E', readable: false });
+    expect(onOrange.ratio).toBeGreaterThan(2.9);
+    expect(onOrange.ratio).toBeLessThan(3);
+    // On a navy, white: 10.3:1, readable.
+    expect(brandKitBestInkOn('#1E3A8A', palette)).toMatchObject({ name: 'White', readable: true });
+    expect(brandKitBestInkOn('#1E3A8A', palette).ratio).toBeGreaterThan(10);
+    // One candidate: itself, graded.
+    expect(brandKitBestInkOn('#4D4E4E', [{ name: 'Orange', hex: '#F37625' }])).toMatchObject({ name: 'Orange', readable: false });
+    expect(brandKitBestInkOn('#4D4E4E', [{ name: 'White', hex: '#FFFFFF' }])).toMatchObject({ name: 'White', readable: true });
   });
 
   it('prints the version the page shows, the kit’s own draft version when none is given', () => {

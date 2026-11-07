@@ -11,8 +11,9 @@
    stylesheet cannot read: keep them in step. The kit's dark, accent, spark and typeface are the frame's
    custom properties (`--pp-dark`, `--pp-accent`, `--pp-accent-text`, `--pp-spark`, `--pp-on-accent`, `--pp-font`),
    bound by `lfx-mktg-portrait-page` from the document's look; `--pp-accent-text` is the accent darkened until it reads
-   on the page white at WCAG AA (mktgPortraitAccentText), for every TEXT set in the accent on a light page; fills,
-   bands, rules and the accent on a dark page keep `--pp-accent`. */
+   on the page white at WCAG AA (mktgPortraitAccentText), for every TEXT set in the accent on a light page;
+   `--pp-accent-on-dark` is the accent where it reads on the dark at AA, else the ink on the dark
+   (mktgPortraitAccentOnDark), for text set in the accent on a dark page; fills, bands and rules keep `--pp-accent`. */
 
 @use 'sass:math';
 
@@ -74,7 +75,7 @@ $pp-band-height: 4px;
   -webkit-print-color-adjust: exact;
 
   /* The neutral inks (--pp-ink, --pp-muted, --pp-hairline, --pp-mist, --pp-white, --pp-fail) and the look's
-     (--pp-dark, --pp-accent, --pp-spark, --pp-on-accent, --pp-font) are set on the frame by the page component
+     (--pp-dark, --pp-accent, --pp-accent-text, --pp-accent-on-dark, --pp-spark, --pp-on-accent, --pp-font) are set on the frame by the page component
      from MKTG_PORTRAIT_INKS and MktgPortraitLook; every rule below reads them. */
 
   * {
@@ -417,7 +418,8 @@ $pp-band-height: 4px;
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--pp-accent);
+  /* The accent where it reads on the dark (AA), else the ink on the dark: never a pairing the matrix grades as failing. */
+  color: var(--pp-accent-on-dark);
 }
 
 .pp-back-url {

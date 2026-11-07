@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { brandKitOverfullFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { brandKitMinimalFixture, brandKitOverfullFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { buildBrandKitBookView } from '@lfx-one/shared/utils';
 import { mktgPortraitLineFits } from '@lfx-one/shared/utils';
 import { MktgBrandKitPageTypeComponent } from './mktg-brand-kit-page-type.component';
@@ -19,10 +19,12 @@ describe('the Typography page', () => {
     expect(rectOf(specimen)).toEqual({ left: '56px', top: '212px', width: '704px' });
     const h1 = specimen?.querySelector<HTMLElement>('[data-testid="brand-kit-type-h1"]');
     // The specimen is always at the mock's 48 px; the synthetic brand line, measured in Montserrat (a wide face) at 500,
-    // does not fit the column whole, so it is shortened to the words that do (the editor: shorten, never shrink).
+    // does not fit the column whole, so it is shortened to the words that do, with an ellipsis (the editor: shorten,
+    // never shrink; never a bare cut).
     expect(h1?.style.fontSize).toBe('48px');
-    expect(h1?.textContent).toBe('Open standards for one');
+    expect(h1?.textContent).toBe('Open standards for one…');
     expect(Array.from(specimen?.querySelectorAll('.kp-type-weight-name') ?? [], (name) => name.textContent)).toEqual(['Regular 400', 'Bold 700']);
+    expect(specimen?.querySelector('.kp-type-weights-note')?.textContent).toBe('2 weights available; the rules below cap what one page uses.');
     // The scale and the two lower blocks are one placed block in flow: the scale at least the room above the mock's
     // y 830 less the 16 px gap (830 − 16 − 436), the lower blocks right after it, so they sit at 830 while the scale is
     // short and follow the engine's own end when it is not — never a computed y.
@@ -42,7 +44,7 @@ describe('the Typography page', () => {
     expect(display?.textContent?.trim()).toBe('Project One');
     expect(steps[0].querySelector('.kp-scale-meta')?.textContent).toContain('500 · 64/72');
     expect(steps[1].querySelector<HTMLElement>('.kp-scale-sample')?.style.fontSize).toBe('32px');
-    expect(steps[1].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe('Open standards for one');
+    expect(steps[1].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe('Open standards for one…');
     expect(steps[1].querySelector('.kp-scale-spec')?.textContent).toBe('500 · 32/40');
     expect(steps[2].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.voice.line);
     expect(steps[2].querySelector('.kp-scale-spec')?.textContent).toBe('500 · 24/32');
@@ -64,6 +66,11 @@ describe('the Typography page', () => {
     expect(rules?.previousElementSibling).toBe(source);
     expect(rules?.classList.contains('kp-type-lower-block')).toBe(true);
     expect(Array.from(rules?.querySelectorAll('li') ?? [], (li) => li.textContent)).toEqual(view.type.rules);
+  });
+
+  it('counts one weight in the singular', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageTypeComponent, 'type', () => buildBrandKitBookView(brandKitMinimalFixture(), 4));
+    expect(frame.querySelector('.kp-type-weights-note')?.textContent).toBe('1 weight available; the rules below cap what one page uses.');
   });
 
   it('shortens a long brand line to the words that fit the column at 48 px, in one line, never shrunk or clipped', async () => {

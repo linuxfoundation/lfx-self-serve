@@ -61,6 +61,28 @@ export interface BrandKitPortraitContentsLayout {
   blocksTop: number;
 }
 
+/**
+ * The book's one accent moment (the imagery call-out and the usage page's
+ * social card), resolved once from the kit's own contrast
+ * (`brandKitPortraitAccentMoment`): text on the accent in the ink that reads
+ * there at AA, or, when neither white nor any palette colour does, a white
+ * card under an accent top rule in the kit's dark; and the reason, in the
+ * values the contrast matrix prints, so a caption never claims a pairing the
+ * matrix grades as failing.
+ */
+export interface BrandKitPortraitAccentMoment {
+  /** `accent`: text on the accent fill; `white`: a white card with an accent top rule. The usage table's ground word. */
+  ground: 'accent' | 'white';
+  /** The CSS ground and ink the card is drawn with. */
+  background: string;
+  ink: string;
+  /** The ink's name, and its contrast on the ground it sits on (`brandKitRatioLabel`). */
+  inkName: string;
+  ratioLabel: string;
+  /** Why, from the matrix: `text in White (4.5:1 on Orange)`, or that nothing reads on the accent and what came closest. */
+  reason: string;
+}
+
 /** One of the four usage cards: its layout, the line it carries, its caption and the accent moment the table names. */
 export interface BrandKitPortraitUsageCard {
   layout: BrandKitUsageView['layout'];

@@ -154,6 +154,7 @@ export const MKTG_PORTRAIT_MORE_LINE = {
     sourceRead: { one: 'source read', many: 'sources read' },
     gap: { one: 'gap', many: 'gaps' },
     colorConflict: { one: 'color conflict', many: 'color conflicts' },
+    weight: { one: 'weight', many: 'weights' },
   },
 } as const;
 
