@@ -112,7 +112,16 @@ describe('MeetingDetailsDrawerComponent', () => {
         { provide: DialogRef, useValue: { close: closeDialog } },
         { provide: Clipboard, useValue: { copy } },
         { provide: UiToastService, useValue: { show: toastShow } },
-        { provide: MeetingService, useValue: { getMeetingDetail, removedRegistrationMeetingIds: signal(new Set<string>()) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeetingDetail,
+            removedRegistrationMeetingIds: signal(new Set<string>()),
+            getPastMeetingRecording: () => of({ sessions: [{ total_size: 1, share_url: 'https://zoom.example/rec' }] }),
+            getPastMeetingTranscript: () => of({ recording_files: [] }),
+            getPastMeetingSummary: () => throwError(() => new HttpErrorResponse({ status: 404 })),
+          },
+        },
         { provide: UserService, useValue: { viewerUsername: signal('synthetic-viewer'), refreshUserMeetings, refreshUserPastMeetings } },
       ],
     });
@@ -188,6 +197,22 @@ describe('MeetingDetailsDrawerComponent', () => {
       expect(getMeetingDetail).not.toHaveBeenCalled();
       expect(context().state()).toBe('ended');
       expect(context().pastMeetingId()).toBe('synthetic-meeting-1762362000000');
+    });
+
+    it('badges an ended date with the artifacts that exist only', async () => {
+      const past = {
+        ...MEETING,
+        id: 'synthetic-meeting-1762362000000',
+        meeting_id: 'synthetic-meeting',
+        scheduled_start_time: '2026-11-01T18:00:00Z',
+        transcript_enabled: true,
+        ai_summary_enabled: true,
+      } as PastMeeting;
+      await render(row(past));
+
+      expect(findAll('meeting-details-feature-recording_enabled')).toHaveLength(1);
+      expect(findAll('meeting-details-feature-transcript_enabled')).toHaveLength(0);
+      expect(findAll('meeting-details-feature-ai_summary_enabled')).toHaveLength(0);
     });
   });
 
