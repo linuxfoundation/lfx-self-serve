@@ -479,6 +479,12 @@ describe('MktgFrameworkPrintComponent', () => {
     const cols = Array.from(query('mktg-framework-print-facts-table')?.querySelectorAll<HTMLTableColElement>('colgroup > col') ?? []);
     expect(cols.map((col) => col.style.width)).toEqual(['50%', '25%', '25%']);
     expect(facts[0].querySelector('.fwp-fact-source .pp-chip')?.classList.contains('fwp-chip-wrap')).toBe(true);
+    // A figure stored without its separators prints with them (the editor's rule); a percentage prints as stored.
+    await setView(buildFoundationMessagePrintView({ ...CONTENT, nums: [pair('$8000', 'raised'), pair('96%', 'of users')] }, 'TestOrbit', 2, null));
+    expect(Array.from(query('mktg-framework-print-numbers')?.querySelectorAll('.fwp-number') ?? []).map((figure) => figure.textContent?.trim())).toEqual([
+      '$8,000',
+      '96%',
+    ]);
   });
 
   it('binds the fitted blocks’ type on the root as --fwp-* custom properties, one value for the fit model and the stylesheet', async () => {

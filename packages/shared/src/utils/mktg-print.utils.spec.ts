@@ -429,6 +429,12 @@ describe('the framework’s print', () => {
       facts
     );
     expect(numbers.map((row) => row.source)).toEqual(['LFX field', 'Press release', 'LFX field', 'LFX field', '', '', '', '', 'Website']);
+    // A figure prints with its thousands separators (the editor's rule), and a fact that states it either way names its source.
+    expect(foundationMessagePrintNumbers([{ number: '4370', label: 'registrations, stored without the separator' }], facts)).toEqual([
+      { number: '4,370', label: 'registrations, stored without the separator', source: '' },
+    ]);
+    expect(foundationMessagePrintNumbers([{ number: '10000+', label: 'servers' }], facts)[0]).toMatchObject({ number: '10,000+', source: 'Press release' });
+    expect(foundationMessagePrintNumbers([{ number: '96%', label: 'a share' }], [])[0].number).toBe('96%');
     // The stored record's key numbers carry no source of their own: the view's come from the facts, never from the pair.
     expect(buildFoundationMessagePrintView({ ...CONTENT, nums: [['7', 'wonders']] }, 'TestOrbit', 1, null).numbers).toEqual([
       { number: '7', label: 'wonders', source: '' },

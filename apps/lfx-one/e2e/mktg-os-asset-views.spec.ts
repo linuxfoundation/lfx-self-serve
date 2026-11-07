@@ -744,6 +744,18 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
   const noteCount = await notes.count();
   expect(noteCount).toBeGreaterThan(0);
   for (const note of await notes.all()) await expect(note).toHaveText(/^\+[1-4] more on the framework's Framework tab in LFX One$/);
+  // Eight figures print as the table, each with its thousands separators (the editor's rule); the fixture's bare "2000" is in the year range
+  // and prints as stored.
+  await expect(page.getByTestId('mktg-framework-print-numbers-table').locator('.fwp-number-cell')).toHaveText([
+    '1,000',
+    '2000',
+    '3,000',
+    '4,000',
+    '5,000',
+    '6,000',
+    '7,000',
+    '8,000',
+  ]);
   await page.screenshot({ path: info.outputPath('foundation-message-print-cap-goals.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);

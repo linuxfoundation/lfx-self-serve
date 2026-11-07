@@ -698,7 +698,8 @@ describe('the framework portrait book’s key numbers', () => {
     expect(overlong).toEqual([]);
     const pages = frameworkPortraitNumbersPages({ ...view(1), numbers: [{ number: '1,234,567,890,123,456', label, source: '' }, ...view(6).numbers.slice(1)] });
     expect(pages[0].tiles).toEqual([]);
-    expect(pages[0].numbersTable.map((entry) => entry.number)).toEqual(['1,234,567,890,123,456', '2000', '3000', '4000', '5000', '6000']);
+    // The figures print separated (`mktgPrintFigure`); the fixture's bare "2000" is in the year range and prints as stored.
+    expect(pages[0].numbersTable.map((entry) => entry.number)).toEqual(['1,234,567,890,123,456', '2000', '3,000', '4,000', '5,000', '6,000']);
   });
 
   it('measures a facts row by the chip its source prints as, so a long source makes the row taller', () => {
@@ -718,7 +719,7 @@ describe('the framework portrait book’s key numbers', () => {
       numbers: [...base.numbers, { number: '9', label: tall, source: '' }, { number: '10', label: 'after', source: '' }],
     });
     expect(pages.length).toBeGreaterThanOrEqual(2);
-    expect(pages.flatMap((page) => page.numbersTable.map((row) => row.number))).toEqual(['1000', '2000', '3000', '4000', '5000', '6000', '9', '10']);
+    expect(pages.flatMap((page) => page.numbersTable.map((row) => row.number))).toEqual(['1,000', '2000', '3,000', '4,000', '5,000', '6,000', '9', '10']);
     // The tall row opens a fresh page, its label cut at a sentence so the row ends above the footer; the figure cell is kept.
     const tallPage = pages.find((page) => page.numbersTable.some((row) => row.number === '9'));
     expect(tallPage?.numbersTable[0].number).toBe('9');
@@ -738,7 +739,7 @@ describe('the framework portrait book’s key numbers', () => {
     const nine = frameworkPortraitNumbersPages(view(9, 2));
     expect(nine).toHaveLength(1);
     expect(nine[0].tiles).toEqual([]);
-    expect(nine[0].numbersTable.map((row) => row.number)).toEqual(['1000', '2000', '3000', '4000', '5000', '6000', '7000', '8000', '9000']);
+    expect(nine[0].numbersTable.map((row) => row.number)).toEqual(['1,000', '2000', '3,000', '4,000', '5,000', '6,000', '7,000', '8,000', '9,000']);
     expect(nine[0].numbersTop).toBe(FRAMEWORK_PORTRAIT_NUMBER_TILE.top);
     expect(nine[0].factsTop).toBeGreaterThan(nine[0].numbersTop);
     expect(nine[0].facts.rows).toHaveLength(2);

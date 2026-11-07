@@ -22,7 +22,7 @@ import {
   MKTG_PRINT_DOT,
   MKTG_PRINT_LF_LOOK,
 } from '../constants/mktg-print.constants';
-import { mktgPrintJoin } from './mktg-print-text.utils';
+import { mktgPrintFigure, mktgPrintJoin } from './mktg-print-text.utils';
 import type { BrandKitRevision } from '../interfaces/brand-kit.interface';
 import type { FoundationMessageContent, FoundationMessageNumberRow, FoundationMessageReport } from '../interfaces/foundation-message.interface';
 import type {
@@ -275,10 +275,12 @@ export function foundationMessagePrintFacts(goals: FoundationMessagePrintGoal[])
  */
 export function foundationMessagePrintNumbers(numbers: FoundationMessageNumberRow[], facts: FoundationMessagePrintFactRow[]): FoundationMessagePrintNumber[] {
   return numbers.map((row) => {
-    const figure = row.number.trim().replace(/\+$/, '');
-    const token = new RegExp(`(?:^|[^\\d,.])${figure.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d|[,.]\\d)`);
-    const sources = new Set(facts.filter((fact) => figure !== '' && token.test(fact.fact)).map((fact) => fact.source));
-    return { ...row, source: sources.size === 1 ? [...sources][0] : '' };
+    // The figure prints with its thousands separators (the editor's rule); a fact states it in either form.
+    const number = mktgPrintFigure(row.number);
+    const figures = [...new Set([row.number.trim(), number].map((figure) => figure.replace(/\+$/, '')).filter((figure) => figure !== ''))];
+    const tokens = figures.map((figure) => new RegExp(`(?:^|[^\\d,.])${figure.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d|[,.]\\d)`));
+    const sources = new Set(facts.filter((fact) => tokens.some((token) => token.test(fact.fact))).map((fact) => fact.source));
+    return { ...row, number, source: sources.size === 1 ? [...sources][0] : '' };
   });
 }
 
