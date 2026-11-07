@@ -302,6 +302,8 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   /** The board's column count, the bands' width when the matrix breaks, and `.fwp-matrix-band + .fwp-matrix-band`'s gap, px. */
   matrixBandColumns: 4,
   matrixBandGap: 16,
+  /** The lines a value proposition and a key message clamp to in a band (the editor's W1, 7 Nov 2026): cut at a word past them, never set smaller. */
+  matrixBandLines: 2,
   /** The message house: the umbrella bar's padding (24 + 24) and its padding across (28 + 28); the brand line's margins (14 + 22); the pillars' gap; a pillar's rule and padding (3 + 12), its message's margin above, its proof list's margin above, a proof row's hairline and padding (1 + 16) and its source chip's line (4 + 16.5); the gap the lower blocks keep under the pillars and the least room they keep above the footer (the pillars' proofs are cut to leave it); the Why now column and the audiences column and its left; the Why now text's margin above; the audience list's margin above and a row's hairline and padding (1 + 14; tight 1 + 10). */
   houseUmbrellaPadding: 48,
   houseUmbrellaPaddingAcross: 56,
@@ -383,6 +385,15 @@ export const FRAMEWORK_PORTRAIT_TILE_SHARES = {
 
 /** The most figures the key numbers page prints as tiles; past it, the table lists them all. */
 export const FRAMEWORK_PORTRAIT_MAX_TILES = 6;
+
+/**
+ * The caption lines under the goal matrix's bands when a row is dropped so the matrix stays one page (the editor's W1,
+ * 7 Nov 2026): the sound-bite row when the bites cannot print whole, then the value-proposition row (frameworkPortraitMatrix).
+ */
+export const FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES = {
+  bites: 'Sound bites are on each goal page',
+  values: 'Value propositions are in LFX One',
+} as const;
 
 /** A count in words for the print's sentences, up to the anchor questions' limit (FOUNDATION_MESSAGE_CONTENT_LIMITS.anchor.max); a count past it prints as digits. */
 export const FOUNDATION_MESSAGE_PRINT_COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five'] as const;

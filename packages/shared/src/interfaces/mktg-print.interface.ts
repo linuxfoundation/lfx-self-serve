@@ -304,6 +304,16 @@ export interface FoundationMessagePrintMatrix {
   bands: FoundationMessagePrintMatrixBand[];
   /** The matrix's measured height, px, from its first row's top to the crosscut's end: at most the room it was given. */
   height: number;
+  /** The rows the matrix prints: every row in a strip; in band mode the sound-bite row, then the value-proposition row, are dropped when the page cannot hold them whole (frameworkPortraitMatrix, the editor's W1), each said in a note under the bands. */
+  rows: FoundationMessagePrintMatrixRows;
+  /** The caption lines under the bands saying which rows were dropped (FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES), in the order they were; empty when none. */
+  notes: string[];
+}
+
+/** Which of the goal matrix's optional rows print: the value proposition row and the sound bite row (the key message and proof rows always do). */
+export interface FoundationMessagePrintMatrixRows {
+  value: boolean;
+  bite: boolean;
 }
 
 /** One band of the goal matrix: the goals from `offset`, `count` of them, laid in `columns` grid columns (the last band of an odd count leaves columns empty). */

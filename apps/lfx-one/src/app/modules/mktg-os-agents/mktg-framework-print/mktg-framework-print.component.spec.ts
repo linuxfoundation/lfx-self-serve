@@ -5,6 +5,7 @@ import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   FRAMEWORK_PORTRAIT_FACT_COLUMNS,
+  FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES,
   FRAMEWORK_PORTRAIT_MAX_TILES,
   FRAMEWORK_PORTRAIT_TILE_SHARES,
   FRAMEWORK_PORTRAIT_ROOM,
@@ -25,6 +26,7 @@ import {
   frameworkPortraitHouse,
   frameworkPortraitIcpPages,
   frameworkPortraitIcpWhoWidth,
+  frameworkPortraitMatrix,
   frameworkPortraitServedCount,
   frameworkPortraitPlan,
   frameworkPortraitStatementWidth,
@@ -760,9 +762,47 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(heads.map((head) => head.textContent?.trim())).toEqual(titles);
     expect(new Set(heads.map((head) => head.style.fontSize)).size).toBe(1);
     expect(parseFloat(heads[0].style.fontSize)).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin);
-    // Each band prints every row for its four goals; every proof cell keeps a row (F3 in the bands too).
+    // Each band prints every row for its four goals (short texts hold their rows); every proof cell keeps a row (F3 in the bands too).
     expect(bands.map((band) => band?.querySelectorAll('[data-testid="mktg-framework-print-matrix-vp"]').length)).toEqual([4, 4]);
     expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof"]').length).toBeGreaterThanOrEqual(8);
+    expect(query('mktg-framework-print-matrix-row-note')).toBeNull();
+    // The overfull record's texts in the bands (editor W1): the value and key message clamped to two lines at their type, cut at a word,
+    // the sound bites whole or the row dropped from both bands with one note under them, as the layout decides; a dropped row leaves
+    // no empty row behind.
+    const wordy = 'Teams standardize on projects every major cloud and vendor already supports, so platforms outlive any one supplier.';
+    const fact = 'Kubernetes runs in production at 96 percent of the organizations surveyed in the latest annual survey';
+    const longGoals = goals.map((goal) => ({
+      ...goal,
+      vp: wordy,
+      key: wordy,
+      bite: 'Open, everywhere, governed in the open.',
+      proof: Array.from({ length: 4 }, () => pair(fact, 'Website')),
+    }));
+    const longView = buildFoundationMessagePrintView({ ...CONTENT, mf: { ...CONTENT.mf, goals: longGoals } }, 'TestOrbit', 2, null);
+    await setView(longView);
+    const laid = frameworkPortraitMatrix(longView.goals, longView.mf.crosscut, FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix);
+    expect(laid.bands).toHaveLength(2);
+    const labels = Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-goals-label"]')).map((label) => label.textContent?.trim());
+    expect(labels.filter((label) => label === 'Key message')).toHaveLength(2);
+    expect(labels.filter((label) => label === 'Proof')).toHaveLength(2);
+    expect(labels.filter((label) => label === 'Value proposition')).toHaveLength(laid.rows.value ? 2 : 0);
+    expect(labels.filter((label) => label === 'Sound bite')).toHaveLength(laid.rows.bite ? 2 : 0);
+    expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).map((note) => note.textContent?.trim())).toEqual(
+      laid.notes
+    );
+    if (laid.rows.value) {
+      const vps = Array.from(host().querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-vp"]'));
+      expect(vps.map((vp) => vp.style.fontSize)).toEqual(Array.from({ length: 8 }, () => `${FRAMEWORK_PORTRAIT_TYPE.matrixCell.size}px`));
+      expect(vps.map((vp) => vp.textContent?.trim())).toEqual(laid.cells.map((cell) => cell.vp.text));
+      expect(vps[0].textContent?.trim().endsWith('…')).toBe(true);
+    }
+    if (laid.rows.bite) {
+      expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-bite"]')).map((bite) => bite.textContent?.trim())).toEqual(
+        Array.from({ length: 8 }, () => '“Open, everywhere, governed in the open.”')
+      );
+    }
+    // The long record's value propositions do not hold two lines of a band's column, so the row is clamped or gone, never a one-line "…".
+    expect(laid.rows.bite || laid.notes[0] === FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites).toBe(true);
     // Short titles at eight goals stay one strip of eight columns.
     await setView(
       buildFoundationMessagePrintView(

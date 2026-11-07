@@ -148,18 +148,20 @@
                     </div>
                   }
                 </div>
-                <!-- The text cells print as the layout fitted them (frameworkPortraitMatrix): at their type where the rows leave the proofs their room, smaller or cut at a sentence otherwise. -->
-                <div class="fwp-matrix-row">
-                  <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Value proposition</span>
-                  @for (goal of band.goals; track goal.id; let index = $index) {
-                    <p
-                      class="fwp-matrix-vp"
-                      [style.font-size.px]="frame.matrix?.cells?.[band.offset + index]?.vp?.size"
-                      data-testid="mktg-framework-print-matrix-vp">
-                      {{ frame.matrix?.cells?.[band.offset + index]?.vp?.text ?? goal.vp }}
-                    </p>
-                  }
-                </div>
+                <!-- The text cells print as the layout fitted them (frameworkPortraitMatrix): at their type where the rows leave the proofs their room, smaller or cut at a sentence in a strip, clamped to two lines in a band; a band drops this row when the page cannot hold it (the note under the bands says so). -->
+                @if (frame.matrix?.rows?.value ?? true) {
+                  <div class="fwp-matrix-row">
+                    <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Value proposition</span>
+                    @for (goal of band.goals; track goal.id; let index = $index) {
+                      <p
+                        class="fwp-matrix-vp"
+                        [style.font-size.px]="frame.matrix?.cells?.[band.offset + index]?.vp?.size"
+                        data-testid="mktg-framework-print-matrix-vp">
+                        {{ frame.matrix?.cells?.[band.offset + index]?.vp?.text ?? goal.vp }}
+                      </p>
+                    }
+                  </div>
+                }
                 <div class="fwp-matrix-row">
                   <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Key message</span>
                   @for (goal of band.goals; track goal.id; let index = $index) {
@@ -189,17 +191,24 @@
                     }
                   }
                 </div>
-                <div class="fwp-matrix-row">
-                  <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Sound bite</span>
-                  @for (goal of band.goals; track goal.id; let index = $index) {
-                    @if (frame.matrix?.cells?.[band.offset + index]?.bite; as bite) {
-                      <p class="fwp-matrix-bite" [style.font-size.px]="bite.size">“{{ bite.text }}”</p>
-                    } @else {
-                      <p class="fwp-matrix-bite fwp-matrix-bite-none"></p>
+                <!-- The sound bites: whole in a band (dropped, with the note under the bands, when the page cannot hold them whole), fitted in a strip. -->
+                @if (frame.matrix?.rows?.bite ?? true) {
+                  <div class="fwp-matrix-row">
+                    <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Sound bite</span>
+                    @for (goal of band.goals; track goal.id; let index = $index) {
+                      @if (frame.matrix?.cells?.[band.offset + index]?.bite; as bite) {
+                        <p class="fwp-matrix-bite" [style.font-size.px]="bite.size" data-testid="mktg-framework-print-matrix-bite">“{{ bite.text }}”</p>
+                      } @else {
+                        <p class="fwp-matrix-bite fwp-matrix-bite-none"></p>
+                      }
                     }
-                  }
-                </div>
+                  </div>
+                }
               </div>
+            }
+            <!-- A row the bands dropped so the matrix stays one page, said once under them (the editor's W1). -->
+            @for (note of frame.matrix?.notes ?? []; track note) {
+              <p class="fwp-cut-note fwp-matrix-band-note" data-testid="mktg-framework-print-matrix-row-note">{{ note }}</p>
             }
             @if (v.mf.crosscut) {
               <p class="fwp-matrix-crosscut">{{ v.mf.crosscut }}</p>

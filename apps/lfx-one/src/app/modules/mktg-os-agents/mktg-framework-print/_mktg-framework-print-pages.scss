@@ -291,6 +291,11 @@
     color: var(--pp-muted);
   }
 
+  /* A row the bands dropped, said once under them at the cut note's measure, inside the rows' side padding (FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES). */
+  .fwp-matrix-band-note {
+    padding: 0 12px;
+  }
+
   /* ---------- one page per goal ---------- */
 
   .fwp-goal-lead {

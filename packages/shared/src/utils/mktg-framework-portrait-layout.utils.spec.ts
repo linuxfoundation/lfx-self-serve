@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES,
   FRAMEWORK_PORTRAIT_MAX_TILES,
   FRAMEWORK_PORTRAIT_NUMBER_TILE,
   FRAMEWORK_PORTRAIT_ROOM,
@@ -65,7 +66,7 @@ import {
 import type { FoundationMessagePrintGoal, FoundationMessagePrintIcp, FoundationMessagePrintView } from '../interfaces/mktg-print.interface';
 import type { FoundationMessagePillarView } from '../interfaces/foundation-message.interface';
 import type { MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
-import { mktgPortraitCharEm, mktgPortraitCharsPerLine } from './mktg-portrait-print.utils';
+import { mktgPortraitCharEm, mktgPortraitCharsPerLine, mktgPortraitWrapLines } from './mktg-portrait-print.utils';
 import { buildFoundationMessagePrintView } from './mktg-print.utils';
 
 const pair = (a: string, b: string): [string, string] => [a, b];
@@ -888,5 +889,196 @@ describe('the framework portrait book’s profile columns', () => {
     const pages = frameworkPortraitIcpPages([narrow, wide, other]);
     expect(pages.flatMap((page) => page.icps.map((icp) => icp.whoWidth))).toEqual([240, 240, 240]);
     expect(pages[0].height).toBe(frameworkPortraitIcpHeight({ ...narrow, whoWidth: 240 }) + frameworkPortraitIcpHeight(wide));
+  });
+});
+
+describe('the framework portrait book’s goal matrix in bands (editor W1)', () => {
+  // The overfull record's shape: eight goals whose titles break the matrix into two bands of four, each with a long value proposition
+  // and key message, a sound bite and four proofs (synthetic figures).
+  const facts = [
+    'Kubernetes runs in production at 96 percent of the organizations surveyed in the latest annual survey',
+    'More than 250 projects are hosted across the graduated, incubating and sandbox tiers',
+    'Over 290,000 contributors from 190 countries have committed to hosted projects',
+    'KubeCon + CloudNativeCon North America drew 12,000 attendees in person last year',
+    'More than 180,000 certifications have been issued under the Kubernetes certification program',
+    '900 member organizations across every continent, from startups to the largest cloud providers',
+    'Twenty-two graduated projects have passed the open governance and security audit bar',
+    'Over 200 Kubernetes community days were held in 60 countries over the last twelve months',
+  ];
+  const overfull: [string, string, string, string][] = [
+    [
+      'Adoption',
+      'Teams standardize on projects every major cloud and vendor already supports, so platforms outlive any one supplier.',
+      'The cloud native stack is open, governed in the open and run everywhere.',
+      'Open, everywhere, governed in the open.',
+    ],
+    [
+      'Contributors',
+      'Maintainers find a neutral home, a release cadence they set and a security process the whole industry trusts.',
+      'Build it where the whole industry maintains it with you.',
+      'Build it where the industry maintains it.',
+    ],
+    [
+      'Certification',
+      'Certified engineers prove the skills employers hire for, against a vendor-neutral curriculum.',
+      'The certification employers recognize, against the standard everyone ships.',
+      'The credential the whole stack recognizes.',
+    ],
+    [
+      'End users',
+      'End users shape the roadmaps they depend on, through the technical oversight committee and the end user community.',
+      'Your production needs set the roadmap: bring them to the end user community.',
+      'Your production sets the roadmap.',
+    ],
+    [
+      'Events',
+      'Practitioners meet the maintainers, in person and in every region, at events the community runs.',
+      'Where cloud native is built, taught and decided: come to the next event.',
+      'Where cloud native is built in person.',
+    ],
+    [
+      'Security',
+      'Projects reach the security bar enterprises require, with audits, fuzzing and a disclosure process they share.',
+      'Security is a shared practice here, not a product.',
+      'Security as a shared practice.',
+    ],
+    [
+      'Membership',
+      'Members fund the neutral infrastructure the ecosystem builds on and sit where its direction is set.',
+      'Sustain the neutral home the whole ecosystem depends on.',
+      'Sustain the neutral home.',
+    ],
+    [
+      'Education',
+      'Learners take a free, structured path from the first container to production operations.',
+      'Learn cloud native the way the maintainers teach it.',
+      'From the first container to production.',
+    ],
+  ];
+  const goals = (shape: readonly [string, string, string, string][]): FoundationMessagePrintGoal[] =>
+    shape.map(([t, vp, key, bite], index) => ({
+      id: `g${index + 1}`,
+      n: index + 1,
+      t,
+      vp,
+      key,
+      bite,
+      proof: [],
+      icps: [],
+      segmentLabel: '',
+      segmentNames: [],
+      proofRows: Array.from({ length: 4 }, (_, at) => ({ fact: facts[(index + at) % facts.length], source: at % 2 ? 'LFX field' : 'Website' })),
+    }));
+  const crosscut =
+    'Every goal shares the proof that the stack runs in production at scale and that no single vendor controls its direction; use the figures for the audience in front of you.';
+  const room = FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix;
+  const column = frameworkPortraitMatrixColumn(FRAMEWORK_PORTRAIT_ROOM.matrixBandColumns);
+  const type = FRAMEWORK_PORTRAIT_TYPE;
+  const linesOf = (text: string, size: number, weight: number) => mktgPortraitWrapLines(text, mktgPortraitCharsPerLine(column, size, { weight }));
+
+  it('clamps every value proposition and key message to two lines at their type, cut at a word past them, never set smaller (W1 b)', () => {
+    const matrix = frameworkPortraitMatrix(goals(overfull), crosscut, room);
+    expect(matrix.bands).toHaveLength(2);
+    expect(matrix.height).toBeLessThanOrEqual(room);
+    for (const [index, cell] of matrix.cells.entries()) {
+      const [, vp, key] = overfull[index];
+      expect(cell.vp.size).toBe(type.matrixCell.size);
+      expect(cell.key.size).toBe(type.matrixKey.size);
+      expect(linesOf(cell.vp.text, cell.vp.size, type.matrixCell.weight)).toBeLessThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBandLines);
+      expect(linesOf(cell.key.text, cell.key.size, type.matrixKey.weight)).toBeLessThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBandLines);
+      // A cut keeps the opening words whole and says so with the ellipsis; a text that holds two lines prints as written.
+      if (cell.vp.text !== vp) expect(vp.startsWith(cell.vp.text.slice(0, -1))).toBe(true);
+      if (cell.key.text !== key) expect(key.startsWith(cell.key.text.slice(0, -1))).toBe(true);
+      expect(cell.vp.text.endsWith('…')).toBe(cell.vp.text !== vp);
+      expect(cell.key.text.endsWith('…')).toBe(cell.key.text !== key);
+    }
+    // The record's value propositions run past two lines of a band's column: at least one is cut, and no cut is a one-line "…".
+    expect(matrix.cells.some((cell) => cell.vp.text.endsWith('…'))).toBe(true);
+    for (const cell of matrix.cells) {
+      if (cell.vp.text.endsWith('…')) expect(linesOf(cell.vp.text, cell.vp.size, type.matrixCell.weight)).toBe(2);
+    }
+  });
+
+  it('prints the sound bites whole where the bands hold them, else drops the row from every band and says so once under them (W1 c)', () => {
+    const matrix = frameworkPortraitMatrix(goals(overfull), crosscut, room);
+    if (matrix.rows.bite) {
+      expect(matrix.notes).toEqual([]);
+      for (const [index, cell] of matrix.cells.entries()) expect(cell.bite).toEqual({ text: overfull[index][3], size: type.matrixBite.size });
+    } else {
+      expect(matrix.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites]);
+      expect(matrix.rows.value).toBe(true);
+    }
+    // Whole bites are never cut in a band: as the room closes, the bites print whole at their type until the bands cannot hold them
+    // beside the proofs' least; then the row is dropped from both bands with its one note, the key message and the proofs staying.
+    const whole = frameworkPortraitMatrix(goals(overfull), '', 2000);
+    expect(whole.rows).toEqual({ value: true, bite: true });
+    expect(whole.notes).toEqual([]);
+    expect(whole.cells.map((cell) => cell.bite?.text)).toEqual(overfull.map((goal) => goal[3]));
+    let at = 2000;
+    while (frameworkPortraitMatrix(goals(overfull), '', at).rows.bite) at -= 10;
+    const last = frameworkPortraitMatrix(goals(overfull), '', at + 10);
+    expect(last.cells.map((cell) => cell.bite)).toEqual(overfull.map((goal) => ({ text: goal[3], size: type.matrixBite.size })));
+    expect(last.height).toBeLessThanOrEqual(at + 10);
+    const dropped = frameworkPortraitMatrix(goals(overfull), '', at);
+    expect(dropped.rows).toEqual({ value: true, bite: false });
+    expect(dropped.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites]);
+    expect(dropped.height).toBeLessThanOrEqual(at);
+    expect(dropped.cells.map((cell) => cell.key.size)).toEqual(Array.from({ length: 8 }, () => type.matrixKey.size));
+    for (const cell of dropped.proofs) expect(cell.rows.length).toBeGreaterThan(0);
+  });
+
+  it('drops the value proposition row after the sound bites, with its own note, when the bands still do not fit; the key message and the proofs always print (W1 d)', () => {
+    const withBites = frameworkPortraitMatrix(goals(overfull), '', 2000).height;
+    // Step the room down until the value row goes: the levels come in the editor's order, bites first, then the values, never the key message.
+    let seen: string[][] = [];
+    for (let at = withBites; at >= 200; at -= 10) {
+      const matrix = frameworkPortraitMatrix(goals(overfull), '', at);
+      const key = matrix.notes.join('|');
+      if (seen[seen.length - 1]?.join('|') !== key) seen = [...seen, matrix.notes];
+      expect(matrix.cells.every((cell) => cell.key.size === type.matrixKey.size)).toBe(true);
+      expect(matrix.proofs.every((cell) => cell.rows.length > 0)).toBe(true);
+      if (matrix.rows.value) expect(matrix.rows.bite || matrix.notes[0] === FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites).toBe(true);
+      else expect(matrix.rows.bite).toBe(false);
+    }
+    expect(seen).toEqual([
+      [],
+      [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites],
+      [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites, FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.values],
+    ]);
+    const bare = frameworkPortraitMatrix(goals(overfull), '', 200);
+    expect(bare.rows).toEqual({ value: false, bite: false });
+    expect(bare.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites, FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.values]);
+    // The two notes take two caption lines of the matrix's room, between the bands and the crosscut.
+    const noted = frameworkPortraitMatrix(goals(overfull), crosscut, 200);
+    expect(noted.height - bare.height).toBeCloseTo(
+      FRAMEWORK_PORTRAIT_ROOM.matrixCrosscutGap + frameworkPortraitTextHeight(crosscut, type.matrixCrosscut, 704 - FRAMEWORK_PORTRAIT_ROOM.matrixPadding),
+      6
+    );
+  });
+
+  it('leaves a strip as it was: four goals print every row, the texts fitted by the fit model, no clamp and no note', () => {
+    const strip = frameworkPortraitMatrix(goals(overfull.slice(0, 4)), crosscut, room);
+    expect(strip.bands).toEqual([{ offset: 0, count: 4, columns: 4 }]);
+    expect(strip.rows).toEqual({ value: true, bite: true });
+    expect(strip.notes).toEqual([]);
+    // A strip of four holds the record's texts whole at their type (the AAIF shape): nothing is cut, and the sound bites print whole.
+    expect(strip.cells.map((cell) => cell.vp.text)).toEqual(overfull.slice(0, 4).map((goal) => goal[1]));
+    expect(strip.cells.map((cell) => cell.key.text)).toEqual(overfull.slice(0, 4).map((goal) => goal[2]));
+    expect(strip.cells.map((cell) => cell.bite?.text)).toEqual(overfull.slice(0, 4).map((goal) => goal[3]));
+    expect(strip.height).toBeLessThanOrEqual(room);
+    // A strip whose rows crowd the proofs is still fitted by the fit model (smaller, then cut at a sentence), not clamped to two lines.
+    const crowded = frameworkPortraitMatrix(goals(overfull.slice(0, 4)), '', 300);
+    expect(crowded.rows).toEqual({ value: true, bite: true });
+    expect(crowded.notes).toEqual([]);
+    expect(crowded.cells.some((cell) => cell.vp.size < type.matrixCell.size)).toBe(true);
+    // Eight goals with short titles are one strip of eight, not bands: no clamp, no note.
+    const eight = frameworkPortraitMatrix(
+      goals(overfull).map((goal, index) => ({ ...goal, t: `Goal ${index + 1}` })),
+      crosscut,
+      room
+    );
+    expect(eight.bands).toEqual([{ offset: 0, count: 8, columns: 8 }]);
+    expect(eight.rows).toEqual({ value: true, bite: true });
+    expect(eight.notes).toEqual([]);
   });
 });
