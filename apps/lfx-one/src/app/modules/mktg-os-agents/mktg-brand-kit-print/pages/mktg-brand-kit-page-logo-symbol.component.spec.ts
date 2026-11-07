@@ -17,8 +17,13 @@ describe('the Symbol & symbol in shape page', () => {
     expect(frame.querySelector('[data-testid="brand-kit-symbol-intro"]')?.textContent).toBe('The symbol.');
     const variants = frame.querySelector('[data-testid="brand-kit-symbol-variants"]');
     expect(rectOf(variants)).toEqual({ left: '56px', top: '250px', width: '704px' });
-    // The symbol is cropped from the three-colour lockup, which no filter may flatten: every variant draws it as it is.
-    expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['', '', '']);
+    // The symbol comes from a three-colour kit, which no filter may derive from: the full-colour variant draws it, and
+    // the reversed and one-colour tiles say "Not supplied" rather than draw a full-colour symbol under a false label.
+    expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['']);
+    expect(Array.from(variants?.querySelectorAll('[data-testid="brand-kit-symbol-variant-missing"]') ?? [], (tile) => tile.textContent)).toEqual([
+      'Not supplied',
+      'Not supplied',
+    ]);
     expect(Array.from(variants?.querySelectorAll('.pp-cap') ?? [], (cap) => cap.textContent)).toEqual(['Full color', 'Reversed', 'One-color black']);
     const shapes = Array.from(frame.querySelectorAll('[data-testid="brand-kit-symbol-shapes"] > div'));
     expect(shapes).toHaveLength(4);
@@ -36,6 +41,17 @@ describe('the Symbol & symbol in shape page', () => {
     expect(rule).toBe(
       'One X of padding from the symbol to the edge of the circle or rounded square, where X is the height of the symbol. Never put the symbol on the accent: accent colors are not logo colors, and white on Orange fails AA (2.8:1).'
     );
+  });
+
+  it('derives the reversed and one-colour variants by filter from a one-colour kit', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
+      ...view,
+      derivable: true,
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
+    }));
+    const variants = frame.querySelector('[data-testid="brand-kit-symbol-variants"]');
+    expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['', 'brightness(0) invert(1)', 'brightness(0)']);
+    expect(variants?.querySelector('[data-testid="brand-kit-symbol-variant-missing"]')).toBeNull();
   });
 
   it('keeps the rule without the AA figure when white reads on the accent', async () => {
