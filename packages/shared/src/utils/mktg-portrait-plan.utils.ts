@@ -8,7 +8,7 @@
 // or a page number is never written by hand.
 
 import type { BrandKitBookView } from '../interfaces/brand-kit.interface';
-import type { MktgPortraitDocumentKind, MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
+import type { MktgPortraitBook, MktgPortraitDocumentKind, MktgPortraitPlacedPage, MktgPortraitPlanPage } from '../interfaces/mktg-portrait-print.interface';
 import { mktgPortraitIsChapter } from './mktg-portrait-print.utils';
 
 /** The document's name, as the running head and the contents print it: `Agentic AI Foundation brand kit`. */
@@ -21,18 +21,27 @@ export function mktgPortraitFootLeft(projectName: string): string {
   return `${projectName} · a Linux Foundation project`;
 }
 
+/** Whether the kit has any logo file to draw from (a supplied file or the symbol cropped out of one). */
+export function brandKitPortraitHasLogoFiles(view: BrandKitBookView): boolean {
+  return Object.values(view.logos).some((file) => file !== null) || view.symbol !== null;
+}
+
+/** Whether the kit has a symbol to draw (its own file or the crop out of the horizontal lockup). */
+export function brandKitPortraitHasSymbol(view: BrandKitBookView): boolean {
+  return view.logos.symbol !== null || view.symbol !== null;
+}
+
 /**
  * The seventeen pages of the Brand Kit's portrait book, in the mock's
  * order: cover · contents · 01 Logo (six pages) · 02 Color (two) · 03 Type
  * · 04 Visual (two) · 05 Usage · 06 Voice · 07 Sources · back cover. Inside
  * the family (`inFamily`) the cover, contents and back cover go: the family
- * has its own. The plan is the same for every kit (every page prints from
- * the live data it has, a slot it lacks left out), so the view is read for
- * nothing yet; it is the plan's input so a page can one day depend on it
- * without a change at the callers.
+ * has its own. A page is never printed empty (the editor's rule): a kit
+ * without a logo file keeps the Logo chapter's first page alone, which says
+ * no files were uploaded yet, and a kit without a symbol has no symbol page.
+ * The count, the contents and the footers all follow.
  */
 export function brandKitPortraitPlan(view: BrandKitBookView, options: { inFamily: boolean }): MktgPortraitPlanPage[] {
-  void view;
   const pages: MktgPortraitPlanPage[] = [
     { id: 'cover', section: 'Cover', title: 'Cover' },
     { id: 'contents', section: 'Contents', title: "What's inside" },
@@ -52,7 +61,12 @@ export function brandKitPortraitPlan(view: BrandKitBookView, options: { inFamily
     { id: 'sources', section: '07 Sources', title: 'Sources & decisions' },
     { id: 'back-cover', section: 'Back cover', title: 'Back cover' },
   ];
-  return options.inFamily ? pages.filter((page) => !['cover', 'contents', 'back-cover'].includes(page.id)) : pages;
+  const dropped = new Set<string>();
+  if (options.inFamily) ['cover', 'contents', 'back-cover'].forEach((id) => dropped.add(id));
+  if (!brandKitPortraitHasLogoFiles(view))
+    ['logo-colorways', 'logo-clear-space', 'logo-symbol', 'logo-partnership', 'logo-watchouts'].forEach((id) => dropped.add(id));
+  if (!brandKitPortraitHasSymbol(view)) dropped.add('logo-symbol');
+  return pages.filter((page) => !dropped.has(page.id));
 }
 
 /**
@@ -68,4 +82,19 @@ export function mktgPortraitOpensChapter(plan: readonly MktgPortraitPlanPage[], 
 /** The section label the running head prints: `01 Logo` standalone, `Brand kit · Logo` inside the family (the number is the family's opener's). */
 export function mktgPortraitSectionLabel(section: string, inFamily: boolean, document = 'Brand kit'): string {
   return inFamily ? `${document} · ${section.replace(/^\d\d /, '')}` : section;
+}
+
+/**
+ * The plan placed in its book: each page numbered from the book's first
+ * page, labelled as the running head prints it, and marked with the band
+ * where it opens a chapter standalone (inside the family the openers are
+ * the chapter pages, so no band).
+ */
+export function mktgPortraitPlacePlan(plan: readonly MktgPortraitPlanPage[], book: MktgPortraitBook, document = 'Brand kit'): MktgPortraitPlacedPage[] {
+  return plan.map((page, index) => ({
+    ...page,
+    number: book.firstPage + index,
+    label: mktgPortraitSectionLabel(page.section, book.inFamily, document),
+    band: !book.inFamily && mktgPortraitOpensChapter(plan, index),
+  }));
 }

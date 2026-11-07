@@ -107,15 +107,18 @@ export async function expectMktgPrintPageSetup(frame: FrameLocator, root: Locato
 }
 
 /**
- * A document of fixed portrait frames (the framework's book) prints on Letter with no margin in both engines: the
- * frame's unnamed rule and the frames' own named page, restated with the same values; the root lifts the flowing
- * documents' side padding, so every frame (the grammar's `lfx-mktg-portrait-page`, as many as the root's `data-pages`
- * says, never none) sits at the page's edge, 816 by 1056 px, on the named page, clipping what would pass its edge.
+ * The page setup of a document of portrait frames: US Letter with no margin in both engines, written unnamed and as
+ * the frames' own named page, and never the page margins (a frame is the whole sheet). Given the document's `root`,
+ * also its frames: the root lifts the flowing documents' side padding, and every frame (the grammar's
+ * `lfx-mktg-portrait-page`, as many as the root's `data-pages` says, never none) sits at the page's edge, 816 by
+ * 1056 px, on the named page, clipping what would pass its edge.
  */
-export async function expectMktgPortraitPageSetup(frame: FrameLocator, root: Locator): Promise<void> {
+export async function expectMktgPortraitPageSetup(frame: FrameLocator, root?: Locator): Promise<void> {
   const setup = MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
   expect(setup).toBe('size: 8.5in 11in; margin: 0;');
   expect(await frame.locator('head style').last().textContent()).toBe(`@page { ${setup} }\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
+  await expect(frame.locator(`body.${MKTG_PRINT_PAGE_MARGINS_CLASS}`)).toHaveCount(0);
+  if (!root) return;
   await expect(root).toHaveCSS('padding-left', '0px');
   const pages = root.getByTestId('lfx-mktg-portrait-page');
   const declared = Number(await root.getAttribute('data-pages'));
@@ -133,6 +136,7 @@ export async function expectMktgPortraitPageSetup(frame: FrameLocator, root: Loc
   }
 }
 
+/** A viewport-height cover in the laid-out frame fills the page: the 1px frame left it at its content's height. */
 /**
  * A table box's computed length in px, to compare to a tenth: Chromium reports a table row's laid-out height snapped to
  * 1/64 px (52.7969px for 0.55in) and WebKit serialises 10pt with six decimals (13.333333px), so an exact string fails.

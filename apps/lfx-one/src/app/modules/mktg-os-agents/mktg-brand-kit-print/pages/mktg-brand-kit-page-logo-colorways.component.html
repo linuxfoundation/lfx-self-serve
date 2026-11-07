@@ -1,0 +1,49 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let i = intro();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <div class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-colorways-intro">
+    <p>
+      @if (i.onWhite; as c) {
+        <b>{{ c.name }}</b> on {{ c.ground }}.
+      }
+      @if (i.reversed; as c) {
+        <b>{{ c.name }}</b> (white) on {{ c.ground }}.
+      }
+      @if (i.mono; as c) {
+        <b>{{ c.name }}</b> for {{ c.ground }}.
+      }
+    </p>
+    <p class="mt-[20px]">Accent colors are never logo colors.</p>
+  </div>
+  <div class="kp-tiles kp-tiles--wrap" [lfxPpRect]="[x, 236, w]" data-testid="brand-kit-colorways-tiles">
+    @for (tile of tiles(); track tile.name) {
+      <div>
+        <div class="pp-tile kp-tile kp-tile--wide" [class.pp-tile--dark]="!tile.light" [style.background]="tile.ground">
+          <img class="h-[44px] w-auto" [src]="tile.logo.src" [alt]="tile.name" [style.filter]="tile.logoFilter || null" />
+        </div>
+        <div class="pp-cap">{{ tile.caption }}</div>
+      </div>
+    }
+  </div>
+  @if (rules().length) {
+    <div [lfxPpRect]="[x, 830, w]">
+      <div class="pp-lab pp-lab--dark">Rules</div>
+      <ul class="kp-rules" data-testid="brand-kit-colorways-rules">
+        @for (rule of rules(); track rule.name) {
+          <li class="kp-rule">
+            <b>{{ rule.name }}</b> — {{ rule.logo }} on {{ rule.ground }}.
+          </li>
+        }
+      </ul>
+    </div>
+  }
+</lfx-mktg-portrait-page>

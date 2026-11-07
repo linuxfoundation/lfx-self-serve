@@ -173,6 +173,10 @@ export class BrandKitWebViewComponent {
     return kit ? buildBrandKitBookView(kit, this.approvedVersion() ?? kit.version) : null;
   });
   protected readonly printBrand = computed(() => mktgPrintBrand(this.approvedKit()));
+  /** The printed (approved) revision's approval: this page's, when the revision it shows is the one that prints; else none, and the PDF leaves the line out. */
+  protected readonly printApproval = computed(() =>
+    this.approvedVersion() !== null && this.versionNumber() === this.approvedVersion() ? this.approval() : null
+  );
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
   /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
   protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));

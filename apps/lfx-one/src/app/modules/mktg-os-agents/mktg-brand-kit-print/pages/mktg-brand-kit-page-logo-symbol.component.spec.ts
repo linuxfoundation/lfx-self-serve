@@ -1,0 +1,46 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { describe, expect, it } from 'vitest';
+import { MktgBrandKitPageLogoSymbolComponent } from './mktg-brand-kit-page-logo-symbol.component';
+import { mountBrandKitPage, rectOf } from './mktg-brand-kit-page.spec-helper';
+
+const SVG = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"/>')}`;
+
+describe('the Symbol & symbol in shape page', () => {
+  it('draws the variants, the four shapes and the padding rule from a kit with a symbol; white on the orange fails AA, so the figure prints', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
+      ...view,
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
+    }));
+    expect(frame.getAttribute('data-page')).toBe('6');
+    expect(frame.querySelector('[data-testid="brand-kit-symbol-intro"]')?.textContent).toBe('The symbol.');
+    const variants = frame.querySelector('[data-testid="brand-kit-symbol-variants"]');
+    expect(rectOf(variants)).toEqual({ left: '56px', top: '250px', width: '704px' });
+    expect(Array.from(variants?.querySelectorAll('img') ?? [], (img) => img.style.filter)).toEqual(['', 'brightness(0) invert(1)', 'brightness(0)']);
+    expect(Array.from(variants?.querySelectorAll('.pp-cap') ?? [], (cap) => cap.textContent)).toEqual(['Full color', 'Reversed', 'One-color black']);
+    const shapes = Array.from(frame.querySelectorAll('[data-testid="brand-kit-symbol-shapes"] > div'));
+    expect(shapes).toHaveLength(4);
+    expect(rectOf(shapes[0])).toEqual({ left: '56px', top: '470px', width: '704px' });
+    expect(shapes[0].querySelector<HTMLElement>('.kp-shape')?.style.borderRadius).toBe('50%');
+    expect(shapes[0].querySelector<HTMLElement>('.kp-shape')?.style.width).toBe('158px');
+    expect(shapes[3].querySelector<HTMLElement>('.kp-shape')?.style.width).toBe('126px');
+    expect(shapes[3].querySelector('.kp-shape-stage')?.classList.contains('kp-shape-stage--mist')).toBe(true);
+    expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-symbol-padding"] img')?.style.height).toBe('100px');
+    const rule = frame.querySelector('[data-testid="brand-kit-symbol-rule"]')?.textContent?.replace(/\s+/g, ' ').trim();
+    expect(rule).toBe(
+      'One X of padding from the symbol to the edge of the circle or rounded square, where X is the height of the symbol. Never put the symbol on the accent: accent colors are not logo colors, and white on Orange fails AA (2.8:1).'
+    );
+  });
+
+  it('keeps the rule without the AA figure when white reads on the accent', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoSymbolComponent, 'logo-symbol', (view) => ({
+      ...view,
+      accent: '#1E3A8A',
+      accentName: 'Navy',
+      symbol: { ref: 'symbol.svg', name: 'symbol.svg', src: SVG },
+    }));
+    expect(frame.querySelector('[data-testid="brand-kit-symbol-rule"]')?.textContent).not.toContain('fails AA');
+    expect(frame.querySelector('[data-testid="brand-kit-symbol-rule"]')?.textContent).toContain('accent colors are not logo colors.');
+  });
+});
