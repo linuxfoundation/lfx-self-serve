@@ -331,8 +331,9 @@ describe('googleDeviceBidModifierRefusal', () => {
  * device only as an exclusion, CONNECTED_TV in the vocabulary, the cap at the vocabulary's size.
  */
 describe('googleDeviceBidModifierRefusal on Demand Gen', () => {
-  it('takes CONNECTED_TV there and nowhere else', () => {
+  it('takes CONNECTED_TV there and on Performance Max, and nowhere else', () => {
     expect(googleAdsDevicesOn('demand-gen')).toEqual(['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV']);
+    expect(googleAdsDevicesOn('performance-max')).toEqual(['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV']);
     expect(googleAdsDevicesOn('search')).toEqual(['MOBILE', 'DESKTOP', 'TABLET']);
     expect(googleAdsDevicesOn('display')).toEqual(['MOBILE', 'DESKTOP', 'TABLET']);
     expect(googleDeviceBidModifierRefusal([{ device: 'CONNECTED_TV', bidModifier: 0 }], 'maximize-clicks', 'demand-gen')).toBeNull();
@@ -368,6 +369,53 @@ describe('googleDeviceBidModifierRefusal on Demand Gen', () => {
         'demand-gen'
       )
     ).toContain('device bid modifier 2 gives MOBILE a bid modifier of 1. Demand Gen campaigns');
+  });
+});
+
+/**
+ * `validateCriteriaPlan`'s Performance Max arm and `performanceMaxDeviceCriterionIDs` (campaign-service
+ * v1.0.33, linuxfoundation/lfx-v2-campaign-service#500): a device only as an exclusion, 1 included; every device excluded refused, keyed on
+ * the trimmed, upper-cased name; CONNECTED_TV in the four-device vocabulary.
+ */
+describe('googleDeviceBidModifierRefusal on Performance Max', () => {
+  const excluded = (...devices: string[]) => devices.map((device) => ({ device, bidModifier: 0 }));
+  const ALL = 'exclude every device (Mobile phones, Computers, Tablets and TV screens) on a Performance Max campaign';
+
+  it('takes the four devices, TV screens included, and only as exclusions', () => {
+    expect(googleAdsDevicesOn('performance-max')).toEqual(['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV']);
+    expect(googleChannelTakesDeviceExclusionsOnly('performance-max')).toBe(true);
+    expect(googleDeviceBidModifierRefusal(excluded('MOBILE', 'TABLET', 'CONNECTED_TV'), 'maximize-conversions', 'performance-max')).toBeNull();
+  });
+
+  it.each([1.2, 1, 0.5])('refuses a modifier of %s under every strategy, before the vocabulary', (bidModifier) => {
+    for (const strategy of ['maximize-conversions', 'target-cpa', 'manual-cpc']) {
+      expect(googleDeviceBidModifierRefusal([{ device: 'TV', bidModifier }], strategy, 'performance-max')).toBe(
+        `The Google Ads device bid modifier 1 gives TV a bid modifier of ${bidModifier}. Performance Max campaigns take a device only as an exclusion, so LFX One doesn't send a device bid adjustment there. Set it to 0 to exclude the device or remove it, then create again.`
+      );
+    }
+  });
+
+  it('refuses every device excluded, however spelled, and before the vocabulary and the repeat', () => {
+    expect(googleDeviceBidModifierRefusal(excluded('MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV'), 'maximize-conversions', 'performance-max')).toBe(
+      `The Google Ads device bid modifiers ${ALL}, so it could not serve anywhere. Keep at least one device, then create again.`
+    );
+    expect(googleDeviceBidModifierRefusal(excluded(' mobile', 'Desktop ', 'tablet', 'connected_tv'), 'maximize-conversions', 'performance-max')).toContain(ALL);
+    // Upstream's order: the every-device check runs before `validateDeviceBidModifiers`.
+    expect(
+      googleDeviceBidModifierRefusal(excluded('MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV', 'MOBILE'), 'maximize-conversions', 'performance-max')
+    ).toContain(ALL);
+    expect(
+      googleDeviceBidModifierRefusal(excluded('MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV', 'OTHER'), 'maximize-conversions', 'performance-max')
+    ).toContain(ALL);
+  });
+
+  it('keeps any three of the four, and judges a repeat and an unknown device as on other channels', () => {
+    expect(googleDeviceBidModifierRefusal(excluded('MOBILE', 'DESKTOP', 'TABLET'), 'maximize-conversions', 'performance-max')).toBeNull();
+    expect(googleDeviceBidModifierRefusal(excluded('DESKTOP', 'TABLET', 'CONNECTED_TV'), 'maximize-conversions', 'performance-max')).toBeNull();
+    expect(googleDeviceBidModifierRefusal(excluded('MOBILE', 'mobile'), 'maximize-conversions', 'performance-max')).toContain('name MOBILE more than once');
+    expect(googleDeviceBidModifierRefusal(excluded('OTHER'), 'maximize-conversions', 'performance-max')).toContain(
+      'which is not one of MOBILE, DESKTOP, TABLET, CONNECTED_TV on Performance Max campaigns'
+    );
   });
 });
 

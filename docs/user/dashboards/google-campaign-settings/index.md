@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups and Demand Gen audiences for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and Performance Max search themes, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -29,6 +29,8 @@ tags:
     video ads,
     ad groups,
     audiences,
+    performance max,
+    search themes,
     implement,
   ]
 last_updated: 2026-11-07
@@ -47,7 +49,7 @@ When you create a Google Ads campaign from the **Campaigns** page in the Foundat
 | --------------- | ---------------------------------------------- | ----------------------------- | ---------------------- | ------------------ |
 | Search          | Yes, adjust with Manual CPC or Maximize Clicks | Yes, adjust with Manual CPC   | Yes                    | Yes                |
 | Display         | Yes, adjust with Maximize Clicks               | Exclude only                  | Yes                    | Yes                |
-| Performance Max | Windows only                                   | No                            | No                     | Yes                |
+| Performance Max | Windows only                                   | Exclude only, with TV screens | No                     | Yes                |
 | Demand Gen      | Windows only                                   | Exclude only, with TV screens | No                     | Yes                |
 
 ## Ad schedule
@@ -66,7 +68,7 @@ If you set an adjustment and then switch to a strategy that ignores it, the adju
 
 ## Devices
 
-For **Mobile phones**, **Computers** and **Tablets**, and **TV screens** on Demand Gen, choose one of:
+For **Mobile phones**, **Computers** and **Tablets**, and **TV screens** on Demand Gen and Performance Max, choose one of:
 
 - **Default bid**: no change.
 - **Adjust bid**: enter a percentage from -90% to +900%. Only offered when the bidding strategy is **Manual CPC**.
@@ -74,9 +76,11 @@ For **Mobile phones**, **Computers** and **Tablets**, and **TV screens** on Dema
 
 LFX One sends device bid adjustments only with **Manual CPC**, and won't create the campaign with one under any other strategy, even at 0%. Under Maximize Conversions, Maximize Conversion Value or Target ROAS, Google Ads doesn't apply device bid adjustments, except excluding a device. Under Target CPA, Google Ads would apply one as an adjustment to that device's target CPA, and under Maximize Clicks it would apply one to the bid, but LFX One doesn't send them there. Search campaigns use Manual CPC unless you pick another strategy. Display campaigns cannot use Manual CPC here, so on Display you can only keep the default bid or exclude a device. The **Devices** section says which strategy is in force when **Adjust bid** is not offered.
 
-Demand Gen campaigns take a device only as an exclusion, under every strategy, so on Demand Gen you can only keep the default bid or exclude a device. Demand Gen is also the only campaign type that offers **TV screens**. If you exclude TV screens and then switch to another campaign type, the exclusion is kept for a switch back and a notice says it will not be sent.
+Demand Gen and Performance Max campaigns take a device only as an exclusion, under every strategy, so on those two you can only keep the default bid or exclude a device. They are also the only campaign types that offer **TV screens**. If you exclude TV screens and then switch to Search or Display, the exclusion is kept for a switch back and a notice says it will not be sent.
 
-If you set an adjustment under Manual CPC and then switch to another strategy, the adjustment is kept for a switch back and a notice says so. **Create Campaign** stays unavailable until you set that device to **Default bid** or **Exclude**, or choose Manual CPC again. If you switch to Demand Gen instead, the same happens, and only **Default bid** or **Exclude** lets you create the campaign there.
+On Performance Max, keep at least one device: a campaign that excludes all four could not serve anywhere, so a message appears under **Devices** and **Create Campaign** stays unavailable until you set one of them back to **Default bid**.
+
+If you set an adjustment under Manual CPC and then switch to another strategy, the adjustment is kept for a switch back and a notice says so. **Create Campaign** stays unavailable until you set that device to **Default bid** or **Exclude**, or choose Manual CPC again. If you switch to Demand Gen or Performance Max instead, the same happens, and only **Default bid** or **Exclude** lets you create the campaign there.
 
 ## Demographic exclusions
 
@@ -115,11 +119,12 @@ You can also pick the languages a Demand Gen campaign serves in, as on the other
 
 Ad extensions add links and details to your ads. Which ones a campaign takes depends on its type:
 
-| Campaign type            | Sitelinks | Callouts, structured snippets, call extensions, promotions and prices |
-| ------------------------ | --------- | --------------------------------------------------------------------- |
-| Search                   | Yes       | Yes                                                                   |
-| Demand Gen               | Yes       | No                                                                    |
-| Display, Performance Max | No        | No                                                                    |
+| Campaign type   | Sitelinks | Callouts and structured snippets | Call extensions, promotions and prices |
+| --------------- | --------- | -------------------------------- | -------------------------------------- |
+| Search          | Yes       | Yes                              | Yes                                    |
+| Performance Max | Yes       | Yes                              | No                                     |
+| Demand Gen      | Yes       | No                               | No                                     |
+| Display         | No        | No                               | No                                     |
 
 **Google Sitelinks** add extra links to the ad. For each sitelink, enter the **Link text** and the **Destination URL**, and optionally two description lines, then select **+ Add sitelink**.
 
@@ -130,7 +135,9 @@ Ad extensions add links and details to your ads. Which ones a campaign takes dep
 
 When it creates the campaign, LFX One's campaign service adds the campaign's tracking parameters to each sitelink destination, as it does to the ad's own link, so you don't need to add them yourself.
 
-On a Demand Gen campaign, **Google Sitelinks** is the only ad extension section that appears. If you entered callouts, structured snippets, call extensions, promotions or prices on a Search campaign and then switch to Demand Gen, they are kept but not sent, and a notice says so. On Display and Performance Max, sitelinks are kept but not sent too, and a notice says to switch to Search or Demand Gen to keep them.
+On a Performance Max campaign, **Google Sitelinks**, **Google Callouts** and **Google Structured Snippets** appear, with the same limits as on Search, and apply to the whole campaign. Call extensions, promotions and prices you entered on a Search campaign are kept but not sent on Performance Max, and a notice says to switch back to Search to keep them.
+
+On a Demand Gen campaign, **Google Sitelinks** is the only ad extension section that appears. If you entered callouts, structured snippets, call extensions, promotions or prices on a Search campaign and then switch to Demand Gen, they are kept but not sent, and a notice says so. On Display, sitelinks are kept but not sent too, and a notice says to switch to Search, Demand Gen or Performance Max to keep them.
 
 ## Conversion actions
 
@@ -187,6 +194,19 @@ The lists apply to the whole campaign, including any ad group added later, for e
 Google Ads shows a short description on small placements, so a Performance Max campaign needs at least one description of **60 characters or fewer**. Chinese, Japanese, Korean and full-width characters count double.
 
 The descriptions filled in from the brief are often longer than that. If none of yours is short enough, a message appears under **Descriptions** and **Create Campaign** stays unavailable. Shorten one description, or add a short one, to continue.
+
+## Performance Max search themes
+
+Search themes tell Google which searches a Performance Max campaign is for, such as "kubernetes conference". They are a hint, not targeting: Google may still show the ads on other searches. The **Google Search Themes** box appears below the **Performance Max Creative** section when Performance Max is the campaign type.
+
+- Enter one search theme per line. Blank lines are ignored.
+- You can add up to 50 search themes, each up to 80 characters.
+- Two search themes cannot be the same, even in different capitals.
+- Search themes belong to the campaign's asset group, which Google Ads builds from the Performance Max creative. If you enter search themes and leave the creative empty, a message says so and **Create Campaign** stays unavailable. Fill in the creative or remove the search themes.
+
+If a search theme would be refused, a message appears under the box and **Create Campaign** stays unavailable until you fix it. If you switch to another campaign type, the box disappears and a notice says your search themes will not be sent. They are kept, so switching back to Performance Max restores them.
+
+If LFX can't confirm that search themes can be sent, for example while that check is still running or after it fails, the box is hidden and a notice says how many search themes will not be sent. When the check failed, select **Retry** to check again. This notice does not hold **Create Campaign**: a campaign created before the check succeeds is created without the search themes.
 
 ## Demand Gen video ads
 
@@ -260,6 +280,6 @@ While the campaign is split, the single Display ad you entered is kept but not s
 
 ## If something is wrong
 
-If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword or Performance Max description would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
+If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword, Performance Max description or search theme would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
-If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Placement exclusions are sent on Display only, and kept with a notice on the other campaign types. Sitelinks are sent on Search and Demand Gen, and the other ad extensions on Search only; each is kept the same way on the other campaign types, with a notice.
+If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Placement exclusions are sent on Display only, and kept with a notice on the other campaign types. Sitelinks are sent on Search, Demand Gen and Performance Max, callouts and structured snippets on Search and Performance Max, and call extensions, promotions and prices on Search only; each is kept the same way on the other campaign types, with a notice.

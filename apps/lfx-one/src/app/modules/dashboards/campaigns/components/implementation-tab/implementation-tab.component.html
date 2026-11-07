@@ -167,6 +167,13 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-format-held-live">
   {{ demandGenFormatHeldMessage() }}
 </div>
+<!-- The Performance Max search themes' refusal, and the themes a switch away holds back (#5262). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-search-themes-error-live">
+  {{ googleSearchThemesError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-search-themes-withheld-live">
+  {{ googleSearchThemesWithheldWarning() }}
+</div>
 <!-- The named Demand Gen ad groups' refusal and what the split leaves unsent (#5226); empty off Demand Gen. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ad-groups-error-live">
   {{ demandGenAdGroupsError() ?? '' }}
@@ -1427,7 +1434,7 @@
       }
 
       <!--
-        Callouts and sitelinks withheld because the create capability is not an explicit yes, on a
+        Ad extensions and search themes withheld because the create capability is not an explicit yes, on a
         channel that takes them — the state the channel warnings below leave to it. Create is NOT blocked here (see `googleExtensionsCapabilityBlock`), so Retry is
         the only action and only where a read could succeed.
       -->
@@ -1494,11 +1501,10 @@
       <!--
         Google Ads: callout extensions.
 
-        SEARCH ONLY, and the gate is `googleCalloutsAvailable` rather than `showGoogleSection` —
-        upstream's `validateAssetPlan` refuses callouts on Demand Gen, Display and Video at
-        preflight, BEFORE the budget mutate, so a callout sent on a Demand Gen create produces no
-        campaign at all rather than a campaign without callouts. (Upstream takes them on Performance
-        Max; this application has not opened that pairing.) Hiding the section there is the
+        SEARCH AND PERFORMANCE MAX, and the gate is `googleCalloutsAvailable` rather than
+        `showGoogleSection` — upstream's `validateAssetPlan` refuses callouts on Demand Gen, Display and
+        Video at preflight, BEFORE the budget mutate, so a callout sent on a Demand Gen create produces
+        no campaign at all rather than a campaign without callouts. Hiding the section there is the
         same withholding the payload makes, in the one place the operator can see it.
       -->
       @if (googleCalloutsAvailable()) {
@@ -1577,8 +1583,8 @@
         Google Ads: sitelink extensions.
 
         Gated on `googleSitelinksAvailable`, not the callouts' gate: `validateAssetPlan` takes
-        sitelinks alone on Demand Gen as well as on Search (campaign-service v1.0.31), and refuses
-        them on Display and Video before the budget mutate. Four fields per entry rather than one
+        sitelinks on Search and Performance Max, and alone on Demand Gen (campaign-service v1.0.31),
+        and refuses them on Display and Video before the budget mutate. Four fields per entry rather than one
         string, so this is a sub-form with its own add button instead of an enter-to-add box — a
         sitelink is only addable once both of its required fields are filled, which no single input
         can express.
@@ -1852,15 +1858,15 @@
       <!--
         Google Ads: call extensions.
 
-        Same gate and same reason as the callouts and snippets above — `validateAssetPlan` refuses
-        call extensions on every channel but Search. Typed, as the snippets are. Both boxes are required:
+        Gated on `googleAssetExtensionsAvailable`, Search alone, not the callouts' gate —
+        `validateAssetPlan` refuses call extensions on every channel but Search, Performance Max included. Typed, as the snippets are. Both boxes are required:
         Google interprets a number against its country and has no default to pick.
 
         One message line for the sub-form rather than one per refusal: the refusals come from the
         shared judge the BFF also refuses by, already as sentences, so the line says exactly what the
         create would be refused for.
       -->
-      @if (googleCalloutsAvailable()) {
+      @if (googleAssetExtensionsAvailable()) {
         <div
           class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
           data-testid="implementation-google-call-extensions-section"
@@ -1940,12 +1946,12 @@
       <!--
         Google Ads: promotion extensions.
 
-        Same gate. Google's two oneofs are each ONE select here rather than two boxes, so the form
+        Same gate as the call extensions. Google's two oneofs are each ONE select here rather than two boxes, so the form
         cannot express what upstream refuses: exactly one discount (percentage or money), and at most
         one condition (a coupon code or a minimum order). The currency box appears only while a money
         field is in use, the one case upstream reads it.
       -->
-      @if (googleCalloutsAvailable()) {
+      @if (googleAssetExtensionsAvailable()) {
         <div
           class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
           data-testid="implementation-google-promotions-section"
@@ -2174,12 +2180,12 @@
       <!--
         Google Ads: price extensions.
 
-        Same gate. A table of rows, so the sub-form holds Google's minimum of three rows from the
+        Same gate as the call extensions. A table of rows, so the sub-form holds Google's minimum of three rows from the
         start and lets the operator grow it to eight; the remove-row control disappears at three and
         the add-row control at eight, so no table the form can build is refused for its size. One
         currency box for the table, copied onto each row's `currencyCode` on the wire.
       -->
-      @if (googleCalloutsAvailable()) {
+      @if (googleAssetExtensionsAvailable()) {
         <div
           class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
           data-testid="implementation-google-prices-section"
@@ -3231,6 +3237,45 @@
           }
         </div>
       </ng-template>
+
+      <!--
+        Google Ads: Performance Max search themes (#5262).
+
+        PERFORMANCE MAX ONLY, gated on `googleSearchThemesAvailable`: a theme is an asset group signal,
+        and `validatePerformanceMaxSignals` refuses it on every other channel before the budget mutate.
+        One theme per line in the LFX textarea wrapper. `googleSearchThemesError` holds Create on any
+        refusal the BFF would make, and says why under the box.
+      -->
+      @if (googleSearchThemesAvailable()) {
+        <div
+          class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-search-themes-section"
+          role="group"
+          aria-labelledby="google-search-themes-heading">
+          <label id="google-search-themes-heading" for="google-search-themes-input" class="block text-xs font-medium text-gray-700">
+            Google Search Themes ({{ googleSearchThemes().length }}/{{ googleMaxSearchThemes }})
+          </label>
+          <p id="google-search-themes-hint" class="text-xs text-gray-500">
+            One per line, up to {{ googleMaxSearchThemeRunes }} characters each. Search themes tell Google which searches this campaign is for; Google may still
+            serve beyond them.
+          </p>
+          <lfx-textarea
+            [form]="campaignForm"
+            control="googlePerformanceMaxSearchThemes"
+            inputId="google-search-themes-input"
+            [rows]="5"
+            ariaDescribedBy="google-search-themes-hint"
+            [describedBy]="googleSearchThemesError() ? 'google-search-themes-error' : undefined"
+            [invalid]="!!googleSearchThemesError()"
+            data-testid="implementation-google-search-themes-input" />
+          @if (googleSearchThemesError(); as error) {
+            <p id="google-search-themes-error" class="text-xs text-red-600" data-testid="implementation-google-search-themes-error">{{ error }}</p>
+          }
+        </div>
+      }
+      @if (googleSearchThemesWithheldWarning(); as warning) {
+        <p class="text-xs text-amber-700" data-testid="implementation-google-search-themes-withheld">{{ warning }}</p>
+      }
 
       <!--
         The two creative messages, one blocking and one not, placed after every section because

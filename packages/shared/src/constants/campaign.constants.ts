@@ -2022,11 +2022,12 @@ export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
 /**
  * The Google channels whose campaign-level criteria accept a device bid modifier.
  *
- * Four channels: Search, Video, Display, and Demand Gen, which `validateCriteriaPlan`
- * (campaign-service v1.0.31) takes only as an exclusion — see
- * {@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}. Performance Max is left out here: upstream now
- * takes a Performance Max device exclusion too (#500), but this client does not offer it yet, so the
- * channel stays fenced and a list set elsewhere is held rather than sent.
+ * Every Google channel: Search, Video, Display, and Demand Gen and Performance Max, which
+ * `validateCriteriaPlan` (campaign-service v1.0.33) takes only as an exclusion — see
+ * {@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}. Performance Max joined with linuxfoundation/lfx-v2-campaign-service#500: upstream
+ * sends its exclusion as a bid modifier of 0 on the device row Google creates on every Performance
+ * Max campaign. Kept as a list rather than dropped, so a channel added to
+ * {@link GOOGLE_CAMPAIGN_CHANNELS} starts outside it until someone confirms upstream takes devices there.
  *
  * Kept separate from {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS} because upstream fences the
  * two in separate branches, for separate reasons, and they already differ on Demand Gen, which takes
@@ -2042,14 +2043,16 @@ export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
  * Video is listed because upstream accepts it there, not because this client can reach it — the
  * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
  */
-export const GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS = ['search', 'demand-gen', 'video', 'display'] as const;
+export const GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS = ['search', 'demand-gen', 'performance-max', 'video', 'display'] as const;
 
 /**
- * The channels that take a device only as an EXCLUSION (a bid modifier of 0): Demand Gen.
- * `validateCriteriaPlan` (campaign-service v1.0.31) refuses any other modifier there, under every
- * bidding strategy, because the validateOnly probe that opened Demand Gen devices (#474) sent only 0.
+ * The channels that take a device only as an EXCLUSION (a bid modifier of 0): Demand Gen and
+ * Performance Max. `validateCriteriaPlan` (campaign-service v1.0.33) refuses any other modifier on
+ * both, under every bidding strategy, for two different reasons: the validateOnly probe that opened
+ * Demand Gen devices (linuxfoundation/lfx-v2-campaign-service#474) sent only 0, and on Performance Max Google itself refuses an adjustment
+ * (OPERATION_NOT_PERMITTED_FOR_CAMPAIGN_TYPE, linuxfoundation/lfx-v2-campaign-service#500).
  */
-export const GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY = ['demand-gen'] as const;
+export const GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY = ['demand-gen', 'performance-max'] as const;
 
 /**
  * The Google channels whose campaign-level criteria accept a demographic exclusion.
@@ -2063,16 +2066,16 @@ export const GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY = ['demand-gen'] as con
 export const GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS = ['search', 'video', 'display'] as const;
 
 /**
- * The `Device` enum this client accepts on a bid modifier on every channel but Demand Gen
- * (`campaign_criteria.go`'s `deviceTypes`).
+ * The `Device` enum this client accepts on a bid modifier on every channel but Demand Gen and
+ * Performance Max (`campaign_criteria.go`'s `deviceTypes`).
  *
  * Compared after trimming and upper-casing, so `" mobile "` is MOBILE.
  *
  * Two of Google's values are deliberately absent. `OTHER` is a reporting bucket rather than
  * something a campaign bids on. `CONNECTED_TV` is a NAMED GAP on these channels: Google accepts TV
  * screens on Display and Video campaigns, so there the omission is campaign-service's limitation
- * rather than Google's, and upstream states it as one. Demand Gen takes it: see
- * {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}.
+ * rather than Google's, and upstream states it as one. Demand Gen and Performance Max take it: see
+ * {@link GOOGLE_ADS_DEMAND_GEN_DEVICES} and {@link GOOGLE_ADS_PERFORMANCE_MAX_DEVICES}.
  *
  * Its length is also upstream's cap on the list (`validateDeviceBidModifiers` caps at the size of
  * the channel's vocabulary): a longer list must repeat a device.
@@ -2087,6 +2090,16 @@ export const GOOGLE_ADS_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET'] as const;
  * and keeps entries in, since it is the widest vocabulary.
  */
 export const GOOGLE_ADS_DEMAND_GEN_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV'] as const;
+
+/**
+ * Performance Max's device vocabulary (`campaign_criteria.go`'s `performanceMaxDeviceCriterionIDs`,
+ * linuxfoundation/lfx-v2-campaign-service#500): the same four devices as {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}, each the row Google creates
+ * on every Performance Max campaign. Its own list, as upstream keeps its own map, because the two
+ * channels reached the same four by different probes. Every entry is an exclusion
+ * ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}), and excluding all four is refused, since the
+ * campaign could then serve nowhere.
+ */
+export const GOOGLE_ADS_PERFORMANCE_MAX_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV'] as const;
 
 /** What the Implementation tab's device control calls each {@link GOOGLE_ADS_DEMAND_GEN_DEVICES} value, in Google's own words. */
 export const GOOGLE_ADS_DEVICE_LABELS = {
@@ -4713,6 +4726,8 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'callExtensions', label: 'call extensions' },
   { field: 'promotions', label: 'promotions' },
   { field: 'prices', label: 'price extensions' },
+  // The Performance Max asset group's search themes (linuxfoundation/lfx-v2-campaign-service#461), judged after the extensions upstream.
+  { field: 'performanceMaxSearchThemes', label: 'Performance Max search themes' },
   // The Search ad group's further ads, every ad's display paths, the create-time negatives and the
   // Search partners opt-in (#4991): the legacy creator builds one ad from `headlines`/`descriptions`
   // on Google Search alone, and nothing else.
@@ -4865,39 +4880,51 @@ export const GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS: Readonly<Record<string, readonl
 };
 
 /**
- * The Google channels this application sends campaign ad extensions OTHER THAN SITELINKS on — the
- * callouts, structured snippets, calls, promotions and prices it collects. Sitelinks have their own
- * fence, {@link GOOGLE_CHANNELS_WITH_SITELINKS}.
+ * The Google channels this application sends call extensions, promotions and prices on — the three
+ * extensions upstream takes on Search alone. Sitelinks, callouts and structured snippets have their
+ * own fences, {@link GOOGLE_CHANNELS_WITH_SITELINKS} and {@link GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS}.
  *
  * Search only. Upstream's `validateAssetPlan` (`internal/platform/googleads/assets.go`, campaign-service
- * v1.0.31) refuses every one of them on Demand Gen ("ad extensions other than sitelinks ... are not
- * supported on DEMAND_GEN") and on Display and Video, and refuses calls, promotions and prices on
- * Performance Max. It does take callouts and structured snippets on Performance Max (linuxfoundation/lfx-v2-campaign-service#461), but this
- * application has not opened that pairing, so this list stays narrower than upstream there rather
- * than wider. Every refusal happens at preflight, before the budget mutate, so sending a callout on a
- * Demand Gen create does not produce a campaign without callouts — it produces no campaign.
+ * v1.0.31) refuses all three on Demand Gen ("ad extensions other than sitelinks ... are not supported on
+ * DEMAND_GEN"), on Display and Video, and on Performance Max ("call extensions, promotions, prices and
+ * lead forms are supported on Search campaigns only"), because no probe has confirmed their campaign
+ * link there. Every refusal happens at preflight, before the budget mutate, so sending a call extension
+ * on a Performance Max create does not produce a campaign without it — it produces no campaign.
  *
  * This is the opposite shape from {@link GOOGLE_CHANNELS_WITH_CREATIVE}, which excludes `search`.
  */
 export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
 
 /**
- * The Google channels this application sends sitelink extensions on: Search and Demand Gen.
+ * The Google channels this application sends callouts and structured snippets on: Search and
+ * Performance Max.
+ *
+ * Upstream's `validateAssetPlan` (campaign-service v1.0.31) takes both on Performance Max (linuxfoundation/lfx-v2-campaign-service#461),
+ * through the same `validateCallouts` and `validateStructuredSnippets` rules as Search and the same
+ * `createCampaignAssets` link, which attaches each asset to the CAMPAIGN (a `campaignAsset`), not to
+ * the asset group. It refuses both on Demand Gen, Display and Video.
+ *
+ * Its own list because upstream fences these two apart from calls, promotions and prices
+ * ({@link GOOGLE_CHANNELS_WITH_AD_EXTENSIONS}), which it still refuses on Performance Max.
+ */
+export const GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS = ['search', 'performance-max'] as const;
+
+/**
+ * The Google channels this application sends sitelink extensions on: Search, Demand Gen and
+ * Performance Max.
  *
  * Upstream's `validateAssetPlan` (`internal/platform/googleads/assets.go`, campaign-service v1.0.31)
  * accepts sitelinks alone on Demand Gen (linuxfoundation/lfx-v2-campaign-service#474): the live KubeCon NA 2026 Demand Gen campaigns carry
- * them, and a `validateOnly` probe accepted the asset and its SITELINK campaign link. Demand Gen
- * sitelinks go through the same `validateSitelinks` rules as Search (cap, text and description
- * widths, both description lines or neither, final URL) and the same `createCampaignAssets` link;
- * the only difference is upstream tags the destination with Demand Gen's `utm_medium=display`
- * rather than Search's (linuxfoundation/lfx-v2-campaign-service#479). This application sends the raw URL on both channels.
+ * them, and a `validateOnly` probe accepted the asset and its SITELINK campaign link. It accepts them
+ * on Performance Max beside callouts and structured snippets (linuxfoundation/lfx-v2-campaign-service#461). Every channel's sitelinks go
+ * through the same `validateSitelinks` rules (cap, text and description widths, both description
+ * lines or neither, final URL) and the same `createCampaignAssets` campaign link; the only difference
+ * is the `utm_medium` upstream tags the destination with (linuxfoundation/lfx-v2-campaign-service#479). This application sends the raw URL.
  *
- * A separate list from {@link GOOGLE_CHANNELS_WITH_AD_EXTENSIONS} because upstream fences the two for
- * different reasons — sitelinks were probed on Demand Gen and the other kinds were not — and either
- * could move without the other. Performance Max is left out although upstream takes sitelinks
- * there too (linuxfoundation/lfx-v2-campaign-service#461): this application has not opened extensions on that channel.
+ * A separate list from {@link GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS} because upstream fences the
+ * two differently on Demand Gen, which takes sitelinks alone.
  */
-export const GOOGLE_CHANNELS_WITH_SITELINKS = ['search', 'demand-gen'] as const;
+export const GOOGLE_CHANNELS_WITH_SITELINKS = ['search', 'demand-gen', 'performance-max'] as const;
 
 /**
  * The Google channels this application sends placement exclusions on: Display alone. campaign-service
@@ -5491,6 +5518,39 @@ export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL = `needs at leas
 
 /** {@link GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL} as a whole sentence, the form the tab's creative error takes. */
 export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL = `Performance Max creative ${GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL}`;
+
+/**
+ * The Google channels that take search themes: Performance Max alone.
+ *
+ * A search theme is an asset group SIGNAL (campaign-service v1.0.31, linuxfoundation/lfx-v2-campaign-service#461): `validatePerformanceMaxSignals`
+ * (`internal/platform/googleads/pmax_signals.go`) refuses it on every other channel, because only
+ * Performance Max has asset groups. Refused there at preflight, before the budget mutate, so a theme
+ * sent on Search produces no campaign at all. Not behind a deployment flag: the themes are free text
+ * naming no account resource (`googleAdsPMaxAudienceSignalEnabled` gates the audience signal only).
+ */
+export const GOOGLE_CHANNELS_WITH_SEARCH_THEMES = ['performance-max'] as const;
+
+/**
+ * Upstream's per-asset-group search-theme ceiling (`pmax_signals.go`'s `maxSearchThemes`), checked on
+ * the SUBMITTED list before any entry, as `validatePerformanceMaxSignals` checks it. Google's help page
+ * still says 25; a `validateOnly` probe found 50.
+ */
+export const GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES = 50;
+
+/**
+ * Upstream's per-theme bound (`pmax_signals.go`'s `maxSearchThemeRunes`), counted in RUNES on the
+ * trimmed text, as {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} is.
+ */
+export const GOOGLE_ADS_MAX_SEARCH_THEME_RUNES = 80;
+
+/**
+ * Why search themes on a Performance Max create with no creative are held, worded once for the tab
+ * and the BFF. A theme attaches to the asset group, and campaign-service creates the asset group only
+ * from `performanceMaxCreative`, so `validatePerformanceMaxSignals` refuses themes without one before
+ * the budget.
+ */
+export const GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL =
+  'Performance Max search themes attach to the asset group, and Google creates the asset group only from the Performance Max creative. Fill in the creative or remove the search themes, then create again.';
 
 /**
  * Shown on the Performance Max creative while some of its copy is still what the brief prefilled
