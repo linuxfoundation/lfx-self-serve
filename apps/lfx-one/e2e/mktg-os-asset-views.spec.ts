@@ -18,6 +18,7 @@ import {
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
   MKTG_SLIDES_EXPORT_API_PATH,
 } from '@lfx-one/shared/constants';
+import type { FoundationMessageContent } from '@lfx-one/shared/interfaces';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import {
   expectMktgPortraitPageSetup,
@@ -882,6 +883,30 @@ test('a framework at the goals’ cap: the matrix’s eight columns fit their te
 });
 
 /** In the matrix: head titles whose boxes overlap a neighbor's, or whose text overflows its own box (a word wider than the column). */
+/** The overfull record's key messages, in its goals' order (synthetic record): four to five lines of a band's 11 px column, printed whole (editor W1b). */
+const OVERFULL_GOAL_KEYS = [
+  'The cloud native stack is open, governed in the open and run everywhere.',
+  'Build it where the whole industry maintains it with you.',
+  'The certification employers recognize, against the standard everyone ships.',
+  'Your production needs set the roadmap: bring them to the end user community.',
+  'Where cloud native is built, taught and decided: come to the next event.',
+  'Security is a shared practice here, not a product.',
+  'Sustain the neutral home the whole ecosystem depends on.',
+  'Learn cloud native the way the maintainers teach it.',
+];
+
+/** The overfull record's proof facts (synthetic figures), four a goal, in rotation. */
+const OVERFULL_GOAL_FACTS = [
+  'Kubernetes runs in production at 96 percent of the organizations surveyed in the latest annual survey',
+  'More than 250 projects are hosted across the graduated, incubating and sandbox tiers',
+  'Over 290,000 contributors from 190 countries have committed to hosted projects',
+  'KubeCon + CloudNativeCon North America drew 12,000 attendees in person last year',
+  'More than 180,000 certifications have been issued under the Kubernetes certification program',
+  '900 member organizations across every continent, from startups to the largest cloud providers',
+  'Twenty-two graduated projects have passed the open governance and security audit bar',
+  'Over 200 Kubernetes community days were held in 60 countries over the last twelve months',
+];
+
 function matrixTitleOverlaps(matrix: Element): { overlapping: number; overflowing: number; titles: number } {
   const titles = Array.from(matrix.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-title"]'));
   const boxes = titles.map((title) => title.getBoundingClientRect());
@@ -902,15 +927,25 @@ test('eight goals with the overfull record’s titles: the matrix prints as two 
 }, info) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await stubMktgPrintFrame(page);
-  await openAssetDocument(page, 'foundation-message', 200, true, false, capGoalsFrameworkRevisionResponse(OVERFULL_GOAL_TITLES));
+  // The record's key messages and proof facts on the cap record's goals (editor W1b: every key message prints whole, so the band
+  // test reads the shape the rule was set on, not the cap fixture's eight-line sentence in every cell).
+  const cap = capGoalsFrameworkRevisionResponse(OVERFULL_GOAL_TITLES);
+  const content = JSON.parse(cap.markdown) as FoundationMessageContent;
+  const goals = content.mf.goals.map((goal, index) => ({
+    ...goal,
+    key: OVERFULL_GOAL_KEYS[index],
+    proof: Array.from({ length: 4 }, (_, n): [string, string] => [OVERFULL_GOAL_FACTS[(index + n) % OVERFULL_GOAL_FACTS.length], 'Report']),
+  }));
+  const record = { ...cap, markdown: JSON.stringify({ ...content, mf: { ...content.mf, goals } }) };
+  await openAssetDocument(page, 'foundation-message', 200, true, false, record);
   await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
   await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
   const frame = await layoutMktgPrintFrame(page);
   const framework = frame.getByTestId('mktg-framework-print').locator('[data-page-id="framework"]');
   const matrix = framework.getByTestId('mktg-framework-print-goals');
   // Two bands of the board's four columns, the eight goals in order across them, every title whole at one size.
-  await expect(matrix.getByTestId('mktg-framework-print-goals-band-0').getByTestId('mktg-framework-print-matrix-vp')).toHaveCount(4);
-  await expect(matrix.getByTestId('mktg-framework-print-goals-band-1').getByTestId('mktg-framework-print-matrix-vp')).toHaveCount(4);
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-0').getByTestId('mktg-framework-print-matrix-title')).toHaveCount(4);
+  await expect(matrix.getByTestId('mktg-framework-print-goals-band-1').getByTestId('mktg-framework-print-matrix-title')).toHaveCount(4);
   await expect(matrix.getByTestId('mktg-framework-print-goals-band-2')).toHaveCount(0);
   await expect(matrix.getByTestId('mktg-framework-print-matrix-title')).toHaveText(OVERFULL_GOAL_TITLES);
   const titleSizes = await matrix
@@ -926,24 +961,25 @@ test('eight goals with the overfull record’s titles: the matrix prints as two 
     await expect(cells).toHaveCount(4);
     for (const cell of await cells.all()) await expect(cell.getByTestId('mktg-framework-print-matrix-proof')).not.toHaveCount(0);
   }
-  // The band rules (editor W1, W4) on this shape: the bands cannot hold the sound bites whole, so that row is dropped from every
-  // band and said once under the last, above the crosscut; the value row stays; the value and key cells are clamped to two lines
-  // at their 11 px type, never set smaller; and each band's proofs print at one size, never under the tight type (10.5 px).
+  // The band rules (editor W1b, W4) on this shape: a band drops the value-proposition and sound-bite rows (each goal page prints both
+  // in full) and prints every key message whole at its 11 px type, never clamped or cut, the one note under the last band above the
+  // crosscut; and each band's proofs print at one size, never under the tight type (10.5 px).
   for (const band of [0, 1]) {
     await expect(matrix.getByTestId(`mktg-framework-print-goals-band-${band}`).getByTestId('mktg-framework-print-goals-label')).toHaveText([
-      'Value proposition',
       'Key message',
       'Proof',
     ]);
   }
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-vp')).toHaveCount(0);
   await expect(matrix.getByTestId('mktg-framework-print-matrix-bite')).toHaveCount(0);
-  await expect(matrix.getByTestId('mktg-framework-print-matrix-row-note')).toHaveText([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites]);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-row-note')).toHaveText([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+  await expect(matrix.getByTestId('mktg-framework-print-matrix-row-note')).toHaveText(['Value propositions and sound bites are on each goal page.']);
   const bandCells = await matrix.evaluate((block) => {
-    const measure = (cell: Element): { size: number; lines: number } => {
-      const style = getComputedStyle(cell);
-      return { size: parseFloat(style.fontSize), lines: Math.round(cell.getBoundingClientRect().height / parseFloat(style.lineHeight)) };
-    };
-    const text = Array.from(block.querySelectorAll('[data-testid="mktg-framework-print-matrix-vp"], .fwp-matrix-key')).map(measure);
+    const measure = (cell: Element): { size: number; text: string } => ({
+      size: parseFloat(getComputedStyle(cell).fontSize),
+      text: cell.textContent?.trim() ?? '',
+    });
+    const text = Array.from(block.querySelectorAll('.fwp-matrix-key')).map(measure);
     const proofs = [0, 1].map((band) =>
       Array.from(block.querySelectorAll(`[data-testid="mktg-framework-print-goals-band-${band}"] [data-testid="mktg-framework-print-matrix-proof"]`)).map(
         (proof) => parseFloat(getComputedStyle(proof).fontSize)
@@ -951,11 +987,9 @@ test('eight goals with the overfull record’s titles: the matrix prints as two 
     );
     return { text, proofs };
   });
-  expect(bandCells.text).toHaveLength(16);
-  for (const cell of bandCells.text) {
-    expect(cell.size).toBe(11);
-    expect(cell.lines).toBeLessThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBandLines);
-  }
+  // Every key message whole, as the record wrote it, at 11 px: no clamp, no ellipsis.
+  expect(bandCells.text.map((cell) => cell.text)).toEqual(OVERFULL_GOAL_KEYS);
+  for (const cell of bandCells.text) expect(cell.size).toBe(11);
   for (const sizes of bandCells.proofs) {
     expect(sizes.length).toBeGreaterThan(0);
     expect(new Set(sizes).size).toBe(1);

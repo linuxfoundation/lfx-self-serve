@@ -1013,92 +1013,51 @@ describe('the framework portrait book’s goal matrix in bands (editor W1)', () 
   const type = FRAMEWORK_PORTRAIT_TYPE;
   const linesOf = (text: string, size: number, weight: number) => mktgPortraitWrapLines(text, mktgPortraitCharsPerLine(column, size, { weight }));
 
-  it('clamps every value proposition and key message to two lines at their type, cut at a word past them, never set smaller (W1 b)', () => {
+  it('drops the value-proposition and sound-bite rows from every band, prints every key message whole at its type and says so once under the bands (W1b)', () => {
+    // The overfull record at the matrix's room: two bands of four, no value row, no sound-bite row (each goal page prints both in
+    // full), every key message as written at 11 px, never clamped or cut, the one note under the last band, the matrix on its page.
     const matrix = frameworkPortraitMatrix(goals(overfull), crosscut, room);
     expect(matrix.bands).toHaveLength(2);
+    expect(matrix.rows).toEqual({ value: false, bite: false });
+    expect(matrix.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(matrix.notes).toEqual(['Value propositions and sound bites are on each goal page.']);
     expect(matrix.height).toBeLessThanOrEqual(room);
-    for (const [index, cell] of matrix.cells.entries()) {
-      const [, vp, key] = overfull[index];
-      expect(cell.vp.size).toBe(type.matrixCell.size);
-      expect(cell.key.size).toBe(type.matrixKey.size);
-      expect(linesOf(cell.vp.text, cell.vp.size, type.matrixCell.weight)).toBeLessThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBandLines);
-      expect(linesOf(cell.key.text, cell.key.size, type.matrixKey.weight)).toBeLessThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixBandLines);
-      // A cut keeps the opening words whole and says so with the ellipsis; a text that holds two lines prints as written.
-      if (cell.vp.text !== vp) expect(vp.startsWith(cell.vp.text.slice(0, -1))).toBe(true);
-      if (cell.key.text !== key) expect(key.startsWith(cell.key.text.slice(0, -1))).toBe(true);
-      expect(cell.vp.text.endsWith('…')).toBe(cell.vp.text !== vp);
-      expect(cell.key.text.endsWith('…')).toBe(cell.key.text !== key);
-    }
-    // The record's value propositions run past two lines of a band's column: at least one is cut, and no cut is a one-line "…".
-    expect(matrix.cells.some((cell) => cell.vp.text.endsWith('…'))).toBe(true);
+    expect(matrix.cells.map((cell) => cell.key)).toEqual(overfull.map((goal) => ({ text: goal[2], size: type.matrixKey.size })));
     for (const cell of matrix.cells) {
-      if (cell.vp.text.endsWith('…')) expect(linesOf(cell.vp.text, cell.vp.size, type.matrixCell.weight)).toBe(2);
+      expect(cell.key.text.endsWith('…')).toBe(false);
+      expect(linesOf(cell.key.text, cell.key.size, type.matrixKey.weight)).toBeGreaterThan(0);
     }
-  });
-
-  it('prints the sound bites whole where the bands hold them, else drops the row from every band and says so once under them (W1 c)', () => {
-    // On the page (the overfull record at the matrix's room) the bands cannot hold the bites whole beside the proofs at the tight
-    // type, but they hold the value row: the sound-bite row goes with its one note, the value proposition, the key message and the
-    // proofs stay, the proofs never under 10.5 px (the one-line cut note, MKTG_PRINT_CUT_NOTE, is what leaves the value row its room).
-    const matrix = frameworkPortraitMatrix(goals(overfull), crosscut, room);
-    expect(matrix.rows).toEqual({ value: true, bite: false });
-    expect(matrix.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites]);
-    expect(matrix.height).toBeLessThanOrEqual(room);
+    // The record's longest key messages run past two lines of a band's column: they print whole all the same (the clamp is gone).
+    expect(matrix.cells.some((cell) => linesOf(cell.key.text, cell.key.size, type.matrixKey.weight) > 2)).toBe(true);
+    // The proof clamp stays: every cell keeps a row at the tight type or above, the rest counted in its note (F3, W4).
     for (const cell of matrix.proofs) {
       expect(cell.rows.length).toBeGreaterThan(0);
       expect(cell.tight).toBe(true);
       for (const row of cell.rows) expect(row.size ?? type.matrixProofTight.size).toBeGreaterThanOrEqual(type.matrixProofTight.size);
     }
-    // Whole bites are never cut in a band: as the room closes, the bites print whole at their type until the bands cannot hold them
-    // beside the proofs at the tight type; then the row is dropped from both bands with its one note, the key message and the proofs
-    // staying, still at the tight type or above (a band drops a row before it sets its proofs smaller, W1 d).
-    const whole = frameworkPortraitMatrix(goals(overfull), '', 2000);
-    expect(whole.rows).toEqual({ value: true, bite: true });
-    expect(whole.notes).toEqual([]);
-    expect(whole.cells.map((cell) => cell.bite?.text)).toEqual(overfull.map((goal) => goal[3]));
-    let at = 2000;
-    while (frameworkPortraitMatrix(goals(overfull), '', at).rows.bite) at -= 10;
-    const last = frameworkPortraitMatrix(goals(overfull), '', at + 10);
-    expect(last.cells.map((cell) => cell.bite)).toEqual(overfull.map((goal) => ({ text: goal[3], size: type.matrixBite.size })));
-    expect(last.height).toBeLessThanOrEqual(at + 10);
-    const dropped = frameworkPortraitMatrix(goals(overfull), '', at);
-    expect(dropped.rows).toEqual({ value: true, bite: false });
-    expect(dropped.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites]);
-    expect(dropped.height).toBeLessThanOrEqual(at);
-    expect(dropped.cells.map((cell) => cell.key.size)).toEqual(Array.from({ length: 8 }, () => type.matrixKey.size));
-    for (const cell of dropped.proofs) {
-      expect(cell.rows.length).toBeGreaterThan(0);
-      for (const row of cell.rows) expect(row.size ?? type.matrixProofTight.size).toBeGreaterThanOrEqual(type.matrixProofTight.size);
-    }
   });
 
-  it('drops the value proposition row after the sound bites, with its own note, when the bands still do not fit; the key message and the proofs always print (W1 d)', () => {
-    const withBites = frameworkPortraitMatrix(goals(overfull), '', 2000).height;
-    // Step the room down until the value row goes: the levels come in the editor's order, bites first, then the values, never the key message.
-    let seen: string[][] = [];
-    for (let at = withBites; at >= 200; at -= 10) {
+  it('prints the same rows in bands at any room: no row comes back when the room is wide, none else goes when it is narrow; the key message and the proofs always print (W1b, stepping)', () => {
+    // The band shape is one shape, whatever the room: the former bites-then-values stepping is gone with the clamp.
+    for (let at = 2000; at >= 200; at -= 10) {
       const matrix = frameworkPortraitMatrix(goals(overfull), '', at);
-      const key = matrix.notes.join('|');
-      if (seen[seen.length - 1]?.join('|') !== key) seen = [...seen, matrix.notes];
+      expect(matrix.rows).toEqual({ value: false, bite: false });
+      expect(matrix.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+      expect(matrix.cells.map((cell) => cell.key.text)).toEqual(overfull.map((goal) => goal[2]));
       expect(matrix.cells.every((cell) => cell.key.size === type.matrixKey.size)).toBe(true);
       expect(matrix.proofs.every((cell) => cell.rows.length > 0)).toBe(true);
-      if (matrix.rows.value) expect(matrix.rows.bite || matrix.notes[0] === FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites).toBe(true);
-      else expect(matrix.rows.bite).toBe(false);
     }
-    expect(seen).toEqual([
-      [],
-      [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites],
-      [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites, FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.values],
-    ]);
+    // The one note takes one caption line of the matrix's room, between the bands and the crosscut.
     const bare = frameworkPortraitMatrix(goals(overfull), '', 200);
-    expect(bare.rows).toEqual({ value: false, bite: false });
-    expect(bare.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites, FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.values]);
-    // The two notes take two caption lines of the matrix's room, between the bands and the crosscut.
     const noted = frameworkPortraitMatrix(goals(overfull), crosscut, 200);
     expect(noted.height - bare.height).toBeCloseTo(
       FRAMEWORK_PORTRAIT_ROOM.matrixCrosscutGap + frameworkPortraitTextHeight(crosscut, type.matrixCrosscut, 704 - FRAMEWORK_PORTRAIT_ROOM.matrixPadding),
       6
     );
+    // A wide room holds the bands with their proofs at the normal type: the note still prints (the rows are gone by rule, not by room).
+    const wide = frameworkPortraitMatrix(goals(overfull), '', 2000);
+    expect(wide.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages]);
+    expect(wide.proofs.every((cell) => !cell.tight && cell.cut === 0)).toBe(true);
   });
 
   it('leaves a strip as it was: four goals print every row, the texts fitted by the fit model, no clamp and no note', () => {
