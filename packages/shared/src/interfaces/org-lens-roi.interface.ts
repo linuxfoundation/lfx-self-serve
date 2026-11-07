@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  ORG_LENS_ROI_ANNUAL_SERIES_MODES,
   ORG_LENS_ROI_CONTRIBUTION_TYPES,
   ORG_LENS_ROI_COVERAGE_REASONS,
   ORG_LENS_ROI_METHODS,
@@ -156,6 +157,13 @@ export interface OrgLensRoiProjectSlice {
 }
 
 export type OrgLensRoiProjectView = (typeof ORG_LENS_ROI_PROJECT_VIEWS)[number];
+
+/**
+ * Whether the annual trend reads each year on its own or as a running total. Deliberately not a
+ * "view" like `OrgLensRoiProjectView`, where a view swaps the whole chart type: here the chart is
+ * the same line chart throughout and only the series arithmetic changes.
+ */
+export type OrgLensRoiAnnualSeriesMode = (typeof ORG_LENS_ROI_ANNUAL_SERIES_MODES)[number];
 
 export type OrgLensRoiProjectSankeyMeasure = (typeof ORG_LENS_ROI_PROJECT_SANKEY_MEASURES)[number];
 
