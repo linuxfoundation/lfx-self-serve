@@ -203,8 +203,11 @@ describe('recolourLogoPngSvg', () => {
 
 describe('logoVariantSources', () => {
   const none = { primary: null, stacked: null, symbol: null, reversed: null };
-  const primary = { ref: 'logo.svg', svg: LOCKUP };
-  const crop = { kind: 'svg', svg: `<svg ${SVG_NS} viewBox="0 0 10 10">${LOCKUP_BODY}</svg>`, derived: true };
+  /** The lockup in one ink (its rule in the mark's blue): single-colour artwork, which the recolours are derived from. */
+  const MONO_BODY = LOCKUP_BODY.replace('stroke="#d62"', 'stroke="#1f6feb"');
+  const MONO_LOCKUP = `<svg ${SVG_NS} viewBox="0 0 20 10">${MONO_BODY}</svg>`;
+  const primary = { ref: 'logo.svg', svg: MONO_LOCKUP };
+  const crop = { kind: 'svg', svg: `<svg ${SVG_NS} viewBox="0 0 10 10">${MONO_BODY}</svg>`, derived: true };
   const reversedOfPrimary = { kind: 'recolour', of: 'primary', ink: 'white' };
   const oneColour = { kind: 'recolour', of: 'primary', ink: 'black' };
   const reversedSymbol = { kind: 'recolour', of: 'symbol', ink: 'white' };
@@ -234,7 +237,7 @@ describe('logoVariantSources', () => {
 
   it('crops a symbol out of the right of the lockup whole: the rasterizer, not the server, reads the crop box', async () => {
     const sources = logoVariantSources({ ...none, primary }, '10 0 10 10');
-    expect(sources.symbol).toEqual({ kind: 'svg', svg: `<svg ${SVG_NS} viewBox="10 0 10 10">${LOCKUP_BODY}</svg>`, derived: true });
+    expect(sources.symbol).toEqual({ kind: 'svg', svg: `<svg ${SVG_NS} viewBox="10 0 10 10">${MONO_BODY}</svg>`, derived: true });
     const symbol = await rasterizeLogoSvg((sources.symbol as { svg: string }).svg, { requireInk: true });
     const reversed = await rasterizeLogoSvg(recolourLogoPngSvg(symbol.png as Uint8Array, 'white') as string, { requireInk: true });
     const pixels = readPng(reversed.png as Uint8Array);
@@ -250,8 +253,100 @@ describe('logoVariantSources', () => {
   });
 
   it('drops a width and height from the cropped root, so the crop fills its box', () => {
-    const sized = { ref: 'logo.svg', svg: `<svg ${SVG_NS} width="200" height="100" viewBox="0 0 20 10">${LOCKUP_BODY}</svg>` };
+    const sized = { ref: 'logo.svg', svg: `<svg ${SVG_NS} width="200" height="100" viewBox="0 0 20 10">${MONO_BODY}</svg>` };
     expect(logoVariantSources({ ...none, primary: sized }, '0 0 10 10').symbol).toEqual(crop);
+  });
+
+  it('derives the recolours from a black-on-transparent lockup, whose unfilled shapes take SVG’s default ink', () => {
+    // A mark drawn in the default black, as AAIF’s is: one ink, no background, so every variant is derived as before.
+    const black = {
+      ref: 'logo.svg',
+      svg: `<svg ${SVG_NS} viewBox="0 0 20 10"><path d="M1 1h8v8H1z"/><path d="M11 5h8" stroke="black" stroke-width="2" fill="none"/></svg>`,
+    };
+    expect(logoVariantSources({ ...none, primary: black }, '0 0 10 10')).toEqual({
+      symbol: {
+        kind: 'svg',
+        svg: `<svg ${SVG_NS} viewBox="0 0 10 10"><path d="M1 1h8v8H1z"/><path d="M11 5h8" stroke="black" stroke-width="2" fill="none"/></svg>`,
+        derived: true,
+      },
+      symbol_reversed: reversedSymbol,
+      reversed: reversedOfPrimary,
+      one_color: oneColour,
+    });
+  });
+
+  it('reads one colour spelled two ways as one ink, so a lockup in black and #000 is derived from', () => {
+    const spelled = {
+      ref: 'logo.svg',
+      svg: `<svg ${SVG_NS} viewBox="0 0 20 10"><path d="M1 1h8v8H1z" fill="black"/><path d="M11 1h8v8h-8z" fill="#000"/></svg>`,
+    };
+    expect(logoVariantSources({ ...none, primary: spelled }, null)).toEqual({ reversed: reversedOfPrimary, one_color: oneColour });
+  });
+
+  it('reads a white rect inside a clipPath as never painted, so a black lockup clipped by it is single-colour artwork', () => {
+    // AAIF’s shape: black paths under a clip whose rect is white, inside <defs>, which draws nothing; its reversed file is an upload, so only the one-colour lockup is derived.
+    const clipped = {
+      ref: 'logo.svg',
+      svg: `<svg ${SVG_NS} viewBox="0 0 20 10"><defs><clipPath id="c"><rect width="20" height="10" fill="#fff"/></clipPath></defs><g clip-path="url(#c)"><path d="M1 1h8v8H1z"/><path d="M11 1h8v8h-8z" fill="black"/></g></svg>`,
+    };
+    const reversedFile = { ref: 'reversed.svg', svg: `<svg ${SVG_NS} viewBox="0 0 20 10"><path d="M1 1h8v8H1z" fill="#fff"/></svg>` };
+    expect(logoVariantSources({ ...none, primary: clipped, reversed: reversedFile }, null)).toEqual({
+      reversed: { kind: 'svg', svg: reversedFile.svg, derived: false },
+      one_color: oneColour,
+    });
+  });
+
+  it('derives nothing from a lockup painted over a white rect the size of its canvas: the ground is a second ink, and a filter would box the mark', () => {
+    const grounded = { ref: 'logo.svg', svg: `<svg ${SVG_NS} viewBox="0 0 20 10"><rect width="20" height="10" fill="#fff"/><path d="M1 1h8v8H1z"/></svg>` };
+    expect(logoVariantSources({ ...none, primary: grounded }, '0 0 10 10')).toEqual({
+      symbol: { kind: 'svg', svg: `<svg ${SVG_NS} viewBox="0 0 10 10"><rect width="20" height="10" fill="#fff"/><path d="M1 1h8v8H1z"/></svg>`, derived: true },
+    });
+  });
+
+  it('derives nothing from a black rounded tile with a white letter: rendered white is an ink, and a reversal would turn the tile white and lose the letter', () => {
+    // The tile and its letter are two inks even though one of them is white: inverting them boxes the letter in a white tile.
+    const tile = {
+      ref: 'logo.svg',
+      svg: `<svg ${SVG_NS} viewBox="0 0 20 10"><rect x="1" y="1" width="8" height="8" rx="2" fill="#000"/><path d="M4 3h2v4H4z" fill="#fff"/><path d="M11 5h8" stroke="#000" stroke-width="2"/></svg>`,
+    };
+    expect(logoVariantSources({ ...none, primary: tile }, '0 0 10 10')).toEqual({
+      symbol: {
+        kind: 'svg',
+        svg: `<svg ${SVG_NS} viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="2" fill="#000"/><path d="M4 3h2v4H4z" fill="#fff"/><path d="M11 5h8" stroke="#000" stroke-width="2"/></svg>`,
+        derived: true,
+      },
+    });
+    expect(logoVariantSources({ ...none, primary: tile }, null)).toEqual({});
+  });
+
+  it('derives no reversed, one-colour or reversed-symbol recolour from a multi-colour primary, and still names the symbol crop', () => {
+    // LOCKUP paints its mark blue and its rule orange: two inks flatten to one shape under the filter, so nothing is recoloured from it.
+    const twoInks = { ref: 'logo.svg', svg: LOCKUP };
+    expect(logoVariantSources({ ...none, primary: twoInks }, '0 0 10 10')).toEqual({
+      symbol: { kind: 'svg', svg: `<svg ${SVG_NS} viewBox="0 0 10 10">${LOCKUP_BODY}</svg>`, derived: true },
+    });
+    expect(logoVariantSources({ ...none, primary: twoInks }, null)).toEqual({});
+  });
+
+  it('returns the uploaded reversed and symbol SVGs as they came beside a multi-colour primary, and recolours only a single-colour uploaded symbol', () => {
+    const twoInks = { ref: 'logo.svg', svg: LOCKUP };
+    const reversedFile = { ref: 'reversed.svg', svg: `<svg ${SVG_NS} viewBox="0 0 20 10"><path d="M1 1h8v8H1z" fill="#fff"/></svg>` };
+    const monoSymbol = { ref: 'symbol.svg', svg: `<svg ${SVG_NS} viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" fill="#1f6feb"/></svg>` };
+    expect(logoVariantSources({ ...none, primary: twoInks, symbol: monoSymbol, reversed: reversedFile }, '0 0 10 10')).toEqual({
+      symbol: { kind: 'svg', svg: monoSymbol.svg, derived: false },
+      symbol_reversed: reversedSymbol,
+      reversed: { kind: 'svg', svg: reversedFile.svg, derived: false },
+    });
+    // An uploaded symbol in two inks is sent as it came, and no reversed symbol is derived from it, whatever the primary.
+    const twoInkSymbol = {
+      ref: 'symbol.svg',
+      svg: `<svg ${SVG_NS} viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" fill="#1f6feb"/><circle cx="4" cy="4" r="1" fill="#d62"/></svg>`,
+    };
+    expect(logoVariantSources({ ...none, primary, symbol: twoInkSymbol }, null)).toEqual({
+      symbol: { kind: 'svg', svg: twoInkSymbol.svg, derived: false },
+      reversed: reversedOfPrimary,
+      one_color: oneColour,
+    });
   });
 
   it('lets an uploaded symbol or reversed SVG win over derivation, and recolours the symbol, never the reversed file', () => {

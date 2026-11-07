@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { BrandKitLogoFiles, MktgLogoPngSize, MktgLogoRecolourInk, MktgLogoVariantSource, MktgLogoVariantSources } from '@lfx-one/shared/interfaces';
-import { brandKitSvgWithViewBox } from '@lfx-one/shared/utils';
+import { brandKitSvgIsMonochrome, brandKitSvgWithViewBox } from '@lfx-one/shared/utils';
 
 /** The id of the recolouring filter in the SVG the server writes; fixed, so the derived SVG, and its content-addressed PNG, are stable. */
 const RECOLOUR_FILTER_ID = 'lfx-one-recolour';
@@ -83,6 +83,18 @@ export function recolourLogoPngSvg(png: Uint8Array, ink: MktgLogoRecolourInk): s
  *   `symbol_viewbox` (the web view says the same of its tiles); absent
  *   whenever the symbol is.
  *
+ * A recolour is derived only from single-colour artwork, by the one rule the
+ * web view applies to its tiles (`brandKitSvgIsMonochrome`): a lockup drawn
+ * in two inks, or over a background, flattens to one shape under the filter,
+ * so the deck gets no reversed or one-colour lockup from a multi-colour
+ * primary, and no reversed symbol from a multi-colour symbol (a crop of the
+ * primary inherits the primary's verdict); a painted background the size
+ * of the canvas is a second ink by that rule, since a filter would set the
+ * mark in a box. The primary itself is still sent, and an uploaded reversed
+ * or symbol file is sent as it came, whatever its colours; the variants
+ * that are not derived are simply absent, which the caller publishes as
+ * nothing.
+ *
  * An SVG source says whether it is an upload as it came or the server's
  * crop (`derived`), so a failure to draw it can be told apart; a recolour
  * is always the server's, made from the PNG of the image it names once
@@ -96,17 +108,29 @@ export function logoVariantSources(files: BrandKitLogoFiles, symbolViewBox: stri
     return {};
   }
   const sources: MktgLogoVariantSources = {};
+  const primaryDerivable = brandKitSvgIsMonochrome(primary);
   let symbol: MktgLogoVariantSource | null = null;
+  let symbolDerivable = false;
   if (files.symbol?.svg) {
     symbol = { kind: 'svg', svg: files.symbol.svg, derived: false };
+    symbolDerivable = brandKitSvgIsMonochrome(files.symbol.svg);
   } else if (symbolViewBox) {
     symbol = { kind: 'svg', svg: brandKitSvgWithViewBox(primary, symbolViewBox), derived: true };
+    symbolDerivable = primaryDerivable;
   }
   if (symbol) {
     sources.symbol = symbol;
-    sources.symbol_reversed = { kind: 'recolour', of: 'symbol', ink: 'white' };
+    if (symbolDerivable) {
+      sources.symbol_reversed = { kind: 'recolour', of: 'symbol', ink: 'white' };
+    }
   }
-  sources.reversed = files.reversed?.svg ? { kind: 'svg', svg: files.reversed.svg, derived: false } : { kind: 'recolour', of: 'primary', ink: 'white' };
-  sources.one_color = { kind: 'recolour', of: 'primary', ink: 'black' };
+  if (files.reversed?.svg) {
+    sources.reversed = { kind: 'svg', svg: files.reversed.svg, derived: false };
+  } else if (primaryDerivable) {
+    sources.reversed = { kind: 'recolour', of: 'primary', ink: 'white' };
+  }
+  if (primaryDerivable) {
+    sources.one_color = { kind: 'recolour', of: 'primary', ink: 'black' };
+  }
   return sources;
 }
