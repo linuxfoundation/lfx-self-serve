@@ -819,14 +819,12 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(heads.map((head) => head.textContent?.trim())).toEqual(titles);
     expect(new Set(heads.map((head) => head.style.fontSize)).size).toBe(1);
     expect(parseFloat(heads[0].style.fontSize)).toBeGreaterThanOrEqual(FRAMEWORK_PORTRAIT_ROOM.matrixTitleMin);
-    // A band prints the key message and the proofs for its four goals, never the value or sound-bite row, whatever the texts (editor W1b),
-    // and says so once under the bands; every proof cell keeps a row (F3 in the bands too).
-    expect(bands.map((band) => band?.querySelectorAll('[data-testid="mktg-framework-print-matrix-vp"]').length)).toEqual([0, 0]);
-    expect(bands.map((band) => band?.querySelectorAll('[data-testid="mktg-framework-print-matrix-bite"]').length)).toEqual([0, 0]);
+    // The bands drop rows only by the room (the editor's ladder): these short texts fit whole, so each band prints every row for its
+    // four goals, the value and sound-bite rows included, with no note under the bands; every proof cell keeps a row (F3 in the bands too).
+    expect(bands.map((band) => band?.querySelectorAll('[data-testid="mktg-framework-print-matrix-vp"]').length)).toEqual([4, 4]);
+    expect(bands.map((band) => band?.querySelectorAll('[data-testid="mktg-framework-print-matrix-bite"]').length)).toEqual([4, 4]);
     expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-proof"]').length).toBeGreaterThanOrEqual(8);
-    expect(Array.from(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).map((note) => note.textContent?.trim())).toEqual([
-      FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages,
-    ]);
+    expect(host().querySelectorAll('[data-testid="mktg-framework-print-matrix-row-note"]')).toHaveLength(0);
     // One size across each band's proof row (editor W4): every cell tightened together, every row at the one size the layout set.
     for (const band of [query('mktg-framework-print-goals-band-0'), query('mktg-framework-print-goals-band-1')]) {
       const cells = Array.from(band?.querySelectorAll<HTMLElement>('[data-testid="mktg-framework-print-matrix-proof-cell"]') ?? []);

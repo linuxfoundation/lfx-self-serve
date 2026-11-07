@@ -307,7 +307,7 @@ export interface FoundationMessagePrintMatrix {
   bands: FoundationMessagePrintMatrixBand[];
   /** The matrix's measured height, px, from its first row's top to the crosscut's end: at most the room it was given. */
   height: number;
-  /** The rows the matrix prints: every row in a strip; in band mode the sound-bite and value-proposition rows are dropped, and the proof row too when its cells would print below the tight floor (frameworkPortraitMatrix, the editor's W1b and FA1b), said in the one note under the bands. */
+  /** The rows the matrix prints: every row in a strip; in band mode the sound-bite row, the value-proposition row, the cells' "+N more" lines (folded into the caption) and the proof row are dropped in that order until the matrix fits with every kept row whole and the proofs at the tight floor (frameworkPortraitMatrix, the editor's ladder), said in the one note under the bands. */
   rows: FoundationMessagePrintMatrixRows;
   /** The caption lines under the bands saying which rows were dropped (FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES), in the order they were; empty when none. */
   notes: string[];
@@ -317,7 +317,7 @@ export interface FoundationMessagePrintMatrix {
 export interface FoundationMessagePrintMatrixRows {
   value: boolean;
   bite: boolean;
-  /** The proof row: dropped in band mode when its cells would print below the tight floor (the editor's FA1b), every goal page printing its proofs in full. */
+  /** The proof row: the ladder's last step in band mode, dropped when its cells would print below the tight floor (the editor's FA1b), every goal page printing its proofs in full. */
   proof: boolean;
 }
 

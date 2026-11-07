@@ -400,15 +400,16 @@ export function frameworkPortraitMatrix(
       family
     )
   );
-  // The rows the bands print (the editor's W1b): the value-proposition and sound-bite rows dropped from every band, each goal page
-  // printing both in full, the key messages whole, the one caption line under the bands saying so; a strip prints every row. When
-  // the proof cells would print below the tight floor (goal names and key messages whole leave them no room), the proof row goes
-  // too and the note says so (the editor's FA1b): never a proof below the floor, never a cut key message.
-  // The band ladder (the maintainer's word of 7 Nov 2026, order 43): the proofs with their own "+N more" lines; then, before any
-  // proof goes, those lines FOLDED into the one caption under the bands (the room they took goes to the proofs); then the proof
-  // row dropped. Each step is tried only when the one before sets a proof under the tight floor.
+  // The rows the bands print (the editor's ladder, 7 Nov 2026, the same standalone and in the family): every row whole, then, in a
+  // fixed order, the sound bites dropped, then the value propositions, then the cells' "+N more" lines FOLDED into the one caption
+  // under the bands (the maintainer's word, order 43: the room they took goes to the proofs), then the proofs, each step taken only
+  // while the matrix does not fit its room with every kept row whole and the proofs at the tight floor or above (the proof clamp,
+  // first proof and "+N more", is the proof row's own format, not a drop); the one caption line under the bands names what dropped,
+  // each goal page printing it in full. The key message and the goal name never drop and never clamp. A strip prints every row.
   const ladder: FrameworkPortraitMatrixLevel[] = banded
     ? [
+        { rows: { value: true, bite: true, proof: true }, fold: false, notes: [] },
+        { rows: { value: true, bite: false, proof: true }, fold: false, notes: [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.bites] },
         { rows: { value: false, bite: false, proof: true }, fold: false, notes: [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPages] },
         { rows: { value: false, bite: false, proof: true }, fold: true, notes: [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold] },
         { rows: { value: false, bite: false, proof: false }, fold: false, notes: [FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesAll] },
@@ -451,10 +452,11 @@ export function frameworkPortraitMatrix(
     });
     return { cells, proofs, bands, height, rows: level.rows, notes: level.notes };
   };
-  const belowFloor = (matrix: FoundationMessagePrintMatrix): boolean =>
-    bands.some((band) => frameworkPortraitMatrixProofRowSize(matrix.proofs.slice(band.offset, band.offset + band.count)) < TYPE.matrixProofTight.size);
+  const fits = (matrix: FoundationMessagePrintMatrix): boolean =>
+    matrix.height <= laid + 0.01 &&
+    bands.every((band) => frameworkPortraitMatrixProofRowSize(matrix.proofs.slice(band.offset, band.offset + band.count)) >= TYPE.matrixProofTight.size);
   let matrix = lay(ladder[0]);
-  for (let step = 1; step < ladder.length && belowFloor(matrix); step += 1) matrix = lay(ladder[step]);
+  for (let step = 1; step < ladder.length && !fits(matrix); step += 1) matrix = lay(ladder[step]);
   return matrix;
 }
 

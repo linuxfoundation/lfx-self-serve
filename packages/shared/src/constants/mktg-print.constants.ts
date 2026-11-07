@@ -412,17 +412,22 @@ export const FRAMEWORK_PORTRAIT_TILE_SHARES = {
 export const FRAMEWORK_PORTRAIT_MAX_TILES = 6;
 
 /**
- * The one caption line under the goal matrix's bands (the editor's W1b, 7 Nov 2026): a band drops the value-proposition and
- * sound-bite rows, each goal page printing both in full, and prints every key message whole (frameworkPortraitMatrix).
+ * The one caption line under the goal matrix's bands (the editor's ladder, 7 Nov 2026): band mode drops its rows in a fixed
+ * order, sound bites, then value propositions, then the cells' "+N more" lines folded into the caption, then proofs, until the
+ * matrix fits its room with every kept row whole and the proofs at the tight floor or above; the note names what dropped, each
+ * goal page printing it in full. The key message and the goal name never drop and never clamp (frameworkPortraitMatrix).
  */
 export const FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES = {
+  /** Step 1: the sound-bite row dropped. */
+  bites: 'Sound bites are on each goal page.',
+  /** Step 2: the value-proposition row dropped as well. */
   goalPages: 'Value propositions and sound bites are on each goal page.',
   /**
-   * The bands kept their proof row by folding each cell's "+N more in LFX One" line into this caption (the editor's wording, order 43
-   * addendum 14, 7 Nov 2026: the drop note as is plus one sentence, no number, on the one line): one whole first proof a goal.
+   * Step 3: the bands kept their proof row by folding each cell's "+N more in LFX One" line into this caption (the editor's wording,
+   * order 43 addendum 14, 7 Nov 2026: the drop note as is plus one sentence, no number, on the one line): one whole first proof a goal.
    */
   goalPagesFold: 'Value propositions and sound bites are on each goal page. More proofs for each goal are in LFX One.',
-  /** The bands dropped the proof row as well (the editor's FA1b): its cells would have printed below the tight floor. */
+  /** Step 4: the proof row dropped as well (the editor's FA1b): its cells would have printed below the tight floor. */
   goalPagesAll: 'Value propositions, sound bites and proofs are on each goal page.',
 } as const;
 
