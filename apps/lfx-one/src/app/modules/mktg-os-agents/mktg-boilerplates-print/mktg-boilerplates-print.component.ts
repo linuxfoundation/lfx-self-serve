@@ -14,7 +14,7 @@ import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/m
   imports: [NgTemplateOutlet, MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent, MktgPrintSheetComponent, MktgPrintSheetRowComponent],
   templateUrl: './mktg-boilerplates-print.component.html',
   // Shared brand typography and exact print colour handling, not a second style path.
-  styleUrl: '../mktg-framework-print/mktg-framework-print.component.scss',
+  styleUrl: '../mktg-flow-print/mktg-flow-print.scss',
 })
 export class MktgBoilerplatesPrintComponent {
   public readonly view = input.required<BoilerplatesPrintView>();

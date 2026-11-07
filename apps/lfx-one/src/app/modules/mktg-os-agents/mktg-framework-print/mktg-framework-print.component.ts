@@ -76,38 +76,46 @@ const ROOM = FRAMEWORK_PORTRAIT_ROOM;
 // a portrait book on the portrait print grammar (lfx-mktg-portrait-*), one
 // fixed US Letter frame (816×1056 px) per page, placed by the design's
 // measurements so Chromium and WebKit paginate one frame per sheet and
-// nothing flows across a page edge (CSS Paged Media: `@page` Letter with no
-// margin, `break-after: page` per frame). The pages are the plan's
+// nothing flows across a page edge (CSS Paged Media: the grammar's `.pp-page`
+// is the named Letter page with no margin and carries the one break per
+// frame, `break-before: page; break-after: auto`; this component sets no
+// page and no break, and its host is a block, MKTG_PORTRAIT_BLOCK_HOST, so
+// Google Chrome adds no sheet at an inline host). The pages are the plan's
 // (`frameworkPortraitPlan`): a cover with the contents; 01 Framework (the
 // statements and the goal matrix, one page per goal, say and avoid with the
-// anchor questions); 02 ICPs, two a page; 03 Message house; 04 Key numbers
-// with their sources; 05 Sources & gaps (the run's report). The
-// reviewer's note stays on screen. These blocks are bounded so they stop at
-// the next block's top or the footer: the four statements, a goal page's
-// value proposition, key message, sound bite and "who it's for" lines by the
-// portrait fit model (set smaller down to 72 %, then cut at a sentence); a
-// goal page's proof rows, the facts table and the Sources & gaps lists by
-// the design reader's list rule (tightened first, then cut to whole rows,
-// with a muted "+N more" line under the cut, never silently). The key
+// anchor questions); 02 ICPs, by their measured cards, two a page at most;
+// 03 Message house; 04 Key numbers with their sources; 05 Sources & gaps (the
+// run's report). The reviewer's note stays on screen. Every block whose
+// height follows the data is bounded in the shared layout utils
+// (`mktg-framework-portrait-layout.utils.ts`), never in the template, so it
+// stops at the next block's top or the footer: text (the statements, a page
+// title, a goal page's value proposition, key message, sound bite and "who
+// it's for" lines, the matrix cells, a tile's figure and label, the house's
+// Why now) by the portrait fit model (set smaller first, then cut at a
+// sentence); lists (the cover's contents, a goal page's proof rows, the
+// matrix's proofs, the say pills and avoid rows, the pillars' proofs, the
+// audiences, the facts table and the Sources & gaps lists) by the design
+// reader's list rule (tightened first, then cut to whole rows, with a muted
+// "+N more" line under the cut, never silently); the profile cards by their
+// measured height (a page holds the cards that end above the footer, a lone
+// card past the room is set tight and its long fields fitted). The key
 // numbers print as tiles up to FRAMEWORK_PORTRAIT_MAX_TILES by the count's
-// layout, past that as a table of every figure continued on more pages
-// (`frameworkPortraitNumbersPages`). The other fixed-top blocks (the framework page's goal matrix,
-// say and avoid, the anchor questions, the message house's pillars and
-// audiences, the ICP rows) are sized for the live data and are not bounded
-// yet (a follow-up); past their room the frame clips them. The type the fit
-// model measures is FRAMEWORK_PORTRAIT_TYPE, bound on the root as `--fwp-*`
-// custom properties the stylesheet reads, so measured and printed type are
-// one value. Set in the project's brand when it has a Brand Kit (its
-// colors, typeface and logo), in the LF look otherwise. Standalone it is
-// its own book (`book` null); inside the family export the family's book
-// sets the running head, the footer and the first page number and drops the
-// cover and the band. On screen the framework is its app page
-// (lfx-mktg-framework-view), which holds this document in a
-// print-only wrapper and prints it with Download PDF (the browser's print,
-// from the print service's frame; the global print rules in styles.scss show
-// it alone). The frames' measurements are the design's, in the component's
-// stylesheet, the `[lfxPpRect]` placements, FRAMEWORK_PORTRAIT_TOPS and
-// FRAMEWORK_PORTRAIT_ROOM.
+// layout, past that (or when a figure would not hold a tile) as a table of
+// every figure continued on more pages (`frameworkPortraitNumbersPages`).
+// The type the fit model measures is FRAMEWORK_PORTRAIT_TYPE, bound on the
+// root as `--fwp-*` custom properties the stylesheet reads, so measured and
+// printed type are one value. Set in the project's brand when it has a Brand
+// Kit (its colors, typeface and logo), in the LF look otherwise. Standalone
+// it is its own book (`book` null); inside the family export the family's
+// book sets the running head, the footer and the first page number and drops
+// the cover and the band. On screen the framework is its app page
+// (lfx-mktg-framework-view), which holds this document in a print-only
+// wrapper and prints it with Download PDF (the browser's print, from the
+// print service's frame; the global print rules in styles.scss show it
+// alone). The frames' measurements are the design's, in the `[lfxPpRect]`
+// placements, FRAMEWORK_PORTRAIT_TOPS and FRAMEWORK_PORTRAIT_ROOM; the pages'
+// styles are the global partial `_mktg-framework-print-pages.scss` beside
+// this file, `@use`d from styles.scss, scoped to this book's root.
 @Component({
   selector: 'lfx-mktg-framework-print',
   imports: [MktgPortraitPageComponent, MktgPortraitRectDirective],

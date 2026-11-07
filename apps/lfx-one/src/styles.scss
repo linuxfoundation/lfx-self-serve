@@ -112,23 +112,28 @@
    and its print document (lfx-mktg-framework-print) sits in a print-only
    wrapper (FOUNDATION_MESSAGE_PRINT_ONLY_CLASS) never shown there. While the
    body carries FOUNDATION_MESSAGE_PRINT_BODY_CLASS (set by Download PDF for
-   the print only) that document is the only thing on paper: portrait pages
-   of the paper chosen in the print dialog (A4 or US Letter), its sections
-   flowing from page to page. */
+   the print only) that document is the only thing on paper: a book of fixed
+   US Letter frames, one per sheet, on the portrait grammar's own named page
+   (`.pp-page { page: mktg-portrait }`, `@page mktg-portrait` in
+   _mktg-portrait.scss, 8.5in × 11in with no margin, which the print frame
+   also writes unnamed: MKTG_PRINT_PAGE_SETUPS['mktg-portrait']). Nothing
+   flows across a frame. */
 .lfx-framework-print-only {
   display: none;
 }
 
 @media print {
-  /* A named page, so only the framework prints on this setup — every other print keeps its own.
-     No paper size: the document is as wide as the page area, so it fits whichever paper the dialog has.
-     No margin: the browser draws its header and footer only in the page margin area, so none reaches the PDF;
-     the page's room is inside the document (lfx-mktg-print-sheet and the kit's chapter tables: 0.55in top and
-     bottom per page; the print roots' padding below: 0.6in at the sides). This is Chromium's setup, mirrored
-     from MKTG_PRINT_PAGE_SETUPS['mktg-framework'] (shared constants), which the print frame also writes as its
-     unnamed @page rule. In WebKit, which prints a table's head and foot once, the frame writes the margins
-     instead ('mktg-framework-page-margins'), restates this named rule with them, and marks its body
-     MKTG_PRINT_PAGE_MARGINS_CLASS, under which the documents' own room collapses. */
+  /* The setup of the FLOWING print documents (the FAQ, the boilerplates and the AEO/GEO report, which run from
+     page to page through the shared sheet): no paper size, so the document is as wide as whichever paper the
+     dialog has; no margin, so the browser's header and footer (drawn only in the margin area) never reach the
+     PDF, and the page's room is inside the document (lfx-mktg-print-sheet: 0.55in top and bottom per page; the
+     print roots' side padding below: 0.6in). The print frame writes these values as its unnamed @page rule from
+     MKTG_PRINT_PAGE_SETUPS['mktg-framework'] (shared constants). In WebKit, which prints a table's head and foot
+     once, the frame writes the margins instead ('mktg-framework-page-margins'), restates this named rule with
+     them (mktg-print.service.ts), and marks its body MKTG_PRINT_PAGE_MARGINS_CLASS, under which the documents'
+     own room collapses. No element names this page any more (the framework's frames moved to the grammar's
+     `mktg-portrait`, the last `page: mktg-framework` went with them), so the named block is reached only through
+     the service's WebKit restatement; removing it is a clean-up of that shared mechanism, not this book's. */
   @page mktg-framework {
     size: portrait;
     margin: 0;

@@ -421,29 +421,30 @@ export const MKTG_PRINT_FRAME_PAPER_IN = { width: 8.5, height: 10.9 } as const;
  * The page setups the print frame writes as the ONE unnamed `@page` rule of
  * its document (WebKit's support for named pages is doubtful, and on the
  * browser's default margins a cover sized to the page area spills a blank
- * sheet). `brand-kit` is the legacy landscape book; `mktg-framework` every
- * portrait document (the brand kit's own portrait print included) in
- * Chromium and every other non-WebKit engine, mirrored by the named
- * `@page mktg-framework` in styles.scss, which a matched named rule outranks
- * in Chrome with the same values. Both print with `margin: 0`: the browser
- * draws its header and footer (date, title, URL, page numbers) only in the
- * page margin area, so no margin is the standard way to keep them off a saved
- * PDF, and the room the portrait pages used to take from the margin (0.55in
- * top and bottom, 0.6in at the sides) is inside the documents, repeated per
- * page by their table head and foot groups (lfx-mktg-print-sheet, the kit's
- * chapters). WebKit does not repeat a table's head and foot on every printed
- * page (bug 17205, open), so in Safari the portrait documents print on
- * `mktg-framework-page-margins`, exactly the margins they had before, with
- * that in-document room collapsed under `MKTG_PRINT_PAGE_MARGINS_CLASS`: the
- * browser's header and footer stay, as before, and the user unticks them in
- * Safari's print dialog. `mktg-portrait` is the fixed-frame portrait book
- * (`MKTG_PORTRAIT_PRINT_CLASS`: the kit's 17 pages, and every document built
- * of `lfx-mktg-portrait-page` frames): US Letter with no margin in BOTH
- * engines, since each frame is the whole sheet and carries its own room;
- * the print frame writes it unnamed (WebKit) and as `@page mktg-portrait`
- * (Chromium, where the body's inherited named page would otherwise win).
- * Keep these in step with styles.scss and `_mktg-portrait.scss`, which
- * cannot read them.
+ * sheet). `brand-kit` is the legacy landscape book. `mktg-framework` is the
+ * FLOWING documents' setup (the FAQ, the boilerplates and the AEO/GEO report,
+ * which run from page to page through the shared sheet) in Chromium and every
+ * other non-WebKit engine: no paper size, `margin: 0`, since the browser draws
+ * its header and footer (date, title, URL, page numbers) only in the page
+ * margin area, so no margin is the standard way to keep them off a saved PDF,
+ * and the room those documents used to take from the margin (0.55in top and
+ * bottom, 0.6in at the sides) is inside them, repeated per page by their
+ * table head and foot groups (lfx-mktg-print-sheet). WebKit does not repeat a
+ * table's head and foot on every printed page (bug 17205, open), so in Safari
+ * the flowing documents print on `mktg-framework-page-margins`, exactly the
+ * margins they had before, with that in-document room collapsed under
+ * `MKTG_PRINT_PAGE_MARGINS_CLASS`: the browser's header and footer stay, as
+ * before, and the user unticks them in Safari's print dialog; the frame
+ * restates styles.scss's named `@page mktg-framework` with those margins for
+ * it (no element names that page any more: it is a shared-mechanism
+ * clean-up). `mktg-portrait` is the fixed-frame portrait book
+ * (`MKTG_PORTRAIT_PRINT_CLASS`: the kit's pages and the framework's, every
+ * document built of `lfx-mktg-portrait-page` frames): US Letter with no
+ * margin in BOTH engines, since each frame is the whole sheet and carries its
+ * own room; the print frame writes it unnamed (WebKit) and as
+ * `@page mktg-portrait` (Chromium, where the body's inherited named page would
+ * otherwise win), and the grammar's `.pp-page` names it. Keep these in step
+ * with styles.scss and `_mktg-portrait.scss`, which cannot read them.
  */
 export const MKTG_PRINT_PAGE_SETUPS = {
   'brand-kit': 'size: letter landscape; margin: 0;',
