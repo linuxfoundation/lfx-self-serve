@@ -6,6 +6,7 @@ import {
   MKTG_FAMILY_PRINT_BOOK_CLASS,
   MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT,
   MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
+  MKTG_FAMILY_PRINT_SEP,
   MKTG_KIT_POSITIONING_FAMILY_ID,
   MKTG_PORTRAIT_PLATE,
   MKTG_PRINT_INK_ON_LIGHT,
@@ -131,8 +132,8 @@ describe('MktgFamilyPrintComponent', () => {
     // One version format everywhere: the contents rows and the cover's tiles (version and date in one line).
     expect(root.querySelector('[data-testid="family-print-contents-chapter"]')?.textContent).toContain('V2.0');
     expect(Array.from(root.querySelectorAll('[data-testid="family-print-cover-documents"] .fpc-doc__meta')).map((meta) => meta.textContent)).toEqual([
-      'V2.0 · 6 Nov 2026',
-      'V16.0 · 6 Nov 2026',
+      `V2.0${MKTG_FAMILY_PRINT_SEP}6 Nov 2026`,
+      `V16.0${MKTG_FAMILY_PRINT_SEP}6 Nov 2026`,
     ]);
   });
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { MKTG_FAMILY_PRINT_LABELS } from '@lfx-one/shared/constants';
+import { MKTG_FAMILY_PRINT_LABELS, MKTG_FAMILY_PRINT_SEP } from '@lfx-one/shared/constants';
 import { FaqGroupView } from '@lfx-one/shared/interfaces';
 import { mktgFamilyPrintFaqGroups } from '@lfx-one/shared/utils';
 import { describe, expect, it } from 'vitest';
@@ -103,7 +103,7 @@ describe('MktgFamilyPrintFaqPageComponent', () => {
     fixture.componentRef.setInput('index', 1);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    expect(root.querySelector('[data-testid="family-print-faq-intro"]')?.textContent).toBe('About · Joining.');
+    expect(root.querySelector('[data-testid="family-print-faq-intro"]')?.textContent).toBe(`About${MKTG_FAMILY_PRINT_SEP}Joining.`);
     expect(
       Array.from(root.querySelectorAll('[data-testid="family-print-faq-group"]')).map((heading) => heading.textContent?.replace(/\s+/g, ' ').trim())
     ).toEqual(['Joining']);

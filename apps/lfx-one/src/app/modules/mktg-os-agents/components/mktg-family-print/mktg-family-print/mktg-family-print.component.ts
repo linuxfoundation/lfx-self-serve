@@ -12,6 +12,8 @@ import {
   MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
   MKTG_FAMILY_PRINT_HEAD_KIND,
   MKTG_FAMILY_PRINT_LABELS,
+  MKTG_FAMILY_PRINT_SEP,
+  MKTG_PORTRAIT_COVER_STRIP,
   MKTG_PORTRAIT_PAGE,
   MKTG_PORTRAIT_PRINT_CLASS,
 } from '@lfx-one/shared/constants';
@@ -198,7 +200,7 @@ export class MktgFamilyPrintComponent {
     return computed(() =>
       this.plan().chapters.map((chapter) => ({
         document: chapter.document,
-        meta: [chapter.document.versionLabel, chapter.document.approvedLabel].filter(Boolean).join(' · '),
+        meta: [chapter.document.versionLabel, chapter.document.approvedLabel].filter(Boolean).join(MKTG_FAMILY_PRINT_SEP),
       }))
     );
   }
@@ -222,7 +224,9 @@ export class MktgFamilyPrintComponent {
   }
 
   private initCoverFootRight(): Signal<string> {
-    return computed(() => [this.view().websiteLabel, this.printedLabel()].filter(Boolean).join(' · '));
+    // The strip is one line with the grammar's left half (mktgPortraitFootLeft), and the grammar splits both halves on its own
+    // separator to shorten them: this half keeps the grammar's dot, not the family's padded one.
+    return computed(() => [this.view().websiteLabel, this.printedLabel()].filter(Boolean).join(MKTG_PORTRAIT_COVER_STRIP.separator));
   }
 
   private initCoverPurpose(): Signal<string> {
