@@ -13,6 +13,7 @@ import {
   brandKitPortraitContrastMatrix,
   brandKitPortraitDate,
   brandKitPortraitFiles,
+  brandKitPortraitFitSize,
   brandKitPortraitPaletteSource,
   brandKitPortraitReadableSource,
   brandKitPortraitShare,
@@ -139,8 +140,12 @@ describe('the type page’s strings', () => {
 
   it('fills each scale step from the kit’s own words, whole, and names the font source by its host', () => {
     const samples = view.type.scale.map((step) => brandKitPortraitTypeSample(view, step));
-    expect(samples).toEqual([view.voice.line, view.voice.line, view.voice.line, 'Plain', view.voice.umbrella, view.footer]);
-    expect(brandKitPortraitTypeSample({ ...view, voice: { ...view.voice, umbrella: '', attributes: [] } }, view.type.scale[4])).toBe(view.voice.line);
+    expect(samples).toEqual(['Project One', view.voice.line, view.voice.line, view.voice.line, view.voice.umbrella, view.footer]);
+    expect(brandKitPortraitTypeSample({ ...view, voice: { ...view.voice, umbrella: '' } }, view.type.scale[4])).toBe(view.voice.line);
+    // A sample is set at its step's size when it fits its line, smaller (never cut) when it would not.
+    expect(brandKitPortraitFitSize('Project One', 704, 64, { weight: 500 })).toBe(64);
+    expect(brandKitPortraitFitSize(view.voice.line, 480, 32, { weight: 500 })).toBe(26.5);
+    expect(brandKitPortraitFitSize('A very long project name that fits no line at all at this size', 200, 64, { weight: 500 })).toBe(32);
     expect(brandKitPortraitTypeSource('https://one.example.org/brand')).toBe('one.example.org');
     expect(brandKitPortraitTypeSource('Named in the brand guide')).toBe('Named in the brand guide');
   });
@@ -148,9 +153,11 @@ describe('the type page’s strings', () => {
 
 describe('the usage page’s cards', () => {
   it('gives each card the kit’s line for its layout and the mock’s accent moment, from the kit’s examples', () => {
-    const cards = brandKitPortraitUsageCards(view);
+    const cards = brandKitPortraitUsageCards(view, { approvedAt: '2026-11-06T10:00:00Z', approvedBy: null });
     expect(cards.map((card) => card.layout)).toEqual(['keynote', 'social', 'report', 'announcement']);
-    expect(cards.map((card) => card.text)).toEqual([view.voice.umbrella, view.voice.line, view.voice.line, 'New members join Project One']);
+    expect(cards.map((card) => card.text)).toEqual([view.voice.line, view.voice.line, 'Project One annual report 2026', 'New members join Project One']);
+    // Without a recorded approval the report cover carries no year: never a made-up one.
+    expect(brandKitPortraitUsageCards(view)[2].text).toBe('Project One annual report');
     expect(cards.map((card) => card.accentMoment)).toEqual(['none (grid ground)', 'the card itself', 'none', 'the top rule']);
     expect(cards[2]).toMatchObject({ name: 'Report cover', format: 'letter', ground: 'white' });
     expect(brandKitPortraitUsageCards({ ...view, usageTiles: [] })).toEqual([]);

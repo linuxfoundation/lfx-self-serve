@@ -1017,11 +1017,12 @@
   color: var(--pp-dark);
 }
 
-/* The attributes in two columns, each under a 3 px rule (the first in the spark, the rest in the accent). */
+/* The attributes in two columns from y 540, each under a 3 px rule (the first in the spark, the rest in the accent); set
+   large (name 20 px, line 15/1.6, 28 px row gap) so the grid runs to about y 900. */
 .kp-attributes {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 22px 16px;
+  gap: 28px 16px;
 }
 
 .kp-attribute {
@@ -1030,15 +1031,15 @@
 }
 
 .kp-attribute-name {
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 600;
   color: var(--pp-dark);
 }
 
 .kp-attribute-line {
   margin-top: 8px;
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.6;
   color: var(--pp-ink);
 }
 

@@ -185,6 +185,8 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const steps = type.getByTestId('brand-kit-type-scale').locator('[data-step]');
     await expect(steps).toHaveCount(kit.chapters.type.scale.length);
     await expect(steps.first().locator('.kp-scale-sample')).toHaveCSS('font-size', '64px');
+    // The kit's own record names the project (the fixture's sidecar says Project One; the head carries the context's name).
+    await expect(steps.first().locator('.kp-scale-sample')).toHaveText(kit.projectName);
     await expect(steps.nth(4).locator('.kp-scale-sample')).toHaveText(kit.chapters.voice.umbrella);
     await expect(type.getByTestId('brand-kit-type-source')).toContainText('Montserrat · Google Fonts · weights 400, 700');
     await expect(type.getByTestId('brand-kit-type-source')).toContainText('Named on one.example.org');
@@ -215,7 +217,9 @@ test.describe('Brand kit PDF: the portrait book', () => {
     }
     await expect(cards.nth(1).locator('.kp-usage-frame')).toHaveCSS('background-color', rgb(kit.kit.accent));
     await expect(cards.nth(1).locator('.kp-usage-frame')).toHaveCSS('color', rgb(kit.kit.dark));
-    await expect(cards.nth(3)).toContainText('New members join Asset Example');
+    await expect(cards.nth(0)).toContainText(kit.chapters.voice.line);
+    await expect(cards.nth(2)).toContainText(`${kit.projectName} annual report 2026`);
+    await expect(cards.nth(3)).toContainText(`New members join ${kit.projectName}`);
     await expect(usage.getByTestId('brand-kit-usage-table').locator('tbody tr')).toHaveCount(4);
     await usage.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('usage.png'), fullPage: false });
@@ -230,7 +234,7 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(voice.getByTestId('brand-kit-voice-intro')).toHaveText('From the messaging framework. As they are.');
     await expect(voice.locator('.kp-voice-umbrella')).toHaveText(kit.chapters.voice.umbrella);
     await expect(voice.locator('.kp-voice-line')).toHaveText(kit.chapters.voice.line);
-    expect(await placement(voice, voice.getByTestId('brand-kit-voice-attributes'))).toEqual({ x: 56, y: 486, width: 704 });
+    expect(await placement(voice, voice.getByTestId('brand-kit-voice-attributes'))).toEqual({ x: 56, y: 540, width: 704 });
     await expect(voice.locator('.kp-attribute-name')).toHaveText(kit.chapters.voice.attributes.map((attribute) => attribute.name));
     await expect(voice).not.toContainText('Avoid');
     const sources = pages.nth(14);
