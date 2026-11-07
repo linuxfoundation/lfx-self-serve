@@ -25,9 +25,11 @@ export class MktgBrandKitPageLogoColorwaysComponent extends MktgBrandKitPageBase
       (name: string) => name,
       (name: string) => `${name} · print only`,
     ];
+    // Each caption belongs to its tile's place in the kit's four colorways, so it is assigned before a tile without
+    // artwork is left out (one missing tile must not shift the captions of the rest).
     return view.colorways
-      .filter((tile): tile is BrandKitColorwayTile & { logo: NonNullable<BrandKitColorwayTile['logo']> } => !!tile.logo?.src)
-      .map((tile, index) => ({ ...tile, caption: (captions[index] ?? captions[2])(tile.name) }));
+      .map((tile, index) => ({ ...tile, caption: (captions[index] ?? captions[2])(tile.name) }))
+      .filter((tile): tile is BrandKitColorwayTile & { caption: string; logo: NonNullable<BrandKitColorwayTile['logo']> } => !!tile.logo?.src);
   });
   protected readonly rules = computed(() => this.view().logo.colorways);
   protected readonly intro = computed(() => {

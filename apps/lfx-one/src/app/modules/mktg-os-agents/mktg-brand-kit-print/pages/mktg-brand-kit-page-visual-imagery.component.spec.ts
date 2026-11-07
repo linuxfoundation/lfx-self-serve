@@ -19,7 +19,10 @@ describe('the Imagery & graphic elements page', () => {
     const elements = frame.querySelector('[data-testid="brand-kit-imagery-elements"]');
     expect(rectOf(elements)).toEqual({ left: '56px', top: '600px', width: '704px' });
     expect(elements?.querySelectorAll('.kp-element')).toHaveLength(3);
-    expect(elements?.querySelector('.kp-element--eyebrow .kp-element-message')?.textContent).toBe(view.voice.umbrella);
+    const message = elements?.querySelector<HTMLElement>('[data-testid="brand-kit-imagery-message"]');
+    expect(message?.textContent).toBe(view.voice.umbrella);
+    expect(message?.style.fontSize).toBe('19px');
+    expect(elements?.querySelector('.kp-element-captions span')?.textContent).toBe('Umbrella message card');
     expect(Array.from(elements?.querySelectorAll('.kp-element--buttons .kp-button') ?? [], (button) => button.textContent)).toEqual([
       'Primary button',
       'Secondary',

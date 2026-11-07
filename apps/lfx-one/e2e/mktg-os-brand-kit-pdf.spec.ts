@@ -112,6 +112,8 @@ test.describe('Brand kit PDF: the portrait book', () => {
     const heads = pages.getByTestId('mktg-portrait-page-doc');
     await expect(heads).toHaveCount(14);
     await expect(heads.first()).toHaveText('Asset Example brand kit');
+    // The version is on the cover and the back cover only: not on the contents page, not in a running head.
+    await expect(pages.nth(1)).not.toContainText('V3.0');
     await expect(pages.nth(3)).not.toContainText('V3.0');
     await expect(pages.getByTestId('mktg-portrait-page-number')).toHaveText(Array.from({ length: 14 }, (_, index) => String(index + 2)));
     await page.screenshot({ path: info.outputPath('book-frames.png'), fullPage: true });
@@ -130,6 +132,7 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(back).toHaveCSS('background-color', rgb(kit.kit.dark));
     await expect(back.getByTestId('mktg-portrait-back-cover-line')).toHaveText(kit.chapters.voice.line);
     await expect(back.getByTestId('mktg-portrait-back-cover-url')).toHaveText('one.example.org');
+    await expect(back.getByTestId('mktg-portrait-back-cover-version')).toHaveText('V3.0 · October 2026');
     await expect(back.getByTestId('mktg-portrait-back-cover-notice')).toBeVisible();
     await expect(back.getByTestId('mktg-portrait-page-foot')).toHaveCount(0);
     await back.scrollIntoViewIfNeeded();
@@ -166,7 +169,7 @@ test.describe('Brand kit PDF: the portrait book', () => {
     await expect(charcoal.first().locator('.kp-pill')).toHaveText('AAA');
     const pairs = contrast.getByTestId('brand-kit-contrast-pairs');
     expect(await placement(contrast, pairs)).toEqual({ x: 56, y: 610, width: 704 });
-    await expect(pairs.locator('.kp-pair')).toHaveText([/Charcoal on White\s+8\.30:1\s+AAA/]);
+    await expect(pairs.locator('.kp-pair')).toHaveText([/Charcoal on White\s+8\.3:1\s+AAA/]);
     await contrast.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('color-contrast.png'), fullPage: false });
   });

@@ -454,6 +454,13 @@ export const BRAND_KIT_PRINT_ONLY_CLASS = 'lfx-brand-kit-print-only';
 export const BRAND_KIT_PORTRAIT_PRINT_CLASS = 'lfx-brand-kit-portrait';
 
 /**
+ * The CSS filter the "don't recolor" watchout draws the lockup with: a lilac
+ * whatever the mark's own colour (black and dark marks included, which a hue
+ * rotation alone leaves black), so the tile looks wrong on every kit.
+ */
+export const BRAND_KIT_RECOLOR_FILTER = 'invert(55%) sepia(1) saturate(2.5) hue-rotate(220deg)';
+
+/**
  * A logo file's stem (its name without the extension and a `-838x203` size
  * suffix) that names nothing a reader would recognise: a long hex hash, a
  * UUID, or a long run of letters and digits with no separator — what CDNs

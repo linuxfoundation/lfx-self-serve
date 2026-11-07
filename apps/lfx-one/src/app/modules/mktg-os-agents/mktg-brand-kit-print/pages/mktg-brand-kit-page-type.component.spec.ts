@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { MKTG_PORTRAIT_FIT } from '@lfx-one/shared/constants';
+import { mktgPortraitCharsPerLine } from '@lfx-one/shared/utils';
 import { MktgBrandKitPageTypeComponent } from './mktg-brand-kit-page-type.component';
 import { mountBrandKitPage, rectOf, wordsOf } from './mktg-brand-kit-page.spec-helper';
 
@@ -39,6 +39,7 @@ describe('the Typography page', () => {
     expect(steps[3].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.voice.line);
     expect(steps[4].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.voice.umbrella);
     expect(steps[4].querySelector('.kp-scale-spec')?.textContent).toBe('400 · 18/30');
+    expect(steps[4].querySelector<HTMLElement>('.kp-scale-sample')?.style.fontSize).toBe('18px');
     expect(steps[5].querySelector('.kp-scale-sample')?.textContent?.trim()).toBe(view.footer);
     const source = frame.querySelector('[data-testid="brand-kit-type-source"]');
     expect(rectOf(source)).toEqual({ left: '56px', top: '830px', width: '340px' });
@@ -51,12 +52,24 @@ describe('the Typography page', () => {
     expect(Array.from(rules?.querySelectorAll('li') ?? [], (li) => li.textContent)).toEqual(view.type.rules);
   });
 
-  it('shrinks the H1 sample until a long brand line fits the column in one line, never below the grammar’s floor', async () => {
+  it('shrinks the H1 sample until a long brand line fits the column in one line, never cut', async () => {
     const long = 'Open standards, open governance and open collaboration for every kind of computing everywhere';
     const { frame } = await mountBrandKitPage(MktgBrandKitPageTypeComponent, 'type', (view) => ({ ...view, voice: { ...view.voice, line: long } }));
-    const size = parseFloat(frame.querySelector<HTMLElement>('[data-testid="brand-kit-type-h1"]')?.style.fontSize ?? '0');
+    const h1 = frame.querySelector<HTMLElement>('[data-testid="brand-kit-type-h1"]');
+    const size = parseFloat(h1?.style.fontSize ?? '0');
     expect(size).toBeLessThan(48);
-    // The floor is the grammar's minimum scale, rounded down to the half pixel the sample is set at.
-    expect(size).toBeGreaterThanOrEqual(Math.floor(48 * MKTG_PORTRAIT_FIT.minScale * 2) / 2);
+    // 94 characters at 500 fit the 704 px column at 13 px by the grammar's fit model; the text is whole.
+    expect(size).toBe(13);
+    expect(h1?.textContent).toBe(long);
+    expect(long.length).toBeLessThanOrEqual(mktgPortraitCharsPerLine(704, size, { weight: 500 }));
+  });
+
+  it('sets the body step at its real size and lets the paragraph wrap, however long the umbrella message', async () => {
+    const umbrella = 'A long umbrella message that runs well past one line of the scale row at eighteen pixels, as a live kit’s often does.';
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageTypeComponent, 'type', (view) => ({ ...view, voice: { ...view.voice, umbrella } }));
+    const body = frame.querySelector<HTMLElement>('[data-step="body"] .kp-scale-sample');
+    expect(body?.style.fontSize).toBe('18px');
+    expect(body?.style.lineHeight).toBe('30px');
+    expect(body?.textContent?.trim()).toBe(umbrella);
   });
 });

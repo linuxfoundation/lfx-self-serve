@@ -88,9 +88,11 @@ describe('the portrait book', () => {
       expect(frame.querySelector('[data-testid="mktg-portrait-page-foot"]')?.textContent).toContain('Synthetic project · a Linux Foundation project');
       expect(frame.textContent).not.toMatch(/\[[^\]]+\]/);
     });
-    // The version is on the cover, in the contents page's glance and on the back cover; never in a running head.
-    frames.slice(2, -1).forEach((frame) => expect(frame.textContent).not.toContain('V3.0'));
-    expect(frames[1].querySelector('[data-testid="brand-kit-contents-version"]')?.textContent).toContain('V3.0');
+    // The version is on the cover and the back cover only (the ruling's two places): not on the contents page, never in a
+    // running head. The Sources page names the approved revision in its accepted box, which is the approval's own line.
+    frames.slice(1, -2).forEach((frame) => expect(frame.textContent).not.toContain('V3.0'));
+    expect(frames[1].querySelector('[data-testid="brand-kit-contents-version"]')).toBeNull();
+    expect(frames[15].querySelector('[data-testid="mktg-portrait-back-cover-version"]')?.textContent).toBe('V3.0 · October 2026');
     frames.forEach((frame) => expect(frame.style.getPropertyValue('--pp-dark')).toBe(view.dark));
     // No head or footer on the cover and the back cover; no flowing chapter, no legacy plate.
     expect(frames[0].querySelector('[data-testid="mktg-portrait-page-head"]')).toBeNull();
@@ -100,7 +102,7 @@ describe('the portrait book', () => {
     expect(print.ensureFontStylesheet).toHaveBeenCalledWith(view.fontUrl);
   });
 
-  it('opens on the cover with the version and date on the strip and closes on the back cover with the brand line, the host and the notice', async () => {
+  it('opens on the cover with the version and date on the strip and closes on the back cover with the brand line, the host, the version and the notice', async () => {
     const { root, view } = await setup();
     const frames = root.querySelectorAll<HTMLElement>('[data-testid="lfx-mktg-portrait-page"]');
     const cover = frames[0];
@@ -115,6 +117,7 @@ describe('the portrait book', () => {
     expect(back.querySelector('[data-testid="mktg-portrait-back-cover-logo"]')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
     expect(back.querySelector('[data-testid="mktg-portrait-back-cover-line"]')?.textContent).toBe(view.voice.line);
     expect(back.querySelector('[data-testid="mktg-portrait-back-cover-url"]')?.textContent).toBe('one.example.org');
+    expect(back.querySelector('[data-testid="mktg-portrait-back-cover-version"]')?.textContent).toBe('V3.0 · October 2026');
     expect(back.querySelector('[data-testid="mktg-portrait-back-cover-notice"]')?.textContent).toBe(view.backCoverNotice);
     // The contents page lists the plan's pages, the Sources page at 15 and the back cover at 16.
     expect(frames[1].querySelectorAll('.kp-contents-row')).toHaveLength(14);

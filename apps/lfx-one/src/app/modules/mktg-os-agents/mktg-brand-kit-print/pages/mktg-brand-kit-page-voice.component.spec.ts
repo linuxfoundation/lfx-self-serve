@@ -43,4 +43,20 @@ describe('the Voice in brief page', () => {
     expect(frame.querySelector('[data-testid="brand-kit-voice-attributes"]')).toBeNull();
     expect(frame.textContent).not.toContain('Umbrella message');
   });
+
+  it('keeps four attributes at full size and sets a grid of eight long ones smaller together, inside the frame', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageVoiceComponent, 'voice');
+    expect(frame.querySelector<HTMLElement>('[data-testid="brand-kit-voice-attributes"]')?.style.getPropertyValue('--kp-fit')).toBe('1');
+    const line = 'Every claim names its number and its source, in the words the reader would use, and never a superlative the record cannot back.';
+    const { frame: crowded } = await mountBrandKitPage(MktgBrandKitPageVoiceComponent, 'voice', (view) => ({
+      ...view,
+      voice: { ...view.voice, attributes: Array.from({ length: 8 }, (_, index) => ({ name: `Attribute ${index + 1}`, line })) },
+    }));
+    const grid = crowded.querySelector<HTMLElement>('[data-testid="brand-kit-voice-attributes"]');
+    expect(grid?.querySelectorAll('.kp-attribute')).toHaveLength(8);
+    const scale = Number(grid?.style.getPropertyValue('--kp-fit'));
+    expect(scale).toBeLessThan(1);
+    expect(scale).toBeGreaterThanOrEqual(0.72);
+    expect(grid?.querySelector('.kp-attribute-line')?.textContent).toBe(line);
+  });
 });

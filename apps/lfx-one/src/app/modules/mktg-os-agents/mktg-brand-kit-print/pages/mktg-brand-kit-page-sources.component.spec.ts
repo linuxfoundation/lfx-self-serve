@@ -26,6 +26,24 @@ describe('the Sources & decisions page', () => {
     expect(frame.textContent).not.toContain('Across the documents');
   });
 
+  it('sets a long record’s two columns smaller together so nothing runs under the accepted box, and breaks a long address inside its column', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageSourcesComponent, 'sources', (view) => ({
+      ...view,
+      report: {
+        ...view.report,
+        sources_read: Array.from({ length: 40 }, (_, index) => `https://one.example.org/a-rather-long-page-address/section-${index + 1}/subsection`),
+      },
+    }));
+    const left = frame.querySelector<HTMLElement>('[data-testid="brand-kit-sources-left"]');
+    const right = frame.querySelector<HTMLElement>('[data-testid="brand-kit-sources-right"]');
+    expect(left?.querySelectorAll('[data-testid="brand-kit-sources-read"] li')).toHaveLength(40);
+    const scale = Number(left?.style.getPropertyValue('--kp-fit'));
+    expect(scale).toBeLessThan(1);
+    expect(scale).toBeGreaterThanOrEqual(0.72);
+    expect(right?.style.getPropertyValue('--kp-fit')).toBe(left?.style.getPropertyValue('--kp-fit'));
+    expect(left?.classList.contains('kp-sources-column')).toBe(true);
+  });
+
   it('names the failed, missing and conflicting sources from the report, the kept value marked, and the accepted box with a recorded approval', async () => {
     const { frame, fixture } = await mountBrandKitPage(MktgBrandKitPageSourcesComponent, 'sources', (view) => ({
       ...view,

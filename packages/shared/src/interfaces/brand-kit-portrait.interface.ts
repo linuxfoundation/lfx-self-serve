@@ -7,7 +7,10 @@
  * lists. Computed by `brand-kit-portrait.utils.ts` from a `BrandKitBookView`.
  */
 
-import type { BrandKitLogoSlot, BrandKitReportColorConflict, BrandKitUsageView } from './brand-kit.interface';
+import type { BrandKitContrastGrade, BrandKitLogoSlot, BrandKitUsageView } from './brand-kit.interface';
+
+/** How a page draws the artwork: as supplied, reversed to white, or one-colour black. */
+export type BrandKitPortraitArtworkMode = 'full' | 'reversed' | 'mono';
 
 /** One row of the logo files table. */
 export interface BrandKitPortraitFileRow {
@@ -20,19 +23,26 @@ export interface BrandKitPortraitFileRow {
   source: string;
 }
 
-/** A WCAG grade as the contrast page's pill prints it: the label and its inks, by the mock's thresholds. */
+/** A WCAG grade as the contrast page's pill prints it: the kit's grade words and the app's semantic inks. */
 export interface BrandKitPortraitContrastGrade {
-  label: 'AAA' | 'AA' | 'Large only' | 'Fails';
+  /** The kit's own grade words, as the web view prints them. */
+  label: BrandKitContrastGrade;
   background: string;
   color: string;
 }
 
-/** One cell of the contrast matrix: the ground, the text colour and their ratio, or no ratio on the diagonal. */
+/** One cell of the contrast matrix: the ground, the text colour, their ratio and its grade, or no ratio on the diagonal. */
 export interface BrandKitPortraitContrastCell {
   foreground: string;
   background: string;
-  /** `null` where a colour meets itself: the cell is a mist square. */
+  /** The unrounded WCAG ratio; `null` where a colour meets itself: the cell is a mist square. */
   ratio: number | null;
+  /** The ratio to one decimal, as printed (`8.3`); '' on the diagonal. */
+  label: string;
+  /** The grade of the unrounded ratio; `null` on the diagonal. */
+  grade: BrandKitPortraitContrastGrade | null;
+  /** True on a coloured ground, where the ratio's small type reads in the ground's ink. */
+  tinted: boolean;
 }
 
 /** One row of the contrast matrix: a palette colour as text, over every palette colour as ground. */
@@ -40,6 +50,14 @@ export interface BrandKitPortraitContrastRow {
   name: string;
   hex: string;
   cells: BrandKitPortraitContrastCell[];
+}
+
+/** How the contents page lays its list and lower blocks out for the pages it lists. */
+export interface BrandKitPortraitContentsLayout {
+  /** The list in one column, or in two when one cannot hold the rows above the lower blocks. */
+  columns: 1 | 2;
+  /** The lower blocks' top: the mock's y 690, or lower when the list needs the room, never past where they would cross the footer's room. */
+  blocksTop: number;
 }
 
 /** One of the four usage cards: its layout, the line it carries, its caption and the accent moment the table names. */
@@ -65,6 +83,35 @@ export interface BrandKitPortraitMissingAsset {
   fix: string;
 }
 
+/** One value of a colour conflict as the Sources page prints it: the swatch, its label (`#4A4A4A · kept` for the kept one) and its source in words. */
+export interface BrandKitPortraitConflictValue {
+  hex: string;
+  label: string;
+  source: string;
+  kept: boolean;
+}
+
+/** A colour conflict as the Sources page prints it. */
+export interface BrandKitPortraitConflict {
+  name: string;
+  chosen: string;
+  values: BrandKitPortraitConflictValue[];
+}
+
+/** The Voice page's attributes fitted to their grid's room: the share of the type size they are set at, whether a line had to be cut, and the attributes as printed. */
+export interface BrandKitPortraitAttributesFit {
+  scale: number;
+  cut: boolean;
+  attributes: { name: string; line: string }[];
+}
+
+/** The Sources page's lists fitted to their columns: the share of the type size they are set at (1 when they fit as written), whether a line had to be cut, and the lists as printed. */
+export interface BrandKitPortraitSourcesFit {
+  scale: number;
+  cut: boolean;
+  sources: BrandKitPortraitSources;
+}
+
 /** Everything the Sources page prints, read from the revision's own run record; a list the record lacks is empty. */
 export interface BrandKitPortraitSources {
   read: string[];
@@ -75,5 +122,5 @@ export interface BrandKitPortraitSources {
   sharedFix: string;
   gaps: string[];
   notes: string;
-  conflicts: BrandKitReportColorConflict[];
+  conflicts: BrandKitPortraitConflict[];
 }

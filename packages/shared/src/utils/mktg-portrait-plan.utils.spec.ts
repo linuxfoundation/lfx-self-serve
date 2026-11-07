@@ -79,6 +79,12 @@ describe('brandKitPortraitPlan', () => {
     expect(plan).toHaveLength(12);
     expect(plan.filter((page) => page.section === '01 Logo').map((page) => page.id)).toEqual(['logo-system']);
     expect(plan[3].id).toBe('color-palette');
+    // A kit whose only files are bitmaps (no inline src) has nothing the pages can draw: planned the same way.
+    const bitmaps = { ...none, logos: { ...none.logos, primary: { ref: 'logo.png', name: 'logo.png', src: null } } };
+    expect(brandKitPortraitPlan(bitmaps, { inFamily: false })).toHaveLength(12);
+    expect(
+      brandKitPortraitPlan({ ...view, logos: { ...view.logos, symbol: { ref: 'symbol.png', name: 'symbol.png', src: null } } }, { inFamily: false })
+    ).toHaveLength(16);
   });
 
   it('inside the family drops the cover, the contents and the back cover: fourteen pages', () => {

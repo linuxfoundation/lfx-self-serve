@@ -34,7 +34,7 @@
                 <div class="kp-matrix-cell" [style.background]="cell.background" [attr.data-ratio]="cell.label">
                   <span class="kp-matrix-aa" [style.color]="cell.foreground">Aa</span>
                   <div class="kp-matrix-meta">
-                    <span class="kp-matrix-ratio" [class.kp-matrix-ratio--tinted]="cell.background.toUpperCase() !== '#FFFFFF'">{{ cell.label }}:1</span>
+                    <span class="kp-matrix-ratio" [class.kp-matrix-ratio--tinted]="cell.tinted">{{ cell.label }}:1</span>
                     <span class="kp-pill" [style.background]="cell.grade?.background" [style.color]="cell.grade?.color">{{ cell.grade?.label }}</span>
                   </div>
                 </div>
@@ -53,7 +53,7 @@
           <div class="kp-pair">
             <span class="kp-pair-sample" [style.background]="pair.backgroundHex" [style.color]="pair.foregroundHex">Aa</span>
             <span class="kp-pair-names">{{ pair.foreground }} on {{ pair.background }}</span>
-            <span class="kp-pair-ratio">{{ pair.ratioLabel }}</span>
+            <span class="kp-pair-ratio">{{ pair.ratio }}</span>
             <span class="kp-pill" [style.background]="pair.pill.background" [style.color]="pair.pill.color">{{ pair.pill.label }}</span>
           </div>
         }

@@ -25,9 +25,9 @@
       </div>
     }
   </div>
-  @if (v.voice.attributes.length) {
-    <div class="kp-attributes" [lfxPpRect]="[x, 540, w]" data-testid="brand-kit-voice-attributes">
-      @for (attribute of v.voice.attributes; track $index; let first = $first) {
+  @if (attributes().attributes.length) {
+    <div class="kp-attributes" [style.--kp-fit]="attributes().scale" [lfxPpRect]="[x, 540, w]" data-testid="brand-kit-voice-attributes">
+      @for (attribute of attributes().attributes; track $index; let first = $first) {
         <div class="kp-attribute" [style.border-top-color]="first ? look().spark : look().accent">
           <div class="kp-attribute-name">{{ attribute.name }}</div>
           <div class="kp-attribute-line">{{ attribute.line }}</div>

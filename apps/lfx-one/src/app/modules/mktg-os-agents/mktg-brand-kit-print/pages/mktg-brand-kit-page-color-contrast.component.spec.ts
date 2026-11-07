@@ -26,7 +26,8 @@ describe('the Color contrast page', () => {
     expect(cells[0].querySelector<HTMLElement>('.kp-matrix-aa')?.style.color).toBe('rgb(77, 78, 78)');
     const pairs = frame.querySelector('[data-testid="brand-kit-contrast-pairs"]');
     expect(rectOf(pairs)).toEqual({ left: '56px', top: '610px', width: '704px' });
-    expect(wordsOf(pairs?.querySelector('.kp-pair') ?? null)).toBe('Aa Charcoal on White 8.30:1 AAA');
+    // The kit's own pairs print the kit's own ratio label and recorded grade, as the web view does.
+    expect(wordsOf(pairs?.querySelector('.kp-pair') ?? null)).toBe('Aa Charcoal on White 8.3:1 AAA');
     expect(frame.textContent).not.toMatch(/\[[^\]]+\]/);
   });
 

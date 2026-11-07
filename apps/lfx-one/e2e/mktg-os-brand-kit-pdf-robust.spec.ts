@@ -15,7 +15,7 @@ import { expectMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from '
 /** The named blocks of each page, by plan id: the contract the content spec and the design check read. */
 const PAGE_TESTIDS: Record<string, string[]> = {
   cover: ['mktg-portrait-cover-logo', 'mktg-portrait-cover-title', 'mktg-portrait-cover-lede', 'mktg-portrait-cover-strip'],
-  contents: ['brand-kit-contents-list', 'brand-kit-contents-built-from', 'brand-kit-contents-glance', 'brand-kit-contents-version'],
+  contents: ['brand-kit-contents-list', 'brand-kit-contents-built-from', 'brand-kit-contents-glance'],
   'logo-system': ['brand-kit-logo-system-intro', 'brand-kit-logo-system-hero', 'brand-kit-logo-system-tiles', 'brand-kit-logo-system-files'],
   'logo-colorways': ['brand-kit-colorways-intro', 'brand-kit-colorways-tiles', 'brand-kit-colorways-rules'],
   'logo-clear-space': ['brand-kit-clear-space-intro', 'brand-kit-clear-space-stage', 'brand-kit-clear-space-cards', 'brand-kit-clear-space-scaling'],
@@ -44,7 +44,13 @@ const PAGE_TESTIDS: Record<string, string[]> = {
   usage: ['brand-kit-usage-intro', 'brand-kit-usage-cards', 'brand-kit-usage-table'],
   voice: ['brand-kit-voice-intro', 'brand-kit-voice-messages', 'brand-kit-voice-attributes'],
   sources: ['brand-kit-sources-intro', 'brand-kit-sources-read'],
-  'back-cover': ['mktg-portrait-back-cover-logo', 'mktg-portrait-back-cover-line', 'mktg-portrait-back-cover-url', 'mktg-portrait-back-cover-notice'],
+  'back-cover': [
+    'mktg-portrait-back-cover-logo',
+    'mktg-portrait-back-cover-line',
+    'mktg-portrait-back-cover-url',
+    'mktg-portrait-back-cover-version',
+    'mktg-portrait-back-cover-notice',
+  ],
 };
 
 async function openBook(page: Page): Promise<Locator> {

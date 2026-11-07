@@ -21,14 +21,19 @@ export function mktgPortraitFootLeft(projectName: string): string {
   return `${projectName} · a Linux Foundation project`;
 }
 
-/** Whether the kit has any logo file to draw from (a supplied file or the symbol cropped out of one). */
+/**
+ * Whether the kit has any logo artwork the pages can draw: a file with an
+ * inline `src` (the book inlines SVG only) or the symbol cropped out of one.
+ * A kit whose files are all bitmaps has nothing to draw, so its logo pages
+ * are planned away rather than printed with empty tiles.
+ */
 export function brandKitPortraitHasLogoFiles(view: BrandKitBookView): boolean {
-  return Object.values(view.logos).some((file) => file !== null) || view.symbol !== null;
+  return Object.values(view.logos).some((file) => !!file?.src) || !!view.symbol?.src;
 }
 
-/** Whether the kit has a symbol to draw (its own file or the crop out of the horizontal lockup). */
+/** Whether the kit has a symbol the pages can draw (its own inline file or the crop out of the horizontal lockup). */
 export function brandKitPortraitHasSymbol(view: BrandKitBookView): boolean {
-  return view.logos.symbol !== null || view.symbol !== null;
+  return !!view.logos.symbol?.src || !!view.symbol?.src;
 }
 
 /**

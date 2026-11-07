@@ -3,6 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { brandKitTestRevision } from './__fixtures__/brand-kit-revision.fixture';
+import { BRAND_KIT_PORTRAIT_FIT_MIN_PX } from '../constants/brand-kit-portrait.constants';
+import { lfxColors } from '../constants/colors.constants';
 import { buildBrandKitBookView } from './brand-kit-book.utils';
 import {
   brandKitPortraitApprovalLine,
@@ -14,6 +16,11 @@ import {
   brandKitPortraitDate,
   brandKitPortraitFiles,
   brandKitPortraitFitSize,
+  brandKitPortraitAttributesFit,
+  brandKitPortraitContentsLayout,
+  brandKitPortraitGradePill,
+  brandKitPortraitMessageCard,
+  brandKitPortraitSourcesFit,
   brandKitPortraitPaletteSource,
   brandKitPortraitReadableSource,
   brandKitPortraitShare,
@@ -55,7 +62,7 @@ describe('brandKitPortraitFiles', () => {
   it('lists the four slots, a missing file as the mock’s plain line, never a file name', () => {
     const rows = brandKitPortraitFiles(view);
     expect(rows.map((row) => row.slot)).toEqual(['primary', 'reversed', 'symbol', 'stacked']);
-    expect(rows[0]).toEqual({ slot: 'primary', name: 'Horizontal lockup', format: 'SVG', variant: 'Full colour', source: 'Supplied' });
+    expect(rows[0]).toEqual({ slot: 'primary', name: 'Horizontal lockup', format: 'SVG', variant: 'Full color', source: 'Supplied' });
     expect(rows[1].source).toBe('Not supplied: this book derives it from the horizontal file');
     expect(rows[1].format).toBe('—');
     expect(rows[2].source).toBe('Not supplied');
@@ -115,20 +122,28 @@ describe('the contents page’s strings', () => {
 });
 
 describe('the contrast page’s matrix', () => {
-  it('grades a ratio by the WCAG thresholds the mock uses', () => {
-    expect(brandKitPortraitContrastGrade(8.3).label).toBe('AAA');
-    expect(brandKitPortraitContrastGrade(7).label).toBe('AAA');
-    expect(brandKitPortraitContrastGrade(4.5).label).toBe('AA');
-    expect(brandKitPortraitContrastGrade(3).label).toBe('Large only');
-    expect(brandKitPortraitContrastGrade(2.8).label).toBe('Fails');
+  it('grades an unrounded ratio by the WCAG thresholds, in the kit’s own grade words, with the app’s semantic inks', () => {
+    expect(brandKitPortraitContrastGrade(8.3)).toBe('AAA');
+    expect(brandKitPortraitContrastGrade(7)).toBe('AAA');
+    expect(brandKitPortraitContrastGrade(4.5)).toBe('AA');
+    // 4.46 prints as 4.5 but is graded as it is: not AA.
+    expect(brandKitPortraitContrastGrade(4.46)).toBe('Large text only');
+    expect(brandKitPortraitContrastGrade(3)).toBe('Large text only');
+    expect(brandKitPortraitContrastGrade(2.96)).toBe('Fails');
+    expect(brandKitPortraitGradePill('AA')).toEqual({ label: 'AA', background: lfxColors.emerald[50], color: lfxColors.emerald[700] });
+    expect(brandKitPortraitGradePill('Fails').color).toBe(lfxColors.red[600]);
   });
 
-  it('pairs every palette colour as text with every colour as ground, computed from the hex values, blank on the diagonal', () => {
-    expect(brandKitPortraitContrast('#4D4E4E', '#FFFFFF')).toBe(8.35);
+  it('pairs every palette colour as text with every colour as ground, computed unrounded from the hex values, blank on the diagonal', () => {
+    expect(brandKitPortraitContrast('#4D4E4E', '#FFFFFF')).toBeCloseTo(8.35, 2);
     const matrix = brandKitPortraitContrastMatrix(view);
     expect(matrix.map((row) => row.name)).toEqual(['Charcoal', 'White', 'Orange', 'Mid gray']);
-    expect(matrix[0].cells.map((cell) => cell.ratio)).toEqual([null, 8.35, 2.95, 1.82]);
-    expect(matrix[1].cells[0]).toEqual({ foreground: '#FFFFFF', background: '#4D4E4E', ratio: 8.35 });
+    expect(matrix[0].cells.map((cell) => cell.label)).toEqual(['', '8.3', '3.0', '1.8']);
+    expect(matrix[0].cells.map((cell) => cell.grade?.label ?? null)).toEqual([null, 'AAA', 'Fails', 'Fails']);
+    // 2.95 prints as 3.0 but fails: graded on the ratio, not on its label.
+    expect(matrix[0].cells[2].ratio).toBeCloseTo(2.95, 2);
+    expect(matrix[0].cells.map((cell) => cell.tinted)).toEqual([true, false, true, true]);
+    expect(matrix[1].cells[0]).toMatchObject({ foreground: '#FFFFFF', background: '#4D4E4E', label: '8.3', tinted: true });
   });
 });
 
@@ -138,6 +153,30 @@ describe('the type page’s strings', () => {
     expect(brandKitPortraitWeightName(650)).toBe('650');
   });
 
+  it('keeps the contents list in one column with the blocks at y 690 for fifteen rows, moves the blocks down for sixteen, and goes to two columns for seventeen', () => {
+    // Fifteen rows end at y 658, 32 px above the blocks; sixteen at 692, so the blocks move to 716 (ending at 986, under 990).
+    expect(brandKitPortraitContentsLayout(14)).toEqual({ columns: 1, blocksTop: 690 });
+    expect(brandKitPortraitContentsLayout(15)).toEqual({ columns: 1, blocksTop: 690 });
+    expect(brandKitPortraitContentsLayout(16)).toEqual({ columns: 1, blocksTop: 716 });
+    // Seventeen rows would put the blocks at 750, ending past 990: two columns of nine, and the blocks back at 690.
+    expect(brandKitPortraitContentsLayout(17)).toEqual({ columns: 2, blocksTop: 690 });
+    expect(brandKitPortraitContentsLayout(30)).toEqual({ columns: 2, blocksTop: 690 });
+  });
+
+  it('sets the umbrella-message card at 19 px when the message fits, smaller when it must, and prints the brand line when it cannot fit whole', () => {
+    expect(brandKitPortraitMessageCard(view)).toEqual({ text: 'Where organizations fund Project One.', size: 19 });
+    // About 120 characters: six lines at 19 px overrun the box, so the message is set in the grammar's steps until it fits.
+    const longer = 'Where organizations fund the open computing standards every member builds on, together and in the open, every year.';
+    const fitted = brandKitPortraitMessageCard({ ...view, voice: { ...view.voice, umbrella: longer } });
+    expect(fitted.text).toBe(longer);
+    expect(fitted.size).toBeLessThan(19);
+    expect(fitted.size).toBeGreaterThanOrEqual(13.5);
+    // A message the box cannot hold at the smallest step is never cut: the brand line is printed instead.
+    const essay = `${longer} ${longer} ${longer}`;
+    expect(brandKitPortraitMessageCard({ ...view, voice: { ...view.voice, umbrella: essay } })).toEqual({ text: view.voice.line, size: 19 });
+    expect(brandKitPortraitMessageCard({ ...view, voice: { ...view.voice, umbrella: '' } }).text).toBe(view.voice.line);
+  });
+
   it('fills each scale step from the kit’s own words, whole, and names the font source by its host', () => {
     const samples = view.type.scale.map((step) => brandKitPortraitTypeSample(view, step));
     expect(samples).toEqual(['Project One', view.voice.line, view.voice.line, view.voice.line, view.voice.umbrella, view.footer]);
@@ -145,7 +184,13 @@ describe('the type page’s strings', () => {
     // A sample is set at its step's size when it fits its line, smaller (never cut) when it would not.
     expect(brandKitPortraitFitSize('Project One', 704, 64, { weight: 500 })).toBe(64);
     expect(brandKitPortraitFitSize(view.voice.line, 480, 32, { weight: 500 })).toBe(26.5);
-    expect(brandKitPortraitFitSize('A very long project name that fits no line at all at this size', 200, 64, { weight: 500 })).toBe(32);
+    // No floor but the readable minimum: a line no size above it holds is set at the minimum and wraps.
+    expect(
+      brandKitPortraitFitSize('Open standards, open governance and open collaboration for every kind of computing everywhere', 704, 48, { weight: 500 })
+    ).toBe(13);
+    expect(brandKitPortraitFitSize('A very long project name that fits no line at all at this size', 200, 64, { weight: 500 })).toBe(
+      BRAND_KIT_PORTRAIT_FIT_MIN_PX
+    );
     expect(brandKitPortraitTypeSource('https://one.example.org/brand')).toBe('one.example.org');
     expect(brandKitPortraitTypeSource('Named in the brand guide')).toBe('Named in the brand guide');
   });
@@ -161,6 +206,25 @@ describe('the usage page’s cards', () => {
     expect(cards.map((card) => card.accentMoment)).toEqual(['none (grid ground)', 'the card itself', 'none', 'the top rule']);
     expect(cards[2]).toMatchObject({ name: 'Report cover', format: 'letter', ground: 'white' });
     expect(brandKitPortraitUsageCards({ ...view, usageTiles: [] })).toEqual([]);
+  });
+});
+
+describe('the Voice page’s attributes', () => {
+  it('keeps four attributes as written, sets eight long ones smaller in the grammar’s steps, and cuts only what no step holds', () => {
+    expect(brandKitPortraitAttributesFit(view.voice.attributes)).toEqual({ scale: 1, cut: false, attributes: view.voice.attributes });
+    const line = 'Every claim names its number and its source, in the words the reader would use, and never a superlative the record cannot back.';
+    const eight = Array.from({ length: 8 }, (_, index) => ({ name: `Attribute ${index + 1}`, line }));
+    const fitted = brandKitPortraitAttributesFit(eight);
+    expect(fitted.scale).toBeLessThan(1);
+    expect(fitted.scale).toBeGreaterThanOrEqual(0.72);
+    expect(fitted.cut).toBe(false);
+    expect(fitted.attributes).toEqual(eight);
+    const twenty = Array.from({ length: 20 }, (_, index) => ({ name: `Attribute ${index + 1}`, line: `${line} ${line}` }));
+    const cut = brandKitPortraitAttributesFit(twenty);
+    expect(cut.scale).toBe(0.72);
+    expect(cut.cut).toBe(true);
+    expect(cut.attributes).toHaveLength(20);
+    expect(cut.attributes.some((attribute) => attribute.line.length < `${line} ${line}`.length)).toBe(true);
   });
 });
 
@@ -203,6 +267,8 @@ describe('the Sources page’s lists', () => {
     expect(rich.notes).toBe('A note.');
     expect(rich.conflicts.map((conflict) => conflict.name)).toEqual(['Orange']);
     expect(rich.conflicts[0].values.map((value) => value.source)).toEqual(['one.example.org stylesheets', 'the uploaded logo files']);
+    expect(rich.conflicts[0].values.map((value) => value.label)).toEqual(['#F37625 · kept', '#F07000']);
+    expect(rich.conflicts[0].values.map((value) => value.kept)).toEqual([true, false]);
   });
 
   it('takes a v2 report’s findings, names the missing assets by the shared labels and lifts a fix they all share', () => {
@@ -230,5 +296,31 @@ describe('the Sources page’s lists', () => {
     ]);
     expect(sources.sharedFix).toBe('Upload each file as SVG.');
     expect(sources.warnings).toEqual([{ text: 'Font weights unverified.', source: 'one.example.org' }]);
+  });
+
+  it('fits the two columns to their room: as written when they fit, smaller together for a long record, cut at a sentence when no size holds it', () => {
+    const short = brandKitPortraitSourcesFit(brandKitPortraitSources(view), true);
+    expect(short).toEqual({ scale: 1, cut: false, sources: brandKitPortraitSources(view) });
+    // Forty read sources at 20 px a line overrun the 636 px above the accepted box; the columns shrink in the grammar's steps.
+    const sentence = 'The page names the typeface and its weights, and links the logo package the site offers to the press.';
+    const long = brandKitPortraitSources({
+      ...view,
+      report: { ...view.report, sources_read: Array.from({ length: 40 }, (_, index) => `https://one.example.org/page-${index + 1}`) },
+    });
+    const fitted = brandKitPortraitSourcesFit(long, true);
+    expect(fitted.scale).toBeLessThan(1);
+    expect(fitted.scale).toBeGreaterThanOrEqual(0.72);
+    expect(fitted.cut).toBe(false);
+    expect(fitted.sources.read).toEqual(long.read);
+    // Without the accepted box the same record has the room down to y 990: it fits at a larger size.
+    expect(brandKitPortraitSourcesFit(long, false).scale).toBeGreaterThan(fitted.scale);
+    // Eighty gap sentences hold at no step: the longest lines are cut at a sentence, marked, and the record's lists stay in order.
+    const essay = brandKitPortraitSources({ ...view, report: { ...view.report, gaps: Array.from({ length: 80 }, () => `${sentence} ${sentence}`) } });
+    const cut = brandKitPortraitSourcesFit(essay, true);
+    expect(cut.scale).toBe(0.72);
+    expect(cut.cut).toBe(true);
+    expect(cut.sources.gaps).toHaveLength(80);
+    expect(cut.sources.gaps.some((gap) => gap.length < `${sentence} ${sentence}`.length)).toBe(true);
+    expect(cut.sources.read).toEqual(essay.read);
   });
 });

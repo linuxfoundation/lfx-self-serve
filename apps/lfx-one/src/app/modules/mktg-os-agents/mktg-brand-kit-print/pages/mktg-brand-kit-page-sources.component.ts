@@ -3,7 +3,7 @@
 
 import { Component, computed, input } from '@angular/core';
 import { MktgRevisionApproval } from '@lfx-one/shared/interfaces';
-import { brandKitPortraitApprovalLine, brandKitPortraitSources } from '@lfx-one/shared/utils';
+import { brandKitPortraitApprovalLine, brandKitPortraitSources, brandKitPortraitSourcesFit } from '@lfx-one/shared/utils';
 import { MktgPortraitPageComponent } from '../../components/mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
 import { MktgPortraitRectDirective } from '../../components/mktg-portrait/mktg-portrait-rect.directive';
 import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
@@ -13,7 +13,9 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
  * only: what was read, what could not be read and why, the warnings and
  * gaps, what is missing with its fix, the colour conflicts with the value
  * kept, and the box saying what was accepted at approval (only with a
- * recorded approval). A line the record does not hold is not printed.
+ * recorded approval). A line the record does not hold is not printed. The
+ * two columns are measured with the fit model and set smaller together when
+ * the record would overrun their room (`brandKitPortraitSourcesFit`).
  */
 @Component({
   selector: 'lfx-mktg-brand-kit-page-sources',
@@ -23,8 +25,10 @@ import { MktgBrandKitPageBase } from './mktg-brand-kit-page.base';
 export class MktgBrandKitPageSourcesComponent extends MktgBrandKitPageBase {
   /** The revision's recorded approval, or null before one. */
   public readonly approval = input<MktgRevisionApproval | null>(null);
-  protected readonly sources = computed(() => brandKitPortraitSources(this.view()));
   protected readonly approvalLine = computed(() => brandKitPortraitApprovalLine(this.approval()));
+  /** The lists fitted to the two columns' room (above the accepted box when it prints): the scale the columns are set at, and the lists as printed. */
+  protected readonly fit = computed(() => brandKitPortraitSourcesFit(brandKitPortraitSources(this.view()), this.approvalLine() !== ''));
+  protected readonly sources = computed(() => this.fit().sources);
   protected readonly intro = computed(() => {
     const version = this.view().versionLabel;
     const approved = this.approvalLine() !== '';

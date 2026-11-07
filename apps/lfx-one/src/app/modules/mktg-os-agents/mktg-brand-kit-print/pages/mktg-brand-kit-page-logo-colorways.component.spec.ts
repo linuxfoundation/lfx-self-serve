@@ -30,4 +30,18 @@ describe('the Colorways page', () => {
     expect(frame.querySelectorAll('[data-testid="brand-kit-colorways-rules"] li')).toHaveLength(view.logo.colorways.length);
     expect(frame.querySelector('[data-testid="brand-kit-colorways-rules"] li')?.textContent?.trim()).toBe('Full color · on white — full color on white.');
   });
+
+  it('keeps each caption with its own colorway when a tile without artwork is left out', async () => {
+    const { frame } = await mountBrandKitPage(MktgBrandKitPageLogoColorwaysComponent, 'logo-colorways', (view) => ({
+      ...view,
+      colorways: view.colorways.map((tile, index) => (index === 1 ? { ...tile, logo: null } : tile)),
+    }));
+    const tiles = Array.from(frame.querySelectorAll('[data-testid="brand-kit-colorways-tiles"] > div'));
+    expect(tiles).toHaveLength(3);
+    expect(tiles.map((tile) => tile.querySelector('.pp-cap')?.textContent)).toEqual([
+      'Full color · on white · on white',
+      'Full color · on light tint',
+      'One-color black · print only · print only',
+    ]);
+  });
 });

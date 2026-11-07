@@ -10,9 +10,10 @@ import { MktgPortraitRectDirective } from '../mktg-portrait-rect.directive';
 /**
  * A portrait document's back cover: a bare dark frame, the reversed lockup
  * 72 px tall centred at y 420, the brand line (13 px caps, +0.16em, in the
- * accent) and the url at y 560, and the copyright and trademark notice
- * (9.5/1.5) over a 20 % white rule at y 964. Without a reversed logo the
- * lockup's slot stays empty.
+ * accent), the url and the version line (`V4.0 · November 2026`, the
+ * ruling's second and last place for it after the cover) at y 560, and the
+ * copyright and trademark notice (9.5/1.5) over a 20 % white rule at y 964.
+ * Without a reversed logo the lockup's slot stays empty.
  */
 @Component({
   selector: 'lfx-mktg-portrait-back-cover',
@@ -28,6 +29,8 @@ export class MktgPortraitBackCoverComponent {
   public readonly line = input('');
   /** `aaif.io`; '' draws none. */
   public readonly url = input('');
+  /** `V4.0 · November 2026`; '' draws none. */
+  public readonly version = input('');
   /** The copyright and trademark notice. */
   public readonly notice = input('');
   protected readonly geometry = MKTG_PORTRAIT_PAGE;

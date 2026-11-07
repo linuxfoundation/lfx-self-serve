@@ -30,7 +30,7 @@ import {
   BrandKitUsageView,
   BrandKitWatchoutView,
 } from '../interfaces/brand-kit.interface';
-import { BRAND_KIT_FOUND_IN_LABELS } from '../constants/brand-kit.constants';
+import { BRAND_KIT_FOUND_IN_LABELS, BRAND_KIT_RECOLOR_FILTER } from '../constants/brand-kit.constants';
 import {
   brandKitBookPages,
   brandKitFontStack,
@@ -126,7 +126,7 @@ export function brandKitColorwayTiles(kit: BrandKitRevision, tint: string, logos
 export function brandKitWatchoutTiles(kit: BrandKitRevision): BrandKitWatchoutView[] {
   const draws = [
     { transform: 'scaleX(1.45)', filter: '', ground: '', retyped: false },
-    { transform: '', filter: 'hue-rotate(140deg) saturate(1.6)', ground: '', retyped: false },
+    { transform: '', filter: BRAND_KIT_RECOLOR_FILTER, ground: '', retyped: false },
     { transform: 'rotate(-14deg)', filter: '', ground: '', retyped: false },
     { transform: '', filter: 'drop-shadow(0.4cqw 0.4cqw 0.3cqw rgba(0, 0, 0, 0.55))', ground: '', retyped: false },
     { transform: '', filter: '', ground: `linear-gradient(135deg, ${kit.kit.accent}, ${kit.kit.dark} 55%, ${kit.kit.spark})`, retyped: false },

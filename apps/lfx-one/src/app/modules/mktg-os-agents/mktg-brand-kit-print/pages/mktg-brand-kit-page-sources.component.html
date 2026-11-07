@@ -12,7 +12,7 @@
   [title]="page().title"
   [band]="page().band">
   <p class="pp-body kp-sources-intro" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-sources-intro">{{ intro() }}</p>
-  <div [lfxPpRect]="[x, 220, 340]">
+  <div class="kp-sources-column" [style.--kp-fit]="fit().scale" [lfxPpRect]="[x, 220, 340]" data-testid="brand-kit-sources-left">
     @if (s.read.length) {
       <div class="kp-block" data-testid="brand-kit-sources-read">
         <div class="pp-lab pp-lab--dark">Read</div>
@@ -60,7 +60,7 @@
       </div>
     }
   </div>
-  <div [lfxPpRect]="[x + 364, 220, 340]">
+  <div class="kp-sources-column" [style.--kp-fit]="fit().scale" [lfxPpRect]="[x + 364, 220, 340]" data-testid="brand-kit-sources-right">
     @if (s.missing.length) {
       <div class="kp-block" data-testid="brand-kit-sources-missing">
         <div class="pp-lab pp-lab--dark">Missing</div>
@@ -83,7 +83,7 @@
     }
     @if (s.conflicts.length) {
       <div class="kp-block" data-testid="brand-kit-sources-conflicts">
-        <div class="pp-lab pp-lab--dark">Colour conflicts</div>
+        <div class="pp-lab pp-lab--dark">Color conflicts</div>
         @for (conflict of s.conflicts; track conflict.name) {
           <table class="kp-conflict">
             <thead>
@@ -93,9 +93,9 @@
             </thead>
             <tbody>
               @for (value of conflict.values; track $index) {
-                <tr [class.kp-conflict-kept]="value.hex.toUpperCase() === conflict.chosen.toUpperCase()">
+                <tr [class.kp-conflict-kept]="value.kept">
                   <td><span class="kp-conflict-swatch" [style.background]="value.hex"></span></td>
-                  <td>{{ value.hex.toUpperCase() }}{{ value.hex.toUpperCase() === conflict.chosen.toUpperCase() ? ' · kept' : '' }}</td>
+                  <td>{{ value.label }}</td>
                   <td class="kp-muted">{{ value.source }}</td>
                 </tr>
               }
