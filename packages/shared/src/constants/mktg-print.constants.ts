@@ -353,6 +353,10 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   taglineInset: 13,
   /** The goal matrix (`.fwp-matrix-row`): a row's padding (10 + 10) and hairline; its side padding (12 + 12); the label column; the column gap; a proof row's margin under it; the sound bite's rule and padding (2 + 10); the crosscut's margin above. */
   matrixRow: 21,
+  /** The head row's chrome: its padding alone (the head has no hairline), the "Goal N" label's line and the title's margin above. The label is an inline span in the page's 12.5 / 1.6 body, so its line is the body's 20 px strut, not the label's own 12 (CSS 2.1 §10.8); measured in Chromium and WebKit, the head of a 1-line title is 61 px. */
+  matrixGoalHeadRow: 20,
+  matrixGoalHeadLabel: 20,
+  matrixGoalHeadTitleTop: 3,
   matrixPadding: 24,
   matrixLabelColumn: 96,
   matrixGap: 16,

@@ -522,14 +522,18 @@ function frameworkPortraitMatrixBandFrame(
   // page has room for. A strip keeps the fit model's measure.
   const textHeight = (text: string, type: FoundationMessagePrintType, width: number): number =>
     banded ? frameworkPortraitGlyphTextHeight(text, type, width, family) : frameworkPortraitTextHeight(text, type, width);
+  // The head row as the sheet draws it (`.fwp-matrix-head`): its padding, no hairline, the "Goal N" label on the page body's line
+  // and the title's margin above it (`ROOM.matrixGoalHeadRow`, `.matrixGoalHeadLabel`, `.matrixGoalHeadTitleTop`).
   const head =
-    ROOM.matrixRow +
-    TYPE.cutNote.size * TYPE.cutNote.line +
-    3 +
+    ROOM.matrixGoalHeadRow +
+    ROOM.matrixGoalHeadLabel +
+    ROOM.matrixGoalHeadTitleTop +
     tallest(titles.map((title) => textHeight(title.text, { ...TYPE.matrixGoal, size: title.size }, column)));
   const proofRow = (proof: FoundationMessagePrintGoalProof, type: FoundationMessagePrintType): number =>
     textHeight(`${proof.fact} ${proof.source}`, { ...type, size: proof.size ?? type.size }, column) + ROOM.matrixProofGap;
-  const noteIn = (cut: number): number => (cut > 0 ? frameworkPortraitCutNoteHeightIn(cut, column) : 0);
+  // A cell's own "+N more" line costs its gap less the last proof's margin: the two margins meet at the list's end and collapse to the
+  // larger (`.fwp-matrix-proofs li` 5 px under `.fwp-cut-note` 6 px above), as Chromium and WebKit both lay it.
+  const noteIn = (cut: number): number => (cut > 0 ? frameworkPortraitCutNoteHeightIn(cut, column) - ROOM.matrixProofGap : 0);
   // The proofs row keeps at least its chrome, every goal's first proof at the fit model's floor and the note counting the rest
   // (never only the note, the editor's rule): never less, whatever the text rows run to.
   const floorType: FoundationMessagePrintType = { ...TYPE.matrixProofTight, size: TYPE.matrixProofTight.size * FIT.minScale };
@@ -574,7 +578,7 @@ function frameworkPortraitMatrixBand(
 ): { cells: FoundationMessagePrintMatrixCell[]; proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>[]; height: number } {
   const { goals, titles, column, head, measure, proofRow } = frame;
   const noteIn = (cut: number): number => (fold ? 0 : frame.noteIn(cut));
-  const noteLine = fold ? 0 : frameworkPortraitCutNoteHeightIn(1, column);
+  const noteLine = noteIn(1);
   const biteWidth = column - ROOM.matrixBiteInset;
   let cells = frame.cells;
   let rows = measure(cells, printed);
@@ -623,7 +627,7 @@ function frameworkPortraitMatrixBand(
   const unified =
     rowSize === TYPE.matrixProof.size
       ? proofs
-      : goals.map((goal) => frameworkPortraitMatrixProofsAt(goal.proofRows, rowSize, proofsRoom, column, proofRow, noteIn, fold));
+      : goals.map((goal) => frameworkPortraitMatrixProofsAt(goal.proofRows, rowSize, proofsRoom, proofRow, noteIn, fold));
   const proofsHeight =
     ROOM.matrixRow +
     tallest(
@@ -656,7 +660,6 @@ function frameworkPortraitMatrixProofsAt(
   rows: readonly FoundationMessagePrintGoalProof[],
   size: number,
   room: number,
-  column: number,
   proofRow: (proof: FoundationMessagePrintGoalProof, type: FoundationMessagePrintType) => number,
   noteIn: (cut: number) => number,
   fold = false
@@ -665,7 +668,7 @@ function frameworkPortraitMatrixProofsAt(
   const type: FoundationMessagePrintType = { ...TYPE.matrixProofTight, size };
   const at = (proof: FoundationMessagePrintGoalProof): FoundationMessagePrintGoalProof => (size < TYPE.matrixProofTight.size ? { ...proof, size } : proof);
   const measure = (proof: FoundationMessagePrintGoalProof): number => proofRow(proof, type);
-  const list = frameworkPortraitCutList(rows.map(at), room, measure, measure, fold ? 0 : frameworkPortraitCutNoteHeightIn(1, column));
+  const list = frameworkPortraitCutList(rows.map(at), room, measure, measure, noteIn(1));
   if (list.rows.length > 0) return { ...list, tight: true, note: fold ? '' : list.note };
   const cut = rows.length - 1;
   const firstRoom = room - noteIn(cut);
