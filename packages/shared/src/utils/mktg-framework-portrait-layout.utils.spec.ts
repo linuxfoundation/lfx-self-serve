@@ -118,7 +118,7 @@ describe('the framework portrait book’s cut lists', () => {
 
 describe('the framework portrait book’s bounded blocks', () => {
   const long = 'A long sentence about the project and the many things it does for the people who use it every day. ';
-  const goal = (proofs: number): FoundationMessagePrintGoal => ({
+  const goal = (proofs: number, overrides: Partial<FoundationMessagePrintGoal> = {}): FoundationMessagePrintGoal => ({
     id: 'g',
     n: 1,
     t: 'Adoption',
@@ -130,6 +130,7 @@ describe('the framework portrait book’s bounded blocks', () => {
     segmentLabel: '',
     segmentNames: [],
     proofRows: Array.from({ length: proofs }, (_, index) => ({ fact: `${long.trim()} (${index})`, source: 'Source' })),
+    ...overrides,
   });
 
   it('fits a page title to its room: the grammar’s 34 px on one line where it fits, smaller to the floor, then the lines it needs, never cut', () => {
@@ -166,12 +167,42 @@ describe('the framework portrait book’s bounded blocks', () => {
     expect(frameworkPortraitMatrixColumn(4)).toBe((704 - 24 - 96 - 64) / 4);
     const whole = frameworkPortraitMatrix([goal(2)], 'Across the goals.', 664);
     expect(whole.proofs[0]).toEqual({ rows: goal(2).proofRows, cut: 0, tight: false, note: '' });
+    // Short text cells print as written, at their type.
+    expect(whole.cells).toEqual([{ vp: { text: 'Value', size: 11 }, key: { text: 'Key', size: 11 }, bite: { text: 'Bite', size: 12.5 } }]);
+    expect(whole.height).toBeLessThanOrEqual(664);
     const bounded = frameworkPortraitMatrix([goal(12), goal(1)], 'Across the goals.', 664);
     expect(bounded.proofs[0].rows.length).toBeGreaterThan(0);
     expect(bounded.proofs[0].rows.length).toBeLessThan(12);
     expect(bounded.proofs[0].tight).toBe(true);
     expect(bounded.proofs[0].note).toBe(`+${12 - bounded.proofs[0].rows.length} more on the framework's Framework tab in LFX One`);
     expect(bounded.proofs[1].cut).toBe(0);
+    expect(bounded.height).toBeLessThanOrEqual(664);
+  });
+
+  it('fits the matrix’s text cells at the record’s cap: eight goals with long cells and four proofs each end inside the room, the proofs keeping their note', () => {
+    const text = long.repeat(3).trim();
+    const goals = Array.from({ length: 8 }, (_, index) =>
+      goal(4, { id: `g${index}`, n: index + 1, t: `Goal ${index + 1} title`, vp: text, key: text, bite: long.trim() })
+    );
+    const column = frameworkPortraitMatrixColumn(8);
+    expect(column).toBe((704 - 24 - 96 - 128) / 8);
+    // Unfitted, the three text rows alone would run past the room the matrix has on the page (the P1 the review measured at about 1224 px).
+    const unfitted = ['vp', 'key'].reduce((sum) => sum + frameworkPortraitTextHeight(text, FRAMEWORK_PORTRAIT_TYPE.matrixCell, column), 0);
+    expect(unfitted).toBeGreaterThan(664);
+    const matrix = frameworkPortraitMatrix(goals, 'Across the goals.', 664);
+    expect(matrix.height).toBeLessThanOrEqual(664);
+    expect(matrix.cells).toHaveLength(8);
+    for (const cell of matrix.cells) {
+      // Fitted: smaller than the type, or cut at a sentence (shorter than the text), never past the room.
+      expect(cell.vp.size < 11 || cell.vp.text.length < text.length).toBe(true);
+      expect(cell.key.size <= 11).toBe(true);
+      expect(cell.bite?.text.length ?? 0).toBeGreaterThan(0);
+    }
+    // Every proof cell keeps its note at the real count: none is cut to nothing without the line that says so.
+    for (const cell of matrix.proofs) {
+      expect(cell.rows.length + cell.cut).toBe(4);
+      if (cell.cut > 0) expect(cell.note).toBe(`+${cell.cut} more on the framework's Framework tab in LFX One`);
+    }
   });
 
   it('packs the say pills into their column and cuts them from the end, tight first; cuts the avoid rows to whole rows', () => {

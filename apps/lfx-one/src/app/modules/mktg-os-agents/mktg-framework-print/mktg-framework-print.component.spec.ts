@@ -319,6 +319,16 @@ describe('MktgFrameworkPrintComponent', () => {
     // Its `white-space: nowrap` is the global partial's rule, asserted computed in the e2e (mktg-os-asset-views.spec.ts).
     expect(tag?.classList.contains('fwp-matrix-source')).toBe(true);
     expect(matrix?.querySelector('.fwp-matrix-bite')?.textContent?.trim()).toBe('“In the open”');
+    // Short cells print as written at their type (frameworkPortraitMatrix fits them only where the rows would crowd the proofs out).
+    const vp = matrix?.querySelector<HTMLElement>('.fwp-matrix-vp');
+    const key = matrix?.querySelector<HTMLElement>('.fwp-matrix-key');
+    expect([vp?.textContent?.trim(), vp?.style.fontSize, key?.textContent?.trim(), key?.style.fontSize]).toEqual([
+      CONTENT.mf.goals[0].vp,
+      `${FRAMEWORK_PORTRAIT_TYPE.matrixCell.size}px`,
+      CONTENT.mf.goals[0].key,
+      `${FRAMEWORK_PORTRAIT_TYPE.matrixKey.size}px`,
+    ]);
+    expect(matrix?.querySelector<HTMLElement>('.fwp-matrix-bite')?.style.fontSize).toBe(`${FRAMEWORK_PORTRAIT_TYPE.matrixBite.size}px`);
     expect(matrix?.querySelector('.fwp-matrix-crosscut')?.textContent?.trim()).toBe('Every column grows the audience.');
     // Segments belong to the profile pages: the matrix does not name them.
     expect(matrix?.textContent).not.toContain('End users');

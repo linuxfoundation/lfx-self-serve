@@ -274,7 +274,18 @@ export interface FoundationMessagePrintAnchorRow {
 
 /** The framework page's goal matrix, bounded: each goal's proof cell as a cut list, in the goals' order (frameworkPortraitMatrix). */
 export interface FoundationMessagePrintMatrix {
+  /** Each goal's value proposition, key message and sound bite as the matrix sets them: fitted (smaller first, then cut at a sentence) where the rows would not leave the proofs their room. */
+  cells: FoundationMessagePrintMatrixCell[];
   proofs: FoundationMessagePrintCutList<FoundationMessagePrintGoalProof>[];
+  /** The matrix's measured height, px, from its first row's top to the crosscut's end: at most the room it was given. */
+  height: number;
+}
+
+/** One goal's text cells in the framework page's matrix (frameworkPortraitMatrix). */
+export interface FoundationMessagePrintMatrixCell {
+  vp: FoundationMessagePrintFittedText;
+  key: FoundationMessagePrintFittedText;
+  bite: FoundationMessagePrintFittedText | null;
 }
 
 /** One ICP page's profiles as the layout packs them (frameworkPortraitIcpPages): the cards that end above the footer with their room, at the tight measure when one card alone needed it. */

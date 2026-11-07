@@ -30,6 +30,7 @@ import {
   openAssetDocument,
   openDraftAssetRun,
   openUnapprovedAssetDocument,
+  capGoalsFrameworkRevisionResponse,
   overfullFrameworkRevisionResponse,
   realShapedFrameworkRevisionResponse,
 } from './helpers/mktg-os-asset-views.helper';
@@ -570,6 +571,12 @@ test('the framework print lists every figure past six as a table, continued on a
     })
   );
   expect(overflow).toEqual([]);
+  // The framework page's matrix ends above the footer rule (1000), its text cells fitted and its proof cells cut before it could.
+  const matrixBottom = await print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="framework"]').evaluate((frame) => {
+    const matrix = frame.querySelector('[data-testid="mktg-framework-print-goals"]')?.getBoundingClientRect();
+    return matrix ? Math.round(matrix.bottom - frame.getBoundingClientRect().top) : Number.NaN;
+  });
+  expect(matrixBottom).toBeLessThanOrEqual(1000);
   const goalTitles = await print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id^="goal-"]').evaluateAll((pages) =>
     pages.map((frame) => {
       const title = frame.querySelector('.pp-title')?.getBoundingClientRect();
@@ -673,6 +680,48 @@ test('the framework print set in the project’s kit: accent text darkened to re
   expect(figureTops).toHaveLength(4);
   expect(figureTops[0]).toBe(figureTops[1]);
   await page.screenshot({ path: info.outputPath('foundation-message-print-kit.png'), fullPage: true });
+  await page.emulateMedia({ media: 'screen' });
+  await finishMktgPrintFrame(page);
+});
+
+test('a framework at the goals’ cap: the matrix’s eight columns fit their text and cut their proofs to the note, ending above the footer', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await stubMktgPrintFrame(page);
+  await openAssetDocument(page, 'foundation-message', 200, true, false, capGoalsFrameworkRevisionResponse());
+  await page.getByTestId('mktg-framework-view-download-pdf').getByRole('button').click();
+  await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'lfx-mktg-framework-print');
+  const frame = await layoutMktgPrintFrame(page);
+  const print = frame.getByTestId('mktg-framework-print');
+  // Eight goals: cover, framework, goal-1…8, say-avoid, the four profiles two a page, the house, the numbers, the sources.
+  await expect(print.getByTestId('lfx-mktg-portrait-page')).toHaveCount(16);
+  const framework = print.locator('[data-testid="lfx-mktg-portrait-page"][data-page-id="framework"]');
+  const matrix = framework.getByTestId('mktg-framework-print-goals');
+  await expect(matrix.locator('.fwp-matrix-vp')).toHaveCount(8);
+  const layout = await framework.evaluate((frame) => {
+    const top = frame.getBoundingClientRect().top;
+    const bottom = (selector: string): number => Math.round((frame.querySelector(selector)?.getBoundingClientRect().bottom ?? Number.NaN) - top);
+    const sizes = (selector: string): number[] =>
+      Array.from(frame.querySelectorAll<HTMLElement>(selector)).map((cell) => parseFloat(getComputedStyle(cell).fontSize));
+    return {
+      matrix: bottom('[data-testid="mktg-framework-print-goals"]'),
+      vp: sizes('.fwp-matrix-vp'),
+      key: sizes('.fwp-matrix-key'),
+      bite: sizes('.fwp-matrix-bite'),
+    };
+  });
+  expect(layout.matrix).toBeLessThanOrEqual(1000);
+  // The cells set smaller than their type (11 / 11 / 12.5 px), never under the fit model's floor (72 %).
+  for (const size of layout.vp) expect(size).toBeLessThan(11);
+  for (const size of [...layout.vp, ...layout.key]) expect(size).toBeGreaterThanOrEqual(Math.ceil(11 * 0.72));
+  for (const size of layout.bite) expect(size).toBeGreaterThanOrEqual(Math.ceil(12.5 * 0.72));
+  // Every proof cell says what it cut; the count is the record's (four a goal).
+  const notes = matrix.getByTestId('mktg-framework-print-matrix-proofs-cut');
+  const noteCount = await notes.count();
+  expect(noteCount).toBeGreaterThan(0);
+  for (const note of await notes.all()) await expect(note).toHaveText(/^\+[1-4] more on the framework's Framework tab in LFX One$/);
+  await page.screenshot({ path: info.outputPath('foundation-message-print-cap-goals.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);
 });

@@ -432,6 +432,34 @@ export function overfullFrameworkRevisionResponse(): MktgRevisionResponse {
   };
 }
 
+/**
+ * The framework record at the goals' cap (`FOUNDATION_MESSAGE_CONTENT_LIMITS.goals.max`: eight goals, four proofs each, long
+ * cells), so the framework page's matrix has 57 px columns and must fit its text cells and cut every proof cell to its
+ * note to end above the footer; the rest of the record is the real-shaped asset's.
+ */
+export function capGoalsFrameworkRevisionResponse(): MktgRevisionResponse {
+  const framework = realShapedFrameworkAsset();
+  const sentence =
+    'A long cell that says what the goal does for the people it serves, across several lines of a narrow column, with a second sentence after it.';
+  const [first] = framework.content.mf.goals;
+  const goals = Array.from({ length: 8 }, (_, index) => ({
+    ...first,
+    id: `goal-${index + 1}`,
+    n: index + 1,
+    t: `Goal ${index + 1} title`,
+    vp: sentence,
+    key: sentence,
+    bite: 'A sound bite that is a sentence long, as the record allows.',
+    proof: Array.from({ length: 4 }, (_, n): [string, string] => [`${sentence} (${n + 1})`, 'Report']),
+  }));
+  const content = { ...framework.content, mf: { ...framework.content.mf, goals } };
+  return {
+    ...columnAssetRevisionResponse('foundation-message'),
+    markdown: JSON.stringify(content),
+    sidecar: { mode: framework.mode, report: framework.report, checks: framework.checks },
+  };
+}
+
 /** Loaded asset without approval: real controls must remain gated, not just the metadata badge. */
 export async function openUnapprovedAssetDocument(page: Page, key: 'foundation-message' | 'brand-kit', pendingApproval = false): Promise<void> {
   await openAssetDocument(page, 'faq');

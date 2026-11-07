@@ -128,16 +128,21 @@
                 </div>
               }
             </div>
+            <!-- The text cells print as the layout fitted them (frameworkPortraitMatrix): at their type where the rows leave the proofs their room, smaller or cut at a sentence otherwise. -->
             <div class="fwp-matrix-row">
               <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Value proposition</span>
-              @for (goal of v.goals; track goal.id) {
-                <p class="fwp-matrix-vp">{{ goal.vp }}</p>
+              @for (goal of v.goals; track goal.id; let column = $index) {
+                <p class="fwp-matrix-vp" [style.font-size.px]="frame.matrix?.cells?.[column]?.vp?.size">
+                  {{ frame.matrix?.cells?.[column]?.vp?.text ?? goal.vp }}
+                </p>
               }
             </div>
             <div class="fwp-matrix-row">
               <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Key message</span>
-              @for (goal of v.goals; track goal.id) {
-                <p class="fwp-matrix-key">{{ goal.key }}</p>
+              @for (goal of v.goals; track goal.id; let column = $index) {
+                <p class="fwp-matrix-key" [style.font-size.px]="frame.matrix?.cells?.[column]?.key?.size">
+                  {{ frame.matrix?.cells?.[column]?.key?.text ?? goal.key }}
+                </p>
               }
             </div>
             <div class="fwp-matrix-row">
@@ -162,9 +167,9 @@
             </div>
             <div class="fwp-matrix-row">
               <span class="pp-lab" data-testid="mktg-framework-print-goals-label">Sound bite</span>
-              @for (goal of v.goals; track goal.id) {
-                @if (goal.bite) {
-                  <p class="fwp-matrix-bite">“{{ goal.bite }}”</p>
+              @for (goal of v.goals; track goal.id; let column = $index) {
+                @if (frame.matrix?.cells?.[column]?.bite; as bite) {
+                  <p class="fwp-matrix-bite" [style.font-size.px]="bite.size">“{{ bite.text }}”</p>
                 } @else {
                   <p class="fwp-matrix-bite fwp-matrix-bite-none"></p>
                 }
