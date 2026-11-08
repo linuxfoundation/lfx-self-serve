@@ -346,6 +346,22 @@ describe('the fixed blocks', () => {
     expect(mktgFamilyPrintSourceLabel('  The approved messaging framework (intake)  ')).toBe('The approved messaging framework (intake)');
   });
 
+  it('reads a source’s label, host and record id in one pass, a forty-thousand-character hostile source included', () => {
+    // The patterns this replaced (`^https?:\/\/\S+ \((.+)\)$`, ` \(uid [^)]+\)`) backtracked quadratically on a repeated ` (uid `
+    // (CodeQL, js/polynomial-redos); the reader is linear and gives the same words.
+    expect(mktgFamilyPrintSourceLabel('https://example.org/press (press release) (uid 00000000-0000-4000-8000-000000000000)')).toBe('press release');
+    expect(mktgFamilyPrintSourceLabel('https://example.org (a (nested) label)')).toBe('a (nested) label');
+    expect(mktgFamilyPrintSourceLabel('https://example.org ()')).toBe('https://example.org ()');
+    expect(mktgFamilyPrintSourceLabel('https://example.org\t(label)')).toBe('https://example.org\t(label)');
+    expect(mktgFamilyPrintSourceLabel('https://example.org/path and words')).toBe('https://example.org/path and words');
+    expect(mktgFamilyPrintSourceLabel('https:///no-host')).toBe('https:///no-host');
+    expect(mktgFamilyPrintSourceLabel('record (uid ) (uid x)')).toBe('record (uid )');
+    const hostile = 'https://example.org/path' + ' (uid x'.repeat(5000);
+    const started = performance.now();
+    expect(mktgFamilyPrintSourceLabel(hostile)).toBe(hostile);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
   it('prints a Built from row in plain words: label and host, host alone, the record without its slug, no run terms', () => {
     expect(mktgFamilyPrintBuiltFromLabel('https://www.example.org/press/2025/launch (launch press release, Dec. 9, 2025)')).toBe(
       'Launch press release, Dec. 9, 2025 (example.org)'
@@ -356,6 +372,19 @@ describe('the fixed blocks', () => {
     expect(mktgFamilyPrintBuiltFromLabel('Approved messaging framework (intake)')).toBe('Approved messaging framework');
     expect(mktgFamilyPrintBuiltFromLabel('  the approved messaging framework  ')).toBe('The approved messaging framework');
     expect(mktgFamilyPrintBuiltFromLabel('')).toBe('');
+  });
+
+  it('reads a Built from row in one pass, a forty-thousand-character hostile source included', () => {
+    // The same two patterns as the source label's (CodeQL, js/polynomial-redos): the same words, linear.
+    expect(mktgFamilyPrintBuiltFromLabel('https://www.example.org/press (press release) (uid 00000000-0000-4000-8000-000000000000)')).toBe(
+      'Press release (example.org)'
+    );
+    expect(mktgFamilyPrintBuiltFromLabel('https://example.org/path and words')).toBe('example.org');
+    expect(mktgFamilyPrintBuiltFromLabel('https://example.org ()')).toBe('example.org');
+    const hostile = 'https://example.org/path' + ' (uid x'.repeat(5000);
+    const started = performance.now();
+    expect(mktgFamilyPrintBuiltFromLabel(hostile)).toBe('example.org');
+    expect(performance.now() - started).toBeLessThan(100);
   });
 
   it('fits the Sources page’s lists to their blocks: whole rows, the open list under the conflicts or in their place', () => {
@@ -547,6 +576,21 @@ describe('mktgFamilyPrintOpenItemText', () => {
       'No symbol was uploaded.',
     ]);
   });
+
+  it('drops the hashed parentheses in one pass, a forty-thousand-tab hostile item included', () => {
+    // `\s*\([^()]*\b[0-9a-f]{12,}[^()]*\)` backtracked quadratically on a run of tabs (CodeQL, js/polynomial-redos); the reader is
+    // linear and drops the same parentheses: a hash at a word's start, no parenthesis inside, the whitespace before it.
+    expect(mktgFamilyPrintOpenItemText('Logo (file 16dd7d8270b673d376cadca831ab3d5ea003bb89, 838 px) missing (and a (nested 0123456789abcdef) one).')).toBe(
+      'Logo missing (and a one).'
+    );
+    expect(mktgFamilyPrintOpenItemText('Not a hash (x16dd7d8270b673d376cadca831ab3d5ea003bb89) and no close (16dd7d8270b673d376cadca831ab3d5ea')).toBe(
+      'Not a hash (x16dd7d8270b673d376cadca831ab3d5ea003bb89) and no close (16dd7d8270b673d376cadca831ab3d5ea'
+    );
+    const hostile = '(' + '\t'.repeat(40000) + ')';
+    const started = performance.now();
+    expect(mktgFamilyPrintOpenItemText(hostile)).toBe('( )');
+    expect(performance.now() - started).toBeLessThan(100);
+  });
 });
 
 describe('mktgFamilyPrintOpenItems', () => {
@@ -632,6 +676,20 @@ describe('mktgFamilyPrintConflicts', () => {
     expect(mktgFamilyPrintReadableSource('https://aaif.io/brand')).toBe('aaif.io');
     expect(mktgFamilyPrintReadableSource('the press release')).toBe('the press release');
     expect(mktgFamilyPrintReadableSource('')).toBe('');
+  });
+
+  it('reads a source’s field name at its first colon, a forty-thousand-space hostile source included', () => {
+    // `^([A-Za-z][\w ]*?)\s*:\s*https?:\/\/` backtracked quadratically on a letter and spaces (CodeQL, js/polynomial-redos); the
+    // reader is linear and names the same fields.
+    expect(mktgFamilyPrintReadableSource('brand_page:https://aaif.io/brand')).toBe('brand page');
+    expect(mktgFamilyPrintReadableSource('Brand  page\t:  https://aaif.io/brand')).toBe('Brand page');
+    expect(mktgFamilyPrintReadableSource('brand-page: https://aaif.io/brand')).toBe('brand-page: https://aaif.io/brand');
+    expect(mktgFamilyPrintReadableSource('brand_page: ftp://aaif.io/brand')).toBe('brand page: ftp://aaif.io/brand');
+    expect(mktgFamilyPrintReadableSource(': https://aaif.io/brand')).toBe(': https://aaif.io/brand');
+    const hostile = 'A' + ' '.repeat(40000) + 'x';
+    const started = performance.now();
+    expect(mktgFamilyPrintReadableSource(hostile)).toBe('A x');
+    expect(performance.now() - started).toBeLessThan(100);
   });
 });
 
