@@ -12,6 +12,7 @@ import {
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
+  MKTG_FAMILY_PRINT_FAQ_CHIP,
   MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS,
   MKTG_FAMILY_PRINT_HEAD_CAPS,
   MKTG_FAMILY_PRINT_HEAD_MEASURE,
@@ -29,6 +30,7 @@ import { MKTG_KIT_FAMILIES } from '../constants/mktg-kit.constants';
 import {
   MKTG_PORTRAIT_CAPS_TRACKING_EM,
   MKTG_PORTRAIT_COVER_STRIP,
+  MKTG_PORTRAIT_FAMILY_WIDTH,
   MKTG_PORTRAIT_FIT,
   MKTG_PORTRAIT_GLYPH_WIDTHS,
   MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
@@ -1136,4 +1138,39 @@ export function mktgFamilyPrintFaqBalancedPages(groups: MktgFamilyPrintFaqPlanGr
 export function mktgFamilyPrintFaqSourceLabel(source: string): string {
   const trimmed = source.trim();
   return MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS[trimmed.toLocaleLowerCase()] ?? trimmed;
+}
+
+/** The widest face the width table knows, so a bound measured in it holds in every book's face. */
+const WIDEST_FAMILY = Object.entries(MKTG_PORTRAIT_FAMILY_WIDTH).reduce((widest, [family, width]) => (width > widest[1] ? [family, width] : widest))[0];
+
+/**
+ * A FAQ source chip's text, bounded to its column: the label's word
+ * (mktgFamilyPrintFaqSourceLabel; '' prints no chip), a URL read as its host
+ * (`one.example.org`), and a label wider than the column at the chip's type
+ * (MKTG_FAMILY_PRINT_FAQ_CHIP, the grammar's `.pp-chip`, measured in the
+ * widest face the table knows) cut at a word, then at a character, with an
+ * ellipsis, so the chip keeps the one line the entry's height counts
+ * (mktgFamilyPrintFaqEntryHeight) and never runs into the other column. The
+ * FAQ agent writes short labels on every record read; this bounds what it
+ * could write. A non-empty label is never cut to nothing. Pure.
+ */
+export function mktgFamilyPrintFaqSourceChip(source: string, width: number): string {
+  const label = mktgFamilyPrintFaqSourceLabel(source);
+  if (!label) return '';
+  const chip = MKTG_FAMILY_PRINT_FAQ_CHIP;
+  const text = SOURCE_HOST_REGEX.test(label) ? (SOURCE_HOST_REGEX.exec(label)?.[1] ?? label).replace(/^www\./, '') : label;
+  const fits = (candidate: string): boolean =>
+    mktgPortraitTextWidth(candidate, chip.size, { weight: chip.weight, caps: true, tracking: chip.tracking, family: WIDEST_FAMILY }) + chip.inset <= width;
+  if (fits(text)) return text;
+  const words = text.split(/\s+/);
+  for (let keep = words.length - 1; keep >= 1; keep--) {
+    const cut = `${words.slice(0, keep).join(' ')}…`;
+    if (fits(cut)) return cut;
+  }
+  const chars = Array.from(words[0]);
+  for (let keep = chars.length - 1; keep >= 1; keep--) {
+    const cut = `${chars.slice(0, keep).join('')}…`;
+    if (fits(cut)) return cut;
+  }
+  return `${chars[0] ?? ''}…`;
 }

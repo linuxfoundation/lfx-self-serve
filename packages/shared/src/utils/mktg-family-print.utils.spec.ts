@@ -8,6 +8,7 @@ import {
   MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES,
   MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE,
+  MKTG_FAMILY_PRINT_FAQ_CHIP,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_HEAD_CAPS,
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
@@ -39,6 +40,7 @@ import {
   mktgFamilyPrintFaqEntryHeight,
   mktgFamilyPrintFaqGroups,
   mktgFamilyPrintFaqPages,
+  mktgFamilyPrintFaqSourceChip,
   mktgFamilyPrintFaqSourceLabel,
   mktgFamilyPrintFill,
   mktgFamilyPrintFitBoilerplateCards,
@@ -1206,6 +1208,47 @@ describe('mktgFamilyPrintContentsLayout', () => {
 
   it('lays an empty book out as two empty columns', () => {
     expect(mktgFamilyPrintContentsLayout([])).toEqual({ columns: [[], []], cut: 0 });
+  });
+});
+
+describe('mktgFamilyPrintFaqSourceChip', () => {
+  const width = (MKTG_PORTRAIT_PAGE.contentWidth - MKTG_FAMILY_PRINT_FAQ_LAYOUT.columnGap) / 2;
+  const measured = (text: string): number =>
+    mktgPortraitTextWidth(text, MKTG_FAMILY_PRINT_FAQ_CHIP.size, {
+      weight: MKTG_FAMILY_PRINT_FAQ_CHIP.weight,
+      caps: true,
+      tracking: MKTG_FAMILY_PRINT_FAQ_CHIP.tracking,
+      family: 'Montserrat',
+    }) + MKTG_FAMILY_PRINT_FAQ_CHIP.inset;
+
+  it('keeps a short label, reads a URL as its host, cuts a long label at a word and a long word at a character, never to nothing', () => {
+    // #5344 :22: the grammar's chip is nowrap, so a source written as a URL or a sentence ran past the 336 px column; the chip's text is
+    // bounded to the column at the chip's type in the widest face, so it keeps the one line mktgFamilyPrintFaqEntryHeight counts.
+    expect(mktgFamilyPrintFaqSourceChip('Framework', width)).toBe('Framework');
+    expect(mktgFamilyPrintFaqSourceChip('Notes', width)).toBe('');
+    expect(mktgFamilyPrintFaqSourceChip('https://www.one.example.org/about/team', width)).toBe('one.example.org');
+    const sentence = Array.from({ length: 12 }, () => 'synthetic brand guidelines').join(' ');
+    const cut = mktgFamilyPrintFaqSourceChip(sentence, width);
+    expect(cut.endsWith('…')).toBe(true);
+    expect(sentence.startsWith(cut.slice(0, -1))).toBe(true);
+    expect(cut.slice(0, -1).endsWith('guidelines') || cut.slice(0, -1).endsWith('brand') || cut.slice(0, -1).endsWith('synthetic')).toBe(true);
+    expect(measured(cut)).toBeLessThanOrEqual(width);
+    expect(
+      measured(
+        `${cut.slice(0, -1)} ${
+          sentence
+            .slice(cut.length - 1)
+            .trim()
+            .split(' ')[0]
+        }…`
+      )
+    ).toBeGreaterThan(width);
+    const word = 'x'.repeat(200);
+    const cutWord = mktgFamilyPrintFaqSourceChip(word, width);
+    expect(cutWord.endsWith('…')).toBe(true);
+    expect(cutWord.length).toBeGreaterThan(1);
+    expect(measured(cutWord)).toBeLessThanOrEqual(width);
+    expect(mktgFamilyPrintFaqSourceChip('Wide', 1)).toBe('W…');
   });
 });
 

@@ -166,6 +166,18 @@ export const MKTG_FAMILY_PRINT_ROUNDING_WORDS: readonly string[] = [
 export const MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS: Readonly<Record<string, string>> = { notes: '' };
 
 /**
+ * The FAQ source chip's type as the grammar's `.pp-chip` sets it (_mktg-portrait.scss: 8.5 px, semibold, capitals tracked
+ * 0.1 em, 7 px padding and a 1 px hairline each side), for the bound that keeps a chip on its one counted line.
+ */
+export const MKTG_FAMILY_PRINT_FAQ_CHIP = {
+  size: 8.5,
+  weight: 600,
+  tracking: 0.1,
+  /** The chip's padding and borders, left and right together. */
+  inset: 16,
+} as const;
+
+/**
  * Words a run's source list uses for its own machinery, which a Built from row drops when they stand alone in
  * parentheses (`Approved messaging framework (intake)` → `Approved messaging framework`): a reader of the book has no
  * intake form.
