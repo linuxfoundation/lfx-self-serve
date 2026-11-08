@@ -1128,6 +1128,8 @@ describe('mktgFamilyPrintNumberConflicts', () => {
     // (review threads :733 and :735) is no disagreement; one counting fewer still is; an exact figure stays exact.
     const launch = [{ number: '10,000+', label: 'Published MCP servers at launch' }];
     expect(mktgFamilyPrintNumberConflicts(launch, [{ title: 'FAQ', texts: ['There are 12,000 published MCP servers at launch.'] }])).toEqual([]);
+    // The lfx-one review's own figure: `10,500` over the framework's `10,000+` is compatible, not a re-run.
+    expect(mktgFamilyPrintNumberConflicts(launch, [{ title: 'FAQ', texts: ['It launched with 10,500 published MCP servers at launch.'] }])).toEqual([]);
     expect(mktgFamilyPrintNumberConflicts(launch, [{ title: 'FAQ', texts: ['There are 10,000 published MCP servers at launch.'] }])).toEqual([]);
     expect(mktgFamilyPrintNumberConflicts(launch, [{ title: 'FAQ', texts: ['There were 9,500 published MCP servers at launch.'] }])).toMatchObject([
       { text: 'The framework’s key numbers say 10,000+ published MCP servers at launch; the FAQ says “There were 9,500 published MCP servers at launch.”' },
