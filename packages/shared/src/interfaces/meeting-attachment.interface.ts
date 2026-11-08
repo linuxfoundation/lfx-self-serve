@@ -266,6 +266,27 @@ export interface MaterialsChangedEvent {
 }
 
 /**
+ * What the meeting materials drawer opens with
+ */
+export interface MeetingMaterialsDrawerData {
+  /** Resource id of the past meeting record (`meeting_and_occurrence_id`, or the meeting id) */
+  pastMeetingId: string;
+  /** Changes already saved this session, which the past record's read can lag */
+  pastChanges?: MaterialsChangedEvent;
+  /** Called after every saved change, so the list behind the drawer shows it before the query service catches up */
+  onChanged: (event: MaterialsChangedEvent) => void;
+}
+
+/**
+ * An existing attachment as the materials drawer lists it
+ */
+export interface MeetingMaterialRow {
+  attachment: PastMeetingAttachment;
+  /** Staged for deletion on Save */
+  deleting: boolean;
+}
+
+/**
  * Temporary attachment during upload process
  * @description Represents an attachment being uploaded with status tracking
  */
