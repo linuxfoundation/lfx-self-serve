@@ -110,3 +110,6 @@ export const MEETING_DETAILS_FEATURES: readonly MeetingDetailsFeature[] = [
   { setting: 'youtube_upload_enabled', label: 'YouTube Upload', icon: 'fa-light fa-upload', iconClass: 'text-amber-600' },
   { setting: 'ai_summary_enabled', label: 'AI Summary', icon: 'fa-light fa-sparkles', iconClass: 'text-violet-600' },
 ];
+
+/** Id the meeting details drawer registers with the app's open-overlay tracking while it is open. */
+export const MEETING_DETAILS_OVERLAY_ID = 'meeting-details-drawer';

@@ -7,13 +7,14 @@ import { OverlayContainer } from '@angular/cdk/overlay';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Injector, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Title } from '@angular/platform-browser';
 import { environment } from '@environments/environment';
 import { Meeting, MeetingDetailsDrawerData, MeetingDetailsTab, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
@@ -39,7 +40,8 @@ const MEETING = {
   youtube_upload_enabled: false,
   ai_summary_enabled: false,
   organizers: [],
-  created_by: { username: 'synthetic-owner', name: 'Synthetic Owner' },
+  timezone: 'Pacific/Chatham',
+  created_by: { username: 'synthetic-owner', name: 'Synthetic Owner', email: 'owner@acme.example' },
   recurrence: null,
   occurrences: [],
 } as unknown as Meeting;
@@ -66,6 +68,7 @@ describe('MeetingDetailsDrawerComponent', () => {
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
   let refreshUserPastMeetings: ReturnType<typeof vi.fn>;
   let closeDialog: ReturnType<typeof vi.fn>;
+  let dialogClosed: Subject<void>;
 
   const settle = async (): Promise<void> => {
     await fixture.whenStable();
@@ -102,6 +105,7 @@ describe('MeetingDetailsDrawerComponent', () => {
     refreshUserMeetings = vi.fn();
     refreshUserPastMeetings = vi.fn();
     closeDialog = vi.fn();
+    dialogClosed = new Subject<void>();
     const drawerContext = new UiDrawerContext('right', 1080);
     drawerContext.requestClose = requestClose;
 
@@ -109,7 +113,7 @@ describe('MeetingDetailsDrawerComponent', () => {
       providers: [
         { provide: DIALOG_DATA, useValue: null },
         { provide: UiDrawerContext, useValue: drawerContext },
-        { provide: DialogRef, useValue: { close: closeDialog } },
+        { provide: DialogRef, useValue: { close: closeDialog, closed: dialogClosed } },
         { provide: Clipboard, useValue: { copy } },
         { provide: UiToastService, useValue: { show: toastShow } },
         {
@@ -141,9 +145,17 @@ describe('MeetingDetailsDrawerComponent', () => {
       expect(find('meeting-details-visibility-public')?.textContent?.trim()).toBe('Public');
       expect(find('meeting-details-type')?.textContent?.trim()).toBe('Technical');
       expect(find('meeting-details-group')?.textContent?.trim()).toBe('Synthetic TSC');
+      expect(find('meeting-details-group')?.getAttribute('role')).toBe('button');
+      expect(find('meeting-details-group')?.getAttribute('aria-label')).toBe('View group: Synthetic TSC');
+      const open = vi.spyOn(window, 'open').mockReturnValue(null);
+      find('meeting-details-group')?.click();
+      expect(open).toHaveBeenCalledWith('/groups/c1', '_blank', 'noopener,noreferrer');
+      open.mockRestore();
       expect(findAll('meeting-details-feature-recording_enabled')).toHaveLength(1);
       expect(findAll('meeting-details-feature-transcript_enabled')).toHaveLength(0);
       expect(find('meeting-details-organizer-name')?.textContent?.trim()).toBe('Synthetic Owner');
+      expect(find('meeting-details-organizer-name')?.getAttribute('href')).toMatch(/^mailto:owner@acme\.example\?subject=Synthetic%20sync/);
+      expect(find('meeting-details-scheduled-zone')?.textContent).toContain('Scheduled in Pacific/Chatham');
     });
 
     it('re-reads an upcoming meeting and shows the fresh detail, bypassing the cache for organizers', async () => {
@@ -183,6 +195,39 @@ describe('MeetingDetailsDrawerComponent', () => {
       await settle();
 
       expect(find('meeting-details-title')?.textContent?.trim()).toBe('Special session');
+    });
+
+    it('adds the guests section hosts to Organized by for a viewer who may see the guests', async () => {
+      const host = { first_name: 'Host', last_name: 'Person', username: 'host', email: 'host@acme.example', host: true };
+      await render(row({ ...MEETING, show_meeting_attendees: true }));
+      context().hosts.set([host]);
+      await settle();
+
+      expect(findAll('meeting-details-organizer-avatar').map((avatar) => avatar.getAttribute('aria-label'))).toEqual([
+        'Email Synthetic Owner',
+        'Email Host Person',
+      ]);
+    });
+
+    it('leaves the hosts out when the guest list is hidden from the viewer', async () => {
+      await render(row(MEETING));
+      context().hosts.set([{ first_name: 'Host', last_name: 'Person', username: 'host', email: 'host@acme.example', host: true }]);
+      await settle();
+
+      expect(find('meeting-details-organizer-name')?.textContent?.trim()).toBe('Synthetic Owner');
+    });
+
+    it('makes a described visibility badge focusable with its description as label', async () => {
+      await render(row({ ...MEETING, visibility: 'private' } as Meeting));
+      const badge = findAll('meeting-details-badges')[0]?.querySelector('[role="img"][tabindex="0"]');
+
+      expect(badge?.getAttribute('aria-label')).toMatch(/^Private: /);
+    });
+
+    it('titles the browser tab with the shown meeting', async () => {
+      await render(row(MEETING));
+
+      expect(TestBed.inject(Title).getTitle()).toBe('Synthetic sync · LFX');
     });
 
     it('does not re-read a past meeting', async () => {
@@ -310,7 +355,9 @@ describe('MeetingDetailsDrawerComponent', () => {
       (TestBed.inject(OverlayContainer).getContainerElement().querySelector('[data-testid="meeting-details-edit"]') as HTMLElement).click();
       await settle();
 
-      expect(requestClose).toHaveBeenCalled();
+      expect(closeDialog).toHaveBeenCalled();
+      expect(edit).not.toHaveBeenCalled();
+      dialogClosed.next();
       expect(edit).toHaveBeenCalledWith(organizerRow);
     });
 
@@ -318,6 +365,7 @@ describe('MeetingDetailsDrawerComponent', () => {
       const past = {
         ...MEETING,
         organizer: true,
+        created_by: { username: 'synthetic-owner', name: 'Synthetic Owner', email: 'owner@acme.example' },
         id: 'synthetic-meeting-1762362000000',
         meeting_id: 'synthetic-meeting',
         scheduled_start_time: '2026-11-01T18:00:00Z',
@@ -328,6 +376,11 @@ describe('MeetingDetailsDrawerComponent', () => {
 
       expect(context().state()).not.toBe('ended');
       expect(find('meeting-details-more')).toBeNull();
+      await click('meeting-details-copy-link');
+      expect(copy).toHaveBeenCalledWith(`${environment.urls.home}/meetings/synthetic-meeting?password=synthetic-pass`);
+      expect(find('meeting-details-organizer-name')?.getAttribute('href')).toContain(
+        `body=${encodeURIComponent(`${environment.urls.home}/meetings/synthetic-meeting`)}`
+      );
     });
 
     it('closes through the drawer so its close guard runs', async () => {

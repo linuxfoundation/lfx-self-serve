@@ -61,6 +61,7 @@ describe('MeetingDetailsContext', () => {
     const context = create(buildRow(MEETING), of({ ...MEETING, title: 'Renamed', invited: false }));
 
     expect(context.meeting().title).toBe('Renamed');
+    expect(context.shownRow().title).toBe('Renamed');
     expect(context.invited()).toBe(false);
   });
 
