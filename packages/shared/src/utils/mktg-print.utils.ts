@@ -189,8 +189,30 @@ export function foundationMessagePrintIcps(content: FoundationMessageContent): F
 
 /** `aaif.io/md/about`, `docs.example.org`: a web address written without its scheme (a host with a dot, a path after it or nothing). */
 const BARE_ADDRESS_REGEX = /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:\/\S*)?$/i;
-/** A bare address with the record's remark on it in parentheses, or alone: `aaif.io (home)`, `docs.example.org`. Words after a dotted name make a phrase (`Node.js docs`), not an address. */
-const BARE_ADDRESS_REMARK_REGEX = /^(\S+)(\s*\(.*\))?$/;
+/** A line terminator, as the dot of a regular expression does not match it: what a remark may not hold. */
+const LINE_TERMINATOR_REGEX = /[\n\r\u2028\u2029]/;
+
+/**
+ * An address at the head of a source with what follows it. A scheme address (`https://…`) is the first token, to the
+ * first whitespace, and takes anything after it on one line as its remark. A bare address takes only the record's
+ * remark in parentheses, or nothing: `aaif.io (home)`, `docs.example.org`, and `aaif.io/a(b c)` as the pattern this
+ * replaces read it (the address ends at the last `(` of its token when the source ends with `)` and the remark runs on
+ * past a space); words after a dotted name make a phrase (`Node.js docs`), not an address. Read by splitting rather than by the patterns
+ * `^(https?:\/\/\S+)(.*)$` and `^(\S+)(\s*\(.*\))?$`, whose overlapping quantifiers a long hostile source made
+ * quadratic (CodeQL, js/polynomial-redos); the outputs are the same.
+ */
+function sourceAddressRemark(rest: string, first: string, scheme: boolean): { written: string; remark: string } | null {
+  if (first === '') return null;
+  const remark = rest.slice(first.length);
+  if (scheme) return LINE_TERMINATOR_REGEX.test(remark) ? null : { written: first, remark };
+  const body = remark.trimStart();
+  if (body === '') return { written: first, remark };
+  if (body.startsWith('(') && body.endsWith(')') && body.length >= 2 && !LINE_TERMINATOR_REGEX.test(body)) return { written: first, remark };
+  // The remark glued to the address: the token's last `(` opens it when the source closes it and nothing breaks the line.
+  const open = first.lastIndexOf('(');
+  if (open < 1 || !rest.endsWith(')') || LINE_TERMINATOR_REGEX.test(rest.slice(open))) return null;
+  return { written: first.slice(0, open), remark: rest.slice(open) };
+}
 /** `host/path`, as the grammar's `mktgReadableSourceName` returns a page's address: the host is what the Sources page prints of it. */
 const HOST_PATH_REGEX = /^[a-z0-9.-]+\//i;
 
@@ -213,10 +235,10 @@ export function foundationMessagePrintSourceLabel(source: string): string {
   // A bare token is an address only when the grammar has no word of its own for it: a file name (`a1b2c3d4e5f6.svg`,
   // `brand-guide.pdf`), an archive member (`brand.zip/logo.svg`) or the LFX record go to `mktgReadableSourceName` as written.
   const first = rest.split(/\s/)[0];
-  const bare = BARE_ADDRESS_REGEX.test(first) && mktgReadableSourceName(first) === first ? rest.match(BARE_ADDRESS_REMARK_REGEX) : null;
-  const url = rest.match(/^(https?:\/\/\S+)(.*)$/) ?? bare;
+  const bare = BARE_ADDRESS_REGEX.test(first) && mktgReadableSourceName(first) === first ? sourceAddressRemark(rest, first, false) : null;
+  const url = (/^https?:\/\/\S/.test(first) ? sourceAddressRemark(rest, first, true) : null) ?? bare;
   if (!url) return mktgReadableSourceName(rest);
-  const [, written, remarkRaw = ''] = url;
+  const { written, remark: remarkRaw } = url;
   const address = /^https?:\/\//i.test(written) ? written : `https://${written}`;
   const readable = mktgReadableSourceName(address);
   // A page's address comes back as `host/path`: the host alone. The grammar's words for a file or a stylesheet stay.
