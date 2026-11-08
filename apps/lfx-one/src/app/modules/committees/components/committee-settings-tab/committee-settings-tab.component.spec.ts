@@ -616,6 +616,7 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
           useValue: {
             getMailingListsByCommittee: vi.fn(() => of(projectMailingLists)),
             getMailingListsByProject: vi.fn(() => of(projectMailingLists)),
+            getMailingList: vi.fn((uid: string) => of(projectMailingLists.find((l) => l.uid === uid))),
             updateMailingList,
           },
         },
@@ -773,7 +774,7 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     const mlService = TestBed.inject(MailingListService) as unknown as { getMailingListsByCommittee: ReturnType<typeof vi.fn> };
 
     const callsBefore = mlService.getMailingListsByCommittee.mock.calls.length;
-    component.onSyncSettingsUpdated();
+    component.onSyncSettingsUpdated(makeMl({ uid: 'ml-1' }));
     await fixture.whenStable();
 
     expect(mlService.getMailingListsByCommittee.mock.calls.length).toBeGreaterThan(callsBefore);
@@ -824,8 +825,8 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     requests[0].complete();
     await fixture.whenStable();
 
-    component.onSyncSettingsUpdated();
-    component.onSyncSettingsUpdated();
+    component.onSyncSettingsUpdated(makeMl({}));
+    component.onSyncSettingsUpdated(makeMl({}));
     await fixture.whenStable();
 
     // switchMap cancels the first of the two refresh requests in favor of the second — that
@@ -879,7 +880,7 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     await fixture.whenStable();
     fixture.detectChanges();
 
-    component.onSyncSettingsUpdated();
+    component.onSyncSettingsUpdated(makeMl({}));
     await fixture.whenStable();
 
     expect(component.refreshingMl()).toBe(true);
@@ -928,7 +929,7 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
 
     expect((component as any).projectMailingLists()).toEqual(PROJECT_LISTS);
 
-    component.onSyncSettingsUpdated();
+    component.onSyncSettingsUpdated(makeMl({ uid: 'proj-ml-1' }));
     await fixture.whenStable();
 
     expect((component as any).projectMailingLists()).toEqual(PROJECT_LISTS);

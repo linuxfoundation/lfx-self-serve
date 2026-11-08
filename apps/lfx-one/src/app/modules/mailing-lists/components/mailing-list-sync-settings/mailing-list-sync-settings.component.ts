@@ -208,7 +208,10 @@ export class MailingListSyncSettingsComponent {
       .subscribe((result) => {
         this.saving.set(false);
         if (result) {
-          this.updated.emit(result);
+          // `updateMailingList` returns the server's raw indexed record, which lacks fields the
+          // list GET adds separately (e.g. `writer`) — merge onto the input so overrides built
+          // from this result keep every field the parent's card rendering depends on (#4899 review).
+          this.updated.emit({ ...ml, ...result });
         }
       });
   }
