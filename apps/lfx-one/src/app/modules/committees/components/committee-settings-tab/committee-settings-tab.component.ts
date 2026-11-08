@@ -164,10 +164,16 @@ export class CommitteeSettingsTabComponent {
   public readonly fetchedAssociatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
 
   // Fetched list with any pending save overrides patched in — see associatedMlOverrides' doc comment.
+  // Patches only the overridden `sync_mode` onto the freshly fetched row, rather than returning the
+  // override wholesale: the override is a pre-save snapshot, so returning it in full would mask
+  // every other field (e.g. `writer`) the subsequent fetch actually refreshed (#4899 review).
   public associatedMailingLists: Signal<GroupsIOMailingList[]> = computed(() => {
     const overrides = this.associatedMlOverrides();
     if (overrides.size === 0) return this.fetchedAssociatedMailingLists();
-    return this.fetchedAssociatedMailingLists().map((ml) => overrides.get(ml.uid) ?? ml);
+    return this.fetchedAssociatedMailingLists().map((ml) => {
+      const override = overrides.get(ml.uid);
+      return override ? { ...ml, sync_mode: override.sync_mode } : ml;
+    });
   });
 
   // Linking or unlinking updates the mailing list itself, so it needs write access on that list.
@@ -197,6 +203,11 @@ export class CommitteeSettingsTabComponent {
 
   // The "Auto Sync" button only makes sense once the committee has at least one linked mailing list to configure.
   public showAutoSyncButton = computed(() => this.autoSyncEnabled() && this.canEdit() && this.associatedMailingLists().length > 0);
+
+  // Blocks opening the drawer while an Add List/Remove association change is in flight — a sync
+  // save opened against that snapshot sends a full-resource PUT with the pre-change `committee_uid`,
+  // which can land after and silently undo the in-flight association change (#4899 review).
+  public autoSyncButtonDisabled = computed(() => this.savingMl() || this.removingMlUid() !== null);
 
   // Inline template passed to UiDrawerService.open() — see drawer.stories.ts for the pattern.
   public readonly autoSyncDrawerTemplate = viewChild.required<TemplateRef<unknown>>('autoSyncDrawer');
@@ -393,6 +404,7 @@ export class CommitteeSettingsTabComponent {
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Removed', detail: `${ml.group_name} removed from this group` });
+          this.clearMlOverride(ml.uid);
           this.refreshMl$.next();
         },
         error: (err: any) => {
@@ -562,6 +574,18 @@ export class CommitteeSettingsTabComponent {
 
   // -- Private methods --
 
+  // Drops a pending save override for a uid that just got unlinked — otherwise a stale automatic
+  // direction survives the unlink and resurfaces if the same list is relinked later in the session,
+  // since reconciliation (see associatedMlOverrides' refresh-pipeline tap) only inspects rows the
+  // fetch still returns (#4899 review).
+  private clearMlOverride(uid: string): void {
+    const overrides = this.associatedMlOverrides();
+    if (!overrides.has(uid)) return;
+    const next = new Map(overrides);
+    next.delete(uid);
+    this.associatedMlOverrides.set(next);
+  }
+
   private openPickerDialog(committeeUid: string, projectUid: string, projectSlug: string | undefined): void {
     const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
 
@@ -636,6 +660,15 @@ export class CommitteeSettingsTabComponent {
         next: (results) => {
           const failed = results.filter((r) => !r.success).length;
           const succeeded = results.filter((r) => r.success).length;
+          // Same override-invalidation reasoning as removeMailingList() above — a disassociation
+          // made through the picker dialog must not leave a stale pending direction behind either
+          // (#4899 review).
+          const removedUids = new Set(removed);
+          for (const r of results) {
+            if (r.success && removedUids.has(r.uid)) {
+              this.clearMlOverride(r.uid);
+            }
+          }
           if (failed === 0) {
             this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Mailing list associations updated' });
           } else if (succeeded > 0) {

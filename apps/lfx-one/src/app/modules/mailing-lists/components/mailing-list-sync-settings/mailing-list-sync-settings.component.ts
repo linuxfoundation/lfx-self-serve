@@ -15,7 +15,7 @@ import { CreateMailingListRequest, GroupsIOMailingList } from '@lfx-one/shared/i
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MessageService } from 'primeng/api';
-import { catchError, finalize, of, switchMap, take } from 'rxjs';
+import { catchError, finalize, map, of, switchMap, take } from 'rxjs';
 
 /**
  * Sync Settings section for the mailing list view page (#4024) — the ON/OFF toggle and direction
@@ -291,9 +291,16 @@ export class MailingListSyncSettingsComponent {
       nonce: this.siblingLookupRetryNonce(),
     }));
 
+    // Standalone-page (no `candidates`) network fetches only, keyed by committeeUid+nonce — lets a
+    // save's new `mailingList` object identity re-run the switchMap (needed for the drawer's
+    // candidates path above) without re-triggering a real refetch, and the loading lock that comes
+    // with it, when neither the committee nor an explicit retry actually changed (#4899 review).
+    let lastFetchKey: string | null = null;
+    let lastFetchResult: GroupsIOMailingList[] = [];
+
     return toSignal(
       toObservable(lookupKey).pipe(
-        switchMap(({ candidates, committeeUid }) => {
+        switchMap(({ candidates, committeeUid, nonce }) => {
           this.siblingLookupFailed.set(false);
           // The caller already has every linked list in hand (the Auto Sync drawer) — reuse it
           // instead of every open instance issuing its own identical getMailingListsByCommittee
@@ -304,13 +311,25 @@ export class MailingListSyncSettingsComponent {
           }
           if (!committeeUid) {
             this.siblingLookupLoading.set(false);
+            lastFetchKey = null;
             return of([] as GroupsIOMailingList[]);
           }
+          const fetchKey = `${committeeUid}:${nonce}`;
+          if (fetchKey === lastFetchKey) {
+            this.siblingLookupLoading.set(false);
+            return of(lastFetchResult);
+          }
+          lastFetchKey = fetchKey;
           this.siblingLookupLoading.set(true);
           return this.mailingListService.getMailingListsByCommittee(committeeUid).pipe(
+            map((result) => {
+              lastFetchResult = result;
+              return result;
+            }),
             catchError((error) => {
               console.error('Failed to load sibling mailing lists for sync settings', error);
               this.siblingLookupFailed.set(true);
+              lastFetchKey = null;
               return of([] as GroupsIOMailingList[]);
             }),
             // `finalize` clears the loading flag on every outcome — success, the caught error

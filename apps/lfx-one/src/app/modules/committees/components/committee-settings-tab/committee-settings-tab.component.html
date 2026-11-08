@@ -47,6 +47,7 @@
               icon="fa-light fa-arrows-rotate"
               severity="secondary"
               [outlined]="true"
+              [disabled]="autoSyncButtonDisabled()"
               size="small"
               styleClass="flex-shrink-0"
               (onClick)="openAutoSyncDrawer()"
