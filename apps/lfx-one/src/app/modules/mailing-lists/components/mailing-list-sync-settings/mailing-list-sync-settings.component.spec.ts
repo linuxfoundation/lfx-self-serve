@@ -8,7 +8,7 @@ import type { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MessageService } from 'primeng/api';
-import { asapScheduler, delay, dematerialize, materialize, of, throwError } from 'rxjs';
+import { asapScheduler, delay, dematerialize, materialize, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MailingListSyncSettingsComponent } from './mailing-list-sync-settings.component';
@@ -222,13 +222,17 @@ describe('MailingListSyncSettingsComponent', () => {
   it('keeps the toggle disabled while the sibling lookup is in flight, even once it resolves to no sibling', async () => {
     TestBed.resetTestingModule();
     updateMailingList = vi.fn(() => of(baseList));
+    // getMailingListsByCommittee's real signature returns Observable<GroupsIOMailingList[]>, and the
+    // component pipes directly off that return value (`.pipe(catchError(...), switchMap(...))`) — a
+    // mocked Promise has no `.pipe` and throws. A manually-controlled Subject keeps the lookup "in
+    // flight" until resolveLookup() fires, without breaking the Observable contract.
     let resolveLookup: (() => void) | undefined;
-    getMailingListsByCommittee = vi.fn(
-      () =>
-        new Promise<GroupsIOMailingList[]>((resolve) => {
-          resolveLookup = () => resolve([]);
-        })
-    );
+    const lookupSubject = new Subject<GroupsIOMailingList[]>();
+    getMailingListsByCommittee = vi.fn(() => lookupSubject.asObservable());
+    resolveLookup = () => {
+      lookupSubject.next([]);
+      lookupSubject.complete();
+    };
     messageAdd = vi.fn();
 
     await TestBed.configureTestingModule({
@@ -259,7 +263,9 @@ describe('MailingListSyncSettingsComponent', () => {
     // updateMailingList's indexed response lacks GET-only enrichment (writer, committee names) and
     // hasn't caught up to the submitted sync_mode yet — the parent must still receive both (#4880
     // review / see also #4899).
-    await render(baseList, { updateResult: { uid: 'list-1', group_name: 'maintainers' } as GroupsIOMailingList });
+    await render(baseList, {
+      updateResult: { uid: 'list-1', group_name: 'maintainers', committees: [{ uid: 'committee-1' }] } as GroupsIOMailingList,
+    });
     const emitted = vi.fn();
     fixture.componentInstance.updated.subscribe(emitted);
 
@@ -267,6 +273,10 @@ describe('MailingListSyncSettingsComponent', () => {
     await fixture.whenStable();
 
     expect(emitted).toHaveBeenCalledWith(expect.objectContaining({ writer: true, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }));
+    // The raw PUT response's `committees` entry is uid-only (no `name`) — asserting the emitted
+    // entry still carries the enriched name proves the result is no longer spread on top of `ml`
+    // (lfx-one review: a plain `...result` spread would let this less-enriched copy win).
+    expect(emitted.mock.calls[0][0].committees[0].name).toBe('Technical Steering Committee');
   });
 
   it('does not emit a save result after the component has been destroyed', async () => {

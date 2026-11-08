@@ -15,7 +15,7 @@ import { CreateMailingListRequest, GroupsIOMailingList } from '@lfx-one/shared/i
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MessageService } from 'primeng/api';
-import { catchError, distinctUntilChanged, of, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, finalize, of, switchMap, take } from 'rxjs';
 
 /**
  * Sync Settings section for the mailing list view page (#4024) — the ON/OFF toggle and direction
@@ -185,10 +185,13 @@ export class MailingListSyncSettingsComponent {
         if (result && !this.destroyed) {
           // `updateMailingList` returns the BFF's raw indexed PUT response, which lacks GET-only
           // enrichment (`writer`, committee names, project/service details) and hasn't caught up to
-          // the just-submitted `sync_mode` in the index yet — merge onto the pre-save enriched input
-          // and override `sync_mode` explicitly so the parent's override keeps every field it
-          // depends on and reflects the mode that was actually accepted (#4880 review).
-          this.updated.emit({ ...ml, ...result, sync_mode: syncMode });
+          // the just-submitted `sync_mode` in the index yet. Emit the pre-save enriched input with
+          // only `sync_mode` overridden — spreading `...result` on top of `ml` (as before) let any
+          // overlapping-but-less-enriched field in the raw doc (e.g. `committees` as uid-only
+          // entries, blank `project_name`/`project_slug`) win over the enriched copy, silently
+          // downgrading the parent's data even though the save only changed `sync_mode` (#4880
+          // review / lfx-one review).
+          this.updated.emit({ ...ml, sync_mode: syncMode });
         }
       });
   }
@@ -241,10 +244,11 @@ export class MailingListSyncSettingsComponent {
               this.siblingLookupFailed.set(true);
               return of([] as GroupsIOMailingList[]);
             }),
-            switchMap((lists) => {
-              this.siblingLookupLoading.set(false);
-              return of(lists);
-            })
+            // `finalize` clears the loading flag on every outcome — success, the caught error
+            // above, or cancellation from a newer lookup superseding this one via switchMap —
+            // instead of a no-op inner switchMap that only existed to run the same side effect
+            // (lfx-one review).
+            finalize(() => this.siblingLookupLoading.set(false))
           );
         })
       ),

@@ -26,7 +26,7 @@ import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, of, switchMap, tap } from 'rxjs';
 
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
@@ -151,6 +151,13 @@ export class MailingListViewComponent {
           }
 
           return this.mailingListService.getMailingList(mailingListId).pipe(
+            // Clearing the override only when navigation *starts* (above) leaves a gap: a
+            // previous list's late-resolving save can still set the override during this list's
+            // own fetch, landing right after the start-of-navigation reset but before this fetch
+            // completes — which would otherwise keep masking the newly-loaded list once it lands.
+            // Re-clearing here, when the authoritative fetched data actually arrives, closes that
+            // window regardless of arrival order (Cursor Bugbot).
+            tap(() => this.mailingListOverride.set(null)),
             catchError(() => {
               this.messageService.add({
                 severity: 'error',
