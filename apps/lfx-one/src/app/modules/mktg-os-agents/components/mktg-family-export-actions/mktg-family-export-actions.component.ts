@@ -29,10 +29,12 @@ import {
   MktgFamilyExportRunUpdate,
   MktgFamilyExportTarget,
   MktgFamilyPrintView,
+  MktgPortraitBook,
+  MktgPortraitLook,
   MktgSlidesExportMode,
   MktgSlidesExportPhase,
 } from '@lfx-one/shared/interfaces';
-import { mktgFamilyExportAgentKeys, mktgPrintDocumentTitle } from '@lfx-one/shared/utils';
+import { mktgFamilyExportAgentKeys, mktgPortraitDocumentName, mktgPortraitFootLeft, mktgPortraitLook, mktgPrintDocumentTitle } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
@@ -84,6 +86,25 @@ export class MktgFamilyExportActionsComponent {
   protected readonly completed = signal<MktgFamilyExportRecord | null>(null);
   protected readonly printing = signal(false);
   protected readonly printView = signal<MktgFamilyPrintView | null>(null);
+  /**
+   * The framework's place in the family book: no cover of its own, the family's running head and foot, and its pages
+   * numbered from 2 — the family's cover sheet is page 1 today (the portrait family plan replaces this number).
+   */
+  protected readonly frameworkBook = computed((): MktgPortraitBook | null => {
+    const view = this.printView();
+    if (!view) return null;
+    return {
+      inFamily: true,
+      headRight: mktgPortraitDocumentName(view.projectName, 'positioning & brand'),
+      footLeft: mktgPortraitFootLeft(view.projectName),
+      firstPage: 2,
+    };
+  });
+  /** Inside the family the framework takes the kit's look when an approved kit prints with it; null leaves it the framework's own. */
+  protected readonly frameworkLook = computed((): MktgPortraitLook | null => {
+    const view = this.printView();
+    return view?.kit ? mktgPortraitLook(view.brand, view.kit.spark) : null;
+  });
   private readonly retry = new Subject<boolean>();
   private run: Subscription | null = null;
   private readonly pdfRetry = new Subject<void>();

@@ -6,12 +6,15 @@ import '@angular/compiler';
 
 import { describe, expect, it } from 'vitest';
 
-import { MeetingVisibility } from '../enums';
-import type { Meeting } from '../interfaces';
+import { MeetingVisibility, RecurrenceType } from '../enums';
+import type { Meeting, MeetingOccurrence } from '../interfaces';
 import {
   canViewMeetingGuests,
+  formatMeetingDetailsDate,
+  formatMeetingDetailsTime,
   getMeetingDetailsFeatures,
   getMeetingDetailsOrganizers,
+  getMeetingDetailsRecurrence,
   getMeetingDetailsState,
   getMeetingScheduledZoneLabel,
   getMeetingShareUrl,
@@ -175,5 +178,41 @@ describe('getMeetingShareUrl', () => {
 
   it('is null for an invalid base URL', () => {
     expect(getMeetingShareUrl('not a url', 'mtg-1', 'secret')).toBeNull();
+  });
+});
+
+describe('formatMeetingDetailsDate and formatMeetingDetailsTime', () => {
+  it('spells out the weekday and year, then the start and the minutes without a zone', () => {
+    expect(formatMeetingDetailsDate(START, 'UTC')).toBe('Thursday, Nov 5, 2026');
+    expect(formatMeetingDetailsTime(START, 45, 'UTC')).toBe('5:00 PM · 45 min');
+  });
+
+  it('is empty for an invalid start', () => {
+    expect(formatMeetingDetailsDate('nope')).toBe('');
+    expect(formatMeetingDetailsTime('nope', 30)).toBe('');
+  });
+});
+
+describe('getMeetingDetailsRecurrence', () => {
+  const weekly = { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '5' };
+  const meeting = { start_time: START, timezone: 'UTC', recurrence: weekly };
+
+  it('keeps the end of the series', () => {
+    expect(getMeetingDetailsRecurrence({ ...meeting, recurrence: { ...weekly, end_times: 6 } })).toBe('Weekly on Thursday, for 6 occurrences');
+  });
+
+  it("prefers the shown date's own rule", () => {
+    const occurrence: MeetingOccurrence = {
+      occurrence_id: '1',
+      start_time: START,
+      duration: 30,
+      recurrence: { type: RecurrenceType.DAILY, repeat_interval: 1 },
+    };
+    expect(getMeetingDetailsRecurrence(meeting, occurrence)).toBe('Daily');
+  });
+
+  it('reads a single-date rule as a one-time meeting, and no rule as nothing', () => {
+    expect(getMeetingDetailsRecurrence({ ...meeting, recurrence: { ...weekly, end_times: 1 } })).toBe('One-time meeting');
+    expect(getMeetingDetailsRecurrence({ ...meeting, recurrence: null })).toBeNull();
   });
 });

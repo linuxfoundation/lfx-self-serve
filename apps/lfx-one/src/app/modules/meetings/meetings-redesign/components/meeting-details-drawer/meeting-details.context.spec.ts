@@ -10,7 +10,7 @@ import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { Observable, of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDetailsContext } from './meeting-details.context';
@@ -57,10 +57,13 @@ describe('MeetingDetailsContext', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
+  afterEach(() => vi.useRealTimers());
+
   it('replaces the row data with the fresh detail and reads invited from it', () => {
     const context = create(buildRow(MEETING), of({ ...MEETING, title: 'Renamed', invited: false }));
 
     expect(context.meeting().title).toBe('Renamed');
+    expect(context.shownRow().title).toBe('Renamed');
     expect(context.invited()).toBe(false);
   });
 
@@ -115,6 +118,20 @@ describe('MeetingDetailsContext', () => {
     now.set(new Date('2050-02-01T09:00:00.000Z'));
     context.occurrence.set(NEXT);
     expect(context.pastMeetingId()).toBe(`mtg-1-${Date.parse(NEXT.start_time)}`);
+  });
+
+  it('reads its own clock every 5s and on focus when the page clock lags', () => {
+    vi.useFakeTimers({ now: new Date('2050-01-01T08:55:00.000Z') });
+    const context = create(buildRow(MEETING));
+    expect(context.now()).toEqual(now());
+
+    vi.advanceTimersByTime(5_000);
+    expect(context.now().toISOString()).toBe('2050-01-01T08:55:05.000Z');
+    expect(context.state()).toBe('soon');
+
+    vi.setSystemTime(new Date('2050-01-01T09:01:00.000Z'));
+    window.dispatchEvent(new Event('focus'));
+    expect(context.state()).toBe('live');
   });
 
   it('counts a past row viewer as a member', () => {
