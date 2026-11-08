@@ -137,7 +137,7 @@ export class MktgFamilyExportService {
       map((responses) => {
         // Each member by its kind in the family (never an agent list): the kind names the reader its revision needs.
         const kindOf = (agentKey: string): MktgFamilyExportKind | null =>
-          agentKey in MKTG_FAMILY_EXPORT_KINDS ? MKTG_FAMILY_EXPORT_KINDS[agentKey as MktgFamilyExportAgentKey] : null;
+          Object.hasOwn(MKTG_FAMILY_EXPORT_KINDS, agentKey) ? MKTG_FAMILY_EXPORT_KINDS[agentKey as MktgFamilyExportAgentKey] : null;
         const ofKind = (kind: MktgFamilyExportKind): MktgRevisionResponse | undefined => responses.find((response) => kindOf(response.type.agentKey) === kind);
         const kitResponse = ofKind('kit');
         const kit = kitResponse ? readBrandKitRevision(kitResponse.sidecar) : null;
