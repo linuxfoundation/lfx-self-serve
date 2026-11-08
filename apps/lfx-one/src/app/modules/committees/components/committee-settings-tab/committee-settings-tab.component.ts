@@ -13,6 +13,7 @@ import {
   CreateMailingListRequest,
   GroupsIOMailingList,
   JoinMode,
+  MailingListAssociationUpdateResult,
   MailingListPickerDialogResult,
   ValidationError,
 } from '@lfx-one/shared/interfaces';
@@ -482,33 +483,29 @@ export class CommitteeSettingsTabComponent {
       return;
     }
 
-    interface MlUpdateResult {
-      uid: string;
-      success: boolean;
-      status?: number;
-    }
-    const AUTO_SYNC_MODES: ReadonlySet<MailingListSyncMode> = new Set([
-      MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
-      MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE,
-    ]);
+    // The backend only allows one active auto-sync list per committee, so at most one list in this
+    // batch can be releasing that slot (moving off an auto mode it previously held). With per-list
+    // direction editing (#4026), a single save can both release that slot and activate a different
+    // list into it in the same batch — firing all of those PUTs through one flat forkJoin races
+    // them, so an activation can land before its paired release, or succeed even though the release
+    // failed. Bucket by outcome and sequence releases before activations instead.
+    //
+    // Only the slot-releasing update gates activation: an unrelated release in the same batch (e.g.
+    // a new list linked as Manual, or an unlink that was never auto-synced) has nothing an
+    // activation depends on, so its failure must not block activations that don't need it.
+    const releaseUpdates: { uid: string; result$: Observable<MailingListAssociationUpdateResult>; releasesAutoSyncSlot: boolean }[] = [];
+    const activateUpdates: { uid: string; result$: Observable<MailingListAssociationUpdateResult> }[] = [];
 
-    // The backend only allows one active auto-sync list per committee. With per-list direction
-    // editing (#4026), a single save can both release one list's auto-sync slot (to Manual, or by
-    // unlinking it) and activate another's in the same batch — firing all of those PUTs through one
-    // flat forkJoin races them, so an activation can land before its paired release, or succeed even
-    // though the release failed. Bucket by outcome and sequence releases before activations instead.
-    const releaseUpdates: { uid: string; result$: Observable<MlUpdateResult> }[] = [];
-    const activateUpdates: { uid: string; result$: Observable<MlUpdateResult> }[] = [];
-
-    const queueUpdate = (uid: string, payload: Partial<CreateMailingListRequest>): void => {
+    const queueUpdate = (uid: string, payload: Partial<CreateMailingListRequest>, currentSyncMode: MailingListSyncMode | undefined): void => {
       const result$ = this.mailingListService.updateMailingList(uid, payload).pipe(
         map(() => ({ uid, success: true })),
         catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
       );
-      if (payload.sync_mode && AUTO_SYNC_MODES.has(payload.sync_mode)) {
+      if (payload.sync_mode && payload.sync_mode !== MailingListSyncMode.MANUAL) {
         activateUpdates.push({ uid, result$ });
       } else {
-        releaseUpdates.push({ uid, result$ });
+        const releasesAutoSyncSlot = !!currentSyncMode && currentSyncMode !== MailingListSyncMode.MANUAL;
+        releaseUpdates.push({ uid, result$, releasesAutoSyncSlot });
       }
     };
 
@@ -518,7 +515,7 @@ export class CommitteeSettingsTabComponent {
     for (const uid of added) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)));
+        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)), ml.sync_mode);
       }
     }
 
@@ -526,7 +523,7 @@ export class CommitteeSettingsTabComponent {
     for (const uid of removed) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        queueUpdate(uid, this.buildMlUpdatePayload(ml, null));
+        queueUpdate(uid, this.buildMlUpdatePayload(ml, null), ml.sync_mode);
       }
     }
 
@@ -534,7 +531,7 @@ export class CommitteeSettingsTabComponent {
     for (const uid of directionChanged) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)));
+        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)), ml.sync_mode);
       }
     }
 
@@ -542,20 +539,26 @@ export class CommitteeSettingsTabComponent {
       return;
     }
 
-    const runReleases$ = releaseUpdates.length > 0 ? forkJoin(releaseUpdates.map((u) => u.result$)) : of<MlUpdateResult[]>([]);
+    const runReleases$ = releaseUpdates.length > 0 ? forkJoin(releaseUpdates.map((u) => u.result$)) : of<MailingListAssociationUpdateResult[]>([]);
 
     this.savingMl.set(true);
     runReleases$
       .pipe(
         switchMap((releaseResults) => {
-          const releaseFailed = releaseResults.some((r) => !r.success);
           if (activateUpdates.length === 0) {
             return of(releaseResults);
           }
-          if (releaseFailed) {
+          const failedSlotRelease = releaseResults.find((r, i) => releaseUpdates[i].releasesAutoSyncSlot && !r.success);
+          if (failedSlotRelease) {
             // Skip the activations outright — activating a new auto-sync slot is only safe once we
-            // know the slot(s) it depends on were actually released.
-            const skipped: MlUpdateResult[] = activateUpdates.map((u) => ({ uid: u.uid, success: false }));
+            // know the slot it depends on was actually released. Carry the triggering failure's
+            // status onto each skipped placeholder so a 403 slot-release still surfaces as
+            // permission-denied rather than the generic error below.
+            const skipped: MailingListAssociationUpdateResult[] = activateUpdates.map((u) => ({
+              uid: u.uid,
+              success: false,
+              status: failedSlotRelease.status,
+            }));
             return of([...releaseResults, ...skipped]);
           }
           return forkJoin(activateUpdates.map((u) => u.result$)).pipe(map((activateResults) => [...releaseResults, ...activateResults]));

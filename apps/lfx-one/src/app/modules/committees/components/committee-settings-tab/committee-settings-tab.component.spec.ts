@@ -15,7 +15,7 @@ import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 
 import { CommitteeSettingsTabComponent } from './committee-settings-tab.component';
 
@@ -708,5 +708,182 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
     );
 
     expect(updateMailingList).not.toHaveBeenCalled();
+  });
+});
+
+// Covers the release-before-activate sequencing added to free up the committee's single auto-sync
+// slot before handing it to a different list (PR #5375 review feedback from Greptile, Cursor
+// bugbot, lfx-one and Copilot). Each case uses deferred Subjects so the two forkJoins' relative
+// timing is directly observable rather than inferred from already-synchronous `of(...)` mocks.
+describe('CommitteeSettingsTabComponent — release-before-activate sequencing (#5375 review)', () => {
+  let fixture: ComponentFixture<CommitteeSettingsTabComponent>;
+  let component: CommitteeSettingsTabComponent;
+  let messageAdd: ReturnType<typeof vi.fn>;
+  let calls: Record<string, Subject<object>>;
+  let updateMailingList: ReturnType<typeof vi.fn>;
+
+  const COMMITTEE: Committee = {
+    uid: 'committee-1',
+    name: 'Test Committee',
+    project_uid: 'project-1',
+    category: 'Board',
+    has_slack_webhook: false,
+  } as Committee;
+
+  const makeMl = (overrides: Partial<GroupsIOMailingList>): GroupsIOMailingList =>
+    ({
+      uid: 'ml-1',
+      group_name: 'test-list',
+      public: false,
+      type: 'discussion_open',
+      audience_access: 'public',
+      description: 'A test list',
+      title: 'Test List',
+      service_uid: 'service-1',
+      sync_mode: MailingListSyncMode.MANUAL,
+      committees: [{ uid: 'committee-1' }],
+      writer: true,
+      ...overrides,
+    }) as GroupsIOMailingList;
+
+  async function createFixture(projectMailingLists: GroupsIOMailingList[]): Promise<void> {
+    calls = {};
+    messageAdd = vi.fn();
+    updateMailingList = vi.fn((uid: string) => {
+      const subject = new Subject<object>();
+      calls[uid] = subject;
+      return subject.asObservable();
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee: vi.fn(() => of(projectMailingLists)),
+            getMailingListsByProject: vi.fn(() => of(projectMailingLists)),
+            updateMailingList,
+          },
+        },
+        { provide: MessageService, useValue: { add: messageAdd } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    await fixture.whenStable();
+  }
+
+  it('does not activate list B until list A — the slot it is handing off from — resolves its release', async () => {
+    const listA = makeMl({ uid: 'ml-A', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
+    const listB = makeMl({ uid: 'ml-B', sync_mode: MailingListSyncMode.MANUAL });
+    await createFixture([listA, listB]);
+
+    (component as any).saveMailingListAssociation(
+      new Set(['ml-A', 'ml-B']),
+      new Set(['ml-A', 'ml-B']),
+      new Map([
+        ['ml-A', MailingListSyncMode.MANUAL],
+        ['ml-B', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST],
+      ])
+    );
+
+    expect(updateMailingList).toHaveBeenCalledWith('ml-A', expect.objectContaining({ sync_mode: MailingListSyncMode.MANUAL }));
+    expect(updateMailingList).not.toHaveBeenCalledWith('ml-B', expect.anything());
+
+    calls['ml-A'].next({});
+    calls['ml-A'].complete();
+
+    expect(updateMailingList).toHaveBeenCalledWith('ml-B', expect.objectContaining({ sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }));
+    expect(component.savingMl()).toBe(true);
+
+    calls['ml-B'].next({});
+    calls['ml-B'].complete();
+
+    expect(component.savingMl()).toBe(false);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+  });
+
+  it('skips activating list B and reports failure when releasing its slot from list A fails', async () => {
+    const listA = makeMl({ uid: 'ml-A', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
+    const listB = makeMl({ uid: 'ml-B', sync_mode: MailingListSyncMode.MANUAL });
+    await createFixture([listA, listB]);
+
+    (component as any).saveMailingListAssociation(
+      new Set(['ml-A', 'ml-B']),
+      new Set(['ml-A', 'ml-B']),
+      new Map([
+        ['ml-A', MailingListSyncMode.MANUAL],
+        ['ml-B', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST],
+      ])
+    );
+
+    calls['ml-A'].error({ status: 500 });
+
+    expect(updateMailingList).not.toHaveBeenCalledWith('ml-B', expect.anything());
+    expect(component.savingMl()).toBe(false);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Failed to update mailing list associations' }));
+  });
+
+  it('reports permission-denied, not a generic error, when the skipped slot release failed with 403', async () => {
+    const listA = makeMl({ uid: 'ml-A', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
+    const listB = makeMl({ uid: 'ml-B', sync_mode: MailingListSyncMode.MANUAL });
+    await createFixture([listA, listB]);
+
+    (component as any).saveMailingListAssociation(
+      new Set(['ml-A', 'ml-B']),
+      new Set(['ml-A', 'ml-B']),
+      new Map([
+        ['ml-A', MailingListSyncMode.MANUAL],
+        ['ml-B', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST],
+      ])
+    );
+
+    calls['ml-A'].error({ status: 403 });
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Permission denied' }));
+  });
+
+  it('still activates list B when an unrelated Manual-list update fails in the same save', async () => {
+    const listA = makeMl({ uid: 'ml-A', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
+    const listB = makeMl({ uid: 'ml-B', sync_mode: MailingListSyncMode.MANUAL });
+    const listC = makeMl({ uid: 'ml-C', sync_mode: MailingListSyncMode.MANUAL });
+    await createFixture([listA, listB, listC]);
+
+    // ml-C is a brand-new Manual link in this same save — it never held the auto-sync slot, so its
+    // failure must not block ml-B's activation (the bug reported by Greptile/Cursor/lfx-one/Copilot).
+    (component as any).saveMailingListAssociation(
+      new Set(['ml-A', 'ml-B', 'ml-C']),
+      new Set(['ml-A', 'ml-B']),
+      new Map([
+        ['ml-A', MailingListSyncMode.MANUAL],
+        ['ml-B', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST],
+      ])
+    );
+
+    calls['ml-A'].next({});
+    calls['ml-A'].complete();
+    calls['ml-C'].error({ status: 500 });
+
+    expect(updateMailingList).toHaveBeenCalledWith('ml-B', expect.objectContaining({ sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }));
+
+    calls['ml-B'].next({});
+    calls['ml-B'].complete();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Partial Success' }));
   });
 });
