@@ -406,7 +406,12 @@ export function mktgPortraitTrimTail(text: string): string {
  * paragraph is cut at a sentence (then at a word) until it does. The result
  * says what happened, so a page can show the cut.
  */
-export function mktgPortraitFitBlock(block: MktgPortraitFitBlock, width: number, height: number, minScale = MKTG_PORTRAIT_FIT.minScale): MktgPortraitFitResult {
+export function mktgPortraitFitBlock(
+  block: MktgPortraitFitBlock,
+  width: number,
+  height: number,
+  minScale: number = MKTG_PORTRAIT_FIT.minScale
+): MktgPortraitFitResult {
   // Each step is measured at the scale the page will print (two decimals, the grammar's --kp-fit), not the loop's
   // floating value: 0.8399… floors a 12.5 px line to 10 px where 0.84 prints 10.5.
   for (let step = 0; ; step += 1) {

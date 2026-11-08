@@ -29,7 +29,7 @@ import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-serv
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { NEVER, of, Subject } from 'rxjs';
+import { map, NEVER, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
 
@@ -112,7 +112,16 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
         provideRouter([{ path: 'documents/:agentKey/:documentId', component: MktgDocumentViewComponent }]),
         provideNoopAnimations(),
         MessageService,
-        { provide: MktgDependencyService, useValue: { resolveBrandKit, notifyDocumentsChanged: vi.fn(), documentsChanged$: NEVER } },
+        {
+          provide: MktgDependencyService,
+          // The print's read (readBrandKit) is the resolved kit as a settled read; the tests drive it through resolveBrandKit.
+          useValue: {
+            resolveBrandKit,
+            readBrandKit: (uid: string) => resolveBrandKit(uid).pipe(map((kit: BrandKitRevision | null) => ({ settled: true, kit, failed: false }))),
+            notifyDocumentsChanged: vi.fn(),
+            documentsChanged$: NEVER,
+          },
+        },
         provideMktgSlidesExportStub({ last: vi.fn(() => of({ last: null, latestRevision: null })), start: vi.fn(() => of()), poll: vi.fn(() => of()) }),
         { provide: ProjectContextService, useValue: { activeContext: signal(PROJECT), activeContextUid: computed(() => PROJECT.uid) } },
         {

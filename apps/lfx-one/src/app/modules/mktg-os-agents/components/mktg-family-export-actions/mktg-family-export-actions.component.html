@@ -143,7 +143,7 @@
       </lfx-mktg-print-sheet-row>
     </lfx-mktg-print-sheet>
     @if (document.framework; as framework) {
-      <lfx-mktg-framework-print [view]="framework" [number]="frameworkNumber" />
+      <lfx-mktg-framework-print [view]="framework" [number]="frameworkNumber" [book]="frameworkBook()" [look]="frameworkLook()" />
     }
     @if (document.kit; as kit) {
       <lfx-mktg-brand-kit-print [view]="kit" [brand]="document.brand" [projectName]="document.projectName" [number]="kitNumber" />

@@ -53,6 +53,8 @@ import {
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
+  MKTG_PRINT_KIT_READ_NONE,
+  MKTG_PRINT_KIT_READ_PENDING,
   MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
 import {
@@ -61,6 +63,7 @@ import {
   MktgFaqAsset,
   MktgFrameworkAsset,
   MktgAssetReport,
+  MktgPrintKitRead,
   MktgRevisionResponse,
   MktgBreadcrumbPage,
   MktgRevisionSummary,
@@ -412,6 +415,8 @@ export class MktgDocumentViewComponent {
   protected readonly approvedApproval = computed(() => this.approvedView().revision?.revision.approval ?? null);
   /** When the approved revision was stored, as the page shows it; it dates the PDF's name. */
   protected readonly approvedCreatedAt = computed(() => this.approvedView().revision?.revision.createdAt ?? null);
+  /** When the approved revision was approved; the framework's print dates its cover with it. */
+  protected readonly approvedAt = computed(() => this.approvedView().revision?.revision.approval?.approvedAt ?? null);
   protected readonly approvedFramework = computed(() => {
     const approved = this.approvedView().revision;
     return approved?.type.agentKey === 'foundation-message' ? foundationMessageAssetOfRevision(approved.markdown, approved.sidecar) : null;
@@ -420,8 +425,11 @@ export class MktgDocumentViewComponent {
     const approved = this.approvedView().revision;
     return approved?.type.agentKey === 'brand-kit' ? readBrandKitRevision(approved.sidecar) : null;
   });
-  /** The print's Brand Kit read: not settled until the project's kit, or null after a failed read, has arrived; a project switch starts a new read. */
-  private readonly printKitRead: Signal<{ settled: boolean; kit: BrandKitRevision | null }> = this.initPrintKitRead();
+  /**
+   * The print's Brand Kit read: not settled until the project's kit, or a definite "none stored", has arrived, and marked failed
+   * when the read errored (the framework's Download PDF then waits and says why, never the LF look); a project switch starts a new read.
+   */
+  protected readonly printKitRead: Signal<MktgPrintKitRead> = this.initPrintKitRead();
   /** The project's stored Brand Kit, which a framework revision's or an AEO/GEO report's print (Download PDF) is set in; null for the LF look. */
   protected readonly printKit: Signal<BrandKitRevision | null> = computed(() => this.printKitRead().kit);
   private readonly printKitSettled = computed(() => this.printKitRead().settled);
@@ -1630,24 +1638,17 @@ export class MktgDocumentViewComponent {
    * plain Markdown document prints nothing of this), only in the browser, and
    * never on the server. Any failed read is null, the LF look, not an error.
    */
-  private initPrintKitRead(): Signal<{ settled: boolean; kit: BrandKitRevision | null }> {
+  private initPrintKitRead(): Signal<MktgPrintKitRead> {
     const projectUid = computed(() =>
       isPlatformBrowser(this.platformId) && (this.asset() !== null || !!this.view()?.aeoGeoReport) ? this.projectContext.activeContextUid() : ''
     );
-    const pending = { settled: false, kit: null };
+    const pending: MktgPrintKitRead = MKTG_PRINT_KIT_READ_PENDING;
     return toSignal(
       toObservable(projectUid).pipe(
         distinctUntilChanged(),
         // A project switch drops the previous project's kit at once: until the new project's kit resolves, the print
         // takes the LF look, never another project's brand, and a Download PDF press waits. No kit project is settled.
-        switchMap((uid) =>
-          uid
-            ? this.dependencyService.resolveBrandKit(uid).pipe(
-                map((kit) => ({ settled: true, kit })),
-                startWith(pending)
-              )
-            : of({ settled: true, kit: null })
-        )
+        switchMap((uid) => (uid ? this.dependencyService.readBrandKit(uid).pipe(startWith(pending)) : of<MktgPrintKitRead>(MKTG_PRINT_KIT_READ_NONE)))
       ),
       { initialValue: pending }
     );
