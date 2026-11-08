@@ -269,9 +269,9 @@ export class CommitteeSettingsTabComponent {
   public openSyncPreviewDialog(ml: GroupsIOMailingList): void {
     // closable: false is only the initial state — lockDynamicDialogWhile (inside the dialog) flips
     // config.closable back to true as soon as loading/applying finishes, so the header X and Escape
-    // remain live dismissal paths once the diff or the apply result is showing. Refresh unconditionally
-    // on close rather than gating on `{ applied: true }`: reloading an unchanged list is cheap, and this
-    // way a native dismiss after a successful apply can't skip the subscriber-count refresh (#4911 review).
+    // remain live dismissal paths once the diff or the apply result is showing. Refresh the mailing-list
+    // roster unconditionally on close: reloading an unchanged list is cheap, and this way a native
+    // dismiss can't skip the subscriber-count refresh (#4911 review).
     const ref: DynamicDialogRef<MailingListSyncPreviewDialogComponent> | null = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
       header: `Sync Now — ${ml.group_name}`,
       width: '800px',
@@ -283,11 +283,15 @@ export class CommitteeSettingsTabComponent {
 
     if (!ref) return;
 
-    ref.onClose.pipe(take(1)).subscribe(() => {
+    ref.onClose.pipe(take(1)).subscribe((result: { applied: boolean } | null) => {
       this.refreshMl$.next();
-      // auto_ml_to_c applies can change committee membership, so the parent's cached roster/Members
-      // count needs reloading too — refreshMl$ only covers the mailing-list side (#4911 review).
-      this.committeeUpdated.emit();
+      // Only a genuine apply can change committee membership — committeeUpdated triggers the parent's
+      // onSettingsSaved(), which refetches the committee and repatches the Settings form, so firing it
+      // on Cancel or a load/apply error would wipe any unsaved edits the admin made before opening this
+      // dialog (#4911 review).
+      if (result?.applied) {
+        this.committeeUpdated.emit();
+      }
     });
   }
 

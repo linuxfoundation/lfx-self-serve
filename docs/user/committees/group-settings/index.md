@@ -4,7 +4,7 @@ description: How managers change a group's name, type, join mode, visibility, ma
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, settings, join-mode, mailing-lists, delete]
-last_updated: 2026-10-28
+last_updated: 2026-11-05
 intercom_collection: Committees
 ---
 
