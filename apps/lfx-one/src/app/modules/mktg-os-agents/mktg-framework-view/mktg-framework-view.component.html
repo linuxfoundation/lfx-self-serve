@@ -44,29 +44,27 @@
         <lfx-button
           label="Export to Google Slides"
           icon="fa-light fa-presentation-screen"
-          [outlined]="pdfEnabled()"
+          [outlined]="true"
           [loading]="slidesExport.busy()"
           [disabled]="!slidesExport.canExport()"
           ariaLabel="Export the messaging framework to Google Slides"
           data-testid="mktg-framework-view-export-slides"
           (onClick)="slidesExport.onExport()" />
       </span>
-      @if (pdfEnabled()) {
-        <span
-          [pTooltip]="pdfTooltip()"
-          tooltipPosition="bottom"
-          tooltipEvent="both"
-          [attr.aria-label]="pdfTooltip() || null"
-          [attr.tabindex]="pdfTooltip() ? 0 : null">
-          <lfx-button
-            label="Download PDF"
-            icon="fa-light fa-file-pdf"
-            [disabled]="!printView()"
-            ariaLabel="Download the approved current messaging framework as a PDF"
-            data-testid="mktg-framework-view-download-pdf"
-            (onClick)="onDownloadPdf()" />
-        </span>
-      }
+      <span
+        [pTooltip]="pdfTooltip()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="pdfTooltip() || null"
+        [attr.tabindex]="pdfTooltip() ? 0 : null">
+        <lfx-button
+          label="Download PDF"
+          icon="fa-light fa-file-pdf"
+          [disabled]="!printView()"
+          ariaLabel="Download the approved current messaging framework as a PDF"
+          data-testid="mktg-framework-view-download-pdf"
+          (onClick)="onDownloadPdf()" />
+      </span>
     }
   </ng-template>
 
@@ -377,14 +375,11 @@
       }
     }
 
-    <!-- The print rendering: never shown on screen; Download PDF prints it alone (styles.scss). Mounted only while the PDF flag is
-         on, as the button is: off, nothing of the book is built or in the document. -->
-    @if (pdfEnabled()) {
-      @if (printView(); as print) {
-        <div [class]="printOnlyClass" data-testid="mktg-framework-view-print">
-          <lfx-mktg-framework-print [view]="print" />
-        </div>
-      }
+    <!-- The print rendering: never shown on screen; Download PDF prints it alone (styles.scss). -->
+    @if (printView(); as print) {
+      <div [class]="printOnlyClass" data-testid="mktg-framework-view-print">
+        <lfx-mktg-framework-print [view]="print" />
+      </div>
     }
   }
 </section>

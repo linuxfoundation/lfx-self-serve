@@ -4,22 +4,17 @@
 /**
  * Pins the Marketing OS feature flags for a page, so every Marketing OS spec states which flags it runs under.
  *
- * The module's own gate (`MKTG_OS_AGENTS_ENABLED_FLAG`) and the Download PDF gate (`MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG`,
- * #5302) both default to `false`, their real values coming from LaunchDarkly targeting, so a spec that asserts a
- * Marketing OS page has to pin them rather than inherit whatever the test account is targeted for.
+ * The module's own gate (`MKTG_OS_AGENTS_ENABLED_FLAG`) defaults to `false`, its real value coming from LaunchDarkly
+ * targeting, so a spec that asserts a Marketing OS page has to pin it rather than inherit whatever the test account is
+ * targeted for.
  */
 
-import {
-  FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-  MKTG_OS_AGENTS_ENABLED_FLAG,
-  MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
-} from '@lfx-one/shared/constants/feature-flags.constants';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MKTG_OS_AGENTS_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Page } from '@playwright/test';
 
-/** What a Marketing OS page runs under unless a spec says otherwise: the module on, and Download PDF on, as today's PDF specs expect. */
+/** What a Marketing OS page runs under unless a spec says otherwise: the module on. */
 export const MKTG_OS_FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [MKTG_OS_AGENTS_ENABLED_FLAG]: true,
-  [MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG]: true,
 };
 
 /**

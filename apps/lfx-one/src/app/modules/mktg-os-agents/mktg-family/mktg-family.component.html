@@ -5,7 +5,7 @@
   <lfx-mktg-breadcrumb [page]="{ kind: 'family', familyId: definition()?.id ?? '' }" />
   @if (definition(); as definition) {
     <lfx-page-header data-testid="mktg-family-header" [title]="definition.name" titleTestId="mktg-family-title">
-      <div pageHeaderDescription class="max-w-4xl" data-testid="mktg-family-intro">{{ intro() }}</div>
+      <div pageHeaderDescription class="max-w-4xl" data-testid="mktg-family-intro">{{ definition.intro ?? definition.description }}</div>
       @if (live() && kit.loading() && !kit.documents()) {
         <div pageHeaderActions class="h-10 w-48 overflow-hidden" data-testid="mktg-family-action-loading">
           <lfx-mktg-skeleton variant="header" />
