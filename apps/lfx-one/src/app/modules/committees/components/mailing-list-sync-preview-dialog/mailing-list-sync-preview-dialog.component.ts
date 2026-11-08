@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { SyncApplyOutcome } from '@lfx-one/shared/enums';
+import { MailingListSyncMode, SyncApplyOutcome } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
   MailingListSyncPreviewDialogData,
@@ -22,9 +22,6 @@ import { MailingListService } from '@services/mailing-list.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, finalize, interval, of, Subscription, take } from 'rxjs';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
-
-/** Upstream `Committee.SyncMode` values — mirrors lfx-v2-mailing-list-service's SyncMode* constants. */
-const SYNC_MODE_AUTO_ML_TO_COMMITTEE = 'auto_ml_to_c';
 
 type PreviewTab = 'adds' | 'removes' | 'conflicts';
 
@@ -64,7 +61,7 @@ export class MailingListSyncPreviewDialogComponent {
   public tabOptions: Signal<FilterPillOption[]> = this.initTabOptions();
   public selectedAdds: Signal<SyncDiffAdd[]> = this.initSelectedAdds();
   public selectedRemoves: Signal<SyncDiffRemove[]> = this.initSelectedRemoves();
-  public isReverseSync: Signal<boolean> = computed(() => this.diff()?.sync_mode === SYNC_MODE_AUTO_ML_TO_COMMITTEE);
+  public isReverseSync: Signal<boolean> = computed(() => this.diff()?.sync_mode === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE);
 
   // Outcome text precomputed here rather than called as a method from the template — the template
   // re-invokes a bound method on every change-detection pass, not just when applyResult() changes
