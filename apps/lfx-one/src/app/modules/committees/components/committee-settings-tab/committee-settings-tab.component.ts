@@ -26,7 +26,7 @@ import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, defer, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
 
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
 import { CommitteeGeneralSettingsComponent } from '../committee-general-settings/committee-general-settings.component';
@@ -496,26 +496,41 @@ export class CommitteeSettingsTabComponent {
     const releaseUpdates: { uid: string; result$: Observable<MailingListAssociationUpdateResult>; releasesAutoSyncSlot: boolean }[] = [];
     const activateUpdates: { uid: string; result$: Observable<MailingListAssociationUpdateResult> }[] = [];
 
-    const queueUpdate = (uid: string, payload: Partial<CreateMailingListRequest>, currentSyncMode: MailingListSyncMode | undefined): void => {
-      const result$ = this.mailingListService.updateMailingList(uid, payload).pipe(
+    // currentlyOnThisCommittee distinguishes a list already linked to committee.uid (whose AUTO
+    // sync_mode, if any, occupies *this* committee's slot) from one only found via
+    // projectMailingLists() (a project-wide lookup) that may be AUTO-synced to a *different*
+    // committee — re-associating that list to this committee doesn't free a slot on this
+    // committee, so it must never gate this save's activations.
+    const queueUpdate = (
+      uid: string,
+      payload: Partial<CreateMailingListRequest>,
+      currentSyncMode: MailingListSyncMode | undefined,
+      currentlyOnThisCommittee: boolean
+    ): void => {
+      // Deferred so the service call — and thus any mock/spy recording it — fires only when this
+      // observable is actually subscribed (forkJoin for releases immediately, but for activations
+      // only inside the switchMap below, once releases have resolved), not when it's merely built.
+      const result$ = defer(() => this.mailingListService.updateMailingList(uid, payload)).pipe(
         map(() => ({ uid, success: true })),
         catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
       );
       if (payload.sync_mode && payload.sync_mode !== MailingListSyncMode.MANUAL) {
         activateUpdates.push({ uid, result$ });
       } else {
-        const releasesAutoSyncSlot = !!currentSyncMode && currentSyncMode !== MailingListSyncMode.MANUAL;
+        const releasesAutoSyncSlot = currentlyOnThisCommittee && !!currentSyncMode && currentSyncMode !== MailingListSyncMode.MANUAL;
         releaseUpdates.push({ uid, result$, releasesAutoSyncSlot });
       }
     };
 
     // Associate: set committee_uid on newly selected MLs, applying any direction chosen for it
     // in the same dialog session (#4026) — buildMlUpdatePayload falls back to MANUAL when no
-    // explicit direction was chosen (e.g. the sync settings feature flag is off).
+    // explicit direction was chosen (e.g. the sync settings feature flag is off). A newly added
+    // list is by definition not currently on this committee, so it can never be releasing this
+    // committee's slot.
     for (const uid of added) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)), ml.sync_mode);
+        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)), ml.sync_mode, false);
       }
     }
 
@@ -523,7 +538,7 @@ export class CommitteeSettingsTabComponent {
     for (const uid of removed) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        queueUpdate(uid, this.buildMlUpdatePayload(ml, null), ml.sync_mode);
+        queueUpdate(uid, this.buildMlUpdatePayload(ml, null), ml.sync_mode, true);
       }
     }
 
@@ -531,7 +546,7 @@ export class CommitteeSettingsTabComponent {
     for (const uid of directionChanged) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)), ml.sync_mode);
+        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)), ml.sync_mode, true);
       }
     }
 
