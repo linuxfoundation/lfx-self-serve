@@ -22,6 +22,7 @@ export * from './meeting-attachment.utils';
 export * from './meeting-calendar.utils';
 export * from './meeting.utils';
 export * from './meeting-list.utils';
+export * from './meeting-details.utils';
 export * from './meeting-attendance.utils';
 export * from './meeting-attendee-grid.utils';
 export * from './meeting-attendee-lock.utils';
