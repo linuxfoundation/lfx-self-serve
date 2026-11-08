@@ -746,7 +746,7 @@ export class MailingListController {
     for (const row of adds) {
       const base = this.parseSyncDiffRowBase(row);
       if (!base) return fail('adds', 'Each add row must have a valid email, member_id, and member_type');
-      const name = (row as Record<string, unknown>).name;
+      const name = (row as Record<string, unknown>)['name'];
       parsedAdds.push(typeof name === 'string' && name.trim() ? { ...base, name } : base);
     }
 
