@@ -1110,6 +1110,19 @@ describe('mktgFamilyPrintNumberConflicts', () => {
     ).toHaveLength(1);
   });
 
+  it('reads a year from its writing, four bare digits, so a count written with a comma or a magnitude in the years is a count', () => {
+    // #5368 review: the year filter read `2,000` with its comma stripped as a year and let `7,181` code contributors pass
+    // against it. A date is four bare digits as written; a figure with a comma or a magnitude word is a count.
+    const contributors = [{ number: '7,181', label: 'Code contributors, last 12 months' }];
+    expect(mktgFamilyPrintNumberConflicts(contributors, [{ title: 'FAQ', texts: ['The project has 2,000 code contributors.'] }])).toMatchObject([
+      { text: 'The framework’s key numbers say 7,181 code contributors, last 12 months; the FAQ says “The project has 2,000 code contributors.”' },
+    ]);
+    expect(mktgFamilyPrintNumberConflicts(contributors, [{ title: 'FAQ', texts: ['The project has 2 thousand code contributors.'] }])).toHaveLength(1);
+    expect(mktgFamilyPrintNumberConflicts(contributors, [{ title: 'FAQ', texts: ['The project has 2k code contributors.'] }])).toHaveLength(1);
+    // Four bare digits before the measure are still a date, not a count.
+    expect(mktgFamilyPrintNumberConflicts(contributors, [{ title: 'FAQ', texts: ['In 2024 code contributors met twice.'] }])).toEqual([]);
+  });
+
   it('reads a framework figure with a plus as a lower bound: a count at or above it agrees, only a smaller one is another count', () => {
     // The live AAIF record: `10,000+` published MCP servers at launch is a floor, so a document counting more of them
     // (review threads :733 and :735) is no disagreement; one counting fewer still is; an exact figure stays exact.

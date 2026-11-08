@@ -929,8 +929,9 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
     const agrees = (count: number): boolean => (figure.lowerBound ? count >= figure.value : count === figure.value);
     // `[qualifier] <figure>[ magnitude][+] <phrase>[s]`: the figure right before the measure counts it, its magnitude
     // read (`1.2M downloads` is 1,200,000 downloads); one under a qualifier or with a trailing `+` is rounded, and a
-    // year is a date. Nothing else between the figure and the phrase: `18 new member organizations` counts a part of
-    // the measure, not the measure.
+    // year is a date: four bare digits as written (`2024 member organizations`), not a count that happens to fall in
+    // the years (`2,000 code contributors`, `2 thousand`). Nothing else between the figure and the phrase: `18 new
+    // member organizations` counts a part of the measure, not the measure.
     const pattern = new RegExp(
       `(?:(${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(?<![$€£\\d,.])(\\d[\\d,]*(?:\\.\\d+)?)${MKTG_FAMILY_PRINT_MAGNITUDE}(\\+?)\\s+${phrase.replace(/ /g, '\\s+')}s?\\b`,
       'gi'
@@ -941,7 +942,7 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
         .map((part) => part.trim())
         .find((part) => {
           const counts = Array.from(part.matchAll(pattern))
-            .filter((match) => !match[1] && !match[5] && !/^(?:19|20)\d\d$/.test(match[2].replace(/,/g, '')))
+            .filter((match) => !match[1] && !match[5] && !(/^(?:19|20)\d\d$/.test(match[2]) && !(match[3] ?? match[4])))
             .map((match) => mktgFamilyPrintFigureValue(match[2], match[3] ?? match[4]));
           // A sentence that states the framework's own figure, or a count at or above a lower bound, agrees with it,
           // whatever else it counts.
