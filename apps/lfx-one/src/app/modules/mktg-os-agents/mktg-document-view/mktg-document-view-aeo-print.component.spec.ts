@@ -14,7 +14,6 @@ import { mktgPrintBrand } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 // package-architecture.md § Import Patterns: fixtures are intentionally not re-exported by the production utils barrel.
 import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { Member360Service } from '@services/member-360.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
@@ -148,7 +147,6 @@ describe('MktgDocumentViewComponent AEO/GEO report print', () => {
         { provide: HttpClient, useValue: {} },
         { provide: MktgPendingDocumentService, useValue: { load: vi.fn(() => null), waitForStorage: vi.fn(), clear: vi.fn() } },
         { provide: MktgPrintService, useValue: { prepare: vi.fn(() => Promise.resolve()), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
       ],
     })
       .overrideComponent(MktgDocumentViewComponent, { set: { providers: [{ provide: DialogService, useValue: { open: vi.fn() } }] } })

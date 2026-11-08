@@ -30,7 +30,6 @@ import {
   FOUNDATION_MESSAGE_VIEW_TABS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
   MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
-  MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
   MKTG_PRINT_KIT_READ_NONE,
   MKTG_PRINT_KIT_READ_NOTES,
   MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS,
@@ -58,7 +57,6 @@ import {
   foundationMessageNumberRows,
   mktgPrintDocumentTitle,
 } from '@lfx-one/shared/utils';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
@@ -217,8 +215,6 @@ export class MktgFrameworkViewComponent {
     if (!this.approvedAsset()) return this.approvalRequiredNote;
     return this.kitRead().failed ? MKTG_PRINT_KIT_READ_NOTES.failed : MKTG_PRINT_KIT_READ_NOTES.pending;
   });
-  /** Download PDF renders only while the flag is on (#5302); off, Export to Google Slides is the row's one action and takes its solid style. */
-  protected readonly pdfEnabled = inject(FeatureFlagService).getBooleanFlag(MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, false);
   protected readonly printOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   /** The report's notes as lines (a check writes one issue per line). */
   protected readonly reportNotes = computed(() =>
@@ -237,9 +233,7 @@ export class MktgFrameworkViewComponent {
   public constructor() {
     // The print mark never outlives the view (a print dialog still up when the page goes).
     this.destroyRef.onDestroy(() => this.printService.clear());
-    // The print's typeface and page setup are prepared only while the PDF flag is on, as the print root is mounted: off,
-    // nothing of the book is built, no font stylesheet is injected and the print service is not touched.
-    toObservable(computed(() => (this.pdfEnabled() ? this.printView() : null)))
+    toObservable(this.printView)
       .pipe(takeUntilDestroyed())
       .subscribe((view) => {
         if (!view) return;
