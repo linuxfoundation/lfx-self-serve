@@ -73,12 +73,17 @@ export class MailingListSyncPreviewDialogComponent {
   public removedWithOutcome: Signal<(SyncApplyRemoveResult & { outcomeText: string })[]> = this.initRemovedWithOutcome();
 
   public constructor() {
-    lockDynamicDialogWhile(computed(() => this.loadingDiff() || this.applying()));
+    // Also locks while the results view is showing — otherwise the header X / Escape stayed usable
+    // right after a sync apply completed, letting the user dismiss the results without acknowledging
+    // them even though the apply itself already finished (#4911 review).
+    lockDynamicDialogWhile(computed(() => this.loadingDiff() || this.applying() || !!this.applyResult()));
     this.loadDiff();
   }
 
   public onTabChange(tab: string): void {
-    this.activeTab.set(tab as PreviewTab);
+    if (tab === 'adds' || tab === 'removes' || tab === 'conflicts') {
+      this.activeTab.set(tab);
+    }
   }
 
   /**
@@ -105,7 +110,6 @@ export class MailingListSyncPreviewDialogComponent {
         removes: this.selectedRemoves(),
       })
       .pipe(
-        take(1),
         finalize(() => {
           ticker.unsubscribe();
           this.applying.set(false);

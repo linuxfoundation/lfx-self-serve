@@ -1,11 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { SyncMemberType } from '@lfx-one/shared/enums';
 import {
   CreateGroupsIOServiceRequest,
   CreateMailingListMemberRequest,
   CreateMailingListRequest,
   SyncApplyRequest,
+  SyncDiffAdd,
+  SyncDiffRemove,
   UpdateGroupsIOServiceRequest,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
@@ -440,7 +443,9 @@ export class MailingListController {
         return;
       }
 
-      const applyRequest: SyncApplyRequest = req.body;
+      const applyRequest = this.parseSyncApplyRequest(req, next);
+      if (!applyRequest) return;
+
       const result = await this.mailingListService.applySyncDiff(req, id, applyRequest);
 
       logger.success(req, 'apply_sync_diff', startTime, {
@@ -701,5 +706,75 @@ export class MailingListController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Validates and narrows an untyped `req.body` into a {@link SyncApplyRequest}, forwarding only an
+   * explicit allowlist of fields upstream. Calls `next(validationError)` and returns `null` on any
+   * shape violation — callers must bail out when `null` is returned (#4911 review).
+   */
+  private parseSyncApplyRequest(req: Request, next: NextFunction): SyncApplyRequest | null {
+    const fail = (field: string, message: string): null => {
+      next(
+        ServiceValidationError.forField(field, message, {
+          operation: 'apply_sync_diff',
+          service: 'mailing_list_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    };
+
+    const body = req.body;
+    if (body === null || body === undefined || typeof body !== 'object' || Array.isArray(body)) {
+      return fail('body', 'Request body must be a JSON object');
+    }
+
+    const { committee_uid, adds, removes } = body as Record<string, unknown>;
+
+    if (typeof committee_uid !== 'string' || !committee_uid.trim()) {
+      return fail('committee_uid', 'committee_uid is required and must be a non-empty string');
+    }
+    if (!Array.isArray(adds)) {
+      return fail('adds', 'adds must be an array');
+    }
+    if (!Array.isArray(removes)) {
+      return fail('removes', 'removes must be an array');
+    }
+
+    const parsedAdds: SyncDiffAdd[] = [];
+    for (const row of adds) {
+      const base = this.parseSyncDiffRowBase(row);
+      if (!base) return fail('adds', 'Each add row must have a valid email, member_id, and member_type');
+      const name = (row as Record<string, unknown>).name;
+      parsedAdds.push(typeof name === 'string' && name.trim() ? { ...base, name } : base);
+    }
+
+    const parsedRemoves: SyncDiffRemove[] = [];
+    for (const row of removes) {
+      const remove = this.parseSyncDiffRowBase(row);
+      if (!remove) return fail('removes', 'Each remove row must have a valid email, member_id, and member_type');
+      parsedRemoves.push(remove);
+    }
+
+    return {
+      committee_uid: committee_uid.trim(),
+      adds: parsedAdds,
+      removes: parsedRemoves,
+    };
+  }
+
+  /** Shape-validates the fields shared by every add/remove row. */
+  private parseSyncDiffRowBase(row: unknown): SyncDiffRemove | null {
+    if (row === null || typeof row !== 'object' || Array.isArray(row)) return null;
+
+    const { email, member_id, member_type } = row as Record<string, unknown>;
+    const validMemberTypes: string[] = Object.values(SyncMemberType);
+
+    if (typeof email !== 'string' || !email.trim()) return null;
+    if (typeof member_id !== 'string' || !member_id.trim()) return null;
+    if (typeof member_type !== 'string' || !validMemberTypes.includes(member_type)) return null;
+
+    return { email, member_id, member_type: member_type as SyncMemberType };
   }
 }
