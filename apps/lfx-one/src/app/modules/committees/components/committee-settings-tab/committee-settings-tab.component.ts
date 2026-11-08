@@ -624,8 +624,11 @@ export class CommitteeSettingsTabComponent {
   }
 
   private initProjectMailingLists(): Signal<GroupsIOMailingList[]> {
+    const committee$ = toObservable(this.committee);
+    const refresh$ = this.refreshMl$.pipe(map(() => this.committee()));
+
     return toSignal(
-      toObservable(this.committee).pipe(
+      merge(committee$, refresh$).pipe(
         filter((c) => !!c?.project_uid),
         switchMap((c) => {
           return this.mailingListService.getMailingListsByProject(c!.project_uid!).pipe(catchError(() => of([] as GroupsIOMailingList[])));

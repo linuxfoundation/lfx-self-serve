@@ -96,6 +96,7 @@
                     styleClass="w-full !text-[12px]"
                     [tooltip]="disabledReason"
                     tooltipPosition="top"
+                    [ariaLabel]="'Sync direction for ' + ml.group_name"
                     [dataTest]="'settings-ml-picker-direction-' + ml.uid"></lfx-select>
                 </td>
               }
@@ -111,7 +112,8 @@
 
   @if (syncEnabled() && activeAutoSyncUid()) {
     <p class="text-[11.5px] text-gray-400 -mt-2">
-      Only one mailing list per committee can have automatic sync configured at a time — set it back to Manual before choosing a direction for another list.
+      Only one mailing list per {{ committeeLabel.singular.toLowerCase() }} can have automatic sync configured at a time — set it back to Manual before choosing
+      a direction for another list.
     </p>
   }
 </div>

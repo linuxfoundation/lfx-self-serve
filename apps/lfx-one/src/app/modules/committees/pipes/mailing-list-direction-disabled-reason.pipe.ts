@@ -23,7 +23,7 @@ export class MailingListDirectionDisabledReasonPipe implements PipeTransform {
       return 'You need Manage access to this mailing list to change its sync direction.';
     }
     if (!selectedUids.has(ml.uid)) {
-      return 'Link this mailing list to the committee before setting a sync direction.';
+      return `Link this mailing list to the ${COMMITTEE_LABEL.singular.toLowerCase()} before setting a sync direction.`;
     }
     if (activeAutoSyncUid && activeAutoSyncUid !== ml.uid) {
       const active = mailingLists.find((m) => m.uid === activeAutoSyncUid);

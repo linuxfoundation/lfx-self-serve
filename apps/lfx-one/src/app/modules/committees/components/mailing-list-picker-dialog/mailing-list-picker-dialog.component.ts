@@ -71,6 +71,7 @@ export class MailingListPickerDialogComponent {
   // Dark-launch gate for the per-list sync direction column (#4026) — same flag that guards the
   // Mailing List Sync Settings section (#4024), since both surface the same `sync_mode` write path.
   protected readonly syncEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, false);
+  protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly directionOptions = [
     { label: 'Manual', value: MailingListSyncMode.MANUAL },
     { label: `${COMMITTEE_LABEL.singular} → Mailing List`, value: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST },
@@ -120,11 +121,13 @@ export class MailingListPickerDialogComponent {
     }
     this.mlCheckboxForm = new FormGroup(controls);
 
-    // Build sync-direction form controls, seeded from each list's persisted `sync_mode` (manual
-    // for a never-linked or not-yet-synced list).
+    // Build sync-direction form controls, seeded from each list's persisted `sync_mode` — but only
+    // for lists already linked to THIS committee. A list linked elsewhere (or never linked) seeds
+    // Manual, otherwise its inherited direction would be sent as an explicit choice the admin never
+    // made, bypassing the reset-to-Manual that applies when moving a list between committees.
     const directionControls: Record<string, FormControl<MailingListSyncMode>> = {};
     for (const ml of this.mailingLists) {
-      const initial = ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL ? ml.sync_mode : MailingListSyncMode.MANUAL;
+      const initial = associatedUids.has(ml.uid) && ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL ? ml.sync_mode : MailingListSyncMode.MANUAL;
       directionControls[ml.uid] = new FormControl(initial, { nonNullable: true });
     }
     this.mlDirectionForm = new FormGroup(directionControls);
