@@ -226,10 +226,9 @@ describe('MailingListSyncSettingsComponent', () => {
     // component pipes directly off that return value (`.pipe(catchError(...), switchMap(...))`) — a
     // mocked Promise has no `.pipe` and throws. A manually-controlled Subject keeps the lookup "in
     // flight" until resolveLookup() fires, without breaking the Observable contract.
-    let resolveLookup: (() => void) | undefined;
     const lookupSubject = new Subject<GroupsIOMailingList[]>();
     getMailingListsByCommittee = vi.fn(() => lookupSubject.asObservable());
-    resolveLookup = () => {
+    const resolveLookup = (): void => {
       lookupSubject.next([]);
       lookupSubject.complete();
     };
@@ -251,7 +250,7 @@ describe('MailingListSyncSettingsComponent', () => {
     let toggle = fixture.debugElement.query((el) => el.name === 'lfx-toggle')?.componentInstance;
     expect(toggle?.disabled()).toBe(true);
 
-    resolveLookup?.();
+    resolveLookup();
     await fixture.whenStable();
     fixture.detectChanges();
 
