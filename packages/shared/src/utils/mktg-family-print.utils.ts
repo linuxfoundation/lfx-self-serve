@@ -598,7 +598,9 @@ function mktgFamilyPrintWithoutHashedParentheses(text: string): string {
 export function mktgFamilyPrintOpenItemText(text: string): string {
   return (
     mktgFamilyPrintWithoutHashedParentheses(text)
-      .replace(/\b[0-9a-f]{12,}[-\w]*\.\w{2,5}\b/g, '')
+      // Twelve hexadecimal digits, then the rest of the word: `{12}` and `[-\w]*` meet once (`{12,}` before `[-\w]*` shared
+      // the digits after the twelfth and backtracked over them: CodeQL, js/polynomial-redos); the same names dropped.
+      .replace(/\b[0-9a-f]{12}[-\w]*\.\w{2,5}\b/g, '')
       // Only the first character of a whitespace run starts a match (the lookbehind), so a long run is read once, not once per character.
       .replace(/(?<!\s)\s+([,.;:])/g, '$1')
       .replace(/\s{2,}/g, ' ')

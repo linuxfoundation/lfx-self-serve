@@ -596,6 +596,15 @@ describe('mktgFamilyPrintOpenItemText', () => {
     expect(mktgFamilyPrintOpenItemText(hostile)).toBe('( )');
     expect(mktgFamilyPrintOpenItemText('\t'.repeat(40000))).toBe('');
     expect(performance.now() - started).toBeLessThan(100);
+    // A hashed name is read as twelve digits and the rest of the word: a forty-thousand-digit one is read once, not once per
+    // digit after the twelfth (`{12,}` before `[-\w]*`: CodeQL, js/polynomial-redos), and the same names are dropped.
+    const digits = 'Logo ' + '0123456789abcdef'.repeat(2500) + 'x.svg missing, and 16dd7d8270b6-838x203.svg too.';
+    const begun = performance.now();
+    expect(mktgFamilyPrintOpenItemText(digits)).toBe('Logo missing, and too.');
+    expect(performance.now() - begun).toBeLessThan(100);
+    expect(mktgFamilyPrintOpenItemText('Not hashed 16dd7d8270b.svg and 16dd7d8270b673.toolongext stay.')).toBe(
+      'Not hashed 16dd7d8270b.svg and 16dd7d8270b673.toolongext stay.'
+    );
   });
 });
 
