@@ -589,6 +589,47 @@ function mktgFamilyPrintWithoutHashedParentheses(text: string): string {
   return out + text.slice(from);
 }
 
+/** A word character, as `\w` reads it. */
+const WORD_CHAR_REGEX = /\w/;
+/** A character of a hashed name, as `[-\w]` reads it. */
+const NAME_CHAR_REGEX = /[-\w]/;
+/** Twelve hexadecimal digits at the start of a string. */
+const HEX_DOZEN_REGEX = /^[0-9a-f]{12}/;
+
+/**
+ * A text without its hashed file names: every word that starts with twelve hexadecimal digits and ends in a `.`
+ * and two to five word characters (`16dd7d82…-838x203.svg`) dropped, as `/\b[0-9a-f]{12,}[-\w]*\.\w{2,5}\b/g`
+ * dropped them. Read by index rather than by that pattern, whose `[-\w]*` was retried from every word start of a
+ * chain of hyphenated words to the chain's end (CodeQL, js/polynomial-redos): a name starts where a word does (the
+ * text's start, or after a character that is not a word character) with twelve hexadecimal digits; the run of
+ * `[-\w]` characters from there is read once per run (every start inside one run ends where the run does, and the
+ * `.` cannot be inside it); the run must be followed by a `.` and a word of two to five characters. The same names
+ * are dropped.
+ */
+function mktgFamilyPrintWithoutHashedNames(text: string): string {
+  let out = '';
+  let from = 0;
+  let runEnd = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    if (!WORD_CHAR_REGEX.test(text[i]) || (i > 0 && WORD_CHAR_REGEX.test(text[i - 1]))) continue;
+    if (!HEX_DOZEN_REGEX.test(text.slice(i, i + 12))) continue;
+    if (runEnd <= i) {
+      runEnd = i;
+      while (runEnd < text.length && NAME_CHAR_REGEX.test(text[runEnd])) runEnd += 1;
+    }
+    if (text[runEnd] !== '.') continue;
+    // The extension: two to five word characters, then the end or a character that is not a word character.
+    let end = runEnd + 1;
+    while (end < text.length && end - runEnd <= 6 && WORD_CHAR_REGEX.test(text[end])) end += 1;
+    const extension = end - runEnd - 1;
+    if (extension < 2 || extension > 5) continue;
+    out += text.slice(from, i);
+    from = end;
+    i = end - 1;
+  }
+  return out + text.slice(from);
+}
+
 /**
  * A run's open item as the page prints it: the record's sentence without a
  * hashed file name (`(16dd7d82…-838x203.svg)`), which names nothing to a
@@ -597,10 +638,7 @@ function mktgFamilyPrintWithoutHashedParentheses(text: string): string {
  */
 export function mktgFamilyPrintOpenItemText(text: string): string {
   return (
-    mktgFamilyPrintWithoutHashedParentheses(text)
-      // Twelve hexadecimal digits, then the rest of the word: `{12}` and `[-\w]*` meet once (`{12,}` before `[-\w]*` shared
-      // the digits after the twelfth and backtracked over them: CodeQL, js/polynomial-redos); the same names dropped.
-      .replace(/\b[0-9a-f]{12}[-\w]*\.\w{2,5}\b/g, '')
+    mktgFamilyPrintWithoutHashedNames(mktgFamilyPrintWithoutHashedParentheses(text))
       // Only the first character of a whitespace run starts a match (the lookbehind), so a long run is read once, not once per character.
       .replace(/(?<!\s)\s+([,.;:])/g, '$1')
       .replace(/\s{2,}/g, ' ')

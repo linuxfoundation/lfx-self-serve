@@ -1440,6 +1440,13 @@ describe('the family print source readers against the patterns they replaced', (
     '(\u00a016dd7d8270b673d376cadca831ab3d5ea003bb89)',
     '(é16dd7d8270b673d376cadca831ab3d5ea003bb89)',
     '(_16dd7d8270b673d376cadca831ab3d5ea003bb89)',
+    'abc.16dd7d8270b673d376cadca831ab3d5ea003bb89.svg',
+    'x-16dd7d8270b673d376cadca831ab3d5ea003bb89.svg-foo',
+    '"16dd7d8270b673d376cadca831ab3d5ea003bb89.svg"',
+    '16dd7d8270b673d376cadca831ab3d5ea003bb89.png.svg',
+    '16dd7d8270b6X_y.a_b 16dd7d8270b6.a 16dd7d8270b6.abcdef 16dd7d8270b6-.png',
+    '-16dd7d8270b6-0123456789ab.svg -0123456789a-16dd7d8270b6.svg',
+    '16DD7D8270B673.svg 16dd7d8270b673.sv g 16dd7d8270b673. svg',
   ];
 
   it('gives the legacy words on every real input of the four fixtures and the AAIF record, and on every edge form', () => {
@@ -1460,6 +1467,21 @@ describe('the family print source readers against the patterns they replaced', (
         expect(performance.now() - started, `${name} on ${input.length} characters`).toBeLessThan(50);
         expect(words).toBe(old(input));
       }
+    }
+  });
+
+  it('reads a hundred-thousand-character chain of hashed words in under 50 ms, in every reader', () => {
+    // Every `-` starts a word, and every word starts with twelve hexadecimal digits: the hashed-name pattern was retried
+    // from each of them to the chain's end (quadratic); the chain's end is read once. The legacy copy is left out of this
+    // one case (it takes seconds on the chain); the words are the chain itself, which no reader changes: no `.`, no
+    // whitespace, no record id and no scheme in it.
+    const chain = '0123456789ab-'.repeat(8000);
+    expect(chain).toHaveLength(104000);
+    for (const [name, reader] of readers) {
+      const started = performance.now();
+      const words = reader(chain);
+      expect(performance.now() - started, `${name} on ${chain.length} characters`).toBeLessThan(50);
+      expect(words).toBe(chain);
     }
   });
 });
