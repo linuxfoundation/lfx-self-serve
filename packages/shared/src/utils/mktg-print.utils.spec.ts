@@ -391,6 +391,29 @@ describe('the framework’s print', () => {
     );
   });
 
+  it('reads an address and its remark in one pass of the source, however long and hostile the source is', () => {
+    // The address ends at the first whitespace; a bare address's remark glued to its path opens at the token's last parenthesis
+    // when the remark runs on past a space (as the patterns this replaced read them: `orbit.example.org/a(b c)` is
+    // `orbit.example.org · b c`, while `orbit.example.org/p(home)` is one token, the address); a remark on another line is no remark.
+    expect(foundationMessagePrintSourceLabel('orbit.example.org/a(b c)')).toBe(`orbit.example.org${FRAMEWORK_PORTRAIT_SEP}b c`);
+    expect(foundationMessagePrintSourceLabel('orbit.example.org/p(home)')).toBe('orbit.example.org');
+    expect(foundationMessagePrintSourceLabel('en.wikipedia.org/wiki/Foo_(bar)')).toBe('en.wikipedia.org');
+    expect(foundationMessagePrintSourceLabel('https://orbit.example.org/x (a) b')).toBe(`orbit.example.org${FRAMEWORK_PORTRAIT_SEP}(a) b`);
+    expect(foundationMessagePrintSourceLabel('orbit.example.org (a) b')).toBe('orbit.example.org (a) b');
+    expect(foundationMessagePrintSourceLabel('orbit.example.org\n(home)')).toBe(`orbit.example.org${FRAMEWORK_PORTRAIT_SEP}home`);
+    expect(foundationMessagePrintSourceLabel('orbit.example.org (ho\nme)')).toBe('orbit.example.org (ho\nme)');
+    // The patterns `^(\S+)(\s*\(.*\))?$` and `^(https?:\/\/\S+)(.*)$` took over 600 ms on these forty-thousand-character
+    // sources (quadratic, CodeQL js/polynomial-redos); the split reads them in a pass.
+    const hostile = [
+      `orbit.example.org/${'('.repeat(40_000)} x`,
+      `https://orbit.example.org/${'x'.repeat(40_000)}\n`,
+      `orbit.example.org${' '.repeat(40_000)}${'('.repeat(40_000)}`,
+    ];
+    const started = performance.now();
+    expect(hostile.map((source) => foundationMessagePrintSourceLabel(source).length)).toEqual([40_020, 17, 80_017]);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
   it('crosses the goals with the profiles: one row per profile, true where the goal’s messaging is written for it', () => {
     const view = buildFoundationMessagePrintView(
       {
