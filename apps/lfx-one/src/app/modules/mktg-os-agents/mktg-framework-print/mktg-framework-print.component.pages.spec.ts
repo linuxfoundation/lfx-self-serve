@@ -14,6 +14,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { BrandKitRevision, FoundationMessageContent, FoundationMessagePrintView, FoundationMessageReport } from '@lfx-one/shared/interfaces';
 import { buildFoundationMessagePrintView, frameworkPortraitMatrix, frameworkPortraitPlan, mktgPortraitLook } from '@lfx-one/shared/utils';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MktgFrameworkPrintComponent } from './mktg-framework-print.component';
 
@@ -506,9 +507,11 @@ describe('MktgFrameworkPrintComponent, the pages', () => {
   });
 
   it('folds the proof cells’ "+N more" lines into the one caption when that is what keeps a whole first proof a goal (the maintainer’s fold step)', async () => {
-    // The family seeds' shape: long goal names on the overfull record's key messages and proofs. The head row grows for the names, and
-    // with each cell's own "+3 more" line the first proofs would fall below the tight floor: the lines fold into the caption, every
-    // goal keeps one whole first proof at 10.5 px, and no cell prints a line of its own.
+    // The family seeds' shape: long goal names on the overfull record's key messages and proofs, in the seeds' own brand face
+    // (Instrument Sans). The head row grows for the names, and with each cell's own "+3 more" line the first proofs would fall below
+    // the tight floor: the lines fold into the caption, every goal keeps one whole first proof at 10.5 px, and no cell prints a line
+    // of its own. In the LF look the same shape drops the proof row instead (Inter measured as the served print sets it, the matrix's
+    // calibrated factor), as the eight-goal test above reads it; the shared layout spec pins both faces.
     const longTitles = [
       'Adoption across every cloud and vendor',
       'Contributors and maintainers of the projects',
@@ -547,9 +550,16 @@ describe('MktgFrameworkPrintComponent, the pages', () => {
       key: keys[index],
       proof: Array.from({ length: 4 }, (_, at) => pair(facts[(index + at) % facts.length], at % 2 ? 'LFX field' : 'Website')),
     }));
-    const view = buildFoundationMessagePrintView({ ...CONTENT, mf: { ...CONTENT.mf, goals } }, 'TestOrbit', 2, null);
+    const seeds = brandKitTestRevision();
+    const kit: BrandKitRevision = {
+      ...seeds,
+      kit: { ...seeds.kit, font: 'Instrument Sans' },
+      chapters: { ...seeds.chapters, type: { ...seeds.chapters.type, family: 'Instrument Sans' } },
+    };
+    const view = buildFoundationMessagePrintView({ ...CONTENT, mf: { ...CONTENT.mf, goals } }, 'TestOrbit', 2, kit);
     await configure('browser', view);
     const room = FRAMEWORK_PORTRAIT_TOPS.footer - FRAMEWORK_PORTRAIT_TOPS.matrix;
+    expect(mktgPortraitLook(view.brand).fontStack).toContain('Instrument Sans');
     const laid = frameworkPortraitMatrix(view.goals, view.mf.crosscut, room, mktgPortraitLook(view.brand).fontStack);
     expect(laid.rows).toEqual({ value: false, bite: false, proof: true });
     expect(laid.notes).toEqual([FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES.goalPagesFold]);
