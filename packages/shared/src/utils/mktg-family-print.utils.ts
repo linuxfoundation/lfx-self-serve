@@ -515,8 +515,11 @@ export function mktgFamilyPrintBuiltFromLabel(source: string): string {
   else if (parts) return host(trimmed);
   else if (/^LFX project record\b/i.test(trimmed)) label = trimmed.replace(/^(LFX project record)\b.*$/i, '$1');
   else {
-    const internal = new RegExp(`\\s*\\((?:${MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS.join('|')})\\)$`, 'i');
-    label = trimmed.replace(internal, '');
+    // `(intake)` at the end, and the whitespace before it: read as the tail's index and a trim, not as `\s*\((intake)\)$`,
+    // whose `\s*` before the parenthesis made a long run of spaces quadratic (CodeQL, js/polynomial-redos); the same words.
+    const internal = new RegExp(`\\((?:${MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS.join('|')})\\)$`, 'i');
+    const tail = internal.exec(trimmed);
+    label = tail ? trimmed.slice(0, tail.index).trimEnd() : trimmed;
   }
   return label ? label[0].toLocaleUpperCase() + label.slice(1) : '';
 }
@@ -596,7 +599,9 @@ function mktgFamilyPrintWithoutHashedParentheses(text: string): string {
 export function mktgFamilyPrintOpenItemText(text: string): string {
   return (
     mktgFamilyPrintWithoutHashedParentheses(text)
-      .replace(/\b[0-9a-f]{12,}[-\w]*\.\w{2,5}\b/g, '')
+      // Twelve hexadecimal digits, then the rest of the word: `{12}` and `[-\w]*` meet once (`{12,}` before `[-\w]*` shared
+      // the digits after the twelfth and backtracked over them: CodeQL, js/polynomial-redos); the same names dropped.
+      .replace(/\b[0-9a-f]{12}[-\w]*\.\w{2,5}\b/g, '')
       // Only the first character of a whitespace run starts a match (the lookbehind), so a long run is read once, not once per character.
       .replace(/(?<!\s)\s+([,.;:])/g, '$1')
       .replace(/\s{2,}/g, ' ')

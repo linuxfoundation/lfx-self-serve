@@ -370,6 +370,14 @@ describe('the fixed blocks', () => {
     expect(mktgFamilyPrintBuiltFromLabel('https://example.org/brand-guidelines')).toBe('example.org');
     expect(mktgFamilyPrintBuiltFromLabel('LFX project record synthetic-project (uid d79df990-0000-4000-8000-000000000000)')).toBe('LFX project record');
     expect(mktgFamilyPrintBuiltFromLabel('Approved messaging framework (intake)')).toBe('Approved messaging framework');
+    // The run's term at the end is read by its index and a trim, so a long run of spaces before it is read once
+    // (`\s*\((intake)\)$` backtracked over it: CodeQL, js/polynomial-redos); the same words, the case ignored.
+    const spaced = 'Approved messaging framework' + ' '.repeat(40000) + '(Intake)';
+    const started = performance.now();
+    expect(mktgFamilyPrintBuiltFromLabel(spaced)).toBe('Approved messaging framework');
+    expect(performance.now() - started).toBeLessThan(100);
+    expect(mktgFamilyPrintBuiltFromLabel('(intake)')).toBe('');
+    expect(mktgFamilyPrintBuiltFromLabel('Brand page (intake) notes')).toBe('Brand page (intake) notes');
     expect(mktgFamilyPrintBuiltFromLabel('  the approved messaging framework  ')).toBe('The approved messaging framework');
     expect(mktgFamilyPrintBuiltFromLabel('')).toBe('');
   });
@@ -590,6 +598,15 @@ describe('mktgFamilyPrintOpenItemText', () => {
     const started = performance.now();
     expect(mktgFamilyPrintOpenItemText(hostile)).toBe('( )');
     expect(performance.now() - started).toBeLessThan(100);
+    // A hashed name is read as twelve digits and the rest of the word: a forty-thousand-digit one is read once, not once per
+    // digit after the twelfth (`{12,}` before `[-\w]*`: CodeQL, js/polynomial-redos), and the same names are dropped.
+    const digits = 'Logo ' + '0123456789abcdef'.repeat(2500) + 'x.svg missing, and 16dd7d8270b6-838x203.svg too.';
+    const begun = performance.now();
+    expect(mktgFamilyPrintOpenItemText(digits)).toBe('Logo missing, and too.');
+    expect(performance.now() - begun).toBeLessThan(100);
+    expect(mktgFamilyPrintOpenItemText('Not hashed 16dd7d8270b.svg and 16dd7d8270b673.toolongext stay.')).toBe(
+      'Not hashed 16dd7d8270b.svg and 16dd7d8270b673.toolongext stay.'
+    );
   });
 });
 
