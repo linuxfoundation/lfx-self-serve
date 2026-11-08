@@ -472,6 +472,7 @@ describe('CommitteeSettingsTabComponent — mailing list write access', () => {
           useValue: {
             getMailingListsByCommittee: vi.fn(() => of(associatedLists)),
             getMailingListsByProject: vi.fn(() => of(projectLists)),
+            getMailingList: vi.fn((uid: string) => of([...projectLists, ...associatedLists].find((l) => l.uid === uid))),
             updateMailingList,
           },
         },

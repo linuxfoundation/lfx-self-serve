@@ -11,6 +11,7 @@ import { UserService } from '@services/user.service';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingsDayGroupComponent } from './meetings-day-group.component';
@@ -28,6 +29,7 @@ describe('MeetingsDayGroupComponent', () => {
         { provide: UserService, useValue: { authenticated: signal(true), viewerUsername: signal(null) } },
         { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
         { provide: MeetingsHomeDeleteService, useValue: {} },
+        { provide: MeetingsHomeDetailsService, useValue: {} },
         { provide: MeetingsHomeStore, useValue: { now: signal(new Date()) } },
       ],
     });

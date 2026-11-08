@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MeetingVisibility } from '../enums';
 import { MeetingHomeRow, MeetingOccurrence, PastMeeting } from '../interfaces';
-import { getMeetingHomeAttendance } from './meeting-attendance.utils';
+import { countMeetingRsvpSummary, getMeetingHomeAttendance, getPastMeetingAttendance } from './meeting-attendance.utils';
 
 const START = '2026-11-10T15:00:00Z';
 
@@ -122,5 +122,37 @@ describe('getMeetingHomeAttendance', () => {
     ['past with no participants', row({ attendance_summary: { invited: 0, attended: 0 } }), true],
   ])('returns null for %s', (_name, meetingRow, past) => {
     expect(getMeetingHomeAttendance(meetingRow, past)).toBeNull();
+  });
+});
+
+describe('getPastMeetingAttendance', () => {
+  it('lists the attended and absent counts when asked to', () => {
+    expect(getPastMeetingAttendance({ invited: 20, attended: 9 }, { withAbsent: true })).toEqual({
+      label: '9 of 20 attended · 45%',
+      ariaLabel: '9 of 20 attended · 45%, 11 absent',
+      segments: [{ kind: 'attendedPoor', percent: 45 }],
+      answers: [
+        { kind: 'attendedPoor', label: 'Attended', count: 9 },
+        { kind: 'absent', label: 'Absent', count: 11 },
+      ],
+      noResponse: null,
+      poor: true,
+    });
+  });
+
+  it('never counts a negative absent', () => {
+    expect(getPastMeetingAttendance({ invited: 2, attended: 3 }, { withAbsent: true })?.answers[1].count).toBe(0);
+  });
+});
+
+describe('countMeetingRsvpSummary', () => {
+  it('tallies answers and counts the rest as no response', () => {
+    const registrants = [
+      { rsvp: { response_type: 'accepted' } },
+      { rsvp: { response_type: 'maybe' } },
+      { rsvp: { response_type: 'declined' } },
+      { rsvp: null },
+    ];
+    expect(countMeetingRsvpSummary(registrants)).toEqual({ invited: 4, yes: 1, maybe: 1, no: 1, no_response: 1 });
   });
 });

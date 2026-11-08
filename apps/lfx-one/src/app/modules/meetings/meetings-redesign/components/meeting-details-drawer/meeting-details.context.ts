@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { computed, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { MEETING_CLOCK_TICK_MS } from '@lfx-one/shared/constants';
 import {
   Meeting,
   MeetingDetailsDrawerData,
@@ -18,7 +20,7 @@ import { canViewMeetingGuests, getMeetingDetailsState, getPastMeetingResourceId,
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { catchError, map, of } from 'rxjs';
+import { catchError, filter, fromEvent, interval, map, merge, of } from 'rxjs';
 
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 
@@ -34,6 +36,11 @@ export class MeetingDetailsContext {
   private readonly store = inject(MeetingsHomeStore);
   private readonly toast = inject(UiToastService);
   private readonly dialogRef = inject(DialogRef, { optional: true });
+  private readonly document = inject(DOCUMENT);
+  /** Time read by the drawer's own clock; 0 until it first ticks. */
+  private readonly tick = signal(0);
+  /** Registered from the drawer; counts as invited before the list catches up. */
+  private readonly registered = signal(false);
 
   /** The row the drawer opened on. */
   public readonly row: Signal<MeetingHomeRow> = signal(this.data.row).asReadonly();
@@ -41,6 +48,11 @@ export class MeetingDetailsContext {
   public readonly meeting: Signal<Meeting> = this.initMeeting();
   /** The date shown; null for a one-time or past meeting until another date is picked. */
   public readonly occurrence: WritableSignal<MeetingOccurrence | null> = signal(this.data.row.occurrence);
+  /** The page clock, or the drawer's own when it is ahead: it ticks every 5s and on focus, so Join opens on time. */
+  public readonly now: Signal<Date> = computed(() => {
+    const page = this.store.now();
+    return this.tick() > page.getTime() ? new Date(this.tick()) : page;
+  });
   /** The row rebuilt for the shown date, for flows that act on one date, such as `MeetingsHomeEditService.edit`. */
   public readonly shownRow: Signal<MeetingHomeRow> = this.initShownRow();
   /** Where the shown date stands, re-checked as the page clock ticks. */
@@ -48,7 +60,7 @@ export class MeetingDetailsContext {
   public readonly organizer: Signal<boolean> = computed(() => this.meeting().organizer === true);
   /** Invited, and not just removed from the meeting on this page. */
   public readonly invited: Signal<boolean> = computed(
-    () => !!this.meeting().invited && !this.meetingService.removedRegistrationMeetingIds().has(this.row().meeting.id)
+    () => (this.registered() || !!this.meeting().invited) && !this.meetingService.removedRegistrationMeetingIds().has(this.row().meeting.id)
   );
   /** Invited, or on a past row: the past feed lists only meetings the viewer is a member of. */
   private readonly member: Signal<boolean> = computed(() => this.invited() || isPastMeetingCalendarRow(this.row().meeting));
@@ -64,6 +76,17 @@ export class MeetingDetailsContext {
   public readonly hosts: WritableSignal<readonly MeetingHostCandidate[]> = signal([]);
   /** Guests or participants count for the tab, set by the guests section once it loads them. */
   public readonly guestCount: WritableSignal<number | null> = signal(null);
+
+  public constructor() {
+    this.startClock();
+  }
+
+  /** Records a registration made from the drawer and reloads the list behind it. */
+  public markRegistered(): void {
+    this.meetingService.clearRemovedRegistration(this.row().meeting.id);
+    this.registered.set(true);
+    this.refreshList();
+  }
 
   /** Reloads the home list behind the drawer after an action changed the meeting. */
   public refreshList(): void {
@@ -101,13 +124,15 @@ export class MeetingDetailsContext {
   private initShownRow(): Signal<MeetingHomeRow> {
     return computed(() => {
       const row = this.row();
-      const occurrence = this.occurrence();
-      if (!occurrence || occurrence.occurrence_id === row.occurrenceId) return row;
+      const occurrence = this.occurrence() ?? row.occurrence;
+      // The title follows the refreshed meeting, unless the date has its own.
+      const title = occurrence?.title || this.meeting().title;
+      if (!occurrence || occurrence.occurrence_id === row.occurrenceId) return title === row.title ? row : { ...row, title };
       return {
         ...row,
         key: `${row.meeting.id}:${occurrence.occurrence_id}`,
         occurrence,
-        title: occurrence.title || row.meeting.title,
+        title,
         occurrenceId: occurrence.occurrence_id,
         startTime: occurrence.start_time,
         durationMinutes: occurrence.duration || row.meeting.duration,
@@ -120,7 +145,7 @@ export class MeetingDetailsContext {
   private initState(): Signal<MeetingDetailsState> {
     return computed(() => {
       const row = this.shownRow();
-      return getMeetingDetailsState(row.startTime, row.durationMinutes, this.store.now(), {
+      return getMeetingDetailsState(row.startTime, row.durationMinutes, this.now(), {
         past: !this.occurrence() && isPastMeetingCalendarRow(row.meeting),
         earlyJoinMinutes: this.meeting().early_join_time_minutes,
       });
@@ -148,5 +173,14 @@ export class MeetingDetailsContext {
     });
     this.userService.refreshUserMeetings();
     this.dialogRef?.close();
+  }
+
+  /** Re-reads the time every 5s, and when the tab comes back, since background tabs freeze timers. Browser only. */
+  private startClock(): void {
+    if (!isPlatformBrowser(inject(PLATFORM_ID))) return;
+    const visible$ = fromEvent(this.document, 'visibilitychange').pipe(filter(() => this.document.visibilityState === 'visible'));
+    merge(interval(MEETING_CLOCK_TICK_MS), fromEvent(window, 'focus'), visible$)
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.tick.set(Date.now()));
   }
 }

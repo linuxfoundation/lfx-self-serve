@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
 import { MktgFamilyExportResultResponse, MktgFamilyPrintView, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { returningRunFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-returning-run.fixture';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '@shared/testing/mktg-family-export-test-data';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgFamilyExportService } from './mktg-family-export.service';
@@ -130,6 +131,7 @@ describe('Family export client', () => {
         chapters: kit.chapters,
         report: kit.report,
         generated_at: kit.generatedAt,
+        inputs: { website_url: kit.websiteUrl },
       },
     };
   }
@@ -168,10 +170,91 @@ describe('Family export client', () => {
     expect(view?.boilerplates?.brand.fontStack).toBe(view?.brand.fontStack);
     expect(view?.faq?.brand.source).toBe('kit');
     expect(view?.kit?.projectName).toBe('Project One');
+    // The kit's recorded approval reaches the kit renderer as the standalone print's does (its acceptance card, the usage page's report year).
+    expect(view?.kitApproval).toEqual({ approvedAt: '2026-10-20T00:00:00Z', approvedBy: null });
     expect(view?.framework).toBeNull();
     expect(view?.fontFamily).toBe('Montserrat');
     // The newest dated member revision names the family PDF; a member without a date is passed over.
     expect(view?.newestRevisionAt).toBe('2026-10-28T09:00:00Z');
+    // The book's chapters, in the family's asset order, named from the kit catalogue with the approval as printed and
+    // the data date from the run's record (the kit's record has none: its generation date stands in).
+    expect(
+      view?.documents.map((document) => [document.number, document.agentKey, document.title, document.versionLabel, document.approvedLabel, document.dataLabel])
+    ).toEqual([
+      ['01', 'brand-kit', 'Brand kit', 'V1.0', '20 Oct 2026', 'figures as of 17 Oct 2026'],
+      ['02', 'boilerplates', 'Boilerplates', 'V1.0', '20 Oct 2026', 'figures as of 19 Oct 2026'],
+      ['03', 'faq', 'FAQ', 'V1.0', '20 Oct 2026', 'figures as of 19 Oct 2026'],
+    ]);
+    expect(view?.tagline).toBe('');
+    expect(view?.websiteLabel).toBe('one.example.org');
+    expect(view?.boilerplatesSources).toEqual(boilerplatesEnvelope.report.sources_read);
+    // No framework, no kit line, no colour conflict: nothing for the Sources page to call a disagreement.
+    expect(view?.conflicts).toEqual([]);
+    // The FAQ's unanswered question is an open item once, although the report's gaps name it too.
+    expect(view?.documents[2].openItems).toEqual(['How much does membership cost?']);
+  });
+
+  it('keeps an unanswered FAQ question in Still open when the run’s report lists no gap for it', () => {
+    let view: MktgFamilyPrintView | undefined;
+    service.printView(target, [familyExportMember({ agentKey: 'faq' })], 'Synthetic project').subscribe((value) => (view = value));
+    const response = approvedKit();
+    http
+      .expectOne((request) => request.url.includes('/documents/faq/living/revisions/'))
+      .flush({
+        ...response,
+        type: MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'faq'),
+        markdown: JSON.stringify(faqEnvelope.content),
+        sidecar: { ...faqEnvelope, report: { ...faqEnvelope.report, gaps: [] } },
+      });
+    expect(view?.faq?.groups[0].questions[2].answered).toBe(false);
+    expect(view?.documents[0].openItems).toEqual(['How much does membership cost?']);
+  });
+
+  it('hands the framework print its run record, so its Sources & gaps page prints inside the family as it does alone', () => {
+    const type = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message');
+    if (!type) throw new Error('Missing synthetic type');
+    const member = familyExportMember({ agentKey: 'foundation-message' });
+    const stored = returningRunFixture(type, target.project).revision;
+    const approval = { approvedAt: '2026-11-06T09:00:00Z', approvedBy: null };
+    const revision = { ...approvedKit().revision, id: member.revisionId, contentSha256: member.contentSha256, approval };
+    const report = {
+      sources_read: ['Project site'],
+      sources_failed: [{ name: 'Annual report', reason: 'timed out' }],
+      gaps: ['No published mission statement'],
+      notes: '',
+    };
+    const respond = (sidecar: Record<string, unknown> | null): void => {
+      http
+        .expectOne((request) => request.url.includes('/documents/foundation-message/living/revisions/'))
+        .flush({
+          ...stored,
+          type,
+          revisions: [revision],
+          approvedCurrent: { revisionId: member.revisionId, number: 1 },
+          revision,
+          approval,
+          markdown: stored.markdown,
+          sidecar,
+        });
+    };
+    let view: MktgFamilyPrintView | undefined;
+    service.printView(target, [member], 'Synthetic project').subscribe((value) => (view = value));
+    respond({ mode: 'draft', report, checks: { findings: [] }, inputs_record: { date_read: '2026-10-27' } });
+    // The same blocks as the standalone print: what was read, what could not be, the gaps; the approval's date; the day the run read.
+    expect(view?.framework?.report).toEqual(report);
+    expect(view?.framework?.dateReadLabel).toBe('27 Oct 2026');
+    expect(view?.framework?.dateLabel).toBe('6 Nov 2026');
+    expect(view?.documents.map((document) => [document.agentKey, document.dataLabel, document.openItems])).toEqual([
+      ['foundation-message', 'figures as of 27 Oct 2026', ['No published mission statement']],
+    ]);
+    // A record without a report or a date read: the approval card alone, an empty Data cell, nothing made up.
+    let bare: MktgFamilyPrintView | undefined;
+    service.printView(target, [member], 'Synthetic project').subscribe((value) => (bare = value));
+    respond({ mode: 'draft' });
+    expect(bare?.framework?.report).toBeNull();
+    expect(bare?.framework?.dateReadLabel).toBe('');
+    expect(bare?.documents[0].openItems).toEqual([]);
+    expect(bare?.documents[0].dataLabel).toBe('');
   });
 
   it.each(['boilerplates', 'faq'] as const)('rejects unreadable approved %s instead of silently omitting it', (agentKey) => {

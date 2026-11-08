@@ -8,7 +8,7 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, ReplaySubject, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MailingListViewComponent } from './mailing-list-view.component';
@@ -84,5 +84,54 @@ describe('MailingListViewComponent indexed address', () => {
     component.goBack();
     expect(setLens).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledWith(['/', 'mailing-lists']);
+  });
+
+  it('applies a sync-settings save result matching the currently displayed list', () => {
+    const component = createComponent({ uid: 'ml-1', group_name: 'main', writer: false } as GroupsIOMailingList);
+    component.applySyncSettingsUpdate({ uid: 'ml-1', group_name: 'main', writer: true } as GroupsIOMailingList);
+    expect(component.mailingList()?.writer).toBe(true);
+  });
+
+  it('ignores a late sync-settings save result for a list other than the one currently displayed', () => {
+    // Simulates a save started on a previous list resolving after the `:id` route has moved on to
+    // ml-1 — the component instance is reused across navigation, so this result must not override
+    // the newly displayed list (#4880 review).
+    const component = createComponent({ uid: 'ml-1', group_name: 'main', writer: true } as GroupsIOMailingList);
+    component.applySyncSettingsUpdate({ uid: 'ml-stale', group_name: 'stale', writer: true, sync_mode: 'manual' } as unknown as GroupsIOMailingList);
+    expect(component.mailingList()?.uid).toBe('ml-1');
+  });
+
+  it('does not let a late save-result override mask a newly-navigated list once its fetch lands (Cursor Bugbot)', () => {
+    // Reproduces the race: the route moves from ml-1 to ml-2 (its fetch still in flight, so
+    // `fetchedMailingList()` still holds ml-1's data), and ml-1's save resolves in that window —
+    // after the start-of-navigation override reset, but before ml-2's GET completes. Without
+    // clearing the override again when ml-2's data actually lands, ml-2's page would keep showing
+    // ml-1's (overridden) data forever.
+    const paramMap$ = new ReplaySubject<ReturnType<typeof convertToParamMap>>(1);
+    paramMap$.next(convertToParamMap({ id: 'ml-1' }));
+    const ml2Response$ = new Subject<GroupsIOMailingList>();
+    const getMailingList = vi.fn((id: string) => (id === 'ml-1' ? of({ uid: 'ml-1', group_name: 'main' } as GroupsIOMailingList) : ml2Response$));
+
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: MailingListService, useValue: { getMailingList } },
+        { provide: ProjectContextService, useValue: {} },
+        { provide: LensService, useValue: { setLens: vi.fn() } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    TestBed.overrideProvider(ActivatedRoute, { useValue: { paramMap: paramMap$ } });
+    const component = TestBed.runInInjectionContext(() => new MailingListViewComponent());
+    expect(component.mailingList()?.uid).toBe('ml-1');
+
+    // Navigate to ml-2 (fetch kicked off but not yet resolved), then let ml-1's save resolve.
+    paramMap$.next(convertToParamMap({ id: 'ml-2' }));
+    component.applySyncSettingsUpdate({ uid: 'ml-1', group_name: 'main', writer: true } as GroupsIOMailingList);
+    expect(component.mailingList()?.uid).toBe('ml-1');
+
+    // ml-2's fetch now lands — it must win, not the stale ml-1 override.
+    ml2Response$.next({ uid: 'ml-2', group_name: 'other' } as GroupsIOMailingList);
+    expect(component.mailingList()?.uid).toBe('ml-2');
   });
 });

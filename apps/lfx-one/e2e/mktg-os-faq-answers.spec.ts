@@ -110,6 +110,21 @@ test('A2: the family PDF prints the lead-in as a paragraph and its items as a li
   await expect(pairs.nth(1)).toContainText('Source: Docs');
   // (d): nothing injected survives in print either.
   await expect(pairs.nth(3).locator('img, script, [onerror], a')).toHaveCount(0);
+  // The flowing prints' own stylesheet (mktg-flow-print.scss) still reaches the FAQ root inside the family document: the
+  // sides' room styles.scss gives every print root (0.6 in, no page-margins body class in a document of portrait frames),
+  // the brand's color printed as it shows, and the group heading in the document's typeface, not the base layer's Inter.
+  await expect(faqPrint).toHaveCSS('padding-left', '57.6px');
+  await expect(faqPrint).toHaveCSS('print-color-adjust', 'exact');
+  // The FAQ's host is a block (MKTG_PORTRAIT_BLOCK_HOST): an inline host around its page break costs a blank sheet in Google Chrome.
+  await expect(frame.locator('lfx-mktg-faq-print')).toHaveCSS('display', 'block');
+  const [rootFont, headingFont, listMarker] = await faqPrint.evaluate((root) => [
+    getComputedStyle(root).fontFamily,
+    getComputedStyle(root.querySelector('[data-testid="mktg-faq-print-group"]') as Element).fontFamily,
+    getComputedStyle(root.querySelector('[data-testid="mktg-faq-print-answer"] ul') as Element).listStyleType,
+  ]);
+  expect(headingFont).toBe(rootFont);
+  expect(rootFont).not.toMatch(/Inter/);
+  expect(listMarker).toBe('disc');
 
   await page.screenshot({ path: info.outputPath('faq-answers-print.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });

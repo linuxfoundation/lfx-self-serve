@@ -13,11 +13,24 @@
       <lfx-toggle
         [checked]="syncOn()"
         (checkedChange)="onToggleChange($event)"
-        [disabled]="saving() || !!activeSync() || lockedBySibling()"
+        [disabled]="saving() || !!activeSync() || lockedBySibling() || siblingLookupFailed() || siblingLookupLoading()"
         label="Automatic membership sync"
         [tooltip]="'When on, members are kept in sync in one direction between the ' + (committeeLabel.singular | lowercase) + ' and this mailing list.'"
         [id]="'sync-settings-toggle-' + mailingList().uid"
         dataTest="sync-settings-toggle"></lfx-toggle>
+
+      @if (siblingLookupFailed()) {
+        <div
+          class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+          data-testid="sibling-lookup-failed-notice">
+          <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600"></i>
+          <span class="flex-1">
+            Couldn't check whether another mailing list already syncs with this {{ committeeLabel.singular | lowercase }}, so sync controls are disabled for
+            now.
+          </span>
+          <lfx-button label="Retry" severity="secondary" [text]="true" (onClick)="retrySiblingLookup()" data-testid="sibling-lookup-retry"></lfx-button>
+        </div>
+      }
 
       @if (activeSync(); as active) {
         <div

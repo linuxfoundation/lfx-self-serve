@@ -91,7 +91,7 @@
           [href]="link.url"
           target="_blank"
           rel="noopener noreferrer"
-          (click)="onLinkClick($event, link.url, true)"
+          (click)="onTitleClick($event)"
           data-testid="meetings-home-next-card-title"
           >{{ row.title }}</a
         >
@@ -154,7 +154,7 @@
         }
         @case ('live') {
           <span class="mt-[4px] flex items-center justify-center gap-[6px] text-label-12 text-blue-600" data-testid="meetings-home-next-card-in-progress">
-            <span class="next-meeting-live-dot bg-blue-500" aria-hidden="true"></span>The meeting is in progress
+            <span class="meeting-live-dot bg-blue-500" aria-hidden="true"></span>The meeting is in progress
           </span>
         }
       }

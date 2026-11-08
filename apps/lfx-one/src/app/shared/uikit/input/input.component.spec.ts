@@ -66,6 +66,13 @@ describe('UiInputComponent', () => {
     expect(fixture.componentInstance.value()).toBe('linux');
   });
 
+  it('locks the value without disabling the field when readonly', async () => {
+    await set('readonly', true);
+
+    expect(field().readOnly).toBe(true);
+    expect(field().disabled).toBe(false);
+  });
+
   it('describes the field with the hint', async () => {
     await set('hint', 'Lowercase letters only');
     const hint = host.querySelector('[data-testid="ui-input-hint"]') as HTMLElement;

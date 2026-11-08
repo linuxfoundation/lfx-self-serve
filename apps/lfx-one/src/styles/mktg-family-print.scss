@@ -6,17 +6,36 @@
   display: none;
 }
 
-.lfx-family-print-cover {
-  /* Readable with Background graphics ON or OFF: ink and logo are for white. */
-  background-color: white;
-  color: var(--mfp-ink);
-  border: 1pt solid var(--mfp-dark);
+/* The running head on every page of the family's book (its own pages', the framework's and the kit's; the root class is
+   `MKTG_FAMILY_PRINT_BOOK_CLASS`): one line, always. A long project name ("Cloud Native Computing Foundation (CNCF)
+   positioning & brand") wrapped both labels to two lines on the framework's pages (the editor's F4). The section label
+   keeps its whole text and the document name on the right yields, clipped with an ellipsis (CSS Overflow 3
+   `text-overflow`), so a page always says where in the book it is; a document's standalone print keeps the grammar's
+   heads untouched. */
+.lfx-mktg-family-book .pp-head {
+  flex-wrap: nowrap;
+  column-gap: 24px;
+
+  .pp-head-section {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .pp-head-doc {
+    flex: 0 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+  }
 }
 
-@layer tailwind-base {
-  .lfx-family-print-cover :is(h1, p) {
-    font-family: inherit;
-  }
+/* A running head that measures too wide at the label's size (MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS, mktgFamilyPrintHeadTight)
+   prints both labels one step smaller, the whole book through, before the ellipsis ever cuts the document name. */
+.lfx-mktg-family-book--tight-head .pp-head .pp-lab {
+  font-size: 9px;
+  letter-spacing: 0.1em;
 }
 
 @media print {
@@ -50,31 +69,8 @@
 
   body.lfx-print-family,
   body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
-    /* No named page on the body: the print frame's unnamed @page rule is the setup, and only a portrait frame
-       (`.pp-page`) names a page, so no change of page name can force a break around the frames. */
-
-    .lfx-family-print-cover {
-      /* The sheet's head and foot take 1.1in of the page; 0.1in of slack under that keeps a fraction of
-         rounding off a blank sheet. Grid without a viewport-height flex-growing child keeps
-         title/contents together on either paper size. */
-      min-height: calc(100vh - 1.2in);
-      align-content: space-between;
-      print-color-adjust: exact;
-      -webkit-print-color-adjust: exact;
-    }
-
-    /* On the page margins (WebKit: MKTG_PRINT_PAGE_MARGINS_CLASS on the frame's body) the cover is the page
-       area under the 0.55in margins, and the 0.6in at its sides is the margin's, not its own. */
-    &.lfx-print-page-margins .lfx-family-print-cover {
-      min-height: calc(100vh - 1.1in);
-      margin-left: 0;
-      margin-right: 0;
-    }
-
-    /* One cover and one contents list for the family, not a second per asset. The framework's cover goes with
-       its whole sheet: a sheet left behind would print its 1.1in of head and foot room alone on a blank page. */
-    lfx-mktg-print-sheet:has([data-testid='mktg-framework-print-cover']),
-    [data-testid='mktg-framework-print-cover'],
+    /* One cover and one contents list for the family, not a second per asset (the framework, on the family's book,
+       prints no cover of its own). */
     [data-testid='brand-kit-page-cover'],
     [data-testid='brand-kit-page-contents'],
     [data-testid='brand-kit-page-back-cover'] {
@@ -117,12 +113,13 @@
       transform: none !important;
     }
 
+    /* The print roots own no page break: the grammar's frames do (`.pp-page { break-before: page }`, one break per
+       sheet, no break-after anywhere), so a root's own break would double the first frame's. */
     lfx-mktg-framework-print,
     lfx-mktg-boilerplates-print,
     lfx-mktg-faq-print,
     lfx-mktg-brand-kit-print {
       width: 100%;
-      break-before: page;
       /* The whole ancestor chain of a print root paints white: the screen's canvas never shows through a page. */
       background: white;
     }
@@ -135,11 +132,11 @@
     }
   }
 
-  body.lfx-print-framework {
-    lfx-mktg-framework-print {
-      break-before: auto;
-    }
+  /* Every host between the family's book and a portrait frame prints as a block: the grammar's rule
+     (`.lfx-mktg-portrait > *` on the book, `:host { display: block }` on every grammar and book component), not a
+     rule of this sheet. Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame. */
 
+  body.lfx-print-framework {
     .lfx-framework-print {
       /* Override the legacy absolute root: only in-flow content sizes the body. */
       position: static !important;

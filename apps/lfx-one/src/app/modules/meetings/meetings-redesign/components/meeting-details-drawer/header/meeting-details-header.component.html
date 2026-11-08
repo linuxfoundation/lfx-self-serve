@@ -26,7 +26,7 @@
   </div>
   <div class="flex flex-none items-center gap-[8px]">
     <lfx-ui-button variant="secondary" icon="fa-light fa-copy" (click)="copyLink()" data-testid="meeting-details-copy-link">Copy Link</lfx-ui-button>
-    @if (canEdit()) {
+    @if (canEdit() || canCancel()) {
       <lfx-ui-button variant="secondary" icon="fa-light fa-ellipsis" ariaLabel="More actions" iconOnly [menu]="moreMenu" data-testid="meeting-details-more" />
     }
     <span class="mx-[6px] h-[20px] w-px bg-gray-200" aria-hidden="true"></span>
@@ -36,6 +36,16 @@
 
 <ng-template #moreMenu>
   <lfx-ui-menu ariaLabel="Meeting actions" data-testid="meeting-details-more-menu">
-    <lfx-ui-menu-item icon="fa-light fa-pen" (triggered)="editMeeting()" data-testid="meeting-details-edit">Edit Meeting</lfx-ui-menu-item>
+    @if (canEdit()) {
+      <lfx-ui-menu-item icon="fa-light fa-pen" (triggered)="editMeeting()" data-testid="meeting-details-edit">Edit Meeting</lfx-ui-menu-item>
+    }
+    @if (canCancel()) {
+      @if (canEdit()) {
+        <lfx-ui-menu-separator />
+      }
+      <lfx-ui-menu-item variant="danger" icon="fa-light fa-ban" (triggered)="cancelOccurrence()" data-testid="meeting-details-cancel-occurrence"
+        >Cancel Occurrence</lfx-ui-menu-item
+      >
+    }
   </lfx-ui-menu>
 </ng-template>

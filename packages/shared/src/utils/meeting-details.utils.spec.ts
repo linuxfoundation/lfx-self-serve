@@ -6,12 +6,17 @@ import '@angular/compiler';
 
 import { describe, expect, it } from 'vitest';
 
-import { MeetingVisibility } from '../enums';
-import type { Meeting } from '../interfaces';
+import { MeetingVisibility, RecurrenceType } from '../enums';
+import type { Meeting, MeetingOccurrence } from '../interfaces';
 import {
   canViewMeetingGuests,
+  formatMeetingDetailsDate,
+  formatMeetingDetailsTime,
   getMeetingDetailsFeatures,
+  getMeetingDetailsOccurrenceIndex,
+  getMeetingDetailsOccurrenceOptions,
   getMeetingDetailsOrganizers,
+  getMeetingDetailsRecurrence,
   getMeetingDetailsState,
   getMeetingScheduledZoneLabel,
   getMeetingShareUrl,
@@ -175,5 +180,77 @@ describe('getMeetingShareUrl', () => {
 
   it('is null for an invalid base URL', () => {
     expect(getMeetingShareUrl('not a url', 'mtg-1', 'secret')).toBeNull();
+  });
+});
+
+describe('formatMeetingDetailsDate and formatMeetingDetailsTime', () => {
+  it('spells out the weekday and year, then the start and the minutes without a zone', () => {
+    expect(formatMeetingDetailsDate(START, 'UTC')).toBe('Thursday, Nov 5, 2026');
+    expect(formatMeetingDetailsTime(START, 45, 'UTC')).toBe('5:00 PM · 45 min');
+  });
+
+  it('is empty for an invalid start', () => {
+    expect(formatMeetingDetailsDate('nope')).toBe('');
+    expect(formatMeetingDetailsTime('nope', 30)).toBe('');
+  });
+});
+
+describe('getMeetingDetailsRecurrence', () => {
+  const weekly = { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '5' };
+  const meeting = { start_time: START, timezone: 'UTC', recurrence: weekly };
+
+  it('keeps the end of the series', () => {
+    expect(getMeetingDetailsRecurrence({ ...meeting, recurrence: { ...weekly, end_times: 6 } })).toBe('Weekly on Thursday, for 6 occurrences');
+  });
+
+  it("prefers the shown date's own rule", () => {
+    const occurrence: MeetingOccurrence = {
+      occurrence_id: '1',
+      start_time: START,
+      duration: 30,
+      recurrence: { type: RecurrenceType.DAILY, repeat_interval: 1 },
+    };
+    expect(getMeetingDetailsRecurrence(meeting, occurrence)).toBe('Daily');
+  });
+
+  it('reads a single-date rule as a one-time meeting, and no rule as nothing', () => {
+    expect(getMeetingDetailsRecurrence({ ...meeting, recurrence: { ...weekly, end_times: 1 } })).toBe('One-time meeting');
+    expect(getMeetingDetailsRecurrence({ ...meeting, recurrence: null })).toBeNull();
+  });
+});
+
+describe('occurrence navigation', () => {
+  const date = (day: number, duration = 30): MeetingOccurrence => ({
+    occurrence_id: String(Date.UTC(2026, 10, day, 17) / 1000),
+    start_time: new Date(Date.UTC(2026, 10, day, 17)).toISOString(),
+    duration,
+  });
+  const timeline = [date(1), date(8), date(15)];
+
+  it('finds the shown date, else the next one after it, else the last', () => {
+    expect(getMeetingDetailsOccurrenceIndex(timeline, date(8).start_time)).toBe(1);
+    expect(getMeetingDetailsOccurrenceIndex(timeline, date(5).start_time)).toBe(1);
+    expect(getMeetingDetailsOccurrenceIndex(timeline, date(20).start_time)).toBe(2);
+    expect(getMeetingDetailsOccurrenceIndex([], START)).toBe(-1);
+  });
+
+  it('splits the menu into upcoming dates with the cancelled ones and past dates newest first', () => {
+    const { upcoming, past } = getMeetingDetailsOccurrenceOptions([date(1), date(2), date(15)], [date(8), date(15)], at('2026-11-05T12:00:00Z'));
+
+    expect(upcoming.map((item) => [item.occurrence.start_time, item.cancelled, item.next])).toEqual([
+      [date(8).start_time, true, false],
+      [date(15).start_time, false, true],
+    ]);
+    expect(past.map((item) => item.occurrence.start_time)).toEqual([date(2).start_time, date(1).start_time]);
+  });
+
+  it('keeps a date upcoming until 40 minutes after its end', () => {
+    const { upcoming } = getMeetingDetailsOccurrenceOptions([date(5)], [], at('2026-11-05T18:10:00Z'));
+    expect(upcoming).toHaveLength(1);
+  });
+
+  it("gives a date without its own duration the series' duration", () => {
+    expect(getMeetingDetailsOccurrenceOptions([date(5, 0)], [], at('2026-11-05T18:30:00Z'), 60).upcoming).toHaveLength(1);
+    expect(getMeetingDetailsOccurrenceOptions([date(5, 0)], [], at('2026-11-05T18:30:00Z')).upcoming).toHaveLength(0);
   });
 });

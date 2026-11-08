@@ -5,21 +5,30 @@ import { Clipboard } from '@angular/cdk/clipboard';
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { OverlayContainer } from '@angular/cdk/overlay';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Injector, signal, WritableSignal } from '@angular/core';
+import { Component, Injector, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Title } from '@angular/platform-browser';
 import { environment } from '@environments/environment';
+import { RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDetailsDrawerData, MeetingDetailsTab, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
+import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { Observable, of, throwError } from 'rxjs';
+import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDetailsDrawerComponent } from './meeting-details-drawer.component';
 import { MeetingDetailsContext } from './meeting-details.context';
+import { MeetingDetailsScheduleComponent } from './schedule/meeting-details-schedule.component';
+
+// The schedule section has its own spec; the shell only places it.
+@Component({ selector: 'lfx-meeting-details-schedule', template: '' })
+class ScheduleStubComponent {}
 
 const MEETING = {
   id: 'synthetic-meeting',
@@ -39,7 +48,8 @@ const MEETING = {
   youtube_upload_enabled: false,
   ai_summary_enabled: false,
   organizers: [],
-  created_by: { username: 'synthetic-owner', name: 'Synthetic Owner' },
+  timezone: 'Pacific/Chatham',
+  created_by: { username: 'synthetic-owner', name: 'Synthetic Owner', email: 'owner@acme.example' },
   recurrence: null,
   occurrences: [],
 } as unknown as Meeting;
@@ -62,10 +72,13 @@ describe('MeetingDetailsDrawerComponent', () => {
   let toastShow: ReturnType<typeof vi.fn>;
   let copy: ReturnType<typeof vi.fn>;
   let edit: ReturnType<typeof vi.fn>;
+  let cancelOccurrence: ReturnType<typeof vi.fn>;
   let requestClose: ReturnType<typeof vi.fn<() => void>>;
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
   let refreshUserPastMeetings: ReturnType<typeof vi.fn>;
+  let clearRemovedRegistration: ReturnType<typeof vi.fn>;
   let closeDialog: ReturnType<typeof vi.fn>;
+  let dialogClosed: Subject<void>;
 
   const settle = async (): Promise<void> => {
     await fixture.whenStable();
@@ -77,6 +90,7 @@ describe('MeetingDetailsDrawerComponent', () => {
       providers: [
         { provide: MeetingsHomeStore, useValue: { now } },
         { provide: MeetingsHomeEditService, useValue: { edit } },
+        { provide: MeetingsHomeDeleteService, useValue: { cancelOccurrence } },
       ],
     });
     const data: MeetingDetailsDrawerData = { row: value, tab, injector: page };
@@ -98,10 +112,13 @@ describe('MeetingDetailsDrawerComponent', () => {
     toastShow = vi.fn();
     copy = vi.fn().mockReturnValue(true);
     edit = vi.fn();
+    cancelOccurrence = vi.fn(() => of(true));
     requestClose = vi.fn<() => void>();
     refreshUserMeetings = vi.fn();
     refreshUserPastMeetings = vi.fn();
+    clearRemovedRegistration = vi.fn();
     closeDialog = vi.fn();
+    dialogClosed = new Subject<void>();
     const drawerContext = new UiDrawerContext('right', 1080);
     drawerContext.requestClose = requestClose;
 
@@ -109,21 +126,44 @@ describe('MeetingDetailsDrawerComponent', () => {
       providers: [
         { provide: DIALOG_DATA, useValue: null },
         { provide: UiDrawerContext, useValue: drawerContext },
-        { provide: DialogRef, useValue: { close: closeDialog } },
+        { provide: DialogRef, useValue: { close: closeDialog, closed: dialogClosed } },
         { provide: Clipboard, useValue: { copy } },
         { provide: UiToastService, useValue: { show: toastShow } },
         {
           provide: MeetingService,
           useValue: {
             getMeetingDetail,
+            clearRemovedRegistration,
             removedRegistrationMeetingIds: signal(new Set<string>()),
+            getMeetingRegistrants: () => of([]),
+            getPastMeetingParticipants: () => of([]),
             getPastMeetingRecording: () => of({ sessions: [{ total_size: 1, share_url: 'https://zoom.example/rec' }] }),
             getPastMeetingTranscript: () => of({ recording_files: [] }),
             getPastMeetingSummary: () => throwError(() => new HttpErrorResponse({ status: 404 })),
+            getMeetingAttachments: () => of([]),
+            getPastMeetingAttachments: () => of([]),
+            attachmentChanges: signal(new Map()),
+            attachmentScopeOverrides: signal(new Map()),
+            // Upcoming guests stay loading, so tests set the hosts and count themselves.
+            getMyMeetingRegistrants: () => NEVER,
           },
         },
-        { provide: UserService, useValue: { viewerUsername: signal('synthetic-viewer'), refreshUserMeetings, refreshUserPastMeetings } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: () => of([]) } },
+        {
+          provide: UserService,
+          useValue: {
+            viewerUsername: signal('synthetic-viewer'),
+            user: signal(null),
+            refreshUserMeetings,
+            refreshUserPastMeetings,
+            confirmedMeetingRsvps: () => [],
+          },
+        },
       ],
+    });
+    TestBed.overrideComponent(MeetingDetailsDrawerComponent, {
+      remove: { imports: [MeetingDetailsScheduleComponent] },
+      add: { imports: [ScheduleStubComponent] },
     });
   });
 
@@ -141,9 +181,17 @@ describe('MeetingDetailsDrawerComponent', () => {
       expect(find('meeting-details-visibility-public')?.textContent?.trim()).toBe('Public');
       expect(find('meeting-details-type')?.textContent?.trim()).toBe('Technical');
       expect(find('meeting-details-group')?.textContent?.trim()).toBe('Synthetic TSC');
+      expect(find('meeting-details-group')?.getAttribute('role')).toBe('button');
+      expect(find('meeting-details-group')?.getAttribute('aria-label')).toBe('View group: Synthetic TSC');
+      const open = vi.spyOn(window, 'open').mockReturnValue(null);
+      find('meeting-details-group')?.click();
+      expect(open).toHaveBeenCalledWith('/groups/c1', '_blank', 'noopener,noreferrer');
+      open.mockRestore();
       expect(findAll('meeting-details-feature-recording_enabled')).toHaveLength(1);
       expect(findAll('meeting-details-feature-transcript_enabled')).toHaveLength(0);
       expect(find('meeting-details-organizer-name')?.textContent?.trim()).toBe('Synthetic Owner');
+      expect(find('meeting-details-organizer-name')?.getAttribute('href')).toMatch(/^mailto:owner@acme\.example\?subject=Synthetic%20sync/);
+      expect(find('meeting-details-scheduled-zone')?.textContent).toContain('Scheduled in Pacific/Chatham');
     });
 
     it('re-reads an upcoming meeting and shows the fresh detail, bypassing the cache for organizers', async () => {
@@ -183,6 +231,39 @@ describe('MeetingDetailsDrawerComponent', () => {
       await settle();
 
       expect(find('meeting-details-title')?.textContent?.trim()).toBe('Special session');
+    });
+
+    it('adds the guests section hosts to Organized by for a viewer who may see the guests', async () => {
+      const host = { first_name: 'Host', last_name: 'Person', username: 'host', email: 'host@acme.example', host: true };
+      await render(row({ ...MEETING, show_meeting_attendees: true }));
+      context().hosts.set([host]);
+      await settle();
+
+      expect(findAll('meeting-details-organizer-avatar').map((avatar) => avatar.getAttribute('aria-label'))).toEqual([
+        'Email Synthetic Owner',
+        'Email Host Person',
+      ]);
+    });
+
+    it('leaves the hosts out when the guest list is hidden from the viewer', async () => {
+      await render(row(MEETING));
+      context().hosts.set([{ first_name: 'Host', last_name: 'Person', username: 'host', email: 'host@acme.example', host: true }]);
+      await settle();
+
+      expect(find('meeting-details-organizer-name')?.textContent?.trim()).toBe('Synthetic Owner');
+    });
+
+    it('makes a described visibility badge focusable with its description as label', async () => {
+      await render(row({ ...MEETING, visibility: 'private' } as Meeting));
+      const badge = findAll('meeting-details-badges')[0]?.querySelector('[role="img"][tabindex="0"]');
+
+      expect(badge?.getAttribute('aria-label')).toMatch(/^Private: /);
+    });
+
+    it('titles the browser tab with the shown meeting', async () => {
+      await render(row(MEETING));
+
+      expect(TestBed.inject(Title).getTitle()).toBe('Synthetic sync · LFX');
     });
 
     it('does not re-read a past meeting', async () => {
@@ -310,7 +391,9 @@ describe('MeetingDetailsDrawerComponent', () => {
       (TestBed.inject(OverlayContainer).getContainerElement().querySelector('[data-testid="meeting-details-edit"]') as HTMLElement).click();
       await settle();
 
-      expect(requestClose).toHaveBeenCalled();
+      expect(closeDialog).toHaveBeenCalled();
+      expect(edit).not.toHaveBeenCalled();
+      dialogClosed.next();
       expect(edit).toHaveBeenCalledWith(organizerRow);
     });
 
@@ -318,6 +401,7 @@ describe('MeetingDetailsDrawerComponent', () => {
       const past = {
         ...MEETING,
         organizer: true,
+        created_by: { username: 'synthetic-owner', name: 'Synthetic Owner', email: 'owner@acme.example' },
         id: 'synthetic-meeting-1762362000000',
         meeting_id: 'synthetic-meeting',
         scheduled_start_time: '2026-11-01T18:00:00Z',
@@ -328,6 +412,75 @@ describe('MeetingDetailsDrawerComponent', () => {
 
       expect(context().state()).not.toBe('ended');
       expect(find('meeting-details-more')).toBeNull();
+      await click('meeting-details-copy-link');
+      expect(copy).toHaveBeenCalledWith(`${environment.urls.home}/meetings/synthetic-meeting?password=synthetic-pass`);
+      expect(find('meeting-details-organizer-name')?.getAttribute('href')).toContain(
+        `body=${encodeURIComponent(`${environment.urls.home}/meetings/synthetic-meeting`)}`
+      );
+    });
+
+    describe('Cancel Occurrence', () => {
+      const OCCURRENCE = { occurrence_id: 'occ-1', title: '', start_time: '2026-11-05T18:00:00Z', duration: 60 };
+      const series = (overrides: Partial<Meeting> = {}): MeetingHomeRow =>
+        row({ ...MEETING, organizer: true, recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 }, ...overrides } as Meeting, {
+          occurrence: OCCURRENCE,
+          occurrenceId: 'occ-1',
+        });
+      const menuItem = (testId: string): HTMLElement | null =>
+        TestBed.inject(OverlayContainer).getContainerElement().querySelector(`[data-testid="${testId}"]`);
+
+      it.each([
+        [true, 1],
+        [false, 0],
+      ])('cancels the shown date through the page flow and closes only once it is cancelled (%s)', async (cancelled, closes) => {
+        cancelOccurrence.mockReturnValue(of(cancelled));
+        const seriesRow = series();
+        await render(seriesRow);
+        await click('meeting-details-more');
+
+        expect(menuItem('meeting-details-edit')).not.toBeNull();
+        expect(menuItem('meeting-details-cancel-occurrence')?.textContent?.trim()).toBe('Cancel Occurrence');
+        menuItem('meeting-details-cancel-occurrence')?.click();
+        await settle();
+
+        expect(cancelOccurrence).toHaveBeenCalledWith(seriesRow, OCCURRENCE, 'drawer');
+        expect(requestClose).toHaveBeenCalledTimes(closes);
+      });
+
+      it('offers it without Edit Meeting when the meeting has no project', async () => {
+        await render(series({ project_slug: undefined }));
+        await click('meeting-details-more');
+
+        expect(menuItem('meeting-details-edit')).toBeNull();
+        expect(menuItem('meeting-details-cancel-occurrence')).not.toBeNull();
+      });
+
+      it('is not offered on a past row, even for a coming date', async () => {
+        const past = { ...series().meeting, id: 'synthetic-meeting-1762362000000', meeting_id: 'synthetic-meeting' } as unknown as PastMeeting;
+        await render(row(past, { occurrence: OCCURRENCE, occurrenceId: 'occ-1' }));
+
+        expect(find('meeting-details-more')).toBeNull();
+      });
+
+      it('is not offered on a one-time meeting', async () => {
+        await render(row({ ...MEETING, organizer: true }));
+        await click('meeting-details-more');
+
+        expect(menuItem('meeting-details-cancel-occurrence')).toBeNull();
+      });
+
+      it('is not offered to an invitee', async () => {
+        await render(series({ organizer: false }));
+
+        expect(find('meeting-details-more')).toBeNull();
+      });
+
+      it('is not offered once the date has ended', async () => {
+        now.set(new Date('2026-11-06T12:00:00Z'));
+        await render(series());
+
+        expect(find('meeting-details-more')).toBeNull();
+      });
     });
 
     it('closes through the drawer so its close guard runs', async () => {
@@ -381,6 +534,16 @@ describe('MeetingDetailsDrawerComponent', () => {
       now.set(new Date('2026-11-06T00:00:00Z'));
       context().refreshList();
       expect(refreshUserPastMeetings).toHaveBeenCalledTimes(1);
+    });
+
+    it('counts a registration made in the drawer as an invitation and refreshes the list', async () => {
+      await render(row({ ...MEETING, invited: false } as Meeting));
+      expect(context().invited()).toBe(false);
+
+      context().markRegistered();
+      expect(clearRemovedRegistration).toHaveBeenCalledWith(MEETING.id);
+      expect(context().invited()).toBe(true);
+      expect(refreshUserMeetings).toHaveBeenCalledTimes(1);
     });
   });
 });

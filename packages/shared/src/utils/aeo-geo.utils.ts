@@ -341,11 +341,14 @@ const CAVEAT_QUOTE_SPACE_MARK = '\u0002';
 // sitemap.xml) or a property (og:site_name) after the quote opens its own sentence.
 const CAVEAT_QUOTE_CONTINUATION = /([.!?]['"\u2019\u201d`]+)(\s+)(?=\p{Ll}[\p{Ll}'\u2019-]*(?:$|[\s,;!?)\]]|\.(?![\p{L}\p{N}])))/gu;
 const CAVEAT_PARENTHETICAL = /\(([^()]*)\)/g;
+// "entitled" is LFX entitlement vocabulary (plumbing); the reader says "matching". The article's and the word's first letters keep their case.
+const CAVEAT_ENTITLED_RECORD = /\b(an\s+)?(e)ntitled record(s?)\b/gi;
 const CAVEAT_WORD_CHARACTER = /[\p{L}\p{N}]/u;
 // The classifier decides by the sentence's SUBJECT. A provider subject (a search, the provider, the API, a lookup)
 // that names a credits or quota limit, or quotes a message after returned/responded/failed/error/message with
-// evidence of failure (a failure word or an error status, inside the quotes or outside them), is a provider
-// failure: a search subject maps to one fixed sentence, another provider subject is left out. A quoted successful
+// evidence of failure (a failure word, quoted or not, or an error status outside the quotes), is a provider
+// failure: a search subject maps to one fixed sentence, another provider subject is left out; so is a caveat that is
+// a bare status line. A quoted successful
 // result or result title is never a failure, and a sentence about the audited site (its pages, fetches,
 // statuses, rate limiting) passes verbatim.
 const CAVEAT_NAME_SEARCH = /\bname search\b/i;
@@ -354,18 +357,26 @@ const CAVEAT_PROVIDER_SUBJECT = /^(?:(?:the|our|a|an)\s+)?(?:provider|API|lookup
 const CAVEAT_LFX_RECORD = /LFX record could not be read/i;
 const CAVEAT_PROVIDER_WORDS = /exceeded your credits|credits? limit|quota (?:exceeded|exhausted)/i;
 const CAVEAT_QUOTED_MESSAGE = /\b(?:returned|responded(?: with)?|failed(?: with)?|error|message)\s*(?::\s*)?['"\u2018\u201c`]/i;
-// Failure evidence: only an error status (4xx or 5xx) counts, never a successful one (HTTP 200) or a number in a title ("Top 100",
-// "Fortune 500"). Inside the quotes it counts only where a status belongs: after HTTP, with or without a version (HTTP 404,
-// HTTP/1.1 404, HTTP/2 429), status or code; or leading the quoted message, where it needs a status-like tail: the closing quote
-// ("404") or a standard reason phrase ("502 Bad Gateway", "429 Too Many Requests"), so a quoted title that opens with such a
-// number ("500 Startups", "404 Media") is a result, not a status. Outside the quotes it counts only after HTTP (same forms) or
-// status, with an optional "code" and colon ("the first 60 KB" is no status). The whitespace before the number depends on the
-// colon, `(?:\s*:)?\s*`, so a failed match never splits one whitespace run between two `\s*`.
+// Failure evidence, the stop rule: a NUMBER IS NEVER READ INSIDE QUOTES. A quoted message counts as a failure only by a failure
+// word, wherever it stands (quoted or not: 'You have exceeded your credits limit', "Quota exceeded.", failed with 'Unauthorized'
+// by the word Unauthorized; the merged list, no more), so whatever a quoted span holds beside the words ("500 Startups", "404 Media", "Investors' 500", "500's best",
+// "Rock 'n' 500", "Top 'Bad' 404", "A guide to '404' pages", "502 Bad Gateway", "HTTP/1.1 404 Not Found") is a result or a
+// quotation and prints verbatim; an inner quotation never counts on its own. Outside the quotes an error status (4xx or 5xx)
+// counts only after HTTP, with or without a version (HTTP 404, HTTP/1.1 404, HTTP/2 429), or status, with an optional "code" and
+// colon ("the first 60 KB" is no status); never a successful one (HTTP 200) or a number in a title ("Top 100", "Fortune 500"). The
+// whitespace before the number depends on the colon, `(?:\s*:)?\s*`, so a failed match never splits one whitespace run between two
+// `\s*`. And a caveat that, whole, is a BARE STATUS LINE (HTTP/1.1 404 Not Found, 404 Not Found, 502 Bad Gateway, 503, HTTP 503)
+// is a provider failure on its own: an optional HTTP word with an optional version, the number, an optional RECOGNISED reason
+// phrase (the IANA 4xx/5xx list, CAVEAT_HTTP_REASON_PHRASES; prose after the number is a sentence: "500 pages were not
+// inspected." is a coverage caveat), an optional period, and nothing else. It is tested on the whole sentence only, never on a
+// part of it, so a status quoted in a sentence never matches it; a bare status line has no subject, so the match stands without
+// one and maps as a search failure.
 const CAVEAT_FAILURE_WORDS = 'unavailable|error|denied|unauthori[sz]ed|forbidden|exceeded|limit|timeout|timed out|quota|credits?|rate[- ]limited';
 const CAVEAT_HTTP_WORD = 'HTTP(?:\\/\\d(?:\\.\\d)?)?';
 // The 4xx and 5xx reason phrases of the IANA HTTP Status Code Registry (RFC 9110 §15.5 and §15.6, RFC 6585, RFC 7725, RFC 8470,
 // RFC 4918, RFC 2295, RFC 2774, RFC 5842), with the RFC 7231 names servers still send (Payload Too Large, Request Entity Too
-// Large, Request-URI Too Long, Requested Range Not Satisfiable, Unprocessable Entity). Matched case-insensitively.
+// Large, Request-URI Too Long, Requested Range Not Satisfiable, Unprocessable Entity). Matched case-insensitively; used only
+// by the bare-status-line rule.
 const CAVEAT_HTTP_REASON_PHRASES = [
   'Bad Request|Unauthorized|Payment Required|Forbidden|Not Found|Method Not Allowed|Not Acceptable|Proxy Authentication Required',
   'Request Timeout|Conflict|Gone|Length Required|Precondition Failed|Content Too Large|Payload Too Large|Request Entity Too Large',
@@ -375,18 +386,24 @@ const CAVEAT_HTTP_REASON_PHRASES = [
   'Internal Server Error|Not Implemented|Bad Gateway|Service Unavailable|Gateway Timeout|HTTP Version Not Supported',
   'Variant Also Negotiates|Insufficient Storage|Loop Detected|Not Extended|Network Authentication Required',
 ].join('|');
-const CAVEAT_FAILURE_IN_QUOTES = new RegExp(
-  `\\b(?:${CAVEAT_FAILURE_WORDS})\\b|\\b(?:${CAVEAT_HTTP_WORD}|status|code)(?:\\s*:)?\\s*[45]\\d{2}\\b` +
-    `|(?:^|['"\\u2018\\u201c\`])\\s*[45]\\d{2}\\b(?=\\s*['"\\u2019\\u201d\`]|\\s+(?:${CAVEAT_HTTP_REASON_PHRASES})\\b)`,
-  'i'
-);
+const CAVEAT_FAILURE_IN_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS})\\b`, 'i');
 const CAVEAT_FAILURE_OUTSIDE_QUOTES = new RegExp(`\\b(?:${CAVEAT_FAILURE_WORDS}|(?:${CAVEAT_HTTP_WORD}|status)(?:\\s+code)?(?:\\s*:)?\\s*[45]\\d{2})\\b`, 'i');
+const CAVEAT_BARE_STATUS_LINE = new RegExp(`^(?:${CAVEAT_HTTP_WORD}\\s+)?[45]\\d{2}(?:\\s+(?:${CAVEAT_HTTP_REASON_PHRASES}))?\\.?$`, 'i');
 const CAVEAT_RESULT_TITLE = [
   /['"\u2018\u201c`][^'"\u2019\u201d`]*['"\u2019\u201d`]\s+as (?:its|the) (?:top|first|best|second|leading)\b[^.]*\bresult/i,
   /\b(?:titled|entitled|called|named)\s*['"\u2018\u201c`]/i,
 ];
-// Quoted spans are blanked before the credits/quota test on a result-title sentence: the words belong to the title.
-const CAVEAT_QUOTED_SPANS = [/"[^"]*"/g, /`[^`]*`/g, /\u201c[^\u201d]*\u201d/g, /\u2018[^\u2019]*\u2019/g, /(^|[\s(])'[^']*'(?=$|[\s).,;:!?])/g];
+// Quoted spans are blanked before the credits/quota test on a result-title sentence: the words belong to the title. In the
+// single-quote rules a quote character followed by a letter is an apostrophe (auditor's, Editor’s), content rather than a closer;
+// each character matches exactly one alternative, so the scan stays linear. No number is read inside a span (the stop rule):
+// the spans only locate the quotes, for the sentence split and for the outside-quotes status test.
+const CAVEAT_QUOTED_SPANS = [
+  /"[^"]*"/g,
+  /`[^`]*`/g,
+  /\u201c[^\u201d]*\u201d/g,
+  /\u2018(?:[^\u2019]|\u2019(?=\p{L}))*\u2019/gu,
+  /(^|[\s(])'(?:[^']|'(?=\p{L}))*'(?=$|[\s).,;:!?])/gu,
+];
 // A symmetric delimiter with an odd count in the text (an inch mark, a truncated quote) opens no span: it would pair with the next one.
 const CAVEAT_SYMMETRIC_QUOTES: [string, RegExp][] = [
   ['"', CAVEAT_QUOTED_SPANS[0]],
@@ -398,13 +415,20 @@ const CAVEAT_IDENTIFIERS = [
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i, // a UUID
   /\bslug\s+[a-z0-9]+(?:-[a-z0-9]+)+\b/i, // a hyphenated slug token
   /\b(?:uid|id)\b(?!=['"])\s*(?:[:=]\s*)?['"\u2018\u2019\u201c\u201d`]?[a-z0-9_-]*\d[a-z0-9_-]*/i, // uid/id with a value, not an HTML attribute
+  // Raw provider blobs are plumbing whatever surrounds them, quoted or not: a JSON brace pair, a run of 20 or more hex
+  // characters (a request or trace id), or a requestId/request_id token.
+  /\{[^{}]*\}/,
+  /[0-9a-f]{20,}/i,
+  /\brequest(?:Id|_id)\b/,
 ];
 
 /**
  * The agent's caveats as reader sentences (web view and print). Sentence by sentence: a failed third-party
  * search and an LFX record that could not be read map to fixed wording; a parenthetical that carries plumbing
- * is removed; a sentence that still carries plumbing is left out. Plumbing is the known shapes: a snake_case
- * field name, a slug, a uid, a credits or quota phrase, or a provider subject (a search, the provider, the API,
+ * is removed; "an entitled record" reads "a matching record" (plural kept); a sentence that still carries plumbing is left out.
+ * Plumbing is the known shapes: a snake_case
+ * field name, a UUID, a slug, a uid, a raw provider blob (a JSON brace pair, a long hex id, a requestId), a credits
+ * or quota phrase, a bare status line, or a provider subject (a search, the provider, the API,
  * a lookup) quoting a failure. A quoted result, a quoted title and any sentence about the audited site pass
  * through unchanged, as does a caveat with nothing to map (returned as is); a quotation is never split into
  * sentences; an emptied caveat, or one above 4,000 characters, becomes one fixed sentence.
@@ -431,32 +455,40 @@ export function aeoGeoReaderCaveat(caveat: string): string {
 /**
  * The report's caveats as reader sentences, in order, each distinct caveat once: two agent caveats that map to
  * the same sentence (two plumbing-only caveats, say, both falling back to the fixed one) print one bullet. A caveat
- * that is exactly one of the fixed sentences is left out when another kept caveat already carries that sentence
- * (the composite "Third-party search was not available for this run. robots.txt allows all crawlers." already
- * tells the reader); on its own, it stays.
+ * that is exactly one of the fixed sentences is left out when another kept caveat STARTS WITH that sentence (the
+ * composite "Third-party search was not available for this run. robots.txt allows all crawlers." already tells the
+ * reader); a caveat that merely quotes the sentence, or carries it later in its text, does not count, and on its own
+ * the fixed sentence stays.
  */
 export function aeoGeoReaderCaveats(caveats: readonly string[]): string[] {
   const distinct = Array.from(new Set(caveats.map(aeoGeoReaderCaveat)));
   const fixed: readonly string[] = Object.values(AEO_GEO_READER_CAVEATS);
-  return distinct.filter((sentence) => !fixed.includes(sentence) || !distinct.some((other) => other !== sentence && other.includes(sentence)));
+  return distinct.filter((sentence) => !fixed.includes(sentence) || !distinct.some((other) => other !== sentence && other.startsWith(sentence)));
 }
 
 function readerSentence(sentence: string): string {
-  if (providerSubject(sentence) === 'search' && carriesProviderFailure(sentence)) {
+  // A bare status line is a provider failure on its own: it has no subject, so none is required. Whole sentence only.
+  if (CAVEAT_BARE_STATUS_LINE.test(sentence) || (providerSubject(sentence) === 'search' && carriesProviderFailure(sentence))) {
     return AEO_GEO_READER_CAVEATS.search_unavailable;
   }
   if (CAVEAT_LFX_RECORD.test(sentence)) {
     return AEO_GEO_READER_CAVEATS.lfx_record_unread;
   }
   const scrubbed = sentence.replace(CAVEAT_PARENTHETICAL, (parenthetical, inner: string) => (carriesPlumbing(inner) ? '' : parenthetical));
-  // Only a sentence that lost a parenthetical has its whitespace normalised.
-  return scrubbed === sentence
-    ? sentence
-    : scrubbed
-        .split(/\s+/)
-        .join(' ')
-        .replace(/ ([.,;:!?])/g, '$1')
-        .trim();
+  // After the identifier strip, the entitlement word becomes the reader's: "an entitled record" is "a matching record", "entitled records" are "matching records".
+  const worded = scrubbed.replace(CAVEAT_ENTITLED_RECORD, (_match, article: string | undefined, initial: string, plural: string) => {
+    const a = article === undefined ? '' : `${article[0] === 'A' ? 'A' : 'a'} `;
+    return `${a}${initial === 'E' ? 'M' : 'm'}atching record${plural}`;
+  });
+  // Only a sentence that lost a parenthetical has its whitespace normalised; the word swap alone leaves it as written.
+  if (scrubbed === sentence) {
+    return worded;
+  }
+  return worded
+    .split(/\s+/)
+    .join(' ')
+    .replace(/ ([.,;:!?])/g, '$1')
+    .trim();
 }
 
 function carriesPlumbing(text: string): boolean {
@@ -464,11 +496,13 @@ function carriesPlumbing(text: string): boolean {
 }
 
 /**
- * A credits/quota phrase (outside a quoted result title), or a provider subject quoting its message with evidence
- * of failure in or around the quotes: a failure word, or a 4xx/5xx status where a status belongs (after HTTP, with or
- * without a version, status or code; or leading the quoted message with a status-like tail, the closing quote or a standard
- * reason phrase); a quoted successful result ("Example Foundation", with HTTP 200 or a number in its title, even its first
- * word: "500 Startups") is audit content.
+ * A credits/quota phrase (outside a quoted result title), or a provider subject quoting its message with evidence of
+ * failure: a failure word anywhere in the sentence, quoted or not, or a 4xx/5xx status OUTSIDE the quotes where a
+ * status belongs (after HTTP, with or without a version, or status, with an optional code). A number inside the quotes
+ * is never read, so a quoted result ("Example Foundation", with HTTP 200), a title with a number anywhere in it ("500
+ * Startups", "Investors' 500", "500's best", "Top 'Bad' 404", "A guide to '404' pages") or a quoted status without a
+ * failure word ("502 Bad Gateway", "HTTP/1.1 404 Not Found") is audit content. A bare status line is the whole
+ * sentence's business (readerSentence), never a part's: a parenthetical "(503)" is not scrubbed as plumbing.
  */
 function carriesProviderFailure(sentence: string): boolean {
   const title = CAVEAT_RESULT_TITLE.some((pattern) => pattern.test(sentence));
@@ -478,7 +512,7 @@ function carriesProviderFailure(sentence: string): boolean {
   if (title || providerSubject(sentence) === null || !CAVEAT_QUOTED_MESSAGE.test(sentence)) {
     return false;
   }
-  return CAVEAT_FAILURE_IN_QUOTES.test(insideQuotes(sentence)) || CAVEAT_FAILURE_OUTSIDE_QUOTES.test(outsideQuotes(sentence));
+  return CAVEAT_FAILURE_IN_QUOTES.test(sentence) || CAVEAT_FAILURE_OUTSIDE_QUOTES.test(outsideQuotes(sentence));
 }
 
 function providerSubject(sentence: string): 'search' | 'provider' | null {
@@ -489,13 +523,6 @@ function providerSubject(sentence: string): 'search' | 'provider' | null {
     return 'search';
   }
   return CAVEAT_PROVIDER_SUBJECT.test(sentence) ? 'provider' : null;
-}
-
-/** The quoted spans' text, joined; the single-quote rule's leading character is not part of its span. */
-function insideQuotes(text: string): string {
-  return quotedSpans(text)
-    .flatMap((span) => Array.from(text.matchAll(span), (match) => (typeof match[1] === 'string' ? match[0].slice(match[1].length) : match[0])))
-    .join(' ');
 }
 
 /** Whitespace inside a quoted span, and after a quote-closed stop the sentence continues past, is masked so the split never breaks a quotation. */

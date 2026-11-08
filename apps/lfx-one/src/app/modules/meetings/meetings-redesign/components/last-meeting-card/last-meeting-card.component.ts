@@ -49,6 +49,7 @@ import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiSplitButtonComponent } from '@shared/uikit/split-button/split-button.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
 import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
@@ -78,6 +79,7 @@ import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-pro
 export class LastMeetingCardComponent {
   private readonly router = inject(Router);
   private readonly dialogs = inject(MeetingsHomeDialogsService);
+  private readonly details = inject(MeetingsHomeDetailsService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -142,10 +144,18 @@ export class LastMeetingCardComponent {
   }
 
   protected open(): void {
-    const link = this.link();
+    const row = this.row();
     // Releasing a text selection inside the card is not a click on it.
-    if (!link || window.getSelection()?.toString()) return;
-    void this.router.navigateByUrl(link.url);
+    if (!row || window.getSelection()?.toString()) return;
+    this.details.open(row, 'last_card');
+  }
+
+  /** A plain click on the title opens the drawer; a modified click keeps the link's own behaviour. */
+  protected onTitleClick(event: MouseEvent): void {
+    event.stopPropagation();
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    this.open();
   }
 
   /** Keeps a link click from also opening the card; a plain click navigates in-app. */

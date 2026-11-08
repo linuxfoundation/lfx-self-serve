@@ -22,7 +22,7 @@
         }
         <h2
           #titleElement
-          class="m-0 font-display text-[30px] font-light leading-[36px] tracking-[-0.01em] text-gray-900 [text-wrap:pretty]"
+          class="m-0 font-display text-[30px] font-light leading-[36px] tracking-[-0.01em] text-gray-900 [text-wrap:pretty] break-words"
           data-testid="meeting-details-title">
           {{ context.shownRow().title }}
         </h2>
@@ -50,17 +50,17 @@
           @if (meetingType(); as type) {
             <lfx-ui-badge variant="outline" data-testid="meeting-details-type"><i [class]="type.icon" aria-hidden="true"></i>{{ type.label }}</lfx-ui-badge>
           }
-          @for (group of groups(); track group) {
+          @for (group of groups(); track group.uid) {
             <!-- A long group name truncates; the tooltip keeps it whole. -->
             <lfx-ui-badge
-              class="max-w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              class="max-w-full"
               variant="outline"
-              role="img"
-              tabindex="0"
-              [attr.aria-label]="group"
-              [lfxUiTooltip]="group"
+              interactive
+              [attr.aria-label]="'View group: ' + group.name"
+              [lfxUiTooltip]="group.name ?? ''"
+              (activated)="openGroup(group.uid)"
               data-testid="meeting-details-group"
-              ><i class="fa-light fa-users" aria-hidden="true"></i><span class="min-w-0 truncate">{{ group }}</span></lfx-ui-badge
+              ><i class="fa-light fa-users" aria-hidden="true"></i><span class="min-w-0 truncate">{{ group.name }}</span></lfx-ui-badge
             >
           }
           @for (feature of features(); track feature.setting) {
@@ -74,27 +74,56 @@
           <div class="flex flex-wrap items-center gap-[6px] text-[13px] leading-[18px] text-gray-600" data-testid="meeting-details-organizers">
             <span>Organized by:</span>
             <span class="inline-flex flex-none items-center pl-[2px]">
-              <!-- One organizer is named beside the avatar, so only a stack of two or more gets tooltips. -->
+              <!-- One organizer is named beside the avatar, so only a stack of two or more names each avatar. -->
               @let stack = organizers().length > 1;
               @for (organizer of organizers(); track organizer.key) {
-                <span
-                  class="inline-flex flex-none cursor-default rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
-                  [style.margin-left.px]="$first ? 0 : -5"
-                  [attr.role]="stack ? 'img' : null"
-                  [attr.tabindex]="stack ? 0 : null"
-                  [attr.aria-label]="stack ? organizer.label : null"
-                  [attr.aria-hidden]="stack ? null : 'true'"
-                  [lfxUiTooltip]="organizer.label"
-                  [lfxUiTooltipDisabled]="!stack"
-                  data-testid="meeting-details-organizer-avatar">
-                  <lfx-ui-avatar class="!text-[8px] !font-semibold" [size]="18" [name]="organizer.name" [src]="organizer.photo" decorative stacked />
-                </span>
+                @if (stack && organizer.mailto) {
+                  <a
+                    class="inline-flex flex-none rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                    [style.margin-left.px]="$first ? 0 : -5"
+                    [href]="organizer.mailto"
+                    [attr.aria-label]="'Email ' + organizer.name"
+                    [lfxUiTooltip]="organizer.label"
+                    data-testid="meeting-details-organizer-avatar">
+                    <lfx-ui-avatar class="!text-[8px] !font-semibold" [size]="18" [name]="organizer.name" [src]="organizer.photo" decorative stacked />
+                  </a>
+                } @else {
+                  <span
+                    class="inline-flex flex-none cursor-default rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                    [style.margin-left.px]="$first ? 0 : -5"
+                    [attr.role]="stack ? 'img' : null"
+                    [attr.tabindex]="stack ? 0 : null"
+                    [attr.aria-label]="stack ? organizer.label : null"
+                    [attr.aria-hidden]="stack ? null : 'true'"
+                    [lfxUiTooltip]="organizer.label"
+                    [lfxUiTooltipDisabled]="!stack"
+                    data-testid="meeting-details-organizer-avatar">
+                    <lfx-ui-avatar class="!text-[8px] !font-semibold" [size]="18" [name]="organizer.name" [src]="organizer.photo" decorative stacked />
+                  </span>
+                }
               }
             </span>
             @if (organizers().length === 1) {
-              <span class="min-w-0 break-words text-gray-700" data-testid="meeting-details-organizer-name">{{ organizers()[0].label }}</span>
+              @let only = organizers()[0];
+              @if (only.mailto) {
+                <a
+                  class="min-w-0 break-words text-gray-700 underline decoration-transparent underline-offset-[3px] hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                  [href]="only.mailto"
+                  [attr.title]="'Email ' + only.name"
+                  [attr.aria-label]="'Email ' + only.name"
+                  data-testid="meeting-details-organizer-name"
+                  >{{ only.label }}</a
+                >
+              } @else {
+                <span class="min-w-0 break-words text-gray-700" data-testid="meeting-details-organizer-name">{{ only.label }}</span>
+              }
             }
           </div>
+        }
+        @if (scheduledZone(); as zone) {
+          <p class="m-0 flex items-center gap-[6px] text-[13px] leading-[18px] text-gray-600" data-testid="meeting-details-scheduled-zone">
+            <i class="fa-light fa-globe" aria-hidden="true"></i>{{ zone }}
+          </p>
         }
       </div>
 
@@ -102,9 +131,10 @@
         class="col-start-1 row-start-2 flex min-w-0 flex-col gap-[12px] @[720px]:sticky @[720px]:top-[calc(var(--md-head)+20px)] @[720px]:z-[3] @[720px]:col-start-2 @[720px]:row-span-2 @[720px]:row-start-1 @[720px]:self-start"
         data-testid="meeting-details-side">
         <!-- Schedule slot: occurrence, date, RSVP and join. -->
-        <div class="flex flex-col gap-[12px] empty:hidden" data-testid="meeting-details-schedule"></div>
+        <div class="flex flex-col gap-[12px] empty:hidden" data-testid="meeting-details-schedule"><lfx-meeting-details-schedule /></div>
         <!-- Tools slot: host controls, attendance, artifacts and the viewer's own actions. -->
         <lfx-meeting-details-tools data-testid="meeting-details-tools" />
+        <lfx-meeting-details-own-actions />
       </div>
 
       <div class="col-start-1 row-start-3 flex min-w-0 flex-col gap-[24px] @[720px]:row-start-2" data-testid="meeting-details-content">
@@ -131,7 +161,9 @@
           [attr.role]="context.canViewGuests() ? 'tabpanel' : null"
           [attr.id]="context.canViewGuests() ? 'meeting-details-panel-agenda' : null"
           [attr.aria-labelledby]="context.canViewGuests() ? 'meeting-details-tab-agenda' : null"
-          data-testid="meeting-details-agenda"></div>
+          data-testid="meeting-details-agenda">
+          <lfx-meeting-details-agenda />
+        </div>
         @if (context.canViewGuests()) {
           <!-- Guests slot: guests, or participants once the date has ended. Kept mounted while hidden, so it loads the hosts and count on open. -->
           <div
@@ -142,7 +174,9 @@
             role="tabpanel"
             id="meeting-details-panel-guests"
             aria-labelledby="meeting-details-tab-guests"
-            data-testid="meeting-details-guests"></div>
+            data-testid="meeting-details-guests">
+            <lfx-meeting-details-guests />
+          </div>
         }
       </div>
     </div>

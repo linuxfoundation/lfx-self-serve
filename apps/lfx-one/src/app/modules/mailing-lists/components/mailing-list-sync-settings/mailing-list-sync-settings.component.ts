@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LowerCasePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, output, signal, Signal, untracked } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, output, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -15,7 +15,7 @@ import { CreateMailingListRequest, GroupsIOMailingList } from '@lfx-one/shared/i
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MessageService } from 'primeng/api';
-import { catchError, of, switchMap, take } from 'rxjs';
+import { catchError, finalize, of, switchMap, take } from 'rxjs';
 
 /**
  * Sync Settings section for the mailing list view page (#4024) — the ON/OFF toggle and direction
@@ -33,6 +33,8 @@ export class MailingListSyncSettingsComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
+  private destroyed = false;
 
   public readonly mailingList = input.required<GroupsIOMailingList>();
   // When the caller already has every mailing list linked to the committee in hand (the Auto Sync
@@ -87,9 +89,20 @@ export class MailingListSyncSettingsComponent {
   // Writable, not a computed off mailingList().sync_mode: a failed save leaves mailingList()
   // unchanged, so a computed would re-evaluate to the exact value it had before the click and
   // lfx-toggle's [ngModel] binding would see no input change — the switch would stay stuck in the
-  // clicked position instead of snapping back (#4899 review). Set optimistically in
+  // clicked position instead of snapping back (#4899 review / #4880 review). Set optimistically in
   // onToggleChange() and explicitly reverted in save()'s catchError.
   protected readonly syncOn = signal(false);
+
+  // Set when the sibling lookup errors — `activeSync()` can't be trusted in this state (we don't know
+  // whether another list already has a direction configured), so the template disables sync controls
+  // rather than silently risking a second auto-sync direction on the same committee (#4880 review).
+  protected readonly siblingLookupFailed = signal(false);
+  // Set for the duration of the lookup — `activeSync()` can't be trusted as "no sibling has sync"
+  // while the request is still in flight (its initial `[]` value looks identical to a resolved,
+  // empty result), so controls must stay disabled until this clears too (#4880 review).
+  protected readonly siblingLookupLoading = signal(false);
+  // Bumped by retrySiblingLookup() to force a re-fetch of the same committee uid (#4880 review).
+  private readonly siblingLookupRetryNonce = signal(0);
 
   // Other mailing lists linked to the same committee, used to resolve whether a sync direction is
   // already active elsewhere (only one direction is allowed per committee at a time).
@@ -97,6 +110,8 @@ export class MailingListSyncSettingsComponent {
   protected readonly activeSync: Signal<GroupsIOMailingList | null> = this.initActiveSync();
 
   public constructor() {
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
+
     // toObservable + takeUntilDestroyed, not effect() — savingChange.emit() is a side effect on a
     // parent, not a write to a signal this component owns, which is what effect() is meant for
     // (#4899 review nitpick).
@@ -145,10 +160,13 @@ export class MailingListSyncSettingsComponent {
     this.form.controls.direction.valueChanges.pipe(takeUntilDestroyed()).subscribe((direction) => this.save(direction));
 
     // Only one direction is allowed per committee at a time — lock the selector whenever another
-    // linked mailing list already has one configured. Also lock it while a save is in flight so a
-    // second direction change can't fire an overlapping PUT that races the first (#4880 review).
+    // linked mailing list already has one configured, while a save is in flight (so a second
+    // direction change can't fire an overlapping PUT that races the first), whenever the sibling
+    // lookup itself failed (we can't verify the "only one direction" invariant without it, so err
+    // toward blocking writes rather than risking a second auto-sync direction, #4880 review), or
+    // whenever a sibling card elsewhere in the same drawer is mid-save (#4899 review).
     effect(() => {
-      if (this.saving() || this.activeSync() || this.lockedBySibling()) {
+      if (this.saving() || this.activeSync() || this.lockedBySibling() || this.siblingLookupFailed() || this.siblingLookupLoading()) {
         this.form.controls.direction.disable({ emitEvent: false });
       } else {
         this.form.controls.direction.enable({ emitEvent: false });
@@ -156,9 +174,15 @@ export class MailingListSyncSettingsComponent {
     });
   }
 
+  protected retrySiblingLookup(): void {
+    // Bumps the lookup's nonce so the lookup observable re-runs even though the committee uid itself
+    // hasn't changed (#4880 review).
+    this.siblingLookupRetryNonce.update((n) => n + 1);
+  }
+
   protected onToggleChange(checked: boolean): void {
     // Set immediately, before the save resolves, so the switch reflects the click right away
-    // instead of waiting on the round-trip — reverted in save()'s catchError on failure (#4899 review).
+    // instead of waiting on the round-trip — reverted in save()'s catchError on failure (#4899/#4880 review).
     this.syncOn.set(checked);
     if (!checked) {
       this.save(MailingListSyncMode.MANUAL);
@@ -207,15 +231,20 @@ export class MailingListSyncSettingsComponent {
       )
       .subscribe((result) => {
         this.saving.set(false);
-        if (result) {
-          // `updateMailingList` returns the server's raw indexed record, which lacks fields the
-          // list GET adds separately (e.g. `writer`) — merge onto the input so overrides built
-          // from this result keep every field the parent's card rendering depends on (#4899 review).
-          // `sync_mode` is explicitly overridden with the value just submitted: the indexed record
-          // doesn't carry `sync_mode` yet (upstream gap), so `...result` would otherwise be a no-op
-          // and `...ml` would feed the parent override the stale pre-save mode — snapping the toggle
-          // back and preventing the override from ever self-clearing (#4899 review).
-          this.updated.emit({ ...ml, ...result, sync_mode: syncMode });
+        // The save is deliberately fire-and-forget (take(1), not takeUntilDestroyed — see above), so
+        // this callback can still run after the component is destroyed (e.g. user navigated away
+        // mid-save). `output()` already no-ops a post-destroy emit, but guard explicitly so we don't
+        // rely on that incidental behavior (#4880 review).
+        if (result && !this.destroyed) {
+          // `updateMailingList` returns the BFF's raw indexed PUT response, which lacks GET-only
+          // enrichment (`writer`, committee names, project/service details) and hasn't caught up to
+          // the just-submitted `sync_mode` in the index yet. Emit the pre-save enriched input with
+          // only `sync_mode` overridden — spreading `...result` on top of `ml` let any
+          // overlapping-but-less-enriched field in the raw doc (e.g. `committees` as uid-only
+          // entries, blank `project_name`/`project_slug`) win over the enriched copy, silently
+          // downgrading the parent's data even though the save only changed `sync_mode` (#4880
+          // review / lfx-one review / #4899 review).
+          this.updated.emit({ ...ml, sync_mode: syncMode });
         }
       });
   }
@@ -252,30 +281,44 @@ export class MailingListSyncSettingsComponent {
     // re-fetch to see the new sync_mode, even though its own committee uid never changed. Keying on
     // uid with distinctUntilChanged (as a single-instance page can) would suppress that refetch and
     // leave `activeSync` stale, breaking the "only one auto direction per committee" guarantee the
-    // moment two lists in the same drawer are toggled back to back.
+    // moment two lists in the same drawer are toggled back to back — so this intentionally does NOT
+    // distinctUntilChanged on committeeUid alone; retrySiblingLookup()'s nonce bump also flows
+    // through unfiltered for the same reason (#4880 review retry behavior, #4899 review refetch).
     const lookupKey = computed(() => ({
       ml: this.mailingList(),
       candidates: this.siblingCandidates(),
       committeeUid: this.syncEnabled() && this.isWriter() ? (this.committee()?.uid ?? null) : null,
+      nonce: this.siblingLookupRetryNonce(),
     }));
 
     return toSignal(
       toObservable(lookupKey).pipe(
         switchMap(({ candidates, committeeUid }) => {
+          this.siblingLookupFailed.set(false);
           // The caller already has every linked list in hand (the Auto Sync drawer) — reuse it
           // instead of every open instance issuing its own identical getMailingListsByCommittee
           // request (#4899 review).
           if (candidates) {
+            this.siblingLookupLoading.set(false);
             return of(candidates);
           }
-          return committeeUid
-            ? this.mailingListService.getMailingListsByCommittee(committeeUid).pipe(
-                catchError((error) => {
-                  console.error('Failed to load sibling mailing lists for sync settings', error);
-                  return of([] as GroupsIOMailingList[]);
-                })
-              )
-            : of([]);
+          if (!committeeUid) {
+            this.siblingLookupLoading.set(false);
+            return of([] as GroupsIOMailingList[]);
+          }
+          this.siblingLookupLoading.set(true);
+          return this.mailingListService.getMailingListsByCommittee(committeeUid).pipe(
+            catchError((error) => {
+              console.error('Failed to load sibling mailing lists for sync settings', error);
+              this.siblingLookupFailed.set(true);
+              return of([] as GroupsIOMailingList[]);
+            }),
+            // `finalize` clears the loading flag on every outcome — success, the caught error
+            // above, or cancellation from a newer lookup superseding this one via switchMap —
+            // instead of a no-op inner switchMap that only existed to run the same side effect
+            // (lfx-one review).
+            finalize(() => this.siblingLookupLoading.set(false))
+          );
         })
       ),
       { initialValue: [] as GroupsIOMailingList[] }
