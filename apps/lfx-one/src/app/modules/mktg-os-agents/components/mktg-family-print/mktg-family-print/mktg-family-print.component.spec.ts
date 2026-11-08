@@ -18,6 +18,7 @@ import {
   buildBoilerplatesPrintView,
   buildFaqPrintView,
   faqAssetOfRevision,
+  mktgFamilyPrintCoverTagline,
   mktgFamilyPrintDocument,
   mktgPortraitPlateFit,
   mktgPortraitPlateRadius,
@@ -207,6 +208,24 @@ describe('MktgFamilyPrintComponent', () => {
     expect(wrappedStrip?.classList.contains('pp-cover-strip--wrapped')).toBe(true);
     expect(wrappedStrip?.parentElement?.style.top).toBe(
       `${MKTG_PORTRAIT_COVER_STRIP.top - MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight}px`
+    );
+  });
+
+  it('prints the cover tagline whole when the stack fits over the tiles, and shortened at a word with an ellipsis when it would meet them', async () => {
+    // #5344 :25: the stack starts at y 500 and the tiles at 800, and no length rule binds an approved tagline; the three lines are measured
+    // in the book's face and the tagline alone gives way, so the title and the purpose keep their room.
+    const base = view();
+    const short = 'Open standards for confidential computing.';
+    const whole = await render({ ...base, tagline: short });
+    expect(whole.querySelector('[data-testid="family-print-cover-tagline"]')?.textContent).toBe(short);
+    const long = Array.from({ length: 30 }, () => short).join(' ');
+    const cut = await render({ ...base, tagline: long });
+    const printed = cut.querySelector('[data-testid="family-print-cover-tagline"]')?.textContent ?? '';
+    expect(printed.endsWith('…')).toBe(true);
+    expect(printed.length).toBeLessThan(long.length);
+    expect(long.startsWith(printed.slice(0, -1))).toBe(true);
+    expect(printed).toBe(
+      mktgFamilyPrintCoverTagline(long, 'Positioning & brand', cut.querySelector('.fpc-purpose')?.textContent ?? '', 672, base.brand.fontStack)
     );
   });
 

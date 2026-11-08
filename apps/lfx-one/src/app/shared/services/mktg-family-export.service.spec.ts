@@ -194,6 +194,27 @@ describe('Family export client', () => {
     expect(view?.documents[2].openItems).toEqual(['How much does membership cost?']);
   });
 
+  it('reads the kit’s open items as its missing-asset reasons and the gaps no missing asset already states', () => {
+    // A kit with a gap but no missing asset is not "nothing left open"; a gap that restates a missing asset prints once (#5344 :179).
+    let view: MktgFamilyPrintView | undefined;
+    service.printView(target, [familyExportMember({ agentKey: 'brand-kit' })], 'Synthetic project').subscribe((value) => (view = value));
+    const response = approvedKit();
+    http
+      .expectOne((request) => request.url.includes('/documents/brand-kit/living/revisions/'))
+      .flush({
+        ...response,
+        sidecar: {
+          ...response.sidecar,
+          report: {
+            ...response.sidecar.report,
+            gaps: ['No stacked logo was provided.', 'No font weights were found.'],
+            findings: { sources_failed: [], missing_assets: [{ asset: 'logo_stacked', reason: 'Not in the record' }], warnings: [] },
+          },
+        },
+      });
+    expect(view?.documents[0].openItems).toEqual(['Not in the record', 'No font weights were found.']);
+  });
+
   it('keeps an unanswered FAQ question in Still open when the run’s report lists no gap for it', () => {
     let view: MktgFamilyPrintView | undefined;
     service.printView(target, [familyExportMember({ agentKey: 'faq' })], 'Synthetic project').subscribe((value) => (view = value));

@@ -20,15 +20,15 @@
             </span>
           </div>
         }
-        <div [lfxPpRect]="[inset[0], 500, inset[1]]">
-          @if (document.tagline) {
-            <p class="fpc-tagline" data-testid="family-print-cover-tagline">{{ document.tagline }}</p>
+        <div [lfxPpRect]="[inset[0], coverText.top, inset[1]]">
+          @if (coverTagline(); as tagline) {
+            <p class="fpc-tagline" data-testid="family-print-cover-tagline">{{ tagline }}</p>
           }
           <h1 class="fpc-title" data-testid="family-print-cover-title">{{ familyName() }}</h1>
           <p class="fpc-purpose">{{ coverPurpose() }}</p>
         </div>
         @if (coverTiles().length) {
-          <div class="fpc-docs" [lfxPpRect]="[inset[0], 800, inset[1]]" data-testid="family-print-cover-documents">
+          <div class="fpc-docs" [lfxPpRect]="[inset[0], coverText.bottom, inset[1]]" data-testid="family-print-cover-documents">
             @for (tile of coverTiles(); track tile.document.agentKey) {
               <div class="fpc-doc">
                 <p class="pp-lab pp-lab--accent">{{ tile.document.number }}</p>

@@ -10,7 +10,7 @@ import {
   MKTG_PORTRAIT_PAGE,
 } from '@lfx-one/shared/constants';
 import { MktgFamilyPrintFaqEntry, MktgFamilyPrintFaqItem, MktgFamilyPrintFaqPlanGroup } from '@lfx-one/shared/interfaces';
-import { mktgFamilyPrintFaqSourceLabel, mktgFamilyPrintFill } from '@lfx-one/shared/utils';
+import { mktgFamilyPrintFaqSourceChip, mktgFamilyPrintFill } from '@lfx-one/shared/utils';
 import { MKTG_PORTRAIT_BLOCK_HOST } from '../../mktg-portrait/mktg-portrait-host';
 import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
 
@@ -41,6 +41,8 @@ export class MktgFamilyPrintFaqPageComponent {
   public readonly labels = MKTG_FAMILY_PRINT_LABELS;
   public readonly geometry = MKTG_PORTRAIT_PAGE;
   public readonly column: readonly [number, number] = [MKTG_PORTRAIT_PAGE.margin, MKTG_PORTRAIT_PAGE.contentWidth];
+  /** One column's width, the plan's (mktgFamilyPrintFaqPages): the bound for a source chip. */
+  private readonly columnWidth = (MKTG_PORTRAIT_PAGE.contentWidth - MKTG_FAMILY_PRINT_FAQ_LAYOUT.columnGap) / 2;
 
   public readonly shown: Signal<MktgFamilyPrintFaqEntry[][]> = this.initShown();
   public readonly intro: Signal<string> = this.initIntro();
@@ -53,10 +55,18 @@ export class MktgFamilyPrintFaqPageComponent {
           const group = groups[item.group];
           const entry = group?.questions[item.question];
           if (!group || !entry) return [];
-          // The chip's word for the source, as the plan measured it; '' (the run's internal `Notes`) prints no chip.
+          // The chip's word for the source, bounded to the column so it keeps the one line the plan counted; '' (the run's internal `Notes`) prints no chip.
           // A heading over any question but the group's first repeats one begun in an earlier column or page.
           const heading = item.heading ? group.name : null;
-          return [{ key: entry.path, heading, continued: !!heading && item.question > 0, entry, source: mktgFamilyPrintFaqSourceLabel(entry.source) }];
+          return [
+            {
+              key: entry.path,
+              heading,
+              continued: !!heading && item.question > 0,
+              entry,
+              source: mktgFamilyPrintFaqSourceChip(entry.source, this.columnWidth),
+            },
+          ];
         })
       );
     });
