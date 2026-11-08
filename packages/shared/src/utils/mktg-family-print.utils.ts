@@ -430,17 +430,70 @@ export function mktgFamilyPrintFitRunBlock(rows: readonly string[], width: numbe
   );
 }
 
+/** `http://` or `https://` at the head of a source. */
+const SOURCE_SCHEME_REGEX = /^https?:\/\//;
+/** One whitespace character, as `\s` reads it: where a source's first token ends. */
+const WHITESPACE_REGEX = /\s/;
+/** A line terminator, which the dot of a regular expression does not match: what a label in parentheses may not hold. */
+const LINE_TERMINATOR_REGEX = /[\n\r\u2028\u2029]/;
+/** The host of a scheme address: what follows the scheme to the first `/` or whitespace (one run, nothing after it to satisfy). */
+const SOURCE_HOST_REGEX = /^https?:\/\/([^/\s]+)/;
+
+/**
+ * A scheme source's first token (`https://host/path`, to the first whitespace) and its label when the source is
+ * `https://… (label)`: one space after the token, the label in parentheses to the end of the source, at least one
+ * character long, with nothing breaking the line. Read by splitting at the first whitespace rather than by
+ * `^https?:\/\/\S+ \((.+)\)$`, whose `\S+` and `.+` overlap on a repeated ` (uid ` and made a long hostile
+ * source quadratic (CodeQL, js/polynomial-redos); the outputs are the same. `null` when the source has no scheme.
+ */
+function mktgFamilyPrintSourceParts(trimmed: string): { token: string; label: string | null } | null {
+  const scheme = SOURCE_SCHEME_REGEX.exec(trimmed)?.[0];
+  if (!scheme) return null;
+  const rest = trimmed.slice(scheme.length);
+  const space = rest.search(WHITESPACE_REGEX);
+  const token = space === -1 ? rest : rest.slice(0, space);
+  const inner = space > 0 && rest[space] === ' ' && rest[space + 1] === '(' && rest.endsWith(')') ? rest.slice(space + 2, -1) : '';
+  return { token: scheme + token, label: inner && !LINE_TERMINATOR_REGEX.test(inner) ? inner : null };
+}
+
+/**
+ * A source without its internal record ids: every ` (uid …)` (one or more characters before the closing parenthesis)
+ * dropped, as `/ \(uid [^)]+\)/g` dropped them, read by index so a source that repeats ` (uid ` without closing it
+ * is read once, not once per repeat.
+ */
+function mktgFamilyPrintWithoutUids(text: string): string {
+  const open = ' (uid ';
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const start = text.indexOf(open, from);
+    if (start === -1) break;
+    const close = text.indexOf(')', start + open.length);
+    if (close === -1) break;
+    if (close === start + open.length) {
+      // ` (uid )` holds no id: it stands, and the search goes on after its space.
+      out += text.slice(from, start + 1);
+      from = start + 1;
+      continue;
+    }
+    out += text.slice(from, start);
+    from = close + 1;
+  }
+  return out + text.slice(from);
+}
+
 /**
  * A source the run read, as the board prints it: a URL followed by its label
  * in parentheses becomes the label, a bare URL its host, and an internal
  * record id (` (uid …)`) is dropped: nothing internal reaches a printed page.
  */
 export function mktgFamilyPrintSourceLabel(source: string): string {
-  const trimmed = source.trim().replace(/ \(uid [^)]+\)/g, '');
-  const labelled = /^https?:\/\/\S+ \((.+)\)$/.exec(trimmed);
-  if (labelled) return labelled[1];
-  const url = /^https?:\/\/([^/\s]+)\S*$/.exec(trimmed);
-  return url ? url[1] : trimmed;
+  const trimmed = mktgFamilyPrintWithoutUids(source.trim());
+  const parts = mktgFamilyPrintSourceParts(trimmed);
+  if (parts?.label) return parts.label;
+  // A bare URL (no whitespace in it, a host before any `/`) is its host, as `^https?:\/\/([^/\s]+)\S*$` read it.
+  const host = parts && parts.token === trimmed ? SOURCE_HOST_REGEX.exec(trimmed)?.[1] : undefined;
+  return host ?? trimmed;
 }
 
 /**
@@ -452,18 +505,38 @@ export function mktgFamilyPrintSourceLabel(source: string): string {
  * alone keeps its own case.
  */
 export function mktgFamilyPrintBuiltFromLabel(source: string): string {
-  const trimmed = source.trim().replace(/ \(uid [^)]+\)/g, '');
-  const host = (url: string): string => (/^https?:\/\/([^/\s]+)/.exec(url)?.[1] ?? '').replace(/^www\./, '');
-  const labelled = /^(https?:\/\/\S+) \((.+)\)$/.exec(trimmed);
+  const trimmed = mktgFamilyPrintWithoutUids(source.trim());
+  const host = (url: string): string => (SOURCE_HOST_REGEX.exec(url)?.[1] ?? '').replace(/^www\./, '');
+  // The token and the label as `^(https?:\/\/\S+) \((.+)\)$` read them (mktgFamilyPrintSourceParts).
+  const parts = mktgFamilyPrintSourceParts(trimmed);
   let label: string;
-  if (labelled) label = `${labelled[2]} (${host(labelled[1])})`;
-  else if (/^https?:\/\//.test(trimmed)) return host(trimmed);
+  if (parts?.label) label = `${parts.label} (${host(parts.token)})`;
+  else if (parts) return host(trimmed);
   else if (/^LFX project record\b/i.test(trimmed)) label = trimmed.replace(/^(LFX project record)\b.*$/i, '$1');
   else {
     const internal = new RegExp(`\\s*\\((?:${MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS.join('|')})\\)$`, 'i');
     label = trimmed.replace(internal, '');
   }
   return label ? label[0].toLocaleUpperCase() + label.slice(1) : '';
+}
+
+/** A field name: a letter, then word characters and spaces (what `[A-Za-z][\w ]*` names; one run, anchored at both ends). */
+const SOURCE_FIELD_NAME_REGEX = /^[A-Za-z][\w ]*$/;
+/** What follows a field name's colon: optional whitespace, then a scheme (one run, then a literal). */
+const SOURCE_FIELD_ADDRESS_REGEX = /^\s*https?:\/\//;
+
+/**
+ * The field name of a `brand_page: https://…` source, without the whitespace before its colon, or `null` when the
+ * source is not one. The name holds no colon, so the colon read is the source's first; read by splitting there
+ * rather than by `^([A-Za-z][\w ]*?)\s*:\s*https?:\/\/`, whose `[\w ]*?` and `\s*` overlap on spaces and made a
+ * long hostile source quadratic (CodeQL, js/polynomial-redos); the outputs are the same.
+ */
+function mktgFamilyPrintSourceFieldName(trimmed: string): string | null {
+  const colon = trimmed.indexOf(':');
+  if (colon < 1) return null;
+  // The lazy name ends at its last word character: the whitespace before the colon was `\s*`'s, not the name's.
+  const name = trimmed.slice(0, colon).trimEnd();
+  return SOURCE_FIELD_NAME_REGEX.test(name) && SOURCE_FIELD_ADDRESS_REGEX.test(trimmed.slice(colon + 1)) ? name : null;
 }
 
 /**
@@ -473,9 +546,44 @@ export function mktgFamilyPrintBuiltFromLabel(source: string): string {
  * reader would take for an identifier reaches the page.
  */
 export function mktgFamilyPrintReadableSource(source: string): string {
-  const named = /^([A-Za-z][\w ]*?)\s*:\s*https?:\/\//.exec(source.trim());
-  if (named) return MKTG_FAMILY_PRINT_SOURCE_FIELD_WORDS[named[1].toLocaleLowerCase()] ?? named[1].replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+  const named = mktgFamilyPrintSourceFieldName(source.trim());
+  if (named !== null) return MKTG_FAMILY_PRINT_SOURCE_FIELD_WORDS[named.toLocaleLowerCase()] ?? named.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
   return mktgFamilyPrintSourceLabel(source).replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** A word that starts with twelve hexadecimal digits (a hash), at the start of a parenthesis's content or after a non-word character. */
+const HASHED_WORD_REGEX = /(?:^|\W)[0-9a-f]{12}/;
+
+/**
+ * A text without its hashed parentheses: every `(…)` that holds no parenthesis and a word starting with twelve
+ * hexadecimal digits, with the whitespace before it, dropped, as `/\s*\([^()]*\b[0-9a-f]{12,}[^()]*\)/g` dropped
+ * them. Read by index (each `(`, its first `)`, the content between them once) rather than by that pattern, whose
+ * `[^()]*` on each side of the hash made a long run of tabs quadratic (CodeQL, js/polynomial-redos); the outputs
+ * are the same.
+ */
+function mktgFamilyPrintWithoutHashedParentheses(text: string): string {
+  let out = '';
+  let from = 0;
+  let close = -1;
+  let open = text.indexOf('(');
+  while (open !== -1) {
+    if (close <= open) close = text.indexOf(')', open + 1);
+    if (close === -1) break;
+    const next = text.indexOf('(', open + 1);
+    if (next !== -1 && next < close) {
+      // A parenthesis inside: this one holds a parenthesis, so the inner one is the candidate.
+      open = next;
+      continue;
+    }
+    if (HASHED_WORD_REGEX.test(text.slice(open + 1, close))) {
+      let start = open;
+      while (start > from && WHITESPACE_REGEX.test(text[start - 1])) start -= 1;
+      out += text.slice(from, start);
+      from = close + 1;
+    }
+    open = next;
+  }
+  return out + text.slice(from);
 }
 
 /**
@@ -485,12 +593,14 @@ export function mktgFamilyPrintReadableSource(source: string): string {
  * dropped by the caller.
  */
 export function mktgFamilyPrintOpenItemText(text: string): string {
-  return text
-    .replace(/\s*\([^()]*\b[0-9a-f]{12,}[^()]*\)/g, '')
-    .replace(/\b[0-9a-f]{12,}[-\w]*\.\w{2,5}\b/g, '')
-    .replace(/\s+([,.;:])/g, '$1')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
+  return (
+    mktgFamilyPrintWithoutHashedParentheses(text)
+      .replace(/\b[0-9a-f]{12,}[-\w]*\.\w{2,5}\b/g, '')
+      // Only the first character of a whitespace run starts a match (the lookbehind), so a long run is read once, not once per character.
+      .replace(/(?<!\s)\s+([,.;:])/g, '$1')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+  );
 }
 
 /**
