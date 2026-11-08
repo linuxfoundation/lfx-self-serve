@@ -11,11 +11,12 @@ import { Title } from '@angular/platform-browser';
 import { environment } from '@environments/environment';
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDetailsDrawerData, MeetingDetailsTab, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
+import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
@@ -143,11 +144,20 @@ describe('MeetingDetailsDrawerComponent', () => {
             getPastMeetingAttachments: () => of([]),
             attachmentChanges: signal(new Map()),
             attachmentScopeOverrides: signal(new Map()),
+            // Upcoming guests stay loading, so tests set the hosts and count themselves.
+            getMyMeetingRegistrants: () => NEVER,
           },
         },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: () => of([]) } },
         {
           provide: UserService,
-          useValue: { viewerUsername: signal('synthetic-viewer'), refreshUserMeetings, refreshUserPastMeetings, confirmedMeetingRsvps: () => [] },
+          useValue: {
+            viewerUsername: signal('synthetic-viewer'),
+            user: signal(null),
+            refreshUserMeetings,
+            refreshUserPastMeetings,
+            confirmedMeetingRsvps: () => [],
+          },
         },
       ],
     });
