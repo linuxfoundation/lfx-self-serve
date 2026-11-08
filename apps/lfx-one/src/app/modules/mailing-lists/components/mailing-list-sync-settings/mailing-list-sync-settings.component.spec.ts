@@ -191,4 +191,24 @@ describe('MailingListSyncSettingsComponent', () => {
 
     expect(savingChanges).toContain(true);
   });
+
+  it('emits the submitted sync_mode when the save response omits it (#4899 review)', async () => {
+    // Guards the stale-merge fix in save(): the indexed record `updateMailingList` resolves with
+    // doesn't carry `sync_mode` yet (upstream lfx-v2-mailing-list-service #101/#104 gap), so
+    // `{ ...ml, ...result }` alone would silently re-emit the pre-save mode. Without the explicit
+    // `sync_mode: syncMode` override this test would still pass, because `updateResult` here (like
+    // every other case in this file) defaults to a full `GroupsIOMailingList`, which already carries
+    // the correct value — it has to omit `sync_mode` from the mocked response to exercise the gap.
+    const synced = { ...baseList, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST };
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional strip, not a read
+    const { sync_mode: _omit, ...response } = synced;
+    await render(synced, { updateResult: response as GroupsIOMailingList });
+    const emitted: GroupsIOMailingList[] = [];
+    fixture.componentInstance.updated.subscribe((v) => emitted.push(v));
+
+    fixture.componentInstance['onToggleChange'](false);
+    await fixture.whenStable();
+
+    expect(emitted[0]?.sync_mode).toBe(MailingListSyncMode.MANUAL);
+  });
 });
