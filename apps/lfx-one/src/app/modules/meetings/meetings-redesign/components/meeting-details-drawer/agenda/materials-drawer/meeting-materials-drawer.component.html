@@ -8,6 +8,28 @@
       <lfx-ui-spinner [size]="24" />
     </div>
   } @else {
+    @if (canScope) {
+      <section class="flex flex-col gap-[8px]" data-testid="meeting-materials-scope">
+        <lfx-ui-choicebox-group
+          label="Applies to"
+          [columns]="2"
+          [disabled]="saving()"
+          [value]="newItemScope()"
+          (valueChange)="setNewItemScope($event)"
+          data-testid="meeting-materials-scope-picker">
+          <lfx-ui-choicebox
+            value="occurrence"
+            label="This occurrence"
+            [description]="(data.occurrence?.start_time | date: 'EEE, MMM d, h:mm a') ?? ''"
+            data-testid="meeting-materials-scope-occurrence" />
+          <lfx-ui-choicebox value="series" label="All occurrences" description="Every date in the series" data-testid="meeting-materials-scope-series" />
+        </lfx-ui-choicebox-group>
+        <p class="text-[12px] leading-[16px] text-gray-500">
+          Choose before adding. Files and links you add now apply to {{ newItemScopeText() }}. You can change an existing item below.
+        </p>
+      </section>
+    }
+
     <section class="flex flex-col gap-[12px]" data-testid="meeting-materials-files">
       <h3 class="text-[14px] font-medium leading-[20px] text-gray-900">Upload Files</h3>
       <!-- Native picker: lfx-file-upload wraps PrimeNG, which meetings-redesign does not use. -->
@@ -119,6 +141,29 @@
       <span class="break-words text-[14px] leading-[20px]" [class]="deleting ? 'text-red-600 line-through' : 'text-gray-900'">{{ attachment.name }}</span>
       @if (attachment.link) {
         <span class="break-all text-[12px] leading-[16px] text-gray-500">{{ attachment.link }}</span>
+      }
+      @if (showScopes && !deleting) {
+        <div class="mt-[2px] flex flex-wrap items-center gap-[8px]" data-testid="meeting-materials-scope-row">
+          @if (row.scope === 'occurrence') {
+            <lfx-ui-badge size="sm" tone="accent"><i slot="icon" class="fa-light fa-calendar-day" aria-hidden="true"></i>This occurrence</lfx-ui-badge>
+          } @else {
+            <lfx-ui-badge size="sm"><i slot="icon" class="fa-light fa-repeat" aria-hidden="true"></i>All occurrences</lfx-ui-badge>
+          }
+          @if (row.scopeUnsaved) {
+            <span class="text-[12px] leading-[16px] text-amber-600" data-testid="meeting-materials-scope-unsaved">Unsaved</span>
+          }
+          @if (row.canToggleScope) {
+            <lfx-ui-button
+              variant="tertiary-accent"
+              size="tiny"
+              [ariaLabel]="(row.scope === 'series' ? 'Limit to this occurrence: ' : 'Apply to all occurrences: ') + attachment.name"
+              [disabled]="saving()"
+              (click)="toggleScope(row)"
+              data-testid="meeting-materials-scope-toggle">
+              {{ row.scope === 'series' ? 'Limit to this occurrence' : 'Apply to all occurrences' }}
+            </lfx-ui-button>
+          }
+        </div>
       }
     </div>
     <!-- One button for Delete and Undo, so focus stays on it when the row toggles. -->
