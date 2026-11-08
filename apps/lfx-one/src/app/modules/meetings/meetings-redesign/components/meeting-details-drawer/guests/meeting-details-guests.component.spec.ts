@@ -86,7 +86,7 @@ describe('MeetingDetailsGuestsComponent', () => {
   let current: WritableSignal<Meeting>;
   let organizer: WritableSignal<boolean>;
   let canViewGuests: WritableSignal<boolean>;
-  let meetingService: Record<string, ReturnType<typeof vi.fn>>;
+  let meetingService: Record<string, ReturnType<typeof vi.fn>> & { removedRegistrationMeetingIds?: WritableSignal<ReadonlySet<string>> };
   let removedIds: WritableSignal<ReadonlySet<string>>;
   let occurrence: WritableSignal<MeetingOccurrence | null>;
   let hosts: WritableSignal<readonly MeetingHostCandidate[]>;
@@ -96,6 +96,8 @@ describe('MeetingDetailsGuestsComponent', () => {
   let closeDialog: ReturnType<typeof vi.fn>;
   let dialogClosed: Subject<void>;
   let confirmedRsvps: WritableSignal<MeetingRsvp[]>;
+  let toastShow: ReturnType<typeof vi.fn>;
+  let refreshList: ReturnType<typeof vi.fn>;
 
   const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   const all = (testId: string): HTMLElement[] => Array.from(fixture.nativeElement.querySelectorAll(`[data-testid="${testId}"]`));
@@ -124,11 +126,14 @@ describe('MeetingDetailsGuestsComponent', () => {
         ] as PastMeetingParticipant[])
       ),
     };
+    meetingService.removedRegistrationMeetingIds = removedIds;
     composerOpen = vi.fn();
     modalOpen = vi.fn(() => ({ closed: of({ proceed: true, scope: 'series' }) }));
     dialogClosed = new Subject<void>();
     closeDialog = vi.fn(() => dialogClosed.next());
     confirmedRsvps = signal([]);
+    toastShow = vi.fn();
+    refreshList = vi.fn();
 
     TestBed.configureTestingModule({
       imports: [MeetingDetailsGuestsComponent],
@@ -147,9 +152,10 @@ describe('MeetingDetailsGuestsComponent', () => {
             hosts,
             guestCount,
             pastMeetingId: signal('synthetic-past-id'),
+            refreshList,
           },
         },
-        { provide: MeetingService, useValue: { ...meetingService, removedRegistrationMeetingIds: removedIds } },
+        { provide: MeetingService, useValue: meetingService },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn(() => of([])) } },
         {
           provide: UserService,
@@ -163,7 +169,7 @@ describe('MeetingDetailsGuestsComponent', () => {
         MeetingsHomeEditService,
         { provide: MeetingComposerService, useValue: { open: composerOpen } },
         { provide: UiModalService, useValue: { open: modalOpen } },
-        { provide: UiToastService, useValue: { show: vi.fn() } },
+        { provide: UiToastService, useValue: { show: toastShow } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
         { provide: DialogRef, useValue: { close: closeDialog, closed: dialogClosed } },
@@ -243,7 +249,11 @@ describe('MeetingDetailsGuestsComponent', () => {
     meetingService['getMyMeetingRegistrants'].mockReturnValueOnce(of(registrants.map((person) => (person.uid === 'r-2' ? { ...person, host: true } : person))));
     await render();
     expect(guestCount()).toBe(3);
-    expect(hosts().map((person) => person.email)).toEqual(['org@acme.example', 'bo@acme.example']);
+    expect(
+      hosts()
+        .map((person) => person.email)
+        .sort()
+    ).toEqual(['bo@acme.example', 'org@acme.example']);
 
     removedIds.set(new Set(['synthetic-meeting']));
     await fixture.whenStable();
@@ -418,5 +428,178 @@ describe('MeetingDetailsGuestsComponent', () => {
     );
     expect(modalOpen.mock.invocationCallOrder[0]).toBeLessThan(composerOpen.mock.invocationCallOrder[0]);
     expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'synthetic-meeting', projectUid: 'p-1', section: 'guests' });
+  });
+
+  describe('organizer guest actions', () => {
+    const cy = registrants[2];
+    const confirmWith = (accept: boolean) => modalOpen.mockReturnValueOnce({ closed: of(accept), close: vi.fn() });
+    const roles = (): string[] => all('meeting-details-guests-role').map((badge) => badge.textContent?.trim() ?? '');
+
+    it('offers actions on every upcoming registrant row, keeping committee rows off removal', async () => {
+      await render();
+
+      expect(all('meeting-details-guests-actions')).toHaveLength(3);
+      const actions = (fixture.componentInstance as unknown as { rowActions: () => Map<string, unknown> }).rowActions();
+      expect(actions.get('r-1')).toEqual({ resend: true, host: false, remove: true });
+      expect(actions.get('r-2')).toEqual({ resend: true, host: true, remove: false });
+    });
+
+    it('offers none to an invitee or once the meeting has ended', async () => {
+      organizer.set(false);
+      await render();
+      expect(all('meeting-details-guests-actions')).toHaveLength(0);
+
+      organizer.set(true);
+      state.set('ended');
+      await fixture.whenStable();
+      expect(all('meeting-details-guests-actions')).toHaveLength(0);
+    });
+
+    it('resends after the confirmation and names the guest in the toast', async () => {
+      meetingService['resendMeetingInvitation'] = vi.fn(() => of({ message: 'ok' }));
+      await render();
+      confirmWith(true);
+      component()['confirmResend'](cy);
+
+      expect(modalOpen).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          role: 'alertdialog',
+          data: expect.objectContaining({ heading: 'Resend invitation', message: 'Resend the meeting invitation to Cy Ng?' }),
+        })
+      );
+      expect(meetingService['resendMeetingInvitation']).toHaveBeenCalledWith('synthetic-meeting', 'r-3');
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting invitation resent to Cy Ng' });
+    });
+
+    it('shows the server reason when a resend fails', async () => {
+      meetingService['resendMeetingInvitation'] = vi.fn(() =>
+        throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'Invite limit reached' } }))
+      );
+      await render();
+      confirmWith(true);
+      component()['confirmResend'](cy);
+
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', message: 'Error', description: 'Invite limit reached' }));
+    });
+
+    it('makes a guest a host without confirming, re-labels the row and refreshes the list', async () => {
+      meetingService['getChangedFields'] = vi.fn((guest: Parameters<MeetingService['getChangedFields']>[0]) =>
+        MeetingService.prototype.getChangedFields.call({}, guest)
+      );
+      meetingService['updateMeetingRegistrants'] = vi.fn(() => of({ successes: [], failures: [], summary: { total: 1, successful: 1, failed: 0 } }));
+      await render();
+      const scoped = { ...cy, occurrence: '2525245200', user_id: 'u-3', username: 'cyng', avatar_url: 'https://avatars.example/cy.png' };
+      component()['toggleHost'](scoped);
+      await fixture.whenStable();
+
+      expect(modalOpen).not.toHaveBeenCalled();
+      const [[meetingId, [update]]] = meetingService['updateMeetingRegistrants'].mock.calls;
+      expect(meetingId).toBe('synthetic-meeting');
+      expect(update.uid).toBe('r-3');
+      expect(update.changes).toMatchObject({ host: true, occurrence_id: '2525245200', user_id: 'u-3', username: 'cyng' });
+      expect(update.changes).not.toHaveProperty('avatar_url');
+      expect(roles()).toEqual(['Organizer', 'Host']);
+      expect(refreshList).toHaveBeenCalled();
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Cy Ng is now a meeting host' });
+    });
+
+    it('moves a guest to the host position as soon as the change saves, then back once removed', async () => {
+      const al = { ...cy, uid: 'r-4', first_name: 'Al', last_name: 'Fox', email: 'al@acme.example' } as MeetingRegistrant;
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([...registrants, al]));
+      meetingService['getChangedFields'] = vi.fn(() => ({}));
+      meetingService['updateMeetingRegistrants'] = vi.fn(() => of({ successes: [], failures: [], summary: { total: 1, successful: 1, failed: 0 } }));
+      await render();
+      expect(names()).toEqual(['Bo Kim (You)', 'Ada Lane', 'Al Fox', 'Cy Ng']);
+
+      component()['toggleHost'](cy);
+      await fixture.whenStable();
+      expect(names()).toEqual(['Bo Kim (You)', 'Ada Lane', 'Cy Ng', 'Al Fox']);
+      expect(query('meeting-details-guests-loading')).toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).toHaveBeenCalledTimes(1);
+      expect(
+        hosts()
+          .map((person) => person.email)
+          .sort()
+      ).toEqual(['cy@acme.example', 'org@acme.example']);
+
+      component()['toggleHost']({ ...cy, host: true });
+      await fixture.whenStable();
+      expect(names()).toEqual(['Bo Kim (You)', 'Ada Lane', 'Al Fox', 'Cy Ng']);
+      expect(hosts().map((person) => person.email)).toEqual(['org@acme.example']);
+    });
+
+    it('reports an upstream host failure', async () => {
+      meetingService['getChangedFields'] = vi.fn(() => ({}));
+      meetingService['updateMeetingRegistrants'] = vi.fn(() =>
+        of({ successes: [], failures: [{ input: null, error: { message: 'Rejected' } }], summary: { total: 1, successful: 0, failed: 1 } })
+      );
+      await render();
+      component()['toggleHost'](cy);
+
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', description: 'Rejected' }));
+      expect(refreshList).not.toHaveBeenCalled();
+    });
+
+    it('removes a guest only after the confirmation and hides the row at once', async () => {
+      meetingService['deleteMeetingRegistrants'] = vi.fn(() => of({ successes: ['r-3'], failures: [], summary: { total: 1, successful: 1, failed: 0 } }));
+      await render();
+
+      confirmWith(false);
+      component()['confirmRemove'](cy);
+      expect(meetingService['deleteMeetingRegistrants']).not.toHaveBeenCalled();
+
+      confirmWith(true);
+      component()['confirmRemove'](cy);
+      await fixture.whenStable();
+      expect(modalOpen).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          data: expect.objectContaining({ heading: 'Remove guest', message: 'Are you sure you want to remove Cy Ng from this meeting?', danger: true }),
+        })
+      );
+      expect(meetingService['deleteMeetingRegistrants']).toHaveBeenCalledWith('synthetic-meeting', ['r-3']);
+      expect(names()).toEqual(['Bo Kim (You)', 'Ada Lane']);
+      expect(guestCount()).toBe(2);
+      expect(refreshList).toHaveBeenCalled();
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Cy Ng removed from the meeting' });
+    });
+
+    it('shows the empty state once the last guest is removed', async () => {
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([cy]));
+      meetingService['deleteMeetingRegistrants'] = vi.fn(() => of({ successes: ['r-3'], failures: [], summary: { total: 1, successful: 1, failed: 0 } }));
+      await render();
+      confirmWith(true);
+      component()['confirmRemove'](cy);
+      await fixture.whenStable();
+
+      expect(query('meeting-details-guests-empty')).not.toBeNull();
+      expect(query('meeting-details-guests-no-match')).toBeNull();
+      expect(guestCount()).toBe(0);
+    });
+
+    it('drops a removal confirmed after the date has ended', async () => {
+      const closed = new Subject<boolean>();
+      meetingService['deleteMeetingRegistrants'] = vi.fn(() => of({ successes: ['r-3'], failures: [], summary: { total: 1, successful: 1, failed: 0 } }));
+      await render();
+      modalOpen.mockReturnValueOnce({ closed, close: vi.fn() });
+      component()['confirmRemove'](cy);
+
+      state.set('ended');
+      await fixture.whenStable();
+      closed.next(true);
+      expect(meetingService['deleteMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
+    it('keeps the row when the removal fails', async () => {
+      meetingService['deleteMeetingRegistrants'] = vi.fn(() => throwError(() => new Error('boom')));
+      await render();
+      confirmWith(true);
+      component()['confirmRemove'](cy);
+      await fixture.whenStable();
+
+      expect(all('meeting-details-guests-row')).toHaveLength(3);
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', description: 'Failed to remove guest. Please try again.' }));
+    });
   });
 });

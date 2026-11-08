@@ -16,6 +16,8 @@ import {
   getMeetingGuestFilterChips,
   getMeetingGuestFilterFields,
   getMeetingGuestSummary,
+  getMeetingGuestRowActions,
+  resortMeetingGuestRows,
   getOfferedMeetingGuestFilters,
 } from './meeting-guests.utils';
 
@@ -127,6 +129,47 @@ describe('buildRegistrantGuestRows', () => {
       true
     );
     expect(rows.map((row) => row.uid)).toEqual(['me', 'org', 'host', 'yes', 'maybe', 'pending-b', 'pending-z', 'unnamed', 'no']);
+  });
+});
+
+describe('resortMeetingGuestRows', () => {
+  it('puts a guest made host back in host order', () => {
+    const rows = buildRegistrantGuestRows(
+      [registrant({ uid: 'r-1', first_name: 'Ann' }), registrant({ uid: 'r-2', first_name: 'Zoe' })],
+      { organizers: [], committees: [] },
+      viewer,
+      false
+    );
+    expect(rows.map((row) => row.uid)).toEqual(['r-1', 'r-2']);
+    const changed = rows.map((row) => (row.uid === 'r-2' ? { ...row, role: 'host' as const } : row));
+    expect(resortMeetingGuestRows(changed).map((row) => row.uid)).toEqual(['r-2', 'r-1']);
+  });
+});
+
+describe('getMeetingGuestRowActions', () => {
+  const rows = buildRegistrantGuestRows(
+    [
+      registrant({ uid: 'r-1', email: 'org@acme.example' }),
+      registrant({ uid: 'r-2', type: 'committee', committee_uid: 'c-1' }),
+      registrant({ uid: 'r-4', username: 'viewer' }),
+    ],
+    { organizers: ['org@acme.example'], committees },
+    viewer,
+    false
+  );
+  const actions = (uid: string, organizer = true, ended = false) => getMeetingGuestRowActions(rows.find((row) => row.uid === uid)!, organizer, ended);
+
+  it('keeps the organizer row off host changes, and committee rows and the viewer off removal', () => {
+    expect(actions('r-1')).toEqual({ resend: true, host: false, remove: true });
+    expect(actions('r-2')).toEqual({ resend: true, host: true, remove: false });
+    expect(actions('r-4')).toEqual({ resend: true, host: true, remove: false });
+  });
+
+  it('offers nothing to non-organizers, once ended or on participant rows', () => {
+    expect(actions('r-1', false)).toBeNull();
+    expect(actions('r-1', true, true)).toBeNull();
+    const [past] = buildParticipantGuestRows([participant({})], { organizers: [], committees: [] }, viewer, []);
+    expect(getMeetingGuestRowActions(past, true, false)).toBeNull();
   });
 });
 

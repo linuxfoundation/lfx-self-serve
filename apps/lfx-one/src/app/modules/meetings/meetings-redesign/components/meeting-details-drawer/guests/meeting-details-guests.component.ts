@@ -4,15 +4,18 @@
 import { DialogRef } from '@angular/cdk/dialog';
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterRenderEffect, Component, computed, ElementRef, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { MEETING_GUEST_EMPTY_FILTERS } from '@lfx-one/shared/constants';
+import { afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, Signal, signal, TemplateRef, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { MEETING_GUEST_EMPTY_FILTERS, MEETING_GUEST_ROLE_LABELS } from '@lfx-one/shared/constants';
 import {
   CommitteeMember,
+  MeetingGuestConfirm,
   MeetingGuestFilterChip,
   MeetingGuestFilterField,
   MeetingGuestFilters,
+  MeetingGuestRoleKey,
   MeetingGuestRow,
+  MeetingGuestRowActions,
   MeetingGuestSummary,
   MeetingGuestsLoad,
   MeetingHostCandidate,
@@ -27,8 +30,10 @@ import {
   getMeetingGuestFilterChips,
   getMeetingGuestFilterFields,
   getMeetingGuestSummary,
+  getMeetingGuestRowActions,
   getOfferedMeetingGuestFilters,
   isMeetingInviteResponsesEnabled,
+  resortMeetingGuestRows,
   selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
@@ -41,11 +46,17 @@ import { UiChipGroupComponent } from '@shared/uikit/chip/chip-group.component';
 import { UiChipComponent } from '@shared/uikit/chip/chip.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
+import { UiMenuItemComponent } from '@shared/uikit/menu/menu-item.component';
+import { UiMenuSeparatorComponent } from '@shared/uikit/menu/menu-separator.component';
+import { UiMenuComponent } from '@shared/uikit/menu/menu.component';
+import { UiModalComponent } from '@shared/uikit/modal/modal.component';
+import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
-import { catchError, combineLatest, debounceTime, map, Observable, of, startWith, switchMap, take, tap, throwError } from 'rxjs';
+import { catchError, combineLatest, debounceTime, filter, map, Observable, of, startWith, switchMap, take, tap, throwError } from 'rxjs';
 
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
@@ -54,6 +65,7 @@ import { MeetingDetailsContext } from '../meeting-details.context';
  * Guests tab of the meeting details drawer, Participants once the meeting has ended.
  * @description Loads its own list from the drawer context: registrants upcoming, through the viewer-scoped endpoint the meeting
  * page uses for everyone, and past participants when ended. Search and the Filters popover narrow one flat list client-side.
+ * Organizers get Resend Invite, Make / Remove Host and Remove on each upcoming registrant row.
  */
 @Component({
   selector: 'lfx-meeting-details-guests',
@@ -65,6 +77,10 @@ import { MeetingDetailsContext } from '../meeting-details.context';
     UiChipGroupComponent,
     UiEmptyStateComponent,
     UiInputComponent,
+    UiMenuComponent,
+    UiMenuItemComponent,
+    UiMenuSeparatorComponent,
+    UiModalComponent,
     UiOptionComponent,
     UiSelectComponent,
     UiSkeletonComponent,
@@ -83,6 +99,10 @@ export class MeetingDetailsGuestsComponent {
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly stickSentinel = viewChild<ElementRef<HTMLElement>>('stickSentinel');
+  private readonly modal = inject(UiModalService);
+  private readonly toast = inject(UiToastService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly confirmDialog = viewChild.required<TemplateRef<unknown>>('confirmDialog');
 
   protected readonly query = signal('');
   protected readonly filters = signal<MeetingGuestFilters>(MEETING_GUEST_EMPTY_FILTERS);
@@ -90,6 +110,13 @@ export class MeetingDetailsGuestsComponent {
   private readonly reload = signal(0);
   /** The toolbar is stuck under the drawer header, so the rows scroll under its fade. */
   protected readonly stuck = signal(false);
+  protected readonly resending = signal<ReadonlySet<string>>(new Set());
+  protected readonly hostUpdating = signal<ReadonlySet<string>>(new Set());
+  protected readonly deleting = signal(false);
+  /** Kept until the drawer closes, like the legacy guest list, so a change shows without refetching. */
+  private readonly removedUids = signal<ReadonlySet<string>>(new Set());
+  private readonly hostOverrides = signal<ReadonlyMap<string, boolean>>(new Map());
+  private confirmRef: DialogRef<boolean> | null = null;
 
   protected readonly ended: Signal<boolean> = computed(() => this.context.state() === 'ended');
   protected readonly canAddGuests: Signal<boolean> = computed(() => this.context.organizer() && !this.ended());
@@ -109,9 +136,11 @@ export class MeetingDetailsGuestsComponent {
   /** Applied filters the popover still offers; a status picked upcoming no longer applies once the meeting ends. */
   private readonly applied: Signal<MeetingGuestFilters> = computed(() => getOfferedMeetingGuestFilters(this.filters(), this.fields()));
   protected readonly chips: Signal<MeetingGuestFilterChip[]> = computed(() => getMeetingGuestFilterChips(this.applied(), this.fields()));
-  protected readonly shown: Signal<MeetingGuestRow[]> = computed(() => filterMeetingGuestRows(this.load().rows, this.searchTerm(), this.applied()));
+  protected readonly rows: Signal<MeetingGuestRow[]> = computed(() => this.applyChanges(this.load().rows));
+  protected readonly rowActions: Signal<ReadonlyMap<string, MeetingGuestRowActions>> = this.initRowActions();
+  protected readonly shown: Signal<MeetingGuestRow[]> = computed(() => filterMeetingGuestRows(this.rows(), this.searchTerm(), this.applied()));
   protected readonly summary: Signal<MeetingGuestSummary> = computed(() =>
-    getMeetingGuestSummary(this.load().rows, this.ended(), (this.context.meeting().committees?.length ?? 0) > 0)
+    getMeetingGuestSummary(this.rows(), this.ended(), (this.context.meeting().committees?.length ?? 0) > 0)
   );
   protected readonly filtersLabel: Signal<string> = computed(() => (this.chips().length ? `Filters, ${this.chips().length} applied` : ''));
   protected readonly draftChanged: Signal<boolean> = computed(() => !this.sameFilters(this.draft(), this.applied()));
@@ -119,6 +148,7 @@ export class MeetingDetailsGuestsComponent {
 
   public constructor() {
     this.watchToolbarStick();
+    this.destroyRef.onDestroy(() => this.confirmRef?.close());
   }
 
   /** Every open of the popover starts from the applied filters, so a closed draft is discarded. */
@@ -164,6 +194,72 @@ export class MeetingDetailsGuestsComponent {
     }
     this.dialogRef.closed.pipe(take(1)).subscribe(() => this.editService.edit(row, 'guests'));
     this.dialogRef.close();
+  }
+
+  protected confirmResend(registrant: MeetingRegistrant): void {
+    if (this.resending().has(registrant.uid)) return;
+    const label = this.registrantLabel(registrant, 'this guest');
+    this.confirm(
+      { heading: 'Resend invitation', message: `Resend the meeting invitation to ${label}?`, confirmLabel: 'Resend', icon: 'fa-light fa-paper-plane' },
+      () => this.resend(registrant, label)
+    );
+  }
+
+  /** Saves the host flag straight away, no confirmation; the update echoes the stored scope and identity fields. */
+  protected toggleHost(registrant: MeetingRegistrant): void {
+    const uid = registrant.uid;
+    if (this.hostUpdating().has(uid)) return;
+    const host = !registrant.host;
+    const label = this.registrantLabel(registrant, 'The guest');
+    this.hostUpdating.update((uids) => this.withUid(uids, uid, true));
+    this.meetingService
+      .updateMeetingRegistrants(this.context.meeting().id, [{ uid, changes: this.meetingService.getChangedFields({ ...registrant, host, state: 'modified' }) }])
+      .pipe(take(1))
+      .subscribe({
+        next: (response) => {
+          this.hostUpdating.update((uids) => this.withUid(uids, uid, false));
+          if (response.summary.successful > 0) {
+            this.hostOverrides.update((overrides) => new Map(overrides).set(uid, host));
+            this.shareChanges();
+            this.showSuccess(`${label} is ${host ? 'now' : 'no longer'} a meeting host`);
+            this.context.refreshList();
+          } else {
+            this.showError(response.failures[0]?.error?.message || 'Failed to update host');
+          }
+        },
+        error: () => {
+          this.hostUpdating.update((uids) => this.withUid(uids, uid, false));
+          this.showError('Failed to update host. Please try again.');
+        },
+      });
+  }
+
+  protected confirmRemove(registrant: MeetingRegistrant): void {
+    if (this.deleting()) return;
+    const label = this.registrantLabel(registrant, 'this guest');
+    this.confirm(
+      {
+        heading: 'Remove guest',
+        message: `Are you sure you want to remove ${label} from this meeting?`,
+        confirmLabel: 'Remove',
+        icon: 'fa-light fa-triangle-exclamation',
+        danger: true,
+      },
+      () => this.remove(registrant)
+    );
+  }
+
+  private initRowActions(): Signal<ReadonlyMap<string, MeetingGuestRowActions>> {
+    return computed(() => {
+      const organizer = this.context.organizer();
+      const ended = this.ended();
+      const actions = new Map<string, MeetingGuestRowActions>();
+      for (const row of this.rows()) {
+        const rowActions = getMeetingGuestRowActions(row, organizer, ended);
+        if (rowActions) actions.set(row.uid, rowActions);
+      }
+      return actions;
+    });
   }
 
   private initLoad(): Signal<MeetingGuestsLoad> {
@@ -226,19 +322,13 @@ export class MeetingDetailsGuestsComponent {
                   viewer,
                   rsvpEnabled
                 );
-                if (!removedSelf) {
-                  this.shareHosts(registrants);
-                  return rows;
-                }
-                const own = new Set(rows.filter((row) => row.you).map((row) => row.uid));
-                this.shareHosts(registrants.filter((registrant) => !own.has(registrant.uid)));
-                return rows.filter((row) => !row.you);
+                return removedSelf ? rows.filter((row) => !row.you) : rows;
               })
             );
           }
           return rows$.pipe(
-            // The shell shows the total as the tab count.
-            tap((rows) => this.context.guestCount.set(rows.length)),
+            // The shell shows the total as the tab count, and upcoming hosts join Organized by, both after local changes.
+            tap((rows) => this.shareAggregates(this.applyChanges(rows), !ended)),
             map((rows): MeetingGuestsLoad => ({ status: 'ready', rows })),
             catchError((error: unknown) => {
               console.error(`Failed to load guests of meeting ${meeting.id}:`, error);
@@ -308,6 +398,17 @@ export class MeetingDetailsGuestsComponent {
     });
   }
 
+  /** After a local change, the tab count and "Organized by" follow the rows the tab shows. */
+  private shareChanges(): void {
+    // A response that lands after the date ended must not swap the participants' hosts for registrant ones.
+    this.shareAggregates(this.rows(), !this.ended());
+  }
+
+  private shareAggregates(rows: MeetingGuestRow[], withHosts: boolean): void {
+    this.context.guestCount.set(rows.length);
+    if (withHosts) this.context.hosts.set(rows.flatMap((row) => (row.registrant?.host ? [row.registrant] : [])));
+  }
+
   /** Host-flagged people join the drawer's "Organized by" line. */
   private shareHosts(people: MeetingHostCandidate[]): void {
     this.context.hosts.set(people.filter((person) => person.host));
@@ -315,5 +416,97 @@ export class MeetingDetailsGuestsComponent {
 
   private sameFilters(a: MeetingGuestFilters, b: MeetingGuestFilters): boolean {
     return (Object.keys(a) as (keyof MeetingGuestFilters)[]).every((key) => a[key] === b[key]);
+  }
+
+  private resend(registrant: MeetingRegistrant, label: string): void {
+    const uid = registrant.uid;
+    if (!this.rowActions().get(uid)?.resend) return;
+    this.resending.update((uids) => this.withUid(uids, uid, true));
+    this.meetingService
+      .resendMeetingInvitation(this.context.meeting().id, uid)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.resending.update((uids) => this.withUid(uids, uid, false));
+          this.showSuccess(`Meeting invitation resent to ${label}`);
+        },
+        error: (error: unknown) => {
+          this.resending.update((uids) => this.withUid(uids, uid, false));
+          // The BFF error envelope is `{ error: string, code }`.
+          const reason: unknown = error instanceof HttpErrorResponse ? error.error?.error : null;
+          this.showError(typeof reason === 'string' && reason.trim() ? reason : 'Failed to resend invitation. Please try again.');
+        },
+      });
+  }
+
+  private remove(registrant: MeetingRegistrant): void {
+    const uid = registrant.uid;
+    // The date can end, or the row go away, while the confirmation is open.
+    if (this.deleting() || !this.rowActions().get(uid)?.remove) return;
+    this.deleting.set(true);
+    this.meetingService
+      .deleteMeetingRegistrants(this.context.meeting().id, [uid])
+      .pipe(take(1))
+      .subscribe({
+        next: (response) => {
+          this.deleting.set(false);
+          if (response.summary.successful > 0) {
+            this.removedUids.update((uids) => this.withUid(uids, uid, true));
+            this.shareChanges();
+            this.showSuccess(`${this.registrantLabel(registrant, 'The guest')} removed from the meeting`);
+            this.context.refreshList();
+          } else {
+            this.showError(response.failures[0]?.error?.message || 'Failed to remove guest');
+          }
+        },
+        error: () => {
+          this.deleting.set(false);
+          this.showError('Failed to remove guest. Please try again.');
+        },
+      });
+  }
+
+  private confirm(data: MeetingGuestConfirm, accept: () => void): void {
+    this.confirmRef = this.modal.open<boolean, MeetingGuestConfirm>(this.confirmDialog(), { data, role: 'alertdialog', describedBy: true });
+    this.confirmRef.closed.pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef)).subscribe(accept);
+  }
+
+  /** Removed rows drop out and host changes re-label and re-sort the rows, all without a refetch. */
+  private applyChanges(rows: MeetingGuestRow[]): MeetingGuestRow[] {
+    const removed = this.removedUids();
+    const overrides = this.hostOverrides();
+    if (!removed.size && !overrides.size) return rows;
+    let relabeled = false;
+    const changed: MeetingGuestRow[] = rows
+      .filter((row) => !removed.has(row.uid))
+      .map((row) => {
+        const host = overrides.get(row.uid);
+        if (host === undefined || !row.registrant) return row;
+        // Organizer rows never take a host change, so the override only switches host and guest.
+        const role: MeetingGuestRoleKey = host ? 'host' : 'guest';
+        relabeled = true;
+        return { ...row, role, roleLabel: MEETING_GUEST_ROLE_LABELS[role], registrant: { ...row.registrant, host } };
+      });
+    // Only registrant rows take overrides; participant rows keep their own order.
+    return relabeled ? resortMeetingGuestRows(changed) : changed;
+  }
+
+  private registrantLabel(registrant: MeetingRegistrant, fallback: string): string {
+    return [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || fallback;
+  }
+
+  private showSuccess(message: string): void {
+    this.toast.show({ variant: 'dark', message });
+  }
+
+  private withUid(uids: ReadonlySet<string>, uid: string, add: boolean): ReadonlySet<string> {
+    const next = new Set(uids);
+    if (add) next.add(uid);
+    else next.delete(uid);
+    return next;
+  }
+
+  private showError(description: string): void {
+    this.toast.show({ variant: 'error', position: 'bottom-center', message: 'Error', description });
   }
 }
