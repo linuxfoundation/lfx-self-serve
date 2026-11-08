@@ -189,6 +189,8 @@ export const FRAMEWORK_PORTRAIT_TYPE = {
   matrixProofTight: { size: 10.5, line: 1.35, weight: 400 },
   matrixBite: { size: 12.5, line: 1.3, weight: 500 },
   matrixCrosscut: { size: 11, line: 1.5, weight: 400 },
+  /** A proof's source tag (`.fwp-matrix-source`): small, semibold, tracked capitals (`FRAMEWORK_PORTRAIT_ROOM.matrixSourceTracking`), never broken. */
+  matrixSource: { size: 8, line: 1.3, weight: 600 },
   /** A page's title in the grammar's type (`.pp-title`, 34/1.1/500), fitted to one line on the goal pages. */
   pageTitle: { size: 34, line: 1.1, weight: 500 },
   /** An anchor question (`.fwp-anchor-question`) and its number; the crosscut box's text. */
@@ -353,13 +355,25 @@ export const FRAMEWORK_PORTRAIT_ROOM = {
   taglineInset: 13,
   /** The goal matrix (`.fwp-matrix-row`): a row's padding (10 + 10) and hairline; its side padding (12 + 12); the label column; the column gap; a proof row's margin under it; the sound bite's rule and padding (2 + 10); the crosscut's margin above. */
   matrixRow: 21,
+  /** The head row's chrome: its padding alone (the head has no hairline), the "Goal N" label's line and the title's margin above. The label is an inline span in the page's 12.5 / 1.6 body, so its line is the body's 20 px strut, not the label's own 12 (CSS 2.1 §10.8); measured in Chromium and WebKit, the head of a 1-line title is 61 px. */
+  matrixGoalHeadRow: 20,
+  matrixGoalHeadLabel: 20,
+  matrixGoalHeadTitleTop: 3,
   matrixPadding: 24,
   matrixLabelColumn: 96,
   matrixGap: 16,
   matrixProofGap: 5,
   matrixBiteInset: 12,
   matrixCrosscutGap: 8,
-  /** The least room a banded matrix leaves under itself, above the footer gap, for its proof row to print (the editor's allowance for a browser setting the face wider; a smaller margin drops the row). */
+  /** The source tag's letter-spacing, em (`.fwp-matrix-source`). */
+  matrixSourceTracking: 0.1,
+  /**
+   * The least room a banded matrix leaves under itself, above the footer gap, for its proof row to print (the editor's allowance for
+   * a browser setting the face wider; a smaller margin drops the row). Calibrated on the served Chrome render of the overfull record's
+   * page 2 (project cncf, Letter, 7 Nov 2026): with the cells measured on the matrix's face factor and the source tag on its own line
+   * where it does not fit beside the fact, the model ends the matrix 0.5 px from the print's (969.8 vs 969.3); nothing of the print is
+   * left unplaced, so the allowance stays 12.
+   */
   matrixBuffer: 12,
   /** The say list: its margin above, a pill's padding and border around (8 + 8 + 1 + 1 down, 14 + 14 + 1 + 1 across; tight 6 + 6 / 10 + 10), the gap between pills; the say column's and the avoid column's widths and the avoid column's left. */
   sayListTop: 10,
@@ -412,18 +426,26 @@ export const FRAMEWORK_PORTRAIT_TILE_SHARES = {
 export const FRAMEWORK_PORTRAIT_MAX_TILES = 6;
 
 /**
- * The one caption line under the goal matrix's bands (the editor's W1b, 7 Nov 2026): a band drops the value-proposition and
- * sound-bite rows, each goal page printing both in full, and prints every key message whole (frameworkPortraitMatrix).
+ * The one caption line under the goal matrix's bands (the editor's ladder, 7 Nov 2026): band mode drops its rows in a fixed
+ * order, sound bites, then value propositions, then the cells' "+N more" lines folded into the caption, then proofs, until the
+ * matrix fits its room with every kept row whole and the proofs at the tight floor or above; the note names what dropped, each
+ * goal page printing it in full. The key message and the goal name never drop and never clamp. A strip, whose other rows are
+ * fitted, drops its proofs alone when they would print below the floor (frameworkPortraitMatrix).
  */
 export const FRAMEWORK_PORTRAIT_MATRIX_BAND_NOTES = {
+  /** Step 1: the sound-bite row dropped. */
+  bites: 'Sound bites are on each goal page.',
+  /** Step 2: the value-proposition row dropped as well. */
   goalPages: 'Value propositions and sound bites are on each goal page.',
   /**
-   * The bands kept their proof row by folding each cell's "+N more in LFX One" line into this caption (the editor's wording, order 43
-   * addendum 14, 7 Nov 2026: the drop note as is plus one sentence, no number, on the one line): one whole first proof a goal.
+   * Step 3: the bands kept their proof row by folding each cell's "+N more in LFX One" line into this caption (the editor's wording,
+   * order 43 addendum 14, 7 Nov 2026: the drop note as is plus one sentence, no number, on the one line): one whole first proof a goal.
    */
   goalPagesFold: 'Value propositions and sound bites are on each goal page. More proofs for each goal are in LFX One.',
-  /** The bands dropped the proof row as well (the editor's FA1b): its cells would have printed below the tight floor. */
+  /** Step 4: the proof row dropped as well (the editor's FA1b): its cells would have printed below the tight floor. */
   goalPagesAll: 'Value propositions, sound bites and proofs are on each goal page.',
+  /** A strip's proof row dropped (the floor applies to strips too): its value propositions and sound bites still print. */
+  proofs: 'Proofs are on each goal page.',
 } as const;
 
 /** A count in words for the print's sentences, up to the anchor questions' limit (FOUNDATION_MESSAGE_CONTENT_LIMITS.anchor.max); a count past it prints as digits. */
