@@ -16,7 +16,7 @@ import {
   MailingListPickerDialogResult,
   ValidationError,
 } from '@lfx-one/shared/interfaces';
-import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
+import { CommitteeMemberVisibility, MailingListSyncMode } from '@lfx-one/shared/enums';
 import { MAILING_LIST_ACCESS_DENIED_MESSAGE, SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -539,6 +539,17 @@ export class CommitteeSettingsTabComponent {
   }
 
   private buildMlUpdatePayload(ml: GroupsIOMailingList, committeeUid: string | null): Partial<CreateMailingListRequest> {
+    // Preserve the existing sync direction (#4024) only when the committee is unchanged —
+    // detaching/reattaching the SAME committee is a full-resource PUT, so omitting sync_mode would
+    // silently reset it to manual. Re-linking to a DIFFERENT committee must reset to manual instead,
+    // or auto-sync would silently start against a committee nobody configured it for (#4880 review).
+    const sameCommittee = !!committeeUid && ml.committees?.[0]?.uid === committeeUid;
+    let syncMode: MailingListSyncMode | undefined;
+    if (sameCommittee) {
+      syncMode = ml.sync_mode;
+    } else if (committeeUid) {
+      syncMode = MailingListSyncMode.MANUAL;
+    }
     return {
       name: ml.group_name,
       public: ml.public,
@@ -551,6 +562,7 @@ export class CommitteeSettingsTabComponent {
       subject_tag: ml.subject_tag,
       writers: ml.writers,
       auditors: ml.auditors,
+      sync_mode: syncMode,
     };
   }
 
