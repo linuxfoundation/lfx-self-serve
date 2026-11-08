@@ -223,7 +223,7 @@ describe('MailingListSyncSettingsComponent', () => {
     TestBed.resetTestingModule();
     updateMailingList = vi.fn(() => of(baseList));
     // getMailingListsByCommittee's real signature returns Observable<GroupsIOMailingList[]>, and the
-    // component pipes directly off that return value (`.pipe(catchError(...), switchMap(...))`) — a
+    // component pipes directly off that return value (`.pipe(catchError(...), finalize(...))`) — a
     // mocked Promise has no `.pipe` and throws. A manually-controlled Subject keeps the lookup "in
     // flight" until resolveLookup() fires, without breaking the Observable contract.
     const lookupSubject = new Subject<GroupsIOMailingList[]>();
