@@ -99,6 +99,8 @@
               </div>
               @if (canEdit()) {
                 @let removable = ml.writer === true;
+                @let syncModeSupported =
+                  ml.sync_mode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST || ml.sync_mode === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE;
                 <div class="flex items-center gap-1 flex-shrink-0">
                   @if (syncPreviewEnabled()) {
                     <lfx-button
@@ -108,10 +110,14 @@
                       size="small"
                       severity="secondary"
                       styleClass="!text-gray-500 hover:!text-blue-600"
-                      [disabled]="!removable"
+                      [disabled]="!removable || !syncModeSupported"
                       [ariaLabel]="'Sync mailing list ' + ml.group_name"
                       [tooltip]="
-                        removable ? 'Preview and apply committee sync for ' + ml.group_name : 'You need Manage access to this mailing list to sync it.'
+                        !removable
+                          ? 'You need Manage access to this mailing list to sync it.'
+                          : !syncModeSupported
+                            ? 'Set a sync direction for ' + ml.group_name + ' in Mailing List Settings before syncing.'
+                            : 'Preview and apply committee sync for ' + ml.group_name
                       "
                       (onClick)="openSyncPreviewDialog(ml)"
                       [attr.data-testid]="'settings-sync-now-ml-' + ml.uid"></lfx-button>

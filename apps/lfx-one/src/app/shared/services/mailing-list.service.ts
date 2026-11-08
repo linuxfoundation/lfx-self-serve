@@ -106,7 +106,10 @@ export class MailingListService {
 
   /** Applies an admin-approved subset of a sync-diff's adds/removes. Same long-request shape as `getSyncDiff`. */
   public applySyncDiff(mailingListId: string, data: SyncApplyRequest): Observable<SyncApplyResult> {
-    return this.http.post<SyncApplyResult>(`${this.baseUrl}/${mailingListId}/sync-apply`, data).pipe(take(1));
+    return this.http.post<SyncApplyResult>(`${this.baseUrl}/${mailingListId}/sync-apply`, data).pipe(
+      take(1),
+      tap(() => this.mailingListDetailCache.delete(mailingListId))
+    );
   }
 
   public getServicesByProject(projectUid: string): Observable<GroupsIOService[]> {

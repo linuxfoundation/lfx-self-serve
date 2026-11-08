@@ -65,6 +65,9 @@ export class CommitteeSettingsTabComponent {
   private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
 
+  // Template-only enum reference for gating Sync Now on a list's configured sync mode
+  protected readonly MailingListSyncMode = MailingListSyncMode;
+
   // Inputs
   public committee = input.required<Committee>();
   public canEdit = input<boolean>(false);
@@ -284,7 +287,7 @@ export class CommitteeSettingsTabComponent {
 
     if (!ref) return;
 
-    ref.onClose.pipe(take(1)).subscribe((result: { applied: boolean } | null) => {
+    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: { applied: boolean } | null) => {
       this.refreshMl$.next();
       // Only a genuine apply can change committee membership — committeeUpdated triggers the parent's
       // onSettingsSaved(), which refetches the committee and repatches the Settings form, so firing it
