@@ -622,6 +622,29 @@ describe('the framework’s print', () => {
       foundationMessagePrintNumbers([{ number: '10,000+', label: 'servers' }], [fact('Over 10000 servers were published', 'Website'), ...facts])[0].source
     ).toBe('');
     expect(foundationMessagePrintNumbers([{ number: '96%', label: 'a share' }], [])[0].number).toBe('96%');
+    // A different measure that contains the digits does not state the figure: no pill from `40%`, `$40`, `€40`, `40M`, `40k`
+    // or `v40` for a stored `40`; a count of 40 does; a stored `96%` or `$8,000` is its own measure and still matches itself.
+    const forty = (text: string, source = 'Report') =>
+      foundationMessagePrintNumbers([{ number: '40', label: 'research groups' }], [fact(text, source)])[0].source;
+    expect(forty('Membership grew 40% last year')).toBe('');
+    expect(forty('Seats cost $40 per seat')).toBe('');
+    expect(forty('Seats cost €40 or £40 per seat')).toBe('');
+    expect(forty('40M downloads in the first year')).toBe('');
+    expect(forty('40k stars on the main repository')).toBe('');
+    expect(forty('Shipped in v40 of the toolchain')).toBe('');
+    expect(forty('40 research groups run the toolchain')).toBe('Report');
+    expect(forty('Run by 40 research groups.')).toBe('Report');
+    expect(foundationMessagePrintNumbers([{ number: '96%', label: 'a share' }], [fact('96% of surveyed organizations run it', 'Survey')])[0].source).toBe(
+      'Survey'
+    );
+    expect(foundationMessagePrintNumbers([{ number: '$8,000', label: 'a fee' }], [fact('The fee is $8,000 a year', 'Website')])[0].source).toBe('Website');
+    // A true `40` from one source beside a `40%` from another is no disagreement: the first source's pill, not none.
+    expect(
+      foundationMessagePrintNumbers(
+        [{ number: '40', label: 'research groups' }],
+        [fact('40 research groups', 'Report'), fact('grew 40% last year', 'Survey')]
+      )[0].source
+    ).toBe('Report');
     // The label decides a four-digit figure's reading: a year under a year label, a separated count under any other (editor S1).
     expect(foundationMessagePrintNumbers([{ number: '2000', label: 'research groups run the toolchain' }], [])[0].number).toBe('2,000');
     expect(foundationMessagePrintNumbers([{ number: '2000', label: 'the year the project was founded' }], [])[0].number).toBe('2000');
