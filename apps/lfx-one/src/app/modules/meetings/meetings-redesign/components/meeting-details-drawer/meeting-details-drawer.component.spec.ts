@@ -9,6 +9,7 @@ import { Component, Injector, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Title } from '@angular/platform-browser';
 import { environment } from '@environments/environment';
+import { RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDetailsDrawerData, MeetingDetailsTab, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -17,6 +18,7 @@ import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDetailsDrawerComponent } from './meeting-details-drawer.component';
@@ -69,6 +71,7 @@ describe('MeetingDetailsDrawerComponent', () => {
   let toastShow: ReturnType<typeof vi.fn>;
   let copy: ReturnType<typeof vi.fn>;
   let edit: ReturnType<typeof vi.fn>;
+  let cancelOccurrence: ReturnType<typeof vi.fn>;
   let requestClose: ReturnType<typeof vi.fn<() => void>>;
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
   let refreshUserPastMeetings: ReturnType<typeof vi.fn>;
@@ -85,6 +88,7 @@ describe('MeetingDetailsDrawerComponent', () => {
       providers: [
         { provide: MeetingsHomeStore, useValue: { now } },
         { provide: MeetingsHomeEditService, useValue: { edit } },
+        { provide: MeetingsHomeDeleteService, useValue: { cancelOccurrence } },
       ],
     });
     const data: MeetingDetailsDrawerData = { row: value, tab, injector: page };
@@ -106,6 +110,7 @@ describe('MeetingDetailsDrawerComponent', () => {
     toastShow = vi.fn();
     copy = vi.fn().mockReturnValue(true);
     edit = vi.fn();
+    cancelOccurrence = vi.fn(() => of(true));
     requestClose = vi.fn<() => void>();
     refreshUserMeetings = vi.fn();
     refreshUserPastMeetings = vi.fn();
@@ -399,6 +404,70 @@ describe('MeetingDetailsDrawerComponent', () => {
       expect(find('meeting-details-organizer-name')?.getAttribute('href')).toContain(
         `body=${encodeURIComponent(`${environment.urls.home}/meetings/synthetic-meeting`)}`
       );
+    });
+
+    describe('Cancel Occurrence', () => {
+      const OCCURRENCE = { occurrence_id: 'occ-1', title: '', start_time: '2026-11-05T18:00:00Z', duration: 60 };
+      const series = (overrides: Partial<Meeting> = {}): MeetingHomeRow =>
+        row({ ...MEETING, organizer: true, recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 }, ...overrides } as Meeting, {
+          occurrence: OCCURRENCE,
+          occurrenceId: 'occ-1',
+        });
+      const menuItem = (testId: string): HTMLElement | null =>
+        TestBed.inject(OverlayContainer).getContainerElement().querySelector(`[data-testid="${testId}"]`);
+
+      it.each([
+        [true, 1],
+        [false, 0],
+      ])('cancels the shown date through the page flow and closes only once it is cancelled (%s)', async (cancelled, closes) => {
+        cancelOccurrence.mockReturnValue(of(cancelled));
+        const seriesRow = series();
+        await render(seriesRow);
+        await click('meeting-details-more');
+
+        expect(menuItem('meeting-details-edit')).not.toBeNull();
+        expect(menuItem('meeting-details-cancel-occurrence')?.textContent?.trim()).toBe('Cancel Occurrence');
+        menuItem('meeting-details-cancel-occurrence')?.click();
+        await settle();
+
+        expect(cancelOccurrence).toHaveBeenCalledWith(seriesRow, OCCURRENCE, 'drawer');
+        expect(requestClose).toHaveBeenCalledTimes(closes);
+      });
+
+      it('offers it without Edit Meeting when the meeting has no project', async () => {
+        await render(series({ project_slug: undefined }));
+        await click('meeting-details-more');
+
+        expect(menuItem('meeting-details-edit')).toBeNull();
+        expect(menuItem('meeting-details-cancel-occurrence')).not.toBeNull();
+      });
+
+      it('is not offered on a past row, even for a coming date', async () => {
+        const past = { ...series().meeting, id: 'synthetic-meeting-1762362000000', meeting_id: 'synthetic-meeting' } as unknown as PastMeeting;
+        await render(row(past, { occurrence: OCCURRENCE, occurrenceId: 'occ-1' }));
+
+        expect(find('meeting-details-more')).toBeNull();
+      });
+
+      it('is not offered on a one-time meeting', async () => {
+        await render(row({ ...MEETING, organizer: true }));
+        await click('meeting-details-more');
+
+        expect(menuItem('meeting-details-cancel-occurrence')).toBeNull();
+      });
+
+      it('is not offered to an invitee', async () => {
+        await render(series({ organizer: false }));
+
+        expect(find('meeting-details-more')).toBeNull();
+      });
+
+      it('is not offered once the date has ended', async () => {
+        now.set(new Date('2026-11-06T12:00:00Z'));
+        await render(series());
+
+        expect(find('meeting-details-more')).toBeNull();
+      });
     });
 
     it('closes through the drawer so its close guard runs', async () => {

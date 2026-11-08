@@ -10,12 +10,14 @@ import { getMeetingHomeRowProject, getMeetingShareUrl, isPastMeetingCalendarRow 
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiMenuItemComponent } from '@shared/uikit/menu/menu-item.component';
+import { UiMenuSeparatorComponent } from '@shared/uikit/menu/menu-separator.component';
 import { UiMenuComponent } from '@shared/uikit/menu/menu.component';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
 import { take } from 'rxjs';
 
+import { MeetingsHomeDeleteService } from '../../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
 import { MeetingDetailsProjectLinkComponent } from '../project-link/meeting-details-project-link.component';
@@ -26,7 +28,7 @@ import { MeetingDetailsProjectLinkComponent } from '../project-link/meeting-deta
  */
 @Component({
   selector: 'lfx-meeting-details-header',
-  imports: [MeetingDetailsProjectLinkComponent, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiTooltipDirective],
+  imports: [MeetingDetailsProjectLinkComponent, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuSeparatorComponent, UiTooltipDirective],
   templateUrl: './meeting-details-header.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -36,6 +38,7 @@ export class MeetingDetailsHeaderComponent {
   private readonly drawer = inject(UiDrawerContext);
   private readonly dialogRef = inject(DialogRef);
   private readonly editService = inject(MeetingsHomeEditService);
+  private readonly deleteService = inject(MeetingsHomeDeleteService);
   protected readonly context = inject(MeetingDetailsContext);
 
   /** The big title has scrolled under this row, so the compact title shows. */
@@ -48,6 +51,15 @@ export class MeetingDetailsHeaderComponent {
       this.context.organizer() &&
       this.context.state() !== 'ended' &&
       !!this.context.meeting().project_slug &&
+      !isPastMeetingCalendarRow(this.context.row().meeting)
+  );
+  /** Organizer on an upcoming date of a series (the meeting page's rule); never a past row, as Edit. */
+  protected readonly canCancel: Signal<boolean> = computed(
+    () =>
+      this.context.organizer() &&
+      !!this.context.meeting().recurrence &&
+      this.context.state() !== 'ended' &&
+      !!this.context.occurrence() &&
       !isPastMeetingCalendarRow(this.context.row().meeting)
   );
 
@@ -70,6 +82,15 @@ export class MeetingDetailsHeaderComponent {
     const row = this.context.shownRow();
     this.dialogRef.closed.pipe(take(1)).subscribe(() => this.editService.edit(row));
     this.dialogRef.close();
+  }
+
+  protected cancelOccurrence(): void {
+    const occurrence = this.context.occurrence();
+    if (!occurrence) return;
+    // The page's flow cancels the date and reloads the list; the drawer then closes on a date that no longer exists.
+    this.deleteService.cancelOccurrence(this.context.shownRow(), occurrence, 'drawer').subscribe((cancelled) => {
+      if (cancelled) this.drawer.requestClose();
+    });
   }
 
   protected close(): void {

@@ -9,7 +9,7 @@ import { Meeting, MeetingDeleteDialogData, MeetingOccurrence, MeetingRsvpSummary
 import { formatMeetingWhen, formatMeetingWhenFull } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDeleteModalComponent } from './meeting-delete-modal.component';
@@ -132,11 +132,20 @@ describe('MeetingDeleteModalComponent', () => {
       expect(query('meeting-dialog-context-when')?.textContent).toContain(formatMeetingWhen(OCCURRENCE.start_time, 30));
       expect(query('meetings-home-delete-guests')).toBeNull();
       expect(query('meetings-home-delete-reason')?.textContent).toContain('Included in the cancellation email sent to guests.');
+      expect(query('meetings-home-delete-note')?.textContent).toContain('This is not how you unregister yourself from an occurrence.');
       await type('  Holiday  ');
       await confirm();
 
       expect(cancelOccurrence).toHaveBeenCalledWith('synthetic-meeting', OCCURRENCE.occurrence_id, 'Holiday');
       expect(close).toHaveBeenCalledWith(true);
+    });
+
+    it('reads Canceling... while the cancel runs', async () => {
+      cancelOccurrence.mockReturnValue(new Subject<void>());
+      await render(buildData(SERIES, OCCURRENCE));
+      await confirm();
+
+      expect(query('meetings-home-delete-confirm')?.textContent).toContain('Canceling...');
     });
 
     it("times a picked date by its own duration, else the series', not the clicked row's", async () => {

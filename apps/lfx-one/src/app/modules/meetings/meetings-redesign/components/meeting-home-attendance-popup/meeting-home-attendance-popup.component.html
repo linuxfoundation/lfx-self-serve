@@ -43,7 +43,7 @@
     (focusout)="onFocusOut($event)"
     data-testid="meetings-home-attendance-popup">
     @if (people(); as people) {
-      <lfx-meeting-attendee-grid [people]="people" [past]="past()" [showViewAll]="false" />
+      <lfx-meeting-attendee-grid [people]="people" [past]="past()" (viewAll)="viewAll()" />
     } @else {
       <lfx-ui-spinner class="self-center" [size]="16" label="Loading invited people" data-testid="meetings-home-attendance-popup-loading" />
     }
