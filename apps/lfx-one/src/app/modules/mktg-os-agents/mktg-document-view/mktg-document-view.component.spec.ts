@@ -3,7 +3,7 @@
 
 import { DATE_PIPE_DEFAULT_OPTIONS, Location } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { computed, linkedSignal, signal } from '@angular/core';
+import { computed, linkedSignal, PLATFORM_ID, Provider, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
@@ -24,6 +24,8 @@ import {
   VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
   MKTG_RUN_ACTIVE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
+  MKTG_PRINT_KIT_READ_NOTES,
+  MKTG_PRINT_KIT_READ_PENDING,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
 } from '@lfx-one/shared/constants';
@@ -357,7 +359,11 @@ describe('MktgDocumentViewComponent', () => {
     projectLookup.mockReturnValue(of({ writer: true }));
     impersonating.set(false);
     viewer.set({ sub: 'synthetic-sub' });
+    await configure();
+  });
 
+  /** The test module as every test has it; `extra` providers come last (a test's own platform token, say). */
+  async function configure(extra: Provider[] = []): Promise<void> {
     await TestBed.configureTestingModule({
       providers: [
         provideMktgCommentsStub(),
@@ -396,6 +402,7 @@ describe('MktgDocumentViewComponent', () => {
         { provide: MktgPendingDocumentService, useValue: pending },
         { provide: MktgPrintService, useValue: print },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => pdfFlag } },
+        ...extra,
       ],
     })
       .overrideComponent(MktgDocumentViewComponent, { set: { providers: [{ provide: DialogService, useValue: dialog }] } })
@@ -406,7 +413,7 @@ describe('MktgDocumentViewComponent', () => {
     vi.spyOn(router, 'navigate').mockImplementation((commands, extras) =>
       commands.length === 2 && commands[0] === '/mktg-os-agents' ? Promise.resolve(true) : navigate(commands, extras)
     );
-  });
+  }
 
   it.each(['faq', 'linkedin-post'])('preserves %s capitalization in recorded-failure labels', async (agentKey) => {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
@@ -3321,6 +3328,69 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-downstream-empty')).toBeNull();
     expect(query('mktg-comments-loading')).toBeNull();
     expect(query('mktg-downstream-loading')).toBeNull();
+  });
+
+  /** The framework's Download PDF as the page first paints it: the button's disabled state and the wrapping span's reason. */
+  function downloadPdfState(): { disabled: boolean | undefined; note: string | null | undefined } {
+    const action = query('mktg-framework-view-download-pdf');
+    return { disabled: action?.querySelector('button')?.disabled, note: action?.parentElement?.getAttribute('aria-label') };
+  }
+
+  it('never settles the Brand Kit read on the server, where the document is not loaded: no kit read, no Download PDF in the HTML to flip (Cursor 608K9W)', async () => {
+    TestBed.resetTestingModule();
+    await configure([{ provide: PLATFORM_ID, useValue: 'server' }]);
+    useFrameworkRevision();
+
+    await render('/documents/foundation-message/living');
+
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    expect(component['printKitRead']()).toEqual(MKTG_PRINT_KIT_READ_PENDING);
+    expect(component['printKitRead']().settled).toBe(false);
+    expect(resolveBrandKit).not.toHaveBeenCalled();
+    // The document's load is the browser's (the constructor's platform gate): the server's HTML is the header skeleton,
+    // with no framework view and no Download PDF, enabled or not, so nothing flips when the client takes over.
+    expect(component['loading']()).toBe(true);
+    expect(query('mktg-document-view-action-loading')).not.toBeNull();
+    expect(query('mktg-framework-view')).toBeNull();
+    expect(query('mktg-framework-view-download-pdf')).toBeNull();
+    expect(query('mktg-framework-print')).toBeNull();
+  });
+
+  it('starts the Brand Kit read pending in the browser and settles it when the kit answers', async () => {
+    const kit = new Subject<BrandKitRevision | null>();
+    resolveBrandKit.mockReturnValue(kit.asObservable());
+    useFrameworkRevision();
+
+    await render('/documents/foundation-message/living');
+
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    expect(resolveBrandKit).toHaveBeenCalledWith('proj-1');
+    expect(component['printKitRead']()).toEqual(MKTG_PRINT_KIT_READ_PENDING);
+    expect(downloadPdfState()).toEqual({ disabled: true, note: MKTG_PRINT_KIT_READ_NOTES.pending });
+    kit.next(null);
+    await settle();
+    expect(component['printKitRead']()).toEqual({ settled: true, kit: null, failed: false });
+    expect(downloadPdfState()).toEqual({ disabled: false, note: null });
+    expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
+  });
+
+  it('hands the client the read the server holds: both pending, and the client’s first paint of Download PDF is disabled with the one note', async () => {
+    TestBed.resetTestingModule();
+    await configure([{ provide: PLATFORM_ID, useValue: 'server' }]);
+    useFrameworkRevision();
+    await render('/documents/foundation-message/living');
+    const server = (harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent)['printKitRead']();
+
+    TestBed.resetTestingModule();
+    await configure();
+    resolveBrandKit.mockReturnValue(NEVER);
+    useFrameworkRevision();
+    await render('/documents/foundation-message/living');
+    const browser = (harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent)['printKitRead']();
+
+    expect(server).toEqual(MKTG_PRINT_KIT_READ_PENDING);
+    expect(browser).toEqual(server);
+    expect(downloadPdfState()).toEqual({ disabled: true, note: MKTG_PRINT_KIT_READ_NOTES.pending });
   });
 
   it('renders the framework with its report and revision-scoped Comments sidebar', async () => {

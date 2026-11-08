@@ -300,7 +300,9 @@ export function foundationMessagePrintFacts(goals: FoundationMessagePrintGoal[])
  * `299 member organizations`, `10,000+` in `More than 10,000 published MCP servers`; never `8` in `188`, `299` in `299.5` or
  * `1,299`, while a sentence's own comma or period after the figure is no part of it), when they agree on one. A figure no
  * proof point states, or that proof points source differently, carries '' and prints no pill: the record's own key numbers
- * have no source of their own, and none is invented.
+ * have no source of their own, and none is invented. A figure is not stated by a different measure that contains its
+ * digits: `40` is not in `40%`, `$40`, `40M`, `40k` or `v40` (a percent sign or a letter after it, a currency sign or a
+ * letter before it), while a stored `96%` or `$8,000` still matches itself.
  */
 export function foundationMessagePrintNumbers(numbers: FoundationMessageNumberRow[], facts: FoundationMessagePrintFactRow[]): FoundationMessagePrintNumber[] {
   return numbers.map((row) => {
@@ -310,7 +312,10 @@ export function foundationMessagePrintNumbers(numbers: FoundationMessageNumberRo
     const bare = row.number.trim().replace(/\+$/, '');
     const plain = bare.replace(/,/g, '');
     const figures = [...new Set([bare, plain, mktgPrintFigure(plain, row.label).replace(/\+$/, '')].filter((figure) => figure !== ''))];
-    const tokens = figures.map((figure) => new RegExp(`(?:^|[^\\d,.])${figure.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d|[,.]\\d)`));
+    // Whole: no digit, separator-digit, percent sign or letter after it, and no digit, currency sign or letter before it.
+    const tokens = figures.map(
+      (figure) => new RegExp(`(?:^|[^\\d,.\\p{L}\\p{Sc}])${figure.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d|[,.]\\d|%|\\p{L})`, 'u')
+    );
     const sources = new Set(facts.filter((fact) => tokens.some((token) => token.test(fact.fact))).map((fact) => fact.source));
     return { ...row, number, source: sources.size === 1 ? [...sources][0] : '' };
   });

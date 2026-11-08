@@ -633,7 +633,11 @@ describe('MktgFrameworkViewComponent', () => {
     expect(button?.disabled).toBe(true);
     // The reason is the wrapping span's tooltip and label (the same span that names the approval rule).
     expect(query('mktg-framework-view-download-pdf')?.parentElement?.getAttribute('aria-label')).toBe(MKTG_PRINT_KIT_READ_NOTES.pending);
+    // This is the read the server's HTML carries too (Cursor 608K9W): a press before hydration meets a disabled button whose
+    // reason is on the page and a focus stop, never a dead one, and nothing of the print is prepared.
+    expect(query('mktg-framework-view-download-pdf')?.parentElement?.getAttribute('tabindex')).toBe('0');
     button?.click();
+    expect(printer.prepare).not.toHaveBeenCalled();
     expect(printer.printNow).not.toHaveBeenCalled();
     // The read settles late with the kit: the print is the kit's, never the LF look, and the button prints it.
     host.kitRead.set(settledKit(kit));
