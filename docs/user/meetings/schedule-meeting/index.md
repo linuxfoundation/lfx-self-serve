@@ -4,7 +4,7 @@ description: How to create a project meeting in LFX Self Serve, from a quick sta
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, create, recurring, zoom, recording, ai summary, agenda]
-last_updated: 2026-10-28
+last_updated: 2026-11-08
 intercom_collection: Meetings
 ---
 
@@ -45,13 +45,13 @@ Select **Create meeting** when you're done. If you need guests, recordings, or r
 - **Meeting type** (required): Technical, Maintainers, Board, Marketing, Legal, or Other.
 - **Visibility**:
   - **Public**: listed on the public project calendar and discoverable in the app.
-  - **Private**: hidden from the public calendar. Only guests with the meeting link can find it.
+  - **Private** (default): hidden from the public calendar. Only guests with the meeting link can find it.
 - **Join Restriction**:
   - **Anyone with the link**: anyone who has the meeting link can join.
-  - **Invited guests only**: only invited guests can join. This makes the meeting **Restricted**.
+  - **Invited guests only** (default): only invited guests can join. This makes the meeting **Restricted**.
 - **Organizer**: defaults to the meeting's creator. You can choose someone else, or enter a name and email.
 
-Choosing the **Board** type sets the meeting to **Private** and **Invited guests only**. If you switch away from Board, the meeting goes back to **Public** and unrestricted, so a non-board meeting isn't left with board-level settings.
+A new meeting starts **Private** and **Invited guests only**. Choosing the **Board** type reaffirms the same setting rather than changing it, so moving to or from Board never loosens or tightens access on its own — you're always free to change **Visibility** and **Join Restriction** yourself.
 
 ### Date & schedule
 

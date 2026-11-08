@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings in LFX Self Serve, with
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-10-28
+last_updated: 2026-11-08
 intercom_collection: Meetings
 ---
 
@@ -39,7 +39,7 @@ An organizer sets two things when scheduling a meeting. **Visibility** is **Publ
 - **Private**: hidden from the public calendar and from calendar feeds. Anyone with the meeting link can join, because the link carries the meeting's password, and they don't need an LFX account. People who aren't invited see only the title and what they need to join. They don't see the agenda, materials, or the date and time.
 - **Restricted**: you need to **sign in**, and your account has to match someone on the guest list. Organizers can also join, and members of a linked group are on the list. There's no passcode to type and no form to get past it. If you need access, ask the organizer to add you, then sign in. Without access, the link shows **Meeting Not Found**.
 
-See [Join a Meeting](join-meeting/) for the steps. A **Board** meeting is Private and Restricted by default, and it never shows its guest list to guests.
+See [Join a Meeting](join-meeting/) for the steps. New meetings default to **Private** and **Restricted**. A **Board** meeting is always Private and Restricted, and it additionally never shows its guest list to guests.
 
 ## Key concepts
 
