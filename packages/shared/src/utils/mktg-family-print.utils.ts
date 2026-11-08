@@ -369,7 +369,11 @@ export function mktgFamilyPrintMeasuredLines(text: string, width: number, size: 
  * minimum, the lines measured in the book's face (`family`, the look's font
  * stack); while the cards and their gaps outgrow the room, the tallest
  * text loses its last sentence and keeps one line for the cut note, so the
- * page prints every card and says how many words did not fit. The room
+ * page prints every card and says how many words did not fit. The loop is
+ * bounded by the room, not by a count: it cuts until the measured heights
+ * fit, a text with nothing left to cut standing empty with every word
+ * counted, and stops only when no card has a word left (then the minimum
+ * heights alone are the overrun). The room
  * keeps one line of the largest text free, so a line the engine wraps
  * otherwise than the measure never reaches the Built from block. A text that
  * fits prints whole. Nothing is rephrased and nothing is cut in silence. Pure.
@@ -377,7 +381,7 @@ export function mktgFamilyPrintMeasuredLines(text: string, width: number, size: 
 export function mktgFamilyPrintFitBoilerplateCards(
   cards: readonly { text: string; fontSize: number; minHeight: number }[],
   width: number,
-  layout: typeof MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT = MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
+  layout: Readonly<Record<keyof typeof MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT, number>> = MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
   family = ''
 ): MktgFamilyPrintFittedText[] {
   const guard = Math.max(0, ...cards.map((card) => card.fontSize * layout.line));
@@ -392,10 +396,13 @@ export function mktgFamilyPrintFitBoilerplateCards(
   };
   const total = (): number => fitted.reduce((sum, _, index) => sum + height(index), 0);
   const words = cards.map((card) => mktgFamilyPrintWordCount(card.text));
-  for (let guard = 0; guard < MKTG_PORTRAIT_FIT.maxCuts && total() > room; guard++) {
-    const tallest = fitted.map((_, index) => index).reduce((best, index) => (height(index) > height(best) ? index : best), 0);
+  // Each turn takes at least one word off the tallest text that still has one, so the loop ends within the texts' word
+  // count: the room bounds it, not a fixed number of cuts (a card of 200 repeated sentences kept 80 under a cap of 120).
+  while (total() > room) {
+    const candidates = fitted.map((_, index) => index).filter((index) => fitted[index].text.length > 0);
+    if (candidates.length === 0) break;
+    const tallest = candidates.reduce((best, index) => (height(index) > height(best) ? index : best));
     const shorter = mktgFamilyPrintCutFromEnd(fitted[tallest].text);
-    if (!shorter) break;
     fitted[tallest] = { text: shorter, cutWords: words[tallest] - mktgFamilyPrintWordCount(shorter) };
   }
   return fitted;

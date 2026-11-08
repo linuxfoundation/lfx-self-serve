@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { MKTG_KIT_POSITIONING_FAMILY_ID } from '../constants/mktg-kit.constants';
 import {
+  MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
   MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES,
   MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE,
@@ -751,6 +752,34 @@ describe('mktgFamilyPrintFitBoilerplateCards', () => {
     const fitted = mktgFamilyPrintFitBoilerplateCards([sentence, long, sentence, long].map(card), MKTG_PORTRAIT_PAGE.contentWidth);
     expect(fitted.map((entry) => entry.text.length > 0)).toEqual([true, true, true, true]);
     expect(fitted.filter((entry) => entry.cutWords > 0).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('cuts until the measured heights fit the room, however many sentences that takes, and counts every omitted word', () => {
+    // #5344 :394: a final card of 200 copies of one sentence kept 80 of them under a cap of 120 cuts and overran the Built from
+    // block. The loop is bounded by the room: the card ends where the heights fit, the words beyond it all counted.
+    const layout = MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT;
+    const texts = [sentence, sentence, sentence, Array.from({ length: 200 }, () => sentence).join(' ')];
+    const cards = texts.map(card);
+    const fitted = mktgFamilyPrintFitBoilerplateCards(cards, MKTG_PORTRAIT_PAGE.contentWidth);
+    const measure = MKTG_PORTRAIT_PAGE.contentWidth - layout.inset - layout.metaWidth - layout.metaGap;
+    const heights = fitted.map((entry, index) => {
+      const note = entry.cutWords > 0 ? cards[index].fontSize * layout.line : 0;
+      const lines = mktgFamilyPrintMeasuredLines(entry.text, measure, cards[index].fontSize, {});
+      return Math.max(cards[index].minHeight, layout.padding + note + lines * cards[index].fontSize * layout.line);
+    });
+    const guard = Math.max(...cards.map((entry) => entry.fontSize * layout.line));
+    expect(heights.reduce((sum, height) => sum + height, 0)).toBeLessThanOrEqual(layout.bottom - layout.top - layout.gap * 3 - guard);
+    expect(fitted[3].text.length).toBeGreaterThan(0);
+    expect(fitted[3].text.endsWith('members.')).toBe(true);
+    expect(fitted[3].cutWords).toBe(200 * 11 - fitted[3].text.split(/\s+/).length);
+    expect(fitted[3].cutWords / 11).toBeGreaterThan(120);
+    expect(fitted.slice(0, 3)).toEqual(texts.slice(0, 3).map((text) => ({ text, cutWords: 0 })));
+    // A room the minimum heights alone overrun: every text is cut to nothing, every word counted, and the loop ends.
+    const tiny = mktgFamilyPrintFitBoilerplateCards([sentence, sentence].map(card), MKTG_PORTRAIT_PAGE.contentWidth, { ...layout, bottom: layout.top + 10 });
+    expect(tiny).toEqual([
+      { text: '', cutWords: 11 },
+      { text: '', cutWords: 11 },
+    ]);
   });
 
   it('prints a text whole when it fits its card in the book’s face, where the flat average would have cut it (the editor’s overfull p30)', () => {
