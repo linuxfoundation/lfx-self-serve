@@ -589,43 +589,43 @@ function mktgFamilyPrintWithoutHashedParentheses(text: string): string {
   return out + text.slice(from);
 }
 
-/** A word character, as `\w` reads it. */
-const WORD_CHAR_REGEX = /\w/;
-/** A character of a hashed name, as `[-\w]` reads it. */
-const NAME_CHAR_REGEX = /[-\w]/;
-/** Twelve hexadecimal digits at the start of a string. */
-const HEX_DOZEN_REGEX = /^[0-9a-f]{12}/;
-
 /**
  * A text without its hashed file names: every word that starts with twelve hexadecimal digits and ends in a `.`
  * and two to five word characters (`16dd7d82…-838x203.svg`) dropped, as `/\b[0-9a-f]{12,}[-\w]*\.\w{2,5}\b/g`
- * dropped them. Read by index rather than by that pattern, whose `[-\w]*` was retried from every word start of a
- * chain of hyphenated words to the chain's end (CodeQL, js/polynomial-redos): a name starts where a word does (the
- * text's start, or after a character that is not a word character) with twelve hexadecimal digits; the run of
- * `[-\w]` characters from there is read once per run (every start inside one run ends where the run does, and the
- * `.` cannot be inside it); the run must be followed by a `.` and a word of two to five characters. The same names
- * are dropped.
+ * dropped them. One linear scan rather than that pattern, whose `[-\w]*` was retried from every word start of a
+ * chain of hyphenated words to the chain's end (CodeQL, js/polynomial-redos): three suffix tables, read right to
+ * left once, give each index the end of its `[-\w]` run, the length of the hexadecimal run and the length of the
+ * word from it; a name starts where a word does with at least twelve hexadecimal digits, and its run must be
+ * followed by a `.` and a word of two to five characters. The same names are dropped (ASCII `\w`, as the pattern's).
  */
 function mktgFamilyPrintWithoutHashedNames(text: string): string {
-  let out = '';
-  let from = 0;
-  let runEnd = 0;
-  for (let i = 0; i < text.length; i += 1) {
-    if (!WORD_CHAR_REGEX.test(text[i]) || (i > 0 && WORD_CHAR_REGEX.test(text[i - 1]))) continue;
-    if (!HEX_DOZEN_REGEX.test(text.slice(i, i + 12))) continue;
-    if (runEnd <= i) {
-      runEnd = i;
-      while (runEnd < text.length && NAME_CHAR_REGEX.test(text[runEnd])) runEnd += 1;
+  const n = text.length;
+  const isWord = (c: number) => (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95;
+  const isHex = (c: number) => (c >= 48 && c <= 57) || (c >= 97 && c <= 102);
+  const runEnd = new Int32Array(n + 1),
+    hexLen = new Int32Array(n + 1),
+    wordLen = new Int32Array(n + 1);
+  runEnd[n] = n;
+  for (let i = n - 1; i >= 0; i--) {
+    const c = text.charCodeAt(i);
+    runEnd[i] = isWord(c) || c === 45 ? runEnd[i + 1] : i;
+    hexLen[i] = isHex(c) ? hexLen[i + 1] + 1 : 0;
+    wordLen[i] = isWord(c) ? wordLen[i + 1] + 1 : 0;
+  }
+  let out = '',
+    from = 0,
+    i = 0;
+  while (i < n) {
+    if (hexLen[i] >= 12 && (i === 0 || !isWord(text.charCodeAt(i - 1)))) {
+      const e = runEnd[i];
+      const ext = e < n && text.charCodeAt(e) === 46 ? wordLen[e + 1] : 0;
+      if (ext >= 2 && ext <= 5) {
+        out += text.slice(from, i);
+        i = from = e + 1 + ext;
+        continue;
+      }
     }
-    if (text[runEnd] !== '.') continue;
-    // The extension: two to five word characters, then the end or a character that is not a word character.
-    let end = runEnd + 1;
-    while (end < text.length && end - runEnd <= 6 && WORD_CHAR_REGEX.test(text[end])) end += 1;
-    const extension = end - runEnd - 1;
-    if (extension < 2 || extension > 5) continue;
-    out += text.slice(from, i);
-    from = end;
-    i = end - 1;
+    i++;
   }
   return out + text.slice(from);
 }

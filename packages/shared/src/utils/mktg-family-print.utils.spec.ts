@@ -1451,6 +1451,8 @@ describe('the family print source readers against the patterns they replaced', (
     'Logo file:16dd7d8270b673d376cadca831ab3d5ea003bb89.svg, missing.',
     'Logo x/16dd7d8270b673d376cadca831ab3d5ea003bb89.png missing.',
     'Logo /16dd7d8270b673d376cadca831ab3d5ea003bb89/16dd7d8270b673d376cadca831ab3d5ea003bb89.png missing.',
+    'g.abcde--16dd7d8270b673d376cadca831ab3d5ea003bb89--.abcde',
+    'x 0123456789ab.svg-0123456789ab.png',
   ];
 
   it('gives the legacy words on every real input of the four fixtures and the AAIF record, and on every edge form', () => {
