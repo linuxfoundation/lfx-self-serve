@@ -12,6 +12,8 @@ import {
   MKTG_FAMILY_PRINT_FAQ_CHIP,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_HEAD_CAPS,
+  MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS,
+  MKTG_FAMILY_PRINT_SOURCE_FIELD_WORDS,
   MKTG_FAMILY_PRINT_SOURCES_LAYOUT,
 } from '../constants/mktg-family-print.constants';
 import { MKTG_PORTRAIT_CAPS_TRACKING_EM, MKTG_PORTRAIT_COVER_STRIP, MKTG_PORTRAIT_PAGE } from '../constants/mktg-portrait-print.constants';
@@ -362,9 +364,10 @@ describe('the fixed blocks', () => {
     expect(mktgFamilyPrintSourceLabel('https://example.org/path and words')).toBe('https://example.org/path and words');
     expect(mktgFamilyPrintSourceLabel('https:///no-host')).toBe('https:///no-host');
     expect(mktgFamilyPrintSourceLabel('record (uid ) (uid x)')).toBe('record (uid )');
-    const hostile = 'https://example.org/path' + ' (uid x'.repeat(5000);
+    // The editor's repro at 48086fdd: twenty thousand ` (uid ` took 7.4 s.
+    const hostile = ' (uid '.repeat(20000);
     const started = performance.now();
-    expect(mktgFamilyPrintSourceLabel(hostile)).toBe(hostile);
+    expect(mktgFamilyPrintSourceLabel(hostile)).toBe(hostile.trim());
     expect(performance.now() - started).toBeLessThan(100);
   });
 
@@ -376,14 +379,6 @@ describe('the fixed blocks', () => {
     expect(mktgFamilyPrintBuiltFromLabel('https://example.org/brand-guidelines')).toBe('example.org');
     expect(mktgFamilyPrintBuiltFromLabel('LFX project record synthetic-project (uid d79df990-0000-4000-8000-000000000000)')).toBe('LFX project record');
     expect(mktgFamilyPrintBuiltFromLabel('Approved messaging framework (intake)')).toBe('Approved messaging framework');
-    // The run's term at the end is read by its index and a trim, so a long run of spaces before it is read once
-    // (`\s*\((intake)\)$` backtracked over it: CodeQL, js/polynomial-redos); the same words, the case ignored.
-    const spaced = 'Approved messaging framework' + ' '.repeat(40000) + '(Intake)';
-    const started = performance.now();
-    expect(mktgFamilyPrintBuiltFromLabel(spaced)).toBe('Approved messaging framework');
-    expect(performance.now() - started).toBeLessThan(100);
-    expect(mktgFamilyPrintBuiltFromLabel('(intake)')).toBe('');
-    expect(mktgFamilyPrintBuiltFromLabel('Brand page (intake) notes')).toBe('Brand page (intake) notes');
     expect(mktgFamilyPrintBuiltFromLabel('  the approved messaging framework  ')).toBe('The approved messaging framework');
     expect(mktgFamilyPrintBuiltFromLabel('')).toBe('');
   });
@@ -395,9 +390,10 @@ describe('the fixed blocks', () => {
     );
     expect(mktgFamilyPrintBuiltFromLabel('https://example.org/path and words')).toBe('example.org');
     expect(mktgFamilyPrintBuiltFromLabel('https://example.org ()')).toBe('example.org');
-    const hostile = 'https://example.org/path' + ' (uid x'.repeat(5000);
+    // The editor's repro at 48086fdd: twenty thousand ` (uid ` took 2.5 s.
+    const hostile = ' (uid '.repeat(20000);
     const started = performance.now();
-    expect(mktgFamilyPrintBuiltFromLabel(hostile)).toBe('example.org');
+    expect(mktgFamilyPrintBuiltFromLabel(hostile)).toBe(hostile.trim());
     expect(performance.now() - started).toBeLessThan(100);
   });
 
@@ -617,9 +613,11 @@ describe('mktgFamilyPrintOpenItemText', () => {
     expect(mktgFamilyPrintOpenItemText('Not a hash (x16dd7d8270b673d376cadca831ab3d5ea003bb89) and no close (16dd7d8270b673d376cadca831ab3d5ea')).toBe(
       'Not a hash (x16dd7d8270b673d376cadca831ab3d5ea003bb89) and no close (16dd7d8270b673d376cadca831ab3d5ea'
     );
+    // The editor's repro at 48086fdd: forty thousand tabs took 1.7 s.
     const hostile = '(' + '\t'.repeat(40000) + ')';
     const started = performance.now();
     expect(mktgFamilyPrintOpenItemText(hostile)).toBe('( )');
+    expect(mktgFamilyPrintOpenItemText('\t'.repeat(40000))).toBe('');
     expect(performance.now() - started).toBeLessThan(100);
     // A hashed name is read as twelve digits and the rest of the word: a forty-thousand-digit one is read once, not once per
     // digit after the twelfth (`{12,}` before `[-\w]*`: CodeQL, js/polynomial-redos), and the same names are dropped.
@@ -753,9 +751,11 @@ describe('mktgFamilyPrintConflicts', () => {
     expect(mktgFamilyPrintReadableSource('brand-page: https://aaif.io/brand')).toBe('brand-page: https://aaif.io/brand');
     expect(mktgFamilyPrintReadableSource('brand_page: ftp://aaif.io/brand')).toBe('brand page: ftp://aaif.io/brand');
     expect(mktgFamilyPrintReadableSource(': https://aaif.io/brand')).toBe(': https://aaif.io/brand');
-    const hostile = 'A' + ' '.repeat(40000) + 'x';
+    // The editor's repro at 48086fdd: twenty thousand ` (uid ` took 1.2 s; a letter and forty thousand spaces is CodeQL's.
+    const hostile = ' (uid '.repeat(20000);
     const started = performance.now();
-    expect(mktgFamilyPrintReadableSource(hostile)).toBe('A x');
+    expect(mktgFamilyPrintReadableSource(hostile)).toBe('(uid' + ' (uid'.repeat(19999));
+    expect(mktgFamilyPrintReadableSource('A' + ' '.repeat(40000) + 'x')).toBe('A x');
     expect(performance.now() - started).toBeLessThan(100);
   });
 });
@@ -1400,5 +1400,303 @@ describe('mktgFamilyPrintBrand', () => {
     expect(mktgFamilyPrintBrand(lfBrand, null)).toBe(lfBrand);
     const logoless = { ...brand, logoOnDark: null };
     expect(mktgFamilyPrintBrand(logoless, book)).toBe(logoless);
+  });
+});
+
+describe('the family print source readers against the patterns they replaced', () => {
+  // The four patterns of 48086fdd, kept verbatim as the contract (CodeQL js/polynomial-redos): the readers must give their
+  // words on every input, so nothing on a printed page changes.
+  const legacy = {
+    sourceLabel(source: string): string {
+      const trimmed = source.trim().replace(/ \(uid [^)]+\)/g, '');
+      const labelled = /^https?:\/\/\S+ \((.+)\)$/.exec(trimmed);
+      if (labelled) return labelled[1];
+      const url = /^https?:\/\/([^/\s]+)\S*$/.exec(trimmed);
+      return url ? url[1] : trimmed;
+    },
+    builtFromLabel(source: string): string {
+      const trimmed = source.trim().replace(/ \(uid [^)]+\)/g, '');
+      const host = (url: string): string => (/^https?:\/\/([^/\s]+)/.exec(url)?.[1] ?? '').replace(/^www\./, '');
+      const labelled = /^(https?:\/\/\S+) \((.+)\)$/.exec(trimmed);
+      let label: string;
+      if (labelled) label = `${labelled[2]} (${host(labelled[1])})`;
+      else if (/^https?:\/\//.test(trimmed)) return host(trimmed);
+      else if (/^LFX project record\b/i.test(trimmed)) label = trimmed.replace(/^(LFX project record)\b.*$/i, '$1');
+      else {
+        const internal = new RegExp(`\\s*\\((?:${MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS.join('|')})\\)$`, 'i');
+        label = trimmed.replace(internal, '');
+      }
+      return label ? label[0].toLocaleUpperCase() + label.slice(1) : '';
+    },
+    readableSource(source: string): string {
+      const named = /^([A-Za-z][\w ]*?)\s*:\s*https?:\/\//.exec(source.trim());
+      if (named) return MKTG_FAMILY_PRINT_SOURCE_FIELD_WORDS[named[1].toLocaleLowerCase()] ?? named[1].replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+      return legacy.sourceLabel(source).replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+    },
+    openItemText(text: string): string {
+      return text
+        .replace(/\s*\([^()]*\b[0-9a-f]{12,}[^()]*\)/g, '')
+        .replace(/\b[0-9a-f]{12,}[-\w]*\.\w{2,5}\b/g, '')
+        .replace(/\s+([,.;:])/g, '$1')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+    },
+  };
+  const readers: [string, (input: string) => string, (input: string) => string][] = [
+    ['mktgFamilyPrintSourceLabel', mktgFamilyPrintSourceLabel, legacy.sourceLabel],
+    ['mktgFamilyPrintBuiltFromLabel', mktgFamilyPrintBuiltFromLabel, legacy.builtFromLabel],
+    ['mktgFamilyPrintReadableSource', mktgFamilyPrintReadableSource, legacy.readableSource],
+    ['mktgFamilyPrintOpenItemText', mktgFamilyPrintOpenItemText, legacy.openItemText],
+  ];
+  // Every source, Built from row, colour reading and open item the four e2e fixtures and the AAIF record hold (the e2e
+  // helpers and shared fixtures, and the hand-test store's documents, read on 8 Nov 2026), each as stored.
+  const realInputs: string[] = [
+    'Approved messaging framework (intake)',
+    'Docs: aaif/technical-committee README',
+    'From the messaging framework',
+    'HTTP 404',
+    'How much does membership cost?',
+    'LFX active memberships (291 read)',
+    'LFX active memberships (291 read) and tier prices',
+    'LFX active memberships (first page of 100)',
+    'LFX memberships (200 active memberships read for tier prices)',
+    'LFX memberships (291 active)',
+    'LFX memberships (first page of 100)',
+    'LFX project record agentic-ai-foundation (uid d79df990-cc45-4db5-b086-dc311f2f7681)',
+    'LFX project record agentic-ai-foundation and its standard metrics',
+    'LFX project record agentic-ai-foundation and its standard metrics (member_organizations, memberships by tier, contributors)',
+    'LFX project record agentic-ai-foundation and standard metrics',
+    'LFX record agentic-ai-foundation and standard metrics',
+    'LFX record: Agentic AI Foundation (agentic-ai-foundation)',
+    'LFX record: Synthetic Foundation',
+    'Launch press release: https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation',
+    'Link: https://github.com/aaif (org page and repos API)',
+    'Link: https://github.com/aaif (organization page)',
+    'Link: https://www.github.com/aaif/ (GitHub org repo list via API)',
+    'Link: https://www.github.com/aaif/ (GitHub organization page)',
+    'Link: https://www.github.com/aaif/ (GitHub organization repositories via API)',
+    'Link: https://www.github.com/aaif/ (organization page)',
+    'Link: https://www.github.com/aaif/ (organization repositories via the GitHub API)',
+    'Membership pricing and benefits detail are not stated on the members page.',
+    'No logo files: the logo chapter uses placeholder marks until the horizontal lockup, the stacked lockup and the symbol are uploaded.',
+    'No published mission statement or official tagline.',
+    "No source read in this run dates when A2A and agentgateway joined; they are named from the framework's website-sourced proof.",
+    "No source read states MCP's deprecation policy or the 2026-07-28 release details that the framework cites.",
+    'No source states how many of the public-sector adopters run the toolkit in production rather than in a pilot.',
+    'No source states the year the toolkit was first released.',
+    'No stacked logo was uploaded and none was read from the site.',
+    'No symbol was uploaded and none could be cropped out of a lockup.',
+    'No white (reversed) logo was uploaded; dark grounds reuse the full-color lockup until one is.',
+    'Press release: Linux Foundation Announces the Formation of the Agentic AI Foundation (Dec 9, 2025)',
+    'Press release: https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation',
+    'Requester answers to the question round',
+    "The about page was not read separately; the programs come from the framework's goal columns and audiences.",
+    'The board and Technical Committee pages publish no member names.',
+    "The framework objection 'Is this production-ready?' is not covered by a source read and was left out.",
+    'The framework says MCP now has a formal deprecation policy, but no source read in this run confirms it.',
+    "The framework's objection response on the MCP deprecation policy and the MCP 2026-07-28 release were not found in any source read, so those questions were left out.",
+    "The framework's response to 'Is this production-ready?' (MCP 2026-07-28 release) was not found in any source read, so that question was left out.",
+    "The framework's response to 'Will the spec keep changing under me?' (formal MCP deprecation policy) was not found in any source read, so that question was left out.",
+    "The framework's responses to 'Will the spec keep changing under me?' and 'Is this production-ready?' (the MCP deprecation policy and the 2026-07-28 release) are not stated in any source read, so neither is in the FAQ.",
+    'The launch year is not stated.',
+    'The logo package on synthetic-foundation.example/brand is a ZIP file, which the agent can’t download from a link. Upload the stacked, reversed, symbol and primary files as SVG in the form, or a ZIP of the SVG files under 150 KB; a larger ZIP may not send.',
+    'The member count by region is only given for three of the five continents.',
+    'The page answered with a sign-in wall and no readable text.',
+    'The production-readiness objection (MCP 2026-07-28 release) is not covered by any source read in this run.',
+    "The site's header links a logo image (16dd7d8270b673d376cadca831ab3d5ea003bb89-838x203.svg) that was not read in this run, so the kit shows placeholder marks.",
+    'The site’s header links a logo image (synthetic-logo-838x203.svg) that was not read in this run, so the kit shows placeholder marks.',
+    'Third-party adoption sweep not run: web search credits exhausted.',
+    'This page does not exist on the site (the server answered 404).',
+    'Website: https://aaif.io (home page)',
+    'Website: https://aaif.io (home)',
+    'Website: https://aaif.io/llms.txt',
+    'Website: https://aaif.io/md/about',
+    'Website: https://aaif.io/md/events',
+    'Website: https://aaif.io/md/members',
+    'Website: https://aaif.io/md/projects',
+    'Website: https://aaif.io/members and https://aaif.io/md/members',
+    'Will the MCP specification keep changing under me?',
+    'Will the spec keep changing under me?',
+    'brand page',
+    'brand_page: https://aaif.io/brand',
+    'https://aaif.io (home page)',
+    'https://aaif.io/',
+    'https://aaif.io/_next/static/chunks/0ivddmds6q2xn.css',
+    'https://aaif.io/_next/static/chunks/1-8f7gq9ry3my.css',
+    'https://aaif.io/_next/static/chunks/2au7-qkhpwtn-.css',
+    'https://aaif.io/_next/static/chunks/3tg274q-9atqx.css',
+    'https://aaif.io/brand',
+    'https://aaif.io/md/about',
+    'https://aaif.io/md/board',
+    'https://aaif.io/md/events',
+    'https://aaif.io/md/members',
+    'https://aaif.io/md/projects',
+    'https://aaif.io/md/tc',
+    'https://acme-mesh.example',
+    'https://docs.example.org/reference-deployments/cloud-providers/compared/with-bare-metal-notes',
+    'https://one.example.org',
+    'https://one.example.org/_next/static/chunks/0a1b2c3d4e5f.css',
+    'https://one.example.org/brand',
+    'https://search.example.org',
+    'https://synthetic-foundation.example/',
+    'https://synthetic-foundation.example/brand',
+    'https://synthetic.example',
+    'https://www.example.org',
+    'https://www.example.org/about',
+    'https://www.example.org/metrics/downloads/annual-report-2026/by-country-and-platform/summary',
+    'https://www.example.org/security/program/independent-audits/2025-second-half/findings-and-remediation',
+    'https://www.github.com/aaif/ (organization page and public repository list)',
+    'https://www.github.com/aaif/ (organization repositories via the GitHub API)',
+    'https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation',
+    'https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation (launch press release, Dec. 9, 2025)',
+    'logo',
+    'logo.svg',
+    'site_css: https://aaif.io/_next/static/chunks/3tg274q-9atqx.css',
+    'the page',
+    ...Array.from({ length: 30 }, (_, index) => `https://source-${index + 1}.example.org/about/a-long-page-path-that-wraps-in-the-card`),
+    ...Array.from({ length: 40 }, (_, index) => `https://www.example.org/brand/source/${index + 1}/a-long-brand-page-path-that-wraps`),
+    ...Array.from({ length: 20 }, (_, index) => `https://www.example.org/faq/source/${index + 1}`),
+    ...Array.from({ length: 60 }, (_, index) => `https://www.example.org/synthetic/source/${index + 1}/with-a-long-path-that-wraps-in-the-column`),
+    ...Array.from({ length: 12 }, (_, index) => `Synthetic boilerplate gap ${index + 1}: no source gives the figure this length cites.`),
+    ...Array.from({ length: 20 }, (_, index) => `Synthetic kit gap ${index + 1}: the brand page names no value for this token.`),
+    ...Array.from({ length: 10 }, (_, index) => `Synthetic FAQ gap ${index + 1}: the question has no public answer yet.`),
+    ...Array.from({ length: 40 }, (_, index) => `Synthetic gap ${index + 1}: no source states the figure the framework needs here.`),
+  ];
+  // The edge forms each rewrite reasons about: empty, whitespace only, the label's parentheses nested or empty, ` (uid `
+  // unclosed or without an id, words or a tab after the address, a line break inside, unicode whitespace and letters,
+  // a field name with spaces or a tab before its colon, a hash mid-word, a parenthesis unclosed or nested.
+  const edgeInputs: string[] = [
+    '',
+    ' ',
+    '   \t \n ',
+    '\u00a0\u2028',
+    'https://',
+    'https:// ',
+    'https:///no-host',
+    'https://host',
+    'HTTPS://host/path',
+    'http://host/path (label)',
+    'https://host/path (a (nested) label)',
+    'https://host/path ()',
+    'https://host/path ( )',
+    'https://host/path (',
+    'https://host/path )',
+    'https://host/path\t(label)',
+    'https://host/path  (label)',
+    'https://host/path (label) ',
+    'https://host/path (label) more',
+    'https://host/path (label\nbroken)',
+    'https://host/path (label\u2028broken)',
+    'https://host/path (label (uid 1))',
+    'https://host/path (uid 1)',
+    'https://host/path (uid )',
+    'https://host/path (uid ',
+    'https://host/path (uid 1) (uid 2) (label)',
+    'https://host/path (uid (uid 1)',
+    ' (uid 1)',
+    'record (uid ) (uid x)',
+    'https://host/path and words',
+    'https://host/path\nsecond line',
+    'https://www.host/path',
+    'https://www./path',
+    'https://hôst/pâth (étiquette)',
+    'https://host/path (日本語)',
+    'ftp://host/path (label)',
+    'LFX project record x (uid 1)',
+    'lfx project record',
+    'LFX project records',
+    'framework (intake)',
+    'framework (INTAKE)',
+    'framework  (intake)',
+    'framework (intake) ',
+    'framework\n(intake)',
+    '(intake)',
+    'brand_page:https://host',
+    'brand_page : https://host',
+    'Brand  page\t:  https://host',
+    'brand_page:\nhttps://host',
+    'brand-page: https://host',
+    'brand_page: ftp://host',
+    'brand_page: https:/host',
+    ': https://host',
+    '9brand: https://host',
+    'brand_page: https://host: https://other',
+    'A' + ' '.repeat(20) + 'x',
+    'A' + ' '.repeat(20) + ': https://host',
+    '(16dd7d8270b673d376cadca831ab3d5ea003bb89)',
+    ' (16dd7d8270b673d376cadca831ab3d5ea003bb89)',
+    '\t\n(16dd7d8270b673d376cadca831ab3d5ea003bb89)',
+    'Logo (file 16dd7d8270b673d376cadca831ab3d5ea003bb89, 838 px) missing.',
+    'Logo (file-16dd7d8270b673d376cadca831ab3d5ea003bb89) missing.',
+    'Logo (x16dd7d8270b673d376cadca831ab3d5ea003bb89) kept.',
+    'Logo (16dd7d8270b67) short.',
+    'Logo (16dd7d8270b673) twelve.',
+    'Logo (16DD7D8270B673D376CADCA831AB3D5EA003BB89) upper.',
+    'Logo (16dd7d8270b673d376cadca831ab3d5ea003bb89 (nested)) end.',
+    'Logo ((16dd7d8270b673d376cadca831ab3d5ea003bb89)) end.',
+    'Logo (16dd7d8270b673d376cadca831ab3d5ea003bb89',
+    'Logo 16dd7d8270b673d376cadca831ab3d5ea003bb89) end.',
+    'Logo (a) (16dd7d8270b673d376cadca831ab3d5ea003bb89) (b) (0123456789abcdef) end.',
+    'Logo (16dd7d8270b673d376cadca831ab3d5ea003bb89)(0123456789abcdef) end.',
+    'Logo (16dd7d8270b673d376cadca831ab3d5ea003bb89) , (0123456789abcdef) .',
+    'Missing 16dd7d8270b673d376cadca831ab3d5ea003bb89.png .',
+    'Missing 16dd7d8270b673d376cadca831ab3d5ea003bb89-838x203.svg,',
+    'Missing 16dd7d8270b673d376cadca831ab3d5ea003bb89.toolong .',
+    'Spaces   before , and ; and : here .',
+    ' , . ; :',
+    'Tabs\t\t(\t16dd7d8270b673d376cadca831ab3d5ea003bb89\t)\t.',
+    'Line\n(\n16dd7d8270b673d376cadca831ab3d5ea003bb89\n)\n.',
+    '(\u00a016dd7d8270b673d376cadca831ab3d5ea003bb89)',
+    '(é16dd7d8270b673d376cadca831ab3d5ea003bb89)',
+    '(_16dd7d8270b673d376cadca831ab3d5ea003bb89)',
+    'abc.16dd7d8270b673d376cadca831ab3d5ea003bb89.svg',
+    'x-16dd7d8270b673d376cadca831ab3d5ea003bb89.svg-foo',
+    '"16dd7d8270b673d376cadca831ab3d5ea003bb89.svg"',
+    '16dd7d8270b673d376cadca831ab3d5ea003bb89.png.svg',
+    '16dd7d8270b6X_y.a_b 16dd7d8270b6.a 16dd7d8270b6.abcdef 16dd7d8270b6-.png',
+    '-16dd7d8270b6-0123456789ab.svg -0123456789a-16dd7d8270b6.svg',
+    '16DD7D8270B673.svg 16dd7d8270b673.sv g 16dd7d8270b673. svg',
+    'Logo (16dd7d8270b673d376cadca831ab3d5ea003bb89-838x203.svg) missing.',
+    'Logo file:16dd7d8270b673d376cadca831ab3d5ea003bb89.svg, missing.',
+    'Logo x/16dd7d8270b673d376cadca831ab3d5ea003bb89.png missing.',
+    'Logo /16dd7d8270b673d376cadca831ab3d5ea003bb89/16dd7d8270b673d376cadca831ab3d5ea003bb89.png missing.',
+    'g.abcde--16dd7d8270b673d376cadca831ab3d5ea003bb89--.abcde',
+    'x 0123456789ab.svg-0123456789ab.png',
+  ];
+
+  it('gives the legacy words on every real input of the four fixtures and the AAIF record, and on every edge form', () => {
+    expect(realInputs).toHaveLength(334);
+    for (const [name, reader, old] of readers) {
+      for (const input of [...realInputs, ...edgeInputs]) {
+        expect(reader(input), `${name} on ${JSON.stringify(input)}`).toBe(old(input));
+      }
+    }
+  });
+
+  it('reads ten thousand repeats of each trigger in under 50 ms, in every reader', () => {
+    const triggers = [' (uid '.repeat(10000), 'A' + ' '.repeat(10000), '\t'.repeat(10000), '(' + '\t'.repeat(10000) + ')'];
+    for (const [name, reader, old] of readers) {
+      for (const input of triggers) {
+        const started = performance.now();
+        const words = reader(input);
+        expect(performance.now() - started, `${name} on ${input.length} characters`).toBeLessThan(50);
+        expect(words).toBe(old(input));
+      }
+    }
+  });
+
+  it('reads a hundred-thousand-character chain of hashed words in under 50 ms, in every reader', () => {
+    // Every `-` starts a word, and every word starts with twelve hexadecimal digits: the hashed-name pattern was retried
+    // from each of them to the chain's end (quadratic); the chain's end is read once. The legacy copy is left out of this
+    // one case (it takes seconds on the chain); the words are the chain itself, which no reader changes: no `.`, no
+    // whitespace, no record id and no scheme in it.
+    const chain = '0123456789ab-'.repeat(8000);
+    expect(chain).toHaveLength(104000);
+    for (const [name, reader] of readers) {
+      const started = performance.now();
+      const words = reader(chain);
+      expect(performance.now() - started, `${name} on ${chain.length} characters`).toBeLessThan(50);
+      expect(words).toBe(chain);
+    }
   });
 });

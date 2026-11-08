@@ -7,11 +7,14 @@ import type {
   Meeting,
   MeetingDetailsArtifacts,
   MeetingDetailsFeature,
+  MeetingDetailsOccurrenceOption,
+  MeetingDetailsOccurrenceOptions,
   MeetingDetailsOrganizer,
   MeetingDetailsState,
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingUserInfo,
+  OccurrenceNavItem,
 } from '../interfaces';
 import { getTimezoneAbbreviation } from './date-time.utils';
 import { isMeetingAttendeeListShared } from './meeting-attendee-lock.utils';
@@ -177,4 +180,45 @@ export function getMeetingDetailsRecurrence(
   if (recurrence.end_times === 1) return 'One-time meeting';
   const end = buildRecurrenceSummary(convertRecurrenceToPattern(recurrence)).endDescription;
   return [getMeetingRecurrenceLabel(meeting, occurrence), end].filter(Boolean).join(', ') || null;
+}
+
+/** Index of the shown date in the occurrence timeline: the same start, else the first after it, else the last; -1 when empty. */
+export function getMeetingDetailsOccurrenceIndex(timeline: MeetingOccurrence[], start: string): number {
+  if (timeline.length === 0) return -1;
+  const startMs = Date.parse(start);
+  const same = timeline.findIndex((occurrence) => Date.parse(occurrence.start_time) === startMs);
+  if (same >= 0) return same;
+  const after = timeline.findIndex((occurrence) => Date.parse(occurrence.start_time) >= startMs);
+  return after >= 0 ? after : timeline.length - 1;
+}
+
+/**
+ * Dates of the drawer's occurrence menu.
+ * @description Upcoming holds the timeline's dates that have not ended and the cancelled ones, in order, and marks the first
+ * date that runs as `next`. Past holds the ended dates, newest first. A date ends 40 minutes after its scheduled end; one
+ * without its own duration takes the series' `fallbackDuration`.
+ */
+export function getMeetingDetailsOccurrenceOptions(
+  timeline: OccurrenceNavItem[],
+  cancelled: MeetingOccurrence[],
+  now: Date,
+  fallbackDuration = 0
+): MeetingDetailsOccurrenceOptions {
+  const ended = (occurrence: MeetingOccurrence): boolean =>
+    Date.parse(occurrence.start_time) + (occurrence.duration || fallbackDuration) * MINUTE_MS + MEETING_END_BUFFER_MS < now.getTime();
+  const option = (occurrence: OccurrenceNavItem, isCancelled = false): MeetingDetailsOccurrenceOption => ({ occurrence, cancelled: isCancelled, next: false });
+  const scheduled = new Set(timeline.map((occurrence) => Date.parse(occurrence.start_time)));
+
+  const upcoming = [
+    ...timeline.filter((occurrence) => !ended(occurrence)).map((occurrence) => option(occurrence)),
+    ...cancelled.filter((occurrence) => !ended(occurrence) && !scheduled.has(Date.parse(occurrence.start_time))).map((occurrence) => option(occurrence, true)),
+  ].sort((a, b) => Date.parse(a.occurrence.start_time) - Date.parse(b.occurrence.start_time));
+  const next = upcoming.find((item) => !item.cancelled);
+  if (next) next.next = true;
+
+  const past = timeline
+    .filter(ended)
+    .map((occurrence) => option(occurrence))
+    .reverse();
+  return { upcoming, past };
 }

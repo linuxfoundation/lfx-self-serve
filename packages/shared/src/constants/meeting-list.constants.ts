@@ -17,7 +17,7 @@ import type {
 /** The AI summary of a past meetings home row. */
 export const MEETINGS_HOME_SUMMARY_ARTIFACT: MeetingHomeArtifact = { noun: 'summary', title: 'AI Summary' };
 
-/** Join link of a date with no request in flight and no failure. */
+/** Empty join link (no link, no error): the state while loading and outside the join window. */
 export const NO_MEETING_JOIN_LINK: MeetingJoinLink = { url: null, error: null, code: null };
 
 /** Rows the meetings home list loads per page. */
@@ -118,3 +118,6 @@ export const MEETING_DETAILS_FEATURES: readonly MeetingDetailsFeature[] = [
 
 /** Id the meeting details drawer registers with the app's open-overlay tracking while it is open. */
 export const MEETING_DETAILS_OVERLAY_ID = 'meeting-details-drawer';
+
+/** Analytics event sent when the meeting details drawer opens, in place of a meeting page view. */
+export const MEETING_DETAILS_OPENED_EVENT = 'Meeting Details Opened';

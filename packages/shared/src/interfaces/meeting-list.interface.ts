@@ -4,8 +4,18 @@
 import type { Injector } from '@angular/core';
 
 import type { MeetingVisibilityKind } from '../enums';
-import type { Meeting, MeetingOccurrence, MeetingResponseFilter, MeetingRsvp, PastMeetingSummary, RsvpResponse, RsvpScope } from './meeting.interface';
+import type { User } from './auth.interface';
 import type { FilterOption } from './filter.interface';
+import type {
+  Meeting,
+  MeetingOccurrence,
+  MeetingResponseFilter,
+  MeetingRsvp,
+  OccurrenceNavItem,
+  PastMeetingSummary,
+  RsvpResponse,
+  RsvpScope,
+} from './meeting.interface';
 import type { UiAvatarStatus, UiBadgeTone } from './uikit.interface';
 
 /** One row of the meetings home list: a single date of a meeting. */
@@ -293,6 +303,9 @@ export type MeetingDetailsState = 'far' | 'soon' | 'live' | 'ended';
 /** Tab of the meeting details drawer. */
 export type MeetingDetailsTab = 'agenda' | 'guests';
 
+/** Where on the meetings home page the details drawer was opened from, sent with its analytics event. */
+export type MeetingDetailsEntryPoint = 'row' | 'next_card' | 'last_card' | 'pending_rsvps' | 'attendance';
+
 /** How the meeting details drawer opens. */
 export interface MeetingDetailsOpenOptions {
   /** Tab to open on; Agenda & Materials by default. */
@@ -430,4 +443,26 @@ export interface MeetingGuestSummary {
 export interface MeetingGuestsLoad {
   status: 'loading' | 'ready' | 'error';
   rows: MeetingGuestRow[];
+}
+
+/** A date in the occurrence menu of the meeting details drawer. */
+export interface MeetingDetailsOccurrenceOption {
+  occurrence: OccurrenceNavItem;
+  cancelled: boolean;
+  /** The next date to come. */
+  next: boolean;
+}
+
+/** Dates of the occurrence menu: upcoming ones in order, past ones newest first. */
+export interface MeetingDetailsOccurrenceOptions {
+  upcoming: MeetingDetailsOccurrenceOption[];
+  past: MeetingDetailsOccurrenceOption[];
+}
+
+/** What the Register for Meeting dialog opens with. */
+export interface MeetingRegisterDialogData {
+  meetingId: string;
+  meetingTitle: string;
+  /** The signed-in user, whose profile fills the form. */
+  user: User | null;
 }

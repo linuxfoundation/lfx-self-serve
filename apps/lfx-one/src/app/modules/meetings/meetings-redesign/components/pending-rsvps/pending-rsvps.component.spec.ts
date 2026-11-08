@@ -13,6 +13,8 @@ import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
+
 import { PendingRsvpsComponent } from './pending-rsvps.component';
 
 const START = new Date(2026, 9, 1, 9, 0);
@@ -47,6 +49,7 @@ describe('PendingRsvpsComponent', () => {
   let closed: Subject<RsvpScope | undefined>;
   let openDrawer: ReturnType<typeof vi.fn>;
   let closeDrawer: ReturnType<typeof vi.fn<() => void>>;
+  let openDetails: ReturnType<typeof vi.fn>;
 
   const byTestId = (testId: string): HTMLElement | null => document.querySelector(`[data-testid="${testId}"]`);
   const all = (testId: string): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>(`[data-testid="${testId}"]`));
@@ -89,6 +92,7 @@ describe('PendingRsvpsComponent', () => {
     openModal = vi.fn(() => ({ closed, close: () => closed.next(undefined) }));
     // Renders the drawer template straight into the page; the uikit drawer has its own spec.
     closeDrawer = vi.fn();
+    openDetails = vi.fn();
     openDrawer = vi.fn((template: TemplateRef<unknown>) => {
       const appRef = TestBed.inject(ApplicationRef);
       const view = template.createEmbeddedView({});
@@ -113,6 +117,7 @@ describe('PendingRsvpsComponent', () => {
         { provide: UiModalService, useValue: { open: openModal } },
         { provide: UiDrawerService, useValue: { open: openDrawer } },
         { provide: UiToastService, useValue: { show: vi.fn() } },
+        { provide: MeetingsHomeDetailsService, useValue: { open: openDetails } },
       ],
     });
   });
@@ -178,18 +183,36 @@ describe('PendingRsvpsComponent', () => {
     expect(rows[0].querySelector('[data-testid="meetings-home-pending-rsvps-row-date"]')?.classList).toContain('w-[46px]');
   });
 
-  it('keeps the drawer open when a title is followed, since it links to the meeting page', async () => {
+  it('swaps the drawer for the meeting details once it has closed when a title is clicked', async () => {
+    const row = buildRow('a');
+    await render([row]);
+    await open();
+
+    const title = byTestId('meetings-home-pending-rsvps-row-title') as HTMLAnchorElement;
+    expect(title.getAttribute('href')).toBeTruthy();
+    expect(title.getAttribute('target')).toBe('_blank');
+    expect(title.getAttribute('rel')).toBe('noopener noreferrer');
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    openDetails.mockImplementation(() => expect(closeDrawer).toHaveBeenCalled());
+    title.dispatchEvent(click);
+    await settle();
+
+    expect(click.defaultPrevented).toBe(true);
+    expect(openDetails).toHaveBeenCalledWith(row, 'pending_rsvps');
+  });
+
+  it('keeps the drawer open and leaves a modified title click to the link', async () => {
     await render([buildRow('a')]);
     await open();
 
     const title = byTestId('meetings-home-pending-rsvps-row-title') as HTMLAnchorElement;
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true });
+    // jsdom would follow the link otherwise.
     title.addEventListener('click', (event) => event.preventDefault());
-    title.click();
+    title.dispatchEvent(click);
     await settle();
 
-    expect(title.getAttribute('href')).toBeTruthy();
-    expect(title.getAttribute('target')).toBe('_blank');
-    expect(title.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(openDetails).not.toHaveBeenCalled();
     expect(closeDrawer).not.toHaveBeenCalled();
   });
 

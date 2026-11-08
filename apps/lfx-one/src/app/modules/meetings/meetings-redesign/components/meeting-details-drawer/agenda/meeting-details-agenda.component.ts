@@ -4,10 +4,20 @@
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, linkedSignal, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { AttachmentScope, MeetingAttachment, MeetingComposerSectionId, MeetingMaterialLink, PastMeetingAttachment } from '@lfx-one/shared/interfaces';
+import {
+  AttachmentScope,
+  MeetingAttachment,
+  MeetingComposerSectionId,
+  MaterialsChangedEvent,
+  MeetingMaterialLink,
+  MeetingMaterialsDrawerData,
+  PastMeetingAttachment,
+} from '@lfx-one/shared/interfaces';
 import {
   applyAttachmentScopeOverrides,
   applyMeetingAttachmentChanges,
+  applyPastMeetingAttachmentChanges,
+  canScopeAttachmentToOccurrence,
   filterAttachmentsForOccurrence,
   getAttachmentScope,
   isPastMeetingCalendarRow,
@@ -21,20 +31,22 @@ import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
+import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiShowMoreComponent } from '@shared/uikit/show-more/show-more.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
-import { catchError, distinctUntilChanged, map, Observable, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingMaterialsDrawerComponent } from './materials-drawer/meeting-materials-drawer.component';
 
 /**
  * Agenda & Materials tab of the meeting details drawer.
  * @description The agenda is the shown date's description, else the meeting's. Files are the primary materials and
- * links the supporting ones. Organizers of an upcoming meeting jump to the composer's Agenda & resources section.
+ * links the supporting ones. Organizers edit the agenda in the composer and materials in Manage Materials.
  */
 @Component({
   selector: 'lfx-meeting-details-agenda',
@@ -59,6 +71,7 @@ export class MeetingDetailsAgendaComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly editService = inject(MeetingsHomeEditService);
   private readonly drawer = inject(UiDrawerContext, { optional: true });
+  private readonly drawerService = inject(UiDrawerService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly agendaText = viewChild<ElementRef<HTMLElement>>('agendaText');
@@ -68,6 +81,8 @@ export class MeetingDetailsAgendaComponent {
   /** True once the rendered agenda is taller than the collapsed height. */
   protected readonly agendaOverflows = signal(false);
   protected readonly filesExpanded = linkedSignal({ source: this.context.occurrence, computation: () => false });
+  /** Changes saved from Manage Materials, shown until the past record's read catches up. */
+  private readonly pastChanges = signal<MaterialsChangedEvent>({ deletedUids: [], addedAttachments: [] });
   protected readonly agendaCollapsedHeight: Signal<number | null> = computed(() =>
     this.agendaOverflows() && !this.agendaExpanded() ? MEETING_DETAILS_AGENDA_COLLAPSED_PX : null
   );
@@ -79,10 +94,13 @@ export class MeetingDetailsAgendaComponent {
   });
   protected readonly fullAccess: Signal<boolean> = this.context.fullAccess;
   protected readonly agenda: Signal<string> = computed(() => (this.context.occurrence()?.description || this.context.meeting().description || '').trim());
-  // The composer edits the series; past materials and rows that hold a past record are not its to edit.
+  // Upcoming dates of the series are editable; past materials and rows that hold a past record are not.
   protected readonly canEdit: Signal<boolean> = computed(
     () => this.context.organizer() && this.context.state() !== 'ended' && !isPastMeetingCalendarRow(this.context.meeting())
   );
+  // An organizer manages an ended date's materials on its past record, as on the legacy past meeting pages.
+  protected readonly canManagePast: Signal<boolean> = computed(() => this.context.organizer() && !!this.context.pastMeetingId());
+  protected readonly canEditMaterials: Signal<boolean> = computed(() => this.canEdit() || this.canManagePast());
   /** Null while loading. */
   private readonly attachments: Signal<(MeetingAttachment | PastMeetingAttachment)[] | null> = this.initAttachments();
   protected readonly loading: Signal<boolean> = computed(() => this.attachments() === null);
@@ -118,6 +136,26 @@ export class MeetingDetailsAgendaComponent {
     this.openComposer('agenda-resources');
   }
 
+  /** Opens Manage Materials over this drawer, on the past record of an ended date or else on the series. */
+  protected editMaterials(): void {
+    const pastMeetingId = this.context.pastMeetingId();
+    if (pastMeetingId) {
+      // A save that finishes after another date is shown belongs to the date it was made on.
+      const onChanged = (event: MaterialsChangedEvent): void => {
+        if (this.context.pastMeetingId() === pastMeetingId) this.recordPastChanges(event);
+      };
+      this.openMaterialsDrawer({ pastMeetingId, pastChanges: this.pastChanges(), occurrence: null, canScopeToOccurrence: false, onChanged });
+      return;
+    }
+    // A series lists and scopes materials for the shown date, as the meeting page does.
+    const occurrence = this.showScopes() ? this.context.occurrence() : null;
+    this.openMaterialsDrawer({
+      meetingId: this.seriesId(),
+      occurrence,
+      canScopeToOccurrence: canScopeAttachmentToOccurrence(this.context.meeting(), occurrence),
+    });
+  }
+
   protected download(attachment: MeetingAttachment | PastMeetingAttachment): void {
     const pastMeetingId = this.context.pastMeetingId();
     const download$ = pastMeetingId
@@ -145,13 +183,21 @@ export class MeetingDetailsAgendaComponent {
     const source = computed(() => (this.context.fullAccess() ? (this.context.pastMeetingId() ?? `meeting:${this.seriesId()}`) : null));
     const loaded$ = toObservable(source).pipe(
       distinctUntilChanged(),
+      tap(() => this.pastChanges.set({ deletedUids: [], addedAttachments: [] })),
       switchMap((key) => (key ? this.loadAttachments().pipe(startWith(null)) : of(null)))
     );
     const loaded = toSignal(loaded$, { initialValue: null });
     return computed(() => {
       const attachments = loaded();
-      if (!attachments || this.context.pastMeetingId()) return attachments;
-      return filterAttachmentsForOccurrence(attachments as MeetingAttachment[], this.context.occurrence()?.occurrence_id);
+      if (!attachments) return null;
+      if (this.context.pastMeetingId()) return applyPastMeetingAttachmentChanges(attachments as PastMeetingAttachment[], this.pastChanges());
+      // The read can lag this session's saves, so they are overlaid; reactive, as Manage Materials saves while this stays open.
+      const meetingId = this.seriesId();
+      const current = applyAttachmentScopeOverrides(
+        applyMeetingAttachmentChanges(attachments as MeetingAttachment[], this.meetingService.attachmentChanges().get(meetingId)),
+        this.meetingService.attachmentScopeOverrides()
+      );
+      return filterAttachmentsForOccurrence(current, this.context.occurrence()?.occurrence_id);
     });
   }
 
@@ -190,17 +236,17 @@ export class MeetingDetailsAgendaComponent {
         })
       );
     }
-    const meetingId = this.seriesId();
-    // The read can lag this session's saves, as in the materials drawer.
-    return this.meetingService
-      .getMeetingAttachments(meetingId)
-      .pipe(
-        map((attachments) =>
-          applyAttachmentScopeOverrides(
-            applyMeetingAttachmentChanges(attachments, this.meetingService.attachmentChanges().get(meetingId)),
-            this.meetingService.attachmentScopeOverrides()
-          )
-        )
-      );
+    return this.meetingService.getMeetingAttachments(this.seriesId());
+  }
+
+  private openMaterialsDrawer(data: MeetingMaterialsDrawerData): void {
+    this.drawerService.open(MeetingMaterialsDrawerComponent, { data });
+  }
+
+  private recordPastChanges(event: MaterialsChangedEvent): void {
+    this.pastChanges.update((current) => ({
+      deletedUids: [...current.deletedUids, ...event.deletedUids],
+      addedAttachments: [...current.addedAttachments, ...event.addedAttachments],
+    }));
   }
 }

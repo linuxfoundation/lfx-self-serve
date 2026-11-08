@@ -56,8 +56,8 @@
             <lfx-ui-badge tone="success" size="sm" data-testid="meeting-details-materials-updated">Updated</lfx-ui-badge>
           }
         </div>
-        @if (canEdit() && hasMaterials()) {
-          <lfx-ui-button variant="secondary" size="small" icon="fa-light fa-pen" (click)="edit()" data-testid="meeting-details-materials-edit">
+        @if (canEditMaterials() && hasMaterials()) {
+          <lfx-ui-button variant="secondary" size="small" icon="fa-light fa-pen" (click)="editMaterials()" data-testid="meeting-details-materials-edit">
             Edit Materials
           </lfx-ui-button>
         }
@@ -179,13 +179,13 @@
         description="Documents and links shared for this meeting will appear here."
         [headingLevel]="4"
         data-testid="meeting-details-materials-empty">
-        @if (canEdit()) {
+        @if (canEditMaterials()) {
           <lfx-ui-button
             empty-state-action
             variant="tertiary-accent"
             size="small"
             icon="fa-light fa-plus"
-            (click)="edit()"
+            (click)="editMaterials()"
             data-testid="meeting-details-materials-add">
             Add Materials
           </lfx-ui-button>

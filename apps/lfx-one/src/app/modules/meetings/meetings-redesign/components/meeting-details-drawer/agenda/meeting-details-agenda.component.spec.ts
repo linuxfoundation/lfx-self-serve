@@ -15,6 +15,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
+import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
 import { MeetingDetailsAgendaComponent } from './meeting-details-agenda.component';
+import { MeetingMaterialsDrawerComponent } from './materials-drawer/meeting-materials-drawer.component';
 
 const MEETING = { id: 'synthetic-meeting', title: 'Synthetic sync', description: 'Roadmap review\nOpen floor' } as Meeting;
 const OCCURRENCE = { occurrence_id: '2524640400', start_time: '2050-01-01T09:00:00.000Z', duration: 30 } as MeetingOccurrence;
@@ -52,6 +54,7 @@ describe('MeetingDetailsAgendaComponent', () => {
   let getMeetingAttachmentDownloadUrl: ReturnType<typeof vi.fn>;
   let getPastMeetingAttachmentDownloadUrl: ReturnType<typeof vi.fn>;
   let edit: ReturnType<typeof vi.fn>;
+  let drawerOpen: ReturnType<typeof vi.fn>;
   let requestClose: ReturnType<typeof vi.fn>;
   let toastShow: ReturnType<typeof vi.fn>;
 
@@ -79,6 +82,7 @@ describe('MeetingDetailsAgendaComponent', () => {
     getMeetingAttachmentDownloadUrl = vi.fn(() => of({ download_url: 'https://files.example/deck' }));
     getPastMeetingAttachmentDownloadUrl = vi.fn(() => of({ download_url: 'https://files.example/past' }));
     edit = vi.fn();
+    drawerOpen = vi.fn();
     requestClose = vi.fn();
     toastShow = vi.fn();
     const drawer = new UiDrawerContext();
@@ -116,6 +120,7 @@ describe('MeetingDetailsAgendaComponent', () => {
           },
         },
         { provide: MeetingsHomeEditService, useValue: { edit } },
+        { provide: UiDrawerService, useValue: { open: drawerOpen } },
         { provide: UiDrawerContext, useValue: drawer },
         { provide: UiToastService, useValue: { show: toastShow } },
       ],
@@ -310,12 +315,12 @@ describe('MeetingDetailsAgendaComponent', () => {
     expect(query('meeting-details-materials-primary')?.textContent).toContain('No primary materials available.');
   });
 
-  it('lets an organizer edit the agenda and materials in the composer, closing the drawer', async () => {
+  it('lets an organizer edit the agenda in the composer, closing the drawer', async () => {
     organizer.set(true);
     occurrence.set(OCCURRENCE);
     await render();
 
-    await click('meeting-details-materials-edit');
+    await click('meeting-details-agenda-edit');
 
     expect(requestClose).toHaveBeenCalled();
     expect(edit).toHaveBeenCalledWith(
@@ -335,6 +340,44 @@ describe('MeetingDetailsAgendaComponent', () => {
     expect(query('meeting-details-agenda-add')).not.toBeNull();
   });
 
+  it('opens Manage Materials over the drawer for the shown date of an upcoming series', async () => {
+    organizer.set(true);
+    meeting.set({ ...MEETING, recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 } } as unknown as Meeting);
+    occurrence.set(OCCURRENCE);
+    await render();
+
+    await click('meeting-details-materials-edit');
+
+    expect(edit).not.toHaveBeenCalled();
+    expect(requestClose).not.toHaveBeenCalled();
+    expect(drawerOpen).toHaveBeenCalledWith(MeetingMaterialsDrawerComponent, {
+      data: expect.objectContaining({ meetingId: 'synthetic-meeting', occurrence: OCCURRENCE, canScopeToOccurrence: true }),
+    });
+  });
+
+  it('lists materials saved this session without a refetch', async () => {
+    const changes = signal(new Map());
+    TestBed.overrideProvider(MeetingService, {
+      useValue: {
+        getMeetingAttachments,
+        getPastMeetingAttachments,
+        getMeetingAttachmentDownloadUrl,
+        getPastMeetingAttachmentDownloadUrl,
+        attachmentChanges: changes,
+        attachmentScopeOverrides: signal(new Map()),
+      },
+    });
+    await render();
+
+    changes.set(new Map([['synthetic-meeting', { added: [{ ...FILE, uid: 'file-new', name: 'Minutes.pdf' }], deletedUids: new Set(['file-1']) }]]));
+    await fixture.whenStable();
+
+    const names = queryAll('meeting-details-materials-file').map((row) => row.textContent);
+    expect(names).toHaveLength(1);
+    expect(names[0]).toContain('Minutes.pdf');
+    expect(getMeetingAttachments).toHaveBeenCalledTimes(1);
+  });
+
   it('offers no edits on an upcoming date of a past row', async () => {
     organizer.set(true);
     meeting.set({
@@ -350,9 +393,59 @@ describe('MeetingDetailsAgendaComponent', () => {
     expect(query('meeting-details-materials-edit')).toBeNull();
   });
 
-  it('offers no edits once the meeting has ended', async () => {
+  it("lets an organizer manage an ended date's materials on its past record, but not the agenda", async () => {
     organizer.set(true);
     state.set('ended');
+    pastMeetingId.set('synthetic-meeting-2524640400');
+    getPastMeetingAttachments.mockReturnValue(of([FILE]));
+    await render();
+
+    expect(query('meeting-details-agenda-edit')).toBeNull();
+    await click('meeting-details-materials-edit');
+
+    expect(edit).not.toHaveBeenCalled();
+    expect(drawerOpen).toHaveBeenCalledWith(MeetingMaterialsDrawerComponent, {
+      data: expect.objectContaining({ pastMeetingId: 'synthetic-meeting-2524640400' }),
+    });
+  });
+
+  it('shows saved past changes before the record catches up', async () => {
+    organizer.set(true);
+    state.set('ended');
+    pastMeetingId.set('synthetic-meeting-2524640400');
+    getPastMeetingAttachments.mockReturnValue(of([FILE]));
+    await render();
+    await click('meeting-details-materials-edit');
+
+    const added = { ...FILE, uid: 'file-new', name: 'Minutes.pdf' } as unknown as PastMeetingAttachment;
+    drawerOpen.mock.calls[0][1].data.onChanged({ deletedUids: ['file-1'], addedAttachments: [added] });
+    await fixture.whenStable();
+
+    const names = queryAll('meeting-details-materials-file').map((row) => row.textContent);
+    expect(names).toHaveLength(1);
+    expect(names[0]).toContain('Minutes.pdf');
+  });
+
+  it('keeps a save that finishes after another date is shown out of that date', async () => {
+    organizer.set(true);
+    state.set('ended');
+    pastMeetingId.set('synthetic-meeting-2524640400');
+    getPastMeetingAttachments.mockReturnValue(of([FILE]));
+    await render();
+    await click('meeting-details-materials-edit');
+
+    pastMeetingId.set('synthetic-meeting-2525245200');
+    await fixture.whenStable();
+    drawerOpen.mock.calls[0][1].data.onChanged({ deletedUids: ['file-1'], addedAttachments: [] });
+    await fixture.whenStable();
+
+    expect(queryAll('meeting-details-materials-file')).toHaveLength(1);
+  });
+
+  it('offers a guest no edits once the meeting has ended', async () => {
+    state.set('ended');
+    pastMeetingId.set('synthetic-meeting-2524640400');
+    getPastMeetingAttachments.mockReturnValue(of([FILE]));
     await render();
 
     expect(query('meeting-details-agenda-edit')).toBeNull();

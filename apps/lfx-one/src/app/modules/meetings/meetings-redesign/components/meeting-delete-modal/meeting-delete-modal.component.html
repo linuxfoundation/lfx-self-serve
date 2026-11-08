@@ -23,7 +23,10 @@
 
   <lfx-ui-note variant="error" plain size="small" icon="fa-solid fa-circle-exclamation" data-testid="meetings-home-delete-note">
     @if (occurrence) {
-      <span class="mb-[4px] block font-medium">You are canceling this occurrence for all registrants of the meeting, not just yourself.</span>
+      <span class="mb-[4px] block font-medium"
+        >You are canceling this occurrence for all registrants of the meeting, not just yourself. This is not how you unregister yourself from an
+        occurrence.</span
+      >
       This will permanently cancel this specific occurrence. Guests will be notified of the cancellation. This action cannot be undone.
     } @else {
       <span class="mb-[4px] block font-medium">You are deleting this meeting for all registrants, not just yourself.</span>
@@ -40,7 +43,7 @@
       [disabled]="!!reasonError()"
       (click)="confirm()"
       data-testid="meetings-home-delete-confirm"
-      >{{ occurrence ? 'Cancel Occurrence' : 'Delete Meeting' }}</lfx-ui-button
+      >{{ confirmLabel() }}</lfx-ui-button
     >
   </ng-container>
 </lfx-ui-modal>

@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { MeetingOccurrence } from './meeting.interface';
+
 /**
  * Valid attachment category values
  */
@@ -263,6 +265,47 @@ export interface MaterialsChangedEvent {
   deletedUids: string[];
   /** Newly created past-meeting attachments, ready for optimistic display */
   addedAttachments: PastMeetingAttachment[];
+}
+
+/**
+ * What the meeting materials drawer opens with
+ * @description Set `meetingId` for an upcoming meeting or `pastMeetingId` for a past meeting record.
+ */
+export interface MeetingMaterialsDrawerData {
+  /** Series id of an upcoming meeting */
+  meetingId?: string;
+  /** Resource id of the past meeting record (`meeting_and_occurrence_id`, or the meeting id) */
+  pastMeetingId?: string;
+  /** Changes already saved this session, which the past record's read can lag */
+  pastChanges?: MaterialsChangedEvent;
+  /** The occurrence managed on an upcoming recurring meeting: it decides what is listed and the scope labels; null otherwise */
+  occurrence: MeetingOccurrence | null;
+  /** Whether items can be scoped to `occurrence` (upcoming and not cancelled) */
+  canScopeToOccurrence: boolean;
+  /** Called after every saved change to a past record, so the list behind the drawer shows it before its read catches up */
+  onChanged?: (event: MaterialsChangedEvent) => void;
+}
+
+/** Outcome of saving one staged scope change in Manage Materials */
+export interface MeetingAttachmentScopeResult {
+  uid: string;
+  ok: boolean;
+  scope: AttachmentScope;
+}
+
+/**
+ * An existing attachment as the materials drawer lists it
+ */
+export interface MeetingMaterialRow {
+  attachment: MeetingAttachment | PastMeetingAttachment;
+  /** Staged for deletion on Save */
+  deleting: boolean;
+  /** Scope once staged changes are saved */
+  scope: AttachmentScope;
+  /** The scope differs from the saved one */
+  scopeUnsaved: boolean;
+  /** The organizer may switch its scope */
+  canToggleScope: boolean;
 }
 
 /**

@@ -39,6 +39,8 @@ export class MeetingDetailsContext {
   private readonly document = inject(DOCUMENT);
   /** Time read by the drawer's own clock; 0 until it first ticks. */
   private readonly tick = signal(0);
+  /** Registered from the drawer; counts as invited before the list catches up. */
+  private readonly registered = signal(false);
 
   /** The row the drawer opened on. */
   public readonly row: Signal<MeetingHomeRow> = signal(this.data.row).asReadonly();
@@ -58,7 +60,7 @@ export class MeetingDetailsContext {
   public readonly organizer: Signal<boolean> = computed(() => this.meeting().organizer === true);
   /** Invited, and not just removed from the meeting on this page. */
   public readonly invited: Signal<boolean> = computed(
-    () => !!this.meeting().invited && !this.meetingService.removedRegistrationMeetingIds().has(this.row().meeting.id)
+    () => (this.registered() || !!this.meeting().invited) && !this.meetingService.removedRegistrationMeetingIds().has(this.row().meeting.id)
   );
   /** Invited, or on a past row: the past feed lists only meetings the viewer is a member of. */
   private readonly member: Signal<boolean> = computed(() => this.invited() || isPastMeetingCalendarRow(this.row().meeting));
@@ -77,6 +79,13 @@ export class MeetingDetailsContext {
 
   public constructor() {
     this.startClock();
+  }
+
+  /** Records a registration made from the drawer and reloads the list behind it. */
+  public markRegistered(): void {
+    this.meetingService.clearRemovedRegistration(this.row().meeting.id);
+    this.registered.set(true);
+    this.refreshList();
   }
 
   /** Reloads the home list behind the drawer after an action changed the meeting. */

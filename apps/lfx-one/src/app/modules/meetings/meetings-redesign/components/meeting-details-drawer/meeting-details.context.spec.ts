@@ -134,6 +134,19 @@ describe('MeetingDetailsContext', () => {
     expect(context.state()).toBe('live');
   });
 
+  it('stops counting a drawer registration as an invitation once the viewer removes themselves', () => {
+    const removed = signal(new Set<string>());
+    TestBed.overrideProvider(MeetingService, {
+      useValue: { getMeetingDetail: () => of(MEETING), removedRegistrationMeetingIds: removed, clearRemovedRegistration: vi.fn() },
+    });
+    const context = create({ ...buildRow({ ...MEETING, invited: false }) }, of({ ...MEETING, invited: false }));
+    context.markRegistered();
+    expect(context.invited()).toBe(true);
+
+    removed.set(new Set([MEETING.id]));
+    expect(context.invited()).toBe(false);
+  });
+
   it('counts a past row viewer as a member', () => {
     const context = create(buildRow({ ...(PAST as unknown as Meeting), visibility: 'private' } as Meeting));
 

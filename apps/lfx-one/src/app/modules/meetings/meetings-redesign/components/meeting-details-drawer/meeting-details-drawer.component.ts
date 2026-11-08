@@ -35,9 +35,11 @@ import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 
+import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDetailsAgendaComponent } from './agenda/meeting-details-agenda.component';
+import { MeetingDetailsGuestsComponent } from './guests/meeting-details-guests.component';
 import { MeetingDetailsHeaderComponent } from './header/meeting-details-header.component';
 import { MeetingDetailsContext } from './meeting-details.context';
 import { MeetingDetailsProjectLinkComponent } from './project-link/meeting-details-project-link.component';
@@ -55,6 +57,7 @@ import { MeetingDetailsToolsComponent } from './tools/meeting-details-tools.comp
   selector: 'lfx-meeting-details-drawer',
   imports: [
     MeetingDetailsAgendaComponent,
+    MeetingDetailsGuestsComponent,
     MeetingDetailsHeaderComponent,
     MeetingDetailsOwnActionsComponent,
     MeetingDetailsProjectLinkComponent,
@@ -73,6 +76,7 @@ import { MeetingDetailsToolsComponent } from './tools/meeting-details-tools.comp
     MeetingDetailsArtifactsService,
     { provide: MeetingsHomeStore, useFactory: () => inject<MeetingDetailsDrawerData>(DIALOG_DATA).injector.get(MeetingsHomeStore) },
     { provide: MeetingsHomeEditService, useFactory: () => inject<MeetingDetailsDrawerData>(DIALOG_DATA).injector.get(MeetingsHomeEditService) },
+    { provide: MeetingsHomeDeleteService, useFactory: () => inject<MeetingDetailsDrawerData>(DIALOG_DATA).injector.get(MeetingsHomeDeleteService) },
   ],
 })
 export class MeetingDetailsDrawerComponent {

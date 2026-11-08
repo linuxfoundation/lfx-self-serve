@@ -556,10 +556,10 @@ export function mktgFamilyPrintBuiltFromLabel(source: string): string {
   else if (parts) return host(trimmed);
   else if (/^LFX project record\b/i.test(trimmed)) label = trimmed.replace(/^(LFX project record)\b.*$/i, '$1');
   else {
-    // `(intake)` at the end, and the whitespace before it: read as the tail's index and a trim, not as `\s*\((intake)\)$`,
-    // whose `\s*` before the parenthesis made a long run of spaces quadratic (CodeQL, js/polynomial-redos); the same words.
-    const internal = new RegExp(`\\((?:${MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS.join('|')})\\)$`, 'i');
-    const tail = internal.exec(trimmed);
+    // A parenthesis holding only the run's own terms at the end, as `\s*\((?:intake|…)\)$` dropped it: the anchored
+    // `(term)$` is found first (it fails fast everywhere but at a `(`), and trimEnd() strips the same `\s` set the
+    // pattern's leading `\s*` did, without its retry at every whitespace character (quadratic on a long run).
+    const tail = new RegExp(`\\((?:${MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS.join('|')})\\)$`, 'i').exec(trimmed);
     label = tail ? trimmed.slice(0, tail.index).trimEnd() : trimmed;
   }
   return label ? label[0].toLocaleUpperCase() + label.slice(1) : '';
@@ -632,6 +632,47 @@ function mktgFamilyPrintWithoutHashedParentheses(text: string): string {
 }
 
 /**
+ * A text without its hashed file names: every word that starts with twelve hexadecimal digits and ends in a `.`
+ * and two to five word characters (`16dd7d82…-838x203.svg`) dropped, as `/\b[0-9a-f]{12,}[-\w]*\.\w{2,5}\b/g`
+ * dropped them. One linear scan rather than that pattern, whose `[-\w]*` was retried from every word start of a
+ * chain of hyphenated words to the chain's end (CodeQL, js/polynomial-redos): three suffix tables, read right to
+ * left once, give each index the end of its `[-\w]` run, the length of the hexadecimal run and the length of the
+ * word from it; a name starts where a word does with at least twelve hexadecimal digits, and its run must be
+ * followed by a `.` and a word of two to five characters. The same names are dropped (ASCII `\w`, as the pattern's).
+ */
+function mktgFamilyPrintWithoutHashedNames(text: string): string {
+  const n = text.length;
+  const isWord = (c: number) => (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95;
+  const isHex = (c: number) => (c >= 48 && c <= 57) || (c >= 97 && c <= 102);
+  const runEnd = new Int32Array(n + 1),
+    hexLen = new Int32Array(n + 1),
+    wordLen = new Int32Array(n + 1);
+  runEnd[n] = n;
+  for (let i = n - 1; i >= 0; i--) {
+    const c = text.charCodeAt(i);
+    runEnd[i] = isWord(c) || c === 45 ? runEnd[i + 1] : i;
+    hexLen[i] = isHex(c) ? hexLen[i + 1] + 1 : 0;
+    wordLen[i] = isWord(c) ? wordLen[i + 1] + 1 : 0;
+  }
+  let out = '',
+    from = 0,
+    i = 0;
+  while (i < n) {
+    if (hexLen[i] >= 12 && (i === 0 || !isWord(text.charCodeAt(i - 1)))) {
+      const e = runEnd[i];
+      const ext = e < n && text.charCodeAt(e) === 46 ? wordLen[e + 1] : 0;
+      if (ext >= 2 && ext <= 5) {
+        out += text.slice(from, i);
+        i = from = e + 1 + ext;
+        continue;
+      }
+    }
+    i++;
+  }
+  return out + text.slice(from);
+}
+
+/**
  * A run's open item as the page prints it: the record's sentence without a
  * hashed file name (`(16dd7d82…-838x203.svg)`), which names nothing to a
  * reader; the sentence around it stands, and an item left with no words is
@@ -639,10 +680,7 @@ function mktgFamilyPrintWithoutHashedParentheses(text: string): string {
  */
 export function mktgFamilyPrintOpenItemText(text: string): string {
   return (
-    mktgFamilyPrintWithoutHashedParentheses(text)
-      // Twelve hexadecimal digits, then the rest of the word: `{12}` and `[-\w]*` meet once (`{12,}` before `[-\w]*` shared
-      // the digits after the twelfth and backtracked over them: CodeQL, js/polynomial-redos); the same names dropped.
-      .replace(/\b[0-9a-f]{12}[-\w]*\.\w{2,5}\b/g, '')
+    mktgFamilyPrintWithoutHashedNames(mktgFamilyPrintWithoutHashedParentheses(text))
       // Only the first character of a whitespace run starts a match (the lookbehind), so a long run is read once, not once per character.
       .replace(/(?<!\s)\s+([,.;:])/g, '$1')
       .replace(/\s{2,}/g, ' ')

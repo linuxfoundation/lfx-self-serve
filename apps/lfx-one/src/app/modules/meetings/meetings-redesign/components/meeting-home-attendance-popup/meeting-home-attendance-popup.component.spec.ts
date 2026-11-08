@@ -9,6 +9,7 @@ import { MeetingService } from '@services/meeting.service';
 import { Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 import { MeetingHomeAttendancePopupComponent } from './meeting-home-attendance-popup.component';
 
 const UPCOMING: MeetingHomeAttendance = {
@@ -52,6 +53,7 @@ describe('MeetingHomeAttendancePopupComponent', () => {
   let participants$: Subject<PastMeetingParticipant[]>;
   let meetingService: { getMeetingRegistrants: ReturnType<typeof vi.fn>; getPastMeetingParticipants: ReturnType<typeof vi.fn> };
   let overlay: HTMLElement;
+  let openDetails: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     registrants$ = new Subject();
@@ -60,7 +62,13 @@ describe('MeetingHomeAttendancePopupComponent', () => {
       getMeetingRegistrants: vi.fn(() => registrants$),
       getPastMeetingParticipants: vi.fn(() => participants$),
     };
-    TestBed.configureTestingModule({ providers: [{ provide: MeetingService, useValue: meetingService }] });
+    openDetails = vi.fn();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: MeetingService, useValue: meetingService },
+        { provide: MeetingsHomeDetailsService, useValue: { open: openDetails } },
+      ],
+    });
     overlay = TestBed.inject(OverlayContainer).getContainerElement();
   });
 
@@ -102,6 +110,22 @@ describe('MeetingHomeAttendancePopupComponent', () => {
     expect(popup()?.querySelectorAll('[data-testid="meeting-attendee-grid-person"]')).toHaveLength(2);
     expect(popup()?.querySelector('[data-testid="meeting-attendee-grid-stats"]')).not.toBeNull();
     expect(popup()?.querySelector('[data-testid="meeting-attendee-grid-view-all"]')).toBeNull();
+  });
+
+  it('offers View all past two rows of people, closing and opening the details drawer on the guests', async () => {
+    const row = buildRow({});
+    const fixture = await render(row);
+    await hover(fixture, 'pointerenter');
+    registrants$.next(Array.from({ length: 19 }, (_, i) => ({ ...REGISTRANTS[1], uid: `r-${i}` })));
+    await fixture.whenStable();
+
+    const viewAll = popup()?.querySelector<HTMLElement>('[data-testid="meeting-attendee-grid-view-all"]');
+    expect(viewAll?.textContent?.trim()).toBe('View all 19');
+    viewAll?.querySelector('button')?.click();
+    await fixture.whenStable();
+
+    expect(openDetails).toHaveBeenCalledWith(row, 'attendance', { tab: 'guests' });
+    expect(popup()).toBeNull();
   });
 
   it('closes after the pointer leaves and reuses the loaded people on the next open', async () => {

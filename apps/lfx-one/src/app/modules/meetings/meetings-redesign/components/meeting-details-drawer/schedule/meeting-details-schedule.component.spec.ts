@@ -4,11 +4,13 @@
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingDetailsState, MeetingHomeRow, MeetingJoinLink } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingDetailsState, MeetingHomeRow, MeetingJoinLink, PublicMeetingRegistrationResponse } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UserService } from '@services/user.service';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { UiModalService } from '@shared/uikit/modal/modal.service';
+import { of, Subject } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeJoinService } from '../../../services/meetings-home-join.service';
 import { MeetingsHomeStore } from '../../../services/meetings-home.store';
@@ -62,7 +64,11 @@ const ROW: MeetingHomeRow = {
 
 describe('MeetingDetailsScheduleComponent', () => {
   let state: WritableSignal<MeetingDetailsState>;
+  let invited: WritableSignal<boolean>;
   let link: WritableSignal<MeetingJoinLink>;
+  let markRegistered: ReturnType<typeof vi.fn>;
+  let modalClosed: Subject<PublicMeetingRegistrationResponse | undefined>;
+  let open: ReturnType<typeof vi.fn>;
   let upcomingRows: WritableSignal<MeetingHomeRow[]>;
   let meeting: WritableSignal<Meeting>;
 
@@ -77,7 +83,11 @@ describe('MeetingDetailsScheduleComponent', () => {
 
   beforeEach(() => {
     state = signal<MeetingDetailsState>('far');
+    invited = signal(false);
     link = signal<MeetingJoinLink>({ url: null, error: null, code: null });
+    markRegistered = vi.fn(() => invited.set(true));
+    modalClosed = new Subject();
+    open = vi.fn(() => ({ closed: modalClosed, close: vi.fn() }));
     upcomingRows = signal<MeetingHomeRow[]>([]);
     meeting = signal(MEETING);
     TestBed.configureTestingModule({
@@ -92,14 +102,17 @@ describe('MeetingDetailsScheduleComponent', () => {
             state,
             now: signal(new Date('2026-11-01T12:00:00Z')),
             organizer: signal(false),
+            invited,
+            markRegistered,
           },
         },
         { provide: MeetingsHomeStore, useValue: { upcomingRows } },
         { provide: MeetingsHomeJoinService, useValue: { joinLink: () => link } },
-        { provide: UserService, useValue: { authenticated: signal(true) } },
+        { provide: UserService, useValue: { authenticated: signal(true), user: signal({ name: 'Ada Lovelace', email: 'ada@example.test' }) } },
+        { provide: UiModalService, useValue: { open } },
         {
           provide: MeetingService,
-          useValue: { removedRegistrationMeetingIds: signal(new Set()) },
+          useValue: { removedRegistrationMeetingIds: signal(new Set()), getPublicMeetingOccurrences: vi.fn(() => of({ past: [], future: [] })) },
         },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set()) } },
       ],
@@ -109,7 +122,8 @@ describe('MeetingDetailsScheduleComponent', () => {
   it('shows the long date, the time and the recurrence with its end', async () => {
     const fixture = await render();
 
-    expect(text(fixture, 'meeting-details-schedule-long-date')).toMatch(/^Thursday, Nov 5, 2026$/);
+    // The runner's zone sets the day, as it does for the viewer.
+    expect(text(fixture, 'meeting-details-schedule-long-date')).toMatch(/^[A-Z][a-z]+day, Nov [56], 2026$/);
     expect(text(fixture, 'meeting-details-schedule-time')).toMatch(/· 30 min$/);
     expect(text(fixture, 'meeting-details-schedule-recurrence')).toBe('Weekly on Thursday, for 4 occurrences');
   });
@@ -127,6 +141,33 @@ describe('MeetingDetailsScheduleComponent', () => {
 
     upcomingRows.set([{ ...ROW, meeting: { ...MEETING, invited: true }, myRsvp: null }]);
     await fixture.whenStable();
+    expect(query(fixture, 'meetings-home-rsvp-accepted')).not.toBeNull();
+  });
+
+  it('offers Register for a public meeting the viewer is not invited to, and hides it once invited', async () => {
+    const fixture = await render();
+    expect(query(fixture, 'meeting-details-schedule-register')).not.toBeNull();
+
+    invited.set(true);
+    await fixture.whenStable();
+    expect(query(fixture, 'meeting-details-schedule-register')).toBeNull();
+  });
+
+  it('registers through the dialog, then counts the viewer as invited and offers the RSVP buttons', async () => {
+    const fixture = await render();
+    (query(fixture, 'meeting-details-schedule-register')?.querySelector('button') as HTMLButtonElement).click();
+
+    expect(open).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        data: { meetingId: 'synthetic-meeting', meetingTitle: 'Synthetic sync', user: { name: 'Ada Lovelace', email: 'ada@example.test' } },
+      },
+      { closePredicate: expect.any(Function) }
+    );
+    modalClosed.next({ uid: 'registrant-1' });
+    await fixture.whenStable();
+
+    expect(markRegistered).toHaveBeenCalled();
     expect(query(fixture, 'meetings-home-rsvp-accepted')).not.toBeNull();
   });
 
@@ -171,5 +212,6 @@ describe('MeetingDetailsScheduleComponent', () => {
 
     expect(text(fixture, 'meeting-details-schedule-ended')).toBe('This meeting has ended.');
     expect(query(fixture, 'meeting-details-schedule-join')).toBeNull();
+    expect(query(fixture, 'meeting-details-schedule-register')).toBeNull();
   });
 });

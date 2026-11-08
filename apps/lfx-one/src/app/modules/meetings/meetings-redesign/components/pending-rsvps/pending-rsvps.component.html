@@ -59,6 +59,7 @@
               [attr.rel]="item.link.newTab ? 'noopener noreferrer' : null"
               [lfxUiTooltip]="item.row.title"
               [lfxUiTooltipDisabled]="!truncated().has(rowTitle)"
+              (click)="openDetails($event, item.row)"
               data-testid="meetings-home-pending-rsvps-row-title"
               >{{ item.row.title }}</a
             >
