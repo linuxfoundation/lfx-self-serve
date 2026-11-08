@@ -1635,8 +1635,10 @@ export class MktgDocumentViewComponent {
   /**
    * The project's Brand Kit, which the print's running head wears: read only
    * while a framework revision or an AEO/GEO report is on screen (a kit or a
-   * plain Markdown document prints nothing of this), only in the browser, and
-   * never on the server. Any failed read is null, the LF look, not an error.
+   * plain Markdown document prints nothing of this), only in the browser. The
+   * server never settles the read: its HTML carries the pending state the client
+   * starts from, so the button does not flip. The browser settles none when no
+   * kit project applies. Any failed read is null, the LF look, not an error.
    */
   private initPrintKitRead(): Signal<MktgPrintKitRead> {
     const projectUid = computed(() =>
@@ -1648,7 +1650,11 @@ export class MktgDocumentViewComponent {
         distinctUntilChanged(),
         // A project switch drops the previous project's kit at once: until the new project's kit resolves, the print
         // takes the LF look, never another project's brand, and a Download PDF press waits. No kit project is settled.
-        switchMap((uid) => (uid ? this.dependencyService.readBrandKit(uid).pipe(startWith(pending)) : of<MktgPrintKitRead>(MKTG_PRINT_KIT_READ_NONE)))
+        switchMap((uid) =>
+          uid
+            ? this.dependencyService.readBrandKit(uid).pipe(startWith(pending))
+            : of<MktgPrintKitRead>(isPlatformBrowser(this.platformId) ? MKTG_PRINT_KIT_READ_NONE : pending)
+        )
       ),
       { initialValue: pending }
     );
