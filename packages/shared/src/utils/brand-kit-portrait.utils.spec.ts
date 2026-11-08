@@ -701,6 +701,8 @@ describe('the Voice page’s attributes', () => {
 describe('the Sources page’s lists', () => {
   it('writes a source in words: the LFX record by name, a stylesheet chunk as the host’s stylesheets, a URL bare', () => {
     expect(brandKitPortraitReadableSource('LFX record')).toBe('The LFX project record');
+    // The framework's own wording of the same line reads the same on every Sources page (one shared rule).
+    expect(brandKitPortraitReadableSource('LFX project record agentic-ai-foundation and standard metrics')).toBe('The LFX project record');
     expect(brandKitPortraitReadableSource('https://one.example.org/_next/static/chunks/app.css')).toBe('one.example.org stylesheets');
     expect(brandKitPortraitReadableSource('https://one.example.org/brand?x=1')).toBe('one.example.org/brand');
     // An uploaded file is named as the logo files, never by its file name.

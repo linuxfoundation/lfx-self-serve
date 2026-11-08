@@ -8,6 +8,9 @@ import { mktgReadableSourceName, mktgReadableSourceText } from './mktg-readable-
 describe('mktgReadableSourceName', () => {
   it('names the LFX record, the site’s pages by address, and its stylesheet chunks as stylesheets', () => {
     expect(mktgReadableSourceName('LFX record: Project One (project-one)')).toBe('The LFX project record');
+    // The record names itself either way: the family's "LFX record", the framework's "LFX project record".
+    expect(mktgReadableSourceName('LFX project record foo and standard metrics')).toBe(MKTG_READABLE_SOURCE.lfxRecord);
+    expect(mktgReadableSourceName('LFX record foo')).toBe(MKTG_READABLE_SOURCE.lfxRecord);
     // A site's root is a page a reader can find, not a file: its host.
     expect(mktgReadableSourceName('https://aaif.example/')).toBe('aaif.example');
     expect(mktgReadableSourceName('https://www.aaif.example')).toBe('aaif.example');

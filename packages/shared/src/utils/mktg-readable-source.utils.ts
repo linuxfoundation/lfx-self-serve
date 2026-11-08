@@ -65,7 +65,8 @@ function isOpaque(path: string): boolean {
  */
 export function mktgReadableSourceName(source: string, count: 'one' | 'many' = 'many'): string {
   const text = source.trim();
-  if (/^LFX record/i.test(text)) return MKTG_READABLE_SOURCE.lfxRecord;
+  // The record names itself either way: the family's "LFX record", the framework's "LFX project record".
+  if (/^LFX (?:project )?record\b/i.test(text)) return MKTG_READABLE_SOURCE.lfxRecord;
   if (KIND_PREFIX_REGEX.test(text)) return mktgReadableSourceName(text.replace(KIND_PREFIX_REGEX, ''), count);
   const isUrl = /^https?:\/\//i.test(text);
   if (!isUrl) {

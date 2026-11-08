@@ -193,6 +193,24 @@ const BARE_ADDRESS_REGEX = /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:\/\S*)?$/i;
 const LINE_TERMINATOR_REGEX = /[\n\r\u2028\u2029]/;
 
 /**
+ * A source the record named by a field of its own, the family's grammar: a name in letters, digits and spaces up to the FIRST
+ * colon, then a web address. Split at the colon, never matched by a pattern (CodeQL, js/polynomial-redos). The name prints in
+ * lower case unless it carries a capital of its own inside (`Brand page` → `brand page`, `GitHub org` stays); a name that ends
+ * in "press release" is the press release. Null when the source has no such field, or nothing but words after the colon.
+ */
+function sourceFieldName(source: string): { name: string; rest: string; pressRelease: boolean } | null {
+  const colon = source.indexOf(':');
+  if (colon < 1) return null;
+  const written = source.slice(0, colon).trim();
+  const rest = source.slice(colon + 1).trim();
+  const address = (rest.startsWith('https://') || rest.startsWith('http://')) && !/\s/.test(rest[rest.indexOf('//') + 2] ?? ' ');
+  if (!address || !/^[A-Za-z][A-Za-z0-9 ]*$/.test(written)) return null;
+  const inner = written.slice(1);
+  const name = inner === inner.toLowerCase() ? written.toLowerCase() : written;
+  return { name, rest, pressRelease: /press release$/i.test(written) };
+}
+
+/**
  * An address at the head of a source with what follows it. A scheme address (`https://…`) is the first token, to the
  * first whitespace, and takes anything after it on one line as its remark. A bare address takes only the record's
  * remark in parentheses, or nothing: `aaif.io (home)`, `docs.example.org`, and `aaif.io/a(b c)` as the pattern this
@@ -226,12 +244,17 @@ const HOST_PATH_REGEX = /^[a-z0-9.-]+\//i;
  * is invented for one; a press release named as the design's mock names it,
  * "The press release" with the site's host; a file, an archive or a hashed
  * address in the grammar's words (`mktgReadableSourceName`); the LFX record
- * by name, never its slug; anything else as written.
+ * by name, never its slug; anything else as written. A source the record
+ * named by a field of its own, as the family's records do (`Brand page:
+ * https://aaif.io/brand`, `Launch press release: https://…`), prints the
+ * host with the field's name as its remark (`aaif.io · brand page`), or as
+ * the press release when the name ends in those words.
  */
 export function foundationMessagePrintSourceLabel(source: string): string {
   const trimmed = source.trim();
   const type = FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES.find((prefix) => trimmed.startsWith(`${prefix}: `));
-  const rest = type ? trimmed.slice(type.length + 2).trim() : trimmed;
+  const field = type ? null : sourceFieldName(trimmed);
+  const rest = field ? field.rest : type ? trimmed.slice(type.length + 2).trim() : trimmed;
   // A bare token is an address only when the grammar has no word of its own for it: a file name (`a1b2c3d4e5f6.svg`,
   // `brand-guide.pdf`), an archive member (`brand.zip/logo.svg`) or the LFX record go to `mktgReadableSourceName` as written.
   const first = rest.split(/\s/)[0];
@@ -247,8 +270,8 @@ export function foundationMessagePrintSourceLabel(source: string): string {
     .trim()
     .replace(/^\((.*)\)$/, '$1')
     .trim();
-  if (type === 'Press release') return `The press release (${name})${remark ? `${FRAMEWORK_PORTRAIT_SEP}${remark}` : ''}`;
-  return mktgPrintJoin([name, remark], FRAMEWORK_PORTRAIT_SEP);
+  if (type === 'Press release' || field?.pressRelease) return `The press release (${name})${remark ? `${FRAMEWORK_PORTRAIT_SEP}${remark}` : ''}`;
+  return mktgPrintJoin([name, field?.name ?? '', remark], FRAMEWORK_PORTRAIT_SEP);
 }
 
 /**
