@@ -419,10 +419,9 @@ describe('the fixed blocks', () => {
     expect(layout.conflictsCut).toBe(2);
     expect(layout.openItems).toEqual(openItems.slice(0, 8));
     expect(layout.openCut).toBe(4);
-    // A full conflicts block (less than one row free): the Still open block sits within a row of where the board draws it, never lower.
+    // A full conflicts block (less than one row free): the Still open block sits within a row of where the board draws it.
     const { openTop, conflict: conflictType } = MKTG_FAMILY_PRINT_SOURCES_LAYOUT;
-    expect(layout.openTop).toBeLessThanOrEqual(openTop);
-    expect(layout.openTop).toBeGreaterThan(openTop - conflictType.padding - conflictType.size * conflictType.line);
+    expect(Math.abs(layout.openTop - openTop)).toBeLessThan(conflictType.padding + conflictType.size * conflictType.line);
     // One short conflict: the Still open block follows it, the block gap under its row, and holds the rows the dead space held before.
     const tight = mktgFamilyPrintSourcesLayout([conflict], openItems);
     expect(tight.conflicts).toEqual([conflict]);
@@ -432,6 +431,24 @@ describe('the fixed blocks', () => {
     );
     expect(tight.openItems).toEqual(openItems);
     expect(tight.openCut).toBe(0);
+    // Conflicts that fill their block to the line (five two-line rows, 254 px): the block gap carries the Still open block past
+    // the board's y, and its budget starts there, so the open list keeps one row fewer than a budget from the board's y kept
+    // (the Bugbot finding on the family PR: that row collided with the footer). Four such rows: the same output as before.
+    const sourcesLayout = MKTG_FAMILY_PRINT_SOURCES_LAYOUT;
+    const twoLine = (count: number) => Array.from({ length: count }, (_, index) => ({ ...conflict, id: `Members · ${index}` }));
+    const over = mktgFamilyPrintSourcesLayout(twoLine(5), openItems);
+    expect(over.conflicts).toHaveLength(5);
+    expect(over.conflictsCut).toBe(0);
+    expect(over.openTop).toBe(
+      sourcesLayout.conflictsTop + sourcesLayout.heading + 5 * (conflictType.padding + 2 * conflictType.size * conflictType.line) + sourcesLayout.blockGap
+    );
+    expect(over.openTop).toBeGreaterThan(sourcesLayout.openTop);
+    expect(over.openItems).toEqual(openItems.slice(0, 7));
+    expect(over.openCut).toBe(5);
+    const under = mktgFamilyPrintSourcesLayout(twoLine(4), openItems);
+    expect(under.openTop).toBeCloseTo(655.2, 5);
+    expect(under.openItems).toEqual(openItems.slice(0, 9));
+    expect(under.openCut).toBe(3);
     const alone = mktgFamilyPrintSourcesLayout([], openItems);
     expect(alone.conflicts).toEqual([]);
     expect(alone.openItems).toEqual(openItems);

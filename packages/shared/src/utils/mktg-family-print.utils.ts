@@ -804,9 +804,12 @@ export function mktgFamilyPrintOpenItems(chapters: MktgFamilyPrintChapter[]): Mk
  * from y 410 to the Still open block, the open items from there to the
  * page's bottom (from y 410 when there are no conflicts); whole rows only,
  * nothing added, the rows past a block counted for its cut note. The Still
- * open block follows the conflicts printed, a block gap under them, never
- * lower than the board's y for it, so the page keeps no dead space between
- * the two; its budget runs from there. The open rows' text column starts
+ * open block follows the conflicts printed, a block gap under them, so the
+ * page keeps no dead space between the two; its budget runs from where it
+ * stands, above the board's y for it when the conflicts are short and below
+ * it when they fill their block to the line (the gap then carries the block
+ * past it), so no open row is kept that the frame has no room for. The open
+ * rows' text column starts
  * after the widest document chip, so the chips align whatever the longest
  * document name.
  */
@@ -833,7 +836,9 @@ export function mktgFamilyPrintSourcesLayout(conflicts: MktgFamilyPrintConflict[
       mktgPortraitParaHeight({ text: conflictText(row), size: layout.conflict.size, line: layout.conflict.line }, conflictWidth),
     noteLine
   );
-  const openTop = conflicts.length ? Math.min(layout.openTop, layout.conflictsTop + layout.heading + conflictsHeight + layout.blockGap) : layout.conflictsTop;
+  // Where the Still open block stands in the page's flow: under the conflicts and the block gap, wherever that falls against
+  // the board's y (a budget started at the board's y under a full conflicts block kept one row more than the frame holds).
+  const openTop = conflicts.length ? layout.conflictsTop + layout.heading + conflictsHeight + layout.blockGap : layout.conflictsTop;
   const chipWidth = Math.max(0, ...openItems.map((item) => item.document.length)) * layout.chip.size * MKTG_PORTRAIT_FIT.charEmCaps + layout.chip.padding;
   const keptOpen = mktgFamilyPrintFitRows(
     openItems,
