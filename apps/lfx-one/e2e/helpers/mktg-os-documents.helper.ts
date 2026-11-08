@@ -100,11 +100,15 @@ export async function setupDocuments(
     runs?: MktgDocumentRunProgress[];
     progressUnavailable?: boolean;
     documentType?: MktgDocumentType;
+    /** The synthetic project's name instead of the canonical one (a long name, for a running head's measure); the project is otherwise DOCUMENT_PROJECT. */
+    projectName?: string;
   } = {}
 ): Promise<void> {
   await suppressCookieBanner(page);
   const writer = options.writer ?? true;
-  mockProjects[DOCUMENT_PROJECT.slug] = { ...DOCUMENT_PROJECT, parent_uid: '', public: true } as Project;
+  // The one project the shell sees: where the slug mock reads it, where the selection is stored and where the lens lists it.
+  const project = options.projectName ? { ...DOCUMENT_PROJECT, name: options.projectName } : DOCUMENT_PROJECT;
+  mockProjects[DOCUMENT_PROJECT.slug] = { ...project, parent_uid: '', public: true } as Project;
   await ApiMockHelper.setupProjectSlugMock(page, { writer });
   await pinMktgOsFlags(page);
   const seedCookies = async (): Promise<void> => {
@@ -116,7 +120,7 @@ export async function setupDocuments(
         path: '/',
       },
       { name: LENS_COOKIE_KEY, value: 'project', domain: 'localhost', path: '/' },
-      { name: SELECTED_PROJECT_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(DOCUMENT_PROJECT)), domain: 'localhost', path: '/' },
+      { name: SELECTED_PROJECT_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(project)), domain: 'localhost', path: '/' },
     ]);
   };
   await seedCookies();
@@ -127,7 +131,7 @@ export async function setupDocuments(
   await page.route('**/api/nav/lens-items*', (route) => {
     const lens = new URL(route.request().url()).searchParams.get('lens');
     return fulfillDocumentJson(route, {
-      items: lens === 'project' ? [{ ...DOCUMENT_PROJECT, logoUrl: null, isFoundation: false }] : [],
+      items: lens === 'project' ? [{ ...project, logoUrl: null, isFoundation: false }] : [],
       next_page_token: null,
       upstream_failed: false,
       lens,
