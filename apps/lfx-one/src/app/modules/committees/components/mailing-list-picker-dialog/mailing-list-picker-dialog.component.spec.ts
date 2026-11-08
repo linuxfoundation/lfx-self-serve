@@ -232,6 +232,13 @@ describe('MailingListPickerDialogComponent sync direction', () => {
     { uid: 'ml-synced', group_name: 'synced', domain: 'lists.example.org', writer: true, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST },
     { uid: 'ml-manual', group_name: 'manual', domain: 'lists.example.org', writer: true },
     { uid: 'ml-unlinked', group_name: 'unlinked', domain: 'lists.example.org', writer: true },
+    {
+      uid: 'ml-elsewhere',
+      group_name: 'elsewhere',
+      domain: 'lists.example.org',
+      writer: true,
+      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+    },
   ] as GroupsIOMailingList[];
 
   async function setup(flagEnabled: boolean): Promise<void> {
@@ -322,8 +329,25 @@ describe('MailingListPickerDialogComponent sync direction', () => {
           ['ml-synced', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST],
           ['ml-manual', MailingListSyncMode.MANUAL],
           ['ml-unlinked', MailingListSyncMode.MANUAL],
+          ['ml-elsewhere', MailingListSyncMode.MANUAL],
         ]),
       })
     );
+  });
+
+  it('seeds a list linked to another committee as Manual, not its inherited sync_mode', async () => {
+    await setup(true);
+
+    // ml-elsewhere carries AUTO_COMMITTEE_TO_MAILING_LIST from its own committee, but it isn't in
+    // associatedUids for this one — the #4880 safeguard must still seed Manual, since the admin
+    // never chose that direction for this committee.
+    expect(fixture.componentInstance.mlDirectionForm.get('ml-elsewhere')?.value).toBe(MailingListSyncMode.MANUAL);
+
+    fixture.componentInstance.toggleMailingList('ml-elsewhere');
+    fixture.componentInstance.save();
+
+    expect(dialogClose).toHaveBeenCalledWith(expect.objectContaining({ syncModes: expect.any(Map) }));
+    const syncModes = dialogClose.mock.calls[0][0].syncModes as Map<string, MailingListSyncMode>;
+    expect(syncModes.get('ml-elsewhere')).toBe(MailingListSyncMode.MANUAL);
   });
 });

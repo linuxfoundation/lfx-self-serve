@@ -482,7 +482,31 @@ export class CommitteeSettingsTabComponent {
       return;
     }
 
-    const updates$: Observable<{ uid: string; success: boolean; status?: number }>[] = [];
+    interface MlUpdateResult { uid: string; success: boolean; status?: number }
+    const AUTO_SYNC_MODES: ReadonlySet<MailingListSyncMode> = new Set([
+      MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE,
+    ]);
+
+    // The backend only allows one active auto-sync list per committee. With per-list direction
+    // editing (#4026), a single save can both release one list's auto-sync slot (to Manual, or by
+    // unlinking it) and activate another's in the same batch — firing all of those PUTs through one
+    // flat forkJoin races them, so an activation can land before its paired release, or succeed even
+    // though the release failed. Bucket by outcome and sequence releases before activations instead.
+    const releaseUpdates: { uid: string; result$: Observable<MlUpdateResult> }[] = [];
+    const activateUpdates: { uid: string; result$: Observable<MlUpdateResult> }[] = [];
+
+    const queueUpdate = (uid: string, payload: Partial<CreateMailingListRequest>): void => {
+      const result$ = this.mailingListService.updateMailingList(uid, payload).pipe(
+        map(() => ({ uid, success: true })),
+        catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
+      );
+      if (payload.sync_mode && AUTO_SYNC_MODES.has(payload.sync_mode)) {
+        activateUpdates.push({ uid, result$ });
+      } else {
+        releaseUpdates.push({ uid, result$ });
+      }
+    };
 
     // Associate: set committee_uid on newly selected MLs, applying any direction chosen for it
     // in the same dialog session (#4026) — buildMlUpdatePayload falls back to MANUAL when no
@@ -490,12 +514,7 @@ export class CommitteeSettingsTabComponent {
     for (const uid of added) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        updates$.push(
-          this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid))).pipe(
-            map(() => ({ uid, success: true })),
-            catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
-          )
-        );
+        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)));
       }
     }
 
@@ -503,12 +522,7 @@ export class CommitteeSettingsTabComponent {
     for (const uid of removed) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        updates$.push(
-          this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, null)).pipe(
-            map(() => ({ uid, success: true })),
-            catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
-          )
-        );
+        queueUpdate(uid, this.buildMlUpdatePayload(ml, null));
       }
     }
 
@@ -516,22 +530,34 @@ export class CommitteeSettingsTabComponent {
     for (const uid of directionChanged) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        updates$.push(
-          this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid))).pipe(
-            map(() => ({ uid, success: true })),
-            catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
-          )
-        );
+        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)));
       }
     }
 
-    if (updates$.length === 0) {
+    if (releaseUpdates.length === 0 && activateUpdates.length === 0) {
       return;
     }
 
+    const runReleases$ = releaseUpdates.length > 0 ? forkJoin(releaseUpdates.map((u) => u.result$)) : of<MlUpdateResult[]>([]);
+
     this.savingMl.set(true);
-    forkJoin(updates$)
-      .pipe(finalize(() => this.savingMl.set(false)))
+    runReleases$
+      .pipe(
+        switchMap((releaseResults) => {
+          const releaseFailed = releaseResults.some((r) => !r.success);
+          if (activateUpdates.length === 0) {
+            return of(releaseResults);
+          }
+          if (releaseFailed) {
+            // Skip the activations outright — activating a new auto-sync slot is only safe once we
+            // know the slot(s) it depends on were actually released.
+            const skipped: MlUpdateResult[] = activateUpdates.map((u) => ({ uid: u.uid, success: false }));
+            return of([...releaseResults, ...skipped]);
+          }
+          return forkJoin(activateUpdates.map((u) => u.result$)).pipe(map((activateResults) => [...releaseResults, ...activateResults]));
+        }),
+        finalize(() => this.savingMl.set(false))
+      )
       .subscribe({
         next: (results) => {
           const failed = results.filter((r) => !r.success).length;
