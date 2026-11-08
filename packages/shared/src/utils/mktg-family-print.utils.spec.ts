@@ -898,15 +898,15 @@ describe('mktgFamilyPrintOneStop', () => {
 });
 
 describe('mktgFamilyPrintFigure', () => {
-  it('reads a key number whole, with its magnitude, and refuses what it cannot interpret', () => {
+  it('reads a key number whole, with its magnitude and its plus as a lower bound, and refuses what it cannot interpret', () => {
     expect(['299', '7,181', '10,000+', '1.2M', '2bn', '3 thousand', 'over 300', '$10,000', '12%', '1.2M a day', 'many'].map(mktgFamilyPrintFigure)).toEqual([
-      299,
-      7181,
-      10000,
-      1200000,
-      2000000000,
-      3000,
-      300,
+      { value: 299, lowerBound: false },
+      { value: 7181, lowerBound: false },
+      { value: 10000, lowerBound: true },
+      { value: 1200000, lowerBound: false },
+      { value: 2000000000, lowerBound: false },
+      { value: 3000, lowerBound: false },
+      { value: 300, lowerBound: false },
       null,
       null,
       null,
@@ -991,6 +991,20 @@ describe('mktgFamilyPrintNumberConflicts', () => {
         [{ number: '10,000+', label: 'Published MCP servers at launch' }],
         [{ title: 'FAQ', texts: ['There were 9,500 published MCP servers at launch.'] }]
       )
+    ).toHaveLength(1);
+  });
+
+  it('reads a framework figure with a plus as a lower bound: a count at or above it agrees, only a smaller one is another count', () => {
+    // The live AAIF record: `10,000+` published MCP servers at launch is a floor, so a document counting more of them
+    // (review threads :733 and :735) is no disagreement; one counting fewer still is; an exact figure stays exact.
+    const launch = [{ number: '10,000+', label: 'Published MCP servers at launch' }];
+    expect(mktgFamilyPrintNumberConflicts(launch, [{ title: 'FAQ', texts: ['There are 12,000 published MCP servers at launch.'] }])).toEqual([]);
+    expect(mktgFamilyPrintNumberConflicts(launch, [{ title: 'FAQ', texts: ['There are 10,000 published MCP servers at launch.'] }])).toEqual([]);
+    expect(mktgFamilyPrintNumberConflicts(launch, [{ title: 'FAQ', texts: ['There were 9,500 published MCP servers at launch.'] }])).toMatchObject([
+      { text: 'The framework’s key numbers say 10,000+ published MCP servers at launch; the FAQ says “There were 9,500 published MCP servers at launch.”' },
+    ]);
+    expect(
+      mktgFamilyPrintNumberConflicts([{ number: '299', label: 'Member organizations' }], [{ title: 'FAQ', texts: ['AAIF has 308 member organizations.'] }])
     ).toHaveLength(1);
   });
 });
