@@ -77,6 +77,19 @@ export const MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE: MktgFamilyPrintCapsMeasure =
 /** The cover lockup's drawn height in px (`.fpc-logo` in the family print's styles, which cannot read this): the plate's measure when the kit's lockup needs one. */
 export const MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT = 84;
 
+/**
+ * The cover's text stack as the family print's styles set it (`.fpc-tagline`, `.fpc-title`, `.fpc-purpose`, which cannot read
+ * this): its y and the document tiles' y under it, which bound it; each line's type and the gaps between them, for the one
+ * measured budget that shortens the tagline when the three would meet the tiles.
+ */
+export const MKTG_FAMILY_PRINT_COVER_TEXT = {
+  top: 500,
+  bottom: 800,
+  tagline: { size: 11.5, line: 1.5, weight: 500, caps: true, tracking: 0.14 },
+  title: { size: 68, line: 1.02, weight: 500, tracking: -0.02, above: 18 },
+  purpose: { size: 17, line: 1.5, above: 20, maxWidth: 560 },
+} as const;
+
 /** What a frame of the book holds; `framework` and `kit` are the inner prints' own portrait pages in the family's book. */
 export const MKTG_FAMILY_PRINT_PAGE_KINDS = ['cover', 'contents', 'opener', 'framework', 'kit', 'boilerplates', 'faq', 'sources', 'back'] as const;
 

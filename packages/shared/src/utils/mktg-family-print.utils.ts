@@ -11,6 +11,7 @@ import {
   MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE,
+  MKTG_FAMILY_PRINT_COVER_TEXT,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_FAQ_CHIP,
   MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS,
@@ -409,6 +410,36 @@ export function mktgFamilyPrintFitBoilerplateCards(
     fitted[tallest] = { text: shorter, cutWords: words[tallest] - mktgFamilyPrintWordCount(shorter) };
   }
   return fitted;
+}
+
+/**
+ * The cover's tagline as it fits over the title and the purpose: the three
+ * measured in the book's face (`family`, the look's font stack) at the cover's
+ * type (MKTG_FAMILY_PRINT_COVER_TEXT) in the inset column `width` wide, the
+ * purpose at its own measure; while the stack would reach the document tiles,
+ * the tagline loses its last word and ends in an ellipsis, so the title and
+ * the purpose, which are never cut, keep their room. A tagline that fits
+ * prints whole; one word with the ellipsis is the least that prints, so a
+ * reader sees it was shortened. Pure.
+ */
+export function mktgFamilyPrintCoverTagline(tagline: string, title: string, purpose: string, width: number, family = ''): string {
+  const cover = MKTG_FAMILY_PRINT_COVER_TEXT;
+  const room = cover.bottom - cover.top;
+  const fixed =
+    mktgPortraitParaHeight({ text: title, ...cover.title, family }, width) +
+    mktgPortraitParaHeight(
+      { text: purpose, size: cover.purpose.size, line: cover.purpose.line, above: cover.purpose.above, family },
+      Math.min(width, cover.purpose.maxWidth)
+    );
+  const fits = (text: string): boolean => fixed + mktgPortraitParaHeight({ text, ...cover.tagline, family }, width) <= room + 0.01;
+  const trimmed = tagline.trim();
+  if (!trimmed || fits(trimmed)) return trimmed;
+  const words = trimmed.split(/\s+/);
+  for (let keep = words.length - 1; keep >= 1; keep--) {
+    const cut = `${words.slice(0, keep).join(' ')}…`;
+    if (fits(cut)) return cut;
+  }
+  return `${words[0]}…`;
 }
 
 /** The cut note under a fitted block: `+3 more in LFX One`; '' when nothing was cut. */

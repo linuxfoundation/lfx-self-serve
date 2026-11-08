@@ -8,6 +8,7 @@ import {
   MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES,
   MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE,
+  MKTG_FAMILY_PRINT_COVER_TEXT,
   MKTG_FAMILY_PRINT_FAQ_CHIP,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_HEAD_CAPS,
@@ -33,6 +34,7 @@ import {
   mktgFamilyPrintCutFromEnd,
   mktgFamilyPrintCapsWidth,
   mktgFamilyPrintCoverStrip,
+  mktgFamilyPrintCoverTagline,
   mktgFamilyPrintCutNote,
   mktgFamilyPrintDate,
   mktgFamilyPrintDocument,
@@ -961,6 +963,44 @@ describe('mktgFamilyPrintHeadTight', () => {
     expect(
       mktgFamilyPrintHeadTight(sections, 'The Open Foundation for Cloud Native Computing, Edge and Confidential Infrastructure positioning & brand', montserrat)
     ).toBe(true);
+  });
+});
+
+describe('mktgFamilyPrintCoverTagline', () => {
+  const width = MKTG_PORTRAIT_PAGE.width - 2 * MKTG_PORTRAIT_PAGE.coverInset;
+  const title = 'Positioning & brand';
+  const purpose =
+    'The living documents of Synthetic project in one reference: what we say, how it looks, the approved descriptions, and the answers to common questions.';
+  const cover = MKTG_FAMILY_PRINT_COVER_TEXT;
+  const stack = (tagline: string, family: string): number =>
+    mktgPortraitParaHeight({ text: tagline, ...cover.tagline, family }, width) +
+    mktgPortraitParaHeight({ text: title, ...cover.title, family }, width) +
+    mktgPortraitParaHeight({ text: purpose, size: cover.purpose.size, line: cover.purpose.line, above: cover.purpose.above, family }, cover.purpose.maxWidth);
+
+  it('keeps a tagline whose stack fits over the tiles, and cuts a long one at a word with an ellipsis until it does, never to nothing', () => {
+    // #5344 :25: no length rule binds an approved tagline, so the three lines share one measured budget, the 300 px over the tiles.
+    const short = 'Open standards for confidential computing.';
+    expect(mktgFamilyPrintCoverTagline(short, title, purpose, width)).toBe(short);
+    expect(mktgFamilyPrintCoverTagline('  ', title, purpose, width)).toBe('');
+    const long = Array.from({ length: 30 }, () => short).join(' ');
+    for (const family of ['', "'Montserrat', sans-serif"]) {
+      const cut = mktgFamilyPrintCoverTagline(long, title, purpose, width, family);
+      expect(cut.endsWith('…')).toBe(true);
+      expect(long.startsWith(cut.slice(0, -1))).toBe(true);
+      expect(stack(cut, family)).toBeLessThanOrEqual(cover.bottom - cover.top + 0.01);
+      // One word more and the stack would meet the tiles: the cut is at the last word that fits.
+      const next = long
+        .slice(cut.length - 1)
+        .trim()
+        .split(' ')[0];
+      expect(stack(`${cut.slice(0, -1)} ${next}…`, family)).toBeGreaterThan(cover.bottom - cover.top + 0.01);
+    }
+    // A wider face takes more lines of the same words, so it keeps fewer of them.
+    expect(mktgFamilyPrintCoverTagline(long, title, purpose, width, "'Montserrat', sans-serif").length).toBeLessThanOrEqual(
+      mktgFamilyPrintCoverTagline(long, title, purpose, width).length
+    );
+    // A title that fills the room on its own leaves the tagline its one word and the ellipsis, so the shortening shows.
+    expect(mktgFamilyPrintCoverTagline(short, Array.from({ length: 6 }, () => title).join(' '), purpose, width)).toBe('Open…');
   });
 });
 
