@@ -319,10 +319,15 @@ export class MailingListSyncSettingsComponent {
             this.siblingLookupLoading.set(false);
             return of(lastFetchResult);
           }
-          lastFetchKey = fetchKey;
           this.siblingLookupLoading.set(true);
           return this.mailingListService.getMailingListsByCommittee(committeeUid).pipe(
             map((result) => {
+              // Record the key only once the request actually completes — recording it before
+              // the request resolves would let a switchMap-cancelled fetch (e.g. the user moves
+              // to another list in the same committee before this one returns) "poison" the key,
+              // so a later request with the same fetchKey short-circuits to the stale/empty
+              // lastFetchResult instead of issuing a real fetch (#4899 review).
+              lastFetchKey = fetchKey;
               lastFetchResult = result;
               return result;
             }),
