@@ -317,6 +317,19 @@ export interface UpdateMailingListMemberRequest {
 }
 
 /**
+ * Outcome of one mailing list's `updateMailingList` call inside a committee's batched
+ * link/unlink/direction-change save (#4026). `status` is only populated on failure — either the
+ * HTTP error's status, or (for an activation skipped because its dependent slot-release failed)
+ * the status copied from that release failure, so permission-denied detection still works for
+ * skipped entries.
+ */
+export interface MailingListAssociationUpdateResult {
+  uid: string;
+  success: boolean;
+  status?: number;
+}
+
+/**
  * Table row decorated with canonical view-link state (GH-1567); `viewCommands` already holds the
  * flat fallback, so the template never branches. Mirrors `CommitteeTableRowVm`.
  */
