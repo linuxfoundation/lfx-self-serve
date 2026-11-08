@@ -76,6 +76,7 @@ export const MEETING_HOME_ATTENDANCE_BG_CLASSES: Record<MeetingHomeAttendanceKin
   no: 'bg-red-500',
   attended: 'bg-blue-500',
   attendedPoor: 'bg-amber-500',
+  absent: 'bg-gray-300',
 };
 
 /** Visibility badge icon and tooltip copy per kind. */
