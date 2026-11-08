@@ -940,11 +940,18 @@ export function foundationMessageAsset(envelope: FoundationMessageEnvelope): Mkt
   };
 }
 
-/** The day the run read its sources, out of its inputs record: a `YYYY-MM-DD` `date_read`, null when absent or not a date. */
+/**
+ * The day the run read its sources, out of its inputs record: a `YYYY-MM-DD` `date_read` that is a day of the UTC calendar,
+ * null when absent, not a date or a day the calendar has no such day for (`2026-02-31`, `2027-02-29`, `2026-13-01`), which
+ * `Date` would otherwise roll over into the next month.
+ */
 export function foundationMessageDateRead(inputsRecord: unknown): string | null {
   if (!isObject(inputsRecord)) return null;
   const dateRead = inputsRecord['date_read'];
-  return typeof dateRead === 'string' && FOUNDATION_MESSAGE_ISO_DATE_REGEX.test(dateRead) ? dateRead : null;
+  if (typeof dateRead !== 'string' || !FOUNDATION_MESSAGE_ISO_DATE_REGEX.test(dateRead)) return null;
+  const [year, month, day] = dateRead.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? dateRead : null;
 }
 
 /**

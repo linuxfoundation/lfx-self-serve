@@ -736,6 +736,14 @@ describe('the stored revision and the view models', () => {
     // The read date is the record's `YYYY-MM-DD` alone: anything else reads as none.
     expect(foundationMessageDateRead({ date_read: '2026-11-04' })).toBe('2026-11-04');
     expect(foundationMessageDateRead({ date_read: '4 Nov 2026' })).toBeNull();
+    // ... and a day the UTC calendar has: a 31st of February, a 29th of a non-leap February, a 13th month or a 31st of April is none.
+    expect(foundationMessageDateRead({ date_read: '2026-02-31' })).toBeNull();
+    expect(foundationMessageDateRead({ date_read: '2027-02-29' })).toBeNull();
+    expect(foundationMessageDateRead({ date_read: '2028-02-29' })).toBe('2028-02-29');
+    expect(foundationMessageDateRead({ date_read: '2026-13-01' })).toBeNull();
+    expect(foundationMessageDateRead({ date_read: '2026-04-31' })).toBeNull();
+    expect(foundationMessageDateRead({ date_read: '2026-00-10' })).toBeNull();
+    expect(foundationMessageDateRead({ date_read: '2026-12-31' })).toBe('2026-12-31');
     expect(foundationMessageDateRead({})).toBeNull();
     expect(foundationMessageDateRead(null)).toBeNull();
     expect(readFoundationMessageContent('# Not JSON')).toBeNull();
