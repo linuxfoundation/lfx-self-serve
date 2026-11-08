@@ -1123,6 +1123,29 @@ describe('mktgFamilyPrintNumberConflicts', () => {
     expect(mktgFamilyPrintNumberConflicts(contributors, [{ title: 'FAQ', texts: ['In 2024 code contributors met twice.'] }])).toEqual([]);
   });
 
+  it('meets the measure’s count noun in the singular as in the plural, so a count of one is another count', () => {
+    // #5368 review: `s?` after the label's plural matched `member organizations` but not `member organization`, so an FAQ
+    // with 1 member organization agreed with the framework's 299. The last word is read as a stem with its endings.
+    const members = [{ number: '299', label: 'Member organizations' }];
+    expect(mktgFamilyPrintNumberConflicts(members, [{ title: 'FAQ', texts: ['The foundation has 1 member organization today.'] }])).toMatchObject([
+      { text: 'The framework’s key numbers say 299 member organizations; the FAQ says “The foundation has 1 member organization today.”' },
+    ]);
+    expect(mktgFamilyPrintNumberConflicts([{ number: '12', label: 'Member companies' }], [{ title: 'FAQ', texts: ['It has 1 member company.'] }])).toHaveLength(
+      1
+    );
+    expect(
+      mktgFamilyPrintNumberConflicts([{ number: '3', label: 'Regional branches' }], [{ title: 'FAQ', texts: ['It runs 1 regional branch.'] }])
+    ).toHaveLength(1);
+    expect(
+      mktgFamilyPrintNumberConflicts([{ number: '3', label: 'Regional branch' }], [{ title: 'FAQ', texts: ['It runs 4 regional branches.'] }])
+    ).toHaveLength(1);
+    // The same count in either form agrees; a word that only starts with the noun is still not the measure.
+    expect(
+      mktgFamilyPrintNumberConflicts(members, [{ title: 'FAQ', texts: ['299 member organizations.', 'Its 299 member organization count holds.'] }])
+    ).toEqual([]);
+    expect(mktgFamilyPrintNumberConflicts(members, [{ title: 'FAQ', texts: ['It has 5 member organizational charts.'] }])).toEqual([]);
+  });
+
   it('reads a framework figure with a plus as a lower bound: a count at or above it agrees, only a smaller one is another count', () => {
     // The live AAIF record: `10,000+` published MCP servers at launch is a floor, so a document counting more of them
     // (review threads :733 and :735) is no disagreement; one counting fewer still is; an exact figure stays exact.

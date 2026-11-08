@@ -863,6 +863,26 @@ function mktgFamilyPrintMeasurePhrase(label: string): string {
     .join(' ');
 }
 
+/**
+ * The measure phrase as a pattern that meets its count noun in the singular and the plural: the last word's stem with
+ * its endings (`organizations` and `organization` → `organizations?`; `company` → `compan(?:y|ies)`; `branch` →
+ * `branch(?:es)?`; a bare final `s` is read as a plural),
+ * the words before it as written, each gap any whitespace. The lfx-one review's case: `1 member organization` is a
+ * count of `member organizations`.
+ */
+function mktgFamilyPrintMeasurePattern(phrase: string): string {
+  const words = phrase.split(' ');
+  const last = words[words.length - 1];
+  let forms: string;
+  if (/[^aeiou]ies$/.test(last)) forms = `${last.slice(0, -3)}(?:y|ies)`;
+  else if (/[^aeiou]y$/.test(last)) forms = `${last.slice(0, -1)}(?:y|ies)`;
+  else if (/(?:s|x|z|ch|sh)es$/.test(last)) forms = `${last.slice(0, -2)}(?:es)?`;
+  else if (/(?:ss|x|z|ch|sh)$/.test(last)) forms = `${last}(?:es)?`;
+  else if (/s$/.test(last)) forms = `${last}?`;
+  else forms = `${last}s?`;
+  return [...words.slice(0, -1), forms].join('\\s+');
+}
+
 /** `Member organizations` read on from a figure or mid-sentence: `member organizations`; an acronym (`FAQ`, `MCP servers`) keeps its case. */
 export function mktgFamilyPrintInSentence(name: string): string {
   const trimmed = name.trim();
@@ -907,7 +927,7 @@ export function mktgFamilyPrintFigure(text: string): MktgFamilyPrintFigure | nul
 /**
  * The framework's key numbers read against the other documents' own text: a
  * sentence that gives the same measure (the label's whole phrase, a word
- * boundary on each side, plural or singular) a different count, the figure
+ * boundary on each side, its count noun in the singular or the plural) a different count, the figure
  * standing right before the phrase (`308 member organizations`), is a row
  * quoting both. A figure of another kind (a price, a percentage, a year), a
  * rounded one (`over 300`, `7,000+`), a figure with words between it and the
@@ -933,7 +953,7 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
     // the years (`2,000 code contributors`, `2 thousand`). Nothing else between the figure and the phrase: `18 new
     // member organizations` counts a part of the measure, not the measure.
     const pattern = new RegExp(
-      `(?:(${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(?<![$€£\\d,.])(\\d[\\d,]*(?:\\.\\d+)?)${MKTG_FAMILY_PRINT_MAGNITUDE}(\\+?)\\s+${phrase.replace(/ /g, '\\s+')}s?\\b`,
+      `(?:(${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(?<![$€£\\d,.])(\\d[\\d,]*(?:\\.\\d+)?)${MKTG_FAMILY_PRINT_MAGNITUDE}(\\+?)\\s+${mktgFamilyPrintMeasurePattern(phrase)}\\b`,
       'gi'
     );
     for (const source of sources) {
