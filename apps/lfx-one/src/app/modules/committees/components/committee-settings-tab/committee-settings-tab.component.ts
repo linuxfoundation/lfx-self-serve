@@ -482,7 +482,11 @@ export class CommitteeSettingsTabComponent {
       return;
     }
 
-    interface MlUpdateResult { uid: string; success: boolean; status?: number }
+    interface MlUpdateResult {
+      uid: string;
+      success: boolean;
+      status?: number;
+    }
     const AUTO_SYNC_MODES: ReadonlySet<MailingListSyncMode> = new Set([
       MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
       MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE,
