@@ -97,7 +97,12 @@ export class MailingListSyncSettingsComponent {
   protected readonly activeSync: Signal<GroupsIOMailingList | null> = this.initActiveSync();
 
   public constructor() {
-    effect(() => this.savingChange.emit(this.saving()));
+    // toObservable + takeUntilDestroyed, not effect() — savingChange.emit() is a side effect on a
+    // parent, not a write to a signal this component owns, which is what effect() is meant for
+    // (#4899 review nitpick).
+    toObservable(this.saving)
+      .pipe(takeUntilDestroyed())
+      .subscribe((saving) => this.savingChange.emit(saving));
 
     // Keep the toggle's displayed value in sync with the persisted sync_mode on initial load and on
     // any refresh that brings in a value set from elsewhere (e.g. another drawer instance's save
@@ -122,9 +127,19 @@ export class MailingListSyncSettingsComponent {
     // Guarded on an actual value change so a re-emission of `mailingList()` with the same sync_mode
     // (e.g. after `refreshData()`) can't clobber a direction the user just picked locally.
     effect(() => {
-      const syncMode = this.mailingList().sync_mode;
-      if (syncMode && syncMode !== MailingListSyncMode.MANUAL && this.form.controls.direction.value !== syncMode) {
-        this.form.controls.direction.setValue(syncMode, { emitEvent: false });
+      const ml = this.mailingList();
+      // Same reuse-across-navigation guard as the syncOn effect above: a save still in flight for a
+      // previously-displayed list must not block syncing the selector to the newly-displayed list's
+      // actual persisted state (#4899 review).
+      if (untracked(this.saving) && untracked(this.savingUid) === ml.uid) return;
+      const syncMode = ml.sync_mode;
+      // Falls back to the default direction, not just "leave the selector alone", when the
+      // newly-displayed list has no active auto sync (MANUAL or unset) — otherwise navigating from a
+      // list with one direction configured to a list with none left the selector showing the
+      // previous list's direction (#4899 review).
+      const nextDirection = syncMode && syncMode !== MailingListSyncMode.MANUAL ? syncMode : MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
+      if (this.form.controls.direction.value !== nextDirection) {
+        this.form.controls.direction.setValue(nextDirection, { emitEvent: false });
       }
     });
     this.form.controls.direction.valueChanges.pipe(takeUntilDestroyed()).subscribe((direction) => this.save(direction));
@@ -175,10 +190,15 @@ export class MailingListSyncSettingsComponent {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update sync settings' });
           // Restore the toggle and selector to the persisted state — both already picked up the
           // attempted value optimistically (onToggleChange / valueChanges), but the server never
-          // accepted it (#4880 review, #4899 review).
-          this.syncOn.set(!!ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL);
-          const persisted = ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL ? ml.sync_mode : MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
-          this.form.controls.direction.setValue(persisted, { emitEvent: false });
+          // accepted it (#4880 review, #4899 review). Gated on the component still displaying the
+          // same list this save was for — this component can be reused across navigation, and a
+          // rollback for a now-hidden list must not clobber the newly-displayed list's own state
+          // with `ml`'s stale persisted mode (#4899 review).
+          if (this.mailingList().uid === ml.uid) {
+            this.syncOn.set(!!ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL);
+            const persisted = ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL ? ml.sync_mode : MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
+            this.form.controls.direction.setValue(persisted, { emitEvent: false });
+          }
           return of(null);
         }),
         // Mailing-list writes are fire-and-forget in this codebase (take(1), not

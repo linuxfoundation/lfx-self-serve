@@ -175,6 +175,13 @@
 <ng-template #autoSyncDrawer let-ref="dialogRef">
   <lfx-ui-drawer heading="Auto Sync" [subtitle]="committee().name">
     <div class="flex flex-col gap-4">
+      @if (mlRefreshFailed()) {
+        <div class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" data-testid="auto-sync-refresh-failed-notice">
+          <i class="fa-light fa-triangle-exclamation mt-0.5 text-red-600"></i>
+          <span class="flex-1">Couldn't refresh the latest sync settings. What you see here may be out of date.</span>
+          <lfx-ui-button variant="secondary" size="small" (click)="retryMlRefresh()" data-testid="auto-sync-refresh-retry-button">Retry</lfx-ui-button>
+        </div>
+      }
       @for (ml of associatedMailingLists(); track ml.uid) {
         <!-- List name/email identifies which card controls which list — needed once a committee has
              more than one linked list, since the child component's own title/description are
@@ -185,7 +192,7 @@
             [mailingList]="ml"
             [siblingCandidates]="associatedMailingLists()"
             [lockedBySibling]="refreshingMl() || (drawerSavingCount() > 0 && !savingMlUids().has(ml.uid))"
-            (updated)="onSyncSettingsUpdated()"
+            (updated)="onSyncSettingsUpdated($event)"
             (savingChange)="onSyncSettingsSavingChange(ml.uid, $event)" />
         </div>
       }

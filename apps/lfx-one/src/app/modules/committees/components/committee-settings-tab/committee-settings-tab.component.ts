@@ -121,6 +121,18 @@ export class CommitteeSettingsTabComponent {
   // activeSync()) reflects the new sync_mode, leaving a window where a second card can still submit
   // an automatic mode against stale sibling data (#4899 review, prior item partially addressed).
   public refreshingMl = signal(false);
+  // Set when the refresh triggered above fails — refreshingMl is deliberately left locked on
+  // failure (see initAssociatedMailingLists' catchError) rather than unlocking sibling cards
+  // against stale data, which would otherwise strand every card locked forever with no way out
+  // (#4899 review). Drives a retry affordance in the drawer; cleared on the next successful refresh.
+  public mlRefreshFailed = signal(false);
+  // Keyed by mailing list uid. Holds a sync-settings save result between the moment a drawer card
+  // emits it and the next real refresh — lets the drawer and settings card reflect a just-saved
+  // sync_mode immediately instead of racing the query index's eventual-consistency window via the
+  // refreshMl$-triggered getMailingListsByCommittee refetch (#4899 review, same root cause as
+  // #4880). Entries self-clear once a real refresh confirms the same value (see the refresh
+  // pipeline's tap below), or on committee change (see the constructor).
+  private readonly associatedMlOverrides = signal<ReadonlyMap<string, GroupsIOMailingList>>(new Map());
 
   // Form
   public form = new FormGroup({
@@ -149,7 +161,14 @@ export class CommitteeSettingsTabComponent {
   public projectMailingLists: Signal<GroupsIOMailingList[]> = this.initProjectMailingLists();
 
   // Associated mailing lists (queried directly by committee_uid tag)
-  public associatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
+  public readonly fetchedAssociatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
+
+  // Fetched list with any pending save overrides patched in — see associatedMlOverrides' doc comment.
+  public associatedMailingLists: Signal<GroupsIOMailingList[]> = computed(() => {
+    const overrides = this.associatedMlOverrides();
+    if (overrides.size === 0) return this.fetchedAssociatedMailingLists();
+    return this.fetchedAssociatedMailingLists().map((ml) => overrides.get(ml.uid) ?? ml);
+  });
 
   // Linking or unlinking updates the mailing list itself, so it needs write access on that list.
   // Only block once lists have loaded and none are writable — an empty list is the picker's own
@@ -201,6 +220,9 @@ export class CommitteeSettingsTabComponent {
   // component instance got reused for a different committee via route param navigation" apart
   // from "the same committee's data just refreshed". Undefined only before the first emission.
   private lastCommitteeUid: string | undefined;
+
+  // Mirrors lastCommitteeUid above, tracked separately for associatedMlOverrides' own reset subscription.
+  private lastOverridesCommitteeUid: string | undefined;
 
   public constructor() {
     // Patch form when committee input changes
@@ -274,6 +296,21 @@ export class CommitteeSettingsTabComponent {
           this.form.disable();
         }
       });
+
+    // Clear any pending save overrides when the committee itself changes (route navigation reusing
+    // this component instance) — an override keyed by mailing list uid could otherwise leak a stale
+    // sync_mode onto an unrelated committee's list of the same uid (#4899 review).
+    toObservable(this.committee)
+      .pipe(
+        filter((c): c is Committee => !!c?.uid),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((c) => {
+        if (this.lastOverridesCommitteeUid !== undefined && this.lastOverridesCommitteeUid !== c.uid) {
+          this.associatedMlOverrides.set(new Map());
+        }
+        this.lastOverridesCommitteeUid = c.uid;
+      });
   }
 
   public openAutoSyncDrawer(): void {
@@ -304,7 +341,21 @@ export class CommitteeSettingsTabComponent {
   // which in turn makes each instance re-fetch its own siblingLists/activeSync lookup — so the
   // "only one auto direction per committee" notice updates across all open instances, not just the
   // one that was just saved (#4025).
-  public onSyncSettingsUpdated(): void {
+  public onSyncSettingsUpdated(updated: GroupsIOMailingList): void {
+    // Apply the save result directly rather than waiting on the refetch below — getMailingListsByCommittee
+    // reads an eventually-consistent query index, so the refresh triggered here can briefly return the
+    // pre-save sync_mode (#4899 review, same root cause as #4880's mailingListOverride pattern).
+    const next = new Map(this.associatedMlOverrides());
+    next.set(updated.uid, updated);
+    this.associatedMlOverrides.set(next);
+
+    this.refreshingMl.set(true);
+    this.refreshMl$.next();
+  }
+
+  // Re-fires the refresh that failed in initAssociatedMailingLists' catchError — the only recovery
+  // path once refreshingMl is latched true with no successful refresh to clear it (#4899 review).
+  public retryMlRefresh(): void {
     this.refreshingMl.set(true);
     this.refreshMl$.next();
   }
@@ -548,30 +599,30 @@ export class CommitteeSettingsTabComponent {
 
     const updates$: Observable<{ uid: string; success: boolean; status?: number }>[] = [];
 
-    // Associate: set committee_uid on newly selected MLs
+    // Fetch each affected mailing list fresh immediately before building its payload — the cached
+    // projectMailingLists()/associatedMailingLists() snapshots can predate another writer's change
+    // (e.g. a sync_mode flip from the Auto Sync drawer), and buildMlUpdatePayload's "preserve the
+    // existing sync direction" branch would otherwise resurrect a stale value in a full-resource PUT
+    // (#4899 review).
     for (const uid of added) {
-      const ml = this.projectMailingLists().find((m) => m.uid === uid);
-      if (ml) {
-        updates$.push(
-          this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, committee.uid)).pipe(
-            map(() => ({ uid, success: true })),
-            catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
-          )
-        );
-      }
+      updates$.push(
+        this.mailingListService.getMailingList(uid, { skipCache: true }).pipe(
+          switchMap((ml) => this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, committee.uid))),
+          map(() => ({ uid, success: true })),
+          catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
+        )
+      );
     }
 
     // Disassociate: clear committee_uid on deselected MLs
     for (const uid of removed) {
-      const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
-      if (ml) {
-        updates$.push(
-          this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, null)).pipe(
-            map(() => ({ uid, success: true })),
-            catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
-          )
-        );
-      }
+      updates$.push(
+        this.mailingListService.getMailingList(uid, { skipCache: true }).pipe(
+          switchMap((ml) => this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, null))),
+          map(() => ({ uid, success: true })),
+          catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
+        )
+      );
     }
 
     if (updates$.length === 0) {
@@ -668,11 +719,31 @@ export class CommitteeSettingsTabComponent {
             tap((lists) => {
               lastGoodLists = { uid: c!.uid, lists };
               this.refreshingMl.set(false);
+              this.mlRefreshFailed.set(false);
+              // Drop any override whose value the real fetch now confirms — once the query index
+              // catches up, the override would otherwise keep masking a further legitimate change
+              // to the same list made outside this component (#4899 review).
+              const overrides = this.associatedMlOverrides();
+              if (overrides.size > 0) {
+                const next = new Map(overrides);
+                for (const ml of lists) {
+                  const override = next.get(ml.uid);
+                  if (override && override.sync_mode === ml.sync_mode) {
+                    next.delete(ml.uid);
+                  }
+                }
+                if (next.size !== overrides.size) {
+                  this.associatedMlOverrides.set(next);
+                }
+              }
             }),
             catchError((error) => {
               console.error('Failed to refresh associated mailing lists', error);
               // Leave refreshingMl locked rather than unlocking sibling cards against this stale
               // fallback — it only clears again once a refresh actually succeeds (#4899 review).
+              // mlRefreshFailed surfaces a retry affordance instead of leaving the drawer locked
+              // with no way out (#4899 review).
+              this.mlRefreshFailed.set(true);
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to refresh mailing lists' });
               return of(lastGoodLists?.uid === c!.uid ? lastGoodLists.lists : []);
             })
