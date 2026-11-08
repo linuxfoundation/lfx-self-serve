@@ -415,7 +415,7 @@ describe('the framework’s print', () => {
     const readableBefore = (source: string): string => {
       const text = source.trim();
       if (/^LFX record/i.test(text)) return MKTG_READABLE_SOURCE.lfxRecord;
-      return /^LFX project record\b/i.test(text) ? text : mktgReadableSourceName(source);
+      return /^LFX project record\s+[A-Za-z0-9]/i.test(text) ? text : mktgReadableSourceName(source);
     };
     const before = (source: string): string => {
       const trimmed = source.trim();
@@ -524,6 +524,10 @@ describe('the framework’s print', () => {
       'Brand page: https://aaif.io/brand',
     ];
     expect(added.map(before)).toEqual(added);
+    // A bare "LFX project record", and the kit's "was not found" row, read as written before and after.
+    const bare = ['LFX project record', 'LFX project record — The LFX project record was not found for this project’s LFX One ID or name'];
+    expect(bare.map(foundationMessagePrintSourceLabel)).toEqual(bare.map(before));
+    expect(bare.map(foundationMessagePrintSourceLabel)).toEqual(bare);
     expect(added.map(foundationMessagePrintSourceLabel)).toEqual([
       MKTG_READABLE_SOURCE.lfxRecord,
       'The press release (linuxfoundation.org)',

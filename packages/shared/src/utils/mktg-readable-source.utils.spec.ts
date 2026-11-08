@@ -8,9 +8,14 @@ import { mktgReadableSourceName, mktgReadableSourceText } from './mktg-readable-
 describe('mktgReadableSourceName', () => {
   it('names the LFX record, the site’s pages by address, and its stylesheet chunks as stylesheets', () => {
     expect(mktgReadableSourceName('LFX record: Project One (project-one)')).toBe('The LFX project record');
-    // The record names itself either way: the family's "LFX record", the framework's "LFX project record".
-    expect(mktgReadableSourceName('LFX project record foo and standard metrics')).toBe(MKTG_READABLE_SOURCE.lfxRecord);
+    // The framework's record line names itself with its slug; the kit's bare line, and its "was not found" row, print as written.
+    expect(mktgReadableSourceName('LFX project record agentic-ai-foundation and standard metrics')).toBe(MKTG_READABLE_SOURCE.lfxRecord);
+    expect(mktgReadableSourceName('LFX project record')).toBe('LFX project record');
+    expect(mktgReadableSourceName('LFX project record — The LFX project record was not found for this project’s LFX One ID or name')).toBe(
+      'LFX project record — The LFX project record was not found for this project’s LFX One ID or name'
+    );
     expect(mktgReadableSourceName('LFX record foo')).toBe(MKTG_READABLE_SOURCE.lfxRecord);
+    expect(mktgReadableSourceName('LFX recorded things')).toBe(MKTG_READABLE_SOURCE.lfxRecord);
     // A site's root is a page a reader can find, not a file: its host.
     expect(mktgReadableSourceName('https://aaif.example/')).toBe('aaif.example');
     expect(mktgReadableSourceName('https://www.aaif.example')).toBe('aaif.example');
