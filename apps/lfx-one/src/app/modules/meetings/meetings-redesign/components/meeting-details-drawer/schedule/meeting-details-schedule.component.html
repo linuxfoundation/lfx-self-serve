@@ -1,6 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<lfx-meeting-details-occurrence-nav />
+
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <div class="flex flex-col gap-[16px] rounded-ui-md bg-white p-[20px] shadow-small ring-1 ring-gray-200" data-testid="meeting-details-schedule-card">
   <div class="flex min-w-0 items-start gap-[12px]" data-testid="meeting-details-schedule-when">
@@ -36,6 +38,17 @@
           You may only join the meeting up to {{ earlyJoinMinutes() }} minutes before the start time.
         </p>
       </div>
+      @if (canRegister()) {
+        <lfx-ui-button
+          variant="secondary"
+          size="large"
+          icon="fa-light fa-user-plus"
+          fullWidth
+          (click)="register()"
+          data-testid="meeting-details-schedule-register"
+          >Register for Meeting</lfx-ui-button
+        >
+      }
     }
     @default {
       @if (canJoin()) {

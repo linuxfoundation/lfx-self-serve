@@ -17,7 +17,7 @@ import type {
 /** The AI summary of a past meetings home row. */
 export const MEETINGS_HOME_SUMMARY_ARTIFACT: MeetingHomeArtifact = { noun: 'summary', title: 'AI Summary' };
 
-/** Join link of a date with no request in flight and no failure. */
+/** Empty join link (no link, no error): the state while loading and outside the join window. */
 export const NO_MEETING_JOIN_LINK: MeetingJoinLink = { url: null, error: null, code: null };
 
 /** Rows the meetings home list loads per page. */

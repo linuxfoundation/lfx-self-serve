@@ -1,0 +1,60 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-ui-modal heading="Register for Meeting" data-testid="meeting-details-register-modal">
+  <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+  <form class="flex flex-col gap-[16px]" [formGroup]="form" (keydown.enter)="submit()" data-testid="meeting-details-register-form">
+    <p class="text-[14px] leading-[20px] text-gray-600">
+      Register for <span class="font-semibold text-gray-900">{{ meetingTitle }}</span>
+    </p>
+    <div class="grid grid-cols-1 gap-[16px] sm:grid-cols-2">
+      <lfx-ui-input
+        label="First Name *"
+        placeholder="Enter first name"
+        autocomplete="given-name"
+        formControlName="first_name"
+        required
+        [error]="errors().first_name"
+        data-testid="meeting-details-register-first-name" />
+      <lfx-ui-input
+        label="Last Name *"
+        placeholder="Enter last name"
+        autocomplete="family-name"
+        formControlName="last_name"
+        required
+        [error]="errors().last_name"
+        data-testid="meeting-details-register-last-name" />
+      <lfx-ui-input
+        class="sm:col-span-2"
+        label="Email *"
+        type="email"
+        placeholder="Enter email address"
+        autocomplete="email"
+        formControlName="email"
+        required
+        [readonly]="emailLocked"
+        [hint]="emailLocked ? 'Registering with the email address on your account.' : ''"
+        [error]="errors().email"
+        data-testid="meeting-details-register-email" />
+      <lfx-ui-input
+        label="Job Title"
+        placeholder="Enter job title"
+        autocomplete="organization-title"
+        formControlName="job_title"
+        data-testid="meeting-details-register-job-title" />
+      <lfx-ui-input
+        label="Company"
+        placeholder="Enter company"
+        autocomplete="organization"
+        formControlName="org_name"
+        data-testid="meeting-details-register-company" />
+    </div>
+  </form>
+
+  <ng-container modalActions>
+    <lfx-ui-button variant="secondary" (click)="cancel()" data-testid="meeting-details-register-cancel">Cancel</lfx-ui-button>
+    <lfx-ui-button [loading]="submitting()" [disabled]="invalid() || submitting()" (click)="submit()" data-testid="meeting-details-register-submit"
+      >Register</lfx-ui-button
+    >
+  </ng-container>
+</lfx-ui-modal>
