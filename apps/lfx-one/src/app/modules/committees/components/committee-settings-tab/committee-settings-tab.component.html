@@ -108,8 +108,11 @@
                       size="small"
                       severity="secondary"
                       styleClass="!text-gray-500 hover:!text-blue-600"
+                      [disabled]="!removable"
                       [ariaLabel]="'Sync mailing list ' + ml.group_name"
-                      [tooltip]="'Preview and apply committee sync for ' + ml.group_name"
+                      [tooltip]="
+                        removable ? 'Preview and apply committee sync for ' + ml.group_name : 'You need Manage access to this mailing list to sync it.'
+                      "
                       (onClick)="openSyncPreviewDialog(ml)"
                       [attr.data-testid]="'settings-sync-now-ml-' + ml.uid"></lfx-button>
                   }

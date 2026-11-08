@@ -10,28 +10,28 @@
         >.
       </p>
 
-      @if (result.added.length > 0) {
+      @if (addedWithOutcome().length > 0) {
         <div class="flex flex-col gap-2">
-          <p class="text-[11.5px] font-medium text-gray-500">Added ({{ result.added.length }})</p>
+          <p class="text-[11.5px] font-medium text-gray-500">Added ({{ addedWithOutcome().length }})</p>
           <div class="flex flex-col gap-1 rounded-lg border border-gray-200 p-2">
-            @for (row of result.added; track row.email) {
+            @for (row of addedWithOutcome(); track row.email) {
               <div class="flex items-center gap-2 text-[12.5px]" [attr.data-testid]="'sync-result-add-' + row.email">
                 <span class="text-gray-900">{{ row.email }}</span>
-                <span class="text-gray-500">— {{ friendlyAddOutcome(row) }}</span>
+                <span class="text-gray-500">— {{ row.outcomeText }}</span>
               </div>
             }
           </div>
         </div>
       }
 
-      @if (result.removed.length > 0) {
+      @if (removedWithOutcome().length > 0) {
         <div class="flex flex-col gap-2">
-          <p class="text-[11.5px] font-medium text-gray-500">Removed ({{ result.removed.length }})</p>
+          <p class="text-[11.5px] font-medium text-gray-500">Removed ({{ removedWithOutcome().length }})</p>
           <div class="flex flex-col gap-1 rounded-lg border border-gray-200 p-2">
-            @for (row of result.removed; track row.email) {
+            @for (row of removedWithOutcome(); track row.email) {
               <div class="flex items-center gap-2 text-[12.5px]" [attr.data-testid]="'sync-result-remove-' + row.email">
                 <span class="text-gray-900">{{ row.email }}</span>
-                <span class="text-gray-500">— {{ friendlyRemoveOutcome(row) }}</span>
+                <span class="text-gray-500">— {{ row.outcomeText }}</span>
               </div>
             }
           </div>

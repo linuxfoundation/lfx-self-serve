@@ -66,6 +66,12 @@ export class MailingListSyncPreviewDialogComponent {
   public selectedRemoves: Signal<SyncDiffRemove[]> = this.initSelectedRemoves();
   public isReverseSync: Signal<boolean> = computed(() => this.diff()?.sync_mode === SYNC_MODE_AUTO_ML_TO_COMMITTEE);
 
+  // Outcome text precomputed here rather than called as a method from the template — the template
+  // re-invokes a bound method on every change-detection pass, not just when applyResult() changes
+  // (docs/reviews/frontend-checklist.md, #4911 review).
+  public addedWithOutcome: Signal<(SyncApplyAddResult & { outcomeText: string })[]> = this.initAddedWithOutcome();
+  public removedWithOutcome: Signal<(SyncApplyRemoveResult & { outcomeText: string })[]> = this.initRemovedWithOutcome();
+
   public constructor() {
     lockDynamicDialogWhile(computed(() => this.loadingDiff() || this.applying()));
     this.loadDiff();
@@ -127,8 +133,8 @@ export class MailingListSyncPreviewDialogComponent {
    * suggestion against the other roster. That PCC-1604 parity gap is tracked separately and
    * blocked on ITX; extend this once linuxfoundation/lfx-self-serve#4364 resolves it.
    */
-  public friendlyAddOutcome(result: SyncApplyAddResult): string {
-    const destination = this.isReverseSync() ? 'the committee' : 'the mailing list';
+  private friendlyAddOutcome(result: SyncApplyAddResult, isReverseSync: boolean): string {
+    const destination = isReverseSync ? 'the committee' : 'the mailing list';
     switch (result.outcome) {
       case SyncApplyOutcome.ADDED:
         return `Added to ${destination}.`;
@@ -143,8 +149,8 @@ export class MailingListSyncPreviewDialogComponent {
     }
   }
 
-  public friendlyRemoveOutcome(result: SyncApplyRemoveResult): string {
-    const destination = this.isReverseSync() ? 'the committee' : 'the mailing list';
+  private friendlyRemoveOutcome(result: SyncApplyRemoveResult, isReverseSync: boolean): string {
+    const destination = isReverseSync ? 'the committee' : 'the mailing list';
     switch (result.outcome) {
       case SyncApplyOutcome.REMOVED:
         return `Removed from ${destination}.`;
@@ -227,6 +233,20 @@ export class MailingListSyncPreviewDialogComponent {
       this.removeFormVersion();
       if (!diff) return [];
       return diff.removes.filter((remove) => this.removeCheckboxForm.get(this.rowKey(remove.member_id))?.value !== false);
+    });
+  }
+
+  private initAddedWithOutcome(): Signal<(SyncApplyAddResult & { outcomeText: string })[]> {
+    return computed(() => {
+      const reverse = this.isReverseSync();
+      return (this.applyResult()?.added ?? []).map((row) => ({ ...row, outcomeText: this.friendlyAddOutcome(row, reverse) }));
+    });
+  }
+
+  private initRemovedWithOutcome(): Signal<(SyncApplyRemoveResult & { outcomeText: string })[]> {
+    return computed(() => {
+      const reverse = this.isReverseSync();
+      return (this.applyResult()?.removed ?? []).map((row) => ({ ...row, outcomeText: this.friendlyRemoveOutcome(row, reverse) }));
     });
   }
 }

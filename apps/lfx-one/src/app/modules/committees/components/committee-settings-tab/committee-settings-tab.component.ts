@@ -283,7 +283,12 @@ export class CommitteeSettingsTabComponent {
 
     if (!ref) return;
 
-    ref.onClose.pipe(take(1)).subscribe(() => this.refreshMl$.next());
+    ref.onClose.pipe(take(1)).subscribe(() => {
+      this.refreshMl$.next();
+      // auto_ml_to_c applies can change committee membership, so the parent's cached roster/Members
+      // count needs reloading too — refreshMl$ only covers the mailing-list side (#4911 review).
+      this.committeeUpdated.emit();
+    });
   }
 
   public removeMailingList(ml: GroupsIOMailingList): void {
