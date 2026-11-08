@@ -69,7 +69,7 @@ describe('AeoGeoReportComponent print and Markdown details', () => {
     expect(element.querySelector('[data-testid="mktg-aeo-typed-recommendation-detail-0"] code')?.textContent).toBe('{"@graph":[]}');
     expect(element.querySelector('[data-testid="mktg-aeo-typed-findings"] p.whitespace-pre-line')).toBeNull();
     const caveats = Array.from(element.querySelectorAll('[data-testid="mktg-aeo-typed-caveats"] li'), (item) => item.textContent?.trim());
-    expect(caveats[0]).toBe('The LFX project record could not be read directly. A name search returned an entitled record. No LFX metrics were queried.');
+    expect(caveats[0]).toBe('The LFX project record could not be read directly. A name search returned a matching record. No LFX metrics were queried.');
     expect(caveats).toHaveLength(report.caveats.length);
     expect(element.textContent).not.toMatch(/project_uid|slug |access error/);
     // No caveats: no Caveats section at all (no heading over an empty list), while the sections around it still render.

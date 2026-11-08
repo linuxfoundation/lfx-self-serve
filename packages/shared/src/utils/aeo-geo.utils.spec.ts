@@ -513,8 +513,21 @@ describe('AEO/GEO reader caveats', () => {
       'A name search returned an entitled record (slug example-project, formation date 2025-01-01, website https://project.example, parent Example Foundation). ' +
       'It was used only to confirm identity, not as evidence of crawlability or authority. No LFX metrics were queried.';
     expect(aeoGeoReaderCaveat(caveat)).toBe(
-      `${AEO_GEO_READER_CAVEATS.lfx_record_unread} A name search returned an entitled record. ` +
+      `${AEO_GEO_READER_CAVEATS.lfx_record_unread} A name search returned a matching record. ` +
         'It was used only to confirm identity, not as evidence of crawlability or authority. No LFX metrics were queried.'
+    );
+    // "entitled" is entitlement vocabulary: the reader says "matching", with the article and the case kept; the phrase alone changes.
+    expect(aeoGeoReaderCaveat('A name search returned an entitled record (slug example-project), used only to confirm identity.')).toBe(
+      'A name search returned a matching record, used only to confirm identity.'
+    );
+    expect(aeoGeoReaderCaveat('A name search returned an entitled record.')).toBe('A name search returned a matching record.');
+    expect(aeoGeoReaderCaveat('An entitled record was found. Entitled record details were not read.')).toBe(
+      'A matching record was found. Matching record details were not read.'
+    );
+    expect(aeoGeoReaderCaveat('A name search returned two entitled records.')).toBe('A name search returned two matching records.');
+    expect(aeoGeoReaderCaveat('The record was read by name.')).toBe('The record was read by name.');
+    expect(aeoGeoReaderCaveat('The explainer is entitled "Record keeping" and dates from 2025.')).toBe(
+      'The explainer is entitled "Record keeping" and dates from 2025.'
     );
     // A following sentence that starts in lowercase is its own sentence and stays.
     expect(aeoGeoReaderCaveat("The LFX record could not be read by the form's project_uid (access error). robots.txt allows all crawlers.")).toBe(
@@ -658,7 +671,7 @@ describe('AEO/GEO reader caveats', () => {
         'A name search returned an entitled record (slug example-project).',
         "Web search (Example Search Service) returned 'You have exceeded your credits limit' for both planned queries.",
       ],
-      [AEO_GEO_READER_CAVEATS.lfx_record_unread, 'A name search returned an entitled record.', AEO_GEO_READER_CAVEATS.search_unavailable],
+      [AEO_GEO_READER_CAVEATS.lfx_record_unread, 'A name search returned a matching record.', AEO_GEO_READER_CAVEATS.search_unavailable],
     ],
     [
       'a status outside the quotes: an error maps, a success is content',
