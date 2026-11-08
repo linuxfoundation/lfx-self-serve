@@ -41,6 +41,7 @@ import { MeetingDetailsAgendaComponent } from './agenda/meeting-details-agenda.c
 import { MeetingDetailsHeaderComponent } from './header/meeting-details-header.component';
 import { MeetingDetailsContext } from './meeting-details.context';
 import { MeetingDetailsProjectLinkComponent } from './project-link/meeting-details-project-link.component';
+import { MeetingDetailsScheduleComponent } from './schedule/meeting-details-schedule.component';
 import { MeetingDetailsArtifactsService } from './tools/meeting-details-artifacts.service';
 import { MeetingDetailsToolsComponent } from './tools/meeting-details-tools.component';
 
@@ -55,6 +56,7 @@ import { MeetingDetailsToolsComponent } from './tools/meeting-details-tools.comp
     MeetingDetailsAgendaComponent,
     MeetingDetailsHeaderComponent,
     MeetingDetailsProjectLinkComponent,
+    MeetingDetailsScheduleComponent,
     MeetingDetailsToolsComponent,
     UiAvatarComponent,
     UiBadgeComponent,
