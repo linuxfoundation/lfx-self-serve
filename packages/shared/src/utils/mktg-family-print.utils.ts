@@ -50,6 +50,7 @@ import type {
   MktgFamilyPrintFaqItem,
   MktgFamilyPrintFaqPage,
   MktgFamilyPrintFaqPlanGroup,
+  MktgFamilyPrintFigure,
   MktgFamilyPrintFitRows,
   MktgFamilyPrintTextSource,
   MktgFamilyPrintOpenItem,
@@ -699,18 +700,19 @@ function mktgFamilyPrintFigureValue(digits: string, magnitude: string | undefine
 
 /**
  * A key number's figure as a value: the whole number read as `[qualifier] <figure>[ magnitude][+]`, so `1.2M` is
- * 1200000 and `7,000+` is 7000; null when the number holds no figure, holds a currency or a percentage, or carries
- * words the reader cannot interpret whole (`1.2M a day`): then nothing is compared and no re-run is asked for.
+ * 1200000 and `7,000+` is 7000 with `lowerBound` set (the `+` makes the figure a floor, not a count); null when the
+ * number holds no figure, holds a currency or a percentage, or carries words the reader cannot interpret whole
+ * (`1.2M a day`): then nothing is compared and no re-run is asked for.
  */
-export function mktgFamilyPrintFigure(text: string): number | null {
+export function mktgFamilyPrintFigure(text: string): MktgFamilyPrintFigure | null {
   if (/[$€£%]/.test(text)) return null;
   const match = new RegExp(
-    `^\\s*(?:(?:${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(\\d[\\d,]*(?:\\.\\d+)?)${MKTG_FAMILY_PRINT_MAGNITUDE}\\+?\\s*$`,
+    `^\\s*(?:(?:${MKTG_FAMILY_PRINT_ROUNDING_WORDS.join('|')})\\s+)?(\\d[\\d,]*(?:\\.\\d+)?)${MKTG_FAMILY_PRINT_MAGNITUDE}(\\+?)\\s*$`,
     'i'
   ).exec(text);
   if (!match) return null;
   const value = mktgFamilyPrintFigureValue(match[1], match[2] ?? match[3]);
-  return Number.isFinite(value) ? value : null;
+  return Number.isFinite(value) ? { value, lowerBound: match[4] === '+' } : null;
 }
 
 /**
@@ -723,7 +725,9 @@ export function mktgFamilyPrintFigure(text: string): number | null {
  * measure (`18 new member organizations`: a part, not the count) or a
  * sentence that also states the framework's own figure (`299 …, up from 150
  * member organizations`) is no other count of it; a word that only starts
- * with the phrase (`membership`) is not the measure. One row per key number
+ * with the phrase (`membership`) is not the measure. A framework figure
+ * written with a `+` (`10,000+`) is a lower bound: a count at or above it
+ * agrees, only a smaller one is another count. One row per key number
  * and document. The document to re-run is the other one: the framework is
  * the source.
  */
@@ -733,6 +737,7 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
     const figure = mktgFamilyPrintFigure(row.number);
     const phrase = mktgFamilyPrintMeasurePhrase(row.label);
     if (figure === null || !phrase) continue;
+    const agrees = (count: number): boolean => (figure.lowerBound ? count >= figure.value : count === figure.value);
     // `[qualifier] <figure>[ magnitude][+] <phrase>[s]`: the figure right before the measure counts it, its magnitude
     // read (`1.2M downloads` is 1,200,000 downloads); one under a qualifier or with a trailing `+` is rounded, and a
     // year is a date. Nothing else between the figure and the phrase: `18 new member organizations` counts a part of
@@ -749,8 +754,9 @@ export function mktgFamilyPrintNumberConflicts(numbers: FoundationMessageNumberR
           const counts = Array.from(part.matchAll(pattern))
             .filter((match) => !match[1] && !match[5] && !/^(?:19|20)\d\d$/.test(match[2].replace(/,/g, '')))
             .map((match) => mktgFamilyPrintFigureValue(match[2], match[3] ?? match[4]));
-          // A sentence that states the framework's own figure agrees with it, whatever else it counts.
-          return counts.length > 0 && !counts.includes(figure);
+          // A sentence that states the framework's own figure, or a count at or above a lower bound, agrees with it,
+          // whatever else it counts.
+          return counts.length > 0 && !counts.some(agrees);
         });
       if (!sentence) continue;
       const label = row.label.trim();
