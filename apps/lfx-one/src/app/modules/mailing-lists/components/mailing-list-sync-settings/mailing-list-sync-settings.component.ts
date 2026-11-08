@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LowerCasePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -33,6 +33,8 @@ export class MailingListSyncSettingsComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
+  private destroyed = false;
 
   public readonly mailingList = input.required<GroupsIOMailingList>();
   public readonly updated = output<GroupsIOMailingList>();
@@ -68,12 +70,21 @@ export class MailingListSyncSettingsComponent {
 
   protected readonly committee = computed(() => this.mailingList().committees?.[0] ?? null);
 
+  // Set when the sibling lookup errors — `activeSync()` can't be trusted in this state (we don't know
+  // whether another list already has a direction configured), so the template disables sync controls
+  // rather than silently risking a second auto-sync direction on the same committee (#4880 review).
+  protected readonly siblingLookupFailed = signal(false);
+  // Bumped by retrySiblingLookup() to force a re-fetch of the same committee uid (#4880 review).
+  private readonly siblingLookupRetryNonce = signal(0);
+
   // Other mailing lists linked to the same committee, used to resolve whether a sync direction is
   // already active elsewhere (only one direction is allowed per committee at a time).
   private readonly siblingLists: Signal<GroupsIOMailingList[]> = this.initSiblingLists();
   protected readonly activeSync: Signal<GroupsIOMailingList | null> = this.initActiveSync();
 
   public constructor() {
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
+
     // Keep the selector's displayed value in sync with the persisted sync_mode (e.g. on initial
     // load, or after a refresh brings in a value set from elsewhere), without re-triggering a save.
     // Guarded on an actual value change so a re-emission of `mailingList()` with the same sync_mode
@@ -97,15 +108,24 @@ export class MailingListSyncSettingsComponent {
     });
 
     // Only one direction is allowed per committee at a time — lock the selector whenever another
-    // linked mailing list already has one configured. Also lock it while a save is in flight so a
-    // second direction change can't fire an overlapping PUT that races the first (#4880 review).
+    // linked mailing list already has one configured, while a save is in flight (so a second
+    // direction change can't fire an overlapping PUT that races the first), or whenever the sibling
+    // lookup itself failed (we can't verify the "only one direction" invariant without it, so err
+    // toward blocking writes rather than risking a second auto-sync direction, #4880 review).
     effect(() => {
-      if (this.saving() || this.activeSync()) {
+      if (this.saving() || this.activeSync() || this.siblingLookupFailed()) {
         this.form.controls.direction.disable({ emitEvent: false });
       } else {
         this.form.controls.direction.enable({ emitEvent: false });
       }
     });
+  }
+
+  protected retrySiblingLookup(): void {
+    // Bumps the lookup's nonce so the lookup observable re-runs even though the committee uid itself
+    // hasn't changed — a bare `distinctUntilChanged()` on the uid alone would otherwise suppress this
+    // retry as a duplicate emission (#4880 review).
+    this.siblingLookupRetryNonce.update((n) => n + 1);
   }
 
   protected onToggleChange(checked: boolean): void {
@@ -154,7 +174,11 @@ export class MailingListSyncSettingsComponent {
       )
       .subscribe((result) => {
         this.saving.set(false);
-        if (result) {
+        // The save is deliberately fire-and-forget (take(1), not takeUntilDestroyed — see above), so
+        // this callback can still run after the component is destroyed (e.g. user navigated away
+        // mid-save). `output()` already no-ops a post-destroy emit, but guard explicitly so we don't
+        // rely on that incidental behavior (#4880 review).
+        if (result && !this.destroyed) {
           this.updated.emit(result);
         }
       });
@@ -188,20 +212,26 @@ export class MailingListSyncSettingsComponent {
     // folded into the observed signal itself, not just read inside switchMap, so the lookup also
     // (re-)runs if the flag/writer status becomes true after the committee uid last changed, e.g.
     // on a direct page load where FeatureFlagService.initialize() hasn't resolved yet (#4880 review).
-    const lookupUid = computed(() => (this.syncEnabled() && this.isWriter() ? (this.committee()?.uid ?? null) : null));
+    const lookupKey = computed(() => ({
+      committeeUid: this.syncEnabled() && this.isWriter() ? (this.committee()?.uid ?? null) : null,
+      nonce: this.siblingLookupRetryNonce(),
+    }));
     return toSignal(
-      toObservable(lookupUid).pipe(
-        distinctUntilChanged(),
-        switchMap((committeeUid) =>
-          committeeUid
-            ? this.mailingListService.getMailingListsByCommittee(committeeUid).pipe(
-                catchError((error) => {
-                  console.error('Failed to load sibling mailing lists for sync settings', error);
-                  return of([] as GroupsIOMailingList[]);
-                })
-              )
-            : of([])
-        )
+      toObservable(lookupKey).pipe(
+        distinctUntilChanged((a, b) => a.committeeUid === b.committeeUid && a.nonce === b.nonce),
+        switchMap(({ committeeUid }) => {
+          this.siblingLookupFailed.set(false);
+          if (!committeeUid) {
+            return of([] as GroupsIOMailingList[]);
+          }
+          return this.mailingListService.getMailingListsByCommittee(committeeUid).pipe(
+            catchError((error) => {
+              console.error('Failed to load sibling mailing lists for sync settings', error);
+              this.siblingLookupFailed.set(true);
+              return of([] as GroupsIOMailingList[]);
+            })
+          );
+        })
       ),
       { initialValue: [] as GroupsIOMailingList[] }
     );

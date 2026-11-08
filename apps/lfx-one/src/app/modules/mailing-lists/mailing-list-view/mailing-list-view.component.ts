@@ -81,8 +81,14 @@ export class MailingListViewComponent {
   public error = signal<boolean>(false);
   public refresh = new BehaviorSubject<void>(undefined);
 
+  // Holds a sync-settings save result between the moment the child component emits it and the next
+  // real navigation — lets the view reflect a just-saved `sync_mode` immediately instead of racing
+  // the query index's eventual-consistency window via a `getMailingList()` refetch (#4880 review).
+  private readonly mailingListOverride = signal<GroupsIOMailingList | null>(null);
+
   // Complex computed/toSignal signals
-  public readonly mailingList: Signal<GroupsIOMailingList | null> = this.initMailingList();
+  private readonly fetchedMailingList: Signal<GroupsIOMailingList | null> = this.initMailingList();
+  public readonly mailingList: Signal<GroupsIOMailingList | null> = computed(() => this.mailingListOverride() ?? this.fetchedMailingList());
   public readonly backLabel: Signal<string> = computed(() => this.navBackLabel ?? this.mailingListLabel.plural);
   public readonly emailAddress: Signal<string> = this.initEmailAddress();
   public readonly memberCount: Signal<number> = this.initMemberCount();
@@ -110,6 +116,12 @@ export class MailingListViewComponent {
     this.refresh.next();
   }
 
+  // Applies a sync-settings save result directly instead of refetching through the query index
+  // (#4880 review) — the child already holds the authoritative, just-written resource.
+  public applySyncSettingsUpdate(updated: GroupsIOMailingList): void {
+    this.mailingListOverride.set(updated);
+  }
+
   public goBack(): void {
     if (this.fromMeLens) {
       this.lensService.setLens('me');
@@ -122,6 +134,7 @@ export class MailingListViewComponent {
     return toSignal(
       combineLatest([this.route.paramMap, this.refresh]).pipe(
         switchMap(([params]) => {
+          this.mailingListOverride.set(null);
           const mailingListId = params?.get('id');
           if (!mailingListId) {
             this.loading.set(false);
