@@ -1,0 +1,66 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, inject } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { Meeting, MeetingDetailsDrawerData, MeetingHomeRow } from '@lfx-one/shared/interfaces';
+import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
+import { Subject } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { MeetingDetailsDrawerComponent } from '../components/meeting-details-drawer/meeting-details-drawer.component';
+import { MeetingsHomeDetailsService } from './meetings-home-details.service';
+
+@Component({ selector: 'lfx-details-host', template: '', providers: [MeetingsHomeDetailsService] })
+class HostComponent {
+  public readonly details = inject(MeetingsHomeDetailsService);
+}
+
+const ROW = { key: 'synthetic-meeting', meeting: { id: 'synthetic-meeting' } as Meeting, title: 'Synthetic sync' } as MeetingHomeRow;
+
+describe('MeetingsHomeDetailsService', () => {
+  let open: ReturnType<typeof vi.fn>;
+  let refs: { close: ReturnType<typeof vi.fn>; closed: Subject<void> }[];
+
+  beforeEach(() => {
+    refs = [];
+    open = vi.fn(() => {
+      const ref = { close: vi.fn(), closed: new Subject<void>() };
+      refs.push(ref);
+      return ref;
+    });
+    TestBed.configureTestingModule({ providers: [{ provide: UiDrawerService, useValue: { open } }] });
+  });
+
+  it('opens a 1080px drawer on the agenda with the page injector', () => {
+    const host = TestBed.createComponent(HostComponent).componentInstance;
+    host.details.open(ROW);
+
+    const [content, config] = open.mock.calls[0] as [unknown, { width: number; data: MeetingDetailsDrawerData }];
+    expect(content).toBe(MeetingDetailsDrawerComponent);
+    expect(config.width).toBe(1080);
+    expect(config.data.row).toBe(ROW);
+    expect(config.data.tab).toBe('agenda');
+    expect(config.data.injector.get(MeetingsHomeDetailsService)).toBe(host.details);
+  });
+
+  it('opens on the requested tab and replaces a drawer already open', () => {
+    const host = TestBed.createComponent(HostComponent).componentInstance;
+    host.details.open(ROW);
+    host.details.open(ROW, { tab: 'guests' });
+
+    expect(refs[0].close).toHaveBeenCalled();
+    expect((open.mock.calls[1][1] as { data: MeetingDetailsDrawerData }).data.tab).toBe('guests');
+  });
+
+  it('closes the open drawer when the page goes away', () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.details.open(ROW);
+    refs[0].closed.next();
+    fixture.componentInstance.details.open(ROW);
+    fixture.destroy();
+
+    expect(refs[0].close).not.toHaveBeenCalled();
+    expect(refs[1].close).toHaveBeenCalled();
+  });
+});
