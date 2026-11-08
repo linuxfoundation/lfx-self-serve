@@ -85,4 +85,19 @@ describe('MailingListViewComponent indexed address', () => {
     expect(setLens).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledWith(['/', 'mailing-lists']);
   });
+
+  it('applies a sync-settings save result matching the currently displayed list', () => {
+    const component = createComponent({ uid: 'ml-1', group_name: 'main', writer: false } as GroupsIOMailingList);
+    component.applySyncSettingsUpdate({ uid: 'ml-1', group_name: 'main', writer: true } as GroupsIOMailingList);
+    expect(component.mailingList()?.writer).toBe(true);
+  });
+
+  it('ignores a late sync-settings save result for a list other than the one currently displayed', () => {
+    // Simulates a save started on a previous list resolving after the `:id` route has moved on to
+    // ml-1 — the component instance is reused across navigation, so this result must not override
+    // the newly displayed list (#4880 review).
+    const component = createComponent({ uid: 'ml-1', group_name: 'main', writer: true } as GroupsIOMailingList);
+    component.applySyncSettingsUpdate({ uid: 'ml-stale', group_name: 'stale', writer: true, sync_mode: 'manual' } as unknown as GroupsIOMailingList);
+    expect(component.mailingList()?.uid).toBe('ml-1');
+  });
 });

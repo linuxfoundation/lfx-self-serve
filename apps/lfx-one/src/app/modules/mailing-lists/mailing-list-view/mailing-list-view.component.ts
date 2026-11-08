@@ -119,6 +119,14 @@ export class MailingListViewComponent {
   // Applies a sync-settings save result directly instead of refetching through the query index
   // (#4880 review) — the child already holds the authoritative, just-written resource.
   public applySyncSettingsUpdate(updated: GroupsIOMailingList): void {
+    const current = this.mailingList();
+    // The `:id` route reuses this component across list-to-list navigation, so a save started on
+    // list A can resolve after the route has already moved to list B. Dropping a result whose uid
+    // no longer matches the currently displayed list prevents it from overriding B's page (#4880
+    // review).
+    if (!current || current.uid !== updated.uid) {
+      return;
+    }
     this.mailingListOverride.set(updated);
   }
 

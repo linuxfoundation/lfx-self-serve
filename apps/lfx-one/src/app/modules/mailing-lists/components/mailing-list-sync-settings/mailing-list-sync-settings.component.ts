@@ -74,6 +74,10 @@ export class MailingListSyncSettingsComponent {
   // whether another list already has a direction configured), so the template disables sync controls
   // rather than silently risking a second auto-sync direction on the same committee (#4880 review).
   protected readonly siblingLookupFailed = signal(false);
+  // Set for the duration of the lookup — `activeSync()` can't be trusted as "no sibling has sync"
+  // while the request is still in flight (its initial `[]` value looks identical to a resolved,
+  // empty result), so controls must stay disabled until this clears too (#4880 review).
+  protected readonly siblingLookupLoading = signal(false);
   // Bumped by retrySiblingLookup() to force a re-fetch of the same committee uid (#4880 review).
   private readonly siblingLookupRetryNonce = signal(0);
 
@@ -113,7 +117,7 @@ export class MailingListSyncSettingsComponent {
     // lookup itself failed (we can't verify the "only one direction" invariant without it, so err
     // toward blocking writes rather than risking a second auto-sync direction, #4880 review).
     effect(() => {
-      if (this.saving() || this.activeSync() || this.siblingLookupFailed()) {
+      if (this.saving() || this.activeSync() || this.siblingLookupFailed() || this.siblingLookupLoading()) {
         this.form.controls.direction.disable({ emitEvent: false });
       } else {
         this.form.controls.direction.enable({ emitEvent: false });
@@ -179,7 +183,12 @@ export class MailingListSyncSettingsComponent {
         // mid-save). `output()` already no-ops a post-destroy emit, but guard explicitly so we don't
         // rely on that incidental behavior (#4880 review).
         if (result && !this.destroyed) {
-          this.updated.emit(result);
+          // `updateMailingList` returns the BFF's raw indexed PUT response, which lacks GET-only
+          // enrichment (`writer`, committee names, project/service details) and hasn't caught up to
+          // the just-submitted `sync_mode` in the index yet — merge onto the pre-save enriched input
+          // and override `sync_mode` explicitly so the parent's override keeps every field it
+          // depends on and reflects the mode that was actually accepted (#4880 review).
+          this.updated.emit({ ...ml, ...result, sync_mode: syncMode });
         }
       });
   }
@@ -222,13 +231,19 @@ export class MailingListSyncSettingsComponent {
         switchMap(({ committeeUid }) => {
           this.siblingLookupFailed.set(false);
           if (!committeeUid) {
+            this.siblingLookupLoading.set(false);
             return of([] as GroupsIOMailingList[]);
           }
+          this.siblingLookupLoading.set(true);
           return this.mailingListService.getMailingListsByCommittee(committeeUid).pipe(
             catchError((error) => {
               console.error('Failed to load sibling mailing lists for sync settings', error);
               this.siblingLookupFailed.set(true);
               return of([] as GroupsIOMailingList[]);
+            }),
+            switchMap((lists) => {
+              this.siblingLookupLoading.set(false);
+              return of(lists);
             })
           );
         })

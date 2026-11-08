@@ -177,4 +177,130 @@ describe('MailingListSyncSettingsComponent', () => {
 
     expect(getMailingListsByCommittee).toHaveBeenCalledWith('committee-1');
   });
+
+  it('disables the toggle and surfaces a retry affordance when the sibling lookup fails', async () => {
+    TestBed.resetTestingModule();
+    updateMailingList = vi.fn(() => of(baseList));
+    getMailingListsByCommittee = vi.fn(() => throwError(() => new Error('upstream down')));
+    messageAdd = vi.fn();
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await TestBed.configureTestingModule({
+      imports: [MailingListSyncSettingsComponent],
+      providers: [
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: MailingListService, useValue: { updateMailingList, getMailingListsByCommittee } },
+        { provide: MessageService, useValue: { add: messageAdd } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MailingListSyncSettingsComponent);
+    fixture.componentRef.setInput('mailingList', baseList);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['siblingLookupFailed']()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="sibling-lookup-failed-notice"]')).toBeTruthy();
+    const toggle = fixture.debugElement.query((el) => el.name === 'lfx-toggle')?.componentInstance;
+    expect(toggle?.disabled()).toBe(true);
+
+    // Retry re-runs the lookup against the same committee uid — once it succeeds, the failure
+    // state clears and the toggle re-enables (#4880 review).
+    getMailingListsByCommittee.mockReturnValue(of([]));
+    fixture.componentInstance['retrySiblingLookup']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['siblingLookupFailed']()).toBe(false);
+    expect(toggle?.disabled()).toBe(false);
+    expect(getMailingListsByCommittee).toHaveBeenCalledTimes(2);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('keeps the toggle disabled while the sibling lookup is in flight, even once it resolves to no sibling', async () => {
+    TestBed.resetTestingModule();
+    updateMailingList = vi.fn(() => of(baseList));
+    let resolveLookup: (() => void) | undefined;
+    getMailingListsByCommittee = vi.fn(
+      () =>
+        new Promise<GroupsIOMailingList[]>((resolve) => {
+          resolveLookup = () => resolve([]);
+        })
+    );
+    messageAdd = vi.fn();
+
+    await TestBed.configureTestingModule({
+      imports: [MailingListSyncSettingsComponent],
+      providers: [
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: MailingListService, useValue: { updateMailingList, getMailingListsByCommittee } },
+        { provide: MessageService, useValue: { add: messageAdd } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MailingListSyncSettingsComponent);
+    fixture.componentRef.setInput('mailingList', baseList);
+    fixture.detectChanges();
+
+    let toggle = fixture.debugElement.query((el) => el.name === 'lfx-toggle')?.componentInstance;
+    expect(toggle?.disabled()).toBe(true);
+
+    resolveLookup?.();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    toggle = fixture.debugElement.query((el) => el.name === 'lfx-toggle')?.componentInstance;
+    expect(toggle?.disabled()).toBe(false);
+  });
+
+  it('emits the pre-save enriched resource with the submitted sync_mode, not the raw PUT response', async () => {
+    // updateMailingList's indexed response lacks GET-only enrichment (writer, committee names) and
+    // hasn't caught up to the submitted sync_mode yet — the parent must still receive both (#4880
+    // review / see also #4899).
+    await render(baseList, { updateResult: { uid: 'list-1', group_name: 'maintainers' } as GroupsIOMailingList });
+    const emitted = vi.fn();
+    fixture.componentInstance.updated.subscribe(emitted);
+
+    fixture.componentInstance['onToggleChange'](true);
+    await fixture.whenStable();
+
+    expect(emitted).toHaveBeenCalledWith(expect.objectContaining({ writer: true, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }));
+  });
+
+  it('does not emit a save result after the component has been destroyed', async () => {
+    // The save is fire-and-forget (take(1), not takeUntilDestroyed — see save()'s comment), so a
+    // real network round-trip can resolve after the user has already navigated away. Use an
+    // asynchronous response (asapScheduler) so the destroy below happens before the result lands,
+    // matching that race rather than the synchronous `of()` used elsewhere in this file (#4880
+    // review).
+    TestBed.resetTestingModule();
+    updateMailingList = vi.fn(() => of(baseList).pipe(delay(0, asapScheduler)));
+    getMailingListsByCommittee = vi.fn(() => of([]));
+    messageAdd = vi.fn();
+
+    await TestBed.configureTestingModule({
+      imports: [MailingListSyncSettingsComponent],
+      providers: [
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: MailingListService, useValue: { updateMailingList, getMailingListsByCommittee } },
+        { provide: MessageService, useValue: { add: messageAdd } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MailingListSyncSettingsComponent);
+    fixture.componentRef.setInput('mailingList', baseList);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const emitted = vi.fn();
+    fixture.componentInstance.updated.subscribe(emitted);
+
+    fixture.componentInstance['onToggleChange'](true);
+    fixture.destroy();
+    await fixture.whenStable();
+
+    expect(emitted).not.toHaveBeenCalled();
+  });
 });
