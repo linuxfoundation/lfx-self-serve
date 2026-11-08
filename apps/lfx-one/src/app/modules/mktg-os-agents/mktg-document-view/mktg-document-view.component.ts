@@ -1638,7 +1638,8 @@ export class MktgDocumentViewComponent {
    * plain Markdown document prints nothing of this), only in the browser. The
    * server never settles the read: its HTML carries the pending state the client
    * starts from, so the button does not flip. The browser settles none when no
-   * kit project applies. Any failed read is null, the LF look, not an error.
+   * kit project applies. A failed read settles as failed: the framework's
+   * Download PDF waits and says why, never the LF look.
    */
   private initPrintKitRead(): Signal<MktgPrintKitRead> {
     const projectUid = computed(() =>
