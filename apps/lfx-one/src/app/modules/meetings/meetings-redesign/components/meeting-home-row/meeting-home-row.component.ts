@@ -34,6 +34,7 @@ import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 import { MeetingsHomeJoinService } from '../../services/meetings-home-join.service';
 import { MeetingsHomeResizeService } from '../../services/meetings-home-resize.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
@@ -46,7 +47,7 @@ import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-r
 
 /**
  * One row of the meetings home list: date tile with visibility badges, project eyebrow, title and two meta lines.
- * @description Clicking the row opens the meeting; the project eyebrow opens the project instead.
+ * @description Clicking the row opens the meeting details drawer; the project eyebrow opens the project instead.
  */
 @Component({
   selector: 'lfx-meeting-home-row',
@@ -73,6 +74,7 @@ export class MeetingHomeRowComponent {
   private readonly resize = inject(MeetingsHomeResizeService);
   private readonly store = inject(MeetingsHomeStore);
   private readonly joinService = inject(MeetingsHomeJoinService);
+  private readonly details = inject(MeetingsHomeDetailsService);
   private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
   private readonly projectNameElement = viewChild<ElementRef<HTMLElement>>('projectName');
 
@@ -118,12 +120,15 @@ export class MeetingHomeRowComponent {
   protected open(): void {
     // Releasing a text selection inside the row is not a click on it.
     if (window.getSelection()?.toString()) return;
-    const { url, newTab } = this.link();
-    if (newTab) {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    } else {
-      void this.router.navigateByUrl(url);
-    }
+    this.details.open(this.row(), 'row');
+  }
+
+  /** A plain click on the title opens the drawer; a modified click keeps the link's own behaviour. */
+  protected onTitleClick(event: MouseEvent): void {
+    event.stopPropagation();
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    this.details.open(this.row(), 'row');
   }
 
   protected join(): void {

@@ -23,7 +23,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 
 | Selector                | Class                      | Purpose                                                                                                                                                                                      |
 | ----------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lfx-ui-button`         | `UiButtonComponent`        | Eight variants, `tiny` 24, `small` 28, `default` 32 or `large` 40px, icon-only circle, loading, faded 45% when disabled, forwards `lfxUiTooltip`, `menu`, `popover`; button or link          |
+| `lfx-ui-button`         | `UiButtonComponent`        | Eight variants, `tiny` 24, `small` 28, `default` 32 or `large` 40px, icon-only circle, loading, faded 45% when disabled, forwards `lfxUiTooltip`, `menu`, `popover`; button, link or `href`  |
 | `lfx-ui-tabs`           | `UiTabsComponent`          | Underline or secondary-pill tabs, default or small, with counts, icons and disabled tabs with a reason; arrows, Home, End; `[(value)]`; projected content at the row's end                   |
 | `lfx-ui-search-input`   | `UiSearchInputComponent`   | Search field on the small `lfx-ui-input` (10px corners): search icon, clear button, 32px tall, 300px minimum width; `[(value)]`                                                              |
 | `lfx-ui-badge`          | `UiBadgeComponent`         | Pill label: six tones, subtle, solid, outline or line (tone-coloured text and ring), 20 or 24px, optional leading icon and status dot; `interactive` makes it a button with `(activated)`    |
@@ -43,7 +43,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-menu-separator` | `UiMenuSeparatorComponent` | Full-bleed 1px rule between menu groups                                                                                                                                                      |
 | `lfx-ui-modal`          | `UiModalComponent`         | Modal layout: title, subtitle, body, inset and actions slots; 540px, 420px or a px width, fixed height, sticky, close, title suffix, header actions/extra, scroll fades                      |
 | `UiModalService`        | `UiModalService`           | Opens a component or template on CDK Dialog: focus trap, focus return, scroll lock, `ui-overlay` backdrop, split Escape and backdrop close                                                   |
-| `lfxUiTooltip`          | `UiTooltipDirective`       | Attribute directive: hover and keyboard-focus tooltip in a CDK overlay, plain or rich, flips sides, hoverable, Escape closes, spoken description; SSR-safe                                   |
+| `lfxUiTooltip`          | `UiTooltipDirective`       | Attribute directive: hover and keyboard-focus tooltip in a CDK overlay, plain or rich with a title icon, flips sides, hoverable, Escape closes, spoken description; SSR-safe                 |
 | `lfx-ui-checkbox`       | `UiCheckboxComponent`      | Native 16px checkbox: checked, indeterminate, disabled, label; `[(checked)]` and reactive forms                                                                                              |
 | `lfx-ui-radio-group`    | `UiRadioGroupComponent`    | Fieldset of native radios (`lfx-ui-radio` options); arrow keys, `[(value)]` and reactive forms                                                                                               |
 | `lfx-ui-toggle`         | `UiToggleComponent`        | On/off switch (`role="switch"`): three sizes, accent, warning or danger; label after or before (`labelPosition`); `[(checked)]` and reactive forms                                           |
@@ -109,8 +109,6 @@ The LFX UI Library tokens come from `scripts/ui-tokens/tokens.json` (canonical, 
 | Full type role (family, size, line height, weight, tracking) | `label-14`, `copy-14`, `button-14`, `heading-24`, `label-14-mono`, ...                                                                                 | `--ui-font-sans/display/mono`     |
 
 The `ui` prefix on colours, radii and heights avoids collisions with Tailwind's own `neutral`, `red`, `amber`, `sm`/`md` and `h-*` names. Pair `text-heading-24` with `font-display font-light` or use the `heading-24` class, which sets both. Focus: `focus-visible:shadow-focus focus-visible:outline-none`; buttons use the library's 4px `ui-accent-100` halo instead.
-
-Type-role classes set the library's cv11/ss01, so uikit text and content projected into uikit containers (modal body, table cells, collapse panels) get them; the app body is unchanged.
 
 Use `duration-ui-*` / `ease-ui-*` instead of arbitrary `duration-[150ms]` / `ease-[cubic-bezier(...)]` values, and keep `prefers-reduced-motion` gating (`motion-safe:` / `motion-reduce:`).
 

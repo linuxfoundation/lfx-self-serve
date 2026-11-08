@@ -184,6 +184,51 @@ describe('MeetingsHomeEditService', () => {
       expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'synthetic-meeting', projectUid: 'synthetic-project-uid' });
     });
 
+    it('asks the scope of a recurring meeting before landing on the requested section', () => {
+      setup(true, of(SERIES));
+      service.edit(row(SERIES, SECOND), 'agenda-resources');
+
+      expect(modalOpen).toHaveBeenCalledWith(MeetingEditScopeModalComponent, { data: { row: row(SERIES, SECOND), meeting: SERIES, occurrence: SECOND } });
+      expect(composerOpen).not.toHaveBeenCalled();
+
+      scopeResult.next({ scope: 'occurrence', proceed: true });
+
+      expect(composerOpen).toHaveBeenCalledWith({
+        mode: 'edit',
+        meetingUid: 'synthetic-meeting',
+        projectUid: 'synthetic-project-uid',
+        occurrenceId: SECOND.occurrence_id,
+        section: 'agenda-resources',
+      });
+    });
+
+    it('lands the series editor on the requested section', () => {
+      setup(true, of(SERIES));
+      service.edit(row(SERIES, SECOND), 'agenda-resources');
+
+      scopeResult.next({ scope: 'series', proceed: true });
+
+      expect(composerOpen).toHaveBeenCalledWith({
+        mode: 'edit',
+        meetingUid: 'synthetic-meeting',
+        projectUid: 'synthetic-project-uid',
+        section: 'agenda-resources',
+      });
+    });
+
+    it('lands a one-time meeting on the requested section without asking', () => {
+      setup(true, of(ONE_OFF));
+      service.edit(row(ONE_OFF), 'agenda-resources');
+
+      expect(modalOpen).not.toHaveBeenCalled();
+      expect(composerOpen).toHaveBeenCalledWith({
+        mode: 'edit',
+        meetingUid: 'synthetic-meeting',
+        projectUid: 'synthetic-project-uid',
+        section: 'agenda-resources',
+      });
+    });
+
     it('opens nothing when the scope dialog is cancelled', () => {
       setup(true, of(SERIES));
       service.edit(row(SERIES, SECOND));

@@ -15,6 +15,8 @@ import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-rese
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { PersonaService } from '@services/persona.service';
+import { PlausibleService } from '@services/plausible.service';
+import { SegmentService } from '@services/segment.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -165,6 +167,8 @@ describe('MeetingsRedesignComponent', () => {
         { provide: PersonaService, useValue: { personaLoaded, hasBoardRole: signal(false), hasProjectRole: signal(true) } },
         { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
+        { provide: PlausibleService, useValue: { trackEvent: vi.fn() } },
+        { provide: SegmentService, useValue: { trackEvent: vi.fn() } },
       ],
     });
   });

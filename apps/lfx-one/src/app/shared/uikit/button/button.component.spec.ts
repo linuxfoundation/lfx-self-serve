@@ -52,6 +52,15 @@ class BothTooltipsHostComponent {}
 class TooltipHostComponent {}
 
 @Component({
+  selector: 'lfx-ui-button-tooltip-icon-host',
+  imports: [UiButtonComponent],
+  template: `<lfx-ui-button lfxUiTooltip="Only invited people can join" lfxUiTooltipTitle="Restricted" lfxUiTooltipIcon="fa-solid fa-lock"
+    >Join</lfx-ui-button
+  >`,
+})
+class TooltipIconHostComponent {}
+
+@Component({
   selector: 'lfx-ui-button-disabled-tooltip-host',
   imports: [UiButtonComponent, UiTooltipDirective],
   template: `<lfx-ui-button lfxUiTooltip="Copy link" [disabled]="disabled()">Copy</lfx-ui-button
@@ -296,6 +305,18 @@ describe('UiButtonComponent', () => {
     expect(el().getAttribute('href')).toBe('/meetings/create');
   });
 
+  it('opens an external href in a new tab without an opener, and drops it while disabled', async () => {
+    await set('href', 'https://zoom.example.test/j/1');
+    expect(el().tagName).toBe('A');
+    expect(el().getAttribute('href')).toBe('https://zoom.example.test/j/1');
+    expect(el().getAttribute('target')).toBe('_blank');
+    expect(el().getAttribute('rel')).toBe('noopener noreferrer');
+    expect(el().classList).toContain('!no-underline');
+    await set('disabled', true);
+    expect(el().hasAttribute('href')).toBe(false);
+    expect(el().getAttribute('aria-disabled')).toBe('true');
+  });
+
   it('pins a link label colour in every state and never underlines it', async () => {
     await set('variant', 'tertiary-accent');
     await set('link', '/meetings');
@@ -475,6 +496,14 @@ describe('UiButtonComponent', () => {
       expect(describedBy).toBeTruthy();
       expect(document.getElementById(describedBy as string)?.textContent).toBe('Copy link');
       expect(wrapper.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('forwards the tooltip title icon to the inner button', async () => {
+      const host = TestBed.createComponent(TooltipIconHostComponent);
+      await host.whenStable();
+      const tooltip = host.debugElement.query(By.directive(UiTooltipDirective)).injector.get(UiTooltipDirective);
+      expect(tooltip.icon()).toBe('fa-solid fa-lock');
+      expect(tooltip.title()).toBe('Restricted');
     });
 
     describe('while disabled', () => {

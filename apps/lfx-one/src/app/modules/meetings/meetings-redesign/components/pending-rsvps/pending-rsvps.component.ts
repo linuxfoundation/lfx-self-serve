@@ -38,6 +38,7 @@ import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { Observable, pairwise, switchMap, take } from 'rxjs';
 
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 import { MeetingsHomeResizeService } from '../../services/meetings-home-resize.service';
 
 import { MeetingDateTileComponent } from '../meeting-date-tile/meeting-date-tile.component';
@@ -70,6 +71,7 @@ export class PendingRsvpsComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   private readonly drawerService = inject(UiDrawerService);
   private readonly resize = inject(MeetingsHomeResizeService);
+  private readonly details = inject(MeetingsHomeDetailsService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly drawerTemplate = viewChild.required<TemplateRef<unknown>>('drawer');
   private readonly panelList = viewChild<ElementRef<HTMLElement>>('panelList');
@@ -110,6 +112,16 @@ export class PendingRsvpsComponent {
       this.drawerRef = null;
       this.drawerOpen.set(false);
     });
+  }
+
+  /** A plain click on a title swaps this drawer for the meeting's details; a modified click keeps the link's own behaviour. */
+  protected openDetails(event: MouseEvent, row: MeetingHomeRow): void {
+    const ref = this.drawerRef;
+    if (!ref || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    // Opens once this drawer has slid out and handed focus back, so the details drawer returns focus to the Pending RSVPs button.
+    ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.details.open(row, 'pending_rsvps'));
+    ref.close();
   }
 
   /** An answered date leaves the list with the focused button; focus goes to the next date left, or out of the drawer once it is empty. */
