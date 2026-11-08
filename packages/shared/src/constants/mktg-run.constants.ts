@@ -940,8 +940,16 @@ export const MKTG_RUN_POLL = {
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;
 
-/** Bound raw Guild history reads to 2,000 events per result request. */
-export const MKTG_RAW_EVENTS_MAX_PAGES = 4;
+/**
+ * Absolute cap on raw Guild event pages (500 each) read for one result request:
+ * 10,000 raw events. Guild serves a session's events oldest-first, so the
+ * finalize receipt and the root envelope ride the LAST page, and the loop is
+ * sized from the API's `pagination.total_count`; this cap only bounds it. A
+ * Member 360 session writes about 8 raw events per member (a 308-member
+ * foundation: 2,558 events; the biggest session seen: 3,037). A safety bound,
+ * not a product limit: past it the truncation marker is appended as before.
+ */
+export const MKTG_RAW_EVENTS_MAX_PAGES = 20;
 
 /** Internal BFF marker: a capped event page cannot prove there is nothing pending. */
 export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';
