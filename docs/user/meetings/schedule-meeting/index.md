@@ -51,7 +51,7 @@ Select **Create meeting** when you're done. If you need guests, recordings, or r
   - **Invited guests only** (default): only invited guests can join. This makes the meeting **Restricted**.
 - **Organizer**: defaults to the meeting's creator. You can choose someone else, or enter a name and email.
 
-A new meeting starts **Private** and **Invited guests only**. Choosing the **Board** type reaffirms the same setting rather than changing it, so moving to or from Board never loosens or tightens access on its own — you're always free to change **Visibility** and **Join Restriction** yourself.
+A new meeting starts **Private** and **Invited guests only** by default. Choosing the **Board** type reaffirms that default, and switching away from Board reaffirms it again — so if you loosen **Visibility** or **Join Restriction** while on Board, changing the type resets them back to Private and Invited guests only. You can still change either setting yourself any time after that.
 
 ### Date & schedule
 
