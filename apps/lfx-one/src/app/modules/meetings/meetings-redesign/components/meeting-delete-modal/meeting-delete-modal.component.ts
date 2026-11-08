@@ -60,6 +60,10 @@ export class MeetingDeleteModalComponent {
   );
   /** True while the request runs; the dialog cannot close meanwhile, or the list would miss the result. */
   public readonly busy = signal(false);
+  protected readonly confirmLabel: Signal<string> = computed(() => {
+    if (!this.occurrence) return 'Delete Meeting';
+    return this.busy() ? 'Canceling...' : 'Cancel Occurrence';
+  });
 
   protected cancel(): void {
     this.dialogRef.close();

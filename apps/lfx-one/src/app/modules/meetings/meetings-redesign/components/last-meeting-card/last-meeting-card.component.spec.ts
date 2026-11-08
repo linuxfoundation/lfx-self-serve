@@ -8,6 +8,7 @@ import { MeetingHomeRow, MeetingHomeSummaryChange, PastMeeting, PastMeetingSumma
 import { formatMeetingWhen, toPastMeetingHomeRow } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
 import { LastMeetingCardComponent } from './last-meeting-card.component';
 
@@ -73,6 +74,7 @@ const rowOf = (meeting: PastMeeting): MeetingHomeRow => toPastMeetingHomeRow(mee
 
 describe('LastMeetingCardComponent', () => {
   let navigateByUrl: ReturnType<typeof vi.fn>;
+  let openDetails: ReturnType<typeof vi.fn>;
   let dialogs: { openSummary: ReturnType<typeof vi.fn>; openRecording: ReturnType<typeof vi.fn>; copyRecordingLink: ReturnType<typeof vi.fn> };
 
   const render = async (inputs: Record<string, unknown>): Promise<ComponentFixture<LastMeetingCardComponent>> => {
@@ -89,11 +91,13 @@ describe('LastMeetingCardComponent', () => {
 
   beforeEach(() => {
     navigateByUrl = vi.fn().mockResolvedValue(true);
+    openDetails = vi.fn();
     dialogs = { openSummary: vi.fn(), openRecording: vi.fn(), copyRecordingLink: vi.fn() };
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl } },
         { provide: MeetingsHomeDialogsService, useValue: dialogs },
+        { provide: MeetingsHomeDetailsService, useValue: { open: openDetails } },
       ],
     });
   });
@@ -175,12 +179,28 @@ describe('LastMeetingCardComponent', () => {
     expect(query(other, 'meetings-home-last-card-attendance')).toBeNull();
   });
 
-  it('opens the meeting page when the card is clicked', async () => {
-    const fixture = await render({ row: rowOf(buildMeeting()), summary: null });
+  it('opens the details drawer on a card or title click, keeping the title a link to the meeting page', async () => {
+    const row = rowOf(buildMeeting());
+    const fixture = await render({ row, summary: null });
+    const title = query(fixture, 'meetings-home-last-card-title');
 
+    expect(title?.getAttribute('href')).toBe('/meetings/m-1-occ');
     query(fixture, 'meetings-home-last-card')?.click();
+    title?.click();
 
-    expect(navigateByUrl).toHaveBeenCalledWith('/meetings/m-1-occ');
+    expect(openDetails).toHaveBeenCalledTimes(2);
+    expect(openDetails).toHaveBeenCalledWith(row, 'last_card');
+    expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it('leaves a modified title click to the link', async () => {
+    const fixture = await render({ row: rowOf(buildMeeting()), summary: null });
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true });
+
+    query(fixture, 'meetings-home-last-card-title')?.dispatchEvent(click);
+
+    expect(click.defaultPrevented).toBe(false);
+    expect(openDetails).not.toHaveBeenCalled();
   });
 
   describe('recording and AI summary', () => {
@@ -238,7 +258,7 @@ describe('LastMeetingCardComponent', () => {
       clickButton(fixture, 'ui-split-button-secondary');
       clickButton(fixture, 'meetings-home-last-card-summary');
 
-      expect(navigateByUrl).not.toHaveBeenCalled();
+      expect(openDetails).not.toHaveBeenCalled();
       expect(query(fixture, 'ui-split-button-secondary')?.getAttribute('aria-label')).toBe('Copy recording link');
       expect(dialogs.openRecording).toHaveBeenCalledWith('https://zoom.example/rec');
       expect(dialogs.copyRecordingLink).toHaveBeenCalledWith('https://zoom.example/rec');

@@ -6,6 +6,7 @@ import type {
   MeetingDetailsFeature,
   MeetingHomeArtifact,
   MeetingHomeAttendanceKind,
+  MeetingJoinLink,
   MeetingResponseFilterOption,
   MeetingRsvpChoice,
   MeetingsHomeFilters,
@@ -15,6 +16,9 @@ import type {
 
 /** The AI summary of a past meetings home row. */
 export const MEETINGS_HOME_SUMMARY_ARTIFACT: MeetingHomeArtifact = { noun: 'summary', title: 'AI Summary' };
+
+/** Join link of a date with no request in flight and no failure. */
+export const NO_MEETING_JOIN_LINK: MeetingJoinLink = { url: null, error: null, code: null };
 
 /** Rows the meetings home list loads per page. */
 export const MEETINGS_HOME_PAGE_SIZE = 20;
@@ -72,6 +76,7 @@ export const MEETING_HOME_ATTENDANCE_BG_CLASSES: Record<MeetingHomeAttendanceKin
   no: 'bg-red-500',
   attended: 'bg-blue-500',
   attendedPoor: 'bg-amber-500',
+  absent: 'bg-gray-300',
 };
 
 /** Visibility badge icon and tooltip copy per kind. */
@@ -110,3 +115,9 @@ export const MEETING_DETAILS_FEATURES: readonly MeetingDetailsFeature[] = [
   { setting: 'youtube_upload_enabled', label: 'YouTube Upload', icon: 'fa-light fa-upload', iconClass: 'text-amber-600' },
   { setting: 'ai_summary_enabled', label: 'AI Summary', icon: 'fa-light fa-sparkles', iconClass: 'text-violet-600' },
 ];
+
+/** Id the meeting details drawer registers with the app's open-overlay tracking while it is open. */
+export const MEETING_DETAILS_OVERLAY_ID = 'meeting-details-drawer';
+
+/** Analytics event sent when the meeting details drawer opens, in place of a meeting page view. */
+export const MEETING_DETAILS_OPENED_EVENT = 'Meeting Details Opened';

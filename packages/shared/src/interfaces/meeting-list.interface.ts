@@ -5,7 +5,8 @@ import type { Injector } from '@angular/core';
 
 import type { MeetingVisibilityKind } from '../enums';
 import type { Meeting, MeetingOccurrence, MeetingResponseFilter, MeetingRsvp, PastMeetingSummary, RsvpResponse, RsvpScope } from './meeting.interface';
-import type { UiBadgeTone } from './uikit.interface';
+import type { FilterOption } from './filter.interface';
+import type { UiAvatarStatus, UiBadgeTone } from './uikit.interface';
 
 /** One row of the meetings home list: a single date of a meeting. */
 export interface MeetingHomeRow {
@@ -199,12 +200,12 @@ export interface MeetingHomeArtifact {
 }
 
 /** What a meetings home attendance count or bar segment measures; `attendedPoor` is attendance under 50%. */
-export type MeetingHomeAttendanceKind = 'yes' | 'maybe' | 'no' | 'attended' | 'attendedPoor';
+export type MeetingHomeAttendanceKind = 'yes' | 'maybe' | 'no' | 'attended' | 'attendedPoor' | 'absent';
 
 /** One answer count in the meetings home attendance legend. */
 export interface MeetingHomeAttendanceCount {
   kind: MeetingHomeAttendanceKind;
-  /** "Yes", "Maybe" or "No". */
+  /** "Yes", "Maybe", "No", or "Attended" and "Absent" for a past meeting. */
   label: string;
   count: number;
 }
@@ -224,7 +225,7 @@ export interface MeetingHomeAttendance {
   ariaLabel: string;
   /** Bar segments with a count above zero. */
   segments: MeetingHomeAttendanceSegment[];
-  /** Yes, Maybe and No counts, zeros included; empty for a past meeting. */
+  /** Yes, Maybe and No counts, zeros included; for a past meeting empty, or Attended and Absent when asked for. */
   answers: MeetingHomeAttendanceCount[];
   /** Invitees with no answer; null for a past meeting. */
   noResponse: number | null;
@@ -292,6 +293,9 @@ export type MeetingDetailsState = 'far' | 'soon' | 'live' | 'ended';
 /** Tab of the meeting details drawer. */
 export type MeetingDetailsTab = 'agenda' | 'guests';
 
+/** Where on the meetings home page the details drawer was opened from, sent with its analytics event. */
+export type MeetingDetailsEntryPoint = 'row' | 'next_card' | 'last_card' | 'pending_rsvps' | 'attendance';
+
 /** How the meeting details drawer opens. */
 export interface MeetingDetailsOpenOptions {
   /** Tab to open on; Agenda & Materials by default. */
@@ -335,4 +339,98 @@ export interface MeetingDetailsArtifactData {
   /** Download link of the transcript file; only its presence is used. */
   transcriptUrl: string | null;
   summary: PastMeetingSummary | null;
+}
+
+/** Join link of a meeting date; `url` and `error` are both null while it loads or outside the join window. */
+export interface MeetingJoinLink {
+  url: string | null;
+  /** Why the link could not be built, shown to the viewer. */
+  error: string | null;
+  /** Error code of a failed request, such as `NOT_REGISTERED_FOR_MEETING`. */
+  code: string | null;
+}
+
+/** Role label of a person in the meeting details drawer's guest list. */
+export type MeetingGuestRoleKey = 'organizer' | 'host' | 'guest';
+
+/** A guest's RSVP answer upcoming, or attendance once the meeting has ended. */
+export type MeetingGuestStatusKey = 'yes' | 'maybe' | 'no' | 'pending' | 'attended' | 'absent';
+
+/** One person in the meeting details drawer's Guests (upcoming) or Participants (ended) list. */
+export interface MeetingGuestRow {
+  /** Registrant or participant uid. */
+  uid: string;
+  name: string;
+  initials: string;
+  avatarUrl: string;
+  /** "Job title · Organization", either part optional. */
+  meta: string;
+  /** As stored; shown on participant rows. */
+  email: string;
+  /** http(s) LinkedIn profile URL, else null. */
+  linkedinUrl: string | null;
+  /** Committee voting status worth showing (not Observer or None), else null. */
+  votingStatus: string | null;
+  /** Voting Rep or Alternate Voting Rep. */
+  votingRep: boolean;
+  role: MeetingGuestRoleKey;
+  /** "Organizer", "Host" or "Guest". */
+  roleLabel: string;
+  /** Null when the meeting does not collect RSVPs. */
+  status: MeetingGuestStatusKey | null;
+  /** Status circle on the guest's avatar: the RSVP answer, or attendance once ended. */
+  statusBadge: UiAvatarStatus | null;
+  /** Always true for registrants; a participant may have joined without an invite. */
+  invited: boolean;
+  /** Meeting committee uids the person belongs to; empty for a direct invite. */
+  groups: string[];
+  /** The signed-in viewer, whose row takes no organizer actions. */
+  you: boolean;
+  /** Lowercased name, meta and email, for search. */
+  searchText: string;
+}
+
+/** Applied guest list filters; null means all. `group` is a committee uid or `direct`. */
+export interface MeetingGuestFilters {
+  status: MeetingGuestStatusKey | null;
+  role: MeetingGuestRoleKey | null;
+  invite: 'invited' | 'uninvited' | null;
+  group: string | null;
+  /** `reps` keeps Voting Reps and Alternate Voting Reps. */
+  voting: 'reps' | null;
+}
+
+/** One select in the guest list's Filters popover. */
+export interface MeetingGuestFilterField {
+  key: keyof MeetingGuestFilters;
+  title: string;
+  /** Label of the empty "all" option. */
+  allLabel: string;
+  options: FilterOption<string>[];
+}
+
+/** An applied guest filter, shown as a chip. */
+export interface MeetingGuestFilterChip {
+  key: keyof MeetingGuestFilters;
+  /** "RSVP status:" */
+  prefix: string;
+  label: string;
+}
+
+/** The signed-in viewer's identity, for marking their own guest row. */
+export interface MeetingGuestViewer {
+  username: string | null;
+  email: string | null;
+}
+
+/** Heading and total of the guest list, such as "Meeting Guests" and "12 guests". */
+export interface MeetingGuestSummary {
+  title: string;
+  subtitle: string;
+}
+
+/** Load state of the meeting details drawer's guest list. */
+export interface MeetingGuestsLoad {
+  status: 'loading' | 'ready' | 'error';
+  rows: MeetingGuestRow[];
 }

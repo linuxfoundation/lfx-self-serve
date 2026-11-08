@@ -10,16 +10,21 @@ import type {
   MeetingDetailsOrganizer,
   MeetingDetailsState,
   MeetingHostCandidate,
+  MeetingOccurrence,
   MeetingUserInfo,
 } from '../interfaces';
 import { getTimezoneAbbreviation } from './date-time.utils';
 import { isMeetingAttendeeListShared } from './meeting-attendee-lock.utils';
+import { getMeetingRecurrenceLabel } from './meeting-list.utils';
 import {
   buildMeetingOrganizerMailto,
+  buildRecurrenceSummary,
   collectMeetingOrganizers,
+  convertRecurrenceToPattern,
   getMeetingOrganizerDisplayName,
   MEETING_END_BUFFER_MS,
   normalizeUsername,
+  resolveOccurrenceRecurrence,
 } from './meeting.utils';
 
 const MINUTE_MS = 60_000;
@@ -143,4 +148,33 @@ export function getMeetingShareUrl(baseUrl: string, id: string, password?: strin
   }
   if (password) url.searchParams.set('password', password);
   return url.toString();
+}
+
+/** Long date of the drawer's date block in the viewer's zone, e.g. "Thursday, Nov 5, 2026"; empty for an invalid start. */
+export function formatMeetingDetailsDate(start: string, timeZone?: string): string {
+  const date = new Date(start);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric', timeZone }).format(date);
+}
+
+/** Time line under the long date: the start and the minutes, e.g. "9:00 AM · 60 min"; no zone, as it is the viewer's own. */
+export function formatMeetingDetailsTime(start: string, durationMinutes: number, timeZone?: string): string {
+  const date = new Date(start);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone }).format(date)} · ${durationMinutes} min`;
+}
+
+/**
+ * Recurrence line of the drawer's date block, with the series' end, e.g. "Weekly on Thursday, until 12/31/2026".
+ * @description The shown date's own rule wins over the series'. A rule with a single date reads "One-time meeting"; no rule gives null.
+ */
+export function getMeetingDetailsRecurrence(
+  meeting: Pick<Meeting, 'recurrence' | 'start_time' | 'timezone'>,
+  occurrence?: MeetingOccurrence | null
+): string | null {
+  const recurrence = resolveOccurrenceRecurrence(meeting, occurrence);
+  if (!recurrence) return null;
+  if (recurrence.end_times === 1) return 'One-time meeting';
+  const end = buildRecurrenceSummary(convertRecurrenceToPattern(recurrence)).endDescription;
+  return [getMeetingRecurrenceLabel(meeting, occurrence), end].filter(Boolean).join(', ') || null;
 }

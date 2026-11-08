@@ -25,6 +25,7 @@ export * from './meeting-list.utils';
 export * from './meeting-details.utils';
 export * from './meeting-attendance.utils';
 export * from './meeting-attendee-grid.utils';
+export * from './meeting-guests.utils';
 export * from './meeting-attendee-lock.utils';
 export * from './meeting-privacy.utils';
 export * from './past-meeting-summary.utils';

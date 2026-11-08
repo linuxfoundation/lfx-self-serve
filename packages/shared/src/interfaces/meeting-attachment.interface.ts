@@ -121,6 +121,20 @@ export interface FileTypeDisplay {
 }
 
 /**
+ * A link attachment as the meeting details drawer lists it
+ */
+export interface MeetingMaterialLink {
+  /** Attachment uid */
+  uid: string;
+  /** Link title */
+  name: string;
+  /** Validated http(s) URL, or null when the stored link is unusable */
+  url: string | null;
+  /** Host shown under the title, without `www.` */
+  host: string;
+}
+
+/**
  * Request body for creating a link-type attachment
  */
 export interface CreateLinkAttachmentRequest {
