@@ -31,6 +31,7 @@ import {
   mktgFamilyExportAgentKeys,
   mktgFamilyPrintConflicts,
   mktgFamilyPrintDocument,
+  mktgFamilyPrintKitOpenItems,
   mktgFamilyPrintBrand,
   mktgFamilyPrintNumberConflicts,
   mktgPrintBrand,
@@ -176,7 +177,9 @@ export class MktgFamilyExportService {
         // The book's chapters, in exporter order (the family's asset order, not an agent list), each with what its run left open.
         const openItems: Record<MktgFamilyExportKind, string[]> = {
           framework: frameworkAsset?.report?.gaps ?? [],
-          kit: kit?.report.findings?.missing_assets.map((missing) => missing.reason) ?? [],
+          // The kit's missing-asset reasons, then the report gaps no missing asset already states (a gap that restates a
+          // reason in other words prints once, in the reason's words).
+          kit: mktgFamilyPrintKitOpenItems(kit?.report),
           boilerplates: boilerplates?.report.gaps ?? [],
           // A question the FAQ left unanswered prints nowhere else (the FAQ pages print answered questions only), so it
           // is an open item too, once, whether or not the run's report repeats it as a gap.

@@ -50,6 +50,7 @@ import {
   mktgFamilyPrintNumberConflicts,
   mktgFamilyPrintOpenItemText,
   mktgFamilyPrintOneStop,
+  mktgFamilyPrintKitOpenItems,
   mktgFamilyPrintOpenItems,
   mktgFamilyPrintPageRange,
   mktgFamilyPrintPlan,
@@ -608,6 +609,33 @@ describe('mktgFamilyPrintOpenItemText', () => {
     expect(mktgFamilyPrintOpenItemText('Not hashed 16dd7d8270b.svg and 16dd7d8270b673.toolongext stay.')).toBe(
       'Not hashed 16dd7d8270b.svg and 16dd7d8270b673.toolongext stay.'
     );
+  });
+});
+
+describe('mktgFamilyPrintKitOpenItems', () => {
+  const report = { sources_read: [], sources_failed: [], gaps: [], notes: '' };
+
+  it('lists the missing-asset reasons, then the gaps no missing asset already states, once each', () => {
+    // A gap that restates a missing asset in other words (its label's or its reason's content words) prints once, in the reason's words;
+    // a gap about something else stands on its own, so a kit with gaps but no missing asset is never "nothing left open" (#5344 :179).
+    const findings = {
+      sources_failed: [],
+      missing_assets: [
+        { asset: 'logo_stacked' as const, reason: 'Not in the record', fix: 'Upload the stacked file as SVG.' },
+        { asset: 'palette_accent' as const, reason: 'No second colour is stated on the site.' },
+      ],
+      warnings: [],
+    };
+    const gaps = ['No stacked logo was provided.', 'The accent color is not stated.', 'No font weights were found.', 'The symbol was not uploaded.', ' '];
+    expect(mktgFamilyPrintKitOpenItems({ ...report, findings, gaps })).toEqual([
+      'Not in the record',
+      'No second colour is stated on the site.',
+      'No font weights were found.',
+      'The symbol was not uploaded.',
+    ]);
+    expect(mktgFamilyPrintKitOpenItems({ ...report, gaps: ['No symbol file.', ''] })).toEqual(['No symbol file.']);
+    expect(mktgFamilyPrintKitOpenItems({ ...report, findings: { ...findings, missing_assets: [] }, gaps: [] })).toEqual([]);
+    expect(mktgFamilyPrintKitOpenItems(null)).toEqual([]);
   });
 });
 

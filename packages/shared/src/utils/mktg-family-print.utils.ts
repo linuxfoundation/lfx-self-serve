@@ -34,7 +34,8 @@ import {
   MKTG_PORTRAIT_GLYPH_WIDTH_DEFAULT,
   MKTG_PORTRAIT_PAGE,
 } from '../constants/mktg-portrait-print.constants';
-import type { BrandKitBookView, BrandKitReportColorConflict } from '../interfaces/brand-kit.interface';
+import { BRAND_KIT_REPORT_ASSET_LABELS } from '../constants/brand-kit.constants';
+import type { BrandKitBookView, BrandKitReport, BrandKitReportColorConflict } from '../interfaces/brand-kit.interface';
 import type { FaqGroupView } from '../interfaces/faq.interface';
 import type { FoundationMessageNumberRow } from '../interfaces/foundation-message.interface';
 import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.interface';
@@ -717,6 +718,39 @@ export function mktgFamilyPrintPlan(members: MktgFamilyPrintPlanMember[]): MktgF
   }
   push({ id: 'back-cover', kind: 'back', section: MKTG_FAMILY_PRINT_LABELS.backCover, title: '', agentKey: null, index: 0, span: 1 });
   return { pages, chapters, faqPages, sourcesPage, total: n };
+}
+
+/** A text's content words for a restatement test: lowercase, letters only, four letters or more, `colour` and `color` one word. */
+function mktgFamilyPrintContentWords(text: string): Set<string> {
+  return new Set(
+    text
+      .toLocaleLowerCase()
+      .split(/[^a-z]+/)
+      .filter((word) => word.length >= 4)
+      .map((word) => word.replace(/our$/, 'or'))
+  );
+}
+
+/**
+ * The kit's open items for the family's Still open list: its missing-asset
+ * reasons, then every report gap that no missing asset already states. On the
+ * real records the gaps restate the missing-asset reasons in other words
+ * (`No stacked logo was provided.` for the stacked logo's `Not in the record`),
+ * so a gap that shares a content word with a missing asset's label or reason
+ * is that asset's restatement and prints once, in the reason's words; a gap
+ * about something else (a kit with gaps but no missing asset, or a gap on the
+ * palette when only a logo is missing) is an open item of its own, so the page
+ * never says nothing is left open while the kit's chapter lists a gap. A v1
+ * report has no findings: its gaps are the items. Pure.
+ */
+export function mktgFamilyPrintKitOpenItems(report: BrandKitReport | null | undefined): string[] {
+  if (!report) return [];
+  const missing = report.findings?.missing_assets ?? [];
+  const stated = missing.map((entry) => mktgFamilyPrintContentWords(`${BRAND_KIT_REPORT_ASSET_LABELS[entry.asset]} ${entry.reason}`));
+  const gaps = report.gaps
+    .map((gap) => gap.trim())
+    .filter((gap) => gap !== '' && !stated.some((words) => [...mktgFamilyPrintContentWords(gap)].some((word) => words.has(word))));
+  return [...missing.map((entry) => entry.reason), ...gaps];
 }
 
 /** The Sources page's Still open list: each chapter's open items, in chapter order, with the document's title; an item a record states twice prints once. */
