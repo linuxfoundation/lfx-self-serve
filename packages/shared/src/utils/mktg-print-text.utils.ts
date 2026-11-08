@@ -22,11 +22,12 @@ export function mktgPrintJoin(parts: readonly string[], dot: string = MKTG_PRINT
 
 /**
  * A key number's label that names a calendar year, so the figure beside it is a date, not a count: `founded`, `established`,
- * `since` or `est.` as the label's first word or the whole label (`Founded`, `Founded in`, `Since`, `Est.`), or `year founded`
- * / `year established` as the whole label. A label that only mentions a year or a start elsewhere (`downloads per year`,
- * `members added since launch`) counts something, and its figure is separated.
+ * `since` or `est.` as the label's first word or the whole label (`Founded`, `Founded in`, `Since`, `Est.`), or a phrase
+ * with `year` before `founded` or `established` (`Year founded`, `the year the foundation was founded`). A label that only
+ * mentions a year or a start elsewhere (`downloads per year`, `members added since launch`) counts something, and its
+ * figure is separated.
  */
-const YEAR_LABEL_REGEX = /^(?:(?:founded|established|since|est\.?)(?:\s|$)|year\s+(?:founded|established)$)/i;
+const YEAR_LABEL_REGEX = /^(?:founded|established|since|est\.?)(?:\s|$)|\byear\b.*\b(?:founded|established)\b/i;
 
 /**
  * A key number's figure as it prints: a purely numeric one gets thousands separators ("1000" → "1,000", "$8000" → "$8,000",
