@@ -211,7 +211,11 @@ export class MailingListSyncSettingsComponent {
           // `updateMailingList` returns the server's raw indexed record, which lacks fields the
           // list GET adds separately (e.g. `writer`) — merge onto the input so overrides built
           // from this result keep every field the parent's card rendering depends on (#4899 review).
-          this.updated.emit({ ...ml, ...result });
+          // `sync_mode` is explicitly overridden with the value just submitted: the indexed record
+          // doesn't carry `sync_mode` yet (upstream gap), so `...result` would otherwise be a no-op
+          // and `...ml` would feed the parent override the stale pre-save mode — snapping the toggle
+          // back and preventing the override from ever self-clearing (#4899 review).
+          this.updated.emit({ ...ml, ...result, sync_mode: syncMode });
         }
       });
   }
