@@ -1444,16 +1444,11 @@ describe('the family print source readers against the patterns they replaced', (
 
   it('reads ten thousand repeats of each trigger in under 50 ms, in every reader', () => {
     const triggers = [' (uid '.repeat(10000), 'A' + ' '.repeat(10000), '\t'.repeat(10000), '(' + '\t'.repeat(10000) + ')'];
-    // The Built from label's `(intake)` tail is read by its original pattern (its linear read is #5366), which is quadratic
-    // on a whitespace run inside the parentheses: that one trigger gets a CI-safe budget for that one reader, the fixed
-    // patterns keep the 50 ms budget, and every pair keeps the equality.
-    const tail = triggers[3];
     for (const [name, reader, old] of readers) {
       for (const input of triggers) {
-        const budget = name === 'mktgFamilyPrintBuiltFromLabel' && input === tail ? 1000 : 50;
         const started = performance.now();
         const words = reader(input);
-        expect(performance.now() - started, `${name} on ${input.length} characters`).toBeLessThan(budget);
+        expect(performance.now() - started, `${name} on ${input.length} characters`).toBeLessThan(50);
         expect(words).toBe(old(input));
       }
     }

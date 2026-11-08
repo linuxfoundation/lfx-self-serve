@@ -514,8 +514,11 @@ export function mktgFamilyPrintBuiltFromLabel(source: string): string {
   else if (parts) return host(trimmed);
   else if (/^LFX project record\b/i.test(trimmed)) label = trimmed.replace(/^(LFX project record)\b.*$/i, '$1');
   else {
-    const internal = new RegExp(`\\s*\\((?:${MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS.join('|')})\\)$`, 'i');
-    label = trimmed.replace(internal, '');
+    // A parenthesis holding only the run's own terms at the end, as `\s*\((?:intake|…)\)$` dropped it: the anchored
+    // `(term)$` is found first (it fails fast everywhere but at a `(`), and trimEnd() strips the same `\s` set the
+    // pattern's leading `\s*` did, without its retry at every whitespace character (quadratic on a long run).
+    const tail = new RegExp(`\\((?:${MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS.join('|')})\\)$`, 'i').exec(trimmed);
+    label = tail ? trimmed.slice(0, tail.index).trimEnd() : trimmed;
   }
   return label ? label[0].toLocaleUpperCase() + label.slice(1) : '';
 }
