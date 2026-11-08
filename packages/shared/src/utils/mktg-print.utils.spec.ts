@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES,
   FRAMEWORK_PORTRAIT_SEP,
   MKTG_PRINT_DOT,
   MKTG_PRINT_INK_ON_DARK,
@@ -17,6 +18,7 @@ import {
   MKTG_PRINT_REVERSED_FILTER,
 } from '../constants/mktg-print.constants';
 import { mktgPrintJoin } from './mktg-print-text.utils';
+import { mktgReadableSourceName } from './mktg-readable-source.utils';
 import { MKTG_READABLE_SOURCE } from '../constants/mktg-readable-source.constants';
 import { BrandKitLogoRef, BrandKitRevision } from '../interfaces/brand-kit.interface';
 import { FoundationMessageContent, FoundationMessageReport } from '../interfaces/foundation-message.interface';
@@ -389,6 +391,125 @@ describe('the framework’s print', () => {
     expect(foundationMessagePrintReportText('The members page https://www.orbit.example.org/members?x=1 answered with a sign-in wall.')).toBe(
       'The members page orbit.example.org/members answered with a sign-in wall.'
     );
+  });
+
+  it('labels every source of the five print fixtures and the live AAIF record, and the adversarial ones, as the patterns it replaced did', () => {
+    // The two patterns CodeQL flagged (js/polynomial-redos), kept here as fixtures, and the label as it computed them on 7 November.
+    const BARE_ADDRESS_REGEX = /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:\/\S*)?$/i;
+    const BARE_ADDRESS_REMARK_REGEX = /^(\S+)(\s*\(.*\))?$/;
+    const SCHEME_ADDRESS_REGEX = /^(https?:\/\/\S+)(.*)$/;
+    const HOST_PATH_REGEX = /^[a-z0-9.-]+\//i;
+    const before = (source: string): string => {
+      const trimmed = source.trim();
+      const type = FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES.find((prefix) => trimmed.startsWith(`${prefix}: `));
+      const rest = type ? trimmed.slice(type.length + 2).trim() : trimmed;
+      const first = rest.split(/\s/)[0];
+      const bare = BARE_ADDRESS_REGEX.test(first) && mktgReadableSourceName(first) === first ? rest.match(BARE_ADDRESS_REMARK_REGEX) : null;
+      const url = rest.match(SCHEME_ADDRESS_REGEX) ?? bare;
+      if (!url) return mktgReadableSourceName(rest);
+      const [, written, remarkRaw = ''] = url;
+      const address = /^https?:\/\//i.test(written) ? written : `https://${written}`;
+      const readable = mktgReadableSourceName(address);
+      const name = HOST_PATH_REGEX.test(readable) ? readable.split('/')[0] : readable;
+      const remark = remarkRaw
+        .trim()
+        .replace(/^\((.*)\)$/, '$1')
+        .trim();
+      if (type === 'Press release') return `The press release (${name})${remark ? `${FRAMEWORK_PORTRAIT_SEP}${remark}` : ''}`;
+      return mktgPrintJoin([name, remark], FRAMEWORK_PORTRAIT_SEP);
+    };
+    // Every Sources line of the print harness's five framework fixtures (tools/print-qa, `framework.<name>.json`), read from the
+    // seeded records' `sources_read` and `sources_failed` as the component passes each `source.name`; the AAIF fixture is the
+    // served AAIF record's own copy, the minimal record has no sources.
+    const fixtures = {
+      aaif: {
+        sources_read: [
+          'Website: https://aaif.io (home)',
+          'Website: https://aaif.io/llms.txt',
+          'Website: https://aaif.io/md/about',
+          'Website: https://aaif.io/md/members',
+          'Website: https://aaif.io/md/events',
+          'Website: https://aaif.io/md/projects',
+          'Link: https://github.com/aaif (org page and repos API)',
+          'Press release: https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation',
+          'LFX record agentic-ai-foundation and standard metrics',
+        ],
+        sources_failed: [],
+      },
+      overfull: {
+        sources_read: [
+          'Website: https://www.cncf.io (home)',
+          'Website: https://www.cncf.io/projects',
+          'Website: https://www.cncf.io/reports/cncf-annual-survey-2025',
+          'Link: https://github.com/cncf (org page and repos API)',
+          'Press release: https://www.cncf.io/announcements/kubecon-cloudnativecon-north-america-closes',
+          'LFX record cncf and standard metrics',
+        ],
+        sources_failed: ['https://www.cncf.io/certification/training/catalog'],
+      },
+      longnames: {
+        sources_read: [
+          'Website: https://www.cncf.io (home)',
+          'Website: https://www.cncf.io/projects',
+          'Website: https://www.cncf.io/reports/cncf-annual-survey-2025',
+          'Link: https://github.com/cncf (org page and repos API)',
+          'Press release: https://www.cncf.io/announcements/kubecon-cloudnativecon-north-america-closes',
+          'LFX record cncf and standard metrics',
+        ],
+        sources_failed: ['https://www.cncf.io/certification/training/catalog'],
+      },
+      logoless: {
+        sources_read: [
+          'Website: https://aaif.io (home)',
+          'Website: https://aaif.io/llms.txt',
+          'Website: https://aaif.io/md/about',
+          'Website: https://aaif.io/md/members',
+          'Website: https://aaif.io/md/events',
+          'Website: https://aaif.io/md/projects',
+          'Link: https://github.com/aaif (org page and repos API)',
+          'Press release: https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation',
+          'LFX record agentic-ai-foundation and standard metrics',
+        ],
+        sources_failed: [],
+      },
+      minimal: { sources_read: [], sources_failed: [] },
+    };
+    const recorded = Object.values(fixtures).flatMap((report) => [...report.sources_read, ...report.sources_failed]);
+    // Adversarial: runs of `!(` and `!!` after a scheme, long whitespace, and the backtracking shapes, sized so the old patterns
+    // still answer in this test (at forty thousand characters they took over 600 ms each).
+    const run = (piece: string, times: number): string => piece.repeat(times);
+    const adversarial = [
+      run('!(', 40),
+      `orbit.example.org/${run('!(', 2_000)}`,
+      `orbit.example.org ${run('!(', 2_000)}`,
+      `http://${run('!!', 2_000)}`,
+      `http://${run('!!', 2_000)} ${run('!(', 2_000)}`,
+      `https://orbit.example.org/${run('!', 5_000)}\n`,
+      `orbit.example.org${run(' ', 5_000)}`,
+      `orbit.example.org${run(' ', 2_000)}${run('(', 2_000)}`,
+      `orbit.example.org${run(' ', 2_000)}(${run('x', 2_000)})`,
+      `orbit.example.org/${run('(', 2_000)} x`,
+      `Website: https://orbit.example.org/${run('x', 10_000)} (${run('!', 2_000)})`,
+      `Link: ${run('\t', 2_000)}orbit.example.org`,
+      `Press release: https://orbit.example.org/${run('(', 2_000)}${run(')', 2_000)}`,
+    ];
+    const rows = [...recorded, ...adversarial];
+    expect(rows).toHaveLength(45);
+    const started = performance.now();
+    for (const source of rows) expect(foundationMessagePrintSourceLabel(source)).toBe(before(source));
+    expect(performance.now() - started).toBeLessThan(500);
+    // The recorded rows print as the Sources page shows them.
+    expect(fixtures.aaif.sources_read.map(foundationMessagePrintSourceLabel)).toEqual([
+      `aaif.io${FRAMEWORK_PORTRAIT_SEP}home`,
+      'aaif.io',
+      'aaif.io',
+      'aaif.io',
+      'aaif.io',
+      'aaif.io',
+      `github.com${FRAMEWORK_PORTRAIT_SEP}org page and repos API`,
+      'The press release (linuxfoundation.org)',
+      'The LFX project record',
+    ]);
   });
 
   it('reads an address and its remark in one pass of the source, however long and hostile the source is', () => {
