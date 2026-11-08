@@ -337,6 +337,17 @@ describe('the framework’s print', () => {
     expect(foundationMessagePrintSourceLabel('Link: https://github.com/orbit (org page and repos API)')).toBe(
       `github.com${FRAMEWORK_PORTRAIT_SEP}org page and repos API`
     );
+    // A source named by a field the record wrote (the family's grammar: a name, a colon, a web address): the host with the field's
+    // name as its remark; a name ending in "press release" is the press release; the record's own words for the LFX record.
+    expect(foundationMessagePrintSourceLabel('LFX project record agentic-ai-foundation and standard metrics')).toBe(MKTG_READABLE_SOURCE.lfxRecord);
+    expect(
+      foundationMessagePrintSourceLabel(
+        'Launch press release: https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation'
+      )
+    ).toBe('The press release (linuxfoundation.org)');
+    expect(foundationMessagePrintSourceLabel('Brand page: https://aaif.io/brand')).toBe(`aaif.io${FRAMEWORK_PORTRAIT_SEP}brand page`);
+    expect(foundationMessagePrintSourceLabel('Press release: https://x.org/p')).toBe('The press release (x.org)');
+    expect(foundationMessagePrintSourceLabel('Note: something in words')).toBe('Note: something in words');
     expect(foundationMessagePrintSourceLabel('orbit.example.org/md/about')).toBe('orbit.example.org');
     expect(foundationMessagePrintSourceLabel('docs.orbit.example.org')).toBe('docs.orbit.example.org');
     expect(foundationMessagePrintSourceLabel('orbit.example.org (home)')).toBe(`orbit.example.org${FRAMEWORK_PORTRAIT_SEP}home`);
@@ -399,17 +410,24 @@ describe('the framework’s print', () => {
     const BARE_ADDRESS_REMARK_REGEX = /^(\S+)(\s*\(.*\))?$/;
     const SCHEME_ADDRESS_REGEX = /^(https?:\/\/\S+)(.*)$/;
     const HOST_PATH_REGEX = /^[a-z0-9.-]+\//i;
+    // The reader as it stood too: the record known as "LFX record" alone; the framework's "LFX project record" line fell through
+    // to the reader's last rule, a phrase as written.
+    const readableBefore = (source: string): string => {
+      const text = source.trim();
+      if (/^LFX record/i.test(text)) return MKTG_READABLE_SOURCE.lfxRecord;
+      return /^LFX project record\s+[A-Za-z0-9]/i.test(text) ? text : mktgReadableSourceName(source);
+    };
     const before = (source: string): string => {
       const trimmed = source.trim();
       const type = FOUNDATION_MESSAGE_PRINT_SOURCE_TYPES.find((prefix) => trimmed.startsWith(`${prefix}: `));
       const rest = type ? trimmed.slice(type.length + 2).trim() : trimmed;
       const first = rest.split(/\s/)[0];
-      const bare = BARE_ADDRESS_REGEX.test(first) && mktgReadableSourceName(first) === first ? rest.match(BARE_ADDRESS_REMARK_REGEX) : null;
+      const bare = BARE_ADDRESS_REGEX.test(first) && readableBefore(first) === first ? rest.match(BARE_ADDRESS_REMARK_REGEX) : null;
       const url = rest.match(SCHEME_ADDRESS_REGEX) ?? bare;
-      if (!url) return mktgReadableSourceName(rest);
+      if (!url) return readableBefore(rest);
       const [, written, remarkRaw = ''] = url;
       const address = /^https?:\/\//i.test(written) ? written : `https://${written}`;
-      const readable = mktgReadableSourceName(address);
+      const readable = readableBefore(address);
       const name = HOST_PATH_REGEX.test(readable) ? readable.split('/')[0] : readable;
       const remark = remarkRaw
         .trim()
@@ -498,6 +516,23 @@ describe('the framework’s print', () => {
     const started = performance.now();
     for (const source of rows) expect(foundationMessagePrintSourceLabel(source)).toBe(before(source));
     expect(performance.now() - started).toBeLessThan(500);
+    // The two readings added on 8 November are the only ones that differ from the label as it stood: the record named "LFX project
+    // record", and a source the record named by a field of its own before a web address. Known prefixes and bare addresses read as before.
+    const added = [
+      'LFX project record agentic-ai-foundation and standard metrics',
+      'Launch press release: https://www.linuxfoundation.org/press/x',
+      'Brand page: https://aaif.io/brand',
+    ];
+    expect(added.map(before)).toEqual(added);
+    // A bare "LFX project record", and the kit's "was not found" row, read as written before and after.
+    const bare = ['LFX project record', 'LFX project record — The LFX project record was not found for this project’s LFX One ID or name'];
+    expect(bare.map(foundationMessagePrintSourceLabel)).toEqual(bare.map(before));
+    expect(bare.map(foundationMessagePrintSourceLabel)).toEqual(bare);
+    expect(added.map(foundationMessagePrintSourceLabel)).toEqual([
+      MKTG_READABLE_SOURCE.lfxRecord,
+      'The press release (linuxfoundation.org)',
+      `aaif.io${FRAMEWORK_PORTRAIT_SEP}brand page`,
+    ]);
     // The recorded rows print as the Sources page shows them.
     expect(fixtures.aaif.sources_read.map(foundationMessagePrintSourceLabel)).toEqual([
       `aaif.io${FRAMEWORK_PORTRAIT_SEP}home`,
