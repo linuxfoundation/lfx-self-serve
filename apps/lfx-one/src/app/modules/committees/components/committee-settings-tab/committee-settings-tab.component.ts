@@ -455,29 +455,43 @@ export class CommitteeSettingsTabComponent {
 
     ref.onClose.pipe(take(1)).subscribe((result: MailingListPickerDialogResult | null) => {
       if (!result) return;
-      this.saveMailingListAssociation(result.selectedUids, associatedUids);
+      this.saveMailingListAssociation(result.selectedUids, associatedUids, result.syncModes);
     });
   }
 
-  private saveMailingListAssociation(currentSelection: Set<string>, originalSelectedUids: Set<string>): void {
+  private saveMailingListAssociation(currentSelection: Set<string>, originalSelectedUids: Set<string>, syncModes: Map<string, MailingListSyncMode>): void {
     const committee = this.committee();
     if (!committee?.uid) return;
 
     const added = [...currentSelection].filter((uid) => !originalSelectedUids.has(uid));
     const removed = [...originalSelectedUids].filter((uid) => !currentSelection.has(uid));
+    // Lists that stay linked across this save but may have had only their sync direction changed
+    // in the picker dialog (#4026) — `added`/`removed` above only cover link/unlink, so a
+    // direction-only change here needs its own update call.
+    const directionChanged = [...currentSelection]
+      .filter((uid) => originalSelectedUids.has(uid))
+      .filter((uid) => {
+        const desired = syncModes.get(uid);
+        if (desired === undefined) return false;
+        const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
+        const current = ml?.sync_mode ?? MailingListSyncMode.MANUAL;
+        return desired !== current;
+      });
 
-    if (added.length === 0 && removed.length === 0) {
+    if (added.length === 0 && removed.length === 0 && directionChanged.length === 0) {
       return;
     }
 
     const updates$: Observable<{ uid: string; success: boolean; status?: number }>[] = [];
 
-    // Associate: set committee_uid on newly selected MLs
+    // Associate: set committee_uid on newly selected MLs, applying any direction chosen for it
+    // in the same dialog session (#4026) — buildMlUpdatePayload falls back to MANUAL when no
+    // explicit direction was chosen (e.g. the sync settings feature flag is off).
     for (const uid of added) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid);
       if (ml) {
         updates$.push(
-          this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, committee.uid)).pipe(
+          this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid))).pipe(
             map(() => ({ uid, success: true })),
             catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
           )
@@ -491,6 +505,19 @@ export class CommitteeSettingsTabComponent {
       if (ml) {
         updates$.push(
           this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, null)).pipe(
+            map(() => ({ uid, success: true })),
+            catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
+          )
+        );
+      }
+    }
+
+    // Direction-only change: the list stays linked to this same committee, only its sync_mode moves.
+    for (const uid of directionChanged) {
+      const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
+      if (ml) {
+        updates$.push(
+          this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid))).pipe(
             map(() => ({ uid, success: true })),
             catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
           )
@@ -538,14 +565,25 @@ export class CommitteeSettingsTabComponent {
     return fallback;
   }
 
-  private buildMlUpdatePayload(ml: GroupsIOMailingList, committeeUid: string | null): Partial<CreateMailingListRequest> {
+  private buildMlUpdatePayload(
+    ml: GroupsIOMailingList,
+    committeeUid: string | null,
+    explicitSyncMode?: MailingListSyncMode
+  ): Partial<CreateMailingListRequest> {
     // Preserve the existing sync direction (#4024) only when the committee is unchanged —
     // detaching/reattaching the SAME committee is a full-resource PUT, so omitting sync_mode would
     // silently reset it to manual. Re-linking to a DIFFERENT committee must reset to manual instead,
     // or auto-sync would silently start against a committee nobody configured it for (#4880 review).
+    //
+    // `explicitSyncMode` lets the picker dialog's per-list direction control (#4026) win over both
+    // of those defaults — it's only populated (non-undefined) when the admin actually chose a
+    // direction with the sync settings feature flag on, so an unset value here always falls back
+    // to the #4024/#4880 behavior above untouched.
     const sameCommittee = !!committeeUid && ml.committees?.[0]?.uid === committeeUid;
     let syncMode: MailingListSyncMode | undefined;
-    if (sameCommittee) {
+    if (explicitSyncMode !== undefined) {
+      syncMode = explicitSyncMode;
+    } else if (sameCommittee) {
       syncMode = ml.sync_mode;
     } else if (committeeUid) {
       syncMode = MailingListSyncMode.MANUAL;

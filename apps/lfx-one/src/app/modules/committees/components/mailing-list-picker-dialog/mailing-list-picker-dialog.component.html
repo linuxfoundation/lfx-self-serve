@@ -40,6 +40,9 @@
             <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Email</th>
             <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Visibility</th>
             <th class="py-2.5 px-4 text-left text-[11.5px] font-medium text-gray-500">Type</th>
+            @if (syncEnabled()) {
+              <th class="py-2.5 px-4 text-left text-[11.5px] font-medium text-gray-500">Sync Direction</th>
+            }
           </tr>
         </thead>
         <tbody>
@@ -80,6 +83,22 @@
                 }
               </td>
               <td class="py-3 px-4 text-gray-500">{{ ml.type | mailingListType }}</td>
+              @if (syncEnabled()) {
+                @let disabledReason = ml | mailingListDirectionDisabledReason: selectedMailingListUids() : activeAutoSyncUid() : mailingLists;
+                <td class="py-3 px-4" data-testid="settings-ml-picker-direction-cell" (click)="$event.stopPropagation()" (keydown)="$event.stopPropagation()">
+                  <lfx-select
+                    [form]="mlDirectionForm"
+                    [control]="ml.uid"
+                    [options]="directionOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    size="small"
+                    styleClass="w-full !text-[12px]"
+                    [tooltip]="disabledReason"
+                    tooltipPosition="top"
+                    [dataTest]="'settings-ml-picker-direction-' + ml.uid"></lfx-select>
+                </td>
+              }
             </tr>
           }
         </tbody>
@@ -89,6 +108,12 @@
       </div>
     }
   </div>
+
+  @if (syncEnabled() && activeAutoSyncUid()) {
+    <p class="text-[11.5px] text-gray-400 -mt-2">
+      Only one mailing list per committee can have automatic sync configured at a time — set it back to Manual before choosing a direction for another list.
+    </p>
+  }
 </div>
 
 <div class="flex justify-end gap-2 mt-4">

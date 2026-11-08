@@ -523,10 +523,9 @@ describe('CommitteeSettingsTabComponent — mailing list write access', () => {
     await setup([list('ml-1', true), list('ml-2', true)]);
     updateMailingList.mockImplementation(() => throwError(() => ({ status: 403 })));
 
-    (component as unknown as { saveMailingListAssociation(a: Set<string>, b: Set<string>): void }).saveMailingListAssociation(
-      new Set(['ml-1', 'ml-2']),
-      new Set()
-    );
+    (
+      component as unknown as { saveMailingListAssociation(a: Set<string>, b: Set<string>, c: Map<string, MailingListSyncMode>): void }
+    ).saveMailingListAssociation(new Set(['ml-1', 'ml-2']), new Set(), new Map());
 
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Permission denied' }));
   });
@@ -535,10 +534,9 @@ describe('CommitteeSettingsTabComponent — mailing list write access', () => {
     await setup([list('ml-1', true), list('ml-2', true)]);
     updateMailingList.mockImplementation((uid: string) => throwError(() => ({ status: uid === 'ml-1' ? 403 : 500 })));
 
-    (component as unknown as { saveMailingListAssociation(a: Set<string>, b: Set<string>): void }).saveMailingListAssociation(
-      new Set(['ml-1', 'ml-2']),
-      new Set()
-    );
+    (
+      component as unknown as { saveMailingListAssociation(a: Set<string>, b: Set<string>, c: Map<string, MailingListSyncMode>): void }
+    ).saveMailingListAssociation(new Set(['ml-1', 'ml-2']), new Set(), new Map());
 
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Failed to update mailing list associations' }));
   });
@@ -638,7 +636,7 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
 
     // Re-selecting the same already-associated list: not in originalSelectedUids → treated as
     // "added" by saveMailingListAssociation, which is exactly the re-link-same-committee case.
-    (component as any).saveMailingListAssociation(new Set(['ml-1']), new Set());
+    (component as any).saveMailingListAssociation(new Set(['ml-1']), new Set(), new Map());
 
     expect(updateMailingList).toHaveBeenCalledOnce();
     const payload = updateMailingList.mock.calls[0][1];
@@ -650,7 +648,7 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
     const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-OLD' }], sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
     await createFixture([ml]);
 
-    (component as any).saveMailingListAssociation(new Set(['ml-1']), new Set());
+    (component as any).saveMailingListAssociation(new Set(['ml-1']), new Set(), new Map());
 
     const payload = updateMailingList.mock.calls[0][1];
     expect(payload.committee_uid).toBe('committee-1');
@@ -662,10 +660,53 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
     await createFixture([ml]);
 
     // Not in currentSelection but present in originalSelectedUids → treated as "removed".
-    (component as any).saveMailingListAssociation(new Set(), new Set(['ml-1']));
+    (component as any).saveMailingListAssociation(new Set(), new Set(['ml-1']), new Map());
 
     const payload = updateMailingList.mock.calls[0][1];
     expect(payload.committee_uid).toBeNull();
     expect(payload.sync_mode).toBeUndefined();
+  });
+
+  // #4026: the picker dialog's per-list sync-direction control passes an explicit syncMode that
+  // overrides buildMlUpdatePayload's committee-change defaults above.
+  it('applies the explicit direction chosen in the picker dialog when linking a list', async () => {
+    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-OLD' }], sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
+    await createFixture([ml]);
+
+    (component as any).saveMailingListAssociation(new Set(['ml-1']), new Set(), new Map([['ml-1', MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE]]));
+
+    const payload = updateMailingList.mock.calls[0][1];
+    expect(payload.committee_uid).toBe('committee-1');
+    // Without the explicit override this would reset to MANUAL (different-committee re-link).
+    expect(payload.sync_mode).toBe(MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE);
+  });
+
+  it('issues an update for a list that stays linked but only has its sync direction changed', async () => {
+    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-1' }], sync_mode: MailingListSyncMode.MANUAL });
+    await createFixture([ml]);
+
+    (component as any).saveMailingListAssociation(
+      new Set(['ml-1']),
+      new Set(['ml-1']),
+      new Map([['ml-1', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST]])
+    );
+
+    expect(updateMailingList).toHaveBeenCalledOnce();
+    const payload = updateMailingList.mock.calls[0][1];
+    expect(payload.committee_uid).toBe('committee-1');
+    expect(payload.sync_mode).toBe(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST);
+  });
+
+  it('skips the update for a list that stays linked with the same sync direction', async () => {
+    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-1' }], sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
+    await createFixture([ml]);
+
+    (component as any).saveMailingListAssociation(
+      new Set(['ml-1']),
+      new Set(['ml-1']),
+      new Map([['ml-1', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST]])
+    );
+
+    expect(updateMailingList).not.toHaveBeenCalled();
   });
 });
