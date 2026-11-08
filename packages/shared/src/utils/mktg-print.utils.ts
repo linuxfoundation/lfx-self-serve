@@ -31,7 +31,7 @@ import type {
   MktgPrintBrand,
   MktgPrintLogo,
 } from '../interfaces/mktg-print.interface';
-import { brandKitContrastRatio, brandKitLuminance, brandKitTint } from './brand-kit-book.utils';
+import { brandKitContrastRatio, brandKitDerivable, brandKitLuminance, brandKitTint } from './brand-kit-book.utils';
 import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitLogoImage, brandKitWeights } from './brand-kit.utils';
 import {
   foundationMessageAudienceRows,
@@ -134,8 +134,13 @@ export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
   let logoOnDark: MktgPrintLogo | null = null;
   if (reversed?.src) {
     logoOnDark = { src: reversed.src, alt, filter: '' };
-  } else if (primary?.src) {
-    logoOnDark = { src: primary.src, alt, filter: MKTG_PRINT_REVERSED_FILTER };
+  } else if (primary?.src && files.primary?.svg) {
+    // The one rule for a dark ground (supplied > derived > plate): a one-colour primary reverses by filter; a
+    // multi-colour one would flatten to one shape, so it is drawn in full colour on the white plate, and every print's
+    // dark cover draws the plate from this flag rather than deciding for itself.
+    logoOnDark = brandKitDerivable(files).lockup
+      ? { src: primary.src, alt, filter: MKTG_PRINT_REVERSED_FILTER }
+      : { src: primary.src, alt, filter: '', plate: true };
   }
   const darkIsHex = BRAND_KIT_HEX_REGEX.test(dark);
   // Text on the kit's dark panels takes whichever ink reads better against it:

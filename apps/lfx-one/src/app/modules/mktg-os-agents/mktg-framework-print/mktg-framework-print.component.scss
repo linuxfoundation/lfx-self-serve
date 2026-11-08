@@ -25,10 +25,9 @@
 }
 
 @media print {
-  .lfx-framework-print {
-    page: mktg-framework;
-    /* The sides' room is styles.scss's, on every print root (the page's margin is the engine's there). */
-  }
+  /* The root names no page: the print frame's unnamed @page rule is the document's setup, and only a portrait frame
+     (`.pp-page`) names a page (one named page per print, the grammar's rule: a second name forces a break at every
+     change of name). The sides' room is styles.scss's, on every print root (the page's margin is the engine's there). */
 
   .mfp-cover {
     /* The page prints with no margin; its sheet's head and foot take 1.1in on A4 and Letter, and 0.1in of

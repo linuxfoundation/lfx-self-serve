@@ -1042,7 +1042,8 @@ describe('MktgSlidesExportService', () => {
       }
       // Seventeen different images under the same content-addressed prefix as the logo: an icon in one colour is one key.
       expect(new Set([...icons.dark, ...icons.light, icons.highlight]).size).toBe(ICON_IMAGES);
-      expect(store.publicImages.size).toBe(1 + ICON_IMAGES);
+      // Beside them the primary lockup and its two recolours (reversed, one-colour): the fixture's lockup carries ink.
+      expect(store.publicImages.size).toBe(3 + ICON_IMAGES);
       const bytesOf = (url: string): Buffer => store.publicImages.get(url.replace('https://cdn.example.test/', '')) as Buffer;
       // Each drawn square at the icon side, not the logo's.
       expect(pngSize(bytesOf(icons.dark[0]))).toEqual({ width: 240, height: 240 });

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard } from '@angular/cdk/clipboard';
+import { DialogRef } from '@angular/cdk/dialog';
 import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
 import { environment } from '@environments/environment';
 import { MeetingHomeRowProject } from '@lfx-one/shared/interfaces';
@@ -12,6 +13,8 @@ import { UiMenuItemComponent } from '@shared/uikit/menu/menu-item.component';
 import { UiMenuComponent } from '@shared/uikit/menu/menu.component';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
+
+import { take } from 'rxjs';
 
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
@@ -31,6 +34,7 @@ export class MeetingDetailsHeaderComponent {
   private readonly clipboard = inject(Clipboard);
   private readonly toast = inject(UiToastService);
   private readonly drawer = inject(UiDrawerContext);
+  private readonly dialogRef = inject(DialogRef);
   private readonly editService = inject(MeetingsHomeEditService);
   protected readonly context = inject(MeetingDetailsContext);
 
@@ -51,7 +55,9 @@ export class MeetingDetailsHeaderComponent {
     // An ended date links to its past meeting record, which takes no passcode.
     const pastId = this.context.pastMeetingId();
     const meeting = this.context.meeting();
-    const url = getMeetingShareUrl(environment.urls.home, pastId ?? meeting.id, pastId ? null : meeting.password);
+    // A coming date picked on a past row links to its series, not the past record the row holds.
+    const id = pastId ?? (isPastMeetingCalendarRow(meeting) ? meeting.meeting_id : meeting.id);
+    const url = getMeetingShareUrl(environment.urls.home, id, pastId ? null : meeting.password);
     if (!url || !this.clipboard.copy(url)) {
       this.toast.show({ variant: 'error', position: 'bottom-center', message: 'Copy Failed', description: 'Failed to copy link. Please try again.' });
       return;
@@ -60,9 +66,10 @@ export class MeetingDetailsHeaderComponent {
   }
 
   protected editMeeting(): void {
-    // The page's edit flow outlives the drawer, so it closes first and the editor opens over the page.
-    this.drawer.requestClose();
-    this.editService.edit(this.context.shownRow());
+    // An explicit leave: close without the close guard, then open the editor once focus is handed back.
+    const row = this.context.shownRow();
+    this.dialogRef.closed.pipe(take(1)).subscribe(() => this.editService.edit(row));
+    this.dialogRef.close();
   }
 
   protected close(): void {

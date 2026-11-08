@@ -199,12 +199,12 @@ export interface MeetingHomeArtifact {
 }
 
 /** What a meetings home attendance count or bar segment measures; `attendedPoor` is attendance under 50%. */
-export type MeetingHomeAttendanceKind = 'yes' | 'maybe' | 'no' | 'attended' | 'attendedPoor';
+export type MeetingHomeAttendanceKind = 'yes' | 'maybe' | 'no' | 'attended' | 'attendedPoor' | 'absent';
 
 /** One answer count in the meetings home attendance legend. */
 export interface MeetingHomeAttendanceCount {
   kind: MeetingHomeAttendanceKind;
-  /** "Yes", "Maybe" or "No". */
+  /** "Yes", "Maybe", "No", or "Attended" and "Absent" for a past meeting. */
   label: string;
   count: number;
 }
@@ -224,7 +224,7 @@ export interface MeetingHomeAttendance {
   ariaLabel: string;
   /** Bar segments with a count above zero. */
   segments: MeetingHomeAttendanceSegment[];
-  /** Yes, Maybe and No counts, zeros included; empty for a past meeting. */
+  /** Yes, Maybe and No counts, zeros included; for a past meeting empty, or Attended and Absent when asked for. */
   answers: MeetingHomeAttendanceCount[];
   /** Invitees with no answer; null for a past meeting. */
   noResponse: number | null;
@@ -335,4 +335,13 @@ export interface MeetingDetailsArtifactData {
   /** Download link of the transcript file; only its presence is used. */
   transcriptUrl: string | null;
   summary: PastMeetingSummary | null;
+}
+
+/** Join link of a meeting date; `url` and `error` are both null while it loads or outside the join window. */
+export interface MeetingJoinLink {
+  url: string | null;
+  /** Why the link could not be built, shown to the viewer. */
+  error: string | null;
+  /** Error code of a failed request, such as `NOT_REGISTERED_FOR_MEETING`. */
+  code: string | null;
 }

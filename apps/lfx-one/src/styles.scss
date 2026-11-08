@@ -10,6 +10,10 @@
    outside the component's view; see the note in the partial. */
 @use 'styles/navbar';
 @use 'styles/mktg-family-print';
+/* The portrait print grammar (fixed Letter frames, `pp-*`): global for the same reason, its type helpers
+   are set on content a document projects into the frame. */
+@use 'app/modules/mktg-os-agents/components/mktg-portrait/mktg-portrait';
+@use 'app/modules/mktg-os-agents/mktg-brand-kit-print/mktg-brand-kit-pages';
 /* LFX UI Library tokens (generated); see shared/uikit/README.md */
 @use 'styles/ui-tokens.css';
 
@@ -61,10 +65,10 @@
 
   body.lfx-print-brand-kit {
     /* The app shell takes no room and leaves no trailing blank sheets; the
-       book, positioned against the viewport, is what the sheets hold. */
+       book, positioned against the viewport, is what the sheets hold. The body
+       names no page: only the book's pages do (one named page per print). */
     height: 0 !important;
     overflow: hidden !important;
-    page: brand-kit;
 
     & * {
       visibility: hidden;
@@ -141,9 +145,9 @@
   }
 
   body.lfx-print-framework {
+    /* The body names no page: the print frame's unnamed @page rule is the setup. */
     height: 0 !important;
     overflow: hidden !important;
-    page: mktg-framework;
 
     & * {
       visibility: hidden;

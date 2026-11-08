@@ -2,7 +2,38 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+@if (hostKey(); as key) {
+  <lfx-meeting-details-host-key [hostKey]="key" />
+}
+
+@if (context.organizer() && !ended()) {
+  <lfx-meeting-details-rsvp />
+}
+
 @if (ended() && context.fullAccess()) {
+  @if (attendance() === undefined) {
+    <div class="flex flex-col gap-[6px]" aria-busy="true" data-testid="meeting-details-attendance-loading">
+      <lfx-ui-skeleton width="60%" height="16px" />
+      <lfx-ui-skeleton height="5px" />
+    </div>
+  } @else if (attendance(); as attendance) {
+    <div class="flex flex-col gap-[16px]">
+      <lfx-meeting-home-attendance [attendance]="attendance" data-testid="meeting-details-attendance" />
+      @if (participants()?.length && context.canViewGuests()) {
+        <lfx-meeting-attendee-grid
+          [people]="participants() ?? []"
+          past
+          [columns]="8"
+          fluid
+          [showStats]="false"
+          viewAllVariant="tertiary-accent"
+          viewAllSize="large"
+          (viewAll)="context.tab.set('guests')"
+          data-testid="meeting-details-attendance-grid" />
+      }
+    </div>
+  }
+
   <div class="h-px bg-gray-200" aria-hidden="true"></div>
   <section class="flex flex-col gap-[8px]" aria-labelledby="meeting-details-tools-heading" data-testid="meeting-details-tools-card">
     <div class="flex flex-col gap-[2px]">

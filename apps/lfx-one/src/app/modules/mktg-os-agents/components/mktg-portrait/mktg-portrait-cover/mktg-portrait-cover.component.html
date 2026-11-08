@@ -1,0 +1,31 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-mktg-portrait-page [look]="look()" [book]="book()" pageId="cover" [page]="page()" section="Cover" [dark]="true" [bare]="true">
+  <div class="pp-grid-ground" [lfxPpRect]="ground()" aria-hidden="true" data-testid="mktg-portrait-cover-ground"></div>
+  @if (logo(); as logo) {
+    <div [lfxPpRect]="lockup()">
+      <span [lfxPpPlate]="logo.plate ? plateHeight : null">
+        <img
+          class="w-auto"
+          [style.height.px]="lockupHeight"
+          [src]="logo.src"
+          [alt]="logo.alt"
+          [style.filter]="logo.filter || null"
+          data-testid="mktg-portrait-cover-logo" />
+      </span>
+    </div>
+  }
+  <div [lfxPpRect]="text()">
+    <div class="pp-cover-title" data-testid="mktg-portrait-cover-title">{{ title() }}</div>
+    @if (lede()) {
+      <p class="pp-cover-lede" data-testid="mktg-portrait-cover-lede">{{ lede() }}</p>
+    }
+  </div>
+  <div [lfxPpRect]="strip()">
+    <div class="pp-cover-strip" [class.pp-cover-strip--wrapped]="stripText().wraps" data-testid="mktg-portrait-cover-strip">
+      <span>{{ stripText().left }}</span>
+      <span>{{ stripText().right }}</span>
+    </div>
+  </div>
+</lfx-mktg-portrait-page>

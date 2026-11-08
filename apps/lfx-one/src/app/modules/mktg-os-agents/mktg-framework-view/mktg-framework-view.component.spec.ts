@@ -578,9 +578,10 @@ describe('MktgFrameworkViewComponent', () => {
     expect(print.style.getPropertyValue('--mfp-dark')).toBe(kit.kit.dark);
     expect(print.style.getPropertyValue('--mfp-accent')).toBe(kit.kit.accent);
     expect(print.style.getPropertyValue('--mfp-font')).toContain('Montserrat');
-    // No reversed artwork in the kit: the cover draws the primary lockup white.
+    // No reversed artwork in the kit, and the fixture's lockup is drawn in three colours: a filter would flatten it,
+    // so the cover draws the primary lockup in full colour on the dark (a one-ink lockup reverses by filter instead).
     expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
-    expect(query('mktg-framework-print-cover-logo')?.style.filter).toContain('invert');
+    expect(query('mktg-framework-print-cover-logo')?.style.filter).toBe('');
 
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
     expect(printer.prepare).toHaveBeenCalledWith('Montserrat');

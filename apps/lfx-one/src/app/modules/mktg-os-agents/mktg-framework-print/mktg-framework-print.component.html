@@ -61,12 +61,15 @@
       }
     </div>
     @if (v.brand.logoOnDark; as logo) {
-      <img
-        class="h-[0.6in] max-w-[3.2in] self-start object-contain object-left"
-        [src]="logo.src"
-        [alt]="logo.alt"
-        [style.filter]="logo.filter || null"
-        data-testid="mktg-framework-print-cover-logo" />
+      <!-- A full-colour lockup the dark cannot reverse sits on the white plate (`logo.plate`, the brand's one rule); the plate pads it by half its height. -->
+      <span class="self-start" [lfxPpPlate]="logo.plate ? coverLogoPlateHeight : null">
+        <img
+          class="h-[0.6in] max-w-[3.2in] object-contain object-left"
+          [src]="logo.src"
+          [alt]="logo.alt"
+          [style.filter]="logo.filter || null"
+          data-testid="mktg-framework-print-cover-logo" />
+      </span>
     }
     <div class="flex flex-col justify-center gap-[14pt]">
       <span [class]="accentBar"></span>

@@ -1,32 +1,6 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- One sample icon: the shared shapes on the 24-unit grid, one stroke in the current colour, no fill. Decorative: the label beside it is the text. -->
-<ng-template #iconTpl let-icon let-size="size">
-  <svg
-    [attr.width]="size"
-    [attr.height]="size"
-    [attr.viewBox]="viewBox"
-    fill="none"
-    stroke="currentColor"
-    [attr.stroke-width]="strokeWidth"
-    [attr.stroke-linecap]="linecap"
-    [attr.stroke-linejoin]="linejoin"
-    class="mx-auto block shrink-0"
-    aria-hidden="true"
-    focusable="false">
-    @for (shape of icon.shapes; track $index) {
-      @if (shape.kind === 'path') {
-        <svg:path [attr.d]="shape.d" />
-      } @else if (shape.kind === 'circle') {
-        <svg:circle [attr.cx]="shape.cx" [attr.cy]="shape.cy" [attr.r]="shape.r" />
-      } @else if (shape.kind === 'rect') {
-        <svg:rect [attr.x]="shape.x" [attr.y]="shape.y" [attr.width]="shape.width" [attr.height]="shape.height" [attr.rx]="shape.rx" />
-      }
-    }
-  </svg>
-</ng-template>
-
 @if (print()) {
   <!--
     The print sheet's variant, the board's proportions on the sheet's own Iconography page: table and table-cell boxes
@@ -36,18 +10,30 @@
     a 110 px dark table whose eight equal cells spread the 30 px icons across its full width, 30 px in from the edges.
   -->
   <!-- Equal columns: each cell carries half the 12 px gap on both sides, and the table bleeds 6 px past the edges to keep the outer tiles flush. -->
-  <div class="-mx-[6px] table w-[calc(100%+12px)] table-fixed border-separate border-spacing-0" data-testid="brand-kit-icon-tiles">
+  <!-- The portrait book's page (`portrait`) draws the mock's tiles instead: 164 × 150, 16 px gaps, the 36 px icon 12 px above its label. -->
+  <div
+    class="table table-fixed border-separate border-spacing-0"
+    [class]="portrait() ? '-mx-[8px] w-[calc(100%+16px)]' : '-mx-[6px] w-[calc(100%+12px)]'"
+    data-testid="brand-kit-icon-tiles">
     @for (row of tileRows; track $index; let lastRow = $last) {
       <div class="table-row">
         @for (icon of row; track icon.id) {
-          <div class="table-cell px-[6px] align-top" [class.pb-[12px]]="!lastRow">
+          <div
+            class="table-cell align-top"
+            [class]="portrait() ? 'px-[8px]' : 'px-[6px]'"
+            [class.pb-[12px]]="!lastRow && !portrait()"
+            [class.pb-[16px]]="!lastRow && portrait()">
             <div
-              class="table h-[110px] w-full border-separate border-spacing-0 rounded-[10px] border border-gray-200"
+              class="table w-full border-separate border-spacing-0 rounded-[10px] border border-gray-200"
+              [class.h-[110px]]="!portrait()"
+              [class.h-[150px]]="portrait()"
               [style.color]="colours().tileInk"
               [attr.data-testid]="'brand-kit-icon-tile-' + icon.id">
               <div class="table-cell text-center align-middle">
-                <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: icon, size: tileIconSize }" />
-                <span class="mt-[10px] block text-[11px] leading-[1.4] text-gray-500">{{ icon.label }}</span>
+                <lfx-mktg-brand-kit-icon [icon]="icon" [size]="tileIconSize()" />
+                <span class="block text-[11px] leading-[1.4] text-gray-500" [class.mt-[10px]]="!portrait()" [class.mt-[12px]]="portrait()">{{
+                  icon.label
+                }}</span>
               </div>
             </div>
           </div>
@@ -56,7 +42,8 @@
     }
   </div>
   <div
-    class="mt-[14px] table h-[110px] w-full table-fixed border-separate border-spacing-0 rounded-[10px] px-[30px] [print-color-adjust:exact]"
+    class="table w-full table-fixed border-separate border-spacing-0 rounded-[10px] [print-color-adjust:exact]"
+    [class]="portrait() ? 'mt-[36px] h-[120px] px-[24px]' : 'mt-[14px] h-[110px] px-[30px]'"
     [style.background-color]="colours().stripGround"
     role="img"
     [attr.aria-label]="stripLabel"
@@ -68,7 +55,7 @@
           [style.color]="item.ink"
           [attr.data-highlight]="item.highlight ? 'true' : null"
           [attr.data-testid]="'brand-kit-icon-strip-' + item.icon.id">
-          <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: item.icon, size: stripIconSize() }" />
+          <lfx-mktg-brand-kit-icon [icon]="item.icon" [size]="stripIconSize()" />
         </span>
       }
     </div>
@@ -84,7 +71,7 @@
         class="flex h-[110px] flex-col items-center justify-center gap-[10px] rounded-[10px] border border-gray-200"
         [style.color]="colours().tileInk"
         [attr.data-testid]="'brand-kit-icon-tile-' + icon.id">
-        <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: icon, size: tileIconSize }" />
+        <lfx-mktg-brand-kit-icon [icon]="icon" [size]="tileIconSize()" />
         <span class="text-[11px] leading-[1.4] text-gray-500">{{ icon.label }}</span>
       </li>
     }
@@ -107,7 +94,7 @@
         [style.color]="item.ink"
         [attr.data-highlight]="item.highlight ? 'true' : null"
         [attr.data-testid]="'brand-kit-icon-strip-' + item.icon.id">
-        <ng-container *ngTemplateOutlet="iconTpl; context: { $implicit: item.icon, size: stripIconSize() }" />
+        <lfx-mktg-brand-kit-icon [icon]="item.icon" [size]="stripIconSize()" />
       </span>
     }
   </div>

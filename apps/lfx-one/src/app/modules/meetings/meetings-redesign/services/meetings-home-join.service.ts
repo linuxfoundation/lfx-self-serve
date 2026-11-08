@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
-import { Meeting, MeetingHomeRow } from '@lfx-one/shared/interfaces';
+import { NO_MEETING_JOIN_LINK } from '@lfx-one/shared/constants';
+import { Meeting, MeetingHomeRow, MeetingJoinLink } from '@lfx-one/shared/interfaces';
 import { buildJoinUrlWithParams, canJoinMeeting } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -29,30 +31,44 @@ export class MeetingsHomeJoinService {
 
   /** Join link built for the real viewer while impersonating; null until joinable or when unavailable. Call it in an injection context. */
   public joinUrl(row: Signal<MeetingHomeRow | null>, joinable: Signal<boolean>): Signal<string | null> {
+    const link = this.joinLink(row, joinable);
+    return computed(() => link().url);
+  }
+
+  /** Like `joinUrl`, with the reason a request failed. Call it in an injection context. */
+  public joinLink(row: Signal<MeetingHomeRow | null>, joinable: Signal<boolean>): Signal<MeetingJoinLink> {
     const request = computed(
       () => {
         const meeting = row()?.meeting;
         if (!meeting || !joinable() || !this.userService.authenticated()) return null;
-        const user = this.userService.meetingJoinIdentity();
-        if (!user?.email) return null;
-        return { id: meeting.id, password: meeting.password, user };
+        // Null while impersonating without a known operator: say so rather than load forever.
+        const identity = this.userService.meetingJoinIdentity();
+        return { id: meeting.id, password: meeting.password, user: identity?.email ? identity : null };
       },
-      { equal: (a, b) => a?.id === b?.id && a?.password === b?.password && a?.user.email === b?.user.email && a?.user.name === b?.user.name }
+      { equal: (a, b) => a?.id === b?.id && a?.password === b?.password && a?.user?.email === b?.user?.email && a?.user?.name === b?.user?.name }
     );
     return toSignal(
       toObservable(request).pipe(
-        switchMap((target) =>
-          target
-            ? this.meetingService.getPublicMeetingJoinUrl(target.id, target.password, { email: target.user.email }).pipe(
-                map((response) => buildJoinUrlWithParams(response.link, target.user)),
-                catchError(() => of(null)),
-                // Never offer the previous meeting's link while this one loads.
-                startWith(null)
-              )
-            : of(null)
-        )
+        switchMap((target) => {
+          if (!target) return of(NO_MEETING_JOIN_LINK);
+          const user = target.user;
+          if (!user) return of({ ...NO_MEETING_JOIN_LINK, error: 'No email to join with' });
+          return this.meetingService.getPublicMeetingJoinUrl(target.id, target.password, { email: user.email }).pipe(
+            map(
+              (response): MeetingJoinLink =>
+                response.link
+                  ? { ...NO_MEETING_JOIN_LINK, url: buildJoinUrlWithParams(response.link, user) }
+                  : { ...NO_MEETING_JOIN_LINK, error: 'Join link unavailable' }
+            ),
+            catchError((error: HttpErrorResponse) =>
+              of({ url: null, error: error?.error?.error || 'Failed to load the join link', code: error?.error?.code ?? null })
+            ),
+            // Never offer the previous meeting's link while this one loads.
+            startWith(NO_MEETING_JOIN_LINK)
+          );
+        })
       ),
-      { initialValue: null }
+      { initialValue: NO_MEETING_JOIN_LINK }
     );
   }
 
