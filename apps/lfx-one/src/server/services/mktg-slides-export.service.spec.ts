@@ -418,6 +418,21 @@ describe('MktgSlidesExportService', () => {
       expect(assets.faq).toEqual([{ q: 'What is this project?', a: 'A synthetic project.' }]);
     });
 
+    it('sends the framework member wrapped with its revision number and date on a family export, as the kit member is sent (deck lane ask)', async () => {
+      await seedFramework(documentStore);
+      await seedFramework(documentStore, 'Search, open. Twice.');
+      await seedKit(documentStore);
+
+      const started = await service.startFamilyExport(req, familyInput);
+
+      expect(started.snapshot.members.find((member) => member.agentKey === 'foundation-message')).toMatchObject({ revisionNumber: 2 });
+      const assets = JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]) as Record<string, Record<string, unknown>>;
+      expect(assets['framework']['version']).toBe(2);
+      expect(typeof assets['framework']['generated_at']).toBe('string');
+      expect(Number.isNaN(Date.parse(assets['framework']['generated_at'] as string))).toBe(false);
+      expect(assets['framework']['content']).toMatchObject({ mf: { tagline: 'Search, open. Twice.' }, mh: { umbrella: 'Open search.', pillars: [] } });
+    });
+
     it('sends the kit member’s approved revision number as the kit’s version on a family export, as the document export does', async () => {
       await seedFramework(documentStore);
       await seedKit(documentStore);

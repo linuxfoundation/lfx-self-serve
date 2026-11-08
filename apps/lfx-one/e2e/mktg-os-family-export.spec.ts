@@ -2,19 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/constants';
-import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
-import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
 import {
-  expectMktgPortraitPageSetup,
-  expectMktgPrintCover,
-  expectMktgPrintFrame,
-  finishMktgPrintFrame,
-  layoutMktgPrintFrame,
-  mktgPrintComputedPx,
-  stubMktgPrintFrame,
-} from './helpers/mktg-print.helper';
+  MKTG_FAMILY_EXPORT_API_PATH,
+  MKTG_FAMILY_PRINT_BODY_CLASS,
+  MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
+  MKTG_FAMILY_PRINT_LABELS,
+  MKTG_PORTRAIT_PAGE_NAME,
+  MKTG_PRINT_PAGE_SETUPS,
+} from '../../../packages/shared/src/constants';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils/brand-kit-book.utils';
+import { brandKitPortraitApprovalLine } from '@lfx-one/shared/utils/brand-kit-portrait.utils';
+import { brandKitPortraitPlan, mktgPortraitSectionLabel } from '@lfx-one/shared/utils/mktg-portrait-plan.utils';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { columnAssetRevisionResponse } from './helpers/mktg-os-asset-views.helper';
+import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
+import { expectFamilyBookFrames, openFamilyExports } from './helpers/mktg-os-family-export.helper';
+import { expectMktgPortraitPageSetup, expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -178,39 +182,68 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   // The geometry proof measures the frame's document: the one the dialog prints.
   const printFrame = await layoutMktgPrintFrame(page);
   const printDocument = printFrame.getByTestId('family-export-print-document');
-  for (const selector of ['lfx-mktg-framework-print', 'lfx-mktg-brand-kit-print', 'lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
-    await expect(printDocument.locator(selector)).toHaveCount(1);
-  }
-  await expect(printFrame.getByTestId('family-export-print-contents').locator('dd')).toHaveText(['Messaging framework', 'Brand kit', 'Boilerplates', 'FAQ']);
-  await expect(printFrame.getByTestId('mktg-boilerplates-print-length')).toHaveCount(4);
-  await expect(printFrame.getByTestId('mktg-faq-print')).toContainText('Needs an answer');
+  // The family prints as one book of the portrait grammar's frames (CSS Paged Media Level 3: `@page { size: auto;
+  // margin: 0 }`, the page box the dialog's paper, one fixed 816×1056 frame per page that the grammar scales to a
+  // narrower paper itself): the family's own pages, and the framework's and the kit's portrait pages in the family's book.
+  const book = printDocument.locator('lfx-mktg-family-print');
+  await expect(book).toHaveCount(1);
+  await expect(book).toHaveClass(/lfx-mktg-portrait/);
+  await expect(printDocument.locator('lfx-mktg-framework-print')).toHaveCount(1);
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print')).toHaveCount(1);
+  await expect(printDocument.locator('lfx-mktg-boilerplates-print, lfx-mktg-faq-print, tfoot')).toHaveCount(0);
+  // No sheet of main's flowing prints anywhere in the book.
+  await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(0);
   // Only the wrapper travels: the card's controls are not in the frame.
   await expect(printFrame.getByTestId('family-export-actions')).toHaveCount(0);
-  const cover = printFrame.getByTestId('family-export-print-cover');
-  await expectMktgPrintCover(cover);
-  // The cover's 0.6in at the sides is its own: with the kit's portrait frames in the family the page has no margin in
-  // either engine.
-  await expect(cover).toHaveCSS('margin-left', '57.6px');
-  await expect(printFrame.getByTestId('family-export-print-title')).toHaveText('Positioning & brand');
-  await expect(printFrame.getByTestId('family-export-print-title')).toHaveCSS('text-wrap', 'balance');
-  await expect(printFrame.getByTestId('family-export-print-logo')).toBeVisible();
+  const frames = await expectFamilyBookFrames(book);
+  // Both @page rules, named and unnamed, carry the grammar's exported setup (`MKTG_PRINT_PAGE_SETUPS['mktg-portrait']`:
+  // the paper box the dialog chose, no margin — its value is the kit's to pin, so no literal here can strand on the
+  // grammar's next change); the frame writes them last in its head, the same values in every engine.
+  const setup = MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
+  expect(await printFrame.locator('head style').last().textContent()).toBe(`@page { ${setup} }\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
+  expect(setup).toMatch(/margin: 0;/);
+  // The cover: the family's title on the kit's dark, the logo, the four documents' tiles with version and date.
+  const cover = frames.byId('cover');
+  await expect(cover).toHaveClass(/pp-page--dark/);
+  await expect(cover.getByTestId('family-print-cover-title')).toHaveText('Positioning & brand');
+  await expect(cover.getByTestId('family-print-cover-title')).toHaveCSS('text-wrap', 'balance');
+  await expect(cover.getByTestId('family-print-cover-logo')).toBeVisible();
+  await expect(cover.getByTestId('family-print-cover-documents').locator('> *')).toHaveCount(4);
+  await expect(cover.getByTestId('family-print-cover-strip')).toContainText('a Linux Foundation project');
   const coverColors = await cover.evaluate((element) => ({ ink: getComputedStyle(element).color, ground: getComputedStyle(element).backgroundColor }));
-  expect(coverColors.ground).toBe('rgb(255, 255, 255)');
+  expect(coverColors.ground).not.toBe('rgb(255, 255, 255)');
   expect(coverColors.ink).not.toBe(coverColors.ground);
-  // No screen canvas may bleed through below a short print section.
-  await expect(printFrame.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
-  const ancestorBackgrounds = await printDocument.evaluate((element) => {
-    const backgrounds: string[] = [];
-    for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) backgrounds.push(getComputedStyle(ancestor).backgroundColor);
-    return backgrounds;
-  });
-  expect(ancestorBackgrounds.every((color) => color === 'rgb(255, 255, 255)')).toBe(true);
-  await expect(printFrame.getByTestId('family-export-print-contents').locator('dt')).toHaveText(['01', '02', '03', '04']);
-  // The framework prints as part of the family book: its plan's frames for this fixture (one goal, one ICP), no cover,
-  // each under the family's running head and foot, numbered on from the family cover (page 1), its band off.
-  const frameworkFrames = printDocument.locator('lfx-mktg-framework-print [data-testid="lfx-mktg-portrait-page"]');
-  await expect(frameworkFrames).toHaveCount(7);
-  expect(await frameworkFrames.evaluateAll((frames) => frames.map((frame) => frame.getAttribute('data-page-id')))).toEqual([
+  // The contents page reads the openers' numbers, and the book ends on the page it counts.
+  const contents = frames.byId('contents');
+  const openerPages = await contents.getByTestId('family-print-contents-opener-page').allTextContents();
+  expect(openerPages.map((text) => text.trim())).toEqual(frames.openers.map((opener) => String(opener.page)));
+  await expect(contents.getByTestId('family-print-contents-intro')).toContainText(`4 documents, ${frames.total} pages.`);
+  await expect(contents.getByTestId('family-print-contents-sources')).toContainText(String(frames.byIdPage('sources')));
+  // The openers, in exporter order, each with its version, its approval date alone and its page range.
+  await expect(book.locator('[data-testid="mktg-portrait-opener-title"]')).toHaveText(['Messaging framework', 'Brand kit', 'Boilerplates', 'FAQ']);
+  const openerMeta = book.locator('[data-testid="mktg-portrait-opener-meta"]').first();
+  await expect(openerMeta).toContainText('Version');
+  await expect(openerMeta).toContainText('Pages');
+  await expect(openerMeta.locator('dd').nth(1)).toHaveText(/^\d{1,2} [A-Z][a-z]{2} \d{4}$/);
+  // The running heads are the board's: the family's own content pages carry their numbered chapter from the contents
+  // order left (the mounted prints' pages print `Document · Section` themselves), the family right on every content page;
+  // no page is hand-numbered.
+  await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-doc')).toHaveText(/positioning & brand$/);
+  await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-section')).toHaveText('03 Boilerplates');
+  await expect(frames.byId('faq-1').getByTestId('mktg-portrait-page-section')).toHaveText('04 FAQ');
+  await expect(frames.byId('contents').getByTestId('mktg-portrait-page-section')).toHaveText(MKTG_FAMILY_PRINT_LABELS.contents);
+  await expect(frames.byId('sources').getByTestId('mktg-portrait-page-section')).toHaveText(MKTG_FAMILY_PRINT_LABELS.sources);
+  await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-number')).toHaveText(String(frames.byIdPage('boilerplates')).padStart(2, '0'));
+  // This book's heads measure within the content width: both labels at the grammar's label size, no tight-head modifier.
+  await expect(book).not.toHaveClass(new RegExp(MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS));
+  await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-section')).toHaveCSS('font-size', '10px');
+  await expect(frames.byId('boilerplates').getByTestId('mktg-portrait-page-doc')).toHaveCSS('font-size', '10px');
+  // The framework in the family's book: the pages of its family plan for this fixture (one goal, one ICP), no cover of
+  // its own and no band, each under the family's running head, numbered on from its opener, on the kit's look.
+  const frameworkPrint = printDocument.locator('lfx-mktg-framework-print');
+  const frameworkFrames = frameworkPrint.locator('[data-testid="lfx-mktg-portrait-page"]');
+  await expect(frameworkFrames).toHaveCount(frames.frameworkPages);
+  expect(await frameworkFrames.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-page-id')))).toEqual([
     'framework',
     'goal-1',
     'say-avoid',
@@ -219,27 +252,33 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
     'key-numbers',
     'sources',
   ]);
-  expect(await frameworkFrames.evaluateAll((frames) => frames.map((frame) => frame.getAttribute('data-page')))).toEqual(['2', '3', '4', '5', '6', '7', '8']);
-  await expect(frameworkFrames.first().getByTestId('mktg-portrait-page-number')).toHaveText('02');
+  await expect(frameworkFrames.first()).toHaveAttribute('data-page', '4');
   await expect(frameworkFrames.first()).toHaveAttribute('data-section', 'Messaging framework · Framework');
-  await expect(frameworkFrames.locator('[data-testid="mktg-portrait-page-doc"]')).toHaveText(Array(7).fill(`${DOCUMENT_PROJECT.name} positioning & brand`));
-  await expect(frameworkFrames.first().getByTestId('mktg-portrait-page-foot')).toContainText(`${DOCUMENT_PROJECT.name} · a Linux Foundation project`);
-  await expect(printDocument.locator('lfx-mktg-framework-print [data-testid="mktg-portrait-page-band"]')).toHaveCount(0);
-  await expect(printDocument.getByTestId('mktg-framework-print-cover')).toHaveCount(0);
-  await expect(printDocument.getByTestId('mktg-framework-print-goals')).toBeVisible();
-  await expect(printDocument.getByTestId('mktg-framework-print-pillars')).toHaveCount(1);
-  await expect(printDocument.locator('article[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(1);
-  // The family passes the framework no report, approval or read date today (its follow-up), so its Sources & gaps page prints
-  // the approval card alone: no intro, no lists, no empty-state line, and a card without a version or approval lead.
+  await expect(frameworkFrames.first().getByTestId('mktg-portrait-page-number')).toHaveText('04');
+  await expect(frameworkPrint.getByTestId('mktg-portrait-page-doc')).toHaveText(
+    Array(frames.frameworkPages).fill(`${DOCUMENT_PROJECT.name} positioning & brand`)
+  );
+  await expect(
+    frameworkPrint.locator('[data-page-id="cover"], [data-testid="mktg-framework-print-cover"], [data-testid="mktg-portrait-page-band"]')
+  ).toHaveCount(0);
+  await expect(frameworkPrint.getByTestId('mktg-framework-print-goals')).toBeVisible();
+  await expect(frameworkPrint.getByTestId('mktg-framework-print-pillars')).toHaveCount(1);
+  // The one profile card inside its rows container: its direct children (the card's own parts carry the same prefix).
+  await expect(frameworkPrint.getByTestId('mktg-framework-print-icp-rows').locator('> [data-testid^="mktg-framework-print-icp-"]')).toHaveCount(1);
+  // The family hands the framework its run record, so its Sources & gaps page prints inside the family as it does alone: the
+  // intro dated by the run's record, the blocks as the fixture's report holds them (nothing read, no source failed, no gap)
+  // and the approval card with the version and the approval date the opener prints.
   await expect(frameworkFrames.last()).toHaveAttribute('data-page-id', 'sources');
-  await expect(printDocument.getByTestId('mktg-framework-print-sources-intro')).toHaveCount(0);
+  await expect(printDocument.getByTestId('mktg-framework-print-sources-intro')).toHaveText(
+    'What the framework was built from on 18 Oct 2026, what could not be read, and what is still open.'
+  );
   await expect(printDocument.getByTestId('mktg-framework-print-sources-read')).toHaveCount(0);
-  await expect(printDocument.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveCount(0);
-  await expect(printDocument.getByTestId('mktg-framework-print-gaps-empty')).toHaveCount(0);
-  // The approval card inside the family: the version label leads it; the family passes no approval date and no report, so no
-  // "Approved <date>" and no gaps clause print (the family lane's follow-up passes them).
-  await expect(printDocument.getByTestId('mktg-framework-print-approval')).toHaveText('V1.0. A later run re-reads the sources and refreshes the LFX figures.');
-  await expect(printDocument.getByTestId('mktg-framework-print-approval').locator('strong')).toHaveText('V1.0.');
+  await expect(printDocument.getByTestId('mktg-framework-print-sources-failed-empty')).toHaveText('No source failed.');
+  await expect(printDocument.getByTestId('mktg-framework-print-gaps-empty')).toHaveText('The sources left no gap.');
+  await expect(printDocument.getByTestId('mktg-framework-print-approval')).toHaveText(
+    'V1.0 · Approved 20 Oct 2026. A later run re-reads the sources and refreshes the LFX figures.'
+  );
+  // Every framework frame is a whole sheet: 816 × 1056 at the sheet's left edge, in the family as alone.
   for (const frame of await frameworkFrames.all()) {
     const box = await frame.boundingBox();
     expect({ x: Math.round(box?.x ?? -1), width: Math.round(box?.width ?? 0), height: Math.round(box?.height ?? 0) }).toEqual({
@@ -248,60 +287,122 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
       height: 1056,
     });
   }
-  await expect(printDocument.locator('lfx-mktg-boilerplates-print h2 > span')).toHaveText('03');
-  await expect(printDocument.locator('lfx-mktg-faq-print h2 > span')).toHaveText('04');
-  for (const selector of ['lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
-    await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head')).toBeVisible();
-    await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head').locator('img')).toBeVisible();
-  }
-  // The kit is thirteen portrait frames inside the family (no cover, contents or back cover; no symbol page: the
-  // synthetic kit has no symbol), one frame one sheet; nothing of it flows. Its frames are numbered from 1 until the
-  // family passes its own book (the family lane's fold-in gives the kit its first page number).
+  // The kit in the family's book: every page of its family plan for this kit (the synthetic kit's record decides the
+  // plan: no cover, contents or back cover of its own), in order, numbered on from its opener, under the family's
+  // running head, no band; nothing of it flows as a chapter.
+  const kitPlan = brandKitPortraitPlan(buildBrandKitBookView(brandKitTestRevision(), 1), { inFamily: true });
   const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');
-  await expect(kitPrint.locator('[data-testid="lfx-mktg-portrait-page"]')).toHaveCount(13);
+  const kitFrames = kitPrint.locator('[data-testid="lfx-mktg-portrait-page"]');
+  await expect(kitFrames).toHaveCount(kitPlan.length);
+  expect(frames.kitPages).toBe(kitPlan.length);
+  expect(await kitFrames.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-page-id')))).toEqual(kitPlan.map((page) => page.id));
+  expect(await kitFrames.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-section')))).toEqual(
+    kitPlan.map((page) => mktgPortraitSectionLabel(page.section, true, 'Brand kit'))
+  );
+  await expect(kitFrames.first()).toHaveAttribute('data-page', String(frames.byIdPage('opener-brand-kit') + 1));
+  await expect(kitPrint.getByTestId('mktg-portrait-page-doc')).toHaveText(Array(kitPlan.length).fill(`${DOCUMENT_PROJECT.name} positioning & brand`));
+  await expect(
+    kitPrint.locator('[data-page-id="cover"], [data-page-id="contents"], [data-page-id="back-cover"], [data-testid="mktg-portrait-page-band"]')
+  ).toHaveCount(0);
   await expect(kitPrint.locator('.kit-chapter, lfx-mktg-print-chapter-header, .lfx-brand-kit-page')).toHaveCount(0);
-  await expect(kitPrint.locator('[data-testid="lfx-mktg-portrait-page"]').first()).toHaveAttribute('data-page-id', 'logo-system');
-  await expect(kitPrint.locator('[data-testid="lfx-mktg-portrait-page"]').last()).toHaveAttribute('data-page-id', 'sources');
-  await expect(kitPrint.getByTestId('mktg-portrait-page-doc').first()).toContainText('positioning & brand');
-  // The page's room is in the document, not the @page margin (none, so no browser header or footer): the other sections
-  // print in sheets that repeat a head and pad their last row, one row per block — no footer group anywhere, for which
-  // Chromium prints an empty page per table: the family cover 1; the boilerplates 4 lengths; the FAQ its header + 4 pairs
-  // (the framework prints in portrait frames, not sheets, and inside the family has no cover page). 3 sheets, all shown.
-  await expect(printDocument.locator('tfoot, [data-testid="mktg-print-sheet-foot"]')).toHaveCount(0);
-  await expect(printDocument.getByTestId('mktg-print-sheet-head')).toHaveCount(3);
-  await expect(printDocument.locator('lfx-mktg-print-sheet')).toHaveCount(3);
-  await expect(printDocument.locator('lfx-mktg-print-sheet').locator('visible=true')).toHaveCount(3);
-  await expect(printDocument.locator('lfx-mktg-print-sheet-row')).toHaveCount(1 + 4 + 5);
   // The page setup: the kit's and the framework's portrait frames make the family a document of frames, US Letter with
   // no margin in both engines and the room in the document (never the page margins, which would shift a frame off its
-  // sheet); the framework's root lifts the flowing documents' side padding and its frames sit at the sheet's edge.
+  // sheet); no footer group anywhere, for which Chromium prints an empty page per table.
+  await expect(printDocument.locator('tfoot, [data-testid="mktg-print-sheet-foot"]')).toHaveCount(0);
   await expectMktgPortraitPageSetup(printFrame, printDocument.locator('lfx-mktg-framework-print .lfx-framework-print'));
-  // A sheet's last row's bottom room, 0.55in = 52.8px, to a tenth (mktgPrintComputedPx).
-  expect(
-    await mktgPrintComputedPx(printDocument.locator('lfx-mktg-faq-print lfx-mktg-print-sheet-row:last-child > .lfx-print-sheet-cell'), 'padding-bottom')
-  ).toBeCloseTo(52.8, 1);
   // The kit's pages read from the kit's own record: the four usage cards, the six watch-outs, the type source as a host.
   await expect(kitPrint.getByTestId('brand-kit-usage-card')).toHaveCount(4);
   await expect(kitPrint.getByTestId('brand-kit-watchouts-tiles').getByTestId('brand-kit-watchout')).toHaveCount(6);
   await expect(kitPrint.getByTestId('brand-kit-type-source')).toContainText('Named on one.example.org');
   await expect(kitPrint.getByTestId('brand-kit-type-source')).not.toContainText('https://');
   await expect(kitPrint.getByTestId('brand-kit-voice-messages').getByTestId('brand-kit-voice-message-label')).toHaveText(['Umbrella message', 'Brand line']);
+  // The kit's own recorded approval (its record's, not the framework's) prints inside the family as it does standalone:
+  // the Sources page's acceptance card, with the kit's version.
+  const kitAccepted = kitPrint.getByTestId('brand-kit-sources-accepted');
+  await expect(kitAccepted).toContainText('Accepted when V1.0 was approved.');
+  await expect(kitAccepted).toContainText(brandKitPortraitApprovalLine(columnAssetRevisionResponse('brand-kit').approval));
   // One break per sheet, owned by the frame that starts it (the family's own break before the kit folds into it).
-  await expect(kitPrint.locator('[data-testid="lfx-mktg-portrait-page"]').first()).toHaveCSS('break-before', 'page');
-  await expect(kitPrint.locator('[data-testid="lfx-mktg-portrait-page"]').last()).toHaveCSS('break-after', 'auto');
-  // Every frame is a whole sheet: 816 × 1056 at the sheet's left edge, in the family as alone.
-  for (const frame of await kitPrint.locator('[data-testid="lfx-mktg-portrait-page"]').all()) {
+  await expect(kitFrames.first()).toHaveCSS('break-before', 'page');
+  await expect(kitFrames.last()).toHaveCSS('break-after', 'auto');
+  // Every kit frame is a whole sheet: 816 × 1056 at the sheet's left edge, in the family as alone.
+  for (const frame of await kitFrames.all()) {
     const box = await frame.boundingBox();
     if (!box) throw new Error('Missing synthetic kit frame');
     expect({ x: Math.round(box.x), width: Math.round(box.width), height: Math.round(box.height) }).toEqual({ x: 0, width: 816, height: 1056 });
   }
   await expect(kitPrint).not.toContainText('SVG supplied');
-  await expect(kitPrint).not.toContainText('V1.0');
+  // The kit's cover and back cover, where its version strip prints standalone, do not print inside the family: the
+  // version appears in the acceptance card only.
+  await expect(kitPrint.locator('lfx-mktg-portrait-cover, lfx-mktg-portrait-back-cover')).toHaveCount(0);
+  await expect(kitPrint.locator('[data-testid="mktg-portrait-page-head"]').filter({ hasText: 'V1.0' })).toHaveCount(0);
   await expect(printDocument.locator('lfx-brand-kit-view, .lfx-brand-kit-page')).toHaveCount(0);
+  // The boilerplates as cards, one per length with text; the FAQ's answered questions only.
+  await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-card')).toHaveCount(4);
+  const faq = frames.byId('faq-1');
+  await expect(faq.getByTestId('family-print-faq-entry')).toHaveCount(3);
+  await expect(faq).not.toContainText('Needs an answer');
+  // Built from: each source as a short readable name (the host, never a raw URL); the run's notes never print.
+  await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-sources')).toContainText('acme-mesh.example');
+  await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-sources')).not.toContainText('https://');
+  await expect(frames.byId('boilerplates').getByTestId('family-print-boilerplate-notes')).toHaveCount(0);
+  // The Sources page (the fixture's run left a gap): the four documents' version, approval and data date; the one place
+  // the fixture's documents disagree (the kit's brand line against the framework's tagline, as the data holds them), with the
+  // document to re-run; the open item under its document's chip; no placeholder, note or bracketed template text anywhere.
+  const sources = frames.byId('sources');
+  // The Data cell prints only a date the record holds: the framework's date_read and the kit's generated_at; the FAQ's and
+  // the boilerplates' native fixtures carry neither, so their cells are empty, never the revision's date.
+  const sourceRows = sources.getByTestId('family-print-sources-row');
+  await expect(sourceRows).toHaveCount(4);
+  await expect(sourceRows.nth(0).locator('td').nth(3)).toHaveText('figures as of 18 Oct 2026');
+  await expect(sourceRows.nth(1).locator('td').nth(3)).toHaveText('figures as of 17 Oct 2026');
+  await expect(sourceRows.nth(2).locator('td').nth(3)).toHaveText('');
+  await expect(sourceRows.nth(3).locator('td').nth(3)).toHaveText('');
+  const conflicts = sources.getByTestId('family-print-sources-conflicts');
+  await expect(conflicts.locator('.fps-row')).toHaveCount(1);
+  await expect(conflicts.locator('.fps-row__topic')).toHaveText('Brand line');
+  // One stop: the tagline's own full stop closes the sentence, with none after the closing quote.
+  await expect(conflicts.locator('.fps-row')).toContainText(
+    'The brand kit carries “Open standards for one computing”; the framework’s tagline is “Build openly.”'
+  );
+  await expect(conflicts.locator('.fps-row')).not.toContainText('.”.');
+  await expect(conflicts.locator('.fps-rerun')).toHaveText('→ Re-run the brand kit so it reads the approved framework.');
+  await expect(sources.getByTestId('family-print-sources-open')).toContainText('The launch year is not stated.');
+  await expect(book).not.toContainText(/\[[A-Z][a-z]+\]/);
+  await expect(book).not.toContainText('SVG supplied');
+  // The back cover: the kit's dark, the trademark notice.
+  await expect(frames.byId('back-cover')).toHaveClass(/pp-page--dark/);
+  await expect(frames.byId('back-cover').getByTestId('mktg-portrait-back-cover-notice')).toContainText('trademarks of the Linux Foundation');
   await page.screenshot({ path: info.outputPath('four-assets-print-document.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);
   await page.screenshot({ path: info.outputPath('family-pdf-ready.png'), fullPage: true });
+});
+
+test('a running head that measures too wide steps both labels one size down, the whole book through', async ({ page }, info) => {
+  await stubMktgPrintFrame(page);
+  // A project name the head cannot hold at the label's size beside the kit's longest section label: the book steps both
+  // labels to 9 px on every page, the family's own and the mounted prints', and the head still reads on one line
+  // (mktgFamilyPrintHeadTight, by the measure; the ellipsis is the last resort).
+  const name = 'The Open Foundation for Cloud Native Computing, Edge and Confidential Infrastructure';
+  const controls = await openFamilyExports(page, { allAssets: true, holdPrint: true, projectName: name });
+  controls.releasePrint();
+  const pdf = page.getByTestId('family-export-pdf').getByRole('button');
+  await expect(pdf).toBeEnabled();
+  await pdf.click();
+  await expectMktgPrintFrame(page, MKTG_FAMILY_PRINT_BODY_CLASS, '[data-testid="family-export-print-document"]');
+  const printFrame = await layoutMktgPrintFrame(page);
+  const printDocument = printFrame.getByTestId('family-export-print-document');
+  const book = printDocument.locator('lfx-mktg-family-print');
+  await expect(book).toHaveClass(new RegExp(MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS));
+  const frames = await expectFamilyBookFrames(book);
+  const head = frames.byId('boilerplates').getByTestId('mktg-portrait-page-head');
+  await expect(head.getByTestId('mktg-portrait-page-doc')).toHaveText(`${name} positioning & brand`);
+  await expect(head.getByTestId('mktg-portrait-page-section')).toHaveCSS('font-size', '9px');
+  await expect(head.getByTestId('mktg-portrait-page-doc')).toHaveCSS('font-size', '9px');
+  const kitHead = printDocument.locator('lfx-mktg-brand-kit-print [data-testid="mktg-portrait-page-head"]').first();
+  await expect(kitHead.getByTestId('mktg-portrait-page-section')).toHaveCSS('font-size', '9px');
+  await expect(kitHead.getByTestId('mktg-portrait-page-doc')).toHaveCSS('font-size', '9px');
+  await page.screenshot({ path: info.outputPath('tight-head-print-document.png'), fullPage: true });
 });
 
 test('Export the family reveals and focuses format choices without choosing one or shifting the card', async ({ page }, info) => {

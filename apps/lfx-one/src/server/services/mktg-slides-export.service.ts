@@ -294,9 +294,15 @@ export class MktgSlidesExportService {
       const bundle = revision.record.bundle;
       let content: unknown = null;
       switch (member.agentKey) {
-        case 'foundation-message':
-          content = bundle.format === 'json' ? readFoundationMessageContent(bundle.markdown) : null;
+        case 'foundation-message': {
+          // The framework member carries its revision number and date like the kit member (the deck's framework
+          // opener prints "Version N" and the date from the wrapper; bare content prints neither).
+          const framework = bundle.format === 'json' ? readFoundationMessageContent(bundle.markdown) : null;
+          content = framework
+            ? { version: member.revisionNumber, generated_at: this.generatedAt(bundle.sidecar, revision.record.createdAt), content: framework }
+            : null;
           break;
+        }
         case 'brand-kit': {
           kit = readBrandKitRevision(bundle.sidecar);
           if (kit) content = this.kitExportContent(kit, member.revisionNumber);
@@ -990,6 +996,12 @@ export class MktgSlidesExportService {
       }
     }
     return { selections, skippedMembers };
+  }
+
+  /** A member's date for the deck: the stored envelope's `generated_at`, else the revision's write time. */
+  private generatedAt(sidecar: Record<string, unknown> | null, createdAt: string): string {
+    const generatedAt = sidecar?.['generated_at'];
+    return typeof generatedAt === 'string' && generatedAt.trim() ? generatedAt : createdAt;
   }
 
   private familyMember(agentKey: MktgFamilyExportAgentKey, summary: MktgRevisionSummary): MktgFamilyExportMember {

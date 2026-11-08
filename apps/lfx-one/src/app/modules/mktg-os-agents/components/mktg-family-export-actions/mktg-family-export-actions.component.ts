@@ -29,38 +29,21 @@ import {
   MktgFamilyExportRunUpdate,
   MktgFamilyExportTarget,
   MktgFamilyPrintView,
-  MktgPortraitBook,
-  MktgPortraitLook,
   MktgSlidesExportMode,
   MktgSlidesExportPhase,
 } from '@lfx-one/shared/interfaces';
-import { mktgFamilyExportAgentKeys, mktgPortraitDocumentName, mktgPortraitFootLeft, mktgPortraitLook, mktgPrintDocumentTitle } from '@lfx-one/shared/utils';
+import { mktgFamilyExportAgentKeys, mktgPrintDocumentTitle } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, combineLatest, distinctUntilChanged, from, map, of, Subject, Subscription, startWith, switchMap } from 'rxjs';
-import { MktgBrandKitPrintComponent } from '../../mktg-brand-kit-print/mktg-brand-kit-print.component';
-import { MktgBoilerplatesPrintComponent } from '../../mktg-boilerplates-print/mktg-boilerplates-print.component';
-import { MktgFaqPrintComponent } from '../../mktg-faq-print/mktg-faq-print.component';
-import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-framework-print.component';
-import { MktgPrintSheetComponent } from '../mktg-print-sheet/mktg-print-sheet.component';
-import { MktgPrintSheetRowComponent } from '../mktg-print-sheet-row/mktg-print-sheet-row.component';
+import { MktgFamilyPrintComponent } from '../mktg-family-print/mktg-family-print/mktg-family-print.component';
 
 /** The Family page's named slot; document export controls are independent. */
 @Component({
   selector: 'lfx-mktg-family-export-actions',
-  imports: [
-    DatePipe,
-    ButtonComponent,
-    MessageComponent,
-    MktgBrandKitPrintComponent,
-    MktgFrameworkPrintComponent,
-    MktgBoilerplatesPrintComponent,
-    MktgFaqPrintComponent,
-    MktgPrintSheetComponent,
-    MktgPrintSheetRowComponent,
-  ],
+  imports: [DatePipe, ButtonComponent, MessageComponent, MktgFamilyPrintComponent],
   templateUrl: './mktg-family-export-actions.component.html',
   styleUrl: './mktg-family-export-actions.component.scss',
   host: { class: 'block', '[attr.data-family-id]': 'familyId()' },
@@ -101,25 +84,6 @@ export class MktgFamilyExportActionsComponent {
   protected readonly completed = signal<MktgFamilyExportRecord | null>(null);
   protected readonly printing = signal(false);
   protected readonly printView = signal<MktgFamilyPrintView | null>(null);
-  /**
-   * The framework's place in the family book: no cover of its own, the family's running head and foot, and its pages
-   * numbered from 2 — the family's cover sheet is page 1 today (the portrait family plan replaces this number).
-   */
-  protected readonly frameworkBook = computed((): MktgPortraitBook | null => {
-    const view = this.printView();
-    if (!view) return null;
-    return {
-      inFamily: true,
-      headRight: mktgPortraitDocumentName(view.projectName, 'positioning & brand'),
-      footLeft: mktgPortraitFootLeft(view.projectName),
-      firstPage: 2,
-    };
-  });
-  /** Inside the family the framework takes the kit's look when an approved kit prints with it; null leaves it the framework's own. */
-  protected readonly frameworkLook = computed((): MktgPortraitLook | null => {
-    const view = this.printView();
-    return view?.kit ? mktgPortraitLook(view.brand, view.kit.spark) : null;
-  });
   private readonly retry = new Subject<boolean>();
   private run: Subscription | null = null;
   private readonly pdfRetry = new Subject<void>();
