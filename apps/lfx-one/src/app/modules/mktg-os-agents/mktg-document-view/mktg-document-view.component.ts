@@ -408,6 +408,8 @@ export class MktgDocumentViewComponent {
   }));
   protected readonly approvedView: Signal<MktgApprovedRevisionState> = this.initApprovedView();
   protected readonly approvedVersion = computed(() => this.approvedView().revision?.revision.number ?? null);
+  /** The approved revision's own approval record: the Brand Kit PDF prints it, whatever revision the page shows. */
+  protected readonly approvedApproval = computed(() => this.approvedView().revision?.revision.approval ?? null);
   /** When the approved revision was stored, as the page shows it; it dates the PDF's name. */
   protected readonly approvedCreatedAt = computed(() => this.approvedView().revision?.revision.createdAt ?? null);
   protected readonly approvedFramework = computed(() => {

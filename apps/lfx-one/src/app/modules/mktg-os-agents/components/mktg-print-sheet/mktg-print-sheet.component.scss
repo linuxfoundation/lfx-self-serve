@@ -27,8 +27,8 @@
 }
 
 /* 0.55in, the top room the portrait page margin used to give, on every page; the last row's cell
-   carries the same value at the bottom (lfx-mktg-print-sheet-row), and so do the kit's chapter tables
-   (mktg-brand-kit-print.component.scss). */
+   carries the same value at the bottom (lfx-mktg-print-sheet-row). The brand kit no longer flows in
+   chapter tables: it is fixed portrait frames (components/mktg-portrait). */
 .lfx-print-sheet-room {
   display: table-row;
   height: 0.55in;

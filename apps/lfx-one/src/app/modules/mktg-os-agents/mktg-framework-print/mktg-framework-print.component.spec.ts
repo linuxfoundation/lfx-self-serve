@@ -166,6 +166,8 @@ describe('MktgFrameworkPrintComponent', () => {
     const root = query('mktg-framework-print');
     const cover = query('mktg-framework-print-cover');
     expect(root?.classList.contains('flex')).toBe(false);
+    // A block host (its stylesheet's :host rule): Chrome 156 breaks a sheet at the anonymous-block boundary an inline host puts around a frame.
+    expect(getComputedStyle(host()).display).toBe('block');
     expect(cover?.classList.contains('grid')).toBe(true);
     expect(root?.querySelector('.h-screen, .min-h-screen, .flex-1')).toBeNull();
     // Each section is one sheet (a table whose head repeats the page's top room; its last row carries the bottom room), one row per block, so a page
@@ -200,6 +202,22 @@ describe('MktgFrameworkPrintComponent', () => {
     // No footer group anywhere (Chromium would print an empty page per sheet for one); the head's room repeats.
     expect(root?.querySelectorAll('[data-testid="mktg-print-sheet-foot"], tfoot')).toHaveLength(0);
     expect(root?.querySelectorAll('[data-testid="mktg-print-sheet-head"]')).toHaveLength(3);
+  });
+
+  it('plates the cover lockup when the brand says so, and draws a supplied reversed file bare', async () => {
+    // The fixture's lockup has three colours and no reversed file: `mktgPrintBrand` flags the plate, and the cover draws
+    // it: the white ground around the lockup, padded by half the lockup's 57.6 px (0.6 in), its corners a sixth of its
+    // shorter side. With a reversed file supplied, no plate.
+    await configure('browser', printView(brandKitTestRevision()));
+    const plate = host().querySelector<HTMLElement>('[data-testid="mktg-portrait-plate"]');
+    expect(plate?.querySelector('[data-testid="mktg-framework-print-cover-logo"]')).toBeTruthy();
+    expect(parseFloat(plate?.style.padding ?? '')).toBeCloseTo(28.8, 6);
+    expect(parseFloat(plate?.style.borderRadius ?? '')).toBeCloseTo((57.6 + 2 * 28.8) / 6, 3);
+    const kit = brandKitTestRevision();
+    const files = { ...kit.chapters.logo.files, reversed: { ref: 'reversed.svg', svg: kit.chapters.logo.files.primary?.svg ?? '' } };
+    await setView(printView({ ...kit, chapters: { ...kit.chapters, logo: { ...kit.chapters.logo, files } } }));
+    expect(query('mktg-portrait-plate')).toBeNull();
+    expect(query('mktg-framework-print-cover-logo')).toBeTruthy();
   });
 
   it('sets its body text in the brand’s ink, not its dark: a kit whose "dark" is white still prints readable text', async () => {

@@ -188,13 +188,27 @@ describe('the print’s brand', () => {
     expect(brand.fontStack).toBe("'Space Grotesk', 'Arial', sans-serif");
     expect(brand.fontUrl).toContain('family=Space+Grotesk');
     expect(brand.fontFamily).toBe('Space Grotesk');
+    // The supplied reversed file is drawn as it is: no filter, no plate.
     expect(brand.logoOnDark).toEqual({ src: expect.stringMatching(/^data:image\/svg\+xml/), alt: 'Orbit logo', filter: '' });
     expect(brand.logoOnLight?.filter).toBe('');
     expect(brand.onDark).not.toBe(MKTG_PRINT_INK_ON_LIGHT);
   });
 
   it('draws the primary lockup white on the cover when there is no reversed artwork, and leaves out a logo it cannot draw', () => {
-    expect(mktgPrintBrand(kitWith({ primary: { ref: 'orbit.svg', svg: SVG } })).logoOnDark?.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+    const derived = mktgPrintBrand(kitWith({ primary: { ref: 'orbit.svg', svg: SVG } })).logoOnDark;
+    expect(derived?.filter).toBe(MKTG_PRINT_REVERSED_FILTER);
+    expect(derived?.plate).toBeUndefined();
+    // A multi-colour primary is never filtered (it would flatten to one shape): the dark ground draws it in full colour
+    // on the white plate, the flag every print's cover reads.
+    const twoColours =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><rect fill="#1D4ED8" width="3" height="3"/><rect fill="#111827" x="4" width="6" height="3"/></svg>';
+    const plated = mktgPrintBrand(kitWith({ primary: { ref: 'orbit.svg', svg: twoColours } })).logoOnDark;
+    expect(plated?.filter).toBe('');
+    expect(plated?.plate).toBe(true);
+    // A supplied reversed file beside the multi-colour primary: drawn as it is, no plate.
+    expect(
+      mktgPrintBrand(kitWith({ primary: { ref: 'orbit.svg', svg: twoColours }, reversed: { ref: 'rev.svg', svg: SVG } })).logoOnDark?.plate
+    ).toBeUndefined();
     // A PNG the envelope carries no bytes for, or the kit's placeholder marks: no logo rather than a broken image.
     const png = mktgPrintBrand(kitWith({ primary: { ref: 'orbit.png', svg: null } }));
     expect([png.logoOnDark, png.logoOnLight]).toEqual([null, null]);

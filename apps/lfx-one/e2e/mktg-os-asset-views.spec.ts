@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import {
   BRAND_KIT_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  MKTG_PORTRAIT_PAGE_NUMBER_DIGITS,
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
   MKTG_SLIDES_EXPORT_API_PATH,
 } from '@lfx-one/shared/constants';
@@ -16,6 +17,7 @@ import {
   layoutMktgPrintFrame,
   PRINT_FRAME_LETTER,
   stubMktgPrintFrame,
+  expectMktgPortraitPageSetup,
   expectMktgPrintPageSetup,
   mktgPrintComputedPx,
 } from './helpers/mktg-print.helper';
@@ -143,6 +145,9 @@ test.describe('Native FAQ document approval and header', () => {
       const approved = { ...base.revision, approval };
       const draft = { ...base.revision, id: `000002-${'b'.repeat(64)}`, number: 2, latest: false };
       const response = { ...base, revision: draft, revisions: [draft, approved], approvedCurrent: { revisionId: approved.id, number: 1 } };
+      // Both reads carry the rows: the living document's poll merges the detail's revisions into the view, so a
+      // detail still answering the helper's one-revision base would put the v1 row back to Draft mid-test.
+      await page.route('**/api/mktg-agents/documents/faq/living?*', (route) => route.fulfill({ json: response }));
       await page.route('**/api/mktg-agents/documents/faq/living/revisions/**', (route) => route.fulfill({ json: response }));
       await page.evaluate((revision) => {
         const url = new URL(window.location.href);
@@ -241,22 +246,34 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     const box = await print.boundingBox();
     if (!box) throw new Error('The approved print document must be rendered');
     expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: PRINT_FRAME_LETTER.width });
-    await expectMktgPrintPageSetup(frame, print, browserName);
     if (key === 'brand-kit') {
-      await expect(print.locator('.kit-chapter')).toHaveCount(5);
-      await expect(print.locator('lfx-mktg-print-chapter-header h2 > span')).toHaveText(['1', '2', '3', '4', '5']);
-      await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
-      await expect(print).toHaveCSS('page', 'mktg-framework');
-      await expect(print.getByTestId('kit-print-type')).toContainText('Typography');
-      // No footer group (Chromium prints an empty page per table for one): the bottom room is the last row's.
-      await expect(print.locator('.kit-chapter > tfoot')).toHaveCount(0);
-      await expect(print.locator('.kit-chapter > tbody > tr:last-child > td')).toHaveCount(5);
-      // calc(10pt + 0.55in) = 66.13px, or the 10pt alone on the page margins; to a tenth (mktgPrintComputedPx).
-      expect(await mktgPrintComputedPx(print.locator('.kit-chapter > tbody > tr:last-child > td').first(), 'padding-bottom')).toBeCloseTo(
-        browserName === 'webkit' ? 13.333 : 66.133,
-        1
+      // The kit is a portrait book: US Letter frames, no page margin in either engine, sixteen frames in the mock's order
+      // (no symbol page: the synthetic kit has no symbol), each 816×1056 at the sheet's edge, and nothing flowing.
+      await expectMktgPortraitPageSetup(frame);
+      const frames = print.getByTestId('lfx-mktg-portrait-page');
+      await expect(frames).toHaveCount(16);
+      await expect(frames.first()).toHaveAttribute('data-page-id', 'cover');
+      await expect(frames.last()).toHaveAttribute('data-page-id', 'back-cover');
+      await expect(frames.first()).toHaveCSS('page', 'mktg-portrait');
+      await expect(frames.first()).toHaveCSS('break-before', 'page');
+      await expect(frames.last()).toHaveCSS('break-after', 'auto');
+      const coverBox = await frames.first().boundingBox();
+      expect(
+        coverBox && { x: Math.round(coverBox.x), y: Math.round(coverBox.y), width: Math.round(coverBox.width), height: Math.round(coverBox.height) }
+      ).toEqual({
+        x: 0,
+        y: 0,
+        width: PRINT_FRAME_LETTER.width,
+        height: 1056,
+      });
+      await expect(print.getByTestId('mktg-portrait-cover-title')).toHaveText('Brand Kit');
+      await expect(print.locator('.kit-chapter, lfx-mktg-print-chapter-header, .lfx-brand-kit-page, tfoot')).toHaveCount(0);
+      // The grammar prints the inner pages' numbers padded ("02"…"15"), the cover and back cover unnumbered.
+      await expect(print.getByTestId('mktg-portrait-page-number')).toHaveText(
+        Array.from({ length: 14 }, (_, index) => String(index + 2).padStart(MKTG_PORTRAIT_PAGE_NUMBER_DIGITS, '0'))
       );
     } else {
+      await expectMktgPrintPageSetup(frame, print, browserName);
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
       await expectMktgPrintCover(frame.getByTestId('mktg-framework-print-cover'));
       // Each section prints in a sheet whose head repeats the page's top room in Chromium (the @page margin is 0: no

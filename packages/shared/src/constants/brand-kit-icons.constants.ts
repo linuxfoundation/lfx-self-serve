@@ -33,6 +33,10 @@ export const BRAND_KIT_ICON_STRIP_SIZE_PX = 24;
 export const BRAND_KIT_ICON_STRIP_ONE_ROW_MIN_PX = 272;
 /** The strip icons' side on the print sheet, in CSS pixels (the board's 30: the sheet's Iconography page keeps the board's proportions). */
 export const BRAND_KIT_ICON_PRINT_STRIP_SIZE_PX = 30;
+/** The portrait book's Iconography page (the design mock): the tile icons' side, 36 px. */
+export const BRAND_KIT_ICON_PORTRAIT_TILE_SIZE_PX = 36;
+/** The portrait book's strip icons' side, 32 px. */
+export const BRAND_KIT_ICON_PORTRAIT_STRIP_SIZE_PX = 32;
 /** The tiles per row of the board's 4 × 2 grid, on the web and in print. */
 export const BRAND_KIT_ICON_TILE_COLUMNS = 4;
 
