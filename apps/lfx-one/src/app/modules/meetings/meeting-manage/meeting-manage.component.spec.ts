@@ -136,6 +136,73 @@ describe('MeetingManageComponent', () => {
     });
   });
 
+  // Pins the create-mode access defaults (private + restricted) and the Board-type reaffirm
+  // behavior, independent of the edit-mode hydration the rest of this file exercises. Reconfigures
+  // ActivatedRoute with no `id` param so the component takes the create-mode branch.
+  describe('create-mode access defaults', () => {
+    const createNewComponent = async () => {
+      TestBed.configureTestingModule({
+        providers: [
+          {
+            provide: ActivatedRoute,
+            useValue: {
+              paramMap: of(convertToParamMap({})),
+              queryParamMap: of(convertToParamMap({})),
+              snapshot: { queryParamMap: convertToParamMap({}), paramMap: convertToParamMap({}) },
+            },
+          },
+        ],
+      });
+      getProject.mockReturnValue(of(null));
+      return createComponent();
+    };
+
+    it('defaults a new meeting to private and restricted', async () => {
+      const fixture = await createNewComponent();
+      const form = fixture.componentInstance.form();
+      expect(form.get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
+      expect(form.get('restricted')?.value).toBe(true);
+    });
+
+    it('keeps private and restricted after selecting Board, then moving away from it', async () => {
+      const fixture = await createNewComponent();
+      const form = fixture.componentInstance.form();
+      form.get('meeting_type')?.setValue(MeetingType.BOARD);
+      form.get('meeting_type')?.setValue(MeetingType.TECHNICAL);
+      expect(form.get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
+      expect(form.get('restricted')?.value).toBe(true);
+    });
+
+    it('resets manually-loosened access back to private and restricted on leaving Board', async () => {
+      const fixture = await createNewComponent();
+      const form = fixture.componentInstance.form();
+      form.get('meeting_type')?.setValue(MeetingType.BOARD);
+      // The organizer explicitly loosens access while still on Board.
+      form.patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
+
+      form.get('meeting_type')?.setValue(MeetingType.TECHNICAL);
+
+      expect(form.get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
+      expect(form.get('restricted')?.value).toBe(true);
+    });
+
+    it('does not touch visibility or restricted when changing type in edit mode', async () => {
+      getMeetingDetail.mockReturnValue(of(unenrichedMeeting()));
+      getProject.mockReturnValue(of(null));
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+      // Simulates an organizer's saved public/unrestricted meeting -- hydration already set
+      // these; patched again here only to make the starting point explicit for the assertion.
+      form.patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
+
+      form.get('meeting_type')?.setValue(MeetingType.BOARD);
+      form.get('meeting_type')?.setValue(MeetingType.TECHNICAL);
+
+      expect(form.get('visibility')?.value).toBe(MeetingVisibility.PUBLIC);
+      expect(form.get('restricted')?.value).toBe(false);
+    });
+  });
+
   describe('committee roster readiness', () => {
     const mountReadyForm = async () => {
       getMeetingDetail.mockReturnValue(of(unenrichedMeeting()));
