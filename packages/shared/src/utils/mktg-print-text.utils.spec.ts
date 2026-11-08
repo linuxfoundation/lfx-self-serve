@@ -29,12 +29,23 @@ describe('the marketing prints’ joined lines', () => {
     expect(mktgPrintFigure('900')).toBe('900');
     expect(mktgPrintFigure('96%')).toBe('96%');
     expect(mktgPrintFigure('1000%')).toBe('1000%');
-    // A bare 1900–2099 integer is a year only when its label says so; a count of 2,000 is separated (editor S1).
-    expect(mktgPrintFigure('2026', 'the year the foundation was founded')).toBe('2026');
-    expect(mktgPrintFigure('1999', 'Open source since')).toBe('1999');
+    // A bare 1900–2099 integer is a year only when its label names a calendar year (`Founded`, `Since`, `Year founded`, `Est.`
+    // as the first word or the whole label); a count of 2,000 is separated (editor S1), and so is a count whose label merely
+    // mentions a year or a start (`downloads per year`, `members added since launch`).
+    expect(mktgPrintFigure('2000', 'founded')).toBe('2000');
+    expect(mktgPrintFigure('2000', 'Founded in')).toBe('2000');
+    expect(mktgPrintFigure('2000', 'year founded')).toBe('2000');
+    expect(mktgPrintFigure('2000', 'Year established')).toBe('2000');
+    expect(mktgPrintFigure('2015', 'since')).toBe('2015');
+    expect(mktgPrintFigure('2015', 'Est.')).toBe('2015');
+    expect(mktgPrintFigure('1999', ' Since open source began ')).toBe('1999');
     expect(mktgPrintFigure('2026')).toBe('2,026');
     expect(mktgPrintFigure('2000', 'research groups run the toolchain')).toBe('2,000');
-    expect(mktgPrintFigure('2024', 'audits published every year since')).toBe('2024');
+    expect(mktgPrintFigure('2000', 'downloads per year')).toBe('2,000');
+    expect(mktgPrintFigure('1200', 'members added since launch')).toBe('1,200');
+    expect(mktgPrintFigure('2026', 'the year the foundation was founded')).toBe('2,026');
+    expect(mktgPrintFigure('2024', 'audits published every year since')).toBe('2,024');
+    expect(mktgPrintFigure('2000', 'yearly founders')).toBe('2,000');
     expect(mktgPrintFigure('$2026', 'Founded')).toBe('$2,026');
     expect(mktgPrintFigure('2026+', 'Founded')).toBe('2,026+');
     expect(mktgPrintFigure('12,000')).toBe('12,000');
