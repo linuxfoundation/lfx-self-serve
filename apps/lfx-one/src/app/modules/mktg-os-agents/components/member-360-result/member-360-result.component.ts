@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DecimalPipe, formatCurrency, formatDate, isPlatformBrowser, NgClass } from '@angular/common';
+import { DatePipe, formatCurrency, formatDate, isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
@@ -46,7 +46,6 @@ import { Member360DisplayRow, Member360Envelope, Member360RankingRow, Member360S
   selector: 'lfx-member-360-result',
   imports: [
     DatePipe,
-    DecimalPipe,
     ReactiveFormsModule,
     NgClass,
     RouterLink,

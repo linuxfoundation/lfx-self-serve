@@ -77,13 +77,30 @@ export function member360EvidenceSource(source: string): string {
  */
 export function member360WeightRows(method: Pick<Method, 'weights_used' | 'weights_default' | 'categories_no_data'>): Member360WeightRow[] {
   const reasons = new Map(method.categories_no_data.map((entry) => [entry.category, entry.reason]));
-  return MEMBER_360_HEAT_ORDER.map((key) => ({
+  const shown = wholePercents(MEMBER_360_HEAT_ORDER.map((key) => method.weights_used[key]));
+  return MEMBER_360_HEAT_ORDER.map((key, index) => ({
     key,
     label: CATEGORY_LABELS[key],
     used: method.weights_used[key],
+    shownPercent: shown[index],
     default: method.weights_default[key],
     noDataReason: reasons.get(key) ?? null,
   }));
+}
+
+/** Whole percents that add up to the rounded total (36.37 / 36.36 / 27.27 show as 37 / 36 / 27, not 36 / 36 / 27 = 99). */
+function wholePercents(values: readonly number[]): number[] {
+  const floors = values.map((value) => Math.floor(value));
+  let missing = Math.round(values.reduce((sum, value) => sum + value, 0)) - floors.reduce((sum, value) => sum + value, 0);
+  const byRemainder = values
+    .map((value, index) => ({ index, remainder: value - floors[index] }))
+    .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+  for (const { index } of byRemainder) {
+    if (missing <= 0) break;
+    floors[index] += 1;
+    missing -= 1;
+  }
+  return floors;
 }
 
 /** A tier baseline group without the project-name prefix and the word "Membership": "Gold", "Silver (100 - 499)". */

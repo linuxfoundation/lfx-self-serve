@@ -137,6 +137,8 @@ export interface Member360WeightRow {
   key: Member360Category;
   label: string;
   used: number;
+  /** The used weight as a whole percent; the shown percents add up to the rounded total (largest remainder). */
+  shownPercent: number;
   default: number;
   noDataReason: string | null;
 }

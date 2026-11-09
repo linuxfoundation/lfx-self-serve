@@ -130,6 +130,15 @@ describe('member360WeightRows', () => {
     });
     expect(rows.map((row) => row.key)).toEqual(['events', 'speaking', 'community_programs', 'committees', 'content', 'marketing_social']);
     expect(rows.find((row) => row.key === 'events')).toMatchObject({ used: 36.36, default: 20, noDataReason: null });
+    // Whole percents add up to 100 (largest remainder): committees 36.37 → 37, events 36.36 → 36, speaking 27.27 → 27.
+    expect(rows.map((row) => [row.key, row.shownPercent])).toEqual([
+      ['events', 36],
+      ['speaking', 27],
+      ['community_programs', 0],
+      ['committees', 37],
+      ['content', 0],
+      ['marketing_social', 0],
+    ]);
     expect(rows.find((row) => row.key === 'content')?.noDataReason).toBe('No content tracker uploaded.');
     expect(rows.find((row) => row.key === 'marketing_social')).toMatchObject({ used: 0, default: 20, noDataReason: null });
   });

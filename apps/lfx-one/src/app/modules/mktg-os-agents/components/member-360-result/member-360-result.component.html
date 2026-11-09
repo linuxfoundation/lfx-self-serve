@@ -224,9 +224,13 @@
         <div class="flex flex-col gap-2 rounded-lg border border-gray-200 p-4" [attr.data-testid]="'member-360-team-' + team.key">
           <div class="flex items-center justify-between gap-2">
             <h4 class="font-semibold">
-              {{ team.owner }}<span class="font-normal text-gray-500"> · {{ team.actions.length }} {{ team.actions.length === 1 ? 'action' : 'actions' }}</span>
+              {{ team.owner
+              }}<span class="whitespace-nowrap font-normal text-gray-500">
+                · {{ team.actions.length }} {{ team.actions.length === 1 ? 'action' : 'actions' }}</span
+              >
             </h4>
             <lfx-button
+              class="shrink-0 whitespace-nowrap"
               label="Copy list"
               [outlined]="true"
               size="small"
@@ -360,7 +364,7 @@
                   <span class="h-2 overflow-hidden rounded-full bg-gray-200" aria-hidden="true"
                     ><span class="block h-full rounded-full bg-blue-600" [style.width.%]="weight.used"></span
                   ></span>
-                  <span class="font-semibold tabular-nums">{{ weight.used | number: '1.0-0' }}%</span>
+                  <span class="font-semibold tabular-nums">{{ weight.shownPercent }}%</span>
                   <span class="text-xs text-gray-500">default {{ weight.default }}%</span>
                 </div>
               } @else {
