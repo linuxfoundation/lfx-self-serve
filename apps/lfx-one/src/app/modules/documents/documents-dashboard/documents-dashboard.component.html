@@ -96,7 +96,7 @@
           <div class="px-5 pb-5">
             <lfx-documents-table
               [documents]="filteredDocuments()"
-              [groupLinkState]="groupLinkState()"
+              [groupLinkState]="groupLinkState"
               [loading]="loading()"
               [showFoundation]="false"
               (folderOpen)="onFolderOpen($event)"
@@ -274,7 +274,7 @@
                       @if (doc.sourceLink; as link) {
                         <a
                           [routerLink]="link.commands"
-                          [state]="link.kind === 'group' ? groupLinkState() : undefined"
+                          [state]="link.kind === 'group' ? groupLinkState : undefined"
                           class="lfx-table-name-link text-sm"
                           [attr.data-testid]="'documents-source-link-' + doc.id">
                           {{ doc.groupOrMeetingName }}

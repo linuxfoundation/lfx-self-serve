@@ -166,12 +166,8 @@ export class DocumentsDashboardComponent {
   protected readonly projectSourceTabOptions: Signal<FilterPillOption[]> = this.initProjectSourceTabOptions();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
   protected readonly documentRows: Signal<MyDocumentTableRow[]> = this.initDocumentRows();
-  // Group links return to this page, and restore the Me lens when that is where the user was.
-  protected readonly groupLinkState: Signal<GroupLinkState> = computed(() => ({
-    backLabel: DOCUMENT_LABEL.plural,
-    backPath: '/documents',
-    fromMeLens: this.activeLens() === 'me',
-  }));
+  // Group links return to this page. Documents has no Me-lens page, and the global lens can still be Me on a project route, so the Me lens is never restored.
+  protected readonly groupLinkState: GroupLinkState = { backLabel: DOCUMENT_LABEL.plural, backPath: '/documents', fromMeLens: false };
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.filteredDocuments().length > 10 ? [10, 25, 50] : undefined));
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initFoundationOptions();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
@@ -428,7 +424,9 @@ export class DocumentsDashboardComponent {
       foundationName: '',
       foundationUid: undefined,
       groupOrMeetingName: groupName,
-      groupOrMeetingUid: ownerProjectUid,
+      // The id of the entity the name refers to, which is what the name's link opens: a committee's uid, or a past meeting's id.
+      // Native project rows and meeting attachments (whose name falls back to the project's) have none, so their name stays plain text.
+      groupOrMeetingUid: (docSource === 'committee' ? doc.committee_uid : doc.past_meeting_id) ?? '',
       date: doc.created_at ?? doc.updated_at ?? '',
       url: doc.url,
       attachmentUid: isProjectFile ? doc.uid : undefined,
@@ -437,6 +435,8 @@ export class DocumentsDashboardComponent {
       isChild,
       downloadUrl,
       uploadedBy: doc.uploaded_by,
+      mailingListUid: doc.mailing_list_uid,
+      pastMeetingId: doc.past_meeting_id,
       summaryUid: doc.summary_uid,
       summaryContent: doc.summary_content,
       projectDocumentSource: docSource,

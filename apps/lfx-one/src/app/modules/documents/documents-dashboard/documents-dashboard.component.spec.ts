@@ -199,6 +199,50 @@ describe('DocumentsDashboardComponent', () => {
     expect(visibleIds()).toEqual(['latest-link', 'old-link']);
   });
 
+  describe('names in the project and foundation Documents view', () => {
+    const link = (uid: string): HTMLAnchorElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="documents-dashboard-source-link-project_link:${uid}"]`);
+
+    beforeEach(async () => {
+      projectDocuments = [
+        document('committee-doc', '2026-10-09', {
+          document_source: 'committee',
+          document_source_name: 'Technical Steering Committee',
+          committee_uid: 'group-1',
+        }),
+        document('list-doc', '2026-10-08', { document_source: 'mailing_list', document_source_name: 'Maintainers', mailing_list_uid: 'list-7' }),
+        document('unresolved-list-doc', '2026-10-07', { document_source: 'mailing_list', document_source_name: '' }),
+        document('summary-doc', '2026-10-06', { document_source: 'summary', document_source_name: 'Weekly sync', past_meeting_id: 'occ-3' }),
+        document('recording-doc', '2026-10-05', { document_source: 'recording', document_source_name: 'Weekly sync', past_meeting_id: 'occ-4' }),
+        document('attachment-doc', '2026-10-04', { document_source: 'meeting' }),
+        document('native-doc', '2026-10-03', { document_source: 'project' }),
+      ];
+      await render();
+    });
+
+    it('opens the real group, mailing list and past meeting, never the project', () => {
+      expect(link('committee-doc')?.getAttribute('href')).toBe('/groups/group-1');
+      expect(link('list-doc')?.getAttribute('href')).toBe('/mailing-lists/list-7');
+      expect(link('summary-doc')?.getAttribute('href')).toBe('/meetings/occ-3/details');
+      expect(link('recording-doc')?.getAttribute('href')).toBe('/meetings/occ-4/details');
+      expect(fixture.nativeElement.innerHTML).not.toContain('/groups/project-1');
+    });
+
+    it('leaves names that are only the project name as plain text, with no link to guess at', () => {
+      expect(link('native-doc')).toBeNull();
+      expect(link('attachment-doc')).toBeNull();
+      expect(link('unresolved-list-doc')).toBeNull();
+    });
+
+    it('returns to Documents from a group without switching the lens', () => {
+      const state = fixture.debugElement
+        .query(By.css('[data-testid="documents-dashboard-source-link-project_link:committee-doc"]'))
+        .injector.get(RouterLink).state;
+
+      expect(state).toEqual({ backLabel: 'Documents', backPath: '/documents', fromMeLens: false });
+    });
+  });
+
   it('links the group, meeting and mailing list names in the My Documents feed to their details pages', async () => {
     routeLens.set('me');
     legacyDocuments = [
