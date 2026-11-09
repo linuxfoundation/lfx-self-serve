@@ -104,7 +104,7 @@ export function buildHealthMetricsMembersSections(year: number): HealthMetricsL2
 
 /**
  * `#breakdown` — members per tier at each year's end, from the first year shown to the running one, as PCC tables it:
- * every tier in rank order, then the totals. Only the sub-nav count follows the selected period.
+ * every tier with a member in a year shown, in rank order, then the totals. Only the sub-nav count follows the period.
  */
 export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembersTiers, range: HealthMetricsRange): HealthMetricsMembersBreakdownView {
   const currentYear = getYearForRange('YTD');

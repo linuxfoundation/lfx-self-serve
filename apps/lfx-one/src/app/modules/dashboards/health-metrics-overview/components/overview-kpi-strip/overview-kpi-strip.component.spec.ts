@@ -30,14 +30,11 @@ class FakeResizeObserver {
 describe('OverviewKpiStripComponent', () => {
   let fixture: ComponentFixture<OverviewKpiStripComponent>;
 
-  async function render(count: number): Promise<void> {
+  async function render(items: number | HealthMetricsOverviewKpiView[]): Promise<void> {
     vi.stubGlobal('ResizeObserver', FakeResizeObserver);
     await TestBed.configureTestingModule({ imports: [OverviewKpiStripComponent] }).compileComponents();
     fixture = TestBed.createComponent(OverviewKpiStripComponent);
-    fixture.componentRef.setInput(
-      'kpis',
-      Array.from({ length: count }, (_, index) => kpi(`k${index}`))
-    );
+    fixture.componentRef.setInput('kpis', typeof items === 'number' ? Array.from({ length: items }, (_, index) => kpi(`k${index}`)) : items);
     fixture.componentRef.setInput('testId', 'strip');
     fixture.detectChanges();
     await fixture.whenStable();
@@ -83,5 +80,16 @@ describe('OverviewKpiStripComponent', () => {
     expect(item('k2')).not.toContain('border-l');
     expect(item('k2')).toContain('border-t');
     expect(item('k3')).toContain('border-l');
+  });
+
+  it('draws a change as the design does: an arrow, the deeper shade and the screen-reader direction', async () => {
+    await render([kpi('k0'), { ...kpi('k1'), delta: { label: '−14%', direction: 'down', good: false } }]);
+    const delta: HTMLElement = fixture.nativeElement.querySelector('[data-testid="strip-k1-delta"]');
+
+    expect(delta.textContent?.replace(/\s+/g, ' ').trim()).toBe('Down−14%');
+    expect(delta.querySelector('i.fa-arrow-down')).not.toBeNull();
+    expect(delta.className).toContain('text-red-700');
+    expect(item('k1')).toContain('gap-[2px]');
+    expect(item('k1')).toContain('pl-[20px]');
   });
 });
