@@ -49,7 +49,7 @@ import type {
 export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   {
     key: 'growth',
-    // Always the running year, whatever the period, so the empty state never names a past year.
+    // One read serves every period, so the empty state never names a past year.
     empty: { icon: 'fa-light fa-chart-line', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members, snapshot: true },
     label: 'Member growth by year',
     heading: 'Member growth by year',
@@ -178,21 +178,6 @@ export const HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR = 2017;
 
 /** Upper bound on month rows read: 12 a year, from the first year on, with decades to spare. */
 export const HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP = 600;
-
-export const HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-] as const;
 
 /** The plot's SVG viewBox, stretched to the card; January and December sit `insetX` in from each edge. */
 export const HEALTH_METRICS_MEMBERS_GROWTH_PLOT = { width: 1000, height: 300, insetX: 40 } as const;

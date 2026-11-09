@@ -11,7 +11,7 @@
       subtitle="We could not load member growth for this foundation. Refresh the page to try again."
       data-testid="members-growth-error" />
   } @else if (loading()) {
-    <p-skeleton height="28rem" borderRadius="0.5rem" data-testid="members-growth-loading" aria-hidden="true" />
+    <p-skeleton height="30rem" borderRadius="0.5rem" data-testid="members-growth-loading" aria-hidden="true" />
   } @else if (!empty()) {
     @let growth = view();
     <div class="flex min-w-0 flex-col gap-[16px] pb-[4px] pt-[14px]" data-testid="members-growth-chart">
@@ -47,7 +47,7 @@
                   class="transition-[stroke-opacity] duration-150"
                   [attr.d]="line.d"
                   [attr.stroke]="line.color"
-                  [attr.stroke-opacity]="opacity(line.year)"
+                  [attr.stroke-opacity]="opacities().get(line.year)"
                   [attr.stroke-dasharray]="line.dashed ? '6 5' : null"
                   [attr.data-testid]="'members-growth-line-' + line.year"></path>
               }
@@ -61,14 +61,14 @@
                   [style.left.%]="point.leftPct"
                   [style.top.%]="point.topPct"
                   [style.background]="line.color"
-                  [style.opacity]="opacity(line.year)"></span>
+                  [style.opacity]="opacities().get(line.year)"></span>
                 <span
                   class="pointer-events-none absolute -translate-x-1/2 -translate-y-[150%] whitespace-nowrap text-[10px] font-medium leading-[12px]"
                   aria-hidden="true"
                   [style.left.%]="point.leftPct"
                   [style.top.%]="point.topPct"
                   [style.color]="line.color"
-                  [style.opacity]="opacity(line.year)"
+                  [style.opacity]="opacities().get(line.year)"
                   >{{ point.label }}</span
                 >
               }
@@ -104,8 +104,8 @@
           </div>
           <!-- On a phone only January and December show, pinned to the plot's edges. -->
           <div class="relative h-[14px] text-[11px] leading-[14px] text-gray-600" aria-hidden="true" data-testid="members-growth-months">
-            @for (column of growth.columns; track column.month; let first = $first; let last = $last) {
-              <span class="absolute -translate-x-1/2 whitespace-nowrap" [class]="monthLabelClass(first, last)" [style.left.%]="column.leftPct">{{
+            @for (column of growth.columns; track column.month; let index = $index) {
+              <span class="absolute -translate-x-1/2 whitespace-nowrap" [class]="monthLabelClasses()[index]" [style.left.%]="column.leftPct">{{
                 column.label
               }}</span>
             }
@@ -118,7 +118,7 @@
         @for (line of growth.lines; track line.year) {
           <span
             class="inline-flex cursor-default items-center gap-[6px] whitespace-nowrap py-[2px] text-[12px] leading-[16px] text-gray-700 transition-opacity duration-150"
-            [style.opacity]="opacity(line.year)"
+            [style.opacity]="opacities().get(line.year)"
             [attr.data-testid]="'members-growth-legend-' + line.year"
             (mouseenter)="highlight.set(line.year)"
             (mouseleave)="highlight.set(null)"

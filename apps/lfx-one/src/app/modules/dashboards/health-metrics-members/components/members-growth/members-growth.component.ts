@@ -57,20 +57,20 @@ export class MembersGrowthComponent {
   protected readonly view: Signal<HealthMetricsMembersGrowthView> = computed(() =>
     buildHealthMetricsMembersGrowthView(this.response(), this.chrome.selectedRange())
   );
+  /** Each year's opacity: full unless another year's legend item is hovered. */
+  protected readonly opacities: Signal<Map<number, number>> = computed(() => {
+    const highlighted = this.highlight();
+    return new Map(this.view().lines.map((line) => [line.year, highlighted === null || highlighted === line.year ? 1 : 0.15]));
+  });
+  /** On a phone only the first and last months show, pinned to the plot's edges. */
+  protected readonly monthLabelClasses: Signal<string[]> = computed(() =>
+    this.view().columns.map((_, index, columns) => {
+      if (index === 0) return 'max-sm:!left-0 max-sm:translate-x-0';
+      return index === columns.length - 1 ? 'max-sm:!left-auto max-sm:right-0 max-sm:translate-x-0' : 'max-sm:hidden';
+    })
+  );
   /** No month was measured; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.view().measured);
-
-  /** A line's opacity: full unless another year's legend item is hovered. */
-  protected opacity(year: number): number {
-    const highlighted = this.highlight();
-    return highlighted === null || highlighted === year ? 1 : 0.15;
-  }
-
-  /** On a phone only the first and last months show, pinned to the plot's edges. */
-  protected monthLabelClass(first: boolean, last: boolean): string {
-    if (first) return 'max-sm:!left-0 max-sm:translate-x-0';
-    return last ? 'max-sm:!left-auto max-sm:right-0 max-sm:translate-x-0' : 'max-sm:hidden';
-  }
 
   /** Opens a month's popup beside it, on its left only when the right has no room for it and the left has more. */
   protected showTip(index: number, event: Event): void {

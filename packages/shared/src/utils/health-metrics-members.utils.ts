@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MONTH_NAMES } from '../constants/calendar.constants';
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS } from '../constants/health-metrics-engagement.constants';
 import {
@@ -22,7 +23,6 @@ import {
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
   HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR,
   HEALTH_METRICS_MEMBERS_GROWTH_LINE_COLORS,
-  HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS,
   HEALTH_METRICS_MEMBERS_GROWTH_PLOT,
   HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP,
   HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
@@ -232,7 +232,7 @@ export function buildHealthMetricsMembersGrowthView(
     })
   );
 
-  const columns = HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS.map((label, month): HealthMetricsMembersGrowthColumnView => {
+  const columns = MONTH_NAMES.map((label, month): HealthMetricsMembersGrowthColumnView => {
     const rows: HealthMetricsChartTipRowView[] = [...lines]
       .reverse()
       .filter((line) => month < line.points.length)
@@ -252,7 +252,6 @@ export function buildHealthMetricsMembersGrowthView(
   return {
     measured: true,
     yMax: formatCount(top),
-    monthLabels: [...HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS],
     lines,
     columns,
     ariaLabel: `Cumulative new members by month, one line per year, ${first === last ? first : `${first} to ${last}`}`,
@@ -260,7 +259,7 @@ export function buildHealthMetricsMembersGrowthView(
 }
 
 function emptyGrowthView(): HealthMetricsMembersGrowthView {
-  return { measured: false, yMax: '', monthLabels: [], lines: [], columns: [], ariaLabel: '' };
+  return { measured: false, yMax: '', lines: [], columns: [], ariaLabel: '' };
 }
 
 /** A smooth path through the points: each segment a cubic whose handles follow its neighbours, as the design curves it. */

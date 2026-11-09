@@ -205,7 +205,6 @@ export interface HealthMetricsMembersGrowthView {
   measured: boolean;
   /** The y axis's top label; the bottom is 0. */
   yMax: string;
-  monthLabels: string[];
   /** Oldest year first, so the newest draws on top; the legend reads in the same order. */
   lines: HealthMetricsMembersGrowthLineView[];
   columns: HealthMetricsMembersGrowthColumnView[];
