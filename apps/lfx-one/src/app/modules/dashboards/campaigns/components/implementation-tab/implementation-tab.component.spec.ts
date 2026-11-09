@@ -17719,8 +17719,8 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     seed(brief(generated));
     show('includeDisplay');
 
-    const options = component()
-      ['googleCreativeSections']()
+    const sections = component()['googleCreativeSections']();
+    const options = sections
       .find((section: { channel: string }) => section.channel === 'display')
       .fields.find((field: { control: string }) => field.control === 'callToActionText')
       .selectOptions.map((option: { value: string }) => option.value);
@@ -17810,11 +17810,13 @@ describe('ImplementationTabComponent Google flight, result link and coverage gro
       { platform: 'reddit-ads', ok: true, campaignId: 't2_abc' },
     ]);
 
-    expect(
-      component()
-        ['platformOutcomes']()
-        .map((row: { platformUrl: string }) => row.platformUrl)
-    ).toEqual(['https://ads.google.com/aw/campaigns?campaignId=24447438160', 'https://ads.google.com/aw/campaigns?campaignId=24447438161', '', '']);
+    const outcomes = component()['platformOutcomes']();
+    expect(outcomes.map((row: { platformUrl: string }) => row.platformUrl)).toEqual([
+      'https://ads.google.com/aw/campaigns?campaignId=24447438160',
+      'https://ads.google.com/aw/campaigns?campaignId=24447438161',
+      '',
+      '',
+    ]);
   });
 
   it('renders the link on the results step', () => {
