@@ -132,7 +132,7 @@ export type MeetingAllowedVotingStatus = (typeof MEETING_ALLOWED_VOTING_STATUSES
 export interface MeetingGroupLink {
   uid: string;
   name: string;
-  /** Group-details link commands from the meeting's own project tier; null when the card is already on that group's page. */
+  /** Group-details link commands from the meeting's own project tier; null when the group has no uid to open, or the card is already on that group's page. */
   commands: string[] | null;
 }
 

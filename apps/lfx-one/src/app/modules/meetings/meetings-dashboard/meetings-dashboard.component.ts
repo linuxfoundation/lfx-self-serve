@@ -131,10 +131,10 @@ export class MeetingsDashboardComponent {
   // never settle — switching to calendar there would show the spinner indefinitely. Gating on lens
   // here keeps `viewMode` user-state intact across lens switches (no forced reset) while making the
   // calendar surface a no-op outside its supported context.
-  // Group links on the cards return here, and restore the Me lens when that is where the user was.
-  public groupLinkState: Signal<GroupLinkState> = computed(() => ({ backLabel: 'Meetings', backPath: '/meetings', fromMeLens: this.activeLens() === 'me' }));
   public canShowCalendarView = computed(() => this.activeLens() === 'foundation' || this.activeLens() === 'project');
   public isCalendarView = computed(() => this.viewMode() === 'calendar' && this.canShowCalendarView());
+  // Group links on the cards return here, and restore the Me lens when that is where the user was.
+  public groupLinkState: Signal<GroupLinkState> = computed(() => ({ backLabel: 'Meetings', backPath: '/meetings', fromMeLens: this.activeLens() === 'me' }));
   public calendarEvents: Signal<EventInput[]>;
   public calendarLoading: Signal<boolean>;
 

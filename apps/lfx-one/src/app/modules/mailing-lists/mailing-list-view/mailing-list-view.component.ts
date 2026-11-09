@@ -19,7 +19,7 @@ import {
 import { MailingListAudienceAccess } from '@lfx-one/shared/enums';
 import { CommitteeReference, GroupLinkState, GroupsIOMailingList, MailingListGroupLink } from '@lfx-one/shared/interfaces';
 import {
-  getEntityCommands,
+  getMailingListGroupLinks,
   getMailingListCommands,
   getMailingListEmail,
   getMailingListGroupsIoUrl,
@@ -201,17 +201,7 @@ export class MailingListViewComponent {
 
   /** Each linked group with its group-details link from the list's own tier; a group with no uid shows as plain text. */
   private initGroupLinks(): Signal<MailingListGroupLink[]> {
-    return computed(() => {
-      const isFoundation = this.mailingList()?.is_foundation;
-      return this.linkedCommittees().map((committee) => {
-        const uid = committee.uid?.trim();
-        return {
-          uid: committee.uid,
-          name: committee.name?.trim() || null,
-          commands: uid ? (getEntityCommands('groups', uid, isFoundation) ?? ['/groups', uid]) : null,
-        };
-      });
-    });
+    return computed(() => getMailingListGroupLinks({ committees: this.linkedCommittees(), is_foundation: this.mailingList()?.is_foundation }));
   }
 
   private initPostingTypeLabel(): Signal<string> {

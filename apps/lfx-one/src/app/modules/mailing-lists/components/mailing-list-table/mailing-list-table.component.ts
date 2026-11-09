@@ -21,8 +21,8 @@ import {
   MAILING_LIST_MAX_VISIBLE_GROUPS,
 } from '@lfx-one/shared';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
-import { FilterOption, GroupLinkState, GroupsIOMailingList, MailingListGroupLink, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
-import { getEntityCommands, getMailingListCommands, getMailingListGroupsIoUrl, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
+import { FilterOption, GroupLinkState, GroupsIOMailingList, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
+import { getMailingListCommands, getMailingListGroupLinks, getMailingListGroupsIoUrl, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { GroupEmailPipe } from '@pipes/group-email.pipe';
 import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
 import { RemainingGroupsTooltipPipe } from '@pipes/remaining-groups-tooltip.pipe';
@@ -193,17 +193,6 @@ export class MailingListTableComponent {
       });
   }
 
-  private buildGroupLinks(mailingList: GroupsIOMailingList): MailingListGroupLink[] {
-    return (mailingList.committees ?? []).slice(0, this.maxVisibleGroups).map((committee) => {
-      const uid = committee.uid?.trim();
-      return {
-        uid: committee.uid,
-        name: committee.name?.trim() || null,
-        commands: uid ? (getEntityCommands('groups', uid, mailingList.is_foundation) ?? ['/groups', uid]) : null,
-      };
-    });
-  }
-
   private initTableRows(): Signal<MailingListTableRowVm[]> {
     return computed(() => {
       const joinedUids = this.myMailingListUids();
@@ -217,7 +206,7 @@ export class MailingListTableComponent {
         return {
           ...mailingList,
           viewCommands: getMailingListCommands(mailingList),
-          groupLinks: this.buildGroupLinks(mailingList),
+          groupLinks: getMailingListGroupLinks(mailingList, this.maxVisibleGroups),
           linkQueryParams: getMailingListLinkQueryParams(mailingList),
           groupsIoUrl: getMailingListGroupsIoUrl(mailingList),
           isMember: joinedUids.has(mailingList.uid),
