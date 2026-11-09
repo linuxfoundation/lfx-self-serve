@@ -478,6 +478,12 @@
                   The brief plans {{ planned | number: '1.0-2' }} in total.
                 }
               </span>
+              @if (googleBudgetOverPlan()) {
+                <span class="text-xs text-amber-700" data-testid="implementation-budget-over-plan"
+                  >This flight spends more than the brief plans. Lower the daily budget, which can't go below 1, or shorten the flight to stay within the
+                  plan.</span
+                >
+              }
               @if (googleBudgetInvalid()) {
                 <span id="implementation-budget-error" class="text-xs text-red-600" data-testid="implementation-budget-error"
                   >Enter a daily budget of at least 1.</span

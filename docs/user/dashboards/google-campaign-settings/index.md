@@ -193,7 +193,12 @@ The lists apply to the whole campaign, including any ad group added later, for e
 
 When you open the **Implement** tab for a brief, some fields start with values from the brief. You can change any of them.
 
-- **Flight dates**: the **Start Date** is today. The **End Date** is the event's first day when the brief gives an event date after today, and otherwise 30 days from today. The Google daily budget starts at the brief's total budget divided by the days from today through the end date, both days counted. If that would be less than 1 a day, the **End Date** is brought forward to the last day the total covers at 1 a day, so the budget never starts below the minimum or above the brief's total. A total too small to cover two days keeps the end date and starts the budget at 1.
+- **Flight dates**: the **Start Date** is today. The **End Date** is the event's first day when the brief gives an event date after today, and otherwise 30 days from today. The Google daily budget starts at the brief's total budget divided by the days from today through the end date, both days counted. The budget never starts below 1 a day. If the total would give less than that:
+  - When Google Ads is the brief's only platform, the **End Date** is brought forward to the last day the total covers at 1 a day, so the flight stays within the brief's total. A total too small to cover two days gets a two-day flight at 1 a day.
+  - When the brief has other platforms too, the **End Date** is kept, because their campaigns share it, and the Google budget starts at 1 a day.
+
+  When the flight spends more than the brief plans, a note under the Google budget says so. Lower the daily budget or shorten the flight to stay within the plan.
+
 - **Demand Gen Creative** (image ad): headlines, descriptions and the business name. Headlines come from the brief's Demand Gen copy first, keeping only those of 30 characters or fewer, and then from its Search headlines. A longer headline is left out, not shortened.
 - **Display Creative**: headlines, descriptions and the business name, chosen the same way, plus a **Long headline**: the first Demand Gen headline the headlines did not use, or else the first Search description the descriptions did not use. A call to action from the brief is kept only if it is one Google accepts (see below).
 - **Performance Max Creative**: headlines, long headlines, descriptions and the business name.

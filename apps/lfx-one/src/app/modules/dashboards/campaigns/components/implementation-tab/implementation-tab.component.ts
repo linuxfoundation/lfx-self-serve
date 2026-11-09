@@ -3738,6 +3738,16 @@ export class ImplementationTabComponent implements OnInit {
   private readonly googleBudgetInputs: Signal<GoogleBudgetInputs> = this.initGoogleBudgetInputs();
   protected readonly googleBudgetFlight: Signal<GoogleBudgetFlight | null> = this.initGoogleBudgetFlight();
   /**
+   * Whether the flight on screen spends more than the brief's total (#1614): the seed floors the daily
+   * budget at the minimum when the total cannot fund the flight, and the operator may raise it. Said
+   * beside the field rather than refused, because spending more than the plan is the operator's call.
+   */
+  protected readonly googleBudgetOverPlan: Signal<boolean> = computed(() => {
+    const flight = this.googleBudgetFlight();
+    const planned = this.googleBriefTotalBudget();
+    return flight !== null && planned !== null && flight.total > planned;
+  });
+  /**
    * Whether the Google daily budget is missing or below the control's minimum of 1. Shown under the
    * field, because on a Google create the same validator holds Create disabled and nothing else on
    * screen says why. The field renders only for a Google selection, so the message never shows
@@ -7930,15 +7940,19 @@ export class ImplementationTabComponent implements OnInit {
     const spec = specs.find((field) => field.control === control);
     if (spec === undefined) return [];
     // A line break inside one generated value would split it into extra entries of a one-per-line
-    // field, past the width and count it was checked against, so it is folded into a space. Trimmed as
-    // Go trims (`googleAdsTrimSpace`), the way campaign-service trims before it judges the line.
+    // field, past the width and count it was checked against, so it is folded into a space. Trimmed by
+    // `trimCreativeLine`, the trim `splitCreativeLines` gives every line before it reaches the wire, so
+    // the seed judges the very string the payload carries: a Go-style trim keeps a leading U+FEFF that
+    // the payload strips, and "\uFEFFJoin us" would seed beside "Join us" as a repeat on the wire.
     const fitting = values
       .filter((value): value is string => typeof value === 'string')
-      .map((value) => googleAdsTrimSpace(value.replace(/\s*[\r\n]+\s*/g, ' ')))
+      .map((value) => this.trimCreativeLine(value.replace(/\s*[\r\n]+\s*/g, ' ')))
       .filter((value) => value !== '' && (spec.width === undefined || googleCreativeFieldWidth(control, value) <= spec.width));
-    // De-duplicated on campaign-service's own key, `strings.ToLower` of the trimmed line
+    // De-duplicated on campaign-service's own key, `strings.ToLower` of the `strings.TrimSpace`d line
     // (`validateCreativeText`, `demandgen_creative.go`, v1.0.35), which REFUSES a list holding two lines
-    // equal under it. The first spelling is kept, so "Join us" and "join us" seed one line, not a refusal.
+    // equal under it. The line is already trimmed as it will be sent, and Go's trim of that changes
+    // nothing more, so the key is campaign-service's. The first spelling is kept, so "Join us" and
+    // "join us" seed one line, not a refusal.
     const seen = new Set<string>();
     return fitting.filter((value) => {
       const key = googleAdsToLower(value);
@@ -7971,6 +7985,15 @@ export class ImplementationTabComponent implements OnInit {
       }
     }
     return undefined;
+  }
+
+  /**
+   * A brief's saved platforms that can still be selected: every platform the picker enables, and X,
+   * whose capability may answer after the seed (see the platform restore in `populateFromBrief`).
+   */
+  private selectablePlatforms(platforms: readonly CampaignPlatform[]): CampaignPlatform[] {
+    const selectable = new Set<CampaignPlatform>([...CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id), 'twitter-ads']);
+    return platforms.filter((p) => selectable.has(p));
   }
 
   /** The value as an array when it is one, else empty: generated copy is untyped JSON. */
@@ -8268,13 +8291,18 @@ export class ImplementationTabComponent implements OnInit {
     //
     // The flight runs to the event's first day when the brief names one after today (#1614), else to
     // `defaultEndDate`; the daily budget is divided over that same flight, so the two cannot disagree.
-    // `googleSeededFlight` never seeds below the budget control's floor: it shortens the flight to the
-    // days the total funds at the floor instead, so a long run-up does not open Create blocked.
+    // `googleSeededFlight` never seeds below the budget control's floor. It may shorten the flight to
+    // keep within the brief's total only when Google is the brief's ONLY platform: the end date is one
+    // control every selected platform's create reads, so shortening it for Google would cut a Meta or
+    // LinkedIn flight short too. Beside other platforms the end date is kept and Google seeds the floor,
+    // and `googleBudgetOverPlan` says that spends more than the brief plans.
     const briefTotal = brief.totalBudget ?? null;
+    const seededPlatforms = brief.selectedPlatforms?.length ? this.selectablePlatforms(brief.selectedPlatforms) : this.selectedPlatforms();
     const { endDate, dailyBudget: seededDailyBudget } = googleSeededFlight(
       briefTotal,
       this.todayDate,
-      defaultCampaignEndDate(details.dates, this.todayDate, this.defaultEndDate)
+      defaultCampaignEndDate(details.dates, this.todayDate, this.defaultEndDate),
+      seededPlatforms.length === 1 && seededPlatforms[0] === 'google-ads'
     );
     this.googleBriefTotalBudget.set(seededDailyBudget === null ? null : briefTotal);
     this.campaignForm.patchValue({
@@ -8311,8 +8339,7 @@ export class ImplementationTabComponent implements OnInit {
       // (`twitterCreateEnabled`) overrides, and the capability may answer after this seed runs, so
       // filtering on it here would drop an X the operator chose. Kept, it is either created (an
       // explicit yes) or blocked with a Remove (`twitterCreateBlock`) — never sent unconfirmed.
-      const selectable = new Set<CampaignPlatform>([...CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id), 'twitter-ads']);
-      this.selectedPlatforms.set(brief.selectedPlatforms.filter((p) => selectable.has(p)));
+      this.selectedPlatforms.set(this.selectablePlatforms(brief.selectedPlatforms));
     }
 
     const searchCopy = this.generatedCopy(brief, ['google_search']);
@@ -11401,7 +11428,7 @@ export class ImplementationTabComponent implements OnInit {
    * A closed-list field's value held to its list (#1614): empty, or one of `field.options`. The select
    * offers nothing else, so this catches what reaches the control another way — a restored draft or a
    * brief saved before the field was a select — which Google would refuse only after the campaign
-   * exists. Same judge as the BFF's `googleCallToActionRefusal`.
+   * exists. The same rule the BFF's `googleCallToActionRefusal` applies.
    */
   private creativeOptionBound(field: GoogleCreativeFieldSpec): ValidatorFn {
     return (control: AbstractControl): ValidationErrors | null => {
@@ -12367,7 +12394,16 @@ export class ImplementationTabComponent implements OnInit {
     if (typeof value !== 'string') return [];
     return value
       .split(/\r?\n/)
-      .map((line) => line.trim())
+      .map((line) => this.trimCreativeLine(line))
       .filter((line) => line !== '');
+  }
+
+  /**
+   * The one trim a creative line gets, wherever it is judged: the payload (`splitCreativeLines`) and the
+   * brief seed (`fittingCreativeCopy`) share it, so the seed de-duplicates the string that is sent.
+   * `String.prototype.trim`, which also strips a U+FEFF that Go's `strings.TrimSpace` would keep.
+   */
+  private trimCreativeLine(line: string): string {
+    return line.trim();
   }
 }

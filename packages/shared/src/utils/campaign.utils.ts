@@ -469,27 +469,33 @@ export function defaultCampaignEndDate(eventDates: string | null | undefined, to
  * divided over the days from today through `endDate`, both counted.
  *
  * Never below {@link GOOGLE_MIN_DAILY_BUDGET_USD}, the floor the budget control enforces, because a seed
- * under it opens the tab with Create blocked. When the total spread to `endDate` would fall under it —
- * a long run-up to a far event, or a small total — the flight is SHORTENED to the most days the total
- * funds at the floor, so the seed still spends no more than the brief planned and still runs as long
- * as it can. A total too small to fund two days at the floor (the shortest flight every other platform
- * accepts, since each refuses an end that is not after the start) keeps `endDate` and seeds the floor,
- * which the tab then shows beside the brief's own total.
+ * under it opens the tab with Create blocked. What happens when the total spread to `endDate` falls
+ * under it depends on whether the end date is Google's alone to move:
+ *
+ * - `mayShorten` (Google is the only platform on the brief): the flight is SHORTENED to the most days
+ *   the total funds at the floor, so the seed spends no more than the brief planned. A total that funds
+ *   fewer than two days gets the shortest flight every other platform also accepts — two days, since
+ *   each refuses an end that is not after the start — at the floor, which is the least Google can spend;
+ *   the tab says that is more than the brief plans.
+ * - Otherwise the end date is shared with the brief's other platforms and is not Google's to change: it
+ *   is kept, and the budget is seeded at the floor. The tab says that flight spends more than the plan.
  *
  * @param total - The brief's total budget, or `null` when it has none
  * @param today - The flight's first day, `YYYY-MM-DD`
  * @param endDate - The end date the flight would otherwise open with, `YYYY-MM-DD`
+ * @param mayShorten - Whether the seed may move the end date, which every selected platform shares
  * @returns The end date and daily budget to seed; `dailyBudget` is `null` when there is no usable total
  */
-export function googleSeededFlight(total: number | null, today: string, endDate: string): { endDate: string; dailyBudget: number | null } {
+export function googleSeededFlight(total: number | null, today: string, endDate: string, mayShorten: boolean): { endDate: string; dailyBudget: number | null } {
   const days = campaignFlightDays(today, endDate);
   const daily = total !== null && days !== null ? dailyBudgetFromTotal(total, days) : null;
   if (daily === null || daily >= GOOGLE_MIN_DAILY_BUDGET_USD || total === null) return { endDate, dailyBudget: daily };
-  const fundedDays = Math.floor(total / GOOGLE_MIN_DAILY_BUDGET_USD);
   const todayDay = calendarDayNumber(today);
-  if (fundedDays < 2 || todayDay === null) return { endDate, dailyBudget: GOOGLE_MIN_DAILY_BUDGET_USD };
-  const shortened = new Date((todayDay + fundedDays - 1) * 86_400_000).toISOString().slice(0, 10);
-  return { endDate: shortened, dailyBudget: dailyBudgetFromTotal(total, fundedDays) };
+  if (!mayShorten || todayDay === null) return { endDate, dailyBudget: GOOGLE_MIN_DAILY_BUDGET_USD };
+  const fundedDays = Math.floor(total / GOOGLE_MIN_DAILY_BUDGET_USD);
+  const flightDays = Math.max(fundedDays, 2);
+  const shortened = new Date((todayDay + flightDays - 1) * 86_400_000).toISOString().slice(0, 10);
+  return { endDate: shortened, dailyBudget: fundedDays >= 2 ? dailyBudgetFromTotal(total, fundedDays) : GOOGLE_MIN_DAILY_BUDGET_USD };
 }
 
 /**

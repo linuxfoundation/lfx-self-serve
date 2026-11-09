@@ -207,6 +207,7 @@ import {
   GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_MESSAGE,
   GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY,
   GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY,
+  GOOGLE_DEMAND_GEN_VIDEO_CALL_TO_ACTION_REFUSAL,
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
@@ -1633,7 +1634,7 @@ export class CampaignController {
         const adGroupsRefusal = this.googleDemandGenAdGroupsRefusal(body, googleChannel, adGroupEventName);
         if (adGroupsRefusal) {
           next(
-            ServiceValidationError.forField(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, adGroupsRefusal, {
+            ServiceValidationError.forField(this.googleCallToActionField(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, adGroupsRefusal), adGroupsRefusal, {
               operation: 'campaign_create',
               service: 'campaign_controller',
             })
@@ -1647,7 +1648,10 @@ export class CampaignController {
         const adsRefusal = this.googleDemandGenAdsRefusal(body, googleChannel, adGroupEventName);
         if (adsRefusal) {
           next(
-            ServiceValidationError.forField(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, adsRefusal, { operation: 'campaign_create', service: 'campaign_controller' })
+            ServiceValidationError.forField(this.googleCallToActionField(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, adsRefusal), adsRefusal, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
           );
           return;
         }
@@ -1669,7 +1673,10 @@ export class CampaignController {
         const videoRefusal = this.googleDemandGenVideoRefusal(body, googleChannel);
         if (videoRefusal) {
           next(
-            ServiceValidationError.forField(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY, videoRefusal, { operation: 'campaign_create', service: 'campaign_controller' })
+            ServiceValidationError.forField(this.googleCallToActionField(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY, videoRefusal), videoRefusal, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
           );
           return;
         }
@@ -6784,6 +6791,17 @@ export class CampaignController {
     const sent = this.googleCreative(body, 'demand-gen');
     const groups = sent[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
     return googleDemandGenAudiencesRefusal(sent[GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY], Array.isArray(groups) ? groups : undefined);
+  }
+
+  /**
+   * The field a Demand Gen refusal is reported against (#1614): the video ad's `callToAction` when the
+   * refusal is about it, else the enclosing key it was judged under. The video ad, ad and ad group
+   * judges each check the call to action LAST, as campaign-service's `validateDemandGenVideoSpec` does,
+   * and end their sentence with {@link GOOGLE_DEMAND_GEN_VIDEO_CALL_TO_ACTION_REFUSAL}, so keeping their
+   * order and naming the field here reports the control to change without reordering upstream's checks.
+   */
+  private googleCallToActionField(enclosing: string, refusal: string): string {
+    return refusal.endsWith(GOOGLE_DEMAND_GEN_VIDEO_CALL_TO_ACTION_REFUSAL) ? 'callToAction' : enclosing;
   }
 
   /**

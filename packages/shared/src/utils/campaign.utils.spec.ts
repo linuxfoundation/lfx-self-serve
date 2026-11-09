@@ -674,21 +674,28 @@ describe('googleAdsCampaignUrl (#1614)', () => {
 describe('googleSeededFlight (#4847, #1614)', () => {
   const today = '2026-11-07';
 
-  it('divides the total over the flight when that is at least the floor', () => {
-    expect(googleSeededFlight(1000, today, '2026-12-07')).toEqual({ endDate: '2026-12-07', dailyBudget: 32.25 });
+  it('divides the total over the flight when that is at least the floor, either way', () => {
+    expect(googleSeededFlight(1000, today, '2026-12-07', true)).toEqual({ endDate: '2026-12-07', dailyBudget: 32.25 });
+    expect(googleSeededFlight(1000, today, '2026-12-07', false)).toEqual({ endDate: '2026-12-07', dailyBudget: 32.25 });
   });
 
-  it('shortens the flight to the days the total funds at the floor, never seeding under it', () => {
+  it('shortens a Google-only flight to the days the total funds at the floor, never seeding under it', () => {
     // 100 over the 129 days to 15 March is 0.77 a day; 100 days at 1 a day ends 14 February.
-    expect(googleSeededFlight(100, today, '2027-03-15')).toEqual({ endDate: '2027-02-14', dailyBudget: 1 });
+    expect(googleSeededFlight(100, today, '2027-03-15', true)).toEqual({ endDate: '2027-02-14', dailyBudget: 1 });
   });
 
-  it('keeps the end date and seeds the floor for a total too small to fund two days', () => {
-    expect(googleSeededFlight(1.5, today, '2027-03-15')).toEqual({ endDate: '2027-03-15', dailyBudget: 1 });
+  it('gives a total under two days at the floor the shortest flight the platforms accept, not the whole run-up', () => {
+    // PR #5389 review: 1.5 kept the 129-day flight at 1 a day, about 129 against a plan of 1.5.
+    expect(googleSeededFlight(1.5, today, '2027-03-15', true)).toEqual({ endDate: '2026-11-08', dailyBudget: 1 });
+  });
+
+  it('keeps an end date shared with other platforms and seeds the floor (PR #5389 review)', () => {
+    expect(googleSeededFlight(100, today, '2027-03-15', false)).toEqual({ endDate: '2027-03-15', dailyBudget: 1 });
+    expect(googleSeededFlight(1.5, today, '2027-03-15', false)).toEqual({ endDate: '2027-03-15', dailyBudget: 1 });
   });
 
   it('seeds no budget without a usable total', () => {
-    expect(googleSeededFlight(null, today, '2027-03-15')).toEqual({ endDate: '2027-03-15', dailyBudget: null });
-    expect(googleSeededFlight(0, today, '2027-03-15')).toEqual({ endDate: '2027-03-15', dailyBudget: null });
+    expect(googleSeededFlight(null, today, '2027-03-15', true)).toEqual({ endDate: '2027-03-15', dailyBudget: null });
+    expect(googleSeededFlight(0, today, '2027-03-15', true)).toEqual({ endDate: '2027-03-15', dailyBudget: null });
   });
 });

@@ -17560,6 +17560,15 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(lines(pmax['descriptions'])).toEqual(['See you there.']);
   });
 
+  /** PR #5389 review: the payload trims a leading U+FEFF, so the seed must de-duplicate on what is sent. */
+  it('seeds one line for two that become the same once serialized, a leading U+FEFF included', () => {
+    seed(brief({ google_search: { headlines: ['Join us', '\uFEFFJoin us', 'Register now'], descriptions: [] } }));
+    show('includeDemandGen');
+
+    const payload = component()['googleCreativePayload']()['demandGenCreative'] as Record<string, unknown>;
+    expect(payload['headlines']).toEqual(['Join us', 'Register now']);
+  });
+
   it('skips a long headline candidate that repeats a seeded line in another case', () => {
     // The five descriptions take D1-D5; "join us" repeats the seeded headline "Join us" in another case.
     const descriptions = ['D1', 'D2', 'D3', 'D4', 'D5', 'join us', 'D7'];
@@ -17777,10 +17786,10 @@ describe('ImplementationTabComponent Google flight, result link and coverage gro
     return fixture.componentInstance as unknown as Record<string, any>;
   }
 
-  function seed(dates: string | undefined, totalBudget = 1000): void {
+  function seed(dates: string | undefined, totalBudget = 1000, selectedPlatforms: string[] = ['google-ads']): void {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU', slug: 'kubecon-eu', registrationUrl: 'https://events.example.com/kubecon', countryCode: 'US', dates },
-      selectedPlatforms: ['google-ads'],
+      selectedPlatforms,
       totalBudget,
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
@@ -17832,6 +17841,36 @@ describe('ImplementationTabComponent Google flight, result link and coverage gro
     expect(form.budgetUsd).toBe(1);
     expect(form.endDate).toBe(daysOut(999).iso);
     expect(component()['campaignForm'].controls.budgetUsd.valid).toBe(true);
+  });
+
+  // PR #5389 review: the end date is one control every platform's create reads, so the Google floor may
+  // move it only when Google is the brief's only platform.
+  it.each([
+    ['a Meta-only brief', ['meta-ads']],
+    ['a Google and Meta brief', ['google-ads', 'meta-ads']],
+  ])('keeps the event end date for %s, seeding the Google floor instead of shortening', (_label, platforms) => {
+    seed('March 15-17, 2099', 1000, platforms);
+
+    const form = component()['campaignForm'].getRawValue();
+    expect(form.endDate).toBe('2099-03-15');
+    expect(form.budgetUsd).toBe(1);
+    expect(component()['googleBudgetOverPlan']()).toBe(true);
+  });
+
+  it('says the flight spends more than the brief plans beside the Google budget', () => {
+    seed('March 15-17, 2099', 1000, ['google-ads', 'meta-ads']);
+    fixture.detectChanges();
+
+    const warning = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget-over-plan"]');
+    expect(warning?.textContent).toContain('spends more than the brief plans');
+  });
+
+  it('does not warn when the flight stays within the plan', () => {
+    seed('Self-paced');
+    fixture.detectChanges();
+
+    expect(component()['googleBudgetOverPlan']()).toBe(false);
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget-over-plan"]')).toBeNull();
   });
 
   it('keeps the 30-day default, and its budget, when the brief names no date it can read', () => {

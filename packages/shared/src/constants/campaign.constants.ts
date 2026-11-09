@@ -5283,6 +5283,14 @@ export const GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION = [
 ] as const;
 
 /**
+ * Why a Demand Gen video ad's call to action is refused: it is not one of
+ * {@link GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION}. One sentence, so the BFF can tell that an enclosing
+ * refusal (the video ad, an ad, an ad group) is about the call to action and report it against that
+ * field (#1614).
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_CALL_TO_ACTION_REFUSAL = `The Demand Gen video ad's call to action is not one Google Ads takes for this ad. Choose ${GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION.map((option) => option.label).join(', ')}, or none.`;
+
+/**
  * The most YouTube videos one Demand Gen video ad carries: campaign-service's `maxVideoAdVideos`
  * (`video_creative.go`), which `validateDemandGenVideoSpec` applies to this ad too.
  */
