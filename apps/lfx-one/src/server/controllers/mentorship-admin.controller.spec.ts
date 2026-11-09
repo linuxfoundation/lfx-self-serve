@@ -62,9 +62,9 @@ describe('MentorshipAdminController', () => {
     it('passes the trimmed search, status and paging to the service', async () => {
       const read = vi.spyOn(MentorshipAdminService.prototype, 'getPrograms').mockResolvedValue({ data: [], total: 0 });
 
-      await controller.getPrograms(buildReq({ search: '  grid ', status: 'open', offset: '12', limit: '24' }), res, next);
+      await controller.getPrograms(buildReq({ search: '  grid ', status: 'in-progress', offset: '12', limit: '24' }), res, next);
 
-      expect(read).toHaveBeenCalledWith(expect.anything(), { search: 'grid', status: 'open', offset: 12, limit: 24 });
+      expect(read).toHaveBeenCalledWith(expect.anything(), { search: 'grid', status: 'in-progress', offset: 12, limit: 24 });
     });
 
     it('never logs the search text', async () => {
@@ -96,7 +96,7 @@ describe('MentorshipAdminController', () => {
       const read = vi.spyOn(MentorshipAdminService.prototype, 'getPrograms');
 
       await controller.getPrograms(buildReq({ search: ['a', 'b'] }), res, next);
-      await controller.getPrograms(buildReq({ status: ['open', 'hidden'] }), res, next);
+      await controller.getPrograms(buildReq({ status: ['accepting', 'hidden'] }), res, next);
       await controller.getPrograms(buildReq({ offset: ['0', '12'] }), res, next);
 
       expect(vi.mocked(next).mock.calls.map(([error]) => (error as { statusCode?: number }).statusCode)).toEqual([400, 400, 400]);

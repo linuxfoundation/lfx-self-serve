@@ -101,7 +101,7 @@ export class ProgramDetailComponent {
   /** The loaded program and the tabs it shows: all four, or Terms only for a pending program. */
   private readonly tabSource = computed<MentorshipProgramDetailTabSource>(() => {
     const page = this.page();
-    return { programId: page?.program.id ?? '', tabs: getMentorshipProgramDetailTabs(page?.program.status ?? 'open').map((tab) => tab.value) };
+    return { programId: page?.program.id ?? '', tabs: getMentorshipProgramDetailTabs(page?.program.status ?? 'in-progress').map((tab) => tab.value) };
   });
   /**
    * Opens on the program's first tab: Current Mentees, or Terms for a pending program. A read of the same program keeps

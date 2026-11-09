@@ -35,7 +35,7 @@ const upstreamProgram = (id: string, name: string, overrides: Record<string, unk
   slug: id,
   name,
   status: 'published',
-  admin_status: 'open',
+  admin_status: 'accepting',
   project_name: 'Energy Project',
   stats: { mentors: 1, mentees: 2, graduated: 0 },
   created_on: '2026-01-01',
@@ -68,7 +68,12 @@ describe('MentorshipAdminService.getPrograms', () => {
 
   it('lists the programs upstream returns, mapped for the card, with upstream’s total', async () => {
     stubUpstream({
-      rows: [upstreamProgram('p-a', 'Alpha'), upstreamProgram('p-b', 'Beta', { admin_status: 'completed' })],
+      rows: [
+        upstreamProgram('p-a', 'Alpha'),
+        upstreamProgram('p-c', 'Gamma', { admin_status: 'in_progress' }),
+        upstreamProgram('p-d', 'Delta', { admin_status: 'upcoming' }),
+        upstreamProgram('p-b', 'Beta', { admin_status: 'completed' }),
+      ],
       total: 30,
     });
 
@@ -76,7 +81,9 @@ describe('MentorshipAdminService.getPrograms', () => {
 
     expect(result.total).toBe(30);
     expect(result.data.map((p) => [p.id, p.status])).toEqual([
-      ['p-a', 'open'],
+      ['p-a', 'accepting'],
+      ['p-c', 'in-progress'],
+      ['p-d', 'upcoming'],
       ['p-b', 'completed'],
     ]);
   });
@@ -155,10 +162,10 @@ describe('MentorshipAdminService.getProjectPrograms', () => {
       .spyOn(MicroserviceProxyService.prototype, 'proxyRequest')
       .mockResolvedValue({ data: [upstreamProgram('p-a', 'Alpha', { admin_status: 'hidden' })], meta: { total: 7 } } as never);
 
-    const result = await service.getProjectPrograms(buildReq(), PROJECT_UID, { search: 'grid', status: 'open', offset: 12, limit: 12 });
+    const result = await service.getProjectPrograms(buildReq(), PROJECT_UID, { search: 'grid', status: 'in-progress', offset: 12, limit: 12 });
 
     expect(spy.mock.calls).toEqual([
-      [expect.anything(), 'LFX_V2_SERVICE', projectProgramsPath, 'GET', { search: 'grid', status: 'open', limit: 12, offset: 12 }, undefined],
+      [expect.anything(), 'LFX_V2_SERVICE', projectProgramsPath, 'GET', { search: 'grid', status: 'in_progress', limit: 12, offset: 12 }, undefined],
     ]);
     expect(result).toEqual({ data: [expect.objectContaining({ id: 'p-a', status: 'hidden' })], total: 7 });
   });
@@ -243,7 +250,8 @@ describe('MentorshipAdminService.getProgramPage', () => {
 
     const page = await service.getProgramPage(buildReq(), PROGRAM_ID);
 
-    expect(page.program).toMatchObject({ id: PROGRAM_ID, name: 'Grid', status: 'open' });
+    // The open term has no dates, so upstream's catch-all reads it as in progress.
+    expect(page.program).toMatchObject({ id: PROGRAM_ID, name: 'Grid', status: 'in-progress' });
     // The header no longer carries a term name.
     expect(page.program).not.toHaveProperty('term');
     expect(page.tabCounts).toEqual({ currentMentees: 7, pastMentees: 4, mentors: 2, terms: 3 });
@@ -287,7 +295,37 @@ describe('MentorshipAdminService.getProgramPage', () => {
   });
 
   it('reads a published program with only closed terms as completed', async () => {
-    stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/management-summary`]: { ...summary, has_open_term: false, has_closed_term: true } }));
+    stubProgramReads(
+      pageRoutes({
+        [`${PROGRAM_PATH}/terms`]: { data: [{ id: 't0', name: 'Spring', status: 'closed' }], meta: { total: 1, limit: 100, offset: 0 } },
+      })
+    );
+
+    expect((await service.getProgramPage(buildReq(), PROGRAM_ID)).program.status).toBe('completed');
+  });
+
+  it("reads a published program's status from its open terms' dates", async () => {
+    const now = new Date();
+    const day = (offset: number) => new Date(now.getTime() + offset * 24 * 60 * 60 * 1000).toISOString();
+    stubProgramReads(
+      pageRoutes({
+        [`${PROGRAM_PATH}/terms`]: {
+          data: [{ id: 't1', name: 'Fall', status: 'open', application_start_date: day(-1), application_end_date: day(5) }],
+          meta: { total: 1, limit: 100, offset: 0 },
+        },
+      })
+    );
+
+    expect((await service.getProgramPage(buildReq(), PROGRAM_ID)).program.status).toBe('accepting');
+  });
+
+  it('reads the status from the summary when the terms read fails', async () => {
+    stubProgramReads(
+      pageRoutes({
+        [`${PROGRAM_PATH}/management-summary`]: { ...summary, has_open_term: false, has_closed_term: true },
+        [`${PROGRAM_PATH}/terms`]: new Error('down'),
+      })
+    );
 
     expect((await service.getProgramPage(buildReq(), PROGRAM_ID)).program.status).toBe('completed');
   });
@@ -306,7 +344,7 @@ describe('MentorshipAdminService.getProgramPage', () => {
 
     expect(page.tabCounts).toEqual({ currentMentees: null, pastMentees: null, mentors: null, terms: null });
     expect(page.terms).toEqual([]);
-    expect(page.program.status).toBe('open');
+    expect(page.program.status).toBe('in-progress');
     expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_admin_get_program', expect.any(String), { programId: PROGRAM_ID, failed: 4 });
   });
 

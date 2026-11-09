@@ -33,7 +33,7 @@ describe('MentorProgramDetailComponent', () => {
       slug: 'gridflow-time-series-ingestion-pipeline',
       name: 'GridFlow: Ingestion Pipeline',
       projectName: 'LF Energy',
-      status: 'open',
+      status: 'accepting',
       stats: { mentees: 2, applicants: 1, tasksToReview: 3 },
     },
     // The detail is program-wide: each row carries its own application's term.

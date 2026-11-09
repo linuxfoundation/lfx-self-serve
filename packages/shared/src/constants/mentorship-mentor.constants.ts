@@ -28,10 +28,10 @@ export const MENTORSHIP_MENTOR_PAGE_TABS = [
 ];
 
 /**
- * Statuses of a mentor's program on upstream `GET /me/mentor-programs`, which the card shows with the admin card's
+ * Statuses of a mentor's program, mapped from upstream `GET /me/mentor-programs` (`_` written as `-`), which the card shows with the admin card's
  * `MENTORSHIP_PROGRAM_STATUS_LABELS` and `MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES`.
  */
-export const MENTORSHIP_MENTOR_PROGRAM_STATUSES = ['open', 'completed'] as const;
+export const MENTORSHIP_MENTOR_PROGRAM_STATUSES = ['accepting', 'in-progress', 'upcoming', 'completed'] as const;
 
 export const EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE: MentorshipMentorProgramsResponse = {
   data: [],

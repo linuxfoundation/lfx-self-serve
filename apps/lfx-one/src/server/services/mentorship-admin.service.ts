@@ -188,7 +188,7 @@ export class MentorshipAdminService {
     }
 
     const summaryData = summary.status === 'fulfilled' ? summary.value : undefined;
-    const { program, unknownStatus } = mapMentorshipAdminHeaderProgram(header.value, summaryData);
+    const { program, unknownStatus } = mapMentorshipAdminHeaderProgram(header.value, summaryData, terms.status === 'fulfilled' ? terms.value : undefined);
     if (unknownStatus) {
       logger.warning(req, 'mentorship_admin_get_program', 'Unknown upstream program status; showing it as pending review', {
         programId,

@@ -15,7 +15,7 @@ describe('MentorProgramCardComponent', () => {
     slug: 'gridflow-time-series-ingestion-pipeline',
     name: 'GridFlow: Time-Series Ingestion Pipeline',
     projectName: 'LF Energy',
-    status: 'open',
+    status: 'accepting',
     stats: { mentees: 3, tasksToReview: 4, applicants: 5 },
   };
 
@@ -39,7 +39,7 @@ describe('MentorProgramCardComponent', () => {
     const season = Array.from(element().querySelectorAll('span')).find((span) => span.textContent?.trim() === 'LF Energy');
     expect(season).toBeDefined();
     expect(element().textContent).not.toContain('·');
-    expect(element().textContent).toContain(MENTORSHIP_PROGRAM_STATUS_LABELS.open);
+    expect(element().textContent).toContain(MENTORSHIP_PROGRAM_STATUS_LABELS.accepting);
     expect(element().textContent).toContain('GridFlow: Time-Series Ingestion Pipeline');
   });
 

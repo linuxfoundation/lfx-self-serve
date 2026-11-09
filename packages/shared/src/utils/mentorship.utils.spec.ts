@@ -962,7 +962,7 @@ describe('getMentorshipProgramDetailTabs', () => {
     expect(getMentorshipProgramDetailTabs('pending-review').map((tab) => tab.value)).toEqual(['terms']);
   });
 
-  it.each(['open', 'completed', 'rejected', 'hidden'] as const)('shows a %s program all four tabs in order', (status) => {
+  it.each(['accepting', 'in-progress', 'upcoming', 'completed', 'rejected', 'hidden'] as const)('shows a %s program all four tabs in order', (status) => {
     expect(getMentorshipProgramDetailTabs(status).map((tab) => tab.value)).toEqual(['current-mentees', 'past-mentees', 'mentors', 'terms']);
   });
 });
