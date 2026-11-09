@@ -194,7 +194,7 @@
       @if (mlRefreshFailed()) {
         <lfx-ui-note variant="error" announce data-testid="auto-sync-refresh-failed-notice">
           Couldn't refresh the latest sync settings. What you see here may be out of date.
-          <lfx-ui-button note-action variant="secondary" size="small" (click)="retryMlRefresh()" data-testid="auto-sync-refresh-retry-button"
+          <lfx-ui-button note-action variant="secondary" (click)="retryMlRefresh()" data-testid="auto-sync-refresh-retry-button"
             >Retry</lfx-ui-button
           >
         </lfx-ui-note>
