@@ -83,7 +83,14 @@ export class MailingListSyncPreviewDialogComponent {
     // Also locks while the results view is showing — otherwise the header X / Escape stayed usable
     // right after a sync apply completed, letting the user dismiss the results without acknowledging
     // them even though the apply itself already finished (#4911 review).
-    lockDynamicDialogWhile(computed(() => this.loadingDiff() || this.applying() || !!this.applyResult()));
+    //
+    // Also locks on applyError() — native dismissal (header X, Escape) calls DynamicDialogRef.close()
+    // directly, bypassing this component's own close() and its applyAttempted()/committeeChanged
+    // payload. Without this, a reverse-sync apply that errors after changing memberships let the user
+    // dismiss via the header/Escape with no committeeChanged flag reaching the parent, skipping the
+    // roster refresh (copilot, #4911 review). The template's own error-view Close button still works —
+    // it calls close() directly regardless of config.closable.
+    lockDynamicDialogWhile(computed(() => this.loadingDiff() || this.applying() || !!this.applyResult() || !!this.applyError()));
     this.loadDiff();
   }
 
@@ -173,8 +180,10 @@ export class MailingListSyncPreviewDialogComponent {
     });
   }
 
+  // Counts only ADDED/INVITED — excluding FAILED alone isn't enough, since SKIPPED_CROSS_LIST is
+  // neither a failure nor an actual add, and was inflating the "succeeded" heading (greptile P2, #4911 review).
   private initAddedSucceededCount(): Signal<number> {
-    return computed(() => this.addedWithOutcome().filter((row) => row.outcome !== SyncApplyOutcome.FAILED).length);
+    return computed(() => this.addedWithOutcome().filter((row) => row.outcome === SyncApplyOutcome.ADDED || row.outcome === SyncApplyOutcome.INVITED).length);
   }
 
   private initRemovedSucceededCount(): Signal<number> {
