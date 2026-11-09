@@ -2323,6 +2323,14 @@ export const GOOGLE_CHANNELS_WITH_OBSERVED_DEMOGRAPHICS = ['search'] as const;
  */
 export const GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_TARGETING = ['display'] as const;
 
+/**
+ * The Google channels that build demographics into a new Audience (linuxfoundation/lfx-v2-campaign-service#498,
+ * #518): Demand Gen alone. A Demand Gen ad group is audience-grouped, so Google refuses demographic
+ * criteria on it; upstream puts the demographics inside an Audience it creates before the budget and
+ * attaches that Audience to the ad group (`validateDemandGenDemographics`).
+ */
+export const GOOGLE_CHANNELS_WITH_DEMAND_GEN_DEMOGRAPHICS = ['demand-gen'] as const;
+
 /** The demographic dimensions a Search campaign can observe, in the order the tab lists them (`validateObservedDemographics`). */
 export const GOOGLE_ADS_OBSERVED_DEMOGRAPHICS = ['AGE_RANGE', 'GENDER', 'INCOME_RANGE'] as const;
 
@@ -4857,6 +4865,9 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'demandGenAds', label: 'Demand Gen ads', normalized: true },
   { field: 'demandGenAdGroups', label: 'Demand Gen ad groups', normalized: true },
   { field: 'demandGenAudience', label: 'Demand Gen audience', normalized: true },
+  // The single Demand Gen ad group's demographic Audience (linuxfoundation/lfx-v2-campaign-service#498).
+  // A named group's own demographics (#518) ride inside `demandGenAdGroups`, which counts already.
+  { field: 'demandGenDemographics', label: 'Demand Gen demographics', normalized: true },
   { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
   { field: 'displayCreative', label: 'Display creative', normalized: true },
   { field: 'displayAdGroups', label: 'Display ad groups', normalized: true },
@@ -5482,6 +5493,18 @@ export const GOOGLE_DEMAND_GEN_AUDIENCE_BESIDE_AD_GROUPS =
 /** The note under the split when the single ad group's Audience is kept but not sent because the campaign is split (#5244). */
 export const GOOGLE_DEMAND_GEN_AUDIENCE_HELD_WHILE_SPLIT =
   'The audience you picked for the single ad group is kept but not sent while the campaign is split into ad groups. Pick an audience on each ad group, or turn the split off to send it.';
+
+/**
+ * The `googleAdsConfig` key the single Demand Gen ad group's demographics ride under
+ * (linuxfoundation/lfx-v2-campaign-service#498): age ranges, genders, income ranges and parental statuses
+ * that upstream builds into one new Audience. A named group's demographics ride under its own
+ * `demographics` (#518).
+ */
+export const GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY = 'demandGenDemographics' satisfies keyof CampaignCreateRequest;
+
+/** The note under the split when the single ad group's demographics are kept but not sent because the campaign is split. */
+export const GOOGLE_DEMAND_GEN_DEMOGRAPHICS_HELD_WHILE_SPLIT =
+  'The demographics you set for the single ad group are kept but not sent while the campaign is split into ad groups. Set demographics on each ad group, or turn the split off to send them.';
 
 /** Google's limit on an ad group's name, in characters: campaign-service's `maxAdGroupNameRunes` (`adgroup_ad.go`). */
 export const GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES = 255;

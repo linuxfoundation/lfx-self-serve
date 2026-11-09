@@ -3,10 +3,6 @@
 
 import { Component, computed, input, model, Signal } from '@angular/core';
 import {
-  GOOGLE_ADS_AGE_RANGE_LABELS,
-  GOOGLE_ADS_AGE_RANGES,
-  GOOGLE_ADS_GENDER_LABELS,
-  GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_INCOME_RANGE_LABELS,
   GOOGLE_ADS_INCOME_RANGES,
   GOOGLE_ADS_OBSERVED_DEMOGRAPHIC_LABELS,
@@ -18,11 +14,12 @@ import type {
   GoogleAdsIncomeRange,
   GoogleAdsObservedDemographic,
   GoogleAdsParentalStatus,
-  GoogleDemographicTargetingGroupView,
   GoogleDisplayDemographics,
   GoogleExclusionOptionView,
 } from '@lfx-one/shared/interfaces';
 import { UiCheckboxComponent } from '@shared/uikit/checkbox/checkbox.component';
+
+import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
 
 /**
  * The Google campaign's ad-group demographics on the Implement tab: income-range and parental-status
@@ -33,7 +30,7 @@ import { UiCheckboxComponent } from '@shared/uikit/checkbox/checkbox.component';
  */
 @Component({
   selector: 'lfx-campaign-google-demographics-panel',
-  imports: [UiCheckboxComponent],
+  imports: [UiCheckboxComponent, CampaignGoogleDemographicTargetingComponent],
   templateUrl: './campaign-google-demographics-panel.component.html',
 })
 export class CampaignGoogleDemographicsPanelComponent {
@@ -57,20 +54,6 @@ export class CampaignGoogleDemographicsPanelComponent {
   protected readonly observedRows: Signal<GoogleExclusionOptionView[]> = computed(() =>
     this.rows(GOOGLE_ADS_OBSERVED_DEMOGRAPHICS, GOOGLE_ADS_OBSERVED_DEMOGRAPHIC_LABELS, this.observedDemographics())
   );
-  /** Display's four targeting groups, each ticked value one the campaign narrows to. */
-  protected readonly targetingGroups: Signal<GoogleDemographicTargetingGroupView[]> = computed(() => {
-    const target = this.displayDemographics();
-    return [
-      { key: 'ageRanges', legend: 'Age', rows: this.rows(GOOGLE_ADS_AGE_RANGES, GOOGLE_ADS_AGE_RANGE_LABELS, target.ageRanges ?? []) },
-      { key: 'genders', legend: 'Gender', rows: this.rows(GOOGLE_ADS_GENDERS, GOOGLE_ADS_GENDER_LABELS, target.genders ?? []) },
-      { key: 'incomeRanges', legend: 'Household income', rows: this.rows(GOOGLE_ADS_INCOME_RANGES, GOOGLE_ADS_INCOME_RANGE_LABELS, target.incomeRanges ?? []) },
-      {
-        key: 'parentalStatuses',
-        legend: 'Parental status',
-        rows: this.rows(GOOGLE_ADS_PARENTAL_STATUSES, GOOGLE_ADS_PARENTAL_STATUS_LABELS, target.parentalStatuses ?? []),
-      },
-    ];
-  });
   /** Whether any section is on show, so the always-mounted live region has a panel to belong to. */
   protected readonly anyShown: Signal<boolean> = computed(
     () => this.showIncomeExclusions() || this.showParentalExclusions() || this.showObserved() || this.showTargeting()
@@ -89,10 +72,6 @@ export class CampaignGoogleDemographicsPanelComponent {
 
   protected onObserved(value: string, checked: boolean): void {
     this.observedDemographics.update((list) => this.toggled(list, value as GoogleAdsObservedDemographic, checked));
-  }
-
-  protected onTarget(key: keyof GoogleDisplayDemographics, value: string, checked: boolean): void {
-    this.displayDemographics.update((target) => ({ ...target, [key]: this.toggled<string>([...(target[key] ?? [])], value, checked) }));
   }
 
   private rows(values: readonly string[], labels: Readonly<Record<string, string>>, ticked: readonly string[]): GoogleExclusionOptionView[] {
