@@ -235,6 +235,24 @@ describe('mktgReportUnmirroredGaps', () => {
       expect(mktgReportGapMirrorsReason('How do I propose a new project to AAIF?', 'How do I propose a new project to AAIF?')).toBe(true);
     });
 
+    it('reduces a reason to its quoted question only in the agents’ wrapper shape: a quoted word in a bare question hides no other gap, and a nested quote survives', () => {
+      const bareWithQuotedWord = 'Should the boilerplate say "members" or "participants"?';
+      expect(mktgReportGapMirrorsReason('Whether to name the Gold and Silver members: the framework names none.', bareWithQuotedWord)).toBe(false);
+      expect(mktgReportGapMirrorsReason('Not answered: Should the boilerplate say "members" or "participants"?', bareWithQuotedWord)).toBe(true);
+      expect(
+        mktgReportGapMirrorsReason(
+          'What does “open” mean here?',
+          'The question “What does “open” mean here?” was left unanswered, so the framework fills that gap with a placeholder.'
+        )
+      ).toBe(true);
+      expect(
+        mktgReportGapMirrorsReason(
+          'Whether to name the Gold and Silver members: the framework names none.',
+          'The section "Pricing" asks "How much is it?" and no page answers it.'
+        )
+      ).toBe(false);
+    });
+
     it('folds whitespace and case, matches containment either way, and keeps an unrelated gap', () => {
       expect(mktgReportGapMirrorsReason('not answered:  how  much does membership cost?', 'How much does MEMBERSHIP cost?')).toBe(true);
       expect(mktgReportGapMirrorsReason('How much does membership cost?', 'Not answered: how much does membership cost? (no page states it)')).toBe(true);

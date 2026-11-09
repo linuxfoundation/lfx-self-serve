@@ -62,8 +62,13 @@ export function brandKitApproveFindings(report: MktgAssetReport | null | undefin
 
 /** The prefix the boilerplates agent puts before an unanswered question in `report.gaps`. */
 const GAP_UNANSWERED_PREFIX = /^not answered:\s*/i;
-/** A question quoted inside a missing asset's reason, in straight or curly double quotes. */
-const QUOTED_QUESTION = /["\u201C]([^"\u201C\u201D]+)["\u201D]/;
+/**
+ * The agents' wrapper around an unanswered question in a missing asset's reason: `The question "…" was not answered…`
+ * (boilerplates, straight quotes) or `The question “…” was left unanswered…` (framework, curly quotes). Anchored at the
+ * start and greedy to the closing quote before ` was`, so a quote nested inside the question survives; a quoted word in
+ * any other sentence is not a question and is not taken.
+ */
+const WRAPPED_QUESTION = /^the question\s+["\u201C](.+)["\u201D]\s+was\b/i;
 
 /** A text folded for comparison only: whitespace runs to one space, trimmed, lower-cased. */
 function foldedForMatch(text: string): string {
@@ -73,15 +78,16 @@ function foldedForMatch(text: string): string {
 /**
  * Whether a gap line and a missing asset's reason speak of the same open question, so the approve dialog lists it once.
  * Both are normalised for the comparison only (the text shown never changes): the gap loses a leading "Not answered: ";
- * the reason is the question quoted inside it (straight "…" or curly “…” quotes) when there is one, else the whole
- * reason; whitespace is folded and case ignored; then either side containing the other is a match. This covers the
- * agents' current wording: the FAQ's reason is its gap; the boilerplates wrap the question in `The question "…" was
- * not answered…` against the gap `Not answered: …`; the framework wraps it in curly quotes against the bare question.
+ * the reason is reduced to the question quoted inside it only when it has the agents' wrapper shape
+ * (`WRAPPED_QUESTION`), else the whole reason is compared; whitespace is folded and case ignored; then either side
+ * containing the other is a match. This covers the agents' current wording: the FAQ's reason is its gap; the
+ * boilerplates wrap the question in `The question "…" was not answered…` against the gap `Not answered: …`; the
+ * framework wraps it in curly quotes against the bare question.
  */
 export function mktgReportGapMirrorsReason(gap: string, reason: string): boolean {
   const gapText = foldedForMatch(gap.replace(GAP_UNANSWERED_PREFIX, ''));
-  const quoted = QUOTED_QUESTION.exec(reason);
-  const reasonText = foldedForMatch(quoted ? quoted[1] : reason);
+  const wrapped = WRAPPED_QUESTION.exec(reason.trim());
+  const reasonText = foldedForMatch(wrapped ? wrapped[1] : reason);
   if (!gapText || !reasonText) return false;
   return gapText.includes(reasonText) || reasonText.includes(gapText);
 }
