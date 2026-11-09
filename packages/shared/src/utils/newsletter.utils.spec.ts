@@ -7,6 +7,7 @@ import {
   addShareToTally,
   combinedViewCount,
   isNewsletterBlocksEnabled,
+  isNewsletterLiveSendLocked,
   newsletterIssuePath,
   shareButtonAriaLabel,
   visibleShareCount,
@@ -108,5 +109,23 @@ describe('isNewsletterBlocksEnabled', () => {
 
   it('keeps a draft with a layout in the composer even with the flag off', () => {
     expect(isNewsletterBlocksEnabled({ hasLayout: true, flagEnabled: false, contextIsOwner: false })).toBe(true);
+  });
+});
+
+describe('isNewsletterLiveSendLocked', () => {
+  it('locks a draft with a layout while live send is off', () => {
+    expect(isNewsletterLiveSendLocked(true, false)).toBe(true);
+  });
+
+  it('never locks a basic editor draft', () => {
+    expect(isNewsletterLiveSendLocked(false, false)).toBe(false);
+  });
+
+  it('unlocks a draft with a layout once live send is on', () => {
+    expect(isNewsletterLiveSendLocked(true, true)).toBe(false);
+  });
+
+  it('keeps live send off by default for the editor-only release', () => {
+    expect(isNewsletterLiveSendLocked(true)).toBe(true);
   });
 });

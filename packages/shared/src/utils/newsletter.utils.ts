@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NEWSLETTER_BLOCKS_PROJECT_SLUGS, NEWSLETTER_DATE_TIME_ZONE, NEWSLETTER_SEND_DATE_PLACEHOLDER } from '../constants/newsletter.constants';
+import {
+  NEWSLETTER_BLOCKS_LIVE_SEND_ENABLED,
+  NEWSLETTER_BLOCKS_PROJECT_SLUGS,
+  NEWSLETTER_DATE_TIME_ZONE,
+  NEWSLETTER_SEND_DATE_PLACEHOLDER,
+} from '../constants/newsletter.constants';
 import { NewsletterShareTally } from '../interfaces/newsletter.interface';
 import { SocialShareChannel } from '../interfaces/social-share.interface';
 
@@ -78,4 +83,12 @@ export function withNewsletterPreviewDate(html: string, now: Date = new Date()):
 export function isNewsletterBlocksEnabled(options: { hasLayout: boolean; flagEnabled: boolean; contextIsOwner: boolean; projectSlug?: string }): boolean {
   if (options.hasLayout) return true;
   return options.flagEnabled && options.contextIsOwner && NEWSLETTER_BLOCKS_PROJECT_SLUGS.includes(options.projectSlug ?? '');
+}
+
+/**
+ * Whether a real send or schedule is locked for a draft. Only a draft with a layout is affected.
+ * A basic editor draft always sends as before.
+ */
+export function isNewsletterLiveSendLocked(hasLayout: boolean, liveSendEnabled: boolean = NEWSLETTER_BLOCKS_LIVE_SEND_ENABLED): boolean {
+  return hasLayout && !liveSendEnabled;
 }

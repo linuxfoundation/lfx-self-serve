@@ -275,6 +275,11 @@
         }
       </div>
 
+      @if (liveSendLocked()) {
+        <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" data-testid="newsletter-review-live-send-locked">
+          Real sends from the block editor aren't switched on yet. You can still send yourself a test.
+        </div>
+      }
       <div class="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-gray-100">
         <lfx-button
           label="Send test"

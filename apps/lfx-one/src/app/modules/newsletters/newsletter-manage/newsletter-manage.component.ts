@@ -41,6 +41,7 @@ import {
   getTimezoneUtcOffsetString,
   getUserTimezone,
   isNewsletterBlocksEnabled,
+  isNewsletterLiveSendLocked,
   isValidEmail,
   stripHtml,
 } from '@lfx-one/shared/utils';
@@ -439,8 +440,11 @@ export class NewsletterManageComponent {
     if (!committeeUid) return false;
     return this.audienceEmailAdds().some((e) => e.committeeUid === committeeUid && e.status === 'pending');
   });
+  // The editor-only release sends tests only, so a real send or schedule is locked for a layout draft.
+  public readonly liveSendLocked = computed(() => isNewsletterLiveSendLocked(this.isBlocksMode()));
   public readonly canSend = computed(
     () =>
+      !this.liveSendLocked() &&
       this.audienceFilled() &&
       this.audienceNormalized() &&
       this.subjectFilled() &&
@@ -477,6 +481,7 @@ export class NewsletterManageComponent {
   // sendMode to 'now' (see initSchedulePastGuard), so it should never surface here.
   public readonly canSchedule = computed(
     () =>
+      !this.liveSendLocked() &&
       this.audienceFilled() &&
       this.audienceNormalized() &&
       this.subjectFilled() &&

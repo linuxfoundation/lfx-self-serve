@@ -59,6 +59,7 @@ export class NewsletterReviewComponent implements OnInit {
   public readonly edName = input<string>('');
   public readonly edEmail = input<string>('');
   public readonly canSend = input<boolean>(false);
+  public readonly liveSendLocked = input<boolean>(false);
   public readonly canSendTest = input<boolean>(false);
   public readonly canPreview = input<boolean>(false);
   public readonly sending = input<boolean>(false);
