@@ -217,9 +217,9 @@ export class CommitteeViewComponent {
 
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
   /**
-   * True when the user arrived from the Me Lens My Groups page — used to show a context-transition notice.
-   * Reads an explicit `fromMeLens` boolean from navigation state (set by both the table anchor and
-   * the card grid link) rather than inferring it from the display label, so renaming the label
+   * True when the user arrived from a Me Lens list — My Groups (table anchor and card grid link) or the
+   * Surveys and Votes group links — used to show a context-transition notice.
+   * Reads an explicit `fromMeLens` boolean from navigation state rather inferring it from the display label, so renaming the label
    * can never silently suppress the notice (addresses GH review on coupling to a label literal).
    */
   protected readonly fromMeLens: boolean = this.router.getCurrentNavigation()?.extras?.state?.['fromMeLens'] === true;

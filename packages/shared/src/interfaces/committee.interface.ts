@@ -380,6 +380,16 @@ export interface GroupEligibility {
 }
 
 /**
+ * Navigation state a Me lens list passes when linking to a group details page, so the page can
+ * return to that list (see `COMMITTEE_BACK_PATHS`) and restore the Me lens.
+ */
+export interface GroupLinkState {
+  backLabel: string;
+  backPath: string;
+  fromMeLens: boolean;
+}
+
+/**
  * Lightweight committee reference for cross-module use
  * @description Minimal committee data with voting status eligibility
  */

@@ -193,8 +193,8 @@ export class MailingListTableComponent {
 
   private buildGroupLinks(mailingList: GroupsIOMailingList): MailingListGroupLink[] {
     return (mailingList.committees ?? [])
-      .slice(0, this.maxVisibleGroups)
       .filter((committee) => !!committee.uid?.trim())
+      .slice(0, this.maxVisibleGroups)
       .map((committee) => ({
         uid: committee.uid,
         name: committee.name?.trim() || 'Unnamed group',

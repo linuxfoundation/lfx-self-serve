@@ -278,6 +278,8 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
       await renderMaintainer(baseList);
 
       expect(fixture.nativeElement.querySelector('[data-testid^="mailing-list-group-link-"]')).toBeNull();
+      const dashes = Array.from(fixture.nativeElement.querySelectorAll('td span.text-gray-400') as NodeListOf<HTMLElement>).map((el) => el.textContent?.trim());
+      expect(dashes).toContain('-');
     });
   });
 });

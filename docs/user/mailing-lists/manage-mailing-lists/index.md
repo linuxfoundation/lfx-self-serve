@@ -34,7 +34,7 @@ Each row shows the list's name, its email address, and an **Open on Groups.io** 
 | Project or foundation, other users      | **Mailing List**, **Description**, **Linked Groups**, **Public**, **Subscribers**, and a **Join** button where it applies |
 | Your own view                           | **Mailing List**, **Description**, **My Subscription**, **Public**, and a leave button                                    |
 
-In the **Linked Groups** column, select a group's name to open its details page.
+If you can manage lists, select a group's name in the **Linked Groups** column to open its details page. Otherwise, select the group icon in that column to open the first linked group.
 
 A **Public** check mark means the list's archive is public. A **Member** badge next to a list name means you are already subscribed. **My Subscription** shows how you receive email from the list, for example **Individual**, **Digest**, or **None**. It shows **Subscribed** when no delivery mode is available.
 

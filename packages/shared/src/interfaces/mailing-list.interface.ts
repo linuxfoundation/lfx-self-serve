@@ -329,10 +329,6 @@ export interface MailingListAssociationUpdateResult {
   status?: number;
 }
 
-/**
- * Table row decorated with canonical view-link state (GH-1567); `viewCommands` already holds the
- * flat fallback, so the template never branches. Mirrors `CommitteeTableRowVm`.
- */
 /** One linked group in the mailing list table, with its canonical group-details link. */
 export interface MailingListGroupLink {
   uid: string;
@@ -341,6 +337,10 @@ export interface MailingListGroupLink {
   commands: string[];
 }
 
+/**
+ * Table row decorated with canonical view-link state (GH-1567); `viewCommands` already holds the
+ * flat fallback, so the template never branches. Mirrors `CommitteeTableRowVm`.
+ */
 export interface MailingListTableRowVm extends GroupsIOMailingList {
   viewCommands: string[];
   /** The first few linked groups that can be opened, in the order the list carries them; the rest are summarised as "+N more". */

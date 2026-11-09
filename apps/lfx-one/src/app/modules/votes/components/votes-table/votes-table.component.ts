@@ -23,6 +23,7 @@ import { VOTE_CLOSE_CONFIRMATION } from '@lfx-one/shared/constants';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
+  GroupLinkState,
   GroupsIOMailingList,
   MyVotesQuickFilter,
   Vote,
@@ -115,7 +116,6 @@ export class VotesTableComponent {
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
-  protected readonly groupLinkState = computed(() => (this.isMeLens() ? { backLabel: VOTE_LABEL.plural, backPath: '/votes', fromMeLens: true } : undefined));
   protected readonly PollStatus = PollStatus;
   protected readonly VoteResponseStatus = VoteResponseStatus;
   protected readonly VoteRowParticipationState = VoteRowParticipationState;
@@ -219,6 +219,7 @@ export class VotesTableComponent {
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
+  protected readonly groupLinkState: Signal<GroupLinkState | undefined> = this.initGroupLinkState();
   // Phone layout (cards) below the sm breakpoint; false through the first render so it matches the SSR table, then swaps.
   protected readonly isMobile: Signal<boolean> = injectIsMobileViewport();
   // 44px is an exact [44px]: the 14px html root makes min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets).
@@ -563,6 +564,10 @@ export class VotesTableComponent {
   }
 
   // === Private Initializers ===
+  private initGroupLinkState(): Signal<GroupLinkState | undefined> {
+    return computed(() => (this.isMeLens() ? { backLabel: VOTE_LABEL.plural, backPath: '/votes', fromMeLens: true } : undefined));
+  }
+
   private initStatusTabOptions(): Signal<FilterPillOption[]> {
     return computed(() => {
       const base: FilterPillOption[] = [
