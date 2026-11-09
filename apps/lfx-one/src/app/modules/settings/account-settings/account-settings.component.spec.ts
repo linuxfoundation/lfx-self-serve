@@ -8,6 +8,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute } from '@angular/router';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_CODE_NOT_RECEIVED_HINT,
   EMAIL_CODE_NOT_RECEIVED_TITLE,
   EMAIL_RESEND_FAILED_MESSAGE,
@@ -870,6 +871,29 @@ describe('AccountSettingsComponent — verify and link outcome (#4253)', () => {
       detail: 'Verification failed. Please try again or request a new code.',
     });
     expect(component.otpStep()).toBe(true);
+    expect(component.verifyingOtp()).toBe(false);
+  });
+
+  // #5459: a correct code for an address linked to an LFX account returns a fixed 409 — it must read as
+  // already-linked guidance, never as success, and leave the pending address in place.
+  it('shows the already-linked guidance on a proven conflict without claiming success, resetting or refreshing', async () => {
+    const { component, add, userServiceMock } = await setup(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: { success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE },
+          })
+      )
+    );
+    const loadsBefore = userServiceMock.getUserEmails.mock.calls.length;
+
+    component.verifyAndLink();
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'error', summary: 'Error', detail: EMAIL_ALREADY_LINKED_MESSAGE });
+    expect(component.otpStep()).toBe(true);
+    expect(component.pendingEmail()).toBe('owned@example.test');
+    expect(userServiceMock.getUserEmails.mock.calls.length).toBe(loadsBefore);
     expect(component.verifyingOtp()).toBe(false);
   });
 });
