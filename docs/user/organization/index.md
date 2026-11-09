@@ -46,7 +46,7 @@ You can see how the selected organization takes part in Linux Foundation foundat
 - **Crowdfunding Initiatives** shows the crowdfunding initiatives run on behalf of the organization, if you are an Admin granted directly on it
 - **Crowdfunding Donations** shows the crowdfunding donations made on behalf of the organization
 - Under **Organization Engagement**:
-  - **People** shows the organization's employees and their board and committee seats, key contact roles, code contributions, events and training. Its **Org Lens Access** tab shows who can open the organization and lets an Admin add, change or remove their access
+  - **People** shows the organization's employees and their board and committee seats, key contact roles, code contributions, events and training. Its **Org Lens Access** tab shows who has been granted access directly on the organization and lets an Admin add, change or remove that access
   - **Code Contributions** shows the repositories the organization's contributors worked in and each of their commits
   - **Events**, and **People** → **Event Attendees**, show which events the organization's people registered for or attended, and let you choose how they are counted
   - **Training & Certification** shows the courses and certifications the organization's people enrolled in or completed
@@ -61,7 +61,7 @@ Your own signed agreements, as a contributor, are on the [CLAs](../account/my-cl
 
 ## Who can use the Organization lens?
 
-You can open an organization in the Organization lens when you hold a role on it: an admin or viewer role, or a CLA Manager or initial CLA Manager designee role. An admin or viewer can open every page in the Organization lens sidebar, and **Crowdfunding Initiatives** appears there only for an Admin granted directly on that organization. A CLA Manager, or an initial CLA Manager designee, with no other role on that organization sees only **EasyCLA**. To give someone an admin or viewer role, see [Manage Org Lens Access](./manage-org-lens-access/).
+You can open an organization in the Organization lens when you hold a role on it: an admin or viewer role, including one inherited from a related organization, or a CLA Manager or initial CLA Manager designee role. An admin or viewer can open every page in the Organization lens sidebar, and **Crowdfunding Initiatives** appears there only for an Admin granted directly on that organization. A CLA Manager, or an initial CLA Manager designee, with no other role on that organization sees only **EasyCLA**. To give someone an admin or viewer role, see [Manage Org Lens Access](./manage-org-lens-access/).
 
 ## How do I open the Organization lens?
 
@@ -83,7 +83,7 @@ See [Choose and switch an organization](./choose-an-organization/) for what you 
 - [Lens-scoped Initiatives](../crowdfunding/lens-initiatives/) — crowdfunding initiatives run on behalf of the organization, for its directly granted Admins
 - [Organization Donations](../crowdfunding/lens-donations/) — crowdfunding donations made on behalf of the organization
 - [People](./people/) — the organization's employees, contributors, board and committee members, key contacts, event attendees and trainees
-- [Manage Org Lens Access](./manage-org-lens-access/) — add, change or remove who can open the organization
+- [Manage Org Lens Access](./manage-org-lens-access/) — add, change or remove the access granted directly on the organization
 - [Code Contributions](./code-contributions/) — the organization's repositories and commits, and how the time range carries to People
 - [Events and Event Attendees](./org-events/) — the filters, defaults and what each option counts on the Events page and on People → Event Attendees
 - [Training & Certification](./training/) — the organization's training courses and certifications, its nine cards, and how to filter and group them
