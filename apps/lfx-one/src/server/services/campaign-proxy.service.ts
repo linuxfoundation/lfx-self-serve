@@ -10,6 +10,7 @@ import {
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  GOOGLE_DISPLAY_CALLS_TO_ACTION,
   googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
@@ -592,7 +593,7 @@ GOOGLE DEMAND GEN (key: "google_display" — runs on YouTube, Discover, Gmail, D
 - headlines: 5 variations, each ≤ 40 characters (STRICT — Demand Gen limit is 40, not 30)
 - descriptions: 5 variations, each ≤ 90 characters (STRICT)
 - business_name: ≤ 25 chars — use the event's parent organization (e.g. "CNCF" for KubeCon). Default to "Linux Foundation" only if no specific foundation is identifiable.
-- call_to_action: one of "Learn More", "Sign Up", "Book Now", "Apply Now" (never "Register": Google refuses it)`;
+- call_to_action: one of ${GOOGLE_DISPLAY_CALLS_TO_ACTION.map((option) => `"${option.value}"`).join(', ')} (exactly as written; Google Ads refuses any other text, "Register" included; used on Display ads only)`;
 
 const COPY_LINKEDIN_SECTION = `
 LINKEDIN SPONSORED CONTENT (key: "linkedin_sponsored"):

@@ -5000,42 +5000,6 @@ export const GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN = /^customers\/[0-9]+\/userLi
 export const GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN = /^customers\/[0-9]+\/customAudiences\/[0-9]+$/;
 
 /**
- * What each Google channel's creative is made of — one ordered catalogue, read by the form that
- * collects a creative and by the BFF normalizer that puts one on the wire.
- *
- * Every field and every number has a named counterpart in `internal/platform/googleads/` —
- * `demandgen_creative.go`, `pmax_creative.go` and `display_creative.go` — and the whole point of
- * three separate channel entries is that they DO NOT travel together. The traps the upstream
- * comments call out, repeated here because this is what a form reads:
- *
- * - Headline COUNTS differ sharply. Demand Gen and Display need one; Performance Max needs
- *   **three**, and allows fifteen. Nothing about the shared field name says so.
- * - Performance Max requires **two** descriptions, and at least one of them must fit a SHORT slot
- *   the other channels do not have at all.
- * - `longHeadline` is a LIST on Performance Max and a SINGLE STRING on Display. Same name, two
- *   shapes — which is why {@link GoogleCreativeFieldSpec} carries `kind` rather than letting a
- *   caller infer the shape from the name.
- * - The marketing-image arrays are reciprocal on Demand Gen (either one satisfies the requirement,
- *   so neither carries a `min`) and BOTH required on Performance Max and Display (so both do, #4848).
- * - `max` on a marketing-image field is that channel's COMBINED cap across its marketing arrays,
- *   not a per-array allowance; logos never count toward the marketing total, and Display's two logo
- *   arrays share a cap of their own. Stating the combined cap on each field is the permissive
- *   direction; {@link GOOGLE_CREATIVE_SHARED_CAPS} checks the real sum, as upstream's preflight does.
- * - `image` is each image slot's SHAPE, copied from the channel's slot table upstream
- *   (`demandGenImageSlots`, `performanceMaxImageSlots`, `displayImageSlots`). Same-named slots do
- *   NOT share it: Display's `logoImages` is 4:1 at 512x128 where the other two channels' are 1:1 at
- *   128x128. The Implement tab offers a stored image for a slot only when it fits that shape, and
- *   the BFF forwards an asset ref only in a field that has one.
- *
- * Ordering is the order a section renders in: the ad's words first, then its images, because the
- * copy is what an operator writes and the images are what they paste links to.
- *
- * One catalogue rather than a table per consumer is deliberate. The same numbers previously existed
- * as a limits object here and a field list in `campaign.controller.ts`, and a third copy was about
- * to appear in the Implementation tab; three copies of a bound is three chances for the form to ask
- * for something the wire will not carry.
- */
-/**
  * The call-to-action texts a responsive display ad accepts (#1614, F13): the English list Google
  * documents for `ResponsiveDisplayAdInfo.callToActionText` on "Call-to-action translations"
  * (https://developers.google.com/google-ads/api/data/call-to-action-translations), spelled as that page
@@ -5074,6 +5038,42 @@ export const GOOGLE_DISPLAY_CALLS_TO_ACTION = [
  */
 export const GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION: readonly GoogleCreativeFieldOption[] = [];
 
+/**
+ * What each Google channel's creative is made of — one ordered catalogue, read by the form that
+ * collects a creative and by the BFF normalizer that puts one on the wire.
+ *
+ * Every field and every number has a named counterpart in `internal/platform/googleads/` —
+ * `demandgen_creative.go`, `pmax_creative.go` and `display_creative.go` — and the whole point of
+ * three separate channel entries is that they DO NOT travel together. The traps the upstream
+ * comments call out, repeated here because this is what a form reads:
+ *
+ * - Headline COUNTS differ sharply. Demand Gen and Display need one; Performance Max needs
+ *   **three**, and allows fifteen. Nothing about the shared field name says so.
+ * - Performance Max requires **two** descriptions, and at least one of them must fit a SHORT slot
+ *   the other channels do not have at all.
+ * - `longHeadline` is a LIST on Performance Max and a SINGLE STRING on Display. Same name, two
+ *   shapes — which is why {@link GoogleCreativeFieldSpec} carries `kind` rather than letting a
+ *   caller infer the shape from the name.
+ * - The marketing-image arrays are reciprocal on Demand Gen (either one satisfies the requirement,
+ *   so neither carries a `min`) and BOTH required on Performance Max and Display (so both do, #4848).
+ * - `max` on a marketing-image field is that channel's COMBINED cap across its marketing arrays,
+ *   not a per-array allowance; logos never count toward the marketing total, and Display's two logo
+ *   arrays share a cap of their own. Stating the combined cap on each field is the permissive
+ *   direction; {@link GOOGLE_CREATIVE_SHARED_CAPS} checks the real sum, as upstream's preflight does.
+ * - `image` is each image slot's SHAPE, copied from the channel's slot table upstream
+ *   (`demandGenImageSlots`, `performanceMaxImageSlots`, `displayImageSlots`). Same-named slots do
+ *   NOT share it: Display's `logoImages` is 4:1 at 512x128 where the other two channels' are 1:1 at
+ *   128x128. The Implement tab offers a stored image for a slot only when it fits that shape, and
+ *   the BFF forwards an asset ref only in a field that has one.
+ *
+ * Ordering is the order a section renders in: the ad's words first, then its images, because the
+ * copy is what an operator writes and the images are what they paste links to.
+ *
+ * One catalogue rather than a table per consumer is deliberate. The same numbers previously existed
+ * as a limits object here and a field list in `campaign.controller.ts`, and a third copy was about
+ * to appear in the Implementation tab; three copies of a bound is three chances for the form to ask
+ * for something the wire will not carry.
+ */
 export const GOOGLE_CREATIVE_FIELD_SPECS = {
   'demand-gen': [
     { control: 'headlines', label: 'Headlines', kind: 'list', min: 1, max: 5, width: 30 },

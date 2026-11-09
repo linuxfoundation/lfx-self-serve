@@ -384,6 +384,9 @@ const EVENT_DATE_DAY_FIRST = new RegExp(
 );
 const EVENT_DATE_ISO = /\b(\d{4})-(\d{2})-(\d{2})\b/;
 const EVENT_DATE_YEAR = /\b(20\d{2})\b/;
+const EVENT_DATE_YEARS = /\b20\d{2}\b/g;
+/** Every month named, in order: used to spot a range that crosses into the next year. */
+const EVENT_DATE_ANY_MONTH = new RegExp(`\\b${EVENT_DATE_MONTH}`, 'gi');
 
 /**
  * The first day of an event, as `YYYY-MM-DD`, read from the brief's human-readable `dates` (#1614).
@@ -391,8 +394,8 @@ const EVENT_DATE_YEAR = /\b(20\d{2})\b/;
  * The scrape asks for "human-readable date range" (`EVENT_EXTRACTION_PROMPT`), so the text is free
  * form. This reads the shapes event pages use — `2027-03-15`, `March 15, 2027`, `March 15-17, 2027`,
  * `March 30 - April 1, 2027`, `15 March 2027`, `15-17 March 2027`, with or without a weekday — and
- * takes the FIRST day of a range, with the first year written, which is the start's in every one of
- * those shapes. Anything it cannot place on a real calendar day, a date with no year among them, is
+ * takes the FIRST day of a range, with the first year written. A range that crosses New Year with the
+ * year written once, `December 30 - January 2, 2027`, starts in the year before. Anything it cannot place on a real calendar day, a date with no year among them, is
  * `null`, so a caller keeps its own default rather than acting on a guess.
  *
  * @param dates - `CampaignEventDetails.dates`
@@ -410,15 +413,23 @@ export function campaignEventStartDate(dates: string | null | undefined): string
   // each also hold a later fragment the other pattern could read.
   let monthName: string;
   let day: string;
+  let startAt: number;
   if (monthFirst && (!dayFirst || monthFirst.index <= dayFirst.index)) {
-    [monthName, day] = [monthFirst[1], monthFirst[2]];
+    [monthName, day, startAt] = [monthFirst[1], monthFirst[2], monthFirst.index];
   } else if (dayFirst) {
-    [day, monthName] = [dayFirst[1], dayFirst[2]];
+    [day, monthName, startAt] = [dayFirst[1], dayFirst[2], dayFirst.index];
   } else {
     return null;
   }
-  const month = EVENT_DATE_MONTHS.indexOf(monthName.slice(0, 3).toLowerCase()) + 1;
-  const date = `${year}-${String(month).padStart(2, '0')}-${day.padStart(2, '0')}`;
+  const monthNumber = (name: string): number => EVENT_DATE_MONTHS.indexOf(name.slice(0, 3).toLowerCase()) + 1;
+  const month = monthNumber(monthName);
+  // "December 30 - January 2, 2027" writes the year once, for the END. A later month numbered below
+  // the start's means the range crosses New Year, so the start is in the year before the one written.
+  const crossesYear =
+    (dates.match(EVENT_DATE_YEARS) ?? []).length === 1 &&
+    [...dates.matchAll(EVENT_DATE_ANY_MONTH)].some((found) => found.index > startAt && monthNumber(found[1]) < month);
+  const startYear = crossesYear ? Number(year) - 1 : Number(year);
+  const date = `${startYear}-${String(month).padStart(2, '0')}-${day.padStart(2, '0')}`;
   return calendarDayNumber(date) === null ? null : date;
 }
 

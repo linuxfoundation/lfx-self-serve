@@ -589,6 +589,10 @@ describe('campaignEventStartDate (#1614)', () => {
     // Both shapes match here; the earlier one is the start.
     ['30 March \u2013 April 1, 2027', '2027-03-30'],
     ['December 30, 2026 - January 2, 2027', '2026-12-30'],
+    // The year written once, for the end of a range that crosses New Year.
+    ['December 30 \u2013 January 2, 2027', '2026-12-30'],
+    ['30 December - 2 January 2027', '2026-12-30'],
+    ['December 28-31, 2026', '2026-12-28'],
     ['September 1 2027', '2027-09-01'],
   ])('reads %s as %s', (dates, expected) => {
     expect(campaignEventStartDate(dates)).toBe(expected);
