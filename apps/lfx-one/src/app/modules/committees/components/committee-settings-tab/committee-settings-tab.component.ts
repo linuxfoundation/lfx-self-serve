@@ -227,8 +227,10 @@ export class CommitteeSettingsTabComponent {
 
   // Blocks opening the drawer while an Add List/Remove association change is in flight — a sync
   // save opened against that snapshot sends a full-resource PUT with the pre-change `committee_uid`,
-  // which can land after and silently undo the in-flight association change (#4899 review).
-  public autoSyncButtonDisabled = computed(() => this.savingMl() || this.removingMlUid() !== null);
+  // which can land after and silently undo the in-flight association change (#4899 review). Also
+  // blocked while refreshingMl() — the post-save mailing-list refetch — is still in flight, so the
+  // button can't unlock between a successful association PUT and that refetch completing (#4899 review).
+  public autoSyncButtonDisabled = computed(() => this.savingMl() || this.removingMlUid() !== null || this.refreshingMl());
 
   // Inline template passed to UiDrawerService.open() — see drawer.stories.ts for the pattern.
   public readonly autoSyncDrawerTemplate = viewChild.required<TemplateRef<unknown>>('autoSyncDrawer');
@@ -346,10 +348,16 @@ export class CommitteeSettingsTabComponent {
   }
 
   public openAutoSyncDrawer(): void {
-    this.drawerService.open(this.autoSyncDrawerTemplate(), {
+    const ref = this.drawerService.open(this.autoSyncDrawerTemplate(), {
       width: 600,
       // Blocks Escape/backdrop/close-button dismissal while any card's save is in flight (#4899 review).
       canClose: () => this.drawerSavingCount() === 0,
+    });
+    // `ref.closed` fires on every closure path, including an external disposal (e.g. browser Back)
+    // that bypasses canClose — reset savingMlUids so a card's in-flight save can't leave
+    // drawerSavingCount stuck non-empty for this component instance's next drawer open (#4899 review).
+    ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.savingMlUids.set(new Set());
     });
   }
 
@@ -424,6 +432,9 @@ export class CommitteeSettingsTabComponent {
           this.messageService.add({ severity: 'success', summary: 'Removed', detail: `${ml.group_name} removed from this group` });
           this.clearMlOverride(ml.uid);
           this.pruneLastGoodAssociatedList(ml.uid);
+          // Locked before refreshMl$ fires — autoSyncButtonDisabled must stay disabled across the
+          // gap between this successful PUT and the refetch it triggers settling (#4899 review).
+          this.refreshingMl.set(true);
           this.refreshMl$.next();
           this.refreshProjectMl$.next();
         },
@@ -812,6 +823,8 @@ export class CommitteeSettingsTabComponent {
           } else {
             this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update mailing list associations' });
           }
+          // Locked before refreshMl$ fires — see removeMailingList's identical comment (#4899 review).
+          this.refreshingMl.set(true);
           this.refreshMl$.next();
           this.refreshProjectMl$.next();
         },

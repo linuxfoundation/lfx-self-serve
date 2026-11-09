@@ -279,27 +279,32 @@ export class MailingListSyncSettingsComponent {
     // new array (every save via associatedMlOverrides, every refresh). Standalone instances fetch
     // once per committeeUid+nonce; retrySiblingLookup() bumps the nonce to force a refetch.
     const lookupKey = computed(() => {
-      // Bare read only — establishes this computed's dependency on `mailingList` (needed so a save
+      // mailingListUid both establishes this computed's dependency on `mailingList` (needed so a save
       // that replaces the parent's `associatedMailingLists()` entry, and thus this input, re-runs the
-      // switchMap) without feeding a value anything downstream consumes (#4899 review).
-      this.mailingList();
+      // switchMap) and is folded into the standalone-fetch cache key below, so navigating to a
+      // sibling list under the same committee/nonce revalidates instead of returning the previously
+      // displayed list's stale cached result (#4899 review).
       return {
         candidates: this.siblingCandidates(),
         committeeUid: this.syncEnabled() && this.isWriter() ? (this.committee()?.uid ?? null) : null,
         nonce: this.siblingLookupRetryNonce(),
+        mailingListUid: this.mailingList().uid,
       };
     });
 
-    // Standalone-page (no `candidates`) network fetches only, keyed by committeeUid+nonce — lets a
-    // save's new `mailingList` object identity re-run the switchMap (needed for the drawer's
+    // Standalone-page (no `candidates`) network fetches only, keyed by committeeUid+nonce+mailingListUid
+    // — lets a save's new `mailingList` object identity re-run the switchMap (needed for the drawer's
     // candidates path above) without re-triggering a real refetch, and the loading lock that comes
-    // with it, when neither the committee nor an explicit retry actually changed (#4899 review).
+    // with it, when neither the committee nor an explicit retry actually changed. The displayed
+    // list's own uid is in the key so navigating to a sibling list under the same committee/nonce
+    // (e.g. right after turning sync off on the first list) revalidates instead of returning that
+    // first list's cached result (#4899 review).
     let lastFetchKey: string | null = null;
     let lastFetchResult: GroupsIOMailingList[] = [];
 
     return toSignal(
       toObservable(lookupKey).pipe(
-        switchMap(({ candidates, committeeUid, nonce }) => {
+        switchMap(({ candidates, committeeUid, nonce, mailingListUid }) => {
           this.siblingLookupFailed.set(false);
           // The caller already has every linked list in hand (the Auto Sync drawer) — reuse it
           // instead of every open instance issuing its own identical getMailingListsByCommittee
@@ -313,7 +318,7 @@ export class MailingListSyncSettingsComponent {
             lastFetchKey = null;
             return of([] as GroupsIOMailingList[]);
           }
-          const fetchKey = `${committeeUid}:${nonce}`;
+          const fetchKey = `${committeeUid}:${nonce}:${mailingListUid}`;
           if (fetchKey === lastFetchKey) {
             this.siblingLookupLoading.set(false);
             return of(lastFetchResult);

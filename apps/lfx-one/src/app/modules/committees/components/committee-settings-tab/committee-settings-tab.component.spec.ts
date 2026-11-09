@@ -774,6 +774,10 @@ describe('CommitteeSettingsTabComponent — release-before-activate sequencing (
           useValue: {
             getMailingListsByCommittee: vi.fn(() => of(projectMailingLists)),
             getMailingListsByProject: vi.fn(() => of(projectMailingLists)),
+            // Missing this mock let the GET throw before any PUT was issued, caught as a failed
+            // release, so every sequencing test below failed before exercising its intended
+            // behavior (#4899 review, Copilot).
+            getMailingList: vi.fn((uid: string) => of(projectMailingLists.find((l) => l.uid === uid))),
             updateMailingList,
           },
         },
