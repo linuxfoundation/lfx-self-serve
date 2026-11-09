@@ -7,10 +7,10 @@ import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
+import { LINKS_CONFIG } from '@lfx-one/shared/constants';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { dropOrgScopeFromUrl } from '@shared/utils/org-scope-url.util';
 import { SkeletonModule } from 'primeng/skeleton';
 
@@ -23,7 +23,6 @@ import { OrgOverviewInvolvementComponent } from '../components/org-overview-invo
     PageHeaderComponent,
     TagComponent,
     SkeletonModule,
-    OpenIntercomDirective,
     OrgLensEmptyStateComponent,
     OrgOverviewInvolvementComponent,
     OrgOverviewFoundationsAndProjectsComponent,
@@ -35,6 +34,8 @@ export class OrgOverviewComponent {
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
+  /** The only link the no-organization-selected state offers besides the profile (#5447). */
+  protected readonly accessDocsUrl = LINKS_CONFIG.DOCS.COMPANY_LENS_ACCESS;
 
   protected readonly selectedAccount = this.accountContextService.selectedAccount;
 

@@ -9,6 +9,7 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   CCLA_SIGN_COPY,
+  LINKS_CONFIG,
   ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
   ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
   ORG_CLA_SIGN_SELECTION_STATE,
@@ -33,7 +34,6 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 
@@ -48,7 +48,6 @@ import { OrgEasyclaGroupSelectComponent } from './org-easycla-sign/org-easycla-g
     ButtonComponent,
     EmptyStateComponent,
     InputTextComponent,
-    OpenIntercomDirective,
     OrgLensEmptyStateComponent,
     OrgEasyclaCardComponent,
     RouterLink,
@@ -103,6 +102,7 @@ export class OrgEasyclaComponent {
   protected readonly fetchError = signal(false);
   protected readonly easyclaRoleMissing = signal(false);
   protected readonly easyclaRoleMissingCopy = ORG_CLA_EASYCLA_ROLE_MISSING_COPY;
+  protected readonly easyclaDocsUrl = LINKS_CONFIG.DOCS.COMPANY_LENS_EASYCLA;
 
   private readonly claLoadingState = signal(false);
   private readonly page = signal(0);

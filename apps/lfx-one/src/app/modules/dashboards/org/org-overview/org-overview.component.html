@@ -60,8 +60,10 @@
       } @else {
         <p class="max-w-md text-sm text-gray-600" data-testid="org-overview-empty-description">
           We couldn't find any organizations you have access to in this environment. If you expect to see one or more here, double-check your invite status with
-          your admin or
-          <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-overview-empty-contact-support">contact support</button>.
+          your admin or read
+          <a [href]="accessDocsUrl" target="_blank" rel="noopener noreferrer" class="font-medium underline" data-testid="org-overview-empty-docs-link"
+            >how access to a company is granted</a
+          >.
         </p>
       }
     </section>

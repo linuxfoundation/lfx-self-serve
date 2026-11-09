@@ -185,7 +185,7 @@ describe('OrgProjectDetailComponent — page-level empty state', () => {
         },
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
         { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(state)) },
-        // The page-level state's own actions (copy reference, contact support).
+        // The page-level state's own actions (copy reference).
         MessageService,
         { provide: IntercomService, useValue: { show: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },

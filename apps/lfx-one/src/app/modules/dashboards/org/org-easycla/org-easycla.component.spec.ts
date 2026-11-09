@@ -4,14 +4,12 @@
 import '@angular/compiler';
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ApplicationRef, computed, signal, TransferState } from '@angular/core';
+import { ApplicationRef, computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
 import type { Account, OrgClaGroup, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
-import { IntercomService } from '@services/intercom.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -969,7 +967,7 @@ describe('OrgEasyclaComponent', () => {
       expect(state).toBeTruthy();
       expect(byTestId(fixture, 'org-easycla-role-missing-state')?.querySelector('h3')?.textContent?.trim()).toBe("We couldn't load your CLAs");
       expect(byTestId(fixture, 'org-easycla-role-missing-description')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-        "You don't have an EasyCLA role at this organization. Please contact support if you need EasyCLA assistance."
+        "You don't have an EasyCLA role at this organization. Ask your company's CLA Managers to give you a role, or read how EasyCLA access works."
       );
       expect(state?.textContent).not.toContain('Refresh');
       expect(byTestId(fixture, 'org-easycla-error-state')).toBeNull();
@@ -978,20 +976,16 @@ describe('OrgEasyclaComponent', () => {
       consoleError.mockRestore();
     });
 
-    it('opens the Intercom messenger from the contact support link', async () => {
+    it('links to the EasyCLA docs and offers no support control (#5447)', async () => {
       getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const fixture = await render();
-      TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
-      const openMessenger = vi.spyOn(TestBed.inject(IntercomService), 'openMessenger').mockImplementation(() => undefined);
-      const link = byTestId(fixture, 'org-easycla-role-missing-contact-support') as HTMLButtonElement | null;
+      const link = byTestId(fixture, 'org-easycla-role-missing-docs-link') as HTMLAnchorElement | null;
 
-      expect(link?.tagName).toBe('BUTTON');
-      expect(link?.getAttribute('type')).toBe('button');
-      expect(link?.textContent?.trim()).toBe('contact support');
-      link?.click();
-
-      expect(openMessenger).toHaveBeenCalledWith('test-app-id', expect.any(Function));
+      expect(link?.tagName).toBe('A');
+      expect(link?.getAttribute('href')).toContain('/docs/user/organization/easycla/');
+      expect(link?.textContent?.trim()).toBe('how EasyCLA access works');
+      expect(byTestId(fixture, 'org-easycla-role-missing-state')?.querySelector('button, [lfxOpenIntercom]')).toBeNull();
       consoleError.mockRestore();
     });
 

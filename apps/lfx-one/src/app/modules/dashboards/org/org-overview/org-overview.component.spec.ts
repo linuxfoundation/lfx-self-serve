@@ -19,6 +19,7 @@ describe('OrgOverviewComponent page gate', () => {
   const pageState = signal<OrgLensEmptyStateName | null>(null);
   const pageReady = signal(true);
   const settled = signal(true);
+  let selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
 
   const has = (testid: string): boolean => !!fixture.nativeElement.querySelector(`[data-testid="${testid}"]`);
   const text = (testid: string): string => fixture.nativeElement.querySelector(`[data-testid="${testid}"]`)?.textContent?.trim() ?? '';
@@ -43,7 +44,7 @@ describe('OrgOverviewComponent page gate', () => {
       }
     );
 
-    const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
+    selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
 
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -91,6 +92,19 @@ describe('OrgOverviewComponent page gate', () => {
     expect(has('org-overview-header')).toBe(false);
     expect(fixture.nativeElement.textContent).not.toContain('Acme Motors');
     expect(has('organization-involvement-placeholder')).toBe(false);
+  });
+
+  // #5447: the no-organization-selected state links only to the documentation, never to support.
+  it('offers the docs link, and no support control, when no organization can be selected', async () => {
+    selectedAccount.set({ accountId: '', accountName: '', membershipTier: '', uid: '', slug: '' });
+    await render();
+
+    expect(has('org-overview-empty-state')).toBe(true);
+    const link = fixture.nativeElement.querySelector('[data-testid="org-overview-empty-docs-link"]') as HTMLAnchorElement | null;
+    expect(link?.tagName).toBe('A');
+    expect(link?.getAttribute('href')).toContain('/docs/user/organization/choose-an-organization/');
+    expect(has('org-overview-empty-contact-support')).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="org-overview-empty-state"] button')).toBeNull();
   });
 
   // lfx-self-serve-ops#1219: the Overview always counts the default organization scope, so its address never names one.

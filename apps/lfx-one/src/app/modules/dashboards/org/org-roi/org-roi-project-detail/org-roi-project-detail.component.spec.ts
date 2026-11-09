@@ -45,7 +45,7 @@ describe('OrgRoiProjectDetailComponent — page-level empty state (#2961)', () =
       imports: [OrgRoiProjectDetailComponent],
       providers: [
         provideRouter([]),
-        // The page-level state's own actions (copy reference, contact support).
+        // The page-level state's own actions (copy reference).
         MessageService,
         { provide: IntercomService, useValue: { show: vi.fn() } },
         { provide: AccountContextService, useValue: { selectedAccount: signal(ACCOUNT) } },

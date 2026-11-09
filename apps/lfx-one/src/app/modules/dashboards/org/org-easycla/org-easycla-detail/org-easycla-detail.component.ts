@@ -29,6 +29,7 @@ import {
   ORG_CLA_DESIGNEE_RESTING_COPY,
   ORG_CLA_DETAIL_TABS,
   ORG_CLA_DOWNLOAD_COPY,
+  LINKS_CONFIG,
   ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
   ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
   ORG_CLA_IDENTIFY_MANAGER_COPY,
@@ -100,7 +101,6 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
 import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
@@ -140,7 +140,6 @@ function designeeRefusalCopy(error: unknown): string {
     ButtonComponent,
     EmptyStateComponent,
     MessageComponent,
-    OpenIntercomDirective,
     OrgEasyclaActivityLogComponent,
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
@@ -219,6 +218,7 @@ export class OrgEasyclaDetailComponent {
   >({ kind: 'idle' });
   protected readonly easyclaRoleMissing = signal(false);
   protected readonly easyclaRoleMissingCopy = ORG_CLA_EASYCLA_ROLE_MISSING_COPY;
+  protected readonly easyclaDocsUrl = LINKS_CONFIG.DOCS.COMPANY_LENS_EASYCLA;
   private readonly claLoadingState = signal(false);
   private readonly loadedManagerCount = signal<{ signatureId: string; count: number } | null>(null);
   /**

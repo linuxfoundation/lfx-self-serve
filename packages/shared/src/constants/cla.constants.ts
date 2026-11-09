@@ -230,9 +230,9 @@ export const ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE = 'EASYCLA_ROLE_MISSING';
 export const ORG_CLA_EASYCLA_ROLE_MISSING_COPY = {
   title: "We couldn't load your CLAs",
   reason: "You don't have an EasyCLA role at this organization.",
-  supportLead: 'Please',
-  supportLabel: 'contact support',
-  supportTail: 'if you need EasyCLA assistance.',
+  docsLead: "Ask your company's CLA Managers to give you a role, or read",
+  docsLabel: 'how EasyCLA access works',
+  docsTail: '.',
   signClaAriaLabel: "Sign a corporate CLA — you don't have an EasyCLA role at this organization",
 } as const;
 
@@ -411,7 +411,7 @@ export const CCLA_SIGN_COPY = {
      * Only for a failure the CLA service did not explain. Distinct from `failure.body`, which
      * talks about preparing a CLA — the self-sign outcome this dialog is not.
      */
-    failureBody: 'We could not send this signature request right now. Please try again, or contact support if the problem continues.',
+    failureBody: 'We could not send this signature request right now. Please try again in a few minutes.',
   },
   preparing: {
     header: 'Configuring CLA Manager Settings…',
@@ -437,7 +437,7 @@ export const CCLA_SIGN_COPY = {
      * its own words — it names the reason and what to do next, and substituting this would
      * discard both.
      */
-    body: 'We could not prepare this CLA right now. Please try again, or contact support if the problem continues.',
+    body: 'We could not prepare this CLA right now. Please try again in a few minutes.',
   },
   picker: {
     header: 'Sign a CLA',
@@ -765,10 +765,11 @@ export const ORG_CLA_IDENTIFY_MANAGER_COPY = {
 /** Why a designee assignment or nomination did not go through, keyed by the BFF's upstream code. */
 export const ORG_CLA_DESIGNEE_REFUSAL_COPY: Record<OrgClaDesigneeRefusal, string> = {
   'already-signed': 'This CLA has already been signed for your organization. Reload the page to see it.',
-  'no-lf-login': 'Your account has no LF Login the CLA service recognizes, so you cannot be made CLA Manager. Contact support.',
-  sanctioned: 'Your organization cannot sign this CLA at this time. Contact support for more information.',
+  'no-lf-login':
+    'Your account has no LF Login the CLA service recognizes, so you cannot be made CLA Manager. Check that the email address on your profile is the one you use to sign in to LFX.',
+  sanctioned: 'Your organization cannot sign this CLA at this time.',
   'not-authorized': 'You are not allowed to request a CLA Manager for this organization.',
-  unknown: 'We could not complete the request. Try again, or contact support if it keeps failing.',
+  unknown: 'We could not complete the request. Try again in a few minutes.',
 };
 
 // ---------------------------------------------------------------------------

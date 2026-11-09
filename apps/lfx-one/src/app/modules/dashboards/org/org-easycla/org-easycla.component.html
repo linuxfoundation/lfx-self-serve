@@ -89,11 +89,11 @@
     } @else if (easyclaRoleMissing()) {
       <lfx-empty-state data-testid="org-easycla-role-missing-state" icon="fa-light fa-lock" [title]="easyclaRoleMissingCopy.title">
         <p class="text-sm text-gray-500" data-testid="org-easycla-role-missing-description">
-          {{ easyclaRoleMissingCopy.reason }} {{ easyclaRoleMissingCopy.supportLead }}
-          <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-easycla-role-missing-contact-support">
-            {{ easyclaRoleMissingCopy.supportLabel }}
-          </button>
-          {{ easyclaRoleMissingCopy.supportTail }}
+          {{ easyclaRoleMissingCopy.reason }} {{ easyclaRoleMissingCopy.docsLead }}
+          <a [href]="easyclaDocsUrl" target="_blank" rel="noopener noreferrer" class="font-medium underline" data-testid="org-easycla-role-missing-docs-link">{{
+            easyclaRoleMissingCopy.docsLabel
+          }}</a
+          >{{ easyclaRoleMissingCopy.docsTail }}
         </p>
       </lfx-empty-state>
     } @else if (fetchError()) {
