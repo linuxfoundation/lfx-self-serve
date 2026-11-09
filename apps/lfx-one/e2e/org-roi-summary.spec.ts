@@ -39,6 +39,10 @@ const EXPECTED_PROJECT_COUNT = `${MOCK_SUMMARY.nProjects.toLocaleString('en-US')
 
 const LATEST_ANNUAL = MOCK_ANNUAL.rows[MOCK_ANNUAL.rows.length - 1] as { year: number; totalReturn: number; expenditure: number };
 
+/** The cumulative view's final point: every year summed, which is the lifetime total by construction. */
+const EXPECTED_CUMULATIVE_INVESTMENT = formatCurrency(MOCK_ANNUAL.rows.reduce((sum, row) => sum + row.expenditure, 0));
+const EXPECTED_CUMULATIVE_RETURN = formatCurrency(MOCK_ANNUAL.rows.reduce((sum, row) => sum + row.totalReturn, 0));
+
 test.describe('Org Lens ROI Metrics — portfolio summary', () => {
   test('renders the page shell and the four headline figures', async ({ page }) => {
     await stubOrgLensContext(page);
@@ -83,6 +87,45 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(note).toContainText('not measured independently for each year');
 
     await expect(page.getByTestId('org-roi-annual-trend-partial-year-note')).toContainText(`${CURRENT_YEAR} is a partial year`);
+  });
+
+  test('switches the annual trend between year over year and cumulative', async ({ page }) => {
+    // The running total is computed client-side from the rows `/annual` already returns, so its
+    // final point must land exactly on the lifetime figures the KPI band above reports. The fixture
+    // splits those very totals across its years, which makes that an exact assertion rather than an
+    // approximate one. Summed here rather than through `cumulativeAnnualRows`, so the test does not
+    // share the implementation it is checking.
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    const yearly = page.getByTestId('org-roi-annual-trend-series-yearly');
+    const cumulative = page.getByTestId('org-roi-annual-trend-series-cumulative');
+    const table = page.getByTestId('org-roi-annual-trend-table');
+
+    await expect(yearly).toHaveAttribute('aria-pressed', 'true');
+    await expect(cumulative).toHaveAttribute('aria-pressed', 'false');
+    await expect(table).toContainText(formatCurrency(LATEST_ANNUAL.totalReturn));
+    // The fixture's per-year and cumulative figures format to different strings, so the default
+    // view asserting the absence of the lifetime total is a real check, not a tautology.
+    await expect(table).not.toContainText(EXPECTED_CUMULATIVE_RETURN);
+
+    await cumulative.click();
+
+    await expect(cumulative).toHaveAttribute('aria-pressed', 'true');
+    await expect(table).toContainText(EXPECTED_CUMULATIVE_INVESTMENT);
+    await expect(table).toContainText(EXPECTED_CUMULATIVE_RETURN);
+    await expect(table).toContainText('Cumulative investment and return by year');
+    // The existing aria-label regex matches both modes, so assert the wording that distinguishes them.
+    await expect(page.getByTestId('org-roi-annual-trend-chart')).toHaveAttribute('aria-label', /cumulative investment and return by year/i);
+    // The disclosure is restated for a monotonic curve, never dropped.
+    const note = page.getByTestId('org-roi-annual-trend-apportionment-note');
+    await expect(note).toContainText('not measured independently for each year');
+    await expect(note).not.toContainText('movement between years');
+
+    await yearly.click();
+
+    await expect(yearly).toHaveAttribute('aria-pressed', 'true');
+    await expect(table).toContainText(formatCurrency(LATEST_ANNUAL.totalReturn));
   });
 
   test('does not call a completed final year partial', async ({ page }) => {

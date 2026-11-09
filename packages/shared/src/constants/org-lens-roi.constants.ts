@@ -100,6 +100,37 @@ export const ORG_LENS_ROI_PROJECT_MEASURE_LABELS: Record<(typeof ORG_LENS_ROI_PR
   netReturn: 'Net Return',
 };
 
+/** The two readings of the annual trend, in tab order. Year over year is the default. */
+export const ORG_LENS_ROI_ANNUAL_SERIES_MODES = ['yearly', 'cumulative'] as const;
+
+/** Annotated like `ORG_LENS_ROI_PROJECT_MEASURE_LABELS`, so adding a mode without a label fails here. */
+export const ORG_LENS_ROI_ANNUAL_SERIES_MODE_LABELS: Record<(typeof ORG_LENS_ROI_ANNUAL_SERIES_MODES)[number], string> = {
+  yearly: 'Year over year',
+  cumulative: 'Cumulative',
+};
+
+/**
+ * Dataset names per mode. The canvas legend and the tooltip both read these, which is why the chart
+ * options themselves never have to vary by mode.
+ */
+export const ORG_LENS_ROI_ANNUAL_SERIES_LABELS: Record<(typeof ORG_LENS_ROI_ANNUAL_SERIES_MODES)[number], { investment: string; return: string }> = {
+  yearly: { investment: 'Investment', return: 'Return' },
+  cumulative: { investment: 'Cumulative investment', return: 'Cumulative return' },
+};
+
+/**
+ * The apportionment disclosure, which both modes owe and neither can phrase the same way. The
+ * leading sentence is if anything more load-bearing cumulatively, since the whole curve's shape is
+ * an artefact of the apportionment weights. Only the trailing clause differs: "movement between
+ * years" describes a per-year shape and says nothing true about a monotonic running total.
+ */
+export const ORG_LENS_ROI_ANNUAL_APPORTIONMENT_NOTE: Record<(typeof ORG_LENS_ROI_ANNUAL_SERIES_MODES)[number], string> = {
+  yearly:
+    "Yearly figures are apportioned from lifetime totals by each year's share of investment — they are not measured independently for each year, so movement between years reflects when the activity happened rather than a change in performance.",
+  cumulative:
+    "Yearly figures are apportioned from lifetime totals by each year's share of investment — they are not measured independently for each year, so the shape of the cumulative curve reflects when the activity happened rather than a change in performance.",
+};
+
 /** Ends in gray so the remainder slice reads as "everything else" rather than as another category. */
 export const ORG_LENS_ROI_DONUT_PALETTE: readonly string[] = [
   lfxColors.blue[600],
