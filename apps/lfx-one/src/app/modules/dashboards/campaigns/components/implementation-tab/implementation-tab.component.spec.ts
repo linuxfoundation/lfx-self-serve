@@ -21506,6 +21506,62 @@ describe('ImplementationTabComponent display audiences', () => {
     expect(draft['displayAdGroups'][0].audiences.audienceSegments).toEqual([LIST]);
   });
 
+  /** PR #5388 review: the draft carries the names the picks were made under, so a restored pick keeps its name. */
+  it('restores a pick by the name it was picked under after a search that does not list it', async () => {
+    await setup((type, q) => (type === 'user_interest' && q !== '' ? of({ ...ENTRIES['user_interest'], audiences: [], truncated: false }) : of(ENTRIES[type])));
+    const c = seedDisplay();
+    let draft: Record<string, any> = {};
+    fixture.componentInstance.draftChange.subscribe((d) => (draft = d as Record<string, any>));
+    pick(c, null, 'userInterests', INTEREST);
+    // The pick's own emission carries the name, not only a later one.
+    expect(draft['displayAudienceNames']).toEqual({ [INTEREST]: 'Cloud Computing' });
+
+    // A teardown loses the tab's names; the restore brings them back, strings only.
+    c['displayAudiencePickedNames'].set(new Map());
+    restoreGoogleDraft(fixture, c, {
+      includeDisplay: true,
+      displayAudiences: { userInterests: [INTEREST] },
+      displayAudienceNames: { [INTEREST]: 'Cloud Computing', [CUSTOM]: 7 },
+    });
+    c['displayInterestSearchForm'].controls.q.setValue('devops');
+    c['onDisplayInterestSearch']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect([...c['displayAudiencePickedNames']().entries()]).toEqual([[INTEREST, 'Cloud Computing']]);
+    expect(query('implementation-display-audience-remove-single-userInterests-0')?.getAttribute('aria-label')).toBe('Remove Cloud Computing');
+  });
+
+  it('shows a restored pick by resource name when the draft carries no name for it', async () => {
+    await setup((type, q) => (type === 'user_interest' && q !== '' ? of({ ...ENTRIES['user_interest'], audiences: [], truncated: false }) : of(ENTRIES[type])));
+    const c = seedDisplay();
+    restoreGoogleDraft(fixture, c, { includeDisplay: true, displayAudiences: { userInterests: [INTEREST] } });
+    c['displayInterestSearchForm'].controls.q.setValue('devops');
+    c['onDisplayInterestSearch']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(query('implementation-display-audience-remove-single-userInterests-0')?.getAttribute('aria-label')).toBe(`Remove ${INTEREST}`);
+  });
+
+  /** PR #5388 review: a new brief clears the interest search with the picks, so the picker lists the first interests again. */
+  it('clears the interest search when the form resets for a brief', async () => {
+    await setup();
+    const c = seedDisplay();
+    c['displayInterestSearchForm'].controls.q.setValue('devops');
+    c['onDisplayInterestSearch']();
+    fixture.detectChanges();
+    expect(readAudiences).toHaveBeenLastCalledWith('tlf', 'user_interest', 'devops');
+
+    // A new brief object re-runs the seed, which resets the Google fields first.
+    seedDisplay();
+    await fixture.whenStable();
+
+    expect(c['displayInterestSearchForm'].controls.q.value).toBe('');
+    expect(c['displayInterestQuery']()).toBe('');
+    expect(readAudiences).toHaveBeenLastCalledWith('tlf', 'user_interest', '');
+  });
+
   describe('a draft holding audiences the request cannot carry', () => {
     function hold(
       enabled: boolean | null,

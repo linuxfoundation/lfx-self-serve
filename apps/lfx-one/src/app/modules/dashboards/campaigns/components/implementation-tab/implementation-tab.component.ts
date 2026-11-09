@@ -6552,9 +6552,10 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected onDisplayAudiencePicked(list: FormControl<string[]>, resourceName: string | null, combobox: { writeValue(value: unknown): void }): void {
     if (resourceName === null) return;
-    if (!list.value.includes(resourceName)) list.setValue([...list.value, resourceName]);
+    // The name first: the list's change emits the draft, which carries the picked names.
     const name = this.displayAudienceNames().get(resourceName);
     if (name !== undefined) this.displayAudiencePickedNames.update((names) => new Map(names).set(resourceName, name));
+    if (!list.value.includes(resourceName)) list.setValue([...list.value, resourceName]);
     combobox.writeValue(null);
   }
 
@@ -7918,6 +7919,12 @@ export class ImplementationTabComponent implements OnInit {
     if (typeof draft.displayAdGroupsSplit === 'boolean') {
       this.campaignForm.controls.displayAdGroupsSplit.setValue(draft.displayAdGroupsSplit);
     }
+    // The names the Display audiences were picked under (#5262), string pairs only, so a pick from an earlier
+    // interest search is still shown by name when the picker's list no longer holds it.
+    if (draft.displayAudienceNames !== null && typeof draft.displayAudienceNames === 'object') {
+      const names = Object.entries(draft.displayAudienceNames).filter((entry): entry is [string, string] => typeof entry[1] === 'string');
+      this.displayAudiencePickedNames.set(new Map(names));
+    }
     // The single Display ad group's audiences and the campaign's exclusions (#5262), strings only; each is
     // judged on Create (`displayAudiencesError`), so a value the create would refuse is shown, not dropped.
     if (draft.displayAudiences !== null && typeof draft.displayAudiences === 'object') {
@@ -8534,6 +8541,7 @@ export class ImplementationTabComponent implements OnInit {
         ...this.displayAudienceDraft(this.campaignForm.controls.displayAudiences.controls),
         excludedAudienceSegments: [...this.campaignForm.controls.displayExcludedUserLists.value],
       },
+      displayAudienceNames: Object.fromEntries(this.displayAudiencePickedNames()),
       // Copied per slot, so the parent holds a snapshot rather than this component's arrays.
       googleImageAssets: Object.fromEntries(
         Object.entries(this.googleHeldImages()).map(([slotKey, images]) => [slotKey, images.map((image) => ({ ...image }))])
@@ -9050,6 +9058,10 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.displayAudiences.reset();
     this.campaignForm.controls.displayExcludedUserLists.reset();
     this.displayAudiencePickedNames.set(new Map());
+    // The interest search too: it decides which interests the picker lists, so a kept one would serve the
+    // last brief's search under an empty-looking box's results.
+    this.displayInterestSearchForm.reset();
+    this.displayInterestQuery.set('');
     this.googleGeoTargets.set([]);
     this.googlePostalGeoTargets.set([]);
     this.googlePostalGeoLabels.set({});
