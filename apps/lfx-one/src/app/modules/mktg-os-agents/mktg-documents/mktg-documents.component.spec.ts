@@ -469,7 +469,8 @@ describe('MktgDocumentsComponent', () => {
       const button = dismissButton();
       if (!button) throw new Error('Missing Dismiss control');
       expect(button.textContent?.trim()).toBe('Dismiss');
-      expect(button.getAttribute('aria-label')).toContain('run started 19 Oct, 12:00');
+      expect(button.getAttribute('aria-label')).toMatch(/^Dismiss .+, started 19 Oct, 12:00$/);
+      expect(button.getAttribute('aria-label')).not.toContain('run run');
       button.click();
       await fixture.whenStable();
       fixture.detectChanges();
