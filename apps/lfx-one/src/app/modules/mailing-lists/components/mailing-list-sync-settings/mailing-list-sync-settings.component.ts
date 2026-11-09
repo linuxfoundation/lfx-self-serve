@@ -275,21 +275,20 @@ export class MailingListSyncSettingsComponent {
     // Every reactive dependency folded into one computed, not read inside the switchMap callback —
     // a signal read inside an RxJS operator body is untracked, so a later change to it would not
     // trigger a refetch (#4899 review; this previously regressed a fix from 323dbfa78 the same way).
-    // Keyed on the whole `mailingList` input, not just the committee uid: when multiple instances of
-    // this component are open together (the committee-detail Auto Sync drawer, #4025), one
-    // instance's save only updates the *parent's* mailing list array — every sibling instance must
-    // re-fetch to see the new sync_mode, even though its own committee uid never changed. Keying on
-    // uid with distinctUntilChanged (as a single-instance page can) would suppress that refetch and
-    // leave `activeSync` stale, breaking the "only one auto direction per committee" guarantee the
-    // moment two lists in the same drawer are toggled back to back — so this intentionally does NOT
-    // distinctUntilChanged on committeeUid alone; retrySiblingLookup()'s nonce bump also flows
-    // through unfiltered for the same reason (#4880 review retry behavior, #4899 review refetch).
-    const lookupKey = computed(() => ({
-      ml: this.mailingList(),
-      candidates: this.siblingCandidates(),
-      committeeUid: this.syncEnabled() && this.isWriter() ? (this.committee()?.uid ?? null) : null,
-      nonce: this.siblingLookupRetryNonce(),
-    }));
+    // Drawer instances reuse `siblingCandidates`; the switchMap re-runs whenever the parent passes a
+    // new array (every save via associatedMlOverrides, every refresh). Standalone instances fetch
+    // once per committeeUid+nonce; retrySiblingLookup() bumps the nonce to force a refetch.
+    const lookupKey = computed(() => {
+      // Bare read only — establishes this computed's dependency on `mailingList` (needed so a save
+      // that replaces the parent's `associatedMailingLists()` entry, and thus this input, re-runs the
+      // switchMap) without feeding a value anything downstream consumes (#4899 review).
+      this.mailingList();
+      return {
+        candidates: this.siblingCandidates(),
+        committeeUid: this.syncEnabled() && this.isWriter() ? (this.committee()?.uid ?? null) : null,
+        nonce: this.siblingLookupRetryNonce(),
+      };
+    });
 
     // Standalone-page (no `candidates`) network fetches only, keyed by committeeUid+nonce — lets a
     // save's new `mailingList` object identity re-run the switchMap (needed for the drawer's

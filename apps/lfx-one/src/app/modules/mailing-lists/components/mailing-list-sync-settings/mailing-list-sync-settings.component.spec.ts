@@ -407,4 +407,40 @@ describe('MailingListSyncSettingsComponent', () => {
 
     expect(emitted).not.toHaveBeenCalled();
   });
+
+  it('disables the direction selector and toggle while lockedBySibling is true (#4899 review)', async () => {
+    const syncedList = { ...baseList, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST };
+    await render(syncedList, { siblingCandidates: [syncedList] });
+
+    fixture.componentRef.setInput('lockedBySibling', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['form'].controls.direction.disabled).toBe(true);
+    const toggle = fixture.debugElement.query((el) => el.name === 'lfx-toggle')?.componentInstance;
+    expect(toggle?.disabled()).toBe(true);
+
+    fixture.componentRef.setInput('lockedBySibling', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['form'].controls.direction.disabled).toBe(false);
+  });
+
+  it('does not re-fetch sibling lists when a standalone instance receives a new object for the same list (#4899 review)', async () => {
+    // A parent re-render (e.g. a route re-resolve) can hand this standalone instance a fresh
+    // `mailingList` object with the same uid/committee — `lastFetchKey` should short-circuit the
+    // network fetch rather than treating the new object identity as a reason to refetch.
+    await render(baseList);
+    expect(getMailingListsByCommittee).toHaveBeenCalledTimes(1);
+
+    fixture.componentRef.setInput('mailingList', { ...baseList });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(getMailingListsByCommittee).toHaveBeenCalledTimes(1);
+  });
 });

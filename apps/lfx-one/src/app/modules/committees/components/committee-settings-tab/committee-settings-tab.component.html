@@ -174,27 +174,38 @@
 <p-confirmDialog></p-confirmDialog>
 
 <ng-template #autoSyncDrawer let-ref="dialogRef">
-  <lfx-ui-drawer heading="Auto Sync" [subtitle]="committee().name">
+  <lfx-ui-drawer heading="Auto Sync" [subtitle]="committee().name" data-testid="settings-auto-sync-drawer">
     <div class="flex flex-col gap-4">
       @if (mlRefreshFailed()) {
-        <div class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" data-testid="auto-sync-refresh-failed-notice">
-          <i class="fa-light fa-triangle-exclamation mt-0.5 text-red-600"></i>
-          <span class="flex-1">Couldn't refresh the latest sync settings. What you see here may be out of date.</span>
-          <lfx-ui-button variant="secondary" size="small" (click)="retryMlRefresh()" data-testid="auto-sync-refresh-retry-button">Retry</lfx-ui-button>
-        </div>
+        <lfx-ui-note variant="error" announce data-testid="auto-sync-refresh-failed-notice">
+          Couldn't refresh the latest sync settings. What you see here may be out of date.
+          <lfx-ui-button note-action variant="secondary" size="small" (click)="retryMlRefresh()" data-testid="auto-sync-refresh-retry-button"
+            >Retry</lfx-ui-button
+          >
+        </lfx-ui-note>
       }
       @for (ml of associatedMailingLists(); track ml.uid) {
         <!-- List name/email identifies which card controls which list — needed once a committee has
              more than one linked list, since the child component's own title/description are
              committee-scoped, not list-scoped (#4899 review). -->
-        <div class="flex flex-col gap-2">
-          <span class="text-sm font-semibold text-gray-900" data-testid="auto-sync-list-label">{{ ml.group_name }} ({{ ml | mailingListEmail }})</span>
-          <lfx-mailing-list-sync-settings
-            [mailingList]="ml"
-            [siblingCandidates]="associatedMailingLists()"
-            [lockedBySibling]="refreshingMl() || (drawerSavingCount() > 0 && !savingMlUids().has(ml.uid))"
-            (updated)="onSyncSettingsUpdated($event)"
-            (savingChange)="onSyncSettingsSavingChange(ml.uid, $event)" />
+        <div class="flex flex-col gap-2" [attr.data-testid]="'settings-auto-sync-ml-' + ml.uid">
+          @let mlEmail = ml | mailingListEmail;
+          <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'settings-auto-sync-ml-label-' + ml.uid"
+            >{{ ml.group_name }}
+            @if (mlEmail) {
+              ({{ mlEmail }})
+            }
+          </span>
+          @if (ml.writer === true) {
+            <lfx-mailing-list-sync-settings
+              [mailingList]="ml"
+              [siblingCandidates]="associatedMailingLists()"
+              [lockedBySibling]="refreshingMl() || (drawerSavingCount() > 0 && !savingMlUids().has(ml.uid))"
+              (updated)="onSyncSettingsUpdated($event)"
+              (savingChange)="onSyncSettingsSavingChange(ml.uid, $event)" />
+          } @else {
+            <span class="text-xs text-gray-500">You don't have permission to manage this list's sync settings.</span>
+          }
         </div>
       }
     </div>
