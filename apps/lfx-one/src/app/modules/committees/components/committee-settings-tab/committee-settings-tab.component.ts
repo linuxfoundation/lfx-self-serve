@@ -246,7 +246,14 @@ export class CommitteeSettingsTabComponent {
   // which can land after and silently undo the in-flight association change (#4899 review). Also
   // blocked while refreshingMl() — the post-save mailing-list refetch — is still in flight, so the
   // button can't unlock between a successful association PUT and that refetch completing (#4899 review).
-  public autoSyncButtonDisabled = computed(() => this.savingMl() || this.removingMlUid() !== null || this.refreshingMl());
+  //
+  // Exempts a *failed* refresh (mlRefreshFailed()) from that refreshingMl() block: refreshingMl stays
+  // latched true until a refresh actually succeeds (see initAssociatedMailingLists' catchError), and
+  // retryMlRefresh() — the only way to fire that next refresh — lives inside this same drawer. Without
+  // this exemption a failed refresh permanently disables the one button that opens the drawer, locking
+  // the user out of their own recovery path with no way back short of reloading the page (greptile P1,
+  // cursor bugbot, copilot — #4899 review).
+  public autoSyncButtonDisabled = computed(() => this.savingMl() || this.removingMlUid() !== null || (this.refreshingMl() && !this.mlRefreshFailed()));
 
   // Inline template passed to UiDrawerService.open() — see drawer.stories.ts for the pattern.
   public readonly autoSyncDrawerTemplate = viewChild.required<TemplateRef<unknown>>('autoSyncDrawer');
