@@ -21013,6 +21013,33 @@ describe('ImplementationTabComponent display audiences', () => {
       expect(c['canSubmit']()).toBe(true);
     });
 
+    it.each([
+      ['answered no', false],
+      ['unanswered', null],
+    ])('keeps focus on a surviving control when a list loses its last chip with access %s', async (_label, enabled) => {
+      await setup();
+      const focused: HTMLElement[] = [];
+      vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+        focused.push(this);
+      });
+      const c = hold(enabled, enabled === null ? 'failed' : 'ready');
+
+      (query('implementation-display-audience-remove-excluded-0') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      // The exclusions list left with its label, so focus goes to the interest still held.
+      expect(query('implementation-display-audience-excluded')).toBeNull();
+      expect(focused.at(-1)).toBe(query('implementation-display-audience-remove-single-userInterests-0'));
+
+      (query('implementation-display-audience-remove-single-userInterests-0') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      // Nothing is held any more, so the notice leaves too and Create Campaign takes focus.
+      expect(c['displayAudiencesBlock']()).toBeNull();
+      expect(focused.at(-1)).toBe(query('implementation-submit-btn')?.querySelector('button'));
+      expect(focused.at(-1)?.isConnected).toBe(true);
+    });
+
     it('clears once the caller is answered yes', async () => {
       await setup();
       const c = hold(true, 'ready');

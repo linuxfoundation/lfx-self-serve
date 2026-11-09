@@ -350,7 +350,7 @@ While the campaign is split, the single Display ad you entered is kept but not s
 
 ## Audiences (Display)
 
-A Display ad group can target existing audiences from the Google Ads account: user lists, custom audiences, custom affinity segments and interests (Google's affinity and in-market categories). The ad group then serves only to people in the audiences picked for it. The audiences themselves are built in Google Ads; here you pick ones the account already has. The campaign can also exclude user lists. Only the LF marketing team sees these pickers, because every foundation shares one Google Ads account.
+A Display ad group can target existing audiences from the Google Ads account: user lists, custom audiences, custom affinity segments and interests (Google's affinity and in-market categories). The audiences picked for an ad group are its targeting. Google Ads may still show its ads to people beyond them: optimized targeting is left at Google's default, which can widen reach. The audiences themselves are built in Google Ads; here you pick ones the account already has. The campaign can also exclude user lists. Only the LF marketing team sees these pickers, because every foundation shares one Google Ads account.
 
 - In the **Display Creative** section, the campaign's single ad group has four pickers: **User lists**, **Custom audiences**, **Custom affinity segments** and **Interests**. When the campaign is split into named ad groups, each ad group has its own four pickers instead.
 - **Excluded user lists** keeps the campaign's ads away from people on those lists. It covers the whole campaign, every ad group included, whether or not the campaign is split. A user list cannot be both targeted and excluded.

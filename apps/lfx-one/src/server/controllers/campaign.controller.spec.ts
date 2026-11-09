@@ -6532,6 +6532,80 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayAudiences.userInterests' });
     });
 
+    describe('a request naming no platform, which the legacy creator reads as Google Ads', () => {
+      beforeEach(() => {
+        isServerFeatureEnabled.mockReturnValue(false);
+        createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+        legacyCreate.mockResolvedValue({ jobId: 'job_legacy_5262' });
+      });
+
+      it.each([
+        ['omitted', undefined],
+        ['empty', []],
+        ['not a list', 'google-ads'],
+      ])('refuses a malformed Display audience list by name when platforms is %s, creating nothing', async (_label, platforms) => {
+        await create({ platforms, displayAudiences: { customAudiences: 'x' } });
+
+        expect(legacyCreate).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayAudiences', message: expect.stringContaining('custom audiences must be') });
+      });
+
+      it.each([
+        ["a group's own exclusions", { displayAdGroups: [{ name: 'a', excludedAudienceSegments: [LIST] }] }],
+        ['a malformed Demand Gen audience', { demandGenAudience: 42 }],
+      ])('refuses %s by name when platforms is omitted', async (_label, fields) => {
+        await create({ platforms: undefined, ...fields });
+
+        expect(legacyCreate).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({ statusCode: 400 });
+      });
+
+      it.each([
+        ['an account-owned Display list', { displayAudiences: { customAudiences: [CUSTOM] } }, GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_CODE],
+        ['a Demand Gen audience', { demandGenAudience: 'customers/1234567890/audiences/42' }, GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_CODE],
+      ])('asks global_marketing_ops for %s when platforms is omitted', async (_label, fields, code) => {
+        marketingOps.mockResolvedValueOnce(false);
+
+        await create({ platforms: undefined, ...fields });
+
+        expect((vi.mocked(next).mock.calls[0][0] as unknown as AuthorizationError).code).toBe(code);
+        expect(legacyCreate).not.toHaveBeenCalled();
+      });
+
+      it('refuses Search audience segments by name when platforms is omitted, rather than letting the legacy creator drop them', async () => {
+        await create({ platforms: undefined, audienceSegments: [LIST] }, ['search']);
+
+        expect(legacyCreate).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'audienceSegments' });
+      });
+
+      it('leaves a create for another platform alone', async () => {
+        await create({ platforms: ['meta-ads'], metaConfig: { budgetUsd: 250 }, displayAudiences: { customAudiences: 'x' } });
+
+        const fields = vi.mocked(next).mock.calls.map((call) => (call[0] as unknown as ServiceValidationError)?.validationErrors?.[0]?.field);
+        expect(fields).not.toContain('displayAudiences');
+        expect(marketingOps).not.toHaveBeenCalled();
+      });
+    });
+
+    it.each([
+      ['Performance Max', ['performance-max']],
+      ['Search', ['search']],
+    ])("refuses a named Display group's lists by name on %s, where no Display group is built", async (_label, campaignTypes) => {
+      await create({ displayAdGroups: [{ name: 'a', creative: AD, userInterests: [INTEREST] }] }, campaignTypes);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayAudiences', message: expect.stringContaining('only on Display campaigns') });
+    });
+
+    it('still builds a request off Display when a named group carries no list', async () => {
+      accepted();
+
+      await create({ displayAdGroups: [{ name: 'a', creative: AD, userInterests: [] }] }, ['search']);
+
+      expect(createCampaigns).toHaveBeenCalled();
+    });
+
     it('refuses Display audiences by name while the cutover is dark, rather than letting the legacy creator drop them', async () => {
       isServerFeatureEnabled.mockReturnValue(false);
       createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });

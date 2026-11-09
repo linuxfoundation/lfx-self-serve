@@ -3231,8 +3231,8 @@
             <div class="mt-4 flex flex-col gap-3" data-testid="implementation-display-audiences">
               @if (displayAudiencesAvailable()) {
                 <p class="text-xs text-gray-500">
-                  Audiences decide who sees the ads: an ad group serves only to people in the user lists, custom audiences, custom affinity segments or
-                  interests picked for it.
+                  The user lists, custom audiences, custom affinity segments and interests picked for an ad group are its targeting. Google Ads may still show
+                  its ads to people beyond them: optimized targeting is left at Google's default, which can widen reach.
                 </p>
                 <!-- Not a nested form: the tab is one form already, so Enter searches here and is kept from submitting it. -->
                 <div class="flex items-end gap-2" (keydown.enter)="onDisplayInterestSearch(); $event.preventDefault()">

@@ -758,6 +758,11 @@ export class CampaignController {
 
       const body = req.body as CampaignCreateRequest;
       const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
+      // Whether this request creates on Google Ads, as the legacy creator reads it: an omitted or empty
+      // `platforms` list is a Google create there (`campaign-proxy.service.ts`, as `unservedGoogleCriteriaField`
+      // records). The audience guards below key on it, not on an explicit `google-ads`, or a request that
+      // names no platform would skip them and the legacy creator would drop the lists it carries.
+      const googleImplied = platforms.length === 0 || platforms.includes('google-ads');
 
       // Google audience segments need `global_marketing_ops` on the project the request names — the
       // LF marketing team, not every campaign manager. `campaign_manager` is `executive_director or
@@ -783,7 +788,7 @@ export class CampaignController {
       const carriesAdGroupSegments = carriesList(body?.audienceSegments as unknown);
       const carriesCampaignSegments = carriesList(body?.campaignAudienceSegments as unknown);
       const carriesSegments = carriesAdGroupSegments || carriesCampaignSegments;
-      if (platforms.includes('google-ads') && carriesSegments) {
+      if (googleImplied && carriesSegments) {
         const access = await this.googleMarketingOpsAccess(req, projectSlug, 'check_google_audience_segments_access', 'audience segments');
         if (access !== 'granted') {
           next(
@@ -809,7 +814,7 @@ export class CampaignController {
       // one only for `global_marketing_ops` on the path project (`GoogleAdsMarketingOpsInputs`,
       // linuxfoundation/lfx-v2-campaign-service#501). Counted as upstream counts it: any value but an
       // absent, null or empty one, whitespace and a malformed value included, on any channel.
-      if (platforms.includes('google-ads') && googleDemandGenAudienceCarried(body?.demandGenAudience, body?.demandGenAdGroups)) {
+      if (googleImplied && googleDemandGenAudienceCarried(body?.demandGenAudience, body?.demandGenAdGroups)) {
         const access = await this.googleMarketingOpsAccess(req, projectSlug, 'check_google_demand_gen_audience_access', 'a Demand Gen audience');
         if (access !== 'granted') {
           next(
@@ -853,7 +858,7 @@ export class CampaignController {
       // malformed value counts too. User interests are Google's own categories and are not gated.
       const rawDisplayAudiences: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY];
       const rawDisplayAdGroups: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY];
-      if (platforms.includes('google-ads') && googleDisplayAudiencesCarried(rawDisplayAudiences, rawDisplayAdGroups)) {
+      if (googleImplied && googleDisplayAudiencesCarried(rawDisplayAudiences, rawDisplayAdGroups)) {
         const access = await this.googleMarketingOpsAccess(req, projectSlug, 'check_google_display_audiences_access', 'Display audiences');
         if (access !== 'granted') {
           next(
@@ -878,7 +883,7 @@ export class CampaignController {
       // which this application does not send, is refused by name: the normalizer reads only lists of strings
       // and the four targeting lists of a group, so nothing after it would see either, and the create would
       // go out without what was asked for. Asked of every caller because user interests need no access.
-      if (platforms.includes('google-ads')) {
+      if (googleImplied) {
         const malformedDisplayAudiences = googleDisplayAudiencesTypeRefusal(rawDisplayAudiences, rawDisplayAdGroups);
         if (malformedDisplayAudiences !== null) {
           next(
@@ -895,7 +900,7 @@ export class CampaignController {
       // the legacy creator would create the campaign without the user lists and report success. The
       // form never sends them in that state (`googleAudienceSegmentsEnabled` is false there), but a
       // capability read and a create can land on pods with different flags mid-rollout.
-      if (platforms.includes('google-ads') && carriesSegments && !canCreateWithAudienceSegments()) {
+      if (googleImplied && carriesSegments && !canCreateWithAudienceSegments()) {
         const field = carriesAdGroupSegments ? 'audienceSegments' : 'campaignAudienceSegments';
         next(
           ServiceValidationError.forField(field, `Google audience segments are not enabled on this deployment; omit ${field}`, {
@@ -6933,15 +6938,19 @@ export class CampaignController {
 
   /**
    * Why campaign-service would refuse this create's Display audiences (#5262), or `null`. Judged on what
-   * the builder would SEND: off Display a `displayAudiences` holding any entry is refused by name
-   * (`validateDisplayTargeting` refuses `customAudiences`, `customAffinities`, `userInterests` and
-   * `excludedAudienceSegments` off Display, and the BFF never sends its Display user lists there); on
+   * the builder would SEND: off Display a `displayAudiences` holding any entry, or a `displayAdGroups` entry
+   * holding a list, is refused by name (`validateDisplayTargeting` refuses `customAudiences`,
+   * `customAffinities`, `userInterests` and `excludedAudienceSegments` off Display, the BFF never sends its
+   * Display user lists there, and it builds no named Display group there, so a group's lists would be dropped); on
    * Display the campaign-level lists and each named group's go through `googleDisplayAudiencesRefusal`.
    */
   private googleDisplayAudiencesRefusal(body: CampaignCreateRequest, googleChannel: unknown): string | null {
     const campaign = this.googleDisplayAudiences(body);
     if (googleChannel !== 'display') {
-      if (Object.keys(campaign).length === 0 || typeof googleChannel !== 'string') return null;
+      // A named Display ad group's lists count too: off Display no group is built, so they would be dropped.
+      const rawGroups: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY];
+      const groupLists = Array.isArray(rawGroups) && rawGroups.some((group: unknown) => Object.keys(this.googleDisplayAudienceLists(group, false)).length > 0);
+      if ((Object.keys(campaign).length === 0 && !groupLists) || typeof googleChannel !== 'string') return null;
       const channelLabel = GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel;
       return `Google Ads takes these audiences only on Display campaigns, not on ${channelLabel} campaigns. Remove them or pick Display, then create again.`;
     }

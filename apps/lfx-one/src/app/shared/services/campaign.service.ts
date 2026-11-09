@@ -699,10 +699,13 @@ export class CampaignService {
    * coded 503 when that check cannot be made, and a 404 while the campaign-service create road is off.
    */
   public getGoogleAdsAudiences(projectSlug: string, type: GoogleAdsAudienceReadType = 'audience', q = ''): Observable<GoogleAdsAudiencesResult> {
-    const params: Record<string, string> = { project: projectSlug };
-    // Only a type other than the default, and only a non-blank q, go on the wire, so the Demand Gen read is unchanged.
-    if (type !== 'audience') params['type'] = type;
-    if (q.trim() !== '') params['q'] = q.trim();
+    // `strictHttpParams`, as the geo search uses it, because `q` is user-typed text: Angular's default codec
+    // leaves `+` unescaped and Express reads it back as a space, so `C++` would search for `C  `. Every param
+    // of this read goes through it. Only a type other than the default, and only a non-blank q, go on the
+    // wire, so the Demand Gen read is unchanged.
+    let params = strictHttpParams().set('project', projectSlug);
+    if (type !== 'audience') params = params.set('type', type);
+    if (q.trim() !== '') params = params.set('q', q.trim());
     return this.http.get<GoogleAdsAudiencesResult>('/api/campaigns/google/audiences', { params });
   }
 

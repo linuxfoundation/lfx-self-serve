@@ -6459,7 +6459,12 @@ export class ImplementationTabComponent implements OnInit {
     combobox.writeValue(null);
   }
 
-  /** Remove one Display audience from `list`; focus moves to the list's picker, or its label when no picker renders. */
+  /**
+   * Remove one Display audience from `list`. Focus moves to the list's picker, or its label when no picker
+   * renders. Without picker access the list leaves the page with its last chip, label included, so focus
+   * falls back to a control that survives: another Display audience's Remove, the hold notice's Remove,
+   * Create Campaign when it is enabled, or the Display channel checkbox.
+   */
   protected removeDisplayAudience(list: FormControl<string[]>, resourceName: string, id: string): void {
     list.setValue(list.value.filter((entry) => entry !== resourceName));
     afterNextRender(
@@ -6467,7 +6472,11 @@ export class ImplementationTabComponent implements OnInit {
         const host = this.host.nativeElement;
         const target =
           host.querySelector<HTMLElement>(`[data-testid="implementation-display-audience-picker-${id}"] input`) ??
-          host.querySelector<HTMLElement>(`#display-audience-${id}-label`);
+          host.querySelector<HTMLElement>(`#display-audience-${id}-label`) ??
+          host.querySelector<HTMLElement>('[data-testid^="implementation-display-audience-remove-"]') ??
+          host.querySelector<HTMLElement>('[data-testid="implementation-display-audiences-block-remove"] button') ??
+          host.querySelector<HTMLElement>('[data-testid="implementation-submit-btn"] button:not(:disabled)') ??
+          host.querySelector<HTMLElement>('[data-testid="implementation-include-display"]');
         target?.focus();
       },
       { injector: this.injector }
