@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import type {
   GroupsIOServiceStatus,
   GroupsIOServiceType,
@@ -135,6 +136,22 @@ export interface GroupsIOMailingList {
   writer?: boolean;
   /** Automatic membership sync direction with the linked committee. Only meaningful when committee_uid/committees is set. */
   sync_mode?: MailingListSyncMode;
+  /**
+   * Committee member voting statuses that gate which members are synced to this list
+   * (linuxfoundation/lfx-v2-mailing-list-service#110). Only meaningful when committee_uid/committees
+   * is set and sync_mode is `auto_c_to_ml`; an empty or omitted list means no voting-status
+   * restriction. Plain string list on the wire — typed here against the known voting-status enum
+   * since that's the only taxonomy the product surfaces for this field today.
+   */
+  committee_filters?: CommitteeMemberVotingStatus[];
+  /**
+   * Committee member roles that gate which members are synced to this list, in addition to
+   * `committee_filters` (linuxfoundation/lfx-v2-mailing-list-service#110). Only meaningful when
+   * committee_uid/committees is set and sync_mode is `auto_c_to_ml`; an empty or omitted list means
+   * no role restriction. The backend matches this by plain string equality with no fixed role
+   * taxonomy, so it's typed as `string[]` rather than `CommitteeMemberRole[]`.
+   */
+  committee_role_filters?: string[];
 }
 
 /**
@@ -175,6 +192,19 @@ export interface CreateMailingListRequest {
   committees?: CommitteeReference[];
   /** Automatic membership sync direction with the linked committee. Requires committee_uid to be set. */
   sync_mode?: MailingListSyncMode;
+  /**
+   * Committee member voting statuses that gate which members are synced to this list
+   * (linuxfoundation/lfx-v2-mailing-list-service#110). Requires committee_uid to be set; an empty
+   * list means no voting-status restriction.
+   */
+  committee_filters?: CommitteeMemberVotingStatus[];
+  /**
+   * Committee member roles that gate which members are synced to this list, in addition to
+   * `committee_filters` (linuxfoundation/lfx-v2-mailing-list-service#110). Requires committee_uid
+   * to be set; an empty list means no role restriction. Plain string match on the backend with no
+   * fixed role taxonomy, so typed as `string[]` rather than `CommitteeMemberRole[]`.
+   */
+  committee_role_filters?: string[];
   /** Email subject prefix (optional) */
   subject_tag?: string;
   /** Manager users who can edit/modify this resource */
@@ -496,4 +526,14 @@ export interface SyncApplyRequest {
   adds: SyncDiffAdd[];
   /** Approved subset of the diff's proposed removes */
   removes: SyncDiffRemove[];
+}
+
+/**
+ * A mailing list's sync direction and committee/role filters for one specific linked committee.
+ * All three fields are empty/unset defaults when the list isn't linked to that committee at all.
+ */
+export interface MailingListCommitteeSync {
+  syncMode: MailingListSyncMode | undefined;
+  committeeFilters: CommitteeMemberVotingStatus[];
+  committeeRoleFilters: string[];
 }
