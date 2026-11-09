@@ -15,7 +15,6 @@ import type { FilterPillOption } from './dashboard-metric.interface';
 import type { FilterOption } from './filter.interface';
 import type { HealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.interface';
 import type { HealthMetricsChartTipView, HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
-import type { HealthMetricsOverviewKpiView } from './health-metrics-overview.interface';
 
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsMembersSectionKey = (typeof HEALTH_METRICS_MEMBERS_SECTIONS)[number]['key'];
@@ -57,80 +56,39 @@ export interface HealthMetricsMembersTierIcon {
   radius: string;
 }
 
-/** A palette colour for the other tiers, and the reserved tier it could be mistaken for. */
-export interface HealthMetricsMembersBreakdownPaletteEntry {
-  color: string;
-  resembles: HealthMetricsMembersReservedTier | null;
-}
-
-export type HealthMetricsMembersBreakdownViewMode = 'chart' | 'table';
-
-export interface HealthMetricsMembersBreakdownViewOption {
-  value: HealthMetricsMembersBreakdownViewMode;
-  /** The tooltip and screen-reader name of the icon-only option. */
-  label: string;
-  icon: string;
-}
-
-/** One stacked segment, positioned as a share of the chart's height. */
-export interface HealthMetricsMembersBreakdownSegmentView {
-  key: string;
-  color: string;
-  bottomPct: number;
-  heightPct: number;
-}
-
-/** One year's column: its stack, the labels under it and its popup. */
+/** One year's column header: e.g. `2026 YTD` for the running year. */
 export interface HealthMetricsMembersBreakdownColumnView {
   year: number;
-  /** e.g. `2026 YTD` for the running year. */
   label: string;
-  membersLabel: string;
-  /** Bottom to top. */
-  segments: HealthMetricsMembersBreakdownSegmentView[];
-  tip: HealthMetricsChartTipView;
-  /** The popup's figures in a sentence, for a screen reader on the focused column. */
-  ariaLabel: string;
 }
 
-export interface HealthMetricsMembersBreakdownLegendItemView {
-  label: string;
-  color: string;
-  /** A divider before the item, setting the grey tiers apart. */
-  divided: boolean;
-}
+export type HealthMetricsMembersBreakdownRowKind = 'tier' | 'total';
 
-export type HealthMetricsMembersBreakdownRowKind = 'tier' | 'total' | 'change';
-
-export interface HealthMetricsMembersBreakdownCellView {
-  label: string;
-  /** A change row's direction; `null` for any other cell and for a change with nothing to compare. */
-  tone: 'up' | 'down' | null;
-}
-
-/** One row of the table view: a tier, a total, or the change under a total. */
+/** One row of the table: a tier, or a total under the tiers. */
 export interface HealthMetricsMembersBreakdownRowView {
   key: string;
   label: string;
   kind: HealthMetricsMembersBreakdownRowKind;
   icon: HealthMetricsMembersReservedTier | null;
+  /** Every other tier row is tinted, as the design stripes them. */
+  striped: boolean;
   /** One per year, in the columns' order. */
-  cells: HealthMetricsMembersBreakdownCellView[];
+  cells: string[];
 }
 
 /** The breakdown table's class strings, by row kind where they differ. */
 export interface HealthMetricsMembersBreakdownTableClasses {
   label: Record<HealthMetricsMembersBreakdownRowKind, string>;
   cell: Record<HealthMetricsMembersBreakdownRowKind, string>;
-  lastCell: Record<HealthMetricsMembersBreakdownRowKind, string>;
-  change: Record<'up' | 'down', string>;
+  stripe: string;
+  totalFill: string;
   cellBase: string;
   rowRule: string;
   cellRule: string;
   totalRule: string;
 }
 
-/** A table row as drawn: its rules, and each cell's type and fill as classes. */
+/** A table row as drawn: its rules and fill, and each cell's type as classes. */
 export interface HealthMetricsMembersBreakdownTableRow {
   key: string;
   label: string;
@@ -140,15 +98,11 @@ export interface HealthMetricsMembersBreakdownTableRow {
   cells: { label: string; cellClass: string }[];
 }
 
-/** `#breakdown`, built over the loaded years; only the metrics row follows the selected period. */
+/** `#breakdown`: members per tier at each year's end, with the totals and revenue under them. */
 export interface HealthMetricsMembersBreakdownView {
-  /** False when no year in the chart has a tier row. */
+  /** False when no year shown has a tier row. */
   measured: boolean;
-  kpis: HealthMetricsOverviewKpiView[];
-  /** The y axis, top to bottom. */
-  yTicks: string[];
   columns: HealthMetricsMembersBreakdownColumnView[];
-  legend: HealthMetricsMembersBreakdownLegendItemView[];
   rows: HealthMetricsMembersBreakdownRowView[];
   /** The selected year's members, for the sub-nav badge; `null` when unmeasured. */
   count: number | null;

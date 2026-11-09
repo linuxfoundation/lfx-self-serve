@@ -77,17 +77,8 @@ describe('MembersBreakdownComponent', () => {
     return root.querySelector(`[data-testid="${testId}"]`);
   }
 
-  function text(testId: string, root?: ParentNode): string {
-    return query(testId, root)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-  }
-
   async function pickRange(range: HealthMetricsRange): Promise<void> {
     TestBed.inject(HealthMetricsChromeService).selectedRange.set(range);
-    await settle();
-  }
-
-  async function pickView(value: 'chart' | 'table'): Promise<void> {
-    query('members-breakdown-view')?.querySelector<HTMLInputElement>(`input[value="${value}"]`)?.click();
     await settle();
   }
 
@@ -116,84 +107,51 @@ describe('MembersBreakdownComponent', () => {
     expect(counts).toEqual([null, 84]);
   });
 
-  it('leads with the metrics row for the selected year, re-settling a period change without a re-read', async () => {
+  it('re-counts the sub-nav for a period change without a re-read', async () => {
     await render();
-    expect(text('members-breakdown-kpis-members')).toContain('Members in 2026 so far');
-    expect(text('members-breakdown-kpis-members-value')).toBe('84');
-    expect(text('members-breakdown-kpis-change-delta')).toContain('+12.0%');
 
     await pickRange('COMPLETED_YEAR');
 
-    expect(text('members-breakdown-kpis-members')).toContain('Members in 2025');
     expect(getMembersTiers).toHaveBeenCalledTimes(1);
     expect(lifecycle).toEqual(['reading', 'settled', 'settled']);
     expect(counts.at(-1)).toBe(75);
   });
 
-  it('stacks Platinum, Gold, Silver and a grey Others in each year, with a divided legend', async () => {
+  it('tables every tier in rank order, then the totals, striped and washed as the design draws them', async () => {
     await render();
 
-    const column = query('members-breakdown-column-2026')!;
-    expect([...column.querySelectorAll('[data-testid^="members-breakdown-segment-2026-"]')].map((segment) => segment.getAttribute('data-testid'))).toEqual([
-      'members-breakdown-segment-2026-Platinum',
-      'members-breakdown-segment-2026-Gold',
-      'members-breakdown-segment-2026-Silver',
-      'members-breakdown-segment-2026-Others',
-    ]);
-    expect(column.getAttribute('aria-label')).toContain('2026 · 84 members. Platinum: 7 · 8%');
-    expect([...(query('members-breakdown-legend')?.children ?? [])].map((item) => item.textContent?.trim() || '|')).toEqual([
-      'Platinum',
-      'Gold',
-      'Silver',
-      '|',
-      'Others',
-    ]);
-    expect(query('members-breakdown-legend-divider')).not.toBeNull();
-  });
-
-  it('shows a column’s popup while it is hovered or focused', async () => {
-    await render();
-    const column = query('members-breakdown-column-2026')!;
-
-    column.dispatchEvent(new Event('mouseenter'));
-    await settle();
-    expect(text('health-metrics-chart-tip-title', column)).toBe('2026 · 84 members');
-    expect(
-      [...column.querySelectorAll('[data-testid="health-metrics-chart-tip-row"]')].map((row) =>
-        [...row.children].map((side) => side.textContent?.trim()).join(' ')
-      )
-    ).toEqual(['Platinum 7 · 8%', 'Gold 16 · 19%', 'Silver 44 · 52%', 'Others 17 · 20%', 'Associate 12', 'End User Supporter 5', 'Revenue $84K']);
-    expect(query('health-metrics-chart-tip-rule', column)).not.toBeNull();
-
-    column.dispatchEvent(new Event('mouseleave'));
-    await settle();
-    expect(query('health-metrics-chart-tip', column)).toBeNull();
-
-    // Escape dismisses a popup opened by focus, without moving focus off the column.
-    column.dispatchEvent(new Event('focus'));
-    await settle();
-    expect(query('health-metrics-chart-tip', column)).not.toBeNull();
-    column.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    await settle();
-    expect(query('health-metrics-chart-tip', column)).toBeNull();
-  });
-
-  it('switches to a table of every real tier, totals and their changes', async () => {
-    await render();
-    await pickView('table');
-
-    expect(query('members-breakdown-chart')).toBeNull();
     const cells = (key: string): string[] =>
       [...(query(`members-breakdown-row-${key}`)?.querySelectorAll('[role="rowheader"], [role="cell"]') ?? [])].map((cell) => cell.textContent?.trim() ?? '');
+    const rows = [...fixture.nativeElement.querySelectorAll('[data-testid^="members-breakdown-row-"]')] as HTMLElement[];
+
+    expect(rows.map((row) => row.getAttribute('data-testid')?.replace('members-breakdown-row-', ''))).toEqual([
+      'tier-Platinum',
+      'tier-Gold',
+      'tier-Silver',
+      'tier-Associate',
+      'tier-End User Supporter',
+      'members',
+      'revenue',
+    ]);
+    expect([...(query('members-breakdown-table')?.querySelectorAll('[role="columnheader"]') ?? [])].map((cell) => cell.textContent?.trim())).toEqual([
+      'Tier',
+      '2023',
+      '2024',
+      '2025',
+      '2026 YTD',
+    ]);
     expect(cells('tier-Platinum')).toEqual(['Platinum', '5', '5', '6', '7']);
     expect(query('members-breakdown-row-tier-Platinum')?.querySelector('lfx-health-metrics-tier-icon')).not.toBeNull();
-    expect(cells('tier-Associate')).toEqual(['Associate', '8', '9', '10', '12']);
     expect(query('members-breakdown-row-tier-Associate')?.querySelector('lfx-health-metrics-tier-icon')).toBeNull();
-    expect(query('members-breakdown-row-tier-Others')).toBeNull();
     expect(cells('members')).toEqual(['Total members', '55', '62', '75', '84']);
-    expect(cells('members-change')).toEqual(['Change vs. previous year', '—', '+12.7%', '+21.0%', '+12.0%']);
+    expect(cells('revenue')).toEqual(['Total revenue', '$55K', '$62K', '$75K', '$84K']);
+    expect(rows.map((row) => row.className.includes('bg-gray-50'))).toEqual([false, true, false, true, false, false, false]);
     expect(query('members-breakdown-row-members')?.className).toContain('border-t');
-    expect([...(query('members-breakdown-row-members')?.querySelectorAll('[role="cell"]') ?? [])].at(-1)?.className).toContain('bg-blue-100');
+    expect(query('members-breakdown-row-members')?.className).toContain('bg-blue-100');
+    expect(query('members-breakdown-row-revenue')?.className).not.toContain('border-t');
+    expect(query('members-breakdown-row-tier-End User Supporter')?.className).not.toContain('border-b');
+    expect(query('members-breakdown-row-tier-Others')).toBeNull();
+    expect(query('members-breakdown-chart')).toBeNull();
   });
 
   it('settles empty, with no body, for a foundation with no tier rows', async () => {
