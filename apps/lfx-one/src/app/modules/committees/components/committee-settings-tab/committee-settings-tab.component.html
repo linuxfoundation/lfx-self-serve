@@ -71,6 +71,11 @@
             <i class="fa-light fa-spinner-third fa-spin"></i>
             <span>Loading mailing lists…</span>
           </div>
+        } @else if (mlRefreshFailed() && associatedMailingLists().length === 0) {
+          <lfx-ui-note variant="error" announce data-testid="settings-ml-refresh-failed-notice">
+            Couldn't load mailing lists for this group. What you see here may be out of date.
+            <lfx-ui-button note-action variant="secondary" (click)="retryMlRefresh()" data-testid="settings-ml-refresh-retry-button">Retry</lfx-ui-button>
+          </lfx-ui-note>
         } @else if (associatedMailingLists().length === 0) {
           <div class="text-[12.5px] text-gray-400 py-2">
             @if (canEdit() && mailingListLinkBlocked()) {
@@ -212,6 +217,7 @@
           @if (ml.writer === true) {
             <lfx-mailing-list-sync-settings
               [mailingList]="ml"
+              [committeeUid]="committee().uid"
               [siblingCandidates]="associatedMailingLists()"
               [lockedBySibling]="refreshingMl() || (drawerSavingCount() > 0 && !savingMlUids().has(ml.uid))"
               (updated)="onSyncSettingsUpdated($event)"
@@ -226,7 +232,9 @@
       <!-- Disabled, not hidden, while a save is in flight (#4899 review) — `ref.close()` bypasses the
            drawer's `canClose` gate (see UiDrawerService.open doc comment), so this is the only thing
            stopping Done from tearing down a child mid-save. -->
-      <lfx-ui-button variant="primary" size="small" [disabled]="drawerSavingCount() > 0" (click)="ref.close()">Done</lfx-ui-button>
+      <lfx-ui-button variant="primary" size="small" [disabled]="drawerSavingCount() > 0" (click)="ref.close()" data-testid="settings-auto-sync-done-button"
+        >Done</lfx-ui-button
+      >
     </ng-container>
   </lfx-ui-drawer>
 </ng-template>

@@ -42,6 +42,14 @@ export class MailingListSyncSettingsComponent {
   // reuses that data instead of issuing its own getMailingListsByCommittee request. Left undefined
   // on the standalone mailing-list view page (#4024), where no such list exists to share.
   public readonly siblingCandidates = input<GroupsIOMailingList[] | undefined>(undefined);
+  // The committee this instance is scoped to. A mailing list can be linked to more than one
+  // committee, so `mailingList().committees` can hold several entries — without this, `committee()`
+  // always picked `committees[0]`, which shows the wrong committee's name and writes sync_mode to
+  // the wrong committee whenever the caller (the Auto Sync drawer, one instance per committee) is
+  // showing a list linked to more than one (#4899 review). Left undefined on the standalone
+  // mailing-list view page (#4024), which has no "current committee" of its own to pass — falls back
+  // to `committees[0]` there.
+  public readonly committeeUid = input<string | undefined>(undefined);
   // Set by the Auto Sync drawer while a *different* card is mid-save (#4899 review). Two cards can
   // each read the same associatedMailingLists() snapshot and both pass their own "no active sync
   // elsewhere" check before either save's round-trip lands and refreshes that snapshot — this locks
@@ -84,7 +92,14 @@ export class MailingListSyncSettingsComponent {
   // previous list and skip syncing the toggle to the new list's persisted state (#4899 review).
   private readonly savingUid = signal<string | null>(null);
 
-  protected readonly committee = computed(() => this.mailingList().committees?.[0] ?? null);
+  protected readonly committee = computed(() => {
+    const committees = this.mailingList().committees;
+    const scopedUid = this.committeeUid();
+    if (scopedUid) {
+      return committees?.find((c) => c.uid === scopedUid) ?? null;
+    }
+    return committees?.[0] ?? null;
+  });
 
   // Writable, not a computed off mailingList().sync_mode: a failed save leaves mailingList()
   // unchanged, so a computed would re-evaluate to the exact value it had before the click and
