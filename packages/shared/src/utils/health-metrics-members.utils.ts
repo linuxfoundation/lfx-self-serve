@@ -83,7 +83,6 @@ import type {
   HealthMetricsMembersTiers,
   HealthMetricsMembersTierYear,
 } from '../interfaces/health-metrics-members.interface';
-import type { HealthMetricsOverviewDelta, HealthMetricsOverviewKpiView } from '../interfaces/health-metrics-overview.interface';
 
 /** Sub-nav items for the Members tab; a section badges only once it reports a count, and notes only once it reports a note. */
 export function buildHealthMetricsMembersSubNavItems(
@@ -854,12 +853,6 @@ function collectBreakdownTiers(rows: HealthMetricsMembersTierYear[]): BreakdownT
   return [...byLabel.values()]
     .filter((tier) => [...tier.members.values()].some((count) => (count ?? 0) > 0))
     .sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label));
-}
-
-function formatSignedDifference(difference: number | null): string {
-  if (difference === null) return '—';
-  if (difference === 0) return '0';
-  return `${difference < 0 ? '−' : '+'}${formatCount(Math.abs(difference))}`;
 }
 
 /** The smallest whole, evenly readable step (e.g. 750 for a 3,000 top) whose four steps reach the top. */
