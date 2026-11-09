@@ -1,12 +1,14 @@
 ---
 title: Organization FAQ
-description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Organization Profile page shows and who can edit it, where to see the organization's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Organization lens — what the lens is and what you can do in it, how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Organization Profile page shows and who can edit it, where to see the organization's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
 tags:
   [
     organization,
     faq,
+    org-lens,
+    overview,
     switch-organization,
     org-overview,
     dashboard,
@@ -29,9 +31,13 @@ tags:
     leaderboard,
     crowdfunding,
   ]
-last_updated: 2026-11-06
+last_updated: 2026-11-09
 intercom_collection: Organization
 ---
+
+## What is the Organization lens, and what can I do in it?
+
+The Organization lens in LFX Self Serve shows one organization at a time: how it takes part in Linux Foundation foundations and projects, its foundation memberships, its projects, its people and their activity, its profile, and its corporate CLAs (Contributor License Agreements). You can open an organization there when you hold a role on it, such as an admin or viewer role, or a CLA Manager or initial CLA Manager designee role. An admin or viewer sees **Dashboard**, **Memberships**, **Projects**, the **Organization Engagement** pages (**People**, **Code Contributions**, **Events**, **Training & Certification**, **Meetings** and **Groups**), **EasyCLA** and **Organization Profile**. A CLA Manager, or an initial CLA Manager designee, with no other role on that organization sees only **EasyCLA**. See [What can I do in the Organization lens?](../#what-can-i-do-in-the-organization-lens).
 
 ## How do I switch to a different organization?
 
