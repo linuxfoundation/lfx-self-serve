@@ -467,7 +467,7 @@ describe('MailingListPickerDialogComponent committee filters', () => {
   it('does not throw and normalizes a cleared (null) filter control to an empty array in save()', async () => {
     await setup(true);
 
-    fixture.componentInstance.mlCommitteeFilterForm.get('ml-synced')?.setValue(null as unknown as string[]);
+    fixture.componentInstance.mlCommitteeFilterForm.get('ml-synced')?.setValue(null as unknown as CommitteeMemberVotingStatus[]);
     fixture.componentInstance.mlCommitteeRoleFilterForm.get('ml-synced')?.setValue(null as unknown as string[]);
 
     expect(() => fixture.componentInstance.save()).not.toThrow();
