@@ -822,3 +822,169 @@ describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)'
     expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('events:v5');
   });
 });
+
+describe('OrgInvolvementService.getFamilyEventAttendanceMonthly', () => {
+  const ROLL_UP = 'family-001000000000000AAA';
+  const PARENT_CO = '001000000000001AAA';
+  const CHILD_CO = '001000000000002AAA';
+  const JAN = new Date(2030, 0, 1);
+  const FEB = new Date(2030, 1, 1);
+
+  interface ParticipationRow {
+    account: string;
+    month: Date;
+    crossRef: number;
+    participantRef: number;
+    personKey: string | null;
+    attendee: boolean;
+    speaker: boolean;
+  }
+
+  // One person on both rosters attends in January through both companies; one speaker without a roster link is credited
+  // to both companies in February (different per-company numbers, one shared number); one attendee per company is their own.
+  const PARTICIPATION: ParticipationRow[] = [
+    { account: PARENT_CO, month: JAN, crossRef: 1001, participantRef: 11, personKey: 'lfid-shared', attendee: true, speaker: false },
+    { account: CHILD_CO, month: JAN, crossRef: 1001, participantRef: 21, personKey: 'lfid-shared', attendee: true, speaker: false },
+    { account: PARENT_CO, month: FEB, crossRef: 2002, participantRef: 12, personKey: null, attendee: false, speaker: true },
+    { account: CHILD_CO, month: FEB, crossRef: 2002, participantRef: 22, personKey: null, attendee: false, speaker: true },
+    { account: PARENT_CO, month: FEB, crossRef: 3003, participantRef: 13, personKey: 'lfid-parent', attendee: true, speaker: false },
+    { account: CHILD_CO, month: JAN, crossRef: 4004, participantRef: 23, personKey: null, attendee: true, speaker: false },
+  ];
+
+  const usesCrossRef = (sql: string): boolean => sql.includes('CROSS_ACCOUNT_PARTICIPANT_REF');
+
+  /** Answers the family read from the fixture: the companies bound, keyed the way the SQL keys a participant. */
+  const answer = (sql: string, binds: unknown[]): { rows: Record<string, unknown>[] } => {
+    const key = (row: ParticipationRow): string => (usesCrossRef(sql) ? String(row.crossRef) : (row.personKey ?? `${row.account}:${row.participantRef}`));
+    const rows = PARTICIPATION.filter((row) => binds.includes(row.account));
+    const distinct = (subset: ParticipationRow[], flag: 'attendee' | 'speaker'): number => new Set(subset.filter((row) => row[flag]).map(key)).size;
+    const months = [...new Set(rows.map((row) => row.month.getTime()))].sort((a, b) => a - b);
+    return {
+      rows: months.map((time) => {
+        const inMonth = rows.filter((row) => row.month.getTime() === time);
+        return {
+          MONTH_START_DATE: new Date(time),
+          ATTENDEES: distinct(inMonth, 'attendee'),
+          SPEAKERS: distinct(inMonth, 'speaker'),
+          TOTAL_ATTENDEES: distinct(rows, 'attendee'),
+          TOTAL_SPEAKERS: distinct(rows, 'speaker'),
+        };
+      }),
+    };
+  };
+
+  beforeEach(() => {
+    execute.mockReset();
+    withOrgCache.mockClear();
+    execute.mockImplementation(async (sql: string, binds: unknown[]) => answer(sql, binds));
+  });
+
+  it('counts a person credited to two companies of the family once, as an attendee and as a speaker', async () => {
+    const response = await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
+
+    expect(response).toEqual({
+      accountId: ROLL_UP,
+      accountName: '',
+      totalAttended: 3,
+      totalSpeakers: 1,
+      attendeesMonthlyData: [2, 1],
+      speakersMonthlyData: [0, 1],
+      monthlyLabels: ['Jan 2030', 'Feb 2030'],
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(withOrgCache.mock.calls.at(-1)?.[0]).toBe(ROLL_UP);
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toMatch(/^events-family:v1:[0-9a-f]{16}$/);
+    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(true);
+  });
+
+  it('reads the person-level table with the single-company rule over every company, binding the companies then 730 days', async () => {
+    await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
+
+    const [sql, binds, options] = execute.mock.calls[0] as [string, unknown[], unknown];
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION\n');
+    expect(sql).not.toContain('ORG_EVENT_PARTICIPATION_MONTHLY');
+    expect(sql).toContain('CROSS_ACCOUNT_PARTICIPANT_REF AS PARTICIPANT');
+    expect(sql).toContain('WHERE account_id IN (?, ?)');
+    expect(sql).toContain('AND event_date < CURRENT_DATE()');
+    expect(sql).toContain('AND event_date >= DATEADD(DAY, 0 - ?, CURRENT_DATE())');
+    expect(sql).toContain('is_counted_all_verified AS IS_ATTENDEE');
+    expect(sql).toContain('is_counted_speaker_verified AS IS_SPEAKER');
+    expect(sql).toContain('(is_counted_registered_all OR is_counted_attended_all OR is_counted_speaker_all) AS IS_SHOWN');
+    expect(sql).toContain('HAVING COUNT_IF(IS_SHOWN) > 0');
+    expect(sql).not.toMatch(/SELF_REPORTED|_COMPANY_EMAIL|is_counted_all_all/);
+    expect(binds).toEqual([PARENT_CO, CHILD_CO, 730]);
+    expect(options).toEqual({ expectInvalidIdentifier: 'CROSS_ACCOUNT_PARTICIPANT_REF' });
+  });
+
+  it("answers a family of one with that company's own numbers", async () => {
+    const family = await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [CHILD_CO]);
+
+    expect(family).toMatchObject({ totalAttended: 2, totalSpeakers: 1, attendeesMonthlyData: [2, 0], speakersMonthlyData: [0, 1] });
+    expect((execute.mock.calls[0] as [string, unknown[]])[1]).toEqual([CHILD_CO, 730]);
+  });
+
+  it('reads each company once and keys the cache on the set, whatever order or repeats it arrives in', async () => {
+    const service = new OrgInvolvementService();
+    await service.getFamilyEventAttendanceMonthly(ROLL_UP, [CHILD_CO, PARENT_CO, CHILD_CO]);
+    const firstKey = withOrgCache.mock.calls.at(-1)?.[1];
+    expect((execute.mock.calls[0] as [string, unknown[]])[1]).toEqual([PARENT_CO, CHILD_CO, 730]);
+    await service.getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
+
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe(firstKey);
+
+    await service.getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO]);
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).not.toBe(firstKey);
+  });
+
+  it('answers zero people without reading the warehouse for an empty set', async () => {
+    const response = await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, []);
+
+    expect(response).toEqual({
+      accountId: ROLL_UP,
+      accountName: '',
+      totalAttended: 0,
+      totalSpeakers: 0,
+      attendeesMonthlyData: [],
+      speakersMonthlyData: [],
+      monthlyLabels: [],
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(withOrgCache).not.toHaveBeenCalled();
+  });
+
+  it('answers zero people and no months when no company of the family took part in the window', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    expect(await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO])).toMatchObject({
+      totalAttended: 0,
+      totalSpeakers: 0,
+      attendeesMonthlyData: [],
+      speakersMonthlyData: [],
+      monthlyLabels: [],
+    });
+  });
+
+  it('counts by person_key, then each company number, and does not store the card, while the shared number is missing', async () => {
+    execute.mockImplementation(async (sql: string, binds: unknown[]) => {
+      if (usesCrossRef(sql)) throw invalidIdentifier('CROSS_ACCOUNT_PARTICIPANT_REF');
+      return answer(sql, binds);
+    });
+
+    const response = await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
+
+    // The person on both rosters still counts once; the speaker with no roster link counts once per company.
+    expect(response).toMatchObject({ totalAttended: 3, totalSpeakers: 2, attendeesMonthlyData: [2, 1], speakersMonthlyData: [0, 2] });
+    expect(execute).toHaveBeenCalledTimes(2);
+    const [fallbackSql, fallbackBinds] = execute.mock.calls[1] as [string, unknown[]];
+    expect(fallbackSql).toContain("COALESCE(person_key, account_id || ':' || participant_ref) AS PARTICIPANT");
+    expect(fallbackBinds).toEqual([PARENT_CO, CHILD_CO, 730]);
+    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
+  });
+
+  it('fails the card on any other warehouse error, without a fallback read', async () => {
+    execute.mockRejectedValue(new Error('Warehouse timeout'));
+
+    await expect(new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO])).rejects.toThrow('Warehouse timeout');
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+});
