@@ -104,7 +104,9 @@ describe('OrgOverviewComponent page gate', () => {
     expect(link?.tagName).toBe('A');
     expect(link?.getAttribute('href')).toBe('/docs/organization/choose-an-organization');
     expect(has('org-overview-empty-contact-support')).toBe(false);
-    expect(fixture.nativeElement.querySelector('[data-testid="org-overview-empty-state"] button')).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="org-overview-empty-state"] button, [data-testid="org-overview-empty-state"] [lfxOpenIntercom]')
+    ).toBeNull();
   });
 
   // lfx-self-serve-ops#1219: the Overview always counts the default organization scope, so its address never names one.
