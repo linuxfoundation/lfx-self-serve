@@ -740,4 +740,4 @@ export const GROUPS_ENGAGEMENT_ICON_CLASS = {
  * List routes a group details page can return to. The page reads `backPath` from navigation state,
  * so an unknown value must fall back to `/groups` rather than navigate anywhere arbitrary.
  */
-export const COMMITTEE_BACK_PATHS: readonly string[] = ['/groups', '/surveys', '/votes', '/mailing-lists', '/meetings'];
+export const COMMITTEE_BACK_PATHS: readonly string[] = ['/groups', '/surveys', '/votes', '/mailing-lists', '/meetings', '/documents'];

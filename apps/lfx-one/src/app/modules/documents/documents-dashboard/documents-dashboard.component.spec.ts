@@ -3,6 +3,8 @@
 
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { provideRouter, RouterLink } from '@angular/router';
 import { MyDocumentItem, Project, ProjectContext, ProjectDocument } from '@lfx-one/shared/interfaces';
 import { compareDocumentsByRecency } from '@lfx-one/shared/utils';
 import { DocumentService } from '@services/document.service';
@@ -46,6 +48,7 @@ describe('DocumentsDashboardComponent', () => {
     await TestBed.configureTestingModule({
       imports: [DocumentsDashboardComponent],
       providers: [
+        provideRouter([]),
         { provide: DocumentService, useValue: { getMyDocuments: vi.fn(() => of(legacyDocuments)) } },
         { provide: ProjectService, useValue: { getProjectDocuments: vi.fn(() => of(projectDocuments)) } },
         {
@@ -194,6 +197,38 @@ describe('DocumentsDashboardComponent', () => {
 
     fixture.componentInstance['onSourceTabChange']('link');
     expect(visibleIds()).toEqual(['latest-link', 'old-link']);
+  });
+
+  it('links the group, meeting and mailing list names in the My Documents feed to their details pages', async () => {
+    routeLens.set('me');
+    legacyDocuments = [
+      legacyDocument('group-doc', '2026-10-03', { groupOrMeetingName: 'Technical Steering Committee', groupOrMeetingUid: 'group-1' }),
+      legacyDocument('meeting-doc', '2026-10-02', { source: 'meeting', groupOrMeetingName: 'Weekly sync', groupOrMeetingUid: 'm-1', meetingId: 'm-1' }),
+      legacyDocument('list-doc', '2026-10-01', {
+        source: 'mailing_list',
+        groupOrMeetingName: 'Maintainers',
+        groupOrMeetingUid: 'group-1',
+        mailingListUid: 'list-7',
+      }),
+      legacyDocument('nameless-doc', '2026-09-30', { source: 'mailing_list', groupOrMeetingName: '', groupOrMeetingUid: 'group-1' }),
+    ];
+    await render();
+
+    const href = (id: string): string | null | undefined =>
+      fixture.nativeElement.querySelector(`[data-testid="documents-source-link-${id}"]`)?.getAttribute('href');
+    expect(href('group-doc')).toBe('/groups/group-1');
+    expect(href('meeting-doc')).toBe('/meetings/m-1');
+    expect(href('list-doc')).toBe('/mailing-lists/list-7');
+    expect(href('nameless-doc')).toBeUndefined();
+  });
+
+  it('sends back state so a group page returns to Documents', async () => {
+    routeLens.set('me');
+    legacyDocuments = [legacyDocument('group-doc', '2026-10-03', { groupOrMeetingName: 'Technical Steering Committee', groupOrMeetingUid: 'group-1' })];
+    await render();
+
+    const link = fixture.debugElement.query(By.css('[data-testid="documents-source-link-group-doc"]')).injector.get(RouterLink);
+    expect(link.state).toEqual({ backLabel: 'Documents', backPath: '/documents', fromMeLens: false });
   });
 
   it('uses name and ID tie-breakers and places missing or invalid dates after all valid dates', async () => {

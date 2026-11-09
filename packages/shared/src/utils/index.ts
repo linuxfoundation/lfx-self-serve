@@ -8,6 +8,7 @@ export * from './color.utils';
 export * from './date-time.utils';
 export * from './docs.utils';
 export * from './document-kind.utils';
+export * from './document-source-link.utils';
 export * from './document-sort.utils';
 export * from './document-title.utils';
 export * from './entity-route.utils';

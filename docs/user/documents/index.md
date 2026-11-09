@@ -4,7 +4,7 @@ description: Browse and manage project documents in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
 tags: [documents, files, governance, project]
-last_updated: 2026-10-28
+last_updated: 2026-11-09
 intercom_collection: Documents
 ---
 
@@ -25,6 +25,8 @@ The Documents section lets you browse and manage documents associated with your 
 Go to **app.lfx.dev**, switch to a project or foundation, and select **Documents** from the left navigation sidebar. The documents dashboard lists documents from all sources for that context: direct project files and links, committee documents, meeting attachments and recordings, and mailing-list artifacts.
 
 Use the tabs above the list to narrow it by source: **All**, **Project**, **Groups**, **Meetings**, or **Mailing Lists**. Use the search box to find a document by name, or by the group or meeting it belongs to (meeting attachments are found by file name).
+
+In the **Group / Meeting** column, select a name to open that group's, meeting's, or mailing list's details page. For a past meeting, it opens the past meeting's details. On a group's own **Documents** tab, that group's name is plain text.
 
 The Documents section is available only in the project and foundation lenses. The old Me-lens **My Documents** page has been removed, and an old `/documents` link opens Documents for your active project or foundation. If you are in the Me or Organization lens, it opens that lens's home page instead.
 

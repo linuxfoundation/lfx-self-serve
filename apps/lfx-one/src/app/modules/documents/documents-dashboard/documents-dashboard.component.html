@@ -96,6 +96,7 @@
           <div class="px-5 pb-5">
             <lfx-documents-table
               [documents]="filteredDocuments()"
+              [groupLinkState]="groupLinkState()"
               [loading]="loading()"
               [showFoundation]="false"
               (folderOpen)="onFolderOpen($event)"
@@ -222,7 +223,7 @@
             } @else {
               <!-- Table -->
               <lfx-table
-                [value]="filteredDocuments()"
+                [value]="documentRows()"
                 [paginator]="filteredDocuments().length > 0"
                 [rows]="10"
                 [rowsPerPageOptions]="rppOptions()"
@@ -270,7 +271,17 @@
 
                     <!-- Group / Meeting column -->
                     <td>
-                      <span class="text-sm text-gray-700">{{ doc.groupOrMeetingName || '—' }}</span>
+                      @if (doc.sourceLink; as link) {
+                        <a
+                          [routerLink]="link.commands"
+                          [state]="link.kind === 'group' ? groupLinkState() : undefined"
+                          class="lfx-table-name-link text-sm"
+                          [attr.data-testid]="'documents-source-link-' + doc.id">
+                          {{ doc.groupOrMeetingName }}
+                        </a>
+                      } @else {
+                        <span class="text-sm text-gray-700">{{ doc.groupOrMeetingName || '—' }}</span>
+                      }
                     </td>
 
                     <!-- Source column -->
