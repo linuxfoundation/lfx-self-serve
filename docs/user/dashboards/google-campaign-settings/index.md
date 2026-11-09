@@ -33,7 +33,7 @@ tags:
     search themes,
     implement,
   ]
-last_updated: 2026-11-07
+last_updated: 2026-11-09
 intercom_collection: Dashboards
 ---
 
@@ -189,6 +189,31 @@ The lists apply to the whole campaign, including any ad group added later, for e
 - **Match type** (Exact, Phrase or Broad) applies to every keyword in the box. Exact is the default.
 - You can add more negative keywords from **Optimize** once the campaign is live.
 
+## Copy, dates and budget filled in from the brief
+
+When you open the **Implement** tab for a brief, some fields start with values from the brief. You can change any of them.
+
+- **Flight dates**: the **Start Date** is today. The **End Date** is the event's first day when the brief gives an event date after today, and otherwise 30 days from today. The Google daily budget starts at the brief's total budget divided by the days from today through the end date, both days counted.
+- **Demand Gen Creative** (image ad): headlines, descriptions and the business name. Headlines come from the brief's Demand Gen copy first, keeping only those of 30 characters or fewer, and then from its Search headlines. A longer headline is left out, not shortened.
+- **Display Creative**: headlines, descriptions and the business name, chosen the same way, plus a **Long headline**: the first Demand Gen headline the headlines did not use, or else the first Search description the descriptions did not use. A call to action from the brief is kept only if it is one Google accepts (see below).
+- **Performance Max Creative**: headlines, long headlines, descriptions and the business name.
+
+A note on each of these creative sections says the copy came from the brief, while it still does. Copy from the brief makes the ad a started one, so add the required images below it to create the ad, or clear the copy to create the campaign without one. Copy you typed before you left the tab is kept when you come back.
+
+### Call to action
+
+On a Display ad, **Call to action** is a list of the button texts Google documents for responsive display ads: Apply Now, Book Now, Contact Us, Download, Learn More, Install, Visit Site, Shop Now, Sign Up, Get Quote, Subscribe and See More. Leave it on **None** and Google chooses the button.
+
+On a Demand Gen image ad, **Call to action** offers only **None**, and Google chooses the button. Google documents no call-to-action values for this ad, and Google Ads refused "Register" there after the campaign was created. On a Demand Gen video ad, choose from the list described under [Demand Gen video ads](#demand-gen-video-ads).
+
+If a saved ad holds a call to action outside its list, a message under **Call to action** says so and **Create Campaign** stays unavailable until you choose one from the list or **None**.
+
+### After you create
+
+Each Google Ads campaign in the results has an **Open in Google Ads** link. It opens the campaign in the Google Ads account you are signed in to; if that is a different account, switch to the campaign's account in Google Ads.
+
+For Google Ads, **Image slot coverage** lists the image slots of the campaign types this tab sends images for: Demand Gen, Display and Performance Max. Search image slots are not listed, because the tab sends no Search images.
+
 ## Performance Max descriptions
 
 Google Ads shows a short description on small placements, so a Performance Max campaign needs at least one description of **60 characters or fewer**. Chinese, Japanese, Korean and full-width characters count double.
@@ -224,7 +249,7 @@ When you choose **Video ad (YouTube)**, the section shows the video ad's fields:
 
 In headlines, long headlines, descriptions and the business name, Chinese, Japanese, Korean and other full-width characters count as two, and a line can't repeat another in the same list, even in different capitals.
 
-If you entered an image ad and then choose the video ad, or the other way round, what you entered is kept but not sent, and a note under **Ad format** says so. Choose the other format again to send it instead. If you leave every video field empty, the campaign is created without an ad, as it is with an empty image ad.
+If the image ad has copy, including copy filled in from the brief, and you then choose the video ad, or the other way round, that ad is kept but not sent, and a note under **Ad format** says so. Choose the other format again to send it instead. If you leave every video field empty, the campaign is created without an ad, as it is with an empty image ad.
 
 ## Demand Gen ad groups
 

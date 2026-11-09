@@ -5698,16 +5698,19 @@ describe('ImplementationTabComponent google creative sections', () => {
   });
 
   /**
-   * The call to action is the other regime: campaign-service bounds it by rune count
-   * (`maxDisplayCallToActionRunes`), so 16 ideographs — 32 wide — are inside its 30 and must not be
-   * refused here.
+   * The call to action is a closed list since #1614 (F13): Google refuses text outside the documented
+   * list after the campaign exists. The rune-count bound campaign-service applies
+   * (`maxDisplayCallToActionRunes`) still stands beside it, so text past 30 runes carries both.
    */
-  it('bounds the call to action by rune count, as campaign-service does', () => {
+  it('holds the call to action to its list, beside the rune-count bound campaign-service applies', () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     const cta = c['campaignForm'].controls.displayCreative.controls.callToActionText;
 
-    cta.setValue('会'.repeat(30));
+    cta.setValue('Learn More');
     expect(cta.valid).toBe(true);
+    cta.setValue('会'.repeat(30));
+    expect(cta.errors?.['creativeOption']).toBeDefined();
+    expect(cta.errors?.['maxlength']).toBeUndefined();
     cta.setValue('会'.repeat(31));
     expect(cta.errors?.['maxlength']).toEqual({ requiredLength: 30, actualLength: 31 });
   });
@@ -6391,7 +6394,7 @@ describe('ImplementationTabComponent demand gen video ad', () => {
     expect(c['googleCreativeError']()).toBeNull();
     expect(c['canSubmit']()).toBe(true);
     expect(c['campaignForm'].controls.demandGenCreative.controls.headlines.value).toBe('An image headline');
-    expect(c['demandGenFormatHeldMessage']()).toContain('image ad you entered is kept but not sent');
+    expect(c['demandGenFormatHeldMessage']()).toContain('The image ad is kept but not sent');
     expect(find('implementation-demand-gen-format-held')?.textContent).toContain('kept but not sent');
     expect(find('implementation-demand-gen-format-held-live')?.textContent).toContain('kept but not sent');
     expect(find('implementation-creative-demand-gen-format')?.getAttribute('aria-describedby')).toBe('implementation-demand-gen-format-held');
@@ -6614,7 +6617,7 @@ describe('ImplementationTabComponent demand gen ad groups', () => {
     fixture.detectChanges();
     // The format's own note gives way: its choice is not on screen while split.
     expect(c['demandGenFormatHeldMessage']()).toBe('');
-    expect(c['demandGenAdGroupsHeldMessage']()).toContain('single Demand Gen ad you entered is kept but not sent');
+    expect(c['demandGenAdGroupsHeldMessage']()).toContain('The single Demand Gen ad is kept but not sent');
     expect(find(fixture, 'implementation-demand-gen-ad-groups-held-live')?.textContent).toContain('kept but not sent');
     expect(find(fixture, 'implementation-demand-gen-ad-groups-split')?.querySelector('input')?.getAttribute('aria-describedby')).toBe(
       'implementation-demand-gen-ad-groups-held'
@@ -7230,7 +7233,7 @@ describe('ImplementationTabComponent display ad groups', () => {
     c['campaignForm'].controls.displayCreative.patchValue({ headlines: 'A single headline' });
     split(c, [{ name: 'Retargeting' }]);
     fixture.detectChanges();
-    expect(c['displayAdGroupsHeldMessage']()).toContain('single Display ad you entered is kept but not sent');
+    expect(c['displayAdGroupsHeldMessage']()).toContain('The single Display ad is kept but not sent');
     expect(find('implementation-display-ad-groups-held-live')?.textContent).toContain('kept but not sent');
     expect(find('implementation-display-ad-groups-split')?.querySelector('input')?.getAttribute('aria-describedby')).toBe(
       'implementation-display-ad-groups-held'
@@ -11012,12 +11015,14 @@ describe('ImplementationTabComponent google extension seeding', () => {
       googlePostalGeoLabels: {},
     });
     for (const key of listKeys) expect(held.draft?.[key]).toEqual([]);
-    // Nothing typed for the previous brief survives. Performance Max is the one group the NEXT brief
-    // fills: its own generated Search copy prefills it (#4784), and every other field stays empty.
+    // Nothing typed for the previous brief survives. The NEXT brief's own generated Search copy prefills
+    // the headlines and descriptions of the three image creatives (#4784, #1614), and every other field
+    // stays empty; the Demand Gen video ad is never seeded.
     const prefilledFromNext: Record<string, string> = { headlines: 'Attend OSS', descriptions: 'Join us in Denver' };
+    const seededGroups = ['performanceMaxCreative', 'demandGenCreative', 'displayCreative'];
     for (const [name, group] of Object.entries(held.draft?.googleCreatives ?? {})) {
       for (const [field, value] of Object.entries(group)) {
-        const expected = name === 'performanceMaxCreative' ? (prefilledFromNext[field] ?? '') : '';
+        const expected = seededGroups.includes(name) ? (prefilledFromNext[field] ?? '') : '';
         expect(value, `${name}.${field}`).toBe(expected);
       }
     }
@@ -17227,7 +17232,10 @@ describe('ImplementationTabComponent performance max prefill', () => {
   }
 
   function prefilled(): boolean {
-    return (fixture.componentInstance as unknown as { performanceMaxPrefillShown(): boolean }).performanceMaxPrefillShown();
+    return (
+      (fixture.componentInstance as unknown as { googleCreativePrefillShown(): Record<string, boolean> }).googleCreativePrefillShown()['performance-max'] ===
+      true
+    );
   }
 
   const generated = {
@@ -17427,6 +17435,402 @@ describe('ImplementationTabComponent performance max prefill', () => {
 
     const notice = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-prefill-notice-performance-max"]');
     expect(notice?.textContent).toContain('filled in from the brief');
+  });
+});
+
+/**
+ * #1614 (F7). The Demand Gen image ad and the responsive display ad are seeded from the brief on
+ * Performance Max's terms: Demand Gen copy first, Search copy filling what is left, every value held
+ * to the channel's own catalogue bounds and never truncated, and the draft restore still winning.
+ */
+describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  /** 39 wide: fits a Demand Gen video headline and a long headline, not the 30-wide image ad headline. */
+  const wide = 'The cloud native conference of the year';
+
+  function brief(structuredCopy: Record<string, unknown> | undefined): CampaignBriefOutput {
+    return {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/kubecon', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      structuredCopy,
+    } as unknown as CampaignBriefOutput;
+  }
+
+  function seed(b: CampaignBriefOutput | null, draft?: CampaignImplementationDraft): void {
+    if (draft !== undefined) fixture.componentRef.setInput('draft', draft);
+    fixture.componentRef.setInput('briefData', b);
+    fixture.detectChanges();
+  }
+
+  function component(): Record<string, any> {
+    return fixture.componentInstance as unknown as Record<string, any>;
+  }
+
+  function group(name: 'demandGenCreative' | 'displayCreative'): Record<string, string> {
+    return component()['campaignForm'].controls[name].getRawValue();
+  }
+
+  function lines(value: string): string[] {
+    return value === '' ? [] : value.split('\n');
+  }
+
+  function prefilled(channel: string): boolean {
+    return component()['googleCreativePrefillShown']()[channel] === true;
+  }
+
+  function show(channel: 'includeDemandGen' | 'includeDisplay'): void {
+    fixture.componentRef.setInput('demandGenEnabled', true);
+    fixture.componentRef.setInput('googleChannelsEnabled', true);
+    fixture.componentRef.setInput('googleCreativeEnabled', true);
+    component()['campaignForm'].patchValue({ includeSearch: false, [channel]: true });
+    fixture.detectChanges();
+  }
+
+  function notice(channel: string): string | undefined {
+    return (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="implementation-creative-prefill-notice-${channel}"]`)?.textContent ?? undefined;
+  }
+
+  const generated = {
+    google_search: {
+      headlines: ['Join KubeCon EU', 'Register for KubeCon'],
+      descriptions: [
+        'Three days of talks, workshops and the hallway track with the cloud native community.',
+        'Meet the maintainers and end users of the CNCF projects you run in production.',
+      ],
+    },
+    google_display: {
+      headlines: ['KubeCon EU 2026 in Amsterdam', wide, 'Where cloud native meets'],
+      descriptions: ['Register now for KubeCon EU 2026.'],
+      business_name: 'CNCF',
+      call_to_action: 'Register',
+    },
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('fills the Demand Gen image ad: fitting Demand Gen headlines then Search ones, descriptions and business name', () => {
+    seed(brief(generated));
+
+    // The 39-wide headline is left out, not cut to 30; the Search headlines fill the slots it leaves.
+    expect(lines(group('demandGenCreative')['headlines'])).toEqual([
+      'KubeCon EU 2026 in Amsterdam',
+      'Where cloud native meets',
+      'Join KubeCon EU',
+      'Register for KubeCon',
+    ]);
+    expect(lines(group('demandGenCreative')['descriptions'])).toEqual([...generated.google_display.descriptions, ...generated.google_search.descriptions]);
+    expect(group('demandGenCreative')['businessName']).toBe('CNCF');
+    // Google documents no call to action for this ad, and refused "Register" live (F13).
+    expect(group('demandGenCreative')['callToActionText']).toBe('');
+    expect(prefilled('demand-gen')).toBe(true);
+  });
+
+  it('caps each Demand Gen list at its field max and drops duplicates', () => {
+    const headlines = ['Headline 0', 'Headline 0', ...Array.from({ length: 6 }, (_, i) => `Headline ${i + 1}`)];
+    seed(brief({ google_display: { headlines, descriptions: [] }, google_search: { headlines: ['Headline 0'] } }));
+
+    const seeded = lines(group('demandGenCreative')['headlines']);
+    expect(seeded).toEqual(['Headline 0', 'Headline 1', 'Headline 2', 'Headline 3', 'Headline 4']);
+  });
+
+  it('does not seed a business name or call to action wider than its field', () => {
+    seed(brief({ google_display: { headlines: ['Join us'], business_name: 'x'.repeat(26), call_to_action: 'y'.repeat(31) } }));
+
+    expect(group('demandGenCreative')['businessName']).toBe('');
+    expect(group('demandGenCreative')['callToActionText']).toBe('');
+    expect(group('displayCreative')['businessName']).toBe('');
+    expect(group('displayCreative')['callToActionText']).toBe('');
+  });
+
+  it('fills the display ad, taking as long headline the first Demand Gen headline the headlines did not take', () => {
+    seed(brief(generated));
+
+    expect(lines(group('displayCreative')['headlines'])).toEqual([
+      'KubeCon EU 2026 in Amsterdam',
+      'Where cloud native meets',
+      'Join KubeCon EU',
+      'Register for KubeCon',
+    ]);
+    expect(group('displayCreative')['longHeadline']).toBe(wide);
+    expect(lines(group('displayCreative')['descriptions'])).toEqual([...generated.google_display.descriptions, ...generated.google_search.descriptions]);
+    expect(group('displayCreative')['businessName']).toBe('CNCF');
+    // "Register" is not on Google's documented list for this ad (F13), so it is not seeded.
+    expect(group('displayCreative')['callToActionText']).toBe('');
+    expect(prefilled('display')).toBe(true);
+  });
+
+  it("seeds a listed call to action in the list's own spelling on Display, and still none on Demand Gen", () => {
+    seed(brief({ google_display: { headlines: ['Join us'], call_to_action: 'learn more' } }));
+
+    expect(group('displayCreative')['callToActionText']).toBe('Learn More');
+    expect(group('demandGenCreative')['callToActionText']).toBe('');
+  });
+
+  it('falls back to a Search description the descriptions did not take for the long headline', () => {
+    const descriptions = Array.from({ length: 6 }, (_, i) => `Search description ${i + 1}`);
+    seed(brief({ google_search: { headlines: ['Join KubeCon EU'], descriptions }, google_display: { headlines: ['Short one'] } }));
+
+    // Five descriptions are taken by the field's max, so the sixth is the first one free.
+    expect(group('displayCreative')['longHeadline']).toBe('Search description 6');
+  });
+
+  it('leaves the long headline empty when every candidate is already seeded elsewhere', () => {
+    seed(brief({ google_search: { headlines: [], descriptions: ['Only description'] }, google_display: { headlines: ['Only headline'] } }));
+
+    expect(group('displayCreative')['longHeadline']).toBe('');
+    expect(lines(group('displayCreative')['headlines'])).toEqual(['Only headline']);
+  });
+
+  it('leaves both creatives empty, with no notice, when the brief has no generated copy', () => {
+    seed(brief(undefined));
+
+    expect(group('demandGenCreative')['headlines']).toBe('');
+    expect(group('displayCreative')['longHeadline']).toBe('');
+    expect(prefilled('demand-gen')).toBe(false);
+    expect(prefilled('display')).toBe(false);
+  });
+
+  it('clears both seeds when a brief without copy replaces one with it', () => {
+    seed(brief(generated));
+    seed(brief(undefined));
+
+    expect(group('demandGenCreative')['headlines']).toBe('');
+    expect(group('displayCreative')['headlines']).toBe('');
+    expect(prefilled('demand-gen')).toBe(false);
+    expect(prefilled('display')).toBe(false);
+  });
+
+  it('lets a restored draft win over both seeds', () => {
+    const draft = {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://events.example.com/kubecon',
+      headlines: [''],
+      descriptions: [''],
+      googleCreatives: {
+        demandGenCreative: { headlines: 'Operator headline', descriptions: '', businessName: 'Operator Co', callToActionText: '' },
+        displayCreative: { headlines: '', longHeadline: 'Operator long headline', descriptions: '', businessName: '', callToActionText: '' },
+      },
+    } as unknown as CampaignImplementationDraft;
+    seed(brief(generated), draft);
+
+    expect(group('demandGenCreative')['headlines']).toBe('Operator headline');
+    expect(group('demandGenCreative')['callToActionText']).toBe('');
+    expect(group('displayCreative')['longHeadline']).toBe('Operator long headline');
+    expect(prefilled('demand-gen')).toBe(false);
+    expect(prefilled('display')).toBe(false);
+  });
+
+  it('drops the Demand Gen notice once the operator rewrites the seeded copy', () => {
+    seed(brief(generated));
+    component()['campaignForm'].controls['demandGenCreative'].patchValue({
+      headlines: 'Mine',
+      descriptions: 'Mine too',
+      businessName: 'Mine Co',
+      callToActionText: 'Go',
+    });
+
+    expect(prefilled('demand-gen')).toBe(false);
+    expect(prefilled('display')).toBe(true);
+  });
+
+  it('shows the prefill notice on the Demand Gen section for the image ad, and not over the video ad', () => {
+    seed(brief(generated));
+    show('includeDemandGen');
+
+    expect(notice('demand-gen')).toContain('filled in from the brief');
+    component()['campaignForm'].controls.demandGenAdFormat.setValue('video');
+    fixture.detectChanges();
+    expect(notice('demand-gen')).toBeUndefined();
+  });
+
+  it('hides the Demand Gen notice while the campaign is split into ad groups', () => {
+    seed(brief(generated));
+    show('includeDemandGen');
+    component()['campaignForm'].controls.demandGenAdGroupsSplit.setValue(true);
+    fixture.detectChanges();
+
+    expect(notice('demand-gen')).toBeUndefined();
+  });
+
+  /** A draft holding only the given creatives, as the parent would hand one back. */
+  function draftWithCreatives(googleCreatives: Record<string, Record<string, string>>): CampaignImplementationDraft {
+    return {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://events.example.com/kubecon',
+      headlines: [''],
+      descriptions: [''],
+      googleCreatives,
+    } as unknown as CampaignImplementationDraft;
+  }
+
+  /** On screen, since a hidden creative group is disabled and neither validated nor sent. */
+  function showGroup(groupName: string): void {
+    show(groupName === 'displayCreative' ? 'includeDisplay' : 'includeDemandGen');
+    if (groupName === 'demandGenVideoCreative') {
+      component()['campaignForm'].controls.demandGenAdFormat.setValue('video');
+      fixture.detectChanges();
+    }
+  }
+
+  it.each([
+    ['displayCreative', 'callToActionText', 'Register'],
+    ['demandGenCreative', 'callToActionText', 'Register'],
+    ['demandGenVideoCreative', 'callToAction', 'REGISTER'],
+  ])('refuses a restored %s call to action outside its list, and says why without waiting for a touch', (groupName, control, value) => {
+    seed(brief(undefined), draftWithCreatives({ [groupName]: { [control]: value } }));
+    showGroup(groupName);
+
+    const field = component()['campaignForm'].get([groupName, control]);
+    expect(field.value).toBe(value);
+    expect(field.errors?.['creativeOption']).toBeDefined();
+    expect(field.touched).toBe(false);
+    expect(component()['creativeControlError'](field)).toContain('does not accept');
+  });
+
+  it.each([
+    ['displayCreative', 'callToActionText', 'Learn More'],
+    ['demandGenVideoCreative', 'callToAction', 'SIGN_UP'],
+    ['demandGenCreative', 'callToActionText', ''],
+  ])('accepts a listed %s call to action, or none', (groupName, control, value) => {
+    seed(brief(undefined), draftWithCreatives({ [groupName]: { [control]: value } }));
+    showGroup(groupName);
+
+    expect(component()['campaignForm'].get([groupName, control]).errors).toBeNull();
+  });
+
+  it('renders the Display call to action as a select of the documented values with None first', () => {
+    seed(brief(generated));
+    show('includeDisplay');
+
+    const sections = component()['googleCreativeSections']();
+    const options = sections
+      .find((section: { channel: string }) => section.channel === 'display')
+      .fields.find((field: { control: string }) => field.control === 'callToActionText')
+      .selectOptions.map((option: { value: string }) => option.value);
+    expect(options[0]).toBe('');
+    expect(options).toContain('Learn More');
+    expect(options).not.toContain('Register');
+  });
+
+  it('shows the prefill notice on the Display section when the copy came from the brief', () => {
+    seed(brief(generated));
+    show('includeDisplay');
+
+    expect(notice('display')).toContain('the long headline');
+  });
+});
+
+/**
+ * #1614 (F4, F5, F9). The flight the brief seed opens with ends on the event's first day when the brief
+ * names one after today, and the Google daily budget is divided over that same flight; a Google result
+ * row links into the Google Ads UI; and the coverage grid is told which Google groups the tab never sends.
+ */
+describe('ImplementationTabComponent Google flight, result link and coverage groups', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function component(): Record<string, any> {
+    return fixture.componentInstance as unknown as Record<string, any>;
+  }
+
+  function seed(dates: string | undefined, totalBudget = 1000): void {
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU', slug: 'kubecon-eu', registrationUrl: 'https://events.example.com/kubecon', countryCode: 'US', dates },
+      selectedPlatforms: ['google-ads'],
+      totalBudget,
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  }
+
+  /** Inclusive days between two ISO dates, counted on UTC day numbers as the shared helper counts them. */
+  function days(start: string, end: string): number {
+    return (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000 + 1;
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it("ends the flight on the event's first day and divides the total over it", () => {
+    seed('March 15-17, 2099');
+
+    const form = component()['campaignForm'].getRawValue();
+    expect(form.endDate).toBe('2099-03-15');
+    const flight = days(component()['todayDate'], '2099-03-15');
+    expect(form.budgetUsd).toBe(Math.floor(100000 / flight) / 100);
+  });
+
+  it('keeps the 30-day default, and its budget, when the brief names no date it can read', () => {
+    seed('Self-paced');
+
+    const form = component()['campaignForm'].getRawValue();
+    expect(form.endDate).toBe(component()['defaultEndDate']);
+    expect(form.budgetUsd).toBe(Math.floor(100000 / days(component()['todayDate'], component()['defaultEndDate'])) / 100);
+  });
+
+  it('keeps the default for an event already past', () => {
+    seed('March 15, 2020');
+
+    expect(component()['campaignForm'].getRawValue().endDate).toBe(component()['defaultEndDate']);
+  });
+
+  it('links a Google result row, created or orphaned, into the Google Ads UI, and no other row', () => {
+    component()['platformResults'].set([
+      { platform: 'google-ads', ok: true, campaignId: '24447438160' },
+      { platform: 'google-ads', ok: false, campaignId: '24447438161', error: 'recording failed' },
+      { platform: 'google-ads', ok: false, error: 'campaign creation failed' },
+      { platform: 'reddit-ads', ok: true, campaignId: 't2_abc' },
+    ]);
+
+    const outcomes = component()['platformOutcomes']();
+    expect(outcomes.map((row: { platformUrl: string }) => row.platformUrl)).toEqual([
+      'https://ads.google.com/aw/campaigns?campaignId=24447438160',
+      'https://ads.google.com/aw/campaigns?campaignId=24447438161',
+      '',
+      '',
+    ]);
+  });
+
+  it('renders the link on the results step', () => {
+    component()['platformResults'].set([{ platform: 'google-ads', ok: true, campaignId: '24447438160' }]);
+    component()['step'].set('results');
+    fixture.detectChanges();
+
+    const link = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-platform-result-link"]') as HTMLAnchorElement | null;
+    expect(link?.getAttribute('href')).toBe('https://ads.google.com/aw/campaigns?campaignId=24447438160');
+    expect(link?.textContent).toContain('Open in Google Ads');
+  });
+
+  it('tells the coverage grid the tab sends no Search or Video images, and every creative channel it does', () => {
+    expect(component()['googleSlotGroupsNotSent']).toEqual(['google-ads/SEARCH', 'google-ads/VIDEO']);
   });
 });
 

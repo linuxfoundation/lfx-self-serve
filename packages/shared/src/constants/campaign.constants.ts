@@ -46,6 +46,7 @@ import type {
   CreativeAssetQueueItemStatus,
   CreativeAssetQueueStatusView,
   GoogleCreativeEitherOrRule,
+  GoogleCreativeFieldOption,
   GoogleCreativeFieldSpec,
   GoogleCreativeGroup,
   GoogleCreativeSharedCap,
@@ -4999,6 +5000,45 @@ export const GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN = /^customers\/[0-9]+\/userLi
 export const GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN = /^customers\/[0-9]+\/customAudiences\/[0-9]+$/;
 
 /**
+ * The call-to-action texts a responsive display ad accepts (#1614, F13): the English list Google
+ * documents for `ResponsiveDisplayAdInfo.callToActionText` on "Call-to-action translations"
+ * (https://developers.google.com/google-ads/api/data/call-to-action-translations), spelled as that page
+ * spells them. The API reference types the field as a free string of display width 30
+ * (https://developers.google.com/google-ads/api/reference/rpc/latest/ResponsiveDisplayAdInfo), but Google
+ * refuses text outside its list at `adGroupAds:mutate` — after the campaign, ad group and image assets
+ * already exist. A live create with "Register" failed exactly there on 7 and 9 November 2026, and the same
+ * creates with no call to action succeeded. campaign-service checks only the 30-rune cap
+ * (`maxDisplayCallToActionRunes`, `display_creative.go`, v1.0.35), so this list is the only guard.
+ * Leaving it empty sends none, and Google chooses the button (the UI's "Automated").
+ */
+export const GOOGLE_DISPLAY_CALLS_TO_ACTION = [
+  { value: 'Apply Now', label: 'Apply Now' },
+  { value: 'Book Now', label: 'Book Now' },
+  { value: 'Contact Us', label: 'Contact Us' },
+  { value: 'Download', label: 'Download' },
+  { value: 'Learn More', label: 'Learn More' },
+  { value: 'Install', label: 'Install' },
+  { value: 'Visit Site', label: 'Visit Site' },
+  { value: 'Shop Now', label: 'Shop Now' },
+  { value: 'Sign Up', label: 'Sign Up' },
+  { value: 'Get Quote', label: 'Get Quote' },
+  { value: 'Subscribe', label: 'Subscribe' },
+  { value: 'See More', label: 'See More' },
+] as const;
+
+/**
+ * The call-to-action texts the Demand Gen IMAGE ad is offered (#1614, F13): none. Google documents
+ * `DemandGenMultiAssetAdInfo.callToActionText` only as "Call to action text."
+ * (https://developers.google.com/google-ads/api/reference/rpc/latest/DemandGenMultiAssetAdInfo), with no
+ * list, and the translations page above names responsive display ads only. campaign-service checks only
+ * the 30-rune cap (`maxDemandGenCallToActionRunes`, `demandgen_creative.go`, v1.0.35) and has probed no
+ * value for this ad. "Register" failed live at `adGroupAds:mutate` on 7 and 9 November 2026, and a blank
+ * call to action succeeded, so blank is the one value known to work. Widen this value by value, each
+ * with a validateOnly probe, as campaign-service did for the video ad (`demandGenVideoCallToActions`).
+ */
+export const GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION: readonly GoogleCreativeFieldOption[] = [];
+
+/**
  * What each Google channel's creative is made of — one ordered catalogue, read by the form that
  * collects a creative and by the BFF normalizer that puts one on the wire.
  *
@@ -5039,7 +5079,14 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
     { control: 'headlines', label: 'Headlines', kind: 'list', min: 1, max: 5, width: 30 },
     { control: 'descriptions', label: 'Descriptions', kind: 'list', min: 1, max: 5, width: 90 },
     { control: 'businessName', label: 'Business name', kind: 'text', width: 25, requiredOnce: true, hint: 'Required by Google once a creative is supplied.' },
-    { control: 'callToActionText', label: 'Call to action', kind: 'text', width: 30 },
+    {
+      control: 'callToActionText',
+      label: 'Call to action',
+      kind: 'text',
+      width: 30,
+      options: GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION,
+      hint: 'None is sent, and Google chooses the button: Google documents no call-to-action values for this ad.',
+    },
     {
       control: 'marketingImages',
       label: 'Marketing images (1.91:1)',
@@ -5169,7 +5216,14 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
     },
     { control: 'descriptions', label: 'Descriptions', kind: 'list', min: 1, max: 5, width: 90 },
     { control: 'businessName', label: 'Business name', kind: 'text', width: 25, requiredOnce: true, hint: 'Required by Google once a creative is supplied.' },
-    { control: 'callToActionText', label: 'Call to action', kind: 'text', width: 30 },
+    {
+      control: 'callToActionText',
+      label: 'Call to action',
+      kind: 'text',
+      width: 30,
+      options: GOOGLE_DISPLAY_CALLS_TO_ACTION,
+      hint: 'Optional. Leave it on none and Google chooses the button.',
+    },
     {
       control: 'marketingImages',
       label: 'Marketing images (1.91:1)',
@@ -5559,6 +5613,21 @@ export const GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL =
  */
 export const GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE =
   'Headlines, long headlines, descriptions and the business name are filled in from the brief where it has them. Add the required images below to create this asset group, or clear the copy to create the campaign without one.';
+
+/**
+ * The prefill notice per Google channel whose image creative the brief seeds (#4784, #1614): shown
+ * on a section while some of its copy is still what the brief put there. Like Performance Max's, the
+ * seeded copy makes the Demand Gen image ad and the responsive display ad started creatives, which
+ * campaign-service refuses without their required images, and each channel still creates with no
+ * creative at all ({@link GOOGLE_CREATIVE_REQUIRED_NOTICE}), so each note gives both ways forward.
+ */
+export const GOOGLE_CREATIVE_PREFILL_NOTICES = {
+  'demand-gen':
+    'Headlines, descriptions and the business name are filled in from the brief where it has them. Add the required images below to create this ad, or clear the copy to create the campaign without one.',
+  'performance-max': GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
+  display:
+    'Headlines, the long headline, descriptions, the business name and a call to action Google accepts are filled in from the brief where it has them. Add the required images below to create this ad, or clear the copy to create the campaign without one.',
+} as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
 
 /**
  * Why a Google channel's creative is worth filling in, stated per channel.

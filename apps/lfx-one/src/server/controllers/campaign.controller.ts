@@ -28,6 +28,7 @@ import {
 import {
   GOOGLE_CREATIVE_WIRE_FIELDS,
   GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS,
+  googleCallToActionRefusal,
   googlePerformanceMaxSearchThemesRefusal,
   googlePerformanceMaxShortDescriptionMissing,
 } from '@lfx-one/shared/utils/campaign-google-creative.utils';
@@ -1670,6 +1671,15 @@ export class CampaignController {
           next(
             ServiceValidationError.forField(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY, videoRefusal, { operation: 'campaign_create', service: 'campaign_controller' })
           );
+          return;
+        }
+
+        // Every Google call to action held to its list (#1614): Google refuses an unlisted Demand Gen
+        // image or Display call to action only at `adGroupAds:mutate`, after the campaign exists, and
+        // campaign-service checks only its length. The Implement tab holds Create on the same judge.
+        const callToActionRefusal = googleCallToActionRefusal(body as unknown as Record<string, unknown>, googleChannel);
+        if (callToActionRefusal) {
+          next(ServiceValidationError.forField('callToActionText', callToActionRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
           return;
         }
       }

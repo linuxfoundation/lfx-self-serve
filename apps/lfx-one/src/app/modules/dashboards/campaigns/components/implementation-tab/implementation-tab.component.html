@@ -2651,8 +2651,11 @@
             about whichever section the operator happened to be looking at.
           -->
           <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">{{ googleCreativeNotice }}</p>
-          @if (section.channel === 'performance-max' && performanceMaxPrefillShown()) {
-            <p class="mt-1 text-xs text-gray-500" data-testid="implementation-creative-prefill-notice-performance-max">{{ performanceMaxPrefillNotice }}</p>
+          <!-- Only over the seeded image creative's own fields: not the Demand Gen video ad, nor a split. -->
+          @if (googleCreativePrefillShown()[section.channel] && section.format === 'image' && section.fields.length > 0) {
+            <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-prefill-notice-' + section.channel">
+              {{ googleCreativePrefillNotices[section.channel] }}
+            </p>
           }
           <!--
             Demand Gen split into named ad groups (#5226), each with its own image or video ad. On, the
@@ -5027,6 +5030,7 @@
             [applyResult]="googleSuggestedApplyResult()"
             [applySeq]="googleSuggestedApplySeq()"
             [formFilled]="googleFormFilledSlots()"
+            [excludedGroups]="googleSlotGroupsNotSent"
             (applySuggested)="onApplySuggestedGoogleImages($event)" />
         </div>
       }
@@ -5367,6 +5371,17 @@
                 </p>
                 @if (pr.campaignId) {
                   <p class="text-xs text-gray-500">campaign {{ pr.campaignId }}</p>
+                }
+                @if (pr.platformUrl) {
+                  <a
+                    [href]="pr.platformUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                    data-testid="implementation-platform-result-link">
+                    Open in Google Ads
+                    <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                  </a>
                 }
               </div>
               <!-- campaign-service handed back an existing campaign instead of creating one (#4983):
