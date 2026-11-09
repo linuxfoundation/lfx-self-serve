@@ -150,6 +150,27 @@ export class OrgInvolvementService {
     );
   }
 
+  public async getFamilyMaintainersMonthly(rollUpKey: string, accountIds: readonly string[]): Promise<OrgInvolvementMaintainersMonthlyResponse> {
+    const companies = [...new Set(accountIds)].sort();
+    if (companies.length === 0) {
+      return { accountId: rollUpKey, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] };
+    }
+    const digest = createHash('sha256').update(JSON.stringify(companies)).digest('hex').slice(0, 16);
+    let degraded = false;
+    return withOrgCache(
+      rollUpKey,
+      `maintainer-roles-family:v1:${digest}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        const fetched = await this.fetchFamilyMaintainersMonthly(rollUpKey, companies);
+        degraded = fetched.rolesMissing;
+        return fetched.response;
+      },
+      OrgInvolvementService.hasAccountId,
+      () => !degraded
+    );
+  }
+
   public async getEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     return withOrgCache(
       accountId,
@@ -388,6 +409,80 @@ export class OrgInvolvementService {
     return {
       response: {
         accountId,
+        maintainerRoles: headline.value === null ? null : (headline.value[0]?.MAINTAINER_ROLES ?? 0),
+        monthlyData: (trend.value ?? []).map((row) => row.ACTIVE_ROLES ?? 0),
+        monthlyLabels: (trend.value ?? []).map((row) => formatMonthLabel(row.METRIC_MONTH)),
+      },
+      rolesMissing: headline.value === null || trend.value === null || headline.teamMembersUnavailable || trend.teamMembersUnavailable,
+    };
+  }
+
+  private async fetchFamilyMaintainersMonthly(
+    rollUpKey: string,
+    companies: readonly string[]
+  ): Promise<{ response: OrgInvolvementMaintainersMonthlyResponse; rolesMissing: boolean }> {
+    const overlap = orgMaintainerRoleOverlap(ORG_OVERVIEW_MAINTAINER_ROLES_RANGE);
+    const accountList = companies.map(() => '?').join(', ');
+    const headlineQuery = (teamMembers: OrgTeamMembersFilter): string => `
+      SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
+      WHERE ACCOUNT_ID IN (${accountList})
+        AND ${overlap.sql}
+        ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
+        ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}
+    `;
+    const trendQuery = (teamMembers: OrgTeamMembersFilter): string => `
+      WITH months AS (
+        SELECT DATEADD(MONTH, -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS METRIC_MONTH
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
+      ),
+      roles AS (
+        SELECT
+          MEMBER_ID,
+          SEGMENT_ID,
+          ROLE_START_DATE,
+          ROLE_END_DATE,
+          (TRUE ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}) AS IS_COUNTED
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
+        WHERE ACCOUNT_ID IN (${accountList})
+          AND ROLE_START_DATE <= CURRENT_DATE()
+          AND (ROLE_END_DATE IS NULL OR ROLE_END_DATE >= (SELECT MIN(METRIC_MONTH) FROM months))
+          ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
+      )
+      SELECT m.METRIC_MONTH, COUNT(DISTINCT IFF(r.IS_COUNTED, r.MEMBER_ID, NULL), r.SEGMENT_ID) AS ACTIVE_ROLES
+      FROM months AS m
+      LEFT JOIN roles AS r
+        ON r.ROLE_START_DATE <= LEAST(LAST_DAY(m.METRIC_MONTH), CURRENT_DATE())
+        AND (r.ROLE_END_DATE IS NULL OR r.ROLE_END_DATE >= m.METRIC_MONTH)
+      WHERE EXISTS (SELECT 1 FROM roles)
+      GROUP BY m.METRIC_MONTH
+      ORDER BY m.METRIC_MONTH ASC
+    `;
+
+    const [headline, trend] = await Promise.all([
+      readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_family_maintainer_roles', (teamMembers) =>
+        readMaintainerRoles<OrgMaintainerRolesCountRow>(
+          this.snowflakeService,
+          'ORG_MAINTAINER_ROLES',
+          headlineQuery(teamMembers),
+          [...companies, ...overlap.binds],
+          orgTeamMembersQueryOptions(teamMembers)
+        )
+      ),
+      readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_family_maintainer_roles_trend', (teamMembers) =>
+        readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(
+          this.snowflakeService,
+          'ORG_MAINTAINER_ROLES',
+          trendQuery(teamMembers),
+          [...companies],
+          orgTeamMembersQueryOptions(teamMembers)
+        )
+      ),
+    ]);
+
+    return {
+      response: {
+        accountId: rollUpKey,
         maintainerRoles: headline.value === null ? null : (headline.value[0]?.MAINTAINER_ROLES ?? 0),
         monthlyData: (trend.value ?? []).map((row) => row.ACTIVE_ROLES ?? 0),
         monthlyLabels: (trend.value ?? []).map((row) => formatMonthLabel(row.METRIC_MONTH)),
