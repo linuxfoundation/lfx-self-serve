@@ -62,8 +62,8 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
-    await page.getByTestId('org-roi-kpi-explanations-toggle').click();
-    const investment = page.getByTestId('org-roi-kpi-explanation-total-expenditure');
+    await page.getByTestId('org-roi-model-overview-toggle').click();
+    const investment = page.getByTestId('org-roi-model-overview-investment');
     await expect(investment).toBeVisible();
     await expect(investment).toContainText('same for every organization');
     await expect(investment).toContainText('No salary, payroll, or invoice data is used.');
@@ -110,22 +110,21 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(page.getByTestId('org-roi-annual-trend-apportionment-note')).toHaveCount(0);
   });
 
-  test('presents the drawer rate inputs as global constants, not this organization\u2019s figures', async ({ page }) => {
+  test('presents the rates as global constants, not this organization\u2019s figures', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await expect(page.getByTestId('org-roi-assumptions-drawer-title')).toBeVisible();
+    await page.getByTestId('org-roi-model-overview-toggle').click();
 
-    const scope = page.getByTestId('org-roi-assumptions-rates-scope');
+    const scope = page.getByTestId('org-roi-model-overview-rates-scope');
     await expect(scope).toContainText('global constants');
     await expect(scope).toContainText('applied identically to every organization');
     await expect(scope).toContainText('not specific to your organization');
 
-    await expect(page.getByTestId('org-roi-assumptions-rates')).toContainText('$200,000');
-    await expect(page.getByTestId('org-roi-assumptions-rates')).toContainText('$150,000');
-    await expect(page.getByTestId('org-roi-assumptions-rates-readonly-note')).toContainText('cannot be recalculated');
-    await expect(page.getByTestId('org-roi-assumptions-rates').locator('input')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-model-overview-rates')).toContainText('$200,000');
+    await expect(page.getByTestId('org-roi-model-overview-rates')).toContainText('$150,000');
+    await expect(page.getByTestId('org-roi-model-overview-rates-readonly-note')).toContainText('cannot be recalculated');
+    await expect(page.getByTestId('org-roi-model-overview-rates').locator('input')).toHaveCount(0);
   });
 
   test('switching estimation method refetches every surface and persists across visits', async ({ page }) => {
@@ -140,8 +139,8 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     const coverageRequest = page.waitForRequest((req) => req.url().includes('/lens/roi/coverage') && req.url().includes('method=direct'));
     const projectsRequest = page.waitForRequest((req) => req.url().includes('/lens/roi/projects') && req.url().includes('method=direct'));
 
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await page.getByTestId('org-roi-assumptions-method-direct').click();
+    await page.getByTestId('org-roi-settings-trigger').click();
+    await page.getByTestId('org-roi-settings-method-direct').click();
 
     await summaryRequest;
     await annualRequest;
@@ -152,8 +151,8 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await restoredRequest;
 
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await expect(page.getByTestId('org-roi-assumptions-method-direct')).toHaveAttribute('aria-pressed', 'true');
+    await page.getByTestId('org-roi-settings-trigger').click();
+    await expect(page.getByTestId('org-roi-settings-method-direct')).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('does not refetch the category breakdown when only the estimation method changes', async ({ page }) => {
@@ -173,8 +172,8 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
 
     // Wait on a method-scoped sibling so the switch has demonstrably completed before counting.
     const projectsRefetch = page.waitForRequest((req) => req.url().includes('/lens/roi/projects') && req.url().includes('method=direct'));
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await page.getByTestId('org-roi-assumptions-method-direct').click();
+    await page.getByTestId('org-roi-settings-trigger').click();
+    await page.getByTestId('org-roi-settings-method-direct').click();
     await projectsRefetch;
 
     expect(breakdownRequests.length).toBe(beforeSwitch);
@@ -261,12 +260,12 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await gotoOrgRoiPage(page);
 
     await expect(page.getByTestId('org-roi-empty-state')).toBeVisible();
-    const trigger = page.getByTestId('org-roi-assumptions-trigger');
+    const trigger = page.getByTestId('org-roi-settings-trigger');
     await expect(trigger).toBeVisible();
 
     await trigger.click();
-    await expect(page.getByTestId('org-roi-assumptions-method-logit')).toBeVisible();
-    await expect(page.getByTestId('org-roi-assumptions-method-direct')).toBeVisible();
+    await expect(page.getByTestId('org-roi-settings-method-logit')).toBeVisible();
+    await expect(page.getByTestId('org-roi-settings-method-direct')).toBeVisible();
   });
 
   test('selects logit by default and lists it first in the assumptions drawer', async ({ page }) => {
@@ -274,9 +273,9 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await expect(page.getByTestId('org-roi-assumptions-method-logit')).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.locator('[data-testid^="org-roi-assumptions-method-"]').first()).toHaveAttribute('data-testid', 'org-roi-assumptions-method-logit');
+    await page.getByTestId('org-roi-settings-trigger').click();
+    await expect(page.getByTestId('org-roi-settings-method-logit')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-testid^="org-roi-settings-method-"]').first()).toHaveAttribute('data-testid', 'org-roi-settings-method-logit');
   });
 
   test('exposes the yearly series to assistive technology, not only as a canvas', async ({ page }) => {
