@@ -8,6 +8,7 @@ import {
   MEMBER_360_STOPPED_MESSAGE,
 } from '../constants/member-360.constants';
 import type { Member360FailureReason, Member360Result } from '../interfaces/member-360.interface';
+import { mktgRunFailureFromPayloads } from '../utils/mktg-run-failure.utils';
 import { mktgOneOffTerminalFacts } from './mktg-one-off-terminal.utils';
 import { createMember360Redactor } from './member-360-redaction.utils';
 
@@ -17,11 +18,13 @@ export function classifyMember360FailureReason(redactedText: string): Member360F
 }
 
 /** Read only event metadata and root final output, never nested tool results or reasoning. */
-export function member360TerminalResult(payloads: string[], contacts: (string | null)[] = []): Member360Result | null {
-  const { rootDone, sessionEnded, failed, doneText: finalText } = mktgOneOffTerminalFacts(payloads);
+export function member360TerminalResult(payloads: string[], contacts: (string | null)[] = [], now = Date.now()): Member360Result | null {
+  const { rootDone, sessionEnded, failed, doneText: finalText, rootTaskEnded } = mktgOneOffTerminalFacts(payloads);
   // Root completion outranks an earlier error. Raw runtime error strings may
   // contain internal details; do not mistake them for the agent's own answer.
-  if (rootDone || sessionEnded) {
+  // A crashed root is terminal too: Guild's own root task status is ERROR/FAILED
+  // and the last error has settled (no clock on the run, only on that error).
+  if (rootDone || sessionEnded || (failed && rootTaskEnded && mktgRunFailureFromPayloads(payloads, now) !== null)) {
     const message = createMember360Redactor(contacts)(finalText).trim();
     return {
       status: 'failed',
@@ -29,6 +32,7 @@ export function member360TerminalResult(payloads: string[], contacts: (string | 
       message: message.slice(0, MEMBER_360_FAILURE_MESSAGE_MAX_CHARS) || (failed ? MEMBER_360_STOPPED_MESSAGE : MEMBER_360_FAILURE_MESSAGE),
     };
   }
-  // Error events can be recoverable; only a session end proves terminal failure.
+  // Error events can be recoverable; only a session end, or a root task Guild
+  // itself ended with a settled last error, proves terminal failure.
   return null;
 }

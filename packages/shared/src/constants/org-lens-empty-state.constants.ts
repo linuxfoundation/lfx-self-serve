@@ -9,6 +9,8 @@
  * other source — including the `/org/not-found` dead end, which has no exception now that Org Lens
  * is always on.
  *
+ * No state offers a support link (#5447): the only links are the person's own profile, the documentation, and LFX Insights.
+ *
  * Product and design review this file. Wording rules: sentence-case headlines, no exclamation marks,
  * never "Oops" / "Forbidden" / "Unauthorized" / "error"; the reason never blames the caller.
  *
@@ -30,14 +32,14 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
       "Organization Lens shows how a company shows up in open source — its projects, its people, and its membership footprint. Your account isn't linked to an organization yet. Add one as an affiliation and it appears here once verified.",
     icon: 'fa-light fa-building',
     primary: { label: 'Add an affiliation', route: ORG_LENS_PROFILE_ATTRIBUTIONS_ROUTE },
-    secondary: { label: 'Already added one? Contact support', action: 'contact-support' },
+    secondary: { label: 'How affiliations and access work', href: LINKS_CONFIG.DOCS.COMPANY_LENS_ACCESS },
   },
   'no-access': {
     headline: 'You do not have access to this organization',
     reason:
       "Organization Lens shows a company's open source footprint — contributions, projects, people, and membership activity. Access is granted by the organization's own Organization Lens administrators, not by the Linux Foundation. If you're not sure who yours are, your OSPO is a good place to start.",
     icon: 'fa-light fa-lock',
-    primary: { label: 'Contact support', action: 'contact-support' },
+    primary: { label: 'How access to a company is granted', href: LINKS_CONFIG.DOCS.COMPANY_LENS_ACCESS },
     secondary: { label: 'See public activity in LFX Insights', href: LINKS_CONFIG.INSIGHTS.BASE },
   },
   'wrong-organization': {
@@ -45,7 +47,7 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     reason: 'This link points to an organization that is not on your list. Here is what you do have access to:',
     icon: 'fa-light fa-lock',
     primary: { label: 'Your organizations', action: 'org-list' },
-    secondary: { label: 'Ask for access to the organization in this link', action: 'contact-support' },
+    secondary: { label: 'How to get access to a company', href: LINKS_CONFIG.DOCS.COMPANY_LENS_ACCESS },
     noList: { reason: 'This link points to an organization that is not on your list.' },
   },
   'not-found-staff': {
@@ -65,7 +67,6 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     reason: 'The staff access check did not complete. This is a system problem on our side, not a change to your permissions. Reference: {correlationId}',
     icon: 'fa-light fa-id-badge',
     primary: { label: 'Retry', action: 'retry' },
-    secondary: { label: 'Still failing? Send this reference to support', action: 'contact-support' },
   },
   // #2961 — an LF contractor with no grant for what is in front of them. The copy depends only on the
   // caller, never on the organization in the link (it withholds its name, existence and administrators).
@@ -74,7 +75,7 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     reason:
       "Organization Lens shows a company's open source footprint — contributions, projects, people, and membership activity. LF contractor accounts no longer see every organization automatically. Access to a specific organization is granted by that organization's Organization Lens administrators.",
     icon: 'fa-light fa-lock',
-    primary: { label: 'Contact support', action: 'contact-support' },
+    primary: { label: 'How access to a company is granted', href: LINKS_CONFIG.DOCS.COMPANY_LENS_ACCESS },
     secondary: { label: 'See public activity in LFX Insights', href: LINKS_CONFIG.INSIGHTS.BASE },
   },
   // #4225 — the caller is affiliated with an employer that IS an LF member, but holds no grant on it.
@@ -86,7 +87,7 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     reason:
       'The "Organization" section of LFX Self-Serve shows how your company is involved with LF projects. Because this includes sensitive information, access is limited to a small set of admins. If you need access, you can contact an admin (likely your OSPO) and they can grant you access.',
     icon: 'fa-light fa-lock',
-    primary: { label: 'Contact support', action: 'contact-support' },
+    primary: { label: 'How access to a company is granted', href: LINKS_CONFIG.DOCS.COMPANY_LENS_ACCESS },
     secondary: { label: 'See public activity in LFX Insights', href: LINKS_CONFIG.INSIGHTS.BASE },
   },
   'section-empty': {
@@ -106,7 +107,7 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     headline: 'You do not have access to this organization',
     reason: "Access is granted by the organization's own Organization Lens administrators. Contact them to request access.",
     icon: 'fa-light fa-lock',
-    primary: { label: 'Contact support', action: 'contact-support' },
+    primary: { label: 'How access to a company is granted', href: LINKS_CONFIG.DOCS.COMPANY_LENS_ACCESS },
   },
   'section-could-not-verify': {
     headline: 'Access could not be verified',

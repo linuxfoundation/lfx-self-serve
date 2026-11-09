@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { signal } from '@angular/core';
-import { MailingListSyncMode } from '@lfx-one/shared/enums';
+import { CommitteeMemberVotingStatus, MailingListSyncMode } from '@lfx-one/shared/enums';
 import { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -229,7 +229,13 @@ describe('MailingListPickerDialogComponent sync direction', () => {
   let dialogClose: ReturnType<typeof vi.fn>;
 
   const MAILING_LISTS: GroupsIOMailingList[] = [
-    { uid: 'ml-synced', group_name: 'synced', domain: 'lists.example.org', writer: true, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST },
+    {
+      uid: 'ml-synced',
+      group_name: 'synced',
+      domain: 'lists.example.org',
+      writer: true,
+      committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }],
+    },
     { uid: 'ml-manual', group_name: 'manual', domain: 'lists.example.org', writer: true },
     { uid: 'ml-unlinked', group_name: 'unlinked', domain: 'lists.example.org', writer: true },
     {
@@ -237,7 +243,9 @@ describe('MailingListPickerDialogComponent sync direction', () => {
       group_name: 'elsewhere',
       domain: 'lists.example.org',
       writer: true,
-      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      // Linked to a DIFFERENT committee ('committee-2'), not this one ('committee-1') — the
+      // picker must resolve sync_mode from the committees[] entry matching THIS committee only.
+      committees: [{ uid: 'committee-2', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }],
     },
   ] as GroupsIOMailingList[];
 
@@ -349,5 +357,225 @@ describe('MailingListPickerDialogComponent sync direction', () => {
     expect(dialogClose).toHaveBeenCalledWith(expect.objectContaining({ syncModes: expect.any(Map) }));
     const syncModes = dialogClose.mock.calls[0][0].syncModes as Map<string, MailingListSyncMode>;
     expect(syncModes.get('ml-elsewhere')).toBe(MailingListSyncMode.MANUAL);
+  });
+});
+
+// #4026 criterion 3: per-list committee/role filters, only available for a selected list in
+// auto_c_to_ml mode, gated behind the same MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG.
+describe('MailingListPickerDialogComponent committee filters', () => {
+  let fixture: ComponentFixture<MailingListPickerDialogComponent>;
+  let dialogClose: ReturnType<typeof vi.fn>;
+
+  const MAILING_LISTS: GroupsIOMailingList[] = [
+    {
+      uid: 'ml-synced',
+      group_name: 'synced',
+      domain: 'lists.example.org',
+      writer: true,
+      committees: [
+        {
+          uid: 'committee-1',
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+          committee_role_filters: ['Chair'],
+        },
+      ],
+    },
+    { uid: 'ml-manual', group_name: 'manual', domain: 'lists.example.org', writer: true },
+  ] as GroupsIOMailingList[];
+
+  async function setup(flagEnabled: boolean): Promise<void> {
+    dialogClose = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [MailingListPickerDialogComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: DynamicDialogConfig,
+          useValue: {
+            data: {
+              mailingLists: MAILING_LISTS,
+              associatedUids: new Set<string>(['ml-synced', 'ml-manual']),
+              committeeUid: 'committee-1',
+            },
+          },
+        },
+        { provide: DynamicDialogRef, useValue: { close: dialogClose } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: ProjectService, useValue: { getProjectStrict: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(flagEnabled)) } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(MailingListPickerDialogComponent);
+    await fixture.whenStable();
+  }
+
+  it('shows the filter row, seeded from persisted values, only for the list in auto_c_to_ml mode', async () => {
+    await setup(true);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-ml-picker-filters-row-ml-synced"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-ml-picker-filters-row-ml-manual"]')).toBeNull();
+    expect(fixture.componentInstance.mlCommitteeFilterForm.get('ml-synced')?.value).toEqual([CommitteeMemberVotingStatus.VOTING_REP]);
+    expect(fixture.componentInstance.mlCommitteeRoleFilterForm.get('ml-synced')?.value).toEqual(['Chair']);
+  });
+
+  it('hides the filter row entirely when the feature flag is off', async () => {
+    await setup(false);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-ml-picker-filters-row-ml-synced"]')).toBeNull();
+  });
+
+  it('hides the filter row once the direction moves off auto_c_to_ml', async () => {
+    await setup(true);
+
+    fixture.componentInstance.mlDirectionForm.get('ml-synced')?.setValue(MailingListSyncMode.MANUAL);
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-ml-picker-filters-row-ml-synced"]')).toBeNull();
+  });
+
+  it('clears the filters when the list is unlinked', async () => {
+    await setup(true);
+
+    fixture.componentInstance.toggleMailingList('ml-synced');
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.mlCommitteeFilterForm.get('ml-synced')?.value).toEqual([]);
+    expect(fixture.componentInstance.mlCommitteeRoleFilterForm.get('ml-synced')?.value).toEqual([]);
+  });
+
+  it('returns the chosen filters in save() when the flag is on', async () => {
+    await setup(true);
+
+    fixture.componentInstance.save();
+
+    expect(dialogClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        committeeFilters: new Map([
+          ['ml-synced', [CommitteeMemberVotingStatus.VOTING_REP]],
+          ['ml-manual', []],
+        ]),
+        committeeRoleFilters: new Map([
+          ['ml-synced', ['Chair']],
+          ['ml-manual', []],
+        ]),
+      })
+    );
+  });
+
+  it('returns empty filter maps in save() when the flag is off', async () => {
+    await setup(false);
+
+    fixture.componentInstance.save();
+
+    expect(dialogClose).toHaveBeenCalledWith(expect.objectContaining({ committeeFilters: new Map(), committeeRoleFilters: new Map() }));
+  });
+
+  // Bugbot/lfx-one review on #5420: a cleared PrimeNG multi-select writes `null` through the
+  // ControlValueAccessor, bypassing the `nonNullable` guarantee (which only governs reset()).
+  // save() must normalize that back to [] instead of propagating null to the caller.
+  it('does not throw and normalizes a cleared (null) filter control to an empty array in save()', async () => {
+    await setup(true);
+
+    fixture.componentInstance.mlCommitteeFilterForm.get('ml-synced')?.setValue(null as unknown as CommitteeMemberVotingStatus[]);
+    fixture.componentInstance.mlCommitteeRoleFilterForm.get('ml-synced')?.setValue(null as unknown as string[]);
+
+    expect(() => fixture.componentInstance.save()).not.toThrow();
+    expect(dialogClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        committeeFilters: new Map([
+          ['ml-synced', []],
+          ['ml-manual', []],
+        ]),
+        committeeRoleFilters: new Map([
+          ['ml-synced', []],
+          ['ml-manual', []],
+        ]),
+      })
+    );
+  });
+});
+
+// copilot review on #5420: the indexed query-service response nests sync_mode/filters under
+// `committees[]` per-entry (model.Committee), not as top-level fields on the mailing list — a list
+// linked to several committees can carry a different direction/filter set for each one. The picker
+// must seed and resolve its controls from the matching `committees[]` entry, not `list.sync_mode`.
+describe('MailingListPickerDialogComponent committee filters from indexed committees[] shape', () => {
+  let fixture: ComponentFixture<MailingListPickerDialogComponent>;
+  let dialogClose: ReturnType<typeof vi.fn>;
+
+  const committeeUid = 'committee-1';
+
+  const MAILING_LISTS: GroupsIOMailingList[] = [
+    {
+      uid: 'ml-indexed',
+      group_name: 'indexed',
+      domain: 'lists.example.org',
+      writer: true,
+      // Deliberately omit top-level sync_mode/committee_filters/committee_role_filters — the
+      // indexed read model only ever populates the nested committees[] entry.
+      committees: [
+        {
+          uid: committeeUid,
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+          committee_role_filters: ['Chair'],
+        },
+      ],
+    },
+  ] as GroupsIOMailingList[];
+
+  async function setup(): Promise<void> {
+    dialogClose = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [MailingListPickerDialogComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: DynamicDialogConfig,
+          useValue: {
+            data: {
+              mailingLists: MAILING_LISTS,
+              associatedUids: new Set<string>(['ml-indexed']),
+              committeeUid,
+            },
+          },
+        },
+        { provide: DynamicDialogRef, useValue: { close: dialogClose } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: ProjectService, useValue: { getProjectStrict: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(MailingListPickerDialogComponent);
+    await fixture.whenStable();
+  }
+
+  it('seeds the direction and filter controls from the nested committees[] entry, not top-level fields', async () => {
+    await setup();
+
+    expect(fixture.componentInstance.mlDirectionForm.get('ml-indexed')?.value).toBe(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST);
+    expect(fixture.componentInstance.mlCommitteeFilterForm.get('ml-indexed')?.value).toEqual([CommitteeMemberVotingStatus.VOTING_REP]);
+    expect(fixture.componentInstance.mlCommitteeRoleFilterForm.get('ml-indexed')?.value).toEqual(['Chair']);
+  });
+
+  it('reopens and saves without clearing the persisted filters seeded from committees[]', async () => {
+    await setup();
+
+    fixture.componentInstance.save();
+
+    expect(dialogClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        syncModes: new Map([['ml-indexed', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST]]),
+        committeeFilters: new Map([['ml-indexed', [CommitteeMemberVotingStatus.VOTING_REP]]]),
+        committeeRoleFilters: new Map([['ml-indexed', ['Chair']]]),
+      })
+    );
   });
 });

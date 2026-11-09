@@ -12,6 +12,9 @@ import {
   MailingListMember,
   MyMailingList,
   QueryServiceCountResponse,
+  SyncApplyRequest,
+  SyncApplyResult,
+  SyncDiff,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import { MAILING_LIST_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
@@ -89,6 +92,23 @@ export class MailingListService {
     return this.http.put<GroupsIOMailingList>(`${this.baseUrl}/${uid}`, data).pipe(
       take(1),
       tap(() => this.mailingListDetailCache.delete(uid))
+    );
+  }
+
+  /**
+   * Previews pending committee ↔ mailing list sync changes. The request blocks server-side
+   * (up to ~5 minutes) while the upstream job runs — there is no job-status endpoint to poll,
+   * so callers should drive an elapsed-time indicator off the request's own duration.
+   */
+  public getSyncDiff(mailingListId: string): Observable<SyncDiff> {
+    return this.http.get<SyncDiff>(`${this.baseUrl}/${mailingListId}/sync-diff`);
+  }
+
+  /** Applies an admin-approved subset of a sync-diff's adds/removes. Same long-request shape as `getSyncDiff`. */
+  public applySyncDiff(mailingListId: string, data: SyncApplyRequest): Observable<SyncApplyResult> {
+    return this.http.post<SyncApplyResult>(`${this.baseUrl}/${mailingListId}/sync-apply`, data).pipe(
+      take(1),
+      tap(() => this.mailingListDetailCache.delete(mailingListId))
     );
   }
 

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import type {
   GroupsIOServiceStatus,
   GroupsIOServiceType,
@@ -10,6 +11,8 @@ import type {
   MailingListMemberType,
   MailingListSyncMode,
   MailingListType,
+  SyncApplyOutcome,
+  SyncMemberType,
 } from '../enums/mailing-list.enum';
 import type { CommitteeReference } from './committee.interface';
 import type { UserInfo } from './project.interface';
@@ -133,6 +136,22 @@ export interface GroupsIOMailingList {
   writer?: boolean;
   /** Automatic membership sync direction with the linked committee. Only meaningful when committee_uid/committees is set. */
   sync_mode?: MailingListSyncMode;
+  /**
+   * Committee member voting statuses that gate which members are synced to this list
+   * (linuxfoundation/lfx-v2-mailing-list-service#110). Only meaningful when committee_uid/committees
+   * is set and sync_mode is `auto_c_to_ml`; an empty or omitted list means no voting-status
+   * restriction. Plain string list on the wire — typed here against the known voting-status enum
+   * since that's the only taxonomy the product surfaces for this field today.
+   */
+  committee_filters?: CommitteeMemberVotingStatus[];
+  /**
+   * Committee member roles that gate which members are synced to this list, in addition to
+   * `committee_filters` (linuxfoundation/lfx-v2-mailing-list-service#110). Only meaningful when
+   * committee_uid/committees is set and sync_mode is `auto_c_to_ml`; an empty or omitted list means
+   * no role restriction. The backend matches this by plain string equality with no fixed role
+   * taxonomy, so it's typed as `string[]` rather than `CommitteeMemberRole[]`.
+   */
+  committee_role_filters?: string[];
 }
 
 /**
@@ -173,6 +192,19 @@ export interface CreateMailingListRequest {
   committees?: CommitteeReference[];
   /** Automatic membership sync direction with the linked committee. Requires committee_uid to be set. */
   sync_mode?: MailingListSyncMode;
+  /**
+   * Committee member voting statuses that gate which members are synced to this list
+   * (linuxfoundation/lfx-v2-mailing-list-service#110). Requires committee_uid to be set; an empty
+   * list means no voting-status restriction.
+   */
+  committee_filters?: CommitteeMemberVotingStatus[];
+  /**
+   * Committee member roles that gate which members are synced to this list, in addition to
+   * `committee_filters` (linuxfoundation/lfx-v2-mailing-list-service#110). Requires committee_uid
+   * to be set; an empty list means no role restriction. Plain string match on the backend with no
+   * fixed role taxonomy, so typed as `string[]` rather than `CommitteeMemberRole[]`.
+   */
+  committee_role_filters?: string[];
   /** Email subject prefix (optional) */
   subject_tag?: string;
   /** Manager users who can edit/modify this resource */
@@ -329,12 +361,23 @@ export interface MailingListAssociationUpdateResult {
   status?: number;
 }
 
+/** One linked group in the mailing list table, with its canonical group-details link. */
+export interface MailingListGroupLink {
+  uid: string;
+  /** Group name; null when the linked group carries none. */
+  name: string | null;
+  /** Group-details link commands from the list's own project tier (`/foundation/...` vs `/project/...`); null when the group has no uid to open. */
+  commands: string[] | null;
+}
+
 /**
  * Table row decorated with canonical view-link state (GH-1567); `viewCommands` already holds the
  * flat fallback, so the template never branches. Mirrors `CommitteeTableRowVm`.
  */
 export interface MailingListTableRowVm extends GroupsIOMailingList {
   viewCommands: string[];
+  /** The first few linked groups that can be opened, in the order the list carries them; the rest are summarised as "+N more". */
+  groupLinks: MailingListGroupLink[];
   /** `?project=` for the view link — present only when the list carries a `project_slug`. */
   linkQueryParams: { project: string } | null;
   /** Public Groups.io page for the list, when derivable from its domain/service */
@@ -349,4 +392,148 @@ export interface MailingListTableRowVm extends GroupsIOMailingList {
   canJoin: boolean;
   /** Precomputed display label for the My Subscription column (avoids a template-bound lookup) */
   mySubscriptionLabel: string;
+}
+
+/**
+ * A member proposed for addition by a sync-diff (either direction)
+ * @description Mirrors the upstream `SyncDiffAdd` model
+ */
+export interface SyncDiffAdd {
+  /** Member's email address */
+  email: string;
+  /** Source-side member identifier (committee member UID or mailing list member ID) */
+  member_id: string;
+  /** Which side of the sync this member originates from */
+  member_type: SyncMemberType;
+  /**
+   * Display name from the source roster, carried through unchanged.
+   * NOTE: this is NOT a fuzzy/name-match suggestion against the other side's roster — that
+   * PCC-1604 parity gap is tracked separately and blocked on ITX; see linuxfoundation/lfx-self-serve#4364.
+   */
+  name?: string;
+}
+
+/**
+ * A member proposed for removal by a sync-diff (either direction)
+ * @description Mirrors the upstream `SyncDiffRemove` model
+ */
+export interface SyncDiffRemove {
+  /** Member's email address */
+  email: string;
+  /** Source-side member identifier (committee member UID or mailing list member ID) */
+  member_id: string;
+  /** Which side of the sync this member originates from */
+  member_type: SyncMemberType;
+}
+
+/**
+ * A member present on both sides with mismatched emails — neither added nor removed automatically
+ * @description Mirrors the upstream `SyncDiffConflict` model
+ */
+export interface SyncDiffConflict {
+  /** Email on the committee side */
+  committee_email: string;
+  /** Email on the mailing list side */
+  mailing_list_email: string;
+  /** Display name, when available */
+  name?: string;
+}
+
+/**
+ * Preview of the pending changes between a committee's roster and its linked mailing list
+ * @description Returned by `GET /groupsio/mailing-lists/{mailing_list_uid}/sync-diff`
+ */
+export interface SyncDiff {
+  /** Mailing list UID this diff was computed for */
+  mailing_list_id: string;
+  /** Linked committee UID this diff was computed against */
+  committee_uid: string;
+  /** Sync direction/mode in effect when this diff was computed */
+  sync_mode: MailingListSyncMode;
+  /** Members proposed for addition */
+  adds: SyncDiffAdd[];
+  /** Members proposed for removal */
+  removes: SyncDiffRemove[];
+  /** Members present on both sides with mismatched emails, requiring manual resolution */
+  conflicts: SyncDiffConflict[];
+}
+
+/**
+ * Result of applying one proposed add during sync-apply
+ * @description Mirrors the upstream `SyncApplyAddResult` model
+ */
+export interface SyncApplyAddResult {
+  /** Member's email address */
+  email: string;
+  /** Source-side member identifier (committee member UID or mailing list member ID) */
+  member_id: string;
+  /** Which side of the sync this member originates from */
+  member_type: SyncMemberType;
+  /** What actually happened when this add was applied */
+  outcome: SyncApplyOutcome;
+  /**
+   * Display name from the source roster, carried through unchanged — shown alongside an
+   * `invited` outcome so the admin can see who the invite was sent for. NOT a fuzzy name-match
+   * suggestion; see the `name` field doc on `SyncDiffAdd` and linuxfoundation/lfx-self-serve#4364.
+   */
+  name_hint?: string;
+  /** Error detail when `outcome` is `failed` */
+  error?: string;
+}
+
+/**
+ * Result of applying one proposed removal during sync-apply
+ * @description Mirrors the upstream `SyncApplyRemoveResult` model
+ */
+export interface SyncApplyRemoveResult {
+  /** Member's email address */
+  email: string;
+  /** Source-side member identifier (committee member UID or mailing list member ID) */
+  member_id: string;
+  /** Which side of the sync this member originates from */
+  member_type: SyncMemberType;
+  /** What actually happened when this removal was applied */
+  outcome: SyncApplyOutcome;
+  /** Error detail when `outcome` is `failed` */
+  error?: string;
+}
+
+/**
+ * Outcome of applying a sync-diff
+ * @description Returned by `POST /groupsio/mailing-lists/{mailing_list_uid}/sync-apply`
+ */
+export interface SyncApplyResult {
+  /** Mailing list UID the apply was run against */
+  mailing_list_id: string;
+  /** Linked committee UID the apply was run against */
+  committee_uid: string;
+  /** Results of each applied addition */
+  added: SyncApplyAddResult[];
+  /** Results of each applied removal */
+  removed: SyncApplyRemoveResult[];
+}
+
+/**
+ * Request payload for sync-apply
+ * @description The admin-approved subset of a `SyncDiff`'s adds/removes to actually apply.
+ * `committee_uid` is rejected with a 409 Conflict if the mailing list is no longer linked to it
+ * (guards against the committee being relinked between preview and apply).
+ */
+export interface SyncApplyRequest {
+  /** Linked committee UID the diff was previewed against */
+  committee_uid: string;
+  /** Approved subset of the diff's proposed adds */
+  adds: SyncDiffAdd[];
+  /** Approved subset of the diff's proposed removes */
+  removes: SyncDiffRemove[];
+}
+
+/**
+ * A mailing list's sync direction and committee/role filters for one specific linked committee.
+ * All three fields are empty/unset defaults when the list isn't linked to that committee at all.
+ */
+export interface MailingListCommitteeSync {
+  syncMode: MailingListSyncMode | undefined;
+  committeeFilters: CommitteeMemberVotingStatus[];
+  committeeRoleFilters: string[];
 }

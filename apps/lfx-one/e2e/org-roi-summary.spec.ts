@@ -376,7 +376,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(forbidden).toBeVisible();
     await expect(forbidden).toHaveAttribute('data-state', 'section-no-access');
     await expect(page.getByTestId('org-roi-forbidden-title')).toHaveText('You do not have access to this organization');
-    await expect(page.getByTestId('org-roi-forbidden-contact-support')).toBeVisible();
+    await expect(page.getByTestId('org-roi-forbidden-primary')).toContainText('How access to a company is granted');
     await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
 
     expect(responses.length).toBeGreaterThan(0);
@@ -411,7 +411,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await gotoOrgRoiPage(page);
 
     // Spec 053 FR-015: decided by the refusal's stated code, so a check that could not run never reads
-    // as a permissions message — and it carries a Retry rather than a contact-support action.
+    // as a permissions message — and it carries a Retry rather than a support action.
     const error = page.getByTestId('org-roi-error-state');
     await expect(error).toBeVisible();
     await expect(error).toHaveAttribute('data-state', 'section-could-not-verify');
@@ -469,7 +469,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await gotoOrgRoiPage(page);
 
     await expect(page.getByTestId('org-roi-no-access-state')).toBeVisible();
-    await expect(page.getByTestId('org-roi-no-access-contact-support')).toBeVisible();
+    await expect(page.getByTestId('org-roi-no-access-secondary')).toContainText('How affiliations and access work');
     await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
     await expect(page.getByTestId('org-roi-no-company-empty-state')).toHaveCount(0);
   });
