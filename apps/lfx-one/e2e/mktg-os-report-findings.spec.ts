@@ -48,11 +48,8 @@ const VIEWS: readonly ViewCase[] = [
       fix: 'Fix: Answer it on a redraft, or add the fact to the request notes.',
     },
     warnings: [],
-    // Neither gap is mirrored by the open question's reason (it wraps the question), so both are listed under Gaps.
-    gaps: [
-      'Whether to name the Gold and Silver members: the framework names none.',
-      'Not answered: Should the 100-word boilerplate name individual member companies?',
-    ],
+    // The open question's gap is mirrored by its reason (which wraps the question), so only the other gap is listed under Gaps.
+    gaps: ['Whether to name the Gold and Silver members: the framework names none.'],
   },
   {
     key: 'faq',

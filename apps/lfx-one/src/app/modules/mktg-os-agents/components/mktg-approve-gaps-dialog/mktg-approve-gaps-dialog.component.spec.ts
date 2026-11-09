@@ -141,7 +141,7 @@ describe('Approval with open gaps dialog', () => {
     expect(query(framework, 'mktg-document-view-approve-gaps')).toBeNull();
   });
 
-  it('shows the boilerplates agent’s real v2 findings: its open question by the family label with its fix, no Failed section, and its unmirrored gaps under Gaps', async () => {
+  it('shows the boilerplates agent’s real v2 findings: its open question by the family label with its fix, no Failed section, and its one unmirrored gap under Gaps', async () => {
     const boilerplates = await render(boilerplatesReportV2Envelope().report);
     expect(query(boilerplates, 'mktg-document-view-approve-failed')).toBeNull();
     expect(query(boilerplates, 'mktg-document-view-approve-missing')?.querySelector('h3')?.textContent).toBe('Missing assets');
@@ -152,13 +152,13 @@ describe('Approval with open gaps dialog', () => {
         'Fix: Answer it on a redraft, or add the fact to the request notes.',
       ],
     ]);
-    // The gaps no missing asset's reason mirrors are listed under Gaps, as written: both of this envelope's, since its reason
-    // wraps the question rather than repeating the gap line.
+    // The gaps no missing asset's reason mirrors are listed under Gaps, as written: one of this envelope's two, since its
+    // reason wraps the other's question (the mirror rule normalises both sides for the comparison only).
     const gaps = query(boilerplates, 'mktg-document-view-approve-gaps');
     expect(gaps?.querySelector('h3')?.textContent).toBe('Gaps');
+    // The open question's gap ("Not answered: …") is mirrored by its reason, which wraps the question: listed once, as Missing.
     expect(queryAll(boilerplates, 'mktg-document-view-approve-gaps-item').map((item) => item.textContent?.trim())).toEqual([
       'Whether to name the Gold and Silver members: the framework names none.',
-      'Not answered: Should the 100-word boilerplate name individual member companies?',
     ]);
   });
 

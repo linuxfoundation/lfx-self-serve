@@ -60,18 +60,44 @@ export function brandKitApproveFindings(report: MktgAssetReport | null | undefin
   };
 }
 
+/** The prefix the boilerplates agent puts before an unanswered question in `report.gaps`. */
+const GAP_UNANSWERED_PREFIX = /^not answered:\s*/i;
+/** A question quoted inside a missing asset's reason, in straight or curly double quotes. */
+const QUOTED_QUESTION = /["\u201C]([^"\u201C\u201D]+)["\u201D]/;
+
+/** A text folded for comparison only: whitespace runs to one space, trimmed, lower-cased. */
+function foldedForMatch(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Whether a gap line and a missing asset's reason speak of the same open question, so the approve dialog lists it once.
+ * Both are normalised for the comparison only (the text shown never changes): the gap loses a leading "Not answered: ";
+ * the reason is the question quoted inside it (straight "…" or curly “…” quotes) when there is one, else the whole
+ * reason; whitespace is folded and case ignored; then either side containing the other is a match. This covers the
+ * agents' current wording: the FAQ's reason is its gap; the boilerplates wrap the question in `The question "…" was
+ * not answered…` against the gap `Not answered: …`; the framework wraps it in curly quotes against the bare question.
+ */
+export function mktgReportGapMirrorsReason(gap: string, reason: string): boolean {
+  const gapText = foldedForMatch(gap.replace(GAP_UNANSWERED_PREFIX, ''));
+  const quoted = QUOTED_QUESTION.exec(reason);
+  const reasonText = foldedForMatch(quoted ? quoted[1] : reason);
+  if (!gapText || !reasonText) return false;
+  return gapText.includes(reasonText) || reasonText.includes(gapText);
+}
+
 /**
  * The gaps lines of a v2 report that no missing asset stands for, as written: the approve dialog lists them under Gaps
- * after the two findings groups, so an approver is told of every open gap. A gap is mirrored when some
- * `findings.missing_assets[].reason`, trimmed, is a substring of the gap line (the FAQ's gap is its question; the
- * boilerplates' is "Not answered: <question>"). Empty for a v1 report (its gaps list as before). Agent-agnostic: the
- * dialog, which knows the document type, leaves the group out for the Brand Kit.
+ * after the two findings groups, so an approver is told of every open gap. A gap is mirrored when it and some
+ * `findings.missing_assets[].reason` speak of the same question (`mktgReportGapMirrorsReason`). Empty for a v1 report
+ * (its gaps list as before). Agent-agnostic: the dialog, which knows the document type, leaves the group out for the
+ * Brand Kit.
  */
 export function mktgReportUnmirroredGaps(report: MktgAssetReport | null | undefined): string[] {
   const findings = report?.findings;
   if (!report || !findings) return [];
-  const reasons = findings.missing_assets.map((missing) => missing.reason.trim()).filter((reason) => reason.length > 0);
-  return report.gaps.filter((gap) => !reasons.some((reason) => gap.includes(reason)));
+  const reasons = findings.missing_assets.map((missing) => missing.reason);
+  return report.gaps.filter((gap) => !reasons.some((reason) => mktgReportGapMirrorsReason(gap, reason)));
 }
 
 /** The v2 rules of a report; empty for a v1 report or another agent's. */

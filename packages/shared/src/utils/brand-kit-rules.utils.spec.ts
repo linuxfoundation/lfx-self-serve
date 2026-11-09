@@ -22,6 +22,7 @@ import {
   brandKitReportRules,
   mktgReportHasOpenGaps,
   mktgReportNeedsApprovalReview,
+  mktgReportGapMirrorsReason,
   mktgReportUnmirroredGaps,
 } from './brand-kit-rules.utils';
 
@@ -211,13 +212,40 @@ describe('mktgReportUnmirroredGaps', () => {
     expect(mktgReportUnmirroredGaps(report)).toEqual(['Whether to name the Gold members.']);
   });
 
-  it('gives the real envelopes their lines: both of the boilerplates’ (its reason wraps the question, so neither gap is mirrored), nothing for the FAQ (its gap is its question) or the framework (no gap)', () => {
-    expect(mktgReportUnmirroredGaps(boilerplatesReportV2Envelope().report)).toEqual([
-      'Whether to name the Gold and Silver members: the framework names none.',
-      'Not answered: Should the 100-word boilerplate name individual member companies?',
-    ]);
+  it('gives the real envelopes their lines: the boilerplates’ one gap no question stands for (its wrapped question is mirrored), nothing for the FAQ (its gap is its question) or the framework (no gap)', () => {
+    expect(mktgReportUnmirroredGaps(boilerplatesReportV2Envelope().report)).toEqual(['Whether to name the Gold and Silver members: the framework names none.']);
     expect(mktgReportUnmirroredGaps(faqReportV2Envelope().report)).toEqual([]);
     expect(mktgReportUnmirroredGaps(frameworkReportV2Fixture())).toEqual([]);
+  });
+
+  describe('mktgReportGapMirrorsReason', () => {
+    it('matches the agents’ current wording: the boilerplates’ "Not answered: …" gap against its straight-quoted reason, the framework’s bare question against its curly-quoted reason, the FAQ’s equal pair', () => {
+      expect(
+        mktgReportGapMirrorsReason(
+          'Not answered: Should the 100-word boilerplate name individual member companies?',
+          'The question "Should the 100-word boilerplate name individual member companies?" was not answered, so the boilerplates were written without it.'
+        )
+      ).toBe(true);
+      expect(
+        mktgReportGapMirrorsReason(
+          'How many member organizations does the foundation have today?',
+          'The question “How many member organizations does the foundation have today?” was left unanswered, so the framework fills that gap with a placeholder or an inference.'
+        )
+      ).toBe(true);
+      expect(mktgReportGapMirrorsReason('How do I propose a new project to AAIF?', 'How do I propose a new project to AAIF?')).toBe(true);
+    });
+
+    it('folds whitespace and case, matches containment either way, and keeps an unrelated gap', () => {
+      expect(mktgReportGapMirrorsReason('not answered:  how  much does membership cost?', 'How much does MEMBERSHIP cost?')).toBe(true);
+      expect(mktgReportGapMirrorsReason('How much does membership cost?', 'Not answered: how much does membership cost? (no page states it)')).toBe(true);
+      expect(
+        mktgReportGapMirrorsReason(
+          'Whether to name the Gold and Silver members: the framework names none.',
+          'The question "Should the boilerplate name member companies?" was not answered.'
+        )
+      ).toBe(false);
+      expect(mktgReportGapMirrorsReason('', 'How much does membership cost?')).toBe(false);
+    });
   });
 
   it('gives nothing for a v1 report or no report, and reads a Brand Kit’s report like any agent’s (the dialog, not the util, leaves the kit out)', () => {

@@ -14,11 +14,11 @@ import { openAssetDocument, reportV2DraftRevisionResponse, type ReportV2AgentKey
 
 /**
  * Each agent's view, and how many failed sources, missing assets, warnings and unmirrored gaps its real envelope carries (no
- * warning names a source; the boilerplates' two gaps are both unmirrored, the FAQ's one gap is its open question).
+ * warning names a source; one of the boilerplates' two gaps is its open question, mirrored, the FAQ's one gap is its open question).
  */
 const VIEWS: readonly { key: ReportV2AgentKey; prefix: string; failed: number; missing: number; warnings: number; gaps: number }[] = [
   { key: 'foundation-message', prefix: 'mktg-framework-view', failed: 1, missing: 0, warnings: 0, gaps: 0 },
-  { key: 'boilerplates', prefix: 'mktg-boilerplates-view', failed: 0, missing: 1, warnings: 0, gaps: 2 },
+  { key: 'boilerplates', prefix: 'mktg-boilerplates-view', failed: 0, missing: 1, warnings: 0, gaps: 1 },
   { key: 'faq', prefix: 'mktg-faq-view', failed: 0, missing: 1, warnings: 2, gaps: 0 },
 ];
 
