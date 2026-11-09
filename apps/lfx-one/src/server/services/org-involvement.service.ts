@@ -16,6 +16,7 @@ import {
   DEFAULT_ORG_SCOPE,
   DEFAULT_ORG_TEAM_MEMBERS,
   ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN,
+  ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW,
   ORG_CONTRIBUTORS_MONTHLY_VIEW,
   ORG_EVENT_ATTENDANCE_METRIC_COLUMNS,
   ORG_LENS_DEFAULT_TIME_RANGE,
@@ -130,14 +131,17 @@ export class OrgInvolvementService {
       .update(JSON.stringify([insightsCompanies, allCompanies]))
       .digest('hex')
       .slice(0, 16);
+    // `contributors-family:v2`: the trend reads the warehouse's per-person monthly rows instead of rebuilding the months from the
+    // daily table. Set by the fetcher, read by `storable`: a card read while that view or the team-member flag is missing
+    // is served, never stored.
     let degraded = false;
     return withOrgCache(
       rollUpKey,
-      `contributors-family:v1:${digest}`,
+      `contributors-family:v2:${digest}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const fetched = await this.fetchFamilyContributorsMonthly(rollUpKey, companies, insightsCompanies, allCompanies);
-        degraded = fetched.teamMembersUnavailable;
+        degraded = fetched.trendMissing || fetched.teamMembersUnavailable;
         return fetched.response;
       },
       OrgInvolvementService.hasAccountId,
@@ -331,18 +335,30 @@ export class OrgInvolvementService {
     };
   }
 
+  /**
+   * Overview Active Contributors card for a family, each company under its own organization scope. The headline is
+   * counted live from the daily table with the single-company headline rule, over every company at once, so a person
+   * credited to two companies counts once. The trend is the warehouse's ORG_CONTRIBUTORS_MONTHLY_PEOPLE rows (one per company,
+   * person and month) counted distinct per month across the companies, over the months ORG_CONTRIBUTORS_MONTHLY lists
+   * for them, so a month without code reads 0 and a family without code in the window has no months. A missing
+   * per-person view answers an empty trend.
+   */
   private async fetchFamilyContributorsMonthly(
     rollUpKey: string,
     companies: readonly string[],
     insightsCompanies: readonly string[],
     allCompanies: readonly string[]
-  ): Promise<{ response: OrgInvolvementContributorsMonthlyResponse; teamMembersUnavailable: boolean }> {
+  ): Promise<{ response: OrgInvolvementContributorsMonthlyResponse; trendMissing: boolean; teamMembersUnavailable: boolean }> {
     const placeholders = (values: readonly string[]): string => values.map(() => '?').join(', ');
-    const scopeTerms = [
-      ...(insightsCompanies.length > 0 ? [`(account_id IN (${placeholders(insightsCompanies)}) AND insights_daily_code_activities > 0)`] : []),
-      ...(allCompanies.length > 0 && insightsCompanies.length > 0 ? [`account_id IN (${placeholders(allCompanies)})`] : []),
-    ];
-    const scopePredicate = insightsCompanies.length > 0 ? `AND (${scopeTerms.join(' OR ')})` : '';
+    // Every company under `all` keeps every row, so only a family with an Insights-scoped company gets a predicate.
+    const scopePredicate = (insightsRow: string): string => {
+      if (insightsCompanies.length === 0) return '';
+      const terms = [
+        `(account_id IN (${placeholders(insightsCompanies)}) AND ${insightsRow})`,
+        ...(allCompanies.length > 0 ? [`account_id IN (${placeholders(allCompanies)})`] : []),
+      ];
+      return `AND (${terms.join(' OR ')})`;
+    };
     const scopeBinds = insightsCompanies.length > 0 ? [...insightsCompanies, ...allCompanies] : [];
 
     const headlineQuery = (teamMembers: OrgTeamMembersFilter): string => `
@@ -352,26 +368,24 @@ export class OrgInvolvementService {
         ${orgContributorsActivityPredicate(ORG_LENS_DEFAULT_TIME_RANGE)}
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope)}
         ${orgTeamMembersPredicate(teamMembers)}
-        ${scopePredicate}
+        ${scopePredicate('insights_daily_code_activities > 0')}
     `;
-    const trendQuery = (teamMembers: OrgTeamMembersFilter): string => `
+    const trendQuery = `
       WITH months AS (
-        SELECT DATEADD(MONTH, -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START_DATE
-        FROM TABLE(GENERATOR(ROWCOUNT => 12))
+        SELECT DISTINCT MONTH_START_DATE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.${ORG_CONTRIBUTORS_MONTHLY_VIEW}
+        WHERE ACCOUNT_ID IN (${placeholders(companies)})
       ),
-      activity AS (
-        SELECT
-          person_key,
-          DATE_TRUNC('MONTH', activity_date) AS MONTH_START_DATE,
-          (TRUE ${orgTeamMembersPredicate(teamMembers)} ${scopePredicate}) AS IS_COUNTED
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
+      people AS (
+        SELECT month_start_date, person_key
+        FROM ANALYTICS.PLATINUM_LFX_ONE.${ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW}
         WHERE account_id IN (${placeholders(companies)})
-          AND activity_date >= (SELECT MIN(MONTH_START_DATE) FROM months)
+          ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS)}
+          ${scopePredicate('is_insights_scope')}
       )
-      SELECT m.MONTH_START_DATE, COUNT(DISTINCT IFF(a.IS_COUNTED, a.person_key, NULL)) AS UNIQUE_CONTRIBUTORS
+      SELECT m.MONTH_START_DATE, COUNT(DISTINCT p.person_key) AS UNIQUE_CONTRIBUTORS
       FROM months AS m
-      LEFT JOIN activity AS a ON a.MONTH_START_DATE = m.MONTH_START_DATE
-      WHERE EXISTS (SELECT 1 FROM activity)
+      LEFT JOIN people AS p ON p.month_start_date = m.MONTH_START_DATE
       GROUP BY m.MONTH_START_DATE
       ORDER BY m.MONTH_START_DATE ASC
     `;
@@ -384,19 +398,24 @@ export class OrgInvolvementService {
           orgTeamMembersQueryOptions(teamMembers)
         )
       ),
-      readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_family_contributors_trend', (teamMembers) =>
-        this.snowflakeService.execute<ContributorsMonthlyRow>(trendQuery(teamMembers), [...scopeBinds, ...companies], orgTeamMembersQueryOptions(teamMembers))
-      ),
+      this.snowflakeService
+        .execute<ContributorsMonthlyRow>(trendQuery, [...companies, ...companies, ...scopeBinds], { expectMissingObject: ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW })
+        .then((result) => result.rows)
+        .catch((error: unknown) => {
+          if (isMissingObjectError(error, ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW)) return null;
+          throw error;
+        }),
     ]);
 
     return {
       response: {
         accountId: rollUpKey,
         totalActiveContributors: headline.value.rows[0]?.ACTIVE_CONTRIBUTORS ?? 0,
-        monthlyData: trend.value.rows.map((row) => row.UNIQUE_CONTRIBUTORS || 0),
-        monthlyLabels: trend.value.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
+        monthlyData: (trend ?? []).map((row) => row.UNIQUE_CONTRIBUTORS || 0),
+        monthlyLabels: (trend ?? []).map((row) => formatMonthLabel(row.MONTH_START_DATE)),
       },
-      teamMembersUnavailable: headline.teamMembersUnavailable || trend.teamMembersUnavailable,
+      trendMissing: trend === null,
+      teamMembersUnavailable: headline.teamMembersUnavailable,
     };
   }
 

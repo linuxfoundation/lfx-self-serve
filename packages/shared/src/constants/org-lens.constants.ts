@@ -54,6 +54,9 @@ export const PERSON_DRAWER_COPIED_RESET_MS = 2000;
 /** lf-dbt's view of the Overview Active Contributors trend (lfx-self-serve#4694); a read names it so a missing view degrades the trend only. */
 export const ORG_CONTRIBUTORS_MONTHLY_VIEW = 'ORG_CONTRIBUTORS_MONTHLY';
 
+/** The warehouse's per-person rows behind ORG_CONTRIBUTORS_MONTHLY, one per (account, person, month), so a family trend counts a person once (lfx-self-serve#5402). */
+export const ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW = 'ORG_CONTRIBUTORS_MONTHLY_PEOPLE';
+
 /** ORG_CONTRIBUTORS_MONTHLY's monthly count without CDP team members, read under the default Team members = Exclude (lfx-self-serve#4685). */
 export const ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN = 'UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS';
 

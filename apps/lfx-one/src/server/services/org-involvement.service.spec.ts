@@ -375,7 +375,7 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly', () => {
 
     expect(response).toEqual({ accountId: ROLL_UP, totalActiveContributors: 31, monthlyData: [20, 0], monthlyLabels: ['Jan 2030', 'Feb 2030'] });
     expect(withOrgCache.mock.calls.at(-1)?.[0]).toBe(ROLL_UP);
-    expect(withOrgCache.mock.calls.at(-1)?.[1]).toMatch(/^contributors-family:v1:[0-9a-f]{16}$/);
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toMatch(/^contributors-family:v2:[0-9a-f]{16}$/);
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(true);
   });
 
@@ -393,19 +393,20 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly', () => {
     expect(options).toEqual({ expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
   });
 
-  it('rebuilds the 12-month trend across the family from the daily table, never adding the per-company view', async () => {
+  it('counts the per-person monthly rows distinct across the family over the monthly view months, never adding the per-company counts', async () => {
     await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO]);
 
-    const [sql, binds] = trendCall();
-    expect(sql).toContain('FROM TABLE(GENERATOR(ROWCOUNT => 12))');
-    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY');
-    expect(sql).not.toContain('ORG_CONTRIBUTORS_MONTHLY');
-    expect(sql).toContain('COUNT(DISTINCT IFF(a.IS_COUNTED, a.person_key, NULL)) AS UNIQUE_CONTRIBUTORS');
-    expect(sql).toContain(
-      '(TRUE AND NOT COALESCE(is_cdp_team_member, FALSE) AND ((account_id IN (?) AND insights_daily_code_activities > 0) OR account_id IN (?))) AS IS_COUNTED'
-    );
-    expect(sql).toContain('WHERE EXISTS (SELECT 1 FROM activity)');
-    expect(binds).toEqual([INSIGHTS_CO, ALL_CO, ALL_CO, INSIGHTS_CO]);
+    const [sql, binds, options] = trendCall();
+    expect(sql).toContain('SELECT DISTINCT MONTH_START_DATE\n        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CONTRIBUTORS_MONTHLY\n');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CONTRIBUTORS_MONTHLY_PEOPLE');
+    expect(sql).not.toContain('ORG_PEOPLE_CONTRIBUTORS_DAILY');
+    expect(sql).not.toContain('GENERATOR');
+    expect(sql).not.toMatch(/SUM\(/);
+    expect(sql).toContain('COUNT(DISTINCT p.person_key) AS UNIQUE_CONTRIBUTORS');
+    expect(sql).toContain('AND NOT COALESCE(is_cdp_team_member, FALSE)');
+    expect(sql).toContain('AND ((account_id IN (?) AND is_insights_scope) OR account_id IN (?))');
+    expect(binds).toEqual([ALL_CO, INSIGHTS_CO, ALL_CO, INSIGHTS_CO, INSIGHTS_CO, ALL_CO]);
+    expect(options).toEqual({ expectMissingObject: 'ORG_CONTRIBUTORS_MONTHLY_PEOPLE' });
   });
 
   it('adds no scope predicate when no company has an Insights organization', async () => {
@@ -415,7 +416,8 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly', () => {
 
     expect(String(headlineCall()[0])).not.toMatch(/insights/i);
     expect(headlineCall()[1]).toEqual([ALL_CO, INSIGHTS_CO]);
-    expect(trendCall()[1]).toEqual([ALL_CO, INSIGHTS_CO]);
+    expect(String(trendCall()[0])).not.toMatch(/insights/i);
+    expect(trendCall()[1]).toEqual([ALL_CO, INSIGHTS_CO, ALL_CO, INSIGHTS_CO]);
   });
 
   it('keeps only Insights-scoped rows, without an OR term, when every company has an Insights organization', async () => {
@@ -425,6 +427,8 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly', () => {
 
     expect(headlineCall()[0]).toContain('AND ((account_id IN (?, ?) AND insights_daily_code_activities > 0))');
     expect(headlineCall()[0]).not.toContain(' OR ');
+    expect(trendCall()[0]).toContain('AND ((account_id IN (?, ?) AND is_insights_scope))');
+    expect(trendCall()[0]).not.toContain(' OR ');
   });
 
   it('reads each company once and keys the cache on the set, whatever order or repeats it arrives in', async () => {
@@ -434,7 +438,12 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly', () => {
     await service.getFamilyContributorsMonthly(ROLL_UP, [INSIGHTS_CO, ALL_CO]);
 
     expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe(firstKey);
-    expect(execute.mock.calls.every(([, binds]) => (binds as string[]).length === 4)).toBe(true);
+    expect(execute.mock.calls.map(([query, binds]) => [isContributorsTrend(String(query)), (binds as string[]).length])).toEqual([
+      [false, 4],
+      [true, 6],
+      [false, 4],
+      [true, 6],
+    ]);
 
     await service.getFamilyContributorsMonthly(ROLL_UP, [INSIGHTS_CO]);
     expect(withOrgCache.mock.calls.at(-1)?.[1]).not.toBe(firstKey);
@@ -448,16 +457,26 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly', () => {
     expect(withOrgCache).not.toHaveBeenCalled();
   });
 
-  it('counts team members, and does not store the card, while the warehouse has no team-member flag yet', async () => {
+  it('counts team members in the headline, and does not store the card, while the daily table has no team-member flag yet', async () => {
     execute.mockImplementation(async (sql: string) => {
+      if (isContributorsTrend(sql)) return { rows: [] };
       if (sql.includes('is_cdp_team_member')) throw invalidIdentifier('IS_CDP_TEAM_MEMBER');
-      return isContributorsTrend(sql) ? { rows: [] } : { rows: [{ ACTIVE_CONTRIBUTORS: 33 }] };
+      return { rows: [{ ACTIVE_CONTRIBUTORS: 33 }] };
     });
 
     const response = await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO]);
 
     expect(response.totalActiveContributors).toBe(33);
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
+  });
+
+  it('fails the card when the month list view is missing, since only the per-person view is expected to be missing', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (isContributorsTrend(sql)) throw missing('ORG_CONTRIBUTORS_MONTHLY');
+      return { rows: [{ ACTIVE_CONTRIBUTORS: 31 }] };
+    });
+
+    await expect(new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO])).rejects.toThrow('ORG_CONTRIBUTORS_MONTHLY');
   });
 
   it.each([
@@ -473,9 +492,11 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly', () => {
   });
 });
 
-// A fake ORG_PEOPLE_CONTRIBUTORS_DAILY: each read is answered from the rows below, filtered by the companies, scope
-// split and team-member rule that the service's own SQL text and binds carry, so the counts depend on what it sends.
-describe('OrgInvolvementService.getFamilyContributorsMonthly — against daily fixture rows', () => {
+// A fake warehouse: the headlines read the daily rows below, the family trend the per-person monthly rows built from
+// them the way ORG_CONTRIBUTORS_MONTHLY_PEOPLE builds its rows, and the single-company trend ORG_CONTRIBUTORS_MONTHLY's
+// counts. Each read is filtered by the companies, scope split and team-member rule that the service's own SQL text and
+// binds carry, so the counts depend on what it sends.
+describe('OrgInvolvementService.getFamilyContributorsMonthly — against fixture rows', () => {
   const ROLL_UP = 'family-001000000000000AAA';
   const ALL_CO = '001000000000001AAA';
   const INSIGHTS_CO = '001000000000002AAA';
@@ -499,6 +520,27 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly — against daily f
     { person: 'team', account: ALL_CO, month: 2, insightsActivities: 0, teamMember: true },
   ];
 
+  interface PersonMonthRow {
+    person: string;
+    account: string;
+    month: number;
+    insightsScope: boolean;
+    teamMember: boolean;
+  }
+  const MONTHLY_PEOPLE: PersonMonthRow[] = Object.values(
+    DAILY.reduce<Record<string, PersonMonthRow>>((rows, row) => {
+      const key = `${row.account}|${row.person}|${row.month}`;
+      rows[key] = {
+        person: row.person,
+        account: row.account,
+        month: row.month,
+        insightsScope: (rows[key]?.insightsScope ?? false) || row.insightsActivities > 0,
+        teamMember: row.teamMember ?? false,
+      };
+      return rows;
+    }, {})
+  );
+
   interface Filter {
     companies: string[];
     insights: string[] | null;
@@ -513,7 +555,7 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly — against daily f
       const values = binds.slice(offset, offset + list[1].split(',').length);
       offset += values.length;
       if (sql.slice(0, list.index).trimEnd().endsWith('WHERE')) filter.companies = values;
-      else if (sql.slice(list.index, list.index + 80).includes('insights_daily_code_activities > 0')) filter.insights = values;
+      else if (/insights_daily_code_activities > 0|is_insights_scope/.test(sql.slice(list.index, list.index + 80))) filter.insights = values;
       else filter.all = values;
     }
     return filter;
@@ -534,11 +576,33 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly — against daily f
         !(filter.excludeTeam && row.teamMember) &&
         (filter.insights === null || (filter.insights.includes(row.account) && row.insightsActivities > 0) || filter.all.includes(row.account))
     );
-  const people = (rows: DailyRow[]): number => new Set(rows.map((row) => row.person)).size;
-  const monthlyRows = (filter: Filter): { MONTH_START_DATE: Date; UNIQUE_CONTRIBUTORS: number }[] => {
-    if (!DAILY.some((row) => filter.companies.includes(row.account))) return [];
+  const people = (rows: readonly { person: string }[]): number => new Set(rows.map((row) => row.person)).size;
+  // ORG_CONTRIBUTORS_MONTHLY: all 12 months for every company with code in the window.
+  const monthsWithCode = (companies: readonly string[]): number[] =>
+    DAILY.some((row) => companies.includes(row.account)) ? MONTHS.map((_month, index) => index) : [];
+  const singleMonthlyRows = (filter: Filter): { MONTH_START_DATE: Date; UNIQUE_CONTRIBUTORS: number }[] => {
     const rows = counted(filter);
-    return MONTHS.map((month, index) => ({ MONTH_START_DATE: month, UNIQUE_CONTRIBUTORS: people(rows.filter((row) => row.month === index)) }));
+    return monthsWithCode(filter.companies).map((index) => ({
+      MONTH_START_DATE: MONTHS[index],
+      UNIQUE_CONTRIBUTORS: people(rows.filter((row) => row.month === index)),
+    }));
+  };
+  // The family trend: the month list from ORG_CONTRIBUTORS_MONTHLY's bound companies, then the per-person rows counted
+  // distinct per month under the people CTE's companies, team-member rule and scope split.
+  const familyMonthlyRows = (sql: string, binds: string[]): { MONTH_START_DATE: Date; UNIQUE_CONTRIBUTORS: number }[] => {
+    const monthsList = /ACCOUNT_ID IN \(([?, ]+)\)/.exec(sql)!;
+    const monthsCompanies = binds.slice(0, monthsList[1].split(',').length);
+    const filter = familyFilter(sql.slice(monthsList.index + monthsList[0].length), binds.slice(monthsCompanies.length));
+    const rows = MONTHLY_PEOPLE.filter(
+      (row) =>
+        filter.companies.includes(row.account) &&
+        !(filter.excludeTeam && row.teamMember) &&
+        (filter.insights === null || (filter.insights.includes(row.account) && row.insightsScope) || filter.all.includes(row.account))
+    );
+    return monthsWithCode(monthsCompanies).map((index) => ({
+      MONTH_START_DATE: MONTHS[index],
+      UNIQUE_CONTRIBUTORS: people(rows.filter((row) => row.month === index)),
+    }));
   };
 
   beforeEach(() => {
@@ -547,10 +611,10 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly — against daily f
     resolveOrgScope.mockReset();
     resolveOrgScope.mockImplementation(async (_snowflake: unknown, accountId: string) => (accountId === INSIGHTS_CO ? 'insights' : 'all'));
     execute.mockImplementation(async (sql: string, binds: string[]) => {
-      const family = sql.includes('account_id IN (');
-      const filter = family ? familyFilter(sql, binds) : singleFilter(sql, binds[0]);
+      if (sql.includes('ORG_CONTRIBUTORS_MONTHLY_PEOPLE')) return { rows: familyMonthlyRows(sql, binds) };
+      const filter = sql.includes('account_id IN (') ? familyFilter(sql, binds) : singleFilter(sql, binds[0]);
       if (!isContributorsTrend(sql)) return { rows: [{ ACTIVE_CONTRIBUTORS: people(counted(filter)) }] };
-      return { rows: monthlyRows(filter) };
+      return { rows: singleMonthlyRows(filter) };
     });
   });
 
@@ -590,6 +654,20 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly — against daily f
     const family = await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, ['001000000000003AAA']);
 
     expect(family).toEqual({ accountId: ROLL_UP, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] });
+  });
+
+  it('serves the headline with an empty trend, and does not store the card, while the per-person view is missing', async () => {
+    const answer = execute.getMockImplementation()!;
+    execute.mockImplementation(async (sql: string, binds: string[]) => {
+      if (sql.includes('ORG_CONTRIBUTORS_MONTHLY_PEOPLE')) throw missing('ORG_CONTRIBUTORS_MONTHLY_PEOPLE');
+      return answer(sql, binds);
+    });
+
+    const family = await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO]);
+
+    expect(family).toEqual({ accountId: ROLL_UP, totalActiveContributors: 3, monthlyData: [], monthlyLabels: [] });
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toMatch(/^contributors-family:v2:[0-9a-f]{16}$/);
+    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(family)).toBe(false);
   });
 });
 
