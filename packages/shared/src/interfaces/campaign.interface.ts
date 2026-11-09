@@ -1683,6 +1683,12 @@ export interface CampaignImplementationDraft {
    * held rather than sent. Optional and restored only when present.
    */
   googlePerformanceMaxSearchThemes?: string;
+  /**
+   * The Performance Max audience signal's picked Audience resource name (#5262), raw. Restored whatever
+   * channel the draft was saved under: the picker and the payload both gate on Performance Max, so a
+   * value restored under another channel is held rather than sent. Absent leaves it alone.
+   */
+  googlePerformanceMaxAudienceSignal?: string;
 }
 
 /**
@@ -2609,10 +2615,11 @@ export interface GoogleUserListPickerState {
 
 /**
  * One entry of campaign-service `list-google-ads-audiences`, camel-cased, as the Implement tab's pickers offer
- * it: an Audience (`type=audience`, the Demand Gen audience picker) or, for the Display audience pickers
- * (#5262), a custom audience, custom affinity segment or user interest. `resourceName` is the
- * `customers/{customerId}/<collection>/{id}` form the create input of that kind accepts and the one the
- * picker sets; `name` and `description` are labels only.
+ * it: an Audience (`type=audience`, the Demand Gen audience and Performance Max audience signal pickers) or,
+ * for the Display audience pickers (#5262), a custom audience, custom affinity segment or user interest.
+ * `resourceName` is the `customers/{customerId}/<collection>/{id}` form the create input of that kind accepts
+ * (`demandGenAudience` and `performanceMaxAudienceSignal` take the `audiences` form) and the one the picker
+ * sets; `name` and `description` are labels only.
  */
 export interface GoogleAdsAudienceOption {
   resourceName: string;
@@ -2632,10 +2639,11 @@ export interface GoogleAdsAudiencesResult {
 }
 
 /**
- * Where one of the Implement tab's audience pickers stands: the Demand Gen audience picker, or one Display
- * audience kind's (#5262). `unavailable` is a list that could not load (the route is off or refused, or
- * Google failed) and `reason` says which in one sentence. `accountId` is the customer the entries were
- * read from, which a picked or restored one must name; `''` until the list has loaded.
+ * Where one of the Implement tab's audience pickers stands: the Audience list the Demand Gen audience picker
+ * and the Performance Max audience signal picker both offer, or one Display audience kind's (#5262).
+ * `unavailable` is a list that could not load (the route is off or refused, or Google failed) and `reason`
+ * says which in one sentence. `accountId` is the customer the entries were read from, which a picked or
+ * restored one must name; `''` until the list has loaded.
  */
 export interface GoogleAudiencePickerState {
   status: 'idle' | 'loading' | 'loaded' | 'unavailable';
@@ -4052,6 +4060,18 @@ export interface CampaignCreateRequest {
    * any other channel and the BFF refuses every breach by name.
    */
   performanceMaxSearchThemes?: string[];
+  /**
+   * The Performance Max asset group's ONE audience signal (#5262; linuxfoundation/lfx-v2-campaign-service#461):
+   * an existing Google Ads Audience Google treats as likely converters, as a bare audience id or a
+   * `customers/{customerId}/audiences/{id}` resource name on the campaign's own account. A signal, not
+   * targeting, so Google may serve beyond it.
+   *
+   * Omitted when blank. PERFORMANCE MAX ONLY (`GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL`), and only beside a
+   * {@link performanceMaxCreative}, whose asset group it attaches to. campaign-service requires
+   * `global_marketing_ops` on the project to send one (#501) and refuses it unless its deployment opts in
+   * (`GOOGLE_ADS_PMAX_AUDIENCE_SIGNAL_ENABLED`).
+   */
+  performanceMaxAudienceSignal?: string;
   displayCreative?: GoogleDisplayCreative;
   /**
    * The Display campaign split into named ad groups (#475), sent INSTEAD of {@link displayCreative}:
@@ -6802,6 +6822,16 @@ export interface CampaignListResult {
    */
   googleDisplayAudiencesEnabled?: boolean | null;
   /**
+   * Whether THIS caller may pick a Performance Max audience signal on the Implement tab (#5262), through
+   * the same `GET /api/campaigns/google/audiences` read, and send it. Answered on the same two checks as
+   * {@link googleDemandGenAudienceEnabled}: the campaign-service create path serves the create, and the
+   * caller holds `global_marketing_ops` on the listed project, the relation campaign-service checks before
+   * it creates with a signal (#501). `null` when that check cannot be made: unverified, not denied.
+   * Optional, so a BFF that predates it reads as unanswered (`null` on the client) and the tab offers no
+   * picker.
+   */
+  googlePerformanceMaxAudienceSignalEnabled?: boolean | null;
+  /**
    * Whether the Implement tab may SEARCH Google's geo target table for postal-code targets, through
    * `GET /api/campaigns/google/geo-targets`, instead of asking for a typed constant id.
    *
@@ -7081,6 +7111,17 @@ export interface CampaignGoogleDemandGenDemographicsBlock {
  * no from `CampaignListResult.googleDisplayAudiencesEnabled`.
  */
 export interface CampaignGoogleDisplayAudiencesBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for a Performance Max audience signal (#5262) the draft still holds but the
+ * request cannot carry, on {@link CampaignGoogleDemandGenAudienceBlock}'s kinds: `restricted` is an
+ * explicit no from `CampaignListResult.googlePerformanceMaxAudienceSignalEnabled`, and `unsupported` the
+ * campaign-service create path not serving this deployment.
+ */
+export interface CampaignGooglePerformanceMaxAudienceSignalBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
   message: string;
 }

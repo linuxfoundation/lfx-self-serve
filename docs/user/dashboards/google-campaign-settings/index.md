@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics, Display audiences and Performance Max search themes, Search ad images, business logo and business name, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics, Display audiences, Performance Max search themes and audience signals, Search ad images, business logo and business name, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -33,6 +33,7 @@ tags:
     search themes,
     images,
     business name,
+    audience signals,
     implement,
   ]
 last_updated: 2026-11-09
@@ -262,6 +263,19 @@ If a search theme would be refused, a message appears under the box and **Create
 
 If LFX can't confirm that search themes can be sent, for example while that check is still running or after it fails, the box is hidden and a notice says how many search themes will not be sent. When the check failed, select **Retry** to check again. This notice does not hold **Create Campaign**: a campaign created before the check succeeds is created without the search themes.
 
+## Performance Max audience signal
+
+An audience signal tells Google which people are likely to convert, using one Google Ads Audience the account already has, such as an Audience built from your customer lists or website visitors. Like a search theme, it is a hint, not targeting: Google may still show the ads to other people. The Audience itself is built in Google Ads. The **Google Audience Signal** section appears below the search themes when Performance Max is the campaign type, and only for the LF marketing team, because every foundation shares one Google Ads account.
+
+- **Pick an Audience** lists the account's Audiences by name, the same list the Demand Gen **Audience** picker shows. Type part of a name to narrow the list, then choose one. A campaign takes one audience signal. The picked Audience is shown by name with a remove button; remove it to pick another.
+- If the Audiences cannot be listed, a note says why: the picker is not available here, or the Audiences could not be read for this project's Google Ads account. If the account has no Audiences, or more than the picker shows, a note says that too. The picker lists the first 500 by name.
+- The audience signal belongs to the campaign's asset group, which Google Ads builds from the Performance Max creative. If you pick one and leave the creative empty, a message says so and **Create Campaign** stays unavailable.
+- If the audience signal would be refused by Google Ads, for example an Audience from another Google Ads account, a message under the picker says why and **Create Campaign** stays unavailable until you remove it.
+- If you switch to another campaign type, the section disappears and a notice says your audience signal will not be sent. It is kept, so switching back to Performance Max restores it.
+- If a saved campaign holds an audience signal that cannot be sent, a notice under the targeting settings says why, and shows the audience signal when its section is not shown. **Create Campaign** stays unavailable until it is sent or removed, so the audience signal is never dropped. The notice says you are not on the LF marketing team, that audience signals are not available on this deployment, that your access is still being checked, that it can be checked once the brief is saved, or that it could not be checked, with **Retry**. Choose **Remove audience signal** to create without it.
+
+Leave the picker alone and the campaign is created exactly as before, with no audience signal.
+
 ## Demand Gen video ads
 
 Each Demand Gen ad is an image ad or a YouTube video ad. Choose one under **Ad format** in the **Demand Gen Creative** section. **Image ad** is the default.
@@ -365,6 +379,6 @@ Leave the pickers alone and the campaign is created exactly as before, with no a
 
 ## If something is wrong
 
-If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword, Performance Max description or search theme would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
+If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword, Performance Max description, search theme or audience signal would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
 If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings, demographic exclusions or other demographic settings will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Placement exclusions are sent on Display only, and kept with a notice on the other campaign types. Sitelinks are sent on Search, Demand Gen and Performance Max, callouts and structured snippets on Search and Performance Max, and call extensions, promotions and prices on Search only; each is kept the same way on the other campaign types, with a notice.

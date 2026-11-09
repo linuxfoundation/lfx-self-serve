@@ -3447,11 +3447,11 @@ export class CampaignServiceClient {
   /**
    * One kind of audience resource on the account a create for this project uses (`list-google-ads-audiences`,
    * linuxfoundation/lfx-v2-campaign-service#504, #517): Audiences (`type=audience`) for the Implement tab's
-   * Demand Gen audience picker (#5244), or custom audiences, custom affinity segments or user interests for
-   * its Display audience pickers (#5262). `q`, when given, keeps entries whose name contains it, ignoring
-   * case. Upstream answers it on `global_marketing_ops` of the path project, the relation the BFF checks
-   * first; it returns up to 500 usable entries sorted by name, with `truncated` set when more matched.
-   * Failures are left to the caller.
+   * Demand Gen audience and Performance Max audience signal pickers (#5244, #5262), or custom audiences,
+   * custom affinity segments or user interests for its Display audience pickers (#5262). `q`, when given,
+   * keeps entries whose name contains it, ignoring case. Upstream answers it on `global_marketing_ops` of the
+   * path project, the relation the BFF checks first; it returns up to 500 usable entries sorted by name, with
+   * `truncated` set when more matched. Failures are left to the caller.
    */
   public async listGoogleAdsAudiences(
     req: Request,
