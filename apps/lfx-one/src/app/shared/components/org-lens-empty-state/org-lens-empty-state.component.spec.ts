@@ -108,7 +108,9 @@ describe('OrgLensEmptyStateComponent', () => {
         expect(allowedKinds.has(action.action), `${state}: action kind "${action.action}" is not allowed (#5447)`).toBe(true);
         expect(action.label, `${state}: "${action.label}" must not point at support (#5447)`).not.toMatch(/support/i);
         if (action.route) {
-          expect(action.route[0], `${state}: route must stay on the profile (#5447)`).toMatch(/^\/(profile|org)$/);
+          // Only the person's own profile, plus the staff dead end's way back to the Company Lens overview.
+          const allowed = state === 'not-found-staff' ? ['/org/overview'] : ['/profile/attributions', '/profile/settings'];
+          expect(allowed, `${state}: route ${action.route.join('/')} is not an allowed destination (#5447)`).toContain(action.route.join('/'));
         }
         if (action.href) {
           expect(action.href, `${state}: href must be docs or Insights (#5447)`).toMatch(
