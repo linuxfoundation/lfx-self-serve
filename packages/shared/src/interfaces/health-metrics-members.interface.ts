@@ -172,98 +172,42 @@ export interface HealthMetricsMembersGrowth {
   months: HealthMetricsMembersGrowthMonth[];
 }
 
-/** Highlights draws the earlier years as one range; All years draws each as its own line. */
-export type HealthMetricsMembersGrowthViewMode = 'highlights' | 'all';
-
-export interface HealthMetricsMembersGrowthViewOption {
-  value: HealthMetricsMembersGrowthViewMode;
+/** A month's point on a year's line, in percent of the plot box, with its value drawn above it. */
+export interface HealthMetricsMembersGrowthPointView {
+  month: number;
+  leftPct: number;
+  topPct: number;
   label: string;
 }
 
-/** One line, as an SVG path over the chart's 600-wide viewBox. */
-export interface HealthMetricsMembersGrowthPathView {
-  key: string;
-  d: string;
+/** One year's line, as an SVG path over the plot's viewBox; only the period's year is solid. */
+export interface HealthMetricsMembersGrowthLineView {
+  year: number;
   color: string;
-  width: number;
   dashed: boolean;
+  d: string;
+  points: HealthMetricsMembersGrowthPointView[];
 }
 
-/** Where an end label sits beside its point: below and right, right and just below, or right and centred. */
-export type HealthMetricsMembersGrowthLabelPlacement = 'below-right' | 'right-below' | 'right';
-
-/** The end labels' offsets by placement, and their weights; applied via [class], so Tailwind's safelist carries them. */
-export interface HealthMetricsMembersGrowthLabelClasses {
-  placement: Record<HealthMetricsMembersGrowthLabelPlacement, string>;
-  strong: string;
-  regular: string;
-}
-
-/** An end label before it is laid out: where it sits off its point, its weight, and whether it stacks with December's. */
-export interface HealthMetricsMembersGrowthEndLabel {
-  key: string;
-  text: string;
-  leftPct: number;
-  topPct: number;
-  color: string;
-  placement: HealthMetricsMembersGrowthLabelPlacement;
-  strong: boolean;
-  stacks: boolean;
-}
-
-/** An end label's box in pixels, so labels that stack can be pushed apart. */
-export interface HealthMetricsMembersGrowthLabelBox {
-  offsetPx: Record<HealthMetricsMembersGrowthLabelPlacement, number>;
-  heightPx: number;
-  gapPx: number;
-}
-
-/** A label on the plot, positioned in percent of the plot box, with its offset and weight classes. */
-export interface HealthMetricsMembersGrowthLabelView {
-  key: string;
-  text: string;
-  leftPct: number;
-  topPct: number;
-  color: string;
-  classes: string;
-}
-
-/** A month's hover and focus target, with its popup. */
+/** A month's hover and focus target, centred on it and spanning the month spacing, with its popup. */
 export interface HealthMetricsMembersGrowthColumnView {
   month: number;
   label: string;
   leftPct: number;
+  widthPct: number;
   tip: HealthMetricsChartTipView;
   ariaLabel: string;
 }
 
-/** A legend swatch: a line (solid or dashed, via `background`) or the range's band. */
-export interface HealthMetricsMembersGrowthLegendItemView {
-  label: string;
-  background: string;
-  band: boolean;
-}
-
-/** `#growth`: this year against last year and the earlier years, cumulative by month. */
+/** `#growth`: cumulative new members by month, one line per year. */
 export interface HealthMetricsMembersGrowthView {
-  /** False when the foundation has no month rows. */
+  /** False when no year has a measured month. */
   measured: boolean;
-  kpis: HealthMetricsOverviewKpiView[];
-  /** The y axis, top to bottom. */
-  yTicks: string[];
-  monthLabels: string[];
-  /** Earlier years first, so this year draws on top. */
-  paths: HealthMetricsMembersGrowthPathView[];
-  /** The earlier years' range; empty in All years, or with no year from the band's first year on. */
-  bandPath: string;
-  /** This month's x in the viewBox, for the Today line. */
-  todayX: number;
-  todayPct: number;
-  /** This year's point today, drawn hollow. */
-  todayDot: { leftPct: number; topPct: number };
-  labels: HealthMetricsMembersGrowthLabelView[];
+  /** The y axis's top label; the bottom is 0. */
+  yMax: string;
+  /** Oldest year first, so the newest draws on top; the legend reads in the same order. */
+  lines: HealthMetricsMembersGrowthLineView[];
   columns: HealthMetricsMembersGrowthColumnView[];
-  legend: HealthMetricsMembersGrowthLegendItemView[];
   ariaLabel: string;
 }
 

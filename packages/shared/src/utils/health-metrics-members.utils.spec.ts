@@ -402,7 +402,7 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
 });
 
 describe('buildHealthMetricsMembersGrowthView', () => {
-  // Nov 6, 2026: this year runs through November, so the projection is the pace of 11 months over 12.
+  // Nov 6, 2026: this year runs through November.
   const TODAY = new Date(2026, 10, 6);
   const YEARS: Record<number, number[]> = {
     2017: [3, 12, 21, 38, 89, 105, 124, 132, 153, 175, 209, 232],
@@ -410,138 +410,120 @@ describe('buildHealthMetricsMembersGrowthView', () => {
     2019: [30, 60, 100, 130, 160, 192, 217, 249, 275, 305, 335, 359],
     2024: [45, 85, 120, 160, 190, 225, 262, 300, 350, 385, 420, 453],
     2025: [38, 70, 105, 150, 175, 215, 287, 306, 340, 375, 410, 480],
-    2026: [74, 123, 184, 244, 293, 350, 408, 458, 523, 725, 801],
+    2026: [74, 123, 184, 244, 293, 350, 408, 458, 523, 725, 801, 0],
   };
 
   function months(years: Record<number, (number | null)[]> = YEARS): HealthMetricsMembersGrowthMonth[] {
     return Object.entries(years).flatMap(([year, values]) => values.map((cumulative, index) => ({ year: Number(year), month: index + 1, cumulative })));
   }
 
-  const build = (mode: 'highlights' | 'all' = 'highlights', years?: Record<number, (number | null)[]>, today = TODAY) =>
-    buildHealthMetricsMembersGrowthView({ months: months(years) }, mode, today);
+  const build = (range: HealthMetricsRange = 'YTD', years?: Record<number, (number | null)[]>, today = TODAY) =>
+    buildHealthMetricsMembersGrowthView({ months: months(years) }, range, today);
 
-  it('leads with this year so far, the change on last year and 2019 at the same month, and the run-rate projection', () => {
-    const kpis = build().kpis;
+  it('draws one line per measured year, oldest first, in the newest-first palette', () => {
+    const lines = build().lines;
 
-    expect(kpis.map((kpi) => [kpi.label, kpi.value])).toEqual([
-      ['New members in 2026 so far', '801'],
-      ['vs 2025', '+391'],
-      ['Since 2019', '+139%'],
-      ['Projected year-end', '~874'],
+    expect(lines.map((line) => line.year)).toEqual([2017, 2018, 2019, 2024, 2025, 2026]);
+    expect(lines.map((line) => line.color)).toEqual([
+      lfxColors.red[300],
+      lfxColors.amber[300],
+      lfxColors.emerald[300],
+      lfxColors.emerald[400],
+      lfxColors.violet[400],
+      lfxColors.blue[500],
     ]);
-    expect(kpis[1].delta).toEqual({ label: '+95%', direction: 'up', good: true });
-    expect(kpis[3].tip).toBe(
-      'An estimate based on this year’s pace. 801 new members joined in the first 11 months, about 73 a month. If December follows the same pace, the year ends at about 874.'
-    );
   });
 
-  it('draws this year, its projection and last year over the earlier years as one range in Highlights', () => {
+  it('draws only the period’s year solid', () => {
+    expect(
+      build()
+        .lines.filter((line) => !line.dashed)
+        .map((line) => line.year)
+    ).toEqual([2026]);
+    expect(
+      build('COMPLETED_YEAR')
+        .lines.filter((line) => !line.dashed)
+        .map((line) => line.year)
+    ).toEqual([2025]);
+    // A period with no line of its own leaves every line dashed.
+    expect(build('COMPLETED_YEAR_3').lines.every((line) => line.dashed)).toBe(true);
+  });
+
+  it('stops this year at today’s month and labels every point', () => {
+    const lines = build().lines;
+    const current = lines[lines.length - 1];
+
+    expect(current.points).toHaveLength(11);
+    expect(current.points[10].label).toBe('801');
+    expect(lines[0].points.map((point) => point.label)).toEqual(YEARS[2017].map(String));
+  });
+
+  it('scales to a round top over the highest total and places January and December inside the plot', () => {
     const view = build();
+    const current = view.lines[view.lines.length - 1];
 
-    expect(view.paths.map((line) => line.key)).toEqual(['projected', '2025', '2026']);
-    expect(view.paths.find((line) => line.key === 'projected')).toMatchObject({ dashed: true, d: 'M545.5 55.7 L600 35.3' });
-    expect(view.bandPath).toMatch(/^M0 267\.4 .* Z$/);
-    expect(view.yTicks).toEqual(['1,000', '750', '500', '250', '0']);
-    expect(view.labels.map((label) => label.text)).toEqual(['2026: 801', '~874 projected', '2025: 480']);
-    expect(view.legend.map((item) => item.label)).toEqual(['2026', '2026 projected', '2025', '2018–2024 range']);
-    expect(view.ariaLabel).toBe('Cumulative new members by month, 2026 versus 2025 and the 2018 to 2024 range');
-    expect(view.todayPct).toBeCloseTo(90.91, 2);
+    expect(view.yMax).toBe('1,000');
+    expect(current.points[0].leftPct).toBe(4);
+    expect(current.points[10].leftPct).toBeCloseTo(4 + (92 / 11) * 10, 5);
+    // 801 of 1,000 sits 19.9% from the top.
+    expect(current.points[10].topPct).toBeCloseTo(19.9, 5);
+    expect(current.d.startsWith('M40 ')).toBe(true);
+    expect(current.d.match(/C/g)).toHaveLength(10);
   });
 
-  it('draws each earlier year as a light line in All years, on the same scale', () => {
-    const view = build('all');
-
-    expect(view.paths.map((line) => line.key)).toEqual(['2017', '2018', '2019', '2024', 'projected', '2025', '2026']);
-    expect(view.paths[0]).toMatchObject({ width: 1.5, dashed: false });
-    expect(view.bandPath).toBe('');
-    expect(view.yTicks).toEqual(build().yTicks);
-    expect(view.legend.at(-1)?.label).toBe('2017–2024');
+  it('keeps every curve segment between its two totals, even a flat month before a jump', () => {
+    const view = build('YTD', { 2025: [0, 0, 100, 100, 100, 500, 500, 500, 500, 500, 500, 500], 2026: [1] }, new Date(2026, 0, 1));
+    const numbers = view.lines[0].d.replace(/[MC]/g, ' ').trim().split(/\s+/).map(Number);
+    // After the move, each cubic is two handles and an end point: its handles' y must sit within its two ends' y.
+    let start = numbers[1];
+    for (let index = 2; index < numbers.length; index += 6) {
+      const [, y1, , y2, , end] = numbers.slice(index, index + 6);
+      const [low, high] = [Math.min(start, end), Math.max(start, end)];
+      expect(y1).toBeGreaterThanOrEqual(low);
+      expect(y1).toBeLessThanOrEqual(high);
+      expect(y2).toBeGreaterThanOrEqual(low);
+      expect(y2).toBeLessThanOrEqual(high);
+      start = end;
+    }
   });
 
-  it('lists this year, last year and then each earlier year, newest first, in a month’s popup', () => {
-    const rows = (month: number): string[] => build().columns[month].tip.rows.map((row) => `${row.label} ${row.value}${row.separated ? ' |' : ''}`);
+  it('lists each month’s years newest first, leaving out this year past today', () => {
+    const columns = build().columns;
 
-    expect(build().columns[10].tip.title).toBe('Nov · cumulative new members');
-    expect(rows(10)).toEqual(['2026 801', '2025 410', '2024 420 |', '2019 335', '2018 404', '2017 209']);
-    expect(rows(11)).toEqual(['2026 projected ~874', '2025 480', '2024 453 |', '2019 359', '2018 433', '2017 232']);
+    expect(columns).toHaveLength(12);
+    expect(columns[10].tip.title).toBe('November');
+    expect(columns[10].tip.rows.map((row) => [row.label, row.value])).toEqual([
+      ['2026', '801'],
+      ['2025', '410'],
+      ['2024', '420'],
+      ['2019', '335'],
+      ['2018', '404'],
+      ['2017', '209'],
+    ]);
+    expect(columns[11].tip.rows[0].label).toBe('2025');
+    expect(columns[10].ariaLabel).toBe('November. 2026: 801, 2025: 410, 2024: 420, 2019: 335, 2018: 404, 2017: 209');
+    expect(columns[0].widthPct).toBeCloseTo(92 / 11, 5);
   });
 
-  it('carries a missing month forward, and keeps this year to the months so far', () => {
-    const view = build('highlights', { ...YEARS, 2026: [74, null, 184, 244, 293, 350, 408, 458, 523, 725, 801, 900] });
+  it('treats a year with no measured month as missing and carries gaps forward', () => {
+    const view = build('YTD', { 2024: Array(12).fill(null), 2025: [5, null, 9, ...Array(9).fill(9)], 2026: [1, 2] }, new Date(2026, 1, 1));
 
-    expect(view.columns[1].tip.rows[0]).toMatchObject({ label: '2026', value: '74' });
-    expect(view.columns[11].tip.rows[0]).toMatchObject({ label: '2026 projected', value: '~874' });
+    expect(view.lines.map((line) => line.year)).toEqual([2025, 2026]);
+    expect(view.lines[0].points.slice(0, 3).map((point) => point.label)).toEqual(['5', '5', '9']);
+    expect(view.ariaLabel).toBe('Cumulative new members by month, one line per year, 2025 to 2026');
   });
 
-  it('shows no comparison, range or projection it has no year for', () => {
-    const newFoundation = build('highlights', { 2026: YEARS[2026] });
-    const december = build('highlights', YEARS, new Date(2026, 11, 2));
+  it('draws at most one line per colour, dropping the oldest years', () => {
+    const years = Object.fromEntries(Array.from({ length: 12 }, (_, index) => [2015 + index, Array(12).fill(index + 1)]));
+    const view = build('YTD', years);
 
-    expect(newFoundation.kpis.map((kpi) => kpi.value)).toEqual(['801', '—', '—', '~874']);
-    expect(newFoundation.kpis[1].delta).toBeNull();
-    expect(newFoundation.legend.map((item) => item.label)).toEqual(['2026', '2026 projected']);
-    expect(newFoundation.ariaLabel).toBe('Cumulative new members by month, 2026');
-    expect(december.paths.map((line) => line.key)).toEqual(['2025', '2026']);
-    expect(december.labels.map((label) => label.key)).toEqual(['current', 'prior']);
+    expect(view.lines.map((line) => line.year)).toEqual([2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]);
+    expect(view.lines[0].color).toBe(lfxColors.red[300]);
   });
 
-  it('is unmeasured with no month rows, only rows before the first year drawn, or no measured total this year', () => {
-    expect(build('highlights', {}).measured).toBe(false);
-    expect(build('highlights', { 2015: [1, 2, 3] }).measured).toBe(false);
-    expect(build('highlights', { ...YEARS, 2026: Array(11).fill(null) }).measured).toBe(false);
-  });
-
-  it('treats an earlier year with no measured total as missing, never as zeros', () => {
-    const view = build('highlights', { ...YEARS, 2025: Array(12).fill(null), 2024: Array(12).fill(null) });
-
-    expect(view.kpis[1].value).toBe('—');
-    expect(view.paths.map((line) => line.key)).toEqual(['projected', '2026']);
-    expect(view.legend.at(-1)?.label).toBe('2018–2019 range');
-    expect(view.columns[10].tip.rows.map((row) => row.label)).toEqual(['2026', '2019', '2018', '2017']);
-  });
-
-  it('keeps December labels apart when their totals meet, without moving the points', () => {
-    const view = build('highlights', { ...YEARS, 2025: [...YEARS[2025].slice(0, 11), 874] });
-    const [projected, prior] = ['projected', 'prior'].map((key) => view.labels.find((label) => label.key === key)!);
-    const boxTop = (topPct: number, offset: number): number => (topPct / 100) * 280 + offset;
-
-    expect(Math.abs(boxTop(prior.topPct, -8) - boxTop(projected.topPct, -2))).toBeGreaterThanOrEqual(18);
-    expect(view.paths.find((line) => line.key === '2025')?.d.endsWith('L600 35.3')).toBe(true);
-  });
-
-  it('stacks this year’s November label with the projection, which narrow plots would otherwise overlap', () => {
-    const view = build('highlights', { ...YEARS, 2026: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10] });
-    const [current, projected] = ['current', 'projected'].map((key) => view.labels.find((label) => label.key === key)!);
-    const boxTop = (topPct: number, offset: number): number => (topPct / 100) * 280 + offset;
-
-    expect(Math.abs(boxTop(current.topPct, 4) - boxTop(projected.topPct, -2))).toBeGreaterThanOrEqual(18);
-    expect(view.todayDot.topPct).toBeCloseTo((1 - 10 / 600) * 100, 5);
-  });
-
-  it.each([
-    ['near zero', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10]],
-    ['zero', Array(11).fill(0)],
-  ])('keeps every label inside the plot and apart with a total %s', (_, current) => {
-    const view = build('highlights', { ...YEARS, 2026: current });
-    const offsets: Record<string, number> = { current: 4, projected: -2, prior: -8 };
-    const tops = view.labels.map((label) => (label.topPct / 100) * 280 + offsets[label.key]).sort((a, b) => a - b);
-
-    tops.forEach((top, index) => {
-      expect(top).toBeGreaterThanOrEqual(0);
-      expect(top + 16).toBeLessThanOrEqual(280);
-      if (index) expect(top - tops[index - 1]).toBeGreaterThanOrEqual(18);
-    });
-    // This year's total is never above the projection, so its label stays below the projection's.
-    const topOf = (key: string): number => view.labels.find((label) => label.key === key)!.topPct;
-    expect(topOf('current')).toBeGreaterThan(topOf('projected'));
-  });
-
-  it('says in December that the year ends at its total so far, with nothing left to project', () => {
-    const tip = build('highlights', YEARS, new Date(2026, 11, 2)).kpis[3].tip;
-
-    expect(tip).toContain('joined so far this year');
-    expect(tip).toContain('December is the last month, so the year ends at about');
-    expect(tip).not.toContain('follows the same pace');
+  it('is unmeasured when no year has a measured month', () => {
+    expect(build('YTD', { 2026: [null, null] }).measured).toBe(false);
+    expect(build('YTD', {}).lines).toEqual([]);
   });
 });
 

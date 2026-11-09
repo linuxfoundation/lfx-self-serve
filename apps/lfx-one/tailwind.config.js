@@ -38,7 +38,6 @@ import {
   HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
-  HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
   HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER,
@@ -269,12 +268,6 @@ export default {
     ...Object.values(HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES)
       .flatMap((value) => (typeof value === 'string' ? [value] : Object.values(value)))
       .flatMap((classes) => classes.split(' ')),
-    // Member growth end labels (HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES in @lfx-one/shared) — applied via [class].
-    ...[
-      ...Object.values(HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES.placement),
-      HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES.strong,
-      HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES.regular,
-    ].flatMap((classes) => classes.split(' ')),
     // Training course type pills (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES).flatMap((c) => c.split(' ')),
   ],
