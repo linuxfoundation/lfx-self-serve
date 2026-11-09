@@ -107,7 +107,7 @@ const at = (iso: string) => `${iso}T00:00:00Z`;
 const term = (status: MentorshipUpstreamProgramTerm['status'], dates: Partial<MentorshipUpstreamProgramTerm> = {}) => ({ status, ...dates });
 
 describe('mentorshipPublishedProgramStatus', () => {
-  it.each([
+  const rules = [
     ['only closed terms', [term('closed'), term('deleted')], 'completed'],
     ['no terms', [], 'upcoming'],
     ['only deleted terms', [term('deleted')], 'upcoming'],
@@ -135,7 +135,7 @@ describe('mentorshipPublishedProgramStatus', () => {
       'accepting',
     ],
     [
-      'an open term inside its term window',
+      'an open term inside its term window, beside one whose application window has not opened',
       [
         term('open', {
           application_start_date: at('2026-08-01'),
@@ -143,6 +143,7 @@ describe('mentorshipPublishedProgramStatus', () => {
           start_date_time: at('2026-09-01'),
           end_date_time: at('2026-12-31'),
         }),
+        term('open', { application_start_date: at('2026-12-01'), application_end_date: at('2026-12-15') }),
       ],
       'in-progress',
     ],
@@ -171,17 +172,32 @@ describe('mentorshipPublishedProgramStatus', () => {
       [term('closed'), term('open', { application_start_date: at('2026-12-01'), application_end_date: at('2026-12-15') })],
       'upcoming',
     ],
-  ] as const)('reads %s as %s', (_label, terms, expected) => {
+  ] as const;
+
+  it.each(rules.map(([label, terms, expected]) => ({ label, terms, expected })))('reads $label as $expected', ({ terms, expected }) => {
     expect(mentorshipPublishedProgramStatus(terms, NOW)).toBe(expected);
   });
 
-  it('compares the term window to the time, not the day', () => {
-    const ended = [term('open', { start_date_time: at('2026-09-01'), end_date_time: '2026-11-09T11:59:59Z' })];
+  // Beside a term whose application window is still ahead, a running term reads In Progress and one that is not
+  // running reads Upcoming, so these cases fail if the running check is dropped or compares by day.
+  describe('compares the term window to the time, not the day, ahead of Upcoming', () => {
+    const upcoming = term('open', { application_start_date: at('2026-12-01'), application_end_date: at('2026-12-15') });
+    const statusWith = (start: string, end: string) =>
+      mentorshipPublishedProgramStatus([term('open', { start_date_time: start, end_date_time: end }), upcoming], NOW);
 
-    expect(mentorshipPublishedProgramStatus(ended, NOW)).toBe('in-progress');
-    expect(mentorshipPublishedProgramStatus([term('open', { start_date_time: '2026-11-09T12:00:01Z', end_date_time: at('2027-01-01') })], NOW)).toBe(
-      'in-progress'
-    );
+    it.each([
+      ['starts now', '2026-11-09T12:00:00Z', at('2027-01-01')],
+      ['ends now', at('2026-09-01'), '2026-11-09T12:00:00Z'],
+    ])('reads a term that %s as in progress', (_label, start, end) => {
+      expect(statusWith(start, end)).toBe('in-progress');
+    });
+
+    it.each([
+      ['ended a second ago', at('2026-09-01'), '2026-11-09T11:59:59Z'],
+      ['starts in a second', '2026-11-09T12:00:01Z', at('2027-01-01')],
+    ])('reads a term that %s, beside an upcoming one, as upcoming', (_label, start, end) => {
+      expect(statusWith(start, end)).toBe('upcoming');
+    });
   });
 });
 

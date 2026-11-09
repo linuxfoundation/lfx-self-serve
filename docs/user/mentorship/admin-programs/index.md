@@ -51,15 +51,16 @@ The **⋯** menu sits next to **Edit Program**. A program in **Pending Review** 
 
 An approved program takes its status from its terms. When more than one fits, the first one in this table applies: a program with one term taking applications and another already running is **Accepting**.
 
-| Status             | What it means                                                                   |
-| ------------------ | ------------------------------------------------------------------------------- |
-| **Accepting**      | Approved, and a term is taking applications today                               |
-| **In Progress**    | Approved, and a term is running, or its applications have closed                |
-| **Upcoming**       | Approved, and a term's applications have not opened yet, or it has no terms yet |
-| **Pending Review** | Submitted and awaiting Linux Foundation review                                  |
-| **Completed**      | Its terms have finished                                                         |
-| **Rejected**       | Not approved during review                                                      |
-| **Hidden**         | Removed from public listings                                                    |
+| Status             | What it means                                                                                                                                        |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Accepting**      | Approved, and a term is taking applications today                                                                                                    |
+| **In Progress**    | Approved, and a term is running today                                                                                                                |
+| **Upcoming**       | Approved, and a term's applications have not opened yet, or it has no terms yet                                                                      |
+| **In Progress**    | Approved, with an open term that fits none of the rows above: its applications have closed but it has not started, or it has ended but is not closed |
+| **Pending Review** | Submitted and awaiting Linux Foundation review                                                                                                       |
+| **Completed**      | Every one of its terms is closed                                                                                                                     |
+| **Rejected**       | Not approved during review                                                                                                                           |
+| **Hidden**         | Removed from public listings                                                                                                                         |
 
 ## Troubleshooting
 
