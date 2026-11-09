@@ -42,11 +42,11 @@ describe('MentorshipAdminService', () => {
 
   it('reads the program list from the admin endpoint with the filters as query params', () => {
     let total = -1;
-    service.getPrograms({ search: 'grid', status: 'open', offset: 10, limit: 5 }).subscribe((response) => (total = response.total));
+    service.getPrograms({ search: 'grid', status: 'in-progress', offset: 10, limit: 5 }).subscribe((response) => (total = response.total));
 
     const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs');
     expect(req.request.params.get('search')).toBe('grid');
-    expect(req.request.params.get('status')).toBe('open');
+    expect(req.request.params.get('status')).toBe('in-progress');
     expect(req.request.params.get('offset')).toBe('10');
     expect(req.request.params.get('limit')).toBe('5');
     req.flush({ data: [], total: 3 } satisfies MentorshipProgramsResponse);

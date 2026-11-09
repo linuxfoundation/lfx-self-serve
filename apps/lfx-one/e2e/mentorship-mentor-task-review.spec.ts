@@ -47,7 +47,7 @@ function detailWith(status: MentorshipApplicantTaskStatus): MentorshipMentorProg
       slug: 'test-program-review',
       name: 'Test Program Review',
       projectName: 'Test Project',
-      status: 'open',
+      status: 'accepting',
       stats: { mentees: 1, tasksToReview: awaiting, applicants: 0 },
     },
     tabCounts: { tasks: awaiting, mentees: 1, applicants: 0 },

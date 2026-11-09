@@ -26,14 +26,15 @@ import type {
 } from '../interfaces/mentorship-admin.interface';
 
 /**
- * Allowed program statuses. Ordered by lifecycle so a `.sort` on this array
- * yields the same order the admin filter dropdown renders.
+ * Allowed program statuses, in the order the admin filter dropdown renders them.
  */
-export const MENTORSHIP_PROGRAM_STATUSES = ['open', 'pending-review', 'completed', 'rejected', 'hidden'] as const;
+export const MENTORSHIP_PROGRAM_STATUSES = ['accepting', 'in-progress', 'upcoming', 'pending-review', 'completed', 'rejected', 'hidden'] as const;
 
 /** Human-readable labels for each program status (used by badge + filter). */
 export const MENTORSHIP_PROGRAM_STATUS_LABELS: Record<MentorshipProgramStatus, string> = {
-  open: 'Open',
+  accepting: 'Accepting',
+  'in-progress': 'In Progress',
+  upcoming: 'Upcoming',
   'pending-review': 'Pending Review',
   completed: 'Completed',
   rejected: 'Rejected',
@@ -46,7 +47,9 @@ export const MENTORSHIP_PROGRAM_STATUS_LABELS: Record<MentorshipProgramStatus, s
  * future shared status-pill component can consume both maps unchanged.
  */
 export const MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES: Record<MentorshipProgramStatus, string> = {
-  open: 'bg-emerald-100 text-emerald-700',
+  accepting: 'bg-emerald-100 text-emerald-700',
+  'in-progress': 'bg-blue-100 text-blue-700',
+  upcoming: 'bg-violet-100 text-violet-700',
   'pending-review': 'bg-amber-100 text-amber-700',
   completed: 'bg-gray-100 text-gray-600',
   rejected: 'bg-red-100 text-red-700',
@@ -372,8 +375,11 @@ export const MENTORSHIP_ADMIN_TERM_DELETED_MESSAGE = 'Term deleted.';
 export const MENTORSHIP_ADMIN_TERM_WRITE_FAILED_MESSAGE = "The term couldn't be saved. Please try again.";
 export const MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE = 'Another term change is still being saved.';
 
-/** Statuses a program admin may hide: both are upstream `published`. A `hidden` program may be unhidden. */
-export const MENTORSHIP_PROGRAM_HIDEABLE_STATUSES: readonly MentorshipProgramStatus[] = ['open', 'completed'];
+/** Statuses of a program upstream holds as `published`: the ones its public page shows. */
+export const MENTORSHIP_PROGRAM_PUBLISHED_STATUSES: readonly MentorshipProgramStatus[] = ['accepting', 'in-progress', 'upcoming', 'completed'];
+
+/** Statuses a program admin may hide: every published one. A `hidden` program may be unhidden. */
+export const MENTORSHIP_PROGRAM_HIDEABLE_STATUSES: readonly MentorshipProgramStatus[] = MENTORSHIP_PROGRAM_PUBLISHED_STATUSES;
 export const MENTORSHIP_PROGRAM_HIDE_DESCRIPTION = 'Hide this program from public view. Mentees can no longer find it or apply.';
 export const MENTORSHIP_PROGRAM_UNHIDE_DESCRIPTION = 'Make this program publicly visible again so mentees can find it and apply.';
 export const MENTORSHIP_PROGRAM_HIDE_CONFIRM =
