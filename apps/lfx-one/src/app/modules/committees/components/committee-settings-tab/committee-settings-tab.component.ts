@@ -19,7 +19,7 @@ import {
   MailingListSyncPreviewDialogResult,
   ValidationError,
 } from '@lfx-one/shared/interfaces';
-import { CommitteeMemberVisibility, MailingListSyncMode } from '@lfx-one/shared/enums';
+import { CommitteeMemberVisibility, CommitteeMemberVotingStatus, MailingListSyncMode } from '@lfx-one/shared/enums';
 import {
   MAILING_LIST_ACCESS_DENIED_MESSAGE,
   MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG,
@@ -531,30 +531,39 @@ export class CommitteeSettingsTabComponent {
 
     ref.onClose.pipe(take(1)).subscribe((result: MailingListPickerDialogResult | null) => {
       if (!result) return;
-      this.saveMailingListAssociation(result.selectedUids, associatedUids, result.syncModes);
+      this.saveMailingListAssociation(result.selectedUids, associatedUids, result.syncModes, result.committeeFilters, result.committeeRoleFilters);
     });
   }
 
-  private saveMailingListAssociation(currentSelection: Set<string>, originalSelectedUids: Set<string>, syncModes: Map<string, MailingListSyncMode>): void {
+  private saveMailingListAssociation(
+    currentSelection: Set<string>,
+    originalSelectedUids: Set<string>,
+    syncModes: Map<string, MailingListSyncMode>,
+    committeeFilters = new Map<string, CommitteeMemberVotingStatus[]>(),
+    committeeRoleFilters = new Map<string, string[]>()
+  ): void {
     const committee = this.committee();
     if (!committee?.uid) return;
 
     const added = [...currentSelection].filter((uid) => !originalSelectedUids.has(uid));
     const removed = [...originalSelectedUids].filter((uid) => !currentSelection.has(uid));
-    // Lists that stay linked across this save but may have had only their sync direction changed
-    // in the picker dialog (#4026) — `added`/`removed` above only cover link/unlink, so a
-    // direction-only change here needs its own update call.
-    const directionChanged = [...currentSelection]
+    // Lists that stay linked across this save but may have had only their sync direction, or
+    // (#4026 criterion 3) committee/role filters, changed in the picker dialog — `added`/`removed`
+    // above only cover link/unlink, so a config-only change here needs its own update call.
+    const configChanged = [...currentSelection]
       .filter((uid) => originalSelectedUids.has(uid))
       .filter((uid) => {
-        const desired = syncModes.get(uid);
-        if (desired === undefined) return false;
+        const desiredSync = syncModes.get(uid);
         const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
-        const current = ml?.sync_mode ?? MailingListSyncMode.MANUAL;
-        return desired !== current;
+        if (desiredSync !== undefined && desiredSync !== (ml?.sync_mode ?? MailingListSyncMode.MANUAL)) return true;
+        const desiredFilters = committeeFilters.get(uid);
+        if (desiredFilters !== undefined && !this.arraysEqualAsSets(desiredFilters, ml?.committee_filters ?? [])) return true;
+        const desiredRoleFilters = committeeRoleFilters.get(uid);
+        if (desiredRoleFilters !== undefined && !this.arraysEqualAsSets(desiredRoleFilters, ml?.committee_role_filters ?? [])) return true;
+        return false;
       });
 
-    if (added.length === 0 && removed.length === 0 && directionChanged.length === 0) {
+    if (added.length === 0 && removed.length === 0 && configChanged.length === 0) {
       return;
     }
 
@@ -605,7 +614,12 @@ export class CommitteeSettingsTabComponent {
     for (const uid of added) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)), ml.sync_mode, false);
+        queueUpdate(
+          uid,
+          this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid), committeeFilters.get(uid), committeeRoleFilters.get(uid)),
+          ml.sync_mode,
+          false
+        );
       }
     }
 
@@ -617,11 +631,17 @@ export class CommitteeSettingsTabComponent {
       }
     }
 
-    // Direction-only change: the list stays linked to this same committee, only its sync_mode moves.
-    for (const uid of directionChanged) {
+    // Config-only change: the list stays linked to this same committee, only its sync_mode and/or
+    // committee/role filters (#4026 criterion 3) move.
+    for (const uid of configChanged) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)), ml.sync_mode, true);
+        queueUpdate(
+          uid,
+          this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid), committeeFilters.get(uid), committeeRoleFilters.get(uid)),
+          ml.sync_mode,
+          true
+        );
       }
     }
 
@@ -688,10 +708,19 @@ export class CommitteeSettingsTabComponent {
     return fallback;
   }
 
+  /** Order-insensitive array equality, used to detect a no-op committee/role filter change (#4026 criterion 3). */
+  private arraysEqualAsSets(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) return false;
+    const setB = new Set(b);
+    return a.every((value) => setB.has(value));
+  }
+
   private buildMlUpdatePayload(
     ml: GroupsIOMailingList,
     committeeUid: string | null,
-    explicitSyncMode?: MailingListSyncMode
+    explicitSyncMode?: MailingListSyncMode,
+    explicitCommitteeFilters?: CommitteeMemberVotingStatus[],
+    explicitCommitteeRoleFilters?: string[]
   ): Partial<CreateMailingListRequest> {
     // Preserve the existing sync direction (#4024) only when the committee is unchanged —
     // detaching/reattaching the SAME committee is a full-resource PUT, so omitting sync_mode would
@@ -711,6 +740,23 @@ export class CommitteeSettingsTabComponent {
     } else if (committeeUid) {
       syncMode = MailingListSyncMode.MANUAL;
     }
+
+    // Committee/role filters (#4026 criterion 3, linuxfoundation/lfx-v2-mailing-list-service#110)
+    // are only meaningful while the resolved direction is auto_c_to_ml — mirrors the sync_mode
+    // preserve/reset rule above: carry the list's own persisted filters forward only when staying
+    // on the SAME committee, reset to unfiltered when linking to a different one, and explicitly
+    // clear both to `[]` (rather than omitting them) whenever the resolved direction isn't
+    // auto_c_to_ml, so stale filters don't linger after switching away from that direction.
+    let committeeFilters: CommitteeMemberVotingStatus[] | undefined;
+    let committeeRoleFilters: string[] | undefined;
+    if (syncMode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST) {
+      committeeFilters = explicitCommitteeFilters ?? (sameCommittee ? (ml.committee_filters ?? []) : []);
+      committeeRoleFilters = explicitCommitteeRoleFilters ?? (sameCommittee ? (ml.committee_role_filters ?? []) : []);
+    } else if (committeeUid) {
+      committeeFilters = [];
+      committeeRoleFilters = [];
+    }
+
     return {
       name: ml.group_name,
       public: ml.public,
@@ -724,6 +770,8 @@ export class CommitteeSettingsTabComponent {
       writers: ml.writers,
       auditors: ml.auditors,
       sync_mode: syncMode,
+      committee_filters: committeeFilters,
+      committee_role_filters: committeeRoleFilters,
     };
   }
 

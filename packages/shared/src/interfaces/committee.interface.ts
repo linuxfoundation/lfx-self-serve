@@ -1237,6 +1237,18 @@ export interface MailingListPickerDialogResult {
    * than treating an empty map as "reset everything to manual".
    */
   syncModes: Map<string, MailingListSyncMode>;
+  /**
+   * Chosen committee voting-status filter per mailing list uid (#4026 criterion 3), keyed for every
+   * list in the dialog's candidate set. Only meaningful for a list whose syncModes entry is
+   * `auto_c_to_ml`; empty when the sync feature flag is off, same fallback contract as `syncModes`.
+   */
+  committeeFilters: Map<string, CommitteeMemberVotingStatus[]>;
+  /**
+   * Chosen committee role filter per mailing list uid (#4026 criterion 3), keyed for every list in
+   * the dialog's candidate set. Only meaningful for a list whose syncModes entry is `auto_c_to_ml`;
+   * empty when the sync feature flag is off, same fallback contract as `syncModes`.
+   */
+  committeeRoleFilters: Map<string, string[]>;
 }
 
 export interface MailingListSyncPreviewDialogData {

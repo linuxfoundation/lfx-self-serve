@@ -5,7 +5,7 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
-import { MailingListSyncMode } from '@lfx-one/shared/enums';
+import { CommitteeMemberVotingStatus, MailingListSyncMode } from '@lfx-one/shared/enums';
 import { Committee, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -705,6 +705,217 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
       new Set(['ml-1']),
       new Set(['ml-1']),
       new Map([['ml-1', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST]])
+    );
+
+    expect(updateMailingList).not.toHaveBeenCalled();
+  });
+});
+
+// Exercises buildMlUpdatePayload's committee_filters/committee_role_filters resolution and
+// saveMailingListAssociation's broadened configChanged detection (#4026 criterion 3).
+describe('CommitteeSettingsTabComponent — committee/role filters for auto_c_to_ml sync (#4026)', () => {
+  let fixture: ComponentFixture<CommitteeSettingsTabComponent>;
+  let component: CommitteeSettingsTabComponent;
+  let updateMailingList: ReturnType<typeof vi.fn>;
+
+  const COMMITTEE: Committee = {
+    uid: 'committee-1',
+    name: 'Test Committee',
+    project_uid: 'project-1',
+    category: 'Board',
+    has_slack_webhook: false,
+  } as Committee;
+
+  const makeMl = (overrides: Partial<GroupsIOMailingList>): GroupsIOMailingList =>
+    ({
+      uid: 'ml-1',
+      group_name: 'test-list',
+      public: false,
+      type: 'discussion_open',
+      audience_access: 'public',
+      description: 'A test list',
+      title: 'Test List',
+      service_uid: 'service-1',
+      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      committees: [{ uid: 'committee-1' }],
+      committee_filters: [],
+      committee_role_filters: [],
+      ...overrides,
+    }) as GroupsIOMailingList;
+
+  async function createFixture(projectMailingLists: GroupsIOMailingList[]): Promise<void> {
+    updateMailingList = vi.fn(() => of({}));
+
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee: vi.fn(() => of(projectMailingLists)),
+            getMailingListsByProject: vi.fn(() => of(projectMailingLists)),
+            updateMailingList,
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    await fixture.whenStable();
+  }
+
+  it('includes committee_filters and committee_role_filters when linking a list with auto_c_to_ml direction', async () => {
+    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-OLD' }], sync_mode: MailingListSyncMode.MANUAL });
+    await createFixture([ml]);
+
+    (component as any).saveMailingListAssociation(
+      new Set(['ml-1']),
+      new Set(),
+      new Map([['ml-1', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST]]),
+      new Map([['ml-1', [CommitteeMemberVotingStatus.VOTING_REP]]]),
+      new Map([['ml-1', ['Chair']]])
+    );
+
+    expect(updateMailingList).toHaveBeenCalledOnce();
+    const payload = updateMailingList.mock.calls[0][1];
+    expect(payload.sync_mode).toBe(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST);
+    expect(payload.committee_filters).toEqual([CommitteeMemberVotingStatus.VOTING_REP]);
+    expect(payload.committee_role_filters).toEqual(['Chair']);
+  });
+
+  it('preserves existing committee_filters/committee_role_filters when re-linking the same committee without an explicit override', async () => {
+    const ml = makeMl({
+      uid: 'ml-1',
+      committees: [{ uid: 'committee-1' }],
+      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
+      committee_role_filters: ['Chair'],
+    });
+    await createFixture([ml]);
+
+    (component as any).saveMailingListAssociation(new Set(['ml-1']), new Set(), new Map());
+
+    const payload = updateMailingList.mock.calls[0][1];
+    expect(payload.committee_filters).toEqual([CommitteeMemberVotingStatus.VOTING_REP]);
+    expect(payload.committee_role_filters).toEqual(['Chair']);
+  });
+
+  it('resets committee_filters/committee_role_filters when the mailing list is linked to a different committee', async () => {
+    const ml = makeMl({
+      uid: 'ml-1',
+      committees: [{ uid: 'committee-OLD' }],
+      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
+      committee_role_filters: ['Chair'],
+    });
+    await createFixture([ml]);
+
+    // No explicit filter maps passed, matching the different-committee re-link path.
+    (component as any).saveMailingListAssociation(new Set(['ml-1']), new Set(), new Map([['ml-1', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST]]));
+
+    const payload = updateMailingList.mock.calls[0][1];
+    expect(payload.sync_mode).toBe(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST);
+    expect(payload.committee_filters).toEqual([]);
+    expect(payload.committee_role_filters).toEqual([]);
+  });
+
+  it('clears committee_filters/committee_role_filters to empty arrays when direction is not auto_c_to_ml', async () => {
+    const ml = makeMl({
+      uid: 'ml-1',
+      committees: [{ uid: 'committee-1' }],
+      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
+      committee_role_filters: ['Chair'],
+    });
+    await createFixture([ml]);
+
+    (component as any).saveMailingListAssociation(
+      new Set(['ml-1']),
+      new Set(['ml-1']),
+      new Map([['ml-1', MailingListSyncMode.MANUAL]]),
+      new Map([['ml-1', [CommitteeMemberVotingStatus.VOTING_REP]]]),
+      new Map([['ml-1', ['Chair']]])
+    );
+
+    expect(updateMailingList).toHaveBeenCalledOnce();
+    const payload = updateMailingList.mock.calls[0][1];
+    expect(payload.sync_mode).toBe(MailingListSyncMode.MANUAL);
+    expect(payload.committee_filters).toEqual([]);
+    expect(payload.committee_role_filters).toEqual([]);
+  });
+
+  it('omits committee_filters/committee_role_filters entirely when the mailing list is fully unlinked', async () => {
+    const ml = makeMl({
+      uid: 'ml-1',
+      committees: [{ uid: 'committee-1' }],
+      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
+      committee_role_filters: ['Chair'],
+    });
+    await createFixture([ml]);
+
+    (component as any).saveMailingListAssociation(new Set(), new Set(['ml-1']), new Map());
+
+    const payload = updateMailingList.mock.calls[0][1];
+    expect(payload.committee_uid).toBeNull();
+    expect(payload.committee_filters).toBeUndefined();
+    expect(payload.committee_role_filters).toBeUndefined();
+  });
+
+  it('issues an update for a list that stays linked with the same direction but a changed filter set', async () => {
+    const ml = makeMl({
+      uid: 'ml-1',
+      committees: [{ uid: 'committee-1' }],
+      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
+      committee_role_filters: ['Chair'],
+    });
+    await createFixture([ml]);
+
+    (component as any).saveMailingListAssociation(
+      new Set(['ml-1']),
+      new Set(['ml-1']),
+      new Map([['ml-1', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST]]),
+      new Map([['ml-1', [CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP]]]),
+      new Map([['ml-1', ['Chair']]])
+    );
+
+    expect(updateMailingList).toHaveBeenCalledOnce();
+    const payload = updateMailingList.mock.calls[0][1];
+    expect(payload.committee_filters).toEqual([CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP]);
+  });
+
+  it('skips the update for a list that stays linked with the same direction and the same filter set (order-insensitive)', async () => {
+    const ml = makeMl({
+      uid: 'ml-1',
+      committees: [{ uid: 'committee-1' }],
+      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP],
+      committee_role_filters: ['Chair'],
+    });
+    await createFixture([ml]);
+
+    (component as any).saveMailingListAssociation(
+      new Set(['ml-1']),
+      new Set(['ml-1']),
+      new Map([['ml-1', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST]]),
+      new Map([['ml-1', [CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP, CommitteeMemberVotingStatus.VOTING_REP]]]),
+      new Map([['ml-1', ['Chair']]])
     );
 
     expect(updateMailingList).not.toHaveBeenCalled();
