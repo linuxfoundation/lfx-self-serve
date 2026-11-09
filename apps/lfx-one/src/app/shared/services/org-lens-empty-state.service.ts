@@ -4,7 +4,7 @@
 import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { OrgLensContractorProbe, OrgLensContractorVerdict, OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
-import { orgRollUpRootUid } from '@lfx-one/shared/utils';
+import { isOrgRollUpSegment, orgRollUpRootUid } from '@lfx-one/shared/utils';
 import { concat, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
