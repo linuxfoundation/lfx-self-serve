@@ -223,7 +223,10 @@ test('Sources and Method use plain-English connection labels for legacy envelope
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
   await expect(page.getByTestId('member-360-result')).toContainText('CRM (not connected yet), Web research');
   await page.getByTestId('member-360-method-toggle').click();
-  await expect(page.getByTestId('member-360-method')).toContainText('hubspot: not connected yet');
+  // Label and status are separate table cells; Angular drops the whitespace between them, so assert each cell.
+  const hubspot = page.getByTestId('member-360-source-hubspot').locator('td');
+  await expect(hubspot.nth(0)).toHaveText('hubspot:');
+  await expect(hubspot.nth(1)).toHaveText('not connected yet');
   await expect(page.getByTestId('member-360-method')).not.toContainText('not_wired');
   await page.screenshot({ path: info.outputPath('plain-source-labels.png'), fullPage: true });
 });
