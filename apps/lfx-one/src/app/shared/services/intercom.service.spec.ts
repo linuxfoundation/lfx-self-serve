@@ -170,6 +170,10 @@ describe('IntercomService', () => {
   });
 
   describe('setLauncherHidden (#5416)', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
     it('should hide and restore the default launcher once booted', () => {
       service.boot({ app_id: 'test-app-id' });
 
@@ -213,7 +217,18 @@ describe('IntercomService', () => {
         ['update', { hide_default_launcher: true }],
         ['update', { hide_default_launcher: true }],
       ]);
-      vi.unstubAllGlobals();
+    });
+
+    it('should keep the default launcher hidden on restore when the boot hid it explicitly', () => {
+      service.boot({ app_id: 'test-app-id', hide_default_launcher: true });
+
+      service.setLauncherHidden(true);
+      service.setLauncherHidden(false);
+
+      expect(queuedCommands().slice(1)).toEqual([
+        ['update', { hide_default_launcher: true }],
+        ['update', { hide_default_launcher: true }],
+      ]);
     });
   });
 
