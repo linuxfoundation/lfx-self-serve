@@ -7,8 +7,8 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import {
   HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES,
-  HEALTH_METRICS_MEMBERS_BREAKDOWN_TIP_ROOM_PX,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_VIEW_OPTIONS,
+  HEALTH_METRICS_MEMBERS_CHART_TIP_ROOM_PX,
   HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsMembersBreakdownView } from '@lfx-one/shared/utils';
@@ -100,7 +100,7 @@ export class MembersBreakdownComponent {
     const column = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const centre = column.left + column.width / 2;
     const roomRight = document.documentElement.clientWidth - centre;
-    this.tip.set({ index, flip: roomRight < HEALTH_METRICS_MEMBERS_BREAKDOWN_TIP_ROOM_PX && centre > roomRight });
+    this.tip.set({ index, flip: roomRight < HEALTH_METRICS_MEMBERS_CHART_TIP_ROOM_PX && centre > roomRight });
   }
 
   protected hideTip(index: number): void {

@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CdkMenuTrigger } from '@angular/cdk/menu';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingHomeRow, MeetingRsvp, MeetingRsvpSubmitError, RsvpScope } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
@@ -269,6 +271,13 @@ describe('MeetingRsvpControlsComponent', () => {
       const fixture = await render(buildRow(buildMeeting(), { myRsvp: buildRsvp() }));
 
       expect(query(fixture, 'meetings-home-rsvp-status')?.textContent?.trim()).toBe('Going');
+    });
+
+    it('opens the change menu from the badge end edge', async () => {
+      const fixture = await render(buildRow(buildMeeting(), { myRsvp: buildRsvp() }));
+      const trigger = fixture.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
+
+      expect(trigger.menuPosition[0]).toEqual({ originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' });
     });
 
     it('lets a recurring answer be picked again to change the dates it covers', async () => {

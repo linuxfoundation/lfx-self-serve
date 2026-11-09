@@ -79,9 +79,11 @@ describe('NewsletterGuestService', () => {
         foundation,
         membership_name: 'Acme Foundation',
         committee_uid: 'c-news',
-        email: 'jane@acme-motors.example',
+        masked_email: 'ja***@acme***.example',
         company_name: 'Acme Motors',
+        teaser: { subject: 'Issue n-new', image_url: null, excerpt: 'n-new' },
       });
+      expect(JSON.stringify(info)).not.toContain('jane@acme-motors.example');
       expect(deps.memberBenefitService.findMemberCompanyForEmail).toHaveBeenCalledWith(req, 'm2m', 'jane@acme-motors.example', 'acme-foundation');
     });
 
@@ -97,7 +99,26 @@ describe('NewsletterGuestService', () => {
       expect(await service.inspectInvite(req, token)).toEqual({ status: 'invalid' });
 
       deps.memberBenefitService.findMemberCompanyForEmail.mockResolvedValueOnce(null);
-      expect(await service.inspectInvite(req, token)).toMatchObject({ status: 'not_eligible', foundation });
+      const notEligible = await service.inspectInvite(req, token);
+      expect(notEligible).toMatchObject({ status: 'not_eligible', foundation, masked_email: 'ja***@acme***.example' });
+      expect(notEligible.teaser).toBeUndefined();
+    });
+
+    it('builds the teaser from the latest issue without its body, and omits it when the read fails', async () => {
+      const token = createNewsletterInviteToken('c-news', 'jane@acme-motors.example');
+      deps.newsletterService.getNewsletter.mockResolvedValueOnce({
+        ...sentIssue('n-new', '2026-10-15T00:00:00Z'),
+        body_html: `<img src="https://cdn.example.com/hero.png"><p>${'Long story. '.repeat(100)}</p>`,
+      });
+      const { teaser } = await service.inspectInvite(req, token);
+      expect(teaser?.image_url).toBe('https://cdn.example.com/hero.png');
+      expect(teaser?.excerpt.length).toBeLessThanOrEqual(600);
+      expect(teaser?.excerpt.endsWith('…')).toBe(true);
+
+      deps.newsletterService.getLatestCommitteeNewsletter.mockRejectedValueOnce(new Error('upstream down'));
+      const info = await service.inspectInvite(req, token);
+      expect(info.status).toBe('valid');
+      expect(info.teaser).toBeUndefined();
     });
   });
 
@@ -114,7 +135,7 @@ describe('NewsletterGuestService', () => {
       expect(deps.newsletterService.getLatestCommitteeNewsletter).toHaveBeenCalledWith(req, 'c-news', { bearerToken: 'm2m' });
       expect(deps.newsletterService.getNewsletter).toHaveBeenCalledWith(req, 'p-1', 'n-new', { bearerToken: 'm2m' });
       expect(deps.inviteService.resolveFoundation).toHaveBeenCalledWith(req, 'p-1', { bearerToken: 'm2m' });
-      expect(grant.issue).toMatchObject({ foundation, email: 'jane@acme-motors.example', confirmation_sent: false, newsletter: { id: 'n-new' } });
+      expect(grant.issue).toMatchObject({ foundation, masked_email: 'ja***@acme***.example', confirmation_sent: false, newsletter: { id: 'n-new' } });
       expect(grant.session).toEqual({ e: 'jane@acme-motors.example', c: 'c-news', f: 'f-1', v: true });
     });
 
@@ -138,7 +159,7 @@ describe('NewsletterGuestService', () => {
       const grant = await service.requestSharedAccess(req, 'acme-foundation', issueId, ' Jane@Acme-Motors.example ');
 
       expect(grant.issue).toMatchObject({
-        email: 'jane@acme-motors.example',
+        masked_email: 'ja***@acme***.example',
         confirmation_sent: true,
         newsletter: { id: issueId, body_html: `<p>${issueId}</p>` },
       });
@@ -189,8 +210,13 @@ describe('NewsletterGuestService', () => {
   });
 
   describe('getSharedIssue', () => {
-    it('returns only the foundation prompt without a session, or with a session for another foundation', async () => {
-      expect(await service.getSharedIssue(req, null, 'acme-foundation', issueId)).toEqual({ issue: null, foundation, membership_name: 'Acme Foundation' });
+    it('returns only the foundation prompt and a teaser without a session, or with a session for another foundation', async () => {
+      expect(await service.getSharedIssue(req, null, 'acme-foundation', issueId)).toEqual({
+        issue: null,
+        foundation,
+        membership_name: 'Acme Foundation',
+        teaser: { subject: `Issue ${issueId}`, image_url: null, excerpt: issueId },
+      });
       expect(
         await service.getSharedIssue(
           req,
@@ -210,7 +236,7 @@ describe('NewsletterGuestService', () => {
         'acme-foundation',
         issueId
       );
-      expect(response.issue).toMatchObject({ email: 'jane@acme-motors.example', confirmation_sent: true, newsletter: { id: issueId } });
+      expect(response.issue).toMatchObject({ masked_email: 'ja***@acme***.example', confirmation_sent: true, newsletter: { id: issueId } });
     });
 
     it('returns nothing for an issue the member benefit does not open', async () => {

@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, Signal, s
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router } from '@angular/router';
+import { TranscendService } from '@app/shared/services/transcend.service';
 import { UserService } from '@app/shared/services/user.service';
 import { extractFieldOrEnvelopeMessage } from '@app/shared/utils/http-error.utils';
 import { NEWSLETTER_INVITE_QUERY_PARAM, NEWSLETTER_INVITE_TOKEN_FRAGMENT_KEY } from '@lfx-one/shared/constants';
@@ -19,7 +20,7 @@ import { NewsletterGuestReaderComponent } from '../components/newsletter-guest-r
 /**
  * `/newsletters/invite#token=…` (#5235) — where a newsletter invite or subscription-confirmation email
  * lands. Signed in, it hands over to the existing drill-down confirm card. Signed out, it shows the
- * guest modal with the invited address read-only; Continue joins that address to the list, shows the
+ * guest modal with the invited address read-only and masked; Continue joins that address to the list, shows the
  * latest issue, and drops the token from the URL so a reload reads through the guest session.
  */
 @Component({
@@ -36,6 +37,7 @@ export class NewsletterInviteGuestComponent implements OnInit {
   private readonly title = inject(Title);
   private readonly userService = inject(UserService);
   private readonly newsletterService = inject(NewsletterService);
+  private readonly transcendService = inject(TranscendService);
 
   // === Writable Signals ===
   protected readonly state: WritableSignal<NewsletterGuestPageState> = signal({ status: 'loading' });
@@ -55,6 +57,9 @@ export class NewsletterInviteGuestComponent implements OnInit {
   // === Lifecycle ===
   public ngOnInit(): void {
     this.title.setTitle(formatLfxDocumentTitle('Newsletter'));
+    // The guest modal carries its own consent line; set on the server too so the prompt never flashes.
+    this.transcendService.suppressPrompt();
+    this.destroyRef.onDestroy(() => this.transcendService.restorePrompt());
     if (!isPlatformBrowser(this.platformId)) return;
 
     this.token = new URLSearchParams(this.route.snapshot.fragment ?? '').get(NEWSLETTER_INVITE_TOKEN_FRAGMENT_KEY) ?? '';

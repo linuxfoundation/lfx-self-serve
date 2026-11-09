@@ -14,7 +14,7 @@
     <p-skeleton height="28rem" borderRadius="0.5rem" data-testid="members-breakdown-loading" aria-hidden="true" />
   } @else if (!empty()) {
     @let breakdown = view();
-    <lfx-overview-kpi-strip [kpis]="breakdown.kpis" testId="members-breakdown-kpis" />
+    <lfx-overview-kpi-strip [kpis]="breakdown.kpis" testId="members-breakdown-kpis" variant="section" />
 
     <div class="mb-[16px] mt-[4px] flex flex-wrap items-center justify-between gap-x-[12px] gap-y-[4px]">
       <span class="text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500">Total members by year, by tier</span>

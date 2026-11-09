@@ -9,11 +9,14 @@ import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
+import { AppService } from '@services/app.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { PersonaService } from '@services/persona.service';
+import { PlausibleService } from '@services/plausible.service';
+import { SegmentService } from '@services/segment.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -164,6 +167,8 @@ describe('MeetingsRedesignComponent', () => {
         { provide: PersonaService, useValue: { personaLoaded, hasBoardRole: signal(false), hasProjectRole: signal(true) } },
         { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
+        { provide: PlausibleService, useValue: { trackEvent: vi.fn() } },
+        { provide: SegmentService, useValue: { trackEvent: vi.fn() } },
       ],
     });
   });
@@ -327,10 +332,20 @@ describe('MeetingsRedesignComponent', () => {
     await fixture.whenStable();
 
     const search = query(fixture, 'meetings-redesign-search');
-    expect(query(fixture, 'meetings-redesign-tabs-bar')?.className).toContain('flex-wrap');
-    expect(query(fixture, 'meetings-redesign-tabs-bar')?.className).toContain('min-[1025px]:@[440px]:flex-nowrap');
+    expect(query(fixture, 'meetings-redesign-tabs')?.className).toContain('flex-wrap');
+    expect(query(fixture, 'meetings-redesign-tabs')?.className).toContain('min-[1025px]:@[440px]:flex-nowrap');
     expect(search?.parentElement?.className).toContain('min-[1025px]:min-w-0 min-[1025px]:flex-nowrap');
-    expect(search?.className).toContain('min-[1025px]:w-[300px] min-[1025px]:min-w-0');
+    expect(search?.className).toContain('min-[1025px]:w-[280px] min-[1025px]:min-w-0');
+  });
+
+  it('puts search and Filters inside the tabs, on their rule', async () => {
+    const fixture = render();
+    await fixture.whenStable();
+
+    const tabs = query(fixture, 'meetings-redesign-tabs');
+    expect(tabs?.contains(query(fixture, 'meetings-redesign-search'))).toBe(true);
+    expect(tabs?.contains(query(fixture, 'meetings-home-filters-button'))).toBe(true);
+    expect(query(fixture, 'ui-tab-upcoming')?.className).toContain('text-[13px]');
   });
 
   it('folds the right column into a two-column grid and hides the description at 1024px and below', async () => {
@@ -414,44 +429,62 @@ describe('MeetingsRedesignComponent', () => {
       query(fixture, 'meetings-redesign-centre')?.dispatchEvent(new Event('scroll'));
       await fixture.whenStable();
     };
-    expect(fade()).not.toContain('mt-[24px]');
+    expect(fade()).not.toContain('mt-[44px]');
 
     await scrollListTo(HEADER_HEIGHT * 2 - 40);
-    expect(fade()).toContain('mt-[24px]');
+    expect(fade()).toContain('mt-[44px]');
 
     await scrollListTo(HEADER_HEIGHT * 2 + 40);
-    expect(fade()).not.toContain('mt-[24px]');
+    expect(fade()).not.toContain('mt-[44px]');
+
+    // The padded heading box starts 20px above the list, so it is stuck once the list is within 20px of the edge.
+    await scrollListTo(HEADER_HEIGHT * 2 + 20);
+    expect(fade()).toContain('mt-[44px]');
+    await scrollListTo(HEADER_HEIGHT * 2 + 21);
+    expect(fade()).not.toContain('mt-[44px]');
 
     // Swapping the list for an empty state, with no scroll, drops the offset too.
     await scrollListTo(HEADER_HEIGHT * 2 - 40);
     query(fixture, 'ui-tab-past')?.click();
     await fixture.whenStable();
     expect(query(fixture, 'meetings-home-empty-past')).toBeTruthy();
-    expect(fade()).not.toContain('mt-[24px]');
+    expect(fade()).not.toContain('mt-[44px]');
   });
 
-  it("counts the layout wrapper's bottom padding, not main's own, in the desktop column height", async () => {
+  it("sizes the desktop column from its own top alone, the layout's bottom padding being cancelled by the host", async () => {
     vi.stubGlobal('innerHeight', 900);
-    // The real shape: main (own padding) > content wrapper (21px) > route-entry host stand-in > the page.
-    const main = document.createElement('main');
-    main.style.paddingBottom = '40px';
-    const wrapper = document.createElement('div');
-    wrapper.style.paddingBottom = '21px';
-    const entryHost = document.createElement('div');
-    main.append(wrapper);
-    wrapper.append(entryHost);
-    document.body.append(main);
+    const fixture = render();
+    vi.spyOn(fixture.nativeElement as HTMLElement, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 60, 100, 100));
+    window.dispatchEvent(new Event('resize'));
+    await fixture.whenStable();
 
-    try {
-      const fixture = TestBed.createComponent(MeetingsRedesignComponent);
-      entryHost.append(fixture.nativeElement);
-      fixture.detectChanges();
-      await fixture.whenStable();
+    expect(fixture.nativeElement.className).toContain('-my-6');
+    expect(query(fixture, 'meetings-redesign')?.style.height).toBe('840px');
+    expect(query(fixture, 'meetings-redesign')?.style.minHeight).toBe('');
+  });
 
-      expect(query(fixture, 'meetings-redesign')?.style.height).toBe('879px');
-    } finally {
-      main.remove();
-    }
+  it('renders the app footer at the end of the centre column and hides the layout footer while shown', async () => {
+    const appService = TestBed.inject(AppService);
+    const fixture = render();
+    await fixture.whenStable();
+
+    const centre = query(fixture, 'meetings-redesign-centre');
+    expect(centre?.lastElementChild?.getAttribute('data-testid')).toBe('meetings-redesign-footer');
+    expect(appService.pageOwnsFooter()).toBe(true);
+
+    fixture.destroy();
+    expect(appService.pageOwnsFooter()).toBe(false);
+  });
+
+  it('uses the available height as the minimum page height when the window scrolls', async () => {
+    desktop = false;
+    vi.stubGlobal('innerHeight', 700);
+    const fixture = render();
+    await fixture.whenStable();
+
+    const root = query(fixture, 'meetings-redesign');
+    expect(root?.style.height).toBe('');
+    expect(root?.style.minHeight).toBe('700px');
   });
 
   it('keeps the measured column height on a short viewport, with no minimum height', async () => {
@@ -603,7 +636,7 @@ describe('MeetingsRedesignComponent', () => {
       expect(rowTitles(fixture)).toEqual(['Board Review']);
     });
 
-    it('shows one page of rows, the next one when the trigger scrolls into view, then the end line', async () => {
+    it('shows one page of rows, the next one when the trigger scrolls into view', async () => {
       const fixture = render();
       await fixture.whenStable();
       await loadFeeds(
@@ -612,14 +645,11 @@ describe('MeetingsRedesignComponent', () => {
       );
 
       expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
-      expect(query(fixture, 'meetings-home-all-loaded')).toBeNull();
-
       observerCallback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
       await fixture.whenStable();
 
       expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE + 5);
       expect(query(fixture, 'meetings-home-load-more')).toBeNull();
-      expect(query(fixture, 'meetings-home-all-loaded')?.textContent?.trim()).toBe(`All ${MEETINGS_HOME_PAGE_SIZE + 5} meetings loaded`);
     });
 
     it('scrolls the list back to its start on a search, filter or tab change, so a page loads only on a scroll', async () => {

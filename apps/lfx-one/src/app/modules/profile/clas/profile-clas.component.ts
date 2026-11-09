@@ -5,14 +5,7 @@ import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChildren } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import {
-  ECLA_COVERED_DOWNLOAD_LABEL,
-  GITLAB_UNSUPPORTED_HEADER,
-  MY_CLAS_M2_ENABLED_FLAG,
-  MY_CLAS_PATH,
-  SIGN_CONTRACT_TYPE_COPY,
-  SIGN_IDENTITY_COPY,
-} from '@lfx-one/shared/constants';
+import { ECLA_COVERED_DOWNLOAD_LABEL, GITLAB_UNSUPPORTED_HEADER, MY_CLAS_PATH, SIGN_CONTRACT_TYPE_COPY, SIGN_IDENTITY_COPY } from '@lfx-one/shared/constants';
 import type {
   ClaGroupOption,
   ClaRow,
@@ -58,7 +51,6 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { MyClasService } from '@services/my-clas.service';
 import { UserService } from '@services/user.service';
 
@@ -71,10 +63,8 @@ import { SignIdentitySelectComponent } from './sign-identity-select.component';
 
 /**
  * "CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
- * from `/v4/my-clas`. The M2 overlay (status column, per-row kebab, Signed as,
- * Sign CLA) is dark-launched behind `my-clas-m2-enabled`; off, this is the M1
- * list (project / type / signed date / document). Status and reason are copied from the
- * producer; this component does not derive standing from `approved`/`valid`.
+ * from `/v4/my-clas`. Status and reason are copied from the producer; this component does not
+ * derive standing from `approved`/`valid`.
  *
  * Also the entry point for signing a new CLA (#1251), which leaves the page for the EasyCLA
  * Contributor Console. That action is page-level rather than per-row: signing a *new* CLA has no
@@ -96,10 +86,6 @@ export class ProfileClasComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly dialogService = inject(DialogService);
   private readonly router = inject(Router);
-  private readonly featureFlagService = inject(FeatureFlagService);
-
-  /** Dark-launch for the M2 overlay. Default off — LaunchDarkly targeting is the rollout switch. */
-  protected readonly myClasM2Enabled = this.featureFlagService.getBooleanFlag(MY_CLAS_M2_ENABLED_FLAG, false);
 
   /**
    * Read-only when impersonating — a signature and a CLA-manager request are binding acts that
@@ -192,7 +178,7 @@ export class ProfileClasComponent {
     // `impersonating()` is re-checked here and not only on the button: the button is now rendered
     // rather than withheld, so a keyboard or programmatic activation can reach this method, and
     // opening the picker would walk the administrator to a prepare the server refuses.
-    if (!this.myClasM2Enabled() || this.signDisabled() || this.starting() || this.signDialogOpen()) return;
+    if (this.signDisabled() || this.starting() || this.signDialogOpen()) return;
     this.signDialogOpen.set(true);
 
     const dialogRef = this.dialogService.open(ClaGroupSelectComponent, {
@@ -752,10 +738,9 @@ export class ProfileClasComponent {
 
   private initRows(): Signal<ClaRow[]> {
     return computed(() => {
-      const m2 = this.myClasM2Enabled();
       const impersonating = this.impersonating();
       return this.agreements().map((agreement) => {
-        const menuItems = m2 ? this.buildRowMenuItems(agreement, impersonating) : [];
+        const menuItems = this.buildRowMenuItems(agreement, impersonating);
         return {
           id: agreement.id,
           agreement,
@@ -767,7 +752,7 @@ export class ProfileClasComponent {
             note: this.statusNote(agreement),
           },
           signedOnLabel: formatClaSignedOn(agreement.signedOn),
-          signedAsLine: m2 ? signedAsLine(agreement.signedVia, agreement.signedAs) : undefined,
+          signedAsLine: signedAsLine(agreement.signedVia, agreement.signedAs),
           menuItems,
           hasActions: menuItems.length > 0,
         };

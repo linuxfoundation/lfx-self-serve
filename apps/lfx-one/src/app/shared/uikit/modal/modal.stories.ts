@@ -5,6 +5,7 @@ import { Directive, inject, input, TemplateRef } from '@angular/core';
 import { UiModalConfig } from '@lfx-one/shared/interfaces';
 import { type Meta, moduleMetadata, type StoryObj } from '@storybook/angular';
 
+import { UiBadgeComponent } from '../badge/badge.component';
 import { UiButtonComponent } from '../button/button.component';
 import { UiModalComponent } from './modal.component';
 import { UiModalService } from './modal.service';
@@ -26,7 +27,7 @@ class StoryOpensModalDirective {
 const meta: Meta<UiModalComponent> = {
   title: 'Uikit/Modal',
   component: UiModalComponent,
-  decorators: [moduleMetadata({ imports: [StoryOpensModalDirective, UiModalComponent, UiButtonComponent] })],
+  decorators: [moduleMetadata({ imports: [StoryOpensModalDirective, UiModalComponent, UiButtonComponent, UiBadgeComponent] })],
   parameters: { layout: 'padded' },
   render: () => ({
     template: `
@@ -94,6 +95,36 @@ export const StickyLongBody: Story = {
           <ng-container modalActions>
             <lfx-ui-button variant="secondary" (click)="ref.close()">Decline</lfx-ui-button>
             <lfx-ui-button variant="primary" (click)="ref.close()">Accept</lfx-ui-button>
+          </ng-container>
+        </lfx-ui-modal>
+      </ng-template>`,
+  }),
+};
+
+/**
+ * A reading dialog: 720px wide and 800px tall (both fit the window), header fixed with a status badge, a copy action and close,
+ * a full-bleed block under the title, and a body that fades at its clipped edges.
+ */
+export const DialogLayout: Story = {
+  render: () => ({
+    template: `
+      <lfx-ui-button variant="primary" size="large" [lfxStoryOpensModal]="dialog">Open modal</lfx-ui-button>
+      <ng-template #dialog let-ref="dialogRef">
+        <lfx-ui-modal heading="AI Summary" [width]="720" [height]="800" sticky closable scrollFade>
+          <lfx-ui-badge modalTitleSuffix tone="success" variant="line" size="sm"><i slot="icon" class="fa-light fa-check"></i>Approved</lfx-ui-badge>
+          <ng-container modalHeaderActions>
+            <lfx-ui-button variant="tertiary" [iconOnly]="true" icon="fa-light fa-copy" ariaLabel="Copy summary" />
+            <span aria-hidden="true" class="mx-[4px] h-[20px] w-px bg-ui-neutral-200"></span>
+          </ng-container>
+          <div modalHeaderExtra class="flex flex-col gap-[4px] px-[24px] py-[16px] shadow-[inset_0_1px_0_0,inset_0_-1px_0_0] shadow-ui-neutral-200">
+            <span class="label-14 text-ui-neutral-900">Technical Steering Committee</span>
+            <span class="copy-12 text-ui-neutral-500">Tue, Nov 4 · 9:00 AM – 10:00 AM · Weekly</span>
+          </div>
+          @for (n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]; track n) {
+            <p class="copy-14">Topic {{ n }}. The group reviewed the release plan and agreed to cut the branch once the open blockers are closed.</p>
+          }
+          <ng-container modalActions>
+            <lfx-ui-button variant="secondary" icon="fa-light fa-pen" (click)="ref.close()">Edit</lfx-ui-button>
           </ng-container>
         </lfx-ui-modal>
       </ng-template>`,

@@ -9,6 +9,7 @@ import { formatMeetingWhen } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 
 import { NextMeetingCardComponent } from './next-meeting-card.component';
 
@@ -62,6 +63,7 @@ function buildRow(meeting: Meeting, start: Date = new Date(meeting.start_time), 
 describe('NextMeetingCardComponent', () => {
   let navigate: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
+  let openDetails: ReturnType<typeof vi.fn>;
 
   const render = async (
     row: MeetingHomeRow | null,
@@ -83,12 +85,14 @@ describe('NextMeetingCardComponent', () => {
   beforeEach(() => {
     navigate = vi.fn().mockResolvedValue(true);
     open = vi.fn();
+    openDetails = vi.fn();
     vi.stubGlobal('open', open);
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigate, navigateByUrl: vi.fn() } },
         { provide: UserService, useValue: {} },
         { provide: MeetingService, useValue: {} },
+        { provide: MeetingsHomeDetailsService, useValue: { open: openDetails } },
       ],
     });
   });
@@ -163,7 +167,7 @@ describe('NextMeetingCardComponent', () => {
     const other = await render(buildRow(buildMeeting()));
 
     expect(text(organized, 'meetings-home-attendance-label')).toBe('4 of 10 attending · 40%');
-    expect(query(organized, 'meetings-home-attendance-legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Yes 4 Maybe 3 No 1');
+    expect(query(organized, 'meetings-home-attendance-legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Yes 4 Maybe 3 No 1 No response 2');
     expect(query(other, 'meetings-home-next-card-attendance')).toBeNull();
   });
 
@@ -178,6 +182,10 @@ describe('NextMeetingCardComponent', () => {
     expect(await badges({ visibility: MeetingVisibility.PUBLIC, restricted: false })).toEqual([]);
     expect(await badges({ visibility: MeetingVisibility.PRIVATE, restricted: false })).toEqual(['meetings-home-next-card-visibility-private']);
     expect(await badges({ visibility: MeetingVisibility.PUBLIC, restricted: true })).toEqual(['meetings-home-next-card-visibility-restricted']);
+    expect(await badges({ visibility: MeetingVisibility.PRIVATE, restricted: true })).toEqual([
+      'meetings-home-next-card-visibility-restricted',
+      'meetings-home-next-card-visibility-private',
+    ]);
   });
 
   it('shows no recurring tag for a one-off meeting', async () => {
@@ -186,12 +194,29 @@ describe('NextMeetingCardComponent', () => {
     expect(query(fixture, 'meetings-home-next-card-recurring')).toBeNull();
   });
 
-  it('opens the meeting in a new tab on a card click', async () => {
-    const fixture = await render(buildRow(buildMeeting()));
+  it('opens the details drawer on a card or title click, keeping the title a new-tab link to the meeting', async () => {
+    const row = buildRow(buildMeeting());
+    const fixture = await render(row);
+    const title = query(fixture, 'meetings-home-next-card-title');
 
+    expect(title?.getAttribute('href')).toMatch(/^\/meetings\/123\?password=secret/);
+    expect(title?.getAttribute('target')).toBe('_blank');
     query(fixture, 'meetings-home-next-card')?.click();
+    title?.click();
 
-    expect(open).toHaveBeenCalledWith(expect.stringMatching(/^\/meetings\/123\?password=secret/), '_blank', 'noopener,noreferrer');
+    expect(openDetails).toHaveBeenCalledTimes(2);
+    expect(openDetails).toHaveBeenCalledWith(row, 'next_card');
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('leaves a modified title click to the link', async () => {
+    const fixture = await render(buildRow(buildMeeting()));
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true });
+
+    query(fixture, 'meetings-home-next-card-title')?.dispatchEvent(click);
+
+    expect(click.defaultPrevented).toBe(false);
+    expect(openDetails).not.toHaveBeenCalled();
   });
 
   describe('join', () => {
@@ -201,7 +226,7 @@ describe('NextMeetingCardComponent', () => {
       expect(joinButton(fixture).disabled).toBe(true);
       query(fixture, 'meetings-home-next-card-join')?.click();
 
-      expect(open).not.toHaveBeenCalled();
+      expect(openDetails).not.toHaveBeenCalled();
       expect(navigate).not.toHaveBeenCalled();
     });
 
@@ -255,7 +280,7 @@ describe('NextMeetingCardComponent', () => {
 
       expect(notes(fixture)).toEqual({ window: null, startsIn: null, live: 'The meeting is in progress' });
       expect(query(fixture, 'meetings-home-next-card-in-progress')?.classList).toContain('text-blue-600');
-      expect(query(fixture, 'meetings-home-next-card-in-progress')?.querySelector('.next-meeting-live-dot')?.getAttribute('aria-hidden')).toBe('true');
+      expect(query(fixture, 'meetings-home-next-card-in-progress')?.querySelector('.meeting-live-dot')?.getAttribute('aria-hidden')).toBe('true');
     });
 
     it('shows no note once the date is over', async () => {

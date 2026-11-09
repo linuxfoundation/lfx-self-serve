@@ -101,7 +101,14 @@ it.each([false, true])('prints the document identity even with an empty first gr
   fixture.componentRef.setInput('projectName', 'Synthetic project');
   await fixture.whenStable();
   const root: HTMLElement = fixture.nativeElement;
-  expect(root.querySelector('section')?.firstElementChild?.tagName).toBe('HEADER');
+  // The document is one sheet, whose head repeats the page's top room on every page; one row per pair, so a page
+  // breaks only between pairs; the identity leads it in a row that keeps the first pair with it.
+  expect(root.querySelector('section')?.firstElementChild?.tagName).toBe('LFX-MKTG-PRINT-SHEET');
+  const rows = root.querySelectorAll('[data-testid="mktg-print-sheet-body"] > lfx-mktg-print-sheet-row');
+  expect(rows).toHaveLength(empty ? 1 : 5);
+  expect(rows[0].classList.contains('break-after-avoid')).toBe(true);
+  expect(rows[0].querySelector('[data-testid="mktg-print-sheet-cell"]')?.firstElementChild?.tagName).toBe('HEADER');
+  expect(root.querySelectorAll('lfx-mktg-print-sheet-row > * > article')).toHaveLength(empty ? 0 : 4);
   expect(root.querySelector('header')?.textContent).toContain('Synthetic project FAQ');
   expect(root.querySelector('h2')?.textContent).toContain('04');
   expect(root.querySelectorAll('h2')).toHaveLength(1);

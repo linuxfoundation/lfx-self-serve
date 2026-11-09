@@ -64,6 +64,7 @@ import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgBrandKitPrintComponent } from '../mktg-brand-kit-print/mktg-brand-kit-print.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
 import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
+import { MktgBrandKitIconSamplesComponent } from '../components/mktg-brand-kit-icon-samples/mktg-brand-kit-icon-samples.component';
 
 // The Brand Kit on screen, as an app page in the Messaging Framework view's
 // look (hand test, 18 Oct: "more like a website — a proper app — not a
@@ -90,6 +91,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
     MktgBrandKitPrintComponent,
     MktgSlidesExportComponent,
     MktgFieldCommentsComponent,
+    MktgBrandKitIconSamplesComponent,
   ],
   templateUrl: './brand-kit-web-view.component.html',
 })
@@ -122,6 +124,8 @@ export class BrandKitWebViewComponent {
   public readonly viewingDraft = input(false);
   public readonly approvedKit = input<BrandKitRevision | null>(null);
   public readonly approvedVersion = input<number | null>(null);
+  /** The approved revision's own approval record (who, when, what it accepted): the PDF's approval line and Sources box read it, whatever revision the page shows. */
+  public readonly approvedApproval = input<MktgRevisionApproval | null>(null);
   /** When the approved revision was stored (ISO), as the page shows it: it dates the PDF's name. */
   public readonly approvedCreatedAt = input<string | null>(null);
   public readonly approvedLoading = input(false);
@@ -169,6 +173,13 @@ export class BrandKitWebViewComponent {
     return kit ? buildBrandKitBookView(kit, this.approvedVersion() ?? kit.version) : null;
   });
   protected readonly printBrand = computed(() => mktgPrintBrand(this.approvedKit()));
+  /**
+   * The printed (approved) revision's approval, from its own record (`approvedApproval`); a host that passes none gets
+   * this page's only when the revision it shows is the one that prints. Else none, and the PDF leaves the line out.
+   */
+  protected readonly printApproval = computed(
+    () => this.approvedApproval() ?? (this.approvedVersion() !== null && this.versionNumber() === this.approvedVersion() ? this.approval() : null)
+  );
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
   /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
   protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));

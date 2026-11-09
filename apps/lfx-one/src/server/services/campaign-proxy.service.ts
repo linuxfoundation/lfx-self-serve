@@ -10,6 +10,7 @@ import {
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  GOOGLE_DISPLAY_CALLS_TO_ACTION,
   googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
@@ -19,7 +20,13 @@ import {
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
-import { campaignSurveySourceTextTooLong, deriveSurveySlug, parseNegativeKeywordInput, surveySourceTitle } from '@lfx-one/shared/utils/campaign.utils';
+import {
+  campaignSurveySourceTextTooLong,
+  deriveSurveySlug,
+  googleAdsCampaignUrl,
+  parseNegativeKeywordInput,
+  surveySourceTitle,
+} from '@lfx-one/shared/utils/campaign.utils';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -586,7 +593,7 @@ GOOGLE DEMAND GEN (key: "google_display" — runs on YouTube, Discover, Gmail, D
 - headlines: 5 variations, each ≤ 40 characters (STRICT — Demand Gen limit is 40, not 30)
 - descriptions: 5 variations, each ≤ 90 characters (STRICT)
 - business_name: ≤ 25 chars — use the event's parent organization (e.g. "CNCF" for KubeCon). Default to "Linux Foundation" only if no specific foundation is identifiable.
-- call_to_action: one of "Learn More", "Register", "Sign Up", "Book Now", "Apply Now"`;
+- call_to_action: one of ${GOOGLE_DISPLAY_CALLS_TO_ACTION.map((option) => `"${option.value}"`).join(', ')} (exactly as written; Google Ads refuses any other text, "Register" included; used on Display ads only)`;
 
 const COPY_LINKEDIN_SECTION = `
 LINKEDIN SPONSORED CONTENT (key: "linkedin_sponsored"):
@@ -1900,8 +1907,8 @@ export class CampaignProxyService {
     }
 
     // Narrower than the keyword gate above, and not by oversight. Callouts and sitelinks are
-    // GOOGLE extension assets: `CampaignCreateRequest` carries them under `callouts` (Search only)
-    // and `sitelinks` (Search and Demand Gen), the Implementation tab renders their editors behind
+    // GOOGLE extension assets: `CampaignCreateRequest` carries them under `callouts` (Search and
+    // Performance Max) and `sitelinks` (those two and Demand Gen), the Implementation tab renders their editors behind
     // `googleCalloutsAvailable` and `googleSitelinksAvailable`, and only `googleads/assets.go`
     // validates them. A Microsoft-only brief takes the keyword
     // block and skips this one, which is right — seeding extensions it has no way to dispatch
@@ -2531,7 +2538,7 @@ export class CampaignProxyService {
       adGroupCount: 1,
       keywordCount: keywordOps.length,
       adCount: 1,
-      campaignUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
+      campaignUrl: googleAdsCampaignUrl(campaignId),
       steps,
     };
   }
@@ -2610,7 +2617,7 @@ export class CampaignProxyService {
       adGroupCount: 1,
       keywordCount: 0,
       adCount: 0,
-      campaignUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
+      campaignUrl: googleAdsCampaignUrl(campaignId),
       steps,
     };
   }

@@ -25,12 +25,14 @@ import { MeetingService } from '@services/meeting.service';
 import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { Observable, Subscription } from 'rxjs';
 
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 import { MeetingAttendeeGridComponent } from '../meeting-attendee-grid/meeting-attendee-grid.component';
 import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
 
 /**
  * A meetings home row's attendance block that opens the invited people above it on hover or keyboard focus.
- * @description People load on the first open and are kept per occurrence; a failed load closes the popup quietly.
+ * @description People load on the first open and are kept per occurrence; a failed load closes the popup quietly. "View all" opens
+ * the meeting details drawer on its guests.
  */
 @Component({
   selector: 'lfx-meeting-home-attendance-popup',
@@ -45,6 +47,7 @@ export class MeetingHomeAttendancePopupComponent {
   private readonly inputModality = inject(InputModalityDetector);
   private readonly idGenerator = inject(_IdGenerator);
   private readonly document = inject(DOCUMENT);
+  private readonly details = inject(MeetingsHomeDetailsService);
 
   public readonly row = input.required<MeetingHomeRow>();
   public readonly attendance = input.required<MeetingHomeAttendance>();
@@ -105,6 +108,11 @@ export class MeetingHomeAttendancePopupComponent {
     this.cancelShow();
     this.cancelHide();
     this.open.set(false);
+  }
+
+  protected viewAll(): void {
+    this.close();
+    this.details.open(this.row(), 'attendance', { tab: 'guests' });
   }
 
   protected cancelHide(): void {

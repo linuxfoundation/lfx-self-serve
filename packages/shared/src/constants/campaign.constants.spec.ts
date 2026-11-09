@@ -47,15 +47,22 @@ import {
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
+  GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MAX_PROXIMITY_TARGETS,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
+  GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES,
+  GOOGLE_ADS_MAX_SEARCH_THEME_RUNES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
+  GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS,
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
@@ -69,7 +76,10 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_CREATIVE_SHARED_CAPS,
+  MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
+  MAX_GOOGLE_GEO_LIST_ENTRIES,
   MAX_REDDIT_HEADLINE_LENGTH,
+  MICROSOFT_MAX_GEO_TARGETS,
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
   META_SELECTABLE_OBJECTIVES,
@@ -756,14 +766,12 @@ describe('Google bidding catalogue', () => {
 
 describe('Google conversion actions', () => {
   /**
-   * Not a Search-versus-the-rest split: `campaign.selective_optimization` is defined for SEARCH,
-   * DISPLAY and VIDEO. Demand Gen has no such field and Performance Max selects conversions through
-   * a resource that cannot be addressed until the campaign exists, so both REFUSE a list rather
-   * than dropping it — the section has to be withheld there, not offered and discarded.
+   * campaign-service v1.0.31 applies the list as a campaign-level custom conversion goal
+   * (`applyCampaignConversionGoal`) on every channel. Demand Gen is offered it (#5262); Performance
+   * Max is left out by choice, since its live reference campaign uses the account's goals.
    */
-  it('admits exactly the three channels upstream accepts a list on', () => {
-    expect([...GOOGLE_CONVERSION_ACTION_CHANNELS]).toEqual(['search', 'video', 'display']);
-    expect(GOOGLE_CONVERSION_ACTION_CHANNELS).not.toContain('demand-gen');
+  it('admits every channel but performance max', () => {
+    expect([...GOOGLE_CONVERSION_ACTION_CHANNELS]).toEqual(['search', 'demand-gen', 'video', 'display']);
     expect(GOOGLE_CONVERSION_ACTION_CHANNELS).not.toContain('performance-max');
   });
 
@@ -802,6 +810,35 @@ describe('Google conversion actions', () => {
     expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.global).toBe(false);
     expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test('12345')).toBe(true);
     expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test('12345')).toBe(true);
+  });
+});
+
+describe('Google location caps', () => {
+  /**
+   * `maxGeoTargets` in `internal/platform/googleads/geo.go`, 500 since campaign-service v1.0.32
+   * (#515), applied to the targeted and excluded lists SEPARATELY. Written as literals so a drift
+   * in the constant fails here rather than moving every spec that reads it.
+   */
+  it('caps each geo list at 500, as upstream does', () => {
+    expect(GOOGLE_ADS_MAX_GEO_TARGETS).toBe(500);
+    expect(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS).toBe(500);
+  });
+
+  /** Upstream raised only `maxGeoTargets`; `maxProximityTargets` and Microsoft's own cap are unchanged. */
+  it('leaves the radius and Microsoft location caps where they were', () => {
+    expect(GOOGLE_ADS_MAX_PROXIMITY_TARGETS).toBe(20);
+    expect(MICROSOFT_MAX_GEO_TARGETS).toBe(30);
+  });
+
+  /**
+   * The resource bound on both geo lists must sit ABOVE both caps, or a list at its cap would be
+   * refused by the generic bound before the named refusal; the shared creative bound stays at 100.
+   */
+  it('bounds the geo lists above their caps without widening the shared list bound', () => {
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBeGreaterThan(GOOGLE_ADS_MAX_GEO_TARGETS);
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBeGreaterThan(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS);
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBe(2000);
+    expect(MAX_GOOGLE_CREATIVE_LIST_ENTRIES).toBe(100);
   });
 });
 
@@ -1343,22 +1380,31 @@ describe('Google Ads campaign criteria vocabularies', () => {
     expect(GOOGLE_ADS_GENDERS).toContain('UNDETERMINED');
   });
 
-  it('fences devices and demographics from two separate lists, which differ on demand gen', () => {
+  it('fences devices and demographics from two separate lists, which differ on demand gen and performance max', () => {
     // Separate constants because `validateCriteriaPlan` fences them in separate branches. Demand
-    // Gen takes device exclusions (#474) and refuses demographic exclusions; Performance Max devices
-    // are not offered by this client.
-    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).toContain('demand-gen');
-    expect([...GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY]).toEqual(['demand-gen']);
-    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('performance-max');
+    // Gen (linuxfoundation/lfx-v2-campaign-service#474) and Performance Max (linuxfoundation/lfx-v2-campaign-service#500) take device exclusions and refuse demographic exclusions.
+    expect([...GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS]).toEqual([...GOOGLE_CAMPAIGN_CHANNELS]);
+    expect([...GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY]).toEqual(['demand-gen', 'performance-max']);
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('demand-gen');
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('performance-max');
   });
 
-  it('fences sitelinks apart from the other extensions, which differ on demand gen', () => {
-    // `validateAssetPlan` (v1.0.31) takes sitelinks alone on Demand Gen (#474) and refuses every
-    // other extension list there. Performance Max is not opened by this client for either.
-    expect([...GOOGLE_CHANNELS_WITH_SITELINKS]).toEqual(['search', 'demand-gen']);
+  it('fences sitelinks, callouts and snippets, and the other extensions apart, as upstream does', () => {
+    // `validateAssetPlan` (v1.0.31) takes sitelinks alone on Demand Gen (linuxfoundation/lfx-v2-campaign-service#474) and refuses every
+    // other extension list there.
+    expect([...GOOGLE_CHANNELS_WITH_SITELINKS]).toEqual(['search', 'demand-gen', 'performance-max']);
+    // Performance Max takes sitelinks, callouts and structured snippets (linuxfoundation/lfx-v2-campaign-service#461) and refuses calls,
+    // promotions, prices and lead forms ("supported on Search campaigns only").
+    expect([...GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS]).toEqual(['search', 'performance-max']);
     expect([...GOOGLE_CHANNELS_WITH_AD_EXTENSIONS]).toEqual(['search']);
+  });
+
+  it('takes search themes on performance max alone, up to 50 of 80 runes each', () => {
+    // `validatePerformanceMaxSignals` (v1.0.31, linuxfoundation/lfx-v2-campaign-service#461): asset group signals, and only Performance Max
+    // has asset groups. `maxSearchThemes` and `maxSearchThemeRunes` in `pmax_signals.go`.
+    expect([...GOOGLE_CHANNELS_WITH_SEARCH_THEMES]).toEqual(['performance-max']);
+    expect(GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES).toBe(50);
+    expect(GOOGLE_ADS_MAX_SEARCH_THEME_RUNES).toBe(80);
   });
 
   it('caps each demographic exclusion list at 20, the per-list bound upstream checks twice', () => {

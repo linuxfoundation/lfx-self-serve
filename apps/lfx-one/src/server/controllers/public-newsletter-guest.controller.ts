@@ -111,7 +111,7 @@ export class PublicNewsletterGuestController {
     res.json(issue);
   }
 
-  /** Guest answers carry the reader's email and the issue body and depend on a cookie: no shared or browser cache may keep them. */
+  /** Guest answers carry the reader's (masked) email and the issue body and depend on a cookie: no shared or browser cache may keep them. */
   private noStore(res: Response): void {
     res.set('Cache-Control', 'private, no-store');
   }

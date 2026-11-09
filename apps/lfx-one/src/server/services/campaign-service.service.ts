@@ -83,6 +83,7 @@ import type {
   CampaignServiceAccessibleAccounts,
   CampaignServiceGoogleAdsConversionActions,
   CampaignServiceGoogleAdsGeoTargetSuggestions,
+  CampaignServiceGoogleAdsAudiences,
   CampaignServiceGoogleAdsUserLists,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
@@ -652,8 +653,9 @@ export function canCreateMetaInstagramDsa(): boolean {
 }
 
 /**
- * Whether this deployment's create path can carry Google `audienceSegments` at all — the
- * deployment half of `CampaignListResult.googleAudienceSegmentsEnabled`, whose other half
+ * Whether this deployment's create path can carry Google `audienceSegments` or
+ * `campaignAudienceSegments` at all — the deployment half of
+ * `CampaignListResult.googleAudienceSegmentsEnabled`, whose other half
  * (`global_marketing_ops` on the project) the controller decides. Only the campaign-service
  * create path reads the key: the legacy creator never does, and would create the campaign
  * without the user lists while reporting success.
@@ -1347,7 +1349,7 @@ export class CampaignServiceClient {
 
     return brief === null
       ? { status: 'unreadable', briefId: found.brief.id, brief: null, etag: found.etag, approved }
-      : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved };
+      : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved, storedEventName: briefDispatchEventName(found.brief) };
   }
 
   /**
@@ -1390,7 +1392,14 @@ export class CampaignServiceClient {
     // answered at all.
     return brief === null
       ? { status: 'unreadable', briefId: response.data.id, brief: null, etag: readBriefValidator(response), approved }
-      : { status: 'loaded', briefId: response.data.id, brief, etag: readBriefValidator(response), approved };
+      : {
+          status: 'loaded',
+          briefId: response.data.id,
+          brief,
+          etag: readBriefValidator(response),
+          approved,
+          storedEventName: briefDispatchEventName(response.data),
+        };
   }
 
   /**
@@ -3435,6 +3444,29 @@ export class CampaignServiceClient {
   }
 
   /**
+   * The Google Ads Audience resources on the account a create for this project uses
+   * (`list-google-ads-audiences` with `type=audience`, linuxfoundation/lfx-v2-campaign-service#504), for
+   * the Implement tab's Demand Gen audience picker (#5244). Upstream answers it on `global_marketing_ops`
+   * of the path project, the relation the BFF checks first; it returns up to 500 enabled, account-scoped
+   * Audiences sorted by name, with `truncated` set when more matched. Failures are left to the caller.
+   */
+  public async listGoogleAdsAudiences(req: Request, projectSlug: string): Promise<CampaignServiceGoogleAdsAudiences> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'An Audience read requires the project it belongs to.', {
+        operation: 'list_google_ads_audiences',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceGoogleAdsAudiences>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/audiences`,
+      'GET',
+      { type: 'audience' }
+    );
+  }
+
+  /**
    * The X Ads accounts the project's connection credential can reach (`list-twitter-ads-accounts`,
    * LFXV2-3319) — `listGoogleAdsAccounts`'s X sibling, on the same resolution: a project with no X
    * connection of its own is answered from the LF system credential upstream (`creds.resolve`), so
@@ -4468,6 +4500,46 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
       driveFolderUrl: brief.driveFolderUrl,
     },
   };
+}
+
+/**
+ * The event name campaign-service composes a create's names from, read off a stored brief the way
+ * `decodeBriefFields` (`internal/dispatch/reddit.go`, v1.0.31) reads it: `event_details`, then `copy`;
+ * in each, the trimmed `eventName`, else the trimmed `name`, else the raw `name`, each only while
+ * nothing earlier has set a value. A blob that is not an object, or whose `eventName`, `name`,
+ * `registrationUrl` or `hsToken` is neither a string nor null, fails Go's decode and is skipped
+ * whole. Keys match ignoring case, as `encoding/json` matches them, and a later key wins.
+ *
+ * Returned untrimmed, as Go keeps it, which differs from trimmed only for a whitespace-only `name`,
+ * a brief upstream then refuses outright. `fromBriefResponse` reads `event_details.name` only, so its
+ * name can differ from this one, and this one is what the Google ad group names are built on.
+ */
+export function briefDispatchEventName(found: Pick<CampaignServiceBrief, 'event_details' | 'copy'>): string {
+  let eventName = '';
+  for (const blob of [found.event_details, found.copy]) {
+    if (blob === undefined) continue;
+    const fields = goBriefFields(blob);
+    if (fields === null) continue;
+    if (eventName === '') eventName = googleAdsTrimSpace(fields.eventName);
+    if (eventName === '') eventName = googleAdsTrimSpace(fields.name);
+    if (googleAdsTrimSpace(eventName) === '') eventName = fields.name;
+  }
+  return eventName;
+}
+
+/** The two name fields of `briefFields` as `json.Unmarshal` fills them, or `null` where it errors. */
+function goBriefFields(blob: unknown): { eventName: string; name: string } | null {
+  const fields = { eventName: '', name: '' };
+  if (blob === null) return fields;
+  if (typeof blob !== 'object' || Array.isArray(blob)) return null;
+  for (const [key, value] of Object.entries(blob as Record<string, unknown>)) {
+    const field = ['eventname', 'name', 'registrationurl', 'hstoken'].find((tag) => tag === key.toLowerCase());
+    if (field === undefined || value === null) continue;
+    if (typeof value !== 'string') return null;
+    if (field === 'eventname') fields.eventName = value;
+    if (field === 'name') fields.name = value;
+  }
+  return fields;
 }
 
 /**

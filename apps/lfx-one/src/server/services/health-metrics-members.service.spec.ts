@@ -27,6 +27,8 @@ import {
   HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP,
+  HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR,
+  HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP,
   HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
@@ -61,6 +63,65 @@ describe('isSupportedMembersRange', () => {
     expect(HEALTH_METRICS_L2_RANGES.every(isSupportedMembersRange)).toBe(true);
     expect(isSupportedMembersRange('COMPLETED_YEAR_4')).toBe(false);
     expect(isSupportedMembersRange('toString')).toBe(false);
+  });
+});
+
+describe('HealthMetricsMembersService.getGrowth', () => {
+  function growthRow(overrides: Record<string, unknown> = {}) {
+    return { YEAR: 2026, MONTH: 3, CUMULATIVE_NEW_MEMBERS: 36, ...overrides };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [growthRow()] });
+  });
+
+  it('reads every month from the first year drawn, newest year first, bound to the foundation and that year', async () => {
+    await new HealthMetricsMembersService().getGrowth(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = readOf('MEMBERSHIP_GROWTH_MONTHLY');
+    expect(binds).toEqual(['acme', HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR]);
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_GROWTH_MONTHLY');
+    expect(sql).toContain('WHERE foundation_slug = ?');
+    expect(sql).toContain('AND year >= ?');
+    expect(sql).toContain('ORDER BY year DESC, month ASC');
+    expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP + 1}`);
+  });
+
+  it('maps month rows, keeps an unmeasured total null and drops a row without a year or month', async () => {
+    execute.mockResolvedValue({
+      rows: [growthRow(), growthRow({ MONTH: 4, CUMULATIVE_NEW_MEMBERS: null }), growthRow({ MONTH: null }), growthRow({ YEAR: null })],
+    });
+
+    const response = await new HealthMetricsMembersService().getGrowth(req, { foundationSlug: 'acme' });
+
+    expect(response.months).toEqual([
+      { year: 2026, month: 3, cumulative: 36 },
+      { year: 2026, month: 4, cumulative: null },
+    ]);
+  });
+
+  it('warns and keeps whole years when the rows hit the cap', async () => {
+    const newest = Array.from({ length: HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP - 1 }, (_, index) => growthRow({ YEAR: 2026 - Math.floor(index / 12) }));
+    const cutYear = newest.at(-1)?.YEAR;
+    execute.mockResolvedValue({ rows: [...newest, growthRow({ YEAR: cutYear }), growthRow({ YEAR: cutYear })] });
+
+    const response = await new HealthMetricsMembersService().getGrowth(req, { foundationSlug: 'acme' });
+
+    expect(response.months.some((row) => row.year === cutYear)).toBe(false);
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_members_growth',
+      'Member growth rows hit the read cap',
+      expect.objectContaining({ foundation_slug: 'acme' })
+    );
+  });
+
+  it('rethrows a failed read', async () => {
+    const failure = new Error('warehouse down');
+    execute.mockRejectedValue(failure);
+
+    await expect(new HealthMetricsMembersService().getGrowth(req, { foundationSlug: 'acme' })).rejects.toBe(failure);
   });
 });
 

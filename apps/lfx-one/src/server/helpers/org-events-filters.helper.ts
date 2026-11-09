@@ -78,8 +78,8 @@ export function orgEventsFootprintColumn(attribution: OrgEventsAttribution): str
 
 /**
  * `ORG_EVENT_PARTICIPATION` predicate selecting the attendees an attribution and participation count (no leading `AND`):
- * the one row-level conjunction flag dbt computes for the pair (`IS_COUNTED_REGISTERED_COMPANY_EMAIL`, `IS_COUNTED_ATTENDED_ALL`,
- * `IS_COUNTED_ALL_ACCOUNT` — registered or attended, ...).
+ * the one row-level conjunction flag dbt computes for the pair (`IS_COUNTED_REGISTERED_VERIFIED`, `IS_COUNTED_ATTENDED_ALL`,
+ * `IS_COUNTED_ALL_SELF_REPORTED` — registered or attended, ...).
  */
 export function orgEventsAttendeePredicate(attribution: OrgEventsAttribution, participation: OrgEventsParticipation): string {
   return `IS_COUNTED_${ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT[participation]}_${ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX[attribution]} = TRUE`;
@@ -87,7 +87,7 @@ export function orgEventsAttendeePredicate(attribution: OrgEventsAttribution, pa
 
 /**
  * Predicate for the speakers an attribution credits (no leading `AND`): the one row-level flag dbt computes for an ACCEPTED talk
- * credited under that attribution (`IS_COUNTED_SPEAKER_COMPANY_EMAIL`, `IS_COUNTED_SPEAKER_ALL`, ...).
+ * credited under that attribution (`IS_COUNTED_SPEAKER_VERIFIED`, `IS_COUNTED_SPEAKER_ALL`, ...).
  */
 export function orgEventsSpeakerPredicate(attribution: OrgEventsAttribution): string {
   return `IS_COUNTED_SPEAKER_${ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX[attribution]} = TRUE`;

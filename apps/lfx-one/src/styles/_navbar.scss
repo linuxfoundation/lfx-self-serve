@@ -1619,7 +1619,7 @@
 
 .lfxn-account-menu__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   padding: 8px 10px;
 }
@@ -1671,6 +1671,21 @@
   font-size: 12px;
   line-height: 16px;
   color: theme('colors.gray.500');
+}
+
+// The user's LFID: an outlined badge that hugs its text. It wraps rather than truncates, so the
+// whole value stays readable without a hover.
+.lfxn-account-menu__lfid {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 0 6px;
+  border: 1px solid theme('colors.gray.300');
+  border-radius: 9999px;
+  font-size: 11px;
+  line-height: 16px;
+  color: theme('colors.gray.500');
+  overflow-wrap: anywhere;
 }
 
 // What's New has unseen updates (the rail's account menu; the footer button carries its own dot).

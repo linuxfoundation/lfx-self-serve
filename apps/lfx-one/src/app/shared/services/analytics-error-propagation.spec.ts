@@ -155,6 +155,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getEventsGeography({ foundationSlug: 'aaif' }),
     },
     {
+      name: 'getMembersGrowth',
+      url: '/api/analytics/members-growth',
+      // A swallowed failure would read as a foundation with no new members.
+      call: () => service.getMembersGrowth({ foundationSlug: 'aaif' }),
+    },
+    {
       name: 'getMembersTiers',
       url: '/api/analytics/members-tiers',
       // A swallowed failure would read as a foundation with no members in any tier.

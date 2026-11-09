@@ -17,13 +17,14 @@ import { MembersBoardAttendanceComponent } from './components/members-board-atte
 import { MembersBreakdownComponent } from './components/members-breakdown/members-breakdown.component';
 import { MembersChurnComponent } from './components/members-churn/members-churn.component';
 import { MembersDirectoryComponent } from './components/members-directory/members-directory.component';
+import { MembersGrowthComponent } from './components/members-growth/members-growth.component';
 import { MembersNpsComponent } from './components/members-nps/members-nps.component';
 import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 
 import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
- * Members (Level 2) — seven anchored sections in the shared Level 2 shell; a section without a body
+ * Members (Level 2) — eight anchored sections in the shared Level 2 shell; a section without a body
  * stays an "Awaiting data" placeholder until it lands. Rendered inside HealthMetricsGateComponent's outlet.
  */
 @Component({
@@ -36,6 +37,7 @@ import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces'
     MembersBreakdownComponent,
     MembersChurnComponent,
     MembersDirectoryComponent,
+    MembersGrowthComponent,
     MembersNpsComponent,
     MembersRenewalsComponent,
   ],

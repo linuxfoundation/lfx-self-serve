@@ -6,6 +6,7 @@ import {
   GOOGLE_DEMAND_GEN_AD_GROUP_NAME_SUFFIX,
   GOOGLE_DEMAND_GEN_VIDEO_AD_NAME_SUFFIX,
   GOOGLE_DEMAND_GEN_MAX_AD_GROUPS,
+  GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP,
   googleAdsTrimSpace,
   googleAdsWellFormed,
   isGoSpaceCode,
@@ -70,9 +71,25 @@ export function googleAdGroupNameKey(name: string): string {
   return key;
 }
 
+/** The single Demand Gen ad group's name in Google Ads, `<event name> - Display` (`demandGenAdGroupName` in `demandgen.go`). */
+export function googleDemandGenSingleAdGroupName(eventName: string): string {
+  return `${googleAdsTrimSpace(googleAdsWellFormed(eventName))}${GOOGLE_DEMAND_GEN_AD_GROUP_NAME_SUFFIX}`;
+}
+
 /** A named Demand Gen ad group's full name in Google Ads: `<event name> - Display | <its name>`. */
 export function googleDemandGenAdGroupName(eventName: string, name: string): string {
-  return `${googleAdsTrimSpace(googleAdsWellFormed(eventName))}${GOOGLE_DEMAND_GEN_AD_GROUP_NAME_SUFFIX} | ${googleAdGroupNamePart(name)}`;
+  return `${googleDemandGenSingleAdGroupName(eventName)} | ${googleAdGroupNamePart(name)}`;
+}
+
+/**
+ * The key two ad names in one group are compared under: Go's `strings.ToLower`, which lowers one code
+ * point at a time by its simple mapping (`validateDemandGenAds`). JavaScript's lower case of one code
+ * point differs from it only on `İ`, which Go lowers to `i` and JavaScript to `i` plus a combining dot.
+ */
+export function googleDemandGenAdNameKey(label: string): string {
+  let key = '';
+  for (const ch of label) key += ch === '\u0130' ? 'i' : ch.toLowerCase();
+  return key;
 }
 
 /** Whether a creative object holds anything at all; `null`, a non-object and `{}` hold nothing. */
@@ -81,13 +98,65 @@ function present(creative: unknown): boolean {
 }
 
 /**
+ * Why campaign-service would refuse one ad group's list of several named ads, `demandGenAds` or a named
+ * group's `ads`, or `null`, in `validateDemandGenAds`'s order: the count, then each ad's name (blank
+ * after `sanitizeNamePart`, or a repeat ignoring case), then its creative (both formats, neither, or one
+ * that fails its own rules), then a video ad's name, `<ad group name> - <its name>`, held to Google's 255
+ * characters (`validateDemandGenVideoAdName`). An image ad's name is not sent, so it has no length rule.
+ *
+ * `owner` names the group in a sentence, such as "the Demand Gen ad group" or "Demand Gen ad group 2";
+ * `groupName` is the group's name in Google Ads. An ad is named by its position, never by its text.
+ * `imageCreativeRefusal` is {@link googleDemandGenAdGroupsRefusal}'s.
+ */
+export function googleDemandGenAdsRefusal(
+  owner: string,
+  groupName: string,
+  ads: unknown,
+  imageCreativeRefusal: (creative: unknown) => string | null = () => null
+): string | null {
+  const subject = owner.charAt(0).toUpperCase() + owner.slice(1);
+  if (!Array.isArray(ads)) return `The ads of ${owner} must be a list.`;
+  if (ads.length > GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP) {
+    return `${subject} takes at most ${GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP} ads, and ${ads.length} are set. Remove ${ads.length - GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP} and create again.`;
+  }
+  const seen = new Map<string, number>();
+  for (const [index, entry] of ads.entries()) {
+    const position = index + 1;
+    const ad: Record<string, unknown> = entry !== null && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>) : {};
+    const label = typeof ad['name'] === 'string' ? googleAdGroupNamePart(ad['name']) : '';
+    if (label === '') return `Ad ${position} of ${owner} needs a name. Each ad in an ad group needs its own name.`;
+    const key = googleDemandGenAdNameKey(label);
+    const earlier = seen.get(key);
+    if (earlier !== undefined) {
+      return `Ad ${position} of ${owner} has the same name as ad ${earlier}; ads in one ad group need different names, ignoring case. Rename one and create again.`;
+    }
+    seen.set(key, position);
+
+    const image = present(ad['creative']);
+    const video = present(ad['videoCreative']);
+    if (image && video) return `Ad ${position} of ${owner} has an image ad and a video ad; each ad takes one. Clear one of them and create again.`;
+    if (!image && !video) return `Ad ${position} of ${owner} has no creative. Fill in its image ad or its video ad.`;
+    const refusal = video ? googleDemandGenVideoCreativeRefusal(ad['videoCreative']) : imageCreativeRefusal(ad['creative']);
+    if (refusal !== null) return `Ad ${position} of ${owner}: ${refusal}`;
+    if (video) {
+      const length = [...`${groupName} - ${label}`].length;
+      if (length > GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES) {
+        return `Ad ${position} of ${owner} is a video ad, named after the ad group, then " - " and its name, which makes ${length} characters, over Google's limit of ${GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES}. Shorten its name or the event name.`;
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Why campaign-service would refuse this `demandGenAdGroups` list, or `null`, in its order: the count,
  * then each group's name (blank, a full name over Google's 255 characters, a repeat ignoring case), then
- * its ad (both formats, neither, or one that fails its own rules), then a video ad's own name
- * (`validateDemandGenVideoAdName`: the full name plus " - Video ad", also held to 255).
+ * its ad (`ads` beside either creative, both formats, neither, or one that fails its own rules), then a
+ * single video ad's own name (`validateDemandGenVideoAdName`: the full name plus " - Video ad", also held
+ * to 255). A group with `ads` has each of its ads judged by {@link googleDemandGenAdsRefusal} instead.
  *
- * `eventName` is the event name the request carries, which campaign-service composes each full name
- * from. The video ad is judged by `googleDemandGenVideoCreativeRefusal`. The image ad is judged by
+ * `eventName` is the event name campaign-service composes each full name from: the stored brief's
+ * (`decodeBriefFields`) where the caller knows it, as the BFF does, else the request's. The video ad is judged by `googleDemandGenVideoCreativeRefusal`. The image ad is judged by
  * `imageCreativeRefusal` when the caller passes one: the Implement tab does, with the minimums it
  * already holds a single image ad to; the BFF does not, as it does not judge the single image ad.
  *
@@ -123,6 +192,16 @@ export function googleDemandGenAdGroupsRefusal(
 
     const image = present(group['creative']);
     const video = present(group['videoCreative']);
+    // Upstream reads an empty `ads` as absent (`len(g.Ads) > 0`).
+    const ads = group['ads'];
+    if (ads !== undefined && ads !== null && !(Array.isArray(ads) && ads.length === 0)) {
+      if (image || video) {
+        return `Demand Gen ad group ${position} has its own ad beside its list of ads, which replaces it. Clear one and create again.`;
+      }
+      const refusal = googleDemandGenAdsRefusal(`Demand Gen ad group ${position}`, name, ads, imageCreativeRefusal);
+      if (refusal !== null) return refusal;
+      continue;
+    }
     if (image && video) {
       return `Demand Gen ad group ${position} has an image ad and a video ad; an ad group takes one. Clear one of them and create again.`;
     }

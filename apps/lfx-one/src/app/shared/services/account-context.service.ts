@@ -470,8 +470,7 @@ export class AccountContextService {
       // address but not something the roll-up combines (M3). Without it a caller whose Org Lens
       // grants lapsed while their CLA-manager company remained would fall back to `null` and land
       // on `/org/not-found`, even though `canAddressOrganization` keeps that same organization when
-      // they are already addressing it — the EasyCLA page guard redirects it from there. Empty
-      // while `org-lens-cla-m3-enabled` is off, so this is inert until M3 ships (#4415, Copilot).
+      // they are already addressing it — the EasyCLA page guard redirects it from there (#4415, Copilot).
       this.orgClaOnlyAccess.claOnlyOrgUids(),
     ]) {
       for (const uid of set) {

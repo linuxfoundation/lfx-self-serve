@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { FOOTER_LEGAL_LINKS } from './footer.constants';
+
 /**
  * Registrable-domain labels of personal (consumer) mailbox providers. An address whose registrable
  * domain starts with one of these labels never qualifies for the member benefit, even if a member
@@ -168,6 +170,15 @@ export const NEWSLETTER_INVITE_COUNTED_LOCALS_KEY = 'newsletterInviteCounted';
 
 /** App route a signed-out invitee lands on from a newsletter invite email; the signed token rides in the URL fragment. */
 export const NEWSLETTER_GUEST_INVITE_PATH = '/newsletters/invite';
+
+/** Legal pages the signed-out newsletter modal's consent line links to (the app footer is not shown on guest pages). */
+export const NEWSLETTER_GUEST_LEGAL_LINKS = {
+  privacyPolicy: FOOTER_LEGAL_LINKS.privacyPolicy,
+  termsOfUse: 'https://www.linuxfoundation.org/legal/terms',
+} as const;
+
+/** Longest plain-text excerpt of an issue a signed-out reader sees behind the guest modal before they qualify. */
+export const NEWSLETTER_GUEST_TEASER_MAX_LENGTH = 600;
 
 /** URL-fragment key of the signed newsletter invite token (`/newsletters/invite#token=…`), kept out of server and proxy logs. */
 export const NEWSLETTER_INVITE_TOKEN_FRAGMENT_KEY = 'token';

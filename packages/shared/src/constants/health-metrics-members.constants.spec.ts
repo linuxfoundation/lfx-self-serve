@@ -12,12 +12,12 @@ import {
 } from './health-metrics-members.constants';
 
 describe('HEALTH_METRICS_MEMBERS_SECTIONS', () => {
-  it('keys the seven sections uniquely, in the design order', () => {
-    expect(HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => section.key)).toEqual(['breakdown', 'list', 'risk', 'renewals', 'board', 'nps', 'churn']);
+  it('keys the eight sections uniquely, in the design order', () => {
+    expect(HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => section.key)).toEqual(['growth', 'breakdown', 'list', 'risk', 'renewals', 'board', 'nps', 'churn']);
   });
 
   it('holds a deep link for every section that reads data', () => {
-    expect(HEALTH_METRICS_MEMBERS_DATA_SECTIONS).toEqual(['breakdown', 'list', 'risk', 'renewals', 'board', 'nps', 'churn']);
+    expect(HEALTH_METRICS_MEMBERS_DATA_SECTIONS).toEqual(['growth', 'breakdown', 'list', 'risk', 'renewals', 'board', 'nps', 'churn']);
   });
 });
 

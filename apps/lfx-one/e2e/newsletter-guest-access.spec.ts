@@ -28,12 +28,13 @@ const INVITE: NewsletterGuestInviteInfo = {
   foundation: FOUNDATION,
   membership_name: 'Acme Foundation',
   committee_uid: 'c-news',
-  email: 'jane.doe@acme-motors.example',
+  masked_email: 'ja***@acme***.example',
   company_name: 'Acme Motors',
+  teaser: { subject: 'Acme Weekly — October', image_url: null, excerpt: 'This month at Acme: new members and events.' },
 };
 const ISSUE: NewsletterGuestIssue = {
   foundation: FOUNDATION,
-  email: 'jane.doe@acme-motors.example',
+  masked_email: 'ja***@acme***.example',
   newsletter: { id: 'n-1', subject: 'Acme Weekly — October', sent_at: '2026-10-01T00:00:00Z', body_html: '<p>Hello members of Acme</p>' },
   confirmation_sent: false,
 };
@@ -49,7 +50,13 @@ test.describe('Newsletter invite link (signed out)', () => {
     await expect(heading).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(heading).toContainText('Be the first to hear about new stories from Acme Foundation');
     await expect(page.getByTestId('newsletter-guest-modal-description')).toContainText('Acme Motors is a member of Acme Foundation');
-    await expect(page.getByTestId('newsletter-guest-modal-email').locator('input')).toBeDisabled();
+    const email = page.getByTestId('newsletter-guest-modal-email').locator('input');
+    await expect(email).toBeDisabled();
+    await expect(email).toHaveValue('ja***@acme***.example');
+    await expect(page.getByTestId('newsletter-guest-reader-teaser-subject')).toHaveText('Acme Weekly — October');
+    await expect(page.getByTestId('newsletter-guest-modal-privacy')).toHaveAttribute('href', 'https://www.linuxfoundation.org/legal/privacy-policy');
+    await expect(page.getByTestId('newsletter-guest-modal-terms')).toHaveAttribute('href', 'https://www.linuxfoundation.org/legal/terms');
+    await expect(page.locator('html')).toHaveClass(/lfx-consent-prompt-hidden/);
     await expect(page.getByTestId('newsletter-guest-modal-sign-in')).toHaveAttribute(
       'href',
       `/login?returnTo=${encodeURIComponent('/newsletters/my/acme-foundation?invite=c-news')}`
@@ -75,7 +82,7 @@ test.describe('Newsletter invite link (signed out)', () => {
     const empty = page.getByTestId('newsletter-guest-reader-empty');
     await expect(empty).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(empty).toContainText('No issues yet');
-    await expect(empty).toContainText('jane.doe@acme-motors.example');
+    await expect(empty).toContainText('ja***@acme***.example');
   });
 
   test('offers only Sign in for an expired link', async ({ page }) => {
@@ -83,9 +90,14 @@ test.describe('Newsletter invite link (signed out)', () => {
 
     await page.goto('/newsletters/invite#token=old.token');
 
-    await expect(page.getByText('This invite link has expired or is invalid.')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    // Scoped to the field: the modal's sr-only live region repeats the same text.
+    await expect(page.getByTestId('newsletter-guest-modal-email').getByText('This invite link has expired or is invalid.')).toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
     await expect(page.getByTestId('newsletter-guest-modal-continue')).toHaveCount(0);
     await expect(page.getByTestId('newsletter-guest-modal-sign-in')).toBeVisible();
+    // The consent prompt stays hidden here, so cookie preferences must remain reachable from the modal.
+    await expect(page.getByTestId('newsletter-guest-modal-cookie-settings')).toBeVisible();
   });
 });
 
@@ -111,11 +123,12 @@ test.describe('Shared newsletter link (signed out)', () => {
     await page.goto(SHARED_ISSUE_PATH);
 
     await expect(page.getByTestId('newsletter-guest-modal-description')).toContainText('Enter your work email to read it', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-guest-modal-confirm-copy')).toContainText("we'll email you a confirmation link");
     await expect(page.getByText('Hello members of Acme')).toHaveCount(0);
     await page.getByTestId('newsletter-guest-modal-email').locator('input').fill('someone@personal-mail.example');
     await page.getByTestId('newsletter-guest-modal-continue').click();
 
-    await expect(page.getByText('Use your work email, or sign in.')).toBeVisible();
+    await expect(page.getByTestId('newsletter-guest-modal-email').getByText('Use your work email, or sign in.')).toBeVisible();
   });
 
   test('opens the issue for a member-company email and notes the confirmation email', async ({ page }) => {
@@ -129,7 +142,7 @@ test.describe('Shared newsletter link (signed out)', () => {
     await page.getByTestId('newsletter-guest-modal-continue').click();
 
     await expect(page.getByText('Hello members of Acme')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    await expect(page.getByTestId('newsletter-guest-reader-confirm-note')).toContainText('jane.doe@acme-motors.example');
+    await expect(page.getByTestId('newsletter-guest-reader-confirm-note')).toContainText('ja***@acme***.example');
     await expect(page.getByTestId('newsletter-guest-reader-sign-in')).toHaveAttribute('href', `/login?returnTo=${encodeURIComponent(SHARED_ISSUE_PATH)}`);
   });
 });

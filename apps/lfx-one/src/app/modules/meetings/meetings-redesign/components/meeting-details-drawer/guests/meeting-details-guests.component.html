@@ -1,0 +1,277 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+
+@if (!context.canViewGuests()) {
+  <lfx-ui-empty-state
+    size="small"
+    icon="fa-light fa-user-lock"
+    heading="Guest list isn't shared"
+    description="The organizers of this meeting haven't shared who's invited."
+    data-testid="meeting-details-guests-hidden" />
+} @else if (load().status === 'loading') {
+  <div class="flex flex-col" aria-busy="true" data-testid="meeting-details-guests-loading">
+    @for (item of [1, 2, 3, 4]; track item) {
+      <div class="flex items-center gap-[12px] py-[12px]">
+        <lfx-ui-skeleton shape="circle" width="32px" height="32px" />
+        <div class="flex flex-1 flex-col gap-[6px]">
+          <lfx-ui-skeleton width="40%" height="14px" />
+          <lfx-ui-skeleton width="60%" height="12px" />
+        </div>
+      </div>
+    }
+  </div>
+} @else if (load().status === 'error') {
+  <lfx-ui-empty-state
+    size="small"
+    icon="fa-light fa-triangle-exclamation"
+    heading="Couldn't load the list"
+    description="Something went wrong. Try again."
+    data-testid="meeting-details-guests-error">
+    <lfx-ui-button
+      empty-state-action
+      variant="tertiary-accent"
+      size="small"
+      icon="fa-light fa-arrow-rotate-right"
+      (click)="retry()"
+      data-testid="meeting-details-guests-retry">
+      Try Again
+    </lfx-ui-button>
+  </lfx-ui-empty-state>
+} @else if (!rows().length) {
+  <lfx-ui-empty-state
+    size="small"
+    icon="fa-light fa-people-group"
+    [heading]="ended() ? 'No participants' : 'No guests yet'"
+    description="People invited to this meeting will appear here."
+    data-testid="meeting-details-guests-empty">
+    @if (canAddGuests()) {
+      <lfx-ui-button
+        empty-state-action
+        variant="tertiary-accent"
+        size="small"
+        icon="fa-light fa-plus"
+        (click)="addGuests()"
+        data-testid="meeting-details-guests-empty-add">
+        Add Guests
+      </lfx-ui-button>
+    }
+  </lfx-ui-empty-state>
+} @else {
+  <!-- The 12px bottom keeps the toolbar gap fill clear of the heading. -->
+  <div class="flex items-baseline gap-[8px] pb-[12px] pt-[4px]" data-testid="meeting-details-guests-summary">
+    <h3 class="m-0 text-[14px] font-semibold text-gray-900">{{ summary().title }}</h3>
+    <span class="text-[12px] text-gray-500">{{ summary().subtitle }}</span>
+  </div>
+  <!-- Leaves the view once the toolbar sticks, which turns the fade on. -->
+  <div #stickSentinel class="h-px" aria-hidden="true"></div>
+  <!-- Sticks 8px under the drawer header and its 42px tabs bar; the shadow fills that gap and the fade shows while stuck. -->
+  <div
+    class="sticky top-[calc(var(--md-head,0px)+50px)] z-[5] -mt-[8px] flex flex-wrap items-center gap-[8px] bg-white py-[8px] shadow-[0_-8px_0_white]"
+    data-testid="meeting-details-guests-toolbar">
+    <lfx-ui-input
+      class="min-w-0 flex-[1_1_220px]"
+      type="search"
+      size="small"
+      prefixIcon="fa-light fa-magnifying-glass"
+      [placeholder]="searchLabel()"
+      [ariaLabel]="searchLabel()"
+      [(value)]="query"
+      data-testid="meeting-details-guests-search" />
+    <lfx-ui-button
+      variant="tertiary"
+      icon="fa-light fa-bars-filter"
+      popoverLabel="Filters"
+      popoverPadding="none"
+      [popover]="filtersPanel"
+      [popoverWidth]="300"
+      [ariaLabel]="filtersLabel()"
+      (click)="resetDraft()"
+      data-testid="meeting-details-guests-filters">
+      Filters
+      @if (chips().length) {
+        <lfx-ui-badge tone="accent" variant="solid" size="sm">{{ chips().length }}</lfx-ui-badge>
+      }
+    </lfx-ui-button>
+    @if (canAddGuests()) {
+      <lfx-ui-button variant="tertiary-accent" icon="fa-light fa-user-plus" (click)="addGuests()" data-testid="meeting-details-guests-add"
+        >Add Guests</lfx-ui-button
+      >
+    }
+    @if (stuck()) {
+      <span
+        class="pointer-events-none absolute inset-x-0 top-full h-[32px] bg-gradient-to-b from-white via-white/85 via-35% to-transparent"
+        aria-hidden="true"
+        data-testid="meeting-details-guests-toolbar-fade"></span>
+    }
+  </div>
+
+  @if (chips().length) {
+    <lfx-ui-chip-group class="pb-[8px]" ariaLabel="Applied filters" data-testid="meeting-details-guests-chips">
+      @for (chip of chips(); track chip.key) {
+        <lfx-ui-chip [prefix]="chip.prefix" [label]="chip.label" (dismissed)="clearFilter(chip.key)" data-testid="meeting-details-guests-chip" />
+      }
+    </lfx-ui-chip-group>
+  }
+
+  @if (!shown().length) {
+    <lfx-ui-empty-state
+      size="small"
+      icon="fa-light fa-magnifying-glass"
+      [heading]="ended() ? 'No participants match' : 'No guests match'"
+      description="Try a different search or adjust the filters."
+      data-testid="meeting-details-guests-no-match">
+      <lfx-ui-button
+        empty-state-action
+        variant="tertiary-accent"
+        size="small"
+        icon="fa-light fa-arrow-rotate-left"
+        (click)="resetAll()"
+        data-testid="meeting-details-guests-reset">
+        Reset Filters
+      </lfx-ui-button>
+    </lfx-ui-empty-state>
+  }
+
+  <ul class="m-0 flex list-none flex-col p-0">
+    @for (row of shown(); track row.uid) {
+      <li class="flex min-w-0 items-center gap-[12px] border-b border-gray-100 py-[12px]" data-testid="meeting-details-guests-row">
+        <lfx-ui-avatar decorative [size]="32" [name]="row.name" [src]="row.avatarUrl" [initials]="row.initials" [status]="row.statusBadge" />
+        <div class="flex min-w-0 flex-1 flex-col">
+          <div class="flex min-w-0 items-center gap-[8px]">
+            <span class="min-w-0 break-words text-[14px] font-medium text-gray-900" data-testid="meeting-details-guests-name">{{ row.name }}</span>
+            @if (row.role !== 'guest') {
+              <lfx-ui-badge class="shrink-0" size="sm" [variant]="row.role === 'organizer' ? 'outline' : 'subtle'" data-testid="meeting-details-guests-role">
+                {{ row.roleLabel }}
+              </lfx-ui-badge>
+            }
+            @if (row.linkedinUrl) {
+              <a
+                class="shrink-0 text-blue-500 hover:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                [href]="row.linkedinUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="View LinkedIn Profile"
+                lfxUiTooltip="View LinkedIn Profile"
+                data-testid="meeting-details-guests-linkedin">
+                <i class="fa-brands fa-linkedin" aria-hidden="true"></i>
+              </a>
+            }
+          </div>
+          @if (row.meta) {
+            <span class="break-words text-[12px] text-gray-500" data-testid="meeting-details-guests-meta">{{ row.meta }}</span>
+          }
+          @if (ended() && row.email) {
+            <span class="break-all text-[12px] text-gray-500" data-testid="meeting-details-guests-email">{{ row.email }}</span>
+          }
+          @if (row.votingStatus) {
+            <span class="flex items-center gap-[4px] text-[12px] text-gray-500" data-testid="meeting-details-guests-voting">
+              <i class="fa-light fa-check-to-slot" aria-hidden="true"></i>{{ row.votingStatus }}
+            </span>
+          }
+        </div>
+        @if (rowActions().get(row.uid); as actions) {
+          @if (row.registrant; as registrant) {
+            <lfx-ui-button
+              class="shrink-0"
+              variant="tertiary"
+              size="small"
+              icon="fa-light fa-ellipsis"
+              iconOnly
+              [ariaLabel]="'Actions for ' + row.name"
+              [menu]="guestMenu"
+              menuAlign="end"
+              [loading]="resending().has(row.uid) || hostUpdating().has(row.uid)"
+              data-testid="meeting-details-guests-actions" />
+            <ng-template #guestMenu>
+              <lfx-ui-menu ariaLabel="Guest actions" data-testid="meeting-details-guests-actions-menu">
+                @if (actions.resend) {
+                  <lfx-ui-menu-item
+                    icon="fa-light fa-paper-plane"
+                    [disabled]="resending().has(row.uid)"
+                    (triggered)="confirmResend(registrant)"
+                    data-testid="meeting-details-guests-resend">
+                    Resend invite
+                  </lfx-ui-menu-item>
+                }
+                @if (actions.host) {
+                  <lfx-ui-menu-item
+                    [icon]="registrant.host ? 'fa-light fa-user-xmark' : 'fa-light fa-user-crown'"
+                    [disabled]="hostUpdating().has(row.uid)"
+                    (triggered)="toggleHost(registrant)"
+                    data-testid="meeting-details-guests-host">
+                    {{ registrant.host ? 'Remove host' : 'Make host' }}
+                  </lfx-ui-menu-item>
+                }
+                @if (actions.remove) {
+                  @if (actions.resend || actions.host) {
+                    <lfx-ui-menu-separator />
+                  }
+                  <lfx-ui-menu-item
+                    variant="danger"
+                    icon="fa-light fa-user-minus"
+                    [disabled]="deleting()"
+                    (triggered)="confirmRemove(registrant)"
+                    data-testid="meeting-details-guests-remove">
+                    Remove
+                  </lfx-ui-menu-item>
+                }
+              </lfx-ui-menu>
+            </ng-template>
+          }
+        }
+      </li>
+    }
+  </ul>
+}
+
+<ng-template #filtersPanel let-close="close">
+  <div class="flex flex-col" data-testid="meeting-details-guests-filters-panel">
+    <div class="flex flex-col gap-[2px] p-[6px]">
+      @for (field of fields(); track field.key) {
+        <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
+          <lfx-ui-select
+            size="small"
+            [label]="field.title"
+            [value]="draft()[field.key] ?? ''"
+            (valueChange)="setDraft(field.key, $event)"
+            [attr.data-testid]="'meeting-details-guests-filter-' + field.key">
+            <lfx-ui-option value="" [label]="field.allLabel" />
+            @for (option of field.options; track option.value) {
+              <lfx-ui-option [value]="option.value" [label]="option.label" />
+            }
+          </lfx-ui-select>
+        </div>
+      }
+    </div>
+    <div class="flex items-center justify-between gap-[8px] border-t border-gray-200 bg-gray-50 px-[12px] py-[10px]">
+      @if (showReset()) {
+        <lfx-ui-button
+          variant="tertiary-accent"
+          icon="fa-light fa-arrow-rotate-left"
+          (click)="resetFilters(close)"
+          data-testid="meeting-details-guests-filters-reset">
+          Reset Filters
+        </lfx-ui-button>
+      }
+      <lfx-ui-button class="ml-auto" [disabled]="!draftChanged()" (click)="apply(close)" data-testid="meeting-details-guests-filters-apply"
+        >Apply</lfx-ui-button
+      >
+    </div>
+  </div>
+</ng-template>
+
+<ng-template #confirmDialog let-data let-ref="dialogRef">
+  <lfx-ui-modal size="sm" [heading]="data.heading" [subtitle]="data.message" data-testid="meeting-details-guests-confirm">
+    <ng-container modalActions>
+      <lfx-ui-button variant="secondary" (click)="ref.close(false)" data-testid="meeting-details-guests-confirm-cancel">Cancel</lfx-ui-button>
+      <lfx-ui-button
+        [variant]="data.danger ? 'danger' : 'primary'"
+        [icon]="data.icon"
+        (click)="ref.close(true)"
+        data-testid="meeting-details-guests-confirm-accept">
+        {{ data.confirmLabel }}
+      </lfx-ui-button>
+    </ng-container>
+  </lfx-ui-modal>
+</ng-template>

@@ -6,7 +6,7 @@ import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By, Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
-import { NEWSLETTER_SHARE_PREVIEW_FALLBACK_TITLE } from '@lfx-one/shared/constants';
+import { CONSENT_PROMPT_HIDDEN_CLASS, NEWSLETTER_SHARE_PREVIEW_FALLBACK_TITLE } from '@lfx-one/shared/constants';
 import { NewsletterService } from '@services/newsletter.service';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,7 +17,7 @@ import { NewsletterSharePreviewComponent } from './newsletter-share-preview.comp
 const foundation = { uid: 'f-1', slug: 'acme', name: 'Acme Foundation', logo_url: null };
 const guestIssue = {
   foundation,
-  email: 'jane@acme-motors.example',
+  masked_email: 'ja***@acme***.example',
   newsletter: { id: 'news-1', subject: 'Weekly Update #42', sent_at: '2026-10-01T00:00:00Z', body_html: '<p>Hello members</p>' },
   confirmation_sent: true,
 };
@@ -92,6 +92,8 @@ describe('NewsletterSharePreviewComponent', () => {
     expect(getNewsletterGuestSharedIssue).toHaveBeenCalledWith('acme', 'news-1');
     expect(el.querySelector('[data-testid="newsletter-share-preview"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="newsletter-guest-modal"]')).toBeNull();
+    // The plain sign-in card has no consent line, so the standard consent prompt is not hidden.
+    expect(document.documentElement.classList.contains(CONSENT_PROMPT_HIDDEN_CLASS)).toBe(false);
   });
 
   it('asks a signed-out reader of a member-benefit issue for a work email over a placeholder page', () => {
@@ -104,9 +106,28 @@ describe('NewsletterSharePreviewComponent', () => {
     );
     expect(el.querySelector('[data-testid="newsletter-guest-reader-placeholder"]')).not.toBeNull();
     expect(el.textContent).not.toContain('Hello members');
+    expect(document.documentElement.classList.contains(CONSENT_PROMPT_HIDDEN_CLASS)).toBe(true);
     expect(el.querySelector('[data-testid="newsletter-guest-modal-sign-in"]')?.getAttribute('href')).toBe(
       `/login?returnTo=${encodeURIComponent('/newsletters/acme/news-1')}`
     );
+  });
+
+  it('shows the server teaser, not the issue body, behind the email prompt', () => {
+    getNewsletterGuestSharedIssue.mockReturnValue(
+      of({
+        issue: null,
+        foundation,
+        membership_name: 'Acme Foundation',
+        teaser: { subject: 'Weekly Update #42', image_url: 'https://cdn.example.com/hero.png', excerpt: 'This week in Acme' },
+      })
+    );
+
+    const el = render();
+
+    expect(el.querySelector('[data-testid="newsletter-guest-reader-teaser-subject"]')?.textContent?.trim()).toBe('Weekly Update #42');
+    expect(el.querySelector('[data-testid="newsletter-guest-reader-teaser-image"]')?.getAttribute('src')).toBe('https://cdn.example.com/hero.png');
+    expect(el.querySelector('[data-testid="newsletter-guest-reader-placeholder"]')).toBeNull();
+    expect(el.querySelector('[data-testid="newsletter-guest-modal"]')).not.toBeNull();
   });
 
   it('shows the issue after Continue with a member-company email', () => {
@@ -120,7 +141,7 @@ describe('NewsletterSharePreviewComponent', () => {
     expect(requestNewsletterGuestAccess).toHaveBeenCalledWith('acme', 'news-1', 'jane@acme-motors.example');
     expect(el.querySelector('[data-testid="newsletter-guest-modal"]')).toBeNull();
     expect(el.textContent).toContain('Hello members');
-    expect(el.querySelector('[data-testid="newsletter-guest-reader-confirm-note"]')?.textContent).toContain('jane@acme-motors.example');
+    expect(el.querySelector('[data-testid="newsletter-guest-reader-confirm-note"]')?.textContent).toContain('ja***@acme***.example');
   });
 
   it('shows the member-benefit refusal under the email field', () => {

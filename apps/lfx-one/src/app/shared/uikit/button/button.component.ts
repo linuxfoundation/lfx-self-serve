@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkMenuTrigger } from '@angular/cdk/menu';
+import { ConnectedPosition } from '@angular/cdk/overlay';
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   afterRenderEffect,
@@ -19,26 +20,26 @@ import {
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { UiButtonSize, UiButtonVariant, UiPopoverContext, UiPopoverPadding, UiTooltipSide } from '@lfx-one/shared/interfaces';
+import { UiButtonSize, UiButtonVariant, UiMenuAlign, UiPopoverContext, UiPopoverPadding, UiTooltipSide } from '@lfx-one/shared/interfaces';
 
 import { UiPopoverDirective } from '../popover/popover.directive';
 import { UiSpinnerComponent } from '../spinner/spinner.component';
 import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
 /**
- * Button with eight variants and four sizes (tiny 24px, small 28px, default 32px, large 40px). Renders a native `<button>`, or a router link when `link` is set.
+ * Button with eight variants and four sizes (tiny 24px, small 28px, default 32px, large 40px). Renders a native `<button>`, a router link when `link` is set, or a new-tab link to another site when `href` is set.
  * Supports a leading and a trailing Font Awesome icon, an icon-only circle, a loading state and full width.
  *
- * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
+ * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipIcon`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
  * `lfxUiTooltipDisabled`) on `<lfx-ui-button>` and the button forwards them to its inner `<button>`, where the spoken description belongs.
  * `UiTooltipDirective` never attaches to `<lfx-ui-button>` itself, so importing it for other elements in the same template is safe.
  * A disabled button takes no clicks or focus and drops its forwarded tooltip, so a tooltip that explains why it is off needs a wrapper element that carries the directive.
  *
  * Menu: pass an `lfx-ui-menu` template to `menu` and the inner `<button>` becomes its trigger (`aria-haspopup`, `aria-expanded`, focus returns
- * to the button on close). A button rendered as a link (`link`) does not open a menu.
+ * to the button on close). `menuAlign="end"` lines the menu up with the button's end edge, for a trigger at a row's end. A button rendered as a link (`link`) does not open a menu.
  *
  * Popover: pass an `<ng-template>` to `popover` and the inner `<button>` opens it as a non-modal dialog (`aria-haspopup="dialog"`, `aria-expanded`,
- * `aria-controls`, focus returns to the button on close). `popoverLabel` names the dialog, `popoverWidth` fixes its width in px and `popoverPadding="none"` drops its 16px padding; see `lfxUiPopover`.
+ * `aria-controls`, focus returns to the button on close). `popoverLabel` names the dialog, `popoverWidth` fixes its width in px, `popoverPadding="none"` drops its 16px padding and `popoverAlign="end"` opens it from the end edge; see `lfxUiPopover`.
  * A link does not open one, and `menu` wins when both are set.
  */
 @Component({
@@ -72,6 +73,10 @@ export class UiButtonComponent {
   public readonly ariaExpanded = input<boolean | null>(null);
   /** Writes `aria-controls` on the inner element: the id of the content this button shows or hides. Not used with `menu` or `popover`. */
   public readonly ariaControls = input<string>('');
+  /** Writes `aria-pressed` on a plain button that toggles; leave `null` for no attribute. Not used with `link`, `menu` or `popover`. */
+  public readonly ariaPressed = input<boolean | null>(null);
+  /** Writes `aria-describedby` on a plain button: the id of text that describes it. Not used with `link`, `menu` or `popover`. */
+  public readonly ariaDescribedBy = input<string>('');
   /** Disables the button (or the link, when `link` is set). It keeps the variant's colours at 45% opacity. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Swaps the leading icon for a spinner, keeps the label and sets `aria-busy`. The button ignores clicks until it is cleared. */
@@ -82,6 +87,8 @@ export class UiButtonComponent {
   public readonly type = input<'button' | 'submit' | 'reset'>('button');
   /** Template reference of an `lfx-ui-menu` to open from the button, such as `#actions`. Ignored when `link` is set. */
   public readonly menu = input<TemplateRef<unknown> | null>(null);
+  /** `start` (default) opens the menu from the button's start edge; `end` lines it up with the end edge so it extends back toward the start. */
+  public readonly menuAlign = input<UiMenuAlign>('start');
   /** Template reference of the content to open from the button as a popover, such as `#filters`. Ignored when `link` or `menu` is set. */
   public readonly popover = input<TemplateRef<UiPopoverContext> | null>(null);
   /** Accessible name of the popover dialog. Without one the button names it. */
@@ -90,13 +97,19 @@ export class UiButtonComponent {
   public readonly popoverWidth = input<number | null>(null);
   /** `none` removes the popover panel's 16px padding for content that runs edge to edge. */
   public readonly popoverPadding = input<UiPopoverPadding>('default');
+  /** `end` opens the popover lined up with the button's end edge, toward the start side. */
+  public readonly popoverAlign = input<UiMenuAlign>('start');
   /** When set, renders a router link instead of a button. Accepts a path or a commands array. */
   public readonly link = input<string | unknown[] | null>(null);
+  /** External URL, such as a Zoom link: renders an `<a>` that opens it in a new tab. Wins over `link`. */
+  public readonly href = input<string | null>(null);
   /* eslint-disable @angular-eslint/no-input-rename -- the aliases are the public input names of UiTooltipDirective, which this button forwards to its inner element. */
   /** Tooltip text, forwarded to the inner button. An empty value shows nothing. See `lfxUiTooltip` for the full contract. */
   public readonly tooltip = input<string>('', { alias: 'lfxUiTooltip' });
   /** Bold first line of the rich tooltip layout. */
   public readonly tooltipTitle = input<string>('', { alias: 'lfxUiTooltipTitle' });
+  /** Font Awesome classes for an icon before the tooltip title. */
+  public readonly tooltipIcon = input<string>('', { alias: 'lfxUiTooltipIcon' });
   /** Keys shown as key caps after the tooltip text, such as `['⌘', 'K']`. */
   public readonly tooltipShortcut = input<string[]>([], { alias: 'lfxUiTooltipShortcut' });
   /** Preferred tooltip side; it flips when it does not fit. */
@@ -113,6 +126,7 @@ export class UiButtonComponent {
   protected readonly classes: Signal<string> = this.initClasses();
   /** A disabled link leaves the tab order; a loading link stays focusable because it has no href while busy. */
   protected readonly linkTabIndex: Signal<number | null> = this.initLinkTabIndex();
+  protected readonly menuPositions: Signal<ConnectedPosition[]> = this.initMenuPositions();
 
   private readonly menuTrigger = viewChild(CdkMenuTrigger);
   private readonly menuButton = viewChild(CdkMenuTrigger, { read: ElementRef });
@@ -142,7 +156,7 @@ export class UiButtonComponent {
   // A busy button keeps focus and its look, so keyboard activation is stopped here instead of with `disabled`.
   // A disabled link has no native `disabled` either, so a programmatic click is stopped the same way.
   protected onClick(event: Event): void {
-    if (!this.loading() && !(this.link() !== null && this.disabled())) return;
+    if (!this.loading() && !((this.link() !== null || this.href() !== null) && this.disabled())) return;
     event.preventDefault();
     event.stopPropagation();
   }
@@ -154,6 +168,21 @@ export class UiButtonComponent {
 
   private initIconSize(): Signal<number> {
     return computed(() => ({ tiny: 12, small: 13, default: 14, large: 18 })[this.size()]);
+  }
+
+  // Below the trigger first, flipping above it, then trying the other edge when the preferred one does not fit.
+  private initMenuPositions(): Signal<ConnectedPosition[]> {
+    return computed(() => {
+      const start: ConnectedPosition[] = [
+        { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' },
+        { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom' },
+      ];
+      const end: ConnectedPosition[] = [
+        { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' },
+        { originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom' },
+      ];
+      return this.menuAlign() === 'end' ? [...end, ...start] : [...start, ...end];
+    });
   }
 
   private initLinkTabIndex(): Signal<number | null> {
@@ -221,7 +250,7 @@ export class UiButtonComponent {
         size.box,
         shape,
         this.fullWidth() ? 'w-full' : '',
-        this.link() !== null ? `!no-underline ${linkInks[this.variant()]}` : '',
+        this.link() !== null || this.href() !== null ? `!no-underline ${linkInks[this.variant()]}` : '',
         pointer,
       ]
         .filter(Boolean)

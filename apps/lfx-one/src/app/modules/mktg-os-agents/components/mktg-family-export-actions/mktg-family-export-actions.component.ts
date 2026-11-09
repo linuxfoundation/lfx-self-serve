@@ -34,23 +34,12 @@ import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, combineLatest, distinctUntilChanged, from, map, of, Subject, Subscription, startWith, switchMap } from 'rxjs';
-import { MktgBrandKitPrintComponent } from '../../mktg-brand-kit-print/mktg-brand-kit-print.component';
-import { MktgBoilerplatesPrintComponent } from '../../mktg-boilerplates-print/mktg-boilerplates-print.component';
-import { MktgFaqPrintComponent } from '../../mktg-faq-print/mktg-faq-print.component';
-import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-framework-print.component';
+import { MktgFamilyPrintComponent } from '../mktg-family-print/mktg-family-print/mktg-family-print.component';
 
 /** The Family page's named slot; document export controls are independent. */
 @Component({
   selector: 'lfx-mktg-family-export-actions',
-  imports: [
-    DatePipe,
-    ButtonComponent,
-    MessageComponent,
-    MktgBrandKitPrintComponent,
-    MktgFrameworkPrintComponent,
-    MktgBoilerplatesPrintComponent,
-    MktgFaqPrintComponent,
-  ],
+  imports: [DatePipe, ButtonComponent, MessageComponent, MktgFamilyPrintComponent],
   templateUrl: './mktg-family-export-actions.component.html',
   styleUrl: './mktg-family-export-actions.component.scss',
   host: { class: 'block', '[attr.data-family-id]': 'familyId()' },
@@ -104,7 +93,7 @@ export class MktgFamilyExportActionsComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      combineLatest([toObservable(this.focusRequested), toObservable(this.checking), toObservable(this.canPrint)])
+      combineLatest([toObservable(this.focusRequested), toObservable(this.checking), toObservable(this.canPrint), toObservable(this.canExport)])
         .pipe(takeUntilDestroyed())
         .subscribe(([requested]) => {
           if (!requested || !this.focusRequested()) return;

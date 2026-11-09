@@ -1644,6 +1644,7 @@ describe('VoteDetailComponent', () => {
         'Synthetic comment r-2',
       ]);
       expect(questionLabels(fixture)).toEqual(['Anything else?', 'Any concerns?', 'Anything else?']);
+      expect(testId(fixture, 'vote-detail-overview-comment-prompt')).toBeNull();
       expect(rendered[0].querySelector('[data-testid="vote-results-comment-meta"]')?.textContent).toContain('Synthetic Voter r-4');
       expect(testId(fixture, 'vote-detail-overview-all-comments')).not.toBeNull();
 
@@ -1654,13 +1655,24 @@ describe('VoteDetailComponent', () => {
       );
     });
 
-    it('omits redundant question labels when the vote has one comment question', async () => {
-      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
-      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: false, poll_comment_prompts: [prompts[0]] })));
-      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), comment_results: [{ prompt: prompts[0], responses: [named('r-1', 22)] }] }));
+    it.each([
+      { viewer: 'manager', anonymous: false },
+      { viewer: 'manager', anonymous: true },
+      { viewer: 'voter', anonymous: false },
+    ])('shows the single comment question once below the heading for a $viewer (anonymous: $anonymous)', async ({ viewer, anonymous }) => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: viewer === 'manager' } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: anonymous, poll_comment_prompts: [prompts[0]] })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getVoteResults.mockReturnValue(
+        of({ ...makeResults(), comment_results: [{ prompt: prompts[0], responses: [named('r-1', 22), named('r-2', 21)] }] })
+      );
       const fixture = await setup('browser', [VoteCommentItemComponent]);
 
-      expect(items(fixture)).toHaveLength(1);
+      const prompt = testId(fixture, 'vote-detail-overview-comment-prompt');
+      expect(prompt?.textContent?.trim()).toBe('Any concerns?');
+      expect(prompt?.previousElementSibling?.querySelector('h2')?.textContent).toBe('What voters are saying');
+      expect(prompt?.nextElementSibling?.querySelectorAll('lfx-vote-comment-item')).toHaveLength(2);
+      expect(items(fixture)).toHaveLength(2);
       expect(questionLabels(fixture)).toEqual([]);
     });
 

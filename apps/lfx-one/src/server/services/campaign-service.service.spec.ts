@@ -63,6 +63,7 @@ import {
   asResumeRefusal,
   CampaignServiceClient,
   deriveEventSlug,
+  briefDispatchEventName,
   fromBriefResponse,
   isCampaignServiceJobId,
   multiCampaignPlatforms,
@@ -1228,6 +1229,24 @@ function storedBrief(overrides: Record<string, unknown> = {}): any {
   };
 }
 
+describe('briefDispatchEventName', () => {
+  it.each([
+    ['eventName before name', { event_details: { name: 'UI name', eventName: ' Stored ' } }, 'Stored'],
+    ['name when eventName is blank', { event_details: { eventName: ' ', name: ' UI name ' } }, 'UI name'],
+    ['event_details before copy', { event_details: { name: 'Details' }, copy: { eventName: 'Copy' } }, 'Details'],
+    ['copy when event_details has none', { event_details: { city: 'Paris' }, copy: { eventName: 'Copy' } }, 'Copy'],
+    ['a key in other capitals, the later one winning', { event_details: { eventName: 'First', EVENTNAME: 'Second' } }, 'Second'],
+    ['nothing from a blob Go cannot decode', { event_details: { name: 'Details', hsToken: 7 }, copy: { name: 'Copy' } }, 'Copy'],
+    ['nothing from a blob that is not an object', { event_details: ['Details'], copy: { name: 'Copy' } }, 'Copy'],
+    // Go's quirk: the raw whitespace name blocks copy's eventName, then copy's absent name replaces it.
+    ["a whitespace name, which keeps copy's eventName out", { event_details: { name: '  ' }, copy: { eventName: 'Copy' } }, ''],
+    ['a whitespace name raw when nothing follows', { event_details: { name: '  ' } }, '  '],
+    ['a whitespace name raw past a copy Go cannot decode', { event_details: { name: '  ' }, copy: ['Copy'] }, '  '],
+  ])('reads %s', (_label, found, expected) => {
+    expect(briefDispatchEventName(found)).toBe(expected);
+  });
+});
+
 describe('fromBriefResponse', () => {
   // The one property that matters most: what a save writes, a load must give back. Anything
   // this drops is work the user did in the Planning tab and would have to redo, without ever
@@ -1863,6 +1882,7 @@ describe('CampaignServiceClient.loadBrief', () => {
     await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email')).resolves.toMatchObject({
       status: 'loaded',
       briefId: 'b-1',
+      storedEventName: 'KubeCon EU 2026',
     });
   });
 
@@ -2014,6 +2034,7 @@ describe('CampaignServiceClient.loadBriefById', () => {
     expect(result.status).toBe('loaded');
     expect(result.briefId).toBe('b-1');
     expect(result.etag).toBe('"3"');
+    expect(result.storedEventName).toBe('KubeCon EU 2026');
     // No query at all: an id is exact identity upstream, so there is nothing to disambiguate.
     expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1', 'GET');
   });
@@ -6172,6 +6193,37 @@ describe('CampaignServiceClient.listGoogleAdsUserLists', () => {
     proxyRequest.mockRejectedValueOnce(upstream);
 
     await expect(new CampaignServiceClient().listGoogleAdsUserLists(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.listGoogleAdsAudiences', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's Audience resources, type=audience, with the project encoded", async () => {
+    const audiences = { account_id: '1234567890', type: 'audience', audiences: [], audience_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(audiences);
+
+    const result = await new CampaignServiceClient().listGoogleAdsAudiences(req, 'lf/ai');
+
+    expect(result).toBe(audiences);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/google-ads/audiences', 'GET', { type: 'audience' });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listGoogleAdsAudiences(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().listGoogleAdsAudiences(req, 'cncf')).rejects.toBe(upstream);
   });
 });
 

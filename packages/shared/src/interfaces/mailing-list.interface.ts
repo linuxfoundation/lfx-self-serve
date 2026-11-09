@@ -8,6 +8,7 @@ import type {
   MailingListMemberDeliveryMode,
   MailingListMemberModStatus,
   MailingListMemberType,
+  MailingListSyncMode,
   MailingListType,
 } from '../enums/mailing-list.enum';
 import type { CommitteeReference } from './committee.interface';
@@ -130,6 +131,8 @@ export interface GroupsIOMailingList {
   subscriber_count: number;
   /** Whether the current user has write access (response-only, set by access check) */
   writer?: boolean;
+  /** Automatic membership sync direction with the linked committee. Only meaningful when committee_uid/committees is set. */
+  sync_mode?: MailingListSyncMode;
 }
 
 /**
@@ -168,6 +171,8 @@ export interface CreateMailingListRequest {
   committee_uid?: string | null;
   /** Linked committees with allowed voting statuses */
   committees?: CommitteeReference[];
+  /** Automatic membership sync direction with the linked committee. Requires committee_uid to be set. */
+  sync_mode?: MailingListSyncMode;
   /** Email subject prefix (optional) */
   subject_tag?: string;
   /** Manager users who can edit/modify this resource */
@@ -309,6 +314,19 @@ export interface UpdateMailingListMemberRequest {
   delivery_mode?: MailingListMemberDeliveryMode;
   /** Moderation status */
   mod_status?: MailingListMemberModStatus;
+}
+
+/**
+ * Outcome of one mailing list's `updateMailingList` call inside a committee's batched
+ * link/unlink/direction-change save (#4026). `status` is only populated on failure — either the
+ * HTTP error's status, or (for an activation skipped because its dependent slot-release failed)
+ * the status copied from that release failure, so permission-denied detection still works for
+ * skipped entries.
+ */
+export interface MailingListAssociationUpdateResult {
+  uid: string;
+  success: boolean;
+  status?: number;
 }
 
 /**

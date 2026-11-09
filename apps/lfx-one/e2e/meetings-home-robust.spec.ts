@@ -196,7 +196,7 @@ test.describe('Meetings home page - Robust Tests', () => {
         await gotoMeetingsHome(page);
 
         const bar = page.getByTestId('meetings-redesign-tabs-bar');
-        const tabs = await box(page.getByTestId('meetings-redesign-tabs'));
+        const tabs = await box(page.getByTestId('meetings-redesign-tabs').getByRole('tablist'));
         const search = await box(page.getByTestId('meetings-redesign-search'));
         const filters = await box(page.getByTestId('meetings-home-filters-button'));
         expect(search.y).toBeLessThan(tabs.y + tabs.height);
@@ -216,7 +216,7 @@ test.describe('Meetings home page - Robust Tests', () => {
       await gotoMeetingsHome(page);
 
       const bar = await box(page.getByTestId('meetings-redesign-tabs-bar'));
-      const tabs = await box(page.getByTestId('meetings-redesign-tabs'));
+      const tabs = await box(page.getByTestId('meetings-redesign-tabs').getByRole('tablist'));
       const search = await box(page.getByTestId('meetings-redesign-search'));
       const filters = await box(page.getByTestId('meetings-home-filters-button'));
       expect(search.y).toBeGreaterThanOrEqual(tabs.y + tabs.height);

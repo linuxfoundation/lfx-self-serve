@@ -69,7 +69,7 @@
         [attr.rel]="link().newTab ? 'noopener noreferrer' : null"
         [lfxUiTooltip]="row().title"
         [lfxUiTooltipDisabled]="!titleTruncated()"
-        (click)="onLinkClick($event, link().url, link().newTab)"
+        (click)="onTitleClick($event)"
         data-testid="meetings-home-row-title"
         >{{ row().title }}</a
       >

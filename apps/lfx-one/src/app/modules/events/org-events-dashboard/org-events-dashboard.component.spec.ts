@@ -5,12 +5,7 @@ import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import {
-  EMPTY_ORG_EVENTS_RESPONSE,
-  ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE,
-  ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE,
-  ORG_EVENTS_PARTICIPATION_UPCOMING_NOTE,
-} from '@lfx-one/shared/constants';
+import { EMPTY_ORG_EVENTS_RESPONSE, ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE, ORG_EVENTS_PARTICIPATION_UPCOMING_NOTE } from '@lfx-one/shared/constants';
 import type { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
@@ -28,8 +23,6 @@ async function render(
   {
     settled = true,
     query = {} as Record<string, string>,
-    summaryServed = 'verified',
-    listServed = 'verified',
     summaryFails = false,
     listMode = 'ok' as 'ok' | 'pending' | 'error',
     foundations = [{ id: 'foundation-a', name: 'Foundation A' }],
@@ -38,13 +31,11 @@ async function render(
   const pageState = signal<OrgLensEmptyStateName | null>(state);
   const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
   const eventsService = {
-    getOrgEventsSummary: vi.fn(() =>
-      summaryFails ? throwError(() => new Error('summary down')) : of({ totalEvents: 0, upcomingEvents: 0, pastEvents: 0, servedAttribution: summaryServed })
-    ),
+    getOrgEventsSummary: vi.fn(() => (summaryFails ? throwError(() => new Error('summary down')) : of({ totalEvents: 0, upcomingEvents: 0, pastEvents: 0 }))),
     getOrgEvents: vi.fn(() => {
       if (listMode === 'pending') return NEVER;
       if (listMode === 'error') return throwError(() => new Error('list down'));
-      return of({ ...EMPTY_ORG_EVENTS_RESPONSE, servedAttribution: listServed });
+      return of(EMPTY_ORG_EVENTS_RESPONSE);
     }),
     getOrgEventFoundations: vi.fn(() => of({ data: foundations })),
   };
@@ -129,7 +120,7 @@ describe('OrgEventsDashboardComponent', () => {
 
   it('restores the filters from the URL and sends them on the Past tab', async () => {
     const { eventsService } = await render(null, {
-      query: { tab: 'past', range: '90d', participation: 'attended', attribution: 'company_email', eventScope: 'all', foundation: 'foundation-a' },
+      query: { tab: 'past', range: '90d', participation: 'attended', attribution: 'self_reported', eventScope: 'all', foundation: 'foundation-a' },
     });
 
     const [, params] = eventsService.getOrgEvents.mock.calls[0] as unknown as [string, Record<string, unknown>];
@@ -137,19 +128,19 @@ describe('OrgEventsDashboardComponent', () => {
       isPast: true,
       range: '90d',
       participation: 'attended',
-      attribution: 'company_email',
+      attribution: 'self_reported',
       eventScope: 'all',
       foundation: 'foundation-a',
     });
     expect(eventsService.getOrgEventsSummary).toHaveBeenCalledWith('acc-1', {
-      attribution: 'company_email',
+      attribution: 'self_reported',
       eventScope: 'all',
       foundation: 'foundation-a',
       range: '90d',
     });
   });
 
-  it('defaults Count to All and Counted by to Company email or employee, and sends a Count of All on the Past tab', async () => {
+  it('defaults Count to All and Counted by to Employee match, and sends a Count of All on the Past tab', async () => {
     const { component, eventsService } = await render(null, { query: { tab: 'past' } });
 
     expect(component.filterForm.controls.participation.value).toBe('all');
@@ -177,7 +168,7 @@ describe('OrgEventsDashboardComponent', () => {
   });
 
   it('keeps Counted by behind "More filters" and counts a non-default pick on the link', async () => {
-    const { el, fixture } = await render(null, { query: { attribution: 'account' } });
+    const { el, fixture } = await render(null, { query: { attribution: 'self_reported' } });
 
     expect(el.querySelector('[data-testid="org-events-more-filters"]')?.classList.contains('hidden')).toBe(true);
     const toggle = el.querySelector<HTMLButtonElement>('[data-testid="org-events-more-filters-toggle"]');
@@ -188,51 +179,23 @@ describe('OrgEventsDashboardComponent', () => {
     expect(el.querySelector('[data-testid="org-events-more-filters"]')?.classList.contains('hidden')).toBe(false);
   });
 
-  it('shows the unavailable note only when the list served an attribution other than the one picked', async () => {
-    const fellBack = await render(null, { query: { attribution: 'company_email' }, listServed: 'account' });
-    expect(fellBack.el.querySelector('[data-testid="org-events-attribution-unavailable"]')?.textContent).toContain(ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE);
-    TestBed.resetTestingModule();
+  it('reads Self-reported only from the URL and says so in the caption', async () => {
+    const { component, eventsService } = await render(null, { query: { attribution: 'self_reported' } });
 
-    const served = await render(null, { query: { attribution: 'company_email' }, listServed: 'company_email' });
-    expect(served.el.querySelector('[data-testid="org-events-attribution-unavailable"]')).toBeNull();
+    expect(component.filterForm.controls.attribution.value).toBe('self_reported');
+    expect(eventsService.getOrgEventsSummary).toHaveBeenCalledWith('acc-1', expect.objectContaining({ attribution: 'self_reported' }));
+    expect(eventsService.getOrgEvents).toHaveBeenCalledWith('acc-1', expect.objectContaining({ attribution: 'self_reported' }));
+    expect(component.upcomingAttendeesCaption()).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.self_reported);
   });
 
-  it('takes the caption and the notice from the list, not the summary, when the summary read fails', async () => {
-    const { el, component } = await render(null, { query: { attribution: 'company_email' }, listServed: 'account', summaryFails: true });
+  // lfx-self-serve#5315 retired Company email and Account on registration: an old link reads with the default instead.
+  it.each(['company_email', 'account'])('falls back to Employee match for the retired ?attribution=%s', async (retired) => {
+    const { component, eventsService } = await render(null, { query: { attribution: retired } });
 
-    expect(el.querySelector('[data-testid="org-events-attribution-unavailable"]')?.textContent).toContain(ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE);
-    expect(component.upcomingAttendeesCaption()).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.account);
-  });
-
-  it('ignores a summary that says account when the list served the attribution picked', async () => {
-    const { el, component } = await render(null, { query: { attribution: 'company_email' }, listServed: 'company_email', summaryServed: 'account' });
-
-    expect(el.querySelector('[data-testid="org-events-attribution-unavailable"]')).toBeNull();
-    expect(component.upcomingAttendeesCaption()).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.company_email);
-  });
-
-  it('shows no notice while the list read is pending, whatever the summary says', async () => {
-    const { el, component } = await render(null, { query: { attribution: 'company_email' }, summaryServed: 'account', listMode: 'pending' });
-
-    expect(el.querySelector('[data-testid="org-events-attribution-unavailable"]')).toBeNull();
-    expect(component.upcomingAttendeesCaption()).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.company_email);
-  });
-
-  it('shows no notice after a failed list read', async () => {
-    const { el } = await render(null, { query: { attribution: 'company_email' }, listMode: 'error' });
-
-    expect(el.querySelector('[data-testid="org-events-attribution-unavailable"]')).toBeNull();
-  });
-
-  it('drops a notice earned under another Counted by as soon as the pick changes', async () => {
-    const { el, component, fixture } = await render(null, { query: { attribution: 'company_email' }, listServed: 'account' });
-    expect(el.querySelector('[data-testid="org-events-attribution-unavailable"]')).not.toBeNull();
-
-    // `all` was never answered by the list, so the held `account` response is stale for it.
-    component.filterForm.controls.attribution.setValue('all');
-    fixture.detectChanges();
-
-    expect(el.querySelector('[data-testid="org-events-attribution-unavailable"]')).toBeNull();
+    expect(component.filterForm.controls.attribution.value).toBe('verified');
+    expect(eventsService.getOrgEventsSummary).toHaveBeenCalledWith('acc-1', expect.objectContaining({ attribution: 'verified' }));
+    expect(eventsService.getOrgEvents).not.toHaveBeenCalledWith('acc-1', expect.objectContaining({ attribution: retired }));
+    expect(component.upcomingAttendeesCaption()).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.verified);
   });
 
   it('offers Clear filters only when a filter is not at its default', async () => {

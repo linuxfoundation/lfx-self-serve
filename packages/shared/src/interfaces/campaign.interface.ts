@@ -14,6 +14,9 @@ import type {
   GOOGLE_ADS_AGE_RANGE_MAP,
   GOOGLE_ADS_DEMAND_GEN_DEVICES,
   GOOGLE_ADS_GENDERS,
+  GOOGLE_ADS_INCOME_RANGES,
+  GOOGLE_ADS_OBSERVED_DEMOGRAPHICS,
+  GOOGLE_ADS_PARENTAL_STATUSES,
   GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
@@ -1457,6 +1460,21 @@ export interface CampaignImplementationDraft {
    * on, so turning it off and on again restores them. Absent leaves the form's groups alone.
    */
   demandGenAdGroups?: GoogleDemandGenAdGroupDraft[];
+  /** The single Demand Gen ad group's first ad's name, used once it has more than one ad. Absent leaves it alone. */
+  demandGenAdName?: string;
+  /** The single Demand Gen ad group's second and later ads, both formats raw. Absent leaves the form's alone. */
+  demandGenAds?: GoogleDemandGenAdDraft[];
+  /** The single Demand Gen ad group's picked Audience resource name (#5244). Absent leaves it alone. */
+  demandGenAudience?: string;
+  /**
+   * The single Demand Gen ad group's demographics (linuxfoundation/lfx-v2-campaign-service#498), kept
+   * whether or not the split is on. Absent leaves the form's alone.
+   */
+  demandGenDemographics?: GoogleDemandGenDemographics;
+  /** Whether the Display campaign is split into named ad groups (#475). Absent restores the default, off. */
+  displayAdGroupsSplit?: boolean;
+  /** The named Display ad groups as typed, kept whether or not the split is on. Absent leaves the form's groups alone. */
+  displayAdGroups?: GoogleDisplayAdGroupDraft[];
   /**
    * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
    * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
@@ -1536,6 +1554,15 @@ export interface CampaignImplementationDraft {
   googleExcludedAgeRanges?: GoogleAdsAgeRange[];
   googleExcludedGenders?: GoogleAdsGender[];
   /**
+   * Google's excluded income ranges and parental statuses, observed Search dimensions and Display
+   * demographic targeting, as the operator set them. Held and restored on the same rule as
+   * {@link googleAdSchedules}: a list saved under a channel that does not take it is kept, not sent.
+   */
+  googleExcludedIncomeRanges?: GoogleAdsIncomeRange[];
+  googleExcludedParentalStatuses?: GoogleAdsParentalStatus[];
+  googleObservedDemographics?: GoogleAdsObservedDemographic[];
+  googleDisplayDemographics?: GoogleDisplayDemographics;
+  /**
    * Google's excluded locations — country codes and numeric geo target constant ids. Countries
    * picked from the list come first; an entry typed into the geo id box is appended after them.
    * Absent and empty agree: the campaign excludes nowhere.
@@ -1564,8 +1591,9 @@ export interface CampaignImplementationDraft {
    *
    * Empty means "no callouts", which is what this path sent before the list existed, so an absent
    * field and an empty list agree. Restored whatever channel the draft was saved under: the section
-   * and the payload both gate on the dispatched channel, so a list restored under Performance Max
-   * is held rather than sent, and is still there if the operator switches back to Search.
+   * and the payload both gate on the dispatched channel, so a list restored under Demand Gen or
+   * Display is held rather than sent, and is still there if the operator switches back to Search or
+   * Performance Max (`GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS`).
    */
   googleCallouts?: string[];
   /**
@@ -1573,14 +1601,16 @@ export interface CampaignImplementationDraft {
    *
    * Held and restored on exactly the same rule as {@link googleCallouts}: absent and empty agree,
    * and a list saved under a channel that takes no sitelinks is kept rather than discarded. Unlike
-   * the callouts, it is SENT on Demand Gen as well as Search (`GOOGLE_CHANNELS_WITH_SITELINKS`).
+   * the callouts, it is SENT on Demand Gen too (`GOOGLE_CHANNELS_WITH_SITELINKS`: Search, Demand Gen
+   * and Performance Max).
    */
   googleSitelinks?: CampaignSitelink[];
   /**
    * Google's structured snippets, as the operator typed them.
    *
    * Held and restored on the same rule as {@link googleCallouts} and {@link googleSitelinks}: absent
-   * and empty agree, and a list saved under a non-Search channel is kept rather than discarded.
+   * and empty agree, and a list saved under a channel that takes no snippets is kept rather than
+   * discarded.
    *
    * Its LIFETIME is shorter than theirs, and deliberately so. This draft is in-memory scratch on the
    * campaigns page: it survives switching away from the Implement tab and back, and nothing else. It
@@ -1597,7 +1627,10 @@ export interface CampaignImplementationDraft {
   googleStructuredSnippets?: CampaignStructuredSnippet[];
   /**
    * Google's audience segments, as the user-list resource names the operator entered — already
-   * trimmed, because an entry only becomes a chip once it has passed the add guards.
+   * trimmed, because an entry only becomes a chip once it has passed the add guards. A create sends
+   * them as `campaignAudienceSegments`, observed on the whole Search campaign (#5244); a draft saved
+   * while they went out as `audienceSegments` holds the same names under this same key, so it
+   * restores unchanged and sends them at the campaign level too.
    *
    * Held and restored on the same rule as {@link googleCallouts}: absent and empty agree, and a list
    * saved under a non-Search channel is kept rather than discarded. Typed by hand like
@@ -1632,6 +1665,18 @@ export interface CampaignImplementationDraft {
   googleTargetRoas?: string;
   googleCpcBid?: string;
   googleConversionActions?: string;
+  /**
+   * The Display placement exclusions box verbatim, one domain per line, unsplit and untrimmed, kept
+   * whichever channel is picked. Absent leaves the form alone.
+   */
+  googleExcludedPlacements?: string;
+  /**
+   * The Performance Max search themes box, as RAW text, one theme per line, unsplit and untrimmed, as
+   * {@link googleConversionActions} is. Restored whatever channel the draft was saved under: the
+   * section and the payload both gate on Performance Max, so text restored under another channel is
+   * held rather than sent. Optional and restored only when present.
+   */
+  googlePerformanceMaxSearchThemes?: string;
 }
 
 /**
@@ -1691,6 +1736,12 @@ export interface CampaignBriefLoadResult {
    * to assume approval.
    */
   approved: boolean;
+  /**
+   * The event name campaign-service will compose this brief's create names from, read off the stored
+   * row the way its dispatcher reads it (`briefDispatchEventName`). Set on `loaded` only; the server's
+   * pre-dispatch name checks read it, and the UI does not.
+   */
+  storedEventName?: string;
 }
 
 /**
@@ -2513,7 +2564,7 @@ export interface GoogleConversionActionPickerState {
 /**
  * One user list on the Google Ads account a create uses, as the Implement tab's audience segment
  * picker offers it (campaign-service `list-google-ads-user-lists`, camel-cased). `resourceName` is the
- * `customers/{customerId}/userLists/{id}` form `audienceSegments` accepts and the one the picker adds;
+ * `customers/{customerId}/userLists/{id}` form `campaignAudienceSegments` accepts and the one the picker adds;
  * the rest are labels only. `eligibleForSearch` is `null` when Google reported nothing.
  */
 export interface GoogleAdsUserListOption {
@@ -2546,6 +2597,40 @@ export interface GoogleAdsUserListsResult {
 export interface GoogleUserListPickerState {
   status: 'idle' | 'loading' | 'loaded' | 'unavailable';
   lists: GoogleUserListPickerOption[];
+  truncated: boolean;
+  reason: string | null;
+}
+
+/**
+ * One Google Ads Audience on the account a create uses, as the Implement tab's Demand Gen audience picker
+ * offers it (campaign-service `list-google-ads-audiences` with `type=audience`, camel-cased).
+ * `resourceName` is the `customers/{customerId}/audiences/{id}` form `demandGenAudience` accepts and the
+ * one the picker sets; `name` and `description` are labels only.
+ */
+export interface GoogleAdsAudienceOption {
+  resourceName: string;
+  id: string;
+  name: string;
+  description: string | null;
+}
+
+/** The Audience read: the account it came from, its Audiences sorted by name, and whether more exist than were returned. */
+export interface GoogleAdsAudiencesResult {
+  accountId: string;
+  audiences: GoogleAdsAudienceOption[];
+  truncated: boolean;
+}
+
+/**
+ * Where the Implement tab's Demand Gen audience picker stands. `unavailable` is a list that could not
+ * load (the route is off or refused, or Google failed) and `reason` says which in one sentence.
+ * `accountId` is the customer the Audiences were read from, which a picked or restored Audience must
+ * name; `''` until the list has loaded.
+ */
+export interface GoogleAudiencePickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  audiences: GoogleAdsAudienceOption[];
+  accountId: string;
   truncated: boolean;
   reason: string | null;
 }
@@ -2762,11 +2847,19 @@ export interface GoogleCreativeFieldSpec {
   image?: GoogleCreativeImageShape;
   /**
    * Set on a `text` field whose value is one of a closed list, and only there: the form offers the
-   * list as a select, and the empty value sends nothing. The Demand Gen video ad's call to action is
-   * the one such field — upstream takes a `CallToActionType` from a short list it has probed, not
-   * free text (`demandGenVideoCallToActions`).
+   * list as a select, the empty value sends nothing, and a value outside the list is refused before
+   * the create. Every Google call to action is one: the Demand Gen video ad's takes a `CallToActionType`
+   * from the short list campaign-service has probed (`demandGenVideoCallToActions`), and the responsive
+   * display ad's and Demand Gen image ad's take the text Google documents for them
+   * (`GOOGLE_DISPLAY_CALLS_TO_ACTION`, `GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION`).
    */
   options?: readonly GoogleCreativeFieldOption[];
+}
+
+/** Why a creative field would be refused, and which field: the control name the BFF reports it against. */
+export interface GoogleCreativeFieldRefusal {
+  field: string;
+  message: string;
 }
 
 /** One choice of a closed-list creative field ({@link GoogleCreativeFieldSpec.options}). */
@@ -3071,33 +3164,115 @@ export interface GoogleDemandGenVideoCreative {
 /**
  * One named Demand Gen ad group (#5226), typed to an entry of `googleAdsConfig.demandGenAdGroups`
  * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenAdGroupConfig`, #460). campaign-service names
- * the group `<event name> - Display | <name>` and gives it exactly one of the two creatives.
+ * the group `<event name> - Display | <name>` and gives it one ad from exactly one of the two creatives,
+ * or several from {@link ads} instead.
  *
- * Upstream also takes `audience` (one Audience per group) and `ads` (several ads per group). Neither is
- * sent yet; each is a field added here, beside the two creatives, when the Implement tab collects it.
+ * `audience` is the group's one Google Ads Audience (#5244), sent only when one was picked.
+ * `demographics` (linuxfoundation/lfx-v2-campaign-service#518) is built into an Audience of the group's
+ * own instead, so upstream refuses the two together.
  */
 export interface GoogleDemandGenAdGroup {
   name: string;
+  /** The group's Audience resource name, `customers/{customerId}/audiences/{id}`, under the same rules as {@link CampaignCreateRequest.demandGenAudience}. */
+  audience?: string;
+  /** The group's own demographics, the same object as {@link CampaignCreateRequest.demandGenDemographics}; they replace those for this group. */
+  demographics?: GoogleDemandGenDemographics;
   /** The group's image ad, the same shape as {@link CampaignCreateRequest.demandGenCreative}. */
   creative?: GoogleDemandGenCreative;
   /** The group's video ad, the same shape as {@link CampaignCreateRequest.demandGenVideoCreative}. */
   videoCreative?: GoogleDemandGenVideoCreative;
+  /** The group's several named ads (#474 upstream), sent INSTEAD of both creatives above. At most 5. */
+  ads?: GoogleDemandGenAd[];
 }
 
-/** One Demand Gen ad group as the Implement tab's draft keeps it: the raw text of both formats, and which is chosen. */
-export interface GoogleDemandGenAdGroupDraft {
+/**
+ * One of several named ads of a Demand Gen ad group, typed to an entry of `googleAdsConfig.demandGenAds`
+ * or of a group's `ads` (`googleAdsDemandGenAdConfig`, lfx-v2-campaign-service#482): a name and exactly
+ * one of the two creatives. campaign-service names a video ad `<ad group name> - <name>`; an image ad's
+ * name is not sent to Google.
+ */
+export interface GoogleDemandGenAd {
+  name: string;
+  creative?: GoogleDemandGenCreative;
+  videoCreative?: GoogleDemandGenVideoCreative;
+}
+
+/** One Demand Gen ad as the Implement tab's draft keeps it: its name, the raw text of both formats, and which is chosen. */
+export interface GoogleDemandGenAdDraft {
   name: string;
   format: GoogleDemandGenAdFormat;
   creative: Record<string, string>;
   videoCreative: Record<string, string>;
 }
 
-/** The form controls of one Demand Gen ad group on the Implement tab: {@link GoogleDemandGenAdGroupDraft}, live. */
-export interface GoogleDemandGenAdGroupControls {
+/**
+ * One Demand Gen ad group as the Implement tab's draft keeps it: its name, its first ad's raw text in
+ * both formats and which is chosen, and, when it has several ads, the first ad's name and the others.
+ */
+export interface GoogleDemandGenAdGroupDraft extends GoogleDemandGenAdDraft {
+  /** The group's picked Audience resource name (#5244). Absent restores none. */
+  audience?: string;
+  /** The group's own demographics (linuxfoundation/lfx-v2-campaign-service#518). Absent restores none. */
+  demographics?: GoogleDemandGenDemographics;
+  /** The first ad's name, used once the group has more than one ad. Absent restores blank. */
+  adName?: string;
+  /** The group's second and later ads. Absent restores none. */
+  ads?: GoogleDemandGenAdDraft[];
+}
+
+/** The form controls of one Demand Gen ad on the Implement tab: {@link GoogleDemandGenAdDraft}, live. */
+export interface GoogleDemandGenAdControls {
   name: import('@angular/forms').FormControl<string>;
   format: import('@angular/forms').FormControl<GoogleDemandGenAdFormat>;
   creative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
   videoCreative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
+}
+
+/**
+ * A form holding one Demand Gen ad's controls: an ad's own form group, or a named group's, whose
+ * first ad it holds. Structural, because a `FormGroup` of the group's wider controls is not assignable
+ * to a `FormGroup` of the ad's.
+ */
+export interface GoogleDemandGenAdForm {
+  controls: GoogleDemandGenAdControls;
+}
+
+/**
+ * The form controls of one Demand Gen ad group on the Implement tab: {@link GoogleDemandGenAdGroupDraft},
+ * live. `name` is the group's name; `format` and the two creatives are its first ad.
+ */
+export interface GoogleDemandGenAdGroupControls extends GoogleDemandGenAdControls {
+  adName: import('@angular/forms').FormControl<string>;
+  audience: import('@angular/forms').FormControl<string>;
+  demographics: import('@angular/forms').FormControl<GoogleDemandGenDemographics>;
+  ads: import('@angular/forms').FormArray<import('@angular/forms').FormGroup<GoogleDemandGenAdControls>>;
+}
+
+/**
+ * One named Display ad group (#475), typed to an entry of `googleAdsConfig.displayAdGroups`
+ * (`internal/dispatch/googleads.go`'s `googleAdsDisplayAdGroupConfig`). campaign-service names the group
+ * `<event name> - Display Network | <name>` and requires its responsive display ad.
+ *
+ * Upstream also takes the group's audience lists and user-list exclusions, all but `userInterests`
+ * behind `GOOGLE_ADS_DISPLAY_AUDIENCES_ENABLED` (`googleAdsDisplayAudienceFieldsSet`). None is sent:
+ * this application offers no audience input on a Display ad group.
+ */
+export interface GoogleDisplayAdGroup {
+  name: string;
+  /** The group's responsive display ad, the same shape as {@link CampaignCreateRequest.displayCreative}. */
+  creative?: GoogleDisplayCreative;
+}
+
+/** One Display ad group as the Implement tab's draft keeps it: the name and the ad's raw text. */
+export interface GoogleDisplayAdGroupDraft {
+  name: string;
+  creative: Record<string, string>;
+}
+
+/** The form controls of one Display ad group on the Implement tab: {@link GoogleDisplayAdGroupDraft}, live. */
+export interface GoogleDisplayAdGroupControls {
+  name: import('@angular/forms').FormControl<string>;
+  creative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
 }
 
 /**
@@ -3455,7 +3630,7 @@ export interface CampaignAdSchedule {
  *
  * Derived from {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}, the widest channel vocabulary, rather than
  * written out again, so a device added to it cannot leave this type behind. Which of these a channel
- * takes is `googleAdsDevicesOn`'s answer: `CONNECTED_TV` is Demand Gen's alone.
+ * takes is `googleAdsDevicesOn`'s answer: `CONNECTED_TV` is Demand Gen's and Performance Max's alone.
  */
 export type GoogleAdsDevice = (typeof GOOGLE_ADS_DEMAND_GEN_DEVICES)[number];
 
@@ -3470,6 +3645,39 @@ export type GoogleAdsAgeRange = keyof typeof GOOGLE_ADS_AGE_RANGE_MAP;
  * A gender a campaign may exclude. Derived from {@link GOOGLE_ADS_GENDERS}.
  */
 export type GoogleAdsGender = (typeof GOOGLE_ADS_GENDERS)[number];
+
+/** A household income range the Implementation tab offers. Derived from {@link GOOGLE_ADS_INCOME_RANGES}. */
+export type GoogleAdsIncomeRange = (typeof GOOGLE_ADS_INCOME_RANGES)[number];
+
+/** A parental status. Derived from {@link GOOGLE_ADS_PARENTAL_STATUSES}. */
+export type GoogleAdsParentalStatus = (typeof GOOGLE_ADS_PARENTAL_STATUSES)[number];
+
+/** A demographic dimension a Search campaign can observe. Derived from {@link GOOGLE_ADS_OBSERVED_DEMOGRAPHICS}. */
+export type GoogleAdsObservedDemographic = (typeof GOOGLE_ADS_OBSERVED_DEMOGRAPHICS)[number];
+
+/**
+ * Positive demographic targeting on every Display ad group (linuxfoundation/lfx-v2-campaign-service#499),
+ * `googleAdsConfig.displayDemographics` on the wire. Each non-empty list narrows the campaign to the
+ * values it names; an empty or absent list leaves that dimension open. Each list takes the vocabulary
+ * of its exclusion counterpart.
+ */
+export interface GoogleDisplayDemographics {
+  ageRanges?: GoogleAdsAgeRange[];
+  genders?: GoogleAdsGender[];
+  incomeRanges?: GoogleAdsIncomeRange[];
+  parentalStatuses?: GoogleAdsParentalStatus[];
+}
+
+/**
+ * A Demand Gen ad group's demographics (linuxfoundation/lfx-v2-campaign-service#498, #518),
+ * `googleAdsConfig.demandGenDemographics` or a `demandGenAdGroups` entry's `demographics` on the wire:
+ * the same four lists as {@link GoogleDisplayDemographics}, in the same vocabularies. Upstream builds
+ * them into one new Audience the ad group targets, so each non-empty list narrows the ad group to the
+ * values it names. Unknown (`UNDETERMINED`) adds the people Google could not classify and needs a real
+ * value beside it; a list naming every value and Unknown narrows nothing, and upstream leaves it out.
+ * Upstream also takes user lists and custom audiences in this object; this application sends neither.
+ */
+export type GoogleDemandGenDemographics = GoogleDisplayDemographics;
 
 /** What the "create another campaign" confirmation shows (#4983, "ss-3"). */
 export interface CampaignCreateAnotherDialogData {
@@ -3599,11 +3807,32 @@ export interface CampaignSearchAd {
   path2?: string;
 }
 
-/** One demographic exclusion checkbox on the Implementation tab: the value it writes, its label and whether it is ticked. */
+/** One demographic checkbox on the Implementation tab (an exclusion, an observed dimension or a targeted value): the value it writes, its label and whether it is ticked. */
 export interface GoogleExclusionOptionView {
   value: string;
   label: string;
   checked: boolean;
+}
+
+/** A refusal naming the request field it is about, so the BFF can attach it to that field. */
+export interface GoogleDemographicFieldRefusal {
+  field: string;
+  message: string;
+}
+
+/** The exclusion lists a targeted or observed demographic is compared with, as the request carries them. */
+export interface GoogleDemographicExclusionLists {
+  ageRanges?: unknown;
+  genders?: unknown;
+  incomeRanges?: unknown;
+  parentalStatuses?: unknown;
+}
+
+/** One dimension of Display's demographic targeting on the Implementation tab: the list it writes, its legend and its checkboxes. */
+export interface GoogleDemographicTargetingGroupView {
+  key: keyof GoogleDisplayDemographics;
+  legend: string;
+  rows: GoogleExclusionOptionView[];
 }
 
 /**
@@ -3706,8 +3935,47 @@ export interface CampaignCreateRequest {
    * campaign-service refuses the list beside either of them. At most `GOOGLE_DEMAND_GEN_MAX_AD_GROUPS`.
    */
   demandGenAdGroups?: GoogleDemandGenAdGroup[];
+  /**
+   * Several named ads for the single Demand Gen ad group (lfx-v2-campaign-service#482), sent INSTEAD
+   * of both creatives above and never beside {@link demandGenAdGroups}. At most
+   * `GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP`.
+   */
+  demandGenAds?: GoogleDemandGenAd[];
+  /**
+   * The single Demand Gen ad group's one Google Ads Audience (#5244), a full
+   * `customers/{customerId}/audiences/{id}` resource name on the campaign's own account. Never beside
+   * {@link demandGenAdGroups}, whose groups each carry their own `audience`; campaign-service refuses the
+   * pair. campaign-service also requires `global_marketing_ops` on the project to send one (#501).
+   */
+  demandGenAudience?: string;
+  /**
+   * The single Demand Gen ad group's demographics (linuxfoundation/lfx-v2-campaign-service#498), which
+   * upstream builds into one new Audience before the budget. DEMAND GEN ONLY
+   * (`GOOGLE_CHANNELS_WITH_DEMAND_GEN_DEMOGRAPHICS`). Never beside {@link demandGenAudience} or a group's
+   * `audience`, since an ad group takes one Audience; a named group's own `demographics` replace these for
+   * that group. Upstream refuses an object naming nothing. Not gated on `global_marketing_ops`: the four
+   * lists name no account resource.
+   */
+  demandGenDemographics?: GoogleDemandGenDemographics;
   performanceMaxCreative?: GooglePerformanceMaxCreative;
+  /**
+   * The Performance Max asset group's search themes (campaign-service v1.0.31, linuxfoundation/lfx-v2-campaign-service#461): free text naming
+   * the searches the campaign is for. A signal, not targeting, so Google may serve beyond them.
+   *
+   * Omitted when empty, on the same rule as {@link callouts}. PERFORMANCE MAX ONLY
+   * (`GOOGLE_CHANNELS_WITH_SEARCH_THEMES`), and only beside a {@link performanceMaxCreative}: a theme
+   * attaches to the asset group that creative creates. At most
+   * `GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES`, each non-blank, at most
+   * `GOOGLE_ADS_MAX_SEARCH_THEME_RUNES` runes and not repeated (case-folded). The UI withholds them on
+   * any other channel and the BFF refuses every breach by name.
+   */
+  performanceMaxSearchThemes?: string[];
   displayCreative?: GoogleDisplayCreative;
+  /**
+   * The Display campaign split into named ad groups (#475), sent INSTEAD of {@link displayCreative}:
+   * campaign-service refuses the list beside it. At most `GOOGLE_DISPLAY_MAX_AD_GROUPS`.
+   */
+  displayAdGroups?: GoogleDisplayAdGroup[];
   /**
    * The places the Google campaign serves in, as ISO 3166-1 alpha-2 country codes or raw numeric
    * Google geo target constant ids — the two spellings upstream's `resolveGeoList` tells apart by
@@ -3734,6 +4002,15 @@ export interface CampaignCreateRequest {
    * says. The two are compared by RESOLVED id, so `US` in one list and `2840` in the other clash.
    */
   excludedGeoTargets?: string[];
+  /**
+   * Websites a Display campaign must never appear on, as bare domains (`example.com`), attached
+   * upstream as campaign-level negative placement criteria (campaign-service v1.0.31,
+   * `googleAdsConfig.excludedPlacements`, #462). DISPLAY ONLY: campaign-service refuses the list on
+   * every other channel (`validateDisplayTargeting`). Optional and OMITTED when empty. At most
+   * `GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS`; a scheme, path or port is refused rather than stripped
+   * (`validateExcludedPlacements`).
+   */
+  excludedPlacements?: string[];
   /**
    * Radius targeting around points — "everyone within N miles of the venue" — which is the one
    * location shape that is not a place in Google's geo table.
@@ -3786,11 +4063,11 @@ export interface CampaignCreateRequest {
    * everywhere, which is Google's own default — so this list is an adjustment and an absent key
    * means the same as an empty one, exactly as {@link adSchedules} does.
    *
-   * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, which leaves out
-   * Performance Max, where this client does not offer devices yet; the BFF refuses a list there by
-   * name. Demand Gen takes a device only as an exclusion, a modifier of `0`
-   * ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}), and is the one channel that takes
-   * `CONNECTED_TV`.
+   * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, every Google
+   * channel. Demand Gen and Performance Max take a device only as an exclusion, a modifier of `0`
+   * ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}), and are the two channels that take
+   * `CONNECTED_TV`. Performance Max also refuses a list that excludes all four devices, since the
+   * campaign could then serve nowhere.
    *
    * A NON-ZERO modifier also needs the effective bidding strategy to be `manual-cpc`: Google would
    * ignore it under any other, so campaign-service refuses it (see `googleDeviceBidModifierRefusal`).
@@ -3808,8 +4085,8 @@ export interface CampaignCreateRequest {
    * Google's own default, so an absent key and an empty list agree.
    *
    * EXCLUSION-ONLY is Google's shape rather than a narrowing here: campaign-level demographic
-   * criteria are negative. Positive demographic targeting lives on the ad group, which this client
-   * does not expose, so this field cannot be mistaken for one that targets.
+   * criteria are negative. Positive demographic targeting lives on the ad group
+   * ({@link displayDemographics}), so this field cannot be mistaken for one that targets.
    *
    * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS}; Performance Max
    * takes demographics as asset-group signals, which this client does not create, so upstream
@@ -3829,6 +4106,23 @@ export interface CampaignCreateRequest {
    * member: excluding it is a real choice a campaign makes.
    */
   excludedGenders?: GoogleAdsGender[];
+  /**
+   * The household income ranges every ad group of the campaign excludes
+   * (linuxfoundation/lfx-v2-campaign-service#473). Search and Display only
+   * ({@link GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS}); capped at
+   * {@link GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS}, and a repeat is collapsed upstream.
+   */
+  excludedIncomeRanges?: GoogleAdsIncomeRange[];
+  /** The parental statuses every ad group excludes, on the same terms as {@link excludedIncomeRanges} but Display only ({@link GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS}). */
+  excludedParentalStatuses?: GoogleAdsParentalStatus[];
+  /**
+   * The demographic dimensions every Search ad group observes (linuxfoundation/lfx-v2-campaign-service#497):
+   * reported and open to a bid adjustment, with no narrowing. Search only; upstream observes every
+   * value of a dimension except those its exclusions already exclude.
+   */
+  observedDemographics?: GoogleAdsObservedDemographic[];
+  /** Display's positive demographic targeting (linuxfoundation/lfx-v2-campaign-service#499). Display only. */
+  displayDemographics?: GoogleDisplayDemographics;
   /**
    * The first responsive search ad's display paths — the segments Google shows after the final
    * URL's domain, as in `example.com/kubecon/na`. Search only ({@link GOOGLE_CHANNELS_WITH_SEARCH_ADS});
@@ -3866,26 +4160,26 @@ export interface CampaignCreateRequest {
    * campaign has no extensions", which is what every create on this path did before the field
    * existed, so an absent key and an empty list agree — the same rule as {@link geoTargets}.
    *
-   * SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`). On Demand Gen, Display and Video upstream
-   * refuses the create outright rather than dropping the list, so the UI withholds it off Search and
-   * the BFF refuses it by name. (Upstream also takes callouts on Performance Max; this application
-   * has not opened that pairing, so it withholds and refuses them there too.)
+   * SEARCH AND PERFORMANCE MAX (`GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS`; campaign-service
+   * v1.0.31 takes them on Performance Max, linuxfoundation/lfx-v2-campaign-service#461, linked to the campaign). On Demand Gen, Display and
+   * Video upstream refuses the create outright rather than dropping the list, so the UI withholds it
+   * there and the BFF refuses it by name.
    */
   callouts?: string[];
   /**
    * The Google campaign's sitelink extensions — extra links rendered with the ad.
    *
-   * Omitted when empty, on the same rule as {@link callouts}. SEARCH AND DEMAND GEN
+   * Omitted when empty, on the same rule as {@link callouts}. SEARCH, DEMAND GEN AND PERFORMANCE MAX
    * (`GOOGLE_CHANNELS_WITH_SITELINKS`): campaign-service v1.0.31 accepts sitelinks alone on Demand
-   * Gen, under the same per-entry rules as Search. On every other channel the UI withholds them and
-   * the BFF refuses them by name.
+   * Gen and beside callouts and snippets on Performance Max, under the same per-entry rules as
+   * Search. On Display and Video the UI withholds them and the BFF refuses them by name.
    */
   sitelinks?: CampaignSitelink[];
   /**
    * The Google campaign's structured snippets — one "Header: value, value, value" line each,
    * enumerating what the campaign offers rather than claiming anything about it.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   * Omitted when empty, and Search and Performance Max only, on the same rule as {@link callouts}.
    */
   structuredSnippets?: CampaignStructuredSnippet[];
   /**
@@ -3895,27 +4189,45 @@ export interface CampaignCreateRequest {
    * Upstream attaches them to the ad group under an observation-only (bid-only) audience targeting
    * setting, by design reporting on an audience rather than narrowing reach. Omitted when empty, on
    * the same rule as {@link callouts}, and SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS`):
-   * upstream refuses the create on any other channel, so the UI withholds the list there and the BFF
-   * refuses it by name.
+   * upstream refuses the create on any other channel, and the BFF refuses it by name.
+   *
+   * The Implement tab no longer sends this key: its lists go out as {@link campaignAudienceSegments}.
+   * The BFF still accepts it, and refuses it beside that field.
    */
   audienceSegments?: string[];
   /**
+   * The existing Google Ads user lists the Search CAMPAIGN observes, as full resource names
+   * (`customers/{customerId}/userLists/{id}`), dispatched as `googleAdsConfig.campaignAudienceSegments`
+   * (linuxfoundation/lfx-v2-campaign-service#525). Upstream adds one campaign criterion per list under
+   * the campaign's targeting setting AUDIENCE bid-only, so the lists report without narrowing reach and
+   * cover every ad group, including one added later.
+   *
+   * Omitted when empty. SEARCH ONLY, never beside {@link audienceSegments}, each entry a user list on
+   * the campaign's own account with a canonical id, at most `GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS` distinct
+   * lists; repeats are collapsed upstream. The BFF refuses each of those by name, except the account
+   * match, which it cannot see. Needs `global_marketing_ops` on the project, as `audienceSegments` does.
+   */
+  campaignAudienceSegments?: string[];
+  /**
    * The Google campaign's call extensions — a phone number shown with the text ad.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}. The key is
+   * Omitted when empty, on the same rule as {@link callouts}, and SEARCH ONLY
+   * (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`): upstream refuses it on Performance Max too. The key is
    * campaign-service's own (`googleAdsConfig.callExtensions`), forwarded unrenamed.
    */
   callExtensions?: CampaignCallExtension[];
   /**
    * The Google campaign's promotion extensions — a discount shown with the text ad.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   * Omitted when empty, on the same rule as {@link callouts}, and SEARCH ONLY
+   * (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`): upstream refuses it on Performance Max too.
    */
   promotions?: CampaignPromotion[];
   /**
    * The Google campaign's price extensions — a table of priced rows shown with the text ad.
    *
-   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   * Omitted when empty, on the same rule as {@link callouts}, and SEARCH ONLY
+   * (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`): upstream refuses it on Performance Max too.
    */
   prices?: CampaignPriceExtension[];
   /**
@@ -3923,9 +4235,11 @@ export interface CampaignCreateRequest {
    *
    * All five are optional and all five are OMITTED when unset rather than sent as zero. Absent
    * `biddingStrategy` means the channel's own default (`GOOGLE_BIDDING_DEFAULT_BY_CHANNEL`), and
-   * campaign-service — not this request — is what applies it. The three numbers and the
-   * conversion list are refused upstream when they do not belong to the named strategy or
-   * channel, so sending a zero to mean "none" would be sending a value, not omitting one.
+   * campaign-service — not this request — is what applies it. The three numbers are refused
+   * upstream when they do not belong to the named strategy or channel, so sending a zero to mean
+   * "none" would be sending a value, not omitting one. The conversion list is accepted on every
+   * channel and under every strategy (`validateConversionActions`, `applyCampaignConversionGoal`);
+   * the tab sends it only where `GOOGLE_CONVERSION_ACTION_CHANNELS` says.
    *
    * `targetRoas` is a RATIO, not a percentage: 4 is 400% return on ad spend. `cpcBid` and
    * `targetCpa` are in whole units of the ad ACCOUNT's currency.
@@ -4714,6 +5028,30 @@ export interface CampaignServiceGoogleAdsUserList {
   size_for_search?: number;
   size_range_for_search?: string;
   eligible_for_search?: boolean;
+}
+
+/** One element of campaign-service's Audience read (`google-ads-audience-resource`, linuxfoundation/lfx-v2-campaign-service#504). */
+export interface CampaignServiceGoogleAdsAudience {
+  resource_name: string;
+  id: string;
+  name: string;
+  type: string;
+  subtype?: string;
+  status?: string;
+  description?: string;
+}
+
+/**
+ * campaign-service `GET /projects/{project_id}/google-ads/audiences?type=` (`global_marketing_ops` on the
+ * project; linuxfoundation/lfx-v2-campaign-service#504): at most 500 entries sorted by name, `truncated`
+ * when more matched.
+ */
+export interface CampaignServiceGoogleAdsAudiences {
+  account_id: string;
+  type: string;
+  audiences: CampaignServiceGoogleAdsAudience[];
+  audience_count: number;
+  truncated: boolean;
 }
 
 /** campaign-service `GET /projects/{project_id}/google-ads/user-lists` (`global_marketing_ops` on the project; linuxfoundation/lfx-v2-campaign-service#508). */
@@ -6322,7 +6660,8 @@ export interface CampaignListResult {
    */
   metaInstagramDsaEnabled: boolean;
   /**
-   * Whether THIS caller may send Google audience segments (`audienceSegments`) on a create.
+   * Whether THIS caller may send Google audience segments (`audienceSegments` or
+   * `campaignAudienceSegments`) on a create.
    *
    * Per CALLER, unlike every capability above: true only when the campaign-service create path
    * serves the create AND the caller holds `global_marketing_ops` on the listed project (the LF
@@ -6348,6 +6687,17 @@ export interface CampaignListResult {
    * the tab keeps its free-text box without asking.
    */
   googleConversionActionsEnabled?: boolean;
+  /**
+   * Whether THIS caller may pick a Demand Gen audience on the Implement tab (#5244), through
+   * `GET /api/campaigns/google/audiences`, and send it. Per caller: true only when the campaign-service
+   * create path serves the create AND the caller holds `global_marketing_ops` on the listed project, the
+   * two checks that route makes and the relation campaign-service checks both before it answers the read
+   * (#504) and before it creates with an Audience (#501). `null` when that check cannot be made, as
+   * {@link googleAudienceSegmentsEnabled} answers it: unverified, not denied, so the Implement tab holds a
+   * retained audience with a Retry rather than the restricted block. Optional, so a BFF that predates it
+   * reads as unanswered (`null` on the client) and the tab offers no picker.
+   */
+  googleDemandGenAudienceEnabled?: boolean | null;
   /**
    * Whether the Implement tab may SEARCH Google's geo target table for postal-code targets, through
    * `GET /api/campaigns/google/geo-targets`, instead of asking for a typed constant id.
@@ -6569,6 +6919,27 @@ export interface CampaignGoogleLocationsCapabilityBlock {
 }
 
 /**
+ * Why upstream refuses one trimmed `campaignAudienceSegments` entry, in the order
+ * `validateCampaignAudienceSegments` checks it (`search_campaign_audiences.go`): `blank`, then `shape`
+ * (not `customers/{digits}/{kind}/{digits}`), then `notUserList` (a well-formed name of another kind,
+ * such as a custom audience), then `id` (a list id that is not the canonical base-10 spelling of a
+ * positive int64). The account match comes between the last two upstream; this client cannot see the
+ * campaign's account, so it is not judged here.
+ */
+export type GoogleCampaignAudienceSegmentFault = 'blank' | 'shape' | 'notUserList' | 'id';
+
+/**
+ * Why upstream refuses a trimmed `campaignAudienceSegments` list after its channel and level checks:
+ * `entries`, more than `GOOGLE_ADS_MAX_CAMPAIGN_AUDIENCE_SEGMENT_ENTRIES` raw entries; `entry`, the
+ * first bad entry (1-based `position`); `lists`, more than `GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS` distinct
+ * lists. `count` is the raw or distinct count the rule judged.
+ */
+export type GoogleCampaignAudienceSegmentsRefusal =
+  | { rule: 'entries'; count: number }
+  | { rule: 'entry'; position: number; fault: GoogleCampaignAudienceSegmentFault }
+  | { rule: 'lists'; count: number };
+
+/**
  * Why Create is blocked for Google audience segments the draft still holds but the request cannot
  * carry. `restricted`: the caller does not hold `global_marketing_ops` on the project, so the
  * segments would be refused (`CampaignListResult.googleAudienceSegmentsEnabled`). `unsupported`: the
@@ -6577,6 +6948,27 @@ export interface CampaignGoogleLocationsCapabilityBlock {
  */
 export interface CampaignGoogleAudienceSegmentsBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for Demand Gen audiences (#5244) the draft still holds but the request cannot
+ * carry. The kinds mean what they do on {@link CampaignGoogleAudienceSegmentsBlock}: `restricted` is an
+ * explicit no from `CampaignListResult.googleDemandGenAudienceEnabled`, and `unsupported` the
+ * campaign-service create path not serving this deployment.
+ */
+export interface CampaignGoogleDemandGenAudienceBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for Demand Gen demographics the draft still holds but the request cannot carry,
+ * because the campaign-service create path is not serving the create. The kinds mean what they do on
+ * {@link CampaignGoogleDemandGenAudienceBlock}; there is no `restricted`, because no role gates them.
+ */
+export interface CampaignGoogleDemandGenDemographicsBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
   message: string;
 }
 

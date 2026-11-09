@@ -615,7 +615,7 @@ export class OrgLensPeopleController {
 
   /**
    * The All Employees Event Attendees tile is the number the People -> Event Attendees tab shows as Attendees at its defaults
-   * (company email or employee, registered or attended; lfx-self-serve#4598, #5158): the same warehouse summary row, through the same reader and
+   * (Employee match, registered or attended; lfx-self-serve#4598, #5158, #5315): the same warehouse summary row, through the same reader and
    * cache entry, so the two cannot drift. Events are LF constructs, so the Non-LF project scope keeps the listed-employee count
    * (`undefined`), as does the unranged roster read. A summary that cannot be read gives `null`, which marks the tile unavailable
    * instead of counting something else; it never fails the roster, and it never rejects.

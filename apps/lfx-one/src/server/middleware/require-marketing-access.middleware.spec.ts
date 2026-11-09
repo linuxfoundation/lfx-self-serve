@@ -50,6 +50,7 @@ const {
   requireNorthStarAccess,
   requireGoogleConversionActionsAccess,
   requireGoogleUserListsAccess,
+  requireGoogleAudiencesAccess,
 } = await import('./require-marketing-access.middleware');
 
 interface PersonaResult {
@@ -500,13 +501,14 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
   });
 });
 
-// The conversion-action list's (#5239) and the user-list read's (#5244) route guards: with marketing FGA on
-// the controller's strict `global_marketing_ops` check is the whole gate, so neither may run the
+// The conversion-action list's (#5239), the user-list read's and the Audience read's (#5244) route guards: with
+// marketing FGA on the controller's strict `global_marketing_ops` check is the whole gate, so none may run the
 // campaign_manager middleware, whose non-strict project check would turn an access-check outage into an
 // uncoded 403.
 describe.each([
   ['requireGoogleConversionActionsAccess', requireGoogleConversionActionsAccess],
   ['requireGoogleUserListsAccess', requireGoogleUserListsAccess],
+  ['requireGoogleAudiencesAccess', requireGoogleAudiencesAccess],
 ])('%s', (_name, guard) => {
   beforeEach(() => {
     getPersonas.mockReset();

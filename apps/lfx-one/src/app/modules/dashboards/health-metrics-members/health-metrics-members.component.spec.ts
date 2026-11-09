@@ -16,9 +16,17 @@ import { MembersBoardAttendanceComponent } from './components/members-board-atte
 import { MembersBreakdownComponent } from './components/members-breakdown/members-breakdown.component';
 import { MembersChurnComponent } from './components/members-churn/members-churn.component';
 import { MembersDirectoryComponent } from './components/members-directory/members-directory.component';
+import { MembersGrowthComponent } from './components/members-growth/members-growth.component';
 import { MembersNpsComponent } from './components/members-nps/members-nps.component';
 import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 import { HealthMetricsMembersComponent } from './health-metrics-members.component';
+
+/** Stands in for Member growth by year, whose read its own spec covers; the test drives its settle. */
+@Component({ selector: 'lfx-members-growth', template: '<div data-testid="members-growth-stub"></div>' })
+class GrowthStubComponent {
+  public readonly settled = output<boolean | null>();
+  public readonly reading = output<void>();
+}
 
 /** Stands in for Membership breakdown by tier, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-members-breakdown', template: '<div data-testid="members-breakdown-stub"></div>' })
@@ -97,6 +105,7 @@ describe('HealthMetricsMembersComponent', () => {
             MembersBreakdownComponent,
             MembersChurnComponent,
             MembersDirectoryComponent,
+            MembersGrowthComponent,
             MembersNpsComponent,
             MembersRenewalsComponent,
           ],
@@ -108,6 +117,7 @@ describe('HealthMetricsMembersComponent', () => {
             BreakdownStubComponent,
             ChurnStubComponent,
             DirectoryStubComponent,
+            GrowthStubComponent,
             NpsStubComponent,
             RenewalsStubComponent,
           ],
@@ -130,7 +140,7 @@ describe('HealthMetricsMembersComponent', () => {
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
-  it('renders the seven sections in order, each anchored with its design copy and a body or placeholder', async () => {
+  it('renders the eight sections in order, each anchored with its design copy and a body or placeholder', async () => {
     await setup();
     const rendered = [...fixture.nativeElement.querySelectorAll('[data-testid^="members-section-"]')] as HTMLElement[];
 
@@ -138,7 +148,10 @@ describe('HealthMetricsMembersComponent', () => {
     rendered.forEach((element, index) => {
       const key = HEALTH_METRICS_MEMBERS_SECTIONS[index].key;
       expect(element.textContent).toContain(HEALTH_METRICS_MEMBERS_SECTIONS[index].heading);
-      if (key === 'breakdown') {
+      if (key === 'growth') {
+        expect(element.querySelector('[data-testid="members-growth-stub"]')).not.toBeNull();
+        expect(element.textContent).not.toContain('Awaiting data');
+      } else if (key === 'breakdown') {
         expect(element.querySelector('[data-testid="members-breakdown-stub"]')).not.toBeNull();
         expect(element.textContent).not.toContain('Awaiting data');
       } else if (key === 'list') {
@@ -183,10 +196,12 @@ describe('HealthMetricsMembersComponent', () => {
     fixture.detectChanges();
   }
 
-  it('holds a deep link until the breakdown, directory, at-risk, renewals, board, nps and churn reads settle', async () => {
+  it('holds a deep link until the growth, breakdown, directory, at-risk, renewals, board, nps and churn reads settle', async () => {
     await setup('churn');
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     // Each settle re-lands the held link; it is released only once every data section has settled.
+    stub(GrowthStubComponent).settled.emit(false);
+    await flush();
     stub(BreakdownStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();

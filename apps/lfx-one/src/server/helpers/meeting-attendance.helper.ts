@@ -8,14 +8,13 @@ import {
   MeetingRegistrant,
   MeetingRsvp,
   MeetingRsvpSummaries,
-  MeetingRsvpSummary,
   MeetingRsvpSummaryRow,
   PastMeeting,
   PastMeetingAttendanceSummary,
   PastMeetingParticipant,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
-import { countRegistrantAttendance, expandMeetingOccurrences, isMeetingHomeOrganizer, isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
+import { countMeetingRsvpSummary, expandMeetingOccurrences, isMeetingHomeOrganizer, isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { logger } from '../services/logger.service';
@@ -171,7 +170,7 @@ async function fetchRsvpSummaries(
       const byKey: MeetingRsvpSummaries = {};
       for (const { key } of rowsByMeeting.get(id) ?? []) {
         // A series row without an occurrence id counts only answers for all dates, as the meeting page does.
-        byKey[key] = toRsvpSummary(attachRsvpsToRegistrants(roster, active, key || undefined, !key && recurring));
+        byKey[key] = countMeetingRsvpSummary(attachRsvpsToRegistrants(roster, active, key || undefined, !key && recurring));
       }
       return [id, byKey];
     })
@@ -192,17 +191,6 @@ async function fetchAttendanceSummaries(req: Request, ids: string[]): Promise<Ma
       return [id, { invited: people.length, attended: people.filter((person) => person.is_attended).length }];
     })
   );
-}
-
-function toRsvpSummary(registrants: Parameters<typeof countRegistrantAttendance>[0]): MeetingRsvpSummary {
-  const counts = countRegistrantAttendance(registrants, { inviteResponsesEnabled: true });
-  return {
-    invited: counts.total,
-    yes: counts.accepted,
-    maybe: counts.maybe,
-    no: counts.declined,
-    no_response: counts.total - counts.accepted - counts.maybe - counts.declined,
-  };
 }
 
 /** Walks every page with the viewer's token; a partial walk throws so its batch is skipped rather than undercounted. */

@@ -9,11 +9,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 
-import { CF_ORG_DONATIONS_FLAG, ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { CF_ORG_DONATIONS_FLAG } from '@lfx-one/shared/constants';
 
-import { cfOrgDonationsGuard, orgLensClaM3EnabledGuard } from './org-lens-flag.guard';
+import { cfOrgDonationsGuard } from './org-lens-flag.guard';
 
-describe('orgLensClaM3EnabledGuard', () => {
+describe('cfOrgDonationsGuard', () => {
   let getFlagOverride: ReturnType<typeof vi.fn>;
   let providerReady: ReturnType<typeof signal<boolean>>;
   let getBooleanFlag: ReturnType<typeof vi.fn>;
@@ -23,13 +23,13 @@ describe('orgLensClaM3EnabledGuard', () => {
     parseUrl: ReturnType<typeof vi.fn>;
     getCurrentNavigation: ReturnType<typeof vi.fn>;
   };
-  /** The URL being recognized — the legacy EasyCLA address unless a case says otherwise. */
+  /** The URL being recognized — the legacy Donations address unless a case says otherwise. */
   let targetUrl: string;
 
-  const route: Route = { path: 'easycla', data: { lens: 'org' } };
+  const route: Route = { path: 'donations', data: { lens: 'org' } };
   const segments: UrlSegment[] = [];
 
-  const runGuard = (): ReturnType<typeof orgLensClaM3EnabledGuard> => TestBed.runInInjectionContext(() => orgLensClaM3EnabledGuard(route, segments));
+  const runGuard = (): ReturnType<typeof cfOrgDonationsGuard> => TestBed.runInInjectionContext(() => cfOrgDonationsGuard(route, segments));
 
   beforeEach(() => {
     getFlagOverride = vi.fn().mockReturnValue(undefined);
@@ -46,7 +46,7 @@ describe('orgLensClaM3EnabledGuard', () => {
         })
     );
 
-    targetUrl = '/org/easycla';
+    targetUrl = '/org/donations';
     router = {
       createUrlTree: vi.fn().mockImplementation((commands: string[]) => ({ redirected: commands.join('/') })),
       parseUrl: vi.fn().mockImplementation((url: string) => ({ redirected: url })),
@@ -144,11 +144,8 @@ describe('orgLensClaM3EnabledGuard', () => {
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 
-  // Spec 050 phase 2 (lfx-self-serve#2743): under `/org/{segment}/easycla` the address names the
-  // organization, and this CanMatch runs before the path guard adopts it — the URL, not the
-  // selection, is what the fallback must keep, or a shared link would bounce to the cookie's org.
-  it('keeps the addressed organization when the flag is off on an org-addressed EasyCLA page', async () => {
-    targetUrl = '/org/other-org/easycla/cla-group-1';
+  it('keeps the addressed organization when the flag is off on an org-addressed page', async () => {
+    targetUrl = '/org/other-org/donations';
     getFlagOverride.mockReturnValue(false);
 
     const result = await runGuard();
@@ -158,15 +155,12 @@ describe('orgLensClaM3EnabledGuard', () => {
     expect(result).toEqual({ redirected: '/org/other-org/overview' });
   });
 
-  it.each([
-    [orgLensClaM3EnabledGuard, ORG_LENS_CLA_M3_ENABLED_FLAG],
-    [cfOrgDonationsGuard, CF_ORG_DONATIONS_FLAG],
-  ])('evaluates its own flag (%#)', async (guard, flag) => {
+  it('evaluates its own flag', async () => {
     getBooleanFlag.mockReturnValue(signal(true));
 
-    const result = await TestBed.runInInjectionContext(() => guard(route, segments));
+    const result = await runGuard();
 
     expect(result).toBe(true);
-    expect(getBooleanFlag).toHaveBeenCalledWith(flag, false);
+    expect(getBooleanFlag).toHaveBeenCalledWith(CF_ORG_DONATIONS_FLAG, false);
   });
 });

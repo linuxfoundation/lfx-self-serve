@@ -219,7 +219,9 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v3');
       // Viewing a new Draft does not relabel the independently approved print target.
       expect(query('mktg-brand-kit-print')?.getAttribute('data-revision')).toBe('V1.0');
-      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V1.0');
+      // The book's cover names the approved revision it prints, not the Draft on screen.
+      expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
+      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V3.0');
     });
 
     it('prints approved kit bytes while the screen renders a different Draft', async () => {
@@ -262,23 +264,26 @@ describe('BrandKitWebViewComponent', () => {
 
     it('prints the active project identity and local chapter numbers, not kit-content identity or family prefixes', async () => {
       const wrapper = query('brand-kit-web-view-print');
-      const head = () => wrapper?.querySelector('[data-testid="mktg-print-running-head"]')?.textContent;
-      expect(head()).toContain('Synthetic project Brand kit');
+      const head = () => wrapper?.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent;
+      expect(head()).toContain('Synthetic project brand kit');
       expect(head()).not.toContain('Project One');
-      expect(Array.from(wrapper?.querySelectorAll('h2 > span') ?? []).map((span) => span.textContent?.trim())).toEqual(['1', '2', '3', '4', '5']);
+      // The running heads number the kit's own chapters from 01, with no family prefix.
+      const sections = Array.from(wrapper?.querySelectorAll('[data-testid="mktg-portrait-page-section"]') ?? [], (span) => span.textContent?.trim());
+      expect([...new Set(sections)]).toEqual(['Contents', '01 Logo', '02 Color', '03 Type', '04 Visual', '05 Usage', '06 Voice', '07 Sources']);
       activeContext.set({ slug: 'synthetic', name: 'Updated project context' });
       await fixture.whenStable();
-      expect(head()).toContain('Updated project context Brand kit');
+      expect(head()).toContain('Updated project context brand kit');
       expect(wrapper?.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V1.0');
     });
 
-    it('keeps the shared native portrait chapters in the print-only wrapper without changing screen content', () => {
+    it('keeps the portrait book in the print-only wrapper without changing screen content', () => {
       const wrapper = query('brand-kit-web-view-print');
       expect(wrapper?.classList.contains(BRAND_KIT_PRINT_ONLY_CLASS)).toBe(true);
       expect(wrapper?.classList.contains(FOUNDATION_MESSAGE_PRINT_ONLY_CLASS)).toBe(true);
-      expect(wrapper?.querySelector('.lfx-framework-print.lfx-brand-kit-portrait')).not.toBeNull();
-      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
-      expect(wrapper?.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
+      // The kit's portrait book: one frame per plan page (the synthetic kit has no symbol, so sixteen), on the portrait root.
+      expect(wrapper?.querySelector('.lfx-brand-kit-portrait.lfx-mktg-portrait')).not.toBeNull();
+      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]')).toHaveLength(16);
+      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="mktg-portrait-page-head"]')).toHaveLength(14);
       expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(0);
       expect(host().querySelector(`.${BRAND_KIT_PRINT_ONLY_CLASS}`)?.contains(query('mktg-brand-kit-print'))).toBe(true);
       // The book brings no toolbar of its own: the actions are the web view's.
@@ -398,16 +403,20 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-lockups')?.querySelectorAll('img').length).toBeGreaterThan(0);
       expect(query('brand-kit-web-view-lockups')?.textContent).toContain('logo.svg');
       const colorways = queryAll('brand-kit-web-view-colorway');
-      expect(colorways.map((element) => element.textContent?.trim())).toEqual([
+      // The caption under each tile (the tile itself may hold a "Not supplied" line).
+      expect(colorways.map((element) => element.lastElementChild?.textContent?.trim())).toEqual([
         'Full color · on white',
         'Reversed · on Charcoal',
         'Full color · on light tint',
         'One-color black · print only',
       ]);
-      // The reversed tile sits on the kit's dark and draws the logo white.
+      // The reversed tile sits on the kit's dark; the fixture's three-colour lockup cannot be reversed by filter (it
+      // would flatten), so the tile says "Not supplied" instead of a filtered image.
       const reversed = colorways[1].firstElementChild as HTMLElement;
       expect(reversed.style.background).toContain('rgb(77, 78, 78)');
-      expect((reversed.firstElementChild as HTMLElement).style.filter).toBe('brightness(0) invert(1)');
+      expect((reversed.firstElementChild as HTMLElement).style.filter).toBe('');
+      expect(reversed.textContent?.trim()).toBe('Not supplied');
+      expect(reversed.querySelector('img')).toBeNull();
       expect(query('brand-kit-web-view-clear-space')?.textContent).toContain('X on every side.');
       expect(query('brand-kit-web-view-minimum-size')?.textContent).toContain('32 px tall on screen, 10 mm in print.');
       expect(queryAll('brand-kit-web-view-watchout')).toHaveLength(6);
@@ -451,7 +460,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(scale?.textContent).toContain('Eyebrow');
     });
 
-    it('Visual: the iconography rules and the recommended set with no sample icon, the imagery rule and what to avoid, the graphic elements in the kit’s colours', async () => {
+    it('Visual: the board’s sample icons in the kit’s colours above the iconography rules and the recommended set, the imagery rule and what to avoid, the graphic elements in the kit’s colours', async () => {
       await open('visual');
 
       const icons = query('brand-kit-web-view-icons');
@@ -459,6 +468,61 @@ describe('BrandKitWebViewComponent', () => {
       expect(icons?.textContent).toContain('Label.');
       expect(icons?.querySelectorAll('i')).toHaveLength(0);
       expect(icons?.textContent).toContain('Recommended set: Lucide');
+      // The samples sit between the title and the rules; the rules and the caption keep their comment fields.
+      const samples = icons?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-samples"]');
+      expect(samples?.previousElementSibling?.tagName).toBe('H3');
+      expect(samples?.nextElementSibling?.tagName).toBe('UL');
+      // Hand-test feedback 1: a clear gap above the rules (the card's gap-2 + mt-3), the rules close together: each rule's
+      // comment affordance floats at the right end of the rule's first line (never a row of its own), its empty count hidden,
+      // back to a block under the text while its composer is open; a clearfix keeps the float inside the list item.
+      const rules = samples?.nextElementSibling;
+      for (const cls of ['mt-3', 'gap-0.5', 'leading-snug', 'list-disc']) {
+        expect(rules?.classList.contains(cls)).toBe(true);
+      }
+      expect(rules?.classList.contains('gap-1')).toBe(false);
+      const ruleItems = Array.from(rules?.querySelectorAll<HTMLElement>(':scope > li') ?? []);
+      expect(ruleItems).toHaveLength(brandKitTestRevision().chapters.visual.icons.rules.length);
+      for (const item of ruleItems) {
+        expect(item.classList.contains('group/commentfield')).toBe(true);
+        expect(item.hasAttribute('data-mktg-comment-group')).toBe(true);
+        for (const cls of [
+          '[&>lfx-mktg-field-comments]:float-right',
+          '[&>lfx-mktg-field-comments]:ml-2',
+          '[&_[data-testid=mktg-field-comment-count].invisible]:hidden',
+          '[&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:float-none',
+          '[&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:block',
+          '[&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:ml-0',
+          'after:block',
+          'after:clear-both',
+          "after:content-['']",
+        ]) {
+          expect(item.classList.contains(cls)).toBe(true);
+        }
+        expect(item.classList.contains('flow-root')).toBe(false);
+        expect(Array.from(item.classList).some((cls) => /inline-block|flex/.test(cls))).toBe(false);
+        expect(item.querySelector('.flex, .flex-wrap')).toBeNull();
+        expect(item.children).toHaveLength(0);
+      }
+      // With comments on, the affordance is the list item's direct child, in the text's flow after it.
+      fixture.componentRef.setInput('commentsEnabled', true);
+      await fixture.whenStable();
+      for (const item of ruleItems) {
+        expect(Array.from(item.children, (child) => child.tagName.toLowerCase())).toEqual(['lfx-mktg-field-comments']);
+        expect(item.firstChild?.textContent?.trim().length).toBeGreaterThan(0);
+      }
+      expect(samples?.querySelectorAll('[data-testid^="brand-kit-icon-tile-"]')).toHaveLength(8);
+      expect(samples?.querySelectorAll('[data-testid^="brand-kit-icon-strip-"]')).toHaveLength(8);
+      expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tile-documents"]')?.textContent?.trim()).toBe('Documents');
+      const inkProbe = document.createElement('span');
+      inkProbe.style.color = brandKitTestRevision().kit.dark;
+      expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-tile-documents"]')?.style.color).toBe(inkProbe.style.color);
+      expect(samples?.querySelector<HTMLElement>('[data-testid="brand-kit-icon-strip"]')?.style.backgroundColor).toBe(inkProbe.style.color);
+      const highlightProbe = document.createElement('span');
+      highlightProbe.style.color = brandKitTestRevision().kit.spark;
+      const highlighted = samples?.querySelector<HTMLElement>('[data-highlight="true"]');
+      expect(highlighted?.getAttribute('data-testid')).toBe('brand-kit-icon-strip-global');
+      expect(highlighted?.style.color).toBe(highlightProbe.style.color);
+      expect(icons?.querySelectorAll('[data-mktg-comment-group]').length).toBe(brandKitTestRevision().chapters.visual.icons.rules.length + 1);
       expect(query('brand-kit-web-view-imagery')?.textContent).toContain('Structure.');
       expect(query('brand-kit-web-view-imagery')?.textContent).toContain('Hackers');
       expect(query('brand-kit-web-view-elements')?.textContent).toContain('Primary button');
@@ -623,13 +687,28 @@ describe('BrandKitWebViewComponent', () => {
       expect(frame?.contentDocument?.querySelector('lfx-mktg-brand-kit-print')).not.toBeNull();
       // The frame's title names the saved PDF like the deck: the project, the asset, the approved revision and that revision's own date.
       expect(frame?.contentDocument?.title).toBe('Synthetic project · Brand kit · v1 · 2026-10-20');
-      expect(frame?.contentDocument?.querySelector('[data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project Brand kit');
+      expect(frame?.contentDocument?.querySelector('[data-testid="mktg-portrait-page-doc"]')?.textContent).toContain('Synthetic project brand kit');
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
       expect(print).not.toHaveBeenCalled();
 
       frame?.contentWindow?.dispatchEvent(new Event('afterprint'));
       expect(frame?.isConnected).toBe(false);
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
+    });
+
+    it('prints the approved revision’s own approval, not the viewed revision’s, on the contents page', async () => {
+      // Viewing a later draft (v2) of a kit whose approved current is v1: the PDF's approval line is v1's record.
+      fixture.componentRef.setInput('version', 2);
+      fixture.componentRef.setInput('approval', null);
+      fixture.componentRef.setInput('approvedVersion', 1);
+      fixture.componentRef.setInput('approvedApproval', { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Synthetic Approver' } });
+      await fixture.whenStable();
+      button('brand-kit-web-view-download-pdf')?.click();
+      const frame = document.querySelector<HTMLIFrameElement>('[data-testid="lfx-print-frame"]');
+      expect(frame?.contentDocument?.querySelector('[data-testid="brand-kit-contents-approval"]')?.textContent).toBe(
+        'Approved 19 Oct 2026 by Synthetic Approver'
+      );
+      frame?.contentWindow?.dispatchEvent(new Event('afterprint'));
     });
 
     it('prepares the kit typeface ahead of creating the PDF frame in the click task', async () => {
@@ -664,9 +743,9 @@ describe('BrandKitWebViewComponent', () => {
   describe('on the server', () => {
     beforeEach(async () => configure('server'));
 
-    it('renders the page and hidden portrait chapters, and never prints on the server', async () => {
+    it('renders the page and the hidden portrait book, and never prints on the server', async () => {
       expect(query('brand-kit-web-view-panel-overview')).not.toBeNull();
-      expect(query('brand-kit-web-view-print')?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
+      expect(query('brand-kit-web-view-print')?.querySelectorAll('lfx-mktg-brand-kit-print [data-testid="lfx-mktg-portrait-page"]')).toHaveLength(16);
 
       button('brand-kit-web-view-download-pdf')?.click();
       await fixture.whenStable();

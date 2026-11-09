@@ -29,18 +29,22 @@
           >{{ row.startTime | date: 'MMM' }}</span
         >
         <span class="flex flex-auto items-center justify-center text-[18px] leading-none text-gray-900">{{ row.startTime | date: 'd' }}</span>
-        <span class="absolute -right-[11px] -top-[11px] flex">
+        <!-- Restricted and Private together: two stacked 8px dots, no icons -->
+        @let stacked = visibilityBadges().length > 1;
+        <span class="absolute flex" [class]="stacked ? '-right-[7px] -top-[7px] flex-col gap-[2px]' : '-right-[11px] -top-[11px]'">
           @for (badge of visibilityBadges(); track badge.kind) {
             <span
               role="img"
               tabindex="0"
-              class="box-content inline-flex h-[17px] w-[17px] cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-              [class]="visibilityBg[badge.kind]"
+              class="box-content inline-flex cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              [class]="visibilityBg[badge.kind] + (stacked ? ' h-[8px] w-[8px]' : ' h-[17px] w-[17px]')"
               [attr.aria-label]="badge.title"
               [lfxUiTooltip]="badge.description ?? ''"
               [lfxUiTooltipTitle]="badge.title"
               [attr.data-testid]="'meetings-home-next-card-visibility-' + badge.kind">
-              <i class="text-[9px]" [class]="badge.icon" aria-hidden="true"></i>
+              @if (!stacked) {
+                <i class="text-[9px]" [class]="badge.icon" aria-hidden="true"></i>
+              }
             </span>
           }
         </span>
@@ -87,7 +91,7 @@
           [href]="link.url"
           target="_blank"
           rel="noopener noreferrer"
-          (click)="onLinkClick($event, link.url, true)"
+          (click)="onTitleClick($event)"
           data-testid="meetings-home-next-card-title"
           >{{ row.title }}</a
         >
@@ -150,7 +154,7 @@
         }
         @case ('live') {
           <span class="mt-[4px] flex items-center justify-center gap-[6px] text-label-12 text-blue-600" data-testid="meetings-home-next-card-in-progress">
-            <span class="next-meeting-live-dot bg-blue-500" aria-hidden="true"></span>The meeting is in progress
+            <span class="meeting-live-dot bg-blue-500" aria-hidden="true"></span>The meeting is in progress
           </span>
         }
       }

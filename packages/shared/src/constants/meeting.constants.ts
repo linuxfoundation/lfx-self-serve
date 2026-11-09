@@ -1177,3 +1177,18 @@ export const MEETING_DURATION_OPTIONS = [
 
 /** How often the meeting page re-reads the wall clock so time-gated UI (join window, ended) updates without a reload. */
 export const MEETING_CLOCK_TICK_MS = 5_000;
+
+/**
+ * How many upcoming meetings the dashboard meetings card lets a user page through, starting from the
+ * meeting it opens on. Fixed rather than a setting so there is nothing to store per user.
+ */
+export const DASHBOARD_UPCOMING_MEETINGS_PAGE_LIMIT = 5;
+
+/** Height in px past which the meeting details drawer collapses the agenda behind Show more. */
+export const MEETING_DETAILS_AGENDA_COLLAPSED_PX = 200;
+
+/** Primary materials the meeting details drawer lists before Show more. */
+export const MEETING_DETAILS_VISIBLE_FILES = 5;
+
+/** How recent an attachment change must be for the materials to show as Updated. */
+export const MEETING_MATERIALS_UPDATED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;

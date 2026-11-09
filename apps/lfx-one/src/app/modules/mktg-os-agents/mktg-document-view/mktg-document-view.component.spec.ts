@@ -28,6 +28,7 @@ import {
   MKTG_AGENTS,
 } from '@lfx-one/shared/constants';
 import {
+  BrandKitRevision,
   MktgDocumentDetailResponse,
   BrandKitReport,
   MktgDocumentsResponse,
@@ -64,7 +65,7 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { filter, firstValueFrom, NEVER, of, Subject, take, throwError, TimeoutError } from 'rxjs';
+import { filter, firstValueFrom, map, NEVER, of, Subject, take, throwError, TimeoutError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
@@ -366,7 +367,16 @@ describe('MktgDocumentViewComponent', () => {
         ]),
         provideNoopAnimations(),
         MessageService,
-        { provide: MktgDependencyService, useValue: { resolveBrandKit, notifyDocumentsChanged: vi.fn(), documentsChanged$: NEVER } },
+        {
+          provide: MktgDependencyService,
+          // The print's read (readBrandKit) is the resolved kit as a settled read; the tests drive it through resolveBrandKit.
+          useValue: {
+            resolveBrandKit,
+            readBrandKit: (uid: string) => resolveBrandKit(uid).pipe(map((kit: BrandKitRevision | null) => ({ settled: true, kit, failed: false }))),
+            notifyDocumentsChanged: vi.fn(),
+            documentsChanged$: NEVER,
+          },
+        },
         provideMktgSlidesExportStub(slidesExport),
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
         { provide: MktgDocumentStoreService, useValue: store },
@@ -1072,6 +1082,12 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-print-overall')?.textContent).toContain(typed.overall_score.toFixed(1));
       expect(query('mktg-document-view-print')?.querySelector('article')?.classList.contains('print:[print-color-adjust:exact]')).toBe(true);
       expect(query('mktg-document-view-print')?.querySelector('article')?.classList.contains('print:[-webkit-print-color-adjust:exact]')).toBe(true);
+      // The report prints through one flowing sheet row, so every page it runs over gets the sheet's top and bottom room.
+      const sheetRows =
+        query('mktg-document-view-print')?.querySelectorAll('article.lfx-framework-print > lfx-mktg-print-sheet lfx-mktg-print-sheet-row') ?? [];
+      expect(Array.from(sheetRows, (row) => row.classList.contains('lfx-print-sheet-row-flows'))).toEqual([true]);
+      expect(sheetRows[0]?.querySelector('[data-testid="mktg-document-view-print-overall"]')).not.toBeNull();
+      expect(sheetRows[0]?.querySelector('lfx-aeo-geo-report')).not.toBeNull();
       expect(query('mktg-document-view-print-verdict')?.textContent).toContain(typed.verdict);
       for (const row of typed.scorecard) {
         expect(query(`mktg-document-view-score-${row.key}`)?.textContent).toContain(`${row.score}/10`);
@@ -3311,7 +3327,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(slidesExport.last).toHaveBeenCalledExactlyOnceWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living' });
     expect(query('mktg-framework-view-print')?.className).toContain('lfx-framework-print-only');
     expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
-    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 2');
+    expect(query('mktg-framework-print-version')?.textContent).toContain('V2.0');
   });
 
   it('keeps expanded Show all and the selected FAQ tab through two polls and a focus re-read', async () => {
@@ -4728,7 +4744,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(content?.classList.contains('hidden')).toBe(true);
     expect(content?.classList.contains('print:block')).toBe(true);
     expect(query('mktg-framework-view-print')?.closest('[data-testid="mktg-document-view-content"]')).toBe(content);
-    expect(query('mktg-framework-print')?.textContent).toContain('Version 2');
+    expect(query('mktg-framework-print')?.textContent).toContain('V2.0');
     const download = query('mktg-framework-view-download-pdf')?.querySelector('button');
     expect(download?.disabled).toBe(false);
     download?.click();

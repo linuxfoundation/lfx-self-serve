@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS } from '@lfx-one/shared/constants';
 import type { GoogleAdsAgeRange, GoogleAdsGender } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -138,7 +139,9 @@ describe('CampaignGoogleExclusionsPanelComponent', () => {
   it('lists every excluded entry as a chip whose × removes it', () => {
     render({ geos: ['DE', '1023191'] });
 
-    expect(query('implementation-google-excluded-geos')?.querySelector('legend')?.textContent).toContain('Excluded locations (2/60)');
+    expect(query('implementation-google-excluded-geos')?.querySelector('legend')?.textContent).toContain(
+      `Excluded locations (2/${GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS})`
+    );
     (query('implementation-google-excluded-geo-chip-DE')?.querySelector('[data-testid="ui-chip-dismiss"]') as HTMLButtonElement).click();
     fixture.detectChanges();
 

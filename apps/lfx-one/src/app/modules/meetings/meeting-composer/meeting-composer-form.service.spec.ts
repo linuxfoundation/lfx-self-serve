@@ -1010,16 +1010,35 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
     expect(service.form().get('restricted')?.value).toBe(true);
   });
 
-  it('hands the access settings back when the type moves off Board', () => {
+  it('defaults a new meeting to private and restricted before any type is chosen', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
+    expect(service.form().get('restricted')?.value).toBe(true);
+  });
+
+  it('stays private and restricted when the type moves off Board', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
     service.form().get('meeting_type')?.setValue(MeetingType.BOARD);
 
     service.form().get('meeting_type')?.setValue(MeetingType.TECHNICAL);
 
-    // Otherwise one mis-click on Board leaves a technical meeting silently invite-only.
-    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PUBLIC);
-    expect(service.form().get('restricted')?.value).toBe(false);
+    // Private/restricted is the form's own baseline default now, not something unique to Board.
+    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
+    expect(service.form().get('restricted')?.value).toBe(true);
     expect(service.form().get('show_meeting_attendees')?.enabled).toBe(true);
+  });
+
+  it('resets manually-loosened access back to private and restricted on leaving Board', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().get('meeting_type')?.setValue(MeetingType.BOARD);
+    // The organizer explicitly loosens access while still on Board.
+    service.form().patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
+
+    service.form().get('meeting_type')?.setValue(MeetingType.TECHNICAL);
+
+    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
+    expect(service.form().get('restricted')?.value).toBe(true);
   });
 
   it('leaves the saved access settings alone in edit mode', () => {

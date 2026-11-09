@@ -125,6 +125,11 @@
                             (onClick)="switchTab('comments')"
                             data-testid="vote-detail-overview-all-comments" />
                         </div>
+                        @if (commentPromptCount() === 1) {
+                          <p class="text-sm font-medium text-gray-900 break-words" data-testid="vote-detail-overview-comment-prompt">
+                            {{ recentComments()[0].promptText }}
+                          </p>
+                        }
                         <!-- Same row, anonymity rules and ballot links as the Comments tab (#4448). -->
                         <div class="flex flex-col gap-3">
                           @for (response of recentComments(); track response.previewKey) {

@@ -3144,6 +3144,17 @@ describe('MktgAgentRunComponent', () => {
 
     beforeEach(async () => configure('browser', 'brand-kit'));
 
+    it('reads the intake intro, naming the PDF the kit downloads as, under the form title', async () => {
+      const intake = MKTG_AGENT_INTAKES['brand-kit'];
+      if (!intake) throw new Error('The Brand Kit intake is in the catalog');
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const intro = query('mktg-agent-run-form-intro')?.textContent?.trim();
+      expect(intro).toBe(intake.intro);
+      expect(intro).toContain('downloads as a 16-page PDF');
+    });
+
     it('asks for the project, the website, the brand page and notes, offers the logo-files section, and submits the files with the form', async () => {
       dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
       activeContext.set(PROJECT_1);

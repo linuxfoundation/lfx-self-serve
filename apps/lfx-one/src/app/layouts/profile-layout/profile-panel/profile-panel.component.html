@@ -60,7 +60,7 @@
         </span>
       </div>
 
-      <!-- Name + handle. min-w-0 lets this flex item shrink below its content's min-content width
+      <!-- Name + LFID. min-w-0 lets this flex item shrink below its content's min-content width
            in the sm-2xl row (the flex default is min-width: auto, which would instead force the
            row to overflow if displayName() falls back to a long, unbreakable username);
            break-words lets a long name wrap instead of pushing the fixed-width pills container
@@ -68,7 +68,20 @@
       <div class="min-w-0">
         <p class="break-words text-left text-[17px] font-bold text-slate-900" data-testid="profile-display-name">{{ displayName() }}</p>
         @if (username()) {
-          <p class="mb-4 break-words text-left text-xs text-slate-500" data-testid="profile-panel-handle">&#64;{{ username() }}</p>
+          <div class="mb-4 flex items-center gap-1 text-left text-xs text-slate-500" data-testid="profile-panel-lfid">
+            <span class="min-w-0 break-words">LFID: {{ username() }}</span>
+            <lfx-button
+              class="shrink-0"
+              icon="fa-light fa-copy"
+              [text]="true"
+              size="small"
+              severity="secondary"
+              ariaLabel="Copy LFID"
+              tooltip="Copy LFID"
+              (onClick)="copyLfid()"
+              data-dd-action-name="Copy LFID"
+              data-testid="profile-panel-lfid-copy"></lfx-button>
+          </div>
         }
       </div>
 

@@ -120,6 +120,8 @@ import {
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryQuery,
   HealthMetricsMembersDirectoryTiers,
+  HealthMetricsMembersGrowth,
+  HealthMetricsMembersGrowthQuery,
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardAttendanceQuery,
   HealthMetricsMembersChurn,
@@ -1313,6 +1315,18 @@ export class AnalyticsService {
       catchError((error: unknown) => {
         const status = error instanceof HttpErrorResponse ? error.status : undefined;
         console.error('[analytics] events-organizations failed', { foundationSlug: query.foundationSlug, range: query.range, segment: query.segment, status });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMembersGrowth(query: HealthMetricsMembersGrowthQuery): Observable<HealthMetricsMembersGrowth> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate so the section shows its error state, not a foundation with no new members.
+    return this.http.get<HealthMetricsMembersGrowth>('/api/analytics/members-growth', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-growth failed', { query, error });
         return throwError(() => error);
       })
     );

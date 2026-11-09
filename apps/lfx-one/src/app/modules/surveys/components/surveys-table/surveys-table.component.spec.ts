@@ -213,6 +213,42 @@ describe('SurveysTableComponent — row-scoped draft edit access', () => {
     expect(action('edit', 'draft')?.querySelector('a')).not.toBeNull();
     expect(action('delete', 'draft')).toBeNull();
   });
+  describe('group link', () => {
+    const groupLink = (uid: string): HTMLAnchorElement | null => fixture.nativeElement.querySelector(`[data-testid="surveys-group-link-${uid}"]`);
+
+    it.each([
+      { is_foundation: true, path: '/foundation/groups/primary' },
+      { is_foundation: false, path: '/project/groups/primary' },
+      { is_foundation: undefined, path: '/groups/primary' },
+    ])('links the group name to the group details page for the survey owning tier ($is_foundation)', ({ is_foundation: isFoundation, path }) => {
+      render([survey('s1', ['primary', 'secondary'], { is_foundation: isFoundation })]);
+
+      const link = groupLink('s1');
+      expect(link?.getAttribute('href')).toBe(`${path}?project=synthetic-project`);
+      expect(link?.textContent?.trim()).toBe('Synthetic primary');
+    });
+
+    it('renders a dash as plain text, without a link or chip, when the survey has no committee', () => {
+      render([survey('s1', [])]);
+
+      expect(groupLink('s1')).toBeNull();
+      const text = fixture.nativeElement.querySelector('[data-testid="surveys-group-text-s1"]') as HTMLElement | null;
+      expect(text?.textContent?.trim()).toBe('-');
+      expect(fixture.nativeElement.textContent).not.toContain('Unknown');
+    });
+
+    it('renders a named group without a uid as plain text, without a link or chip', () => {
+      const noUid = survey('s1', ['primary']);
+      noUid.committees[0].committee_uid = '';
+      render([noUid]);
+
+      expect(groupLink('s1')).toBeNull();
+      const text = fixture.nativeElement.querySelector('[data-testid="surveys-group-text-s1"]') as HTMLElement | null;
+      expect(text?.textContent?.trim()).toBe('Synthetic primary');
+      expect(text?.className).not.toContain('border');
+    });
+  });
+
   describe('status tab counts', () => {
     const tabLabels = (): string[] =>
       Array.from(fixture.nativeElement.querySelectorAll('[data-testid="surveys-status-tabs"] [data-testid^="filter-pill-"]') as NodeListOf<HTMLElement>).map(

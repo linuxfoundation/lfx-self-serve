@@ -29,6 +29,8 @@ test.describe('Org People Trainees paging — structure', () => {
     const table = page.getByTestId('org-people-trainees-table');
     const outside = page.getByTestId('org-people-trainees-outside');
     await expect(page.getByTestId('org-people-trainees-rows')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // The list of learners not on the people list starts collapsed.
+    await outside.getByTestId('org-people-trainees-outside-toggle').click();
 
     await expect(table.getByTestId('org-people-trainees-paginator')).toHaveCount(1);
     await expect(outside.getByTestId('org-people-trainees-outside-paginator')).toHaveCount(1);
@@ -57,6 +59,7 @@ test.describe('Org People Trainees paging — structure', () => {
     await page.setViewportSize(MOBILE_VIEWPORT);
     guard = await gotoOrgPageWithTrainees(page, TRAINEES_URL);
     await expect(page.getByTestId('org-people-trainees-rows')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('org-people-trainees-outside-toggle').click();
 
     for (const testId of ['org-people-trainees-paginator', 'org-people-trainees-outside-paginator']) {
       const paginator = page.getByTestId(testId);

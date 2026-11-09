@@ -91,6 +91,8 @@ function setup(): Harness {
           auditorSet: signal(empty),
           inheritedWriterSet: signal(empty),
           inheritedAuditorSet: signal(empty),
+          claManagerOrgSet: signal(empty),
+          claManagerLookupFailed: signal(false),
           refresh,
         },
       },

@@ -3,6 +3,7 @@
 
 import type { CommitteeMemberVisibility } from '../enums/committee.enum';
 import type { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import type { MailingListSyncMode } from '../enums/mailing-list.enum';
 import type { BadgeSeverity, TagSeverity } from './components.interface';
 import type { GroupsIOMailingList } from './mailing-list.interface';
 import type { MeetingAttachment } from './meeting-attachment.interface';
@@ -1219,6 +1220,13 @@ export interface MailingListPickerDialogData {
 
 export interface MailingListPickerDialogResult {
   selectedUids: Set<string>;
+  /**
+   * Chosen sync direction per mailing list uid (#4026), keyed for every list in the dialog's
+   * candidate set. Empty when the Mailing List Sync Settings feature flag is off (#4024) — the
+   * caller should fall back to preserving each list's existing `sync_mode` in that case rather
+   * than treating an empty map as "reset everything to manual".
+   */
+  syncModes: Map<string, MailingListSyncMode>;
 }
 
 export interface DescriptionDialogData {

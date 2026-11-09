@@ -81,6 +81,13 @@ describe('UiToastComponent', () => {
     expect(toast().classList).toContain('shadow-modal');
   });
 
+  it('hugs its content up to the 420px library width, then wraps', async () => {
+    await setup();
+    expect(toast().classList).toContain('w-fit');
+    expect(toast().classList).toContain('max-w-[min(420px,calc(100vw-32px))]');
+    expect(toast().classList).not.toContain('w-[420px]');
+  });
+
   describe('dark', () => {
     it('shows a success-400 check, a medium title and a neutral-300 description', async () => {
       await setup((instance) => {
@@ -224,6 +231,7 @@ describe('UiToastComponent', () => {
       const dismiss = toast().querySelector('[data-testid="ui-toast-dismiss"]') as HTMLButtonElement;
       expect(dismiss.getAttribute('aria-label')).toBe('Dismiss');
       expect(dismiss.type).toBe('button');
+      expect(dismiss.classList).toContain('shrink-0');
       dismiss.click();
       expect(host.dismissed).toHaveBeenCalledTimes(1);
     });
@@ -420,6 +428,18 @@ describe('UiToastService', () => {
     Object.defineProperty(right, 'offsetHeight', { configurable: true, value: 0 });
     resize();
     expect(centre.style.marginBottom).toBe('16px');
+  });
+
+  it('lines each toast up with its stack edge: right for bottom-right, centre for bottom-centre', async () => {
+    service.show({ message: 'Saved.' });
+    service.show({ message: 'Link copied.', variant: 'dark' });
+    await flush();
+    const regionOf = (message: string) =>
+      toasts()
+        .find((toast) => toast.textContent?.includes(message))
+        ?.closest('[data-testid="ui-toast-region"]') as HTMLElement;
+    expect(regionOf('Saved.').classList).toContain('items-end');
+    expect(regionOf('Link copied.').classList).toContain('items-center');
   });
 
   it('marks the pane with the toast pane class so a popover does not treat a click on it as outside', () => {

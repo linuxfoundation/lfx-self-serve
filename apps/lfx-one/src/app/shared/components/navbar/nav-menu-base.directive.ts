@@ -102,7 +102,7 @@ export abstract class NavMenuBase {
   protected readonly lensLoaded: Signal<boolean> = this.initLensLoaded();
 
   // Browser-only hydration gate. Org-lens menu items are still shaped by browser-only LaunchDarkly
-  // flags (ROI, EasyCLA M3), so the server menu can differ from the client-resolved one; hydrating
+  // flags (Donations), so the server menu can differ from the client-resolved one; hydrating
   // one against the other leaves stale nodes on screen. Holding the concrete menu back until
   // afterNextRender means the server and the first client render both show the loading skeleton
   // (skeleton→skeleton reconciles cleanly), then the real menu is inserted as a post-hydration update.

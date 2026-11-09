@@ -200,7 +200,8 @@ async function renderTraineesPage(
   query: string = QUERY,
   stats: OrgTrainingStats = STATS,
   formerOnPeopleList: OrgTraineesResponse['formerOnPeopleList'] = { people: 0, pairs: 0 },
-  outsideLearners: OrgTraineesResponse['outsideLearners'] = []
+  outsideLearners: OrgTraineesResponse['outsideLearners'] = [],
+  openOutside = false
 ): Promise<HTMLElement> {
   const response: OrgTraineesResponse = {
     ...EMPTY_ORG_TRAINEES_RESPONSE,
@@ -225,6 +226,11 @@ async function renderTraineesPage(
   await TestBed.inject(Router).navigateByUrl(`/${query}`);
   const fixture = TestBed.createComponent(TraineesComponent);
   await settle(fixture);
+  if (openOutside) {
+    // The list of learners not on the people list starts collapsed.
+    fixture.nativeElement.querySelector('[data-testid="org-people-trainees-outside-toggle"]')!.click();
+    await settle(fixture);
+  }
   return fixture.nativeElement;
 }
 
@@ -250,7 +256,7 @@ describe('Learners not on the people list: tile vs the Trainees list', () => {
   const UNFILTERED_STATS: OrgTrainingStats = { ...STATS, learnersOutsidePeopleList: OUTSIDE.length };
 
   it('shows a tile value equal to the Trainees outside list length, and keeps it out of the people tile', async () => {
-    const host = await renderTraineesPage(DETAILS, '?range=all', UNFILTERED_STATS, { people: 0, pairs: 0 }, OUTSIDE);
+    const host = await renderTraineesPage(DETAILS, '?range=all', UNFILTERED_STATS, { people: 0, pairs: 0 }, OUTSIDE, true);
     const tiles = snapshotTiles(host);
     const outsideTile = tiles.find((tile) => tile.testId === 'org-training-stat-learners-outside-people-list')!;
     const peopleTile = tiles.find((tile) => tile.testId === 'org-training-stat-people-with-training-activity')!;

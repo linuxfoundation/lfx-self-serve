@@ -7,24 +7,6 @@
     <p class="text-sm text-slate-700">{{ anonymousNotice() }}</p>
   </div>
 }
-@if (hasMultipleQuestions()) {
-  <div class="flex flex-wrap justify-end gap-2" data-testid="vote-results-comments-controls">
-    <lfx-button
-      label="Expand all"
-      [text]="true"
-      size="small"
-      [disabled]="allExpanded()"
-      (onClick)="setAllExpanded(true)"
-      data-testid="vote-results-comments-expand-all" />
-    <lfx-button
-      label="Collapse all"
-      [text]="true"
-      size="small"
-      [disabled]="expandedPrompts().size === 0"
-      (onClick)="setAllExpanded(false)"
-      data-testid="vote-results-comments-collapse-all" />
-  </div>
-}
 <div class="flex flex-col gap-4" data-testid="vote-results-comments-questions">
   @for (commentResult of displayCommentResults(); track commentResult.prompt.prompt_id) {
     @let promptId = commentResult.prompt.prompt_id;

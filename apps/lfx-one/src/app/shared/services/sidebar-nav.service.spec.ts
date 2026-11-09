@@ -13,7 +13,6 @@ import {
   MAILING_LIST_LABEL,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
-  ORG_LENS_CLA_M3_ENABLED_FLAG,
   CF_ORG_DONATIONS_FLAG,
   MARKETING_OPS_FGA_ENABLED_FLAG,
   MENTORSHIP_ENABLED_FLAG,
@@ -39,7 +38,6 @@ describe('SidebarNavService', () => {
   // The mobile drawer's previewed lens (#4208); the menu follows it while set, otherwise the active lens.
   const menuLensPreview = signal<Lens | null>(null);
   const mktgOsEnabled = signal(false);
-  const orgEasyclaEnabled = signal(false);
   const cfOrgDonationsEnabled = signal(false);
   const mentorshipEnabled = signal(false);
   const lfStaff = signal(false);
@@ -87,7 +85,6 @@ describe('SidebarNavService', () => {
     selectedProject.set(null);
     selectedFoundation.set(null);
     mktgOsEnabled.set(false);
-    orgEasyclaEnabled.set(false);
     cfOrgDonationsEnabled.set(false);
     mentorshipEnabled.set(false);
     lfStaff.set(false);
@@ -124,7 +121,6 @@ describe('SidebarNavService', () => {
           useValue: {
             getBooleanFlag: vi.fn((key: string) => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
-              if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
               if (key === CF_ORG_DONATIONS_FLAG) return cfOrgDonationsEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               if (key === AKRITES_ENABLED_FLAG) return akritesEnabled;
@@ -186,7 +182,10 @@ describe('SidebarNavService', () => {
         { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => (orgSegment() ? `/org/${orgSegment()}/${page}` : `/org/${page}`) } },
         {
           provide: AccountContextService,
-          useValue: { selectedAccount: () => ({ accountId: '', accountName: 'Acme', uid: selectedOrgUid() }), isRollUp: () => selectedOrgUid()?.startsWith('family-') ?? false },
+          useValue: {
+            selectedAccount: () => ({ accountId: '', accountName: 'Acme', uid: selectedOrgUid() }),
+            isRollUp: () => selectedOrgUid()?.startsWith('family-') ?? false,
+          },
         },
         { provide: OrgRoleGrantsService, useValue: { writerSet: orgWriterSet, claManagerOrgSet } },
       ],
@@ -497,16 +496,6 @@ describe('SidebarNavService', () => {
     expect(findByLink(sectionItems(items, 'Security'), '/akrites')).toEqual(expect.objectContaining({ label: 'Akrites Program' }));
   });
 
-  it('renders no EasyCLA entry on the org lens while the M3 flag is off', () => {
-    activeLens.set('org');
-
-    const items = TestBed.inject(SidebarNavService).sidebarItems();
-
-    expect(labels(items)).not.toContain('EasyCLA');
-    expect(findByLink(items, '/org/easycla')).toBeUndefined();
-    expect(labels(sectionItems(items, 'Organization Engagement'))).not.toContain('EasyCLA');
-  });
-
   /**
    * Copilot on PR #4415. `orgLensPath` prefixes every item with the selected segment, so in
    * roll-up mode Profile linked to `/org/family-{id}/profile`, where the page asks for
@@ -528,9 +517,8 @@ describe('SidebarNavService', () => {
 
   // EasyCLA is single-organization for the same reason as Profile: a corporate CLA belongs to one
   // company, so `/org/family-{id}/easycla` could only error (#4415, Copilot).
-  it('drops EasyCLA in roll-up mode even with the M3 flag on', () => {
+  it('drops EasyCLA in roll-up mode', () => {
     activeLens.set('org');
-    orgEasyclaEnabled.set(true);
     selectedOrgUid.set('family-0014100000RootAAAA');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
@@ -559,7 +547,6 @@ describe('SidebarNavService', () => {
 
   it('places EasyCLA as a top-level item directly before Organization Profile, under the org-admin divider', () => {
     activeLens.set('org');
-    orgEasyclaEnabled.set(true);
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
     const itemLabels = labels(items);
@@ -584,7 +571,6 @@ describe('SidebarNavService', () => {
 
   it('opts only EasyCLA into subpath highlighting across the Org Lens tree', () => {
     activeLens.set('org');
-    orgEasyclaEnabled.set(true);
 
     const flatten = (items: SidebarMenuItem[]): SidebarMenuItem[] => items.flatMap((item) => [item, ...flatten(item.items ?? [])]);
     const optedIn = flatten(TestBed.inject(SidebarNavService).sidebarItems()).filter((item) => item.activeOnSubpaths);
@@ -594,7 +580,6 @@ describe('SidebarNavService', () => {
 
   it('aliases only EasyCLA, to the leftover /org/easycla mount, so an addressed link still highlights there', () => {
     activeLens.set('org');
-    orgEasyclaEnabled.set(true);
     orgSegment.set('acme-inc');
 
     const flatten = (items: SidebarMenuItem[]): SidebarMenuItem[] => items.flatMap((item) => [item, ...flatten(item.items ?? [])]);
@@ -605,7 +590,6 @@ describe('SidebarNavService', () => {
 
   it('keeps EasyCLA directly above Organization Profile and closes the menu with the LF Staff Only section', () => {
     activeLens.set('org');
-    orgEasyclaEnabled.set(true);
     lfStaff.set(true);
 
     const itemLabels = labels(TestBed.inject(SidebarNavService).sidebarItems());
@@ -625,8 +609,6 @@ describe('SidebarNavService', () => {
     });
 
     it('shows the EasyCLA item and nothing else', () => {
-      orgEasyclaEnabled.set(true);
-
       const items = TestBed.inject(SidebarNavService).sidebarItems();
 
       expect(items).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: `/org/${CLA_ONLY_UID}/easycla` })]);
@@ -634,23 +616,14 @@ describe('SidebarNavService', () => {
     });
 
     it('keeps the full org sidebar for any other selected organization', () => {
-      orgEasyclaEnabled.set(true);
       selectedOrgUid.set('0014100000OtherOrg');
 
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Dashboard');
-    });
-
-    it('applies nothing while org-lens-cla-m3-enabled is off', () => {
-      const itemLabels = labels(TestBed.inject(SidebarNavService).sidebarItems());
-
-      expect(itemLabels).toContain('Dashboard');
-      expect(itemLabels).not.toContain('EasyCLA');
     });
   });
 
   it('addresses every Org Lens item to the selected organization, with ROI Metrics under LF Staff Only', () => {
     activeLens.set('org');
-    orgEasyclaEnabled.set(true);
     lfStaff.set(true);
     orgSegment.set('acme-inc');
 

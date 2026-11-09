@@ -89,6 +89,7 @@ import {
   GoogleAdsConversionActionsResult,
   GoogleAdsGeoTargetSearchOptions,
   GoogleAdsGeoTargetSearchResult,
+  GoogleAdsAudiencesResult,
   GoogleAdsUserListsResult,
   HubSpotEmailMonitorResponse,
   HubSpotEmailSearchResult,
@@ -688,6 +689,15 @@ export class CampaignService {
    */
   public getGoogleAdsConversionActions(projectSlug: string): Observable<GoogleAdsConversionActionsResult> {
     return this.http.get<GoogleAdsConversionActionsResult>('/api/campaigns/google/conversion-actions', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The Audiences on the Google Ads account a create for this project uses, for the Implement tab's Demand
+   * Gen audience picker (#5244). A coded 403 for a caller without `global_marketing_ops` on the project, a
+   * coded 503 when that check cannot be made, and a 404 while the campaign-service create road is off.
+   */
+  public getGoogleAdsAudiences(projectSlug: string): Observable<GoogleAdsAudiencesResult> {
+    return this.http.get<GoogleAdsAudiencesResult>('/api/campaigns/google/audiences', { params: { project: projectSlug } });
   }
 
   /**

@@ -47,7 +47,7 @@ export interface HealthMetricsMembersTiers {
   rows: HealthMetricsMembersTierYear[];
 }
 
-/** Platinum, Gold or Silver: the tiers with a colour and an icon of their own. */
+/** Diamond, Platinum, Gold or Silver: the tiers with a colour and an icon of their own. */
 export type HealthMetricsMembersReservedTier = (typeof HEALTH_METRICS_MEMBERS_RESERVED_TIERS)[number];
 
 /** A tier icon's fill, and the CSS mask that cuts it to shape. */
@@ -152,6 +152,119 @@ export interface HealthMetricsMembersBreakdownView {
   rows: HealthMetricsMembersBreakdownRowView[];
   /** The selected year's members, for the sub-nav badge; `null` when unmeasured. */
   count: number | null;
+}
+
+/** `GET /api/analytics/members-growth` — every year's months at once, so the view switch never re-reads. */
+export interface HealthMetricsMembersGrowthQuery {
+  foundationSlug: string;
+}
+
+/** One `MEMBERSHIP_GROWTH_MONTHLY` row: new members from January through the month. `null` is unmeasured. */
+export interface HealthMetricsMembersGrowthMonth {
+  year: number;
+  /** 1 to 12. */
+  month: number;
+  cumulative: number | null;
+}
+
+export interface HealthMetricsMembersGrowth {
+  /** Newest year first, then month. */
+  months: HealthMetricsMembersGrowthMonth[];
+}
+
+/** Highlights draws the earlier years as one range; All years draws each as its own line. */
+export type HealthMetricsMembersGrowthViewMode = 'highlights' | 'all';
+
+export interface HealthMetricsMembersGrowthViewOption {
+  value: HealthMetricsMembersGrowthViewMode;
+  label: string;
+}
+
+/** One line, as an SVG path over the chart's 600-wide viewBox. */
+export interface HealthMetricsMembersGrowthPathView {
+  key: string;
+  d: string;
+  color: string;
+  width: number;
+  dashed: boolean;
+}
+
+/** Where an end label sits beside its point: below and right, right and just below, or right and centred. */
+export type HealthMetricsMembersGrowthLabelPlacement = 'below-right' | 'right-below' | 'right';
+
+/** The end labels' offsets by placement, and their weights; applied via [class], so Tailwind's safelist carries them. */
+export interface HealthMetricsMembersGrowthLabelClasses {
+  placement: Record<HealthMetricsMembersGrowthLabelPlacement, string>;
+  strong: string;
+  regular: string;
+}
+
+/** An end label before it is laid out: where it sits off its point, its weight, and whether it stacks with December's. */
+export interface HealthMetricsMembersGrowthEndLabel {
+  key: string;
+  text: string;
+  leftPct: number;
+  topPct: number;
+  color: string;
+  placement: HealthMetricsMembersGrowthLabelPlacement;
+  strong: boolean;
+  stacks: boolean;
+}
+
+/** An end label's box in pixels, so labels that stack can be pushed apart. */
+export interface HealthMetricsMembersGrowthLabelBox {
+  offsetPx: Record<HealthMetricsMembersGrowthLabelPlacement, number>;
+  heightPx: number;
+  gapPx: number;
+}
+
+/** A label on the plot, positioned in percent of the plot box, with its offset and weight classes. */
+export interface HealthMetricsMembersGrowthLabelView {
+  key: string;
+  text: string;
+  leftPct: number;
+  topPct: number;
+  color: string;
+  classes: string;
+}
+
+/** A month's hover and focus target, with its popup. */
+export interface HealthMetricsMembersGrowthColumnView {
+  month: number;
+  label: string;
+  leftPct: number;
+  tip: HealthMetricsChartTipView;
+  ariaLabel: string;
+}
+
+/** A legend swatch: a line (solid or dashed, via `background`) or the range's band. */
+export interface HealthMetricsMembersGrowthLegendItemView {
+  label: string;
+  background: string;
+  band: boolean;
+}
+
+/** `#growth`: this year against last year and the earlier years, cumulative by month. */
+export interface HealthMetricsMembersGrowthView {
+  /** False when the foundation has no month rows. */
+  measured: boolean;
+  kpis: HealthMetricsOverviewKpiView[];
+  /** The y axis, top to bottom. */
+  yTicks: string[];
+  monthLabels: string[];
+  /** Earlier years first, so this year draws on top. */
+  paths: HealthMetricsMembersGrowthPathView[];
+  /** The earlier years' range; empty in All years, or with no year from the band's first year on. */
+  bandPath: string;
+  /** This month's x in the viewBox, for the Today line. */
+  todayX: number;
+  todayPct: number;
+  /** This year's point today, drawn hollow. */
+  todayDot: { leftPct: number; topPct: number };
+  labels: HealthMetricsMembersGrowthLabelView[];
+  columns: HealthMetricsMembersGrowthColumnView[];
+  legend: HealthMetricsMembersGrowthLegendItemView[];
+  ariaLabel: string;
 }
 
 /** A `MEMBERSHIP_DIRECTORY` NPS category, and the values the directory's NPS filter accepts. */

@@ -11,6 +11,7 @@ import { UserService } from '@services/user.service';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingsDayGroupComponent } from './meetings-day-group.component';
@@ -28,6 +29,7 @@ describe('MeetingsDayGroupComponent', () => {
         { provide: UserService, useValue: { authenticated: signal(true), viewerUsername: signal(null) } },
         { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
         { provide: MeetingsHomeDeleteService, useValue: {} },
+        { provide: MeetingsHomeDetailsService, useValue: {} },
         { provide: MeetingsHomeStore, useValue: { now: signal(new Date()) } },
       ],
     });
@@ -63,7 +65,8 @@ describe('MeetingsDayGroupComponent', () => {
     const element = await render({ label: 'Today', count: 1, rows: [row('a', 'Board Review')] }, 132);
 
     const separator = element.querySelector<HTMLElement>('[data-testid="meetings-home-day-group-separator"]');
-    expect(separator?.className).toContain('sticky z-[1] flex h-[24px]');
+    expect(separator?.className).toContain('sticky z-[1] -mt-[20px] flex h-[44px]');
+    expect(separator?.className).toContain('pt-[20px]');
     expect(separator?.className).toContain('bg-white');
     expect(separator?.style.top).toBe('132px');
   });

@@ -11,13 +11,19 @@ import {
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_ONLY_CLASS,
+  MKTG_PORTRAIT_PAGE_NAME,
+  MKTG_PORTRAIT_PRINT_CLASS,
   MKTG_PRINT_FONT_LINK_ID_PREFIX,
   MKTG_PRINT_FONT_WAIT_MS,
   MKTG_PRINT_FRAME_LINGER_MS,
   MKTG_PRINT_FRAME_PAPER_IN,
+  MKTG_PRINT_PAGE_MARGINS_CLASS,
   MKTG_PRINT_PAGE_SETUPS,
 } from '@lfx-one/shared/constants';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const SAFARI_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15';
+const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 import { MktgPrintService } from './mktg-print.service';
 
 describe('MktgPrintService isolated frame', () => {
@@ -53,9 +59,15 @@ describe('MktgPrintService isolated frame', () => {
     await vi.advanceTimersByTimeAsync(0);
   }
 
+  /** The frame reads the engine from its own window's user agent, once, at print time. */
+  function printAs(userAgent: string) {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(userAgent);
+  }
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    printAs(CHROME_UA);
     parentPrint = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     Object.defineProperty(document, 'fonts', { value: { load: parentFont }, configurable: true });
     root = document.createElement('div');
@@ -126,6 +138,65 @@ describe('MktgPrintService isolated frame', () => {
     root.innerHTML = `<section class="${BRAND_KIT_PORTRAIT_PRINT_CLASS}" data-testid="synthetic-print">Synthetic print</section>`;
     configure().printNow(BRAND_KIT_PRINT_BODY_CLASS);
     expect(framePageRule()).toBe(`@page { ${MKTG_PRINT_PAGE_SETUPS['mktg-framework']} }`);
+  });
+
+  it.each([
+    ['Chromium', CHROME_UA],
+    ['WebKit', SAFARI_UA],
+  ])("in %s gives a document of portrait frames US Letter with no margin, unnamed and as the frames' own named page", (_engine, userAgent) => {
+    printAs(userAgent);
+    root.className = BRAND_KIT_PRINT_ONLY_CLASS;
+    root.innerHTML = `<div class="${BRAND_KIT_PORTRAIT_PRINT_CLASS} ${MKTG_PORTRAIT_PRINT_CLASS}"><section class="pp-page" data-page="1">Synthetic frame</section></div>`;
+    configure().printNow(BRAND_KIT_PRINT_BODY_CLASS);
+    const setup = MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
+    expect(setup).toBe('size: auto; margin: 0;');
+    expect(framePageRule()).toBe(`@page { ${setup} }\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
+    expect(framePageRule()).not.toContain('@page mktg-framework');
+    // No page margins in either engine: the flowing parts beside the frames keep their own room.
+    expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(false);
+  });
+
+  it('in the family print, the portrait frames set the page too', () => {
+    printAs(SAFARI_UA);
+    root.className = MKTG_FAMILY_PRINT_ONLY_CLASS;
+    root.innerHTML = `<section class="${MKTG_PORTRAIT_PRINT_CLASS}"><section class="pp-page" data-page="1">Synthetic frame</section></section>`;
+    configure().printNow(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(framePageRule()).toContain(`@page ${MKTG_PORTRAIT_PAGE_NAME} { ${MKTG_PRINT_PAGE_SETUPS['mktg-portrait']} }`);
+    expect(framePageRule()).not.toContain('0.55in');
+  });
+
+  it('prints every page with no margin, where the browser would draw its header and footer', () => {
+    root.className = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
+    configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    const rule = framePageRule();
+    expect(rule).toContain('margin: 0;');
+    expect(rule).toContain('size: portrait;');
+    expect(rule).not.toMatch(/margin: [0-9.]+(in|cm|mm|pt|px)/);
+    expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(false);
+  });
+
+  it.each([
+    [FOUNDATION_MESSAGE_PRINT_BODY_CLASS, FOUNDATION_MESSAGE_PRINT_ONLY_CLASS],
+    [MKTG_FAMILY_PRINT_BODY_CLASS, MKTG_FAMILY_PRINT_ONLY_CLASS],
+  ])('in WebKit, which prints a table head and foot once, gives the %s print its page margins and collapses the room', (bodyClass, wrapper) => {
+    printAs(SAFARI_UA);
+    root.className = wrapper;
+    configure().printNow(bodyClass);
+    const setup = MKTG_PRINT_PAGE_SETUPS['mktg-framework-page-margins'];
+    expect(setup).toBe('size: portrait; margin: 0.55in 0.6in;');
+    // The unnamed rule, and the named one restated after the cloned sheets: no engine prints the margin-less setup.
+    expect(framePageRule()).toBe(`@page { ${setup} }\n@page mktg-framework { ${setup} }`);
+    expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(true);
+    expect(document.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(false);
+  });
+
+  it("in WebKit keeps the kit's legacy book on its own landscape setup, never restated into the framework's page", () => {
+    printAs(SAFARI_UA);
+    root.className = BRAND_KIT_PRINT_ONLY_CLASS;
+    configure().printNow(BRAND_KIT_PRINT_BODY_CLASS);
+    expect(framePageRule()).toBe(`@page { ${MKTG_PRINT_PAGE_SETUPS['brand-kit']} }`);
+    expect(framePageRule()).not.toContain('@page mktg-framework');
+    expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(true);
   });
 
   it('copies head CSS, base and page classes, but never scripts or interactive shell content', async () => {

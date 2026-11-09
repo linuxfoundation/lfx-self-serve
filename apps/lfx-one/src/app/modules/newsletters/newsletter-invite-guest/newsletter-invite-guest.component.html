@@ -2,7 +2,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div data-testid="newsletter-invite-guest">
-  <lfx-newsletter-guest-reader [issue]="state().issue ?? null" [foundation]="invite()?.foundation ?? null" [signInHref]="signInHref()" />
+  <lfx-newsletter-guest-reader
+    [issue]="state().issue ?? null"
+    [teaser]="invite()?.teaser ?? null"
+    [foundation]="invite()?.foundation ?? null"
+    [signInHref]="signInHref()" />
 
   @if (state().status === 'prompt' || state().status === 'error') {
     <lfx-newsletter-guest-modal
@@ -10,7 +14,7 @@
       [foundation]="invite()?.foundation ?? null"
       [membershipName]="invite()?.membership_name ?? ''"
       [companyName]="invite()?.company_name ?? ''"
-      [email]="invite()?.email ?? ''"
+      [email]="invite()?.masked_email ?? ''"
       [loading]="submitting()"
       [errorMessage]="modalError()"
       [blocked]="blocked()"

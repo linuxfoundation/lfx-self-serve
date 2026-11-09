@@ -13,9 +13,11 @@ import type { GoogleCreativeFieldSpec } from '../interfaces/campaign.interface';
 import {
   GOOGLE_CREATIVE_WIRE_FIELDS,
   GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS,
+  googleCallToActionRefusal,
   googleCreativeFieldWidth,
   googleCreativeImageFit,
   googleCreativeImageRequirement,
+  googlePerformanceMaxSearchThemesRefusal,
   googlePerformanceMaxShortDescriptionMissing,
   storedCreativeAssetLabel,
 } from './campaign-google-creative.utils';
@@ -95,6 +97,39 @@ describe('GOOGLE_CREATIVE_FIELD_SPECS image shapes', () => {
   });
 });
 
+describe('googlePerformanceMaxSearchThemesRefusal', () => {
+  const themes = (n: number): string[] => Array.from({ length: n }, (_, i) => `theme ${i + 1}`);
+
+  it('accepts no themes, and 50 distinct ones, the probe-verified ceiling', () => {
+    expect(googlePerformanceMaxSearchThemesRefusal([])).toBeNull();
+    expect(googlePerformanceMaxSearchThemesRefusal(themes(50))).toBeNull();
+  });
+
+  it('refuses a 51st theme on the submitted count, before judging any entry', () => {
+    expect(googlePerformanceMaxSearchThemesRefusal([...themes(50), ''])).toContain('at most 50 search themes');
+  });
+
+  it('refuses a blank entry by its position', () => {
+    expect(googlePerformanceMaxSearchThemesRefusal(['kubernetes', ''])).toContain('blank entry (search theme 2)');
+  });
+
+  it('bounds a theme at 80 runes, counting code points rather than UTF-16 units', () => {
+    expect(googlePerformanceMaxSearchThemesRefusal(['x'.repeat(80)])).toBeNull();
+    expect(googlePerformanceMaxSearchThemesRefusal(['x'.repeat(81)])).toContain('has 81');
+    // 80 astral-plane characters are 160 UTF-16 units but 80 runes, which upstream accepts.
+    expect(googlePerformanceMaxSearchThemesRefusal(['😀'.repeat(80)])).toBeNull();
+  });
+
+  it('refuses a repeat case-folded with Go rules, rather than collapsing it', () => {
+    expect(googlePerformanceMaxSearchThemesRefusal(['Cloud Native', 'cloud native'])).toContain('more than once');
+    expect(googlePerformanceMaxSearchThemesRefusal(['ΟΔΟΣ', 'οδοσ'])).toContain('more than once');
+  });
+
+  it('names the first bad entry in list order', () => {
+    expect(googlePerformanceMaxSearchThemesRefusal(['a', 'A', 'x'.repeat(81)])).toContain('more than once');
+  });
+});
+
 describe('googlePerformanceMaxShortDescriptionMissing', () => {
   const long = 'Join KeycloakCon on March 15, 2027 in Barcelona. Half-day conference for IAM professionals';
 
@@ -170,5 +205,52 @@ describe('the creative wire tables', () => {
     expect(GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS.images).toEqual(['logoImages']);
     expect(GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS.lists).toContain('youtubeVideoIds');
     expect(Object.values(GOOGLE_CREATIVE_WIRE_FIELDS).map((w) => w.key)).not.toContain(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY);
+  });
+});
+
+describe('googleCallToActionRefusal (#1614, F13)', () => {
+  it('passes a listed Display call to action, and none', () => {
+    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: 'Learn More' } }, 'display')).toBeNull();
+    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: '  ' } }, 'display')).toBeNull();
+    expect(googleCallToActionRefusal({ displayCreative: { headlines: ['Join us'] } }, 'display')).toBeNull();
+  });
+
+  it('refuses an unlisted Display call to action, on the single ad and in a named ad group', () => {
+    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: 'Register' } }, 'display')?.message).toContain('does not accept "Register"');
+    expect(googleCallToActionRefusal({ displayAdGroups: [{ name: 'A', creative: { callToActionText: 'Register' } }] }, 'display')?.message).toContain(
+      'Register'
+    );
+  });
+
+  it('refuses any Demand Gen image call to action, since Google documents none for it', () => {
+    expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: 'Learn More' } }, 'demand-gen')?.message).toContain('call to action');
+  });
+
+  it('refuses an unlisted Demand Gen video call to action and passes a listed one', () => {
+    expect(googleCallToActionRefusal({ demandGenVideoCreative: { callToAction: 'REGISTER' } }, 'demand-gen')?.message).toContain('REGISTER');
+    expect(googleCallToActionRefusal({ demandGenVideoCreative: { callToAction: 'SIGN_UP' } }, 'demand-gen')).toBeNull();
+  });
+
+  it('reads several Demand Gen ads, named ad groups and their ads', () => {
+    expect(googleCallToActionRefusal({ demandGenAds: [{ name: 'a', creative: { callToActionText: 'Go' } }] }, 'demand-gen')?.message).toContain('"Go"');
+    expect(googleCallToActionRefusal({ demandGenAdGroups: [{ name: 'g', videoCreative: { callToAction: 'GET_STARTED' } }] }, 'demand-gen')?.message).toContain(
+      'GET_STARTED'
+    );
+    expect(
+      googleCallToActionRefusal({ demandGenAdGroups: [{ name: 'g', ads: [{ name: 'a', creative: { callToActionText: 'Go' } }] }] }, 'demand-gen')?.message
+    ).toContain('"Go"');
+  });
+
+  it('names the field it refuses: callToActionText on the image and Display ads, callToAction on the video ad', () => {
+    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: 'Register' } }, 'display')?.field).toBe('callToActionText');
+    expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: 'Register' } }, 'demand-gen')?.field).toBe('callToActionText');
+    expect(googleCallToActionRefusal({ demandGenVideoCreative: { callToAction: 'REGISTER' } }, 'demand-gen')?.field).toBe('callToAction');
+    expect(googleCallToActionRefusal({ demandGenAds: [{ name: 'a', videoCreative: { callToAction: 'REGISTER' } }] }, 'demand-gen')?.field).toBe('callToAction');
+  });
+
+  it('reads only the channel being created', () => {
+    const body = { displayCreative: { callToActionText: 'Register' }, demandGenCreative: { callToActionText: 'Register' } };
+    expect(googleCallToActionRefusal(body, 'performance-max')).toBeNull();
+    expect(googleCallToActionRefusal(body, 'search')).toBeNull();
   });
 });

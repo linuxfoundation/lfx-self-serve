@@ -102,9 +102,16 @@ export const ORG_TRAINING_STAT_TILES: readonly OrgTrainingStatTileLayout[] = [
   { key: 'peopleInTraining', icon: 'fa-light fa-users', iconClass: 'bg-blue-100 text-blue-600', testId: 'org-training-stat-people-in-training' },
 ];
 
+/** The tiles People › Trainees shows before "Show more stats": the ones about the people list its table lists (lfx-self-serve#5304). */
+export const ORG_TRAINING_STAT_PRIMARY_KEYS: readonly OrgTrainingStatKey[] = ['peopleWithTrainingActivity', 'coursesTaken', 'certifiedPeople'];
+
 /** Heading of the Trainees list of learners linked to the organization who are not on its people list (lfx-self-serve#4287). */
 export const ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING = 'Learners not on the people list';
 
 /** Shown in place of that list while a course-level filter is picked: the list carries no course data to filter on. */
 export const ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE =
   'Learners not on the people list follow the time range and the name search only, so they are hidden while a foundation, project, course, level or format is selected.';
+
+/** Note in the open Trainees list of learners not on the people list: one person can appear more than once, and who can recognize them (lfx-self-serve#5304). */
+export const ORG_TRAINEES_OUTSIDE_LEARNERS_REVIEW_NOTE =
+  'These learners have training linked to this organization but are not on its people list. One person can appear more than once, for example with several training accounts under different emails. An org admin can review this list if a name looks familiar.';

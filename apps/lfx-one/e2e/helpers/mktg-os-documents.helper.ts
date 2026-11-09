@@ -1,14 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-  LENS_COOKIE_KEY,
-  MKTG_DOCUMENT_TYPES,
-  MKTG_OS_AGENTS_ENABLED_FLAG,
-  PERSONA_COOKIE_KEY,
-  SELECTED_PROJECT_COOKIE_KEY,
-} from '@lfx-one/shared/constants';
+import { LENS_COOKIE_KEY, MKTG_DOCUMENT_TYPES, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import type {
   MktgDocumentDetailResponse,
   MktgDocumentType,
@@ -22,6 +15,7 @@ import { expect, Page, Route } from '@playwright/test';
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { ApiMockHelper } from './api-mock.helper';
+import { pinMktgOsFlags } from './mktg-os-flags.helper';
 import { DATA_LOAD_TIMEOUT } from './mktg-os-assets.helper';
 
 export const DOCUMENT_PROJECT = { uid: 'd0000000-0000-4000-8000-000000000001', slug: 'synthetic-documents', name: 'Synthetic Documents Project', writer: true };
@@ -112,10 +106,7 @@ export async function setupDocuments(
   const writer = options.writer ?? true;
   mockProjects[DOCUMENT_PROJECT.slug] = { ...DOCUMENT_PROJECT, parent_uid: '', public: true } as Project;
   await ApiMockHelper.setupProjectSlugMock(page, { writer });
-  await page.addInitScript(([key, value]) => localStorage.setItem(key, value), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    JSON.stringify({ [MKTG_OS_AGENTS_ENABLED_FLAG]: true }),
-  ] as const);
+  await pinMktgOsFlags(page);
   const seedCookies = async (): Promise<void> => {
     await page.context().addCookies([
       {

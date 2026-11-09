@@ -5,7 +5,7 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
 import { provideRouter, Router } from '@angular/router';
-import { EMPTY_ORG_EVENT_ATTENDEES_RESPONSE, ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_EVENT_ATTENDEES_RESPONSE, ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE } from '@lfx-one/shared/constants';
 import type { OrgDropdownOption, OrgEventAttendeeDetailRow, OrgEventAttendeesResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
@@ -92,7 +92,7 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
     expect(TestBed.inject(Router).url).not.toContain('attribution');
   });
 
-  it('offers All as the first Count option and Company email or employee as the first Counted by option, All relations next', async () => {
+  it('offers All as the first Count option and Employee match, Self-reported only, All as the Counted by options', async () => {
     await mount('/?tab=events');
     const component = fixture.componentInstance as unknown as {
       participationOptions: { label: string; value: string }[];
@@ -100,18 +100,31 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
     };
 
     expect(component.participationOptions.map((option) => option.label)).toEqual(['All', 'Registered', 'Attended']);
-    expect(component.attributionOptions[0]).toEqual({ label: 'Company email or employee', value: 'verified' });
-    expect(component.attributionOptions[1]).toEqual({ label: 'All relations', value: 'all' });
+    expect(component.attributionOptions).toEqual([
+      { label: 'Employee match', value: 'verified' },
+      { label: 'Self-reported only', value: 'self_reported' },
+      { label: 'All', value: 'all' },
+    ]);
     expect(form().controls['participation'].value).toBe('all');
     expect(form().controls['attribution'].value).toBe('verified');
   });
 
   it('restores Count and Counted by from the URL and reads with them', async () => {
-    await mount('/?tab=events&range=90d&participation=attended&attribution=company_email');
+    await mount('/?tab=events&range=90d&participation=attended&attribution=self_reported');
 
     expect(form().controls['participation'].value).toBe('attended');
-    expect(form().controls['attribution'].value).toBe('company_email');
-    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '90d', attribution: 'company_email', participation: 'attended' });
+    expect(form().controls['attribution'].value).toBe('self_reported');
+    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '90d', attribution: 'self_reported', participation: 'attended' });
+    expect(testId('org-people-event-attendees-attendees-caption')?.textContent).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.self_reported);
+  });
+
+  // lfx-self-serve#5315 retired Company email and Account on registration: an old link reads with the default instead.
+  it.each(['company_email', 'account'])('falls back to Employee match for the retired ?attribution=%s', async (retired) => {
+    await mount(`/?tab=events&attribution=${retired}`);
+
+    expect(form().controls['attribution'].value).toBe('verified');
+    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '730d', attribution: 'verified', participation: 'all' });
+    expect(getEventAttendees).not.toHaveBeenCalledWith(ORG, expect.objectContaining({ attribution: retired }));
   });
 
   it('writes a non-default pick to the URL and refetches, then drops it again at the default', async () => {
@@ -143,7 +156,7 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
   });
 
   it('keeps Counted by behind "More filters", counting a non-default pick on the link', async () => {
-    await mount('/?tab=events&attribution=account');
+    await mount('/?tab=events&attribution=all');
 
     const row = testId('org-people-event-attendees-more-filters');
     expect(row?.classList.contains('hidden')).toBe(true);
@@ -201,18 +214,6 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
 
     expect([tile('speakers'), tile('events'), tile('foundations')]).toEqual(['1', '2', '1']);
     expect(tile('attendees')).toBe('2');
-  });
-
-  it('says so when Counted by fell back to the account', async () => {
-    await mount('/?tab=events&attribution=company_email', { ...RESPONSE, servedAttribution: 'account' });
-
-    expect(testId('org-people-event-attendees-attribution-unavailable')?.textContent).toContain(ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE);
-  });
-
-  it('does not show the note when the served attribution is the one picked', async () => {
-    await mount('/?tab=events', { ...RESPONSE, servedAttribution: 'verified' });
-
-    expect(testId('org-people-event-attendees-attribution-unavailable')).toBeNull();
   });
 
   it('clears a picked event the new response no longer offers', async () => {

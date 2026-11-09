@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 import { AUDIT_PROJECT, PAGE_LOAD_TIMEOUT, setupAudit } from './helpers/mktg-os-aeo-geo.helper';
 import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
-import { expectMktgPrintFrame, finishMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
+import { expectMktgPrintFrame, finishMktgPrintFrame, mktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.describe('AEO/GEO audit content', () => {
   test('empty intake history, normalized domain, and blank or 2–5 key pages', async ({ page }, testInfo) => {
@@ -110,10 +110,86 @@ test.describe('AEO/GEO audit content', () => {
     expect(frameCreatedSynchronously).toContain(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
     await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, '[data-testid="mktg-document-view-print"]');
     await expect(page.getByTestId('mktg-document-view-print')).toContainText('Add a detailed FAQ');
+    // The report prints through one flowing sheet row: the sheet's head gives every page its top room and the row its
+    // bottom room (Chromium), or the page margins do (WebKit), as for the asset prints.
+    const printArticle = mktgPrintFrame(page).locator('[data-testid="mktg-document-view-print"] article.lfx-framework-print');
+    await expect(
+      printArticle.locator(':scope > lfx-mktg-print-sheet > .lfx-print-sheet-body > lfx-mktg-print-sheet-row.lfx-print-sheet-row-flows')
+    ).toHaveCount(1);
+    await expect(printArticle.getByTestId('mktg-print-sheet-head')).toHaveCount(1);
+    await expect(printArticle.getByTestId('mktg-print-sheet-foot')).toHaveCount(0);
+    // The row holds the print hero and the report: this fixture's earlier report is Markdown (no typed report), so the
+    // document view's @else renders it through lfx-markdown-renderer; a typed one would render lfx-aeo-geo-report.
+    await expect(printArticle.locator('lfx-mktg-print-sheet-row [data-testid="mktg-document-view-print-overall"]')).toHaveCount(1);
+    await expect(printArticle.locator('lfx-mktg-print-sheet-row :is(lfx-aeo-geo-report, lfx-markdown-renderer)')).toHaveCount(1);
     expect(downloads).toHaveLength(0);
     await finishMktgPrintFrame(page);
     await expect(page.getByTestId('mktg-document-view-run-again')).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('reopened-report.png'), fullPage: true });
+  });
+
+  test('prints the typed report with its title first, the running head, code spans as code and a spaced source role', async ({ page }, testInfo) => {
+    await stubMktgPrintFrame(page);
+    const app = await setupAudit(page, { previous: true, typed: true });
+    const recorded = aeoGeoEnvelopeFixture().report;
+    if (!recorded) {
+      throw new Error('Recorded report fixture is missing.');
+    }
+    await app.go('/aeo-geo');
+    await page.getByRole('link', { name: 'Open report from', exact: false }).click();
+    await expect(page.getByTestId('mktg-document-view-verdict')).toHaveText(recorded.verdict);
+    // The web view renders the finding's Markdown code span as code, with no literal backtick (the same renderer prints).
+    const webDetail = page.getByTestId('mktg-document-view-report-summary').getByTestId('mktg-aeo-typed-finding-detail-0');
+    await expect(webDetail.locator('code')).toHaveText('User-agent: *');
+    await expect(webDetail).not.toContainText('`');
+    await page.getByTestId('mktg-document-view-download').getByRole('button').click();
+    await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, '[data-testid="mktg-document-view-print"]');
+    const printArticle = mktgPrintFrame(page).locator('[data-testid="mktg-document-view-print"] article.lfx-framework-print');
+    // The title opens the report: the first text of the sheet's body (its head group carries the running head), before the
+    // score card the web view leads with.
+    const headline = printArticle.getByTestId('mktg-document-view-print-headline');
+    await expect(headline).toHaveText(recorded.headline);
+    await expect(printArticle.locator('lfx-aeo-geo-report h2')).toHaveCount(0);
+    expect(
+      await headline.evaluate((title) => {
+        const body = title.closest('.lfx-print-sheet-body');
+        const overall = body?.querySelector('[data-testid="mktg-document-view-print-overall"]');
+        const walker = body && body.ownerDocument.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+        let firstText: Node | null = null;
+        while (walker && (firstText = walker.nextNode())) {
+          if (firstText.textContent?.trim()) break;
+        }
+        return {
+          firstTextInTitle: !!firstText && title.contains(firstText),
+          titleBeforeOverall: !!overall && !!(title.compareDocumentPosition(overall) & Node.DOCUMENT_POSITION_FOLLOWING),
+        };
+      })
+    ).toEqual({ firstTextInTitle: true, titleBeforeOverall: true });
+    await expect(printArticle.getByTestId('mktg-document-view-print-subline')).toContainText('AEO/GEO report — 15 Oct 2026 · 2 key pages named');
+    await expect(printArticle.getByTestId('mktg-document-view-print-subline')).not.toContainText('stored under');
+    // The running head sits in the sheet's head group (repeated per page by Chromium): project, document, date; no version.
+    const runningHead = printArticle.getByTestId('mktg-print-sheet-head').getByTestId('mktg-print-running-head');
+    await expect(runningHead).toHaveText(`${AUDIT_PROJECT.name} AEO/GEO report · 15 Oct 2026`);
+    await expect(runningHead).not.toContainText(/version|v1/i);
+    await expect(printArticle.getByTestId('mktg-print-sheet-foot')).toHaveCount(0);
+    // The code span prints as code, and the article's text carries no literal backtick: neither in the text nor drawn by the
+    // typography plugin's `code::before`/`code::after` pseudo-content, which the report's stylesheet switches off.
+    const printedCode = printArticle.getByTestId('mktg-aeo-typed-finding-detail-0').locator('code');
+    await expect(printedCode).toHaveText('User-agent: *');
+    await expect(printArticle).not.toContainText('`');
+    expect(
+      await printedCode.evaluate((code) => ({
+        before: getComputedStyle(code, '::before').content,
+        after: getComputedStyle(code, '::after').content,
+      }))
+    ).toEqual({ before: 'none', after: 'none' });
+    // A space between the source link and its role, and the finding and recommendation blocks are kept whole on a page.
+    await expect(printArticle.getByTestId('mktg-aeo-typed-sources').locator('li').first()).toHaveText(
+      `${recorded.sources[0].url} (${recorded.sources[0].role})`
+    );
+    await expect(printArticle.getByTestId('mktg-aeo-typed-findings').locator('.lfx-aeo-report-block').first()).toHaveCSS('break-inside', 'avoid');
+    await expect(printArticle.getByTestId('mktg-aeo-typed-findings').locator('h3')).toHaveCSS('break-after', 'avoid');
+    await page.screenshot({ path: testInfo.outputPath('typed-report-print.png'), fullPage: true });
   });
 
   test('asks one round on the run page, resumes it on re-entry, then writes and renders a typed report on the document', async ({ page }, testInfo) => {
