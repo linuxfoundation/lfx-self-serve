@@ -1466,6 +1466,11 @@ export interface CampaignImplementationDraft {
   demandGenAds?: GoogleDemandGenAdDraft[];
   /** The single Demand Gen ad group's picked Audience resource name (#5244). Absent leaves it alone. */
   demandGenAudience?: string;
+  /**
+   * The single Demand Gen ad group's demographics (linuxfoundation/lfx-v2-campaign-service#498), kept
+   * whether or not the split is on. Absent leaves the form's alone.
+   */
+  demandGenDemographics?: GoogleDemandGenDemographics;
   /** Whether the Display campaign is split into named ad groups (#475). Absent restores the default, off. */
   displayAdGroupsSplit?: boolean;
   /** The named Display ad groups as typed, kept whether or not the split is on. Absent leaves the form's groups alone. */
@@ -3157,11 +3162,15 @@ export interface GoogleDemandGenVideoCreative {
  * or several from {@link ads} instead.
  *
  * `audience` is the group's one Google Ads Audience (#5244), sent only when one was picked.
+ * `demographics` (linuxfoundation/lfx-v2-campaign-service#518) is built into an Audience of the group's
+ * own instead, so upstream refuses the two together.
  */
 export interface GoogleDemandGenAdGroup {
   name: string;
   /** The group's Audience resource name, `customers/{customerId}/audiences/{id}`, under the same rules as {@link CampaignCreateRequest.demandGenAudience}. */
   audience?: string;
+  /** The group's own demographics, the same object as {@link CampaignCreateRequest.demandGenDemographics}; they replace those for this group. */
+  demographics?: GoogleDemandGenDemographics;
   /** The group's image ad, the same shape as {@link CampaignCreateRequest.demandGenCreative}. */
   creative?: GoogleDemandGenCreative;
   /** The group's video ad, the same shape as {@link CampaignCreateRequest.demandGenVideoCreative}. */
@@ -3197,6 +3206,8 @@ export interface GoogleDemandGenAdDraft {
 export interface GoogleDemandGenAdGroupDraft extends GoogleDemandGenAdDraft {
   /** The group's picked Audience resource name (#5244). Absent restores none. */
   audience?: string;
+  /** The group's own demographics (linuxfoundation/lfx-v2-campaign-service#518). Absent restores none. */
+  demographics?: GoogleDemandGenDemographics;
   /** The first ad's name, used once the group has more than one ad. Absent restores blank. */
   adName?: string;
   /** The group's second and later ads. Absent restores none. */
@@ -3227,6 +3238,7 @@ export interface GoogleDemandGenAdForm {
 export interface GoogleDemandGenAdGroupControls extends GoogleDemandGenAdControls {
   adName: import('@angular/forms').FormControl<string>;
   audience: import('@angular/forms').FormControl<string>;
+  demographics: import('@angular/forms').FormControl<GoogleDemandGenDemographics>;
   ads: import('@angular/forms').FormArray<import('@angular/forms').FormGroup<GoogleDemandGenAdControls>>;
 }
 
@@ -3650,6 +3662,17 @@ export interface GoogleDisplayDemographics {
   parentalStatuses?: GoogleAdsParentalStatus[];
 }
 
+/**
+ * A Demand Gen ad group's demographics (linuxfoundation/lfx-v2-campaign-service#498, #518),
+ * `googleAdsConfig.demandGenDemographics` or a `demandGenAdGroups` entry's `demographics` on the wire:
+ * the same four lists as {@link GoogleDisplayDemographics}, in the same vocabularies. Upstream builds
+ * them into one new Audience the ad group targets, so each non-empty list narrows the ad group to the
+ * values it names. Unknown (`UNDETERMINED`) adds the people Google could not classify and needs a real
+ * value beside it; a list naming every value and Unknown narrows nothing, and upstream leaves it out.
+ * Upstream also takes user lists and custom audiences in this object; this application sends neither.
+ */
+export type GoogleDemandGenDemographics = GoogleDisplayDemographics;
+
 /** What the "create another campaign" confirmation shows (#4983, "ss-3"). */
 export interface CampaignCreateAnotherDialogData {
   /** "This creates a separate, separately budgeted … campaign on …", built by the Implement tab. */
@@ -3919,6 +3942,15 @@ export interface CampaignCreateRequest {
    * pair. campaign-service also requires `global_marketing_ops` on the project to send one (#501).
    */
   demandGenAudience?: string;
+  /**
+   * The single Demand Gen ad group's demographics (linuxfoundation/lfx-v2-campaign-service#498), which
+   * upstream builds into one new Audience before the budget. DEMAND GEN ONLY
+   * (`GOOGLE_CHANNELS_WITH_DEMAND_GEN_DEMOGRAPHICS`). Never beside {@link demandGenAudience} or a group's
+   * `audience`, since an ad group takes one Audience; a named group's own `demographics` replace these for
+   * that group. Upstream refuses an object naming nothing. Not gated on `global_marketing_ops`: the four
+   * lists name no account resource.
+   */
+  demandGenDemographics?: GoogleDemandGenDemographics;
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   /**
    * The Performance Max asset group's search themes (campaign-service v1.0.31, linuxfoundation/lfx-v2-campaign-service#461): free text naming
@@ -6921,6 +6953,16 @@ export interface CampaignGoogleAudienceSegmentsBlock {
  */
 export interface CampaignGoogleDemandGenAudienceBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for Demand Gen demographics the draft still holds but the request cannot carry,
+ * because the campaign-service create path is not serving the create. The kinds mean what they do on
+ * {@link CampaignGoogleDemandGenAudienceBlock}; there is no `restricted`, because no role gates them.
+ */
+export interface CampaignGoogleDemandGenDemographicsBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
   message: string;
 }
 

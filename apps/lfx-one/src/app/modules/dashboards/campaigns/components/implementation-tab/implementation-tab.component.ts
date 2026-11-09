@@ -202,6 +202,7 @@ import {
   GOOGLE_AUDIENCE_PICKER_REASONS,
   GOOGLE_AUDIENCE_PICKER_TRUNCATED,
   GOOGLE_DEMAND_GEN_AUDIENCE_HELD_WHILE_SPLIT,
+  GOOGLE_DEMAND_GEN_DEMOGRAPHICS_HELD_WHILE_SPLIT,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   DEFAULT_GOOGLE_DAILY_BUDGET_USD,
@@ -252,6 +253,7 @@ import type {
   CampaignCreateResult,
   CampaignGoogleAudienceSegmentsBlock,
   CampaignGoogleDemandGenAudienceBlock,
+  CampaignGoogleDemandGenDemographicsBlock,
   CampaignGoogleExtensionsCapabilityBlock,
   CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
@@ -303,6 +305,7 @@ import type {
   GoogleAdsObservedDemographic,
   GoogleAdsParentalStatus,
   GoogleDisplayDemographics,
+  GoogleDemandGenDemographics,
   GoogleAdsGeoTargetOption,
   GoogleAdsGeoTargetSearchState,
   GoogleAdsGeoTargetSuggestion,
@@ -388,6 +391,8 @@ import {
   googleDemandGenVideoCreativeRefusal,
   googleDemandGenAdGroupsRefusal,
   googleDemandGenAudiencesRefusal,
+  googleDemandGenDemographicsLeftOut,
+  googleDemandGenDemographicsRefusal,
   googleDemandGenAdsRefusal,
   googleDemandGenSingleAdGroupName,
   googleExcludedPlacementsRefusal,
@@ -428,6 +433,7 @@ import {
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
+import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
 import { CampaignGoogleDemographicsPanelComponent } from '../campaign-google-demographics-panel/campaign-google-demographics-panel.component';
 import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
 import { CampaignGoogleSearchAdsPanelComponent } from '../campaign-google-search-ads-panel/campaign-google-search-ads-panel.component';
@@ -437,6 +443,7 @@ import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-g
 import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
 import { DemandGenAdListContextDirective } from './demand-gen-ad-list-context.directive';
 import { DemandGenAudienceContextDirective } from './demand-gen-audience-context.directive';
+import { DemandGenDemographicsContextDirective } from './demand-gen-demographics-context.directive';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -494,8 +501,10 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     NgTemplateOutlet,
     DemandGenAdListContextDirective,
     DemandGenAudienceContextDirective,
+    DemandGenDemographicsContextDirective,
     SlicePipe,
     CampaignBiddingControlComponent,
+    CampaignGoogleDemographicTargetingComponent,
     CampaignGoogleDemographicsPanelComponent,
     CampaignGoogleExclusionsPanelComponent,
     CampaignGoogleSearchAdsPanelComponent,
@@ -1269,6 +1278,10 @@ export class ImplementationTabComponent implements OnInit {
     // The single ad group's Audience resource name (#5244), set only by the picker or a restored draft.
     // Empty by default, which sends no `demandGenAudience`; held, not sent, while the campaign is split.
     demandGenAudience: this.fb.nonNullable.control(''),
+    // The single ad group's demographics (linuxfoundation/lfx-v2-campaign-service#498), which upstream
+    // builds into a new Audience. Empty by default, which sends no `demandGenDemographics`; held, not
+    // sent, while the campaign is split, as the Audience above is.
+    demandGenDemographics: this.fb.nonNullable.control<GoogleDemandGenDemographics>({}),
     demandGenAds: new FormArray<FormGroup<GoogleDemandGenAdControls>>([]),
     // The Display campaign split into named ad groups (#475), on the Demand Gen split's terms: off by
     // default, the groups kept whichever way it sits, and only an active split renders and sends them.
@@ -3540,6 +3553,10 @@ export class ImplementationTabComponent implements OnInit {
     // A retained Demand Gen audience the request cannot carry (#5244), on the audience segments' terms:
     // held, never dropped, whatever the cutover.
     if (this.demandGenAudienceBlock() !== null) return false;
+    // Demand Gen demographics campaign-service would refuse (#498, #518).
+    if (googleSelected && this.demandGenDemographicsError() !== null) return false;
+    // Retained Demand Gen demographics the request cannot carry, held on the audience block's terms.
+    if (this.demandGenDemographicsBlock() !== null) return false;
     // The named Display ad groups campaign-service would refuse (#475).
     if (googleSelected && this.displayAdGroupsError() !== null) return false;
     // Performance Max search themes the BFF would refuse (#5262); the message is under the box.
@@ -4109,6 +4126,35 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly demandGenAudienceBlockMessage = computed(() => this.demandGenAudienceBlock()?.message ?? '');
   /** The note when the single ad group's Audience is kept but not sent because the campaign is split; `''` otherwise. */
   protected readonly demandGenAudienceHeldMessage: Signal<string> = this.initDemandGenAudienceHeldMessage();
+  /**
+   * Per ad group on screen, keyed `single` or the group's index, whether its demographics name a value, so
+   * its fragment holds the Audience picker back and keeps the demographics on show beside a picked Audience.
+   */
+  protected readonly demandGenDemographicsNamed: Signal<Record<string, boolean>> = computed(() => {
+    void this.campaignFormRevision();
+    const form = this.campaignForm.controls;
+    return {
+      single: googleDisplayDemographicsCarried(form.demandGenDemographics.value),
+      ...Object.fromEntries(
+        form.demandGenAdGroups.controls.map((group, index) => [`${index}`, googleDisplayDemographicsCarried(group.controls.demographics.value)])
+      ),
+    };
+  });
+  /** Why campaign-service would refuse the Demand Gen demographics the create carries, holding Create, or `null` (#498, #518). */
+  protected readonly demandGenDemographicsError: Signal<string | null> = this.initDemandGenDemographicsError();
+  /**
+   * Per ad group, keyed `single` or the group's index, the note that a dimension naming every value and
+   * Unknown narrows nothing, so Google Ads leaves it out of the Audience (#519); absent when none does.
+   */
+  protected readonly demandGenDemographicsLeftOut: Signal<Record<string, string>> = this.initDemandGenDemographicsLeftOut();
+  /** The ad groups whose demographics {@link demandGenDemographicsBlock} holds, by name. */
+  protected readonly demandGenDemographicsRetained: Signal<string[]> = this.initDemandGenDemographicsRetained();
+  /** Why Create is held for Demand Gen demographics the draft still holds but the request cannot carry, or `null`. */
+  protected readonly demandGenDemographicsBlock: Signal<CampaignGoogleDemandGenDemographicsBlock | null> = this.initDemandGenDemographicsBlock();
+  /** The always-mounted live region's text for `demandGenDemographicsBlock`; `''` when nothing blocks. */
+  protected readonly demandGenDemographicsBlockMessage = computed(() => this.demandGenDemographicsBlock()?.message ?? '');
+  /** The note when the single ad group's demographics are kept but not sent because the campaign is split; `''` otherwise. */
+  protected readonly demandGenDemographicsHeldMessage: Signal<string> = this.initDemandGenDemographicsHeldMessage();
   protected readonly audiencePickerEmpty = GOOGLE_AUDIENCE_PICKER_EMPTY;
   protected readonly audiencePickerLoading = GOOGLE_AUDIENCE_PICKER_LOADING;
   protected readonly audiencePickerTruncated = GOOGLE_AUDIENCE_PICKER_TRUNCATED;
@@ -5930,6 +5976,8 @@ export class ImplementationTabComponent implements OnInit {
       // The single ad group's Audience (#5244), on the same gate; absent unless one was picked and the
       // campaign is not split.
       ...(platforms.includes('google-ads') ? this.googleDemandGenAudiencePayload() : {}),
+      // The single ad group's demographics (#498), on the same terms as its Audience.
+      ...(platforms.includes('google-ads') ? this.googleDemandGenDemographicsPayload() : {}),
       // The named Display ad groups (#475), on the same terms.
       ...(platforms.includes('google-ads') ? this.googleDisplayAdGroupsPayload() : {}),
       // The Performance Max search themes (#5262), on the same gate, and already withheld unless the
@@ -6218,6 +6266,30 @@ export class ImplementationTabComponent implements OnInit {
       form.demandGenAudience.setValue('');
     } else {
       for (const group of form.demandGenAdGroups.controls) group.controls.audience.setValue('');
+    }
+    this.focusAfterDemandGenAudienceBlockRemoved();
+  }
+
+  /** The demographics control of ad group `group`, the single one for `null` (#498, #518). */
+  protected demandGenDemographicsControl(group: number | null): FormControl<GoogleDemandGenDemographics> {
+    return group === null ? this.campaignForm.controls.demandGenDemographics : this.campaignForm.controls.demandGenAdGroups.at(group).controls.demographics;
+  }
+
+  /** A tick in ad group `group`'s demographics, the single one for `null`; the form's own `valueChanges` emits the draft. */
+  protected onDemandGenDemographicsChange(group: number | null, demographics: GoogleDemandGenDemographics): void {
+    this.demandGenDemographicsControl(group).setValue(demographics);
+  }
+
+  /**
+   * {@link demandGenDemographicsBlock}'s way out: clear every demographics object it holds, for the split
+   * mode the request would use, then move focus as the audience block's Remove does.
+   */
+  protected onDemandGenDemographicsClearAll(): void {
+    const form = this.campaignForm.controls;
+    if (!form.demandGenAdGroupsSplit.value) {
+      form.demandGenDemographics.setValue({});
+    } else {
+      for (const group of form.demandGenAdGroups.controls) group.controls.demographics.setValue({});
     }
     this.focusAfterDemandGenAudienceBlockRemoved();
   }
@@ -7543,6 +7615,11 @@ export class ImplementationTabComponent implements OnInit {
     // The single ad group's Audience (#5244), a string only; its shape and account are judged on Create
     // (`demandGenAudienceError`), so a value the create would refuse is shown with its reason, not dropped.
     if (typeof draft.demandGenAudience === 'string') this.campaignForm.controls.demandGenAudience.setValue(draft.demandGenAudience);
+    // The single ad group's demographics (#498), present-only, string entries only; judged on Create
+    // (`demandGenDemographicsError`), so a value the create would refuse is shown with its reason.
+    if (draft.demandGenDemographics !== undefined) {
+      this.campaignForm.controls.demandGenDemographics.setValue(this.demographicsFromDraft(draft.demandGenDemographics));
+    }
     if (typeof draft.demandGenAdGroupsSplit === 'boolean') {
       this.campaignForm.controls.demandGenAdGroupsSplit.setValue(draft.demandGenAdGroupsSplit);
     }
@@ -8105,12 +8182,15 @@ export class ImplementationTabComponent implements OnInit {
         adName: group.controls.adName.value,
         ads: group.controls.ads.controls.map((ad) => this.demandGenAdDraft(ad)),
         audience: group.controls.audience.value,
+        demographics: this.copyDisplayDemographics(group.controls.demographics.value),
       })),
       // The single ad group's several ads (#5226), on the same terms.
       demandGenAdName: this.campaignForm.controls.demandGenAdName.value,
       demandGenAds: this.campaignForm.controls.demandGenAds.controls.map((ad) => this.demandGenAdDraft(ad)),
       // The single ad group's Audience (#5244), split or not, so turning the split off restores it.
       demandGenAudience: this.campaignForm.controls.demandGenAudience.value,
+      // The single ad group's demographics (#498), split or not, on the Audience's terms.
+      demandGenDemographics: this.copyDisplayDemographics(this.campaignForm.controls.demandGenDemographics.value),
       displayAdGroupsSplit: this.campaignForm.controls.displayAdGroupsSplit.value,
       displayAdGroups: this.campaignForm.controls.displayAdGroups.controls.map((group) => ({
         name: group.controls.name.value,
@@ -8612,6 +8692,7 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.demandGenAdName.reset();
     this.campaignForm.controls.demandGenAds.clear();
     this.campaignForm.controls.demandGenAudience.reset();
+    this.campaignForm.controls.demandGenDemographics.reset();
     this.campaignForm.controls.displayAdGroupsSplit.reset();
     this.campaignForm.controls.displayAdGroups.clear();
     this.googleGeoTargets.set([]);
@@ -11672,13 +11753,19 @@ export class ImplementationTabComponent implements OnInit {
    * sends its name and the creative of its chosen format, built as the sections' creatives are; a
    * creative that empties out is omitted, which {@link demandGenAdGroupsError} then refuses. A group with
    * a second ad sends `ads` instead: its own ad first, under its ad name, then the others. A group's picked
-   * Audience goes last, trimmed, and only when it has one (#5244).
+   * Audience goes last, trimmed, and only when it has one (#5244), and so do its demographics, only when
+   * they name a value (linuxfoundation/lfx-v2-campaign-service#518).
    */
   private googleDemandGenAdGroupsPayload(): { demandGenAdGroups?: GoogleDemandGenAdGroup[] } {
     if (!this.demandGenAdGroupsActive()) return {};
     const groups = this.campaignForm.controls.demandGenAdGroups.controls.map((group): GoogleDemandGenAdGroup => {
       const audience = group.controls.audience.value.trim();
-      const withAudience = (entry: GoogleDemandGenAdGroup): GoogleDemandGenAdGroup => (audience === '' ? entry : { ...entry, audience });
+      const demographics = group.controls.demographics.value;
+      const withAudience = (entry: GoogleDemandGenAdGroup): GoogleDemandGenAdGroup => ({
+        ...entry,
+        ...(audience === '' ? {} : { audience }),
+        ...(googleDisplayDemographicsCarried(demographics) ? { demographics: this.copyDisplayDemographics(demographics) } : {}),
+      });
       if (group.controls.ads.length === 0) return withAudience(this.demandGenAdEntry(group.controls.name.value, group));
       return withAudience({
         name: group.controls.name.value.trim(),
@@ -11807,6 +11894,7 @@ export class ImplementationTabComponent implements OnInit {
           group.controls.name.value.trim() !== '' ||
           group.controls.ads.length > 0 ||
           group.controls.audience.value.trim() !== '' ||
+          googleDisplayDemographicsCarried(group.controls.demographics.value) ||
           typed(group.controls.creative.getRawValue()) ||
           typed(group.controls.videoCreative.getRawValue())
       );
@@ -11982,6 +12070,127 @@ export class ImplementationTabComponent implements OnInit {
       void this.campaignFormRevision();
       if (!this.demandGenAdGroupsActive() || this.campaignForm.controls.demandGenAudience.value.trim() === '') return '';
       return GOOGLE_DEMAND_GEN_AUDIENCE_HELD_WHILE_SPLIT;
+    });
+  }
+
+  /**
+   * The single ad group's demographics as the create sends them (#498), each non-empty list copied, or
+   * `{}` when they name nothing or the campaign is split (they are then held), so a create without them
+   * is byte-identical to one made before they existed. Gated as {@link googleDemandGenAudiencePayload} is.
+   */
+  private googleDemandGenDemographicsPayload(): { demandGenDemographics?: GoogleDemandGenDemographics } {
+    const demographics = this.campaignForm.controls.demandGenDemographics.value;
+    return this.demandGenAdsShown() && googleDisplayDemographicsCarried(demographics)
+      ? { demandGenDemographics: this.copyDisplayDemographics(demographics) }
+      : {};
+  }
+
+  /**
+   * {@link demandGenDemographicsError}: the shared judge the BFF refuses the create on, over exactly what
+   * the create sends — the single ad group's demographics and Audience, or the named groups with their own.
+   */
+  private initDemandGenDemographicsError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const single = this.googleDemandGenDemographicsPayload().demandGenDemographics;
+      const groups = this.googleDemandGenAdGroupsPayload().demandGenAdGroups;
+      if (single === undefined && !(groups ?? []).some((group) => group.demographics !== undefined)) return null;
+      return googleDemandGenDemographicsRefusal(single, groups, this.googleDemandGenAudiencePayload().demandGenAudience, 'demand-gen')?.message ?? null;
+    });
+  }
+
+  /** {@link demandGenDemographicsLeftOut}: for the ad groups on screen, the dimensions Google Ads would leave out, as a sentence. */
+  private initDemandGenDemographicsLeftOut(): Signal<Record<string, string>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const notes: Record<string, string> = {};
+      const note = (key: string, demographics: GoogleDemandGenDemographics): void => {
+        const left = googleDemandGenDemographicsLeftOut(demographics);
+        if (left.length === 0) return;
+        notes[key] =
+          `Every ${joinAsSentenceList(left)} value is ticked, Unknown included, so ${left.length === 1 ? 'it narrows' : 'they narrow'} nothing and Google Ads leaves ${left.length === 1 ? 'it' : 'them'} out of the Audience.`;
+      };
+      if (this.demandGenAdsShown()) note('single', this.campaignForm.controls.demandGenDemographics.value);
+      if (this.demandGenAdGroupsActive()) {
+        for (const [index, group] of this.campaignForm.controls.demandGenAdGroups.controls.entries()) note(`${index}`, group.controls.demographics.value);
+      }
+      return notes;
+    });
+  }
+
+  /**
+   * {@link demandGenDemographicsRetained}: on a create that asks for Demand Gen, the ad groups whose
+   * demographics the split mode would send, read from the form itself for the reason
+   * {@link initDemandGenAudienceRetained} gives.
+   */
+  private initDemandGenDemographicsRetained(): Signal<string[]> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.showGoogleSection() || !this.selectedGoogleChannels().includes('demand-gen')) return [];
+      const form = this.campaignForm.controls;
+      if (!form.demandGenAdGroupsSplit.value) return googleDisplayDemographicsCarried(form.demandGenDemographics.value) ? ['Single ad group'] : [];
+      return form.demandGenAdGroups.controls.flatMap((group, index) =>
+        googleDisplayDemographicsCarried(group.controls.demographics.value) ? [group.controls.name.value.trim() || `Ad group ${index + 1}`] : []
+      );
+    });
+  }
+
+  /**
+   * Why Create is held for Demand Gen demographics the draft still holds but the request cannot carry, or
+   * `null`: {@link initDemandGenAudienceBlock}'s kinds and order but `restricted`, since no role gates
+   * them. Clear only when the create path serves the create, where Demand Gen's creative section shows
+   * them and {@link demandGenDemographicsError} judges them.
+   */
+  private initDemandGenDemographicsBlock(): Signal<CampaignGoogleDemandGenDemographicsBlock | null> {
+    return computed(() => {
+      const count = this.demandGenDemographicsRetained().length;
+      if (count === 0 || this.googleCreativeAvailable()) return null;
+      const held = count === 1 ? 'the Demand Gen demographics' : `the Demand Gen demographics of ${count} ad groups`;
+      if (this.googleCreativeEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Demand Gen demographics are not available on this deployment, so ${held} on this brief cannot be sent. Clear them to create the campaign.`,
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return {
+          kind: 'pending',
+          message: `Checking whether Demand Gen demographics can be sent. Create waits for the answer so ${held} on this brief are not dropped.`,
+        };
+      }
+      if (!this.briefPersistence().briefId) {
+        return { kind: 'unsaved', message: `Demand Gen demographics can't be checked until this brief is saved. Save the brief, or clear ${held} on it.` };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that Demand Gen demographics can be sent, so Create waits rather than dropping ${held} on this brief. Retry the check, or clear them.`,
+      };
+    });
+  }
+
+  /** {@link demandGenDemographicsHeldMessage}: Demand Gen's section is on screen, the campaign is split and the single ad group holds demographics. */
+  private initDemandGenDemographicsHeldMessage(): Signal<string> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.demandGenAdGroupsActive() || !googleDisplayDemographicsCarried(this.campaignForm.controls.demandGenDemographics.value)) return '';
+      return GOOGLE_DEMAND_GEN_DEMOGRAPHICS_HELD_WHILE_SPLIT;
+    });
+  }
+
+  /**
+   * Demand Gen demographics restored from a draft (#498, #518): an object's four lists, string entries
+   * only and empty lists left out, or `{}` for anything else, as the draft is in-memory but a non-string
+   * entry would render as no box and be sent as junk.
+   */
+  private demographicsFromDraft(saved: unknown): GoogleDemandGenDemographics {
+    if (saved === null || typeof saved !== 'object' || Array.isArray(saved)) return {};
+    const lists = saved as Record<string, unknown>;
+    const strings = (key: string): string[] => (Array.isArray(lists[key]) ? (lists[key] as unknown[]).filter((v): v is string => typeof v === 'string') : []);
+    return this.copyDisplayDemographics({
+      ageRanges: strings('ageRanges') as GoogleAdsAgeRange[],
+      genders: strings('genders') as GoogleAdsGender[],
+      incomeRanges: strings('incomeRanges') as GoogleAdsIncomeRange[],
+      parentalStatuses: strings('parentalStatuses') as GoogleAdsParentalStatus[],
     });
   }
 
@@ -12180,14 +12389,15 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * One named Demand Gen ad group's controls, filled from a saved draft entry when one is given: its name
-   * and first ad, its first ad's name, its second and later ads (#5226), and its Audience (#5244), a string
-   * only.
+   * and first ad, its first ad's name, its second and later ads (#5226), its Audience (#5244), a string
+   * only, and its demographics (linuxfoundation/lfx-v2-campaign-service#518), string entries only.
    */
   private buildDemandGenAdGroup(saved?: GoogleDemandGenAdGroupDraft): FormGroup<GoogleDemandGenAdGroupControls> {
     const group = new FormGroup<GoogleDemandGenAdGroupControls>({
       ...this.demandGenAdControls(saved),
       adName: this.fb.nonNullable.control(typeof saved?.adName === 'string' ? saved.adName : ''),
       audience: this.fb.nonNullable.control(typeof saved?.audience === 'string' ? saved.audience : ''),
+      demographics: this.fb.nonNullable.control<GoogleDemandGenDemographics>(this.demographicsFromDraft(saved?.demographics)),
       ads: new FormArray<FormGroup<GoogleDemandGenAdControls>>([]),
     });
     if (Array.isArray(saved?.ads)) this.restoreDemandGenAds(group.controls.ads, saved.ads);

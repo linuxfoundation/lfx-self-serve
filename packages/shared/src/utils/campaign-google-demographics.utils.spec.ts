@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import {
   googleAdGroupDemographicExclusionsRefusal,
   googleDisplayDemographicsCarried,
+  googleDemandGenDemographicsLeftOut,
+  googleDemandGenDemographicsRefusal,
   googleDisplayDemographicsRefusal,
   googleObservedDemographicsRefusal,
 } from './campaign-google-demographics.utils';
@@ -224,5 +226,189 @@ describe('googleDisplayDemographicsCarried', () => {
     expect(googleDisplayDemographicsCarried({ genders: [] })).toBe(false);
     expect(googleDisplayDemographicsCarried(null)).toBe(false);
     expect(googleDisplayDemographicsCarried(['MALE'])).toBe(false);
+  });
+});
+
+// One test per branch of campaign-service v1.0.35's `validateDemandGenDemographics`,
+// `validateDemandGenGroupDemographics`, `buildDemographicPlan`, `demographicTargets` and `coversEveryone`
+// (`internal/platform/googleads/demandgen_demographics.go`).
+describe('googleDemandGenDemographicsRefusal', () => {
+  const AGES = ['18-24', '25-34', '35-44', '45-54', '55-64', '65+'];
+  const INCOMES = ['INCOME_RANGE_0_50', 'INCOME_RANGE_50_60', 'INCOME_RANGE_60_70', 'INCOME_RANGE_70_80', 'INCOME_RANGE_80_90', 'INCOME_RANGE_90_UP'];
+
+  it("accepts the live KubeCon NA campaign's shape: ages 25 to 54 with Unknown, income and parental status left open", () => {
+    expect(googleDemandGenDemographicsRefusal({ ageRanges: ['25-34', '35-44', '45-54', 'UNDETERMINED'] }, undefined, undefined, 'demand-gen')).toBeNull();
+  });
+
+  it('accepts every dimension together, in either spelling and any case', () => {
+    expect(
+      googleDemandGenDemographicsRefusal(
+        { ageRanges: ['AGE_RANGE_65_UP'], genders: ['female'], incomeRanges: ['income_range_90_up', 'UNDETERMINED'], parentalStatuses: ['NOT_A_PARENT'] },
+        undefined,
+        '',
+        'demand-gen'
+      )
+    ).toBeNull();
+  });
+
+  it('asks nothing of an absent or null value, or of a create with no channel', () => {
+    expect(googleDemandGenDemographicsRefusal(undefined, undefined, undefined, 'search')).toBeNull();
+    expect(googleDemandGenDemographicsRefusal(null, [{ demographics: null }], undefined, 'demand-gen')).toBeNull();
+    expect(googleDemandGenDemographicsRefusal({ genders: ['MALE'] }, undefined, undefined, undefined)).toBeNull();
+  });
+
+  it.each([[['25-34']], ['25-34'], [{ ageRanges: '25-34' }], [{ genders: [1] }]])('refuses %j, which Go cannot decode', (raw) => {
+    expect(googleDemandGenDemographicsRefusal(raw, undefined, undefined, 'demand-gen')).toEqual({
+      field: 'demandGenDemographics',
+      message: expect.stringContaining('must be'),
+    });
+  });
+
+  it("refuses a group's demographics Go cannot decode, after the single ad group's and before any other check", () => {
+    expect(googleDemandGenDemographicsRefusal(undefined, [{}, { demographics: ['MALE'] }], undefined, 'demand-gen')).toEqual({
+      field: 'demandGenAdGroups',
+      message: expect.stringContaining('Demand Gen ad group 2 must be an object'),
+    });
+    expect(googleDemandGenDemographicsRefusal({ genders: 'MALE' }, [{ demographics: [] }], undefined, 'demand-gen')?.field).toBe('demandGenDemographics');
+  });
+
+  it.each([['audienceSegments'], ['customAudiences']])('refuses %s by name, which this application does not send', (key) => {
+    expect(
+      googleDemandGenDemographicsRefusal({ genders: ['MALE'], [key]: ['customers/1/userLists/2'] }, undefined, undefined, 'demand-gen')?.message
+    ).toContain('sends only age, gender, income and parental status');
+    expect(googleDemandGenDemographicsRefusal({ genders: ['MALE'], [key]: [] }, undefined, undefined, 'demand-gen')).toBeNull();
+  });
+
+  it.each([
+    ['search', 'observed demographics'],
+    ['display', 'demographic targeting'],
+    ['video', 'age and gender exclusions'],
+  ])('refuses them on %s, naming what that channel takes instead', (channel, hint) => {
+    const message = googleDemandGenDemographicsRefusal({ genders: ['MALE'] }, undefined, undefined, channel)?.message;
+    expect(message).toContain('Demand Gen ad group only');
+    expect(message).toContain(hint);
+  });
+
+  it('refuses them on Performance Max with no channel to point at', () => {
+    expect(googleDemandGenDemographicsRefusal({ genders: ['MALE'] }, undefined, undefined, 'performance-max')?.message).toMatch(/then create again\.$/);
+  });
+
+  it.each([[{}], [{ ageRanges: [], genders: null }]])('refuses %j, an object naming nothing', (raw) => {
+    expect(googleDemandGenDemographicsRefusal(raw, undefined, undefined, 'demand-gen')?.message).toContain('set but name nothing');
+  });
+
+  it('refuses them beside the Demand Gen audience', () => {
+    expect(googleDemandGenDemographicsRefusal({ genders: ['MALE'] }, undefined, 'customers/1/audiences/2', 'demand-gen')?.message).toContain(
+      'cannot both be set'
+    );
+  });
+
+  it("refuses them beside a group's audience", () => {
+    expect(
+      googleDemandGenDemographicsRefusal({ genders: ['MALE'] }, [{ name: 'A' }, { name: 'B', audience: 'customers/1/audiences/2' }], undefined, 'demand-gen')
+        ?.message
+    ).toContain('audience of Demand Gen ad group 2');
+  });
+
+  it('refuses them when every group sets its own, and accepts them while one group does not', () => {
+    const own = { demographics: { genders: ['MALE'] } };
+    expect(googleDemandGenDemographicsRefusal({ genders: ['FEMALE'] }, [own, own], undefined, 'demand-gen')?.message).toContain('would reach no ad group');
+    expect(googleDemandGenDemographicsRefusal({ genders: ['FEMALE'] }, [own, {}], undefined, 'demand-gen')).toBeNull();
+  });
+
+  it('refuses a 21st entry on the submitted count, before a repeat is collapsed', () => {
+    expect(googleDemandGenDemographicsRefusal({ genders: Array.from({ length: 20 }, () => 'MALE') }, undefined, undefined, 'demand-gen')).toBeNull();
+    expect(googleDemandGenDemographicsRefusal({ genders: Array.from({ length: 21 }, () => 'MALE') }, undefined, undefined, 'demand-gen')?.message).toContain(
+      'at most 20 genders'
+    );
+  });
+
+  it.each([
+    [{ ageRanges: ['25-35'] }, '18-24'],
+    [{ genders: ['constructor'] }, 'MALE, FEMALE, UNDETERMINED'],
+    [{ incomeRanges: ['ıncome_range_0_50'] }, 'INCOME_RANGE_0_50'],
+    [{ parentalStatuses: ['  '] }, 'NOT_A_PARENT'],
+  ])('refuses %j on its vocabulary', (raw, expected) => {
+    expect(googleDemandGenDemographicsRefusal(raw, undefined, undefined, 'demand-gen')?.message).toContain(expected);
+  });
+
+  it('judges the dimensions in order: ages before genders', () => {
+    expect(googleDemandGenDemographicsRefusal({ ageRanges: ['NOPE'], genders: ['NOPE'] }, undefined, undefined, 'demand-gen')?.message).toContain('age range');
+  });
+
+  it.each([
+    [{ ageRanges: ['AGE_RANGE_UNDETERMINED'] }, 'age range'],
+    [{ genders: ['UNDETERMINED', 'undetermined'] }, 'gender'],
+    [{ incomeRanges: ['INCOME_RANGE_UNDETERMINED'] }, 'income range'],
+    [{ parentalStatuses: ['UNDETERMINED'] }, 'parental status'],
+  ])('refuses %j, Unknown alone in a dimension', (raw, noun) => {
+    expect(googleDemandGenDemographicsRefusal(raw, undefined, undefined, 'demand-gen')?.message).toContain(
+      `The ${noun} list in the Demand Gen demographics holds only Unknown`
+    );
+  });
+
+  it('accepts a dimension naming every value and Unknown beside one that narrows, and names it as left out', () => {
+    const raw = { ageRanges: [...AGES, 'UNDETERMINED'], genders: ['FEMALE'] };
+    expect(googleDemandGenDemographicsRefusal(raw, undefined, undefined, 'demand-gen')).toBeNull();
+    expect(googleDemandGenDemographicsLeftOut(raw)).toEqual(['age']);
+  });
+
+  it('keeps a dimension naming every value without Unknown, which still narrows', () => {
+    expect(googleDemandGenDemographicsLeftOut({ incomeRanges: INCOMES })).toEqual([]);
+  });
+
+  it('refuses demographics where every dimension names everyone', () => {
+    expect(
+      googleDemandGenDemographicsRefusal(
+        { genders: ['MALE', 'FEMALE', 'UNDETERMINED'], parentalStatuses: ['PARENT', 'NOT_A_PARENT', 'UNDETERMINED'] },
+        undefined,
+        undefined,
+        'demand-gen'
+      )?.message
+    ).toContain('restrict nobody: each dimension they set (gender, parental status)');
+  });
+
+  it('names no dimension left out of demographics that would be refused', () => {
+    expect(googleDemandGenDemographicsLeftOut({ genders: ['MALE', 'FEMALE', 'UNDETERMINED'] })).toEqual([]);
+    expect(googleDemandGenDemographicsLeftOut(['MALE'])).toEqual([]);
+  });
+
+  it("refuses a group's demographics naming nothing", () => {
+    expect(googleDemandGenDemographicsRefusal(undefined, [{ demographics: {} }], undefined, 'demand-gen')).toEqual({
+      field: 'demandGenAdGroups',
+      message: expect.stringContaining('Demand Gen ad group 1 are set but name nothing'),
+    });
+  });
+
+  it("refuses a group's demographics beside its own audience", () => {
+    expect(
+      googleDemandGenDemographicsRefusal(undefined, [{ audience: 'customers/1/audiences/2', demographics: { genders: ['MALE'] } }], undefined, 'demand-gen')
+        ?.message
+    ).toContain('Demand Gen ad group 1 sets both an audience and demographics');
+  });
+
+  it("refuses a group's demographics on the same plan, naming the group", () => {
+    expect(googleDemandGenDemographicsRefusal(undefined, [{}, { demographics: { genders: ['UNDETERMINED'] } }], undefined, 'demand-gen')).toEqual({
+      field: 'demandGenAdGroups',
+      message: expect.stringContaining('the demographics of Demand Gen ad group 2 holds only Unknown'),
+    });
+  });
+
+  it("judges the single ad group's demographics before any group's", () => {
+    expect(googleDemandGenDemographicsRefusal({ genders: ['NOPE'] }, [{ demographics: { genders: ['NOPE'] } }, {}], undefined, 'demand-gen')?.field).toBe(
+      'demandGenDemographics'
+    );
+  });
+
+  it('accepts a different Audience on each group, and judges no group off Demand Gen', () => {
+    expect(
+      googleDemandGenDemographicsRefusal(
+        undefined,
+        [{ demographics: { ageRanges: ['25-34'] } }, { audience: 'customers/1/audiences/2' }],
+        undefined,
+        'demand-gen'
+      )
+    ).toBeNull();
+    expect(googleDemandGenDemographicsRefusal(undefined, [{ demographics: {} }], undefined, 'search')).toBeNull();
   });
 });

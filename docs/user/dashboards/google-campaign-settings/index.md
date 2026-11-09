@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and Performance Max search themes, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics and Performance Max search themes, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -45,12 +45,12 @@ When you create a Google Ads campaign from the **Campaigns** page in the Foundat
 2. Open the **Implement** tab for a brief that includes Google Ads.
 3. Tick a campaign type, such as **Search Campaign**. The **Ad schedule** and **Devices** sections appear below the language settings when the type supports them, followed by **Demographic exclusions**, **Excluded locations** and **More demographics**. On Search, **Networks**, **Display path**, **More ads** and **Negative keywords** appear below **Headlines** and **Descriptions**.
 
-| Campaign type   | Ad schedule                                    | Devices                       | Demographic exclusions | Excluded locations | More demographics                               |
-| --------------- | ---------------------------------------------- | ----------------------------- | ---------------------- | ------------------ | ----------------------------------------------- |
-| Search          | Yes, adjust with Manual CPC or Maximize Clicks | Yes, adjust with Manual CPC   | Yes                    | Yes                | Observe; exclude income                         |
-| Display         | Yes, adjust with Maximize Clicks               | Exclude only                  | Yes                    | Yes                | Target only; exclude income and parental status |
-| Performance Max | Windows only                                   | Exclude only, with TV screens | No                     | Yes                | No                                              |
-| Demand Gen      | Windows only                                   | Exclude only, with TV screens | No                     | Yes                | No                                              |
+| Campaign type   | Ad schedule                                    | Devices                       | Demographic exclusions | Excluded locations | More demographics                                             |
+| --------------- | ---------------------------------------------- | ----------------------------- | ---------------------- | ------------------ | ------------------------------------------------------------- |
+| Search          | Yes, adjust with Manual CPC or Maximize Clicks | Yes, adjust with Manual CPC   | Yes                    | Yes                | Observe; exclude income                                       |
+| Display         | Yes, adjust with Maximize Clicks               | Exclude only                  | Yes                    | Yes                | Target only; exclude income and parental status               |
+| Performance Max | Windows only                                   | Exclude only, with TV screens | No                     | Yes                | No                                                            |
+| Demand Gen      | Windows only                                   | Exclude only, with TV screens | No                     | Yes                | No; see [Demographics (Demand Gen)](#demographics-demand-gen) |
 
 ## Ad schedule
 
@@ -298,6 +298,22 @@ A Demand Gen ad group can target one Google Ads Audience, such as an Audience bu
 - If a saved campaign holds an Audience that cannot be sent, a notice under the targeting settings says why and lists the Audience when the **Demand Gen Creative** section is not shown. This includes a Demand Gen campaign selected together with a Search campaign. **Create Campaign** stays unavailable until it is sent or removed, so the Audience is never dropped. The notice says you are not on the LF marketing team, that Audiences are not available on this deployment, that your access is still being checked, that it can be checked once the brief is saved, or that it could not be checked, with **Retry**. Choose **Remove audience** (**Remove audiences** for several) to create without them.
 
 Leave the picker alone and the campaign is created exactly as before, with no Audience.
+
+## Demographics (Demand Gen)
+
+A Demand Gen ad group can be narrowed by age, gender, household income and parental status. Google Ads does not take these on a Demand Gen ad group directly, so LFX One's campaign service builds the values you tick into a new Google Ads Audience for that ad group. Anyone who can create the campaign can set them; they are not limited to the LF marketing team.
+
+- The single ad group's **Demographics** sit under its ad in the **Demand Gen Creative** section, below **Audience**. When the campaign is split into named ad groups, each ad group has its own, so ad groups can reach different people. This works with image ads and video ads alike.
+- Tick values under **Age**, **Gender**, **Household income** or **Parental status** to show the ads only to those people. A group with nothing ticked reaches all of it.
+- **Unknown** adds the people Google could not classify. It needs at least one other value ticked in the same group.
+- A group with every value ticked, **Unknown** included, narrows nothing, so Google Ads leaves it out of the Audience and a note says so. If every group you ticked is like that, **Create Campaign** stays unavailable until you untick a value.
+- Demand Gen takes no observed demographics. To leave a group open, as an observed group on Search would be, tick nothing in it. For example, to reach everyone but people aged 18 to 24 and 55 or more, tick 25 to 34, 35 to 44, 45 to 54 and **Unknown** under **Age**, and leave **Household income** and **Parental status** unticked.
+- An ad group takes one Audience. While an ad group has an Audience picked, its **Demographics** are replaced by a note, and while it has demographics ticked, its **Audience** picker is replaced by a note. Remove one to set the other.
+- While the campaign is split, the single ad group's demographics are kept but not sent, and a note under **Split into named ad groups** says so. An ad group's demographics are likewise kept but not sent while the checkbox is unticked.
+- If demographics would be refused by Google Ads, for example beside an Audience on a saved campaign, a message at the end of the **Demand Gen Creative** section says why and **Create Campaign** stays unavailable until you fix it.
+- If a saved campaign holds demographics that cannot be sent, a notice under the targeting settings says why and lists the ad groups when the **Demand Gen Creative** section is not shown. **Create Campaign** stays unavailable until they are sent or cleared. The notice says that Demand Gen demographics are not available on this deployment, that the check is still running, that it can be made once the brief is saved, or that it could not be made, with **Retry**. Choose **Clear demographics** to create without them.
+
+Tick nothing and the campaign is created exactly as before, with no demographic Audience.
 
 ## Display ad groups
 
