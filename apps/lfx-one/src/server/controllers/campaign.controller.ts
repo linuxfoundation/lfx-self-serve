@@ -6635,6 +6635,10 @@ export class CampaignController {
     // Normalized only, as the three above are — `createCampaign` names every call, promotion and
     // price refusal first.
     const assetExtensions = this.googleAssetExtensions(body);
+    // The campaign's ad images, business logo and business name (#5262), the one creative Search
+    // takes. Normalized only, as every creative is: campaign-service judges each count, shape and
+    // width before the budget mutate (`validateSearchAssets`), and the Implement tab first.
+    const searchAssets = this.googleCreative(body, 'search');
 
     return {
       budget,
@@ -6682,6 +6686,7 @@ export class CampaignController {
       ...sitelinks,
       ...structuredSnippets,
       ...assetExtensions,
+      ...searchAssets,
     };
   }
 
@@ -7762,9 +7767,9 @@ export class CampaignController {
    * 3. **The same applies to the whole creative.** If no field survives, no creative key is emitted
    *    and the create behaves exactly as it did before this existed.
    *
-   * Unknown channels — `search`, `video`, anything a future catalogue adds — return `{}` rather
-   * than throwing, so a channel gaining a creative upstream is one table entry here and not a
-   * crash in the meantime.
+   * Search's creative is its campaign assets, `searchAssets` (#5262). Unknown channels — `video`,
+   * anything a future catalogue adds — return `{}` rather than throwing, so a channel gaining a
+   * creative upstream is one table entry here and not a crash in the meantime.
    */
   private googleCreative(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
     const spec = GOOGLE_CREATIVE_WIRE_FIELDS[channel];

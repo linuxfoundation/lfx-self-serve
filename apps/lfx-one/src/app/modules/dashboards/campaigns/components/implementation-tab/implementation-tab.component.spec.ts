@@ -41,9 +41,12 @@ import {
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CREATIVE_PREFILL_NOTICES,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  GOOGLE_SEARCH_ASSETS_NOTICE,
   GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY,
   GOOGLE_DEMAND_GEN_MAX_AD_GROUPS,
   GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP,
@@ -5485,6 +5488,7 @@ describe('ImplementationTabComponent google creative sections', () => {
     ['includeDemandGen', 'demand-gen'],
     ['includePerformanceMax', 'performance-max'],
     ['includeDisplay', 'display'],
+    ['includeSearch', 'search'],
   ])('renders the %s section', (control, channel) => {
     const c = seedChannel(fixture, { [control]: true });
     const sections = c['googleCreativeSections']();
@@ -5495,11 +5499,36 @@ describe('ImplementationTabComponent google creative sections', () => {
     expect(sections[0].groupName).toBe(GOOGLE_CREATIVE_REQUEST_KEYS[channel as keyof typeof GOOGLE_CREATIVE_REQUEST_KEYS]);
   });
 
-  /** Search carries no creative object at all — its copy is the two shared arrays. */
-  it('renders no section for a search-only campaign', () => {
+  /**
+   * #5262: Search's section collects its campaign assets, not its copy (the two shared arrays), and is
+   * sent as `searchAssets` with each list split one per line, as every creative is.
+   */
+  it('sends the Search assets under searchAssets, one entry per line', () => {
     const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.searchAssets.patchValue({
+      businessName: ' Example Foundation ',
+      adImages: 'https://cdn.example.org/a.png\n\nhttps://cdn.example.org/b.png',
+      landscapeAdImages: 'https://cdn.example.org/wide.png',
+      businessLogoImages: '',
+    });
 
-    expect(c['googleCreativeSections']()).toEqual([]);
+    expect(c['googleCreativeWirePayload']()).toEqual({
+      searchAssets: {
+        businessName: 'Example Foundation',
+        adImages: ['https://cdn.example.org/a.png', 'https://cdn.example.org/b.png'],
+        landscapeAdImages: ['https://cdn.example.org/wide.png'],
+      },
+    });
+  });
+
+  /** A Search campaign serves on its ads alone, so its section says its assets are optional rather than warning of an empty shell. */
+  it('shows the optional-assets line on the Search section and the empty-shell line on the others', () => {
+    seedChannel(fixture, { includeSearch: true, includeDisplay: true });
+    const notice = (channel: string): string | undefined =>
+      (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="implementation-creative-notice-${channel}"]`)?.textContent?.trim();
+
+    expect(notice('search')).toBe(GOOGLE_SEARCH_ASSETS_NOTICE);
+    expect(notice('display')).toBe(GOOGLE_CREATIVE_REQUIRED_NOTICE);
   });
 
   it('renders no section when Google is not a selected platform', () => {
@@ -5529,7 +5558,7 @@ describe('ImplementationTabComponent google creative sections', () => {
   it('drops the demand gen section when search is ticked alongside it', () => {
     const c = seedChannel(fixture, { includeSearch: true, includeDemandGen: true, includeDisplay: true });
 
-    expect(c['googleCreativeSections']().map((section: { channel: string }) => section.channel)).toEqual(['display']);
+    expect(c['googleCreativeSections']().map((section: { channel: string }) => section.channel)).toEqual(['display', 'search']);
   });
 
   /**
@@ -5933,13 +5962,16 @@ describe('ImplementationTabComponent google creative minimums', () => {
    * an operator finishes in the Google Ads UI, and the only shape every Demand Gen campaign
    * created before this feature existed had. Blocking it would refuse a create the platform makes.
    */
-  it.each([['includeDemandGen'], ['includePerformanceMax'], ['includeDisplay']])('blocks nothing when the %s creative is wholly empty', (control) => {
-    const c = seedChannel(fixture, { [control]: true });
+  it.each([['includeDemandGen'], ['includePerformanceMax'], ['includeDisplay'], ['includeSearch']])(
+    'blocks nothing when the %s creative is wholly empty',
+    (control) => {
+      const c = seedChannel(fixture, { [control]: true });
 
-    expect(c['googleCreativePayload']()).toEqual({});
-    expect(c['googleCreativeError']()).toBeNull();
-    expect(c['canSubmit']()).toBe(true);
-  });
+      expect(c['googleCreativePayload']()).toEqual({});
+      expect(c['googleCreativeError']()).toBeNull();
+      expect(c['canSubmit']()).toBe(true);
+    }
+  );
 
   /** A list below its catalogued floor, named with the count the operator actually gave. */
   it('names a list field short of its minimum', () => {
@@ -6120,6 +6152,55 @@ describe('ImplementationTabComponent google creative minimums', () => {
     expect(c['googleCreativeError']()).toBe(
       `${GOOGLE_CREATIVE_SECTION_TITLES['demand-gen']} creative has 21 marketing images across its fields (pasted URLs and stored images together) — 1 over the shared cap of 20.`
     );
+  });
+
+  /**
+   * #5262: Google takes twenty Search ad images, square and landscape together, and refuses the
+   * twenty-first whatever the mix (`maxSearchAdImages`, #538). Each list sits under its own cap here.
+   */
+  it('refuses Search ad images over the twenty the square and landscape fields share', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const urls = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `https://example.com/${prefix}${i}.png`).join('\n');
+    const group = c['campaignForm'].controls.searchAssets;
+    group.patchValue({ adImages: urls('s', 12), landscapeAdImages: urls('l', 9) });
+
+    expect(c['googleCreativeError']()).toBe(
+      `${GOOGLE_CREATIVE_SECTION_TITLES.search} creative has 21 ad images across its fields (pasted URLs and stored images together) — 1 over the shared cap of 20.`
+    );
+    expect(c['canSubmit']()).toBe(false);
+
+    group.patchValue({ landscapeAdImages: urls('l', 8) });
+    expect(c['googleCreativeError']()).toBeNull();
+  });
+
+  /** One business logo: Google refused a second with RESOURCE_LIMIT (#538). */
+  it('refuses a second Search business logo', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.searchAssets.patchValue({ businessLogoImages: 'https://example.com/a.png\nhttps://example.com/b.png' });
+
+    expect(c['googleCreativeError']()).toBe(
+      `${GOOGLE_CREATIVE_SECTION_TITLES.search} creative has 2 entries in Business logo (1:1) (pasted URLs and stored images together) — 1 over the cap of 1.`
+    );
+  });
+
+  /** Each Search asset stands alone (`validateSearchAssets`): a business name with no image is a complete request. */
+  it('holds nothing for a Search business name with no image', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.searchAssets.patchValue({ businessName: 'Example Foundation' });
+
+    expect(c['googleCreativePayload']()).toEqual({ searchAssets: { businessName: 'Example Foundation' } });
+    expect(c['googleCreativeError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /** An empty Search section is not a shell: the campaign serves on its ads, so it is never named in the warning. */
+  it('never names an empty Search section in the empty-creative warning', () => {
+    const search = seedChannel(fixture, { includeSearch: true });
+    expect(search['googleCreativeEmptyWarning']()).toBeNull();
+
+    const both = seedChannel(fixture, { includeSearch: true, includeDisplay: true });
+    expect(both['googleCreativeEmptyWarning']()).toContain(`${GOOGLE_CREATIVE_SECTION_TITLES.display} has no creative.`);
+    expect(both['googleCreativeEmptyWarning']()).not.toContain(GOOGLE_CREATIVE_SECTION_TITLES.search);
   });
 
   /** Performance Max states its two marketing requirements separately, so it carries no rule. */
@@ -15970,6 +16051,26 @@ describe('ImplementationTabComponent google stored images', () => {
       expect(c['googleCreativePayload']()['performanceMaxCreative']['marketingImages']).toEqual([{ imageAssetId: WIDE_LOGO }]);
     });
 
+    /** #5262: Search's plan slots carry the request's own names, so the table maps them one to one. */
+    it("fills Search's ad image and business logo fields from the plan, and offers its three slots", async () => {
+      const { f, c } = await mount(true);
+      c['campaignForm'].patchValue({ includeDisplay: false, includeSearch: true });
+      f.detectChanges();
+
+      expect(c['googleSuggestionTargets']()).toEqual([
+        'google-ads/SEARCH/adImages',
+        'google-ads/SEARCH/landscapeAdImages',
+        'google-ads/SEARCH/businessLogoImages',
+      ]);
+      c['onApplySuggestedGoogleImages']([assignment('adImages', [SQUARE_LOGO], 'SEARCH'), assignment('businessLogoImages', [SQUARE_LOGO], 'SEARCH')]);
+
+      expect(c['googleCreativePayload']()['searchAssets']).toEqual({
+        adImages: [{ imageAssetId: SQUARE_LOGO }],
+        businessLogoImages: [{ imageAssetId: SQUARE_LOGO }],
+      });
+      expect(c['googleFormFilledSlots']()).toEqual({ 'google-ads/SEARCH/adImages': 1, 'google-ads/SEARCH/businessLogoImages': 1 });
+    });
+
     it('maps every planned slot onto an image field of its own channel', () => {
       for (const [channel, slots] of Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS)) {
         const imageControls = (
@@ -17608,7 +17709,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     return fixture.componentInstance as unknown as Record<string, any>;
   }
 
-  function group(name: 'demandGenCreative' | 'displayCreative'): Record<string, string> {
+  function group(name: 'demandGenCreative' | 'displayCreative' | 'searchAssets'): Record<string, string> {
     return component()['campaignForm'].controls[name].getRawValue();
   }
 
@@ -17733,6 +17834,22 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(group('demandGenCreative')['callToActionText']).toBe('');
     expect(group('displayCreative')['businessName']).toBe('');
     expect(group('displayCreative')['callToActionText']).toBe('');
+    expect(group('searchAssets')['businessName']).toBe('');
+    expect(prefilled('search')).toBe(false);
+  });
+
+  /** #5262: the Search business name is the brief's one business name, as every other channel's is; the brief holds no image to seed. */
+  it('fills the Search business name from the brief, and nothing else in its section', () => {
+    seed(brief(generated));
+
+    expect(group('searchAssets')).toEqual({ businessName: 'CNCF', adImages: '', landscapeAdImages: '', businessLogoImages: '' });
+    expect(prefilled('search')).toBe(true);
+    fixture.componentRef.setInput('demandGenEnabled', true);
+    fixture.componentRef.setInput('googleChannelsEnabled', true);
+    fixture.componentRef.setInput('googleCreativeEnabled', true);
+    component()['campaignForm'].patchValue({ includeSearch: true });
+    fixture.detectChanges();
+    expect(notice('search')?.trim()).toBe(GOOGLE_CREATIVE_PREFILL_NOTICES.search);
   });
 
   it('fills the display ad, taking as long headline the first Demand Gen headline the headlines did not take', () => {
@@ -18055,8 +18172,8 @@ describe('ImplementationTabComponent Google flight, result link and coverage gro
     expect(link?.textContent).toContain('Open in Google Ads');
   });
 
-  it('tells the coverage grid the tab sends no Search or Video images, and every creative channel it does', () => {
-    expect(component()['googleSlotGroupsNotSent']).toEqual(['google-ads/SEARCH', 'google-ads/VIDEO']);
+  it('tells the coverage grid the tab sends no Video images, and every creative channel it does, Search included (#5262)', () => {
+    expect(component()['googleSlotGroupsNotSent']).toEqual(['google-ads/VIDEO']);
   });
 });
 

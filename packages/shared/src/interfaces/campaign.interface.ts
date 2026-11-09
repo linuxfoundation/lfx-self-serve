@@ -2787,7 +2787,7 @@ export interface HubSpotCampaignCreateRequest {
 /**
  * One collectable field of one Google channel's creative.
  *
- * The three creative interfaces below say what MAY be sent; this says what a form should ask for,
+ * The creative interfaces below say what MAY be sent; this says what a form should ask for,
  * in what order, under what name, and inside what bounds — the same facts a server-side normalizer
  * needs to decide which keys to copy off an unvalidated body and whether a value is a list or a
  * scalar. Both sides read {@link GOOGLE_CREATIVE_FIELD_SPECS}, so a field added to a channel reaches
@@ -2797,7 +2797,12 @@ export interface HubSpotCampaignCreateRequest {
  * channel's group; they are deliberately the same string so neither side needs a mapping table.
  */
 export interface GoogleCreativeFieldSpec {
-  control: keyof GoogleDemandGenCreative | keyof GoogleDemandGenVideoCreative | keyof GooglePerformanceMaxCreative | keyof GoogleDisplayCreative;
+  control:
+    | keyof GoogleDemandGenCreative
+    | keyof GoogleDemandGenVideoCreative
+    | keyof GooglePerformanceMaxCreative
+    | keyof GoogleDisplayCreative
+    | keyof GoogleSearchAssets;
   /** Field label as shown to an operator. */
   label: string;
   /**
@@ -3003,12 +3008,12 @@ export interface GoogleCreativeSharedCap {
 }
 
 /**
- * The Google channels that carry a creative object — the three `GOOGLE_CHANNELS_WITH_CREATIVE` names.
+ * The Google channels that carry a creative object — the four `GOOGLE_CHANNELS_WITH_CREATIVE` names.
  *
- * Derived from the constant rather than spelled out, so the three creative catalogues keyed by it
- * and anything that indexes them stay provably the same set. Narrower than `GoogleCampaignChannel`
- * on purpose: Search composes its ad from the top-level copy arrays and Video cannot be created at
- * all, so neither has an entry in `GOOGLE_CREATIVE_FIELD_SPECS` to index.
+ * Derived from the constant rather than spelled out, so the creative catalogues keyed by it and
+ * anything that indexes them stay provably the same set. Narrower than `GoogleCampaignChannel` on
+ * purpose: Video cannot be created at all, so it has no entry in `GOOGLE_CREATIVE_FIELD_SPECS` to
+ * index. Search's object is its campaign assets ({@link GoogleSearchAssets}), not its ad copy.
  */
 export type GoogleCreativeChannel = (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number];
 
@@ -3341,6 +3346,28 @@ export interface GoogleDisplayCreative {
   /** REQUIRED by Google when a creative is supplied. */
   businessName?: string;
   callToActionText?: string;
+}
+
+/**
+ * The Search campaign's image, business-logo and business-name assets (#5262), typed to
+ * `googleAdsConfig.searchAssets` (`internal/dispatch/googleads.go`'s `googleAdsSearchAssetsConfig`,
+ * lfx-v2-campaign-service#477, #538). campaign-service links each one to the CAMPAIGN, after the
+ * campaign exists, in one atomic `googleAds:mutate` (`createSearchCampaignAssets`).
+ *
+ * Every field is optional and each stands alone: a Search campaign serves on its ads without any of
+ * them, so leaving all four empty sends no key. SEARCH ONLY: campaign-service refuses the object on
+ * every other channel, and the BFF sends it only on a Search create. Each image entry is a URL or a
+ * stored asset of the brief's, as on the other creatives. See `GOOGLE_CREATIVE_FIELD_SPECS.search`.
+ */
+export interface GoogleSearchAssets {
+  /** Square (1:1) ad images, at least 300x300. At most 20 together with {@link landscapeAdImages}. */
+  adImages?: GoogleCreativeImageRef[];
+  /** Landscape (1.91:1) ad images, at least 600x314, linked as the same AD_IMAGE field type. */
+  landscapeAdImages?: GoogleCreativeImageRef[];
+  /** The business logo: at most one square (1:1) image, at least 128x128. A list on the wire. */
+  businessLogoImages?: GoogleCreativeImageRef[];
+  /** The business name, at most 25 display-width units. */
+  businessName?: string;
 }
 
 /**
@@ -3976,6 +4003,11 @@ export interface CampaignCreateRequest {
    * campaign-service refuses the list beside it. At most `GOOGLE_DISPLAY_MAX_AD_GROUPS`.
    */
   displayAdGroups?: GoogleDisplayAdGroup[];
+  /**
+   * The Search campaign's ad images, business logo and business name (#5262), sent only on a Search
+   * create and omitted when every field is empty. See {@link GoogleSearchAssets}.
+   */
+  searchAssets?: GoogleSearchAssets;
   /**
    * The places the Google campaign serves in, as ISO 3166-1 alpha-2 country codes or raw numeric
    * Google geo target constant ids — the two spellings upstream's `resolveGeoList` tells apart by

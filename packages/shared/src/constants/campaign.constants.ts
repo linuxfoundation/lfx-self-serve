@@ -4878,6 +4878,9 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
   { field: 'displayCreative', label: 'Display creative', normalized: true },
   { field: 'displayAdGroups', label: 'Display ad groups', normalized: true },
+  // The Search campaign's assets (#5262), which campaign-service judges after the creatives
+  // (`validateSearchAssets`).
+  { field: 'searchAssets', label: 'Search images, logo and business name', normalized: true },
 ] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string; normalized?: true }[];
 
 /**
@@ -4941,9 +4944,12 @@ export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
 /**
  * The Google channels whose creative this application can COLLECT and send.
  *
- * `search` is absent because its creative is not a creative object at all — it is the
- * `headlines`/`descriptions`/`keywords` the Implementation tab has always collected, which the BFF
- * sends as top-level `googleAdsConfig` fields rather than under a creative key.
+ * `search` is here for its campaign assets alone (#5262): the ad images, business logo and business
+ * name campaign-service links to a Search campaign under `searchAssets` (lfx-v2-campaign-service#477).
+ * Its ad copy is not a creative object — it is the `headlines`/`descriptions`/`keywords` the
+ * Implementation tab has always collected, which the BFF sends as top-level `googleAdsConfig` fields.
+ * Unlike the other three, every Search asset is optional and a Search campaign serves without any
+ * of them, so the empty-shell warning does not apply to it ({@link GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE}).
  *
  * `video` is absent for the harder reason: {@link GOOGLE_VIDEO_CREATE_SUPPORTED} is `false`, so no
  * Video campaign is ever created here and there is nothing for a `videoCreative` to attach to.
@@ -4951,7 +4957,7 @@ export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
  * field is reachable — it is not, from this application, and collecting it would build a form whose
  * only possible outcome is `ErrVideoCreateUnsupported`.
  */
-export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display'] as const;
+export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display', 'search'] as const;
 
 /**
  * campaign-service's asset-plan `slot` for each Google image field, per channel, mapped to the
@@ -4960,7 +4966,8 @@ export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', '
  * (`MARKETING_IMAGE`, `LOGO`, …; `internal/platform/googleads/pmax_creative.go`), and Demand Gen
  * names its portrait shapes `portraitMarketingImages` / `tallPortraitMarketingImages`
  * (`demandgen_creative.go`) where the request carries `portraitImages` / `tallPortraitImages`.
- * Display's names already match. A slot absent here is not applied.
+ * Display's and Search's names already match (Search's from `searchImageSlots`, `search_assets.go`).
+ * A slot absent here is not applied.
  */
 export const GOOGLE_ASSET_PLAN_SLOT_CONTROLS: Readonly<Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], Readonly<Record<string, string>>>> = {
   'performance-max': {
@@ -4982,6 +4989,11 @@ export const GOOGLE_ASSET_PLAN_SLOT_CONTROLS: Readonly<Record<(typeof GOOGLE_CHA
     squareMarketingImages: 'squareMarketingImages',
     logoImages: 'logoImages',
     squareLogoImages: 'squareLogoImages',
+  },
+  search: {
+    adImages: 'adImages',
+    landscapeAdImages: 'landscapeAdImages',
+    businessLogoImages: 'businessLogoImages',
   },
 };
 
@@ -5011,8 +5023,6 @@ export const GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS: Readonly<Record<string, readonl
  * lead forms are supported on Search campaigns only"), because no probe has confirmed their campaign
  * link there. Every refusal happens at preflight, before the budget mutate, so sending a call extension
  * on a Performance Max create does not produce a campaign without it — it produces no campaign.
- *
- * This is the opposite shape from {@link GOOGLE_CHANNELS_WITH_CREATIVE}, which excludes `search`.
  */
 export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
 
@@ -5163,8 +5173,8 @@ export const GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION: readonly GoogleCreativeFie
  * collects a creative and by the BFF normalizer that puts one on the wire.
  *
  * Every field and every number has a named counterpart in `internal/platform/googleads/` —
- * `demandgen_creative.go`, `pmax_creative.go` and `display_creative.go` — and the whole point of
- * three separate channel entries is that they DO NOT travel together. The traps the upstream
+ * `demandgen_creative.go`, `pmax_creative.go`, `display_creative.go` and `search_assets.go` — and the
+ * whole point of separate channel entries is that they DO NOT travel together. The traps the upstream
  * comments call out, repeated here because this is what a form reads:
  *
  * - Headline COUNTS differ sharply. Demand Gen and Display need one; Performance Max needs
@@ -5181,7 +5191,7 @@ export const GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION: readonly GoogleCreativeFie
  *   arrays share a cap of their own. Stating the combined cap on each field is the permissive
  *   direction; {@link GOOGLE_CREATIVE_SHARED_CAPS} checks the real sum, as upstream's preflight does.
  * - `image` is each image slot's SHAPE, copied from the channel's slot table upstream
- *   (`demandGenImageSlots`, `performanceMaxImageSlots`, `displayImageSlots`). Same-named slots do
+ *   (`demandGenImageSlots`, `performanceMaxImageSlots`, `displayImageSlots`, `searchImageSlots`). Same-named slots do
  *   NOT share it: Display's `logoImages` is 4:1 at 512x128 where the other two channels' are 1:1 at
  *   128x128. The Implement tab offers a stored image for a slot only when it fits that shape, and
  *   the BFF forwards an asset ref only in a field that has one.
@@ -5376,6 +5386,37 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       kind: 'list',
       max: 5,
       hint: 'Optional. The cap of 5 is shared with the landscape logos.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
+    },
+  ],
+  // The Search campaign's assets (#5262): `searchImageSlots` and the caps beside it in
+  // `search_assets.go` (campaign-service v1.0.35). Every field is optional and none is required once
+  // another is set — `validateSearchAssets` accepts any of the four alone — so no entry has a `min`
+  // or `requiredOnce`. The business name is 25 wide, as on the other channels.
+  search: [
+    { control: 'businessName', label: 'Business name', kind: 'text', width: 25, hint: 'Optional.' },
+    {
+      control: 'adImages',
+      label: 'Square ad images (1:1)',
+      kind: 'list',
+      max: 20,
+      hint: 'One image URL per line. Optional. The cap of 20 is shared with the landscape ad images.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 },
+    },
+    {
+      control: 'landscapeAdImages',
+      label: 'Landscape ad images (1.91:1)',
+      kind: 'list',
+      max: 20,
+      hint: 'Optional. The cap of 20 is shared with the square ad images.',
+      image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 },
+    },
+    {
+      control: 'businessLogoImages',
+      label: 'Business logo (1:1)',
+      kind: 'list',
+      max: 1,
+      hint: 'Optional. At most one.',
       image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
     },
   ],
@@ -5589,7 +5630,7 @@ export const GOOGLE_CREATIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
  * members would refuse the half upstream takes, and putting it on one would name the wrong field —
  * so the rule lives here, over the pair.
  *
- * Performance Max and Display are deliberately empty: each requires both marketing arrays
+ * Performance Max and Display are deliberately empty, and so is Search, whose assets are each optional: each requires both marketing arrays
  * SEPARATELY, which their two `min: 1` catalogue entries already express (#4848). The authority
  * for Display is Google's `ResponsiveDisplayAdInfo`, which refuses an ad missing either shape;
  * campaign-service mirrors it in `display_creative.go` from the release carrying
@@ -5608,13 +5649,15 @@ export const GOOGLE_CREATIVE_EITHER_OR_RULES = {
   ],
   'performance-max': [],
   display: [],
+  search: [],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeEitherOrRule[]>;
 
 /**
  * The ceilings Google states across several of a channel's image fields (#4848), which no
  * per-field `max` can state: every field can sit under its own cap while the group is over this
  * one. Google states each, and campaign-service refuses each before the budget mutate
- * (`maxDemandGenMarketingImages`, `maxPerformanceMaxMarketingImages`, `maxDisplayMarketingImages`;
+ * (`maxDemandGenMarketingImages`, `maxPerformanceMaxMarketingImages`, `maxDisplayMarketingImages`,
+ * `maxSearchAdImages` over Search's square and landscape ad images together, #538;
  * Display's shared `maxDisplayLogos` from the release carrying lfx-v2-campaign-service#437, before
  * which Google refuses the ad itself), so the operator would otherwise learn of it only as a
  * failed create.
@@ -5629,21 +5672,22 @@ export const GOOGLE_CREATIVE_SHARED_CAPS = {
     { controls: ['marketingImages', 'squareMarketingImages'], max: 15, label: 'marketing images' },
     { controls: ['logoImages', 'squareLogoImages'], max: 5, label: 'logo images' },
   ],
+  search: [{ controls: ['adImages', 'landscapeAdImages'], max: 20, label: 'ad images' }],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeSharedCap[]>;
 
 /**
  * The `CampaignCreateRequest` key each channel's creative is sent under.
  *
  * Separate from {@link GOOGLE_CREATIVE_FIELD_SPECS} because it is about the envelope, not the
- * fields: campaign-service names the three creative objects `demandGenCreative`,
- * `performanceMaxCreative` and `displayCreative`, and that spelling has nothing to do with the
- * channel's wire value. A missing entry is a compile error, so a fourth channel with a creative
- * cannot be half-wired.
+ * fields: campaign-service names the creative objects `demandGenCreative`, `performanceMaxCreative`,
+ * `displayCreative` and `searchAssets`, and that spelling has nothing to do with the channel's wire
+ * value. A missing entry is a compile error, so a channel with a creative cannot be half-wired.
  */
 export const GOOGLE_CREATIVE_REQUEST_KEYS = {
   'demand-gen': 'demandGenCreative',
   'performance-max': 'performanceMaxCreative',
   display: 'displayCreative',
+  search: 'searchAssets',
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], keyof CampaignCreateRequest>;
 
 /**
@@ -5658,6 +5702,7 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
   'demand-gen': 'Demand Gen',
   'performance-max': 'Performance Max',
   display: 'Display',
+  search: 'Search',
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
 
 /**
@@ -5760,6 +5805,7 @@ export const GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE =
  * seeded copy makes the Demand Gen image ad and the responsive display ad started creatives, which
  * campaign-service refuses without their required images, and each channel still creates with no
  * creative at all ({@link GOOGLE_CREATIVE_REQUIRED_NOTICE}), so each note gives both ways forward.
+ * Search's seed is the business name alone (#5262), which needs nothing beside it.
  */
 export const GOOGLE_CREATIVE_PREFILL_NOTICES = {
   'demand-gen':
@@ -5767,6 +5813,7 @@ export const GOOGLE_CREATIVE_PREFILL_NOTICES = {
   'performance-max': GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   display:
     'Headlines, the long headline, descriptions, the business name and a call to action Google accepts are filled in from the brief where it has them. Add the required images below to create this ad, or clear the copy to create the campaign without one.',
+  search: 'The business name is filled in from the brief. Clear it to create the campaign without one.',
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
 
 /**
@@ -5797,6 +5844,31 @@ export const GOOGLE_CREATIVE_PREFILL_NOTICES = {
  */
 export const GOOGLE_CREATIVE_REQUIRED_NOTICE =
   'Without creative this campaign is created as an empty shell: it has no ad and it cannot serve. Activating it from LFX is then refused permanently — adding the ad in Google Ads afterwards does not lift the refusal — so it has to be finished and launched in Google Ads, or recreated here with creative.';
+
+/**
+ * The Google channels whose campaign serves with its creative section left empty: Search (#5262).
+ * Its ad is the headlines and descriptions above the section, and its campaign assets are each
+ * optional (`validateSearchAssets` accepts none of them), so the Implementation tab neither shows
+ * {@link GOOGLE_CREATIVE_REQUIRED_NOTICE} on it nor names it in the empty-creative warning.
+ */
+export const GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE = ['search'] as const;
+
+/**
+ * The standing line on the Search creative section (#5262), in place of
+ * {@link GOOGLE_CREATIVE_REQUIRED_NOTICE}. campaign-service links these assets to the campaign after
+ * it exists (`createSearchCampaignAssets`, `search_assets.go`), in one request that either links them
+ * all or none of them.
+ */
+export const GOOGLE_SEARCH_ASSETS_NOTICE =
+  'Optional. Ad images, a business logo and a business name are linked to the Search campaign after it is created. Leave them empty and the campaign serves on its ads alone.';
+
+/** The standing line on each Google creative section: the empty-shell warning, except on Search ({@link GOOGLE_SEARCH_ASSETS_NOTICE}). */
+export const GOOGLE_CREATIVE_SECTION_NOTICES = {
+  'demand-gen': GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  'performance-max': GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  display: GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  search: GOOGLE_SEARCH_ASSETS_NOTICE,
+} as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
 
 /**
  * The bidding strategies campaign-service accepts, in the caller vocabulary it accepts them in.

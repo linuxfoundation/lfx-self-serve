@@ -169,6 +169,7 @@ import {
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
   GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
+  GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE,
   GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CONVERSION_ACTION_PICKER_EMPTY,
@@ -180,7 +181,7 @@ import {
   GOOGLE_CREATIVE_PREFILL_NOTICES,
   GOOGLE_MIN_DAILY_BUDGET_USD,
   GOOGLE_CREATIVE_REQUEST_KEYS,
-  GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  GOOGLE_CREATIVE_SECTION_NOTICES,
   GOOGLE_CREATIVE_GROUPS,
   GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
   GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY,
@@ -1121,12 +1122,13 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
   protected readonly videoCreateUnsupportedReason = GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON;
-  protected readonly googleCreativeNotice = GOOGLE_CREATIVE_REQUIRED_NOTICE;
+  /** Each creative section's standing line, by channel: the empty-shell warning, or Search's optional-assets line (#5262). */
+  protected readonly googleCreativeNotices = GOOGLE_CREATIVE_SECTION_NOTICES;
   protected readonly googleCreativePrefillNotices = GOOGLE_CREATIVE_PREFILL_NOTICES;
   /**
-   * The Google plan groups this tab sends no images for (#1614): every Google channel without an image
-   * creative here, Search among them. campaign-service publishes Search's three optional asset slots,
-   * but this tab has no Search image control, so the coverage grid must not list them as covered.
+   * The Google plan groups this tab sends no images for (#1614): every Google channel without a
+   * creative section here, which is Video alone now that Search sends its ad images and business logo
+   * (#5262). The coverage grid must not list a group whose slots no control can fill.
    */
   protected readonly googleSlotGroupsNotSent: readonly string[] = GOOGLE_CAMPAIGN_CHANNELS.filter(
     (channel) => !(GOOGLE_CHANNELS_WITH_CREATIVE as readonly string[]).includes(channel)
@@ -1261,6 +1263,8 @@ export class ImplementationTabComponent implements OnInit {
     demandGenCreative: this.buildCreativeGroup('demand-gen'),
     performanceMaxCreative: this.buildCreativeGroup('performance-max'),
     displayCreative: this.buildCreativeGroup('display'),
+    // The Search campaign's ad images, business logo and business name (#5262), on the same terms.
+    searchAssets: this.buildCreativeGroup('search'),
     // Demand Gen's second creative, the video ad (#5226), and the choice between the two. Both groups
     // are kept whichever is chosen, so switching back restores what was typed; only the chosen one
     // renders and is sent (`googleCreativeGroupFor`).
@@ -8041,6 +8045,19 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * Prefill the Search campaign's business name from the brief (#5262): the Demand Gen copy's
+   * `business_name`, the one business name a brief holds and the one every other Google channel seeds,
+   * held to the field's width and never truncated. Nothing else: the brief holds no image, so the ad
+   * images and the business logo stay the operator's.
+   */
+  private seedSearchAssets(brief: CampaignBriefOutput): void {
+    const channel = 'search';
+    this.seedGoogleCreative(channel, {
+      businessName: this.fittingCreativeCopy(channel, 'businessName', [this.generatedDemandGenCopy(brief)?.['business_name']])[0] ?? '',
+    });
+  }
+
+  /**
    * The brief's call to action as the channel's field lists it (#1614, F13), or `''`: matched without
    * regard to case, so the generator's "Learn More" or "learn more" both seed the listed spelling, and
    * anything off the list — the generator's "Register", which Google refused live — seeds nothing.
@@ -8535,6 +8552,7 @@ export class ImplementationTabComponent implements OnInit {
     this.seedDemandGenCreative(brief);
     this.seedPerformanceMaxCreative(brief);
     this.seedDisplayCreative(brief);
+    this.seedSearchAssets(brief);
 
     if (brief.linkedInCopy) {
       this.linkedInVariants.set(brief.linkedInCopy.variants);
@@ -10962,8 +10980,14 @@ export class ImplementationTabComponent implements OnInit {
       // ad: `demandGenAdGroupsError` holds Create on an empty one rather than warning. So does
       // `demandGenAdsError` on an empty first ad of several.
       const several = this.googleDemandGenAdsPayload().demandGenAds !== undefined;
+      // A channel that serves with its section empty (Search, #5262) is never named: it is not a shell.
+      const servesEmpty: readonly string[] = GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE;
       const empty = this.googleCreativeSections().filter(
-        (section) => section.fields.length > 0 && payload[section.groupName] === undefined && !(several && section.channel === 'demand-gen')
+        (section) =>
+          section.fields.length > 0 &&
+          payload[section.groupName] === undefined &&
+          !(several && section.channel === 'demand-gen') &&
+          !servesEmpty.includes(section.channel)
       );
       if (empty.length === 0) return null;
       const names = empty.map((section) => section.label).join(' and ');

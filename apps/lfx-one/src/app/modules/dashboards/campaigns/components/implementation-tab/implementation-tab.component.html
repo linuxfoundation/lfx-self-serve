@@ -2707,8 +2707,9 @@
         Google Ads: per-channel creative.
 
         One section per selected channel that carries a creative OBJECT rather than the two copy
-        arrays above — Demand Gen, Performance Max and Display. Search is absent because its copy IS
-        those arrays, and Video because Google Ads cannot create a Video campaign at all.
+        arrays above — Demand Gen, Performance Max, Display, and Search, whose object is its campaign
+        assets (ad images, business logo, business name, #5262) because its copy IS those arrays.
+        Video is absent because Google Ads cannot create a Video campaign at all.
 
         Everything rendered here comes from `googleCreativeSections()`, which resolves the shared
         field catalogue: the fields, their order, their bounds and their hints are stated once, in
@@ -2730,12 +2731,15 @@
           <h3 class="text-sm font-semibold text-gray-900">{{ section.label }} Creative</h3>
           <!--
             The notice sits on every section rather than once above them because a warning about
-            what an empty creative costs belongs beside the fields it is about. More than one
+            what an empty creative costs belongs beside the fields it is about. Search's says its
+            assets are optional instead, because its campaign serves without them. More than one
             section can be on screen — ticking Performance Max and Display renders both — and only
             `canSubmit` refuses that pair, so a single notice above the group would read as being
             about whichever section the operator happened to be looking at.
           -->
-          <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">{{ googleCreativeNotice }}</p>
+          <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">
+            {{ googleCreativeNotices[section.channel] }}
+          </p>
           <!-- Only over the seeded image creative's own fields: not the Demand Gen video ad, nor a split. -->
           @if (googleCreativePrefillShown()[section.channel] && section.format === 'image' && section.fields.length > 0) {
             <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-prefill-notice-' + section.channel">

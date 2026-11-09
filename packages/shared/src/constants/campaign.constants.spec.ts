@@ -61,6 +61,7 @@ import {
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS,
+  GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
@@ -74,8 +75,11 @@ import {
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  GOOGLE_CREATIVE_SECTION_NOTICES,
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_CREATIVE_SHARED_CAPS,
+  GOOGLE_SEARCH_ASSETS_NOTICE,
   MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
   MAX_GOOGLE_GEO_LIST_ENTRIES,
   MAX_REDDIT_HEADLINE_LENGTH,
@@ -859,13 +863,12 @@ describe('Google channel enums and creative catalogue', () => {
   });
 
   /**
-   * Search builds its ad from the shared headline/description copy, and the Google Ads API cannot
-   * create a Video campaign at all — so neither collects a channel creative, and offering one would
-   * build a form whose only possible outcome is a refusal.
+   * The Google Ads API cannot create a Video campaign at all, so Video collects no creative: offering
+   * one would build a form whose only possible outcome is a refusal. Search collects its campaign
+   * assets (#5262); its ad copy stays the shared headline/description arrays.
    */
-  it('collects a creative only for the three channels that carry one', () => {
-    expect([...GOOGLE_CHANNELS_WITH_CREATIVE]).toEqual(['demand-gen', 'performance-max', 'display']);
-    expect(GOOGLE_CHANNELS_WITH_CREATIVE).not.toContain('search');
+  it('collects a creative for the four channels that carry one, and never for Video', () => {
+    expect([...GOOGLE_CHANNELS_WITH_CREATIVE]).toEqual(['demand-gen', 'performance-max', 'display', 'search']);
     expect(GOOGLE_CHANNELS_WITH_CREATIVE).not.toContain('video');
   });
 
@@ -883,6 +886,7 @@ describe('Google channel enums and creative catalogue', () => {
       'demand-gen': 'demandGenCreative',
       'performance-max': 'performanceMaxCreative',
       display: 'displayCreative',
+      search: 'searchAssets',
     });
   });
 
@@ -896,6 +900,7 @@ describe('Google channel enums and creative catalogue', () => {
       'demand-gen': 'Demand Gen',
       'performance-max': 'Performance Max',
       display: 'Display',
+      search: 'Search',
     });
   });
 
@@ -961,6 +966,7 @@ describe('Google channel enums and creative catalogue', () => {
       'demand-gen': ['businessName'],
       'performance-max': ['businessName'],
       display: ['longHeadline', 'businessName'],
+      search: [],
     });
   });
 
@@ -982,6 +988,7 @@ describe('Google channel enums and creative catalogue', () => {
     expect(GOOGLE_CREATIVE_EITHER_OR_RULES['demand-gen'].map((r) => r.controls)).toEqual([['marketingImages', 'squareMarketingImages']]);
     expect(GOOGLE_CREATIVE_EITHER_OR_RULES.display).toEqual([]);
     expect(GOOGLE_CREATIVE_EITHER_OR_RULES['performance-max']).toEqual([]);
+    expect(GOOGLE_CREATIVE_EITHER_OR_RULES.search).toEqual([]);
   });
 
   /** The independent requirement on Performance Max and Display, which is what makes their empty rule lists correct. */
@@ -1011,6 +1018,40 @@ describe('Google channel enums and creative catalogue', () => {
       [['marketingImages', 'squareMarketingImages'], 15],
       [['logoImages', 'squareLogoImages'], 5],
     ]);
+    expect(shape('search')).toEqual([[['adImages', 'landscapeAdImages'], 20]]);
+  });
+
+  /**
+   * campaign-service v1.0.35 `search_assets.go` (#477, #538): `searchImageSlots`' three rows and the caps
+   * beside them, and a 25-wide business name. None is required, so nothing carries `min` or
+   * `requiredOnce`: `validateSearchAssets` accepts any one of the four alone.
+   */
+  it('states the Search assets exactly as campaign-service v1.0.35 slots and caps them', () => {
+    expect(GOOGLE_CREATIVE_FIELD_SPECS.search).toEqual([
+      { control: 'businessName', label: 'Business name', kind: 'text', width: 25, hint: 'Optional.' },
+      expect.objectContaining({ control: 'adImages', kind: 'list', max: 20, image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 } }),
+      expect.objectContaining({ control: 'landscapeAdImages', kind: 'list', max: 20, image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 } }),
+      expect.objectContaining({ control: 'businessLogoImages', kind: 'list', max: 1, image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 } }),
+    ]);
+    for (const field of GOOGLE_CREATIVE_FIELD_SPECS.search as readonly GoogleCreativeFieldSpec[]) {
+      expect(field.min).toBeUndefined();
+      expect(field.requiredOnce).toBeUndefined();
+    }
+    // The asset plan names Search's slots by the request's own keys (`searchCatalog`, `slot_catalog.go`).
+    expect(GOOGLE_ASSET_PLAN_SLOT_CONTROLS.search).toEqual({
+      adImages: 'adImages',
+      landscapeAdImages: 'landscapeAdImages',
+      businessLogoImages: 'businessLogoImages',
+    });
+  });
+
+  /** Search serves on its ads with its assets empty, so it alone gets the optional line instead of the empty-shell one. */
+  it('warns of an empty shell on every creative section but Search', () => {
+    expect([...GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE]).toEqual(['search']);
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      const expected = channel === 'search' ? GOOGLE_SEARCH_ASSETS_NOTICE : GOOGLE_CREATIVE_REQUIRED_NOTICE;
+      expect(GOOGLE_CREATIVE_SECTION_NOTICES[channel]).toBe(expected);
+    }
   });
 
   /**
