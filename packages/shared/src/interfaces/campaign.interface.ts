@@ -2856,6 +2856,12 @@ export interface GoogleCreativeFieldSpec {
   options?: readonly GoogleCreativeFieldOption[];
 }
 
+/** Why a creative field would be refused, and which field: the control name the BFF reports it against. */
+export interface GoogleCreativeFieldRefusal {
+  field: string;
+  message: string;
+}
+
 /** One choice of a closed-list creative field ({@link GoogleCreativeFieldSpec.options}). */
 export interface GoogleCreativeFieldOption {
   value: string;

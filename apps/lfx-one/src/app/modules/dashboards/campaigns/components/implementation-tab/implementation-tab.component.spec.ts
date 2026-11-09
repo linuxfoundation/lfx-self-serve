@@ -17681,6 +17681,43 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(prefilled('demand-gen')).toBe(true);
   });
 
+  /** campaign-service refuses two lines equal after trim and lower-casing (`validateCreativeText`). */
+  it('drops lines that differ only in case or spacing, keeping the first spelling, in every seeded list (PR #5387 review)', () => {
+    seed(
+      brief({
+        google_search: {
+          headlines: ['Join KubeCon EU', 'join kubecon eu ', 'JOIN KUBECON EU', 'Register now'],
+          descriptions: ['See you there.', 'see you there.'],
+        },
+        google_display: { headlines: ['Join KubeCon EU'], descriptions: ['SEE YOU THERE.'] },
+      })
+    );
+
+    expect(lines(group('demandGenCreative')['headlines'])).toEqual(['Join KubeCon EU', 'Register now']);
+    expect(lines(group('demandGenCreative')['descriptions'])).toEqual(['SEE YOU THERE.']);
+    expect(lines(group('displayCreative')['headlines'])).toEqual(['Join KubeCon EU', 'Register now']);
+    const pmax = component()['campaignForm'].controls['performanceMaxCreative'].getRawValue();
+    expect(lines(pmax['headlines'])).toEqual(['Join KubeCon EU', 'Register now']);
+    expect(lines(pmax['descriptions'])).toEqual(['See you there.']);
+  });
+
+  /** PR #5389 review: the payload trims a leading U+FEFF, so the seed must de-duplicate on what is sent. */
+  it('seeds one line for two that become the same once serialized, a leading U+FEFF included', () => {
+    seed(brief({ google_search: { headlines: ['Join us', '\uFEFFJoin us', 'Register now'], descriptions: [] } }));
+    show('includeDemandGen');
+
+    const payload = component()['googleCreativePayload']()['demandGenCreative'] as Record<string, unknown>;
+    expect(payload['headlines']).toEqual(['Join us', 'Register now']);
+  });
+
+  it('skips a long headline candidate that repeats a seeded line in another case', () => {
+    // The five descriptions take D1-D5; "join us" repeats the seeded headline "Join us" in another case.
+    const descriptions = ['D1', 'D2', 'D3', 'D4', 'D5', 'join us', 'D7'];
+    seed(brief({ google_search: { headlines: [], descriptions }, google_display: { headlines: ['Join us'] } }));
+
+    expect(group('displayCreative')['longHeadline']).toBe('D7');
+  });
+
   it('caps each Demand Gen list at its field max and drops duplicates', () => {
     const headlines = ['Headline 0', 'Headline 0', ...Array.from({ length: 6 }, (_, i) => `Headline ${i + 1}`)];
     seed(brief({ google_display: { headlines, descriptions: [] }, google_search: { headlines: ['Headline 0'] } }));
@@ -17890,10 +17927,10 @@ describe('ImplementationTabComponent Google flight, result link and coverage gro
     return fixture.componentInstance as unknown as Record<string, any>;
   }
 
-  function seed(dates: string | undefined, totalBudget = 1000): void {
+  function seed(dates: string | undefined, totalBudget = 1000, selectedPlatforms: string[] = ['google-ads']): void {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU', slug: 'kubecon-eu', registrationUrl: 'https://events.example.com/kubecon', countryCode: 'US', dates },
-      selectedPlatforms: ['google-ads'],
+      selectedPlatforms,
       totalBudget,
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
@@ -17920,13 +17957,61 @@ describe('ImplementationTabComponent Google flight, result link and coverage gro
     await fixture.whenStable();
   });
 
+  /** An ISO day `n` days after the tab's today, and the same day as the brief's free text writes it. */
+  function daysOut(n: number): { iso: string; text: string } {
+    const iso = new Date(Date.parse(`${component()['todayDate']}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+    const date = new Date(`${iso}T00:00:00Z`);
+    const month = date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+    return { iso, text: `${month} ${date.getUTCDate()}, ${date.getUTCFullYear()}` };
+  }
+
   it("ends the flight on the event's first day and divides the total over it", () => {
+    const event = daysOut(60);
+    seed(event.text);
+
+    const form = component()['campaignForm'].getRawValue();
+    expect(form.endDate).toBe(event.iso);
+    expect(form.budgetUsd).toBe(Math.floor(100000 / days(component()['todayDate'], event.iso)) / 100);
+  });
+
+  it('brings the end forward rather than seed a daily budget under the minimum (PR #5387 review)', () => {
+    // 1000 over the run-up to 2099 is cents a day; 1000 days at 1 a day is what the total funds.
     seed('March 15-17, 2099');
 
     const form = component()['campaignForm'].getRawValue();
+    expect(form.budgetUsd).toBe(1);
+    expect(form.endDate).toBe(daysOut(999).iso);
+    expect(component()['campaignForm'].controls.budgetUsd.valid).toBe(true);
+  });
+
+  // PR #5389 review: the end date is one control every platform's create reads, so the Google floor may
+  // move it only when Google is the brief's only platform.
+  it.each([
+    ['a Meta-only brief', ['meta-ads']],
+    ['a Google and Meta brief', ['google-ads', 'meta-ads']],
+  ])('keeps the event end date for %s, seeding the Google floor instead of shortening', (_label, platforms) => {
+    seed('March 15-17, 2099', 1000, platforms);
+
+    const form = component()['campaignForm'].getRawValue();
     expect(form.endDate).toBe('2099-03-15');
-    const flight = days(component()['todayDate'], '2099-03-15');
-    expect(form.budgetUsd).toBe(Math.floor(100000 / flight) / 100);
+    expect(form.budgetUsd).toBe(1);
+    expect(component()['googleBudgetOverPlan']()).toBe(true);
+  });
+
+  it('says the flight spends more than the brief plans beside the Google budget', () => {
+    seed('March 15-17, 2099', 1000, ['google-ads', 'meta-ads']);
+    fixture.detectChanges();
+
+    const warning = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget-over-plan"]');
+    expect(warning?.textContent).toContain('spends more than the brief plans');
+  });
+
+  it('does not warn when the flight stays within the plan', () => {
+    seed('Self-paced');
+    fixture.detectChanges();
+
+    expect(component()['googleBudgetOverPlan']()).toBe(false);
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget-over-plan"]')).toBeNull();
   });
 
   it('keeps the 30-day default, and its budget, when the brief names no date it can read', () => {
@@ -18327,11 +18412,19 @@ describe('ImplementationTabComponent google daily budget', () => {
     expect(text('implementation-budget-hint')).not.toContain('The brief plans');
   });
 
-  it('keeps a seeded daily figure below one rather than rounding it up past the plan', () => {
+  /**
+   * Neither rounded up past the plan nor seeded under the minimum (PR #5387 review): 10 over the
+   * 31-day flight is 0.32 a day, which opened Create blocked, so the flight is brought forward to the
+   * 10 days the total funds at 1 a day.
+   */
+  it('brings the flight forward rather than seed a daily figure below one or round it up past the plan', () => {
     mountBrief({ totalBudget: 10 });
 
-    expect(c['campaignForm'].controls.budgetUsd.value).toBe(0.32);
-    expect(text('implementation-budget-error')).toBe('Enter a daily budget of at least 1.');
+    expect(c['campaignForm'].controls.budgetUsd.value).toBe(1);
+    const end = new Date(Date.parse(`${c['todayDate']}T00:00:00Z`) + 9 * 86_400_000).toISOString().slice(0, 10);
+    expect(c['campaignForm'].controls.endDate.value).toBe(end);
+    expect(text('implementation-budget-error')).toBeNull();
+    expect(text('implementation-budget-hint')).toContain('About 10 over 10 days');
   });
 
   it('recomputes the flight total as the budget and dates change', () => {
@@ -18394,10 +18487,12 @@ describe('ImplementationTabComponent google daily budget', () => {
   });
 
   it('shows neither the field nor its error when Google is not selected', () => {
-    // A total this small seeds a daily figure below the minimum, which would show the error.
+    // A daily figure below the minimum would show the error; the seed never sets one, so it is typed.
     mountBrief({ totalBudget: 10, selectedPlatforms: ['meta-ads'] });
+    c['campaignForm'].patchValue({ budgetUsd: 0.32 });
+    fixture.detectChanges();
 
-    expect(c['campaignForm'].controls.budgetUsd.value).toBe(0.32);
+    expect(c['campaignForm'].controls.budgetUsd.invalid).toBe(true);
     expect(text('implementation-budget-hint')).toBeNull();
     expect(text('implementation-budget-error')).toBeNull();
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget"]')).toBeNull();

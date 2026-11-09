@@ -6701,12 +6701,13 @@ describe('CampaignController.createCampaign cutover', () => {
     });
 
     it.each([
-      ['a watch URL in place of an id', { youtubeVideoIds: ['https://www.youtube.com/watch?v=dQw4w9WgXcQ'] }, 'is a link'],
-      ['a second logo', { logoImages: ['https://cdn.example/a.png', 'https://cdn.example/b.png'] }, 'exactly one logo'],
-      ['a headline wider than 40', { headlines: ['日'.repeat(21)] }, 'longer than the 40 characters'],
-      ['no long headline', { longHeadlines: [] }, 'at least 1 long headline'],
-      ['a call to action Google refuses', { callToAction: 'REGISTER' }, 'call to action'],
-    ])('refuses %s by name, as campaign-service would before the budget', async (_label, overrides, fragment) => {
+      ['a watch URL in place of an id', { youtubeVideoIds: ['https://www.youtube.com/watch?v=dQw4w9WgXcQ'] }, 'is a link', 'demandGenVideoCreative'],
+      ['a second logo', { logoImages: ['https://cdn.example/a.png', 'https://cdn.example/b.png'] }, 'exactly one logo', 'demandGenVideoCreative'],
+      ['a headline wider than 40', { headlines: ['日'.repeat(21)] }, 'longer than the 40 characters', 'demandGenVideoCreative'],
+      ['no long headline', { longHeadlines: [] }, 'at least 1 long headline', 'demandGenVideoCreative'],
+      // Reported against the call to action itself (#1614), still in upstream's order: it is checked last.
+      ['a call to action Google refuses', { callToAction: 'REGISTER' }, 'call to action', 'callToAction'],
+    ])('refuses %s by name, as campaign-service would before the budget', async (_label, overrides, fragment, field) => {
       await controller.createCampaign(
         buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenVideoCreative: { ...VIDEO, ...overrides } }), { project: 'tlf', brief_id: 'b-1' }),
         res,
@@ -6714,7 +6715,62 @@ describe('CampaignController.createCampaign cutover', () => {
       );
 
       expect(createCampaigns).not.toHaveBeenCalled();
-      expect(refusalFrom()).toMatchObject({ field: 'demandGenVideoCreative', message: expect.stringContaining(fragment) });
+      expect(refusalFrom()).toMatchObject({ field, message: expect.stringContaining(fragment) });
+    });
+
+    // The ad and ad group judges wrap the video ad's sentence; the field is the call to action there too (#1614).
+    it.each([
+      [
+        'an ad of the single ad group',
+        {
+          demandGenAds: [
+            { name: 'Teaser', videoCreative: { ...VIDEO, callToAction: 'REGISTER' } },
+            { name: 'Recap', videoCreative: VIDEO },
+          ],
+        },
+      ],
+      ['a named ad group', { demandGenAdGroups: [{ name: 'Retargeting', videoCreative: { ...VIDEO, callToAction: 'REGISTER' } }] }],
+      [
+        'an ad inside a named ad group',
+        {
+          demandGenAdGroups: [
+            {
+              name: 'Retargeting',
+              ads: [
+                { name: 'Teaser', videoCreative: { ...VIDEO, callToAction: 'REGISTER' } },
+                { name: 'Recap', videoCreative: VIDEO },
+              ],
+            },
+          ],
+        },
+      ],
+    ])('reports a refused video call to action in %s against callToAction', async (_label, overrides) => {
+      await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'callToAction', message: expect.stringContaining("video ad's call to action") });
+    });
+
+    it('keeps the enclosing field for an ad refused for anything else', async () => {
+      await controller.createCampaign(
+        buildReq(
+          googleBody({
+            campaignTypes: ['demand-gen'],
+            demandGenAds: [
+              { name: 'Teaser', videoCreative: { ...VIDEO, longHeadlines: [] } },
+              { name: 'Recap', videoCreative: VIDEO },
+            ],
+          }),
+          {
+            project: 'tlf',
+            brief_id: 'b-1',
+          }
+        ),
+        res,
+        next
+      );
+
+      expect(refusalFrom()).toMatchObject({ field: 'demandGenAds' });
     });
 
     it('neither sends nor judges a video ad left under another channel', async () => {

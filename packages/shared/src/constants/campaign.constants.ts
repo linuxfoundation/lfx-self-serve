@@ -252,6 +252,13 @@ export const DEFAULT_MICROSOFT_BUDGET_USD = 500;
  */
 export const DEFAULT_GOOGLE_DAILY_BUDGET_USD = 500;
 
+/**
+ * The smallest Google daily budget the Implementation tab accepts (its `budgetUsd` control's
+ * `Validators.min`), and so the floor the brief seed holds a divided total to (#1614): a seed below it
+ * would open the tab with Create blocked on a value nobody typed.
+ */
+export const GOOGLE_MIN_DAILY_BUDGET_USD = 1;
+
 /** The LinkedIn targeting profile the Implementation tab starts from, and resets to when a brief carries no LinkedIn copy (#4624). */
 export const DEFAULT_LINKEDIN_TARGETING_PROFILE: LinkedInTargetingProfile = 'cloud-native';
 
@@ -5387,6 +5394,14 @@ export const GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION = [
   { value: 'VISIT_SITE', label: 'Visit site' },
   { value: 'WATCH_NOW', label: 'Watch now' },
 ] as const;
+
+/**
+ * Why a Demand Gen video ad's call to action is refused: it is not one of
+ * {@link GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION}. One sentence, so the BFF can tell that an enclosing
+ * refusal (the video ad, an ad, an ad group) is about the call to action and report it against that
+ * field (#1614).
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_CALL_TO_ACTION_REFUSAL = `The Demand Gen video ad's call to action is not one Google Ads takes for this ad. Choose ${GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION.map((option) => option.label).join(', ')}, or none.`;
 
 /**
  * The most YouTube videos one Demand Gen video ad carries: campaign-service's `maxVideoAdVideos`

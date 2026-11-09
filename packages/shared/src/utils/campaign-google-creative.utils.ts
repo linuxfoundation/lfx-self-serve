@@ -20,7 +20,13 @@ import {
   googleAdsToLower,
   googleAdsTrimSpace,
 } from '../constants/campaign.constants';
-import type { GoogleCreativeFieldSpec, GoogleCreativeImageShape, GoogleCreativeWireFields, StoredCreativeAsset } from '../interfaces/campaign.interface';
+import type {
+  GoogleCreativeFieldRefusal,
+  GoogleCreativeFieldSpec,
+  GoogleCreativeImageShape,
+  GoogleCreativeWireFields,
+  StoredCreativeAsset,
+} from '../interfaces/campaign.interface';
 import { googleAdsTextWeight } from './campaign-google-search-ads.utils';
 import { codePointLength } from './string.utils';
 
@@ -211,8 +217,8 @@ export function googleCreativeOptionMessage(label: string, value: string): strin
   return `Google Ads does not accept "${googleAdsEchoed(value)}" as the ${label.toLowerCase()}. Choose one from the list, or None, and create again.`;
 }
 
-/** The first closed-list field of one creative whose value is outside its list, as a sentence, or `null`. */
-function googleCreativeOptionsRefusal(fields: readonly GoogleCreativeFieldSpec[], creative: unknown): string | null {
+/** The first closed-list field of one creative whose value is outside its list, named with its sentence, or `null`. */
+function googleCreativeOptionsRefusal(fields: readonly GoogleCreativeFieldSpec[], creative: unknown): GoogleCreativeFieldRefusal | null {
   if (creative === null || typeof creative !== 'object' || Array.isArray(creative)) return null;
   const raw = creative as Record<string, unknown>;
   for (const field of fields) {
@@ -220,7 +226,9 @@ function googleCreativeOptionsRefusal(fields: readonly GoogleCreativeFieldSpec[]
     const value = raw[field.control];
     if (typeof value !== 'string') continue;
     const trimmed = googleAdsTrimSpace(value);
-    if (trimmed !== '' && !field.options.some((option) => option.value === trimmed)) return googleCreativeOptionMessage(field.label, trimmed);
+    if (trimmed !== '' && !field.options.some((option) => option.value === trimmed)) {
+      return { field: field.control, message: googleCreativeOptionMessage(field.label, trimmed) };
+    }
   }
   return null;
 }
@@ -235,13 +243,16 @@ function googleCreativeOptionsRefusal(fields: readonly GoogleCreativeFieldSpec[]
  * read, as the BFF sends only that channel's creatives: Demand Gen's image and video ads, alone, as
  * several ads, or in named ad groups; Display's single ad and named ad groups. Performance Max has no
  * call-to-action field, and Search and Video have no creative here.
+ *
+ * The refusal names the field it is about — `callToActionText` on the image and Display ads,
+ * `callToAction` on the video ad — so the BFF reports the one the operator has to change.
  */
-export function googleCallToActionRefusal(body: Readonly<Record<string, unknown>>, channel: unknown): string | null {
+export function googleCallToActionRefusal(body: Readonly<Record<string, unknown>>, channel: unknown): GoogleCreativeFieldRefusal | null {
   const entries = (list: unknown): Record<string, unknown>[] =>
     Array.isArray(list) ? list.filter((entry): entry is Record<string, unknown> => entry !== null && typeof entry === 'object' && !Array.isArray(entry)) : [];
   const imageFields = GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'];
   const videoFields = GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS;
-  const demandGenAd = (ad: Record<string, unknown>): string | null =>
+  const demandGenAd = (ad: Record<string, unknown>): GoogleCreativeFieldRefusal | null =>
     googleCreativeOptionsRefusal(imageFields, ad['creative']) ?? googleCreativeOptionsRefusal(videoFields, ad['videoCreative']);
   if (channel === 'demand-gen') {
     const single =

@@ -178,6 +178,7 @@ import {
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_IMAGE_MAX_BYTES,
   GOOGLE_CREATIVE_PREFILL_NOTICES,
+  GOOGLE_MIN_DAILY_BUDGET_USD,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_GROUPS,
@@ -363,9 +364,9 @@ import {
   campaignBiddingPayload,
   campaignFlightDays,
   campaignLabelColumns,
-  dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
   defaultCampaignEndDate,
+  googleSeededFlight,
   describeCampaignDispatchFailure,
   googleAdditionalSearchAdsRefusal,
   googleAdsCampaignUrl,
@@ -1203,7 +1204,7 @@ export class ImplementationTabComponent implements OnInit {
     registrationUrl: ['', [Validators.required]],
     // The Google DAILY budget (#4847): campaign-service creates it with no period, which Google
     // treats as daily. Seeded from the brief's total divided over the flight, never the total itself.
-    budgetUsd: [DEFAULT_GOOGLE_DAILY_BUDGET_USD as number, [Validators.required, Validators.min(1)]],
+    budgetUsd: [DEFAULT_GOOGLE_DAILY_BUDGET_USD as number, [Validators.required, Validators.min(GOOGLE_MIN_DAILY_BUDGET_USD)]],
     // Typed `number`, not inferred. `CAMPAIGN_BUDGET_DEFAULTS` is `as const`, so the inferred
     // control type was the literal `70` — which is wrong for a slider the user drags, and made
     // any other value a type error to patch in (LFXV2-3229).
@@ -3778,6 +3779,16 @@ export class ImplementationTabComponent implements OnInit {
   /** The Google budget and flight controls as a signal, so the two readings below recompute on any edit (#4847). */
   private readonly googleBudgetInputs: Signal<GoogleBudgetInputs> = this.initGoogleBudgetInputs();
   protected readonly googleBudgetFlight: Signal<GoogleBudgetFlight | null> = this.initGoogleBudgetFlight();
+  /**
+   * Whether the flight on screen spends more than the brief's total (#1614): the seed floors the daily
+   * budget at the minimum when the total cannot fund the flight, and the operator may raise it. Said
+   * beside the field rather than refused, because spending more than the plan is the operator's call.
+   */
+  protected readonly googleBudgetOverPlan: Signal<boolean> = computed(() => {
+    const flight = this.googleBudgetFlight();
+    const planned = this.googleBriefTotalBudget();
+    return flight !== null && planned !== null && flight.total > planned;
+  });
   /**
    * Whether the Google daily budget is missing or below the control's minimum of 1. Shown under the
    * field, because on a Google create the same validator holds Create disabled and nothing else on
@@ -7988,14 +7999,16 @@ export class ImplementationTabComponent implements OnInit {
   private seedDisplayCreative(brief: CampaignBriefOutput): void {
     const channel = 'display';
     const copy = this.generatedGoogleImageAdCopy(brief, channel);
-    const taken = new Set([...copy.headlines, ...copy.descriptions]);
+    // On campaign-service's de-duplication key, as the lists above are, so a candidate differing from a
+    // seeded line only in case does not repeat it.
+    const taken = new Set([...copy.headlines, ...copy.descriptions].map((value) => googleAdsToLower(value)));
     const candidates = [
       ...this.fittingCreativeCopy(channel, 'longHeadline', this.asArray(this.generatedDemandGenCopy(brief)?.['headlines'])),
       ...this.fittingCreativeCopy(channel, 'longHeadline', this.asArray(this.generatedCopy(brief, ['google_search'])?.['descriptions'])),
     ];
     this.seedGoogleCreative(channel, {
       headlines: copy.headlines.join('\n'),
-      longHeadline: candidates.find((value) => !taken.has(value)) ?? '',
+      longHeadline: candidates.find((value) => !taken.has(googleAdsToLower(value))) ?? '',
       descriptions: copy.descriptions.join('\n'),
       businessName: copy.businessName,
       callToActionText: copy.callToActionText,
@@ -8060,9 +8073,10 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * Generated values that fit one creative field, in order: strings only, each trimmed with any line
-   * break folded into a space, de-duplicated, and measured with `googleCreativeFieldWidth` as the
-   * field's validator measures it against the channel's `GOOGLE_CREATIVE_FIELD_SPECS` width. A value
-   * too wide is dropped, never truncated. Empty when the channel has no such field.
+   * break folded into a space, measured with `googleCreativeFieldWidth` as the field's validator
+   * measures it against the channel's `GOOGLE_CREATIVE_FIELD_SPECS` width, and de-duplicated without
+   * regard to case, as campaign-service judges a repeat. A value too wide is dropped, never truncated.
+   * Empty when the channel has no such field.
    */
   private fittingCreativeCopy(channel: GoogleCreativeChannel, control: string, values: unknown[]): string[] {
     // Typed as the shared spec, as `initGoogleCreativeSections` reads it: not every catalogue entry
@@ -8071,11 +8085,26 @@ export class ImplementationTabComponent implements OnInit {
     const spec = specs.find((field) => field.control === control);
     if (spec === undefined) return [];
     // A line break inside one generated value would split it into extra entries of a one-per-line
-    // field, past the width and count it was checked against, so it is folded into a space.
-    const unique = [
-      ...new Set(values.filter((value): value is string => typeof value === 'string').map((value) => value.replace(/\s*[\r\n]+\s*/g, ' ').trim())),
-    ];
-    return unique.filter((value) => value !== '' && (spec.width === undefined || googleCreativeFieldWidth(control, value) <= spec.width));
+    // field, past the width and count it was checked against, so it is folded into a space. Trimmed by
+    // `trimCreativeLine`, the trim `splitCreativeLines` gives every line before it reaches the wire, so
+    // the seed judges the very string the payload carries: a Go-style trim keeps a leading U+FEFF that
+    // the payload strips, and "\uFEFFJoin us" would seed beside "Join us" as a repeat on the wire.
+    const fitting = values
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => this.trimCreativeLine(value.replace(/\s*[\r\n]+\s*/g, ' ')))
+      .filter((value) => value !== '' && (spec.width === undefined || googleCreativeFieldWidth(control, value) <= spec.width));
+    // De-duplicated on campaign-service's own key, `strings.ToLower` of the `strings.TrimSpace`d line
+    // (`validateCreativeText`, `demandgen_creative.go`, v1.0.35), which REFUSES a list holding two lines
+    // equal under it. The line is already trimmed as it will be sent, and Go's trim of that changes
+    // nothing more, so the key is campaign-service's. The first spelling is kept, so "Join us" and
+    // "join us" seed one line, not a refusal.
+    const seen = new Set<string>();
+    return fitting.filter((value) => {
+      const key = googleAdsToLower(value);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   /** The first values up to the creative field's catalogue `max`, or all of them when it states none. */
@@ -8101,6 +8130,15 @@ export class ImplementationTabComponent implements OnInit {
       }
     }
     return undefined;
+  }
+
+  /**
+   * A brief's saved platforms that can still be selected: every platform the picker enables, and X,
+   * whose capability may answer after the seed (see the platform restore in `populateFromBrief`).
+   */
+  private selectablePlatforms(platforms: readonly CampaignPlatform[]): CampaignPlatform[] {
+    const selectable = new Set<CampaignPlatform>([...CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id), 'twitter-ads']);
+    return platforms.filter((p) => selectable.has(p));
   }
 
   /** The value as an array when it is one, else empty: generated copy is untyped JSON. */
@@ -8405,10 +8443,19 @@ export class ImplementationTabComponent implements OnInit {
     //
     // The flight runs to the event's first day when the brief names one after today (#1614), else to
     // `defaultEndDate`; the daily budget is divided over that same flight, so the two cannot disagree.
+    // `googleSeededFlight` never seeds below the budget control's floor. It may shorten the flight to
+    // keep within the brief's total only when Google is the brief's ONLY platform: the end date is one
+    // control every selected platform's create reads, so shortening it for Google would cut a Meta or
+    // LinkedIn flight short too. Beside other platforms the end date is kept and Google seeds the floor,
+    // and `googleBudgetOverPlan` says that spends more than the brief plans.
     const briefTotal = brief.totalBudget ?? null;
-    const endDate = defaultCampaignEndDate(details.dates, this.todayDate, this.defaultEndDate);
-    const flightDays = campaignFlightDays(this.todayDate, endDate);
-    const seededDailyBudget = briefTotal !== null && flightDays !== null ? dailyBudgetFromTotal(briefTotal, flightDays) : null;
+    const seededPlatforms = brief.selectedPlatforms?.length ? this.selectablePlatforms(brief.selectedPlatforms) : this.selectedPlatforms();
+    const { endDate, dailyBudget: seededDailyBudget } = googleSeededFlight(
+      briefTotal,
+      this.todayDate,
+      defaultCampaignEndDate(details.dates, this.todayDate, this.defaultEndDate),
+      seededPlatforms.length === 1 && seededPlatforms[0] === 'google-ads'
+    );
     this.googleBriefTotalBudget.set(seededDailyBudget === null ? null : briefTotal);
     this.campaignForm.patchValue({
       eventName: details.name,
@@ -8444,8 +8491,7 @@ export class ImplementationTabComponent implements OnInit {
       // (`twitterCreateEnabled`) overrides, and the capability may answer after this seed runs, so
       // filtering on it here would drop an X the operator chose. Kept, it is either created (an
       // explicit yes) or blocked with a Remove (`twitterCreateBlock`) — never sent unconfirmed.
-      const selectable = new Set<CampaignPlatform>([...CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id), 'twitter-ads']);
-      this.selectedPlatforms.set(brief.selectedPlatforms.filter((p) => selectable.has(p)));
+      this.selectedPlatforms.set(this.selectablePlatforms(brief.selectedPlatforms));
     }
 
     const searchCopy = this.generatedCopy(brief, ['google_search']);
@@ -9091,7 +9137,7 @@ export class ImplementationTabComponent implements OnInit {
   private initGoogleBudgetInvalid(): Signal<boolean> {
     return computed(() => {
       const { daily } = this.googleBudgetInputs();
-      return typeof daily !== 'number' || !Number.isFinite(daily) || daily < 1;
+      return typeof daily !== 'number' || !Number.isFinite(daily) || daily < GOOGLE_MIN_DAILY_BUDGET_USD;
     });
   }
 
@@ -11615,7 +11661,7 @@ export class ImplementationTabComponent implements OnInit {
    * A closed-list field's value held to its list (#1614): empty, or one of `field.options`. The select
    * offers nothing else, so this catches what reaches the control another way — a restored draft or a
    * brief saved before the field was a select — which Google would refuse only after the campaign
-   * exists. Same judge as the BFF's `googleCallToActionRefusal`.
+   * exists. The same rule the BFF's `googleCallToActionRefusal` applies.
    */
   private creativeOptionBound(field: GoogleCreativeFieldSpec): ValidatorFn {
     return (control: AbstractControl): ValidationErrors | null => {
@@ -12710,7 +12756,16 @@ export class ImplementationTabComponent implements OnInit {
     if (typeof value !== 'string') return [];
     return value
       .split(/\r?\n/)
-      .map((line) => line.trim())
+      .map((line) => this.trimCreativeLine(line))
       .filter((line) => line !== '');
+  }
+
+  /**
+   * The one trim a creative line gets, wherever it is judged: the payload (`splitCreativeLines`) and the
+   * brief seed (`fittingCreativeCopy`) share it, so the seed de-duplicates the string that is sent.
+   * `String.prototype.trim`, which also strips a U+FEFF that Go's `strings.TrimSpace` would keep.
+   */
+  private trimCreativeLine(line: string): string {
+    return line.trim();
   }
 }
