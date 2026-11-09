@@ -12,11 +12,6 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
   HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
   HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR,
-  HEALTH_METRICS_MEMBERS_BREAKDOWN_GROUPING_TIERS,
-  HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR,
-  HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_LABEL,
-  HEALTH_METRICS_MEMBERS_BREAKDOWN_PALETTE,
-  HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS,
   HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
   HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
@@ -33,10 +28,10 @@ import {
 } from '../constants/health-metrics-members.constants';
 import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
 import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
-import { formatCurrency, formatPercent } from './number.utils';
+import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
-import type { HealthMetricsChartTipRowView, HealthMetricsChartTipView, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsChartTipRowView, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsMembersAtRiskAging,
   HealthMetricsMembersAtRiskAgingView,
@@ -50,7 +45,6 @@ import type {
   HealthMetricsMembersBoardMeetingRowView,
   HealthMetricsMembersBoardSummaryView,
   HealthMetricsMembersBoardTrendBarView,
-  HealthMetricsMembersBreakdownCellView,
   HealthMetricsMembersBreakdownColumnView,
   HealthMetricsMembersBreakdownRowView,
   HealthMetricsMembersBreakdownView,
@@ -110,71 +104,38 @@ export function buildHealthMetricsMembersSections(year: number): HealthMetricsL2
 }
 
 /**
- * `#breakdown` — members per tier at each year's end, from the first year shown to the running one. Diamond, Platinum,
- * Gold and Silver keep their own colours and lead in that order; with Platinum, Gold and Silver all present the other
- * tiers share one grey segment, otherwise every tier is its own colour. Only the metrics row follows the selected period.
+ * `#breakdown` — members per tier at each year's end, from the first year shown to the running one, as PCC tables it:
+ * every tier in rank order, then the totals. Only the sub-nav count follows the selected period.
  */
 export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembersTiers, range: HealthMetricsRange): HealthMetricsMembersBreakdownView {
   const currentYear = getYearForRange('YTD');
   const rows = tiers.rows.filter((row) => row.year >= HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR && row.year <= currentYear);
-  if (rows.length === 0) return { measured: false, kpis: [], yTicks: [], columns: [], legend: [], rows: [], count: null };
+  if (rows.length === 0) return { measured: false, columns: [], rows: [], count: null };
 
   const firstYear = Math.min(...rows.map((row) => row.year));
   const years = Array.from({ length: currentYear - firstYear + 1 }, (_, index) => firstYear + index);
-  const tierList = collectBreakdownTiers(rows);
-  const series = buildBreakdownSeries(tierList);
-  // Totals count every row, so a measured zero stays zero after the empty tiers drop out of the chart.
+  // Totals count every row, so a measured zero stays zero after the empty tiers drop out of the table.
   const totals = years.map((year) => sumNullable(rows.filter((row) => row.year === year).map((row) => row.memberCount)));
   const revenue = years.map((year) => sumNullable(rows.filter((row) => row.year === year).map((row) => row.revenueUsd)));
-  const step = breakdownScaleStep(Math.max(0, ...totals.map((total) => total ?? 0)));
-  const top = step * 4;
-  const yearLabel = (year: number): string => (year === currentYear ? `${year} YTD` : String(year));
 
-  const columns = years.map((year, index): HealthMetricsMembersBreakdownColumnView => {
-    const total = totals[index];
-    let bottom = 0;
-    const segments = series.flatMap((entry) => {
-      const value = seriesValue(entry, year) ?? 0;
-      if (value <= 0) return [];
-      const heightPct = (value / top) * 100;
-      const segment = { key: entry.key, color: entry.color, bottomPct: bottom, heightPct };
-      bottom += heightPct;
-      return [segment];
-    });
-    const tip = buildBreakdownTip(series, year, total, revenue[index]);
-    return {
-      year,
-      label: yearLabel(year),
-      membersLabel: `${formatCount(total)} members`,
-      segments,
-      tip,
-      ariaLabel: `${tip.title}. ${tip.rows.map((row) => `${row.label}: ${row.value}`).join(', ')}`,
-    };
-  });
-
-  // The table leads with the reserved tiers too, as the chart stacks them.
-  const tierRows = leadWithReservedTiers(tierList).map(
-    (tier): HealthMetricsMembersBreakdownRowView => ({
+  const tierRows = collectBreakdownTiers(rows).map(
+    (tier, index): HealthMetricsMembersBreakdownRowView => ({
       key: `tier-${tier.label}`,
       label: tier.label,
       kind: 'tier',
       icon: tier.reserved,
-      cells: years.map((year) => ({ label: formatCount(tier.members.get(year) ?? null), tone: null })),
+      striped: index % 2 === 1,
+      cells: years.map((year) => formatCount(tier.members.get(year) ?? null)),
     })
   );
 
   return {
     measured: true,
-    kpis: buildBreakdownKpis(years, totals, revenue, getYearForRange(range), currentYear),
-    yTicks: [4, 3, 2, 1, 0].map((tick) => formatCount(step * tick)),
-    columns,
-    legend: series.map((entry) => ({ label: entry.label, color: entry.color, divided: entry.grey && series.some((other) => !other.grey) })),
+    columns: years.map((year): HealthMetricsMembersBreakdownColumnView => ({ year, label: year === currentYear ? `${year} YTD` : String(year) })),
     rows: [
       ...tierRows,
-      { key: 'members', label: 'Total members', kind: 'total', icon: null, cells: totals.map((total) => ({ label: formatCount(total), tone: null })) },
-      { key: 'members-change', label: 'Change vs. previous year', kind: 'change', icon: null, cells: breakdownChanges(totals) },
-      { key: 'revenue', label: 'Total revenue', kind: 'total', icon: null, cells: revenue.map((value) => ({ label: formatUsd(value), tone: null })) },
-      { key: 'revenue-change', label: 'Change vs. previous year', kind: 'change', icon: null, cells: breakdownChanges(revenue) },
+      { key: 'members', label: 'Total members', kind: 'total', icon: null, striped: false, cells: totals.map((total) => formatCount(total)) },
+      { key: 'revenue', label: 'Total revenue', kind: 'total', icon: null, striped: false, cells: revenue.map((value) => formatUsd(value)) },
     ],
     count: totals[years.indexOf(getYearForRange(range))] ?? null,
   };
@@ -870,15 +831,6 @@ interface BreakdownTier {
   members: Map<number, number | null>;
 }
 
-/** One stacked segment: a tier, or the grey tiers drawn as one. */
-interface BreakdownSeries {
-  key: string;
-  label: string;
-  color: string;
-  grey: boolean;
-  tiers: BreakdownTier[];
-}
-
 /** The tier's name without a trailing "Membership" or "Member", so "Platinum Membership" reads as Platinum. */
 function breakdownTierLabel(raw: string): { label: string; reserved: HealthMetricsMembersReservedTier | null } {
   const trimmed = raw.trim();
@@ -904,120 +856,10 @@ function collectBreakdownTiers(rows: HealthMetricsMembersTierYear[]): BreakdownT
     .sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label));
 }
 
-/** The stack, bottom to top, with each segment's colour; see `buildHealthMetricsMembersBreakdownView`. */
-function buildBreakdownSeries(tiers: BreakdownTier[]): BreakdownSeries[] {
-  const reserved = new Set(tiers.flatMap((tier) => (tier.reserved ? [tier.reserved] : [])));
-  const single = (tier: BreakdownTier, color: string, grey = false): BreakdownSeries => ({ key: tier.label, label: tier.label, color, grey, tiers: [tier] });
-  const ordered = leadWithReservedTiers(tiers);
-  const rest = tiers.filter((tier) => !tier.reserved);
-
-  if (HEALTH_METRICS_MEMBERS_BREAKDOWN_GROUPING_TIERS.every((key) => reserved.has(key))) {
-    const main = ordered
-      .filter((tier) => tier.reserved)
-      .map((tier) => single(tier, HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS[tier.reserved as HealthMetricsMembersReservedTier]));
-    if (rest.length === 0) return main;
-    if (rest.length === 1) return [...main, single(rest[0], HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR, true)];
-
-    const label = HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_LABEL;
-    return [...main, { key: label, label, color: HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR, grey: true, tiers: rest }];
-  }
-
-  const palette = HEALTH_METRICS_MEMBERS_BREAKDOWN_PALETTE.filter((entry) => !entry.resembles || !reserved.has(entry.resembles));
-  let next = 0;
-  return ordered.map((tier) =>
-    single(tier, tier.reserved ? HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS[tier.reserved] : palette[next++ % palette.length].color)
-  );
-}
-
-/** The reserved tiers present, as Diamond, Platinum, Gold, Silver, then the other tiers in rank order. */
-function leadWithReservedTiers(tiers: BreakdownTier[]): BreakdownTier[] {
-  const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.flatMap((key) => tiers.filter((tier) => tier.reserved === key));
-  return [...reserved, ...tiers.filter((tier) => !tier.reserved)];
-}
-
-function seriesValue(series: BreakdownSeries, year: number): number | null {
-  return sumNullable(series.tiers.map((tier) => tier.members.get(year) ?? null));
-}
-
-/** The popup: each segment's count and share, the tiers inside Others without colour, then the year's revenue. */
-function buildBreakdownTip(series: BreakdownSeries[], year: number, total: number | null, revenue: number | null): HealthMetricsChartTipView {
-  const share = (value: number | null): string => (value === null || !total ? '' : ` · ${Math.round((value / total) * 100)}%`);
-  const rows: HealthMetricsChartTipRowView[] = series.map((entry) => {
-    const value = seriesValue(entry, year);
-    return { label: entry.label, value: `${formatCount(value)}${share(value)}`, color: entry.color, separated: false };
-  });
-  const grouped = series.find((entry) => entry.tiers.length > 1)?.tiers ?? [];
-  for (const tier of grouped) rows.push({ label: tier.label, value: formatCount(tier.members.get(year) ?? null), color: 'transparent', separated: false });
-  rows.push({ label: 'Revenue', value: formatUsd(revenue), color: null, separated: true });
-
-  return { title: `${year} · ${formatCount(total)} members`, rows };
-}
-
-/** The metrics row for the selected year: its members, the change on the year before, growth since the first year, revenue. */
-function buildBreakdownKpis(
-  years: number[],
-  totals: (number | null)[],
-  revenue: (number | null)[],
-  year: number,
-  currentYear: number
-): HealthMetricsOverviewKpiView[] {
-  const at = (values: (number | null)[], target: number): number | null => values[years.indexOf(target)] ?? null;
-  const members = at(totals, year);
-  const prior = at(totals, year - 1);
-  const first = totals[0];
-  const difference = members === null || prior === null ? null : members - prior;
-  const growth = members === null || !first || year === years[0] ? null : (members - first) / first;
-
-  return [
-    { key: 'members', label: year === currentYear ? `Members in ${year} so far` : `Members in ${year}`, value: formatCount(members), delta: null, note: '' },
-    {
-      key: 'change',
-      label: `vs ${year - 1}`,
-      value: formatSignedDifference(difference),
-      delta: breakdownDelta(members, prior),
-      note: '',
-    },
-    {
-      key: 'since',
-      label: `Since ${years[0]}`,
-      value: growth === null ? '—' : `${growth < 0 ? '−' : '+'}${Math.round(Math.abs(growth) * 100)}%`,
-      delta: null,
-      note: '',
-    },
-    {
-      key: 'revenue',
-      label: `${year} revenue`,
-      value: formatUsd(at(revenue, year)),
-      delta: breakdownDelta(at(revenue, year), at(revenue, year - 1)),
-      note: '',
-    },
-  ];
-}
-
 function formatSignedDifference(difference: number | null): string {
   if (difference === null) return '—';
   if (difference === 0) return '0';
   return `${difference < 0 ? '−' : '+'}${formatCount(Math.abs(difference))}`;
-}
-
-/** A change that rounds to zero draws no arrow. */
-function breakdownDelta(value: number | null, prior: number | null): HealthMetricsOverviewDelta | null {
-  const change = breakdownChange(value, prior);
-  return change?.tone ? { label: change.label, direction: change.tone, good: change.tone === 'up' } : null;
-}
-
-/** "Change vs. previous year" cells; the first year, and a year after one with nothing, have nothing to compare. */
-function breakdownChanges(values: (number | null)[]): HealthMetricsMembersBreakdownCellView[] {
-  return values.map((value, index) => breakdownChange(value, index === 0 ? null : values[index - 1]) ?? { label: '—', tone: null });
-}
-
-/** A change on the year before; one that rounds to zero reads as no change, neither up nor down. */
-function breakdownChange(value: number | null, prior: number | null): HealthMetricsMembersBreakdownCellView | null {
-  if (value === null || prior === null || prior === 0) return null;
-
-  const pct = Number(formatPercent(((value - prior) / prior) * 100));
-  if (pct === 0) return { label: '0.0%', tone: null };
-  return { label: `${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%`, tone: pct < 0 ? 'down' : 'up' };
 }
 
 /** The smallest whole, evenly readable step (e.g. 750 for a 3,000 top) whose four steps reach the top. */

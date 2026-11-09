@@ -3,12 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { lfxColors } from '../constants/colors.constants';
-import {
-  HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR,
-  HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS,
-  HEALTH_METRICS_MEMBERS_SECTIONS,
-} from '../constants/health-metrics-members.constants';
+import { HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import {
   buildHealthMetricsMembersAtRiskAging,
   buildHealthMetricsMembersAtRiskCountLabel,
@@ -207,197 +202,53 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
     vi.useRealTimers();
   });
 
-  it('groups every other tier into one grey Others segment when Platinum, Gold and Silver all exist', () => {
+  it('tables every tier in rank order under its plain name, then the totals', () => {
     const view = build([
-      ...PGS,
       ...tier('Associate Membership', 4, [82, 113, 168, 204, 236, 298, 362, 440]),
-      ...tier('End User Supporter', 5, [42, 58, 87, 106, 122, 155, 187, 228]),
-      ...tier('Academic & Nonprofit', 6, [22, 30, 45, 54, 64, 80, 97, 117]),
+      ...PGS,
+      ...tier('Diamond Membership', 0, [60, 61, 62, 63, 64, 65, 66, 67]),
     ]);
 
-    expect(view.legend).toEqual([
-      { label: 'Platinum', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.platinum, divided: false },
-      { label: 'Gold', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold, divided: false },
-      { label: 'Silver', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.silver, divided: false },
-      { label: 'Others', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR, divided: true },
+    expect(view.columns.map((column) => column.label)).toEqual(['2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026 YTD']);
+    expect(view.rows.map((row) => [row.label, row.kind, row.icon, row.striped])).toEqual([
+      ['Diamond', 'tier', 'diamond', false],
+      ['Platinum', 'tier', 'platinum', true],
+      ['Gold', 'tier', 'gold', false],
+      ['Silver', 'tier', 'silver', true],
+      ['Associate', 'tier', null, false],
+      ['Total members', 'total', null, false],
+      ['Total revenue', 'total', null, false],
     ]);
-    const last = view.columns[view.columns.length - 1];
-    expect([last.label, last.membersLabel]).toEqual(['2026 YTD', '2,630 members']);
-    expect(last.segments.map((segment) => segment.key)).toEqual(['Platinum', 'Gold', 'Silver', 'Others']);
-    // The tiers inside Others follow, uncoloured, then the year's revenue under a rule.
-    expect(last.tip).toEqual({
-      title: '2026 · 2,630 members',
-      rows: [
-        { label: 'Platinum', value: '158 · 6%', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.platinum, separated: false },
-        { label: 'Gold', value: '322 · 12%', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold, separated: false },
-        { label: 'Silver', value: '1,365 · 52%', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.silver, separated: false },
-        { label: 'Others', value: '785 · 30%', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR, separated: false },
-        { label: 'Associate', value: '440', color: 'transparent', separated: false },
-        { label: 'End User Supporter', value: '228', color: 'transparent', separated: false },
-        { label: 'Academic & Nonprofit', value: '117', color: 'transparent', separated: false },
-        { label: 'Revenue', value: '$2.6M', color: null, separated: true },
-      ],
-    });
-    // The table lists the real tiers, never Others.
-    expect(view.rows.map((row) => [row.label, row.icon])).toEqual([
-      ['Platinum', 'platinum'],
-      ['Gold', 'gold'],
-      ['Silver', 'silver'],
-      ['Associate', null],
-      ['End User Supporter', null],
-      ['Academic & Nonprofit', null],
-      ['Total members', null],
-      ['Change vs. previous year', null],
-      ['Total revenue', null],
-      ['Change vs. previous year', null],
-    ]);
+    expect(view.rows[1].cells).toEqual(['110', '118', '124', '131', '138', '142', '150', '158']);
+    expect(view.rows[5].cells[7]).toBe('2,352');
+    expect(view.rows[6].cells[7]).toBe('$2.4M');
   });
 
-  it('greys a single other tier under its own name, and draws only the three without one', () => {
-    const one = build([...PGS, ...tier('Associate Membership', 4, [146, 201, 300, 364, 422, 533, 646, 785])]);
-    expect(one.legend.map((item) => [item.label, item.divided])).toEqual([
-      ['Platinum', false],
-      ['Gold', false],
-      ['Silver', false],
-      ['Associate', true],
-    ]);
-    expect(one.legend[3].color).toBe(HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR);
-    expect(one.columns[0].tip.rows.map((row) => row.label)).toEqual(['Platinum', 'Gold', 'Silver', 'Associate', 'Revenue']);
-
-    expect(build(PGS).legend.map((item) => item.label)).toEqual(['Platinum', 'Gold', 'Silver']);
-  });
-
-  it('colours every tier on its own without all three, skipping a colour that looks like a reserved tier present', () => {
-    const others = [
-      ...tier('Associate Membership', 3, [1, 1, 1, 1, 1, 1, 1, 1]),
-      ...tier('End User Supporter', 4, [1, 1, 1, 1, 1, 1, 1, 1]),
-      ...tier('Academic & Nonprofit', 5, [1, 1, 1, 1, 1, 1, 1, 1]),
-    ];
-    const noPlatinum = build([...tier('Gold Membership', 1, [2, 2, 2, 2, 2, 2, 2, 2]), ...tier('Silver Membership', 2, [3, 3, 3, 3, 3, 3, 3, 3]), ...others]);
-    expect(noPlatinum.legend).toEqual([
-      { label: 'Gold', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold, divided: false },
-      { label: 'Silver', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.silver, divided: false },
-      { label: 'Associate', color: lfxColors.violet[500], divided: false },
-      { label: 'End User Supporter', color: lfxColors.emerald[500], divided: false },
-      { label: 'Academic & Nonprofit', color: lfxColors.red[500], divided: false },
-    ]);
-
-    const custom = build([...tier('Premier Membership', 1, [2, 2, 2, 2, 2, 2, 2, 2]), ...tier('General Membership', 2, [3, 3, 3, 3, 3, 3, 3, 3]), ...others]);
-    expect(custom.legend.map((item) => item.color)).toEqual([
-      lfxColors.blue[500],
-      lfxColors.violet[500],
-      lfxColors.emerald[500],
-      lfxColors.amber[500],
-      lfxColors.red[500],
-    ]);
-    expect(custom.rows[0].icon).toBeNull();
-
-    const platinum = build([...tier('Platinum Membership', 1, [2, 2, 2, 2, 2, 2, 2, 2]), ...tier('Associate Membership', 2, [3, 3, 3, 3, 3, 3, 3, 3])]);
-    expect(platinum.legend.map((item) => item.color)).toEqual([HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.platinum, lfxColors.blue[500]]);
-  });
-
-  it('keeps a tier that only starts with a reserved name as a tier of its own, and leaves out one that never had a member', () => {
-    const view = build([...PGS, ...tier('Gold Legacy Membership', 4, [5, 5, 5, 5, 5, 5, 5, 5]), ...tier('Associate Membership', 5, [0, 0, 0, 0, 0, 0, 0, 0])]);
-
-    expect(view.legend.map((item) => item.label)).toEqual(['Platinum', 'Gold', 'Silver', 'Gold Legacy']);
-    expect(view.legend[3].color).toBe(HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR);
-    expect(view.rows.some((row) => row.label === 'Associate')).toBe(false);
-  });
-
-  it('fits four even, readable steps to the tallest year and stacks each year from the bottom', () => {
-    const view = build([...PGS, ...tier('Associate Membership', 4, [146, 201, 300, 364, 422, 533, 646, 785])]);
-
-    expect(view.yTicks).toEqual(['3,000', '2,250', '1,500', '750', '0']);
-    const [platinum, gold] = view.columns[view.columns.length - 1].segments;
-    expect(platinum).toMatchObject({ bottomPct: 0, heightPct: (158 / 3000) * 100 });
-    expect(gold.bottomPct).toBeCloseTo((158 / 3000) * 100);
-    expect(build(tier('Platinum Membership', 1, [1, 1, 1, 1, 1, 1, 1, 3])).yTicks).toEqual(['4', '3', '2', '1', '0']);
-  });
-
-  it('fills the metrics row for the selected year, and the change rows for every year after the first', () => {
-    const ytd = build(PGS);
-    expect(ytd.kpis.map((kpi) => [kpi.label, kpi.value, kpi.delta?.label ?? null])).toEqual([
-      ['Members in 2026 so far', '1,845', null],
-      ['vs 2025', '+318', '+20.8%'],
-      ['Since 2019', '+94%', null],
-      ['2026 revenue', '$1.8M', '+20.8%'],
-    ]);
-    expect(ytd.count).toBe(1845);
-
-    const past = build(PGS, 'COMPLETED_YEAR_2');
-    expect(past.kpis.map((kpi) => kpi.label)).toEqual(['Members in 2024', 'vs 2023', 'Since 2019', '2024 revenue']);
-    expect(past.count).toBe(1415);
-
-    const change = ytd.rows.find((row) => row.key === 'members-change');
-    expect(change?.cells[0]).toEqual({ label: '—', tone: null });
-    expect(change?.cells[4]).toEqual({ label: '−1.1%', tone: 'down' });
-    expect(change?.cells[7]).toEqual({ label: '+20.8%', tone: 'up' });
-  });
-
-  it('stacks Diamond first in its own colour beside Platinum, Gold and Silver, and leads the table with the reserved tiers', () => {
+  it('keeps a foundation’s own tiers, without grouping any as Others', () => {
     const view = build([
-      ...tier('Diamond Membership', 1, [9, 9, 9, 9, 9, 9, 9, 9]),
-      ...tier('Premier Membership', 2, [4, 4, 4, 4, 4, 4, 4, 4]),
-      ...PGS.map((row) => ({ ...row, sortRank: row.sortRank + 2 })),
-      ...tier('Associate Membership', 6, [1, 1, 1, 1, 1, 1, 1, 1]),
+      ...tier('Premier', 1, [10, 11, 12, 13, 14, 15, 16, 17]),
+      ...tier('General', 2, [40, 41, 42, 43, 44, 45, 46, 47]),
+      ...tier('Associate', 3, [5, 5, 5, 5, 5, 5, 5, 5]),
+      ...tier('Academic', 4, [2, 2, 2, 2, 2, 2, 2, 2]),
     ]);
 
-    expect(view.columns[0].segments.map((segment) => segment.key)).toEqual(['Diamond', 'Platinum', 'Gold', 'Silver', 'Others']);
-    expect(view.legend).toEqual([
-      { label: 'Diamond', color: lfxColors.violet[500], divided: false },
-      { label: 'Platinum', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.platinum, divided: false },
-      { label: 'Gold', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold, divided: false },
-      { label: 'Silver', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.silver, divided: false },
-      { label: 'Others', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR, divided: true },
-    ]);
-    expect(view.rows.filter((row) => row.kind === 'tier').map((row) => [row.label, row.icon])).toEqual([
-      ['Diamond', 'diamond'],
-      ['Platinum', 'platinum'],
-      ['Gold', 'gold'],
-      ['Silver', 'silver'],
-      ['Premier', null],
-      ['Associate', null],
-    ]);
+    expect(view.rows.filter((row) => row.kind === 'tier').map((row) => row.label)).toEqual(['Premier', 'General', 'Associate', 'Academic']);
+    expect(view.rows.some((row) => row.label === 'Others')).toBe(false);
   });
 
-  it('leads with the reserved tiers present without all three, keeping purple for Diamond only while it is present', () => {
-    const others = [...tier('Associate Membership', 1, [3, 3, 3, 3, 3, 3, 3, 3]), ...tier('Diamond Startup', 2, [2, 2, 2, 2, 2, 2, 2, 2])];
-    const diamond = build([...others, ...tier('Diamond Membership', 3, [1, 1, 1, 1, 1, 1, 1, 1]), ...tier('Gold Membership', 4, [1, 1, 1, 1, 1, 1, 1, 1])]);
+  it('counts the selected year’s members for the sub-nav, and drops tiers with no member in any year shown', () => {
+    const rows = [...PGS, ...tier('Former', 9, [0, 0, 0, 0, 0, 0, 0, 0])];
 
-    expect(diamond.legend.map((item) => [item.label, item.color])).toEqual([
-      ['Diamond', lfxColors.violet[500]],
-      ['Gold', HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold],
-      ['Associate', lfxColors.blue[500]],
-      ['Diamond Startup', lfxColors.emerald[500]],
-    ]);
-    expect(diamond.rows.filter((row) => row.kind === 'tier').map((row) => row.label)).toEqual(['Diamond', 'Gold', 'Associate', 'Diamond Startup']);
-    expect(build(tier('Diamond Membership', 1, [1, 1, 1, 1, 1, 1, 1, 1])).legend.map((item) => item.color)).toEqual([lfxColors.violet[500]]);
-    expect(build(others).legend.map((item) => item.color)).toEqual([lfxColors.blue[500], lfxColors.violet[500]]);
+    expect(build(rows).count).toBe(1845);
+    expect(build(rows, 'COMPLETED_YEAR').count).toBe(1527);
+    expect(build(rows).rows.map((row) => row.label)).not.toContain('Former');
   });
 
-  it('keeps a measured zero as zero, not unmeasured', () => {
-    const view = build(tier('Platinum Membership', 1, [0, 0, 0, 0, 0, 0, 0, 0]));
+  it('starts at a later first year, and is unmeasured with no rows', () => {
+    const view = build(tier('Gold', 1, [0, 0, 0, 0, 0, 5, 6, 7]).slice(5));
 
-    expect(view.measured).toBe(true);
-    expect(view.count).toBe(0);
-    expect(view.rows.find((row) => row.key === 'members')?.cells[7].label).toBe('0');
-  });
-
-  it('reads an unchanged year as no change, with no arrow and no sign', () => {
-    const flat = build(tier('Platinum Membership', 1, [4, 4, 4, 4, 4, 4, 4, 4]));
-
-    expect(flat.kpis[1]).toMatchObject({ value: '0', delta: null });
-    expect(flat.kpis[3].delta).toBeNull();
-    expect(flat.rows.find((row) => row.key === 'members-change')?.cells[7]).toEqual({ label: '0.0%', tone: null });
-  });
-
-  it('starts at the first year with members after 2019, and reads as unmeasured with no year to show', () => {
-    const late = build(tier('Platinum Membership', 1, [0, 0, 0, 0, 0, 0, 4, 6]).filter((row) => row.year >= 2025));
-    expect(late.columns.map((column) => column.label)).toEqual(['2025', '2026 YTD']);
-    expect(late.kpis[2]).toMatchObject({ label: 'Since 2025', value: '+50%' });
-
-    expect(build([]).measured).toBe(false);
-    expect(build([{ year: 2018, tier: 'Gold', sortRank: 1, memberCount: 4, revenueUsd: 0 }]).measured).toBe(false);
+    expect(view.columns.map((column) => column.year)).toEqual([2024, 2025, 2026]);
+    expect(build([])).toEqual({ measured: false, columns: [], rows: [], count: null });
   });
 });
 
@@ -531,7 +382,7 @@ describe('buildHealthMetricsMembersSections', () => {
   it('names the running year in the breakdown description', () => {
     const breakdown = buildHealthMetricsMembersSections(2026).find((section) => section.key === 'breakdown')!;
 
-    expect(breakdown.description).toBe('Members per tier at the end of each year, with totals and annual revenue. 2026 is year to date.');
+    expect(breakdown.description).toBe('Members per tier at each year end. 2026 is year to date.');
   });
 });
 
