@@ -4260,7 +4260,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly performanceMaxAudienceSignalWithheldWarning: Signal<string | null> = computed(() => {
     const channel = this.resolveGoogleChannel();
     if (!channel || (GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL as readonly string[]).includes(channel) || this.performanceMaxAudienceSignal() === '') return null;
-    return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take an audience signal, so the one you picked will not be sent. Switch back to Performance Max to keep it.`;
+    return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take an audience signal, so the audience signal on this brief will not be sent. Switch back to Performance Max to keep it.`;
   });
   protected readonly audiencePickerEmpty = GOOGLE_AUDIENCE_PICKER_EMPTY;
   protected readonly audiencePickerLoading = GOOGLE_AUDIENCE_PICKER_LOADING;
@@ -12270,10 +12270,15 @@ export class ImplementationTabComponent implements OnInit {
       truncated: false,
       reason,
     });
-    const trigger = computed(() => ({
-      projectSlug: this.activeFoundationSlug(),
-      shown: this.demandGenAudienceAvailable() || this.performanceMaxAudienceSignalAvailable(),
-    }));
+    // Compared by value, so a switch between Demand Gen and Performance Max, which flips both availabilities
+    // in one tick while `shown` stays true, does not restart a read that still applies.
+    const trigger = computed(
+      () => ({
+        projectSlug: this.activeFoundationSlug(),
+        shown: this.demandGenAudienceAvailable() || this.performanceMaxAudienceSignalAvailable(),
+      }),
+      { equal: (a, b) => a.projectSlug === b.projectSlug && a.shown === b.shown }
+    );
     return toSignal(
       toObservable(trigger).pipe(
         switchMap(({ projectSlug, shown }) => {

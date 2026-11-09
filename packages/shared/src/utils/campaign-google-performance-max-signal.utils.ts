@@ -49,3 +49,17 @@ export function googlePerformanceMaxAudienceSignalRefusal(value: unknown, accoun
 export function googlePerformanceMaxAudienceSignalCarried(value: unknown): boolean {
   return value !== undefined && value !== null && value !== '';
 }
+
+/**
+ * Why a create body's RAW audience signal is refused for its type, or `null`: a value that is not a string
+ * (campaign-service's JSON decode into a `string` field refuses it). Absent, `null` and an empty list ask
+ * for nothing, as the cutover-only create fields and the Demand Gen audience treat them
+ * (`googleDemandGenAudienceTypeRefusal`), and every string passes, blank included: the normalizer omits a
+ * blank one, and a non-blank one is judged for its shape, or refused while the cutover is dark, by the
+ * checks after this. The BFF runs it right after the access check and before any check that depends on the
+ * cutover, because the normalizer drops a non-string, so nothing after it would see one.
+ */
+export function googlePerformanceMaxAudienceSignalTypeRefusal(value: unknown): string | null {
+  if (value === undefined || value === null || typeof value === 'string' || (Array.isArray(value) && value.length === 0)) return null;
+  return googlePerformanceMaxAudienceSignalRefusal(value);
+}

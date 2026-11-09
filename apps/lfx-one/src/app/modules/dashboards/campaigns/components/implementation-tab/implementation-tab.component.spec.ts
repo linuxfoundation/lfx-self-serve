@@ -20248,6 +20248,23 @@ describe('ImplementationTabComponent performance max audience signal', () => {
     expect((await requestOf(c))['performanceMaxAudienceSignal']).toBe(AUDIENCE_A);
   });
 
+  it('reads the Audiences once across a switch between Demand Gen and Performance Max, since one list serves both pickers', async () => {
+    await setup();
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    fixture.componentRef.setInput('googleDemandGenAudienceEnabled', true);
+    fixture.componentRef.setInput('googlePerformanceMaxAudienceSignalEnabled', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(1);
+
+    c['campaignForm'].patchValue({ includeDemandGen: false, includePerformanceMax: true });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(query('implementation-performance-max-audience-signal-picker')).not.toBeNull();
+  });
+
   it('picks through the combobox itself', async () => {
     await setup();
     const c = seedPmax();
@@ -20374,7 +20391,7 @@ describe('ImplementationTabComponent performance max audience signal', () => {
     expect(c['googlePerformanceMaxAudienceSignalPayload']()).toEqual({});
     expect(query('implementation-performance-max-audience-signal-section')).toBeNull();
     expect(query('implementation-performance-max-audience-signal-withheld')?.textContent).toContain(
-      'Display campaigns do not take an audience signal, so the one you picked will not be sent.'
+      'Display campaigns do not take an audience signal, so the audience signal on this brief will not be sent.'
     );
     expect(query('implementation-performance-max-audience-signal-withheld-live')?.textContent).toContain('Display campaigns do not take an audience signal');
     expect(c['performanceMaxAudienceSignalBlock']()).toBeNull();

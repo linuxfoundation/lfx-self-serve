@@ -3,7 +3,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { googlePerformanceMaxAudienceSignalCarried, googlePerformanceMaxAudienceSignalRefusal } from './campaign-google-performance-max-signal.utils';
+import {
+  googlePerformanceMaxAudienceSignalCarried,
+  googlePerformanceMaxAudienceSignalRefusal,
+  googlePerformanceMaxAudienceSignalTypeRefusal,
+} from './campaign-google-performance-max-signal.utils';
 
 const AUDIENCE = 'customers/1234567890/audiences/42';
 
@@ -57,6 +61,17 @@ describe('googlePerformanceMaxAudienceSignalRefusal', () => {
   it("refuses another account's Audience only when the account is known", () => {
     expect(googlePerformanceMaxAudienceSignalRefusal('customers/999/audiences/42')).toBeNull();
     expect(googlePerformanceMaxAudienceSignalRefusal('customers/999/audiences/42', '1234567890')).toContain('belongs to another Google Ads account');
+  });
+});
+
+describe('googlePerformanceMaxAudienceSignalTypeRefusal', () => {
+  it('refuses a value that is not a string, naming the type, without judging its shape', () => {
+    for (const value of [42, ['x'], {}, true])
+      expect(googlePerformanceMaxAudienceSignalTypeRefusal(value)).toContain('must be a Google Ads Audience id or resource name');
+  });
+
+  it('asks nothing of an absent, null or empty-list value, and passes every string, blank or malformed included', () => {
+    for (const value of [undefined, null, [], '', ' ', 'nope', AUDIENCE]) expect(googlePerformanceMaxAudienceSignalTypeRefusal(value)).toBeNull();
   });
 });
 

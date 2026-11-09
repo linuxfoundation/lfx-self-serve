@@ -61,6 +61,7 @@ import {
 import {
   googlePerformanceMaxAudienceSignalCarried,
   googlePerformanceMaxAudienceSignalRefusal,
+  googlePerformanceMaxAudienceSignalTypeRefusal,
 } from '@lfx-one/shared/utils/campaign-google-performance-max-signal.utils';
 import {
   googleAdsToUpperCode,
@@ -945,18 +946,14 @@ export class CampaignController {
         // Then, for a caller who MAY send one, a value that is not a string is refused by name before any
         // check that depends on the cutover: Go cannot decode it into the string field, and the normalizer
         // (`googlePerformanceMaxAudienceSignal`) would drop it, so the legacy creator would create without it.
-        // An empty list asks for nothing, as the cutover-only create fields and the Demand Gen audience
-        // treat it (`googleDemandGenAudienceTypeRefusal`); the normalizer omits it.
-        if (typeof rawAudienceSignal !== 'string' && !(Array.isArray(rawAudienceSignal) && rawAudienceSignal.length === 0)) {
+        // An empty list asks for nothing (`googlePerformanceMaxAudienceSignalTypeRefusal`); the normalizer omits it.
+        const malformedSignal = googlePerformanceMaxAudienceSignalTypeRefusal(rawAudienceSignal);
+        if (malformedSignal !== null) {
           next(
-            ServiceValidationError.forField(
-              GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_REQUEST_KEY,
-              googlePerformanceMaxAudienceSignalRefusal(rawAudienceSignal) ?? '',
-              {
-                operation: 'campaign_create',
-                service: 'campaign_controller',
-              }
-            )
+            ServiceValidationError.forField(GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_REQUEST_KEY, malformedSignal, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
           );
           return;
         }
