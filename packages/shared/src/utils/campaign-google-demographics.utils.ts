@@ -260,14 +260,6 @@ export function googleDisplayDemographicsRefusal(raw: unknown, channel: unknown,
   return null;
 }
 
-/** The undetermined enum of each Demand Gen dimension, which upstream sends as `includeUndetermined` rather than as a value. */
-const DEMAND_GEN_UNDETERMINED: Readonly<Record<string, string>> = {
-  ageRanges: 'AGE_RANGE_UNDETERMINED',
-  genders: 'UNDETERMINED',
-  incomeRanges: 'INCOME_RANGE_UNDETERMINED',
-  parentalStatuses: 'UNDETERMINED',
-};
-
 /** The noun each Demand Gen dimension goes by when it names everyone, as upstream's summary words it. */
 const DEMAND_GEN_DIMENSION_NOUNS: Readonly<Record<string, string>> = {
   ageRanges: 'age',
@@ -314,7 +306,9 @@ function demandGenDemographicPlan(owner: string, obj: Record<string, unknown>): 
     if (bad !== undefined) {
       return { refusal: `Google Ads cannot target the ${noun} ${googleAdsEchoed(bad)} in ${owner}. Pick one of ${choices} and create again.`, everyone };
     }
-    const undetermined = DEMAND_GEN_UNDETERMINED[key];
+    // Each map resolves bare UNDETERMINED to its dimension's undetermined enum, which upstream sends as
+    // `includeUndetermined` rather than as a value.
+    const undetermined = allowed['UNDETERMINED'];
     const resolved = new Set(values.map((entry) => resolvedEnum(entry, allowed) as string));
     const includeUndetermined = resolved.delete(undetermined);
     if (includeUndetermined && resolved.size === 0) {
