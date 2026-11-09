@@ -135,25 +135,42 @@ describe('MembersGrowthComponent', () => {
     expect(lines().every((line) => line.getAttribute('stroke-opacity') === '1')).toBe(true);
   });
 
-  it('highlights a year from the keyboard too, and a tap toggles it', async () => {
+  it('previews a year on focus and keeps it after activation, even when focus or hover comes first', async () => {
     await render();
     const legend = query('members-growth-legend-2024') as HTMLButtonElement;
+    const opacities = (): (string | null)[] => lines().map((line) => line.getAttribute('stroke-opacity'));
 
     legend.dispatchEvent(new Event('focus'));
     await settle();
-    expect(lines().map((line) => line.getAttribute('stroke-opacity'))).toEqual(['0.15', '1', '0.15', '0.15']);
+    expect(opacities()).toEqual(['0.15', '1', '0.15', '0.15']);
+    expect(legend.getAttribute('aria-pressed')).toBe('false');
+
+    // A real activation: hover and focus first, then the click.
+    legend.dispatchEvent(new Event('mouseenter'));
+    legend.click();
+    await settle();
     expect(legend.getAttribute('aria-pressed')).toBe('true');
 
+    legend.dispatchEvent(new Event('mouseleave'));
     legend.dispatchEvent(new Event('blur'));
     await settle();
-    expect(lines().every((line) => line.getAttribute('stroke-opacity') === '1')).toBe(true);
+    expect(opacities()).toEqual(['0.15', '1', '0.15', '0.15']);
 
-    legend.click();
+    // Another year's preview wins while it lasts, then the selection returns.
+    const other = query('members-growth-legend-2026') as HTMLButtonElement;
+    other.dispatchEvent(new Event('mouseenter'));
     await settle();
-    expect(legend.getAttribute('aria-pressed')).toBe('true');
+    expect(opacities()).toEqual(['0.15', '0.15', '0.15', '1']);
+    other.dispatchEvent(new Event('mouseleave'));
+    await settle();
+    expect(opacities()).toEqual(['0.15', '1', '0.15', '0.15']);
+
+    legend.dispatchEvent(new Event('focus'));
     legend.click();
+    legend.dispatchEvent(new Event('blur'));
     await settle();
     expect(legend.getAttribute('aria-pressed')).toBe('false');
+    expect(opacities().every((opacity) => opacity === '1')).toBe(true);
   });
 
   it('shows a month’s popup while it is hovered or focused', async () => {

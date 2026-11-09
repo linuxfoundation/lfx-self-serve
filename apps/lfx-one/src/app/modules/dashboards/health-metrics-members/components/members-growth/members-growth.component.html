@@ -113,20 +113,20 @@
         </div>
       </div>
 
-      <!-- Hovering, focusing or tapping a year fades every other line; the month popups carry the same values. -->
+      <!-- Hovering or focusing a year previews it and activating it keeps it, fading every other line; the month popups carry the same values. -->
       <div class="flex flex-wrap justify-center gap-x-[16px] gap-y-[8px]" role="group" aria-label="Highlight a year" data-testid="members-growth-legend">
         @for (line of growth.lines; track line.year) {
           <button
             type="button"
             class="inline-flex cursor-default items-center gap-[6px] whitespace-nowrap rounded-[4px] py-[2px] text-[12px] leading-[16px] text-gray-700 outline-none transition-opacity duration-150 focus-visible:ring-2 focus-visible:ring-blue-500"
             [style.opacity]="opacities().get(line.year)"
-            [attr.aria-pressed]="highlight() === line.year"
+            [attr.aria-pressed]="selected() === line.year"
             [attr.data-testid]="'members-growth-legend-' + line.year"
-            (mouseenter)="highlight.set(line.year)"
-            (mouseleave)="highlight.set(null)"
-            (focus)="highlight.set(line.year)"
-            (blur)="highlight.set(null)"
-            (click)="highlight.set(highlight() === line.year ? null : line.year)">
+            (mouseenter)="preview.set(line.year)"
+            (mouseleave)="preview.set(null)"
+            (focus)="preview.set(line.year)"
+            (blur)="preview.set(null)"
+            (click)="selected.set(selected() === line.year ? null : line.year)">
             <span class="h-[10px] w-[10px] shrink-0 rounded-full" aria-hidden="true" [style.background]="line.color"></span>{{ line.year }}
           </button>
         }

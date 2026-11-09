@@ -45,8 +45,12 @@ export class MembersGrowthComponent {
   protected readonly loadFailed = signal<boolean>(false);
   protected readonly plot = HEALTH_METRICS_MEMBERS_GROWTH_PLOT;
   protected readonly viewBox = `0 0 ${HEALTH_METRICS_MEMBERS_GROWTH_PLOT.width} ${HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height}`;
-  /** The year whose legend item is hovered; every other line fades. */
-  protected readonly highlight = signal<number | null>(null);
+  /** The year previewed while its legend item is hovered or focused. */
+  protected readonly preview = signal<number | null>(null);
+  /** The year a click, tap or Enter on its legend item selected; another activation clears it. */
+  protected readonly selected = signal<number | null>(null);
+  /** The year whose line stays at full opacity: the preview, else the selection. */
+  protected readonly highlight = computed(() => this.preview() ?? this.selected());
   /** The month whose popup shows, and whether it opens to the month's left for want of room. */
   protected readonly tip = signal<{ index: number; flip: boolean } | null>(null);
 
@@ -101,7 +105,8 @@ export class MembersGrowthComponent {
           this.loading.set(true);
           this.loadFailed.set(false);
           this.tip.set(null);
-          this.highlight.set(null);
+          this.preview.set(null);
+          this.selected.set(null);
           this.reading.emit();
         }),
         switchMap((query) =>
