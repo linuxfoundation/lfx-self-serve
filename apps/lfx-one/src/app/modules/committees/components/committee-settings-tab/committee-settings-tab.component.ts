@@ -862,14 +862,16 @@ export class CommitteeSettingsTabComponent {
       // snapshot that can predate another writer's change, e.g. a sync_mode flip from the Auto Sync
       // drawer (#4899 review).
       const result$ = defer(() =>
-        this.mailingListService.getMailingList(uid, { skipCache: true }).pipe(
-          switchMap((ml) =>
-            this.mailingListService.updateMailingList(
-              uid,
-              this.buildMlUpdatePayload(ml, committeeUid, explicitSyncMode, explicitCommitteeFilters, explicitCommitteeRoleFilters)
+        this.mailingListService
+          .getMailingList(uid, { skipCache: true })
+          .pipe(
+            switchMap((ml) =>
+              this.mailingListService.updateMailingList(
+                uid,
+                this.buildMlUpdatePayload(ml, committeeUid, explicitSyncMode, explicitCommitteeFilters, explicitCommitteeRoleFilters)
+              )
             )
           )
-        )
       ).pipe(
         map(() => ({ uid, success: true })),
         catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
