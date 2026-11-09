@@ -12,7 +12,7 @@
 
       @if (addedWithOutcome().length > 0) {
         <div class="flex flex-col gap-2">
-          <p class="text-[11.5px] font-medium text-gray-500">Added ({{ addedWithOutcome().length }})</p>
+          <p class="text-[11.5px] font-medium text-gray-500">Add results ({{ addedSucceededCount() }} of {{ addedWithOutcome().length }} succeeded)</p>
           <div class="flex flex-col gap-1 rounded-lg border border-gray-200 p-2">
             @for (row of addedWithOutcome(); track row.email) {
               <div class="flex items-center gap-2 text-[12.5px]" [attr.data-testid]="'sync-result-add-' + row.email">
@@ -26,7 +26,7 @@
 
       @if (removedWithOutcome().length > 0) {
         <div class="flex flex-col gap-2">
-          <p class="text-[11.5px] font-medium text-gray-500">Removed ({{ removedWithOutcome().length }})</p>
+          <p class="text-[11.5px] font-medium text-gray-500">Remove results ({{ removedSucceededCount() }} of {{ removedWithOutcome().length }} succeeded)</p>
           <div class="flex flex-col gap-1 rounded-lg border border-gray-200 p-2">
             @for (row of removedWithOutcome(); track row.email) {
               <div class="flex items-center gap-2 text-[12.5px]" [attr.data-testid]="'sync-result-remove-' + row.email">
@@ -56,7 +56,7 @@
       <p class="text-[12.5px] text-gray-500">{{ error }}</p>
     </div>
     <div class="mt-4 flex justify-end gap-2">
-      <lfx-button label="Close" severity="secondary" [outlined]="true" size="small" (onClick)="close()"></lfx-button>
+      <lfx-button label="Close" severity="secondary" [outlined]="true" size="small" (onClick)="close()" data-testid="sync-preview-error-close-btn"></lfx-button>
     </div>
   } @else if (diff(); as syncDiff) {
     <p class="text-[12.5px] text-gray-500 -mt-1">
@@ -95,7 +95,7 @@
                   <td class="px-4 py-2.5">
                     <lfx-checkbox
                       [form]="addCheckboxForm"
-                      [control]="rowKey(add.member_id)"
+                      [control]="add.member_id"
                       [binary]="true"
                       [ariaLabelledBy]="'sync-add-email-' + add.member_id"></lfx-checkbox>
                   </td>
@@ -123,7 +123,7 @@
                   <td class="px-4 py-2.5">
                     <lfx-checkbox
                       [form]="removeCheckboxForm"
-                      [control]="rowKey(remove.member_id)"
+                      [control]="remove.member_id"
                       [binary]="true"
                       [ariaLabelledBy]="'sync-remove-email-' + remove.member_id"></lfx-checkbox>
                   </td>

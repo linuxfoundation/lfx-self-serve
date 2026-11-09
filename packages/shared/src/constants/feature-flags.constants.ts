@@ -65,13 +65,12 @@ export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
- * Dark-launch gate for the committee ↔ mailing-list sync UI across #4022's three frontend
- * surfaces: the **Sync Now** entry point on the committee Settings tab (#4027, wired by this PR),
- * and — once their own open PRs merge — the ON/OFF toggle and direction selector on the mailing
- * list view page (#4024, PR #4880) and the committee Auto Sync drawer (#4025, PR #4899). Default
- * false: an unflagged evaluation hides all of them so the feature ships dark ahead of #4022's full
- * rollout. Whichever of #4880/#4899 merges second should drop its duplicate definition of this
- * constant rather than adding one.
+ * Dark-launch gate for the committee ↔ mailing-list sync UI across #4022's frontend surfaces:
+ * the ON/OFF toggle and direction selector on the mailing list view page (#4024) and the
+ * **Sync Now** entry point on the committee Settings tab (#4027). Default false: an unflagged
+ * evaluation hides all of them so the feature ships dark ahead of #4022's full rollout. A new
+ * consumer (e.g. #4025's committee Auto Sync drawer) reads this same constant rather than
+ * defining a duplicate.
  *
  * **UI-only** — this is an OpenFeature/GrowthBook flag evaluated through
  * `FeatureFlagService.getBooleanFlag`, which never runs server-side, so it cannot gate an Express

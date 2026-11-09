@@ -9,11 +9,13 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
   Committee,
+  CommitteeAssociatedMailingListRow,
   CommitteeUpdateData,
   CreateMailingListRequest,
   GroupsIOMailingList,
   JoinMode,
   MailingListPickerDialogResult,
+  MailingListSyncPreviewDialogResult,
   ValidationError,
 } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility, MailingListSyncMode } from '@lfx-one/shared/enums';
@@ -128,6 +130,11 @@ export class CommitteeSettingsTabComponent {
   // Associated mailing lists (queried directly by committee_uid tag)
   public associatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
 
+  // Precomputed per-row state for the Settings tab's associated-mailing-list cards — avoids
+  // nested ternaries and repeated ml.writer/ml.sync_mode branching in the template
+  // (docs/reviews/frontend-checklist.md §4/§12, #4911 review).
+  public associatedMailingListRows: Signal<CommitteeAssociatedMailingListRow[]> = this.initAssociatedMailingListRows();
+
   // Linking or unlinking updates the mailing list itself, so it needs write access on that list.
   // Only block once lists have loaded and none are writable — an empty list is the picker's own
   // "no mailing lists" state, which still offers Create New List.
@@ -149,9 +156,8 @@ export class CommitteeSettingsTabComponent {
   public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
 
   // Dark-launch gate for the "Sync Now" preview/apply entry point on each associated mailing list
-  // card — same flag as the Mailing List Settings sync toggle (#4024) and the committee detail Auto
-  // Sync drawer (#4025), so all three committee/mailing-list sync surfaces roll out together.
-  // Default false: unflagged, "Sync Now" stays hidden even for editors.
+  // card — same flag as the Mailing List Settings sync toggle (#4024), so both committee/mailing-list
+  // sync surfaces roll out together. Default false: unflagged, "Sync Now" stays hidden even for editors.
   public syncPreviewEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, false);
 
   // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the
@@ -270,30 +276,30 @@ export class CommitteeSettingsTabComponent {
   }
 
   public openSyncPreviewDialog(ml: GroupsIOMailingList): void {
-    // closable: false is only the initial state — lockDynamicDialogWhile (inside the dialog) flips
-    // config.closable back to true once the diff has loaded, and locks it again while applying and
-    // while the apply result is on screen, so the header X and Escape are live dismissal paths only
-    // when the dialog isn't mid-operation or showing a result the user hasn't acknowledged. Refresh
-    // the mailing-list roster unconditionally on close: reloading an unchanged list is cheap, and
-    // this way a native dismiss can't skip the subscriber-count refresh (#4911 review).
+    // closable: true from the start — lockDynamicDialogWhile (inside the dialog) flips
+    // config.closable to false while the diff is loading, while applying, and while the apply
+    // result is on screen, so the header X and Escape are blocked during those windows. PrimeNG's
+    // Dialog only reads closeOnEscape/closable once, at open, to bind its Escape listener — opening
+    // with closable: false here would mean Escape can never be rebound later even once
+    // lockDynamicDialogWhile flips it back to true (#4911 review).
     const ref: DynamicDialogRef<MailingListSyncPreviewDialogComponent> | null = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
       header: `Sync Now — ${ml.group_name}`,
       width: '800px',
       modal: true,
-      closable: false,
+      closable: true,
       draggable: false,
       data: { mailingListUid: ml.uid, mailingListName: ml.group_name },
     });
 
     if (!ref) return;
 
-    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: { applied: boolean } | null) => {
+    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MailingListSyncPreviewDialogResult | null) => {
       this.refreshMl$.next();
-      // Only a genuine apply can change committee membership — committeeUpdated triggers the parent's
-      // onSettingsSaved(), which refetches the committee and repatches the Settings form, so firing it
-      // on Cancel or a load/apply error would wipe any unsaved edits the admin made before opening this
-      // dialog (#4911 review).
-      if (result?.applied) {
+      // Only a reverse sync (mailing list → committee) can change committee membership —
+      // committeeUpdated triggers the parent's onSettingsSaved(), which refetches the committee and
+      // repatches the Settings form, so firing it for a forward sync, a Cancel, or a load/apply
+      // error would wipe any unsaved edits the admin made before opening this dialog (#4911 review).
+      if (result?.committeeChanged) {
         this.committeeUpdated.emit();
       }
     });
@@ -609,6 +615,27 @@ export class CommitteeSettingsTabComponent {
       auditors: ml.auditors,
       sync_mode: syncMode,
     };
+  }
+
+  private initAssociatedMailingListRows(): Signal<CommitteeAssociatedMailingListRow[]> {
+    return computed(() =>
+      this.associatedMailingLists().map((ml) => {
+        const removable = ml.writer === true;
+        const syncModeSupported =
+          ml.sync_mode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST || ml.sync_mode === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE;
+
+        let syncTooltip = `Preview and apply committee sync for ${ml.group_name}`;
+        if (!removable) {
+          syncTooltip = 'You need Manage access to this mailing list to sync it.';
+        } else if (!syncModeSupported) {
+          syncTooltip = `Set a sync direction for ${ml.group_name} in Mailing List Settings before syncing.`;
+        }
+
+        const removeTooltip = removable ? `Remove mailing list ${ml.group_name}` : 'You need Manage access to this mailing list to unlink it.';
+
+        return { ...ml, removable, syncModeSupported, syncTooltip, removeTooltip };
+      })
+    );
   }
 
   private initAssociatedMailingLists(): Signal<GroupsIOMailingList[]> {

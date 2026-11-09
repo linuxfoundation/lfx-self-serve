@@ -1226,6 +1226,22 @@ export interface MailingListSyncPreviewDialogData {
   mailingListName: string;
 }
 
+export interface MailingListSyncPreviewDialogResult {
+  applied: boolean;
+  committeeChanged: boolean;
+}
+
+/**
+ * An associated mailing list plus its per-row Settings-tab derived state, precomputed so the
+ * template doesn't branch on `ml.writer`/`ml.sync_mode` or nest ternaries for button state/tooltips.
+ */
+export interface CommitteeAssociatedMailingListRow extends GroupsIOMailingList {
+  removable: boolean;
+  syncModeSupported: boolean;
+  syncTooltip: string;
+  removeTooltip: string;
+}
+
 export interface DescriptionDialogData {
   mode: 'view' | 'edit';
   description: string;

@@ -52,6 +52,11 @@ export class MailingListSyncPreviewDialogComponent {
   public applyResult = signal<SyncApplyResult | null>(null);
   public elapsedSeconds = signal(0);
 
+  // Tracks that an apply request was sent, independent of whether a SyncApplyResult came back —
+  // a request can partially succeed upstream before the response errors out, so close() needs to
+  // know an apply was attempted even when applyResult() never got set (#4911 review).
+  public applyAttempted = signal(false);
+
   // Bumped whenever addCheckboxForm/removeCheckboxForm emit a value change, so the selectedAdds/
   // selectedRemoves computeds below re-run — a FormGroup's own value isn't a signal, so reading
   // it inside computed() would otherwise never register as a dependency (#4911 review).
@@ -69,6 +74,11 @@ export class MailingListSyncPreviewDialogComponent {
   public addedWithOutcome: Signal<(SyncApplyAddResult & { outcomeText: string })[]> = this.initAddedWithOutcome();
   public removedWithOutcome: Signal<(SyncApplyRemoveResult & { outcomeText: string })[]> = this.initRemovedWithOutcome();
 
+  // Excludes failed rows so the results-view headings don't count a row as "added"/"removed" when
+  // it actually failed (docs/reviews/frontend-checklist.md § 4, #4911 review).
+  public addedSucceededCount: Signal<number> = this.initAddedSucceededCount();
+  public removedSucceededCount: Signal<number> = this.initRemovedSucceededCount();
+
   public constructor() {
     // Also locks while the results view is showing — otherwise the header X / Escape stayed usable
     // right after a sync apply completed, letting the user dismiss the results without acknowledging
@@ -83,20 +93,12 @@ export class MailingListSyncPreviewDialogComponent {
     }
   }
 
-  /**
-   * member_id is unique within a single diff's adds (committee member UIDs) or removes (mailing
-   * list member IDs) — using it alone avoids the bug where a dot in an email address makes
-   * FormGroup.get() treat the key as a nested path and return null (#4911 review).
-   */
-  public rowKey(memberId: string): string {
-    return memberId;
-  }
-
   public apply(): void {
     const diff = this.diff();
     if (!diff || this.applying()) return;
 
     this.applying.set(true);
+    this.applyAttempted.set(true);
     this.applyError.set(null);
     const ticker = this.startElapsedTicker();
 
@@ -125,7 +127,100 @@ export class MailingListSyncPreviewDialogComponent {
   }
 
   public close(): void {
-    this.dialogRef.close(this.applyResult() ? { applied: true } : null);
+    this.dialogRef.close(this.applyAttempted() ? { applied: true, committeeChanged: this.isReverseSync() } : null);
+  }
+
+  private initTabOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      const diff = this.diff();
+      return [
+        { id: 'adds', label: `Add (${diff?.adds.length ?? 0})` },
+        { id: 'removes', label: `Remove (${diff?.removes.length ?? 0})` },
+        { id: 'conflicts', label: `Conflicts (${diff?.conflicts.length ?? 0})` },
+      ];
+    });
+  }
+
+  private initSelectedAdds(): Signal<SyncDiffAdd[]> {
+    return computed(() => {
+      const diff = this.diff();
+      this.addFormVersion();
+      if (!diff) return [];
+      return diff.adds.filter((add) => this.addCheckboxForm.get(add.member_id)?.value !== false);
+    });
+  }
+
+  private initSelectedRemoves(): Signal<SyncDiffRemove[]> {
+    return computed(() => {
+      const diff = this.diff();
+      this.removeFormVersion();
+      if (!diff) return [];
+      return diff.removes.filter((remove) => this.removeCheckboxForm.get(remove.member_id)?.value !== false);
+    });
+  }
+
+  private initAddedWithOutcome(): Signal<(SyncApplyAddResult & { outcomeText: string })[]> {
+    return computed(() => {
+      const reverse = this.isReverseSync();
+      return (this.applyResult()?.added ?? []).map((row) => ({ ...row, outcomeText: this.friendlyAddOutcome(row, reverse) }));
+    });
+  }
+
+  private initRemovedWithOutcome(): Signal<(SyncApplyRemoveResult & { outcomeText: string })[]> {
+    return computed(() => {
+      const reverse = this.isReverseSync();
+      return (this.applyResult()?.removed ?? []).map((row) => ({ ...row, outcomeText: this.friendlyRemoveOutcome(row, reverse) }));
+    });
+  }
+
+  private initAddedSucceededCount(): Signal<number> {
+    return computed(() => this.addedWithOutcome().filter((row) => row.outcome !== SyncApplyOutcome.FAILED).length);
+  }
+
+  private initRemovedSucceededCount(): Signal<number> {
+    return computed(() => this.removedWithOutcome().filter((row) => row.outcome !== SyncApplyOutcome.FAILED).length);
+  }
+
+  private loadDiff(): void {
+    this.loadingDiff.set(true);
+    this.loadError.set(null);
+    const ticker = this.startElapsedTicker();
+
+    this.mailingListService
+      .getSyncDiff(this.mailingListUid)
+      .pipe(
+        take(1),
+        finalize(() => {
+          ticker.unsubscribe();
+          this.loadingDiff.set(false);
+        }),
+        catchError((error) => {
+          this.loadError.set(error?.error?.error ?? 'Could not load the sync preview. Please try again.');
+          return of(null);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((diff) => {
+        if (!diff) return;
+        this.diff.set(diff);
+
+        // member_id is unique within a single diff's adds/removes and used directly as the
+        // FormGroup key. FormGroup.get() treats a dot as a nested-path separator, so this assumes
+        // member_id never contains one — true for the UID-shaped ids the backend returns today.
+        const addControls: Record<string, FormControl<boolean>> = {};
+        diff.adds.forEach((add) => {
+          addControls[add.member_id] = new FormControl(true, { nonNullable: true });
+        });
+        this.addCheckboxForm = new FormGroup(addControls);
+        this.addCheckboxForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.addFormVersion.update((v) => v + 1));
+
+        const removeControls: Record<string, FormControl<boolean>> = {};
+        diff.removes.forEach((remove) => {
+          removeControls[remove.member_id] = new FormControl(true, { nonNullable: true });
+        });
+        this.removeCheckboxForm = new FormGroup(removeControls);
+        this.removeCheckboxForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.removeFormVersion.update((v) => v + 1));
+      });
   }
 
   /**
@@ -167,87 +262,5 @@ export class MailingListSyncPreviewDialogComponent {
     return interval(1000)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.elapsedSeconds.update((s) => s + 1));
-  }
-
-  private loadDiff(): void {
-    this.loadingDiff.set(true);
-    this.loadError.set(null);
-    const ticker = this.startElapsedTicker();
-
-    this.mailingListService
-      .getSyncDiff(this.mailingListUid)
-      .pipe(
-        take(1),
-        finalize(() => {
-          ticker.unsubscribe();
-          this.loadingDiff.set(false);
-        }),
-        catchError((error) => {
-          this.loadError.set(error?.error?.error ?? 'Could not load the sync preview. Please try again.');
-          return of(null);
-        }),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((diff) => {
-        if (!diff) return;
-        this.diff.set(diff);
-
-        const addControls: Record<string, FormControl<boolean>> = {};
-        diff.adds.forEach((add) => {
-          addControls[this.rowKey(add.member_id)] = new FormControl(true, { nonNullable: true });
-        });
-        this.addCheckboxForm = new FormGroup(addControls);
-        this.addCheckboxForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.addFormVersion.update((v) => v + 1));
-
-        const removeControls: Record<string, FormControl<boolean>> = {};
-        diff.removes.forEach((remove) => {
-          removeControls[this.rowKey(remove.member_id)] = new FormControl(true, { nonNullable: true });
-        });
-        this.removeCheckboxForm = new FormGroup(removeControls);
-        this.removeCheckboxForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.removeFormVersion.update((v) => v + 1));
-      });
-  }
-
-  private initTabOptions(): Signal<FilterPillOption[]> {
-    return computed(() => {
-      const diff = this.diff();
-      return [
-        { id: 'adds', label: `Add (${diff?.adds.length ?? 0})` },
-        { id: 'removes', label: `Remove (${diff?.removes.length ?? 0})` },
-        { id: 'conflicts', label: `Conflicts (${diff?.conflicts.length ?? 0})` },
-      ];
-    });
-  }
-
-  private initSelectedAdds(): Signal<SyncDiffAdd[]> {
-    return computed(() => {
-      const diff = this.diff();
-      this.addFormVersion();
-      if (!diff) return [];
-      return diff.adds.filter((add) => this.addCheckboxForm.get(this.rowKey(add.member_id))?.value !== false);
-    });
-  }
-
-  private initSelectedRemoves(): Signal<SyncDiffRemove[]> {
-    return computed(() => {
-      const diff = this.diff();
-      this.removeFormVersion();
-      if (!diff) return [];
-      return diff.removes.filter((remove) => this.removeCheckboxForm.get(this.rowKey(remove.member_id))?.value !== false);
-    });
-  }
-
-  private initAddedWithOutcome(): Signal<(SyncApplyAddResult & { outcomeText: string })[]> {
-    return computed(() => {
-      const reverse = this.isReverseSync();
-      return (this.applyResult()?.added ?? []).map((row) => ({ ...row, outcomeText: this.friendlyAddOutcome(row, reverse) }));
-    });
-  }
-
-  private initRemovedWithOutcome(): Signal<(SyncApplyRemoveResult & { outcomeText: string })[]> {
-    return computed(() => {
-      const reverse = this.isReverseSync();
-      return (this.applyResult()?.removed ?? []).map((row) => ({ ...row, outcomeText: this.friendlyRemoveOutcome(row, reverse) }));
-    });
   }
 }
