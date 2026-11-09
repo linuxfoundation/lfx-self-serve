@@ -622,7 +622,7 @@ export class CommitteeSettingsTabComponent {
         queueUpdate(
           uid,
           this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid), committeeFilters.get(uid), committeeRoleFilters.get(uid)),
-          ml.sync_mode,
+          getMailingListCommitteeSync(ml, committee.uid).syncMode,
           false
         );
       }
@@ -632,7 +632,7 @@ export class CommitteeSettingsTabComponent {
     for (const uid of removed) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        queueUpdate(uid, this.buildMlUpdatePayload(ml, null), ml.sync_mode, true);
+        queueUpdate(uid, this.buildMlUpdatePayload(ml, null), getMailingListCommitteeSync(ml, committee.uid).syncMode, true);
       }
     }
 
@@ -644,7 +644,7 @@ export class CommitteeSettingsTabComponent {
         queueUpdate(
           uid,
           this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid), committeeFilters.get(uid), committeeRoleFilters.get(uid)),
-          ml.sync_mode,
+          getMailingListCommitteeSync(ml, committee.uid).syncMode,
           true
         );
       }

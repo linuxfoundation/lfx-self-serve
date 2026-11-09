@@ -229,7 +229,13 @@ describe('MailingListPickerDialogComponent sync direction', () => {
   let dialogClose: ReturnType<typeof vi.fn>;
 
   const MAILING_LISTS: GroupsIOMailingList[] = [
-    { uid: 'ml-synced', group_name: 'synced', domain: 'lists.example.org', writer: true, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST },
+    {
+      uid: 'ml-synced',
+      group_name: 'synced',
+      domain: 'lists.example.org',
+      writer: true,
+      committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }],
+    },
     { uid: 'ml-manual', group_name: 'manual', domain: 'lists.example.org', writer: true },
     { uid: 'ml-unlinked', group_name: 'unlinked', domain: 'lists.example.org', writer: true },
     {
@@ -237,7 +243,9 @@ describe('MailingListPickerDialogComponent sync direction', () => {
       group_name: 'elsewhere',
       domain: 'lists.example.org',
       writer: true,
-      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      // Linked to a DIFFERENT committee ('committee-2'), not this one ('committee-1') — the
+      // picker must resolve sync_mode from the committees[] entry matching THIS committee only.
+      committees: [{ uid: 'committee-2', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }],
     },
   ] as GroupsIOMailingList[];
 
@@ -364,9 +372,14 @@ describe('MailingListPickerDialogComponent committee filters', () => {
       group_name: 'synced',
       domain: 'lists.example.org',
       writer: true,
-      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
-      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
-      committee_role_filters: ['Chair'],
+      committees: [
+        {
+          uid: 'committee-1',
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+          committee_role_filters: ['Chair'],
+        },
+      ],
     },
     { uid: 'ml-manual', group_name: 'manual', domain: 'lists.example.org', writer: true },
   ] as GroupsIOMailingList[];

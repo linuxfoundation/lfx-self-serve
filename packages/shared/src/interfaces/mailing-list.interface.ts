@@ -527,3 +527,13 @@ export interface SyncApplyRequest {
   /** Approved subset of the diff's proposed removes */
   removes: SyncDiffRemove[];
 }
+
+/**
+ * A mailing list's sync direction and committee/role filters for one specific linked committee.
+ * All three fields are empty/unset defaults when the list isn't linked to that committee at all.
+ */
+export interface MailingListCommitteeSync {
+  syncMode: MailingListSyncMode | undefined;
+  committeeFilters: CommitteeMemberVotingStatus[];
+  committeeRoleFilters: string[];
+}

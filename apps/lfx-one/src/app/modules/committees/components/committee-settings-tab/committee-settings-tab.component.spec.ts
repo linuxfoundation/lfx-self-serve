@@ -589,8 +589,7 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
       description: 'A test list',
       title: 'Test List',
       service_uid: 'service-1',
-      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
-      committees: [{ uid: 'committee-1' }],
+      committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }],
       ...overrides,
     }) as GroupsIOMailingList;
 
@@ -631,7 +630,7 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
   }
 
   it('keeps sync_mode when the mailing list stays linked to the same committee', async () => {
-    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-1' }], sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
+    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }] });
     await createFixture([ml]);
 
     // Re-selecting the same already-associated list: not in originalSelectedUids → treated as
@@ -645,7 +644,7 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
   });
 
   it('resets sync_mode to MANUAL when the mailing list is linked to a different committee', async () => {
-    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-OLD' }], sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
+    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-OLD', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }] });
     await createFixture([ml]);
 
     (component as any).saveMailingListAssociation(new Set(['ml-1']), new Set(), new Map());
@@ -656,7 +655,7 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
   });
 
   it('omits sync_mode when the mailing list is removed from the committee', async () => {
-    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-1' }], sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
+    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }] });
     await createFixture([ml]);
 
     // Not in currentSelection but present in originalSelectedUids → treated as "removed".
@@ -670,7 +669,7 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
   // #4026: the picker dialog's per-list sync-direction control passes an explicit syncMode that
   // overrides buildMlUpdatePayload's committee-change defaults above.
   it('applies the explicit direction chosen in the picker dialog when linking a list', async () => {
-    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-OLD' }], sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
+    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-OLD', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }] });
     await createFixture([ml]);
 
     (component as any).saveMailingListAssociation(new Set(['ml-1']), new Set(), new Map([['ml-1', MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE]]));
@@ -682,7 +681,7 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
   });
 
   it('issues an update for a list that stays linked but only has its sync direction changed', async () => {
-    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-1' }], sync_mode: MailingListSyncMode.MANUAL });
+    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.MANUAL }] });
     await createFixture([ml]);
 
     (component as any).saveMailingListAssociation(
@@ -698,7 +697,7 @@ describe('CommitteeSettingsTabComponent — mailing list sync_mode on committee 
   });
 
   it('skips the update for a list that stays linked with the same sync direction', async () => {
-    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-1' }], sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
+    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }] });
     await createFixture([ml]);
 
     (component as any).saveMailingListAssociation(
@@ -736,10 +735,9 @@ describe('CommitteeSettingsTabComponent — committee/role filters for auto_c_to
       description: 'A test list',
       title: 'Test List',
       service_uid: 'service-1',
-      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
-      committees: [{ uid: 'committee-1' }],
-      committee_filters: [],
-      committee_role_filters: [],
+      committees: [
+        { uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST, allowed_voting_statuses: [], committee_role_filters: [] },
+      ],
       ...overrides,
     }) as GroupsIOMailingList;
 
@@ -780,7 +778,7 @@ describe('CommitteeSettingsTabComponent — committee/role filters for auto_c_to
   }
 
   it('includes committee_filters and committee_role_filters when linking a list with auto_c_to_ml direction', async () => {
-    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-OLD' }], sync_mode: MailingListSyncMode.MANUAL });
+    const ml = makeMl({ uid: 'ml-1', committees: [{ uid: 'committee-OLD', sync_mode: MailingListSyncMode.MANUAL }] });
     await createFixture([ml]);
 
     (component as any).saveMailingListAssociation(
@@ -801,10 +799,14 @@ describe('CommitteeSettingsTabComponent — committee/role filters for auto_c_to
   it('preserves existing committee_filters/committee_role_filters when re-linking the same committee without an explicit override', async () => {
     const ml = makeMl({
       uid: 'ml-1',
-      committees: [{ uid: 'committee-1' }],
-      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
-      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
-      committee_role_filters: ['Chair'],
+      committees: [
+        {
+          uid: 'committee-1',
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+          committee_role_filters: ['Chair'],
+        },
+      ],
     });
     await createFixture([ml]);
 
@@ -818,10 +820,14 @@ describe('CommitteeSettingsTabComponent — committee/role filters for auto_c_to
   it('resets committee_filters/committee_role_filters when the mailing list is linked to a different committee', async () => {
     const ml = makeMl({
       uid: 'ml-1',
-      committees: [{ uid: 'committee-OLD' }],
-      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
-      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
-      committee_role_filters: ['Chair'],
+      committees: [
+        {
+          uid: 'committee-OLD',
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+          committee_role_filters: ['Chair'],
+        },
+      ],
     });
     await createFixture([ml]);
 
@@ -837,10 +843,14 @@ describe('CommitteeSettingsTabComponent — committee/role filters for auto_c_to
   it('clears committee_filters/committee_role_filters to empty arrays when direction is not auto_c_to_ml', async () => {
     const ml = makeMl({
       uid: 'ml-1',
-      committees: [{ uid: 'committee-1' }],
-      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
-      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
-      committee_role_filters: ['Chair'],
+      committees: [
+        {
+          uid: 'committee-1',
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+          committee_role_filters: ['Chair'],
+        },
+      ],
     });
     await createFixture([ml]);
 
@@ -862,10 +872,14 @@ describe('CommitteeSettingsTabComponent — committee/role filters for auto_c_to
   it('omits committee_filters/committee_role_filters entirely when the mailing list is fully unlinked', async () => {
     const ml = makeMl({
       uid: 'ml-1',
-      committees: [{ uid: 'committee-1' }],
-      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
-      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
-      committee_role_filters: ['Chair'],
+      committees: [
+        {
+          uid: 'committee-1',
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+          committee_role_filters: ['Chair'],
+        },
+      ],
     });
     await createFixture([ml]);
 
@@ -880,10 +894,14 @@ describe('CommitteeSettingsTabComponent — committee/role filters for auto_c_to
   it('issues an update for a list that stays linked with the same direction but a changed filter set', async () => {
     const ml = makeMl({
       uid: 'ml-1',
-      committees: [{ uid: 'committee-1' }],
-      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
-      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP],
-      committee_role_filters: ['Chair'],
+      committees: [
+        {
+          uid: 'committee-1',
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+          committee_role_filters: ['Chair'],
+        },
+      ],
     });
     await createFixture([ml]);
 
@@ -903,10 +921,14 @@ describe('CommitteeSettingsTabComponent — committee/role filters for auto_c_to
   it('skips the update for a list that stays linked with the same direction and the same filter set (order-insensitive)', async () => {
     const ml = makeMl({
       uid: 'ml-1',
-      committees: [{ uid: 'committee-1' }],
-      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
-      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP],
-      committee_role_filters: ['Chair'],
+      committees: [
+        {
+          uid: 'committee-1',
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP],
+          committee_role_filters: ['Chair'],
+        },
+      ],
     });
     await createFixture([ml]);
 
@@ -951,8 +973,7 @@ describe('CommitteeSettingsTabComponent — release-before-activate sequencing (
       description: 'A test list',
       title: 'Test List',
       service_uid: 'service-1',
-      sync_mode: MailingListSyncMode.MANUAL,
-      committees: [{ uid: 'committee-1' }],
+      committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.MANUAL }],
       writer: true,
       ...overrides,
     }) as GroupsIOMailingList;
@@ -1000,8 +1021,8 @@ describe('CommitteeSettingsTabComponent — release-before-activate sequencing (
   }
 
   it('does not activate list B until list A — the slot it is handing off from — resolves its release', async () => {
-    const listA = makeMl({ uid: 'ml-A', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
-    const listB = makeMl({ uid: 'ml-B', sync_mode: MailingListSyncMode.MANUAL });
+    const listA = makeMl({ uid: 'ml-A', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }] });
+    const listB = makeMl({ uid: 'ml-B', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.MANUAL }] });
     await createFixture([listA, listB]);
 
     (component as any).saveMailingListAssociation(
@@ -1030,8 +1051,8 @@ describe('CommitteeSettingsTabComponent — release-before-activate sequencing (
   });
 
   it('skips activating list B and reports failure when releasing its slot from list A fails', async () => {
-    const listA = makeMl({ uid: 'ml-A', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
-    const listB = makeMl({ uid: 'ml-B', sync_mode: MailingListSyncMode.MANUAL });
+    const listA = makeMl({ uid: 'ml-A', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }] });
+    const listB = makeMl({ uid: 'ml-B', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.MANUAL }] });
     await createFixture([listA, listB]);
 
     (component as any).saveMailingListAssociation(
@@ -1051,8 +1072,8 @@ describe('CommitteeSettingsTabComponent — release-before-activate sequencing (
   });
 
   it('reports permission-denied, not a generic error, when the skipped slot release failed with 403', async () => {
-    const listA = makeMl({ uid: 'ml-A', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
-    const listB = makeMl({ uid: 'ml-B', sync_mode: MailingListSyncMode.MANUAL });
+    const listA = makeMl({ uid: 'ml-A', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }] });
+    const listB = makeMl({ uid: 'ml-B', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.MANUAL }] });
     await createFixture([listA, listB]);
 
     (component as any).saveMailingListAssociation(
@@ -1070,9 +1091,9 @@ describe('CommitteeSettingsTabComponent — release-before-activate sequencing (
   });
 
   it('still activates list B when an unrelated Manual-list update fails in the same save', async () => {
-    const listA = makeMl({ uid: 'ml-A', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
-    const listB = makeMl({ uid: 'ml-B', sync_mode: MailingListSyncMode.MANUAL });
-    const listC = makeMl({ uid: 'ml-C', sync_mode: MailingListSyncMode.MANUAL });
+    const listA = makeMl({ uid: 'ml-A', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }] });
+    const listB = makeMl({ uid: 'ml-B', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.MANUAL }] });
+    const listC = makeMl({ uid: 'ml-C', committees: [{ uid: 'committee-1', sync_mode: MailingListSyncMode.MANUAL }] });
     await createFixture([listA, listB, listC]);
 
     // ml-C is a brand-new Manual link in this same save — it never held the auto-sync slot, so its

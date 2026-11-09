@@ -1,9 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { MailingListSyncMode } from '../enums/mailing-list.enum';
-import type { GroupsIOMailingList } from '../interfaces/mailing-list.interface';
+import type { GroupsIOMailingList, MailingListCommitteeSync } from '../interfaces/mailing-list.interface';
 
 import { getEntityCommands } from './entity-route.utils';
 
@@ -67,16 +65,6 @@ export function getMailingListCommands(list: Pick<GroupsIOMailingList, 'uid' | '
 /** `?project=` for mailing-list links — present only when the list carries a slug (GH-1567). */
 export function getMailingListLinkQueryParams(list: { project_slug?: string | null } | null | undefined): { project: string } | null {
   return list?.project_slug ? { project: list.project_slug } : null;
-}
-
-/**
- * A mailing list's sync direction and committee/role filters for one specific linked committee.
- * All three fields are empty/unset defaults when the list isn't linked to that committee at all.
- */
-export interface MailingListCommitteeSync {
-  syncMode: MailingListSyncMode | undefined;
-  committeeFilters: CommitteeMemberVotingStatus[];
-  committeeRoleFilters: string[];
 }
 
 /**
