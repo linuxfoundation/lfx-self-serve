@@ -69,15 +69,36 @@
                   · Started {{ run.startedAt | date: 'd MMM, HH:mm' }}
                 </span>
               </div>
-              @if (runTargets()[run.runId]; as target) {
-                <a
-                  [routerLink]="target.commands"
-                  [queryParams]="target.params"
-                  queryParamsHandling="merge"
-                  class="text-[12.25px] font-medium text-blue-700 no-underline hover:text-blue-800"
-                  [attr.data-testid]="'mktg-documents-open-started-' + run.runId"
-                  >{{ target.label }}</a
-                >
+              <div class="flex shrink-0 items-center gap-3">
+                @if (run.state === 'failed' && mayDismiss()) {
+                  <lfx-button
+                    label="Dismiss"
+                    [text]="true"
+                    size="small"
+                    [loading]="dismissingRunId() === run.runId"
+                    [disabled]="dismissingRunId() !== null"
+                    [ariaLabel]="'Dismiss the ' + run.label + ' run started ' + (run.startedAt | date: 'd MMM, HH:mm')"
+                    (onClick)="onDismissRun(run)"
+                    [attr.data-testid]="'mktg-documents-dismiss-started-' + run.runId" />
+                }
+                @if (runTargets()[run.runId]; as target) {
+                  <a
+                    [routerLink]="target.commands"
+                    [queryParams]="target.params"
+                    queryParamsHandling="merge"
+                    class="text-[12.25px] font-medium text-blue-700 no-underline hover:text-blue-800"
+                    [attr.data-testid]="'mktg-documents-open-started-' + run.runId"
+                    >{{ target.label }}</a
+                  >
+                }
+              </div>
+              @if (dismissError()?.runId === run.runId) {
+                <lfx-message
+                  class="col-span-2"
+                  severity="error"
+                  size="small"
+                  [text]="dismissError()?.text"
+                  [attr.data-testid]="'mktg-documents-dismiss-error-' + run.runId" />
               }
             </div>
           } @empty {
