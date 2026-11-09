@@ -251,6 +251,13 @@ export const DEFAULT_MICROSOFT_BUDGET_USD = 500;
  */
 export const DEFAULT_GOOGLE_DAILY_BUDGET_USD = 500;
 
+/**
+ * The smallest Google daily budget the Implementation tab accepts (its `budgetUsd` control's
+ * `Validators.min`), and so the floor the brief seed holds a divided total to (#1614): a seed below it
+ * would open the tab with Create blocked on a value nobody typed.
+ */
+export const GOOGLE_MIN_DAILY_BUDGET_USD = 1;
+
 /** The LinkedIn targeting profile the Implementation tab starts from, and resets to when a brief carries no LinkedIn copy (#4624). */
 export const DEFAULT_LINKEDIN_TARGETING_PROFILE: LinkedInTargetingProfile = 'cloud-native';
 

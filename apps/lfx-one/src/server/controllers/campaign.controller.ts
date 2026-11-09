@@ -1679,7 +1679,12 @@ export class CampaignController {
         // campaign-service checks only its length. The Implement tab holds Create on the same judge.
         const callToActionRefusal = googleCallToActionRefusal(body as unknown as Record<string, unknown>, googleChannel);
         if (callToActionRefusal) {
-          next(ServiceValidationError.forField('callToActionText', callToActionRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
+          next(
+            ServiceValidationError.forField(callToActionRefusal.field, callToActionRefusal.message, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
           return;
         }
       }

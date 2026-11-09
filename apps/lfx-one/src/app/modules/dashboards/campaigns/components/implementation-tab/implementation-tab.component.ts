@@ -174,6 +174,7 @@ import {
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_IMAGE_MAX_BYTES,
   GOOGLE_CREATIVE_PREFILL_NOTICES,
+  GOOGLE_MIN_DAILY_BUDGET_USD,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_GROUPS,
@@ -352,9 +353,9 @@ import {
   campaignBiddingPayload,
   campaignFlightDays,
   campaignLabelColumns,
-  dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
   defaultCampaignEndDate,
+  googleSeededFlight,
   describeCampaignDispatchFailure,
   googleAdditionalSearchAdsRefusal,
   googleAdsCampaignUrl,
@@ -1180,7 +1181,7 @@ export class ImplementationTabComponent implements OnInit {
     registrationUrl: ['', [Validators.required]],
     // The Google DAILY budget (#4847): campaign-service creates it with no period, which Google
     // treats as daily. Seeded from the brief's total divided over the flight, never the total itself.
-    budgetUsd: [DEFAULT_GOOGLE_DAILY_BUDGET_USD as number, [Validators.required, Validators.min(1)]],
+    budgetUsd: [DEFAULT_GOOGLE_DAILY_BUDGET_USD as number, [Validators.required, Validators.min(GOOGLE_MIN_DAILY_BUDGET_USD)]],
     // Typed `number`, not inferred. `CAMPAIGN_BUDGET_DEFAULTS` is `as const`, so the inferred
     // control type was the literal `70` — which is wrong for a slider the user drags, and made
     // any other value a type error to patch in (LFXV2-3229).
@@ -7843,14 +7844,16 @@ export class ImplementationTabComponent implements OnInit {
   private seedDisplayCreative(brief: CampaignBriefOutput): void {
     const channel = 'display';
     const copy = this.generatedGoogleImageAdCopy(brief, channel);
-    const taken = new Set([...copy.headlines, ...copy.descriptions]);
+    // On campaign-service's de-duplication key, as the lists above are, so a candidate differing from a
+    // seeded line only in case does not repeat it.
+    const taken = new Set([...copy.headlines, ...copy.descriptions].map((value) => googleAdsToLower(value)));
     const candidates = [
       ...this.fittingCreativeCopy(channel, 'longHeadline', this.asArray(this.generatedDemandGenCopy(brief)?.['headlines'])),
       ...this.fittingCreativeCopy(channel, 'longHeadline', this.asArray(this.generatedCopy(brief, ['google_search'])?.['descriptions'])),
     ];
     this.seedGoogleCreative(channel, {
       headlines: copy.headlines.join('\n'),
-      longHeadline: candidates.find((value) => !taken.has(value)) ?? '',
+      longHeadline: candidates.find((value) => !taken.has(googleAdsToLower(value))) ?? '',
       descriptions: copy.descriptions.join('\n'),
       businessName: copy.businessName,
       callToActionText: copy.callToActionText,
@@ -7915,9 +7918,10 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * Generated values that fit one creative field, in order: strings only, each trimmed with any line
-   * break folded into a space, de-duplicated, and measured with `googleCreativeFieldWidth` as the
-   * field's validator measures it against the channel's `GOOGLE_CREATIVE_FIELD_SPECS` width. A value
-   * too wide is dropped, never truncated. Empty when the channel has no such field.
+   * break folded into a space, measured with `googleCreativeFieldWidth` as the field's validator
+   * measures it against the channel's `GOOGLE_CREATIVE_FIELD_SPECS` width, and de-duplicated without
+   * regard to case, as campaign-service judges a repeat. A value too wide is dropped, never truncated.
+   * Empty when the channel has no such field.
    */
   private fittingCreativeCopy(channel: GoogleCreativeChannel, control: string, values: unknown[]): string[] {
     // Typed as the shared spec, as `initGoogleCreativeSections` reads it: not every catalogue entry
@@ -7926,11 +7930,22 @@ export class ImplementationTabComponent implements OnInit {
     const spec = specs.find((field) => field.control === control);
     if (spec === undefined) return [];
     // A line break inside one generated value would split it into extra entries of a one-per-line
-    // field, past the width and count it was checked against, so it is folded into a space.
-    const unique = [
-      ...new Set(values.filter((value): value is string => typeof value === 'string').map((value) => value.replace(/\s*[\r\n]+\s*/g, ' ').trim())),
-    ];
-    return unique.filter((value) => value !== '' && (spec.width === undefined || googleCreativeFieldWidth(control, value) <= spec.width));
+    // field, past the width and count it was checked against, so it is folded into a space. Trimmed as
+    // Go trims (`googleAdsTrimSpace`), the way campaign-service trims before it judges the line.
+    const fitting = values
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => googleAdsTrimSpace(value.replace(/\s*[\r\n]+\s*/g, ' ')))
+      .filter((value) => value !== '' && (spec.width === undefined || googleCreativeFieldWidth(control, value) <= spec.width));
+    // De-duplicated on campaign-service's own key, `strings.ToLower` of the trimmed line
+    // (`validateCreativeText`, `demandgen_creative.go`, v1.0.35), which REFUSES a list holding two lines
+    // equal under it. The first spelling is kept, so "Join us" and "join us" seed one line, not a refusal.
+    const seen = new Set<string>();
+    return fitting.filter((value) => {
+      const key = googleAdsToLower(value);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   /** The first values up to the creative field's catalogue `max`, or all of them when it states none. */
@@ -8253,10 +8268,14 @@ export class ImplementationTabComponent implements OnInit {
     //
     // The flight runs to the event's first day when the brief names one after today (#1614), else to
     // `defaultEndDate`; the daily budget is divided over that same flight, so the two cannot disagree.
+    // `googleSeededFlight` never seeds below the budget control's floor: it shortens the flight to the
+    // days the total funds at the floor instead, so a long run-up does not open Create blocked.
     const briefTotal = brief.totalBudget ?? null;
-    const endDate = defaultCampaignEndDate(details.dates, this.todayDate, this.defaultEndDate);
-    const flightDays = campaignFlightDays(this.todayDate, endDate);
-    const seededDailyBudget = briefTotal !== null && flightDays !== null ? dailyBudgetFromTotal(briefTotal, flightDays) : null;
+    const { endDate, dailyBudget: seededDailyBudget } = googleSeededFlight(
+      briefTotal,
+      this.todayDate,
+      defaultCampaignEndDate(details.dates, this.todayDate, this.defaultEndDate)
+    );
     this.googleBriefTotalBudget.set(seededDailyBudget === null ? null : briefTotal);
     this.campaignForm.patchValue({
       eventName: details.name,
@@ -8934,7 +8953,7 @@ export class ImplementationTabComponent implements OnInit {
   private initGoogleBudgetInvalid(): Signal<boolean> {
     return computed(() => {
       const { daily } = this.googleBudgetInputs();
-      return typeof daily !== 'number' || !Number.isFinite(daily) || daily < 1;
+      return typeof daily !== 'number' || !Number.isFinite(daily) || daily < GOOGLE_MIN_DAILY_BUDGET_USD;
     });
   }
 

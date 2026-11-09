@@ -216,27 +216,36 @@ describe('googleCallToActionRefusal (#1614, F13)', () => {
   });
 
   it('refuses an unlisted Display call to action, on the single ad and in a named ad group', () => {
-    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: 'Register' } }, 'display')).toContain('does not accept "Register"');
-    expect(googleCallToActionRefusal({ displayAdGroups: [{ name: 'A', creative: { callToActionText: 'Register' } }] }, 'display')).toContain('Register');
+    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: 'Register' } }, 'display')?.message).toContain('does not accept "Register"');
+    expect(googleCallToActionRefusal({ displayAdGroups: [{ name: 'A', creative: { callToActionText: 'Register' } }] }, 'display')?.message).toContain(
+      'Register'
+    );
   });
 
   it('refuses any Demand Gen image call to action, since Google documents none for it', () => {
-    expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: 'Learn More' } }, 'demand-gen')).toContain('call to action');
+    expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: 'Learn More' } }, 'demand-gen')?.message).toContain('call to action');
   });
 
   it('refuses an unlisted Demand Gen video call to action and passes a listed one', () => {
-    expect(googleCallToActionRefusal({ demandGenVideoCreative: { callToAction: 'REGISTER' } }, 'demand-gen')).toContain('REGISTER');
+    expect(googleCallToActionRefusal({ demandGenVideoCreative: { callToAction: 'REGISTER' } }, 'demand-gen')?.message).toContain('REGISTER');
     expect(googleCallToActionRefusal({ demandGenVideoCreative: { callToAction: 'SIGN_UP' } }, 'demand-gen')).toBeNull();
   });
 
   it('reads several Demand Gen ads, named ad groups and their ads', () => {
-    expect(googleCallToActionRefusal({ demandGenAds: [{ name: 'a', creative: { callToActionText: 'Go' } }] }, 'demand-gen')).toContain('"Go"');
-    expect(googleCallToActionRefusal({ demandGenAdGroups: [{ name: 'g', videoCreative: { callToAction: 'GET_STARTED' } }] }, 'demand-gen')).toContain(
+    expect(googleCallToActionRefusal({ demandGenAds: [{ name: 'a', creative: { callToActionText: 'Go' } }] }, 'demand-gen')?.message).toContain('"Go"');
+    expect(googleCallToActionRefusal({ demandGenAdGroups: [{ name: 'g', videoCreative: { callToAction: 'GET_STARTED' } }] }, 'demand-gen')?.message).toContain(
       'GET_STARTED'
     );
     expect(
-      googleCallToActionRefusal({ demandGenAdGroups: [{ name: 'g', ads: [{ name: 'a', creative: { callToActionText: 'Go' } }] }] }, 'demand-gen')
+      googleCallToActionRefusal({ demandGenAdGroups: [{ name: 'g', ads: [{ name: 'a', creative: { callToActionText: 'Go' } }] }] }, 'demand-gen')?.message
     ).toContain('"Go"');
+  });
+
+  it('names the field it refuses: callToActionText on the image and Display ads, callToAction on the video ad', () => {
+    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: 'Register' } }, 'display')?.field).toBe('callToActionText');
+    expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: 'Register' } }, 'demand-gen')?.field).toBe('callToActionText');
+    expect(googleCallToActionRefusal({ demandGenVideoCreative: { callToAction: 'REGISTER' } }, 'demand-gen')?.field).toBe('callToAction');
+    expect(googleCallToActionRefusal({ demandGenAds: [{ name: 'a', videoCreative: { callToAction: 'REGISTER' } }] }, 'demand-gen')?.field).toBe('callToAction');
   });
 
   it('reads only the channel being created', () => {

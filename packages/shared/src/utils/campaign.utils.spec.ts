@@ -27,6 +27,7 @@ import {
   defaultCampaignEndDate,
   describeCampaignDispatchFailure,
   googleAdsCampaignUrl,
+  googleSeededFlight,
   isReversedCampaignFlight,
   keywordActionKey,
   normalizeSponsors,
@@ -593,6 +594,16 @@ describe('campaignEventStartDate (#1614)', () => {
     ['December 30 \u2013 January 2, 2027', '2026-12-30'],
     ['30 December - 2 January 2027', '2026-12-30'],
     ['December 28-31, 2026', '2026-12-28'],
+    // The one year written after the START is the start's, not the end's (PR #5387 review).
+    ['December 30, 2026 - January 2', '2026-12-30'],
+    ['30 December 2026 - 2 January', '2026-12-30'],
+    // A word that only starts like a month is not one (PR #5387 review): read as a later, lower month
+    // ahead of the year, each of these would move the start a year back.
+    ['December 3 at the Marriott Marquis, 2028', '2028-12-03'],
+    ['December 2, Rio de Janeiro 2028', '2028-12-02'],
+    ['November 5 at Junction City, 2028', '2028-11-05'],
+    ['March 3 in Decatur, 2028', '2028-03-03'],
+    ['September 10, 2028 at the Marriott Marquis', '2028-09-10'],
     ['September 1 2027', '2027-09-01'],
   ])('reads %s as %s', (dates, expected) => {
     expect(campaignEventStartDate(dates)).toBe(expected);
@@ -657,5 +668,27 @@ describe('googleAdsCampaignUrl (#1614)', () => {
 
   it('percent-encodes the id', () => {
     expect(googleAdsCampaignUrl('1&x=2')).toBe('https://ads.google.com/aw/campaigns?campaignId=1%26x%3D2');
+  });
+});
+
+describe('googleSeededFlight (#4847, #1614)', () => {
+  const today = '2026-11-07';
+
+  it('divides the total over the flight when that is at least the floor', () => {
+    expect(googleSeededFlight(1000, today, '2026-12-07')).toEqual({ endDate: '2026-12-07', dailyBudget: 32.25 });
+  });
+
+  it('shortens the flight to the days the total funds at the floor, never seeding under it', () => {
+    // 100 over the 129 days to 15 March is 0.77 a day; 100 days at 1 a day ends 14 February.
+    expect(googleSeededFlight(100, today, '2027-03-15')).toEqual({ endDate: '2027-02-14', dailyBudget: 1 });
+  });
+
+  it('keeps the end date and seeds the floor for a total too small to fund two days', () => {
+    expect(googleSeededFlight(1.5, today, '2027-03-15')).toEqual({ endDate: '2027-03-15', dailyBudget: 1 });
+  });
+
+  it('seeds no budget without a usable total', () => {
+    expect(googleSeededFlight(null, today, '2027-03-15')).toEqual({ endDate: '2027-03-15', dailyBudget: null });
+    expect(googleSeededFlight(0, today, '2027-03-15')).toEqual({ endDate: '2027-03-15', dailyBudget: null });
   });
 });

@@ -338,9 +338,10 @@
                   class="w-full rounded-r-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   data-testid="planning-budget-input" />
               </div>
-              <!-- The Implement tab's seed: dailyBudgetFromTotal over campaignFlightDays(today, defaultCampaignEndDate(...)). -->
+              <!-- The Implement tab's seed: googleSeededFlight(total, today, defaultCampaignEndDate(...)). -->
               <p class="text-xs text-gray-500" data-testid="planning-budget-pacing-hint">
-                Google daily budget = Total ÷ days from today through the end date (the event's first day, else 30 days out)
+                Google daily budget = Total ÷ days from today through the end date (the event's first day, else 30 days out; sooner if that would be under 1 a
+                day)
               </p>
             </div>
             <div class="flex flex-col gap-1">
