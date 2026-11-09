@@ -67,9 +67,6 @@ export class CommitteeSettingsTabComponent {
   private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
 
-  // Template-only enum reference for gating Sync Now on a list's configured sync mode
-  protected readonly MailingListSyncMode = MailingListSyncMode;
-
   // Inputs
   public committee = input.required<Committee>();
   public canEdit = input<boolean>(false);
@@ -286,11 +283,11 @@ export class CommitteeSettingsTabComponent {
 
   public openSyncPreviewDialog(ml: GroupsIOMailingList): void {
     // closable: true from the start — lockDynamicDialogWhile (inside the dialog) flips
-    // config.closable to false while the diff is loading, while applying, and while the apply
-    // result is on screen, so the header X and Escape are blocked during those windows. PrimeNG's
-    // Dialog only reads closeOnEscape/closable once, at open, to bind its Escape listener — opening
-    // with closable: false here would mean Escape can never be rebound later even once
-    // lockDynamicDialogWhile flips it back to true (#4911 review).
+    // config.closable to false while the diff is loading, while applying, while the apply result
+    // (success or error) is on screen, so the header X and Escape are blocked during those
+    // windows. PrimeNG's Dialog only reads closeOnEscape/closable once, at open, to bind its
+    // Escape listener — opening with closable: false here would mean Escape can never be rebound
+    // later even once lockDynamicDialogWhile flips it back to true (#4911 review).
     const ref: DynamicDialogRef<MailingListSyncPreviewDialogComponent> | null = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
       header: `Sync Now — ${ml.group_name}`,
       width: '800px',
@@ -306,8 +303,11 @@ export class CommitteeSettingsTabComponent {
       this.refreshMl$.next();
       // Only a reverse sync (mailing list → committee) can change committee membership —
       // committeeUpdated triggers the parent's onSettingsSaved(), which refetches the committee and
-      // repatches the Settings form, so firing it for a forward sync, a Cancel, or a load/apply
-      // error would wipe any unsaved edits the admin made before opening this dialog (#4911 review).
+      // repatches the Settings form. The same-committee dirty filter (constructor) now keeps any
+      // in-flight unsaved edit intact across that repatch, but a reverse sync is still the only
+      // reason to pay for the cache-bypassing refetch at all — a forward sync, a Cancel, or a
+      // load/apply error didn't touch committee membership, so there's nothing new to fetch
+      // (#4911 review).
       if (result?.committeeChanged) {
         this.committeeUpdated.emit();
       }
@@ -456,6 +456,21 @@ export class CommitteeSettingsTabComponent {
             this.editingSlackWebhookUrl.set(false);
             this.slackWebhookRemovalStaged.set(false);
           }
+          // Mark every other successfully-saved control pristine, only if its current value still
+          // equals what was actually submitted. Without this, the constructor's same-committee
+          // dirty filter (above) treats a saved control as "still has an unsaved edit" forever —
+          // the server-normalized value never lands, and a later unrelated save resends the stale
+          // value, reverting any change another writer made in between (cursor, greptile, copilot,
+          // dealako [blocking], #4911 review). Checking against `values` (captured at submit time)
+          // rather than unconditionally resetting dirty keeps a genuinely new edit — typed while
+          // this request was still in flight — marked dirty, since that one was never submitted.
+          Object.keys(values).forEach((key) => {
+            if (key === 'chat_webhook_url') return;
+            const control = this.form.get(key);
+            if (control?.dirty && control.value === (values as Record<string, unknown>)[key]) {
+              control.markAsPristine();
+            }
+          });
           this.committeeUpdated.emit();
         },
         error: (err: any) => {

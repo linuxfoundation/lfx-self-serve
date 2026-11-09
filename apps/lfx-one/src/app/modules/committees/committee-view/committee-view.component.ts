@@ -808,6 +808,11 @@ export class CommitteeViewComponent {
   public onSettingsSaved(): void {
     const committee = this.committee();
     if (committee?.uid && this.committeeId() !== committee.uid) {
+      // Set unconditionally, not just on the refreshMembers() path below — a reverse sync can
+      // add/remove committee members within the 10s detail-cache TTL, and the route param change
+      // below drives its own refetch (readCommitteeToleratingPropagation) that would otherwise
+      // replay that stale cache instead of seeing post-sync state (dealako/cursor, #4911 review).
+      this.skipCacheOnNextRefresh.set(true);
       // The route id change resets activeTab to Overview; `?tab=` is what the auto-select restores it from, and an explicit value also overrides a stale deep-linked tab.
       void this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
         queryParams: { tab: this.activeTab() },
@@ -816,10 +821,12 @@ export class CommitteeViewComponent {
       });
       return;
     }
-    // A reverse sync (the only trigger for this event today — see openSyncPreviewDialog's
-    // committeeChanged gate) can add/remove committee members within the 10s detail-cache TTL;
-    // skipCache guarantees role-gated UI and the Settings form see the post-sync state instead of
-    // a stale cached read (copilot, #4911 review).
+    // committeeUpdated fires from both a Settings save and a reverse sync (mailing list →
+    // committee) via openSyncPreviewDialog's committeeChanged gate — a save already evicts the
+    // detail cache server-side (updateCommittee), but a reverse sync can add/remove committee
+    // members within the 10s detail-cache TTL, so skipCache guarantees role-gated UI and the
+    // Settings form see the post-sync state instead of a stale cached read (copilot, dealako,
+    // #4911 review).
     this.refreshMembers({ skipCache: true });
   }
 

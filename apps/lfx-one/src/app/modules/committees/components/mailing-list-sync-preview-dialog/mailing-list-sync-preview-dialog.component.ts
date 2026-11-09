@@ -87,8 +87,10 @@ export class MailingListSyncPreviewDialogComponent {
   public addedWithOutcome: Signal<(SyncApplyAddResult & { outcomeText: string })[]> = this.initAddedWithOutcome();
   public removedWithOutcome: Signal<(SyncApplyRemoveResult & { outcomeText: string })[]> = this.initRemovedWithOutcome();
 
-  // Excludes failed rows so the results-view headings don't count a row as "added"/"removed" when
-  // it actually failed (docs/reviews/frontend-checklist.md § 4, #4911 review).
+  // Adds count only ADDED/INVITED (also excludes SKIPPED_CROSS_LIST, neither a failure nor an
+  // actual add); removes count everything except FAILED — so the results-view headings don't
+  // count a row as "added"/"removed" when it actually failed or was skipped
+  // (docs/reviews/frontend-checklist.md § 4, #4911 review).
   public addedSucceededCount: Signal<number> = this.initAddedSucceededCount();
   public removedSucceededCount: Signal<number> = this.initRemovedSucceededCount();
 
