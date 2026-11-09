@@ -1,18 +1,18 @@
 ---
 title: Identities
-description: Link, verify, and remove the GitHub, social, and email identities used to attribute your work in LFX Self Serve
+description: Link, verify, and remove the GitHub, GitLab, social, and email identities used to attribute your work in LFX Self Serve
 audience: [all]
 product_area: Account
-tags: [account, identities, github, email, verification, linux-com-alias, meeting-invitations]
-last_updated: 2026-11-04
+tags: [account, identities, github, gitlab, email, verification, linux-com-alias, meeting-invitations]
+last_updated: 2026-11-09
 intercom_collection: Account
 ---
 
-The **Identities** tab is where you manage the accounts used to identify you and attribute your contributions across Linux Foundation projects — your GitHub and social accounts and your verified email addresses. Keeping these linked and verified helps ensure accurate project affiliations and work history. It lives under the Profile & Account hub at `/profile/identities`.
+The **Identities** tab is where you manage the accounts used to identify you and attribute your contributions across Linux Foundation projects — your GitHub, GitLab and social accounts and your verified email addresses. Keeping these linked and verified helps ensure accurate project affiliations and work history. It lives under the Profile & Account hub at `/profile/identities`.
 
 ## What you can do
 
-- Link a new GitHub, social, or email identity to your account
+- Link a new GitHub, GitLab, social, or email identity to your account
 - Verify an identity that is connected but not yet confirmed
 - Remove an identity you no longer want linked
 - Claim and manage a personal **Linux.com email** alias (an Individual Supporter add-on)
@@ -40,7 +40,8 @@ The profile sidebar and the **Primary** badge use your current primary email. Ch
 
 1. Select **Add identity**.
 2. Choose a provider:
-   - For a social account, select **Continue with GitHub**, **Continue with LinkedIn**, or **Continue with Google** and complete the provider's sign-in. Linked identities are used to attribute contributions and participation across projects.
+   - For a social account, select **Continue with GitHub**, **Continue with GitLab**, **Continue with LinkedIn**, or **Continue with Google** and complete the provider's sign-in. Linked identities are used to attribute contributions and participation across projects.
+   - A GitLab account appears under **Verified identities**, with your GitLab username, once you have connected it here. GitLab accounts are not offered for verification until you connect them yourself. Remove one like any other verified identity (see [Remove an identity](#remove-an-identity)).
    - If that social account is already connected to your own account, LFX confirms **This identity is already connected to your account.** instead of linking it again, and refreshes your identities. Nothing new is linked.
    - For an email address, select **Add email**, enter the address, and select **Send verification code**. If the address can be added, a 6-digit code is sent to it; enter that code and select **Verify email**. After the cooldown, use **Resend code** once if needed. The button shows **Requesting code…** and is disabled while the request is pending. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance. After one successful resend request, the **Still waiting for your code?** callout directs you to **Contact support**, while code entry remains available. To correct the address, select **Use a different email** without closing the dialog; the action is disabled while requesting or verifying a code.
    - If the address turns out to be already connected to your own account, LFX still asks for the code — the code is what proves you own the inbox — and then confirms **This email is already connected to your account.** instead of adding it a second time. If verification instead reports that the address is already linked to an LFX account, select **contact support**.

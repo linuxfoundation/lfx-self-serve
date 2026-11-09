@@ -3,6 +3,7 @@
 
 import {
   ALLOWED_AVATAR_MIME_TYPES,
+  AUTH0_LINKED_ONLY_IDENTITY_COMBOS,
   AUTH0_TO_CDP_PROVIDER_MAP,
   CDP_DISPLAYABLE_IDENTITY_COMBOS,
   CDP_PLATFORM_ICONS,
@@ -19,6 +20,8 @@ import {
   EMAIL_VERIFICATION_MIN_RESPONSE_MS,
   EMAIL_VERIFICATION_SENT_MESSAGE,
   ERROR_CODES,
+  GITLAB_AUTH0_CONNECTION,
+  GITLAB_AUTH0_PROVIDER,
   IDENTITY_ALREADY_CONNECTED_STATUS,
   PROFILE_EMAIL_PATH,
   PROFILE_EMAILS_PATH,
@@ -1373,11 +1376,15 @@ export class ProfileController {
       });
 
       // Reconcile CDP identities with auth-service identities and filter to the
-      // (platform, type) combos LFX One can surface for verification via Auth0. During impersonation
+      // (platform, type) combos LFX One can surface for verification via Auth0, plus the linked-only
+      // combos (GitLab) when backed by a linked auth-service identity. During impersonation
       // the read is preserved but CDP writes (auto-verify + synthetic-identity creation) are skipped —
       // an impersonator must never mutate the target's CDP records.
       const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, memberId, cdpIdentities, auth0Identities, lfid, primaryEmail);
-      const displayIdentities = enriched.filter((id) => CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${id.platform}+${id.type}`));
+      const displayIdentities = enriched.filter((id) => {
+        const combo = `${id.platform}+${id.type}`;
+        return CDP_DISPLAYABLE_IDENTITY_COMBOS.has(combo) || (AUTH0_LINKED_ONLY_IDENTITY_COMBOS.has(combo) && id.inAuth0 === true);
+      });
 
       logger.success(req, 'get_identities', startTime, {
         lfid,
@@ -1503,8 +1510,9 @@ export class ProfileController {
         }
 
         if (provider && auth0UserId) {
-          // Map CDP platform name to Auth0 provider name (e.g., 'google' → 'google-oauth2')
-          const auth0Provider = CDP_TO_AUTH0_PROVIDER_MAP[provider] || provider;
+          // Map CDP platform name to Auth0 provider name (e.g., 'google' → 'google-oauth2'). GitLab's
+          // connection name ('gitlab') differs from its Auth0 provider ('oauth2'), and unlink needs the provider.
+          const auth0Provider = provider === 'gitlab' ? GITLAB_AUTH0_PROVIDER : CDP_TO_AUTH0_PROVIDER_MAP[provider] || provider;
           const mgmtToken = this.profileAuthService.getManagementToken(req);
           if (mgmtToken) {
             const unlinkResult = await this.emailVerificationService.unlinkIdentity(req, mgmtToken, auth0Provider, auth0UserId);
@@ -2690,7 +2698,7 @@ export class ProfileController {
     // Build a map of "platform:type:value" → Auth0Identity for matching
     const authServiceMap = new Map<string, Auth0Identity>();
     for (const authId of authServiceIdentities) {
-      const cdpPlatform = AUTH0_TO_CDP_PROVIDER_MAP[authId.provider];
+      const cdpPlatform = this.resolveAuth0IdentityPlatform(authId);
       const value = this.getAuth0IdentityValue(authId);
       if (cdpPlatform && value) {
         authServiceMap.set(this.identityMatchKey(cdpPlatform, CDP_PLATFORM_TO_TYPE_MAP[cdpPlatform] ?? 'username', value), authId);
@@ -2775,8 +2783,8 @@ export class ProfileController {
       let displayState: IdentityDisplayState;
 
       if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${cdp.platform}+${cdp.type}`)) {
-        // Combo not surfaceable via Auth0 (e.g. linkedin+username, gitlab+username) —
-        // we have no way to help the user verify it, so hide.
+        // Combo not surfaceable via Auth0 (e.g. linkedin+username) — we have no way to help the
+        // user verify it, so hide. GitLab is shown only when linked (matched above), never from CDP alone.
         displayState = 'hidden';
       } else if (isVerifiedByOtherOwner && hasMultiLfid) {
         // Multi-LFID merged profile — hide identities verified by another LFID
@@ -2799,7 +2807,7 @@ export class ProfileController {
     // 'custom'), so the enriched-array-only check below misses them.
     const postedCustomEmails = new Set<string>();
     for (const [, authId] of authServiceMap) {
-      const cdpPlatform = AUTH0_TO_CDP_PROVIDER_MAP[authId.provider];
+      const cdpPlatform = this.resolveAuth0IdentityPlatform(authId);
       const value = this.getAuth0IdentityValue(authId);
       if (!cdpPlatform || !value) {
         continue;
@@ -2810,8 +2818,10 @@ export class ProfileController {
         continue;
       }
 
-      // Skip combos LFX One can't surface for verification (e.g. lfid, gitlab)
-      if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${cdpPlatform}+${type}`)) {
+      // Skip combos LFX One can't surface (e.g. lfid). Linked-only combos (gitlab) are kept: this
+      // identity is linked, so it is shown and synced to CDP.
+      const combo = `${cdpPlatform}+${type}`;
+      if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(combo) && !AUTH0_LINKED_ONLY_IDENTITY_COMBOS.has(combo)) {
         continue;
       }
 
@@ -3132,6 +3142,25 @@ export class ProfileController {
   }
 
   /**
+   * Whether an Auth0 identity came from the GitLab generic OAuth2 connection (#4187). `oauth2` is
+   * shared by any custom social connection, so the connection name must match too (fail closed).
+   */
+  private isGitlabAuth0Identity(authId: Auth0Identity): boolean {
+    return authId.provider === GITLAB_AUTH0_PROVIDER && authId.connection === GITLAB_AUTH0_CONNECTION;
+  }
+
+  /**
+   * Resolve the CDP platform for an Auth0 identity. GitLab is identified by its connection; every
+   * other provider maps through AUTH0_TO_CDP_PROVIDER_MAP. Returns undefined for unmapped providers.
+   */
+  private resolveAuth0IdentityPlatform(authId: Auth0Identity): string | undefined {
+    if (this.isGitlabAuth0Identity(authId)) {
+      return 'gitlab';
+    }
+    return AUTH0_TO_CDP_PROVIDER_MAP[authId.provider];
+  }
+
+  /**
    * Extract the matching value from an Auth0 identity's profileData
    * Used for value-level cross-referencing with CDP identities
    */
@@ -3139,6 +3168,11 @@ export class ProfileController {
     const pd = auth0Id.profileData;
     if (!pd) {
       return null;
+    }
+    if (this.isGitlabAuth0Identity(auth0Id)) {
+      // GitLab username. No name fallback: with type='username' on POST, persisting pd.name (a
+      // display name, not a username) would corrupt CDP. Skip the identity if there is no nickname.
+      return pd.nickname ?? null;
     }
     switch (auth0Id.provider) {
       case 'email':

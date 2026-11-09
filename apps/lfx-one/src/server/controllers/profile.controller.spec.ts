@@ -107,6 +107,7 @@ const {
     verifyOtp: vi.fn(),
     linkIdentity: vi.fn(),
     listIdentities: vi.fn(),
+    unlinkIdentity: vi.fn(),
     addAlias: vi.fn(),
   },
   forwardsSvc: {
@@ -139,11 +140,13 @@ const {
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
 vi.mock('@lfx-one/shared/constants', () => ({
   ALLOWED_AVATAR_MIME_TYPES: ['image/png', 'image/jpeg', 'image/webp'],
+  AUTH0_LINKED_ONLY_IDENTITY_COMBOS: new Set(['gitlab+username']),
   AUTH0_TO_CDP_PROVIDER_MAP: auth0ToCdpProviderMap,
   CDP_DISPLAYABLE_IDENTITY_COMBOS: new Set(['github+username', 'linkedin+email', 'email+email', 'google+email']),
-  CDP_PLATFORM_ICONS: { email: 'fa-light fa-envelope', google: 'fa-brands fa-google' },
+  CDP_PLATFORM_ICONS: { email: 'fa-light fa-envelope', gitlab: 'fa-brands fa-gitlab', google: 'fa-brands fa-google' },
   CDP_PLATFORM_TO_TYPE_MAP: cdpPlatformToTypeMap,
-  CDP_TO_AUTH0_PROVIDER_MAP: {},
+  // The real reverse map holds gitlab → gitlab (the connection name); unlink must still send `oauth2`.
+  CDP_TO_AUTH0_PROVIDER_MAP: { gitlab: 'gitlab' },
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_ALREADY_LINKED_MESSAGE,
@@ -160,6 +163,8 @@ vi.mock('@lfx-one/shared/constants', () => ({
   // Only the member the write path sets. This factory replaces the module wholesale, so a name the
   // controller reads and this list omits fails as an undefined export rather than a wrong value.
   ERROR_CODES: { SERVICE_ADVISORY: 'SERVICE_ADVISORY' },
+  GITLAB_AUTH0_CONNECTION: 'gitlab',
+  GITLAB_AUTH0_PROVIDER: 'oauth2',
   IDENTITY_ALREADY_CONNECTED_STATUS,
   PURCHASE_LINUX_URL: 'https://example.com',
   VALKEY_CACHE,
@@ -3266,6 +3271,148 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(res.redirect).toHaveBeenCalledWith('/profile?error=impersonation_read_only');
       expect(emailVerificationSvc.verifyOtp).not.toHaveBeenCalled();
       expect(req.appSession.pendingEmailVerification).toEqual({ email: ownedEmail, otp: '654321' });
+    });
+  });
+});
+
+describe('ProfileController GitLab identities (#4190)', () => {
+  const lfid = 'dev-user';
+  const memberId = 'member-1';
+  let controller: ProfileController;
+
+  // GitLab links through Auth0's generic OAuth2 connection: provider `oauth2`, connection `gitlab`.
+  const linkedGitlab = {
+    provider: 'oauth2',
+    connection: 'gitlab',
+    user_id: 'gitlab|1000001',
+    isSocial: true,
+    profileData: { nickname: 'gitlab-dev-example', name: 'GitLab Dev Example' },
+  };
+
+  function cdpRow(overrides: Record<string, unknown> & { id: string; platform: string; type: string; value: string }): Record<string, unknown> {
+    return { verified: false, verifiedBy: null, source: 'cdp', icon: '', createdAt: '', updatedAt: '', ...overrides };
+  }
+
+  async function fetchIdentities(authIdentities: Record<string, unknown>[], cdpIdentities: Record<string, unknown>[] = []): Promise<any[]> {
+    auth0Svc.getUserIdentities.mockResolvedValue(authIdentities);
+    cdpSvc.getMemberIdentitiesForUser.mockResolvedValue({ memberId, identities: cdpIdentities });
+    const res = buildRes();
+    const next = vi.fn();
+    await controller.getIdentities(
+      buildReq({ path: '/api/profile/identities', oidc: { user: { sub: 'auth0|dev-user', email: 'dev@example.com' } } }),
+      res,
+      next
+    );
+    expect(next).not.toHaveBeenCalled();
+    return res.json.mock.calls[0][0];
+  }
+
+  const gitlabRows = (rows: any[]): any[] => rows.filter((row) => row.platform === 'gitlab');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.assign(auth0ToCdpProviderMap, { github: 'github', gitlab: 'gitlab', 'google-oauth2': 'google', email: 'email', linkedin: 'linkedin' });
+    Object.assign(cdpPlatformToTypeMap, { github: 'username', gitlab: 'username', google: 'email', email: 'email', linkedin: 'email', lfid: 'username' });
+    getEffectiveUsernameMock.mockReturnValue(lfid);
+    getUsernameFromAuthMock.mockResolvedValue(lfid);
+    getEffectiveEmailMock.mockReturnValue('dev@example.com');
+    isImpersonatingMock.mockReturnValue(false);
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'dev@example.com', alternate_emails: [] });
+    cdpSvc.verifyIdentity.mockResolvedValue(undefined);
+    cdpSvc.createIdentity.mockResolvedValue(undefined);
+    // Start every queued write synchronously so assertions can run right after the response.
+    cdpSvc.runMemberIdentityWrites.mockImplementation((_req: unknown, _memberId: string, writes: (() => Promise<void>)[]) => {
+      writes.forEach((write) => void write());
+      return true;
+    });
+    controller = new ProfileController();
+  });
+
+  afterEach(() => {
+    for (const map of [auth0ToCdpProviderMap, cdpPlatformToTypeMap]) {
+      for (const key of Object.keys(map)) {
+        delete map[key];
+      }
+    }
+  });
+
+  it('shows a linked GitLab account as verified with its username and syncs it to CDP', async () => {
+    const rows = await fetchIdentities([linkedGitlab]);
+
+    expect(gitlabRows(rows)).toEqual([
+      expect.objectContaining({
+        type: 'username',
+        value: 'gitlab-dev-example',
+        displayState: 'verified',
+        inAuth0: true,
+        auth0UserId: 'gitlab|1000001',
+        icon: 'fa-brands fa-gitlab',
+      }),
+    ]);
+    expect(cdpSvc.createIdentity).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      memberId,
+      expect.objectContaining({ value: 'gitlab-dev-example', platform: 'gitlab', type: 'username', verified: true, verifiedBy: lfid })
+    );
+  });
+
+  it('verifies a matching unverified CDP GitLab row instead of adding a second one', async () => {
+    const rows = await fetchIdentities([linkedGitlab], [cdpRow({ id: 'cdp-gitlab', platform: 'gitlab', type: 'username', value: 'gitlab-dev-example' })]);
+
+    expect(gitlabRows(rows)).toEqual([expect.objectContaining({ id: 'cdp-gitlab', displayState: 'verified', inAuth0: true, auth0UserId: 'gitlab|1000001' })]);
+    expect(cdpSvc.verifyIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), memberId, 'cdp-gitlab', lfid);
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+  });
+
+  it('hides an unverified CDP-only GitLab row when no GitLab account is linked', async () => {
+    const rows = await fetchIdentities([], [cdpRow({ id: 'cdp-gitlab', platform: 'gitlab', type: 'username', value: 'gitlab-dev-example' })]);
+
+    expect(gitlabRows(rows)).toEqual([]);
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+  });
+
+  it('ignores an oauth2 identity from any other connection', async () => {
+    const rows = await fetchIdentities([{ ...linkedGitlab, connection: 'other-oauth', user_id: 'other-oauth|1000002' }]);
+
+    expect(gitlabRows(rows)).toEqual([]);
+    expect(rows.some((row) => row.auth0UserId === 'other-oauth|1000002')).toBe(false);
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+  });
+
+  it('skips a linked GitLab account with no username rather than storing its display name', async () => {
+    const rows = await fetchIdentities([{ ...linkedGitlab, profileData: { name: 'GitLab Dev Example' } }]);
+
+    expect(gitlabRows(rows)).toEqual([]);
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+  });
+
+  describe('rejectIdentity', () => {
+    async function removeIdentity(body: Record<string, unknown>): Promise<void> {
+      const res = buildRes();
+      const next = vi.fn();
+      await controller.rejectIdentity(
+        buildReq({ params: { identityId: 'auth0:linked-1' }, body, path: '/api/profile/identities/auth0:linked-1', apiGatewayToken: 'v1-token' }),
+        res,
+        next
+      );
+      expect(next).not.toHaveBeenCalled();
+    }
+
+    beforeEach(() => {
+      profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+      emailVerificationSvc.unlinkIdentity.mockResolvedValue({ success: true });
+    });
+
+    it('unlinks GitLab with the oauth2 Auth0 provider, not the connection name', async () => {
+      await removeIdentity({ provider: 'gitlab', auth0UserId: 'gitlab|1000001' });
+
+      expect(emailVerificationSvc.unlinkIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'mgmt-token', 'oauth2', 'gitlab|1000001');
+    });
+
+    it('still unlinks GitHub with the github provider', async () => {
+      await removeIdentity({ provider: 'github', auth0UserId: '1000003' });
+
+      expect(emailVerificationSvc.unlinkIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'mgmt-token', 'github', '1000003');
     });
   });
 });

@@ -504,3 +504,44 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
     });
   });
 });
+
+/**
+ * Guards #4190: GitLab is offered in Add account with its brand icon, and LF ID stays excluded.
+ */
+describe('AddAccountDialogComponent — provider list (#4190)', () => {
+  let fixture: ComponentFixture<AddAccountDialogComponent>;
+
+  function setup(data: Record<string, unknown> = { existingProviders: [] }) {
+    TestBed.configureTestingModule({
+      imports: [AddAccountDialogComponent],
+      providers: [
+        { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
+        { provide: DynamicDialogConfig, useValue: { data } },
+        { provide: UserService, useValue: {} },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(AddAccountDialogComponent);
+    return fixture.componentInstance;
+  }
+
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+  });
+
+  it('lists GitLab with its icon and excludes LF ID', () => {
+    const component = setup();
+
+    expect(component.providers.find((provider) => provider.id === 'gitlab')).toEqual(expect.objectContaining({ name: 'GitLab', icon: 'fa-brands fa-gitlab' }));
+    expect(component.providers.some((provider) => provider.id === 'lfid')).toBe(false);
+  });
+
+  it('leaves GitLab out when the caller restricts the providers', () => {
+    const component = setup({ existingProviders: [], allowedProviders: ['github', 'linkedin'] });
+
+    expect(component.providers.map((provider) => provider.id)).toEqual(['github', 'linkedin']);
+  });
+});
