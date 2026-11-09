@@ -3,8 +3,11 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { MailingListSyncMode } from '../enums/mailing-list.enum';
 import { MAILING_LIST_NAME_PATTERN } from '../constants/mailing-list.constants';
-import { normalizeServicePrefix } from './mailing-list.utils';
+import { GroupsIOMailingList } from '../interfaces/mailing-list.interface';
+import { getMailingListCommitteeSync, normalizeServicePrefix } from './mailing-list.utils';
 
 describe('normalizeServicePrefix', () => {
   it.each([
@@ -39,6 +42,55 @@ describe('normalizeServicePrefix', () => {
   it('never produces a double hyphen when joined with a list name', () => {
     expect(`${normalizeServicePrefix('example-project-')}-dev`).toBe('example-project-dev');
     expect(`${normalizeServicePrefix('example-project')}-dev`).toBe('example-project-dev');
+  });
+});
+
+describe('getMailingListCommitteeSync', () => {
+  const committeeUid = 'committee-1';
+  const otherCommitteeUid = 'committee-2';
+
+  it('resolves sync_mode and filters from the matching committees[] entry, not top-level fields', () => {
+    const list: Pick<GroupsIOMailingList, 'committees'> = {
+      committees: [
+        {
+          uid: committeeUid,
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+          committee_role_filters: ['Chair'],
+        },
+      ],
+    };
+
+    expect(getMailingListCommitteeSync(list, committeeUid)).toEqual({
+      syncMode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+      committeeFilters: [CommitteeMemberVotingStatus.VOTING_REP],
+      committeeRoleFilters: ['Chair'],
+    });
+  });
+
+  it('returns empty defaults when the list is linked to a different committee', () => {
+    const list: Pick<GroupsIOMailingList, 'committees'> = {
+      committees: [
+        {
+          uid: otherCommitteeUid,
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+        },
+      ],
+    };
+
+    expect(getMailingListCommitteeSync(list, committeeUid)).toEqual({ syncMode: undefined, committeeFilters: [], committeeRoleFilters: [] });
+  });
+
+  it.each([[null], [undefined], [{ committees: [] }], [{ committees: undefined }]])('returns empty defaults for %j', (list) => {
+    expect(getMailingListCommitteeSync(list, committeeUid)).toEqual({ syncMode: undefined, committeeFilters: [], committeeRoleFilters: [] });
+  });
+
+  it.each([[null], [undefined], [''], ['' as const]])('returns empty defaults when committeeUid is %j', (uid) => {
+    const list: Pick<GroupsIOMailingList, 'committees'> = {
+      committees: [{ uid: committeeUid, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }],
+    };
+    expect(getMailingListCommitteeSync(list, uid)).toEqual({ syncMode: undefined, committeeFilters: [], committeeRoleFilters: [] });
   });
 });
 

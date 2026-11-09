@@ -400,6 +400,20 @@ export interface CommitteeReference {
   name?: string;
   /** Allowed voting statuses: Voting Rep, Alternate Voting Rep, Observer, Emeritus, None */
   allowed_voting_statuses?: CommitteeMemberVotingStatus[];
+  /**
+   * Automatic membership sync direction between this committee and the mailing list it's attached
+   * to (linuxfoundation/lfx-v2-mailing-list-service#110 `model.Committee.SyncMode`). The backend
+   * stores this per-committee-entry, not on the mailing list resource itself, so a mailing list
+   * linked to multiple committees can carry a different direction for each.
+   */
+  sync_mode?: MailingListSyncMode;
+  /**
+   * Committee member roles that gate which members are synced to the mailing list for this
+   * committee's C→ML direction, in addition to `allowed_voting_statuses`
+   * (linuxfoundation/lfx-v2-mailing-list-service#110 `model.Committee.CommitteeRoleFilters`).
+   * Plain string match against the member's role; there is no fixed role taxonomy.
+   */
+  committee_role_filters?: string[];
 }
 
 /**
@@ -1237,6 +1251,18 @@ export interface MailingListPickerDialogResult {
    * than treating an empty map as "reset everything to manual".
    */
   syncModes: Map<string, MailingListSyncMode>;
+  /**
+   * Chosen committee voting-status filter per mailing list uid (#4026 criterion 3), keyed for every
+   * list in the dialog's candidate set. Only meaningful for a list whose syncModes entry is
+   * `auto_c_to_ml`; empty when the sync feature flag is off, same fallback contract as `syncModes`.
+   */
+  committeeFilters: Map<string, CommitteeMemberVotingStatus[]>;
+  /**
+   * Chosen committee role filter per mailing list uid (#4026 criterion 3), keyed for every list in
+   * the dialog's candidate set. Only meaningful for a list whose syncModes entry is `auto_c_to_ml`;
+   * empty when the sync feature flag is off, same fallback contract as `syncModes`.
+   */
+  committeeRoleFilters: Map<string, string[]>;
 }
 
 export interface MailingListSyncPreviewDialogData {
