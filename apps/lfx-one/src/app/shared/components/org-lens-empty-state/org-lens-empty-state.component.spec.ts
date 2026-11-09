@@ -112,7 +112,7 @@ describe('OrgLensEmptyStateComponent', () => {
         }
         if (action.href) {
           expect(action.href, `${state}: href must be docs or Insights (#5447)`).toMatch(
-            /linuxfoundation\/lfx-self-serve\/blob\/main\/docs\/|insights\.linuxfoundation\.org/
+            /^(\/docs\/organization\/[a-z-]+|https:\/\/insights\.linuxfoundation\.org(\/.*)?)$/
           );
         }
       }
