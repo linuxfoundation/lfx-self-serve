@@ -1406,6 +1406,12 @@ describe('CampaignController.createCampaign cutover', () => {
       { demandGenVideoCreative: { headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `H${i}`) } },
     ],
     ['an oversized video ad scalar', { demandGenVideoCreative: { businessName: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }],
+    // Search's campaign assets (#5262), a creative key like the others.
+    [
+      'a Search ad image list above the entry cap',
+      { searchAssets: { adImages: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `https://x.example/${i}.png`) } },
+    ],
+    ['an oversized Search business name', { searchAssets: { businessName: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }],
     // The named Demand Gen ad groups (#5226): the list, a name, and each group's creatives.
     [
       'an ad group list above the entry cap',
@@ -3842,6 +3848,7 @@ describe('CampaignController.createCampaign cutover', () => {
       searchPartners: true,
       excludedPlacements: ['spam.example'],
       displayAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us this spring'] } }],
+      searchAssets: { businessName: 'Example Foundation' },
     };
     const CASES = GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.map(({ field, label }) => [field, label] as const);
 
@@ -3883,6 +3890,22 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(legacyCreate).not.toHaveBeenCalled();
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenVideoCreative' });
+    });
+
+    // Pinned outside the table, which is derived from the constant and so cannot notice the entry going missing.
+    it('refuses a Search create carrying its campaign assets by name while the cutover is dark (#5262)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ searchAssets: { adImages: ['https://cdn.example.org/square.png'] } }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'searchAssets' });
     });
 
     it('refuses a Display create split into ad groups by name while the cutover is dark (#475)', async () => {
@@ -11888,12 +11911,15 @@ describe('CampaignController.createCampaign Google stored images', () => {
     isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceGoogleAssets ? assets : cutover));
   };
 
+  // A Search create also carries the ad copy and a keyword, without which it is refused before any creative is read.
+  const searchCopy = { headlines: ['H1'], descriptions: ['D1'], keywords: [{ term: 'kubernetes', matchType: 'Exact' }] };
   const body = (channel: string, key: string, creative: Record<string, unknown>): Record<string, unknown> => ({
     platforms: ['google-ads'],
     campaignTypes: [channel],
     budgetUsd: 1000,
     startDate: '2026-04-01',
     endDate: '2026-04-30',
+    ...(channel === 'search' ? searchCopy : {}),
     [key]: creative,
   });
 
@@ -11911,6 +11937,7 @@ describe('CampaignController.createCampaign Google stored images', () => {
     ['demand-gen', 'demandGenCreative', 'logoImages'],
     ['performance-max', 'performanceMaxCreative', 'marketingImages'],
     ['display', 'displayCreative', 'squareLogoImages'],
+    ['search', 'searchAssets', 'businessLogoImages'],
   ])('forwards a %s asset ref as { imageAssetId } beside the pasted URLs, in order', async (channel, key, field) => {
     flagsWith(true, true);
     createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
@@ -11950,6 +11977,70 @@ describe('CampaignController.createCampaign Google stored images', () => {
     );
 
     expect(sentCreative('demandGenCreative')['logoImages']).toEqual([{ imageAssetId: ASSET }]);
+  });
+
+  /**
+   * #5262: Search's campaign assets ride under `searchAssets` on the Search branch, normalized as every
+   * creative is: each list trimmed with its blanks dropped, the business name trimmed, a field that
+   * empties out omitted. campaign-service judges every count, shape and width (`validateSearchAssets`).
+   */
+  it('forwards the Search campaign assets on a Search create, normalized', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        body('search', 'searchAssets', {
+          adImages: [' https://cdn.example.org/square.png ', '  ', { imageAssetId: ASSET }],
+          landscapeAdImages: ['https://cdn.example.org/wide.png'],
+          businessLogoImages: [],
+          businessName: '  Example Foundation  ',
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentCreative('searchAssets')).toEqual({
+      adImages: ['https://cdn.example.org/square.png', { imageAssetId: ASSET }],
+      landscapeAdImages: ['https://cdn.example.org/wide.png'],
+      businessName: 'Example Foundation',
+    });
+  });
+
+  /** A Search create whose assets are all blank sends no `searchAssets` key, which campaign-service reads as none asked for. */
+  it('sends no searchAssets key when every Search asset is blank', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body('search', 'searchAssets', { adImages: ['  '], businessName: ' ' }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect('searchAssets' in (createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>)['googleAdsConfig']).toBe(false);
+  });
+
+  /** campaign-service refuses `searchAssets` off Search; the BFF sends only the selected channel's creative, so it never reaches there. */
+  it.each(['performance-max', 'display'])('does not send searchAssets on a %s create', async (channel) => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body(channel, 'searchAssets', { businessName: 'Example Foundation' }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect('searchAssets' in (createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>)['googleAdsConfig']).toBe(false);
   });
 
   /** `youtubeVideoIds` is a list but not an image slot, so an object there is dropped as before. */
@@ -12078,6 +12169,26 @@ describe('CampaignController.createCampaign Google stored images', () => {
         code: 'FIELD_VALIDATION_ERROR',
       },
     ]);
+  });
+
+  it('refuses a stored Search ad image when the Google-assets flag is off, naming the entry and creating nothing (#5262)', async () => {
+    flagsWith(false, true);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(body('search', 'searchAssets', { landscapeAdImages: ['https://cdn.example.org/wide.png', { imageAssetId: ASSET }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([expect.objectContaining({ field: 'searchAssets.landscapeAdImages[1].imageAssetId' })]);
   });
 
   it.each([

@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics and Performance Max search themes, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics and Performance Max search themes, Search ad images, business logo and business name, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -31,13 +31,15 @@ tags:
     audiences,
     performance max,
     search themes,
+    images,
+    business name,
     implement,
   ]
 last_updated: 2026-11-09
 intercom_collection: Dashboards
 ---
 
-When you create a Google Ads campaign from the **Campaigns** page in the Foundation lens, the **Implement** tab lets you limit when the campaign runs, change how much it bids on each device, and keep it from serving to some age ranges, genders or places. It also lets you pick the conversion actions the campaign counts. On a Search campaign it also lets you add Google's search partners, set the ad's display path, add up to two more ads, and add negative keywords. Every setting is optional. If you leave them alone, the campaign serves all day, every day, at the same bid on every device, to every age and gender, everywhere it targets, which is Google's default, on Google Search only, with one ad and no negative keywords beyond any filled in from the brief.
+When you create a Google Ads campaign from the **Campaigns** page in the Foundation lens, the **Implement** tab lets you limit when the campaign runs, change how much it bids on each device, and keep it from serving to some age ranges, genders or places. It also lets you pick the conversion actions the campaign counts. On a Search campaign it also lets you add Google's search partners, set the ad's display path, add up to two more ads, add negative keywords, and add ad images, a business logo and a business name. Every setting is optional. If you leave them alone, the campaign serves all day, every day, at the same bid on every device, to every age and gender, everywhere it targets, which is Google's default, on Google Search only, with one ad and no negative keywords beyond any filled in from the brief.
 
 ## Where to find them
 
@@ -198,6 +200,19 @@ The lists apply to the whole campaign, including any ad group added later, for e
 - **Match type** (Exact, Phrase or Broad) applies to every keyword in the box. Exact is the default.
 - You can add more negative keywords from **Optimize** once the campaign is live.
 
+## Images, logo and business name (Search only)
+
+A Search campaign can show images, a business logo and a business name beside its ads. The **Search Creative** section appears below **Negative keywords** when Search is the campaign type. Every field in it is optional: leave them empty and the campaign serves on its ads alone.
+
+- **Business name**: up to 25 characters. Chinese, Japanese, Korean and other full-width characters count as two.
+- **Square ad images (1:1)**: square images of at least 300 x 300 pixels.
+- **Landscape ad images (1.91:1)**: landscape images of at least 600 x 314 pixels. Google Ads takes up to 20 ad images, square and landscape together.
+- **Business logo (1:1)**: one square image of at least 128 x 128 pixels.
+
+Paste one `https://` image link per line, or pick or upload images from the brief's image library where it is offered. Each image can be up to 5 MB. If you add more ad images or logos than Google Ads takes, a message says so and **Create Campaign** stays unavailable until you remove some.
+
+Each image's size and shape are checked before anything is created. The images, logo and business name are then added to the campaign after it is created, all together or not at all. They are added before the campaign's ads, so if Google Ads refuses them, the campaign has already been created without them and without its ads and keywords. Finish it in Google Ads, or create it again here with images, a logo and a business name Google Ads accepts. That is why nothing in this section is filled in from the brief, not even the business name the other campaign types start with: they are sent only when you add them.
+
 ## Copy, dates and budget filled in from the brief
 
 When you open the **Implement** tab for a brief, some fields start with values from the brief. You can change any of them.
@@ -212,7 +227,7 @@ When you open the **Implement** tab for a brief, some fields start with values f
 - **Display Creative**: headlines, descriptions and the business name, chosen the same way, plus a **Long headline**: the first Demand Gen headline the headlines did not use, or else the first Search description the descriptions did not use. A call to action from the brief is kept only if it is one Google accepts (see below).
 - **Performance Max Creative**: headlines, long headlines, descriptions and the business name.
 
-A note on each of these creative sections says the copy came from the brief, while it still does. Copy from the brief makes the ad a started one, so add the required images below it to create the ad, or clear the copy to create the campaign without one. Copy you typed before you left the tab is kept when you come back.
+A note on each of these creative sections says the copy came from the brief, while it still does. Copy from the brief makes the ad a started one, so add the required images below it to create the ad, or clear the copy to create the campaign without one. The **Search Creative** section is never filled in from the brief (see [Images, logo and business name](#images-logo-and-business-name-search-only)). Copy you typed before you left the tab is kept when you come back.
 
 ### Call to action
 
@@ -226,7 +241,7 @@ If a saved ad holds a call to action outside its list, a message under **Call to
 
 Each Google Ads campaign in the results has an **Open in Google Ads** link. It opens the campaign in the Google Ads account you are signed in to; if that is a different account, switch to the campaign's account in Google Ads.
 
-For Google Ads, **Image slot coverage** lists the image slots of the campaign types this tab sends images for: Demand Gen, Display and Performance Max. Search image slots are not listed, because the tab sends no Search images.
+For Google Ads, **Image slot coverage** lists the image slots of the campaign types this tab sends images for: Demand Gen, Display, Performance Max and Search. Video image slots are not listed, because the tab sends no Video images.
 
 ## Performance Max descriptions
 

@@ -189,8 +189,8 @@ export function googleCreativeWireFields(key: string, fields: readonly GoogleCre
  *
  * One entry per channel's image creative. Demand Gen's second creative, its video ad, is
  * {@link GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS}. `video` has no entry on purpose — see
- * `GOOGLE_VIDEO_CREATE_SUPPORTED`. `search` has none either: its copy rides as top-level
- * `headlines`/`descriptions`/`keywords`, not under a creative key.
+ * `GOOGLE_VIDEO_CREATE_SUPPORTED`. `search`'s entry is its campaign assets, `searchAssets` (#5262);
+ * its ad copy rides as top-level `headlines`/`descriptions`/`keywords`, not under a creative key.
  */
 export const GOOGLE_CREATIVE_WIRE_FIELDS: Readonly<Record<string, GoogleCreativeWireFields>> = Object.fromEntries(
   GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => [
