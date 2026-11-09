@@ -19570,6 +19570,51 @@ describe('ImplementationTabComponent demand gen audience', () => {
     expect(retried).toHaveBeenCalledTimes(1);
   });
 
+  it.each([['pending'], ['failed']])(
+    'keeps the block, with Retry and Remove, while the Demand Gen capability is unanswered and the read is %s',
+    async (read) => {
+      await setup();
+      const c = holdAudience(null, read as 'pending' | 'failed');
+      fixture.componentRef.setInput('demandGenEnabled', null);
+      fixture.detectChanges();
+
+      // `selectedGoogleChannels()` drops Demand Gen here, and the checkbox is hidden; the block must not follow it.
+      expect(c['selectedGoogleChannels']()).not.toContain('demand-gen');
+      expect(query('implementation-include-demand-gen')).toBeNull();
+      expect(c['demandGenAudienceBlock']()?.kind).toBe(read);
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-demand-gen-audience-block-remove')).not.toBeNull();
+      expect(query('implementation-demand-gen-audience-block-retry') !== null).toBe(read === 'failed');
+    }
+  );
+
+  it('moves focus to the Search checkbox on Remove all while the Demand Gen checkbox is hidden and Create is disabled', async () => {
+    await setup();
+    const focused: HTMLElement[] = [];
+    vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+      focused.push(this);
+    });
+    const c = holdAudience(null, 'failed');
+    fixture.componentRef.setInput('demandGenEnabled', null);
+    fixture.detectChanges();
+
+    (query('implementation-demand-gen-audience-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(c['demandGenAudienceBlock']()).toBeNull();
+    expect(focused.at(-1)).toBe(query('implementation-include-search'));
+  });
+
+  it('clears the block only when the Demand Gen capability is answered no, which drops the channel', async () => {
+    await setup();
+    const c = holdAudience(null, 'failed');
+    fixture.componentRef.setInput('demandGenEnabled', false);
+    fixture.detectChanges();
+
+    expect(c['demandGenAudienceBlock']()).toBeNull();
+  });
+
   it('asks for the brief to be saved when there is no brief to check against', async () => {
     await setup();
     const c = holdAudience(null, 'unknown', null);
@@ -20511,6 +20556,86 @@ describe('ImplementationTabComponent performance max audience signal', () => {
     expect(c['performanceMaxAudienceSignalBlock']()).toBeNull();
     expect(query('implementation-performance-max-audience-signal-block-live')?.textContent?.trim()).toBe('');
     expect((await requestOf(c))['performanceMaxAudienceSignal']).toBe(AUDIENCE_A);
+  });
+
+  it.each([
+    ['a lone U+FEFF', '\uFEFF'],
+    ['a U+FEFF before an id', '\uFEFF42'],
+  ])('trims as Go does, so %s is judged and refused rather than omitted or accepted', async (_label, value) => {
+    await setup();
+    const c = seedPmax();
+    restoreGoogleDraft(fixture, c, { includePerformanceMax: true, googlePerformanceMaxAudienceSignal: value });
+    c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
+    fixture.detectChanges();
+
+    // JS `trim()` would give '' and '42'; Go's TrimSpace keeps U+FEFF.
+    expect(c['performanceMaxAudienceSignal']()).toBe(value);
+    expect(c['googlePerformanceMaxAudienceSignalPayload']()).toEqual({ performanceMaxAudienceSignal: value });
+    expect(c['performanceMaxAudienceSignalError']()).toContain('is not a Google Ads Audience');
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  it('still trims the whitespace Go trims around an id', async () => {
+    await setup();
+    const c = seedPmax();
+    restoreGoogleDraft(fixture, c, { includePerformanceMax: true, googlePerformanceMaxAudienceSignal: '\u00a0\t111\n' });
+    expect(c['performanceMaxAudienceSignal']()).toBe('111');
+  });
+
+  /** The channel capability read pending or failed: `googleChannelsEnabled` is `null`, so the PMax checkbox is hidden. */
+  describe.each([
+    ['pending', 'pending'],
+    ['failed', 'failed'],
+  ] as const)('with the channel capability unanswered (read %s)', (read, kind) => {
+    it('keeps the block with its Retry and Remove, and Create held, though selectedGoogleChannels drops Performance Max', async () => {
+      await setup();
+      const retried = vi.fn();
+      fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
+      const c = holdSignal(null, read);
+      fixture.componentRef.setInput('googleChannelsEnabled', null);
+      fixture.componentRef.setInput('googleCreativeEnabled', null);
+      fixture.detectChanges();
+
+      expect(c['selectedGoogleChannels']()).not.toContain('performance-max');
+      expect(query('implementation-include-performance-max')).toBeNull();
+      expect(c['performanceMaxAudienceSignalBlock']()?.kind).toBe(kind);
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-performance-max-audience-signal-block-remove')).not.toBeNull();
+      if (kind === 'failed') {
+        (query('implementation-performance-max-audience-signal-block-retry')?.querySelector('button') as HTMLButtonElement).click();
+        expect(retried).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('falls back to the Search checkbox on Remove, the PMax checkbox being hidden and Create disabled', async () => {
+      await setup();
+      const focused: HTMLElement[] = [];
+      vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+        focused.push(this);
+      });
+      const c = holdSignal(null, read);
+      fixture.componentRef.setInput('googleChannelsEnabled', null);
+      fixture.detectChanges();
+
+      (query('implementation-performance-max-audience-signal-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(c['performanceMaxAudienceSignalBlock']()).toBeNull();
+      expect(focused.at(-1)).toBe(query('implementation-include-search'));
+    });
+  });
+
+  it('clears the block only once the channel capability is answered no, which drops Performance Max', async () => {
+    await setup();
+    const c = holdSignal(null, 'failed');
+    fixture.componentRef.setInput('googleChannelsEnabled', null);
+    fixture.detectChanges();
+    expect(c['performanceMaxAudienceSignalBlock']()?.kind).toBe('failed');
+
+    fixture.componentRef.setInput('googleChannelsEnabled', false);
+    fixture.detectChanges();
+    expect(c['performanceMaxAudienceSignalBlock']()).toBeNull();
   });
 
   it('holds Create naming the deployment while the cutover is dark, listing the signal with Remove', async () => {

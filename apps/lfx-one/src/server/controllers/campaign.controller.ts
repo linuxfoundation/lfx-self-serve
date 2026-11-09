@@ -911,9 +911,10 @@ export class CampaignController {
       // existing Audience on the shared account, so campaign-service creates with one only for
       // `global_marketing_ops` on the path project (`GoogleAdsMarketingOpsInputs`,
       // linuxfoundation/lfx-v2-campaign-service#501). Counted as upstream counts it: any value but an absent,
-      // null or empty one, whitespace and a malformed value included, on any channel.
+      // null or empty one, whitespace and a malformed value included, on any channel, and on a request that
+      // names no platform (`googleImplied`), which the legacy creator reads as a Google create.
       const rawAudienceSignal: unknown = body?.performanceMaxAudienceSignal;
-      if (platforms.includes('google-ads') && googlePerformanceMaxAudienceSignalCarried(rawAudienceSignal)) {
+      if (googleImplied && googlePerformanceMaxAudienceSignalCarried(rawAudienceSignal)) {
         const access = await this.googleMarketingOpsAccess(
           req,
           projectSlug,

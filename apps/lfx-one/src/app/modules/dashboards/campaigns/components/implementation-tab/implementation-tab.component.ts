@@ -4230,10 +4230,14 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly performanceMaxAudienceSignalAvailable: Signal<boolean> = computed(
     () => this.googlePerformanceMaxAudienceSignalEnabled() === true && this.googleChannelIn(GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL)
   );
-  /** The audience signal the form holds (set by the picker or a restored draft), trimmed; `''` when none. */
+  /**
+   * The audience signal the form holds (set by the picker or a restored draft), trimmed as campaign-service's
+   * Go `TrimSpace` does ({@link googleAdsTrimSpace}, which keeps U+FEFF where JS `trim()` strips it), so the
+   * judge, the payload and the retained-value block all read what upstream would; `''` when none.
+   */
   protected readonly performanceMaxAudienceSignal: Signal<string> = computed(() => {
     void this.campaignFormRevision();
-    return this.campaignForm.controls.googlePerformanceMaxAudienceSignal.value.trim();
+    return googleAdsTrimSpace(this.campaignForm.controls.googlePerformanceMaxAudienceSignal.value);
   });
   /**
    * Whether the audience signal's section renders: the dispatched channel takes a signal, and either this
@@ -6482,14 +6486,16 @@ export class ImplementationTabComponent implements OnInit {
    * Remove the audience signal, from the picker section or from {@link performanceMaxAudienceSignalBlock}.
    * Focus moves to the picker that replaces it; where none renders (no picker access, the list unavailable
    * or empty, or the section hidden), to Create Campaign when it is enabled, otherwise to the Performance
-   * Max channel checkbox, which renders while the block can show.
+   * Max channel checkbox, and where that is hidden too (the channel capability still unanswered) to the Search
+   * checkbox, which always renders.
    */
   protected removePerformanceMaxAudienceSignal(): void {
     this.campaignForm.controls.googlePerformanceMaxAudienceSignal.setValue('');
     this.focusPerformanceMaxAudienceSignalAfterRender(
       '[data-testid="implementation-performance-max-audience-signal-picker"] input',
       '[data-testid="implementation-submit-btn"] button:not(:disabled)',
-      '[data-testid="implementation-include-performance-max"]'
+      '[data-testid="implementation-include-performance-max"]',
+      '[data-testid="implementation-include-search"]'
     );
   }
 
@@ -12351,14 +12357,16 @@ export class ImplementationTabComponent implements OnInit {
    * Demand Gen's creative section is off screen (the cutover dark, its answer still out, or Search ticked
    * beside it), and reading them here would let a restored draft create without its audience.
    *
-   * Demand Gen among the selected channels, not {@link resolveGoogleChannel}: that resolves Search + Demand
+   * Demand Gen among the selected channels (the raw box unless its capability is answered no), not {@link resolveGoogleChannel}: that resolves Search + Demand
    * Gen to Search, yet with the cutover dark the legacy creator builds both campaigns from that pair, so
    * the Demand Gen one would go out without its saved targeting.
    */
   private initDemandGenAudienceRetained(): Signal<{ owner: string; audience: string }[]> {
     return computed(() => {
       void this.campaignFormRevision();
-      if (!this.showGoogleSection() || !this.selectedGoogleChannels().includes('demand-gen')) return [];
+      // The raw selection, not `selectedGoogleChannels()`, which drops Demand Gen while its capability is
+      // unanswered and would hide the block's Retry and Remove; only an answered no means it is not asked for.
+      if (!this.showGoogleSection() || !this.campaignForm.getRawValue().includeDemandGen || this.demandGenEnabled() === false) return [];
       const form = this.campaignForm.controls;
       if (!form.demandGenAdGroupsSplit.value) {
         const single = form.demandGenAudience.value.trim();
@@ -12593,7 +12601,11 @@ export class ImplementationTabComponent implements OnInit {
   private initPerformanceMaxAudienceSignalBlock(): Signal<CampaignGooglePerformanceMaxAudienceSignalBlock | null> {
     return computed(() => {
       if (this.performanceMaxAudienceSignal() === '') return null;
-      if (!this.showGoogleSection() || !this.selectedGoogleChannels().includes('performance-max')) return null;
+      // The raw selection, not `selectedGoogleChannels()`: that drops Performance Max while the channel
+      // capability is unanswered, which would hide the Retry and Remove this block offers. Only an answered
+      // no on the channel capability (the restore then clears the box) means the signal is not asked for.
+      if (!this.showGoogleSection() || !this.campaignForm.getRawValue().includePerformanceMax) return null;
+      if (this.googleChannelsEnabled() === false) return null;
       if (this.googleCreativeAvailable() && this.googlePerformanceMaxAudienceSignalEnabled() === true) return null;
 
       if (this.googleCreativeEnabled() === false) {
@@ -12697,10 +12709,10 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Once rendered, focus Create Campaign when it is enabled, otherwise the Demand Gen channel checkbox. Both
-   * are on screen whenever {@link demandGenAudienceBlock} was, cutover dark included, where Demand Gen's
-   * creative section and its own fallbacks are hidden; the checkbox renders while Demand Gen can be
-   * selected, which the block needs.
+   * Once rendered, focus Create Campaign when it is enabled, otherwise the Demand Gen channel checkbox, and
+   * where that is hidden too (the Demand Gen capability still unanswered) the Search checkbox, which always
+   * renders. Create and the checkbox are on screen whenever {@link demandGenAudienceBlock} was, cutover
+   * dark included, where Demand Gen's creative section and its own fallbacks are hidden.
    */
   private focusAfterDemandGenAudienceBlockRemoved(): void {
     afterNextRender(
@@ -12708,7 +12720,8 @@ export class ImplementationTabComponent implements OnInit {
         const host = this.host.nativeElement;
         const target =
           host.querySelector<HTMLElement>('[data-testid="implementation-submit-btn"] button:not(:disabled)') ??
-          host.querySelector<HTMLElement>('[data-testid="implementation-include-demand-gen"]');
+          host.querySelector<HTMLElement>('[data-testid="implementation-include-demand-gen"]') ??
+          host.querySelector<HTMLElement>('[data-testid="implementation-include-search"]');
         target?.focus();
       },
       { injector: this.injector }

@@ -6564,9 +6564,25 @@ describe('CampaignController.createCampaign cutover', () => {
         expect(refusalFrom()).toMatchObject({ statusCode: 400 });
       });
 
+      it('refuses a malformed Performance Max audience signal by its shape, not as an unserved field, when platforms is omitted', async () => {
+        await create({ platforms: undefined, performanceMaxAudienceSignal: 42 });
+
+        expect(legacyCreate).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({
+          statusCode: 400,
+          field: 'performanceMaxAudienceSignal',
+          message: expect.stringContaining('must be a Google Ads Audience'),
+        });
+      });
+
       it.each([
         ['an account-owned Display list', { displayAudiences: { customAudiences: [CUSTOM] } }, GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_CODE],
         ['a Demand Gen audience', { demandGenAudience: 'customers/1234567890/audiences/42' }, GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_CODE],
+        [
+          'a Performance Max audience signal',
+          { performanceMaxAudienceSignal: 'customers/1234567890/audiences/42' },
+          GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_CODE,
+        ],
       ])('asks global_marketing_ops for %s when platforms is omitted', async (_label, fields, code) => {
         marketingOps.mockResolvedValueOnce(false);
 
