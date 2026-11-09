@@ -156,6 +156,7 @@ export * from './campaign-google-demand-gen-ad-groups.utils';
 export * from './campaign-google-demand-gen-audience.utils';
 export * from './campaign-google-placements.utils';
 export * from './campaign-google-display-ad-groups.utils';
+export * from './campaign-google-display-audiences.utils';
 export * from './campaign-event-details.utils';
 export * from './campaign.utils';
 export * from './campaign-optimize.utils';

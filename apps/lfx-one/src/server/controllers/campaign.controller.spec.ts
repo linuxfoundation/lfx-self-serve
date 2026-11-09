@@ -18,6 +18,8 @@ import {
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_CODE,
   GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_CODE,
+  GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_CODE,
   GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
@@ -3849,6 +3851,8 @@ describe('CampaignController.createCampaign cutover', () => {
       excludedPlacements: ['spam.example'],
       displayAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us this spring'] } }],
       searchAssets: { businessName: 'Example Foundation' },
+      // User interests alone, which need no global_marketing_ops (#5262).
+      displayAudiences: { userInterests: ['customers/1234567890/userInterests/80001'] },
     };
     const CASES = GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.map(({ field, label }) => [field, label] as const);
 
@@ -5736,8 +5740,9 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(next).not.toHaveBeenCalled();
       const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
       expect(config).not.toHaveProperty('displayCreative');
+      // A group's audience lists ride on the group (#5262).
       expect(config['displayAdGroups']).toEqual([
-        { name: 'Retargeting', creative: { headlines: ['Join us'] } },
+        { name: 'Retargeting', creative: { headlines: ['Join us'] }, audienceSegments: ['customers/1/userLists/2'] },
         { name: 'Prospecting', creative: { headlines: ['Register'] } },
       ]);
     });
@@ -6364,6 +6369,182 @@ describe('CampaignController.createCampaign cutover', () => {
 
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenAudience', message: expect.stringContaining('ad group 1 must be') });
+    });
+  });
+
+  describe('Display audiences (#5262)', () => {
+    const LIST = 'customers/1234567890/userLists/5';
+    const LIST_B = 'customers/1234567890/userLists/6';
+    const CUSTOM = 'customers/1234567890/customAudiences/7';
+    const AFFINITY = 'customers/1234567890/customInterests/8';
+    const INTEREST = 'customers/1234567890/userInterests/80001';
+    const AD = { headlines: ['Join us'] };
+    const marketingOps = vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict);
+    const create = async (fields: Record<string, unknown>, campaignTypes = ['display']): Promise<void> => {
+      await controller.createCampaign(buildReq(googleBody({ campaignTypes, ...fields } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    };
+    const accepted = (): void => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005262', error: null });
+    };
+    const config = (): Record<string, unknown> => envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+
+    it('sends the single ad group lists and the exclusions as top-level googleAdsConfig fields, trimmed, asking global_marketing_ops', async () => {
+      accepted();
+
+      await create({
+        displayCreative: AD,
+        displayAudiences: {
+          audienceSegments: [` ${LIST}`, LIST],
+          customAudiences: [CUSTOM],
+          customAffinities: [AFFINITY],
+          userInterests: [INTEREST],
+          excludedAudienceSegments: [LIST_B],
+          customAffinitiesExtra: ['ignored'],
+        },
+      });
+
+      expect(next).not.toHaveBeenCalled();
+      expect(config()).toMatchObject({
+        audienceSegments: [LIST, LIST],
+        customAudiences: [CUSTOM],
+        customAffinities: [AFFINITY],
+        userInterests: [INTEREST],
+        excludedAudienceSegments: [LIST_B],
+      });
+      expect(config()).not.toHaveProperty('displayAudiences');
+      expect(marketingOps).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    });
+
+    it("sends each named group's lists on the group, with the campaign's exclusions at the top level", async () => {
+      accepted();
+
+      await create({
+        displayAudiences: { excludedAudienceSegments: [LIST_B] },
+        displayAdGroups: [
+          { name: 'Retargeting', creative: AD, audienceSegments: [LIST], customAudiences: [] },
+          { name: 'Prospecting', creative: AD, customAffinities: [` ${AFFINITY} `], userInterests: [INTEREST] },
+        ],
+      });
+
+      expect(next).not.toHaveBeenCalled();
+      expect(config()['displayAdGroups']).toEqual([
+        { name: 'Retargeting', creative: { headlines: ['Join us'] }, audienceSegments: [LIST] },
+        { name: 'Prospecting', creative: { headlines: ['Join us'] }, customAffinities: [AFFINITY], userInterests: [INTEREST] },
+      ]);
+      expect(config()['excludedAudienceSegments']).toEqual([LIST_B]);
+      expect(config()).not.toHaveProperty('audienceSegments');
+    });
+
+    it('leaves the request byte-identical, asking nothing, when every list is empty', async () => {
+      accepted();
+      await create({ displayCreative: AD });
+      const without = JSON.stringify(config());
+      for (const displayAudiences of [{}, null, { audienceSegments: [], userInterests: null }]) {
+        createCampaigns.mockClear();
+        await create({ displayCreative: AD, displayAudiences });
+        expect(JSON.stringify(config())).toBe(without);
+      }
+      expect(marketingOps).not.toHaveBeenCalled();
+    });
+
+    it('sends user interests without asking global_marketing_ops, as upstream gates only account-owned lists', async () => {
+      accepted();
+
+      await create({ displayCreative: AD, displayAudiences: { userInterests: [INTEREST] } });
+
+      expect(next).not.toHaveBeenCalled();
+      expect(marketingOps).not.toHaveBeenCalled();
+      expect(config()['userInterests']).toEqual([INTEREST]);
+    });
+
+    it.each([
+      ['a user list', { displayAudiences: { audienceSegments: [LIST] } }],
+      ['a custom audience', { displayAudiences: { customAudiences: [CUSTOM] } }],
+      ['a custom affinity segment', { displayAudiences: { customAffinities: [AFFINITY] } }],
+      ['an excluded user list', { displayAudiences: { excludedAudienceSegments: [LIST] } }],
+      ["a group's user list", { displayAdGroups: [{ name: 'a', creative: AD, audienceSegments: [LIST] }] }],
+      ['a malformed list, which must not reach the shape refusal first', { displayAudiences: { customAudiences: 'x' } }],
+      ['lists left under another channel', { displayAudiences: { audienceSegments: [LIST] }, campaignTypes: ['search'] }],
+    ])('refuses %s from a caller without global_marketing_ops with a coded 403, creating nothing', async (_label, fields) => {
+      marketingOps.mockResolvedValueOnce(false);
+
+      await create({ displayCreative: AD, ...fields });
+
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as AuthorizationError;
+      expect(error).toBeInstanceOf(AuthorizationError);
+      expect(error.code).toBe(GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_CODE);
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+    });
+
+    it('refuses with a coded 503 rather than admitting when the check cannot be made', async () => {
+      marketingOps.mockRejectedValueOnce(new Error('access check unavailable'));
+
+      await create({ displayCreative: AD, displayAudiences: { customAudiences: [CUSTOM] } });
+
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
+      expect(error.statusCode).toBe(503);
+      expect(error.code).toBe(GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_CODE);
+      expect(createCampaigns).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['displayAudiences that is not an object', { displayAudiences: [LIST] }, 'must be an object of audience lists'],
+      ['a list that is not a list of strings', { displayAudiences: { userInterests: [7] } }, "The single ad group's interests must be"],
+      [
+        "a group's list that is not a list of strings",
+        { displayAdGroups: [{ name: 'a', creative: AD, userInterests: 'x' }] },
+        "Display ad group 1's interests must be",
+      ],
+      ["a group's own exclusions", { displayAdGroups: [{ name: 'a', creative: AD, excludedAudienceSegments: [LIST] }] }, 'excludes user lists of its own'],
+      ['a blank entry', { displayCreative: AD, displayAudiences: { userInterests: [INTEREST, ' '] } }, 'interests: entry 2 is blank'],
+      [
+        'an Audience resource',
+        { displayCreative: AD, displayAudiences: { audienceSegments: ['customers/1234567890/audiences/4'] } },
+        'is a Google Ads Audience',
+      ],
+      ['a resource in the wrong list', { displayCreative: AD, displayAudiences: { customAudiences: [AFFINITY] } }, 'pick it under Custom affinity segments'],
+      ['an exclusion that is not a user list', { displayCreative: AD, displayAudiences: { excludedAudienceSegments: [CUSTOM] } }, 'is not a user list'],
+      [
+        'a list targeted and excluded',
+        { displayCreative: AD, displayAudiences: { audienceSegments: [LIST], excludedAudienceSegments: [LIST] } },
+        'also excludes',
+      ],
+      [
+        'the single ad group lists beside named groups',
+        { displayAudiences: { userInterests: [INTEREST] }, displayAdGroups: [{ name: 'a', creative: AD }] },
+        'cannot be sent with named ad groups',
+      ],
+      ['lists on Search', { displayAudiences: { userInterests: [INTEREST] }, campaignTypes: ['search'] }, 'only on Display campaigns, not on Search campaigns'],
+      ['lists on Demand Gen', { displayAudiences: { excludedAudienceSegments: [LIST] }, campaignTypes: ['demand-gen'] }, 'not on Demand Gen campaigns'],
+    ])('refuses %s by name before any upstream call', async (_label, fields, fragment) => {
+      const { campaignTypes, ...rest } = fields as Record<string, unknown> & { campaignTypes?: string[] };
+      await create(rest, campaignTypes);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayAudiences', message: expect.stringContaining(fragment) });
+    });
+
+    it('refuses an oversized list before normalizing it', async () => {
+      await create({ displayCreative: AD, displayAudiences: { userInterests: Array(101).fill(INTEREST) } });
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayAudiences.userInterests' });
+    });
+
+    it('refuses Display audiences by name while the cutover is dark, rather than letting the legacy creator drop them', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_legacy_5262' });
+
+      await create({ displayAudiences: { userInterests: [INTEREST] } }, ['search']);
+
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({
+        statusCode: 400,
+        field: 'displayAudiences',
+        message: expect.stringContaining('Google Display audiences cannot be applied'),
+      });
     });
   });
 
@@ -10374,6 +10555,7 @@ describe('CampaignController.listBriefCampaigns', () => {
         googleAudienceSegmentsEnabled: audiences,
         googleConversionActionsEnabled: conversions,
         googleDemandGenAudienceEnabled: conversions,
+        googleDisplayAudiencesEnabled: conversions,
       })
     );
   });
@@ -10387,7 +10569,12 @@ describe('CampaignController.listBriefCampaigns', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ googleAudienceSegmentsEnabled: null, googleConversionActionsEnabled: false, googleDemandGenAudienceEnabled: null })
+      expect.objectContaining({
+        googleAudienceSegmentsEnabled: null,
+        googleConversionActionsEnabled: false,
+        googleDemandGenAudienceEnabled: null,
+        googleDisplayAudiencesEnabled: null,
+      })
     );
   });
 

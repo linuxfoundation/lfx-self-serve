@@ -51,6 +51,7 @@ import type {
   GoogleCreativeGroup,
   GoogleCreativeSharedCap,
   GoogleDeviceBidMode,
+  GoogleDisplayAudienceLists,
   GoogleDisplayDemographics,
   KeywordActionOutcome,
   KeywordActionPlatform,
@@ -1542,6 +1543,23 @@ export const GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_DEMAND
 /** The user-facing message of that refusal. Nothing was created. */
 export const GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_MESSAGE =
   'Your access to Demand Gen audiences could not be verified, so nothing was created. Try again in a few minutes, or remove the audience.';
+
+/**
+ * The error `code` (HTTP 403) of a Google create refused because it names an account-owned Display audience
+ * (#5262): a user list, custom audience or custom affinity segment targeted by the single ad group or a named
+ * one, or a user list the campaign excludes, while the caller does not hold `global_marketing_ops` on the
+ * project. campaign-service refuses the same create on the same relation (`GoogleAdsMarketingOpsInputs`,
+ * linuxfoundation/lfx-v2-campaign-service#505). User interests are Google's own categories and are not gated.
+ */
+export const GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_CODE = 'GOOGLE_DISPLAY_AUDIENCES_RESTRICTED';
+/** The user-facing message of that refusal. Nothing was created. */
+export const GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_MESSAGE =
+  'Only the LF marketing team can target or exclude user lists, custom audiences or custom affinity segments on Display, because every foundation shares one Google Ads account. Remove them and create again.';
+/** The error `code` (HTTP 503) of that create refused because the caller's access could not be verified. */
+export const GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE';
+/** The user-facing message of that refusal. Nothing was created. */
+export const GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE =
+  'Your access to Display audiences could not be verified, so nothing was created. Try again in a few minutes, or remove the audiences.';
 
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
@@ -4881,6 +4899,8 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   // The Search campaign's assets (#5262), which campaign-service judges after the creatives
   // (`validateSearchAssets`).
   { field: 'searchAssets', label: 'Search images, logo and business name', normalized: true },
+  // The Display audiences outside the named groups (#5262), counted when `googleDisplayAudiences` would send a list.
+  { field: 'displayAudiences', label: 'Display audiences', normalized: true },
 ] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string; normalized?: true }[];
 
 /**
@@ -5575,6 +5595,50 @@ export const GOOGLE_DEMAND_GEN_AD_GROUP_NAME_SUFFIX = ' - Display';
 export const GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY = 'displayAdGroups' satisfies keyof CampaignCreateRequest;
 
 /**
+ * The `CampaignCreateRequest` key the Display audiences outside the named groups ride under (#5262): the
+ * single ad group's four lists and the campaign's excluded user lists. The BFF sends each list as the
+ * top-level `googleAdsConfig` field of the same name, on Display alone.
+ */
+export const GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY = 'displayAudiences' satisfies keyof CampaignCreateRequest;
+
+/**
+ * The four Display audience kinds an ad group targets (#5262), in the order campaign-service judges them
+ * (`validateDisplayTargeting`): the `googleAdsConfig` field, the resource collection its entries must name
+ * (`displayAudienceCollections` in `display_targeting.go`), the audience read that lists them (`null` for
+ * user lists, which `GET /api/campaigns/google/user-lists` lists), and the words the tab and refusals use.
+ * `gated` is whether the kind names an account-owned resource, which campaign-service creates with only for
+ * `global_marketing_ops` (`GoogleAdsMarketingOpsInputs`); user interests are Google's own categories.
+ */
+export const GOOGLE_DISPLAY_AUDIENCE_KINDS = [
+  { kind: 'audienceSegments', collection: 'userLists', readType: null, label: 'User lists', noun: 'user list', gated: true },
+  { kind: 'customAudiences', collection: 'customAudiences', readType: 'custom_audience', label: 'Custom audiences', noun: 'custom audience', gated: true },
+  {
+    kind: 'customAffinities',
+    collection: 'customInterests',
+    readType: 'custom_interest',
+    label: 'Custom affinity segments',
+    noun: 'custom affinity segment',
+    gated: true,
+  },
+  { kind: 'userInterests', collection: 'userInterests', readType: 'user_interest', label: 'Interests', noun: 'interest', gated: false },
+] as const satisfies readonly {
+  kind: keyof GoogleDisplayAudienceLists;
+  collection: string;
+  readType: (typeof GOOGLE_ADS_AUDIENCE_READ_TYPES)[number] | null;
+  label: string;
+  noun: string;
+  gated: boolean;
+}[];
+
+/** The note under the split when the single ad group's Display audiences are kept but not sent because the campaign is split (#5262). */
+export const GOOGLE_DISPLAY_AUDIENCES_HELD_WHILE_SPLIT =
+  'The audiences you picked for the single ad group are kept but not sent while the campaign is split into ad groups. Pick audiences on each ad group, or turn the split off to send them.';
+
+/** The note when the named ad groups' Display audiences are kept but not sent because the campaign is not split (#5262). */
+export const GOOGLE_DISPLAY_AUDIENCES_HELD_WHILE_NOT_SPLIT =
+  'The audiences you picked for named ad groups are kept but not sent while the campaign is not split. Turn the split on to send them.';
+
+/**
  * The most named ad groups one Display campaign takes: campaign-service's `maxDisplayAdGroups`
  * (`internal/platform/googleads/display_adgroups.go`), a service bound for the reasons the Demand Gen one has.
  */
@@ -6122,6 +6186,28 @@ export const GOOGLE_AUDIENCE_PICKER_EMPTY = 'This Google Ads account has no Audi
 
 /** What the Demand Gen audience picker says when upstream returned only part of the account's Audiences. */
 export const GOOGLE_AUDIENCE_PICKER_TRUNCATED = 'This account has more Audiences than the picker shows: only the first 500 by name are listed.';
+
+/**
+ * The kinds `GET /api/campaigns/google/audiences` reads (#5262), each one `type` of campaign-service
+ * `list-google-ads-audiences` (#504, #517): `audience` for the Demand Gen audience picker, the default, and
+ * the three Display audience kinds that are not user lists. `combined_audience` is left out: no create
+ * input takes one.
+ */
+export const GOOGLE_ADS_AUDIENCE_READ_TYPES = ['audience', 'custom_audience', 'custom_interest', 'user_interest'] as const;
+
+/**
+ * The resource collection each read type's entries name, `customers/<id>/<collection>/<id>`: the only rows
+ * the BFF passes on for that type, as campaign-service's create refuses any other in the field it fills.
+ */
+export const GOOGLE_ADS_AUDIENCE_READ_COLLECTIONS = {
+  audience: 'audiences',
+  custom_audience: 'customAudiences',
+  custom_interest: 'customInterests',
+  user_interest: 'userInterests',
+} as const satisfies Record<(typeof GOOGLE_ADS_AUDIENCE_READ_TYPES)[number], string>;
+
+/** The longest `q` campaign-service's audience read accepts (`list-google-ads-audiences`, `MaxLength(100)`). */
+export const GOOGLE_ADS_AUDIENCE_QUERY_MAX_LENGTH = 100;
 
 /** Google's UserListType values in the words the Google Ads UI uses for them; the picker shows any other value in sentence case. */
 export const GOOGLE_USER_LIST_TYPE_LABELS: Readonly<Record<string, string>> = {

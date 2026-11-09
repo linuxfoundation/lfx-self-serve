@@ -205,6 +205,9 @@ import {
   GOOGLE_AUDIENCE_PICKER_TRUNCATED,
   GOOGLE_DEMAND_GEN_AUDIENCE_HELD_WHILE_SPLIT,
   GOOGLE_DEMAND_GEN_DEMOGRAPHICS_HELD_WHILE_SPLIT,
+  GOOGLE_DISPLAY_AUDIENCE_KINDS,
+  GOOGLE_DISPLAY_AUDIENCES_HELD_WHILE_NOT_SPLIT,
+  GOOGLE_DISPLAY_AUDIENCES_HELD_WHILE_SPLIT,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   DEFAULT_GOOGLE_DAILY_BUDGET_USD,
@@ -256,6 +259,7 @@ import type {
   CampaignGoogleAudienceSegmentsBlock,
   CampaignGoogleDemandGenAudienceBlock,
   CampaignGoogleDemandGenDemographicsBlock,
+  CampaignGoogleDisplayAudiencesBlock,
   CampaignGoogleExtensionsCapabilityBlock,
   CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
@@ -334,6 +338,10 @@ import type {
   GoogleDisplayAdGroup,
   GoogleDisplayAdGroupControls,
   GoogleDisplayAdGroupDraft,
+  GoogleDisplayAudienceControls,
+  GoogleDisplayAudienceKind,
+  GoogleDisplayAudienceLists,
+  GoogleDisplayCampaignAudiences,
   GoogleCreativeSectionField,
   GoogleCreativeHeldImage,
   GoogleCreativeImageRef,
@@ -395,6 +403,7 @@ import {
   googleDemandGenAudiencesRefusal,
   googleDemandGenDemographicsLeftOut,
   googleDemandGenDemographicsRefusal,
+  googleDisplayAudiencesRefusal,
   googleDemandGenAdsRefusal,
   googleDemandGenSingleAdGroupName,
   googleExcludedPlacementsRefusal,
@@ -446,6 +455,8 @@ import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-li
 import { DemandGenAdListContextDirective } from './demand-gen-ad-list-context.directive';
 import { DemandGenAudienceContextDirective } from './demand-gen-audience-context.directive';
 import { DemandGenDemographicsContextDirective } from './demand-gen-demographics-context.directive';
+import { DisplayAudienceListContextDirective } from './display-audience-list-context.directive';
+import { DisplayAudiencesContextDirective } from './display-audiences-context.directive';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -504,6 +515,8 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     DemandGenAdListContextDirective,
     DemandGenAudienceContextDirective,
     DemandGenDemographicsContextDirective,
+    DisplayAudienceListContextDirective,
+    DisplayAudiencesContextDirective,
     SlicePipe,
     CampaignBiddingControlComponent,
     CampaignGoogleDemographicTargetingComponent,
@@ -806,6 +819,12 @@ export class ImplementationTabComponent implements OnInit {
    * Create (`demandGenAudienceBlock`) rather than dropping it, and only an explicit no is a denial.
    */
   public readonly googleDemandGenAudienceEnabled = input<boolean | null>(null);
+  /**
+   * Whether THIS caller may pick and send Display audiences (#5262) — `CampaignListResult.googleDisplayAudiencesEnabled`,
+   * the two checks the reads and the create gate make. Only an explicit yes shows the pickers; a draft that
+   * still holds Display audiences otherwise holds Create (`displayAudiencesBlock`) rather than dropping them.
+   */
+  public readonly googleDisplayAudiencesEnabled = input<boolean | null>(null);
 
   /** @see microsoftScheduleEnabled — an explicit yes, never a `null`. */
   protected readonly microsoftScheduleAvailable = computed<boolean>(() => this.microsoftScheduleEnabled() === true);
@@ -1293,6 +1312,10 @@ export class ImplementationTabComponent implements OnInit {
     // default, the groups kept whichever way it sits, and only an active split renders and sends them.
     displayAdGroupsSplit: this.fb.nonNullable.control(false),
     displayAdGroups: new FormArray<FormGroup<GoogleDisplayAdGroupControls>>([]),
+    // The single Display ad group's audiences (#5262), set only by the pickers or a restored draft; held,
+    // not sent, while the campaign is split. And the user lists the whole campaign excludes, split or not.
+    displayAudiences: this.buildDisplayAudienceControls(),
+    displayExcludedUserLists: this.fb.nonNullable.control<string[]>([]),
     // The Google bidding plan. All five are STRINGS, including the three money/ratio fields, so
     // that "" can mean "not supplied" — which is a different answer from a typed 0, and the one
     // the wire needs, since upstream reads 0 as absent on all three.
@@ -3563,6 +3586,9 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.demandGenDemographicsError() !== null) return false;
     // Retained Demand Gen demographics the request cannot carry, held on the audience block's terms.
     if (this.demandGenDemographicsBlock() !== null) return false;
+    // Display audiences campaign-service would refuse (#5262), and retained ones the request cannot carry.
+    if (googleSelected && this.displayAudiencesError() !== null) return false;
+    if (this.displayAudiencesBlock() !== null) return false;
     // The named Display ad groups campaign-service would refuse (#475).
     if (googleSelected && this.displayAdGroupsError() !== null) return false;
     // Performance Max search themes the BFF would refuse (#5262); the message is under the box.
@@ -4174,6 +4200,57 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly audiencePickerEmpty = GOOGLE_AUDIENCE_PICKER_EMPTY;
   protected readonly audiencePickerLoading = GOOGLE_AUDIENCE_PICKER_LOADING;
   protected readonly audiencePickerTruncated = GOOGLE_AUDIENCE_PICKER_TRUNCATED;
+  /** The four Display audience kinds (#5262), in the order the tab shows and campaign-service judges them. */
+  protected readonly displayAudienceKinds = GOOGLE_DISPLAY_AUDIENCE_KINDS;
+  /**
+   * Whether the Display audience pickers may show (#5262): Display's creative section is on screen and this
+   * caller may send them (`googleDisplayAudiencesEnabled`, an explicit yes).
+   */
+  protected readonly displayAudiencesAvailable: Signal<boolean> = computed(
+    () => this.googleDisplayAudiencesEnabled() === true && this.googleCreativeSections().some((section) => section.channel === 'display')
+  );
+  /** The interest search box (#5262): Google's interest taxonomy is larger than one read returns, so it is searched by name. */
+  protected readonly displayInterestSearchForm = this.fb.nonNullable.group({ q: '' });
+  /** The interest search last asked for; `''` reads the first entries by name. */
+  protected readonly displayInterestQuery = signal('');
+  /** Each Display audience kind's picker list, read only while the pickers may show; `unavailable` with a reason otherwise. */
+  protected readonly displayAudiencePickers: Signal<Record<GoogleDisplayAudienceKind, GoogleAudiencePickerState>> = this.initDisplayAudiencePickers();
+  /** Every listed or picked Display audience's name by resource name, so a pick is shown by name after a new search too. */
+  protected readonly displayAudienceNames: Signal<ReadonlyMap<string, string>> = computed(() => {
+    const names = new Map(this.displayAudiencePickedNames());
+    for (const picker of Object.values(this.displayAudiencePickers())) {
+      for (const option of picker.audiences) names.set(option.resourceName, option.name);
+    }
+    return names;
+  });
+  /** Each kind's loading line, reason, empty or partial-list note, shown under its pickers; `''` when it has none. */
+  protected readonly displayAudiencePickerNotes: Signal<Record<GoogleDisplayAudienceKind, string>> = computed(() => ({
+    audienceSegments: this.displayAudiencePickerNote('audienceSegments'),
+    customAudiences: this.displayAudiencePickerNote('customAudiences'),
+    customAffinities: this.displayAudiencePickerNote('customAffinities'),
+    userInterests: this.displayAudiencePickerNote('userInterests'),
+  }));
+  /** The notes above for the always-mounted live region, each after its kind's label; `''` when none. */
+  protected readonly displayAudiencePickerAnnouncement: Signal<string> = computed(() =>
+    GOOGLE_DISPLAY_AUDIENCE_KINDS.map(({ kind, label }) => {
+      const note = this.displayAudiencePickerNotes()[kind];
+      return note === '' ? '' : `${label}: ${note}`;
+    })
+      .filter((line) => line !== '')
+      .join(' ')
+  );
+  /** Why Create is held for Display audiences the create would carry, or `null` (#5262). */
+  protected readonly displayAudiencesError: Signal<string | null> = this.initDisplayAudiencesError();
+  /** The Display audiences {@link displayAudiencesBlock} holds, each named by where it sits. */
+  protected readonly displayAudiencesRetained: Signal<{ owner: string; audience: string }[]> = this.initDisplayAudiencesRetained();
+  /** Why Create is held for Display audiences the draft holds but the request cannot carry, or `null` (#5262). */
+  protected readonly displayAudiencesBlock: Signal<CampaignGoogleDisplayAudiencesBlock | null> = this.initDisplayAudiencesBlock();
+  /** The always-mounted live region's text for `displayAudiencesBlock`; `''` when nothing blocks. */
+  protected readonly displayAudiencesBlockMessage = computed(() => this.displayAudiencesBlock()?.message ?? '');
+  /** The note when picked Display audiences are kept but not sent because of the split; `''` otherwise. */
+  protected readonly displayAudiencesHeldMessage: Signal<string> = this.initDisplayAudiencesHeldMessage();
+  /** Names recorded at pick time, so a pick from an earlier interest search keeps its name. */
+  private readonly displayAudiencePickedNames = signal<ReadonlyMap<string, string>>(new Map());
   /**
    * Each ad group and ad field's error, on the creative sections' terms, keyed `<group index>.<format>.<control>`
    * for a group's first ad, `<group index>.ad-<n>.<format>.<control>` for its ad n, and `ad-<n>.<format>.<control>`
@@ -5996,6 +6073,8 @@ export class ImplementationTabComponent implements OnInit {
       ...(platforms.includes('google-ads') ? this.googleDemandGenDemographicsPayload() : {}),
       // The named Display ad groups (#475), on the same terms.
       ...(platforms.includes('google-ads') ? this.googleDisplayAdGroupsPayload() : {}),
+      // The Display audiences outside the named groups (#5262), on the same gate; absent unless any is picked.
+      ...(platforms.includes('google-ads') ? this.googleDisplayAudiencesPayload() : {}),
       // The Performance Max search themes (#5262), on the same gate, and already withheld unless the
       // dispatched channel is Performance Max.
       ...(platforms.includes('google-ads') ? this.googleSearchThemesPayload() : {}),
@@ -6338,6 +6417,75 @@ export class ImplementationTabComponent implements OnInit {
     const groups = this.campaignForm.controls.demandGenAdGroups;
     groups.removeAt(index);
     this.focusAdGroupAfterRender('demand-gen', Math.min(index, groups.length - 1));
+  }
+
+  /**
+   * The Display audience list of ad group `group` and `kind`, the single ad group's for `null`, or the
+   * campaign's excluded user lists for `'excluded'` (#5262).
+   */
+  protected displayAudienceControl(group: number | null | 'excluded', kind: GoogleDisplayAudienceKind): FormControl<string[]> {
+    if (group === 'excluded') return this.campaignForm.controls.displayExcludedUserLists;
+    const controls =
+      group === null ? this.campaignForm.controls.displayAudiences.controls : this.campaignForm.controls.displayAdGroups.at(group).controls.audiences.controls;
+    return controls[kind];
+  }
+
+  /** Search Google's interests by the name typed in the search box (#5262); a blank search lists the first ones again. */
+  protected onDisplayInterestSearch(): void {
+    this.displayInterestQuery.set(this.displayInterestSearchForm.controls.q.value.trim());
+  }
+
+  /**
+   * A Display audience picked for `list` (the group, the single ad group or the exclusions; `id` its id
+   * stem): added once, its name recorded, and the combobox cleared through its own `writeValue` so the same
+   * entry can be picked again after a Remove, as the Search user-list picker does. A `null` adds nothing.
+   */
+  protected onDisplayAudiencePicked(list: FormControl<string[]>, resourceName: string | null, combobox: { writeValue(value: unknown): void }): void {
+    if (resourceName === null) return;
+    if (!list.value.includes(resourceName)) list.setValue([...list.value, resourceName]);
+    const name = this.displayAudienceNames().get(resourceName);
+    if (name !== undefined) this.displayAudiencePickedNames.update((names) => new Map(names).set(resourceName, name));
+    combobox.writeValue(null);
+  }
+
+  /** Remove one Display audience from `list`; focus moves to the list's picker, or its label when no picker renders. */
+  protected removeDisplayAudience(list: FormControl<string[]>, resourceName: string, id: string): void {
+    list.setValue(list.value.filter((entry) => entry !== resourceName));
+    afterNextRender(
+      () => {
+        const host = this.host.nativeElement;
+        const target =
+          host.querySelector<HTMLElement>(`[data-testid="implementation-display-audience-picker-${id}"] input`) ??
+          host.querySelector<HTMLElement>(`#display-audience-${id}-label`);
+        target?.focus();
+      },
+      { injector: this.injector }
+    );
+  }
+
+  /**
+   * {@link displayAudiencesBlock}'s way out: drop every Display audience the form holds, the single ad
+   * group's, every group's and the exclusions. Focus moves on as the Demand Gen block's Remove does, to
+   * Create Campaign when it is enabled, otherwise the Display channel checkbox.
+   */
+  protected onDisplayAudiencesRemoveAll(): void {
+    const form = this.campaignForm.controls;
+    const clear = (controls: GoogleDisplayAudienceControls): void => {
+      for (const { kind } of GOOGLE_DISPLAY_AUDIENCE_KINDS) controls[kind].setValue([]);
+    };
+    clear(form.displayAudiences.controls);
+    for (const group of form.displayAdGroups.controls) clear(group.controls.audiences.controls);
+    form.displayExcludedUserLists.setValue([]);
+    afterNextRender(
+      () => {
+        const host = this.host.nativeElement;
+        const target =
+          host.querySelector<HTMLElement>('[data-testid="implementation-submit-btn"] button:not(:disabled)') ??
+          host.querySelector<HTMLElement>('[data-testid="implementation-include-display"]');
+        target?.focus();
+      },
+      { injector: this.injector }
+    );
   }
 
   /** {@link onDemandGenAdGroupsSplitChange} for the Display split (#475). */
@@ -7651,6 +7799,12 @@ export class ImplementationTabComponent implements OnInit {
     if (typeof draft.displayAdGroupsSplit === 'boolean') {
       this.campaignForm.controls.displayAdGroupsSplit.setValue(draft.displayAdGroupsSplit);
     }
+    // The single Display ad group's audiences and the campaign's exclusions (#5262), strings only; each is
+    // judged on Create (`displayAudiencesError`), so a value the create would refuse is shown, not dropped.
+    if (draft.displayAudiences !== null && typeof draft.displayAudiences === 'object') {
+      this.restoreDisplayAudiences(this.campaignForm.controls.displayAudiences.controls, draft.displayAudiences);
+      this.campaignForm.controls.displayExcludedUserLists.setValue(this.draftStringList(draft.displayAudiences.excludedAudienceSegments));
+    }
     // The stored images held in the Google image slots, on the Meta image's terms.
     if (draft.googleImageAssets !== undefined) {
       this.googleHeldImages.set(this.restoreGoogleHeldImages(draft.googleImageAssets));
@@ -8238,7 +8392,13 @@ export class ImplementationTabComponent implements OnInit {
       displayAdGroups: this.campaignForm.controls.displayAdGroups.controls.map((group) => ({
         name: group.controls.name.value,
         creative: { ...group.controls.creative.getRawValue() },
+        audiences: this.displayAudienceDraft(group.controls.audiences.controls),
       })),
+      // The single Display ad group's audiences and the exclusions (#5262), split or not, so turning the split off restores them.
+      displayAudiences: {
+        ...this.displayAudienceDraft(this.campaignForm.controls.displayAudiences.controls),
+        excludedAudienceSegments: [...this.campaignForm.controls.displayExcludedUserLists.value],
+      },
       // Copied per slot, so the parent holds a snapshot rather than this component's arrays.
       googleImageAssets: Object.fromEntries(
         Object.entries(this.googleHeldImages()).map(([slotKey, images]) => [slotKey, images.map((image) => ({ ...image }))])
@@ -8749,6 +8909,9 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.demandGenDemographics.reset();
     this.campaignForm.controls.displayAdGroupsSplit.reset();
     this.campaignForm.controls.displayAdGroups.clear();
+    this.campaignForm.controls.displayAudiences.reset();
+    this.campaignForm.controls.displayExcludedUserLists.reset();
+    this.displayAudiencePickedNames.set(new Map());
     this.googleGeoTargets.set([]);
     this.googlePostalGeoTargets.set([]);
     this.googlePostalGeoLabels.set({});
@@ -12347,14 +12510,17 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The named Display ad groups as the create sends them (#475), or `{}` while the split is not active,
    * so a create without it is byte-identical. Each group sends its name and its ad, built as the sections'
-   * creatives are, with pasted URLs only; an ad that empties out is omitted, which the judge refuses.
+   * creatives are, with pasted URLs only; an ad that empties out is omitted, which the judge refuses. Each
+   * group's picked audience lists (#5262) follow, a list only when it holds any.
    */
   private googleDisplayAdGroupsPayload(): { displayAdGroups?: GoogleDisplayAdGroup[] } {
     if (!this.displayAdGroupsActive()) return {};
     const groups = this.campaignForm.controls.displayAdGroups.controls.map((group): GoogleDisplayAdGroup => {
       const name = group.controls.name.value.trim();
       const creative = this.creativeFrom(this.displayAdGroupFields, group.controls.creative.getRawValue(), null);
-      return creative === null ? { name } : { name, creative: creative as GoogleDisplayAdGroup['creative'] };
+      // The group's picked audiences (#5262) after its ad, each list only when it holds any.
+      const audiences = this.displayAudienceListsFrom(group.controls.audiences.controls);
+      return creative === null ? { name, ...audiences } : { name, creative: creative as GoogleDisplayAdGroup['creative'], ...audiences };
     });
     return { displayAdGroups: groups };
   }
@@ -12417,12 +12583,256 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
-  /** One named Display ad group's controls, filled from a saved draft entry field by field when one is given. */
+  /** A Display audience picker's loading line, reason, empty or partial-list note; `''` when it has nothing to say. */
+  private displayAudiencePickerNote(kind: GoogleDisplayAudienceKind): string {
+    const picker = this.displayAudiencePickers()[kind];
+    const noun = (GOOGLE_DISPLAY_AUDIENCE_KINDS.find((entry) => entry.kind === kind)?.label ?? kind).toLowerCase();
+    if (picker.status === 'loading') return `Loading this account's ${noun}…`;
+    if (picker.status === 'unavailable') return picker.reason ?? '';
+    if (picker.status !== 'loaded') return '';
+    if (picker.audiences.length === 0) {
+      return kind === 'userInterests' && this.displayInterestQuery() !== ''
+        ? 'No interest matches that search.'
+        : `This Google Ads account has no ${noun} to pick from.`;
+    }
+    if (!picker.truncated) return '';
+    return kind === 'userInterests'
+      ? 'More interests match than the picker shows: only the first 500 by name are listed. Search to narrow them.'
+      : `This account has more ${noun} than the picker shows: only the first 500 by name are listed.`;
+  }
+
+  /**
+   * The Display audiences outside the named groups as the create sends them (#5262), or `{}` when none is
+   * sent: the single ad group's lists while Display's creative section is on screen and not split, and the
+   * campaign's excluded user lists while it is on screen, split or not. A list goes only when it holds any.
+   */
+  private googleDisplayAudiencesPayload(): { displayAudiences?: GoogleDisplayCampaignAudiences } {
+    if (!this.googleCreativeSections().some((section) => section.channel === 'display')) return {};
+    const audiences: GoogleDisplayCampaignAudiences = this.displayAdGroupsActive()
+      ? {}
+      : this.displayAudienceListsFrom(this.campaignForm.controls.displayAudiences.controls);
+    const excluded = this.campaignForm.controls.displayExcludedUserLists.value;
+    if (excluded.length > 0) audiences.excludedAudienceSegments = [...excluded];
+    return Object.keys(audiences).length > 0 ? { displayAudiences: audiences } : {};
+  }
+
+  /** One Display audience target's lists, each copied and only when it holds any, so an empty target adds no key. */
+  private displayAudienceListsFrom(controls: GoogleDisplayAudienceControls): GoogleDisplayAudienceLists {
+    const lists: GoogleDisplayAudienceLists = {};
+    for (const { kind } of GOOGLE_DISPLAY_AUDIENCE_KINDS) {
+      if (controls[kind].value.length > 0) lists[kind] = [...controls[kind].value];
+    }
+    return lists;
+  }
+
+  /** One Display audience target's lists for the draft, every kind copied, empty ones included. */
+  private displayAudienceDraft(controls: GoogleDisplayAudienceControls): GoogleDisplayAudienceLists {
+    return Object.fromEntries(GOOGLE_DISPLAY_AUDIENCE_KINDS.map(({ kind }) => [kind, [...controls[kind].value]]));
+  }
+
+  /** One Display audience target's controls (#5262), every list empty. */
+  private buildDisplayAudienceControls(): FormGroup<GoogleDisplayAudienceControls> {
+    return new FormGroup<GoogleDisplayAudienceControls>({
+      audienceSegments: this.fb.nonNullable.control<string[]>([]),
+      customAudiences: this.fb.nonNullable.control<string[]>([]),
+      customAffinities: this.fb.nonNullable.control<string[]>([]),
+      userInterests: this.fb.nonNullable.control<string[]>([]),
+    });
+  }
+
+  /** Fill one Display audience target's lists from a saved draft, strings only; a kind the draft lacks is left alone. */
+  private restoreDisplayAudiences(controls: GoogleDisplayAudienceControls, saved: GoogleDisplayAudienceLists): void {
+    for (const { kind } of GOOGLE_DISPLAY_AUDIENCE_KINDS) {
+      if (saved[kind] !== undefined) controls[kind].setValue(this.draftStringList(saved[kind]));
+    }
+  }
+
+  /** A saved draft's list as the strings it holds; anything that is not a list is read as empty. */
+  private draftStringList(value: unknown): string[] {
+    return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+  }
+
+  /**
+   * Each Display audience kind's picker list (#5262), read only while the pickers may show and the project
+   * is known, both read INSIDE the trigger so a change to either drops a read that no longer applies. User
+   * lists come from the user-list read; the other three from the audience read of their type, interests
+   * narrowed by {@link displayInterestQuery}. The pickers show only for a caller the routes admit, so a 403
+   * or 404 here is the deployment or the gateway, not the caller, and reads as unavailable.
+   */
+  private initDisplayAudiencePickers(): Signal<Record<GoogleDisplayAudienceKind, GoogleAudiencePickerState>> {
+    const state = (status: GoogleAudiencePickerState['status'], reason: string | null = null): GoogleAudiencePickerState => ({
+      status,
+      audiences: [],
+      accountId: '',
+      truncated: false,
+      reason,
+    });
+    const read = (kind: GoogleDisplayAudienceKind): Signal<GoogleAudiencePickerState> => {
+      const entry = GOOGLE_DISPLAY_AUDIENCE_KINDS.find((candidate) => candidate.kind === kind);
+      const noun = (entry?.label ?? kind).toLowerCase();
+      const trigger = computed(() => ({
+        projectSlug: this.activeFoundationSlug(),
+        shown: this.displayAudiencesAvailable(),
+        q: kind === 'userInterests' ? this.displayInterestQuery() : '',
+      }));
+      return toSignal(
+        toObservable(trigger).pipe(
+          switchMap(({ projectSlug, shown, q }) => {
+            if (projectSlug === '' || !shown) return of(state('idle'));
+            const source: Observable<GoogleAudiencePickerState> =
+              entry?.readType === null || entry === undefined
+                ? this.campaignService.getGoogleAdsUserLists(projectSlug).pipe(
+                    map((result) => ({
+                      status: 'loaded' as const,
+                      audiences: result.userLists.map((list) => ({ resourceName: list.resourceName, id: list.id, name: list.name, description: null })),
+                      accountId: result.accountId,
+                      truncated: result.truncated,
+                      reason: null,
+                    }))
+                  )
+                : this.campaignService.getGoogleAdsAudiences(projectSlug, entry.readType, q).pipe(
+                    map((result) => ({
+                      status: 'loaded' as const,
+                      audiences: result.audiences,
+                      accountId: result.accountId,
+                      truncated: result.truncated,
+                      reason: null,
+                    }))
+                  );
+            return source.pipe(
+              catchError((err: unknown) => {
+                console.error(`Failed to read the Google Ads ${noun} for the Display audience picker:`, err);
+                const status = err instanceof HttpErrorResponse ? err.status : 0;
+                if (status === 403 || status === 404) return of(state('unavailable', `The ${noun} picker isn't available here, so none can be picked.`));
+                return of(state('unavailable', `The ${noun} couldn't be read for this project's Google Ads account, so none can be picked.`));
+              }),
+              startWith(state('loading'))
+            );
+          })
+        ),
+        { initialValue: state('idle') }
+      );
+    };
+    const pickers = {
+      audienceSegments: read('audienceSegments'),
+      customAudiences: read('customAudiences'),
+      customAffinities: read('customAffinities'),
+      userInterests: read('userInterests'),
+    };
+    return computed(() => ({
+      audienceSegments: pickers.audienceSegments(),
+      customAudiences: pickers.customAudiences(),
+      customAffinities: pickers.customAffinities(),
+      userInterests: pickers.userInterests(),
+    }));
+  }
+
+  /**
+   * {@link displayAudiencesError}: over exactly what the create sends, the shared judge the BFF refuses on,
+   * here with the account the pickers read, so another account's resource is refused too. The account is
+   * not judged until a list has loaded. Only for a caller answered yes: any other answer is
+   * {@link displayAudiencesBlock}'s.
+   */
+  private initDisplayAudiencesError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (this.googleDisplayAudiencesEnabled() !== true) return null;
+      const campaign = this.googleDisplayAudiencesPayload().displayAudiences;
+      const groups = this.googleDisplayAdGroupsPayload().displayAdGroups;
+      const groupsTarget = (groups ?? []).some((group) => GOOGLE_DISPLAY_AUDIENCE_KINDS.some(({ kind }) => group[kind] !== undefined));
+      if (campaign === undefined && !groupsTarget) return null;
+      const accountId = Object.values(this.displayAudiencePickers()).find((picker) => picker.accountId !== '')?.accountId ?? '';
+      return googleDisplayAudiencesRefusal(campaign, groups, accountId);
+    });
+  }
+
+  /**
+   * {@link displayAudiencesRetained}: on a create that asks for Display, the audiences the split mode would
+   * send and the exclusions, read from the form rather than the payload helpers, which answer `{}` whenever
+   * Display's creative section is off screen, so a restored draft cannot create without its audiences.
+   */
+  private initDisplayAudiencesRetained(): Signal<{ owner: string; audience: string }[]> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.showGoogleSection() || !this.selectedGoogleChannels().includes('display')) return [];
+      const form = this.campaignForm.controls;
+      const held = (owner: string, controls: GoogleDisplayAudienceControls): { owner: string; audience: string }[] =>
+        GOOGLE_DISPLAY_AUDIENCE_KINDS.flatMap(({ kind }) => controls[kind].value.map((audience) => ({ owner, audience })));
+      const targeted = form.displayAdGroupsSplit.value
+        ? form.displayAdGroups.controls.flatMap((group, index) =>
+            held(group.controls.name.value.trim() || `Ad group ${index + 1}`, group.controls.audiences.controls)
+          )
+        : held('Single ad group', form.displayAudiences.controls);
+      return [...targeted, ...form.displayExcludedUserLists.value.map((audience) => ({ owner: 'Excluded', audience }))];
+    });
+  }
+
+  /**
+   * Why Create is held for Display audiences the draft still holds but the request cannot carry, or `null`
+   * (#5262): {@link initDemandGenAudienceBlock}'s kinds and order, on the same capability read. Clear only
+   * when the create path serves the create and the caller is answered yes, where the pickers show and
+   * {@link displayAudiencesError} judges each value. User interests are held with the rest: campaign-service
+   * would take them from any caller, but the read that lists them is LF marketing only, so this tab offers
+   * the section to that team alone and holds rather than drops what a draft brought.
+   */
+  private initDisplayAudiencesBlock(): Signal<CampaignGoogleDisplayAudiencesBlock | null> {
+    return computed(() => {
+      const count = this.displayAudiencesRetained().length;
+      if (count === 0) return null;
+      if (this.googleCreativeAvailable() && this.googleDisplayAudiencesEnabled() === true) return null;
+      const held = count === 1 ? 'the Display audience' : `the ${count} Display audiences`;
+      const them = count === 1 ? 'it' : 'them';
+      if (this.googleCreativeEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Display audiences are not available on this deployment, so ${held} on this brief cannot be sent. Remove ${them} to create the campaign.`,
+        };
+      }
+      if (this.googleDisplayAudiencesEnabled() === false) {
+        return {
+          kind: 'restricted',
+          message: `Only the LF marketing team can target audiences on Display, because every foundation shares one Google Ads account. Remove ${held} on this brief to create the campaign, or ask the LF marketing team to add ${them}.`,
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return {
+          kind: 'pending',
+          message: `Checking whether you can send Display audiences. Create waits for the answer so ${held} on this brief ${count === 1 ? 'is' : 'are'} not dropped.`,
+        };
+      }
+      if (!this.briefPersistence().briefId) {
+        return { kind: 'unsaved', message: `Display audience access can't be checked until this brief is saved. Save the brief, or remove ${held} on it.` };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that you can send Display audiences, so Create waits rather than dropping ${held} on this brief. Retry the check, or remove ${them}.`,
+      };
+    });
+  }
+
+  /**
+   * {@link displayAudiencesHeldMessage}: Display's section is on screen and picked audiences sit where the
+   * split does not send them: the single ad group's while split, a named group's while not.
+   */
+  private initDisplayAudiencesHeldMessage(): Signal<string> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.googleCreativeSections().some((section) => section.channel === 'display')) return '';
+      const form = this.campaignForm.controls;
+      const holds = (controls: GoogleDisplayAudienceControls): boolean => GOOGLE_DISPLAY_AUDIENCE_KINDS.some(({ kind }) => controls[kind].value.length > 0);
+      if (form.displayAdGroupsSplit.value) return holds(form.displayAudiences.controls) ? GOOGLE_DISPLAY_AUDIENCES_HELD_WHILE_SPLIT : '';
+      return form.displayAdGroups.controls.some((group) => holds(group.controls.audiences.controls)) ? GOOGLE_DISPLAY_AUDIENCES_HELD_WHILE_NOT_SPLIT : '';
+    });
+  }
+
+  /** One named Display ad group's controls, filled from a saved draft entry field by field when one is given, its audiences (#5262) strings only. */
   private buildDisplayAdGroup(saved?: GoogleDisplayAdGroupDraft): FormGroup<GoogleDisplayAdGroupControls> {
     const group = new FormGroup<GoogleDisplayAdGroupControls>({
       name: this.fb.nonNullable.control(typeof saved?.name === 'string' ? saved.name : ''),
       creative: this.buildCreativeGroup('display'),
+      audiences: this.buildDisplayAudienceControls(),
     });
+    if (saved?.audiences !== null && typeof saved?.audiences === 'object') this.restoreDisplayAudiences(group.controls.audiences.controls, saved.audiences);
     const values = saved?.creative;
     if (values !== null && typeof values === 'object') {
       for (const [control, value] of Object.entries(values)) {
