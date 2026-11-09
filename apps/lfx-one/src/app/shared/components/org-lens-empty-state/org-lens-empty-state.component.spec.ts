@@ -30,7 +30,6 @@ function byTestId(fixture: ComponentFixture<unknown>, suffix: string): HTMLEleme
 const CONTROL_BY_KIND: Record<OrgLensEmptyStateActionKind, string> = {
   retry: 'retry',
   'reset-filters': 'reset-filters',
-  'contact-support': 'contact-support',
   'org-list': 'org-list',
 };
 
@@ -96,15 +95,47 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(picked).toEqual(['b']);
   });
 
+  // #5447: the only links a Company Lens empty state may carry are the caller's own profile, the documentation,
+  // and LFX Insights. A support action — or any control that opens the support messenger — fails here.
+  it('offers no support action in any registry state', () => {
+    const allowedKinds = new Set<string | undefined>([undefined, 'retry', 'reset-filters', 'org-list']);
+    for (const [state, copy] of Object.entries(ORG_LENS_EMPTY_STATE_COPY)) {
+      for (const action of [copy.primary, copy.secondary]) {
+        if (!action) {
+          continue;
+        }
+        expect(allowedKinds.has(action.action), `${state}: action kind "${action.action}" is not allowed (#5447)`).toBe(true);
+        expect(action.label, `${state}: "${action.label}" must not point at support (#5447)`).not.toMatch(/support/i);
+        expect(copy.reason, `${state}: reason must not mention support (#5447)`).not.toMatch(/support/i);
+        if (action.route) {
+          expect(action.route[0], `${state}: route must stay on the profile (#5447)`).toMatch(/^\/(profile|org)$/);
+        }
+        if (action.href) {
+          expect(action.href, `${state}: href must be docs or Insights (#5447)`).toMatch(
+            /linuxfoundation\/lfx-self-serve\/blob\/main\/docs\/|insights\.linuxfoundation\.org/
+          );
+        }
+      }
+    }
+  });
+
+  it('never mounts the support messenger directive', () => {
+    for (const state of Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]) {
+      const fixture = render(state, { orgList: ORG_LIST, filterActive: true });
+      expect((fixture.nativeElement as HTMLElement).querySelector('[lfxopenintercom], [lfxOpenIntercom]'), `${state} renders no support control`).toBeNull();
+      fixture.destroy();
+    }
+  });
+
   // A shared component must never render a state with no control: an `org-list` primary with nothing
   // to list promotes the secondary into the primary slot (and does not render it twice).
   it('promotes the secondary when the wrong-organization list is empty', () => {
     const fixture = render('wrong-organization', { orgList: [] });
 
     expect(byTestId(fixture, 'org-list')).toBeNull();
-    const controls = (fixture.nativeElement as HTMLElement).querySelectorAll(`[data-testid="${TEST_ID}-contact-support"]`);
+    const controls = (fixture.nativeElement as HTMLElement).querySelectorAll(`[data-testid="${TEST_ID}-primary"]`);
     expect(controls).toHaveLength(1);
-    expect(controls[0].textContent).toContain('Ask for access to the organization in this link');
+    expect(controls[0].textContent).toContain('How to get access to a company');
     expect(controls[0].tagName).toBe('LFX-BUTTON');
     // The reason must not introduce a list that is not there.
     expect(byTestId(fixture, 'description')?.textContent?.trim()).toBe('This link points to an organization that is not on your list.');
