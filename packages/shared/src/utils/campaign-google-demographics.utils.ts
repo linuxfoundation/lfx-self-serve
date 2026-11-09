@@ -223,6 +223,34 @@ export function googleDisplayDemographicsCarried(raw: unknown): boolean {
   return DISPLAY_TARGETING_LISTS.some(({ key }) => Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0);
 }
 
+/** The spellings the tab's demographic checkboxes offer and write, per list, keyed as {@link DISPLAY_TARGETING_SPECS}. */
+const OFFERED_DEMOGRAPHIC_SPELLINGS: Record<(typeof GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS)[number], readonly string[]> = {
+  ageRanges: GOOGLE_ADS_AGE_RANGES,
+  genders: GOOGLE_ADS_GENDERS,
+  incomeRanges: GOOGLE_ADS_INCOME_RANGES,
+  parentalStatuses: GOOGLE_ADS_PARENTAL_STATUSES,
+};
+
+/**
+ * One demographic list with every value upstream accepts rewritten to the spelling the tab's checkbox
+ * offers for the same enum, so a restored `AGE_RANGE_25_34` ticks the `25-34` box (upstream resolves the
+ * two alike, so the wire means the same). A value upstream would refuse is kept as it is, for the
+ * refusal to name. A repeat the rewrite makes is dropped, as one box is one value.
+ */
+export function googleDemographicValuesAsOffered(key: (typeof GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS)[number], values: readonly string[]): string[] {
+  const { allowed } = DISPLAY_TARGETING_SPECS[key];
+  const offered = new Map(OFFERED_DEMOGRAPHIC_SPELLINGS[key].map((option) => [resolvedEnum(option, allowed), option]));
+  return [
+    ...new Set(
+      values.map((value) => {
+        // A non-string a hand-built draft holds is kept for the shape refusal, not walked.
+        const resolved = typeof value === 'string' ? resolvedEnum(value, allowed) : null;
+        return (resolved !== null ? offered.get(resolved) : undefined) ?? value;
+      })
+    ),
+  ];
+}
+
 /**
  * Why upstream would refuse Display's positive demographic targeting (linuxfoundation/lfx-v2-campaign-service#499),
  * or `null`. Go decodes `displayDemographics` into a struct of four string lists, so anything else
@@ -365,6 +393,15 @@ function demandGenDemographicsShapeRefusal(owner: string, raw: unknown): string 
     return `This application sends only age, gender, income and parental status in ${owner}. To target user lists or custom audiences as well, build that Audience in Google Ads and pick it as the ad group's audience instead.`;
   }
   return null;
+}
+
+/**
+ * Whether a raw Demand Gen demographics value is set and malformed (see {@link googleDemandGenDemographicsRefusal}'s
+ * shape step): not an object of string lists, or naming user lists or custom audiences. The BFF normalizer
+ * drops such a value, so a check that reads only what it would send must count this as well.
+ */
+export function googleDemandGenDemographicsMalformed(raw: unknown): boolean {
+  return demandGenDemographicsSet(raw) && demandGenDemographicsShapeRefusal('the Demand Gen demographics', raw) !== null;
 }
 
 /** A trimmed audience value set, on `validateDemandGenAudience`'s terms after it has refused a blank one. */

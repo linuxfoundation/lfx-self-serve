@@ -407,6 +407,7 @@ import {
   googleDemandGenAudiencesRefusal,
   googleDemandGenDemographicsLeftOut,
   googleDemandGenDemographicsRefusal,
+  googleDemographicValuesAsOffered,
   googleDisplayAudiencesRefusal,
   googleDemandGenAdsRefusal,
   googleDemandGenSingleAdGroupName,
@@ -6458,6 +6459,26 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * Clear ad group `group`'s demographics, the single one for `null`: the way out of a refusal for a restored
+   * value no checkbox offers, which cannot be unticked. Focus moves to the group's first demographic box, or,
+   * where an Audience beside them now holds the boxes back, to that Audience's Remove.
+   */
+  protected onDemandGenDemographicsClear(group: number | null): void {
+    this.demandGenDemographicsControl(group).setValue({});
+    const key = group === null ? 'single' : `${group}`;
+    afterNextRender(
+      () => {
+        const host = this.host.nativeElement;
+        const target =
+          host.querySelector<HTMLElement>(`[data-testid="implementation-demand-gen-demographics-targeting-${key}"] input`) ??
+          host.querySelector<HTMLElement>(`#demand-gen-audience-${key}-remove`);
+        target?.focus();
+      },
+      { injector: this.injector }
+    );
+  }
+
+  /**
    * {@link demandGenDemographicsBlock}'s way out: clear every demographics object it holds, for the split
    * mode the request would use, then move focus as the audience block's Remove does.
    */
@@ -6586,7 +6607,8 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * {@link displayAudiencesBlock}'s way out: drop every Display audience the form holds, the single ad
    * group's, every group's and the exclusions. Focus moves on as the Demand Gen block's Remove does, to
-   * Create Campaign when it is enabled, otherwise the Display channel checkbox.
+   * Create Campaign when it is enabled, otherwise the Display channel checkbox, and where that is hidden too
+   * (the channel capability still unanswered) the Search checkbox, which always renders.
    */
   protected onDisplayAudiencesRemoveAll(): void {
     const form = this.campaignForm.controls;
@@ -6601,7 +6623,8 @@ export class ImplementationTabComponent implements OnInit {
         const host = this.host.nativeElement;
         const target =
           host.querySelector<HTMLElement>('[data-testid="implementation-submit-btn"] button:not(:disabled)') ??
-          host.querySelector<HTMLElement>('[data-testid="implementation-include-display"]');
+          host.querySelector<HTMLElement>('[data-testid="implementation-include-display"]') ??
+          host.querySelector<HTMLElement>('[data-testid="implementation-include-search"]');
         target?.focus();
       },
       { injector: this.injector }
@@ -7978,27 +8001,31 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleDeviceBidModifiers !== undefined) {
       this.googleDeviceBidModifiers.set(draft.googleDeviceBidModifiers.map((d) => ({ ...d })));
     }
-    // Copied, and held rather than sent on a channel that takes none, on the same rule.
+    // Copied, and held rather than sent on a channel that takes none, on the same rule. Each demographic
+    // list in the spelling its checkbox offers (`googleDemographicValuesAsOffered`), so an accepted
+    // `AGE_RANGE_25_34` shows ticked rather than as a value no box can untick.
     if (draft.googleExcludedAgeRanges !== undefined) {
-      this.googleExcludedAgeRanges.set([...draft.googleExcludedAgeRanges]);
+      this.googleExcludedAgeRanges.set(googleDemographicValuesAsOffered('ageRanges', draft.googleExcludedAgeRanges) as GoogleAdsAgeRange[]);
     }
     if (draft.googleExcludedGenders !== undefined) {
-      this.googleExcludedGenders.set([...draft.googleExcludedGenders]);
+      this.googleExcludedGenders.set(googleDemographicValuesAsOffered('genders', draft.googleExcludedGenders) as GoogleAdsGender[]);
     }
     if (draft.googleExcludedGeoTargets !== undefined) {
       this.googleExcludedGeoTargets.set([...draft.googleExcludedGeoTargets]);
     }
     if (draft.googleExcludedIncomeRanges !== undefined) {
-      this.googleExcludedIncomeRanges.set([...draft.googleExcludedIncomeRanges]);
+      this.googleExcludedIncomeRanges.set(googleDemographicValuesAsOffered('incomeRanges', draft.googleExcludedIncomeRanges) as GoogleAdsIncomeRange[]);
     }
     if (draft.googleExcludedParentalStatuses !== undefined) {
-      this.googleExcludedParentalStatuses.set([...draft.googleExcludedParentalStatuses]);
+      this.googleExcludedParentalStatuses.set(
+        googleDemographicValuesAsOffered('parentalStatuses', draft.googleExcludedParentalStatuses) as GoogleAdsParentalStatus[]
+      );
     }
     if (draft.googleObservedDemographics !== undefined) {
       this.googleObservedDemographics.set([...draft.googleObservedDemographics]);
     }
     if (draft.googleDisplayDemographics !== undefined) {
-      this.googleDisplayDemographics.set(this.copyDisplayDemographics(draft.googleDisplayDemographics));
+      this.googleDisplayDemographics.set(this.demographicsAsOffered(draft.googleDisplayDemographics));
     }
     // Copied on the same rule, and held rather than sent while a channel other than Search is
     // selected. The negatives' text restores over the brief's suggestions `populateFromBrief` seeded.
@@ -12505,12 +12532,15 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * {@link demandGenDemographicsRetained}: on a create that asks for Demand Gen, the ad groups whose
    * demographics the split mode would send, read from the form itself for the reason
-   * {@link initDemandGenAudienceRetained} gives.
+   * {@link initDemandGenAudienceRetained} gives, and on its channel gate: the raw Demand Gen box unless its
+   * capability is answered no.
    */
   private initDemandGenDemographicsRetained(): Signal<string[]> {
     return computed(() => {
       void this.campaignFormRevision();
-      if (!this.showGoogleSection() || !this.selectedGoogleChannels().includes('demand-gen')) return [];
+      // The raw selection, as the audience's retained list reads it: `selectedGoogleChannels()` drops Demand
+      // Gen while its capability is unanswered, which would hide the block's Retry and Clear.
+      if (!this.showGoogleSection() || !this.campaignForm.getRawValue().includeDemandGen || this.demandGenEnabled() === false) return [];
       const form = this.campaignForm.controls;
       if (!form.demandGenAdGroupsSplit.value) return googleDisplayDemographicsCarried(form.demandGenDemographics.value) ? ['Single ad group'] : [];
       return form.demandGenAdGroups.controls.flatMap((group, index) =>
@@ -12564,17 +12594,31 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Demand Gen demographics restored from a draft (#498, #518): an object's four lists, string entries
    * only and empty lists left out, or `{}` for anything else, as the draft is in-memory but a non-string
-   * entry would render as no box and be sent as junk.
+   * entry would render as no box and be sent as junk. Each in its checkbox's spelling ({@link demographicsAsOffered}).
    */
   private demographicsFromDraft(saved: unknown): GoogleDemandGenDemographics {
     if (saved === null || typeof saved !== 'object' || Array.isArray(saved)) return {};
     const lists = saved as Record<string, unknown>;
     const strings = (key: string): string[] => (Array.isArray(lists[key]) ? (lists[key] as unknown[]).filter((v): v is string => typeof v === 'string') : []);
-    return this.copyDisplayDemographics({
+    return this.demographicsAsOffered({
       ageRanges: strings('ageRanges') as GoogleAdsAgeRange[],
       genders: strings('genders') as GoogleAdsGender[],
       incomeRanges: strings('incomeRanges') as GoogleAdsIncomeRange[],
       parentalStatuses: strings('parentalStatuses') as GoogleAdsParentalStatus[],
+    });
+  }
+
+  /**
+   * A restored demographic targeting object, Display's or a Demand Gen ad group's, with each list in the
+   * spelling its checkbox offers ({@link googleDemographicValuesAsOffered}) and empty lists left out, so an
+   * accepted `AGE_RANGE_25_34` ticks the `25-34` box and an unknown value is kept for the refusal to name.
+   */
+  private demographicsAsOffered(targeting: GoogleDisplayDemographics): GoogleDisplayDemographics {
+    return this.copyDisplayDemographics({
+      ageRanges: googleDemographicValuesAsOffered('ageRanges', targeting.ageRanges ?? []) as GoogleAdsAgeRange[],
+      genders: googleDemographicValuesAsOffered('genders', targeting.genders ?? []) as GoogleAdsGender[],
+      incomeRanges: googleDemographicValuesAsOffered('incomeRanges', targeting.incomeRanges ?? []) as GoogleAdsIncomeRange[],
+      parentalStatuses: googleDemographicValuesAsOffered('parentalStatuses', targeting.parentalStatuses ?? []) as GoogleAdsParentalStatus[],
     });
   }
 
@@ -12621,6 +12665,9 @@ export class ImplementationTabComponent implements OnInit {
    */
   private initPerformanceMaxAudienceSignalBlock(): Signal<CampaignGooglePerformanceMaxAudienceSignalBlock | null> {
     return computed(() => {
+      // The form's revision, not only the signal: the channel box below is read from the form, and the signal
+      // computed keeps its value across a channel switch, so without this the block would stay cached.
+      void this.campaignFormRevision();
       if (this.performanceMaxAudienceSignal() === '') return null;
       // The raw selection, not `selectedGoogleChannels()`: that drops Performance Max while the channel
       // capability is unanswered, which would hide the Retry and Remove this block offers. Only an answered
@@ -13042,7 +13089,9 @@ export class ImplementationTabComponent implements OnInit {
   private initDisplayAudiencesRetained(): Signal<{ owner: string; audience: string }[]> {
     return computed(() => {
       void this.campaignFormRevision();
-      if (!this.showGoogleSection() || !this.selectedGoogleChannels().includes('display')) return [];
+      // The raw selection, not `selectedGoogleChannels()`, which drops Display while the channel capability is
+      // unanswered and would hide the block's Retry and Remove; only an answered no means it is not asked for.
+      if (!this.showGoogleSection() || !this.campaignForm.getRawValue().includeDisplay || this.googleChannelsEnabled() === false) return [];
       const form = this.campaignForm.controls;
       const held = (owner: string, controls: GoogleDisplayAudienceControls): { owner: string; audience: string }[] =>
         GOOGLE_DISPLAY_AUDIENCE_KINDS.flatMap(({ kind }) => controls[kind].value.map((audience) => ({ owner, audience })));

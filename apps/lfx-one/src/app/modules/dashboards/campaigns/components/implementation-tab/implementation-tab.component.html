@@ -3413,7 +3413,8 @@
       -->
       <ng-template #demandGenAudienceTemplate lfxDemandGenAudienceContext let-group let-audienceControl="audience">
         @let key = group === null ? 'single' : '' + group;
-        @let audience = audienceControl.value;
+        <!-- Trimmed as the payload trims it, so a blank Audience reads as none, here and below. -->
+        @let audience = audienceControl.value.trim();
         @if (demandGenAudienceAvailable() || audience !== '') {
           <div class="mt-4 flex flex-col gap-2" [attr.data-testid]="'implementation-demand-gen-audience-' + key">
             <span class="text-xs font-medium text-gray-700">Audience</span>
@@ -3494,7 +3495,7 @@
         let-audienceControl="audience">
         @let key = group === null ? 'single' : '' + group;
         <div class="mt-4 flex flex-col gap-2" [attr.data-testid]="'implementation-demand-gen-demographics-' + key">
-          @if (audienceControl.value !== '' && !demandGenDemographicsNamed()[key]) {
+          @if (audienceControl.value.trim() !== '' && !demandGenDemographicsNamed()[key]) {
             <span class="text-xs font-medium text-gray-700">Demographics</span>
             <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-demographics-held-by-audience-' + key">
               This ad group targets the Audience above, and Google Ads takes one Audience per Demand Gen ad group. Remove the Audience to set demographics
@@ -3514,6 +3515,16 @@
             </p>
             @if (demandGenDemographicsLeftOut()[key]; as note) {
               <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-demographics-left-out-' + key">{{ note }}</p>
+            }
+            <!-- A restored value no box offers cannot be unticked, so Clear is the way out of its refusal. -->
+            @if (demandGenDemographicsNamed()[key]) {
+              <lfx-button
+                label="Clear demographics"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                (onClick)="onDemandGenDemographicsClear(group)"
+                [attr.data-testid]="'implementation-demand-gen-demographics-clear-' + key" />
             }
           }
         </div>
