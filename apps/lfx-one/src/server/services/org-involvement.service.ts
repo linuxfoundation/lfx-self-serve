@@ -175,7 +175,7 @@ export class OrgInvolvementService {
     let degraded = false;
     return withOrgCache(
       rollUpKey,
-      `maintainer-roles-family:v1:${digest}`,
+      `maintainer-roles-family:v2:${digest}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const fetched = await this.fetchFamilyMaintainersMonthly(rollUpKey, companies);
@@ -478,28 +478,17 @@ export class OrgInvolvementService {
     `;
     const trendQuery = (teamMembers: OrgTeamMembersFilter): string => `
       WITH months AS (
-        SELECT DATEADD(MONTH, -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS METRIC_MONTH
-        FROM TABLE(GENERATOR(ROWCOUNT => 12))
-      ),
-      roles AS (
-        SELECT
-          MEMBER_ID,
-          SEGMENT_ID,
-          ROLE_START_DATE,
-          ROLE_END_DATE,
-          (TRUE ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}) AS IS_COUNTED
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
+        SELECT DISTINCT METRIC_MONTH
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY
         WHERE ACCOUNT_ID IN (${accountList})
-          AND ROLE_START_DATE <= CURRENT_DATE()
-          AND (ROLE_END_DATE IS NULL OR ROLE_END_DATE >= (SELECT MIN(METRIC_MONTH) FROM months))
-          ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
       )
-      SELECT m.METRIC_MONTH, COUNT(DISTINCT IFF(r.IS_COUNTED, r.MEMBER_ID, NULL), r.SEGMENT_ID) AS ACTIVE_ROLES
+      SELECT m.METRIC_MONTH, COUNT(DISTINCT r.MEMBER_ID, r.SEGMENT_ID) AS ACTIVE_ROLES
       FROM months AS m
-      LEFT JOIN roles AS r
-        ON r.ROLE_START_DATE <= LEAST(LAST_DAY(m.METRIC_MONTH), CURRENT_DATE())
-        AND (r.ROLE_END_DATE IS NULL OR r.ROLE_END_DATE >= m.METRIC_MONTH)
-      WHERE EXISTS (SELECT 1 FROM roles)
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLE_MONTHS AS r
+        ON r.METRIC_MONTH = m.METRIC_MONTH
+        AND r.ACCOUNT_ID IN (${accountList})
+        ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
+        ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}
       GROUP BY m.METRIC_MONTH
       ORDER BY m.METRIC_MONTH ASC
     `;
@@ -517,9 +506,9 @@ export class OrgInvolvementService {
       readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_family_maintainer_roles_trend', (teamMembers) =>
         readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(
           this.snowflakeService,
-          'ORG_MAINTAINER_ROLES',
+          'ORG_MAINTAINER_ROLE_MONTHS',
           trendQuery(teamMembers),
-          [...companies],
+          [...companies, ...companies],
           orgTeamMembersQueryOptions(teamMembers)
         )
       ),

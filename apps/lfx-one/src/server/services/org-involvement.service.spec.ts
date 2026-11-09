@@ -598,41 +598,108 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
   const PARENT_CO = '001000000000001AAA';
   const CHILD_CO = '001000000000002AAA';
 
-  const ROLES: { account: string; member: string; segment: string }[] = [
-    { account: PARENT_CO, member: 'member-1', segment: 'segment-1' },
-    { account: PARENT_CO, member: 'member-2', segment: 'segment-1' },
-    { account: CHILD_CO, member: 'member-1', segment: 'segment-1' },
-    { account: CHILD_CO, member: 'member-3', segment: 'segment-2' },
+  const PAST_CO = '001000000000003AAA';
+  const MONTHS = Array.from({ length: 12 }, (_, month) => new Date(2030, month, 15));
+  const LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month) => `${month} 2030`);
+
+  interface Role {
+    account: string;
+    member: string;
+    segment: string;
+    activeMonths: [number, number] | null;
+    inHeadline: boolean;
+    teamMember?: boolean;
+  }
+  const ROLES: Role[] = [
+    { account: PARENT_CO, member: 'shared', segment: 'segment-1', activeMonths: [0, 4], inHeadline: true },
+    { account: CHILD_CO, member: 'shared', segment: 'segment-1', activeMonths: [3, 11], inHeadline: true },
+    { account: PARENT_CO, member: 'ended', segment: 'segment-1', activeMonths: [6, 8], inHeadline: true },
+    { account: CHILD_CO, member: 'starts-this-month', segment: 'segment-2', activeMonths: [11, 11], inHeadline: true },
+    { account: PARENT_CO, member: 'ended-before-window', segment: 'segment-2', activeMonths: null, inHeadline: true },
+    { account: CHILD_CO, member: 'starts-later', segment: 'segment-2', activeMonths: null, inHeadline: false },
+    { account: PARENT_CO, member: 'team', segment: 'segment-1', activeMonths: [0, 11], inHeadline: true, teamMember: true },
+    { account: PAST_CO, member: 'past-only', segment: 'segment-3', activeMonths: null, inHeadline: true },
   ];
-  const distinctRoles = (accounts: readonly unknown[]): number =>
-    new Set(ROLES.filter((role) => accounts.includes(role.account)).map((role) => `${role.member}|${role.segment}`)).size;
+  const ROLE_MONTHS = ROLES.flatMap((role) =>
+    role.activeMonths
+      ? MONTHS.map((_, month) => ({ ...role, month })).filter(({ month }) => month >= role.activeMonths![0] && month <= role.activeMonths![1])
+      : []
+  );
+  const distinct = (roles: Role[]): number => new Set(roles.map((role) => `${role.member}|${role.segment}`)).size;
+  const counted = <T extends Role>(roles: T[], companies: readonly unknown[], excludeTeam: boolean): T[] =>
+    roles.filter((role) => companies.includes(role.account) && !(excludeTeam && role.teamMember));
+  const monthlyViewMonths = (companies: readonly unknown[]): number[] =>
+    ROLE_MONTHS.some((row) => companies.includes(row.account)) ? MONTHS.map((_, month) => month) : [];
 
   beforeEach(() => {
     execute.mockReset();
     withOrgCache.mockClear();
-    execute.mockImplementation(async (sql: string, binds: unknown[]) =>
-      isRolesTrend(sql)
-        ? {
-            rows: [
-              { METRIC_MONTH: new Date(2030, 0, 15), ACTIVE_ROLES: distinctRoles(binds) },
-              { METRIC_MONTH: new Date(2030, 1, 15), ACTIVE_ROLES: null },
-            ],
-          }
-        : { rows: [{ MAINTAINER_ROLES: distinctRoles(binds) }] }
-    );
+    execute.mockImplementation(async (sql: string, binds: unknown[]) => {
+      const excludeTeam = sql.includes('NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)') || sql.includes('ACTIVE_ROLES_EXCLUDING_TEAM_MEMBERS');
+      if (!isRolesTrend(sql)) {
+        const companies = sql.includes('ACCOUNT_ID IN (') ? binds.filter((bind) => typeof bind === 'string') : [binds[0]];
+        return {
+          rows: [
+            {
+              MAINTAINER_ROLES: distinct(
+                counted(
+                  ROLES.filter((role) => role.inHeadline),
+                  companies,
+                  excludeTeam
+                )
+              ),
+            },
+          ],
+        };
+      }
+      const family = sql.includes('ORG_MAINTAINER_ROLE_MONTHS');
+      const monthCompanies = family ? binds.slice(0, binds.length / 2) : [binds[0]];
+      const roleCompanies = family ? binds.slice(binds.length / 2) : [binds[0]];
+      const rows = counted(ROLE_MONTHS, roleCompanies, excludeTeam);
+      return {
+        rows: monthlyViewMonths(monthCompanies).map((month) => ({
+          METRIC_MONTH: MONTHS[month],
+          ACTIVE_ROLES: distinct(rows.filter((row) => row.month === month)),
+        })),
+      };
+    });
   });
 
   const headlineCall = (): unknown[] => execute.mock.calls.find(([query]) => !isRolesTrend(String(query)))!;
   const trendCall = (): unknown[] => execute.mock.calls.find(([query]) => isRolesTrend(String(query)))!;
 
-  it('counts a role held on the same project through two companies of the family once', async () => {
-    const response = await new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
+  it('counts a role held on the same project through two companies of the family once, in every month it overlaps either', async () => {
+    const service = new OrgInvolvementService();
+    const family = await service.getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
+    const parent = await service.getMaintainersMonthly(PARENT_CO);
+    const child = await service.getMaintainersMonthly(CHILD_CO);
 
-    expect(response).toEqual({ accountId: ROLL_UP, maintainerRoles: 3, monthlyData: [3, 0], monthlyLabels: ['Jan 2030', 'Feb 2030'] });
-    expect(execute).toHaveBeenCalledTimes(2);
-    expect(withOrgCache.mock.calls.at(-1)?.[0]).toBe(ROLL_UP);
-    expect(withOrgCache.mock.calls.at(-1)?.[1]).toMatch(/^maintainer-roles-family:v1:[0-9a-f]{16}$/);
-    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(true);
+    expect(family).toEqual({
+      accountId: ROLL_UP,
+      maintainerRoles: 4,
+      monthlyData: [1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 2],
+      monthlyLabels: LABELS,
+    });
+    expect(parent.monthlyData[3] + child.monthlyData[3]).toBe(2);
+    expect((parent.maintainerRoles ?? 0) + (child.maintainerRoles ?? 0)).toBe(5);
+    expect(withOrgCache.mock.calls[0]?.[0]).toBe(ROLL_UP);
+    expect(withOrgCache.mock.calls[0]?.[1]).toMatch(/^maintainer-roles-family:v2:[0-9a-f]{16}$/);
+    expect(withOrgCache.mock.calls[0]?.[5]?.(family)).toBe(true);
+  });
+
+  it.each([PARENT_CO, CHILD_CO, PAST_CO])("answers a family of one with that company's own card (%s)", async (company) => {
+    const service = new OrgInvolvementService();
+
+    const family = await service.getFamilyMaintainersMonthly(ROLL_UP, [company]);
+    const single = await service.getMaintainersMonthly(company);
+
+    expect({ ...family, accountId: company }).toEqual(single);
+  });
+
+  it('answers an empty trend for a family whose only roles ended before the window, with those roles in the headline', async () => {
+    const family = await new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [PAST_CO]);
+
+    expect(family).toEqual({ accountId: ROLL_UP, maintainerRoles: 1, monthlyData: [], monthlyLabels: [] });
   });
 
   it('reads the headline with the single-company rule over every company of the family, binding the companies then 730 days', async () => {
@@ -649,36 +716,28 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLES', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
   });
 
-  it('rebuilds the 12-month trend across the family from the roles table, never adding the per-company view', async () => {
+  it("selects the trend from the modeled role-months over the family's companies, on the per-company view's months", async () => {
     await new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
 
     const [sql, binds, options] = trendCall();
-    expect(sql).toContain('FROM TABLE(GENERATOR(ROWCOUNT => 12))');
-    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES\n');
-    expect(sql).not.toContain('ORG_MAINTAINER_ROLES_MONTHLY');
-    expect(sql).toContain('WHERE ACCOUNT_ID IN (?, ?)');
-    expect(sql).toContain('(TRUE AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)) AS IS_COUNTED');
-    expect(sql).toContain('COUNT(DISTINCT IFF(r.IS_COUNTED, r.MEMBER_ID, NULL), r.SEGMENT_ID) AS ACTIVE_ROLES');
-    expect(sql).toContain('ON r.ROLE_START_DATE <= LEAST(LAST_DAY(m.METRIC_MONTH), CURRENT_DATE())');
-    expect(sql).toContain('WHERE EXISTS (SELECT 1 FROM roles)');
-    expect(binds).toEqual([PARENT_CO, CHILD_CO]);
-    expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLES', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
-  });
-
-  it("answers a family of one with that company's own numbers", async () => {
-    const family = await new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [CHILD_CO]);
-
-    expect(family.maintainerRoles).toBe(distinctRoles([CHILD_CO]));
-    expect(family.monthlyData).toEqual([distinctRoles([CHILD_CO]), 0]);
-    expect(headlineCall()[1]).toEqual([CHILD_CO, 730]);
-    expect(trendCall()[1]).toEqual([CHILD_CO]);
+    expect(sql).toContain(
+      'SELECT DISTINCT METRIC_MONTH\n        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY\n        WHERE ACCOUNT_ID IN (?, ?)'
+    );
+    expect(sql).toContain('SELECT m.METRIC_MONTH, COUNT(DISTINCT r.MEMBER_ID, r.SEGMENT_ID) AS ACTIVE_ROLES');
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLE_MONTHS AS r');
+    expect(sql).toContain('ON r.METRIC_MONTH = m.METRIC_MONTH\n        AND r.ACCOUNT_ID IN (?, ?)');
+    expect(sql).toContain('AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)');
+    expect(sql).not.toContain('GENERATOR');
+    expect(sql).not.toContain('ROLE_START_DATE');
+    expect(binds).toEqual([PARENT_CO, CHILD_CO, PARENT_CO, CHILD_CO]);
+    expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLE_MONTHS', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
   });
 
   it('reads each company once and keys the cache on the set, whatever order or repeats it arrives in', async () => {
     const service = new OrgInvolvementService();
     await service.getFamilyMaintainersMonthly(ROLL_UP, [CHILD_CO, PARENT_CO, CHILD_CO]);
     const firstKey = withOrgCache.mock.calls.at(-1)?.[1];
-    expect(trendCall()[1]).toEqual([PARENT_CO, CHILD_CO]);
+    expect(trendCall()[1]).toEqual([PARENT_CO, CHILD_CO, PARENT_CO, CHILD_CO]);
     await service.getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
 
     expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe(firstKey);
@@ -706,25 +765,43 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     });
   });
 
-  it('counts team members, and does not store the card, while the roles table has no team-member flag yet', async () => {
-    execute.mockImplementation(async (sql: string) => {
+  it('counts team members, and does not store the card, while the team-member flag is missing', async () => {
+    const answer = execute.getMockImplementation()!;
+    execute.mockImplementation(async (sql: string, binds: unknown[]) => {
       if (sql.includes('IS_CDP_TEAM_MEMBER')) throw invalidIdentifier('IS_CDP_TEAM_MEMBER');
-      return isRolesTrend(sql) ? { rows: [{ METRIC_MONTH: new Date(2030, 0, 15), ACTIVE_ROLES: 5 }] } : { rows: [{ MAINTAINER_ROLES: 6 }] };
+      return answer(sql, binds);
     });
 
     const response = await new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
 
-    expect(response).toEqual({ accountId: ROLL_UP, maintainerRoles: 6, monthlyData: [5], monthlyLabels: ['Jan 2030'] });
-    expect(execute.mock.calls.filter(([query]) => isRolesTrend(String(query))).at(-1)?.[0]).toContain('(TRUE ) AS IS_COUNTED');
+    expect(response).toEqual({ accountId: ROLL_UP, maintainerRoles: 5, monthlyData: [2, 2, 2, 2, 2, 2, 3, 3, 3, 2, 2, 3], monthlyLabels: LABELS });
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
   });
 
-  it('answers an unavailable headline and an empty trend, and does not store the card, while the roles table is missing', async () => {
-    execute.mockRejectedValue(missing('ORG_MAINTAINER_ROLES'));
+  it('serves the headline with an empty trend, and does not store the card, while the role-months view is missing', async () => {
+    const answer = execute.getMockImplementation()!;
+    execute.mockImplementation(async (sql: string, binds: unknown[]) => {
+      if (sql.includes('ORG_MAINTAINER_ROLE_MONTHS')) throw missing('ORG_MAINTAINER_ROLE_MONTHS');
+      return answer(sql, binds);
+    });
 
     const response = await new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
 
-    expect(response).toEqual({ accountId: ROLL_UP, maintainerRoles: null, monthlyData: [], monthlyLabels: [] });
+    expect(response).toEqual({ accountId: ROLL_UP, maintainerRoles: 4, monthlyData: [], monthlyLabels: [] });
+    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
+  });
+
+  it('answers an unavailable headline, and does not store the card, while the roles table is missing', async () => {
+    const answer = execute.getMockImplementation()!;
+    execute.mockImplementation(async (sql: string, binds: unknown[]) => {
+      if (!isRolesTrend(sql)) throw missing('ORG_MAINTAINER_ROLES');
+      return answer(sql, binds);
+    });
+
+    const response = await new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
+
+    expect(response.maintainerRoles).toBeNull();
+    expect(response.monthlyData).toEqual([1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 2]);
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
   });
 
