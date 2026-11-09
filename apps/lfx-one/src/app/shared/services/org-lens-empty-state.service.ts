@@ -4,7 +4,7 @@
 import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { OrgLensContractorProbe, OrgLensContractorVerdict, OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
-import { isOrgRollUpSegment } from '@lfx-one/shared/utils';
+import { orgRollUpRootUid } from '@lfx-one/shared/utils';
 import { concat, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
@@ -129,15 +129,16 @@ export class OrgLensEmptyStateService {
     //
     // Held whenever it is still *admitted*, which is the condition `selectRollUp` applies: the
     // caller may select it, or the grants are only a lower bound and admission is deliberately
-    // riding that out. `canSelectRollUp` alone was not enough — a conglomerate's siblings arrive as
+    // riding that out. `canSelectRollUpFor` alone was not enough — a conglomerate's siblings arrive as
     // inherited grants, so the count sits below two through the whole partial window while the
     // selection stands (#4415, Copilot then Cursor).
     //
     // The outage rules come FIRST, because optimism must never paper one over. Writing the failure
-    // check as one disjunct among others did exactly that: two persona seeds keep `canSelectRollUp`
+    // check as one disjunct among others did exactly that: two persona seeds keep `canSelectRollUpFor`
     // true after the roster fails outright, and that short-circuited rules 2 and 3 away, taking the
     // page-level state and its shared Retry with them (#4415, Copilot).
-    if (isOrgRollUpSegment(uid)) {
+    const rollUpRootUid = orgRollUpRootUid(uid);
+    if (rollUpRootUid) {
       const outcome = this.roleGrants.lookupOutcome();
       // Rule 2 — the roster never answered, so the selection is not evidence of anything.
       if (outcome === 'failed') {
@@ -145,11 +146,14 @@ export class OrgLensEmptyStateService {
       }
       // Rule 3 — a lower bound with nothing held at all is the same outage. `holdsAnything` is the
       // caller's own evidence of holding something, weighed exactly as `classifyLookup` weighs it.
-      const lowerBound = !this.roleGrants.loaded() || outcome === 'partial' || this.claOnlyAccess.lookupFailed();
+      // The families answer is part of the same bound: admission rides out its pending, partial or
+      // failed window (`grantsUnsettled`), so held-ness must too.
+      const lowerBound =
+        !this.roleGrants.loaded() || outcome === 'partial' || this.claOnlyAccess.lookupFailed() || this.accountContext.rollUpFamiliesUnsettled();
       if (lowerBound && !this.accountContext.hasOrgSelectorAccess()) {
         return false;
       }
-      return this.accountContext.canSelectRollUp() || lowerBound;
+      return this.accountContext.canSelectRollUpFor(rollUpRootUid) || lowerBound;
     }
     return (
       this.roleGrants.writerSet().has(uid) ||

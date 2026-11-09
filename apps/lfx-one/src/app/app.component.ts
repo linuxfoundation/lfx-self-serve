@@ -144,7 +144,7 @@ export class AppComponent {
       // Initialize user organizations from backend (matched from committee memberships).
       // Called even with an empty list: a caller whose organizations are all inherited grants has no
       // persona seeds, and skipping this left their stored selection unread — so a restored
-      // `{ uid: 'all' }` never came back, and org-items could pin a concrete organization over it
+      // roll-up selection never came back, and org-items could pin a concrete organization over it
       // (#4415 review 8). With no seeds and nothing stored this settles on the placeholder, which is
       // what the bootstrap value already was.
       this.accountContextService.initializeUserOrganizations(this.auth.organizations ?? []);

@@ -1,7 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_ACCOUNT_ID_PATTERN, ORG_EASYCLA_PATH, ORG_LENS_PAGE_SEGMENTS, ORG_ROLLUP_SEGMENT, ORG_SLUG_SEGMENT_PATTERN } from '../constants';
+import {
+  ORG_ACCOUNT_ID_PATTERN,
+  ORG_EASYCLA_PATH,
+  ORG_LENS_PAGE_SEGMENTS,
+  ORG_ROLLUP_SEGMENT_PATTERN,
+  ORG_ROLLUP_SEGMENT_PREFIX,
+  ORG_ROLLUP_SEGMENT_RESERVED_PATTERN,
+  ORG_SLUG_SEGMENT_PATTERN,
+  ROLLUP_ACCOUNT_NAME,
+} from '../constants';
 import type { Account } from '../interfaces';
 
 /**
@@ -23,9 +32,9 @@ import type { Account } from '../interfaces';
  */
 export function orgUrlSegment(org: Pick<Account, 'uid' | 'slug'> | null | undefined): string | null {
   if (!org) return null;
-  // The roll-up selection is addressed by its reserved segment, never by a slug or SFID: it names a
-  // set, not a row, so there is nothing for the resolver to canonicalize it to (#4125).
-  if (isOrgRollUpSegment(org.uid)) return ORG_ROLLUP_SEGMENT;
+  // A family roll-up is addressed by its reserved segment, never by a slug or SFID: it names a set,
+  // not a row, so there is nothing for the resolver to canonicalize it to (#4125).
+  if (org.uid && isOrgRollUpSegment(org.uid)) return org.uid;
   const slug = org.slug?.trim().toLowerCase();
   if (slug && isOrgSlugSegment(slug)) return slug;
   const uid = org.uid?.trim();
@@ -38,12 +47,46 @@ export function isOrgAccountIdSegment(segment: string): boolean {
 }
 
 /**
- * True when the value is the reserved All Organizations roll-up segment (`ORG_ROLLUP_SEGMENT`) — the
- * one `/org/{segment}` value that selects a *set* of organizations rather than one. Takes `unknown`
- * so cookie and address callers can hand it an unvalidated value directly.
+ * True when the value is a family roll-up segment (`family-{top account id}`) — the one shape of
+ * `/org/{segment}` value that selects a *set* of organizations rather than one. Takes `unknown` so
+ * cookie and address callers can hand it an unvalidated value directly. Exact-case: run raw address
+ * input through `normalizeOrgSegment` first.
  */
-export function isOrgRollUpSegment(value: unknown): value is typeof ORG_ROLLUP_SEGMENT {
-  return value === ORG_ROLLUP_SEGMENT;
+export function isOrgRollUpSegment(value: unknown): boolean {
+  return typeof value === 'string' && ORG_ROLLUP_SEGMENT_PATTERN.test(value);
+}
+
+/** The family's top Salesforce account id a roll-up segment names, or null when the value is not a roll-up segment. */
+export function orgRollUpRootUid(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  return ORG_ROLLUP_SEGMENT_PATTERN.exec(value)?.[1] ?? null;
+}
+
+/** The roll-up segment for the family whose top Salesforce account id is `rootUid`. */
+export function orgRollUpSegment(rootUid: string): string {
+  return `${ORG_ROLLUP_SEGMENT_PREFIX}${rootUid}`;
+}
+
+/**
+ * Synthetic selection standing for one family's roll-up (lfx-self-serve#4125). It is not a `b2b_org`
+ * row, so both identifier fields carry the family's roll-up segment, and `slug` is a confirmed
+ * `null` so nothing tries to learn one from the index. The segment is what every address, cookie
+ * and `:orgUid` / `:accountId` request built from this selection ends up spelling, and what
+ * `isRollUp` keys on.
+ *
+ * The segment sits in BOTH identifier fields. The Org Lens endpoints key on `:orgUid`, but the
+ * Events family keys on `:accountId`, and consumers that filter on a falsy `accountId` would
+ * otherwise skip the roll-up and silently keep their previous result.
+ */
+export function orgRollUpAccount(rootUid: string, familyName?: string | null): Account {
+  const segment = orgRollUpSegment(rootUid);
+  return {
+    accountId: segment,
+    accountName: familyName?.trim() ? `All ${familyName.trim()} Organizations` : ROLLUP_ACCOUNT_NAME,
+    membershipTier: '',
+    uid: segment,
+    slug: null,
+  };
 }
 
 /**
@@ -55,7 +98,12 @@ export function isOrgRollUpSegment(value: unknown): value is typeof ORG_ROLLUP_S
  * `Object.prototype` keys (`'constructor' in {}` is true).
  */
 export function isOrgSlugSegment(segment: string): boolean {
-  return ORG_SLUG_SEGMENT_PATTERN.test(segment) && !isOrgAccountIdSegment(segment) && !isOrgRollUpSegment(segment) && ORG_LENS_PAGE_SEGMENTS[segment] !== true;
+  return (
+    ORG_SLUG_SEGMENT_PATTERN.test(segment) &&
+    !isOrgAccountIdSegment(segment) &&
+    !ORG_ROLLUP_SEGMENT_RESERVED_PATTERN.test(segment) &&
+    ORG_LENS_PAGE_SEGMENTS[segment] !== true
+  );
 }
 
 /**
@@ -95,10 +143,18 @@ export function orgLensDestinationKey(path: string): string {
   return path;
 }
 
-/** Lowercase + trim a raw URL segment before matching or lookup (FR-004). SFIDs are case-sensitive upstream, so they are only trimmed. */
+/**
+ * Lowercase + trim a raw URL segment before matching or lookup (FR-004). SFIDs are case-sensitive
+ * upstream, so they are only trimmed — including the top account id inside a family roll-up
+ * segment, where only the prefix is lowercased (`Family-001…` → `family-001…`, id untouched).
+ */
 export function normalizeOrgSegment(raw: string): string {
   const trimmed = raw.trim();
-  return isOrgAccountIdSegment(trimmed) ? trimmed : trimmed.toLowerCase();
+  if (isOrgAccountIdSegment(trimmed)) return trimmed;
+  if (ORG_ROLLUP_SEGMENT_RESERVED_PATTERN.test(trimmed)) {
+    return `${ORG_ROLLUP_SEGMENT_PREFIX}${trimmed.slice(ORG_ROLLUP_SEGMENT_PREFIX.length)}`;
+  }
+  return trimmed.toLowerCase();
 }
 
 /**

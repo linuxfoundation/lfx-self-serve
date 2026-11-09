@@ -335,7 +335,7 @@ export class OrgNavigationService {
       //    leaves the combined view living only in the cookie: the address still reads
       //    `/org/people`, so sharing or reloading that link drops it (#4415 review 7).
       //  - the organization a demotion fell back to, which `applyDemotionFallback` pins for the
-      //    same reason. `repointAddressAfterDemotion` corrects a `/org/all/…` address but no-ops on
+      //    same reason. `repointAddressAfterDemotion` corrects a `/org/family-{rootUid}/…` address but no-ops on
       //    a legacy one, which names no organization to correct — so without this the page would
       //    render one organization under `/org/people` and a shared link would not identify it
       //    (#4415, Copilot).

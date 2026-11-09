@@ -6,16 +6,9 @@ import { HttpClient } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
-import {
-  ACCOUNT_COOKIE_KEY,
-  ORG_ACCOUNT_ID_PATTERN,
-  ORG_NOT_FOUND_PATH,
-  ORG_ROLLUP_SEGMENT,
-  ROLLUP_ACCOUNT,
-  ROLLUP_MIN_ORGANIZATIONS,
-} from '@lfx-one/shared/constants';
-import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
-import { isOrgRollUpSegment, normalizeOrgSegment, orgUrlSegment } from '@lfx-one/shared/utils';
+import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_NOT_FOUND_PATH, ROLLUP_MIN_ORGANIZATIONS } from '@lfx-one/shared/constants';
+import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment, normalizeOrgSegment, orgRollUpAccount, orgRollUpRootUid, orgUrlSegment } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { filter, firstValueFrom, from, Subscription, switchMap, take } from 'rxjs';
 
@@ -23,6 +16,7 @@ import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
 import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
+import { OrgRollUpFamiliesService } from './org-roll-up-families.service';
 
 const PLACEHOLDER_ACCOUNT: Account = {
   accountId: '',
@@ -38,6 +32,7 @@ export class AccountContextService {
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly rollUpFamiliesService = inject(OrgRollUpFamiliesService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -100,43 +95,51 @@ export class AccountContextService {
   /** Spec 050: the `/org/{segment}/…` segment of the current selection — the indexed slug (org-items row or resolver answer) when one is known, else the SFID; null for the placeholder. Never member-service's slug: addresses resolve against the index. */
   public readonly selectedUrlSegment: Signal<string | null> = computed(() => orgUrlSegment(this.selectedAccount()));
 
-  /** True while the All Organizations roll-up is the selection — every page reads combined data and every write is gated off (#4125). */
-  public readonly isRollUp: Signal<boolean> = computed(() => isOrgRollUpSegment(this.selectedAccount().uid));
+  /** The top Salesforce account id of the family whose roll-up is the selection, or null when a concrete organization (or nothing) is selected (#4125). */
+  public readonly selectedRollUpRootUid: Signal<string | null> = computed(() => orgRollUpRootUid(this.selectedAccount().uid));
+
+  /** True while a family roll-up is the selection — every page reads combined data and every write is gated off (#4125). */
+  public readonly isRollUp: Signal<boolean> = computed(() => this.selectedRollUpRootUid() !== null);
 
   /**
-   * How many distinct organizations the caller holds — what the roll-up would combine.
+   * The caller's organizations grouped by Salesforce family — one roll-up per family (#4125). Every
+   * family the caller holds anything in, including one-organization families, which are not offered
+   * as a roll-up (`eligibleRollUpFamilies`).
    *
-   * Derived client-side from the same sources `hasOrgSelectorAccess` consults: persona-seeded
-   * accounts plus direct and inherited grant sets, de-duplicated by uid. Deliberately **not** the
-   * selector's `items()`, which is paged and would count a first page rather than a holding.
-   *
-   * Interim. lfx-self-serve#4126 exposes the caller's resolved roll-up set from the BFF, which is
-   * the authority — it walks `b2b_org.is_parent` / `parent_uid` the way the access layer already
-   * does, and can see organizations no persona seed carries. Swap this computed for that response
-   * when it lands; nothing outside this service reads the sources directly.
+   * The server's families (`OrgRollUpFamiliesService`, lfx-self-serve#4126) — it resolves each
+   * organization to its family's top account, which the grant sets alone cannot. Empty while that
+   * answer is pending or failed: unknown, not empty, and `grantsUnsettled` holds every demotion
+   * until it lands.
    */
-  public readonly rollUpOrganizationCount: Signal<number> = computed(() => {
-    const uids = new Set<string>();
-    // The persona seeds, NOT `availableAccounts()`. That signal swaps each seed for its enriched
-    // Snowflake row, and `toAccount` does not carry `uid` — so counting it would drop every
-    // enriched organization and hide the roll-up row the moment enrichment succeeded.
-    for (const account of this.userOrganizations()) {
-      if (account.uid) {
-        uids.add(account.uid);
-      }
-    }
-    for (const set of [
-      this.orgRoleGrantsService.writerSet(),
-      this.orgRoleGrantsService.auditorSet(),
-      this.orgRoleGrantsService.inheritedWriterSet(),
-      this.orgRoleGrantsService.inheritedAuditorSet(),
-    ]) {
-      for (const uid of set) {
-        uids.add(uid);
-      }
-    }
-    return uids.size;
+  public readonly rollUpFamilies: Signal<OrgRollUpFamily[]> = computed(() =>
+    this.rollUpFamiliesService.hasServerFamilies() ? this.rollUpFamiliesService.families() : []
+  );
+
+  /** True once the families answer landed as a lower bound or unknown — the switcher shows its incomplete-list notice, whose Retry re-runs the grants and so the families. */
+  public readonly rollUpFamiliesIncomplete: Signal<boolean> = this.rollUpFamiliesService.incomplete;
+  /** True while the families cannot settle roll-up eligibility — the window admission rides out, so held-ness must ride it out too. */
+  public readonly rollUpFamiliesUnsettled: Signal<boolean> = this.rollUpFamiliesService.unsettled;
+  public readonly rollUpFamiliesLoading: Signal<boolean> = this.rollUpFamiliesService.loading;
+
+  /**
+   * The families a roll-up is offered for: those where the caller holds at least
+   * `ROLLUP_MIN_ORGANIZATIONS` organizations (#4132), from a settled answer only. A partial answer
+   * can name a provisional top account, and an answer to an earlier grants load can name a family
+   * the reload shrank or removed; a pick made on either would demote once the current answer lands.
+   * A selection made before stays admitted: `grantsUnsettled` holds it meanwhile.
+   */
+  public readonly eligibleRollUpFamilies: Signal<OrgRollUpFamily[]> = computed(() =>
+    this.rollUpFamiliesService.unsettled() ? [] : this.rollUpFamilies().filter((family) => family.orgUids.length >= ROLLUP_MIN_ORGANIZATIONS)
+  );
+
+  /** The family behind the selected roll-up, or null when no roll-up is selected or its family is not known (yet). */
+  public readonly selectedRollUpFamily: Signal<OrgRollUpFamily | null> = computed(() => {
+    const rootUid = this.selectedRollUpRootUid();
+    return rootUid ? (this.rollUpFamilies().find((family) => family.rootUid === rootUid) ?? null) : null;
   });
+
+  /** How many organizations the selected roll-up combines — 0 while its family is not known (yet). */
+  public readonly rollUpOrganizationCount: Signal<number> = computed(() => this.selectedRollUpFamily()?.orgUids.length ?? 0);
 
   /**
    * True when the roll-up is the selection and the caller has stopped qualifying for it — the one
@@ -149,10 +152,13 @@ export class AccountContextService {
    * The exact complement of what `selectRollUp` admits, so admission and reconciliation cannot
    * answer the same question differently — the defect of #4415 review 12.
    */
-  private readonly rollUpShouldDemote: Signal<boolean> = computed(() => this.isRollUp() && !this.grantsUnsettled() && !this.canSelectRollUp());
+  private readonly rollUpShouldDemote: Signal<boolean> = computed(() => {
+    const rootUid = this.selectedRollUpRootUid();
+    return rootUid !== null && !this.grantsUnsettled() && !this.canSelectRollUpFor(rootUid);
+  });
 
-  /** Whether the roll-up is offered at all: the caller holds two or more organizations (#4132). */
-  public readonly canSelectRollUp: Signal<boolean> = computed(() => this.rollUpOrganizationCount() >= ROLLUP_MIN_ORGANIZATIONS);
+  /** Whether any roll-up is offered: the caller holds two or more organizations in at least one family (#4132). */
+  public readonly canSelectRollUp: Signal<boolean> = computed(() => this.eligibleRollUpFamilies().length > 0);
 
   /**
    * True while the grant sets are not a usable answer — still loading, or loaded from a lookup that
@@ -160,9 +166,9 @@ export class AccountContextService {
    * empty". Anything derived from them (the roll-up count, the demotion fallback) is a lower bound
    * until this clears, so it is also the window in which roll-up eligibility cannot be judged.
    *
-   * `rollUpOrganizationCount()` under-counts while it holds: a conglomerate's sibling organizations
-   * arrive as *inherited* grants rather than persona seeds, so a caller who does qualify can still
-   * count as one organization. Callers restoring or adopting a roll-up therefore admit it
+   * `rollUpFamilies()` under-counts while it holds: a conglomerate's sibling organizations arrive as
+   * *inherited* grants rather than persona seeds, so a caller who does qualify can still count as
+   * one organization in that family. Callers restoring or adopting a roll-up therefore admit it
    * optimistically and let the constructor's reconciliation settle it.
    *
    * Two windows, not one. The obvious one is `!loaded()`. The other is a lookup that finished
@@ -170,11 +176,17 @@ export class AccountContextService {
    * having cleared every grant set — its own comment says the grants are then "unknown, not empty",
    * and it raises `degraded` / `lookupOutcome: 'failed'` to say so. Reading that as a settled answer
    * would demote a genuine conglomerate admin on a transient BFF outage and persist the concrete uid
-   * over their `all` cookie, so the choice would not come back when the outage cleared. Anything but
+   * over their roll-up cookie, so the choice would not come back when the outage cleared. Anything but
    * `'ok'` therefore stays unsettled: a `'partial'` roll-up expansion is a lower bound for the same
    * reason.
+   *
+   * The families answer is held to the same rule (`OrgRollUpFamiliesService.unsettled`): it lands
+   * after the grants, and judging a family's size before it does would demote a caller whose
+   * family is simply not known yet.
    */
-  public readonly grantsUnsettled: Signal<boolean> = computed(() => !this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok');
+  public readonly grantsUnsettled: Signal<boolean> = computed(
+    () => !this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok' || this.rollUpFamiliesService.unsettled()
+  );
 
   /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */
   public readonly isAddressedSelection: Signal<boolean> = computed(() => {
@@ -237,7 +249,7 @@ export class AccountContextService {
     this.selectedAccount = signal<Account>(PLACEHOLDER_ACCOUNT);
 
     // Settle an optimistically admitted roll-up once the grant sets land. A cookie restore or a
-    // `/org/all` deep link is admitted while `OrgRoleGrantsService` is still loading — the count is
+    // `/org/family-…` deep link is admitted while `OrgRoleGrantsService` is still loading — the count is
     // a lower bound until then, and demoting on it would drop a genuine conglomerate admin into one
     // company. Nothing else re-runs afterwards: `applyRollUpSelection` pins the selection, so every
     // later `initializeUserOrganizations` returns through its `isAddressedSelection()` branch, and
@@ -250,6 +262,16 @@ export class AccountContextService {
     toObservable(this.rollUpShouldDemote)
       .pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.demoteFromRollUp());
+
+    // A restored or deep-linked roll-up is admitted before its family is known, under the generic
+    // name. Once the family lands, rename the selection itself — not just the switcher label — so
+    // every page heading reads the same name. The address pin and the cookie hold only the uid.
+    toObservable(this.selectedRollUpFamily)
+      .pipe(
+        filter((family): family is OrgRollUpFamily => family !== null),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((family) => this.renameSelectedRollUp(family));
   }
 
   /** Seed persona-authorised orgs and trigger Snowflake enrichment; selection matches by stored accountId only — display attributes always come from seeds or live response. */
@@ -279,14 +301,16 @@ export class AccountContextService {
     // drop their restored roll-up to the placeholder.
     const storedUid = this.loadUidFromStorage();
 
-    // A cookie-restored roll-up (#4133). Restored optimistically while the grant sets are still
-    // loading: a conglomerate's sibling organizations commonly arrive as *inherited* grants rather
-    // than persona seeds, so `canSelectRollUp()` under-counts until `OrgRoleGrantsService` settles,
-    // and demoting on that transient count would drop the caller into one company and overwrite the
-    // cookie that said otherwise. Once the grants have loaded the count is trustworthy, and a caller
-    // who no longer holds two organizations falls through to the ordinary default selection below.
-    if (isOrgRollUpSegment(storedUid) && (this.canSelectRollUp() || this.grantsUnsettled())) {
-      this.applyRollUpSelection();
+    // A cookie-restored family roll-up (#4133). Restored optimistically while the grant sets are
+    // still loading: a conglomerate's sibling organizations commonly arrive as *inherited* grants
+    // rather than persona seeds, so `canSelectRollUpFor()` under-counts until `OrgRoleGrantsService`
+    // settles, and demoting on that transient count would drop the caller into one company and
+    // overwrite the cookie that said otherwise. Once the grants have loaded the count is
+    // trustworthy, and a caller who no longer holds two organizations in that family falls through
+    // to the ordinary default selection below.
+    const storedRootUid = orgRollUpRootUid(storedUid);
+    if (storedRootUid && (this.canSelectRollUpFor(storedRootUid) || this.grantsUnsettled())) {
+      this.applyRollUpSelection(storedRootUid);
       this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
       return;
     }
@@ -298,7 +322,7 @@ export class AccountContextService {
       // before reconciliation demoted again, so it is replaced with whatever the caller does hold
       // — inherited grants included — or cleared (#4415, Cursor).
       if (isOrgRollUpSegment(storedUid)) {
-        const fallback = this.rollUpFallbackOrganization();
+        const fallback = this.rollUpFallbackOrganization(storedRootUid);
         if (fallback) {
           this.setAccount(fallback);
           // A grant with no seed behind it is a uid-only stub, so the trigger would render a blank
@@ -322,7 +346,7 @@ export class AccountContextService {
     // let the canonical fetch hydrate display fields. Falls back to the first seed when there is no
     // stored id (or it is a legacy UUID / otherwise invalid).
     // Past the roll-up branch above, a sentinel cookie belongs to a caller who no longer qualifies.
-    // It must not reach the uid-stub path below, which would select `{ uid: 'all' }` as though it
+    // It must not reach the uid-stub path below, which would select `{ uid: 'family-…' }` as though it
     // were an organization and leave `isRollUp()` true after the demotion.
     const concreteStoredUid = isOrgRollUpSegment(storedUid) ? null : storedUid;
     const matchedSeed = concreteStoredUid ? (seeds.find((seed) => seed.uid === concreteStoredUid) ?? null) : null;
@@ -378,34 +402,42 @@ export class AccountContextService {
   }
 
   /**
-   * Select the All Organizations roll-up (#4125). Pinned as an `'address'` selection for the same
-   * reason a resolver hit is: from here on the address is `/org/all/…` and only the roll-up may
-   * render under it, so neither an org-items reload nor a persona re-seed may default it back to a
-   * single organization.
+   * Select the roll-up of the family whose top Salesforce account id is `rootUid` (#4125). Pinned as
+   * an `'address'` selection for the same reason a resolver hit is: from here on the address is
+   * `/org/family-{rootUid}/…` and only that roll-up may render under it, so neither an org-items
+   * reload nor a persona re-seed may default it back to a single organization.
    *
-   * No-op when the caller holds fewer than `ROLLUP_MIN_ORGANIZATIONS`, so a stale cookie or a hand-typed
-   * `/org/all` cannot put a single-org caller into a mode built for several.
+   * No-op when the caller holds fewer than `ROLLUP_MIN_ORGANIZATIONS` in that family, so a stale
+   * cookie or a hand-typed address cannot put a caller into a mode built for several.
    */
-  public selectRollUp(options?: { admitWhilePending?: boolean }): boolean {
-    // `admitWhilePending` is for an ADDRESS — a `/org/all/…` deep link the guard is activating.
+  public selectRollUp(rootUid: string, options?: { admitWhilePending?: boolean }): boolean {
+    // `admitWhilePending` is for an ADDRESS — a `/org/family-…` deep link the guard is activating.
     // The count is a lower bound while the grants are unsettled, so refusing then would send a
     // genuine conglomerate admin to `/org/not-found`: a dead end later grants cannot repair,
     // because reconciliation stops once the roll-up is deselected and no default may leave
     // not-found. Admitting is self-correcting instead — `rollUpShouldDemote` is the exact
     // complement of this condition, so the moment the grants land either they confirm the roll-up
     // or reconciliation demotes and re-points (#4415 reviews 10 and 12).
-    const admissible = this.canSelectRollUp() || (options?.admitWhilePending === true && this.grantsUnsettled());
+    const admissible = this.canSelectRollUpFor(rootUid) || (options?.admitWhilePending === true && this.grantsUnsettled());
     if (!admissible) {
       return false;
     }
-    this.applyRollUpSelection();
+    this.applyRollUpSelection(rootUid);
     return true;
+  }
+
+  /** Whether the roll-up of the family topped by `rootUid` is offered: the caller holds at least `ROLLUP_MIN_ORGANIZATIONS` organizations in it. */
+  public canSelectRollUpFor(rootUid: string | null | undefined): boolean {
+    return !!rootUid && this.eligibleRollUpFamilies().some((family) => family.rootUid === rootUid);
   }
 
   /**
    * The organization to fall back on when the roll-up is not available to this caller — on a
-   * demotion, or when `orgPathParamGuard` turns an ineligible `/org/all` address into a concrete
-   * one.
+   * demotion, or when `orgPathParamGuard` turns an ineligible `/org/family-…` address into a
+   * concrete one.
+   *
+   * An organization in the same family (`rootUid`) first, so leaving a roll-up lands inside the
+   * family it combined rather than in an unrelated company the caller also holds.
    *
    * Persona seeds first, since they carry display fields; otherwise a uid from the grant sets as a
    * stub for the canonical fetch to hydrate. Eligibility counts direct and inherited grants, so a
@@ -415,7 +447,16 @@ export class AccountContextService {
    * Public because the guard needs the same answer: it previously fell back to `selectedAccount()`
    * alone, which for a grant-only caller is the placeholder (#4415 review 7).
    */
-  public rollUpFallbackOrganization(): Account | null {
+  public rollUpFallbackOrganization(rootUid?: string | null): Account | null {
+    const familyUids = rootUid ? (this.rollUpFamilies().find((family) => family.rootUid === rootUid)?.orgUids ?? []) : [];
+    const familySeed = this.userOrganizations().find((account) => !!account.uid && familyUids.includes(account.uid));
+    if (familySeed) {
+      return familySeed;
+    }
+    if (familyUids.length > 0) {
+      // `accountId` too, for the same reason as the grant-set stub below.
+      return { ...PLACEHOLDER_ACCOUNT, uid: familyUids[0], accountId: familyUids[0] };
+    }
     const seed = this.userOrganizations()[0];
     if (seed) {
       return seed;
@@ -425,7 +466,7 @@ export class AccountContextService {
       this.orgRoleGrantsService.auditorSet(),
       this.orgRoleGrantsService.inheritedWriterSet(),
       this.orgRoleGrantsService.inheritedAuditorSet(),
-      // Last, and never counted toward `rollUpOrganizationCount`: a CLA-only organization is a real
+      // Last, and never grouped into `rollUpFamilies`: a CLA-only organization is a real
       // address but not something the roll-up combines (M3). Without it a caller whose Org Lens
       // grants lapsed while their CLA-manager company remained would fall back to `null` and land
       // on `/org/not-found`, even though `canAddressOrganization` keeps that same organization when
@@ -446,14 +487,14 @@ export class AccountContextService {
   }
 
   /**
-   * Leave an addressed `/org/all/…` this caller may not have, and answer with the organization the
-   * address should name instead — `orgPathParamGuard`'s half of `demoteFromRollUp`.
+   * Leave an addressed `/org/family-{rootUid}/…` this caller may not have, and answer with the
+   * organization the address should name instead — `orgPathParamGuard`'s half of `demoteFromRollUp`.
    *
    * The result is adopted as an ADDRESS selection, not a bare `setAccount`. The address is about to
    * name it, so a persona re-seed or an empty org-items first page must not replace or clear it
    * before that navigation settles — the same reason a resolver hit pins.
    */
-  public demoteAddressedRollUp(): Account | null {
+  public demoteAddressedRollUp(rootUid: string): Account | null {
     const current = this.selectedAccount();
     // The current selection counts only when it is a CONCRETE organization the caller still holds.
     //
@@ -469,7 +510,14 @@ export class AccountContextService {
     // Only reached from `orgPathParamGuard` once the grants have settled — `admitWhilePending`
     // admits every unsettled visit — so the held set is authoritative here, not a lower bound.
     const concrete = !isOrgRollUpSegment(current.uid) && orgUrlSegment(current) && this.canAddressOrganization(current.uid) ? current : null;
-    const next = concrete ?? this.rollUpFallbackOrganization();
+    // The addressed family first: a link to family A lands in A while the caller still holds an
+    // organization there, whatever company they happened to be viewing before.
+    const familyUids = this.rollUpFamilies().find((family) => family.rootUid === rootUid)?.orgUids ?? [];
+    let next: Account | null = concrete && familyUids.includes(concrete.uid ?? '') ? concrete : null;
+    if (!next && familyUids.length > 0) {
+      next = this.rollUpFallbackOrganization(rootUid);
+    }
+    next ??= concrete ?? this.rollUpFallbackOrganization(rootUid);
     if (!next || !orgUrlSegment(next)) {
       return null;
     }
@@ -527,7 +575,7 @@ export class AccountContextService {
    * the stored one — or `null` when there is none to pin.
    *
    * Never the roll-up sentinel. `selected_uid` names a `b2b_org` row for the server to guarantee is
-   * present; `all` names none, and both the selection and the cookie can hold it. Sent anyway it is
+   * present; a roll-up segment names none, and both the selection and the cookie can hold it. Sent anyway it is
    * at best ignored and at worst rejected at the request boundary, which fails the whole list and
    * leaves the panel showing the pinned roll-up row and no organizations — with no way to switch
    * away from the very mode that caused it (#4415, Cursor).
@@ -717,7 +765,7 @@ export class AccountContextService {
    * now *wrong* for this caller, not merely unavailable — so the stored choice is updated like any
    * other switch rather than held.
    *
-   * The address is re-pointed off `/org/all/…` in place by `repointAddressAfterDemotion`
+   * The address is re-pointed off `/org/family-…/…` in place by `repointAddressAfterDemotion`
    * (`replaceUrl`, keeping page, query and fragment). An earlier revision deliberately left that to
    * `orgPathParamGuard`'s next run, on the grounds that navigating from a service effect would
    * fight the router — but that left the page showing one organization's data under a combined-view
@@ -725,10 +773,11 @@ export class AccountContextService {
    * avoiding it: it waits for the router to be idle before correcting.
    */
   private demoteFromRollUp(): void {
+    const rootUid = this.selectedRollUpRootUid();
     this.addressedUid.set(null);
     this.pinSource.set(null);
 
-    const fallback = this.rollUpFallbackOrganization();
+    const fallback = this.rollUpFallbackOrganization(rootUid);
     if (!fallback) {
       this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
       this.clearStorage();
@@ -743,8 +792,7 @@ export class AccountContextService {
   /**
    * Whether this caller may be left addressing `uid`.
    *
-   * Deliberately wider than `rollUpOrganizationCount`, which counts only what the roll-up would
-   * *combine*: this asks what the caller can reach at all, so it mirrors `hasOrgSelectorAccess`'s
+   * Deliberately wider than `rollUpFamilies`, which holds only what a roll-up would *combine*: this asks what the caller can reach at all, so it mirrors `hasOrgSelectorAccess`'s
    * sources rather than the roll-up's. A CLA-only organization is not part of a roll-up but is a
    * real address (M3: the EasyCLA tab), and a staff viewer reaches every organization with no grant
    * of their own — gating either on the roll-up's narrower set would send them to `/org/not-found`
@@ -789,14 +837,14 @@ export class AccountContextService {
   }
 
   /**
-   * Leave the `/org/all/…` address when the selection is no longer the roll-up. Without this the
+   * Leave the `/org/family-…/…` address when the selection is no longer the roll-up. Without this the
    * page keeps a combined-view address while its consumers read one organization's data — the
    * mismatch spec 050 exists to prevent, just in the other direction. The page, query and fragment
    * are kept; only the organization segment changes.
    *
    * `replaceUrl`, not a push: the roll-up address was never valid for this caller, so it is a
    * correction rather than a step they could sensibly go Back to. Browser-only — SSR issues no
-   * redirects (FR-021) — and a no-op off `/org/all/…`, which is every page the guard already
+   * redirects (FR-021) — and a no-op off `/org/family-…/…`, which is every page the guard already
    * re-points on its own next run.
    */
   private repointAddressAfterDemotion(next: Account | null): void {
@@ -805,7 +853,7 @@ export class AccountContextService {
     }
     // One pending re-point at most, and never while a navigation is in flight. Reading `router.url`
     // mid-navigation sees the address being *left*, not the one being entered — so arriving at
-    // `/org/all/people` would miss the correction, and leaving a roll-up page would cancel the
+    // `/org/family-…/people` would miss the correction, and leaving a roll-up page would cancel the
     // viewer's own navigation to a concrete organization. Mirrors `OrgNavigationService`'s
     // `writeDefaultAddress`, including its re-check once the router settles.
     this.pendingRepoint?.unsubscribe();
@@ -837,14 +885,14 @@ export class AccountContextService {
       });
   }
 
-  /** The re-point itself, once the router is idle. A no-op off `/org/all/…`. */
+  /** The re-point itself, once the router is idle. A no-op off `/org/family-…/…`. */
   private repointNow(next: Account | null): void {
     const tree = this.router.parseUrl(this.router.url);
     const primary = tree.root.children['primary'];
     const segments = primary?.segments ?? [];
-    // `normalizeOrgSegment`, because the guards admit `/org/All/people` — the match guard lowercases
-    // before testing and the roll-up branch returns without canonicalizing — so a mixed-case address
-    // would otherwise keep its combined-view URL after demotion.
+    // `normalizeOrgSegment`, because the guards admit `/org/Family-…/people` — the match guard
+    // normalizes before testing and the roll-up branch returns without canonicalizing — so a
+    // mixed-case prefix would otherwise keep its combined-view URL after demotion.
     if (segments.length < 2 || segments[0].path !== 'org' || !isOrgRollUpSegment(normalizeOrgSegment(segments[1].path))) {
       return;
     }
@@ -858,12 +906,24 @@ export class AccountContextService {
     void this.router.navigateByUrl(tree, { replaceUrl: true });
   }
 
-  /** Writes the roll-up selection and pins it as an address selection. The eligibility gate lives in the callers. */
-  private applyRollUpSelection(): void {
-    this.selectedAccount.set(ROLLUP_ACCOUNT);
-    this.persistToStorage(ROLLUP_ACCOUNT);
-    this.addressedUid.set(ORG_ROLLUP_SEGMENT);
+  /** Writes the family roll-up selection and pins it as an address selection. The eligibility gate lives in the callers. */
+  private applyRollUpSelection(rootUid: string): void {
+    const family = this.rollUpFamilies().find((candidate) => candidate.rootUid === rootUid);
+    const account = orgRollUpAccount(rootUid, family?.name);
+    this.selectedAccount.set(account);
+    this.persistToStorage(account);
+    this.addressedUid.set(account.uid ?? null);
     this.pinSource.set('address');
+  }
+
+  /** Rewrites the selected roll-up's display name to its family's, when the selection is still that family's roll-up. */
+  private renameSelectedRollUp(family: OrgRollUpFamily): void {
+    const current = this.selectedAccount();
+    const named = orgRollUpAccount(family.rootUid, family.name);
+    if (current.uid !== named.uid || current.accountName === named.accountName) {
+      return;
+    }
+    this.selectedAccount.set({ ...current, accountName: named.accountName });
   }
 
   /** Spec 002: persist only the org account id (SFID, in `uid`) — display fields stay in memory and are always re-hydrated from persona seeds + Snowflake + the canonical fetch. */
@@ -903,14 +963,14 @@ export class AccountContextService {
    * Spec 002: the org uid is the canonical 18-char Salesforce account id; legacy UUIDs (and anything
    * else) are treated as absent/tampered so a stale cookie degrades to the default selection.
    *
-   * The reserved roll-up segment is accepted as well, so `{ uid: 'all' }` survives a refresh instead
-   * of being discarded as a legacy id (#4133). Widened here, in the cookie round-trip, rather than in
+   * A family roll-up segment is accepted as well, so `{ uid: 'family-…' }` survives a refresh
+   * instead of being discarded as a legacy id (#4133). Widened here, in the cookie round-trip, rather than in
    * `ORG_ACCOUNT_ID_PATTERN` itself: that constant is the request-boundary validator for roughly
    * fifteen server call sites (`assertOrgUid`, `requireOrgLensAccess`, the analytics access helper,
    * crowdfunding, the slug resolver's `prefer`), and widening it would make every one of them accept
    * the sentinel before lfx-self-serve#4127 has taught any of them to authorize it. Restoring the
-   * cookie still goes through `canSelectRollUp`, so a restored sentinel only takes effect for a
-   * caller who actually holds two or more organizations.
+   * cookie still goes through `canSelectRollUpFor`, so a restored roll-up only takes effect for a
+   * caller who actually holds two or more organizations in that family.
    */
   private isValidUid(uid: unknown): uid is string {
     return typeof uid === 'string' && (ORG_ACCOUNT_ID_PATTERN.test(uid) || isOrgRollUpSegment(uid));

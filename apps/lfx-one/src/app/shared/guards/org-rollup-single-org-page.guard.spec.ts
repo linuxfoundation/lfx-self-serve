@@ -13,16 +13,18 @@ import { orgRollUpSingleOrgPageGuard } from './org-rollup-single-org-page.guard'
 /**
  * Cursor on PR #4415. Dropping Organization Profile from the sidebar does not stop the page
  * loading: `navigateToSelectedOrg` canonicalizes a legacy `/org/profile` by inserting the selected
- * segment, so in roll-up mode the app rewrites it to `/org/all/profile` itself, and the page then
- * asks for `/api/orgs/uid/all` and errors.
+ * segment, so in roll-up mode the app rewrites it to `/org/family-{id}/profile` itself, and the
+ * page then asks for `/api/orgs/uid/family-{id}` and errors.
  */
 describe('orgRollUpSingleOrgPageGuard', () => {
+  const FAMILY_SEGMENT = 'family-0014100000RootAAAA';
   const isRollUp = signal(false);
+  const selectedAccount = signal({ uid: FAMILY_SEGMENT });
 
   beforeEach(() => {
     isRollUp.set(false);
     TestBed.configureTestingModule({
-      providers: [{ provide: AccountContextService, useValue: { isRollUp } }],
+      providers: [{ provide: AccountContextService, useValue: { isRollUp, selectedAccount } }],
     });
   });
 
@@ -42,7 +44,7 @@ describe('orgRollUpSingleOrgPageGuard', () => {
 
   const redirectsToRollUpOverview = (result: boolean | UrlTree): void => {
     expect(result).toBeInstanceOf(UrlTree);
-    expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe('/org/all/overview');
+    expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe(`/org/${FAMILY_SEGMENT}/overview`);
   };
 
   it('lets a concrete organization through', () => {
@@ -78,7 +80,7 @@ describe('orgRollUpSingleOrgPageGuard', () => {
   /**
    * Copilot again, on the first fix: keying on `?org=` alone was too wide. Only EasyCLA adopts the
    * parameter, only the legacy mount can carry such a return, and an empty value adopts nothing —
-   * so each of these is a hand-made address aimed at the sentinel, not a signing return.
+   * so each of these is a hand-made address aimed at a roll-up, not a signing return.
    */
   it.each([
     ['Profile, which never adopts the parameter', { page: 'profile' as const, queryParams: { org: '0014100000AaaAAAAA' } }],

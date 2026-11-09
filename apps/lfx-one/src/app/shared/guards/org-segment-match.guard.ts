@@ -14,7 +14,7 @@ import { isOrgAccountIdSegment, isOrgRollUpSegment, isOrgSlugSegment, normalizeO
  * rejecting them here is belt-and-braces, and rejecting malformed segments lets the in-shell 404
  * catch-all answer instead of a resolver round trip.
  *
- * The reserved All Organizations roll-up segment matches too (lfx-self-serve#4125). It is accepted
+ * A family roll-up segment (`family-{top account id}`) matches too (lfx-self-serve#4125). It is accepted
  * explicitly rather than falling out of `isOrgSlugSegment`, which rejects it: a slug is something
  * the resolver can look up, and this names a set the BFF expands per caller. `orgPathParamGuard`
  * then adopts it without a resolver round trip.

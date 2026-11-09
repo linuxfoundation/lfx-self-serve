@@ -3,8 +3,8 @@
 
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ORG_ROLLUP_SEGMENT } from '@lfx-one/shared/constants';
 import { Account, OrgLensEmptyStateName, OrgLensLookupOutcome, OrgLensStaffCheck } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment, orgRollUpSegment } from '@lfx-one/shared/utils';
 import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
@@ -14,6 +14,9 @@ import { OrgLensEmptyStateService } from './org-lens-empty-state.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
+
+const ROLLUP_ROOT = '0014100000RootAAAA';
+const ROLLUP_SEGMENT = orgRollUpSegment(ROLLUP_ROOT);
 
 const HELD = 'held-org';
 const OTHER = 'other-org';
@@ -34,6 +37,8 @@ interface Harness {
   selectedAccount: WritableSignal<Account>;
   hasOrgSelectorAccess: WritableSignal<boolean>;
   canSelectRollUp: WritableSignal<boolean>;
+  /** `AccountContextService.rollUpFamiliesUnsettled` — the families answer is pending, partial, failed or stale. */
+  rollUpFamiliesUnsettled: WritableSignal<boolean>;
   /** Organizations `OrgClaOnlyAccessService.isClaOnly` answers true for. */
   claOnlyUids: WritableSignal<Set<string>>;
   /** `OrgClaOnlyAccessService.lookupFailed` — the flag-gated CLA-manager scopes outage. */
@@ -73,6 +78,7 @@ function setup(): Harness {
   const selectedAccount = signal<Account>(account(''));
   const hasOrgSelectorAccess = signal(false);
   const canSelectRollUp = signal(true);
+  const rollUpFamiliesUnsettled = signal(false);
   const claOnlyUids = signal(new Set<string>());
   const claLookupFailed = signal(false);
   const affiliatedToMember = signal(false);
@@ -123,12 +129,13 @@ function setup(): Harness {
         useValue: {
           selectedAccount,
           hasOrgSelectorAccess,
-          canSelectRollUp,
+          canSelectRollUpFor: (rootUid: string | null) => rootUid === ROLLUP_ROOT && canSelectRollUp(),
+          rollUpFamiliesUnsettled,
           getStoredUid: () => 'cookie-uid',
           // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
           orgListPinUid: () => {
             const uid = selectedAccount().uid || 'cookie-uid';
-            return uid === ORG_ROLLUP_SEGMENT ? null : uid;
+            return isOrgRollUpSegment(uid) ? null : uid;
           },
         },
       },
@@ -154,6 +161,7 @@ function setup(): Harness {
     selectedAccount,
     hasOrgSelectorAccess,
     canSelectRollUp,
+    rollUpFamiliesUnsettled,
     claOnlyUids,
     claLookupFailed,
     affiliatedToMember,
@@ -206,7 +214,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
    * was short, and, for a contractor, sending them to the probe instead of their page.
    */
   it('treats the roll-up as held while the caller may select it', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.hasOrgSelectorAccess.set(true);
     h.canSelectRollUp.set(true);
     h.lookupOutcome.set('partial');
@@ -217,7 +225,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
   });
 
   it('does not treat the roll-up as held once the caller may no longer select it', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.canSelectRollUp.set(false);
 
     expect(h.service.selectedHeld()).toBe(false);
@@ -230,7 +238,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
    * and its Retry vanished there, and a contractor was probed with the reserved sentinel.
    */
   it('keeps the roll-up held through the partial window the admission path rides out', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.hasOrgSelectorAccess.set(true);
     h.canSelectRollUp.set(false);
     h.lookupOutcome.set('partial');
@@ -240,13 +248,31 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.listIncomplete()).toBe(true);
   });
 
+  // The grants answered `ok`, but the families have not settled — always briefly, right after the
+  // grants load, and for as long as the families request keeps failing. Admission rides that out, so
+  // held-ness must: no not-held page, and no contractor probe on the roll-up key.
+  it('keeps the roll-up held while the families are unsettled', () => {
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(false);
+    h.rollUpFamiliesUnsettled.set(true);
+    h.isContractor.set(true);
+
+    expect(h.service.selectedHeld()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+    expect(h.readCheck).not.toHaveBeenCalled();
+
+    h.rollUpFamiliesUnsettled.set(false);
+    expect(h.service.selectedHeld()).toBe(false);
+  });
+
   /**
    * Copilot on PR #4415. Writing the failure check as one disjunct among others let optimism
    * short-circuit it: two persona seeds keep `canSelectRollUp` true after the roster fails, so the
    * page-level outage and its shared Retry disappeared behind a roll-up that could still be picked.
    */
   it('lets the outage win even when the seeds still make the roll-up selectable', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.hasOrgSelectorAccess.set(true);
     h.canSelectRollUp.set(true);
     h.lookupOutcome.set('failed');
@@ -257,7 +283,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
 
   // Rule 3 — a lower bound with nothing held at all is the same outage, not a window to ride out.
   it('lets the outage win for a partial lookup that leaves the caller holding nothing', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.hasOrgSelectorAccess.set(false);
     h.canSelectRollUp.set(false);
     h.lookupOutcome.set('partial');
@@ -268,7 +294,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
 
   // A failed lookup is not a lower bound: rule 2 owns that render, rather than a page over an outage.
   it('lets the outage win over an admitted roll-up when the lookup failed outright', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.hasOrgSelectorAccess.set(true);
     h.canSelectRollUp.set(false);
     h.lookupOutcome.set('failed');
@@ -284,7 +310,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
    * verdict, parking them on the skeleton until the doomed request finished.
    */
   it('never probes the roll-up sentinel for a contractor, even during an outage', () => {
-    h.selectedAccount.set(account(ORG_ROLLUP_SEGMENT));
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
     h.isContractor.set(true);
     h.canSelectRollUp.set(false);
     h.lookupOutcome.set('failed');

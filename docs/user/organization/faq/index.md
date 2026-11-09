@@ -40,7 +40,7 @@ You switch organizations from the organization switcher at the top of the sideba
 
 ## Can I see all my organizations at once?
 
-Yes, if you have access to two or more. The organization switcher then offers the **All Organizations Roll-Up** as its first entry, a combined view across all of them, labelled **Combined view of related organizations** with the number of organizations it covers. Select it the way you would select an organization; to leave it, open the switcher and select a single organization. Organizations where your only role is CLA Manager or initial CLA Manager designee are not part of it. With access to only one organization the entry does not appear, because there is nothing to combine. See [What is the All Organizations Roll-Up?](../choose-an-organization/#what-is-the-all-organizations-roll-up).
+Yes, one corporate family at a time, if you have access to two or more organizations in that family. The organization switcher then offers a roll-up for the family as its first entry, named after the family's top company (for example **All Acme Organizations**) and labelled **Combined view of related organizations** with the number of organizations it covers. If your organizations belong to two families, you get one roll-up per family; organizations from different families are never combined. Select a roll-up the way you would select an organization; to leave it, open the switcher and select a single organization. Organizations where your only role is CLA Manager or initial CLA Manager designee are not part of it. See [What is an organization family roll-up?](../choose-an-organization/#what-is-an-organization-family-roll-up).
 
 ## What does the Org Overview dashboard show?
 

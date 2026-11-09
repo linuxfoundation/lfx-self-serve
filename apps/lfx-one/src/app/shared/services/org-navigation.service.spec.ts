@@ -718,9 +718,9 @@ describe('OrgNavigationService default selection', () => {
 
     /**
      * Copilot on PR #4415. This spec used to assert the opposite, and so locked in the defect: on
-     * `/org/people` with an `all` cookie, if the grants settle to one organization before org-items
+     * `/org/people` with a roll-up cookie, if the grants settle to one organization before org-items
      * answers, the demotion pins its concrete fallback as an address selection — but
-     * `repointAddressAfterDemotion` only corrects a `/org/all/…` address, and a legacy one names no
+     * `repointAddressAfterDemotion` only corrects a `/org/family-{rootUid}/…` address, and a legacy one names no
      * organization to correct. Gating the write on `isRollUp()` then skipped it, leaving the page
      * rendering one organization under an address that does not identify it.
      *

@@ -313,7 +313,10 @@ describe('orgPathParamGuard', () => {
    * that three behaviour changes here shipped untested, one of them (`prefer`) a single condition
    * whose loss had been a high-severity regression in round 1.
    */
-  describe('All Organizations roll-up', () => {
+  describe('family roll-up', () => {
+    const ROOT = '0014100000RootAAAA';
+    const SEGMENT = `family-${ROOT}`;
+
     /**
      * The `admitWhilePending` argument is the contract this guard owes the service, so it is pinned
      * here: on a cold deep link the grant sets have not answered, and without opting in a
@@ -322,9 +325,9 @@ describe('orgPathParamGuard', () => {
      * behaviour and is covered by its own specs — asserting it here against a mock that honours the
      * argument would only restate this expectation.
      */
-    it('adopts /org/all without asking the resolver, opting into admission while pending', async () => {
-      expect(await runGuard('all', '/org/all/people')).toBe(true);
-      expect(selectRollUp).toHaveBeenCalledWith({ admitWhilePending: true });
+    it('adopts /org/family-{root} without asking the resolver, for that family, opting into admission while pending', async () => {
+      expect(await runGuard(SEGMENT, `/org/${SEGMENT}/people`)).toBe(true);
+      expect(selectRollUp).toHaveBeenCalledWith(ROOT, { admitWhilePending: true });
       expect(resolve).not.toHaveBeenCalled();
     });
 
@@ -335,7 +338,7 @@ describe('orgPathParamGuard', () => {
       selectRollUp.mockReturnValue(false);
       selectedAccount.set(account({ uid: UID_A, slug: 'alpha-inc' }));
       demoteAddressedRollUp.mockReturnValue(account({ uid: UID_A, slug: 'alpha-inc' }));
-      expect(await outcome('all', '/org/all/people')).toBe('/org/alpha-inc/people');
+      expect(await outcome(SEGMENT, `/org/${SEGMENT}/people`)).toBe('/org/alpha-inc/people');
     });
 
     /**
@@ -348,8 +351,9 @@ describe('orgPathParamGuard', () => {
       selectRollUp.mockReturnValue(false);
       demoteAddressedRollUp.mockReturnValue(account({ uid: UID_B, slug: 'beta-llc' }));
 
-      expect(await outcome('all', '/org/all/people')).toBe('/org/beta-llc/people');
+      expect(await outcome(SEGMENT, `/org/${SEGMENT}/people`)).toBe('/org/beta-llc/people');
       expect(demoteAddressedRollUp).toHaveBeenCalledTimes(1);
+      expect(demoteAddressedRollUp).toHaveBeenCalledWith(ROOT);
     });
 
     // Which organization, whether the stored choice survives, and the address pin are all the
@@ -358,24 +362,31 @@ describe('orgPathParamGuard', () => {
       selectRollUp.mockReturnValue(false);
       demoteAddressedRollUp.mockReturnValue(null);
 
-      expect(await outcome('all', '/org/all/people')).toBe('/org/not-found');
+      expect(await outcome(SEGMENT, `/org/${SEGMENT}/people`)).toBe('/org/not-found');
+    });
+
+    // Salesforce ids are case-sensitive: lowercasing the address used to hand the service a
+    // different (or no) top account. Only the prefix may change case.
+    it('keeps the top account id exact when the prefix arrives in another case', async () => {
+      expect(await runGuard(`Family-${ROOT}`, `/org/Family-${ROOT}/people`)).toBe(true);
+      expect(selectRollUp).toHaveBeenCalledWith(ROOT, { admitWhilePending: true });
     });
 
     it('renders without a selection on the server rather than redirecting', async () => {
       platformId = 'server';
       selectRollUp.mockReturnValue(false);
-      expect(await runGuard('all', '/org/all/people')).toBe(true);
+      expect(await runGuard(SEGMENT, `/org/${SEGMENT}/people`)).toBe(true);
       expect(clearAccount).toHaveBeenCalled();
     });
 
     /**
      * Regression guard, PR #4415 review round 1. The server validates `prefer` against
      * `ORG_ACCOUNT_ID_PATTERN` and rejects anything else outright, so leaving roll-up mode by a Back
-     * or a concrete-organization link sent `prefer=all`, drew a 400, and landed a perfectly valid
+     * or a concrete-organization link sent the roll-up segment as `prefer`, drew a 400, and landed a perfectly valid
      * address on `/org/not-found`.
      */
     it('never offers the roll-up sentinel to the slug resolver as a preference', async () => {
-      selectedAccount.set(account({ uid: 'all', accountId: 'all', slug: null }));
+      selectedAccount.set(account({ uid: SEGMENT, accountId: SEGMENT, slug: null }));
       resolve.mockReturnValue(of(hit(UID_B, 'beta-llc')));
 
       await runGuard('beta-llc', '/org/beta-llc/overview');
