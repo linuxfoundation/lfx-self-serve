@@ -473,6 +473,126 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly', () => {
   });
 });
 
+// A fake ORG_PEOPLE_CONTRIBUTORS_DAILY: each read is answered from the rows below, filtered by the companies, scope
+// split and team-member rule that the service's own SQL text and binds carry, so the counts depend on what it sends.
+describe('OrgInvolvementService.getFamilyContributorsMonthly — against daily fixture rows', () => {
+  const ROLL_UP = 'family-001000000000000AAA';
+  const ALL_CO = '001000000000001AAA';
+  const INSIGHTS_CO = '001000000000002AAA';
+  const MONTHS = Array.from({ length: 12 }, (_, month) => new Date(2030, month, 15));
+  const LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month) => `${month} 2030`);
+
+  interface DailyRow {
+    person: string;
+    account: string;
+    month: number;
+    insightsActivities: number;
+    teamMember?: boolean;
+  }
+  const DAILY: DailyRow[] = [
+    { person: 'shared', account: ALL_CO, month: 2, insightsActivities: 0 },
+    { person: 'shared', account: INSIGHTS_CO, month: 2, insightsActivities: 3 },
+    { person: 'all-only', account: ALL_CO, month: 2, insightsActivities: 0 },
+    { person: 'all-only', account: ALL_CO, month: 5, insightsActivities: 0 },
+    { person: 'insights-only', account: INSIGHTS_CO, month: 5, insightsActivities: 1 },
+    { person: 'other-org-code', account: INSIGHTS_CO, month: 5, insightsActivities: 0 },
+    { person: 'team', account: ALL_CO, month: 2, insightsActivities: 0, teamMember: true },
+  ];
+
+  interface Filter {
+    companies: string[];
+    insights: string[] | null;
+    all: string[];
+    excludeTeam: boolean;
+  }
+  const familyFilter = (sql: string, binds: string[]): Filter => {
+    const lists = [...sql.matchAll(/account_id IN \(([?, ]+)\)/g)];
+    let offset = 0;
+    const filter: Filter = { companies: [], insights: null, all: [], excludeTeam: sql.includes('NOT COALESCE(is_cdp_team_member, FALSE)') };
+    for (const list of lists) {
+      const values = binds.slice(offset, offset + list[1].split(',').length);
+      offset += values.length;
+      if (sql.slice(0, list.index).trimEnd().endsWith('WHERE')) filter.companies = values;
+      else if (sql.slice(list.index, list.index + 80).includes('insights_daily_code_activities > 0')) filter.insights = values;
+      else filter.all = values;
+    }
+    return filter;
+  };
+  const singleFilter = (sql: string, account: string): Filter => {
+    const insights = sql.includes('INSIGHTS_DAILY_CODE_ACTIVITIES > 0') || sql.includes('INSIGHTS_UNIQUE_CONTRIBUTORS');
+    return {
+      companies: [account],
+      insights: insights ? [account] : null,
+      all: [],
+      excludeTeam: sql.includes('NOT COALESCE(is_cdp_team_member, FALSE)') || sql.includes('EXCLUDING_TEAM_MEMBERS'),
+    };
+  };
+  const counted = (filter: Filter): DailyRow[] =>
+    DAILY.filter(
+      (row) =>
+        filter.companies.includes(row.account) &&
+        !(filter.excludeTeam && row.teamMember) &&
+        (filter.insights === null || (filter.insights.includes(row.account) && row.insightsActivities > 0) || filter.all.includes(row.account))
+    );
+  const people = (rows: DailyRow[]): number => new Set(rows.map((row) => row.person)).size;
+  const monthlyRows = (filter: Filter): { MONTH_START_DATE: Date; UNIQUE_CONTRIBUTORS: number }[] => {
+    if (!DAILY.some((row) => filter.companies.includes(row.account))) return [];
+    const rows = counted(filter);
+    return MONTHS.map((month, index) => ({ MONTH_START_DATE: month, UNIQUE_CONTRIBUTORS: people(rows.filter((row) => row.month === index)) }));
+  };
+
+  beforeEach(() => {
+    execute.mockReset();
+    withOrgCache.mockClear();
+    resolveOrgScope.mockReset();
+    resolveOrgScope.mockImplementation(async (_snowflake: unknown, accountId: string) => (accountId === INSIGHTS_CO ? 'insights' : 'all'));
+    execute.mockImplementation(async (sql: string, binds: string[]) => {
+      const family = sql.includes('account_id IN (');
+      const filter = family ? familyFilter(sql, binds) : singleFilter(sql, binds[0]);
+      if (!isContributorsTrend(sql)) return { rows: [{ ACTIVE_CONTRIBUTORS: people(counted(filter)) }] };
+      return { rows: monthlyRows(filter) };
+    });
+  });
+
+  it('counts a person contributing through two companies in the same month once, where adding the companies counts them twice', async () => {
+    const service = new OrgInvolvementService();
+    const family = await service.getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO]);
+    const allCompany = await service.getContributorsMonthly(ALL_CO);
+    const insightsCompany = await service.getContributorsMonthly(INSIGHTS_CO);
+
+    expect(family).toEqual({
+      accountId: ROLL_UP,
+      totalActiveContributors: 3,
+      monthlyData: [0, 0, 2, 0, 0, 2, 0, 0, 0, 0, 0, 0],
+      monthlyLabels: LABELS,
+    });
+    expect(allCompany.monthlyData[2] + insightsCompany.monthlyData[2]).toBe(3);
+    expect((allCompany.totalActiveContributors ?? 0) + (insightsCompany.totalActiveContributors ?? 0)).toBe(4);
+  });
+
+  it.each([
+    ['insights', INSIGHTS_CO],
+    ['all', INSIGHTS_CO],
+    ['insights', ALL_CO],
+    ['all', ALL_CO],
+  ])('answers a one-company family exactly as that company under the %s scope (%s)', async (scope, company) => {
+    resolveOrgScope.mockImplementation(async () => scope);
+    const service = new OrgInvolvementService();
+
+    const family = await service.getFamilyContributorsMonthly(ROLL_UP, [company]);
+    const single = await service.getContributorsMonthly(company);
+
+    expect({ ...family, accountId: company }).toEqual(single);
+    expect(family.monthlyLabels).toEqual(LABELS);
+  });
+
+  it('leaves a company without code in the window out, so a family of one such company has an empty trend', async () => {
+    const family = await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, ['001000000000003AAA']);
+
+    expect(family).toEqual({ accountId: ROLL_UP, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] });
+  });
+});
+
 describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
   const ROLL_UP = 'family-001000000000000AAA';
   const PARENT_CO = '001000000000001AAA';
