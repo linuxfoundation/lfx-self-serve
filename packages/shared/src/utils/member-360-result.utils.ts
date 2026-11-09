@@ -111,7 +111,10 @@ export function member360WeightRows(method: Method): Member360WeightRow[] {
 /** A tier baseline group without the project-name prefix and the word "Membership": "Gold", "Silver (100 - 499)". */
 export function member360TierGroupLabel(group: string, projectName: string): string {
   const withoutProject = projectName && group.startsWith(`${projectName} - `) ? group.slice(projectName.length + 3) : group;
-  const short = withoutProject.replace(/\s*Membership\b/i, '').trim();
+  const short = withoutProject
+    .replace(/\bMembership\b/i, '')
+    .replace(/ {2,}/g, ' ')
+    .trim();
   return short.length > 0 ? short : group;
 }
 
