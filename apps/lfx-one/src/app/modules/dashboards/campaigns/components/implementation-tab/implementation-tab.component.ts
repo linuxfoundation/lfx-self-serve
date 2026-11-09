@@ -206,6 +206,7 @@ import {
   GOOGLE_DEMAND_GEN_AUDIENCE_HELD_WHILE_SPLIT,
   GOOGLE_DEMAND_GEN_DEMOGRAPHICS_HELD_WHILE_SPLIT,
   GOOGLE_DISPLAY_AUDIENCE_KINDS,
+  GOOGLE_ADS_AUDIENCE_QUERY_MAX_LENGTH,
   GOOGLE_DISPLAY_AUDIENCES_HELD_WHILE_NOT_SPLIT,
   GOOGLE_DISPLAY_AUDIENCES_HELD_WHILE_SPLIT,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
@@ -4209,6 +4210,16 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly displayAudiencesAvailable: Signal<boolean> = computed(
     () => this.googleDisplayAudiencesEnabled() === true && this.googleCreativeSections().some((section) => section.channel === 'display')
   );
+  /** The longest interest search the audience read accepts, so the box cannot send one it would refuse with a 400. */
+  protected readonly interestQueryMaxLength = GOOGLE_ADS_AUDIENCE_QUERY_MAX_LENGTH;
+  /** Whether Display's creative section, where the Display audience pickers sit, is on screen (#5262). */
+  protected readonly displayCreativeShown: Signal<boolean> = computed(() => this.googleCreativeSections().some((section) => section.channel === 'display'));
+  /**
+   * The options each Display audience list still offers, keyed by the list's id stem (`single-<kind>`,
+   * `<group index>-<kind>`, `excluded`): its kind's listed entries not already picked in that list, so the
+   * template reads a computed rather than filtering per option.
+   */
+  protected readonly displayAudienceUnpicked: Signal<Partial<Record<string, GoogleAudiencePickerState['audiences']>>> = this.initDisplayAudienceUnpicked();
   /** The interest search box (#5262): Google's interest taxonomy is larger than one read returns, so it is searched by name. */
   protected readonly displayInterestSearchForm = this.fb.nonNullable.group({ q: '' });
   /** The interest search last asked for; `''` reads the first entries by name. */
@@ -7803,7 +7814,9 @@ export class ImplementationTabComponent implements OnInit {
     // judged on Create (`displayAudiencesError`), so a value the create would refuse is shown, not dropped.
     if (draft.displayAudiences !== null && typeof draft.displayAudiences === 'object') {
       this.restoreDisplayAudiences(this.campaignForm.controls.displayAudiences.controls, draft.displayAudiences);
-      this.campaignForm.controls.displayExcludedUserLists.setValue(this.draftStringList(draft.displayAudiences.excludedAudienceSegments));
+      if (draft.displayAudiences.excludedAudienceSegments !== undefined) {
+        this.campaignForm.controls.displayExcludedUserLists.setValue(this.draftStringList(draft.displayAudiences.excludedAudienceSegments));
+      }
     }
     // The stored images held in the Google image slots, on the Meta image's terms.
     if (draft.googleImageAssets !== undefined) {
@@ -12647,9 +12660,32 @@ export class ImplementationTabComponent implements OnInit {
     }
   }
 
-  /** A saved draft's list as the strings it holds; anything that is not a list is read as empty. */
+  /**
+   * A saved draft's list as the distinct strings it holds; anything that is not a list is read as empty. A
+   * repeat is dropped: the pickers add a resource name once, and the chips are keyed by it.
+   */
   private draftStringList(value: unknown): string[] {
-    return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+    return Array.isArray(value) ? [...new Set(value.filter((entry): entry is string => typeof entry === 'string'))] : [];
+  }
+
+  /** {@link displayAudienceUnpicked}: every rendered list's unpicked options, recomputed as the form or a picker list changes. */
+  private initDisplayAudienceUnpicked(): Signal<Partial<Record<string, GoogleAudiencePickerState['audiences']>>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const pickers = this.displayAudiencePickers();
+      const form = this.campaignForm.controls;
+      const out: Record<string, GoogleAudiencePickerState['audiences']> = {};
+      const fill = (id: string, kind: GoogleDisplayAudienceKind, picked: readonly string[]): void => {
+        const taken = new Set(picked);
+        out[id] = pickers[kind].audiences.filter((option) => !taken.has(option.resourceName));
+      };
+      for (const { kind } of GOOGLE_DISPLAY_AUDIENCE_KINDS) {
+        fill(`single-${kind}`, kind, form.displayAudiences.controls[kind].value);
+        form.displayAdGroups.controls.forEach((group, index) => fill(`${index}-${kind}`, kind, group.controls.audiences.controls[kind].value));
+      }
+      fill('excluded', 'audienceSegments', form.displayExcludedUserLists.value);
+      return out;
+    });
   }
 
   /**

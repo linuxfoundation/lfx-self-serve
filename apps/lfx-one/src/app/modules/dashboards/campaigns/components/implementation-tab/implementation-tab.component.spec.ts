@@ -20787,6 +20787,9 @@ describe('ImplementationTabComponent display audiences', () => {
 
     pick(c, null, 'audienceSegments', LIST);
     pick(c, null, 'audienceSegments', LIST);
+    // A picked list leaves that list's picker, not the exclusions'.
+    expect(c['displayAudienceUnpicked']()['single-audienceSegments'].map((o: { resourceName: string }) => o.resourceName)).toEqual([LIST_B]);
+    expect(c['displayAudienceUnpicked']()['excluded']).toHaveLength(2);
     pick(c, null, 'customAudiences', CUSTOM);
     pick(c, null, 'customAffinities', AFFINITY);
     pick(c, null, 'userInterests', INTEREST);
@@ -20845,6 +20848,7 @@ describe('ImplementationTabComponent display audiences', () => {
     await fixture.whenStable();
 
     expect(readAudiences).toHaveBeenCalledWith('tlf', 'user_interest', 'devops');
+    expect(query('implementation-display-interest-search')?.querySelector('input')?.getAttribute('maxlength')).toBe('100');
     expect(query('implementation-display-audience-note-single-userInterests')?.textContent).toContain('No interest matches that search.');
     expect(query('implementation-display-audience-single-userInterests')?.textContent).toContain('Cloud Computing');
   });
@@ -20926,6 +20930,9 @@ describe('ImplementationTabComponent display audiences', () => {
 
     expect(c['campaignForm'].controls.displayAudiences.controls.userInterests.value).toEqual([INTEREST]);
     expect(c['campaignForm'].controls.displayAudiences.controls.customAudiences.value).toEqual([]);
+    // A repeat is restored once, as the pickers add it once.
+    restoreGoogleDraft(fixture, c, { includeDisplay: true, displayAudiences: { userInterests: [INTEREST, INTEREST] } });
+    expect(c['campaignForm'].controls.displayAudiences.controls.userInterests.value).toEqual([INTEREST]);
     expect(c['campaignForm'].controls.displayExcludedUserLists.value).toEqual([LIST_B]);
     expect(c['campaignForm'].controls.displayAdGroups.at(0).controls.audiences.controls.audienceSegments.value).toEqual([LIST]);
 
@@ -20981,17 +20988,20 @@ describe('ImplementationTabComponent display audiences', () => {
       expect(retried).toHaveBeenCalledTimes(1);
     });
 
-    it('asks for the brief to be saved, and says the deployment cannot send them', async () => {
+    it('asks for the brief to be saved, and says the deployment cannot send them, listing them while the section is hidden', async () => {
       await setup();
       expect(hold(null, 'unknown', null)['displayAudiencesBlock']()?.kind).toBe('unsaved');
       expect(hold(true, 'ready', 'brief-1', false)['displayAudiencesBlock']()?.kind).toBe('unsupported');
+      expect(query('implementation-display-audiences-block-list')?.textContent).toContain('Excluded:');
     });
 
     it('holds Create with the restricted block on an explicit no, listing them, and Remove clears it', async () => {
       await setup();
       const c = hold(false, 'ready');
       expect(query('implementation-display-audiences-block-restricted')?.textContent).toContain(DENIAL);
-      expect(query('implementation-display-audiences-block-list')?.textContent).toContain('Excluded:');
+      // Display's creative section is on screen, so the held values show there as chips, not again in the block.
+      expect(query('implementation-display-audiences-block-list')).toBeNull();
+      expect(query('implementation-display-audience-remove-excluded-0')).not.toBeNull();
       expect(c['canSubmit']()).toBe(false);
 
       (query('implementation-display-audiences-block-remove')?.querySelector('button') as HTMLButtonElement).click();

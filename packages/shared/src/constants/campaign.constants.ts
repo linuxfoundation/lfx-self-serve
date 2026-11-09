@@ -5605,27 +5605,46 @@ export const GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY = 'displayAudiences' satisfies
  * The four Display audience kinds an ad group targets (#5262), in the order campaign-service judges them
  * (`validateDisplayTargeting`): the `googleAdsConfig` field, the resource collection its entries must name
  * (`displayAudienceCollections` in `display_targeting.go`), the audience read that lists them (`null` for
- * user lists, which `GET /api/campaigns/google/user-lists` lists), and the words the tab and refusals use.
+ * user lists, which `GET /api/campaigns/google/user-lists` lists), and the words the tab and refusals use
+ * (`addLabel` is the picker's label).
  * `gated` is whether the kind names an account-owned resource, which campaign-service creates with only for
  * `global_marketing_ops` (`GoogleAdsMarketingOpsInputs`); user interests are Google's own categories.
  */
 export const GOOGLE_DISPLAY_AUDIENCE_KINDS = [
-  { kind: 'audienceSegments', collection: 'userLists', readType: null, label: 'User lists', noun: 'user list', gated: true },
-  { kind: 'customAudiences', collection: 'customAudiences', readType: 'custom_audience', label: 'Custom audiences', noun: 'custom audience', gated: true },
+  { kind: 'audienceSegments', collection: 'userLists', readType: null, addLabel: 'Add to user lists', label: 'User lists', noun: 'user list', gated: true },
+  {
+    kind: 'customAudiences',
+    collection: 'customAudiences',
+    readType: 'custom_audience',
+    addLabel: 'Add to custom audiences',
+    label: 'Custom audiences',
+    noun: 'custom audience',
+    gated: true,
+  },
   {
     kind: 'customAffinities',
     collection: 'customInterests',
     readType: 'custom_interest',
     label: 'Custom affinity segments',
+    addLabel: 'Add to custom affinity segments',
     noun: 'custom affinity segment',
     gated: true,
   },
-  { kind: 'userInterests', collection: 'userInterests', readType: 'user_interest', label: 'Interests', noun: 'interest', gated: false },
+  {
+    kind: 'userInterests',
+    collection: 'userInterests',
+    readType: 'user_interest',
+    addLabel: 'Add to interests',
+    label: 'Interests',
+    noun: 'interest',
+    gated: false,
+  },
 ] as const satisfies readonly {
   kind: keyof GoogleDisplayAudienceLists;
   collection: string;
   readType: (typeof GOOGLE_ADS_AUDIENCE_READ_TYPES)[number] | null;
   label: string;
+  addLabel: string;
   noun: string;
   gated: boolean;
 }[];
