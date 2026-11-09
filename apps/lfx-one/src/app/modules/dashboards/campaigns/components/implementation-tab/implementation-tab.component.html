@@ -3411,10 +3411,10 @@
         can be removed. A picked Audience is shown by name with Remove; with none, the picker lists the
         account's Audiences. A pick sets the resource name and replaces the picker, so it is never cleared.
       -->
-      <ng-template #demandGenAudienceTemplate lfxDemandGenAudienceContext let-group let-audienceControl="audience">
+      <ng-template #demandGenAudienceTemplate lfxDemandGenAudienceContext let-group>
         @let key = group === null ? 'single' : '' + group;
         <!-- Trimmed as the payload trims it, so a blank Audience reads as none, here and below. -->
-        @let audience = audienceControl.value.trim();
+        @let audience = demandGenAudienceTrimmed()[key];
         @if (demandGenAudienceAvailable() || audience !== '') {
           <div class="mt-4 flex flex-col gap-2" [attr.data-testid]="'implementation-demand-gen-audience-' + key">
             <span class="text-xs font-medium text-gray-700">Audience</span>
@@ -3487,15 +3487,10 @@
         restored draft holds beside one stay on show so they can be cleared, and the shared refusal holds
         Create until one of the two goes.
       -->
-      <ng-template
-        #demandGenDemographicsTemplate
-        lfxDemandGenDemographicsContext
-        let-group
-        let-demographicsControl="demographics"
-        let-audienceControl="audience">
+      <ng-template #demandGenDemographicsTemplate lfxDemandGenDemographicsContext let-group let-demographicsControl="demographics">
         @let key = group === null ? 'single' : '' + group;
         <div class="mt-4 flex flex-col gap-2" [attr.data-testid]="'implementation-demand-gen-demographics-' + key">
-          @if (audienceControl.value.trim() !== '' && !demandGenDemographicsNamed()[key]) {
+          @if (demandGenAudienceTrimmed()[key] !== '' && !demandGenDemographicsNamed()[key]) {
             <span class="text-xs font-medium text-gray-700">Demographics</span>
             <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-demographics-held-by-audience-' + key">
               This ad group targets the Audience above, and Google Ads takes one Audience per Demand Gen ad group. Remove the Audience to set demographics

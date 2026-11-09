@@ -4208,6 +4208,18 @@ export class ImplementationTabComponent implements OnInit {
       ),
     };
   });
+  /**
+   * Per ad group on screen, keyed `single` or the group's index, its Audience trimmed as the payload trims it
+   * ({@link googleDemandGenAudiencePayload}), so a blank one reads as none in the template; `''` when none.
+   */
+  protected readonly demandGenAudienceTrimmed: Signal<Record<string, string>> = computed(() => {
+    void this.campaignFormRevision();
+    const form = this.campaignForm.controls;
+    return {
+      single: form.demandGenAudience.value.trim(),
+      ...Object.fromEntries(form.demandGenAdGroups.controls.map((group, index) => [`${index}`, group.controls.audience.value.trim()])),
+    };
+  });
   /** Why campaign-service would refuse the Demand Gen demographics the create carries, holding Create, or `null` (#498, #518). */
   protected readonly demandGenDemographicsError: Signal<string | null> = this.initDemandGenDemographicsError();
   /**
