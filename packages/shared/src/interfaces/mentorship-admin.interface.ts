@@ -46,6 +46,12 @@ export interface MentorshipProgramStats {
  */
 export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[number];
 
+/** The term fields a published program's status is read from. */
+export type MentorshipProgramTermDates = Pick<
+  MentorshipUpstreamProgramTerm,
+  'status' | 'start_date_time' | 'end_date_time' | 'application_start_date' | 'application_end_date'
+>;
+
 /** A program admin's visibility change on the program-detail header: `hide` a published program, `unhide` a hidden one. */
 export type MentorshipProgramVisibilityAction = 'hide' | 'unhide';
 

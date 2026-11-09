@@ -26,7 +26,7 @@ import type {
 } from '../interfaces/mentorship-admin.interface';
 
 /**
- * Allowed program statuses, in the order upstream sorts the admin list and the admin filter dropdown renders.
+ * Allowed program statuses, in the order the admin filter dropdown renders them.
  */
 export const MENTORSHIP_PROGRAM_STATUSES = ['accepting', 'in-progress', 'upcoming', 'pending-review', 'completed', 'rejected', 'hidden'] as const;
 

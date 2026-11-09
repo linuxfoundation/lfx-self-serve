@@ -155,8 +155,8 @@ export class MentorshipAdminService {
    * a management read passes on too: the caller may not administer the program. The summary and the applications need
    * a program manager (writer or mentor), and the members a program writer, since they carry every mentor's email and
    * LFID. Any other failure of those reads leaves its count `null`, and a failed terms read leaves the terms `[]`.
-   * The summary also settles whether a published program reads `open` or `completed`, so a program whose summary
-   * failed reads `open`.
+   * A published program's status comes from its terms (`mentorshipPublishedProgramStatus`); when the terms read fails,
+   * the summary settles `completed` and `upcoming`, and anything else reads `in-progress`.
    */
   public async getProgramPage(req: Request, programId: string): Promise<MentorshipAdminProgramPage> {
     logger.debug(req, 'mentorship_admin_get_program', 'Loading mentorship program page', { programId });

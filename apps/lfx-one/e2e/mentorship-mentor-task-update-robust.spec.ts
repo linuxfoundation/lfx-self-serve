@@ -50,7 +50,7 @@ const DETAIL: MentorshipMentorProgramDetail = {
     slug: 'test-program-task-structure',
     name: 'Test Program Task Structure',
     projectName: 'Test Project',
-    status: 'open',
+    status: 'accepting',
     stats: { mentees: 1, tasksToReview: 0, applicants: 1 },
   },
   tabCounts: { tasks: 0, mentees: 1, applicants: 1 },

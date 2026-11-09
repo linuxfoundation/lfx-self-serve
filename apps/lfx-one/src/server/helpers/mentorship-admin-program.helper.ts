@@ -7,12 +7,12 @@ import {
   MentorshipProgram,
   MentorshipProgramMentor,
   MentorshipProgramStatus,
+  MentorshipProgramTermDates,
   MentorshipProgramTermRow,
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamMemberManagementRow,
   MentorshipUpstreamProgramHeader,
   MentorshipUpstreamProgramManagementSummary,
-  MentorshipUpstreamProgramTerm,
   MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
@@ -49,12 +49,6 @@ export const mapMentorshipAdminProgram = (item: MentorshipUpstreamAdministeredPr
   };
 };
 
-/** The term fields a published program's status is read from. */
-type MentorshipStatusTerm = Pick<
-  MentorshipUpstreamProgramTerm,
-  'status' | 'start_date_time' | 'end_date_time' | 'application_start_date' | 'application_end_date'
->;
-
 /** The UTC calendar day (`YYYY-MM-DD`) of an upstream timestamp, or `undefined` when it is missing or not a date. */
 const toUtcDay = (value: string | undefined): string | undefined => {
   const time = toTime(value);
@@ -76,7 +70,7 @@ const toTime = (value: string | undefined): number | undefined => {
  * - `upcoming`: an open term with an application end whose application start is after today, or no open term at all
  * - `in-progress`: any other open term
  */
-export const mentorshipPublishedProgramStatus = (terms: readonly MentorshipStatusTerm[], now: Date): MentorshipMentorProgramStatus => {
+export const mentorshipPublishedProgramStatus = (terms: readonly MentorshipProgramTermDates[], now: Date): MentorshipMentorProgramStatus => {
   const open = terms.filter((term) => term.status === 'open');
   if (open.length === 0) {
     return terms.some((term) => term.status === 'closed') ? 'completed' : 'upcoming';
@@ -125,7 +119,7 @@ const publishedStatusFromSummary = (
 export const mapMentorshipAdminHeaderProgram = (
   header: MentorshipUpstreamProgramHeader,
   summary?: Pick<MentorshipUpstreamProgramManagementSummary, 'has_open_term' | 'has_closed_term'>,
-  terms?: readonly MentorshipStatusTerm[],
+  terms?: readonly MentorshipProgramTermDates[],
   now: Date = new Date()
 ): { program: MentorshipProgram; unknownStatus: boolean } => {
   const { program: item } = header;
