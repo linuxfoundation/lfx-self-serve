@@ -1,0 +1,68 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="org-roi-settings-drawer">
+  <ng-template #header>
+    <div class="flex w-full items-start justify-between gap-4" data-testid="org-roi-settings-drawer-header">
+      <div class="flex flex-1 flex-col gap-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="org-roi-settings-drawer-title">Model settings</h2>
+        <p class="text-sm text-gray-500">The estimation method used for every figure on this page.</p>
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="flex-shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+        aria-label="Close panel"
+        data-testid="org-roi-settings-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-8 pb-2" data-testid="org-roi-settings-drawer-content">
+    <section class="flex flex-col gap-3" data-testid="org-roi-settings-method">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-semibold text-gray-900">Estimation method</h3>
+        <p class="text-sm text-gray-500">Applies to every figure on this page and is remembered on this device.</p>
+      </div>
+      <!-- The per-method buttons are the first elements carrying this testid prefix, and e2e reads
+           the first match to check the default is offered first. Keep any new control out of that
+           prefix, or above these buttons, but not both. -->
+      <div class="flex flex-col gap-2">
+        @for (option of methods; track option) {
+          <button
+            type="button"
+            (click)="onSelectMethod(option)"
+            [class]="
+              option === method()
+                ? 'flex items-start gap-3 rounded-md border border-blue-500 bg-blue-50 px-3 py-2.5 text-left text-sm text-gray-900'
+                : 'flex items-start gap-3 rounded-md border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50'
+            "
+            [attr.aria-pressed]="option === method()"
+            [attr.data-testid]="'org-roi-settings-method-' + option">
+            <i [class]="option === method() ? 'fa-solid fa-circle-dot mt-0.5 text-blue-600' : 'fa-light fa-circle mt-0.5 text-gray-400'" aria-hidden="true"></i>
+            <span class="flex flex-col gap-1">
+              <span class="flex items-center gap-2">
+                <span class="font-medium">{{ methodLabels[option] }}</span>
+                @if (option === defaultMethod) {
+                  <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Default</span>
+                }
+              </span>
+              <span class="text-xs text-gray-500">{{ methodDescriptions[option] }}</span>
+            </span>
+          </button>
+        }
+      </div>
+      <p class="text-xs text-gray-500" data-testid="org-roi-settings-method-note">
+        {{ methodLabels[defaultMethod] }} is the default and the preferred method. Both draw on the same investment base and the same target distribution, so
+        switching moves the figures modestly rather than dramatically.
+      </p>
+    </section>
+  </div>
+</p-drawer>

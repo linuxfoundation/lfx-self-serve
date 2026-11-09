@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [faq, mentorship, mentee, mentor, program-admin, applications, tasks]
 last_generated: 2026-10-26
-last_updated: 2026-11-02
+last_updated: 2026-11-09
 intercom_collection: Mentorship
 ---
 
@@ -95,11 +95,11 @@ A logo is rejected when it is the wrong format, the wrong size, or too large a f
 
 ### How do I see my program's public page?
 
-Open the program from [app.lfx.dev/mentorship/admin](https://app.lfx.dev/mentorship/admin) and select **View Public Page**. It opens the program's page on [mentorship.linuxfoundation.org](https://mentorship.linuxfoundation.org) in a new tab.
+Open the program from [app.lfx.dev/mentorship/admin](https://app.lfx.dev/mentorship/admin) and select **View Public Page**. It opens the program's page on [mentorship.linuxfoundation.org](https://mentorship.linuxfoundation.org) in a new tab. The button shows only on an approved program, not on one in **Pending Review**, **Rejected** or **Hidden**.
 
 ### How do I hide a program from the public site?
 
-Open the program and select **Hide Program** from the **⋯** menu. Only an **Open** or **Completed** program can be hidden, and not while it has active applications. Select **Unhide Program** on a **Hidden** program to show it again. See [Hide or Show a Program](../program-visibility/).
+Open the program and select **Hide Program** from the **⋯** menu. Only an approved program (**Accepting**, **In Progress**, **Upcoming** or **Completed**) can be hidden, and not while it has active applications. Select **Unhide Program** on a **Hidden** program to show it again. See [Hide or Show a Program](../program-visibility/).
 
 ## Statuses
 

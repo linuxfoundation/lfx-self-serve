@@ -54,7 +54,7 @@ const program = (id: string, name: string, status: MentorshipProgram['status']):
 
 const POPULATED: MentorshipProgramsResponse = {
   data: [
-    program(OPEN_ID, 'Test Program Open', 'open'),
+    program(OPEN_ID, 'Test Program Open', 'accepting'),
     program(PENDING_ID, 'Test Program Pending', 'pending-review'),
     program(REJECTED_ID, 'Test Program Rejected', 'rejected'),
     program(HIDDEN_ID, 'Test Program Hidden', 'hidden'),
@@ -87,7 +87,7 @@ test.describe('Admin programs list — real programs', () => {
     await expect(page.getByTestId(`mentorship-program-card-${PENDING_ID}`)).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
 
     const badge = (id: string) => page.getByTestId(`mentorship-program-card-${id}`).getByTestId('mentorship-program-card-status');
-    await expect(badge(OPEN_ID)).toHaveText('Open');
+    await expect(badge(OPEN_ID)).toHaveText('Accepting');
     await expect(badge(PENDING_ID)).toHaveText('Pending Review');
     await expect(badge(REJECTED_ID)).toHaveText('Rejected');
     await expect(badge(HIDDEN_ID)).toHaveText('Hidden');
@@ -175,7 +175,7 @@ test.describe('Admin programs list — logo missing', () => {
   const rows = (pendingLogoAdded = false): MentorshipProgramsResponse => ({
     data: [
       { ...program(PENDING_NO_LOGO_ID, 'Acme Rocket Mentorship', 'pending-review'), logoMissing: !pendingLogoAdded },
-      { ...program(PUBLISHED_NO_LOGO_ID, 'Acme Orbit Mentorship', 'open'), logoMissing: true },
+      { ...program(PUBLISHED_NO_LOGO_ID, 'Acme Orbit Mentorship', 'accepting'), logoMissing: true },
       { ...program(PENDING_WITH_LOGO_ID, 'Acme Lander Mentorship', 'pending-review'), logoMissing: false },
       { ...program(REJECTED_NO_LOGO_ID, 'Acme Probe Mentorship', 'rejected'), logoMissing: false },
     ],

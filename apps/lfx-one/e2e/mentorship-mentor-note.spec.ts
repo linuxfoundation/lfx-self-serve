@@ -56,7 +56,7 @@ function detailWith(note?: string): MentorshipMentorProgramDetail {
       slug: 'test-program-notes',
       name: 'Test Program Notes',
       projectName: 'Test Project',
-      status: 'open',
+      status: 'accepting',
       stats: { mentees: 1, tasksToReview: 0, applicants: 1 },
     },
     tabCounts: { tasks: 0, mentees: 1, applicants: 1 },

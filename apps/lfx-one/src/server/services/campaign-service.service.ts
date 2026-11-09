@@ -113,6 +113,7 @@ import type {
   CreativeSlotAssignment,
   CreativeSlotGap,
   GenerateEmailCopyResult,
+  GoogleAdsAudienceReadType,
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
   KeywordActionPlatform,
@@ -3444,13 +3445,20 @@ export class CampaignServiceClient {
   }
 
   /**
-   * The Google Ads Audience resources on the account a create for this project uses
-   * (`list-google-ads-audiences` with `type=audience`, linuxfoundation/lfx-v2-campaign-service#504), for
-   * the Implement tab's Demand Gen audience picker (#5244). Upstream answers it on `global_marketing_ops`
-   * of the path project, the relation the BFF checks first; it returns up to 500 enabled, account-scoped
-   * Audiences sorted by name, with `truncated` set when more matched. Failures are left to the caller.
+   * One kind of audience resource on the account a create for this project uses (`list-google-ads-audiences`,
+   * linuxfoundation/lfx-v2-campaign-service#504, #517): Audiences (`type=audience`) for the Implement tab's
+   * Demand Gen audience and Performance Max audience signal pickers (#5244, #5262), or custom audiences,
+   * custom affinity segments or user interests for its Display audience pickers (#5262). `q`, when given,
+   * keeps entries whose name contains it, ignoring case. Upstream answers it on `global_marketing_ops` of the
+   * path project, the relation the BFF checks first; it returns up to 500 usable entries sorted by name, with
+   * `truncated` set when more matched. Failures are left to the caller.
    */
-  public async listGoogleAdsAudiences(req: Request, projectSlug: string): Promise<CampaignServiceGoogleAdsAudiences> {
+  public async listGoogleAdsAudiences(
+    req: Request,
+    projectSlug: string,
+    type: GoogleAdsAudienceReadType = 'audience',
+    q?: string
+  ): Promise<CampaignServiceGoogleAdsAudiences> {
     if (projectSlug === '') {
       throw ServiceValidationError.forField('project', 'An Audience read requires the project it belongs to.', {
         operation: 'list_google_ads_audiences',
@@ -3462,7 +3470,7 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/google-ads/audiences`,
       'GET',
-      { type: 'audience' }
+      q === undefined ? { type } : { type, q }
     );
   }
 

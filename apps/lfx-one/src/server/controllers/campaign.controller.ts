@@ -45,6 +45,11 @@ import {
   googleDemandGenSingleAdGroupName,
 } from '@lfx-one/shared/utils/campaign-google-demand-gen-ad-groups.utils';
 import { googleDisplayAdGroupsRefusal } from '@lfx-one/shared/utils/campaign-google-display-ad-groups.utils';
+import {
+  googleDisplayAudiencesCarried,
+  googleDisplayAudiencesRefusal,
+  googleDisplayAudiencesTypeRefusal,
+} from '@lfx-one/shared/utils/campaign-google-display-audiences.utils';
 import { googleExcludedPlacementsRefusal } from '@lfx-one/shared/utils/campaign-google-placements.utils';
 import { googleDemandGenVideoCreativeRefusal } from '@lfx-one/shared/utils/campaign-google-demand-gen-video.utils';
 import { googleCampaignAudienceSegmentFault, googleCampaignAudienceSegmentsRefusal } from '@lfx-one/shared/utils/campaign-google-user-lists.utils';
@@ -53,6 +58,11 @@ import {
   googleDemandGenAudiencesRefusal,
   googleDemandGenAudienceTypeRefusal,
 } from '@lfx-one/shared/utils/campaign-google-demand-gen-audience.utils';
+import {
+  googlePerformanceMaxAudienceSignalCarried,
+  googlePerformanceMaxAudienceSignalRefusal,
+  googlePerformanceMaxAudienceSignalTypeRefusal,
+} from '@lfx-one/shared/utils/campaign-google-performance-max-signal.utils';
 import {
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
@@ -100,6 +110,7 @@ import type {
   FlushableResponse,
   GoogleAdsAccountOption,
   GoogleAdsConversionActionsResult,
+  GoogleAdsAudienceReadType,
   GoogleAdsAudiencesResult,
   GoogleAdsUserListsResult,
   TwitterAdsAccountOption,
@@ -111,6 +122,8 @@ import type {
   GoogleCampaignChannel,
   GoogleCreativeImageRef,
   GoogleCreativeWireFields,
+  GoogleDisplayAudienceLists,
+  GoogleDisplayCampaignAudiences,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
   TwitterCampaignCreateRequest,
@@ -206,6 +219,7 @@ import {
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
+  GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL,
   GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
@@ -213,16 +227,30 @@ import {
   GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_CODE,
   GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_MESSAGE,
   GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY,
-  GOOGLE_DEMAND_GEN_AUDIENCE_RESOURCE_PATTERN,
   GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_CODE,
   GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_MESSAGE,
   GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY,
   GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY,
   GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY,
   GOOGLE_DEMAND_GEN_VIDEO_CALL_TO_ACTION_REFUSAL,
+  GOOGLE_ADS_AUDIENCE_QUERY_MAX_LENGTH,
+  GOOGLE_ADS_AUDIENCE_READ_COLLECTIONS,
+  GOOGLE_ADS_AUDIENCE_READ_TYPES,
+  GOOGLE_DISPLAY_AUDIENCE_KINDS,
+  GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
+  GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY,
+  GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_CODE,
+  GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_MESSAGE,
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
   GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_CODE,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_MESSAGE,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_REQUEST_KEY,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_CODE,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_MESSAGE,
   GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_SEARCH_AD_GROUP_NAME,
@@ -742,6 +770,11 @@ export class CampaignController {
 
       const body = req.body as CampaignCreateRequest;
       const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
+      // Whether this request creates on Google Ads, as the legacy creator reads it: an omitted or empty
+      // `platforms` list is a Google create there (`campaign-proxy.service.ts`, as `unservedGoogleCriteriaField`
+      // records). The audience guards below key on it, not on an explicit `google-ads`, or a request that
+      // names no platform would skip them and the legacy creator would drop the lists it carries.
+      const googleImplied = platforms.length === 0 || platforms.includes('google-ads');
 
       // Google audience segments need `global_marketing_ops` on the project the request names — the
       // LF marketing team, not every campaign manager. `campaign_manager` is `executive_director or
@@ -767,7 +800,7 @@ export class CampaignController {
       const carriesAdGroupSegments = carriesList(body?.audienceSegments as unknown);
       const carriesCampaignSegments = carriesList(body?.campaignAudienceSegments as unknown);
       const carriesSegments = carriesAdGroupSegments || carriesCampaignSegments;
-      if (platforms.includes('google-ads') && carriesSegments) {
+      if (googleImplied && carriesSegments) {
         const access = await this.googleMarketingOpsAccess(req, projectSlug, 'check_google_audience_segments_access', 'audience segments');
         if (access !== 'granted') {
           next(
@@ -793,7 +826,7 @@ export class CampaignController {
       // one only for `global_marketing_ops` on the path project (`GoogleAdsMarketingOpsInputs`,
       // linuxfoundation/lfx-v2-campaign-service#501). Counted as upstream counts it: any value but an
       // absent, null or empty one, whitespace and a malformed value included, on any channel.
-      if (platforms.includes('google-ads') && googleDemandGenAudienceCarried(body?.demandGenAudience, body?.demandGenAdGroups)) {
+      if (googleImplied && googleDemandGenAudienceCarried(body?.demandGenAudience, body?.demandGenAdGroups)) {
         const access = await this.googleMarketingOpsAccess(req, projectSlug, 'check_google_demand_gen_audience_access', 'a Demand Gen audience');
         if (access !== 'granted') {
           next(
@@ -829,12 +862,109 @@ export class CampaignController {
           return;
         }
       }
+      // Display audiences (#5262) on the same terms: a user list, custom audience or custom affinity
+      // segment targeted by the single ad group (`displayAudiences`) or a named one (`displayAdGroups`), or a
+      // user list the campaign excludes, names a resource on the shared account, so campaign-service creates
+      // with one only for `global_marketing_ops` on the path project (`GoogleAdsMarketingOpsInputs`,
+      // linuxfoundation/lfx-v2-campaign-service#505). Counted as upstream counts it, whatever the channel; a
+      // malformed value counts too. User interests are Google's own categories and are not gated.
+      const rawDisplayAudiences: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY];
+      const rawDisplayAdGroups: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY];
+      if (googleImplied && googleDisplayAudiencesCarried(rawDisplayAudiences, rawDisplayAdGroups)) {
+        const access = await this.googleMarketingOpsAccess(req, projectSlug, 'check_google_display_audiences_access', 'Display audiences');
+        if (access !== 'granted') {
+          next(
+            access === 'denied'
+              ? new AuthorizationError(GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_MESSAGE, {
+                  operation: 'campaign_create',
+                  service: 'campaign_controller',
+                  path: req.path,
+                  code: GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_CODE,
+                })
+              : new MicroserviceError(GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE, 503, GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_CODE, {
+                  operation: 'campaign_create',
+                  service: 'campaign_controller',
+                  path: req.path,
+                  clientMessage: GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
+                })
+          );
+          return;
+        }
+      }
+      // Then, for any caller, a raw Display audience list Go cannot decode, or a named group's own exclusions,
+      // which this application does not send, is refused by name: the normalizer reads only lists of strings
+      // and the four targeting lists of a group, so nothing after it would see either, and the create would
+      // go out without what was asked for. Asked of every caller because user interests need no access.
+      if (googleImplied) {
+        const malformedDisplayAudiences = googleDisplayAudiencesTypeRefusal(rawDisplayAudiences, rawDisplayAdGroups);
+        if (malformedDisplayAudiences !== null) {
+          next(
+            ServiceValidationError.forField(GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY, malformedDisplayAudiences, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+          return;
+        }
+      }
+      // A Performance Max audience signal (#5262) on the same terms: `performanceMaxAudienceSignal` names an
+      // existing Audience on the shared account, so campaign-service creates with one only for
+      // `global_marketing_ops` on the path project (`GoogleAdsMarketingOpsInputs`,
+      // linuxfoundation/lfx-v2-campaign-service#501). Counted as upstream counts it: any value but an absent,
+      // null or empty one, whitespace and a malformed value included, on any channel, and on a request that
+      // names no platform (`googleImplied`), which the legacy creator reads as a Google create.
+      const rawAudienceSignal: unknown = body?.performanceMaxAudienceSignal;
+      if (googleImplied && googlePerformanceMaxAudienceSignalCarried(rawAudienceSignal)) {
+        const access = await this.googleMarketingOpsAccess(
+          req,
+          projectSlug,
+          'check_google_performance_max_audience_signal_access',
+          'a Performance Max audience signal'
+        );
+        if (access !== 'granted') {
+          next(
+            access === 'denied'
+              ? new AuthorizationError(GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_MESSAGE, {
+                  operation: 'campaign_create',
+                  service: 'campaign_controller',
+                  path: req.path,
+                  code: GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_CODE,
+                })
+              : new MicroserviceError(
+                  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_MESSAGE,
+                  503,
+                  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_CODE,
+                  {
+                    operation: 'campaign_create',
+                    service: 'campaign_controller',
+                    path: req.path,
+                    clientMessage: GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_MESSAGE,
+                  }
+                )
+          );
+          return;
+        }
+        // Then, for a caller who MAY send one, a value that is not a string is refused by name before any
+        // check that depends on the cutover: Go cannot decode it into the string field, and the normalizer
+        // (`googlePerformanceMaxAudienceSignal`) would drop it, so the legacy creator would create without it.
+        // An empty list asks for nothing (`googlePerformanceMaxAudienceSignalTypeRefusal`); the normalizer omits it.
+        const malformedSignal = googlePerformanceMaxAudienceSignalTypeRefusal(rawAudienceSignal);
+        if (malformedSignal !== null) {
+          next(
+            ServiceValidationError.forField(GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_REQUEST_KEY, malformedSignal, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+          return;
+        }
+      }
       // Then, for a caller who MAY send them, refused rather than dropped when the serving create
       // path cannot carry them — the `bidding` reasoning below. Only campaign-service reads the key;
       // the legacy creator would create the campaign without the user lists and report success. The
       // form never sends them in that state (`googleAudienceSegmentsEnabled` is false there), but a
       // capability read and a create can land on pods with different flags mid-rollout.
-      if (platforms.includes('google-ads') && carriesSegments && !canCreateWithAudienceSegments()) {
+      if (googleImplied && carriesSegments && !canCreateWithAudienceSegments()) {
         const field = carriesAdGroupSegments ? 'audienceSegments' : 'campaignAudienceSegments';
         next(
           ServiceValidationError.forField(field, `Google audience segments are not enabled on this deployment; omit ${field}`, {
@@ -1734,6 +1864,20 @@ export class CampaignController {
           return;
         }
 
+        // The Display audiences (#5262): refused by name off Display, as `validateDisplayTargeting` refuses
+        // them, and on Display through the same shared judge the Implement tab holds Create on, on the shape
+        // only (the account is not known here; upstream judges it before anything is created).
+        const displayAudiencesRefusal = this.googleDisplayAudiencesRefusal(body, googleChannel);
+        if (displayAudiencesRefusal) {
+          next(
+            ServiceValidationError.forField(GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY, displayAudiencesRefusal, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+          return;
+        }
+
         // The Demand Gen video ad (#5226), through the same shared judge the Implement tab holds
         // Create on, so a video ad Go would refuse after dispatch is named here first.
         const videoRefusal = this.googleDemandGenVideoRefusal(body, googleChannel);
@@ -2034,6 +2178,38 @@ export class CampaignController {
             refuse(themesRefusal);
             return;
           }
+        }
+      }
+
+      // The Performance Max audience signal (#5262), after the themes, as `validatePerformanceMaxSignals`
+      // judges the audience after them: the Performance-Max-only fence, the asset group it attaches to, then
+      // the shared judge on the value as dispatched (trimmed with Go's rules; a blank one is omitted, never
+      // sent). A value that is not a string was refused right after the access check. The account is not
+      // known here; upstream judges it before anything is created.
+      const audienceSignal = typeof rawAudienceSignal === 'string' ? googleAdsTrimSpace(rawAudienceSignal) : '';
+      if (cutoverOn && platforms.includes('google-ads') && audienceSignal !== '' && typeof googleChannel === 'string') {
+        const refuse = (message: string): void =>
+          next(
+            ServiceValidationError.forField(GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_REQUEST_KEY, message, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+        // REFUSED by name, not withheld: upstream fails the whole create on any channel but Performance Max.
+        if (!(GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL as readonly string[]).includes(googleChannel)) {
+          refuse(
+            `Google Ads only accepts an audience signal on Performance Max campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the audience signal or pick Performance Max, then create again.`
+          );
+          return;
+        }
+        if (!('performanceMaxCreative' in ((configEnvelope['googleAdsConfig'] as Record<string, unknown> | undefined) ?? {}))) {
+          refuse(GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL);
+          return;
+        }
+        const signalRefusal = googlePerformanceMaxAudienceSignalRefusal(audienceSignal);
+        if (signalRefusal) {
+          refuse(signalRefusal);
+          return;
         }
       }
 
@@ -3420,7 +3596,20 @@ export class CampaignController {
       if (conversionsDeployed) {
         googleDemandGenAudienceEnabled = marketingOps === 'unverified' ? null : marketingOps === 'granted';
       }
-      const result: CampaignListResult = { ...listed, googleAudienceSegmentsEnabled, googleConversionActionsEnabled, googleDemandGenAudienceEnabled };
+      // The Display audiences (#5262) on the same two checks: the create road both reads need and the relation
+      // campaign-service checks before it answers them and before it creates with an account-owned list (#505).
+      const googleDisplayAudiencesEnabled = googleDemandGenAudienceEnabled;
+      // The Performance Max audience signal (#5262) on exactly the same two checks: the same create road,
+      // and the same relation campaign-service checks before it creates with one (#501).
+      const googlePerformanceMaxAudienceSignalEnabled = googleDemandGenAudienceEnabled;
+      const result: CampaignListResult = {
+        ...listed,
+        googleAudienceSegmentsEnabled,
+        googleConversionActionsEnabled,
+        googleDemandGenAudienceEnabled,
+        googleDisplayAudiencesEnabled,
+        googlePerformanceMaxAudienceSignalEnabled,
+      };
       logger.success(req, 'list_brief_campaigns', startTime, { count: result.campaigns.length, possiblyStale: result.possiblyStale });
       res.json(result);
     } catch (error) {
@@ -4203,10 +4392,16 @@ export class CampaignController {
   }
 
   /**
-   * The Audiences on the Google Ads account a create for this project uses, for the Implement tab's
-   * Demand Gen audience picker (#5244), camel-cased. campaign-service reads `type=audience`: enabled,
-   * account-scoped Audience resources, the one kind `demandGenAudience` and a group's `audience` take.
-   * The list names every foundation's Audiences on the shared LF account, so it is answered on the
+   * One kind of audience resource on the Google Ads account a create for this project uses, camel-cased.
+   * `?type=` picks it (`GOOGLE_ADS_AUDIENCE_READ_TYPES`): `audience`, the default, for the Demand Gen
+   * audience picker (#5244) and the Performance Max audience signal picker (#5262), the enabled,
+   * account-scoped Audience resources `demandGenAudience`, a group's `audience` and
+   * `performanceMaxAudienceSignal` take; `custom_audience`, `custom_interest` or `user_interest` for the
+   * Display audience pickers (#5262), the kinds `customAudiences`, `customAffinities` and `userInterests` take.
+   * `?q=` is passed on trimmed, and left out when blank: campaign-service keeps entries whose name contains
+   * it, which is how the user interest taxonomy, larger than its 500-entry cap, is searched. Any other
+   * type, or a `q` over 100 characters, is a 400 before any upstream call.
+   * The list names every foundation's audiences on the shared LF account, so it is answered on the
    * relation campaign-service checks before it serves it and before it creates with one:
    * `global_marketing_ops` on the project the request names (linuxfoundation/lfx-v2-campaign-service#504,
    * #501). A refusal is a coded 403; a check that cannot be made is a coded 503, never an admission; both
@@ -4214,7 +4409,7 @@ export class CampaignController {
    * is registered ahead of the blanket `requireCampaignManager`, behind its own
    * `requireGoogleAudiencesAccess`, for the same reason as the conversion-action list's (#5239). Answers
    * 404, as if it were not mounted, while the campaign-service create road (`canCreateWithGoogleCriteria`),
-   * the only road that sends a Demand Gen audience, is off.
+   * the only road that sends a Demand Gen audience or a Performance Max audience signal, is off.
    */
   public async getGoogleAdsAudiences(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'google_ads_audiences';
@@ -4245,10 +4440,37 @@ export class CampaignController {
       );
       return;
     }
-    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+    const rawType = req.query['type'];
+    let type: GoogleAdsAudienceReadType | null = 'audience';
+    if (rawType !== undefined) {
+      type = (GOOGLE_ADS_AUDIENCE_READ_TYPES as readonly unknown[]).includes(rawType) ? (rawType as GoogleAdsAudienceReadType) : null;
+    }
+    if (type === null) {
+      next(
+        ServiceValidationError.forField('type', `type must be one of ${GOOGLE_ADS_AUDIENCE_READ_TYPES.join(', ')}`, {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const rawQuery = req.query['q'];
+    if (rawQuery !== undefined && (typeof rawQuery !== 'string' || rawQuery.trim().length > GOOGLE_ADS_AUDIENCE_QUERY_MAX_LENGTH)) {
+      next(
+        ServiceValidationError.forField('q', `q must be one string of at most ${GOOGLE_ADS_AUDIENCE_QUERY_MAX_LENGTH} characters`, {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const query = typeof rawQuery === 'string' && rawQuery.trim() !== '' ? rawQuery.trim() : undefined;
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true, type });
 
     try {
-      const payload = await this.campaignServiceClient.listGoogleAdsAudiences(req, projectSlug);
+      const payload = await this.campaignServiceClient.listGoogleAdsAudiences(req, projectSlug, type, query);
       // `audiences` is required upstream; reading its absence as an empty list would say the account has
       // none, so an unreadable body fails the read.
       if (!Array.isArray(payload?.audiences)) {
@@ -4259,13 +4481,22 @@ export class CampaignController {
       }
       const accountId = typeof payload.account_id === 'string' ? payload.account_id : '';
       // A row the create would refuse is dropped rather than offered: a resource name that is not a
-      // `customers/<id>/audiences/<id>` with a canonical id, or that names another customer than the
-      // account the list was read from (`validateDemandGenAudienceField`). A repeated resource name is
-      // offered once, since the picker keys its rows by it.
+      // `customers/<id>/<collection>/<id>` of the type's own collection with a canonical id, or that names
+      // another customer than the account the list was read from (`validateDemandGenAudienceField`,
+      // `validateDisplayAudienceList`). A repeated resource name is offered once, since the picker keys
+      // its rows by it.
+      const collection = GOOGLE_ADS_AUDIENCE_READ_COLLECTIONS[type];
       const usable = (resourceName: unknown): resourceName is string => {
         if (typeof resourceName !== 'string') return false;
-        const match = GOOGLE_DEMAND_GEN_AUDIENCE_RESOURCE_PATTERN.exec(resourceName);
-        return match !== null && isCanonicalGoogleAdsResourceId(match[2]) && match[1] === accountId;
+        const parts = resourceName.split('/');
+        return (
+          parts.length === 4 &&
+          parts[0] === 'customers' &&
+          parts[1] === accountId &&
+          /^[0-9]+$/.test(parts[1]) &&
+          parts[2] === collection &&
+          isCanonicalGoogleAdsResourceId(parts[3])
+        );
       };
       const result: GoogleAdsAudiencesResult = {
         accountId,
@@ -6106,6 +6337,8 @@ export class CampaignController {
     for (const channel of Object.keys(GOOGLE_CREATIVE_REQUEST_KEYS) as GoogleCampaignChannel[]) {
       Object.assign(sent, this.googleCreative(body, channel));
     }
+    // The Display audiences (#5262) under their request key, whenever the builder would send a list.
+    if (Object.keys(this.googleDisplayAudiences(body)).length > 0) sent[GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY] = true;
     // An empty string asks for nothing too: the display paths are the only string fields here. So
     // does `false`: `searchPartners` is the only boolean, and false is Google Search alone.
     const asked = (value: unknown): boolean =>
@@ -6589,10 +6822,15 @@ export class CampaignController {
         // Display alone takes placement exclusions (#462); the gate inside the helper withholds them
         // elsewhere. Normalized only — `createCampaign` names every refusal first.
         ...this.googleExcludedPlacements(body, selectedChannels[0]),
+        // Display alone takes the campaign-level audiences (#5262); off Display they are refused by name
+        // before this config is dispatched, so none is built there.
+        ...(selectedChannels[0] === 'display' ? this.googleDisplayAudiences(body) : {}),
         ...creative,
         // After the creative they attach to. Performance Max only; normalized only — `createCampaign`
         // names every search-theme refusal first.
         ...this.googleSearchThemes(body, selectedChannels[0]),
+        // The asset group's audience signal (#5262), after the themes, on the same gate.
+        ...this.googlePerformanceMaxAudienceSignal(body, selectedChannels[0]),
       };
     }
 
@@ -6749,7 +6987,7 @@ export class CampaignController {
    * campaign-level refusal `validateDisplayAdGroups` opens with: the list replaces the single ad group, so
    * it is refused beside `displayCreative`. Then every rule of the list itself through
    * `googleDisplayAdGroupsRefusal`. The campaign-level Display audience lists upstream also refuses beside
-   * it are fields this application does not send on Display.
+   * it are judged with the audiences, after this (`googleDisplayAudiencesRefusal`).
    *
    * `eventName` is {@link googleAdGroupEventName}'s: the stored brief's, which campaign-service composes
    * each full name from (`decodeBriefFields`), or the request's when the brief cannot be read.
@@ -6799,6 +7037,57 @@ export class CampaignController {
     if (!Array.isArray(raw)) return {};
     const placements = raw.filter((entry): entry is string => typeof entry === 'string').map((entry) => googleAdsTrimSpace(entry));
     return placements.length > 0 ? { excludedPlacements: placements } : {};
+  }
+
+  /**
+   * Why campaign-service would refuse this create's Display audiences (#5262), or `null`. Judged on what
+   * the builder would SEND: off Display a `displayAudiences` holding any entry, or a `displayAdGroups` entry
+   * holding a list, is refused by name (`validateDisplayTargeting` refuses `customAudiences`,
+   * `customAffinities`, `userInterests` and `excludedAudienceSegments` off Display, the BFF never sends its
+   * Display user lists there, and it builds no named Display group there, so a group's lists would be dropped); on
+   * Display the campaign-level lists and each named group's go through `googleDisplayAudiencesRefusal`.
+   */
+  private googleDisplayAudiencesRefusal(body: CampaignCreateRequest, googleChannel: unknown): string | null {
+    const campaign = this.googleDisplayAudiences(body);
+    if (googleChannel !== 'display') {
+      // A named Display ad group's lists count too: off Display no group is built, so they would be dropped.
+      const rawGroups: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY];
+      const groupLists = Array.isArray(rawGroups) && rawGroups.some((group: unknown) => Object.keys(this.googleDisplayAudienceLists(group, false)).length > 0);
+      if ((Object.keys(campaign).length === 0 && !groupLists) || typeof googleChannel !== 'string') return null;
+      const channelLabel = GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel;
+      return `Google Ads takes these audiences only on Display campaigns, not on ${channelLabel} campaigns. Remove them or pick Display, then create again.`;
+    }
+    const groups = this.googleCreative(body, 'display')[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY] as GoogleDisplayAudienceLists[] | undefined;
+    return googleDisplayAudiencesRefusal(campaign, groups);
+  }
+
+  /**
+   * `displayAudiences` as dispatched (#5262), spread-ready under the top-level `googleAdsConfig` names: each
+   * list a string list, each entry trimmed as Go trims it, blanks KEPT so they are refused by name and
+   * repeats kept for upstream to fold, and an empty list omitted. `{}` when nothing is left, so a create
+   * without them is byte-identical to one made before they existed. The channel fence is the caller's.
+   */
+  private googleDisplayAudiences(body: CampaignCreateRequest): GoogleDisplayCampaignAudiences {
+    return this.googleDisplayAudienceLists((body as unknown as Record<string, unknown>)[GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY], true);
+  }
+
+  /**
+   * The Display audience lists of one raw object, normalized as {@link googleDisplayAudiences} says: the
+   * four targeting lists, and the campaign's `excludedAudienceSegments` when `withExclusions`.
+   */
+  private googleDisplayAudienceLists(raw: unknown, withExclusions: boolean): GoogleDisplayCampaignAudiences {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const source = raw as Record<string, unknown>;
+    const keys: (keyof GoogleDisplayCampaignAudiences)[] = GOOGLE_DISPLAY_AUDIENCE_KINDS.map((entry) => entry.kind);
+    if (withExclusions) keys.push('excludedAudienceSegments');
+    const out: GoogleDisplayCampaignAudiences = {};
+    for (const key of keys) {
+      const list = source[key];
+      if (!Array.isArray(list)) continue;
+      const entries = list.filter((entry): entry is string => typeof entry === 'string').map((entry) => googleAdsTrimSpace(entry));
+      if (entries.length > 0) out[key] = entries;
+    }
+    return out;
   }
 
   /**
@@ -7132,6 +7421,23 @@ export class CampaignController {
     if (!(GOOGLE_CHANNELS_WITH_SEARCH_THEMES as readonly string[]).includes(channel)) return {};
     const clean = this.googleSearchThemeList(body?.performanceMaxSearchThemes);
     return clean.length > 0 ? { performanceMaxSearchThemes: clean } : {};
+  }
+
+  /**
+   * The Performance Max asset group's audience signal (#5262), spread-ready: the string trimmed as Go trims,
+   * or `{}` when it is absent, not a string, blank, or the channel takes none, so a create without one is
+   * byte-identical to one made before it existed.
+   *
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL}, Performance Max alone. For any other
+   * channel the `{}` is never dispatched either: `createCampaign` refuses a non-blank signal there by name,
+   * and a value that is not a string on every channel, before this is dispatched.
+   */
+  private googlePerformanceMaxAudienceSignal(body: CampaignCreateRequest, channel: GoogleCampaignChannel): { performanceMaxAudienceSignal?: string } {
+    if (!(GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL as readonly string[]).includes(channel)) return {};
+    const raw: unknown = body?.performanceMaxAudienceSignal;
+    if (typeof raw !== 'string') return {};
+    const trimmed = googleAdsTrimSpace(raw);
+    return trimmed === '' ? {} : { performanceMaxAudienceSignal: trimmed };
   }
 
   /**
@@ -7527,8 +7833,9 @@ export class CampaignController {
     candidates.push([GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY, raw[GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY]]);
     // The first ad's display paths are bare strings, which `boundableEntries` yields nothing for, so
     // they are measured here; the trim the Search branch applies runs over them during normalisation.
-    // So is the single Demand Gen ad group's Audience (#5244), which `googleDemandGenAudience` trims.
-    for (const key of ['path1', 'path2', GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY]) {
+    // So is the single Demand Gen ad group's Audience (#5244), which `googleDemandGenAudience` trims, and
+    // the Performance Max audience signal (#5262), which `googlePerformanceMaxAudienceSignal` trims.
+    for (const key of ['path1', 'path2', GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY, GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_REQUEST_KEY]) {
       const value = raw[key];
       if (typeof value === 'string' && this.boundedLength(value) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
         return { field: key, message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
@@ -7561,6 +7868,25 @@ export class CampaignController {
       // The named Display ad groups (#475) on the same terms: the list, each name and each group's one ad.
       this.oversizedDemandGenAdList(GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY, raw[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY], false);
     if (adEntries !== null) return adEntries;
+
+    // The Display audience lists (#5262), at the campaign level and on each named group (already bounded
+    // above), because `googleDisplayAudienceLists` trims every entry of each as it goes.
+    const displayAudienceSources: [string, unknown][] = [];
+    const campaignAudiences = raw[GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY];
+    const listsOf = (prefix: string, source: unknown, keys: readonly string[]): void => {
+      if (source === null || typeof source !== 'object' || Array.isArray(source)) return;
+      for (const key of keys) displayAudienceSources.push([`${prefix}.${key}`, (source as Record<string, unknown>)[key]]);
+    };
+    const audienceKeys = GOOGLE_DISPLAY_AUDIENCE_KINDS.map((entry) => entry.kind);
+    listsOf(GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY, campaignAudiences, [...audienceKeys, 'excludedAudienceSegments']);
+    const displayGroups = raw[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY];
+    if (Array.isArray(displayGroups)) {
+      for (const [index, group] of displayGroups.entries()) listsOf(`${GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY}[${index}]`, group, audienceKeys);
+    }
+    for (const [key, source] of displayAudienceSources) {
+      const found = this.oversizedBoundableField(key, source);
+      if (found !== null) return found;
+    }
 
     // Nine request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
     // of a list — an object entry is left for the normalisers, so the strings nested inside it are
@@ -7808,7 +8134,7 @@ export class CampaignController {
    * create without it is byte-identical to one made before it existed. Each group keeps its position; an
    * entry that is not an object, or a name that is not a string, becomes a blank name the refusal names.
    * The name is trimmed as Go trims; the ad is normalized as the campaign-level one is, and omitted when
-   * it empties out. Only the name and the ad are read: this application sends no group audience.
+   * it empties out; the group's four audience lists (#5262) as {@link googleDisplayAudiences} normalizes them.
    */
   private googleDisplayAdGroups(body: CampaignCreateRequest): Record<string, unknown> {
     const list: unknown = (body as unknown as Record<string, unknown>)[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY];
@@ -7816,7 +8142,13 @@ export class CampaignController {
     const groups = list.map((entry: unknown) => {
       const group: Record<string, unknown> = entry !== null && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>) : {};
       const creative = this.googleCreativeFields(group['creative'], GOOGLE_CREATIVE_WIRE_FIELDS['display']);
-      return { name: typeof group['name'] === 'string' ? googleAdsTrimSpace(group['name']) : '', ...(creative === null ? {} : { creative }) };
+      return {
+        name: typeof group['name'] === 'string' ? googleAdsTrimSpace(group['name']) : '',
+        ...(creative === null ? {} : { creative }),
+        // The group's audience lists (#5262), normalized as the campaign-level ones are; its own exclusions
+        // are refused before this runs (`googleDisplayAudiencesTypeRefusal`).
+        ...this.googleDisplayAudienceLists(group, false),
+      };
     });
     return { [GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY]: groups };
   }

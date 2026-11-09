@@ -18,6 +18,11 @@ import {
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_CODE,
   GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_CODE,
+  GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_CODE,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_CODE,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_CODE,
   GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
@@ -3840,6 +3845,7 @@ describe('CampaignController.createCampaign cutover', () => {
       demandGenDemographics: { genders: ['FEMALE'] },
       performanceMaxCreative: { businessName: 'Example Foundation' },
       performanceMaxSearchThemes: ['kubernetes conference'],
+      performanceMaxAudienceSignal: 'customers/1234567890/audiences/42',
       displayCreative: { headlines: ['Join us this spring'] },
       path1: 'kubecon',
       path2: 'na',
@@ -3849,6 +3855,8 @@ describe('CampaignController.createCampaign cutover', () => {
       excludedPlacements: ['spam.example'],
       displayAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us this spring'] } }],
       searchAssets: { businessName: 'Example Foundation' },
+      // User interests alone, which need no global_marketing_ops (#5262).
+      displayAudiences: { userInterests: ['customers/1234567890/userInterests/80001'] },
     };
     const CASES = GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.map(({ field, label }) => [field, label] as const);
 
@@ -5736,8 +5744,9 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(next).not.toHaveBeenCalled();
       const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
       expect(config).not.toHaveProperty('displayCreative');
+      // A group's audience lists ride on the group (#5262).
       expect(config['displayAdGroups']).toEqual([
-        { name: 'Retargeting', creative: { headlines: ['Join us'] } },
+        { name: 'Retargeting', creative: { headlines: ['Join us'] }, audienceSegments: ['customers/1/userLists/2'] },
         { name: 'Prospecting', creative: { headlines: ['Register'] } },
       ]);
     });
@@ -6364,6 +6373,272 @@ describe('CampaignController.createCampaign cutover', () => {
 
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenAudience', message: expect.stringContaining('ad group 1 must be') });
+    });
+  });
+
+  describe('Display audiences (#5262)', () => {
+    const LIST = 'customers/1234567890/userLists/5';
+    const LIST_B = 'customers/1234567890/userLists/6';
+    const CUSTOM = 'customers/1234567890/customAudiences/7';
+    const AFFINITY = 'customers/1234567890/customInterests/8';
+    const INTEREST = 'customers/1234567890/userInterests/80001';
+    const AD = { headlines: ['Join us'] };
+    const marketingOps = vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict);
+    const create = async (fields: Record<string, unknown>, campaignTypes = ['display']): Promise<void> => {
+      await controller.createCampaign(buildReq(googleBody({ campaignTypes, ...fields } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    };
+    const accepted = (): void => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005262', error: null });
+    };
+    const config = (): Record<string, unknown> => envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+
+    it('sends the single ad group lists and the exclusions as top-level googleAdsConfig fields, trimmed, asking global_marketing_ops', async () => {
+      accepted();
+
+      await create({
+        displayCreative: AD,
+        displayAudiences: {
+          audienceSegments: [` ${LIST}`, LIST],
+          customAudiences: [CUSTOM],
+          customAffinities: [AFFINITY],
+          userInterests: [INTEREST],
+          excludedAudienceSegments: [LIST_B],
+          customAffinitiesExtra: ['ignored'],
+        },
+      });
+
+      expect(next).not.toHaveBeenCalled();
+      expect(config()).toMatchObject({
+        audienceSegments: [LIST, LIST],
+        customAudiences: [CUSTOM],
+        customAffinities: [AFFINITY],
+        userInterests: [INTEREST],
+        excludedAudienceSegments: [LIST_B],
+      });
+      expect(config()).not.toHaveProperty('displayAudiences');
+      expect(marketingOps).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    });
+
+    it("sends each named group's lists on the group, with the campaign's exclusions at the top level", async () => {
+      accepted();
+
+      await create({
+        displayAudiences: { excludedAudienceSegments: [LIST_B] },
+        displayAdGroups: [
+          { name: 'Retargeting', creative: AD, audienceSegments: [LIST], customAudiences: [] },
+          { name: 'Prospecting', creative: AD, customAffinities: [` ${AFFINITY} `], userInterests: [INTEREST] },
+        ],
+      });
+
+      expect(next).not.toHaveBeenCalled();
+      expect(config()['displayAdGroups']).toEqual([
+        { name: 'Retargeting', creative: { headlines: ['Join us'] }, audienceSegments: [LIST] },
+        { name: 'Prospecting', creative: { headlines: ['Join us'] }, customAffinities: [AFFINITY], userInterests: [INTEREST] },
+      ]);
+      expect(config()['excludedAudienceSegments']).toEqual([LIST_B]);
+      expect(config()).not.toHaveProperty('audienceSegments');
+    });
+
+    it('leaves the request byte-identical, asking nothing, when every list is empty', async () => {
+      accepted();
+      await create({ displayCreative: AD });
+      const without = JSON.stringify(config());
+      for (const displayAudiences of [{}, null, { audienceSegments: [], userInterests: null }]) {
+        createCampaigns.mockClear();
+        await create({ displayCreative: AD, displayAudiences });
+        expect(JSON.stringify(config())).toBe(without);
+      }
+      expect(marketingOps).not.toHaveBeenCalled();
+    });
+
+    it('sends user interests without asking global_marketing_ops, as upstream gates only account-owned lists', async () => {
+      accepted();
+
+      await create({ displayCreative: AD, displayAudiences: { userInterests: [INTEREST] } });
+
+      expect(next).not.toHaveBeenCalled();
+      expect(marketingOps).not.toHaveBeenCalled();
+      expect(config()['userInterests']).toEqual([INTEREST]);
+    });
+
+    it.each([
+      ['a user list', { displayAudiences: { audienceSegments: [LIST] } }],
+      ['a custom audience', { displayAudiences: { customAudiences: [CUSTOM] } }],
+      ['a custom affinity segment', { displayAudiences: { customAffinities: [AFFINITY] } }],
+      ['an excluded user list', { displayAudiences: { excludedAudienceSegments: [LIST] } }],
+      ["a group's user list", { displayAdGroups: [{ name: 'a', creative: AD, audienceSegments: [LIST] }] }],
+      ['a malformed list, which must not reach the shape refusal first', { displayAudiences: { customAudiences: 'x' } }],
+      ['lists left under another channel', { displayAudiences: { audienceSegments: [LIST] }, campaignTypes: ['search'] }],
+    ])('refuses %s from a caller without global_marketing_ops with a coded 403, creating nothing', async (_label, fields) => {
+      marketingOps.mockResolvedValueOnce(false);
+
+      await create({ displayCreative: AD, ...fields });
+
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as AuthorizationError;
+      expect(error).toBeInstanceOf(AuthorizationError);
+      expect(error.code).toBe(GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_CODE);
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+    });
+
+    it('refuses with a coded 503 rather than admitting when the check cannot be made', async () => {
+      marketingOps.mockRejectedValueOnce(new Error('access check unavailable'));
+
+      await create({ displayCreative: AD, displayAudiences: { customAudiences: [CUSTOM] } });
+
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
+      expect(error.statusCode).toBe(503);
+      expect(error.code).toBe(GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_CODE);
+      expect(createCampaigns).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['displayAudiences that is not an object', { displayAudiences: [LIST] }, 'must be an object of audience lists'],
+      ['a list that is not a list of strings', { displayAudiences: { userInterests: [7] } }, "The single ad group's interests must be"],
+      [
+        "a group's list that is not a list of strings",
+        { displayAdGroups: [{ name: 'a', creative: AD, userInterests: 'x' }] },
+        "Display ad group 1's interests must be",
+      ],
+      ["a group's own exclusions", { displayAdGroups: [{ name: 'a', creative: AD, excludedAudienceSegments: [LIST] }] }, 'excludes user lists of its own'],
+      ['a blank entry', { displayCreative: AD, displayAudiences: { userInterests: [INTEREST, ' '] } }, 'interests: entry 2 is blank'],
+      [
+        'an Audience resource',
+        { displayCreative: AD, displayAudiences: { audienceSegments: ['customers/1234567890/audiences/4'] } },
+        'is a Google Ads Audience',
+      ],
+      ['a resource in the wrong list', { displayCreative: AD, displayAudiences: { customAudiences: [AFFINITY] } }, 'pick it under Custom affinity segments'],
+      ['an exclusion that is not a user list', { displayCreative: AD, displayAudiences: { excludedAudienceSegments: [CUSTOM] } }, 'is not a user list'],
+      [
+        'a list targeted and excluded',
+        { displayCreative: AD, displayAudiences: { audienceSegments: [LIST], excludedAudienceSegments: [LIST] } },
+        'also excludes',
+      ],
+      [
+        'the single ad group lists beside named groups',
+        { displayAudiences: { userInterests: [INTEREST] }, displayAdGroups: [{ name: 'a', creative: AD }] },
+        'cannot be sent with named ad groups',
+      ],
+      ['lists on Search', { displayAudiences: { userInterests: [INTEREST] }, campaignTypes: ['search'] }, 'only on Display campaigns, not on Search campaigns'],
+      ['lists on Demand Gen', { displayAudiences: { excludedAudienceSegments: [LIST] }, campaignTypes: ['demand-gen'] }, 'not on Demand Gen campaigns'],
+    ])('refuses %s by name before any upstream call', async (_label, fields, fragment) => {
+      const { campaignTypes, ...rest } = fields as Record<string, unknown> & { campaignTypes?: string[] };
+      await create(rest, campaignTypes);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayAudiences', message: expect.stringContaining(fragment) });
+    });
+
+    it('refuses an oversized list before normalizing it', async () => {
+      await create({ displayCreative: AD, displayAudiences: { userInterests: Array(101).fill(INTEREST) } });
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayAudiences.userInterests' });
+    });
+
+    describe('a request naming no platform, which the legacy creator reads as Google Ads', () => {
+      beforeEach(() => {
+        isServerFeatureEnabled.mockReturnValue(false);
+        createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+        legacyCreate.mockResolvedValue({ jobId: 'job_legacy_5262' });
+      });
+
+      it.each([
+        ['omitted', undefined],
+        ['empty', []],
+        ['not a list', 'google-ads'],
+      ])('refuses a malformed Display audience list by name when platforms is %s, creating nothing', async (_label, platforms) => {
+        await create({ platforms, displayAudiences: { customAudiences: 'x' } });
+
+        expect(legacyCreate).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayAudiences', message: expect.stringContaining('custom audiences must be') });
+      });
+
+      it.each([
+        ["a group's own exclusions", { displayAdGroups: [{ name: 'a', excludedAudienceSegments: [LIST] }] }],
+        ['a malformed Demand Gen audience', { demandGenAudience: 42 }],
+      ])('refuses %s by name when platforms is omitted', async (_label, fields) => {
+        await create({ platforms: undefined, ...fields });
+
+        expect(legacyCreate).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({ statusCode: 400 });
+      });
+
+      it('refuses a malformed Performance Max audience signal by its shape, not as an unserved field, when platforms is omitted', async () => {
+        await create({ platforms: undefined, performanceMaxAudienceSignal: 42 });
+
+        expect(legacyCreate).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({
+          statusCode: 400,
+          field: 'performanceMaxAudienceSignal',
+          message: expect.stringContaining('must be a Google Ads Audience'),
+        });
+      });
+
+      it.each([
+        ['an account-owned Display list', { displayAudiences: { customAudiences: [CUSTOM] } }, GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_CODE],
+        ['a Demand Gen audience', { demandGenAudience: 'customers/1234567890/audiences/42' }, GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_CODE],
+        [
+          'a Performance Max audience signal',
+          { performanceMaxAudienceSignal: 'customers/1234567890/audiences/42' },
+          GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_CODE,
+        ],
+      ])('asks global_marketing_ops for %s when platforms is omitted', async (_label, fields, code) => {
+        marketingOps.mockResolvedValueOnce(false);
+
+        await create({ platforms: undefined, ...fields });
+
+        expect((vi.mocked(next).mock.calls[0][0] as unknown as AuthorizationError).code).toBe(code);
+        expect(legacyCreate).not.toHaveBeenCalled();
+      });
+
+      it('refuses Search audience segments by name when platforms is omitted, rather than letting the legacy creator drop them', async () => {
+        await create({ platforms: undefined, audienceSegments: [LIST] }, ['search']);
+
+        expect(legacyCreate).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'audienceSegments' });
+      });
+
+      it('leaves a create for another platform alone', async () => {
+        await create({ platforms: ['meta-ads'], metaConfig: { budgetUsd: 250 }, displayAudiences: { customAudiences: 'x' } });
+
+        const fields = vi.mocked(next).mock.calls.map((call) => (call[0] as unknown as ServiceValidationError)?.validationErrors?.[0]?.field);
+        expect(fields).not.toContain('displayAudiences');
+        expect(marketingOps).not.toHaveBeenCalled();
+      });
+    });
+
+    it.each([
+      ['Performance Max', ['performance-max']],
+      ['Search', ['search']],
+    ])("refuses a named Display group's lists by name on %s, where no Display group is built", async (_label, campaignTypes) => {
+      await create({ displayAdGroups: [{ name: 'a', creative: AD, userInterests: [INTEREST] }] }, campaignTypes);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayAudiences', message: expect.stringContaining('only on Display campaigns') });
+    });
+
+    it('still builds a request off Display when a named group carries no list', async () => {
+      accepted();
+
+      await create({ displayAdGroups: [{ name: 'a', creative: AD, userInterests: [] }] }, ['search']);
+
+      expect(createCampaigns).toHaveBeenCalled();
+    });
+
+    it('refuses Display audiences by name while the cutover is dark, rather than letting the legacy creator drop them', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_legacy_5262' });
+
+      await create({ displayAudiences: { userInterests: [INTEREST] } }, ['search']);
+
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({
+        statusCode: 400,
+        field: 'displayAudiences',
+        message: expect.stringContaining('Google Display audiences cannot be applied'),
+      });
     });
   });
 
@@ -8001,6 +8276,216 @@ describe('CampaignController.createCampaign cutover', () => {
       );
 
       expect(build({ performanceMaxSearchThemes: ['kubernetes'] }, channel)).toEqual(taken ? { performanceMaxSearchThemes: ['kubernetes'] } : {});
+    });
+  });
+
+  describe('performance max audience signal (#5262)', () => {
+    const AUDIENCE = 'customers/1234567890/audiences/42';
+    const PMAX_CREATIVE = { businessName: 'Example Foundation' };
+    const marketingOps = vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict);
+    const pmaxBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+      googleBody({ campaignTypes: ['performance-max'], budgetUsd: 500, performanceMaxCreative: PMAX_CREATIVE, ...overrides });
+    const create = (body: Record<string, unknown>): Promise<void> =>
+      controller.createCampaign(buildReq(body as never, { project: 'tlf', brief_id: 'b-1' }), res, next);
+    const accepted = (): void => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005262', error: null });
+    };
+    const config = (): Record<string, unknown> => envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+
+    it("dispatches the signal trimmed with Go's rules after the themes, asking global_marketing_ops on the project", async () => {
+      accepted();
+
+      await create(pmaxBody({ performanceMaxSearchThemes: ['kubernetes'], performanceMaxAudienceSignal: ` ${AUDIENCE}\u0085` }));
+
+      expect(next).not.toHaveBeenCalled();
+      expect(marketingOps).toHaveBeenCalledWith(expect.anything(), 'tlf');
+      expect(config()['performanceMaxAudienceSignal']).toBe(AUDIENCE);
+      expect(Object.keys(config()).slice(-3)).toEqual(['performanceMaxCreative', 'performanceMaxSearchThemes', 'performanceMaxAudienceSignal']);
+    });
+
+    it("forwards a bare canonical audience id, which upstream resolves in the campaign's own account", async () => {
+      accepted();
+
+      await create(pmaxBody({ performanceMaxAudienceSignal: '42' }));
+
+      expect(next).not.toHaveBeenCalled();
+      expect(config()['performanceMaxAudienceSignal']).toBe('42');
+    });
+
+    it.each([
+      ['absent', {}],
+      ['null', { performanceMaxAudienceSignal: null }],
+      ['empty', { performanceMaxAudienceSignal: '' }],
+    ])('leaves a Performance Max request byte-identical, asking nothing, for a signal that is %s', async (_label, overrides) => {
+      accepted();
+      await create(pmaxBody());
+      const without = JSON.stringify(config());
+      createCampaigns.mockClear();
+
+      await create(pmaxBody(overrides));
+
+      expect(next).not.toHaveBeenCalled();
+      expect(JSON.stringify(config())).toBe(without);
+      expect(without).not.toContain('performanceMaxAudienceSignal');
+      expect(marketingOps).not.toHaveBeenCalled();
+    });
+
+    it('omits a blank signal rather than sending it, after asking who is asking', async () => {
+      accepted();
+
+      await create(pmaxBody({ performanceMaxAudienceSignal: ' \u0085 ' }));
+
+      expect(next).not.toHaveBeenCalled();
+      expect(marketingOps).toHaveBeenCalledWith(expect.anything(), 'tlf');
+      expect(config()).not.toHaveProperty('performanceMaxAudienceSignal');
+    });
+
+    it.each([
+      ['a signal', pmaxBody({ performanceMaxAudienceSignal: AUDIENCE })],
+      ['a blank signal, which upstream counts', pmaxBody({ performanceMaxAudienceSignal: ' ' })],
+      ['a malformed signal, which must not reach the shape refusal first', pmaxBody({ performanceMaxAudienceSignal: 42 })],
+      ['a signal left under another channel', googleBody({ campaignTypes: ['display'], performanceMaxAudienceSignal: AUDIENCE })],
+    ])('refuses %s from a caller without global_marketing_ops with a coded 403, creating nothing', async (_label, body) => {
+      marketingOps.mockResolvedValueOnce(false);
+
+      await create(body);
+
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as AuthorizationError;
+      expect(error).toBeInstanceOf(AuthorizationError);
+      expect(error.code).toBe(GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_CODE);
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+    });
+
+    it('refuses with a coded 503 rather than admitting when the check cannot be made', async () => {
+      marketingOps.mockRejectedValueOnce(new Error('access check unavailable'));
+
+      await create(pmaxBody({ performanceMaxAudienceSignal: AUDIENCE }));
+
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
+      expect(error.statusCode).toBe(503);
+      expect(error.code).toBe(GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_CODE);
+      expect(createCampaigns).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a number', pmaxBody({ performanceMaxAudienceSignal: 42 }), 'must be a Google Ads Audience id or resource name'],
+      ['a list', pmaxBody({ performanceMaxAudienceSignal: [AUDIENCE] }), 'must be a Google Ads Audience id or resource name'],
+      ['a user list in place of an Audience', pmaxBody({ performanceMaxAudienceSignal: 'customers/1234567890/userLists/42' }), 'is not a Google Ads Audience'],
+      ['an id that is not canonical', pmaxBody({ performanceMaxAudienceSignal: '042' }), 'is not a Google Ads Audience'],
+      ['a resource id that is not canonical', pmaxBody({ performanceMaxAudienceSignal: 'customers/1234567890/audiences/0' }), 'is not a Google Ads Audience'],
+      [
+        'no creative',
+        pmaxBody({ performanceMaxCreative: undefined, performanceMaxAudienceSignal: AUDIENCE }),
+        GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL,
+      ],
+      [
+        'a creative that empties out, which creates no asset group',
+        pmaxBody({ performanceMaxCreative: { businessName: '   ' }, performanceMaxAudienceSignal: AUDIENCE }),
+        GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL,
+      ],
+    ])('refuses %s by name before any upstream call', async (_label, body, expected) => {
+      await create(body);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'performanceMaxAudienceSignal', message: expect.stringContaining(expected) });
+    });
+
+    it.each([
+      ['search', 'Search'],
+      ['display', 'Display'],
+      ['demand-gen', 'Demand Gen'],
+    ])('refuses a signal on %s by name, because upstream refuses the whole create there', async (channel, channelLabel) => {
+      await create(googleBody({ campaignTypes: [channel], performanceMaxAudienceSignal: AUDIENCE }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({
+        field: 'performanceMaxAudienceSignal',
+        message: expect.stringContaining(`only accepts an audience signal on Performance Max campaigns, not on ${channelLabel} campaigns`),
+      });
+    });
+
+    it('refuses a value that is not a string on any channel, as the access check counts it on any channel', async () => {
+      accepted();
+
+      await create(googleBody({ campaignTypes: ['display'], performanceMaxAudienceSignal: { id: 1 } }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({
+        statusCode: 400,
+        field: 'performanceMaxAudienceSignal',
+        message: expect.stringContaining('must be a Google Ads Audience'),
+      });
+    });
+
+    it('judges the themes before the signal, as validatePerformanceMaxSignals does', async () => {
+      await create(pmaxBody({ performanceMaxSearchThemes: [''], performanceMaxAudienceSignal: 'nope' }));
+
+      expect(refusalFrom().field).toBe('performanceMaxSearchThemes');
+    });
+
+    it('refuses an oversized signal before normalising it', async () => {
+      await create(pmaxBody({ performanceMaxAudienceSignal: `customers/1/audiences/${'1'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}` }));
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ field: 'performanceMaxAudienceSignal', message: expect.stringContaining('maximum length') });
+    });
+
+    describe('while the cutover is dark', () => {
+      beforeEach(() => {
+        isServerFeatureEnabled.mockReturnValue(false);
+        createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+        legacyCreate.mockResolvedValue({ jobId: 'job_legacy_5262' });
+      });
+
+      it('refuses a value that is not a string by name, after the access check, rather than letting the normalizer drop it', async () => {
+        await create(googleBody({ campaignTypes: ['performance-max'], performanceMaxAudienceSignal: 42 }));
+
+        expect(marketingOps).toHaveBeenCalledWith(expect.anything(), 'tlf');
+        expect(legacyCreate).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({
+          statusCode: 400,
+          field: 'performanceMaxAudienceSignal',
+          message: expect.stringContaining('must be a Google Ads'),
+        });
+      });
+
+      it('refuses a signal by name rather than letting the legacy creator drop it', async () => {
+        await create(googleBody({ campaignTypes: ['performance-max'], performanceMaxAudienceSignal: AUDIENCE }));
+
+        expect(legacyCreate).not.toHaveBeenCalled();
+        expect(refusalFrom()).toMatchObject({
+          statusCode: 400,
+          field: 'performanceMaxAudienceSignal',
+          message: expect.stringContaining('Google Performance Max audience signal cannot be applied'),
+        });
+      });
+
+      it.each([
+        ['absent', {}],
+        ['null', { performanceMaxAudienceSignal: null }],
+        ['empty', { performanceMaxAudienceSignal: '' }],
+      ])('creates through the legacy creator for a signal that is %s', async (_label, fields) => {
+        await create(googleBody(fields));
+
+        expect(next).not.toHaveBeenCalled();
+        expect(legacyCreate).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    /** The builder's own channel gate, behind the by-name refusal: pinned on the helper. */
+    it.each([
+      ['search', false],
+      ['demand-gen', false],
+      ['display', false],
+      ['performance-max', true],
+      ['video', false],
+    ] as const)('builds the signal for %s only when the channel takes it', (channel, taken) => {
+      const build = (
+        controller as unknown as { googlePerformanceMaxAudienceSignal: (body: unknown, channel: string) => Record<string, unknown> }
+      ).googlePerformanceMaxAudienceSignal.bind(controller);
+
+      expect(build({ performanceMaxAudienceSignal: AUDIENCE }, channel)).toEqual(taken ? { performanceMaxAudienceSignal: AUDIENCE } : {});
     });
   });
 
@@ -10374,11 +10859,13 @@ describe('CampaignController.listBriefCampaigns', () => {
         googleAudienceSegmentsEnabled: audiences,
         googleConversionActionsEnabled: conversions,
         googleDemandGenAudienceEnabled: conversions,
+        googleDisplayAudiencesEnabled: conversions,
+        googlePerformanceMaxAudienceSignalEnabled: conversions,
       })
     );
   });
 
-  it('answers null (unverified, not denied) for audience segments and the Demand Gen audience and no for the conversion picker, rather than failing the list, when the global_marketing_ops check cannot be made', async () => {
+  it('answers null (unverified, not denied) for audience segments, the Demand Gen audience, Display audiences and the Performance Max audience signal and no for the conversion picker, rather than failing the list, when the global_marketing_ops check cannot be made', async () => {
     listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, googleCreativeEnabled: true, googleAudienceSegmentsEnabled: false });
     isServerFeatureEnabled.mockReturnValue(true);
     vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockRejectedValueOnce(new Error('access check unavailable'));
@@ -10387,7 +10874,13 @@ describe('CampaignController.listBriefCampaigns', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ googleAudienceSegmentsEnabled: null, googleConversionActionsEnabled: false, googleDemandGenAudienceEnabled: null })
+      expect.objectContaining({
+        googleAudienceSegmentsEnabled: null,
+        googleConversionActionsEnabled: false,
+        googleDemandGenAudienceEnabled: null,
+        googleDisplayAudiencesEnabled: null,
+        googlePerformanceMaxAudienceSignalEnabled: null,
+      })
     );
   });
 

@@ -380,6 +380,16 @@ export interface GroupEligibility {
 }
 
 /**
+ * Navigation state a Me lens list passes when linking to a group details page, so the page can
+ * return to that list (see `COMMITTEE_BACK_PATHS`) and restore the Me lens.
+ */
+export interface GroupLinkState {
+  backLabel: string;
+  backPath: string;
+  fromMeLens: boolean;
+}
+
+/**
  * Lightweight committee reference for cross-module use
  * @description Minimal committee data with voting status eligibility
  */
@@ -1227,6 +1237,28 @@ export interface MailingListPickerDialogResult {
    * than treating an empty map as "reset everything to manual".
    */
   syncModes: Map<string, MailingListSyncMode>;
+}
+
+export interface MailingListSyncPreviewDialogData {
+  mailingListUid: string;
+  mailingListName: string;
+  committeeUid: string;
+}
+
+export interface MailingListSyncPreviewDialogResult {
+  applied: boolean;
+  committeeChanged: boolean;
+}
+
+/**
+ * An associated mailing list plus its per-row Settings-tab derived state, precomputed so the
+ * template doesn't branch on `ml.writer`/`ml.sync_mode` or nest ternaries for button state/tooltips.
+ */
+export interface CommitteeAssociatedMailingListRow extends GroupsIOMailingList {
+  removable: boolean;
+  syncModeSupported: boolean;
+  syncTooltip: string;
+  removeTooltip: string;
 }
 
 export interface DescriptionDialogData {

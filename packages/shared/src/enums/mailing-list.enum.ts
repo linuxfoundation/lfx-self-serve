@@ -81,3 +81,24 @@ export enum MailingListSyncMode {
   AUTO_COMMITTEE_TO_MAILING_LIST = 'auto_c_to_ml',
   AUTO_MAILING_LIST_TO_COMMITTEE = 'auto_ml_to_c',
 }
+
+/**
+ * Sync-diff/sync-apply member type (committee ↔ mailing list sync)
+ * @description Indicates which side of the sync a member originates from
+ */
+export enum SyncMemberType {
+  COMMITTEE_MEMBER = 'committee_member',
+  MAILING_LIST_MEMBER = 'mailing_list_member',
+}
+
+/**
+ * Sync-apply per-row outcome
+ * @description Result of applying a single add/remove row during sync-apply
+ */
+export enum SyncApplyOutcome {
+  ADDED = 'added',
+  INVITED = 'invited',
+  REMOVED = 'removed',
+  SKIPPED_CROSS_LIST = 'skipped_cross_list',
+  FAILED = 'failed',
+}

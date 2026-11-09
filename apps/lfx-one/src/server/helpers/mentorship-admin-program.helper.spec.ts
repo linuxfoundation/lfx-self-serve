@@ -7,6 +7,7 @@ import {
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamMemberManagementRow,
   MentorshipUpstreamProgramHeader,
+  MentorshipUpstreamProgramTerm,
   MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
@@ -16,6 +17,7 @@ import {
   mapMentorshipAdminMentorRow,
   mapMentorshipAdminProgram,
   mapMentorshipAdminTermRow,
+  mentorshipPublishedProgramStatus,
 } from './mentorship-admin-program.helper';
 
 const upstream = (overrides: Partial<MentorshipUpstreamAdministeredProgram> = {}): MentorshipUpstreamAdministeredProgram => ({
@@ -23,7 +25,7 @@ const upstream = (overrides: Partial<MentorshipUpstreamAdministeredProgram> = {}
   slug: 'program-one',
   name: 'Program One',
   status: 'published',
-  admin_status: 'open',
+  admin_status: 'accepting',
   project_name: 'Energy Project',
   stats: { mentors: 2, mentees: 3, graduated: 1 },
   created_on: '2026-01-01T00:00:00Z',
@@ -33,7 +35,9 @@ const upstream = (overrides: Partial<MentorshipUpstreamAdministeredProgram> = {}
 
 describe('mapMentorshipAdminProgram', () => {
   it.each([
-    ['open', 'open'],
+    ['accepting', 'accepting'],
+    ['in_progress', 'in-progress'],
+    ['upcoming', 'upcoming'],
     ['pending_review', 'pending-review'],
     ['completed', 'completed'],
     ['rejected', 'rejected'],
@@ -42,7 +46,7 @@ describe('mapMentorshipAdminProgram', () => {
     expect(mapMentorshipAdminProgram(upstream({ admin_status: adminStatus }))).toMatchObject({ program: { status: expected }, unknownStatus: false });
   });
 
-  it.each(['mystery', 'constructor', ''])('reads the unknown admin_status "%s" as pending-review and flags it', (adminStatus) => {
+  it.each(['mystery', 'constructor', '', 'open', 'in-progress'])('reads the unknown admin_status "%s" as pending-review and flags it', (adminStatus) => {
     expect(mapMentorshipAdminProgram(upstream({ admin_status: adminStatus }))).toMatchObject({ program: { status: 'pending-review' }, unknownStatus: true });
   });
 
@@ -52,7 +56,7 @@ describe('mapMentorshipAdminProgram', () => {
       slug: 'program-one',
       name: 'Program One',
       projectName: 'Energy Project',
-      status: 'open',
+      status: 'accepting',
       stats: { mentors: 2, mentees: 3, graduated: 1 },
       logoUrl: 'https://logo.example/p.png',
       logoMissing: false,
@@ -97,17 +101,126 @@ const header = (status: string, overrides: Partial<MentorshipUpstreamProgramHead
   ...overrides,
 });
 
+// 2026-11-09 12:00 UTC.
+const NOW = new Date('2026-11-09T12:00:00Z');
+const at = (iso: string) => `${iso}T00:00:00Z`;
+const term = (status: MentorshipUpstreamProgramTerm['status'], dates: Partial<MentorshipUpstreamProgramTerm> = {}) => ({ status, ...dates });
+
+describe('mentorshipPublishedProgramStatus', () => {
+  const rules = [
+    ['only closed terms', [term('closed'), term('deleted')], 'completed'],
+    ['no terms', [], 'upcoming'],
+    ['only deleted terms', [term('deleted')], 'upcoming'],
+    [
+      'an open term inside its application window',
+      [term('open', { application_start_date: at('2026-11-01'), application_end_date: at('2026-11-30') })],
+      'accepting',
+    ],
+    [
+      'an open term whose application window ends today, at any time of day',
+      [term('open', { application_start_date: at('2026-11-01'), application_end_date: '2026-11-09T00:00:00Z' })],
+      'accepting',
+    ],
+    [
+      'an open term whose application window opens today',
+      [term('open', { application_start_date: '2026-11-09T23:00:00Z', application_end_date: at('2026-11-30') })],
+      'accepting',
+    ],
+    [
+      'one term taking applications and another running',
+      [
+        term('open', { start_date_time: at('2026-09-01'), end_date_time: at('2026-12-31') }),
+        term('open', { application_start_date: at('2026-11-01'), application_end_date: at('2026-11-30') }),
+      ],
+      'accepting',
+    ],
+    [
+      'an open term inside its term window, beside one whose application window has not opened',
+      [
+        term('open', {
+          application_start_date: at('2026-08-01'),
+          application_end_date: at('2026-08-15'),
+          start_date_time: at('2026-09-01'),
+          end_date_time: at('2026-12-31'),
+        }),
+        term('open', { application_start_date: at('2026-12-01'), application_end_date: at('2026-12-15') }),
+      ],
+      'in-progress',
+    ],
+    [
+      'an open term whose application window has not opened',
+      [term('open', { application_start_date: at('2026-12-01'), application_end_date: at('2026-12-15'), start_date_time: at('2027-01-01') })],
+      'upcoming',
+    ],
+    ['an open term with only a future application start', [term('open', { application_start_date: at('2026-12-01') })], 'in-progress'],
+    [
+      'an open term whose applications closed before it started',
+      [
+        term('open', {
+          application_start_date: at('2026-10-01'),
+          application_end_date: at('2026-10-31'),
+          start_date_time: at('2026-12-01'),
+          end_date_time: at('2027-03-31'),
+        }),
+      ],
+      'in-progress',
+    ],
+    ['an open term that ended without being closed', [term('open', { start_date_time: at('2026-01-01'), end_date_time: at('2026-06-30') })], 'in-progress'],
+    ['an open term with no dates', [term('open')], 'in-progress'],
+    [
+      'an open term beside a closed one',
+      [term('closed'), term('open', { application_start_date: at('2026-12-01'), application_end_date: at('2026-12-15') })],
+      'upcoming',
+    ],
+  ] as const;
+
+  it.each(rules.map(([label, terms, expected]) => ({ label, terms, expected })))('reads $label as $expected', ({ terms, expected }) => {
+    expect(mentorshipPublishedProgramStatus(terms, NOW)).toBe(expected);
+  });
+
+  // Beside a term whose application window is still ahead, a running term reads In Progress and one that is not
+  // running reads Upcoming, so these cases fail if the running check is dropped or compares by day.
+  describe('compares the term window to the time, not the day, ahead of Upcoming', () => {
+    const upcoming = term('open', { application_start_date: at('2026-12-01'), application_end_date: at('2026-12-15') });
+    const statusWith = (start: string, end: string) =>
+      mentorshipPublishedProgramStatus([term('open', { start_date_time: start, end_date_time: end }), upcoming], NOW);
+
+    it.each([
+      ['starts now', '2026-11-09T12:00:00Z', at('2027-01-01')],
+      ['ends now', at('2026-09-01'), '2026-11-09T12:00:00Z'],
+    ])('reads a term that %s as in progress', (_label, start, end) => {
+      expect(statusWith(start, end)).toBe('in-progress');
+    });
+
+    it.each([
+      ['ended a second ago', at('2026-09-01'), '2026-11-09T11:59:59Z'],
+      ['starts in a second', '2026-11-09T12:00:01Z', at('2027-01-01')],
+    ])('reads a term that %s, beside an upcoming one, as upcoming', (_label, start, end) => {
+      expect(statusWith(start, end)).toBe('upcoming');
+    });
+  });
+});
+
 describe('mapMentorshipAdminHeaderProgram', () => {
+  it('reads a published program from its terms', () => {
+    const terms = [term('open', { application_start_date: at('2026-11-01'), application_end_date: at('2026-11-30') })];
+
+    expect(mapMentorshipAdminHeaderProgram(header('published'), { has_open_term: true, has_closed_term: false }, terms, NOW)).toMatchObject({
+      program: { status: 'accepting' },
+      unknownStatus: false,
+    });
+  });
+
   it.each([
-    ['published, an open term', { has_open_term: true, has_closed_term: true }, 'open'],
-    ['published, only closed terms', { has_open_term: false, has_closed_term: true }, 'completed'],
-    ['published, no terms', { has_open_term: false, has_closed_term: false }, 'open'],
-  ] as const)('reads %s as %s', (_label, summary, expected) => {
+    ['an open term', { has_open_term: true, has_closed_term: true }, 'in-progress'],
+    ['only closed terms', { has_open_term: false, has_closed_term: true }, 'completed'],
+    ['no terms', { has_open_term: false, has_closed_term: false }, 'upcoming'],
+  ] as const)('reads a published program with %s from the summary when its terms are missing, as %s', (_label, summary, expected) => {
     expect(mapMentorshipAdminHeaderProgram(header('published'), summary)).toMatchObject({ program: { status: expected }, unknownStatus: false });
   });
 
-  it('reads a published program as open when the summary is missing', () => {
-    expect(mapMentorshipAdminHeaderProgram(header('published')).program.status).toBe('open');
+  it('reads a published program as in progress when the summary and terms are missing', () => {
+    expect(mapMentorshipAdminHeaderProgram(header('published')).program.status).toBe('in-progress');
   });
 
   it.each([
@@ -131,7 +244,7 @@ describe('mapMentorshipAdminHeaderProgram', () => {
       slug: 'program-one',
       name: 'Program One',
       projectName: 'Energy Project',
-      status: 'open',
+      status: 'in-progress',
       stats: { mentors: 2, mentees: 3, graduated: 1 },
       createdOn: '2026-01-01T00:00:00Z',
       updatedOn: '2026-01-02T00:00:00Z',

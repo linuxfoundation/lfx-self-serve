@@ -9,12 +9,14 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
   Committee,
+  CommitteeAssociatedMailingListRow,
   CommitteeUpdateData,
   CreateMailingListRequest,
   GroupsIOMailingList,
   JoinMode,
   MailingListAssociationUpdateResult,
   MailingListPickerDialogResult,
+  MailingListSyncPreviewDialogResult,
   ValidationError,
 } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility, MailingListSyncMode } from '@lfx-one/shared/enums';
@@ -40,6 +42,7 @@ import { UiNoteComponent } from '@shared/uikit/note/note.component';
 
 import { MailingListSyncSettingsComponent } from '../../../mailing-lists/components/mailing-list-sync-settings/mailing-list-sync-settings.component';
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
+import { MailingListSyncPreviewDialogComponent } from '../mailing-list-sync-preview-dialog/mailing-list-sync-preview-dialog.component';
 import { CommitteeGeneralSettingsComponent } from '../committee-general-settings/committee-general-settings.component';
 import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
 import { MailingListEmailPipe } from '../../pipes/mailing-list-email.pipe';
@@ -234,6 +237,11 @@ export class CommitteeSettingsTabComponent {
     });
   });
 
+  // Precomputed per-row state for the Settings tab's associated-mailing-list cards — avoids
+  // nested ternaries and repeated ml.writer/ml.sync_mode branching in the template
+  // (docs/reviews/frontend-checklist.md §4/§12, #4911 review).
+  public associatedMailingListRows: Signal<CommitteeAssociatedMailingListRow[]> = this.initAssociatedMailingListRows();
+
   // Linking or unlinking updates the mailing list itself, so it needs write access on that list.
   // Only block once lists have loaded and none are writable — an empty list is the picker's own
   // "no mailing lists" state, which still offers Create New List.
@@ -282,6 +290,11 @@ export class CommitteeSettingsTabComponent {
   // Inline template passed to UiDrawerService.open() — see drawer.stories.ts for the pattern.
   public readonly autoSyncDrawerTemplate = viewChild.required<TemplateRef<unknown>>('autoSyncDrawer');
 
+  // Dark-launch gate for the "Sync Now" preview/apply entry point on each associated mailing list
+  // card — same flag as the Mailing List Settings sync toggle (#4024), so both committee/mailing-list
+  // sync surfaces roll out together. Default false: unflagged, "Sync Now" stays hidden even for editors.
+  public syncPreviewEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, false);
+
   // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the
   // control renders visible-but-disabled instead of accepting an edit that will 403, matching the
   // established pattern (weekly-brief-card, profile-panel) of gating on
@@ -325,7 +338,7 @@ export class CommitteeSettingsTabComponent {
         const committeeChanged = this.lastCommitteeUid !== undefined && this.lastCommitteeUid !== c.uid;
         this.lastCommitteeUid = c.uid;
         const preserveWebhookEdit = !committeeChanged && this.form.controls.chat_webhook_url.dirty;
-        this.form.patchValue({
+        const incomingValues = {
           name: c.name,
           category: c.category,
           parent_uid: c.parent_uid ?? null,
@@ -340,7 +353,16 @@ export class CommitteeSettingsTabComponent {
           chat_channel: c.chat_channel ?? null,
           website: c.website ?? null,
           ...(preserveWebhookEdit ? {} : { chat_webhook_url: null }),
-        });
+        };
+        // On a same-committee refresh (e.g. after a reverse mailing-list sync via openSyncPreviewDialog),
+        // drop any field the admin has a dirty, unsaved edit on from the patch instead of clobbering it —
+        // chat_webhook_url already got this treatment above; this extends it to every other control
+        // (copilot, #4911 review). A committee-changed navigation still fully repatches: an unsaved edit
+        // for committee A must never survive onto committee B's form.
+        const patchValues = committeeChanged
+          ? incomingValues
+          : (Object.fromEntries(Object.entries(incomingValues).filter(([key]) => !this.form.get(key)?.dirty)) as typeof incomingValues);
+        this.form.patchValue(patchValues);
         if (!preserveWebhookEdit) {
           this.editingSlackWebhookUrl.set(false);
           this.slackWebhookRemovalStaged.set(false);
@@ -466,6 +488,39 @@ export class CommitteeSettingsTabComponent {
         },
         error: () => this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Unable to verify your access. Please try again.' }),
       });
+  }
+
+  public openSyncPreviewDialog(ml: GroupsIOMailingList): void {
+    // closable: true from the start — lockDynamicDialogWhile (inside the dialog) flips
+    // config.closable to false while the diff is loading, while applying, while the apply result
+    // (success or error) is on screen, so the header X and Escape are blocked during those
+    // windows. PrimeNG's Dialog only reads closeOnEscape/closable once, at open, to bind its
+    // Escape listener — opening with closable: false here would mean Escape can never be rebound
+    // later even once lockDynamicDialogWhile flips it back to true (#4911 review).
+    const ref: DynamicDialogRef<MailingListSyncPreviewDialogComponent> | null = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
+      header: `Sync Now — ${ml.group_name}`,
+      width: '800px',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { mailingListUid: ml.uid, mailingListName: ml.group_name, committeeUid: this.committee().uid },
+    });
+
+    if (!ref) return;
+
+    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MailingListSyncPreviewDialogResult | null) => {
+      this.refreshMl$.next();
+      // Only a reverse sync (mailing list → committee) can change committee membership —
+      // committeeUpdated triggers the parent's onSettingsSaved(), which refetches the committee and
+      // repatches the Settings form. The same-committee dirty filter (constructor) now keeps any
+      // in-flight unsaved edit intact across that repatch, but a reverse sync is still the only
+      // reason to pay for the cache-bypassing refetch at all — a forward sync, a Cancel, or a
+      // load/apply error didn't touch committee membership, so there's nothing new to fetch
+      // (#4911 review).
+      if (result?.committeeChanged) {
+        this.committeeUpdated.emit();
+      }
+    });
   }
 
   public removeMailingList(ml: GroupsIOMailingList): void {
@@ -617,6 +672,21 @@ export class CommitteeSettingsTabComponent {
             this.editingSlackWebhookUrl.set(false);
             this.slackWebhookRemovalStaged.set(false);
           }
+          // Mark every other successfully-saved control pristine, only if its current value still
+          // equals what was actually submitted. Without this, the constructor's same-committee
+          // dirty filter (above) treats a saved control as "still has an unsaved edit" forever —
+          // the server-normalized value never lands, and a later unrelated save resends the stale
+          // value, reverting any change another writer made in between (cursor, greptile, copilot,
+          // dealako [blocking], #4911 review). Checking against `values` (captured at submit time)
+          // rather than unconditionally resetting dirty keeps a genuinely new edit — typed while
+          // this request was still in flight — marked dirty, since that one was never submitted.
+          Object.keys(values).forEach((key) => {
+            if (key === 'chat_webhook_url') return;
+            const control = this.form.get(key);
+            if (control?.dirty && control.value === (values as Record<string, unknown>)[key]) {
+              control.markAsPristine();
+            }
+          });
           this.committeeUpdated.emit();
         },
         error: (err: any) => {
@@ -961,6 +1031,27 @@ export class CommitteeSettingsTabComponent {
       auditors: ml.auditors,
       sync_mode: syncMode,
     };
+  }
+
+  private initAssociatedMailingListRows(): Signal<CommitteeAssociatedMailingListRow[]> {
+    return computed(() =>
+      this.associatedMailingLists().map((ml) => {
+        const removable = ml.writer === true;
+        const syncModeSupported =
+          ml.sync_mode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST || ml.sync_mode === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE;
+
+        let syncTooltip = `Preview and apply committee sync for ${ml.group_name}`;
+        if (!removable) {
+          syncTooltip = 'You need Manage access to this mailing list to sync it.';
+        } else if (!syncModeSupported) {
+          syncTooltip = `Set a sync direction for ${ml.group_name} in Mailing List Settings before syncing.`;
+        }
+
+        const removeTooltip = removable ? `Remove mailing list ${ml.group_name}` : 'You need Manage access to this mailing list to unlink it.';
+
+        return { ...ml, removable, syncModeSupported, syncTooltip, removeTooltip };
+      })
+    );
   }
 
   private initAssociatedMailingLists(): Signal<GroupsIOMailingList[]> {
