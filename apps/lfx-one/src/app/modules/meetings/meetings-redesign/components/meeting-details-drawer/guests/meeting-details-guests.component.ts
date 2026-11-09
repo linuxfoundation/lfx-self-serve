@@ -287,17 +287,23 @@ export class MeetingDetailsGuestsComponent {
           parts.occurrenceId,
           this.reload(),
         ].join('|');
-        return { ...parts, key };
+        return { ...parts, key, version: this.context.participantsVersion() };
       },
-      { equal: (a, b) => a.key === b.key }
+      { equal: (a, b) => a.key === b.key && a.version === b.version }
     );
+    // A participants change reloads the same list in place, keeping the rows, count and hosts until it lands.
+    let shownKey: string | null = null;
 
     return toSignal(
       toObservable(request).pipe(
-        switchMap(({ meeting, canView, ended, pastId, occurrenceId: shownOccurrenceId }) => {
-          // The previous date's count and hosts must not linger while this load runs, after it fails, or once hidden.
-          this.context.guestCount.set(null);
-          this.context.hosts.set([]);
+        switchMap(({ meeting, canView, ended, pastId, occurrenceId: shownOccurrenceId, key }) => {
+          const inPlace = key === shownKey;
+          shownKey = key;
+          if (!inPlace) {
+            // The previous date's count and hosts must not linger while this load runs, after it fails, or once hidden.
+            this.context.guestCount.set(null);
+            this.context.hosts.set([]);
+          }
           if (!canView) return of<MeetingGuestsLoad>({ status: 'ready', rows: [] });
           const viewer = { username: this.userService.viewerUsername(), email: this.userService.user()?.email ?? null };
           let rows$: Observable<MeetingGuestRow[]>;
@@ -334,7 +340,7 @@ export class MeetingDetailsGuestsComponent {
               console.error(`Failed to load guests of meeting ${meeting.id}:`, error);
               return of<MeetingGuestsLoad>({ status: 'error', rows: [] });
             }),
-            startWith(loading)
+            inPlace ? (source: Observable<MeetingGuestsLoad>) => source : startWith(loading)
           );
         })
       ),

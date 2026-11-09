@@ -4,7 +4,7 @@
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
+import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MEETING_CLOCK_TICK_MS } from '@lfx-one/shared/constants';
 import {
@@ -20,7 +20,7 @@ import { canViewMeetingGuests, getMeetingDetailsState, getPastMeetingResourceId,
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { catchError, filter, fromEvent, interval, map, merge, of } from 'rxjs';
+import { catchError, filter, fromEvent, interval, map, merge, of, timer } from 'rxjs';
 
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 
@@ -37,6 +37,7 @@ export class MeetingDetailsContext {
   private readonly toast = inject(UiToastService);
   private readonly dialogRef = inject(DialogRef, { optional: true });
   private readonly document = inject(DOCUMENT);
+  private readonly destroyRef = inject(DestroyRef);
   /** Time read by the drawer's own clock; 0 until it first ticks. */
   private readonly tick = signal(0);
   /** Registered from the drawer; counts as invited before the list catches up. */
@@ -76,6 +77,8 @@ export class MeetingDetailsContext {
   public readonly hosts: WritableSignal<readonly MeetingHostCandidate[]> = signal([]);
   /** Guests or participants count for the tab, set by the guests section once it loads them. */
   public readonly guestCount: WritableSignal<number | null> = signal(null);
+  /** Bumped when the shown date's participants change; the sections that list them reload on it. */
+  public readonly participantsVersion: WritableSignal<number> = signal(0);
 
   public constructor() {
     this.startClock();
@@ -85,6 +88,15 @@ export class MeetingDetailsContext {
   public markRegistered(): void {
     this.meetingService.clearRemovedRegistration(this.row().meeting.id);
     this.registered.set(true);
+    this.refreshList();
+  }
+
+  /** Reloads the participants now and again after 1s, as the meeting page does while the change indexes, and the list behind the drawer. */
+  public refreshParticipants(): void {
+    this.participantsVersion.update((version) => version + 1);
+    timer(1000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.participantsVersion.update((version) => version + 1));
     this.refreshList();
   }
 

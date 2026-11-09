@@ -486,3 +486,12 @@ export interface MeetingRegisterDialogData {
   /** The signed-in user, whose profile fills the form. */
   user: User | null;
 }
+
+/** What the Reconcile Attendance dialog opens with. */
+export interface MeetingReconcileDialogData {
+  row: MeetingHomeRow;
+  /** Resource id of the past meeting being reconciled. */
+  pastMeetingId: string;
+  /** Called after attendee records change, so the opener reloads its participants. */
+  onChange: () => void;
+}
