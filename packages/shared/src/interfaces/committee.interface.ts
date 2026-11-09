@@ -1224,6 +1224,7 @@ export interface MailingListPickerDialogResult {
 export interface MailingListSyncPreviewDialogData {
   mailingListUid: string;
   mailingListName: string;
+  committeeUid: string;
 }
 
 export interface MailingListSyncPreviewDialogResult {

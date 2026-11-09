@@ -19,6 +19,7 @@ import {
   SyncDiffRemove,
 } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
+import { UserService } from '@services/user.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, finalize, interval, of, Subscription, take } from 'rxjs';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
@@ -35,9 +36,21 @@ export class MailingListSyncPreviewDialogComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly destroyRef = inject(DestroyRef);
   private readonly mailingListService = inject(MailingListService);
+  private readonly userService = inject(UserService);
+
+  // The backend's POST sync-apply route unconditionally rejects impersonated applies via
+  // blockDuringImpersonation, so an impersonator could only ever see a 403 here. Gate Apply on the
+  // same established impersonating() pattern (weekly-brief-card, profile-panel,
+  // committee-settings-tab.component.ts) rather than letting them hit that 403 (copilot, #4911 review).
+  public readonly impersonating = this.userService.impersonating;
 
   public readonly mailingListUid: string = (this.config.data as MailingListSyncPreviewDialogData).mailingListUid;
   public readonly mailingListName: string = (this.config.data as MailingListSyncPreviewDialogData).mailingListName;
+  // The committee the admin was viewing when they opened this dialog — captured here rather than
+  // re-read live, so a relink (mailing list moved from committee A to B) between open and apply is
+  // caught by comparing against it, instead of trusting whatever committee_uid the diff reports
+  // (copilot, #4911 review).
+  private readonly committeeUid: string = (this.config.data as MailingListSyncPreviewDialogData).committeeUid;
 
   public addCheckboxForm = new FormGroup<Record<string, FormControl<boolean>>>({});
   public removeCheckboxForm = new FormGroup<Record<string, FormControl<boolean>>>({});
@@ -102,7 +115,7 @@ export class MailingListSyncPreviewDialogComponent {
 
   public apply(): void {
     const diff = this.diff();
-    if (!diff || this.applying()) return;
+    if (!diff || this.applying() || this.impersonating()) return;
 
     this.applying.set(true);
     this.applyAttempted.set(true);
@@ -211,6 +224,16 @@ export class MailingListSyncPreviewDialogComponent {
       )
       .subscribe((diff) => {
         if (!diff) return;
+
+        // The mailing list could have been relinked from this committee to another between this
+        // dialog opening and the diff loading — both requests would still target the new
+        // committee, so the preview-to-apply relink check alone can't catch it. Reject a mismatch
+        // up front and keep Apply disabled (copilot, #4911 review).
+        if (diff.committee_uid !== this.committeeUid) {
+          this.loadError.set('This mailing list is now linked to a different committee. Close this dialog and reopen Sync Now to see the current preview.');
+          return;
+        }
+
         this.diff.set(diff);
 
         // member_id is unique within a single diff's adds/removes and used directly as the

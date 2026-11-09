@@ -157,13 +157,20 @@
       }
     </div>
 
+    @if (impersonating()) {
+      <p class="text-[11.5px] text-amber-600" data-testid="sync-preview-impersonating-notice">
+        <i class="fa-light fa-triangle-exclamation"></i>
+        Applying sync changes isn't available while impersonating a user. You can still review this preview.
+      </p>
+    }
+
     <div class="mt-4 flex justify-end gap-2">
       <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="close()" data-testid="sync-preview-cancel-btn"></lfx-button>
       <lfx-button
         label="Apply Changes"
         severity="info"
         size="small"
-        [disabled]="selectedAdds().length === 0 && selectedRemoves().length === 0"
+        [disabled]="impersonating() || (selectedAdds().length === 0 && selectedRemoves().length === 0)"
         (onClick)="apply()"
         data-testid="sync-preview-apply-btn"></lfx-button>
     </div>

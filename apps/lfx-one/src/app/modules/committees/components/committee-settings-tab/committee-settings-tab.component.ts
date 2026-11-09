@@ -200,7 +200,7 @@ export class CommitteeSettingsTabComponent {
         const committeeChanged = this.lastCommitteeUid !== undefined && this.lastCommitteeUid !== c.uid;
         this.lastCommitteeUid = c.uid;
         const preserveWebhookEdit = !committeeChanged && this.form.controls.chat_webhook_url.dirty;
-        this.form.patchValue({
+        const incomingValues = {
           name: c.name,
           category: c.category,
           parent_uid: c.parent_uid ?? null,
@@ -215,7 +215,16 @@ export class CommitteeSettingsTabComponent {
           chat_channel: c.chat_channel ?? null,
           website: c.website ?? null,
           ...(preserveWebhookEdit ? {} : { chat_webhook_url: null }),
-        });
+        };
+        // On a same-committee refresh (e.g. after a reverse mailing-list sync via openSyncPreviewDialog),
+        // drop any field the admin has a dirty, unsaved edit on from the patch instead of clobbering it —
+        // chat_webhook_url already got this treatment above; this extends it to every other control
+        // (copilot, #4911 review). A committee-changed navigation still fully repatches: an unsaved edit
+        // for committee A must never survive onto committee B's form.
+        const patchValues = committeeChanged
+          ? incomingValues
+          : (Object.fromEntries(Object.entries(incomingValues).filter(([key]) => !this.form.get(key)?.dirty)) as typeof incomingValues);
+        this.form.patchValue(patchValues);
         if (!preserveWebhookEdit) {
           this.editingSlackWebhookUrl.set(false);
           this.slackWebhookRemovalStaged.set(false);
@@ -288,7 +297,7 @@ export class CommitteeSettingsTabComponent {
       modal: true,
       closable: true,
       draggable: false,
-      data: { mailingListUid: ml.uid, mailingListName: ml.group_name },
+      data: { mailingListUid: ml.uid, mailingListName: ml.group_name, committeeUid: this.committee().uid },
     });
 
     if (!ref) return;
