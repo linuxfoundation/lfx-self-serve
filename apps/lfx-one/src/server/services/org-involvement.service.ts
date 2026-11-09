@@ -19,21 +19,21 @@ import {
   ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW,
   ORG_CONTRIBUTORS_MONTHLY_VIEW,
   ORG_EVENT_ATTENDANCE_METRIC_COLUMNS,
+  ORG_EVENT_CROSS_ACCOUNT_PARTICIPANT_REF_COLUMN,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_DAYS,
   ORG_MAINTAINER_ROLES_MONTHLY_EXCLUDING_COLUMN,
   ORG_OVERVIEW_MAINTAINER_ROLES_RANGE,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import type { OrgEventAttendanceMonthlyRow, OrgScopeFilter, OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
+import type { OrgEventAttendanceMonthlyRow, OrgFamilyEventAttendanceMonthlyRow, OrgScopeFilter, OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
 
 import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { orgScopeColumn, orgScopeRowPredicate, resolveOrgScope } from '../helpers/org-scope.helper';
 import { orgTeamMembersPredicate, orgTeamMembersQueryOptions, readWithOrgTeamMembersFallback } from '../helpers/org-team-members.helper';
-import { isInvalidIdentifierError, isMissingObjectError } from '../helpers/snowflake-error.helper';
-import { logger } from './logger.service';
+import { isMissingObjectError } from '../helpers/snowflake-error.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -51,20 +51,6 @@ interface ContributorsMonthlyRow {
   MONTH_START_DATE: Date;
   UNIQUE_CONTRIBUTORS: number;
 }
-
-interface FamilyEventAttendanceMonthlyRow {
-  MONTH_START_DATE: Date;
-  ATTENDEES: number | null;
-  SPEAKERS: number | null;
-  TOTAL_ATTENDEES: number | null;
-  TOTAL_SPEAKERS: number | null;
-}
-
-/** ORG_EVENT_PARTICIPATION's participant number that is the same in every company, so a family counts a person once. */
-const ORG_EVENT_CROSS_ACCOUNT_REF_COLUMN = 'CROSS_ACCOUNT_PARTICIPANT_REF';
-
-/** Until that column is built: the person_key every company shares, else the company's own participant number. */
-const ORG_EVENT_PER_ACCOUNT_PARTICIPANT_KEY = "COALESCE(person_key, account_id || ':' || participant_ref)";
 
 /** Cross-foundation organization involvement analytics against the org_* platinum tables (account-level). */
 export class OrgInvolvementService {
@@ -217,18 +203,14 @@ export class OrgInvolvementService {
       };
     }
     const digest = createHash('sha256').update(JSON.stringify(companies)).digest('hex').slice(0, 16);
-    let degraded = false;
+    // `events-family:v2`: the months are the companies' months in ORG_EVENT_PARTICIPATION_MONTHLY, and no per-company
+    // fallback count is served.
     return withOrgCache(
       rollUpKey,
-      `events-family:v1:${digest}`,
+      `events-family:v2:${digest}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      async () => {
-        const fetched = await this.fetchFamilyEventAttendanceMonthly(rollUpKey, companies);
-        degraded = fetched.crossAccountRefMissing;
-        return fetched.response;
-      },
-      OrgInvolvementService.hasAccountId,
-      () => !degraded
+      () => this.fetchFamilyEventAttendanceMonthly(rollUpKey, companies),
+      OrgInvolvementService.hasAccountId
     );
   }
 
@@ -486,15 +468,16 @@ export class OrgInvolvementService {
     companies: readonly string[]
   ): Promise<{ response: OrgInvolvementMaintainersMonthlyResponse; rolesMissing: boolean }> {
     const accountList = companies.map(() => '?').join(', ');
-    const headlineQuery = (teamMembers: OrgTeamMembersFilter): string => `
+    // Both views carry IS_CDP_TEAM_MEMBER from the roles table, so only the view itself can be missing.
+    const headlineQuery = `
       SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_RECENT
       WHERE ACCOUNT_ID IN (${accountList})
         AND IS_ACTIVE_LAST_TWO_YEARS
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
-        ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}
+        ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS, 'IS_CDP_TEAM_MEMBER')}
     `;
-    const trendQuery = (teamMembers: OrgTeamMembersFilter): string => `
+    const trendQuery = `
       WITH months AS (
         SELECT DISTINCT METRIC_MONTH
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY
@@ -506,40 +489,24 @@ export class OrgInvolvementService {
         ON r.METRIC_MONTH = m.METRIC_MONTH
         AND r.ACCOUNT_ID IN (${accountList})
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
-        ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}
+        ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS, 'IS_CDP_TEAM_MEMBER')}
       GROUP BY m.METRIC_MONTH
       ORDER BY m.METRIC_MONTH ASC
     `;
 
     const [headline, trend] = await Promise.all([
-      readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_family_maintainer_roles', (teamMembers) =>
-        readMaintainerRoles<OrgMaintainerRolesCountRow>(
-          this.snowflakeService,
-          'ORG_MAINTAINER_ROLES_RECENT',
-          headlineQuery(teamMembers),
-          [...companies],
-          orgTeamMembersQueryOptions(teamMembers)
-        )
-      ),
-      readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_family_maintainer_roles_trend', (teamMembers) =>
-        readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(
-          this.snowflakeService,
-          'ORG_MAINTAINER_ROLE_MONTHS',
-          trendQuery(teamMembers),
-          [...companies, ...companies],
-          orgTeamMembersQueryOptions(teamMembers)
-        )
-      ),
+      readMaintainerRoles<OrgMaintainerRolesCountRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES_RECENT', headlineQuery, [...companies]),
+      readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLE_MONTHS', trendQuery, [...companies, ...companies]),
     ]);
 
     return {
       response: {
         accountId: rollUpKey,
-        maintainerRoles: headline.value === null ? null : (headline.value[0]?.MAINTAINER_ROLES ?? 0),
-        monthlyData: (trend.value ?? []).map((row) => row.ACTIVE_ROLES ?? 0),
-        monthlyLabels: (trend.value ?? []).map((row) => formatMonthLabel(row.METRIC_MONTH)),
+        maintainerRoles: headline === null ? null : (headline[0]?.MAINTAINER_ROLES ?? 0),
+        monthlyData: (trend ?? []).map((row) => row.ACTIVE_ROLES ?? 0),
+        monthlyLabels: (trend ?? []).map((row) => formatMonthLabel(row.METRIC_MONTH)),
       },
-      rolesMissing: headline.value === null || trend.value === null || headline.teamMembersUnavailable || trend.teamMembersUnavailable,
+      rolesMissing: headline === null || trend === null,
     };
   }
 
@@ -588,77 +555,59 @@ export class OrgInvolvementService {
   }
 
   /**
-   * Overview Event Attendees / Event Speakers for a family, counted live from the person-level participation table with
-   * the single-company rule (Employee match, registered or attended, ended events in the last 2 years; a month appears
-   * when anyone took part in it under any option), over every company of the family at once. A person credited to two
-   * companies counts once through the participant number every company shares. While that column is missing the read
-   * falls back to the person_key-first key, which still counts a person on two companies' rosters once, and the answer
-   * is served but not stored.
+   * Overview Event Attendees / Event Speakers for a family, with the single-company rule (Employee match, registered or
+   * attended, ended events in the last 2 years) over every company of the family at once. The months are the ones
+   * ORG_EVENT_PARTICIPATION_MONTHLY lists for those companies, so a family of one has that company's own series; the
+   * people are counted distinct per month and over the window from the person-level participation table through the
+   * participant number every company shares, so a person credited to two companies counts once. Until that column is in
+   * the warehouse the read fails rather than serve per-company counts that would count such a person twice.
    */
-  private async fetchFamilyEventAttendanceMonthly(
-    rollUpKey: string,
-    companies: readonly string[]
-  ): Promise<{ response: OrgInvolvementEventAttendanceMonthlyResponse; crossAccountRefMissing: boolean }> {
+  private async fetchFamilyEventAttendanceMonthly(rollUpKey: string, companies: readonly string[]): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     const accountList = companies.map(() => '?').join(', ');
-    const query = (participantKey: string): string => `
-      WITH participants AS (
+    const query = `
+      WITH months AS (
+        SELECT DISTINCT MONTH_START_DATE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_MONTHLY
+        WHERE ACCOUNT_ID IN (${accountList})
+      ),
+      participants AS (
         SELECT
           DATE_TRUNC('MONTH', event_date)::DATE AS MONTH_START_DATE,
-          ${participantKey} AS PARTICIPANT,
+          ${ORG_EVENT_CROSS_ACCOUNT_PARTICIPANT_REF_COLUMN} AS PARTICIPANT,
           is_counted_all_verified AS IS_ATTENDEE,
-          is_counted_speaker_verified AS IS_SPEAKER,
-          (is_counted_registered_all OR is_counted_attended_all OR is_counted_speaker_all) AS IS_SHOWN
+          is_counted_speaker_verified AS IS_SPEAKER
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION
         WHERE account_id IN (${accountList})
           AND event_date < CURRENT_DATE()
           AND event_date >= DATEADD(DAY, 0 - ?, CURRENT_DATE())
       )
       SELECT
-        MONTH_START_DATE,
-        COUNT(DISTINCT IFF(IS_ATTENDEE, PARTICIPANT, NULL)) AS ATTENDEES,
-        COUNT(DISTINCT IFF(IS_SPEAKER, PARTICIPANT, NULL)) AS SPEAKERS,
+        m.MONTH_START_DATE,
+        COUNT(DISTINCT IFF(p.IS_ATTENDEE, p.PARTICIPANT, NULL)) AS ATTENDEES,
+        COUNT(DISTINCT IFF(p.IS_SPEAKER, p.PARTICIPANT, NULL)) AS SPEAKERS,
         (SELECT COUNT(DISTINCT IFF(IS_ATTENDEE, PARTICIPANT, NULL)) FROM participants) AS TOTAL_ATTENDEES,
         (SELECT COUNT(DISTINCT IFF(IS_SPEAKER, PARTICIPANT, NULL)) FROM participants) AS TOTAL_SPEAKERS
-      FROM participants
-      GROUP BY MONTH_START_DATE
-      HAVING COUNT_IF(IS_SHOWN) > 0
-      ORDER BY MONTH_START_DATE ASC
+      FROM months AS m
+      LEFT JOIN participants AS p ON p.MONTH_START_DATE = m.MONTH_START_DATE
+      GROUP BY m.MONTH_START_DATE
+      ORDER BY m.MONTH_START_DATE ASC
     `;
-    const binds = [...companies, ORG_LENS_TIME_RANGE_DAYS['730d']];
 
-    let rows: FamilyEventAttendanceMonthlyRow[];
-    let crossAccountRefMissing = false;
-    try {
-      rows = (
-        await this.snowflakeService.execute<FamilyEventAttendanceMonthlyRow>(query(ORG_EVENT_CROSS_ACCOUNT_REF_COLUMN), binds, {
-          expectInvalidIdentifier: ORG_EVENT_CROSS_ACCOUNT_REF_COLUMN,
-        })
-      ).rows;
-    } catch (error) {
-      if (!isInvalidIdentifierError(error, ORG_EVENT_CROSS_ACCOUNT_REF_COLUMN)) {
-        throw error;
-      }
-      logger.warning(
-        undefined,
-        'get_org_involvement_family_events',
-        `${ORG_EVENT_CROSS_ACCOUNT_REF_COLUMN} is not in the warehouse yet; counting by person_key, then each company's participant number`,
-        { err: error, column: ORG_EVENT_CROSS_ACCOUNT_REF_COLUMN }
-      );
-      rows = (await this.snowflakeService.execute<FamilyEventAttendanceMonthlyRow>(query(ORG_EVENT_PER_ACCOUNT_PARTICIPANT_KEY), binds)).rows;
-      crossAccountRefMissing = true;
-    }
+    // The column is expected to be missing until it is built, so its absence does not count toward the circuit breaker.
+    const { rows } = await this.snowflakeService.execute<OrgFamilyEventAttendanceMonthlyRow>(
+      query,
+      [...companies, ...companies, ORG_LENS_TIME_RANGE_DAYS['730d']],
+      { expectInvalidIdentifier: ORG_EVENT_CROSS_ACCOUNT_PARTICIPANT_REF_COLUMN }
+    );
 
     return {
-      response: {
-        accountId: rollUpKey,
-        accountName: '',
-        totalAttended: rows[0]?.TOTAL_ATTENDEES ?? 0,
-        totalSpeakers: rows[0]?.TOTAL_SPEAKERS ?? 0,
-        attendeesMonthlyData: rows.map((row) => row.ATTENDEES ?? 0),
-        speakersMonthlyData: rows.map((row) => row.SPEAKERS ?? 0),
-        monthlyLabels: rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
-      },
-      crossAccountRefMissing,
+      accountId: rollUpKey,
+      accountName: '',
+      totalAttended: rows[0]?.TOTAL_ATTENDEES ?? 0,
+      totalSpeakers: rows[0]?.TOTAL_SPEAKERS ?? 0,
+      attendeesMonthlyData: rows.map((row) => row.ATTENDEES ?? 0),
+      speakersMonthlyData: rows.map((row) => row.SPEAKERS ?? 0),
+      monthlyLabels: rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
     };
   }
 }

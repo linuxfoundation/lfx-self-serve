@@ -796,7 +796,7 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     expect(sql).not.toContain('IS_LF_PROJECT');
     expect(sql).not.toContain('ROLE_START_DATE');
     expect(binds).toEqual([PARENT_CO, CHILD_CO]);
-    expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLES_RECENT', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
+    expect(options).toEqual({ expectMissingObject: 'ORG_MAINTAINER_ROLES_RECENT' });
   });
 
   it("selects the trend from the modeled role-months over the family's companies, on the per-company view's months", async () => {
@@ -813,7 +813,7 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     expect(sql).not.toContain('GENERATOR');
     expect(sql).not.toContain('ROLE_START_DATE');
     expect(binds).toEqual([PARENT_CO, CHILD_CO, PARENT_CO, CHILD_CO]);
-    expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLE_MONTHS', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
+    expect(options).toEqual({ expectMissingObject: 'ORG_MAINTAINER_ROLE_MONTHS' });
   });
 
   it('reads each company once and keys the cache on the set, whatever order or repeats it arrives in', async () => {
@@ -848,17 +848,25 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     });
   });
 
-  it('counts team members, and does not store the card, while the team-member flag is missing', async () => {
+  it('reads the team-member flag the views ship with, so a missing flag fails the card instead of counting team members', async () => {
     const answer = execute.getMockImplementation()!;
     execute.mockImplementation(async (sql: string, binds: unknown[]) => {
       if (sql.includes('IS_CDP_TEAM_MEMBER')) throw invalidIdentifier('IS_CDP_TEAM_MEMBER');
       return answer(sql, binds);
     });
 
-    const response = await new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
+    await expect(new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO])).rejects.toThrow('IS_CDP_TEAM_MEMBER');
+    expect(execute.mock.calls.every(([query]) => String(query).includes('NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)'))).toBe(true);
+  });
 
-    expect(response).toEqual({ accountId: ROLL_UP, maintainerRoles: 5, monthlyData: [2, 2, 2, 2, 2, 2, 3, 3, 3, 2, 2, 3], monthlyLabels: LABELS });
-    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
+  it('fails the card while the per-company monthly view the months come from is missing, as the contributor trend does', async () => {
+    const answer = execute.getMockImplementation()!;
+    execute.mockImplementation(async (sql: string, binds: unknown[]) => {
+      if (isRolesTrend(sql)) throw missing('ORG_MAINTAINER_ROLES_MONTHLY');
+      return answer(sql, binds);
+    });
+
+    await expect(new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO])).rejects.toThrow('ORG_MAINTAINER_ROLES_MONTHLY');
   });
 
   it('serves the headline with an empty trend, and does not store the card, while the role-months view is missing', async () => {
@@ -989,105 +997,134 @@ describe('OrgInvolvementService.getFamilyEventAttendanceMonthly', () => {
   const CHILD_CO = '001000000000002AAA';
   const JAN = new Date(2030, 0, 1);
   const FEB = new Date(2030, 1, 1);
+  const MAR = new Date(2030, 2, 1);
+  const APR = new Date(2030, 3, 1);
 
   interface ParticipationRow {
     account: string;
     month: Date;
     crossRef: number;
-    participantRef: number;
-    personKey: string | null;
     attendee: boolean;
     speaker: boolean;
+    // Counted under some "Counted by" option, so the monthly table lists the month.
+    shown: boolean;
+    // Ended in the last 730 days.
+    inWindow: boolean;
   }
 
-  // One person on both rosters attends in January through both companies; one speaker without a roster link is credited
-  // to both companies in February (different per-company numbers, one shared number); one attendee per company is their own.
+  // One person on both rosters attends in January through both companies; one speaker is credited to both companies in
+  // February; each company has one attendee of its own. March has only a self-declared registrant (a month the monthly
+  // table lists with nobody under Employee match), April only a row no option counts, and one attendance is too old.
   const PARTICIPATION: ParticipationRow[] = [
-    { account: PARENT_CO, month: JAN, crossRef: 1001, participantRef: 11, personKey: 'lfid-shared', attendee: true, speaker: false },
-    { account: CHILD_CO, month: JAN, crossRef: 1001, participantRef: 21, personKey: 'lfid-shared', attendee: true, speaker: false },
-    { account: PARENT_CO, month: FEB, crossRef: 2002, participantRef: 12, personKey: null, attendee: false, speaker: true },
-    { account: CHILD_CO, month: FEB, crossRef: 2002, participantRef: 22, personKey: null, attendee: false, speaker: true },
-    { account: PARENT_CO, month: FEB, crossRef: 3003, participantRef: 13, personKey: 'lfid-parent', attendee: true, speaker: false },
-    { account: CHILD_CO, month: JAN, crossRef: 4004, participantRef: 23, personKey: null, attendee: true, speaker: false },
+    { account: PARENT_CO, month: JAN, crossRef: 1001, attendee: true, speaker: false, shown: true, inWindow: true },
+    { account: CHILD_CO, month: JAN, crossRef: 1001, attendee: true, speaker: false, shown: true, inWindow: true },
+    { account: PARENT_CO, month: FEB, crossRef: 2002, attendee: false, speaker: true, shown: true, inWindow: true },
+    { account: CHILD_CO, month: FEB, crossRef: 2002, attendee: false, speaker: true, shown: true, inWindow: true },
+    { account: PARENT_CO, month: FEB, crossRef: 3003, attendee: true, speaker: false, shown: true, inWindow: true },
+    { account: CHILD_CO, month: JAN, crossRef: 4004, attendee: true, speaker: false, shown: true, inWindow: true },
+    { account: PARENT_CO, month: MAR, crossRef: 5005, attendee: false, speaker: false, shown: true, inWindow: true },
+    { account: CHILD_CO, month: APR, crossRef: 6006, attendee: false, speaker: false, shown: false, inWindow: true },
+    { account: PARENT_CO, month: new Date(2027, 11, 1), crossRef: 7007, attendee: true, speaker: false, shown: true, inWindow: false },
   ];
 
-  const usesCrossRef = (sql: string): boolean => sql.includes('CROSS_ACCOUNT_PARTICIPANT_REF');
+  const distinct = (rows: ParticipationRow[], flag: 'attendee' | 'speaker'): number => new Set(rows.filter((row) => row[flag]).map((row) => row.crossRef)).size;
+  const monthsOf = (rows: ParticipationRow[]): number[] =>
+    [...new Set(rows.filter((row) => row.shown).map((row) => row.month.getTime()))].sort((a, b) => a - b);
+  const inMonth = (rows: ParticipationRow[], time: number): ParticipationRow[] => rows.filter((row) => row.month.getTime() === time);
 
-  /** Answers the family read from the fixture: the companies bound, keyed the way the SQL keys a participant. */
-  const answer = (sql: string, binds: unknown[]): { rows: Record<string, unknown>[] } => {
-    const key = (row: ParticipationRow): string => (usesCrossRef(sql) ? String(row.crossRef) : (row.personKey ?? `${row.account}:${row.participantRef}`));
-    const rows = PARTICIPATION.filter((row) => binds.includes(row.account));
-    const distinct = (subset: ParticipationRow[], flag: 'attendee' | 'speaker'): number => new Set(subset.filter((row) => row[flag]).map(key)).size;
-    const months = [...new Set(rows.map((row) => row.month.getTime()))].sort((a, b) => a - b);
-    return {
-      rows: months.map((time) => {
-        const inMonth = rows.filter((row) => row.month.getTime() === time);
-        return {
-          MONTH_START_DATE: new Date(time),
-          ATTENDEES: distinct(inMonth, 'attendee'),
-          SPEAKERS: distinct(inMonth, 'speaker'),
-          TOTAL_ATTENDEES: distinct(rows, 'attendee'),
-          TOTAL_SPEAKERS: distinct(rows, 'speaker'),
-        };
-      }),
-    };
+  /** ORG_EVENT_PARTICIPATION_MONTHLY as the warehouse builds it from the same rows: one company, its listed months, its totals. */
+  const monthlyTable = (account: unknown): Record<string, unknown>[] => {
+    const rows = PARTICIPATION.filter((row) => row.account === account && row.inWindow);
+    return monthsOf(rows).map((time) => ({
+      ACCOUNT_ID: account,
+      ACCOUNT_NAME: 'Company',
+      MONTH_START_DATE: new Date(time),
+      ATTENDEES_ALL_VERIFIED: distinct(inMonth(rows, time), 'attendee'),
+      SPEAKERS_VERIFIED: distinct(inMonth(rows, time), 'speaker'),
+      TOTAL_ATTENDEES_ALL_VERIFIED: distinct(rows, 'attendee'),
+      TOTAL_SPEAKERS_VERIFIED: distinct(rows, 'speaker'),
+    }));
+  };
+
+  const isFamilyRead = (sql: string): boolean => sql.includes('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION\n');
+
+  /** The family read over the same rows: the months the bound companies' monthly rows list, the people the participation rows hold. */
+  const familyRead = (sql: string, binds: unknown[]): Record<string, unknown>[] => {
+    const companies = binds.slice(0, (binds.length - 1) / 2);
+    const windowed = sql.includes('AND event_date >= DATEADD(DAY, 0 - ?, CURRENT_DATE())') && binds.at(-1) === 730;
+    const months = [...new Set(companies.flatMap((account) => monthlyTable(account).map((row) => (row['MONTH_START_DATE'] as Date).getTime())))].sort(
+      (a, b) => a - b
+    );
+    const participants = PARTICIPATION.filter((row) => binds.slice(companies.length, -1).includes(row.account) && (!windowed || row.inWindow));
+    return months.map((time) => ({
+      MONTH_START_DATE: new Date(time),
+      ATTENDEES: distinct(inMonth(participants, time), 'attendee'),
+      SPEAKERS: distinct(inMonth(participants, time), 'speaker'),
+      TOTAL_ATTENDEES: distinct(participants, 'attendee'),
+      TOTAL_SPEAKERS: distinct(participants, 'speaker'),
+    }));
   };
 
   beforeEach(() => {
     execute.mockReset();
     withOrgCache.mockClear();
-    execute.mockImplementation(async (sql: string, binds: unknown[]) => answer(sql, binds));
+    execute.mockImplementation(async (sql: string, binds: unknown[]) => ({ rows: isFamilyRead(sql) ? familyRead(sql, binds) : monthlyTable(binds[0]) }));
   });
 
   it('counts a person credited to two companies of the family once, as an attendee and as a speaker', async () => {
-    const response = await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
+    const service = new OrgInvolvementService();
+    const family = await service.getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
+    const parent = await service.getEventAttendanceMonthly(PARENT_CO);
+    const child = await service.getEventAttendanceMonthly(CHILD_CO);
 
-    expect(response).toEqual({
+    expect(family).toEqual({
       accountId: ROLL_UP,
       accountName: '',
       totalAttended: 3,
       totalSpeakers: 1,
-      attendeesMonthlyData: [2, 1],
-      speakersMonthlyData: [0, 1],
-      monthlyLabels: ['Jan 2030', 'Feb 2030'],
+      attendeesMonthlyData: [2, 1, 0],
+      speakersMonthlyData: [0, 1, 0],
+      monthlyLabels: ['Jan 2030', 'Feb 2030', 'Mar 2030'],
     });
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(withOrgCache.mock.calls.at(-1)?.[0]).toBe(ROLL_UP);
-    expect(withOrgCache.mock.calls.at(-1)?.[1]).toMatch(/^events-family:v1:[0-9a-f]{16}$/);
-    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(true);
+    expect(parent.totalAttended + child.totalAttended).toBe(4);
+    expect(parent.totalSpeakers + child.totalSpeakers).toBe(2);
+    expect(withOrgCache.mock.calls[0]?.[0]).toBe(ROLL_UP);
+    expect(withOrgCache.mock.calls[0]?.[1]).toMatch(/^events-family:v2:[0-9a-f]{16}$/);
   });
 
-  it('reads the person-level table with the single-company rule over every company, binding the companies then 730 days', async () => {
+  it.each([PARENT_CO, CHILD_CO])("answers a family of one with that company's own card (%s)", async (company) => {
+    const service = new OrgInvolvementService();
+
+    const family = await service.getFamilyEventAttendanceMonthly(ROLL_UP, [company]);
+    const single = await service.getEventAttendanceMonthly(company);
+
+    expect({ ...family, accountId: company, accountName: single.accountName }).toEqual(single);
+  });
+
+  it("takes the months from the companies' monthly rows and counts the shared participant number over the window", async () => {
     await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
 
     const [sql, binds, options] = execute.mock.calls[0] as [string, unknown[], unknown];
-    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION\n');
-    expect(sql).not.toContain('ORG_EVENT_PARTICIPATION_MONTHLY');
+    expect(sql).toContain(
+      'SELECT DISTINCT MONTH_START_DATE\n        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_MONTHLY\n        WHERE ACCOUNT_ID IN (?, ?)'
+    );
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION\n        WHERE account_id IN (?, ?)');
     expect(sql).toContain('CROSS_ACCOUNT_PARTICIPANT_REF AS PARTICIPANT');
-    expect(sql).toContain('WHERE account_id IN (?, ?)');
     expect(sql).toContain('AND event_date < CURRENT_DATE()');
     expect(sql).toContain('AND event_date >= DATEADD(DAY, 0 - ?, CURRENT_DATE())');
     expect(sql).toContain('is_counted_all_verified AS IS_ATTENDEE');
     expect(sql).toContain('is_counted_speaker_verified AS IS_SPEAKER');
-    expect(sql).toContain('(is_counted_registered_all OR is_counted_attended_all OR is_counted_speaker_all) AS IS_SHOWN');
-    expect(sql).toContain('HAVING COUNT_IF(IS_SHOWN) > 0');
-    expect(sql).not.toMatch(/SELF_REPORTED|_COMPANY_EMAIL|is_counted_all_all/);
-    expect(binds).toEqual([PARENT_CO, CHILD_CO, 730]);
+    expect(sql).toContain('LEFT JOIN participants AS p ON p.MONTH_START_DATE = m.MONTH_START_DATE');
+    expect(sql).not.toMatch(/HAVING|IS_SHOWN|person_key|participant_ref\b|SELF_REPORTED|_COMPANY_EMAIL|is_counted_all_all/);
+    expect(binds).toEqual([PARENT_CO, CHILD_CO, PARENT_CO, CHILD_CO, 730]);
     expect(options).toEqual({ expectInvalidIdentifier: 'CROSS_ACCOUNT_PARTICIPANT_REF' });
-  });
-
-  it("answers a family of one with that company's own numbers", async () => {
-    const family = await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [CHILD_CO]);
-
-    expect(family).toMatchObject({ totalAttended: 2, totalSpeakers: 1, attendeesMonthlyData: [2, 0], speakersMonthlyData: [0, 1] });
-    expect((execute.mock.calls[0] as [string, unknown[]])[1]).toEqual([CHILD_CO, 730]);
   });
 
   it('reads each company once and keys the cache on the set, whatever order or repeats it arrives in', async () => {
     const service = new OrgInvolvementService();
     await service.getFamilyEventAttendanceMonthly(ROLL_UP, [CHILD_CO, PARENT_CO, CHILD_CO]);
     const firstKey = withOrgCache.mock.calls.at(-1)?.[1];
-    expect((execute.mock.calls[0] as [string, unknown[]])[1]).toEqual([PARENT_CO, CHILD_CO, 730]);
+    expect((execute.mock.calls[0] as [string, unknown[]])[1]).toEqual([PARENT_CO, CHILD_CO, PARENT_CO, CHILD_CO, 730]);
     await service.getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
 
     expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe(firstKey);
@@ -1113,9 +1150,7 @@ describe('OrgInvolvementService.getFamilyEventAttendanceMonthly', () => {
   });
 
   it('answers zero people and no months when no company of the family took part in the window', async () => {
-    execute.mockResolvedValue({ rows: [] });
-
-    expect(await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO])).toMatchObject({
+    expect(await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, ['001000000000009AAA'])).toMatchObject({
       totalAttended: 0,
       totalSpeakers: 0,
       attendeesMonthlyData: [],
@@ -1124,24 +1159,14 @@ describe('OrgInvolvementService.getFamilyEventAttendanceMonthly', () => {
     });
   });
 
-  it('counts by person_key, then each company number, and does not store the card, while the shared number is missing', async () => {
-    execute.mockImplementation(async (sql: string, binds: unknown[]) => {
-      if (usesCrossRef(sql)) throw invalidIdentifier('CROSS_ACCOUNT_PARTICIPANT_REF');
-      return answer(sql, binds);
-    });
+  it('fails the card, with no per-company fallback count, while the shared participant number is missing', async () => {
+    execute.mockRejectedValue(invalidIdentifier('CROSS_ACCOUNT_PARTICIPANT_REF'));
 
-    const response = await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
-
-    // The person on both rosters still counts once; the speaker with no roster link counts once per company.
-    expect(response).toMatchObject({ totalAttended: 3, totalSpeakers: 2, attendeesMonthlyData: [2, 1], speakersMonthlyData: [0, 2] });
-    expect(execute).toHaveBeenCalledTimes(2);
-    const [fallbackSql, fallbackBinds] = execute.mock.calls[1] as [string, unknown[]];
-    expect(fallbackSql).toContain("COALESCE(person_key, account_id || ':' || participant_ref) AS PARTICIPANT");
-    expect(fallbackBinds).toEqual([PARENT_CO, CHILD_CO, 730]);
-    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
+    await expect(new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO])).rejects.toThrow('CROSS_ACCOUNT_PARTICIPANT_REF');
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
-  it('fails the card on any other warehouse error, without a fallback read', async () => {
+  it('fails the card on any other warehouse error', async () => {
     execute.mockRejectedValue(new Error('Warehouse timeout'));
 
     await expect(new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO])).rejects.toThrow('Warehouse timeout');
