@@ -153,10 +153,22 @@
             </div>
 
             @if (linkedCommittees().length > 0) {
-              <div class="flex flex-wrap gap-2" data-testid="mailing-list-view-committees-list">
-                @for (committee of linkedCommittees(); track committee.uid) {
-                  <lfx-tag [value]="committee.name || committee.uid" severity="info" [attr.data-testid]="'mailing-list-view-committee-' + committee.uid">
-                  </lfx-tag>
+              <div class="flex flex-wrap gap-x-4 gap-y-2" data-testid="mailing-list-view-committees-list">
+                @for (group of groupLinks(); track $index) {
+                  @if (group.commands) {
+                    <a
+                      [routerLink]="group.commands"
+                      [queryParams]="editQueryParams()"
+                      [state]="groupLinkState"
+                      class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                      [attr.data-testid]="'mailing-list-view-committee-' + group.uid">
+                      {{ group.name || group.uid }}
+                    </a>
+                  } @else {
+                    <span class="text-sm font-medium text-gray-700" [attr.data-testid]="'mailing-list-view-committee-text-' + $index">{{
+                      group.name || '-'
+                    }}</span>
+                  }
                 }
               </div>
             } @else {

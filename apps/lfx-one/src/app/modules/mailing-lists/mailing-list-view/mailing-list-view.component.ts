@@ -17,8 +17,14 @@ import {
   MAILING_LIST_VISIBILITY_LABELS,
 } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess } from '@lfx-one/shared/enums';
-import { CommitteeReference, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
-import { getMailingListCommands, getMailingListEmail, getMailingListGroupsIoUrl, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
+import { CommitteeReference, GroupLinkState, GroupsIOMailingList, MailingListGroupLink } from '@lfx-one/shared/interfaces';
+import {
+  getEntityCommands,
+  getMailingListCommands,
+  getMailingListEmail,
+  getMailingListGroupsIoUrl,
+  getMailingListLinkQueryParams,
+} from '@lfx-one/shared/utils';
 import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
 import { LensService } from '@services/lens.service';
@@ -93,6 +99,9 @@ export class MailingListViewComponent {
   public readonly emailAddress: Signal<string> = this.initEmailAddress();
   public readonly memberCount: Signal<number> = this.initMemberCount();
   public readonly linkedCommittees: Signal<CommitteeReference[]> = this.initLinkedCommittees();
+  public readonly groupLinks: Signal<MailingListGroupLink[]> = this.initGroupLinks();
+  // The group page returns to the mailing lists and restores the Me lens when the user opened this page from there.
+  protected readonly groupLinkState: GroupLinkState = { backLabel: this.mailingListLabel.plural, backPath: '/mailing-lists', fromMeLens: this.fromMeLens };
   public readonly postingTypeLabel: Signal<string> = this.initPostingTypeLabel();
   public readonly audienceAccessLabel: Signal<string> = this.initAudienceAccessLabel();
   public readonly visibilityLabel: Signal<string> = this.initVisibilityLabel();
@@ -188,6 +197,21 @@ export class MailingListViewComponent {
 
   private initLinkedCommittees(): Signal<CommitteeReference[]> {
     return computed(() => this.mailingList()?.committees || []);
+  }
+
+  /** Each linked group with its group-details link from the list's own tier; a group with no uid shows as plain text. */
+  private initGroupLinks(): Signal<MailingListGroupLink[]> {
+    return computed(() => {
+      const isFoundation = this.mailingList()?.is_foundation;
+      return this.linkedCommittees().map((committee) => {
+        const uid = committee.uid?.trim();
+        return {
+          uid: committee.uid,
+          name: committee.name?.trim() || null,
+          commands: uid ? (getEntityCommands('groups', uid, isFoundation) ?? ['/groups', uid]) : null,
+        };
+      });
+    });
   }
 
   private initPostingTypeLabel(): Signal<string> {
