@@ -7,41 +7,33 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import {
   HEALTH_METRICS_MEMBERS_CHART_TIP_ROOM_PX,
-  HEALTH_METRICS_MEMBERS_GROWTH_COLORS,
   HEALTH_METRICS_MEMBERS_GROWTH_PLOT,
   HEALTH_METRICS_MEMBERS_GROWTH_UNMEASURED,
-  HEALTH_METRICS_MEMBERS_GROWTH_VIEW_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsMembersGrowthView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
-import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
 import { HealthMetricsChartTipComponent } from '../../../components/health-metrics-chart-tip/health-metrics-chart-tip.component';
-import { OverviewKpiStripComponent } from '../../../health-metrics-overview/components/overview-kpi-strip/overview-kpi-strip.component';
+import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
-import type {
-  HealthMetricsMembersGrowth,
-  HealthMetricsMembersGrowthQuery,
-  HealthMetricsMembersGrowthView,
-  HealthMetricsMembersGrowthViewMode,
-} from '@lfx-one/shared/interfaces';
+import type { HealthMetricsMembersGrowth, HealthMetricsMembersGrowthQuery, HealthMetricsMembersGrowthView } from '@lfx-one/shared/interfaces';
 
 /**
- * `#growth` — new members this year, cumulative by month, against last year and the earlier years. The section
- * always shows the running year, so the period pill does not change it; one read serves both chart views.
+ * `#growth` — cumulative new members by month, one line per year as PCC draws it. The period pill only picks which
+ * year's line is solid, so one read serves every period.
  */
 @Component({
   selector: 'lfx-members-growth',
-  imports: [EmptyStateComponent, HealthMetricsChartTipComponent, OverviewKpiStripComponent, Skeleton, UiSwitchComponent, UiSwitchOptionComponent],
+  imports: [EmptyStateComponent, HealthMetricsChartTipComponent, Skeleton],
   templateUrl: './members-growth.component.html',
 })
 export class MembersGrowthComponent {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
   /** Fires once the section settles, `true` when there is nothing to show; its height changes, moving every anchor below. */
@@ -51,13 +43,10 @@ export class MembersGrowthComponent {
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
-  protected readonly viewOptions = HEALTH_METRICS_MEMBERS_GROWTH_VIEW_OPTIONS;
-  protected readonly colors = HEALTH_METRICS_MEMBERS_GROWTH_COLORS;
   protected readonly plot = HEALTH_METRICS_MEMBERS_GROWTH_PLOT;
   protected readonly viewBox = `0 0 ${HEALTH_METRICS_MEMBERS_GROWTH_PLOT.width} ${HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height}`;
-  /** Gridlines at each quarter of the plot, top down; the base is the axis. */
-  protected readonly gridlines = [0, 0.25, 0.5, 0.75].map((fraction) => fraction * HEALTH_METRICS_MEMBERS_GROWTH_PLOT.height);
-  protected readonly mode = signal<HealthMetricsMembersGrowthViewMode>(HEALTH_METRICS_MEMBERS_GROWTH_VIEW_OPTIONS[0].value);
+  /** The year whose legend item is hovered; every other line fades. */
+  protected readonly highlight = signal<number | null>(null);
   /** The month whose popup shows, and whether it opens to the month's left for want of room. */
   protected readonly tip = signal<{ index: number; flip: boolean } | null>(null);
 
@@ -65,13 +54,22 @@ export class MembersGrowthComponent {
     foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
   }));
   protected readonly response: Signal<HealthMetricsMembersGrowth> = this.initResponse();
-  protected readonly view: Signal<HealthMetricsMembersGrowthView> = computed(() => buildHealthMetricsMembersGrowthView(this.response(), this.mode()));
+  protected readonly view: Signal<HealthMetricsMembersGrowthView> = computed(() =>
+    buildHealthMetricsMembersGrowthView(this.response(), this.chrome.selectedRange())
+  );
   /** No month was measured; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.view().measured);
 
-  protected onModeChange(value: string | null): void {
-    const option = HEALTH_METRICS_MEMBERS_GROWTH_VIEW_OPTIONS.find((candidate) => candidate.value === value);
-    if (option) this.mode.set(option.value);
+  /** A line's opacity: full unless another year's legend item is hovered. */
+  protected opacity(year: number): number {
+    const highlighted = this.highlight();
+    return highlighted === null || highlighted === year ? 1 : 0.15;
+  }
+
+  /** On a phone only the first and last months show, pinned to the plot's edges. */
+  protected monthLabelClass(first: boolean, last: boolean): string {
+    if (first) return 'max-sm:!left-0 max-sm:translate-x-0';
+    return last ? 'max-sm:!left-auto max-sm:right-0 max-sm:translate-x-0' : 'max-sm:hidden';
   }
 
   /** Opens a month's popup beside it, on its left only when the right has no room for it and the left has more. */
@@ -103,6 +101,7 @@ export class MembersGrowthComponent {
           this.loading.set(true);
           this.loadFailed.set(false);
           this.tip.set(null);
+          this.highlight.set(null);
           this.reading.emit();
         }),
         switchMap((query) =>
@@ -115,7 +114,7 @@ export class MembersGrowthComponent {
             tap((response) => {
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit(!this.loadFailed() && !buildHealthMetricsMembersGrowthView(response, this.mode()).measured);
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && !buildHealthMetricsMembersGrowthView(response, this.chrome.selectedRange()).measured);
             })
           )
         )

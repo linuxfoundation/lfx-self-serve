@@ -9,6 +9,7 @@ import { UserService } from '@services/user.service';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { MembersGrowthComponent } from './members-growth.component';
 
 import type { HealthMetricsMembersGrowth } from '@lfx-one/shared/interfaces';
@@ -38,6 +39,7 @@ describe('MembersGrowthComponent', () => {
     await TestBed.configureTestingModule({
       imports: [MembersGrowthComponent],
       providers: [
+        HealthMetricsChromeService,
         { provide: AnalyticsService, useValue: { getMembersGrowth } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
@@ -67,10 +69,18 @@ describe('MembersGrowthComponent', () => {
     return query(testId, root)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
   }
 
-  function lines(): string[] {
-    return [...fixture.nativeElement.querySelectorAll('[data-testid^="members-growth-line-"]')].map((line: Element) =>
-      (line.getAttribute('data-testid') ?? '').replace('members-growth-line-', '')
-    );
+  function lines(): Element[] {
+    return [...fixture.nativeElement.querySelectorAll('[data-testid^="members-growth-line-"]')];
+  }
+
+  function years(): string[] {
+    return lines().map((line) => (line.getAttribute('data-testid') ?? '').replace('members-growth-line-', ''));
+  }
+
+  function solid(): string[] {
+    return lines()
+      .filter((line) => !line.hasAttribute('stroke-dasharray'))
+      .map((line) => (line.getAttribute('data-testid') ?? '').replace('members-growth-line-', ''));
   }
 
   beforeEach(() => {
@@ -96,53 +106,48 @@ describe('MembersGrowthComponent', () => {
     expect(verdicts).toEqual([false]);
   });
 
-  it('leads with the metrics row, the projection carrying its tooltip', async () => {
+  it('draws one line per year, oldest first, with the period’s year solid and the rest dashed', async () => {
     await render();
 
-    expect(text('members-growth-kpis-new')).toContain('New members in 2026 so far');
-    expect(text('members-growth-kpis-new-value')).toBe('801');
-    expect(text('members-growth-kpis-change-value')).toBe('+391');
-    expect(text('members-growth-kpis-change-delta')).toContain('+95%');
-    expect(text('members-growth-kpis-since-value')).toBe('—');
-    expect(text('members-growth-kpis-projected-value')).toBe('~874');
-  });
+    expect(years()).toEqual(['2018', '2024', '2025', '2026']);
+    expect(solid()).toEqual(['2026']);
+    expect(text('members-growth-y-max')).toBe('1,000');
+    expect([...(query('members-growth-legend')?.children ?? [])].map((item) => item.textContent?.trim())).toEqual(['2018', '2024', '2025', '2026']);
 
-  it('draws Highlights with the range, then each earlier year in All years without a re-read', async () => {
-    await render();
-
-    expect(lines()).toEqual(['projected', '2025', '2026']);
-    expect(query('members-growth-band')).not.toBeNull();
-    expect(text('members-growth-today')).toBe('Today');
-    expect(text('members-growth-label-current')).toBe('2026: 801');
-    expect(text('members-growth-label-projected')).toBe('~874 projected');
-    expect([...(query('members-growth-legend')?.children ?? [])].map((item) => item.textContent?.trim())).toEqual([
-      '2026',
-      '2026 projected',
-      '2025',
-      '2018–2024 range',
-    ]);
-
-    query('members-growth-view')?.querySelector<HTMLInputElement>('input[value="all"]')?.click();
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     await settle();
 
-    expect(lines()).toEqual(['2018', '2024', 'projected', '2025', '2026']);
-    expect(query('members-growth-band')).toBeNull();
+    expect(solid()).toEqual(['2025']);
     expect(getMembersGrowth).toHaveBeenCalledTimes(1);
+  });
+
+  it('fades every other year while a legend item is hovered', async () => {
+    await render();
+    const legend = query('members-growth-legend-2025')!;
+
+    legend.dispatchEvent(new Event('mouseenter'));
+    await settle();
+    expect(lines().map((line) => line.getAttribute('stroke-opacity'))).toEqual(['0.15', '0.15', '1', '0.15']);
+    expect(query('members-growth-legend-2026')?.style.opacity).toBe('0.15');
+
+    legend.dispatchEvent(new Event('mouseleave'));
+    await settle();
+    expect(lines().every((line) => line.getAttribute('stroke-opacity') === '1')).toBe(true);
   });
 
   it('shows a month’s popup while it is hovered or focused', async () => {
     await render();
-    const month = query('members-growth-month-12')!;
+    const month = query('members-growth-month-11')!;
 
     month.dispatchEvent(new Event('mouseenter'));
     await settle();
-    expect(text('health-metrics-chart-tip-title', month)).toBe('Dec · cumulative new members');
+    expect(text('health-metrics-chart-tip-title', month)).toBe('November');
     expect(
       [...month.querySelectorAll('[data-testid="health-metrics-chart-tip-row"]')].map((row) =>
         [...row.children].map((side) => side.textContent?.trim()).join(' ')
       )
-    ).toEqual(['2026 projected ~874', '2025 480', '2024 453', '2018 433']);
-    expect(month.getAttribute('aria-label')).toContain('Dec · cumulative new members. 2026 projected: ~874');
+    ).toEqual(['2026 801', '2025 410', '2024 420', '2018 404']);
+    expect(month.getAttribute('aria-label')).toBe('November. 2026: 801, 2025: 410, 2024: 420, 2018: 404');
 
     month.dispatchEvent(new Event('mouseleave'));
     await settle();

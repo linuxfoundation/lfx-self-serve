@@ -31,9 +31,6 @@ import type {
   HealthMetricsMembersDirectoryTierOption,
   HealthMetricsMembersEngagementLevel,
   HealthMetricsMembersGrowth,
-  HealthMetricsMembersGrowthLabelBox,
-  HealthMetricsMembersGrowthLabelClasses,
-  HealthMetricsMembersGrowthViewOption,
   HealthMetricsMembersNps,
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersQueryParams,
@@ -56,7 +53,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     empty: { icon: 'fa-light fa-chart-line', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members, snapshot: true },
     label: 'Member growth by year',
     heading: 'Member growth by year',
-    description: 'Cumulative new members joining each month, this year against last year and the historical range.',
+    description: 'New members each month, this year against last year.',
     footnote: [],
     footnoteCaution: false,
   },
@@ -176,59 +173,43 @@ export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [
 /** Read-failed / no-foundation value: no month rows, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_GROWTH_UNMEASURED: HealthMetricsMembersGrowth = { months: [] };
 
-/** The earliest year read and drawn: All years and the popup go back to it. */
+/** The earliest year read; the chart draws at most one line per colour, newest first. */
 export const HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR = 2017;
-
-/** Highlights' grey range starts a year later than All years, as the design draws it. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_BAND_FIRST_YEAR = 2018;
-
-/** The year "Since" compares this year against, at the same month. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_BASELINE_YEAR = 2019;
 
 /** Upper bound on month rows read: 12 a year, from the first year on, with decades to spare. */
 export const HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP = 600;
 
-export const HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+export const HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+] as const;
 
-/** The plot's SVG viewBox; it stretches to the card, and the design draws it 280px tall. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_PLOT = { width: 600, height: 280 } as const;
+/** The plot's SVG viewBox, stretched to the card; January and December sit `insetX` in from each edge. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_PLOT = { width: 1000, height: 300, insetX: 40 } as const;
 
-/** The design's growth colours: this year in accent, last year in neutral, the earlier years light. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_COLORS = {
-  current: lfxColors.blue[500],
-  prior: lfxColors.gray[500],
-  earlier: lfxColors.gray[300],
-  band: lfxColors.gray[400],
-  /** The band at the design's 35% for its legend swatch. */
-  bandSwatch: `${lfxColors.gray[400]}59`,
-  today: lfxColors.gray[500],
-  gridline: lfxColors.gray[100],
-  axis: lfxColors.gray[200],
-} as const;
-
-/** How each end label sits off its point, as the design offsets them, and its weight. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES: HealthMetricsMembersGrowthLabelClasses = {
-  placement: {
-    'below-right': 'translate-x-[8px] translate-y-[4px]',
-    'right-below': 'translate-x-[10px] -translate-y-[2px]',
-    right: 'translate-x-[10px] -translate-y-1/2',
-  },
-  strong: 'font-semibold',
-  regular: 'font-medium',
-};
-
-/** An end label's box in pixels: its top off its point per placement (as the classes offset it), height and least gap. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_LABEL_BOX: HealthMetricsMembersGrowthLabelBox = {
-  offsetPx: { 'below-right': 4, 'right-below': -2, right: -8 },
-  heightPx: 16,
-  gapPx: 2,
-};
-
-/** The view switch over the growth chart; the first is the default. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_VIEW_OPTIONS: readonly HealthMetricsMembersGrowthViewOption[] = [
-  { value: 'highlights', label: 'Highlights' },
-  { value: 'all', label: 'All years' },
-];
+/** One colour per year, newest first: this year in accent, then the design's palette. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_LINE_COLORS = [
+  lfxColors.blue[500],
+  lfxColors.violet[400],
+  lfxColors.emerald[400],
+  lfxColors.amber[400],
+  lfxColors.red[400],
+  lfxColors.gray[400],
+  lfxColors.violet[300],
+  lfxColors.emerald[300],
+  lfxColors.amber[300],
+  lfxColors.red[300],
+] as const;
 
 /** Read-failed / no-foundation value: no tier rows, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED: HealthMetricsMembersTiers = { rows: [] };
