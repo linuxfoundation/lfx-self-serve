@@ -39,6 +39,10 @@ import {
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
+  GOOGLE_AUDIENCE_PICKER_EMPTY,
+  GOOGLE_AUDIENCE_PICKER_LOADING,
+  GOOGLE_AUDIENCE_PICKER_REASONS,
+  GOOGLE_AUDIENCE_PICKER_TRUNCATED,
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
@@ -51,6 +55,7 @@ import {
   GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP,
   GOOGLE_DISPLAY_AD_GROUPS_EMPTY,
   GOOGLE_DISPLAY_MAX_AD_GROUPS,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL,
@@ -19368,7 +19373,7 @@ describe('ImplementationTabComponent demand gen audience', () => {
     seedDemandGen(false);
     expect(read).not.toHaveBeenCalled();
     expect(query('implementation-demand-gen-audience-single')).toBeNull();
-    expect(query('implementation-demand-gen-audience-picker-live')?.textContent?.trim()).toBe('');
+    expect(query('implementation-google-audience-picker-live')?.textContent?.trim()).toBe('');
 
     seedDemandGen(null);
     expect(read).not.toHaveBeenCalled();
@@ -19856,14 +19861,14 @@ describe('ImplementationTabComponent demand gen audience', () => {
     seedDemandGen();
     expect(query('implementation-demand-gen-audience-picker-single')).toBeNull();
     expect(query('implementation-demand-gen-audience-picker-empty-single')?.textContent).toContain('no Audiences to pick from');
-    expect(query('implementation-demand-gen-audience-picker-live')?.textContent).toContain('no Audiences to pick from');
+    expect(query('implementation-google-audience-picker-live')?.textContent).toContain('no Audiences to pick from');
 
     fixture.destroy();
     TestBed.resetTestingModule();
     await setup(() => of({ ...AUDIENCES, truncated: true }));
     seedDemandGen();
     expect(query('implementation-demand-gen-audience-picker-truncated-single')?.textContent).toContain('more Audiences than the picker shows');
-    expect(query('implementation-demand-gen-audience-picker-live')?.textContent).toContain('more Audiences than the picker shows');
+    expect(query('implementation-google-audience-picker-live')?.textContent).toContain('more Audiences than the picker shows');
   });
 
   it.each([
@@ -19877,7 +19882,7 @@ describe('ImplementationTabComponent demand gen audience', () => {
 
     expect(query('implementation-demand-gen-audience-picker-single')).toBeNull();
     expect(query('implementation-demand-gen-audience-picker-unavailable-single')?.textContent).toContain(reason);
-    expect(query('implementation-demand-gen-audience-picker-live')?.textContent).toContain(reason);
+    expect(query('implementation-google-audience-picker-live')?.textContent).toContain(reason);
   });
 
   it('shows the loading line while the read is in flight, and drops the read when the picker hides', async () => {
@@ -19885,12 +19890,12 @@ describe('ImplementationTabComponent demand gen audience', () => {
     await setup(() => pending.asObservable());
     seedDemandGen();
     expect(query('implementation-demand-gen-audience-picker-loading-single')).not.toBeNull();
-    expect(query('implementation-demand-gen-audience-picker-live')?.textContent).toContain('Loading');
+    expect(query('implementation-google-audience-picker-live')?.textContent).toContain('Loading');
 
     fixture.componentRef.setInput('googleDemandGenAudienceEnabled', false);
     fixture.detectChanges();
     expect(pending.observed).toBe(false);
-    expect(query('implementation-demand-gen-audience-picker-live')?.textContent?.trim()).toBe('');
+    expect(query('implementation-google-audience-picker-live')?.textContent?.trim()).toBe('');
   });
 });
 
@@ -20141,6 +20146,377 @@ describe('ImplementationTabComponent google performance max search themes', () =
     fixture.detectChanges();
     expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
     expect(c['googleSearchThemesPayload']()).toEqual({ performanceMaxSearchThemes: ['kubernetes'] });
+  });
+});
+
+describe('ImplementationTabComponent performance max audience signal', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const query = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  const ACCOUNT = '1234567890';
+  const AUDIENCE_A = `customers/${ACCOUNT}/audiences/111`;
+  const AUDIENCE_B = `customers/${ACCOUNT}/audiences/222`;
+  const AUDIENCES: GoogleAdsAudiencesResult = {
+    accountId: ACCOUNT,
+    audiences: [
+      { resourceName: AUDIENCE_A, id: '111', name: 'Example Summit - High Intent', description: null },
+      { resourceName: AUDIENCE_B, id: '222', name: 'Example Summit - Registrants', description: 'CRM list' },
+    ],
+    truncated: false,
+  };
+  const PMAX_COMPLETE = {
+    headlines: 'One headline\nTwo headline\nThree headline',
+    longHeadlines: 'A long headline',
+    descriptions: 'A short description\nAnother short description',
+    businessName: 'Acme',
+    marketingImages: 'https://example.com/a.png',
+    squareMarketingImages: 'https://example.com/square.png',
+    logoImages: 'https://example.com/logo.png',
+  };
+  const DENIAL = 'Only the LF marketing team can add a Google Ads Audience as a Performance Max audience signal';
+  let read: ReturnType<typeof vi.fn>;
+
+  async function setup(answer: () => unknown = () => of(AUDIENCES)): Promise<void> {
+    await configureGoogleTab();
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
+    read = vi.fn(answer);
+    vi.spyOn(TestBed.inject(CampaignService), 'getGoogleAdsAudiences').mockImplementation(read as never);
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  /** Performance Max with a complete creative, and the per-caller capability. */
+  function seedPmax(enabled: boolean | null = true, f: ComponentFixture<ImplementationTabComponent> = fixture): Record<string, any> {
+    const c = seedChannel(f, { includePerformanceMax: true });
+    c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
+    f.componentRef.setInput('googlePerformanceMaxAudienceSignalEnabled', enabled);
+    f.detectChanges();
+    return c;
+  }
+
+  async function requestOf(c: Record<string, any>, f: ComponentFixture<ImplementationTabComponent> = fixture): Promise<Record<string, unknown>> {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    createCampaign.mockClear();
+    f.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+    c['submit']();
+    await f.whenStable();
+    return createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+  }
+
+  it('reads nothing and shows nothing for a caller the route would not admit, or off Performance Max', async () => {
+    await setup();
+    seedPmax(false);
+    expect(read).not.toHaveBeenCalled();
+    expect(query('implementation-performance-max-audience-signal-section')).toBeNull();
+
+    seedPmax(null);
+    expect(read).not.toHaveBeenCalled();
+    expect(query('implementation-performance-max-audience-signal-section')).toBeNull();
+
+    for (const channel of [{ includeSearch: true }, { includeDisplay: true }, { includeDemandGen: true }]) {
+      seedChannel(fixture, channel);
+      fixture.componentRef.setInput('googlePerformanceMaxAudienceSignalEnabled', true);
+      fixture.detectChanges();
+      expect(query('implementation-performance-max-audience-signal-section')).toBeNull();
+    }
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('offers the Audiences, shows a pick by name with Remove, and sends it on a Performance Max create', async () => {
+    await setup();
+    const c = seedPmax();
+    expect(read).toHaveBeenCalledWith('tlf');
+    expect(query('implementation-performance-max-audience-signal-picker')).not.toBeNull();
+
+    c['onPerformanceMaxAudienceSignalPicked'](AUDIENCE_B);
+    fixture.detectChanges();
+    expect(query('implementation-performance-max-audience-signal-picker')).toBeNull();
+    expect(query('implementation-performance-max-audience-signal-picked')?.textContent).toContain('Example Summit - Registrants');
+    expect(query('implementation-performance-max-audience-signal-remove')?.getAttribute('aria-label')).toBe('Remove Example Summit - Registrants');
+
+    c['removePerformanceMaxAudienceSignal']();
+    fixture.detectChanges();
+    expect(query('implementation-performance-max-audience-signal-picker')).not.toBeNull();
+    expect(c['googlePerformanceMaxAudienceSignalPayload']()).toEqual({});
+
+    c['onPerformanceMaxAudienceSignalPicked'](null);
+    expect(c['campaignForm'].controls.googlePerformanceMaxAudienceSignal.value).toBe('');
+    c['onPerformanceMaxAudienceSignalPicked'](AUDIENCE_A);
+    expect((await requestOf(c))['performanceMaxAudienceSignal']).toBe(AUDIENCE_A);
+  });
+
+  it('picks through the combobox itself', async () => {
+    await setup();
+    const c = seedPmax();
+    const combobox = fixture.debugElement.query(By.css('[data-testid="implementation-performance-max-audience-signal-picker"]'))
+      .componentInstance as UiComboboxComponent;
+    (combobox as unknown as { select(option: { value: string; label: string }): void }).select({ value: AUDIENCE_A, label: 'x' });
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.googlePerformanceMaxAudienceSignal.value).toBe(AUDIENCE_A);
+  });
+
+  it("moves focus to the picked Audience's Remove button, and back to the picker on Remove", async () => {
+    await setup();
+    const focused: HTMLElement[] = [];
+    vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+      focused.push(this);
+    });
+    const c = seedPmax();
+
+    c['onPerformanceMaxAudienceSignalPicked'](AUDIENCE_A);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(focused).toEqual([query('implementation-performance-max-audience-signal-remove')]);
+
+    c['removePerformanceMaxAudienceSignal']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(focused[1]).toBe(query('implementation-performance-max-audience-signal-picker')?.querySelector('input'));
+  });
+
+  it.each([
+    ['loading', () => NEVER, 'implementation-performance-max-audience-signal-picker-loading', GOOGLE_AUDIENCE_PICKER_LOADING],
+    ['empty', () => of({ ...AUDIENCES, audiences: [] }), 'implementation-performance-max-audience-signal-picker-empty', GOOGLE_AUDIENCE_PICKER_EMPTY],
+    [
+      'truncated',
+      () => of({ ...AUDIENCES, truncated: true }),
+      'implementation-performance-max-audience-signal-picker-truncated',
+      GOOGLE_AUDIENCE_PICKER_TRUNCATED,
+    ],
+    [
+      'refused',
+      () => throwError(() => new HttpErrorResponse({ status: 403 })),
+      'implementation-performance-max-audience-signal-picker-unavailable',
+      GOOGLE_AUDIENCE_PICKER_REASONS.unavailable,
+    ],
+    [
+      'failed',
+      () => throwError(() => new HttpErrorResponse({ status: 502 })),
+      'implementation-performance-max-audience-signal-picker-unavailable',
+      GOOGLE_AUDIENCE_PICKER_REASONS.failed,
+    ],
+  ])('says so, visibly and in the shared live region, when the list is %s', async (_label, answer, testId, text) => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await setup(answer);
+    seedPmax();
+
+    expect(query(testId)?.textContent).toContain(text);
+    expect(query('implementation-google-audience-picker-live')?.textContent).toContain(text);
+  });
+
+  /** A Performance Max request with no signal picked is byte-identical to one built before it existed. */
+  it('sends a byte-identical request when no signal is picked', async () => {
+    await setup();
+    const without = JSON.stringify(await requestOf(seedPmax(false)));
+
+    const other = TestBed.createComponent(ImplementationTabComponent);
+    other.detectChanges();
+    await other.whenStable();
+    const after = seedPmax(true, other);
+
+    expect(JSON.stringify(await requestOf(after, other))).toBe(without);
+    expect(without).not.toContain('performanceMaxAudienceSignal');
+  });
+
+  it.each([
+    ['a malformed resource name', 'customers/1234567890/userLists/111', 'is not a Google Ads Audience'],
+    ["another account's Audience", 'customers/999/audiences/111', 'belongs to another Google Ads account'],
+  ])('holds Create, with the reason shown and announced, for %s', async (_label, value, reason) => {
+    await setup();
+    const c = seedPmax();
+    restoreGoogleDraft(fixture, c, { includePerformanceMax: true, googlePerformanceMaxAudienceSignal: value });
+    c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
+    fixture.detectChanges();
+
+    expect(c['canSubmit']()).toBe(false);
+    expect(query('implementation-performance-max-audience-signal-error')?.textContent).toContain(reason);
+    expect(query('implementation-performance-max-audience-signal-error-live')?.textContent).toContain(reason);
+    expect(query('implementation-performance-max-audience-signal-remove')).not.toBeNull();
+
+    c['removePerformanceMaxAudienceSignal']();
+    fixture.detectChanges();
+    expect(c['performanceMaxAudienceSignalError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it("takes a restored bare audience id, which upstream resolves in the campaign's own account", async () => {
+    await setup();
+    const c = seedPmax();
+    restoreGoogleDraft(fixture, c, { includePerformanceMax: true, googlePerformanceMaxAudienceSignal: ' 111 ' });
+    c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
+
+    expect((await requestOf(c))['performanceMaxAudienceSignal']).toBe('111');
+  });
+
+  it('holds Create while the Performance Max creative is empty, as the signal attaches to its asset group', async () => {
+    await setup();
+    const c = seedPmax();
+    c['onPerformanceMaxAudienceSignalPicked'](AUDIENCE_A);
+    c['campaignForm'].controls.performanceMaxCreative.reset();
+    fixture.detectChanges();
+
+    expect(c['performanceMaxAudienceSignalError']()).toBe(GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL);
+    expect(query('implementation-performance-max-audience-signal-error')?.textContent).toContain(GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  it('holds the signal back after a switch away from Performance Max, saying so, and sends it again on the way back', async () => {
+    await setup();
+    const c = seedPmax();
+    c['onPerformanceMaxAudienceSignalPicked'](AUDIENCE_A);
+    c['campaignForm'].patchValue({ includePerformanceMax: false, includeDisplay: true });
+    fixture.detectChanges();
+
+    expect(c['googlePerformanceMaxAudienceSignalPayload']()).toEqual({});
+    expect(query('implementation-performance-max-audience-signal-section')).toBeNull();
+    expect(query('implementation-performance-max-audience-signal-withheld')?.textContent).toContain(
+      'Display campaigns do not take an audience signal, so the one you picked will not be sent.'
+    );
+    expect(query('implementation-performance-max-audience-signal-withheld-live')?.textContent).toContain('Display campaigns do not take an audience signal');
+    expect(c['performanceMaxAudienceSignalBlock']()).toBeNull();
+
+    c['campaignForm'].patchValue({ includePerformanceMax: true, includeDisplay: false });
+    fixture.detectChanges();
+    expect(query('implementation-performance-max-audience-signal-withheld')).toBeNull();
+    expect(c['googlePerformanceMaxAudienceSignalPayload']()).toEqual({ performanceMaxAudienceSignal: AUDIENCE_A });
+  });
+
+  it('carries the signal through the draft, restores it under any channel, and clears it on reset', async () => {
+    await setup();
+    const c = seedPmax();
+    c['onPerformanceMaxAudienceSignalPicked'](AUDIENCE_A);
+    let captured: CampaignImplementationDraft | null = null;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    c['emitDraft']();
+    expect((captured as unknown as CampaignImplementationDraft).googlePerformanceMaxAudienceSignal).toBe(AUDIENCE_A);
+
+    restoreGoogleDraft(fixture, c, { includeSearch: true, googlePerformanceMaxAudienceSignal: AUDIENCE_B });
+    expect(c['campaignForm'].controls.googlePerformanceMaxAudienceSignal.value).toBe(AUDIENCE_B);
+
+    // A draft that predates the field, or holds a non-string, leaves it alone.
+    restoreGoogleDraft(fixture, c, { includeSearch: true });
+    restoreGoogleDraft(fixture, c, { includeSearch: true, googlePerformanceMaxAudienceSignal: 42 });
+    expect(c['campaignForm'].controls.googlePerformanceMaxAudienceSignal.value).toBe(AUDIENCE_B);
+
+    c['resetGoogleFields']();
+    expect(c['campaignForm'].controls.googlePerformanceMaxAudienceSignal.value).toBe('');
+  });
+
+  /**
+   * A retained signal the request cannot carry, on the Demand Gen audience's terms: a pending line or a
+   * Retry while the per-caller answer is out, the restricted block only on an explicit no, and the
+   * deployment named while the cutover is dark. Never dropped, and Remove in every state.
+   */
+  function holdSignal(
+    enabled: boolean | null,
+    capabilityRead: 'pending' | 'ready' | 'failed' | 'unknown',
+    briefId: string | null = 'brief-1',
+    creative: boolean | null = true
+  ): Record<string, any> {
+    const c = seedPmax(enabled);
+    restoreGoogleDraft(fixture, c, { includePerformanceMax: true, googlePerformanceMaxAudienceSignal: AUDIENCE_A });
+    c['campaignForm'].controls.performanceMaxCreative.patchValue(PMAX_COMPLETE);
+    fixture.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
+    fixture.componentRef.setInput('createCapabilityRead', capabilityRead);
+    fixture.componentRef.setInput('googlePerformanceMaxAudienceSignalEnabled', enabled);
+    fixture.componentRef.setInput('googleCreativeEnabled', creative);
+    fixture.detectChanges();
+    return c;
+  }
+
+  it('holds Create with a pending line, not the denial, while the per-caller answer is being read', async () => {
+    await setup();
+    const c = holdSignal(null, 'pending');
+
+    expect(c['performanceMaxAudienceSignalBlock']()?.kind).toBe('pending');
+    expect(query('implementation-performance-max-audience-signal-block-pending')?.textContent).toContain(
+      'Checking whether you can send Performance Max audience signals'
+    );
+    expect(query('implementation-performance-max-audience-signal-block-live')?.textContent?.trim()).toBe(c['performanceMaxAudienceSignalBlockMessage']());
+    expect(fixture.nativeElement.textContent).not.toContain(DENIAL);
+    expect(c['performanceMaxAudienceSignalError']()).toBeNull();
+    expect(query('implementation-performance-max-audience-signal-block-retry')).toBeNull();
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  it.each([['failed'], ['unknown'], ['ready']])('offers a Retry, not the denial, when the read is %s and the answer is still out', async (capabilityRead) => {
+    await setup();
+    const retried = vi.fn();
+    fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
+    const c = holdSignal(null, capabilityRead as 'failed' | 'unknown' | 'ready');
+
+    expect(c['performanceMaxAudienceSignalBlock']()?.kind).toBe('failed');
+    expect(fixture.nativeElement.textContent).not.toContain(DENIAL);
+    expect(c['canSubmit']()).toBe(false);
+    (query('implementation-performance-max-audience-signal-block-retry')?.querySelector('button') as HTMLButtonElement).click();
+    expect(retried).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks for the brief to be saved when there is no brief to check against', async () => {
+    await setup();
+    const c = holdSignal(null, 'unknown', null);
+
+    expect(c['performanceMaxAudienceSignalBlock']()?.kind).toBe('unsaved');
+    expect(query('implementation-performance-max-audience-signal-block-retry')).toBeNull();
+  });
+
+  it('holds Create with the restricted block on an explicit no, and Remove clears it', async () => {
+    await setup();
+    const c = holdSignal(false, 'ready');
+
+    expect(c['performanceMaxAudienceSignalBlock']()?.kind).toBe('restricted');
+    expect(query('implementation-performance-max-audience-signal-block-restricted')?.textContent).toContain(DENIAL);
+    // The section is on screen, so the held value shows there with its own Remove, not again in the block.
+    expect(query('implementation-performance-max-audience-signal-remove')).not.toBeNull();
+    expect(query('implementation-performance-max-audience-signal-block-value')).toBeNull();
+    expect(read).not.toHaveBeenCalled();
+    expect(c['canSubmit']()).toBe(false);
+
+    (query('implementation-performance-max-audience-signal-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.googlePerformanceMaxAudienceSignal.value).toBe('');
+    expect(c['performanceMaxAudienceSignalBlock']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('clears the block once the caller is answered yes on a deployment the cutover serves', async () => {
+    await setup();
+    const c = holdSignal(null, 'pending');
+    fixture.componentRef.setInput('createCapabilityRead', 'ready');
+    fixture.componentRef.setInput('googlePerformanceMaxAudienceSignalEnabled', true);
+    fixture.detectChanges();
+
+    expect(c['performanceMaxAudienceSignalBlock']()).toBeNull();
+    expect(query('implementation-performance-max-audience-signal-block-live')?.textContent?.trim()).toBe('');
+    expect((await requestOf(c))['performanceMaxAudienceSignal']).toBe(AUDIENCE_A);
+  });
+
+  it('holds Create naming the deployment while the cutover is dark, listing the signal with Remove', async () => {
+    await setup();
+    const focused: HTMLElement[] = [];
+    vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+      focused.push(this);
+    });
+    const c = holdSignal(false, 'ready', 'brief-1', false);
+
+    expect(c['googlePerformanceMaxAudienceSignalPayload']()).toEqual({});
+    expect(c['performanceMaxAudienceSignalBlock']()?.kind).toBe('unsupported');
+    expect(query('implementation-performance-max-audience-signal-block-unsupported')?.textContent).toContain('not available on this deployment');
+    expect(query('implementation-performance-max-audience-signal-block-value')?.textContent).toContain(`Audience signal: ${AUDIENCE_A}`);
+    expect(query('implementation-performance-max-audience-signal-section')).toBeNull();
+    expect(c['canSubmit']()).toBe(false);
+
+    (query('implementation-performance-max-audience-signal-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(c['performanceMaxAudienceSignalBlock']()).toBeNull();
+    expect(focused.at(-1)?.closest('[data-testid]')?.getAttribute('data-testid')).toMatch(/implementation-(submit-btn|include-performance-max)/);
   });
 });
 

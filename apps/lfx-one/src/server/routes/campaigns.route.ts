@@ -83,7 +83,7 @@ router.get('/google/conversion-actions', requireGoogleConversionActionsAccess, (
 router.get('/google/user-lists', requireGoogleUserListsAccess, (req, res, next) => campaignController.getGoogleAdsUserLists(req, res, next));
 
 // The Audiences on the Google Ads account a create uses, for the Implement tab's Demand Gen audience
-// picker (#5244). The account is shared, so the list names every foundation's Audiences: answered only to
+// picker (#5244) and Performance Max audience signal picker (#5262). The account is shared, so the list names every foundation's Audiences: answered only to
 // `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#504). 404
 // while the campaign-service create road is off. Registered ahead of `router.use(requireCampaignManager)`
 // for the same reason as the two lists above: an access-check outage must reach the controller's coded

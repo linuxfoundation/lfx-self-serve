@@ -154,6 +154,7 @@ export * from './campaign-google-creative.utils';
 export * from './campaign-google-demand-gen-video.utils';
 export * from './campaign-google-demand-gen-ad-groups.utils';
 export * from './campaign-google-demand-gen-audience.utils';
+export * from './campaign-google-performance-max-signal.utils';
 export * from './campaign-google-placements.utils';
 export * from './campaign-google-display-ad-groups.utils';
 export * from './campaign-google-display-audiences.utils';

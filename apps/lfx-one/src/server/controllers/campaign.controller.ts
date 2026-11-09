@@ -59,6 +59,10 @@ import {
   googleDemandGenAudienceTypeRefusal,
 } from '@lfx-one/shared/utils/campaign-google-demand-gen-audience.utils';
 import {
+  googlePerformanceMaxAudienceSignalCarried,
+  googlePerformanceMaxAudienceSignalRefusal,
+} from '@lfx-one/shared/utils/campaign-google-performance-max-signal.utils';
+import {
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
   googlePriceExtensionRefusal,
@@ -214,6 +218,7 @@ import {
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
+  GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL,
   GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
@@ -239,6 +244,12 @@ import {
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
   GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_CODE,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_MESSAGE,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_REQUEST_KEY,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_CODE,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_MESSAGE,
   GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_SEARCH_AD_GROUP_NAME,
@@ -891,6 +902,61 @@ export class CampaignController {
               operation: 'campaign_create',
               service: 'campaign_controller',
             })
+          );
+          return;
+        }
+      }
+      // A Performance Max audience signal (#5262) on the same terms: `performanceMaxAudienceSignal` names an
+      // existing Audience on the shared account, so campaign-service creates with one only for
+      // `global_marketing_ops` on the path project (`GoogleAdsMarketingOpsInputs`,
+      // linuxfoundation/lfx-v2-campaign-service#501). Counted as upstream counts it: any value but an absent,
+      // null or empty one, whitespace and a malformed value included, on any channel.
+      const rawAudienceSignal: unknown = body?.performanceMaxAudienceSignal;
+      if (platforms.includes('google-ads') && googlePerformanceMaxAudienceSignalCarried(rawAudienceSignal)) {
+        const access = await this.googleMarketingOpsAccess(
+          req,
+          projectSlug,
+          'check_google_performance_max_audience_signal_access',
+          'a Performance Max audience signal'
+        );
+        if (access !== 'granted') {
+          next(
+            access === 'denied'
+              ? new AuthorizationError(GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_MESSAGE, {
+                  operation: 'campaign_create',
+                  service: 'campaign_controller',
+                  path: req.path,
+                  code: GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_CODE,
+                })
+              : new MicroserviceError(
+                  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_MESSAGE,
+                  503,
+                  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_CODE,
+                  {
+                    operation: 'campaign_create',
+                    service: 'campaign_controller',
+                    path: req.path,
+                    clientMessage: GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_MESSAGE,
+                  }
+                )
+          );
+          return;
+        }
+        // Then, for a caller who MAY send one, a value that is not a string is refused by name before any
+        // check that depends on the cutover: Go cannot decode it into the string field, and the normalizer
+        // (`googlePerformanceMaxAudienceSignal`) would drop it, so the legacy creator would create without it.
+        // An empty list asks for nothing, as the cutover-only create fields and the Demand Gen audience
+        // treat it (`googleDemandGenAudienceTypeRefusal`); the normalizer omits it.
+        if (typeof rawAudienceSignal !== 'string' && !(Array.isArray(rawAudienceSignal) && rawAudienceSignal.length === 0)) {
+          next(
+            ServiceValidationError.forField(
+              GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_REQUEST_KEY,
+              googlePerformanceMaxAudienceSignalRefusal(rawAudienceSignal) ?? '',
+              {
+                operation: 'campaign_create',
+                service: 'campaign_controller',
+              }
+            )
           );
           return;
         }
@@ -2114,6 +2180,38 @@ export class CampaignController {
             refuse(themesRefusal);
             return;
           }
+        }
+      }
+
+      // The Performance Max audience signal (#5262), after the themes, as `validatePerformanceMaxSignals`
+      // judges the audience after them: the Performance-Max-only fence, the asset group it attaches to, then
+      // the shared judge on the value as dispatched (trimmed with Go's rules; a blank one is omitted, never
+      // sent). A value that is not a string was refused right after the access check. The account is not
+      // known here; upstream judges it before anything is created.
+      const audienceSignal = typeof rawAudienceSignal === 'string' ? googleAdsTrimSpace(rawAudienceSignal) : '';
+      if (cutoverOn && platforms.includes('google-ads') && audienceSignal !== '' && typeof googleChannel === 'string') {
+        const refuse = (message: string): void =>
+          next(
+            ServiceValidationError.forField(GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_REQUEST_KEY, message, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+        // REFUSED by name, not withheld: upstream fails the whole create on any channel but Performance Max.
+        if (!(GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL as readonly string[]).includes(googleChannel)) {
+          refuse(
+            `Google Ads only accepts an audience signal on Performance Max campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the audience signal or pick Performance Max, then create again.`
+          );
+          return;
+        }
+        if (!('performanceMaxCreative' in ((configEnvelope['googleAdsConfig'] as Record<string, unknown> | undefined) ?? {}))) {
+          refuse(GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL);
+          return;
+        }
+        const signalRefusal = googlePerformanceMaxAudienceSignalRefusal(audienceSignal);
+        if (signalRefusal) {
+          refuse(signalRefusal);
+          return;
         }
       }
 
@@ -3503,12 +3601,16 @@ export class CampaignController {
       // The Display audiences (#5262) on the same two checks: the create road both reads need and the relation
       // campaign-service checks before it answers them and before it creates with an account-owned list (#505).
       const googleDisplayAudiencesEnabled = googleDemandGenAudienceEnabled;
+      // The Performance Max audience signal (#5262) on exactly the same two checks: the same create road,
+      // and the same relation campaign-service checks before it creates with one (#501).
+      const googlePerformanceMaxAudienceSignalEnabled = googleDemandGenAudienceEnabled;
       const result: CampaignListResult = {
         ...listed,
         googleAudienceSegmentsEnabled,
         googleConversionActionsEnabled,
         googleDemandGenAudienceEnabled,
         googleDisplayAudiencesEnabled,
+        googlePerformanceMaxAudienceSignalEnabled,
       };
       logger.success(req, 'list_brief_campaigns', startTime, { count: result.campaigns.length, possiblyStale: result.possiblyStale });
       res.json(result);
@@ -4294,9 +4396,10 @@ export class CampaignController {
   /**
    * One kind of audience resource on the Google Ads account a create for this project uses, camel-cased.
    * `?type=` picks it (`GOOGLE_ADS_AUDIENCE_READ_TYPES`): `audience`, the default, for the Demand Gen
-   * audience picker (#5244), the enabled, account-scoped Audience resources `demandGenAudience` and a
-   * group's `audience` take; `custom_audience`, `custom_interest` or `user_interest` for the Display
-   * audience pickers (#5262), the kinds `customAudiences`, `customAffinities` and `userInterests` take.
+   * audience picker (#5244) and the Performance Max audience signal picker (#5262), the enabled,
+   * account-scoped Audience resources `demandGenAudience`, a group's `audience` and
+   * `performanceMaxAudienceSignal` take; `custom_audience`, `custom_interest` or `user_interest` for the
+   * Display audience pickers (#5262), the kinds `customAudiences`, `customAffinities` and `userInterests` take.
    * `?q=` is passed on trimmed, and left out when blank: campaign-service keeps entries whose name contains
    * it, which is how the user interest taxonomy, larger than its 500-entry cap, is searched. Any other
    * type, or a `q` over 100 characters, is a 400 before any upstream call.
@@ -4308,7 +4411,7 @@ export class CampaignController {
    * is registered ahead of the blanket `requireCampaignManager`, behind its own
    * `requireGoogleAudiencesAccess`, for the same reason as the conversion-action list's (#5239). Answers
    * 404, as if it were not mounted, while the campaign-service create road (`canCreateWithGoogleCriteria`),
-   * the only road that sends a Demand Gen audience, is off.
+   * the only road that sends a Demand Gen audience or a Performance Max audience signal, is off.
    */
   public async getGoogleAdsAudiences(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'google_ads_audiences';
@@ -6728,6 +6831,8 @@ export class CampaignController {
         // After the creative they attach to. Performance Max only; normalized only — `createCampaign`
         // names every search-theme refusal first.
         ...this.googleSearchThemes(body, selectedChannels[0]),
+        // The asset group's audience signal (#5262), after the themes, on the same gate.
+        ...this.googlePerformanceMaxAudienceSignal(body, selectedChannels[0]),
       };
     }
 
@@ -7321,6 +7426,23 @@ export class CampaignController {
   }
 
   /**
+   * The Performance Max asset group's audience signal (#5262), spread-ready: the string trimmed as Go trims,
+   * or `{}` when it is absent, not a string, blank, or the channel takes none, so a create without one is
+   * byte-identical to one made before it existed.
+   *
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL}, Performance Max alone. For any other
+   * channel the `{}` is never dispatched either: `createCampaign` refuses a non-blank signal there by name,
+   * and a value that is not a string on every channel, before this is dispatched.
+   */
+  private googlePerformanceMaxAudienceSignal(body: CampaignCreateRequest, channel: GoogleCampaignChannel): { performanceMaxAudienceSignal?: string } {
+    if (!(GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL as readonly string[]).includes(channel)) return {};
+    const raw: unknown = body?.performanceMaxAudienceSignal;
+    if (typeof raw !== 'string') return {};
+    const trimmed = googleAdsTrimSpace(raw);
+    return trimmed === '' ? {} : { performanceMaxAudienceSignal: trimmed };
+  }
+
+  /**
    * The search-theme list as dispatched: strings only (`createCampaign` refuses anything else first),
    * each decoded and trimmed with Go's rules as `validatePerformanceMaxSignals` trims it. Blanks are
    * KEPT so they are refused by name; upstream refuses them too ("search theme %d is empty").
@@ -7713,8 +7835,9 @@ export class CampaignController {
     candidates.push([GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY, raw[GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY]]);
     // The first ad's display paths are bare strings, which `boundableEntries` yields nothing for, so
     // they are measured here; the trim the Search branch applies runs over them during normalisation.
-    // So is the single Demand Gen ad group's Audience (#5244), which `googleDemandGenAudience` trims.
-    for (const key of ['path1', 'path2', GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY]) {
+    // So is the single Demand Gen ad group's Audience (#5244), which `googleDemandGenAudience` trims, and
+    // the Performance Max audience signal (#5262), which `googlePerformanceMaxAudienceSignal` trims.
+    for (const key of ['path1', 'path2', GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY, GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_REQUEST_KEY]) {
       const value = raw[key];
       if (typeof value === 'string' && this.boundedLength(value) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
         return { field: key, message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };

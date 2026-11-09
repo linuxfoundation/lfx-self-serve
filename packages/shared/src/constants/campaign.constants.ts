@@ -1561,6 +1561,22 @@ export const GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_DISPLAY_
 export const GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE =
   'Your access to Display audiences could not be verified, so nothing was created. Try again in a few minutes, or remove the audiences.';
 
+/**
+ * The error `code` (HTTP 403) of a Google create refused because it names a Performance Max audience
+ * signal (`performanceMaxAudienceSignal`) and the caller does not hold `global_marketing_ops` on the
+ * project. campaign-service refuses the same create on the same relation (`GoogleAdsMarketingOpsInputs`,
+ * linuxfoundation/lfx-v2-campaign-service#501).
+ */
+export const GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_CODE = 'GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED';
+/** The user-facing message of that refusal. Nothing was created. */
+export const GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_MESSAGE =
+  'Only the LF marketing team can add a Google Ads Audience as a Performance Max audience signal, because every foundation shares one Google Ads account. Remove the audience signal and create again.';
+/** The error `code` (HTTP 503) of that create refused because the caller's access could not be verified. */
+export const GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE';
+/** The user-facing message of that refusal. Nothing was created. */
+export const GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_MESSAGE =
+  'Your access to Performance Max audience signals could not be verified, so nothing was created. Try again in a few minutes, or remove the audience signal.';
+
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
 
@@ -4864,6 +4880,8 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'prices', label: 'price extensions' },
   // The Performance Max asset group's search themes (linuxfoundation/lfx-v2-campaign-service#461), judged after the extensions upstream.
   { field: 'performanceMaxSearchThemes', label: 'Performance Max search themes' },
+  // The asset group's audience signal (#5262), judged after the themes by the same validator upstream.
+  { field: 'performanceMaxAudienceSignal', label: 'Performance Max audience signal' },
   // The Search ad group's further ads, every ad's display paths, the create-time negatives and the
   // Search partners opt-in (#4991): the legacy creator builds one ad from `headlines`/`descriptions`
   // on Google Search alone, and nothing else.
@@ -5877,6 +5895,30 @@ export const GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL =
   'Performance Max search themes attach to the asset group, and Google creates the asset group only from the Performance Max creative. Fill in the creative or remove the search themes, then create again.';
 
 /**
+ * The channels that take an audience signal (#5262): Performance Max alone. Like a search theme, the
+ * signal is an asset group signal, and `validatePerformanceMaxSignals` (`pmax_signals.go`) refuses it on
+ * every other channel before the budget mutate. Unlike the themes it names an existing Audience on the
+ * shared account, so campaign-service also needs `global_marketing_ops` on the project and its own
+ * deployment opt-in (`GOOGLE_ADS_PMAX_AUDIENCE_SIGNAL_ENABLED`).
+ */
+export const GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL = ['performance-max'] as const;
+
+/**
+ * The `googleAdsConfig` key the Performance Max audience signal rides under (#5262): ONE Google Ads
+ * Audience for the asset group, as a bare audience id or a `customers/{customerId}/audiences/{id}`
+ * resource name (`resolvePerformanceMaxAudience` in `pmax_signals.go`).
+ */
+export const GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_REQUEST_KEY = 'performanceMaxAudienceSignal' satisfies keyof CampaignCreateRequest;
+
+/**
+ * Why an audience signal on a Performance Max create with no creative is held, worded once for the tab
+ * and the BFF: the signal attaches to the asset group, which campaign-service creates only from
+ * `performanceMaxCreative`, so `validatePerformanceMaxSignals` refuses it without one before the budget.
+ */
+export const GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL =
+  'A Performance Max audience signal attaches to the asset group, and Google creates the asset group only from the Performance Max creative. Fill in the creative or remove the audience signal, then create again.';
+
+/**
  * Shown on the Performance Max creative while some of its copy is still what the brief prefilled
  * (#4784). That copy makes the creative a started one, which Google refuses without its required
  * images, so the note says both ways forward.
@@ -6188,7 +6230,8 @@ export const GOOGLE_USER_LIST_PICKER_EMPTY = 'This Google Ads account has no use
 export const GOOGLE_USER_LIST_PICKER_TRUNCATED = "This account has more user lists than the picker shows. If one isn't listed, enter its resource name below.";
 
 /**
- * Why the Implement tab's Demand Gen audience picker has no list, one sentence each. The picker shows
+ * Why the Implement tab's Audience pickers (the Demand Gen audience and the Performance Max audience
+ * signal, #5262) have no list, one sentence each. The picker shows
  * only for a caller the route admits, so a 403 or 404 after that is the deployment or the gateway, not
  * the caller.
  */
@@ -6197,13 +6240,13 @@ export const GOOGLE_AUDIENCE_PICKER_REASONS = {
   failed: "The Audiences couldn't be read for this project's Google Ads account, so no Audience can be picked.",
 } as const;
 
-/** What the Demand Gen audience picker says while its list is being read. */
+/** What an Audience picker says while its list is being read. */
 export const GOOGLE_AUDIENCE_PICKER_LOADING = "Loading this account's Audiences…";
 
-/** What the Demand Gen audience picker says when the account has no Audience to offer. */
+/** What an Audience picker says when the account has no Audience to offer. */
 export const GOOGLE_AUDIENCE_PICKER_EMPTY = 'This Google Ads account has no Audiences to pick from. Build one in Google Ads first.';
 
-/** What the Demand Gen audience picker says when upstream returned only part of the account's Audiences. */
+/** What an Audience picker says when upstream returned only part of the account's Audiences. */
 export const GOOGLE_AUDIENCE_PICKER_TRUNCATED = 'This account has more Audiences than the picker shows: only the first 500 by name are listed.';
 
 /**

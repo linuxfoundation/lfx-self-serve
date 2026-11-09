@@ -167,6 +167,7 @@ import {
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
+  GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL,
   GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE,
@@ -190,6 +191,7 @@ import {
   GOOGLE_DISPLAY_AD_GROUPS_EMPTY,
   GOOGLE_DISPLAY_MAX_AD_GROUPS,
   GOOGLE_CREATIVE_SHARED_CAPS,
+  GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL,
@@ -261,6 +263,7 @@ import type {
   CampaignGoogleDemandGenAudienceBlock,
   CampaignGoogleDemandGenDemographicsBlock,
   CampaignGoogleDisplayAudiencesBlock,
+  CampaignGooglePerformanceMaxAudienceSignalBlock,
   CampaignGoogleExtensionsCapabilityBlock,
   CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
@@ -419,6 +422,7 @@ import {
   googleExcludedGendersRefusal,
   googleObservedDemographicsRefusal,
   googleExcludedGeoListRefusal,
+  googlePerformanceMaxAudienceSignalRefusal,
   googlePerformanceMaxSearchThemesRefusal,
   googlePerformanceMaxShortDescriptionMissing,
   googlePickedConversionActionIds,
@@ -826,6 +830,13 @@ export class ImplementationTabComponent implements OnInit {
    * still holds Display audiences otherwise holds Create (`displayAudiencesBlock`) rather than dropping them.
    */
   public readonly googleDisplayAudiencesEnabled = input<boolean | null>(null);
+  /**
+   * Whether THIS caller may pick and send a Performance Max audience signal (#5262) —
+   * `CampaignListResult.googlePerformanceMaxAudienceSignalEnabled`, on the Demand Gen audience's two
+   * checks. Only an explicit yes shows the picker; a draft that still holds a signal otherwise holds Create
+   * (`performanceMaxAudienceSignalBlock`) rather than dropping it, and only an explicit no is a denial.
+   */
+  public readonly googlePerformanceMaxAudienceSignalEnabled = input<boolean | null>(null);
 
   /** @see microsoftScheduleEnabled — an explicit yes, never a `null`. */
   protected readonly microsoftScheduleAvailable = computed<boolean>(() => this.microsoftScheduleEnabled() === true);
@@ -1340,6 +1351,10 @@ export class ImplementationTabComponent implements OnInit {
     // channel; only Performance Max renders and sends them (`googleSearchThemesAvailable`). No
     // validators, for the bidding reason above: `googleSearchThemesError` does the checking.
     googlePerformanceMaxSearchThemes: [''],
+    // The Performance Max audience signal's Audience resource name (#5262), set only by the picker or a
+    // restored draft. Empty by default, which sends no `performanceMaxAudienceSignal`; held whatever the
+    // channel, and sent only on Performance Max (`googlePerformanceMaxAudienceSignalPayload`).
+    googlePerformanceMaxAudienceSignal: this.fb.nonNullable.control(''),
     // The LinkedIn ad account, geo targets and targeting profile, on the FORM rather than in
     // signals (LFXV2-3230). All three are user-editable — a select, an add/remove chip list and a
     // two-button toggle — and all three used to be destroyed by a tab switch, then silently
@@ -3594,6 +3609,11 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.displayAdGroupsError() !== null) return false;
     // Performance Max search themes the BFF would refuse (#5262); the message is under the box.
     if (googleSelected && this.googleSearchThemesError() !== null) return false;
+    // A Performance Max audience signal campaign-service would refuse (#5262); the message is under the picker.
+    if (googleSelected && this.performanceMaxAudienceSignalError() !== null) return false;
+    // A retained audience signal the request cannot carry (#5262), on the Demand Gen audience's terms: held,
+    // never dropped, whatever the cutover.
+    if (this.performanceMaxAudienceSignalBlock() !== null) return false;
     // Postal-code or radius targets the request cannot carry yet. Withholding them would not shrink
     // the campaign but WIDEN it to the event country, so Create waits — see the block's own doc.
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
@@ -4145,14 +4165,18 @@ export class ImplementationTabComponent implements OnInit {
    * and this caller may send an audience (`googleDemandGenAudienceEnabled`, an explicit yes).
    */
   protected readonly demandGenAudienceAvailable: Signal<boolean> = this.initDemandGenAudienceAvailable();
-  /** The Account's Audiences for the picker, read only while it may show; `unavailable` with a reason otherwise. */
-  protected readonly demandGenAudiencePicker: Signal<GoogleAudiencePickerState> = this.initDemandGenAudiencePicker();
+  /**
+   * The account's Audiences for the Demand Gen audience and Performance Max audience signal pickers, read
+   * only while one of them may show; `unavailable` with a reason otherwise. One read serves both: they take
+   * the same kind of Audience, and only one channel is dispatched at a time.
+   */
+  protected readonly googleAudiencePicker: Signal<GoogleAudiencePickerState> = this.initGoogleAudiencePicker();
   /** Each listed Audience's name by resource name, so a picked one is shown by name. */
-  protected readonly demandGenAudienceNames: Signal<ReadonlyMap<string, string>> = computed(
-    () => new Map(this.demandGenAudiencePicker().audiences.map((audience) => [audience.resourceName, audience.name]))
+  protected readonly googleAudienceNames: Signal<ReadonlyMap<string, string>> = computed(
+    () => new Map(this.googleAudiencePicker().audiences.map((audience) => [audience.resourceName, audience.name]))
   );
   /** The picker's loading line, reason, empty or partial-list note, for its always-mounted live region; `''` otherwise. */
-  protected readonly demandGenAudiencePickerAnnouncement: Signal<string> = this.initDemandGenAudiencePickerAnnouncement();
+  protected readonly googleAudiencePickerAnnouncement: Signal<string> = this.initGoogleAudiencePickerAnnouncement();
   /** Why Create is held for a Demand Gen audience the create would carry, or `null` (#5244). */
   protected readonly demandGenAudienceError: Signal<string | null> = this.initDemandGenAudienceError();
   /**
@@ -4198,6 +4222,46 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly demandGenDemographicsBlockMessage = computed(() => this.demandGenDemographicsBlock()?.message ?? '');
   /** The note when the single ad group's demographics are kept but not sent because the campaign is split; `''` otherwise. */
   protected readonly demandGenDemographicsHeldMessage: Signal<string> = this.initDemandGenDemographicsHeldMessage();
+  /**
+   * Whether the Performance Max audience signal picker may show (#5262): the dispatched channel takes a
+   * signal (`GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL`, on the campaign-service road) and this caller may send
+   * one (`googlePerformanceMaxAudienceSignalEnabled`, an explicit yes).
+   */
+  protected readonly performanceMaxAudienceSignalAvailable: Signal<boolean> = computed(
+    () => this.googlePerformanceMaxAudienceSignalEnabled() === true && this.googleChannelIn(GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL)
+  );
+  /** The audience signal the form holds (set by the picker or a restored draft), trimmed; `''` when none. */
+  protected readonly performanceMaxAudienceSignal: Signal<string> = computed(() => {
+    void this.campaignFormRevision();
+    return this.campaignForm.controls.googlePerformanceMaxAudienceSignal.value.trim();
+  });
+  /**
+   * Whether the audience signal's section renders: the dispatched channel takes a signal, and either this
+   * caller may pick one or a restored draft holds one, so it can be removed.
+   */
+  protected readonly performanceMaxAudienceSignalShown: Signal<boolean> = computed(
+    () =>
+      this.googleChannelIn(GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL) && (this.performanceMaxAudienceSignalAvailable() || this.performanceMaxAudienceSignal() !== '')
+  );
+  /** Why Create is held for an audience signal the create would carry, or `null` (#5262). */
+  protected readonly performanceMaxAudienceSignalError: Signal<string | null> = this.initPerformanceMaxAudienceSignalError();
+  /**
+   * Why Create is held for an audience signal the draft still holds but the request cannot carry, or `null`
+   * (#5262): `demandGenAudienceBlock`'s kinds, on the same capability read.
+   */
+  protected readonly performanceMaxAudienceSignalBlock: Signal<CampaignGooglePerformanceMaxAudienceSignalBlock | null> =
+    this.initPerformanceMaxAudienceSignalBlock();
+  /** The always-mounted live region's text for `performanceMaxAudienceSignalBlock`; `''` when nothing blocks. */
+  protected readonly performanceMaxAudienceSignalBlockMessage = computed(() => this.performanceMaxAudienceSignalBlock()?.message ?? '');
+  /**
+   * The audience signal held back after a switch away from Performance Max, or `null`: the twin of
+   * {@link googleSearchThemesWithheldWarning}, on the resolved channel.
+   */
+  protected readonly performanceMaxAudienceSignalWithheldWarning: Signal<string | null> = computed(() => {
+    const channel = this.resolveGoogleChannel();
+    if (!channel || (GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL as readonly string[]).includes(channel) || this.performanceMaxAudienceSignal() === '') return null;
+    return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take an audience signal, so the one you picked will not be sent. Switch back to Performance Max to keep it.`;
+  });
   protected readonly audiencePickerEmpty = GOOGLE_AUDIENCE_PICKER_EMPTY;
   protected readonly audiencePickerLoading = GOOGLE_AUDIENCE_PICKER_LOADING;
   protected readonly audiencePickerTruncated = GOOGLE_AUDIENCE_PICKER_TRUNCATED;
@@ -6089,6 +6153,9 @@ export class ImplementationTabComponent implements OnInit {
       // The Performance Max search themes (#5262), on the same gate, and already withheld unless the
       // dispatched channel is Performance Max.
       ...(platforms.includes('google-ads') ? this.googleSearchThemesPayload() : {}),
+      // The Performance Max audience signal (#5262), on the same gate, and already withheld unless the
+      // dispatched channel is Performance Max.
+      ...(platforms.includes('google-ads') ? this.googlePerformanceMaxAudienceSignalPayload() : {}),
       // The bidding plan, Google-gated for the same reason the creative is, and already narrowed
       // to the fields the effective strategy and channel actually take.
       ...(platforms.includes('google-ads') ? this.googleBiddingPayload() : {}),
@@ -6398,6 +6465,32 @@ export class ImplementationTabComponent implements OnInit {
       for (const group of form.demandGenAdGroups.controls) group.controls.demographics.setValue({});
     }
     this.focusAfterDemandGenAudienceBlockRemoved();
+  }
+
+  /**
+   * An Audience picked as the Performance Max audience signal (#5262): its resource name is set, which hides
+   * the picker while it holds focus, so focus moves to the picked Audience's Remove button once rendered. A
+   * `null` (the field cleared) sets nothing.
+   */
+  protected onPerformanceMaxAudienceSignalPicked(resourceName: string | null): void {
+    if (resourceName === null) return;
+    this.campaignForm.controls.googlePerformanceMaxAudienceSignal.setValue(resourceName);
+    this.focusPerformanceMaxAudienceSignalAfterRender('#performance-max-audience-signal-remove');
+  }
+
+  /**
+   * Remove the audience signal, from the picker section or from {@link performanceMaxAudienceSignalBlock}.
+   * Focus moves to the picker that replaces it; where none renders (no picker access, the list unavailable
+   * or empty, or the section hidden), to Create Campaign when it is enabled, otherwise to the Performance
+   * Max channel checkbox, which renders while the block can show.
+   */
+  protected removePerformanceMaxAudienceSignal(): void {
+    this.campaignForm.controls.googlePerformanceMaxAudienceSignal.setValue('');
+    this.focusPerformanceMaxAudienceSignalAfterRender(
+      '[data-testid="implementation-performance-max-audience-signal-picker"] input',
+      '[data-testid="implementation-submit-btn"] button:not(:disabled)',
+      '[data-testid="implementation-include-performance-max"]'
+    );
   }
 
   /**
@@ -7949,6 +8042,11 @@ export class ImplementationTabComponent implements OnInit {
     if (typeof draft.googlePerformanceMaxSearchThemes === 'string') {
       this.campaignForm.controls.googlePerformanceMaxSearchThemes.setValue(draft.googlePerformanceMaxSearchThemes, { emitEvent: false });
     }
+    // The audience signal (#5262), a string only; its shape and account are judged on Create
+    // (`performanceMaxAudienceSignalError`), so a value the create would refuse is shown with its reason.
+    if (typeof draft.googlePerformanceMaxAudienceSignal === 'string') {
+      this.campaignForm.controls.googlePerformanceMaxAudienceSignal.setValue(draft.googlePerformanceMaxAudienceSignal, { emitEvent: false });
+    }
 
     // Restored only when PRESENT. A draft persisted before these fields shipped has none of them,
     // and absence there means "this draft predates Meta fields" — the seeded values must stand.
@@ -8475,6 +8573,8 @@ export class ImplementationTabComponent implements OnInit {
       googleExcludedPlacements: form.googleExcludedPlacements,
       // Raw text, as the conversion actions are; held whatever the channel.
       googlePerformanceMaxSearchThemes: form.googlePerformanceMaxSearchThemes,
+      // The audience signal's resource name (#5262), raw; held whatever the channel.
+      googlePerformanceMaxAudienceSignal: form.googlePerformanceMaxAudienceSignal,
       // Signal-backed, so `valueChanges` never carries them — they are snapshotted here and
       // emitted explicitly by each Meta handler. `placements` is spread rather than referenced so
       // the parent holds a value, not a live view of a signal this component is about to destroy.
@@ -8918,6 +9018,7 @@ export class ImplementationTabComponent implements OnInit {
       googleConversionActions: '',
       googleExcludedPlacements: '',
       googlePerformanceMaxSearchThemes: '',
+      googlePerformanceMaxAudienceSignal: '',
     });
     for (const { groupName } of GOOGLE_CREATIVE_GROUPS) {
       this.creativeGroup(groupName).reset();
@@ -12156,12 +12257,12 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * The Demand Gen audience picker's list (#5244), read only while the picker may show and the project is
-   * known, both read INSIDE the trigger so a change to either drops a read that no longer applies. The
+   * The Audience pickers' list (#5244, #5262), read only while the Demand Gen audience picker or the
+   * Performance Max audience signal picker may show and the project is known, both read INSIDE the trigger so a change to either drops a read that no longer applies. The
    * picker shows only for a caller the route admits, so a 403 or 404 here is the deployment or the
    * gateway, not the caller, and reads as unavailable.
    */
-  private initDemandGenAudiencePicker(): Signal<GoogleAudiencePickerState> {
+  private initGoogleAudiencePicker(): Signal<GoogleAudiencePickerState> {
     const state = (status: GoogleAudiencePickerState['status'], reason: string | null = null): GoogleAudiencePickerState => ({
       status,
       audiences: [],
@@ -12169,7 +12270,10 @@ export class ImplementationTabComponent implements OnInit {
       truncated: false,
       reason,
     });
-    const trigger = computed(() => ({ projectSlug: this.activeFoundationSlug(), shown: this.demandGenAudienceAvailable() }));
+    const trigger = computed(() => ({
+      projectSlug: this.activeFoundationSlug(),
+      shown: this.demandGenAudienceAvailable() || this.performanceMaxAudienceSignalAvailable(),
+    }));
     return toSignal(
       toObservable(trigger).pipe(
         switchMap(({ projectSlug, shown }) => {
@@ -12185,7 +12289,7 @@ export class ImplementationTabComponent implements OnInit {
               })
             ),
             catchError((err: unknown) => {
-              console.error('Failed to read the Google Ads Audiences for the Demand Gen audience picker:', err);
+              console.error('Failed to read the Google Ads Audiences for the Audience pickers:', err);
               const status = err instanceof HttpErrorResponse ? err.status : 0;
               if (status === 403 || status === 404) return of(state('unavailable', GOOGLE_AUDIENCE_PICKER_REASONS.unavailable));
               return of(state('unavailable', GOOGLE_AUDIENCE_PICKER_REASONS.failed));
@@ -12198,9 +12302,9 @@ export class ImplementationTabComponent implements OnInit {
     );
   }
 
-  private initDemandGenAudiencePickerAnnouncement(): Signal<string> {
+  private initGoogleAudiencePickerAnnouncement(): Signal<string> {
     return computed(() => {
-      const picker = this.demandGenAudiencePicker();
+      const picker = this.googleAudiencePicker();
       if (picker.status === 'loading') return GOOGLE_AUDIENCE_PICKER_LOADING;
       if (picker.status === 'unavailable') return picker.reason ?? '';
       if (picker.status === 'loaded' && picker.audiences.length === 0) return GOOGLE_AUDIENCE_PICKER_EMPTY;
@@ -12232,7 +12336,7 @@ export class ImplementationTabComponent implements OnInit {
       const single = this.googleDemandGenAudiencePayload().demandGenAudience;
       const groups = this.googleDemandGenAdGroupsPayload().demandGenAdGroups;
       if (single === undefined && !(groups ?? []).some((group) => group.audience !== undefined)) return null;
-      return googleDemandGenAudiencesRefusal(single, groups, this.demandGenAudiencePicker().accountId);
+      return googleDemandGenAudiencesRefusal(single, groups, this.googleAudiencePicker().accountId);
     });
   }
 
@@ -12438,6 +12542,106 @@ export class ImplementationTabComponent implements OnInit {
       incomeRanges: strings('incomeRanges') as GoogleAdsIncomeRange[],
       parentalStatuses: strings('parentalStatuses') as GoogleAdsParentalStatus[],
     });
+  }
+
+  /**
+   * The Performance Max audience signal as the create sends it (#5262), trimmed, or `{}` when none was
+   * picked or the dispatched channel takes none (the value is then held), so a create without one is
+   * byte-identical to one made before it existed. Gated on the channel alone, as
+   * {@link googleSearchThemesPayload} is: a value this caller may not send holds Create
+   * ({@link performanceMaxAudienceSignalBlock}) rather than being dropped here.
+   */
+  private googlePerformanceMaxAudienceSignalPayload(): { performanceMaxAudienceSignal?: string } {
+    const signal = this.performanceMaxAudienceSignal();
+    return this.googleChannelIn(GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL) && signal !== '' ? { performanceMaxAudienceSignal: signal } : {};
+  }
+
+  /**
+   * {@link performanceMaxAudienceSignalError}: over exactly what the create sends, the asset group it
+   * attaches to first (no Performance Max creative creates none), then the shared judge the BFF refuses on,
+   * here with the account the picker read, so another account's Audience is refused too. The account is not
+   * judged until the list has loaded. Only for a caller answered yes: any other answer, `null` included, is
+   * {@link performanceMaxAudienceSignalBlock}'s, which tells a denial from a check still to be made.
+   */
+  private initPerformanceMaxAudienceSignalError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (this.googlePerformanceMaxAudienceSignalEnabled() !== true) return null;
+      const signal = this.googlePerformanceMaxAudienceSignalPayload().performanceMaxAudienceSignal;
+      if (signal === undefined) return null;
+      if (this.googleCreativePayload()[GOOGLE_CREATIVE_REQUEST_KEYS['performance-max']] === undefined) {
+        return GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL;
+      }
+      return googlePerformanceMaxAudienceSignalRefusal(signal, this.googleAudiencePicker().accountId);
+    });
+  }
+
+  /**
+   * Why Create is held for an audience signal the draft still holds but the request cannot carry, or `null`
+   * (#5262): {@link initDemandGenAudienceBlock}'s kinds and order, on the same capability read. It counts a
+   * signal on a create that asks for Performance Max, read from the form rather than the payload, which is
+   * `{}` while the cutover is dark or its answer is still out, so a restored draft cannot create without its
+   * signal. Clear only when the create path serves the create and the caller is answered yes, where the
+   * picker shows and {@link performanceMaxAudienceSignalError} judges the value. Remove is offered in every
+   * state.
+   */
+  private initPerformanceMaxAudienceSignalBlock(): Signal<CampaignGooglePerformanceMaxAudienceSignalBlock | null> {
+    return computed(() => {
+      if (this.performanceMaxAudienceSignal() === '') return null;
+      if (!this.showGoogleSection() || !this.selectedGoogleChannels().includes('performance-max')) return null;
+      if (this.googleCreativeAvailable() && this.googlePerformanceMaxAudienceSignalEnabled() === true) return null;
+
+      if (this.googleCreativeEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message:
+            'Performance Max audience signals are not available on this deployment, so the audience signal on this brief cannot be sent. Remove it to create the campaign.',
+        };
+      }
+      if (this.googlePerformanceMaxAudienceSignalEnabled() === false) {
+        return {
+          kind: 'restricted',
+          message:
+            'Only the LF marketing team can add a Google Ads Audience as a Performance Max audience signal, because every foundation shares one Google Ads account. Remove the audience signal on this brief to create the campaign, or ask the LF marketing team to add it.',
+        };
+      }
+      // `unknown` is treated like a failure, as the bidding block records: nothing else starts the read.
+      if (this.createCapabilityRead() === 'pending') {
+        return {
+          kind: 'pending',
+          message:
+            'Checking whether you can send Performance Max audience signals. Create waits for the answer so the audience signal on this brief is not dropped.',
+        };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: "Performance Max audience signal access can't be checked until this brief is saved. Save the brief, or remove the audience signal on it.",
+        };
+      }
+      return {
+        kind: 'failed',
+        message:
+          'Could not confirm that you can send Performance Max audience signals, so Create waits rather than dropping the audience signal on this brief. Retry the check, or remove it.',
+      };
+    });
+  }
+
+  /** Focus the first of `selectors` that matches once rendered (#5262): the audience signal's Remove button, its picker, or a fallback. */
+  private focusPerformanceMaxAudienceSignalAfterRender(...selectors: string[]): void {
+    afterNextRender(
+      () => {
+        const host = this.host.nativeElement;
+        for (const selector of selectors) {
+          const element = host.querySelector<HTMLElement>(selector);
+          if (element) {
+            element.focus();
+            return;
+          }
+        }
+      },
+      { injector: this.injector }
+    );
   }
 
   /** {@link demandGenAdGroupFieldErrors}: each touched ad group field's error, as {@link creativeFieldError} words it. */

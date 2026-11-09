@@ -174,6 +174,16 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-search-themes-withheld-live">
   {{ googleSearchThemesWithheldWarning() }}
 </div>
+<!-- The Performance Max audience signal's refusal, the signal a switch away holds back, and why Create is held for a retained one (#5262). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-performance-max-audience-signal-error-live">
+  {{ performanceMaxAudienceSignalError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-performance-max-audience-signal-withheld-live">
+  {{ performanceMaxAudienceSignalWithheldWarning() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-performance-max-audience-signal-block-live">
+  {{ performanceMaxAudienceSignalBlockMessage() }}
+</div>
 <!-- The named Demand Gen ad groups' refusal and what the split leaves unsent (#5226); empty off Demand Gen. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ad-groups-error-live">
   {{ demandGenAdGroupsError() ?? '' }}
@@ -181,9 +191,12 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ad-groups-held-live">
   {{ demandGenAdGroupsHeldMessage() }}
 </div>
-<!-- The Demand Gen audience picker's loading line, reason, empty or partial-list note (#5244); empty while it is hidden. -->
-<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-audience-picker-live">
-  {{ demandGenAudiencePickerAnnouncement() }}
+<!--
+  The Audience pickers' loading line, reason, empty or partial-list note (#5244, #5262): one list serves the
+  Demand Gen audience and the Performance Max audience signal; empty while neither picker may show.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-audience-picker-live">
+  {{ googleAudiencePickerAnnouncement() }}
 </div>
 <!-- Why Create is held for a Demand Gen audience, and the single ad group's audience held while split (#5244). -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-audience-error-live">
@@ -1574,6 +1587,52 @@
               [text]="true"
               (onClick)="onDisplayAudiencesRemoveAll()"
               data-testid="implementation-display-audiences-block-remove" />
+          </div>
+        </div>
+      }
+
+      <!--
+        A retained Performance Max audience signal the request cannot carry (#5262), on the Demand Gen
+        audience block's terms. The signal's own section shows only on the campaign-service road, so the held
+        signal is listed here while that section is not on screen. Create is held while it shows; Remove is
+        offered in every state.
+      -->
+      @if (performanceMaxAudienceSignalBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-performance-max-audience-signal-block-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (!performanceMaxAudienceSignalShown()) {
+            <p class="break-all" data-testid="implementation-performance-max-audience-signal-block-value">
+              Audience signal: {{ performanceMaxAudienceSignal() }}
+            </p>
+          }
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryCreateCapabilities.emit()"
+                data-testid="implementation-performance-max-audience-signal-block-retry" />
+            }
+            <lfx-button
+              label="Remove audience signal"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="removePerformanceMaxAudienceSignal()"
+              data-testid="implementation-performance-max-audience-signal-block-remove" />
           </div>
         </div>
       }
@@ -3358,7 +3417,7 @@
           <div class="mt-4 flex flex-col gap-2" [attr.data-testid]="'implementation-demand-gen-audience-' + key">
             <span class="text-xs font-medium text-gray-700">Audience</span>
             @if (audience !== '') {
-              @let audienceName = demandGenAudienceNames().get(audience) ?? audience;
+              @let audienceName = googleAudienceNames().get(audience) ?? audience;
               <span
                 class="inline-flex w-fit items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
                 [attr.data-testid]="'implementation-demand-gen-audience-picked-' + key">
@@ -3380,9 +3439,9 @@
                 demographics to pick an existing Audience instead.
               </p>
             } @else {
-              @switch (demandGenAudiencePicker().status) {
+              @switch (googleAudiencePicker().status) {
                 @case ('loaded') {
-                  @if (demandGenAudiencePicker().audiences.length > 0) {
+                  @if (googleAudiencePicker().audiences.length > 0) {
                     <lfx-ui-combobox
                       label="Pick an Audience"
                       placeholder="Search this account's Audiences"
@@ -3390,11 +3449,11 @@
                       size="small"
                       (valueChange)="onDemandGenAudiencePicked(group, $event)"
                       [attr.data-testid]="'implementation-demand-gen-audience-picker-' + key">
-                      @for (option of demandGenAudiencePicker().audiences; track option.resourceName) {
+                      @for (option of googleAudiencePicker().audiences; track option.resourceName) {
                         <lfx-ui-option [value]="option.resourceName" [label]="option.name" />
                       }
                     </lfx-ui-combobox>
-                    @if (demandGenAudiencePicker().truncated) {
+                    @if (googleAudiencePicker().truncated) {
                       <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-audience-picker-truncated-' + key">
                         {{ audiencePickerTruncated }}
                       </p>
@@ -3410,7 +3469,7 @@
                 }
                 @case ('unavailable') {
                   <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-audience-picker-unavailable-' + key">
-                    {{ demandGenAudiencePicker().reason }}
+                    {{ googleAudiencePicker().reason }}
                   </p>
                 }
               }
@@ -3611,6 +3670,85 @@
       }
       @if (googleSearchThemesWithheldWarning(); as warning) {
         <p class="text-xs text-amber-700" data-testid="implementation-google-search-themes-withheld">{{ warning }}</p>
+      }
+
+      <!--
+        Google Ads: the Performance Max audience signal (#5262).
+
+        PERFORMANCE MAX ONLY (`performanceMaxAudienceSignalShown`): the signal is an asset group signal, and
+        `validatePerformanceMaxSignals` refuses it on every other channel. Shown to a caller who may send one,
+        and to anyone while a restored draft holds one, so it can be removed. A picked Audience is shown by
+        name with Remove; with none, the picker lists the account's Audiences from the read the Demand Gen
+        picker uses. `performanceMaxAudienceSignalError` holds Create on any refusal and says why below.
+      -->
+      @if (performanceMaxAudienceSignalShown()) {
+        @let signal = performanceMaxAudienceSignal();
+        <div
+          class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-performance-max-audience-signal-section"
+          role="group"
+          aria-labelledby="performance-max-audience-signal-heading">
+          <span id="performance-max-audience-signal-heading" class="block text-xs font-medium text-gray-700">Google Audience Signal</span>
+          <p class="text-xs text-gray-500">
+            One of this account's Audiences, as a hint about who is likely to convert. Google may still show the ads to other people.
+          </p>
+          @if (signal !== '') {
+            @let signalName = googleAudienceNames().get(signal) ?? signal;
+            <span
+              class="inline-flex w-fit items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+              data-testid="implementation-performance-max-audience-signal-picked">
+              {{ signalName }}
+              <button
+                id="performance-max-audience-signal-remove"
+                type="button"
+                (click)="removePerformanceMaxAudienceSignal()"
+                class="ml-0.5 text-blue-600 hover:text-blue-800"
+                [attr.aria-label]="'Remove ' + signalName"
+                data-testid="implementation-performance-max-audience-signal-remove">
+                <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+              </button>
+            </span>
+          } @else {
+            @switch (googleAudiencePicker().status) {
+              @case ('loaded') {
+                @if (googleAudiencePicker().audiences.length > 0) {
+                  <lfx-ui-combobox
+                    label="Pick an Audience"
+                    placeholder="Search this account's Audiences"
+                    emptyText="No Audience matches"
+                    size="small"
+                    (valueChange)="onPerformanceMaxAudienceSignalPicked($event)"
+                    data-testid="implementation-performance-max-audience-signal-picker">
+                    @for (option of googleAudiencePicker().audiences; track option.resourceName) {
+                      <lfx-ui-option [value]="option.resourceName" [label]="option.name" />
+                    }
+                  </lfx-ui-combobox>
+                  @if (googleAudiencePicker().truncated) {
+                    <p class="text-xs text-gray-500" data-testid="implementation-performance-max-audience-signal-picker-truncated">
+                      {{ audiencePickerTruncated }}
+                    </p>
+                  }
+                } @else {
+                  <p class="text-xs text-gray-500" data-testid="implementation-performance-max-audience-signal-picker-empty">{{ audiencePickerEmpty }}</p>
+                }
+              }
+              @case ('loading') {
+                <p class="text-xs text-gray-500" data-testid="implementation-performance-max-audience-signal-picker-loading">{{ audiencePickerLoading }}</p>
+              }
+              @case ('unavailable') {
+                <p class="text-xs text-gray-500" data-testid="implementation-performance-max-audience-signal-picker-unavailable">
+                  {{ googleAudiencePicker().reason }}
+                </p>
+              }
+            }
+          }
+          @if (performanceMaxAudienceSignalError(); as error) {
+            <p class="text-xs text-red-600" data-testid="implementation-performance-max-audience-signal-error">{{ error }}</p>
+          }
+        </div>
+      }
+      @if (performanceMaxAudienceSignalWithheldWarning(); as warning) {
+        <p class="text-xs text-amber-700" data-testid="implementation-performance-max-audience-signal-withheld">{{ warning }}</p>
       }
 
       <!--
