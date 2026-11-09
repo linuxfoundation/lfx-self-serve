@@ -54,7 +54,7 @@ An approved program takes its status from its terms. When more than one fits, th
 | Status             | What it means                                                                                                                                        |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Accepting**      | Approved, and a term is taking applications today                                                                                                    |
-| **In Progress**    | Approved, and a term is running today                                                                                                                |
+| **In Progress**    | Approved, and a term is running now (between its start and end time)                                                                                 |
 | **Upcoming**       | Approved, and a term's applications have not opened yet, or it has no terms yet                                                                      |
 | **In Progress**    | Approved, with an open term that fits none of the rows above: its applications have closed but it has not started, or it has ended but is not closed |
 | **Pending Review** | Submitted and awaiting Linux Foundation review                                                                                                       |
