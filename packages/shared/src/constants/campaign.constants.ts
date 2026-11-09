@@ -6129,14 +6129,22 @@ export const CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES: readonly string[] = [
   '; the connection is not at fault',
 ];
 
-/**
- * The keys of a Display demographic targeting object (`displayDemographics`), in the order
- * campaign-service v1.0.35's `validateDisplayDemographics` judges them. Typed against
- * `GoogleDisplayDemographics`, so a renamed or added key fails to compile here.
- */
-export const GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS = [
+/** {@link GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS}' entries; `satisfies` refuses a key the interface does not have. */
+const DISPLAY_DEMOGRAPHIC_KEY_TUPLE = [
   'ageRanges',
   'genders',
   'incomeRanges',
   'parentalStatuses',
 ] as const satisfies readonly (keyof GoogleDisplayDemographics)[];
+
+/**
+ * The keys of a demographic targeting object — Display's (`displayDemographics`) and a Demand Gen ad
+ * group's (`demandGenDemographics`, a group's `demographics`), which take the same four lists — in the
+ * order campaign-service v1.0.35's `validateDisplayDemographics` judges them. Exhaustive against
+ * `GoogleDisplayDemographics` both ways: the tuple's `satisfies` refuses a key the interface lacks, and
+ * this declared type collapses to `never` when the interface has a key the tuple lacks, so a renamed or
+ * added key fails to compile here.
+ */
+export const GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS: [Exclude<keyof GoogleDisplayDemographics, (typeof DISPLAY_DEMOGRAPHIC_KEY_TUPLE)[number]>] extends [never]
+  ? typeof DISPLAY_DEMOGRAPHIC_KEY_TUPLE
+  : never = DISPLAY_DEMOGRAPHIC_KEY_TUPLE;

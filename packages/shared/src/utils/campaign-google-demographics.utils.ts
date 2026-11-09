@@ -17,6 +17,7 @@ import {
   GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_OBSERVED_DEMOGRAPHICS,
   GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS,
+  GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS,
   googleAdsEchoed,
   googleAdsTrimSpace,
 } from '../constants/campaign.constants';
@@ -177,37 +178,39 @@ export function googleObservedDemographicsRefusal(raw: unknown, channel: unknown
   return null;
 }
 
-/** The four lists of a demographic targeting object, Display's or a Demand Gen ad group's, in the order upstream judges them. */
-const DISPLAY_TARGETING_LISTS = [
-  {
-    key: 'ageRanges',
-    exclusion: 'ageRanges',
-    noun: 'age range',
-    plural: 'targeted age ranges',
-    list: 'age ranges',
-    allowed: GOOGLE_ADS_AGE_RANGE_MAP as Readonly<Record<string, string>>,
-    choices: AGE_CHOICES,
-  },
-  { key: 'genders', exclusion: 'genders', noun: 'gender', plural: 'targeted genders', list: 'genders', allowed: GENDER_MAP, choices: GENDER_CHOICES },
-  {
-    key: 'incomeRanges',
-    exclusion: 'incomeRanges',
+/**
+ * How each list of a demographic targeting object is named and judged, keyed by
+ * {@link GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS}: a `Record` over that tuple's keys, so a key missing here, or one
+ * the tuple does not have, fails to compile.
+ */
+const DISPLAY_TARGETING_SPECS: Record<
+  (typeof GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS)[number],
+  { noun: string; plural: string; list: string; allowed: Readonly<Record<string, string>>; choices: string }
+> = {
+  ageRanges: { noun: 'age range', plural: 'targeted age ranges', list: 'age ranges', allowed: GOOGLE_ADS_AGE_RANGE_MAP, choices: AGE_CHOICES },
+  genders: { noun: 'gender', plural: 'targeted genders', list: 'genders', allowed: GENDER_MAP, choices: GENDER_CHOICES },
+  incomeRanges: {
     noun: 'income range',
     plural: 'targeted income ranges',
     list: 'income ranges',
-    allowed: GOOGLE_ADS_INCOME_RANGE_MAP as Readonly<Record<string, string>>,
+    allowed: GOOGLE_ADS_INCOME_RANGE_MAP,
     choices: INCOME_CHOICES,
   },
-  {
-    key: 'parentalStatuses',
-    exclusion: 'parentalStatuses',
+  parentalStatuses: {
     noun: 'parental status',
     plural: 'targeted parental statuses',
     list: 'parental statuses',
     allowed: PARENTAL_MAP,
     choices: PARENTAL_CHOICES,
   },
-] as const;
+};
+
+/**
+ * The four lists of a demographic targeting object, Display's or a Demand Gen ad group's, in the order
+ * upstream judges them: {@link GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS}' order, each with its spec. `exclusion`
+ * names the exclusion list a targeted value is compared with, which has the same key.
+ */
+const DISPLAY_TARGETING_LISTS = GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS.map((key) => ({ key, exclusion: key, ...DISPLAY_TARGETING_SPECS[key] }));
 
 /**
  * Whether a demographic targeting object names any value: Display's (`displayDemographics`), the test
