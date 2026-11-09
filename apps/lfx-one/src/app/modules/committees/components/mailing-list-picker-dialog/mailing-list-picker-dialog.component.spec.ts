@@ -460,4 +460,109 @@ describe('MailingListPickerDialogComponent committee filters', () => {
 
     expect(dialogClose).toHaveBeenCalledWith(expect.objectContaining({ committeeFilters: new Map(), committeeRoleFilters: new Map() }));
   });
+
+  // Bugbot/lfx-one review on #5420: a cleared PrimeNG multi-select writes `null` through the
+  // ControlValueAccessor, bypassing the `nonNullable` guarantee (which only governs reset()).
+  // save() must normalize that back to [] instead of propagating null to the caller.
+  it('does not throw and normalizes a cleared (null) filter control to an empty array in save()', async () => {
+    await setup(true);
+
+    fixture.componentInstance.mlCommitteeFilterForm.get('ml-synced')?.setValue(null as unknown as string[]);
+    fixture.componentInstance.mlCommitteeRoleFilterForm.get('ml-synced')?.setValue(null as unknown as string[]);
+
+    expect(() => fixture.componentInstance.save()).not.toThrow();
+    expect(dialogClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        committeeFilters: new Map([
+          ['ml-synced', []],
+          ['ml-manual', []],
+        ]),
+        committeeRoleFilters: new Map([
+          ['ml-synced', []],
+          ['ml-manual', []],
+        ]),
+      })
+    );
+  });
+});
+
+// copilot review on #5420: the indexed query-service response nests sync_mode/filters under
+// `committees[]` per-entry (model.Committee), not as top-level fields on the mailing list — a list
+// linked to several committees can carry a different direction/filter set for each one. The picker
+// must seed and resolve its controls from the matching `committees[]` entry, not `list.sync_mode`.
+describe('MailingListPickerDialogComponent committee filters from indexed committees[] shape', () => {
+  let fixture: ComponentFixture<MailingListPickerDialogComponent>;
+  let dialogClose: ReturnType<typeof vi.fn>;
+
+  const committeeUid = 'committee-1';
+
+  const MAILING_LISTS: GroupsIOMailingList[] = [
+    {
+      uid: 'ml-indexed',
+      group_name: 'indexed',
+      domain: 'lists.example.org',
+      writer: true,
+      // Deliberately omit top-level sync_mode/committee_filters/committee_role_filters — the
+      // indexed read model only ever populates the nested committees[] entry.
+      committees: [
+        {
+          uid: committeeUid,
+          sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+          allowed_voting_statuses: [CommitteeMemberVotingStatus.VOTING_REP],
+          committee_role_filters: ['Chair'],
+        },
+      ],
+    },
+  ] as GroupsIOMailingList[];
+
+  async function setup(): Promise<void> {
+    dialogClose = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [MailingListPickerDialogComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: DynamicDialogConfig,
+          useValue: {
+            data: {
+              mailingLists: MAILING_LISTS,
+              associatedUids: new Set<string>(['ml-indexed']),
+              committeeUid,
+            },
+          },
+        },
+        { provide: DynamicDialogRef, useValue: { close: dialogClose } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: ProjectService, useValue: { getProjectStrict: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(MailingListPickerDialogComponent);
+    await fixture.whenStable();
+  }
+
+  it('seeds the direction and filter controls from the nested committees[] entry, not top-level fields', async () => {
+    await setup();
+
+    expect(fixture.componentInstance.mlDirectionForm.get('ml-indexed')?.value).toBe(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST);
+    expect(fixture.componentInstance.mlCommitteeFilterForm.get('ml-indexed')?.value).toEqual([CommitteeMemberVotingStatus.VOTING_REP]);
+    expect(fixture.componentInstance.mlCommitteeRoleFilterForm.get('ml-indexed')?.value).toEqual(['Chair']);
+  });
+
+  it('reopens and saves without clearing the persisted filters seeded from committees[]', async () => {
+    await setup();
+
+    fixture.componentInstance.save();
+
+    expect(dialogClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        syncModes: new Map([['ml-indexed', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST]]),
+        committeeFilters: new Map([['ml-indexed', [CommitteeMemberVotingStatus.VOTING_REP]]]),
+        committeeRoleFilters: new Map([['ml-indexed', ['Chair']]]),
+      })
+    );
+  });
 });

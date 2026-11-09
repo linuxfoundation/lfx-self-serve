@@ -26,6 +26,7 @@ import {
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   WG_WEEKLY_BRIEF_SLACK_FLAG,
 } from '@lfx-one/shared/constants';
+import { getMailingListCommitteeSync } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -555,11 +556,15 @@ export class CommitteeSettingsTabComponent {
       .filter((uid) => {
         const desiredSync = syncModes.get(uid);
         const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
-        if (desiredSync !== undefined && desiredSync !== (ml?.sync_mode ?? MailingListSyncMode.MANUAL)) return true;
+        // The read model stores sync_mode/filters per-entry inside ml.committees[], not as
+        // top-level fields on the mailing list — getMailingListCommitteeSync resolves the entry
+        // for THIS committee instead of reading the (always-empty-on-reads) top-level fields.
+        const persisted = getMailingListCommitteeSync(ml, committee.uid);
+        if (desiredSync !== undefined && desiredSync !== (persisted.syncMode ?? MailingListSyncMode.MANUAL)) return true;
         const desiredFilters = committeeFilters.get(uid);
-        if (desiredFilters !== undefined && !this.arraysEqualAsSets(desiredFilters, ml?.committee_filters ?? [])) return true;
+        if (desiredFilters !== undefined && !this.arraysEqualAsSets(desiredFilters, persisted.committeeFilters)) return true;
         const desiredRoleFilters = committeeRoleFilters.get(uid);
-        if (desiredRoleFilters !== undefined && !this.arraysEqualAsSets(desiredRoleFilters, ml?.committee_role_filters ?? [])) return true;
+        if (desiredRoleFilters !== undefined && !this.arraysEqualAsSets(desiredRoleFilters, persisted.committeeRoleFilters)) return true;
         return false;
       });
 
@@ -732,11 +737,15 @@ export class CommitteeSettingsTabComponent {
     // direction with the sync settings feature flag on, so an unset value here always falls back
     // to the #4024/#4880 behavior above untouched.
     const sameCommittee = !!committeeUid && ml.committees?.[0]?.uid === committeeUid;
+    // The read model stores sync_mode/filters per-entry inside ml.committees[], not as top-level
+    // fields on the mailing list — getMailingListCommitteeSync resolves the entry for THIS
+    // committee instead of reading the (always-empty-on-reads) top-level fields directly.
+    const persisted = sameCommittee ? getMailingListCommitteeSync(ml, committeeUid) : undefined;
     let syncMode: MailingListSyncMode | undefined;
     if (explicitSyncMode !== undefined) {
       syncMode = explicitSyncMode;
     } else if (sameCommittee) {
-      syncMode = ml.sync_mode;
+      syncMode = persisted?.syncMode;
     } else if (committeeUid) {
       syncMode = MailingListSyncMode.MANUAL;
     }
@@ -750,8 +759,8 @@ export class CommitteeSettingsTabComponent {
     let committeeFilters: CommitteeMemberVotingStatus[] | undefined;
     let committeeRoleFilters: string[] | undefined;
     if (syncMode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST) {
-      committeeFilters = explicitCommitteeFilters ?? (sameCommittee ? (ml.committee_filters ?? []) : []);
-      committeeRoleFilters = explicitCommitteeRoleFilters ?? (sameCommittee ? (ml.committee_role_filters ?? []) : []);
+      committeeFilters = explicitCommitteeFilters ?? persisted?.committeeFilters ?? [];
+      committeeRoleFilters = explicitCommitteeRoleFilters ?? persisted?.committeeRoleFilters ?? [];
     } else if (committeeUid) {
       committeeFilters = [];
       committeeRoleFilters = [];

@@ -400,6 +400,20 @@ export interface CommitteeReference {
   name?: string;
   /** Allowed voting statuses: Voting Rep, Alternate Voting Rep, Observer, Emeritus, None */
   allowed_voting_statuses?: CommitteeMemberVotingStatus[];
+  /**
+   * Automatic membership sync direction between this committee and the mailing list it's attached
+   * to (linuxfoundation/lfx-v2-mailing-list-service#110 `model.Committee.SyncMode`). The backend
+   * stores this per-committee-entry, not on the mailing list resource itself, so a mailing list
+   * linked to multiple committees can carry a different direction for each.
+   */
+  sync_mode?: MailingListSyncMode;
+  /**
+   * Committee member roles that gate which members are synced to the mailing list for this
+   * committee's C→ML direction, in addition to `allowed_voting_statuses`
+   * (linuxfoundation/lfx-v2-mailing-list-service#110 `model.Committee.CommitteeRoleFilters`).
+   * Plain string match against the member's role; there is no fixed role taxonomy.
+   */
+  committee_role_filters?: string[];
 }
 
 /**
