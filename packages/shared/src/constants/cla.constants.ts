@@ -767,6 +767,7 @@ export const ORG_CLA_DESIGNEE_REFUSAL_COPY: Record<OrgClaDesigneeRefusal, string
   'already-signed': 'This CLA has already been signed for your organization. Reload the page to see it.',
   'no-lf-login':
     'Your account has no LF Login the CLA service recognizes, so you cannot be made CLA Manager. Check that the email address on your profile is the one you use to sign in to LFX.',
+  // Deliberately no next step (#5447): no support link in error states, and there is no docs page for sanctioned companies yet.
   sanctioned: 'Your organization cannot sign this CLA at this time.',
   'not-authorized': 'You are not allowed to request a CLA Manager for this organization.',
   unknown: 'We could not complete the request. Try again in a few minutes.',
