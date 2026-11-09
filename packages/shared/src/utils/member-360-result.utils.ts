@@ -2,38 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { CATEGORY_LABELS, MEMBER_360_ACTION_TEAM_ORDER, MEMBER_360_HEAT_ORDER, MEMBER_360_PRIORITY_ORDER } from '../constants/member-360.constants';
-import type { Member360Envelope } from '../interfaces/member-360.interface';
+import type { Member360ActionTeam, Member360Category, Member360Envelope, Member360EvidenceGroup, Member360WeightRow } from '../interfaces/member-360.interface';
 
 type Tabs = Member360Envelope['tabs'];
 type Action = Tabs['actions_by_team'][number];
 type Evidence = Tabs['evidence'][number];
 type Method = Tabs['method'];
-type CategoryKey = keyof typeof CATEGORY_LABELS;
-
-/** One team's actions as the page shows them: ordered, counted by priority, with the next due date. */
-export interface Member360ActionTeam {
-  key: string;
-  owner: Action['owner'];
-  actions: Action[];
-  priorityCounts: { priority: Action['priority']; count: number }[];
-  nextDue: string | null;
-}
-
-/** One evidence category as the page shows it: its label and rows, largest category first. */
-export interface Member360EvidenceGroup {
-  key: CategoryKey;
-  label: string;
-  rows: Evidence[];
-}
-
-/** One scoring category's weight as the page shows it, or why it had no data. */
-export interface Member360WeightRow {
-  key: CategoryKey;
-  label: string;
-  used: number;
-  default: number;
-  noDataReason: string | null;
-}
 
 /**
  * The agent opens many actions with the team that owns them ("Marketing: …", "Mktg owner: …",
@@ -74,13 +48,14 @@ export function member360ActionTeams(actions: readonly Action[]): Member360Actio
 
 /** Evidence grouped by category, largest first; rows keep their order within a category. */
 export function member360EvidenceGroups(evidence: readonly Evidence[]): Member360EvidenceGroup[] {
-  const groups = new Map<CategoryKey, Evidence[]>();
+  const groups = new Map<Member360Category, Evidence[]>();
   for (const row of evidence) {
-    const key = row.category as CategoryKey;
-    groups.set(key, [...(groups.get(key) ?? []), row]);
+    const rows = groups.get(row.category);
+    if (rows) rows.push(row);
+    else groups.set(row.category, [row]);
   }
   return [...groups.entries()]
-    .map(([key, rows]) => ({ key, label: CATEGORY_LABELS[key] ?? key, rows }))
+    .map(([key, rows]) => ({ key, label: CATEGORY_LABELS[key], rows }))
     .sort((a, b) => b.rows.length - a.rows.length || a.label.localeCompare(b.label));
 }
 
@@ -96,15 +71,18 @@ export function member360EvidenceSource(source: string): string {
   return EVIDENCE_SOURCES.find(([pattern]) => pattern.test(source))?.[1] ?? source;
 }
 
-/** The weight each scoring category carried, in the heat-strip order, with the reason when it had no data. */
-export function member360WeightRows(method: Method): Member360WeightRow[] {
-  const reasons = new Map(method.categories_no_data.map((entry) => [entry.category as CategoryKey, entry.reason]));
+/**
+ * The weight each scoring category carried, in the heat-strip order. A category is "no data" only when the run
+ * lists it in categories_no_data (with its reason); a category weighted 0% on purpose keeps its bar at 0%.
+ */
+export function member360WeightRows(method: Pick<Method, 'weights_used' | 'weights_default' | 'categories_no_data'>): Member360WeightRow[] {
+  const reasons = new Map(method.categories_no_data.map((entry) => [entry.category, entry.reason]));
   return MEMBER_360_HEAT_ORDER.map((key) => ({
     key,
     label: CATEGORY_LABELS[key],
     used: method.weights_used[key],
     default: method.weights_default[key],
-    noDataReason: method.weights_used[key] > 0 ? null : (reasons.get(key) ?? 'No data in this run.'),
+    noDataReason: reasons.get(key) ?? null,
   }));
 }
 
@@ -118,10 +96,13 @@ export function member360TierGroupLabel(group: string, projectName: string): str
   return short.length > 0 ? short : group;
 }
 
-/** The calendar quarter of an ISO date or timestamp, as "Q4 2026"; null for a missing or unreadable date. */
+/**
+ * The calendar quarter of an ISO date or timestamp, as "Q4 2026", in the viewer's local time: the same clock the
+ * date pipe renders beside it, so a row never reads "Q4 2026 · 30 Sep". Null for a missing or unreadable date.
+ */
 export function member360QuarterLabel(iso: string | null): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return `Q${Math.floor(date.getUTCMonth() / 3) + 1} ${date.getUTCFullYear()}`;
+  return `Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
 }

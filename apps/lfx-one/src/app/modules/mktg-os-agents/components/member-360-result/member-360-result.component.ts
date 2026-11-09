@@ -108,28 +108,36 @@ export class Member360ResultComponent {
       .map(([tier, count]) => `${count} ${tier.toLowerCase()}`)
       .join(' · ')
   );
-  protected readonly foldedRows = MEMBER_360_FOLDED_ROWS;
+  private readonly foldedRows = MEMBER_360_FOLDED_ROWS;
   /** Lists opened past their first rows ("team:sales", "evidence:events", "notes"); every list starts folded. */
   protected readonly unfolded = signal<ReadonlySet<string>>(new Set());
   protected readonly teams = computed(() =>
-    member360ActionTeams(this.envelope().tabs.actions_by_team).map((team) => ({
-      ...team,
-      nextDueText: this.dayText(team.nextDue),
-      priorityCounts: team.priorityCounts.map((count) => ({ ...count, priorityClass: this.priorityClass(count.priority) })),
-      rows: team.actions.map((action) => ({
+    member360ActionTeams(this.envelope().tabs.actions_by_team).map((team) => {
+      const rows = team.actions.map((action) => ({
         action,
         text: member360ActionText(action),
         dueText: this.dayText(action.suggested_deadline),
         priorityClass: this.priorityClass(action.priority),
-      })),
-    }))
+      }));
+      return {
+        ...team,
+        nextDueText: this.dayText(team.nextDue),
+        priorityCounts: team.priorityCounts.map((count) => ({ ...count, priorityClass: this.priorityClass(count.priority) })),
+        rows,
+        fold: this.foldView(`team:${team.key}`, rows, `Show all ${rows.length} actions`),
+      };
+    })
   );
   protected readonly evidenceGroups = computed(() =>
-    member360EvidenceGroups(this.envelope().tabs.evidence).map((group) => ({
-      ...group,
-      rows: group.rows.map((row) => ({ ...row, sourceText: member360EvidenceSource(row.source) })),
-    }))
+    member360EvidenceGroups(this.envelope().tabs.evidence).map((group) => {
+      const rows = group.rows.map((row) => ({ ...row, sourceText: member360EvidenceSource(row.source) }));
+      return { ...group, rows, fold: this.foldView(`evidence:${group.key}`, rows, `Show all ${rows.length}`) };
+    })
   );
+  protected readonly notes = computed(() => {
+    const notes = this.method().notes;
+    return this.foldView('notes', notes, `Show all ${notes.length} notes`);
+  });
   protected readonly method = computed(() => this.envelope().tabs.method);
   protected readonly methodSources = computed(() =>
     this.method().data_sources.map((source) => ({ ...source, label: member360SourceLabel(source.label), statusText: member360SourceStatusText(source.status) }))
@@ -225,9 +233,6 @@ export class Member360ResultComponent {
   protected toggle(member: number): void {
     this.expanded.update((current) => (current === member ? null : member));
   }
-  protected isUnfolded(key: string): boolean {
-    return this.unfolded().has(key);
-  }
   protected toggleFold(key: string): void {
     this.unfolded.update((current) => {
       const next = new Set(current);
@@ -299,6 +304,17 @@ export class Member360ResultComponent {
       trendClass,
       trendAriaLabel: trend === null ? 'no trend' : null,
       trendState: trend ?? 'none',
+    };
+  }
+  /** A folded list's view: its first rows until opened, and the toggle's state and label; reads the fold signal, so callers are computed. */
+  private foldView<T>(key: string, rows: readonly T[], showAllLabel: string) {
+    const open = this.unfolded().has(key);
+    return {
+      key,
+      open,
+      visible: open ? rows : rows.slice(0, this.foldedRows),
+      foldable: rows.length > this.foldedRows,
+      toggleLabel: open ? 'Show fewer' : showAllLabel,
     };
   }
   /** "20 Nov" for an ISO day; any other deadline the agent wrote is shown as written. */

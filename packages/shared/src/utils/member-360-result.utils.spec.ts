@@ -16,19 +16,18 @@ import {
 type Tabs = Member360Envelope['tabs'];
 type Action = Tabs['actions_by_team'][number];
 
-const action = (over: Partial<Action>): Action =>
-  ({
-    owner: 'Marketing',
-    priority: 'Medium',
-    member_organization: 'Org',
-    engagement_tier: 'Passive',
-    days_to_renewal: 21,
-    recommended_action: 'Invite the voting rep to speak.',
-    supporting_rationale: 'Rule 6.',
-    suggested_deadline: '2026-12-15',
-    routing_rule: 6,
-    ...over,
-  }) as Action;
+const baseAction: Action = {
+  owner: 'Marketing',
+  priority: 'Medium',
+  member_organization: 'Org',
+  engagement_tier: 'Passive',
+  days_to_renewal: 21,
+  recommended_action: 'Invite the voting rep to speak.',
+  supporting_rationale: 'Rule 6.',
+  suggested_deadline: '2026-12-15',
+  routing_rule: 6,
+};
+const action = (over: Partial<Action>): Action => ({ ...baseAction, ...over });
 
 describe('member360ActionText', () => {
   it.each([
@@ -78,7 +77,7 @@ describe('member360ActionTeams', () => {
 });
 
 describe('member360EvidenceGroups and member360EvidenceSource', () => {
-  const evidence = [
+  const evidence: Tabs['evidence'] = [
     {
       member_organization: 'A',
       category: 'speaking',
@@ -103,7 +102,7 @@ describe('member360EvidenceGroups and member360EvidenceSource', () => {
       source: 'LFX MCP — lfx_mcp_search_committee_members',
       signal_weight: 1,
     },
-  ] as Tabs['evidence'];
+  ];
 
   it('groups by category, largest first, keeping row order inside a group', () => {
     const groups = member360EvidenceGroups(evidence);
@@ -123,17 +122,16 @@ describe('member360EvidenceGroups and member360EvidenceSource', () => {
 });
 
 describe('member360WeightRows', () => {
-  it('lists every category in heat order with its weight, and a reason for the ones without data', () => {
-    const method = {
+  it('lists every category in heat order with its weight; only a category the run lists as without data reads as no data', () => {
+    const rows = member360WeightRows({
       weights_used: { committees: 36.37, events: 36.36, speaking: 27.27, content: 0, community_programs: 0, marketing_social: 0 },
       weights_default: { committees: 20, events: 20, speaking: 15, content: 15, community_programs: 10, marketing_social: 20 },
       categories_no_data: [{ category: 'content', reason: 'No content tracker uploaded.' }],
-    } as unknown as Tabs['method'];
-    const rows = member360WeightRows(method);
+    });
     expect(rows.map((row) => row.key)).toEqual(['events', 'speaking', 'community_programs', 'committees', 'content', 'marketing_social']);
     expect(rows.find((row) => row.key === 'events')).toMatchObject({ used: 36.36, default: 20, noDataReason: null });
     expect(rows.find((row) => row.key === 'content')?.noDataReason).toBe('No content tracker uploaded.');
-    expect(rows.find((row) => row.key === 'marketing_social')?.noDataReason).toBe('No data in this run.');
+    expect(rows.find((row) => row.key === 'marketing_social')).toMatchObject({ used: 0, default: 20, noDataReason: null });
   });
 });
 
@@ -146,8 +144,11 @@ describe('member360TierGroupLabel and member360QuarterLabel', () => {
   });
 
   it('names the calendar quarter of a run date, and nothing for a missing one', () => {
-    expect(member360QuarterLabel('2026-11-09T21:09:44Z')).toBe('Q4 2026');
-    expect(member360QuarterLabel('2026-01-01')).toBe('Q1 2026');
+    expect(member360QuarterLabel('2026-11-15T12:00:00Z')).toBe('Q4 2026');
+    expect(member360QuarterLabel('2026-02-15T12:00:00Z')).toBe('Q1 2026');
+    // Local time, the clock the date pipe shows beside it: a run at local 30 Sep 23:30 is Q3, whatever UTC says.
+    const lateSeptember = new Date(2026, 8, 30, 23, 30).toISOString();
+    expect(member360QuarterLabel(lateSeptember)).toBe('Q3 2026');
     expect(member360QuarterLabel(null)).toBeNull();
     expect(member360QuarterLabel('not a date')).toBeNull();
   });

@@ -245,39 +245,37 @@
             </div>
           }
           <ol class="flex flex-col text-sm">
-            @for (row of team.rows; track $index; let index = $index) {
-              @if (index < foldedRows || isUnfolded('team:' + team.key)) {
-                <li class="flex flex-col gap-0.5 border-t border-gray-200 py-2.5" data-testid="member-360-action-row">
-                  <div class="flex flex-wrap items-center justify-between gap-2">
-                    <span class="font-semibold">{{ row.action.member_organization }}</span>
-                    <span class="flex items-center gap-2 text-xs">
-                      <span class="rounded-full px-2 py-0.5 font-semibold" [ngClass]="row.priorityClass">{{ row.action.priority }}</span>
-                      @if (row.dueText) {
-                        <span class="whitespace-nowrap tabular-nums text-gray-700">Due {{ row.dueText }}</span>
-                      }
-                    </span>
-                  </div>
-                  <p class="break-words">{{ row.text }}</p>
-                  <p class="text-xs text-gray-500">
-                    {{ row.action.engagement_tier }}
-                    @if (row.action.days_to_renewal !== null) {
-                      · renews in {{ row.action.days_to_renewal }} {{ row.action.days_to_renewal === 1 ? 'day' : 'days' }}
+            @for (row of team.fold.visible; track $index) {
+              <li class="flex flex-col gap-0.5 border-t border-gray-200 py-2.5" data-testid="member-360-action-row">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="font-semibold">{{ row.action.member_organization }}</span>
+                  <span class="flex items-center gap-2 text-xs">
+                    <span class="rounded-full px-2 py-0.5 font-semibold" [ngClass]="row.priorityClass">{{ row.action.priority }}</span>
+                    @if (row.dueText) {
+                      <span class="whitespace-nowrap tabular-nums text-gray-700">Due {{ row.dueText }}</span>
                     }
-                  </p>
-                </li>
-              }
+                  </span>
+                </div>
+                <p class="break-words">{{ row.text }}</p>
+                <p class="text-xs text-gray-500">
+                  {{ row.action.engagement_tier }}
+                  @if (row.action.days_to_renewal !== null) {
+                    · renews in {{ row.action.days_to_renewal }} {{ row.action.days_to_renewal === 1 ? 'day' : 'days' }}
+                  }
+                </p>
+              </li>
             } @empty {
               <li [attr.data-testid]="'member-360-no-actions-' + team.key">No actions for this team.</li>
             }
           </ol>
-          @if (team.rows.length > foldedRows) {
+          @if (team.fold.foldable) {
             <button
               type="button"
               class="self-start text-sm font-medium text-blue-700 hover:text-blue-800 hover:underline"
-              [attr.aria-expanded]="isUnfolded('team:' + team.key)"
-              (click)="toggleFold('team:' + team.key)"
+              [attr.aria-expanded]="team.fold.open"
+              (click)="toggleFold(team.fold.key)"
               [attr.data-testid]="'member-360-show-all-' + team.key">
-              {{ isUnfolded('team:' + team.key) ? 'Show fewer' : 'Show all ' + team.rows.length + ' actions' }}
+              {{ team.fold.toggleLabel }}
             </button>
           }
         </div>
@@ -315,27 +313,25 @@
                     </tr>
                   </thead>
                   <tbody>
-                    @for (evidence of group.rows; track $index; let index = $index) {
-                      @if (index < foldedRows || isUnfolded('evidence:' + group.key)) {
-                        <tr class="border-b border-gray-100 align-top">
-                          <td class="py-1.5 pr-3 font-semibold">{{ evidence.member_organization }}</td>
-                          <td class="break-words py-1.5 pr-3">{{ evidence.description }}</td>
-                          <td class="whitespace-nowrap py-1.5 pr-3 tabular-nums">{{ evidence.date | date: 'd MMM y' }}</td>
-                          <td class="py-1.5 text-gray-500">{{ evidence.sourceText }}</td>
-                        </tr>
-                      }
+                    @for (evidence of group.fold.visible; track $index) {
+                      <tr class="border-b border-gray-100 align-top">
+                        <td class="py-1.5 pr-3 font-semibold">{{ evidence.member_organization }}</td>
+                        <td class="break-words py-1.5 pr-3">{{ evidence.description }}</td>
+                        <td class="whitespace-nowrap py-1.5 pr-3 tabular-nums">{{ evidence.date | date: 'd MMM y' }}</td>
+                        <td class="py-1.5 text-gray-500">{{ evidence.sourceText }}</td>
+                      </tr>
                     }
                   </tbody>
                 </table>
               </div>
-              @if (group.rows.length > foldedRows) {
+              @if (group.fold.foldable) {
                 <button
                   type="button"
                   class="self-start font-medium text-blue-700 hover:text-blue-800 hover:underline"
-                  [attr.aria-expanded]="isUnfolded('evidence:' + group.key)"
-                  (click)="toggleFold('evidence:' + group.key)"
+                  [attr.aria-expanded]="group.fold.open"
+                  (click)="toggleFold(group.fold.key)"
                   [attr.data-testid]="'member-360-evidence-show-all-' + group.key">
-                  {{ isUnfolded('evidence:' + group.key) ? 'Show fewer' : 'Show all ' + group.rows.length }}
+                  {{ group.fold.toggleLabel }}
                 </button>
               }
             </div>
@@ -445,20 +441,18 @@
                 @for (override of method().overrides; track $index) {
                   <li class="break-words">{{ override }}</li>
                 }
-                @for (note of method().notes; track $index; let index = $index) {
-                  @if (index < foldedRows || isUnfolded('notes')) {
-                    <li class="break-words">{{ note }}</li>
-                  }
+                @for (note of notes().visible; track $index) {
+                  <li class="break-words">{{ note }}</li>
                 }
               </ul>
-              @if (method().notes.length > foldedRows) {
+              @if (notes().foldable) {
                 <button
                   type="button"
                   class="self-start font-medium text-blue-700 hover:text-blue-800 hover:underline"
-                  [attr.aria-expanded]="isUnfolded('notes')"
-                  (click)="toggleFold('notes')"
+                  [attr.aria-expanded]="notes().open"
+                  (click)="toggleFold(notes().key)"
                   data-testid="member-360-notes-show-all">
-                  {{ isUnfolded('notes') ? 'Show fewer' : 'Show all ' + method().notes.length + ' notes' }}
+                  {{ notes().toggleLabel }}
                 </button>
               }
             </div>
