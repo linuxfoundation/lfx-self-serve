@@ -1179,6 +1179,28 @@
           [demographicsError]="googleDemographicExclusionsError()"
           [excludedGeosError]="googleExcludedGeoTargetsError()" />
       }
+      <!--
+        Google Ads: ad-group demographics (linuxfoundation/lfx-v2-campaign-service#473, #497, #499) —
+        income and parental-status exclusions, Search's observed dimensions and Display's targeting,
+        each section on its own shared channel fence. The error is the shared refusal the BFF answers
+        the create with, and Create waits on it.
+      -->
+      @if (googleBiddingChannel()) {
+        <lfx-campaign-google-demographics-panel
+          [showIncomeExclusions]="googleIncomeExclusionsAvailable()"
+          [showParentalExclusions]="googleParentalExclusionsAvailable()"
+          [showObserved]="googleObservedDemographicsAvailable()"
+          [showTargeting]="googleDemographicTargetingAvailable()"
+          [excludedIncomeRanges]="googleExcludedIncomeRanges()"
+          (excludedIncomeRangesChange)="onGoogleExcludedIncomeRangesChange($event)"
+          [excludedParentalStatuses]="googleExcludedParentalStatuses()"
+          (excludedParentalStatusesChange)="onGoogleExcludedParentalStatusesChange($event)"
+          [observedDemographics]="googleObservedDemographics()"
+          (observedDemographicsChange)="onGoogleObservedDemographicsChange($event)"
+          [displayDemographics]="googleDisplayDemographics()"
+          (displayDemographicsChange)="onGoogleDisplayDemographicsChange($event)"
+          [error]="googleAdGroupDemographicsError()" />
+      }
       @if (googleTargetingWithheldMessage(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-targeting-withheld">
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}

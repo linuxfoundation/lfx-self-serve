@@ -158,6 +158,10 @@ import {
   GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_TARGETING,
+  GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_OBSERVED_DEMOGRAPHICS,
+  GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
@@ -294,6 +298,10 @@ import type {
   CreativeSlotAssignment,
   GoogleAdsAgeRange,
   GoogleAdsGender,
+  GoogleAdsIncomeRange,
+  GoogleAdsObservedDemographic,
+  GoogleAdsParentalStatus,
+  GoogleDisplayDemographics,
   GoogleAdsGeoTargetOption,
   GoogleAdsGeoTargetSearchState,
   GoogleAdsGeoTargetSuggestion,
@@ -384,7 +392,11 @@ import {
   googleDeviceAdjustmentNotSentSentence,
   googleDeviceBidModifierRefusal,
   googleExcludedAgeRangesRefusal,
+  googleAdGroupDemographicExclusionsRefusal,
+  googleDisplayDemographicsCarried,
+  googleDisplayDemographicsRefusal,
   googleExcludedGendersRefusal,
+  googleObservedDemographicsRefusal,
   googleExcludedGeoListRefusal,
   googlePerformanceMaxSearchThemesRefusal,
   googlePerformanceMaxShortDescriptionMissing,
@@ -412,6 +424,7 @@ import {
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
+import { CampaignGoogleDemographicsPanelComponent } from '../campaign-google-demographics-panel/campaign-google-demographics-panel.component';
 import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
 import { CampaignGoogleSearchAdsPanelComponent } from '../campaign-google-search-ads-panel/campaign-google-search-ads-panel.component';
 import { CampaignGoogleTargetingPanelComponent } from '../campaign-google-targeting-panel/campaign-google-targeting-panel.component';
@@ -474,6 +487,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     DemandGenAudienceContextDirective,
     SlicePipe,
     CampaignBiddingControlComponent,
+    CampaignGoogleDemographicsPanelComponent,
     CampaignGoogleExclusionsPanelComponent,
     CampaignGoogleSearchAdsPanelComponent,
     CampaignGoogleTargetingPanelComponent,
@@ -1848,6 +1862,15 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleExcludedAgeRanges = signal<GoogleAdsAgeRange[]>([]);
   protected readonly googleExcludedGenders = signal<GoogleAdsGender[]>([]);
   protected readonly googleExcludedGeoTargets = signal<string[]>([]);
+  /**
+   * The ad-group demographics, edited in `lfx-campaign-google-demographics-panel`: income and
+   * parental-status exclusions, Search's observed dimensions and Display's positive targeting.
+   * Empty is Google's own default, so leaving them alone changes nothing about the campaign.
+   */
+  protected readonly googleExcludedIncomeRanges = signal<GoogleAdsIncomeRange[]>([]);
+  protected readonly googleExcludedParentalStatuses = signal<GoogleAdsParentalStatus[]>([]);
+  protected readonly googleObservedDemographics = signal<GoogleAdsObservedDemographic[]>([]);
+  protected readonly googleDisplayDemographics = signal<GoogleDisplayDemographics>({});
   /**
    * The Search campaign's first-ad display paths, its second and third ads, and its create-time
    * negative keywords (the editor's raw text and the one match type they all take), edited in
@@ -3516,6 +3539,8 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && (this.googleAdSchedulesError() !== null || this.googleDeviceBidModifiersError() !== null)) return false;
     // A demographic exclusion or excluded location the BFF would refuse; the message is under the exclusions panel.
     if (googleSelected && (this.googleDemographicExclusionsError() !== null || this.googleExcludedGeoTargetsError() !== null)) return false;
+    // An ad-group demographic the BFF would refuse; the message is under the demographics panel.
+    if (googleSelected && this.googleAdGroupDemographicsError() !== null) return false;
     // A placement exclusion campaign-service would refuse (#462); the message is under the box.
     if (googleSelected && this.googleExcludedPlacementsError() !== null) return false;
     // A display path, further ad or negative keyword the BFF would refuse; the message is under the Search ads panel.
@@ -3899,6 +3924,17 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleExcludedGeoTargetsAvailable = computed(() => this.googleBiddingChannel() !== null);
   /** The shared age-range refusal, else the gender one — the BFF's order — or `null`; `canSubmit` blocks on it. */
   protected readonly googleDemographicExclusionsError: Signal<string | null> = this.initGoogleDemographicExclusionsError();
+  /** Whether each ad-group demographic section shows and is sent: each fenced by the shared channel list the BFF refuses on. */
+  protected readonly googleIncomeExclusionsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS));
+  protected readonly googleParentalExclusionsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS));
+  protected readonly googleObservedDemographicsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_OBSERVED_DEMOGRAPHICS));
+  protected readonly googleDemographicTargetingAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_TARGETING));
+  /**
+   * The shared ad-group demographic refusal — exclusions, then observed dimensions, then Display
+   * targeting, the BFF's order — judged on exactly what the request will carry, or `null`.
+   * `canSubmit` blocks on it.
+   */
+  protected readonly googleAdGroupDemographicsError: Signal<string | null> = this.initGoogleAdGroupDemographicsError();
   /**
    * The shared excluded-location refusal, judged against the targeted list the request will ACTUALLY
    * send (`googleEffectiveGeoTargets`, event-country fallback included), which is the list the BFF
@@ -5296,6 +5332,26 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onGoogleExcludedGendersChange(genders: GoogleAdsGender[]): void {
     this.googleExcludedGenders.set(genders);
+    this.emitDraft();
+  }
+
+  protected onGoogleExcludedIncomeRangesChange(incomeRanges: GoogleAdsIncomeRange[]): void {
+    this.googleExcludedIncomeRanges.set(incomeRanges);
+    this.emitDraft();
+  }
+
+  protected onGoogleExcludedParentalStatusesChange(statuses: GoogleAdsParentalStatus[]): void {
+    this.googleExcludedParentalStatuses.set(statuses);
+    this.emitDraft();
+  }
+
+  protected onGoogleObservedDemographicsChange(dimensions: GoogleAdsObservedDemographic[]): void {
+    this.googleObservedDemographics.set(dimensions);
+    this.emitDraft();
+  }
+
+  protected onGoogleDisplayDemographicsChange(targeting: GoogleDisplayDemographics): void {
+    this.googleDisplayDemographics.set(targeting);
     this.emitDraft();
   }
 
@@ -7538,6 +7594,18 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleExcludedGeoTargets !== undefined) {
       this.googleExcludedGeoTargets.set([...draft.googleExcludedGeoTargets]);
     }
+    if (draft.googleExcludedIncomeRanges !== undefined) {
+      this.googleExcludedIncomeRanges.set([...draft.googleExcludedIncomeRanges]);
+    }
+    if (draft.googleExcludedParentalStatuses !== undefined) {
+      this.googleExcludedParentalStatuses.set([...draft.googleExcludedParentalStatuses]);
+    }
+    if (draft.googleObservedDemographics !== undefined) {
+      this.googleObservedDemographics.set([...draft.googleObservedDemographics]);
+    }
+    if (draft.googleDisplayDemographics !== undefined) {
+      this.googleDisplayDemographics.set(this.copyDisplayDemographics(draft.googleDisplayDemographics));
+    }
     // Copied on the same rule, and held rather than sent while a channel other than Search is
     // selected. The negatives' text restores over the brief's suggestions `populateFromBrief` seeded.
     if (draft.googleSearchPath1 !== undefined) this.googleSearchPath1.set(draft.googleSearchPath1);
@@ -7927,6 +7995,10 @@ export class ImplementationTabComponent implements OnInit {
       googleExcludedAgeRanges: [...this.googleExcludedAgeRanges()],
       googleExcludedGenders: [...this.googleExcludedGenders()],
       googleExcludedGeoTargets: [...this.googleExcludedGeoTargets()],
+      googleExcludedIncomeRanges: [...this.googleExcludedIncomeRanges()],
+      googleExcludedParentalStatuses: [...this.googleExcludedParentalStatuses()],
+      googleObservedDemographics: [...this.googleObservedDemographics()],
+      googleDisplayDemographics: this.copyDisplayDemographics(this.googleDisplayDemographics()),
       googleSearchPath1: this.googleSearchPath1(),
       googleSearchPath2: this.googleSearchPath2(),
       googleAdditionalSearchAds: this.googleAdditionalSearchAds().map((ad) => this.copySearchAd(ad)),
@@ -8402,6 +8474,10 @@ export class ImplementationTabComponent implements OnInit {
     this.googleExcludedAgeRanges.set([]);
     this.googleExcludedGenders.set([]);
     this.googleExcludedGeoTargets.set([]);
+    this.googleExcludedIncomeRanges.set([]);
+    this.googleExcludedParentalStatuses.set([]);
+    this.googleObservedDemographics.set([]);
+    this.googleDisplayDemographics.set({});
     this.googleSearchPath1.set('');
     this.googleSearchPath2.set('');
     this.googleAdditionalSearchAds.set([]);
@@ -9390,6 +9466,26 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  private initGoogleAdGroupDemographicsError(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel) return null;
+      const sent = this.googleAdGroupDemographicsPayload();
+      const demographics = this.googleDemographicExclusionsAvailable();
+      const exclusions = {
+        ageRanges: demographics ? this.googleExcludedAgeRanges() : [],
+        genders: demographics ? this.googleExcludedGenders() : [],
+        incomeRanges: sent.excludedIncomeRanges,
+        parentalStatuses: sent.excludedParentalStatuses,
+      };
+      return (
+        googleAdGroupDemographicExclusionsRefusal(sent.excludedIncomeRanges, sent.excludedParentalStatuses, channel)?.message ??
+        googleObservedDemographicsRefusal(sent.observedDemographics, channel, exclusions) ??
+        googleDisplayDemographicsRefusal(sent.displayDemographics, channel, exclusions)
+      );
+    });
+  }
+
   private initGoogleDemographicExclusionsError(): Signal<string | null> {
     return computed(() => {
       if (!this.googleDemographicExclusionsAvailable()) return null;
@@ -9572,6 +9668,32 @@ export class ImplementationTabComponent implements OnInit {
       if (demographics > 0) {
         kinds.push('demographic exclusions');
         held.push(`${demographics} demographic ${demographics === 1 ? 'exclusion' : 'exclusions'}`);
+      }
+      // The ad-group demographics, each held on its own fence: [sent here, how many, kind, one, many].
+      const t = this.googleDisplayDemographics();
+      const targeted = (t.ageRanges?.length ?? 0) + (t.genders?.length ?? 0) + (t.incomeRanges?.length ?? 0) + (t.parentalStatuses?.length ?? 0);
+      const adGroupHeld: [boolean, number, string, string, string][] = [
+        [this.googleIncomeExclusionsAvailable(), this.googleExcludedIncomeRanges().length, 'income exclusions', 'income exclusion', 'income exclusions'],
+        [
+          this.googleParentalExclusionsAvailable(),
+          this.googleExcludedParentalStatuses().length,
+          'parental-status exclusions',
+          'parental-status exclusion',
+          'parental-status exclusions',
+        ],
+        [
+          this.googleObservedDemographicsAvailable(),
+          this.googleObservedDemographics().length,
+          'observed demographics',
+          'observed demographic',
+          'observed demographics',
+        ],
+        [this.googleDemographicTargetingAvailable(), targeted, 'demographic targeting', 'targeted demographic', 'targeted demographics'],
+      ];
+      for (const [available, count, kind, one, many] of adGroupHeld) {
+        if (available || count === 0) continue;
+        kinds.push(kind);
+        held.push(`${count} ${count === 1 ? one : many}`);
       }
       if (held.length === 0) return '';
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take ${kinds.join(' or ')}, so the ${held.join(' and ')} you set will not be sent. Switch the channel back to keep them.`;
@@ -10690,6 +10812,30 @@ export class ImplementationTabComponent implements OnInit {
    * carries them: each gated by the SAME computed its panel section renders on, omitted when empty
    * (Google's default), entries copied.
    */
+  private googleAdGroupDemographicsPayload(): Partial<CampaignCreateRequest> {
+    const payload: Partial<CampaignCreateRequest> = {};
+    const incomes = this.googleExcludedIncomeRanges();
+    if (this.googleIncomeExclusionsAvailable() && incomes.length > 0) payload.excludedIncomeRanges = [...incomes];
+    const parents = this.googleExcludedParentalStatuses();
+    if (this.googleParentalExclusionsAvailable() && parents.length > 0) payload.excludedParentalStatuses = [...parents];
+    const observed = this.googleObservedDemographics();
+    if (this.googleObservedDemographicsAvailable() && observed.length > 0) payload.observedDemographics = [...observed];
+    const targeting = this.googleDisplayDemographics();
+    if (this.googleDemographicTargetingAvailable() && googleDisplayDemographicsCarried(targeting))
+      payload.displayDemographics = this.copyDisplayDemographics(targeting);
+    return payload;
+  }
+
+  /** A copy of Display's targeting with only its non-empty lists, each copied. */
+  private copyDisplayDemographics(targeting: GoogleDisplayDemographics): GoogleDisplayDemographics {
+    const copy: GoogleDisplayDemographics = {};
+    if (targeting.ageRanges?.length) copy.ageRanges = [...targeting.ageRanges];
+    if (targeting.genders?.length) copy.genders = [...targeting.genders];
+    if (targeting.incomeRanges?.length) copy.incomeRanges = [...targeting.incomeRanges];
+    if (targeting.parentalStatuses?.length) copy.parentalStatuses = [...targeting.parentalStatuses];
+    return copy;
+  }
+
   private googleTargetingPayload(): Partial<CampaignCreateRequest> {
     const payload: Partial<CampaignCreateRequest> = {};
     const schedules = this.googleAdSchedules();
@@ -10702,6 +10848,7 @@ export class ImplementationTabComponent implements OnInit {
       if (ageRanges.length > 0) payload.excludedAgeRanges = [...ageRanges];
       if (genders.length > 0) payload.excludedGenders = [...genders];
     }
+    Object.assign(payload, this.googleAdGroupDemographicsPayload());
     const excluded = this.googleExcludedGeoTargets();
     if (this.googleExcludedGeoTargetsAvailable() && excluded.length > 0) payload.excludedGeoTargets = [...excluded];
     // Display placement exclusions (#462), one per non-blank line, trimmed; repeats are left for upstream to fold.
