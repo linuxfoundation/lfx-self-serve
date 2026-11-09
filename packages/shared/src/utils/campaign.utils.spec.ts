@@ -20,10 +20,13 @@ import {
   campaignSurveySourceTextTooLong,
   deriveSurveySlug,
   surveySourceTitle,
+  campaignEventStartDate,
   campaignFlightDays,
   campaignLabelColumns,
   dailyBudgetFromTotal,
+  defaultCampaignEndDate,
   describeCampaignDispatchFailure,
+  googleAdsCampaignUrl,
   isReversedCampaignFlight,
   keywordActionKey,
   normalizeSponsors,
@@ -569,5 +572,86 @@ describe('campaignLabelColumns', () => {
       created_at: 'yesterday',
     });
     expect(labels).toEqual({ channel: '—', stage: '—', tactic: '—', created: '—' });
+  });
+});
+
+describe('campaignEventStartDate (#1614)', () => {
+  it.each([
+    ['2027-03-15', '2027-03-15'],
+    ['March 15, 2027', '2027-03-15'],
+    ['Mar. 15th, 2027', '2027-03-15'],
+    ['Monday, March 15, 2027', '2027-03-15'],
+    ['March 23-26, 2027', '2027-03-23'],
+    ['March 30 \u2013 April 1, 2027', '2027-03-30'],
+    ['15 March 2027', '2027-03-15'],
+    ['23\u201326 March 2027', '2027-03-23'],
+    ['30 March - 1 April 2027', '2027-03-30'],
+    // Both shapes match here; the earlier one is the start.
+    ['30 March \u2013 April 1, 2027', '2027-03-30'],
+    ['December 30, 2026 - January 2, 2027', '2026-12-30'],
+    ['September 1 2027', '2027-09-01'],
+  ])('reads %s as %s', (dates, expected) => {
+    expect(campaignEventStartDate(dates)).toBe(expected);
+  });
+
+  it.each([
+    ['no year', 'March 15'],
+    ['no month', '15 2027'],
+    ['an impossible day', 'February 30, 2027'],
+    ['an impossible ISO date', '2027-02-30'],
+    ['a month and year only', 'March 2027'],
+    ['blank', ''],
+    ['a duration', 'Self-paced, 40 hours'],
+  ])('is null for %s', (_label, dates) => {
+    expect(campaignEventStartDate(dates)).toBeNull();
+  });
+
+  it('is null for a missing value', () => {
+    expect(campaignEventStartDate(undefined)).toBeNull();
+    expect(campaignEventStartDate(null)).toBeNull();
+  });
+});
+
+describe('defaultCampaignEndDate (#1614)', () => {
+  const today = '2026-11-07';
+  const fallback = '2026-12-07';
+
+  it('ends on the event day when it is after today, even past the fallback', () => {
+    expect(defaultCampaignEndDate('March 15, 2027', today, fallback)).toBe('2027-03-15');
+  });
+
+  it('ends on the event day when it is before the fallback', () => {
+    expect(defaultCampaignEndDate('November 20, 2026', today, fallback)).toBe('2026-11-20');
+  });
+
+  it('keeps the fallback for an event today, since every other platform refuses an end that is not after the start', () => {
+    expect(defaultCampaignEndDate('November 7, 2026', today, fallback)).toBe(fallback);
+  });
+
+  it('keeps the fallback for a past event or unreadable dates', () => {
+    expect(defaultCampaignEndDate('March 15, 2026', today, fallback)).toBe(fallback);
+    expect(defaultCampaignEndDate('Self-paced', today, fallback)).toBe(fallback);
+    expect(defaultCampaignEndDate(undefined, today, fallback)).toBe(fallback);
+  });
+
+  it('divides the brief total over the same flight it ends', () => {
+    const end = defaultCampaignEndDate('March 15, 2027', today, fallback);
+    expect(campaignFlightDays(today, end)).toBe(129);
+    expect(dailyBudgetFromTotal(1000, campaignFlightDays(today, end) as number)).toBe(7.75);
+  });
+});
+
+describe('googleAdsCampaignUrl (#1614)', () => {
+  it('links to the campaign in the Google Ads UI', () => {
+    expect(googleAdsCampaignUrl('24447438160')).toBe('https://ads.google.com/aw/campaigns?campaignId=24447438160');
+  });
+
+  it('is empty without an id', () => {
+    expect(googleAdsCampaignUrl('')).toBe('');
+    expect(googleAdsCampaignUrl(undefined)).toBe('');
+  });
+
+  it('percent-encodes the id', () => {
+    expect(googleAdsCampaignUrl('1&x=2')).toBe('https://ads.google.com/aw/campaigns?campaignId=1%26x%3D2');
   });
 });

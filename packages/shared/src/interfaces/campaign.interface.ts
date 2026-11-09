@@ -2830,9 +2830,11 @@ export interface GoogleCreativeFieldSpec {
   image?: GoogleCreativeImageShape;
   /**
    * Set on a `text` field whose value is one of a closed list, and only there: the form offers the
-   * list as a select, and the empty value sends nothing. The Demand Gen video ad's call to action is
-   * the one such field — upstream takes a `CallToActionType` from a short list it has probed, not
-   * free text (`demandGenVideoCallToActions`).
+   * list as a select, the empty value sends nothing, and a value outside the list is refused before
+   * the create. Every Google call to action is one: the Demand Gen video ad's takes a `CallToActionType`
+   * from the short list campaign-service has probed (`demandGenVideoCallToActions`), and the responsive
+   * display ad's and Demand Gen image ad's take the text Google documents for them
+   * (`GOOGLE_DISPLAY_CALLS_TO_ACTION`, `GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION`).
    */
   options?: readonly GoogleCreativeFieldOption[];
 }

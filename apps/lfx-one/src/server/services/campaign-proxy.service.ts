@@ -19,7 +19,13 @@ import {
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
-import { campaignSurveySourceTextTooLong, deriveSurveySlug, parseNegativeKeywordInput, surveySourceTitle } from '@lfx-one/shared/utils/campaign.utils';
+import {
+  campaignSurveySourceTextTooLong,
+  deriveSurveySlug,
+  googleAdsCampaignUrl,
+  parseNegativeKeywordInput,
+  surveySourceTitle,
+} from '@lfx-one/shared/utils/campaign.utils';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -586,7 +592,7 @@ GOOGLE DEMAND GEN (key: "google_display" — runs on YouTube, Discover, Gmail, D
 - headlines: 5 variations, each ≤ 40 characters (STRICT — Demand Gen limit is 40, not 30)
 - descriptions: 5 variations, each ≤ 90 characters (STRICT)
 - business_name: ≤ 25 chars — use the event's parent organization (e.g. "CNCF" for KubeCon). Default to "Linux Foundation" only if no specific foundation is identifiable.
-- call_to_action: one of "Learn More", "Register", "Sign Up", "Book Now", "Apply Now"`;
+- call_to_action: one of "Learn More", "Sign Up", "Book Now", "Apply Now" (never "Register": Google refuses it)`;
 
 const COPY_LINKEDIN_SECTION = `
 LINKEDIN SPONSORED CONTENT (key: "linkedin_sponsored"):
@@ -2531,7 +2537,7 @@ export class CampaignProxyService {
       adGroupCount: 1,
       keywordCount: keywordOps.length,
       adCount: 1,
-      campaignUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
+      campaignUrl: googleAdsCampaignUrl(campaignId),
       steps,
     };
   }
@@ -2610,7 +2616,7 @@ export class CampaignProxyService {
       adGroupCount: 1,
       keywordCount: 0,
       adCount: 0,
-      campaignUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
+      campaignUrl: googleAdsCampaignUrl(campaignId),
       steps,
     };
   }

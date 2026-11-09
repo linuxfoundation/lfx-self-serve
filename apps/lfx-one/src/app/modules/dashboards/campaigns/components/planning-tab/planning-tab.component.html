@@ -314,7 +314,7 @@
       <!--
         Budget & Assets Card — paid only, and not merely by association. Both halves state a
         paid-ad fact that is wrong for email: the helper text under the budget describes DAILY AD
-        PACING ("Budget/day = Total / (End Date − Today)"), and HubSpot staging has no daily
+        PACING (the Google daily budget divided from the total), and HubSpot staging has no daily
         spend; the asset sizes are ad creative dimensions.
 
         The budget also reaches the copy generator, which appends "Total Campaign Budget: $N" to
@@ -338,7 +338,10 @@
                   class="w-full rounded-r-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   data-testid="planning-budget-input" />
               </div>
-              <p class="text-xs text-gray-500">Budget/day = Total / (End Date − Today)</p>
+              <!-- The Implement tab's seed: dailyBudgetFromTotal over campaignFlightDays(today, defaultCampaignEndDate(...)). -->
+              <p class="text-xs text-gray-500" data-testid="planning-budget-pacing-hint">
+                Google daily budget = Total ÷ days from today through the end date (the event's first day, else 30 days out)
+              </p>
             </div>
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium text-gray-700">Image Assets (Google Drive) <span class="font-normal text-gray-400">(optional)</span></label>
