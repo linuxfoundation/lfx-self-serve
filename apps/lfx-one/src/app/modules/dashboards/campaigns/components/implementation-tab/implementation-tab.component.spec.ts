@@ -9702,6 +9702,147 @@ describe('ImplementationTabComponent google exclusions', () => {
   });
 });
 
+/**
+ * Ad-group demographics (linuxfoundation/lfx-v2-campaign-service#473, #497, #499): income and
+ * parental-status exclusions, Search's observed dimensions and Display's positive targeting. Pins what
+ * each channel sends, that Create waits on the shared refusal, and that a channel switch holds the rest.
+ */
+describe('ImplementationTabComponent google ad-group demographics', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  function seedDemographics(patch: Record<string, unknown>): Record<string, any> {
+    const c = seedChannel(fixture, patch);
+    c['onGoogleExcludedIncomeRangesChange'](['INCOME_RANGE_0_50']);
+    c['onGoogleExcludedParentalStatusesChange'](['NOT_A_PARENT']);
+    c['onGoogleObservedDemographicsChange'](['AGE_RANGE', 'INCOME_RANGE']);
+    c['onGoogleDisplayDemographicsChange']({ ageRanges: ['25-34'], genders: [] });
+    fixture.detectChanges();
+    return c;
+  }
+
+  it.each([
+    ['search', { includeSearch: true }, { excludedIncomeRanges: ['INCOME_RANGE_0_50'], observedDemographics: ['AGE_RANGE', 'INCOME_RANGE'] }],
+    [
+      'display',
+      { includeDisplay: true },
+      { excludedIncomeRanges: ['INCOME_RANGE_0_50'], excludedParentalStatuses: ['NOT_A_PARENT'], displayDemographics: { ageRanges: ['25-34'] } },
+    ],
+    ['demand-gen', { includeDemandGen: true }, {}],
+    ['performance-max', { includePerformanceMax: true }, {}],
+  ])('sends what %s accepts and holds the rest', (_channel, patch, expected) => {
+    const c = seedDemographics(patch);
+
+    expect(c['googleAdGroupDemographicsPayload']()).toEqual(expected);
+    expect(c['googleAdGroupDemographicsError']()).toBeNull();
+  });
+
+  it('submits the Display lists, copied rather than shared', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedDemographics({ includeDisplay: true });
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(request['excludedParentalStatuses']).toEqual(['NOT_A_PARENT']);
+    expect(request['displayDemographics']).toEqual({ ageRanges: ['25-34'] });
+    expect(request).not.toHaveProperty('observedDemographics');
+    expect(request['excludedIncomeRanges']).not.toBe(c['googleExcludedIncomeRanges']());
+  });
+
+  it('shows the Search sections on Search and the Display ones on Display, and says what Demand Gen holds', () => {
+    seedDemographics({ includeSearch: true });
+    expect(query('implementation-google-observed-demographics')).not.toBeNull();
+    expect(query('implementation-google-income-exclusions')).not.toBeNull();
+    expect(query('implementation-google-parental-exclusions')).toBeNull();
+    expect(query('implementation-google-demographic-targeting')).toBeNull();
+    // Only what Search does not take is held: the parental exclusion and the targeted value, not the income exclusion it sends.
+    expect(query('implementation-google-targeting-withheld')?.textContent).toContain(
+      'Search campaigns do not take parental-status exclusions or demographic targeting, so the 1 parental-status exclusion and 1 targeted demographic you set will not be sent.'
+    );
+
+    const form = (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'];
+    form.patchValue({ includeSearch: false, includeDisplay: true });
+    fixture.detectChanges();
+    expect(query('implementation-google-observed-demographics')).toBeNull();
+    expect(query('implementation-google-parental-exclusions')).not.toBeNull();
+    expect(query('implementation-google-demographic-targeting')).not.toBeNull();
+    expect(query('implementation-google-targeting-withheld')?.textContent).toContain('2 observed demographics');
+
+    form.patchValue({ includeDisplay: false, includeDemandGen: true });
+    fixture.detectChanges();
+    expect(query('implementation-google-ad-group-demographics')).toBeNull();
+    expect(query('implementation-google-targeting-withheld')?.textContent).toContain(
+      'Demand Gen campaigns do not take income exclusions or parental-status exclusions or observed demographics or demographic targeting, so the 1 income exclusion and 1 parental-status exclusion and 2 observed demographics and 1 targeted demographic you set will not be sent.'
+    );
+  });
+
+  function expectHeld(c: Record<string, any>, message: string): void {
+    fixture.detectChanges();
+    expect(c['googleAdGroupDemographicsError']()).toContain(message);
+    expect(c['canSubmit']()).toBe(false);
+    expect(query('implementation-google-ad-group-demographics-error')?.textContent).toContain(message);
+  }
+
+  it('holds Create on Search when every value of an observed dimension is excluded', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['onGoogleExcludedGendersChange'](['MALE', 'FEMALE', 'UNDETERMINED']);
+    c['onGoogleObservedDemographicsChange'](['GENDER']);
+    expectHeld(c, 'Every gender is excluded');
+  });
+
+  it('holds Create on Display when a value is both targeted and excluded', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['onGoogleExcludedAgeRangesChange'](['25-34']);
+    c['onGoogleDisplayDemographicsChange']({ ageRanges: ['25-34'] });
+    expectHeld(c, 'both target and exclude the age range 25-34');
+  });
+
+  it('withholds the panel and every key off the campaign-service road', () => {
+    const c = seedDemographics({ includeDisplay: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', false);
+    fixture.detectChanges();
+
+    expect(c['googleAdGroupDemographicsPayload']()).toEqual({});
+    expect(query('implementation-google-ad-group-demographics')).toBeNull();
+  });
+
+  it('round-trips the four fields through a draft and empties them for a new brief', () => {
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const c = seedDemographics({ includeDisplay: true });
+
+    expect(emitted?.googleExcludedIncomeRanges).toEqual(['INCOME_RANGE_0_50']);
+    expect(emitted?.googleExcludedParentalStatuses).toEqual(['NOT_A_PARENT']);
+    expect(emitted?.googleObservedDemographics).toEqual(['AGE_RANGE', 'INCOME_RANGE']);
+    expect(emitted?.googleDisplayDemographics).toEqual({ ageRanges: ['25-34'] });
+
+    c['resetGoogleFields']();
+    expect(c['googleExcludedIncomeRanges']()).toEqual([]);
+    expect(c['googleDisplayDemographics']()).toEqual({});
+    restoreGoogleDraft(fixture, c, {
+      googleExcludedIncomeRanges: ['UNDETERMINED'],
+      googleExcludedParentalStatuses: ['PARENT'],
+      googleObservedDemographics: ['GENDER'],
+      googleDisplayDemographics: { genders: ['FEMALE'] },
+    });
+
+    expect(c['googleExcludedIncomeRanges']()).toEqual(['UNDETERMINED']);
+    expect(c['googleExcludedParentalStatuses']()).toEqual(['PARENT']);
+    expect(c['googleObservedDemographics']()).toEqual(['GENDER']);
+    expect(c['googleDisplayDemographics']()).toEqual({ genders: ['FEMALE'] });
+  });
+});
+
 /** Display placement exclusions (campaign-service v1.0.31, #462). */
 describe('ImplementationTabComponent display placement exclusions', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;

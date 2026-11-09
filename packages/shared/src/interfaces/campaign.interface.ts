@@ -14,6 +14,9 @@ import type {
   GOOGLE_ADS_AGE_RANGE_MAP,
   GOOGLE_ADS_DEMAND_GEN_DEVICES,
   GOOGLE_ADS_GENDERS,
+  GOOGLE_ADS_INCOME_RANGES,
+  GOOGLE_ADS_OBSERVED_DEMOGRAPHICS,
+  GOOGLE_ADS_PARENTAL_STATUSES,
   GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
@@ -1545,6 +1548,15 @@ export interface CampaignImplementationDraft {
    */
   googleExcludedAgeRanges?: GoogleAdsAgeRange[];
   googleExcludedGenders?: GoogleAdsGender[];
+  /**
+   * Google's excluded income ranges and parental statuses, observed Search dimensions and Display
+   * demographic targeting, as the operator set them. Held and restored on the same rule as
+   * {@link googleAdSchedules}: a list saved under a channel that does not take it is kept, not sent.
+   */
+  googleExcludedIncomeRanges?: GoogleAdsIncomeRange[];
+  googleExcludedParentalStatuses?: GoogleAdsParentalStatus[];
+  googleObservedDemographics?: GoogleAdsObservedDemographic[];
+  googleDisplayDemographics?: GoogleDisplayDemographics;
   /**
    * Google's excluded locations — country codes and numeric geo target constant ids. Countries
    * picked from the list come first; an entry typed into the geo id box is appended after them.
@@ -3616,6 +3628,28 @@ export type GoogleAdsAgeRange = keyof typeof GOOGLE_ADS_AGE_RANGE_MAP;
  */
 export type GoogleAdsGender = (typeof GOOGLE_ADS_GENDERS)[number];
 
+/** A household income range the Implementation tab offers. Derived from {@link GOOGLE_ADS_INCOME_RANGES}. */
+export type GoogleAdsIncomeRange = (typeof GOOGLE_ADS_INCOME_RANGES)[number];
+
+/** A parental status. Derived from {@link GOOGLE_ADS_PARENTAL_STATUSES}. */
+export type GoogleAdsParentalStatus = (typeof GOOGLE_ADS_PARENTAL_STATUSES)[number];
+
+/** A demographic dimension a Search campaign can observe. Derived from {@link GOOGLE_ADS_OBSERVED_DEMOGRAPHICS}. */
+export type GoogleAdsObservedDemographic = (typeof GOOGLE_ADS_OBSERVED_DEMOGRAPHICS)[number];
+
+/**
+ * Positive demographic targeting on every Display ad group (linuxfoundation/lfx-v2-campaign-service#499),
+ * `googleAdsConfig.displayDemographics` on the wire. Each non-empty list narrows the campaign to the
+ * values it names; an empty or absent list leaves that dimension open. Each list takes the vocabulary
+ * of its exclusion counterpart.
+ */
+export interface GoogleDisplayDemographics {
+  ageRanges?: GoogleAdsAgeRange[];
+  genders?: GoogleAdsGender[];
+  incomeRanges?: GoogleAdsIncomeRange[];
+  parentalStatuses?: GoogleAdsParentalStatus[];
+}
+
 /** What the "create another campaign" confirmation shows (#4983, "ss-3"). */
 export interface CampaignCreateAnotherDialogData {
   /** "This creates a separate, separately budgeted … campaign on …", built by the Implement tab. */
@@ -3744,11 +3778,32 @@ export interface CampaignSearchAd {
   path2?: string;
 }
 
-/** One demographic exclusion checkbox on the Implementation tab: the value it writes, its label and whether it is ticked. */
+/** One demographic checkbox on the Implementation tab (an exclusion, an observed dimension or a targeted value): the value it writes, its label and whether it is ticked. */
 export interface GoogleExclusionOptionView {
   value: string;
   label: string;
   checked: boolean;
+}
+
+/** A refusal naming the request field it is about, so the BFF can attach it to that field. */
+export interface GoogleDemographicFieldRefusal {
+  field: string;
+  message: string;
+}
+
+/** The exclusion lists a targeted or observed demographic is compared with, as the request carries them. */
+export interface GoogleDemographicExclusionLists {
+  ageRanges?: unknown;
+  genders?: unknown;
+  incomeRanges?: unknown;
+  parentalStatuses?: unknown;
+}
+
+/** One dimension of Display's demographic targeting on the Implementation tab: the list it writes, its legend and its checkboxes. */
+export interface GoogleDemographicTargetingGroupView {
+  key: keyof GoogleDisplayDemographics;
+  legend: string;
+  rows: GoogleExclusionOptionView[];
 }
 
 /**
@@ -3992,8 +4047,8 @@ export interface CampaignCreateRequest {
    * Google's own default, so an absent key and an empty list agree.
    *
    * EXCLUSION-ONLY is Google's shape rather than a narrowing here: campaign-level demographic
-   * criteria are negative. Positive demographic targeting lives on the ad group, which this client
-   * does not expose, so this field cannot be mistaken for one that targets.
+   * criteria are negative. Positive demographic targeting lives on the ad group
+   * ({@link displayDemographics}), so this field cannot be mistaken for one that targets.
    *
    * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS}; Performance Max
    * takes demographics as asset-group signals, which this client does not create, so upstream
@@ -4013,6 +4068,23 @@ export interface CampaignCreateRequest {
    * member: excluding it is a real choice a campaign makes.
    */
   excludedGenders?: GoogleAdsGender[];
+  /**
+   * The household income ranges every ad group of the campaign excludes
+   * (linuxfoundation/lfx-v2-campaign-service#473). Search and Display only
+   * ({@link GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS}); capped at
+   * {@link GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS}, and a repeat is collapsed upstream.
+   */
+  excludedIncomeRanges?: GoogleAdsIncomeRange[];
+  /** The parental statuses every ad group excludes, on the same terms as {@link excludedIncomeRanges} but Display only ({@link GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS}). */
+  excludedParentalStatuses?: GoogleAdsParentalStatus[];
+  /**
+   * The demographic dimensions every Search ad group observes (linuxfoundation/lfx-v2-campaign-service#497):
+   * reported and open to a bid adjustment, with no narrowing. Search only; upstream observes every
+   * value of a dimension except those its exclusions already exclude.
+   */
+  observedDemographics?: GoogleAdsObservedDemographic[];
+  /** Display's positive demographic targeting (linuxfoundation/lfx-v2-campaign-service#499). Display only. */
+  displayDemographics?: GoogleDisplayDemographics;
   /**
    * The first responsive search ad's display paths — the segments Google shows after the final
    * URL's domain, as in `example.com/kubecon/na`. Search only ({@link GOOGLE_CHANNELS_WITH_SEARCH_ADS});

@@ -20,6 +20,12 @@ import {
   googleUpperCodeList,
 } from '@lfx-one/shared/utils/campaign-google-criteria.utils';
 import {
+  googleAdGroupDemographicExclusionsRefusal,
+  googleDisplayDemographicsCarried,
+  googleDisplayDemographicsRefusal,
+  googleObservedDemographicsRefusal,
+} from '@lfx-one/shared/utils/campaign-google-demographics.utils';
+import {
   googleAdditionalSearchAdsRefusal,
   googleCreateNegativeKeywordsRefusal,
   googleSearchAdCopyWidthRefusal,
@@ -190,8 +196,12 @@ import {
   GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
   GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_TARGETING,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
+  GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
+  GOOGLE_CHANNELS_WITH_OBSERVED_DEMOGRAPHICS,
+  GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
@@ -208,6 +218,7 @@ import {
   GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY,
   GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY,
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
+  GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
@@ -1573,6 +1584,39 @@ export class CampaignController {
         const genderRefusal = googleExcludedGendersRefusal(body?.excludedGenders, googleChannel);
         if (genderRefusal) {
           next(ServiceValidationError.forField('excludedGenders', genderRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
+          return;
+        }
+
+        // The ad-group demographics (linuxfoundation/lfx-v2-campaign-service#473, #497, #499), right after
+        // the criteria plan as `preflightCampaignKind` judges them: the income and parental exclusions,
+        // then Search's observed dimensions, then Display's positive targeting — the last two compared
+        // with the exclusions above, which upstream has accepted by then.
+        const demographicExclusions = {
+          ageRanges: body?.excludedAgeRanges,
+          genders: body?.excludedGenders,
+          incomeRanges: body?.excludedIncomeRanges,
+          parentalStatuses: body?.excludedParentalStatuses,
+        };
+        const adGroupDemographicRefusal = googleAdGroupDemographicExclusionsRefusal(body?.excludedIncomeRanges, body?.excludedParentalStatuses, googleChannel);
+        if (adGroupDemographicRefusal) {
+          next(
+            ServiceValidationError.forField(adGroupDemographicRefusal.field, adGroupDemographicRefusal.message, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+          return;
+        }
+        const observedRefusal = googleObservedDemographicsRefusal(body?.observedDemographics, googleChannel, demographicExclusions);
+        if (observedRefusal) {
+          next(ServiceValidationError.forField('observedDemographics', observedRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
+          return;
+        }
+        const displayDemographicsRefusal = googleDisplayDemographicsRefusal(body?.displayDemographics, googleChannel, demographicExclusions);
+        if (displayDemographicsRefusal) {
+          next(
+            ServiceValidationError.forField('displayDemographics', displayDemographicsRefusal, { operation: 'campaign_create', service: 'campaign_controller' })
+          );
           return;
         }
 
@@ -6027,13 +6071,20 @@ export class CampaignController {
     for (const channel of Object.keys(GOOGLE_CREATIVE_REQUEST_KEYS) as GoogleCampaignChannel[]) {
       Object.assign(sent, this.googleCreative(body, channel));
     }
+    // An empty string asks for nothing too: the display paths are the only string fields here. So
+    // does `false`: `searchPartners` is the only boolean, and false is Google Search alone.
+    const asked = (value: unknown): boolean =>
+      value !== undefined && value !== null && value !== '' && value !== false && !(Array.isArray(value) && value.length === 0);
     return (
       GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.find((entry) => {
         if ('normalized' in entry) return entry.field in sent;
         const value = raw[entry.field];
-        // An empty string asks for nothing too: the display paths are the only string fields here. So
-        // does `false`: `searchPartners` is the only boolean, and false is Google Search alone.
-        return value !== undefined && value !== null && value !== '' && value !== false && !(Array.isArray(value) && value.length === 0);
+        // The one object field asks for something when any of its four lists is asked for by the same
+        // test — a malformed non-list included, named as the flat lists are.
+        if (entry.field === 'displayDemographics' && value !== null && typeof value === 'object' && !Array.isArray(value)) {
+          return GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS.some((key) => asked((value as Record<string, unknown>)[key]));
+        }
+        return asked(value);
       }) ?? null
     );
   }
@@ -6492,6 +6543,7 @@ export class CampaignController {
         // normalized only; `createCampaign` names every refusal first.
         ...this.googleDeviceBidModifiers(body, selectedChannels[0]),
         ...this.googleDemographicExclusions(body, selectedChannels[0]),
+        ...this.googleAdGroupDemographics(body, selectedChannels[0]),
         ...languages,
         // Sitelinks reach Demand Gen and Performance Max as well as Search, and callouts and snippets
         // Performance Max (campaign-service v1.0.31); the gate inside each helper withholds them on
@@ -6587,6 +6639,7 @@ export class CampaignController {
       // differently.
       ...this.googleDeviceBidModifiers(body, 'search'),
       ...this.googleDemographicExclusions(body, 'search'),
+      ...this.googleAdGroupDemographics(body, 'search'),
       ...searchLanguages,
       ...audienceSegments,
       ...campaignAudienceSegments,
@@ -7414,6 +7467,11 @@ export class CampaignController {
     candidates.push(['deviceBidModifiers', raw['deviceBidModifiers']]);
     candidates.push(['excludedAgeRanges', raw['excludedAgeRanges']]);
     candidates.push(['excludedGenders', raw['excludedGenders']]);
+    candidates.push(['excludedIncomeRanges', raw['excludedIncomeRanges']]);
+    candidates.push(['excludedParentalStatuses', raw['excludedParentalStatuses']]);
+    candidates.push(['observedDemographics', raw['observedDemographics']]);
+    // An object of four lists, each bounded as a creative's fields are.
+    candidates.push(['displayDemographics', raw['displayDemographics']]);
     // The first ad's display paths are bare strings, which `boundableEntries` yields nothing for, so
     // they are measured here; the trim the Search branch applies runs over them during normalisation.
     // So is the single Demand Gen ad group's Audience (#5244), which `googleDemandGenAudience` trims.
@@ -8107,7 +8165,7 @@ export class CampaignController {
    * — trim, upper-case, and nothing else — and the per-list reasons live on the callers.
    *
    * Exclusion-only is Google's own shape at campaign level, not a narrowing this application chose:
-   * positive demographic targeting lives on the ad group, which this client does not create.
+   * positive demographic targeting lives on the ad group — see {@link googleAdGroupDemographics}.
    *
    * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS}, the other half of
    * Performance Max's split — it takes demographics as asset-group signals, which this client does
@@ -8124,6 +8182,35 @@ export class CampaignController {
       ...(ageRanges.length > 0 ? { excludedAgeRanges: ageRanges } : {}),
       ...(genders.length > 0 ? { excludedGenders: genders } : {}),
     };
+  }
+
+  /**
+   * The ad-group demographics, spread-ready, or `{}`: the income and parental-status exclusions
+   * (linuxfoundation/lfx-v2-campaign-service#473), Search's observed dimensions (#497) and Display's
+   * positive targeting (#499). Each is CHANNEL-GATED on its own shared fence, so a list kept on the
+   * tab under a channel that does not take it is not dispatched. Normalizes only — trim and
+   * upper-case, repeats kept — because `createCampaign` has already named every refusal through the
+   * shared judges, and upstream collapses a repeat itself. A Display list left empty is omitted.
+   */
+  private googleAdGroupDemographics(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    const incomes = googleUpperCodeList(body?.excludedIncomeRanges);
+    const parents = googleUpperCodeList(body?.excludedParentalStatuses);
+    const observed = googleUpperCodeList(body?.observedDemographics);
+    if (incomes.length > 0 && (GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS as readonly string[]).includes(channel)) out['excludedIncomeRanges'] = incomes;
+    if (parents.length > 0 && (GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS as readonly string[]).includes(channel)) out['excludedParentalStatuses'] = parents;
+    if (observed.length > 0 && (GOOGLE_CHANNELS_WITH_OBSERVED_DEMOGRAPHICS as readonly string[]).includes(channel)) out['observedDemographics'] = observed;
+    const display = body?.displayDemographics as unknown;
+    if (googleDisplayDemographicsCarried(display) && (GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_TARGETING as readonly string[]).includes(channel)) {
+      const lists = display as Record<string, unknown>;
+      const targeting: Record<string, string[]> = {};
+      for (const key of GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS) {
+        const list = googleUpperCodeList(lists[key]);
+        if (list.length > 0) targeting[key] = list;
+      }
+      out['displayDemographics'] = targeting;
+    }
+    return out;
   }
 
   /**

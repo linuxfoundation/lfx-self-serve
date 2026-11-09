@@ -3562,6 +3562,9 @@ describe('CampaignController.createCampaign cutover', () => {
     ['deviceBidModifiers', Array.from({ length: 101 }, () => ({ device: 'MOBILE', bidModifier: 1.2 }))],
     ['excludedAgeRanges', Array.from({ length: 101 }, () => '18-24')],
     ['excludedGenders', Array.from({ length: 101 }, () => 'MALE')],
+    ['excludedIncomeRanges', Array.from({ length: 101 }, () => 'INCOME_RANGE_0_50')],
+    ['excludedParentalStatuses', Array.from({ length: 101 }, () => 'PARENT')],
+    ['observedDemographics', Array.from({ length: 101 }, () => 'GENDER')],
   ])('bounds a %s list before the envelope normalizes it, since that runs ahead of the named cap', async (field, list) => {
     // The named caps (20, 42, 3 and 20) are the operator-facing refusal and still fire first for any
     // plausible list. This ceiling only stops `createConfigEnvelope` — which runs BEFORE them and
@@ -3808,6 +3811,10 @@ describe('CampaignController.createCampaign cutover', () => {
       deviceBidModifiers: [{ device: 'MOBILE', bidModifier: 0 }],
       excludedAgeRanges: ['AGE_RANGE_18_24'],
       excludedGenders: ['FEMALE'],
+      excludedIncomeRanges: ['INCOME_RANGE_0_50'],
+      excludedParentalStatuses: ['PARENT'],
+      observedDemographics: ['GENDER'],
+      displayDemographics: { genders: ['FEMALE'] },
       sitelinks: [{ text: 'Schedule', finalUrl: 'https://events.example/schedule' }],
       callouts: ['Hands-on labs'],
       structuredSnippets: [{ header: 'Types', values: ['Talks', 'Labs', 'Demos'] }],
@@ -3996,6 +4003,34 @@ describe('CampaignController.createCampaign cutover', () => {
       legacyServes();
 
       await controller.createCampaign(buildReq(googleBody({ searchPartners: false }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(legacyCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a demographic targeting object whose list is not a list by name while the cutover is dark', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ displayDemographics: { ageRanges: '18-24' } } as never), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayDemographics' });
+    });
+
+    it('still serves a demographic targeting object whose every list is empty on the legacy road', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ displayDemographics: { ageRanges: [], genders: null } }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
 
       expect(next).not.toHaveBeenCalled();
       expect(legacyCreate).toHaveBeenCalledTimes(1);
@@ -5233,6 +5268,124 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(config).not.toHaveProperty('deviceBidModifiers');
     expect(config).not.toHaveProperty('excludedAgeRanges');
     expect(config).not.toHaveProperty('excludedGenders');
+  });
+
+  describe('ad-group demographics at create (linuxfoundation/lfx-v2-campaign-service#473, #497, #499)', () => {
+    const query = { project: 'tlf', brief_id: 'b-1' };
+    const ok = (): void => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000497', error: null });
+    };
+    const config = (): Record<string, unknown> => envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+
+    it('dispatches Search income exclusions and observed dimensions, normalized', async () => {
+      ok();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ excludedIncomeRanges: [' income_range_0_50 '], observedDemographics: ['age_range', 'GENDER'] }), query),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(config()['excludedIncomeRanges']).toEqual(['INCOME_RANGE_0_50']);
+      expect(config()['observedDemographics']).toEqual(['AGE_RANGE', 'GENDER']);
+      expect(config()).not.toHaveProperty('displayDemographics');
+    });
+
+    it('dispatches Display income and parental exclusions and positive targeting, an empty list left out', async () => {
+      ok();
+
+      await controller.createCampaign(
+        buildReq(
+          googleBody({
+            campaignTypes: ['display'],
+            excludedIncomeRanges: ['UNDETERMINED'],
+            excludedParentalStatuses: ['not_a_parent'],
+            displayDemographics: { ageRanges: ['25-34', 'AGE_RANGE_35_44'], genders: [], incomeRanges: ['INCOME_RANGE_90_UP'], parentalStatuses: ['parent'] },
+          }),
+          query
+        ),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(config()['excludedIncomeRanges']).toEqual(['UNDETERMINED']);
+      expect(config()['excludedParentalStatuses']).toEqual(['NOT_A_PARENT']);
+      expect(config()['displayDemographics']).toEqual({
+        ageRanges: ['25-34', 'AGE_RANGE_35_44'],
+        incomeRanges: ['INCOME_RANGE_90_UP'],
+        parentalStatuses: ['PARENT'],
+      });
+    });
+
+    it('omits every ad-group demographic field when none was set', async () => {
+      ok();
+
+      await controller.createCampaign(
+        buildReq(
+          googleBody({
+            campaignTypes: ['display'],
+            excludedIncomeRanges: [],
+            excludedParentalStatuses: [],
+            observedDemographics: [],
+            displayDemographics: { genders: [] },
+          }),
+          query
+        ),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      for (const key of ['excludedIncomeRanges', 'excludedParentalStatuses', 'observedDemographics', 'displayDemographics']) {
+        expect(config()).not.toHaveProperty(key);
+      }
+    });
+
+    it.each([
+      ['excludedIncomeRanges', { campaignTypes: ['demand-gen'], excludedIncomeRanges: ['INCOME_RANGE_0_50'] }, 'income-range'],
+      ['excludedParentalStatuses', { excludedParentalStatuses: ['PARENT'] }, 'Search'],
+      ['excludedParentalStatuses', { campaignTypes: ['video'], excludedParentalStatuses: ['PARENT'] }, 'only on Display'],
+      ['excludedIncomeRanges', { campaignTypes: ['display'], excludedIncomeRanges: ['50-60'] }, 'INCOME_RANGE_0_50'],
+      ['excludedParentalStatuses', { campaignTypes: ['display'], excludedParentalStatuses: {} }, 'list'],
+      ['observedDemographics', { campaignTypes: ['display'], observedDemographics: ['GENDER'] }, 'Search campaigns only'],
+      ['observedDemographics', { observedDemographics: ['PARENTAL_STATUS'] }, 'parental status'],
+      ['observedDemographics', { excludedGenders: ['MALE', 'FEMALE', 'UNDETERMINED'], observedDemographics: ['GENDER'] }, 'Every gender is excluded'],
+      ['displayDemographics', { displayDemographics: { genders: ['MALE'] } }, 'Display campaigns only'],
+      ['displayDemographics', { campaignTypes: ['display'], displayDemographics: ['MALE'] }, 'must be'],
+      [
+        'displayDemographics',
+        { campaignTypes: ['display'], displayDemographics: { ageRanges: ['18-24'] }, excludedAgeRanges: ['AGE_RANGE_18_24'] },
+        'both target and exclude',
+      ],
+    ])('refuses %s by name before dispatch (%j)', async (field, overrides, expected) => {
+      await controller.createCampaign(buildReq(googleBody(overrides as never), query), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.statusCode).toBe(400);
+      expect(error.field).toBe(field);
+      expect(error.message).toContain(expected);
+    });
+
+    it('judges the exclusions before the observed dimensions, as preflightCampaignKind does', async () => {
+      await controller.createCampaign(buildReq(googleBody({ excludedIncomeRanges: ['NOPE'], observedDemographics: ['DEVICE'] }), query), res, next);
+
+      expect(refusalFrom().field).toBe('excludedIncomeRanges');
+    });
+
+    it('bounds each Display targeting list before the envelope normalizes it', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['display'], displayDemographics: { genders: Array.from({ length: 101 }, () => 'MALE') } } as never), query),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ field: 'displayDemographics.genders' });
+      expect(refusalFrom().message).toContain('100');
+    });
   });
 
   describe('Search ads, display paths and negatives at create (#4991)', () => {

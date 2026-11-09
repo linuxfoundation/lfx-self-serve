@@ -2,9 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  CampaignFunnelStage,
-  CampaignLabelOption,
-  CampaignTactic,
   AudienceBuildMode,
   AudienceCustomOperator,
   AudienceCustomReuseRecommendation,
@@ -12,8 +9,8 @@ import type {
   AudienceOptInLookup,
   AudienceOptInSignal,
   AudienceSignal,
-  AudienceStepKey,
   AudienceSpeakerScope,
+  AudienceStepKey,
   BriefMetricsActionRule,
   CampaignBiddingPlatform,
   CampaignBiddingPlatformRule,
@@ -24,22 +21,25 @@ import type {
   CampaignDeliveryTypeOption,
   CampaignEmailSegment,
   CampaignEmailTypeOption,
-  CampaignSurveyEmailCountOption,
-  CampaignSurveyTypeOption,
+  CampaignFunnelStage,
   CampaignGoalOption,
-  CampaignOptimizeControlLever,
-  CampaignOptimizeLever,
   CampaignKeyword,
+  CampaignLabelOption,
   CampaignNegativeKeywordMatchType,
   CampaignNegativeKeywordMatchTypeOption,
   CampaignNegativeKeywordOutcome,
   CampaignNegativeKeywordPlatformRules,
+  CampaignOptimizeControlLever,
+  CampaignOptimizeLever,
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
   CampaignServiceMonitorProvider,
   CampaignStatus,
+  CampaignSurveyEmailCountOption,
+  CampaignSurveyTypeOption,
   CampaignTabOption,
+  CampaignTactic,
   CampaignToggleAction,
   CampaignToggleStatus,
   CreativeAssetMimeType,
@@ -51,6 +51,7 @@ import type {
   GoogleCreativeGroup,
   GoogleCreativeSharedCap,
   GoogleDeviceBidMode,
+  GoogleDisplayDemographics,
   KeywordActionOutcome,
   KeywordActionPlatform,
   LinkedInGeoTarget,
@@ -2243,6 +2244,100 @@ export const GOOGLE_ADS_GENDER_LABELS = {
   FEMALE: 'Female',
   UNDETERMINED: 'Unknown',
 } as const;
+
+/**
+ * Every spelling upstream accepts for a household income range, mapped to Google's
+ * `IncomeRangeType` enum (`campaign_criteria.go`'s `incomeRangeTypes`). The enum names are
+ * percentile buckets, not amounts, so there is no friendly spelling beside them; bare
+ * `UNDETERMINED` is the one alias. Read for membership with `Object.hasOwn`, and for the resolved
+ * enum when a targeted value is compared with an excluded one.
+ */
+export const GOOGLE_ADS_INCOME_RANGE_MAP = {
+  INCOME_RANGE_0_50: 'INCOME_RANGE_0_50',
+  INCOME_RANGE_50_60: 'INCOME_RANGE_50_60',
+  INCOME_RANGE_60_70: 'INCOME_RANGE_60_70',
+  INCOME_RANGE_70_80: 'INCOME_RANGE_70_80',
+  INCOME_RANGE_80_90: 'INCOME_RANGE_80_90',
+  INCOME_RANGE_90_UP: 'INCOME_RANGE_90_UP',
+  UNDETERMINED: 'INCOME_RANGE_UNDETERMINED',
+  INCOME_RANGE_UNDETERMINED: 'INCOME_RANGE_UNDETERMINED',
+} as const;
+
+/** The income ranges the Implementation tab offers and sends, in Google's enum order, with bare `UNDETERMINED` for Unknown. */
+export const GOOGLE_ADS_INCOME_RANGES = [
+  'INCOME_RANGE_0_50',
+  'INCOME_RANGE_50_60',
+  'INCOME_RANGE_60_70',
+  'INCOME_RANGE_70_80',
+  'INCOME_RANGE_80_90',
+  'INCOME_RANGE_90_UP',
+  'UNDETERMINED',
+] as const;
+
+/** What the Implementation tab calls each {@link GOOGLE_ADS_INCOME_RANGES} value: Google Ads' own household income labels. */
+export const GOOGLE_ADS_INCOME_RANGE_LABELS = {
+  INCOME_RANGE_90_UP: 'Top 10%',
+  INCOME_RANGE_80_90: '11-20%',
+  INCOME_RANGE_70_80: '21-30%',
+  INCOME_RANGE_60_70: '31-40%',
+  INCOME_RANGE_50_60: '41-50%',
+  INCOME_RANGE_0_50: 'Lower 50%',
+  UNDETERMINED: 'Unknown',
+} as const;
+
+/** Google's `ParentalStatusType` enum (`campaign_criteria.go`'s `parentalStatusTypes`), whose names are already what a caller writes. */
+export const GOOGLE_ADS_PARENTAL_STATUSES = ['PARENT', 'NOT_A_PARENT', 'UNDETERMINED'] as const;
+
+/** What the Implementation tab calls each {@link GOOGLE_ADS_PARENTAL_STATUSES} value. */
+export const GOOGLE_ADS_PARENTAL_STATUS_LABELS = {
+  PARENT: 'Parent',
+  NOT_A_PARENT: 'Not a parent',
+  UNDETERMINED: 'Unknown',
+} as const;
+
+/**
+ * The Google channels that take income-range exclusions (linuxfoundation/lfx-v2-campaign-service#473).
+ * Upstream attaches them to every ad group it creates, and `validateAdGroupDemographicExclusions`
+ * refuses them on every other channel: Demand Gen and Video build ad groups it never probed, and
+ * Performance Max has none.
+ */
+export const GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS = ['search', 'display'] as const;
+
+/**
+ * The Google channels that take parental-status exclusions: Display alone. Google refuses a
+ * parental-status criterion on a Search ad group (OPERATION_NOT_PERMITTED_FOR_CONTEXT), so
+ * upstream refuses it there by name, and on the other channels for the reason above.
+ */
+export const GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS = ['display'] as const;
+
+/**
+ * The Google channels that observe demographics (linuxfoundation/lfx-v2-campaign-service#497): Search
+ * alone. Each observed dimension is reported and can take a bid adjustment on every Search ad group
+ * without narrowing who sees the ad (`validateObservedDemographics`).
+ */
+export const GOOGLE_CHANNELS_WITH_OBSERVED_DEMOGRAPHICS = ['search'] as const;
+
+/**
+ * The Google channels that take positive demographic targeting on the ad group
+ * (linuxfoundation/lfx-v2-campaign-service#499): Display alone (`validateDisplayDemographics`).
+ */
+export const GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_TARGETING = ['display'] as const;
+
+/** The demographic dimensions a Search campaign can observe, in the order the tab lists them (`validateObservedDemographics`). */
+export const GOOGLE_ADS_OBSERVED_DEMOGRAPHICS = ['AGE_RANGE', 'GENDER', 'INCOME_RANGE'] as const;
+
+/** What the Implementation tab calls each {@link GOOGLE_ADS_OBSERVED_DEMOGRAPHICS} dimension. */
+export const GOOGLE_ADS_OBSERVED_DEMOGRAPHIC_LABELS = {
+  AGE_RANGE: 'Age',
+  GENDER: 'Gender',
+  INCOME_RANGE: 'Household income',
+} as const;
+
+/**
+ * Upstream's bound on the observed demographic list (`maxObservedDemographicEntries`): three
+ * distinct values exist, and the slack admits a list that repeats one, which upstream collapses.
+ */
+export const GOOGLE_ADS_MAX_OBSERVED_DEMOGRAPHIC_ENTRIES = 6;
 
 /**
  * Upstream's own bound on a Google Ads callout list (`assets.go`'s `maxCallouts`).
@@ -4721,6 +4816,13 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'deviceBidModifiers', label: 'device bid modifiers' },
   { field: 'excludedAgeRanges', label: 'excluded age ranges' },
   { field: 'excludedGenders', label: 'excluded genders' },
+  // The ad-group demographics (linuxfoundation/lfx-v2-campaign-service#473, #497, #499), judged right
+  // after the criteria plan upstream. `displayDemographics` is an object: it counts when one of its
+  // lists is non-empty or not a list (`unservedGoogleCriteriaField`).
+  { field: 'excludedIncomeRanges', label: 'excluded income ranges' },
+  { field: 'excludedParentalStatuses', label: 'excluded parental statuses' },
+  { field: 'observedDemographics', label: 'observed demographics' },
+  { field: 'displayDemographics', label: 'demographic targeting' },
   { field: 'sitelinks', label: 'sitelinks' },
   { field: 'callouts', label: 'callouts' },
   { field: 'structuredSnippets', label: 'structured snippets' },
@@ -6003,3 +6105,15 @@ export const CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES: readonly string[] = [
   '; nothing was created',
   '; the connection is not at fault',
 ];
+
+/**
+ * The keys of a Display demographic targeting object (`displayDemographics`), in the order
+ * campaign-service v1.0.35's `validateDisplayDemographics` judges them. Typed against
+ * `GoogleDisplayDemographics`, so a renamed or added key fails to compile here.
+ */
+export const GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS = [
+  'ageRanges',
+  'genders',
+  'incomeRanges',
+  'parentalStatuses',
+] as const satisfies readonly (keyof GoogleDisplayDemographics)[];

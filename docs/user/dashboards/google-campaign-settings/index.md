@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and Performance Max search themes, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and Performance Max search themes, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -43,14 +43,14 @@ When you create a Google Ads campaign from the **Campaigns** page in the Foundat
 
 1. Open **Campaigns** in the Foundation lens and choose **Paid Marketing**.
 2. Open the **Implement** tab for a brief that includes Google Ads.
-3. Tick a campaign type, such as **Search Campaign**. The **Ad schedule** and **Devices** sections appear below the language settings when the type supports them, followed by **Demographic exclusions** and **Excluded locations**. On Search, **Networks**, **Display path**, **More ads** and **Negative keywords** appear below **Headlines** and **Descriptions**.
+3. Tick a campaign type, such as **Search Campaign**. The **Ad schedule** and **Devices** sections appear below the language settings when the type supports them, followed by **Demographic exclusions**, **Excluded locations** and **More demographics**. On Search, **Networks**, **Display path**, **More ads** and **Negative keywords** appear below **Headlines** and **Descriptions**.
 
-| Campaign type   | Ad schedule                                    | Devices                       | Demographic exclusions | Excluded locations |
-| --------------- | ---------------------------------------------- | ----------------------------- | ---------------------- | ------------------ |
-| Search          | Yes, adjust with Manual CPC or Maximize Clicks | Yes, adjust with Manual CPC   | Yes                    | Yes                |
-| Display         | Yes, adjust with Maximize Clicks               | Exclude only                  | Yes                    | Yes                |
-| Performance Max | Windows only                                   | Exclude only, with TV screens | No                     | Yes                |
-| Demand Gen      | Windows only                                   | Exclude only, with TV screens | No                     | Yes                |
+| Campaign type   | Ad schedule                                    | Devices                       | Demographic exclusions | Excluded locations | More demographics                               |
+| --------------- | ---------------------------------------------- | ----------------------------- | ---------------------- | ------------------ | ----------------------------------------------- |
+| Search          | Yes, adjust with Manual CPC or Maximize Clicks | Yes, adjust with Manual CPC   | Yes                    | Yes                | Observe; exclude income                         |
+| Display         | Yes, adjust with Maximize Clicks               | Exclude only                  | Yes                    | Yes                | Target only; exclude income and parental status |
+| Performance Max | Windows only                                   | Exclude only, with TV screens | No                     | Yes                | No                                              |
+| Demand Gen      | Windows only                                   | Exclude only, with TV screens | No                     | Yes                | No                                              |
 
 ## Ad schedule
 
@@ -96,9 +96,18 @@ The campaign does not serve in the places listed here.
 - You can exclude up to 500 places. This limit is separate from the 500 places you can target.
 - A place cannot be both targeted and excluded, even when the two are written differently, such as `US` and its id `2840`. If you have added no target country, postal code or radius, the campaign targets the event country, so you cannot exclude that country either.
 
+## More demographics
+
+The **More demographics** section applies to every ad group in the campaign. With nothing ticked, the campaign serves to everyone. **Unknown** is the people Google could not classify.
+
+- **Observe** (Search only): tick **Age**, **Gender** or **Household income** to see how each group performs and adjust bids for it in Google Ads, without narrowing who sees the ads. You cannot observe a dimension whose every value you excluded.
+- **Target only** (Display only): tick values under **Age**, **Gender**, **Household income** or **Parental status** to show the ads only to those people. A group with nothing ticked reaches all of it. A value cannot be both targeted and excluded.
+- **Exclude household income** (Search and Display): tick an income group (Top 10%, 11-20%, 21-30%, 31-40%, 41-50%, Lower 50%) to stop the campaign serving to it.
+- **Exclude parental status** (Display only): tick **Parent** or **Not a parent** to stop the campaign serving to it.
+
 ## Placement exclusions (Display only)
 
-On a Display campaign, a **Placement exclusions** box appears below **Excluded locations**. List the websites the campaign's ads must never appear on, one per line.
+On a Display campaign, a **Placement exclusions** box appears below **More demographics**. List the websites the campaign's ads must never appear on, one per line.
 
 - Enter each website as a bare domain, such as `example.com` or `news.example.com`. Leave out `https://`, any path such as `/news`, and any port. LFX One does not strip them for you; it holds **Create Campaign** and says which entry to fix.
 - Write an international domain in its `xn--` form.
@@ -307,4 +316,4 @@ While the campaign is split, the single Display ad you entered is kept but not s
 
 If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword, Performance Max description or search theme would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
-If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings or demographic exclusions will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Placement exclusions are sent on Display only, and kept with a notice on the other campaign types. Sitelinks are sent on Search, Demand Gen and Performance Max, callouts and structured snippets on Search and Performance Max, and call extensions, promotions and prices on Search only; each is kept the same way on the other campaign types, with a notice.
+If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings, demographic exclusions or other demographic settings will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Placement exclusions are sent on Display only, and kept with a notice on the other campaign types. Sitelinks are sent on Search, Demand Gen and Performance Max, callouts and structured snippets on Search and Performance Max, and call extensions, promotions and prices on Search only; each is kept the same way on the other campaign types, with a notice.
