@@ -10808,7 +10808,7 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Ad schedules, device adjustments, demographic exclusions and excluded locations as the request
+   * Income and parental-status exclusions, observed dimensions and Display targeting as the request
    * carries them: each gated by the SAME computed its panel section renders on, omitted when empty
    * (Google's default), entries copied.
    */
@@ -10836,6 +10836,11 @@ export class ImplementationTabComponent implements OnInit {
     return copy;
   }
 
+  /**
+   * Ad schedules, device adjustments, demographic exclusions and excluded locations as the request
+   * carries them: each gated by the SAME computed its panel section renders on, omitted when empty
+   * (Google's default), entries copied.
+   */
   private googleTargetingPayload(): Partial<CampaignCreateRequest> {
     const payload: Partial<CampaignCreateRequest> = {};
     const schedules = this.googleAdSchedules();

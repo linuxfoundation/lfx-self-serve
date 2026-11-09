@@ -19,21 +19,7 @@ import {
   googleAdsEchoed,
   googleAdsTrimSpace,
 } from '../constants/campaign.constants';
-import type { GoogleCampaignChannel } from '../interfaces/campaign.interface';
-
-/** A refusal naming the request field it is about, so the BFF can attach it to that field. */
-export interface GoogleDemographicFieldRefusal {
-  field: string;
-  message: string;
-}
-
-/** The exclusion lists a targeted or observed demographic is compared with, as the request carries them. */
-export interface GoogleDemographicExclusionLists {
-  ageRanges?: unknown;
-  genders?: unknown;
-  incomeRanges?: unknown;
-  parentalStatuses?: unknown;
-}
+import type { GoogleCampaignChannel, GoogleDemographicExclusionLists, GoogleDemographicFieldRefusal } from '../interfaces/campaign.interface';
 
 const GENDER_MAP: Readonly<Record<string, string>> = Object.fromEntries(GOOGLE_ADS_GENDERS.map((g) => [g, g]));
 const PARENTAL_MAP: Readonly<Record<string, string>> = Object.fromEntries(GOOGLE_ADS_PARENTAL_STATUSES.map((s) => [s, s]));

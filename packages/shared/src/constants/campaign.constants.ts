@@ -4815,8 +4815,8 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'excludedAgeRanges', label: 'excluded age ranges' },
   { field: 'excludedGenders', label: 'excluded genders' },
   // The ad-group demographics (linuxfoundation/lfx-v2-campaign-service#473, #497, #499), judged right
-  // after the criteria plan upstream. `displayDemographics` is an object: it counts only when one of
-  // its lists names a value (`unservedGoogleCriteriaField`).
+  // after the criteria plan upstream. `displayDemographics` is an object: it counts when one of its
+  // lists is non-empty or not a list (`unservedGoogleCriteriaField`).
   { field: 'excludedIncomeRanges', label: 'excluded income ranges' },
   { field: 'excludedParentalStatuses', label: 'excluded parental statuses' },
   { field: 'observedDemographics', label: 'observed demographics' },

@@ -6060,18 +6060,20 @@ export class CampaignController {
     for (const channel of Object.keys(GOOGLE_CREATIVE_REQUEST_KEYS) as GoogleCampaignChannel[]) {
       Object.assign(sent, this.googleCreative(body, channel));
     }
+    // An empty string asks for nothing too: the display paths are the only string fields here. So
+    // does `false`: `searchPartners` is the only boolean, and false is Google Search alone.
+    const asked = (value: unknown): boolean =>
+      value !== undefined && value !== null && value !== '' && value !== false && !(Array.isArray(value) && value.length === 0);
     return (
       GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.find((entry) => {
         if ('normalized' in entry) return entry.field in sent;
         const value = raw[entry.field];
-        // The one object field: a well-formed object asks for something only when a list names a
-        // value; anything else present is a malformed request, named as the lists below are.
+        // The one object field asks for something when any of its four lists is asked for by the same
+        // test — a malformed non-list included, named as the flat lists are.
         if (entry.field === 'displayDemographics' && value !== null && typeof value === 'object' && !Array.isArray(value)) {
-          return googleDisplayDemographicsCarried(value);
+          return ['ageRanges', 'genders', 'incomeRanges', 'parentalStatuses'].some((key) => asked((value as Record<string, unknown>)[key]));
         }
-        // An empty string asks for nothing too: the display paths are the only string fields here. So
-        // does `false`: `searchPartners` is the only boolean, and false is Google Search alone.
-        return value !== undefined && value !== null && value !== '' && value !== false && !(Array.isArray(value) && value.length === 0);
+        return asked(value);
       }) ?? null
     );
   }

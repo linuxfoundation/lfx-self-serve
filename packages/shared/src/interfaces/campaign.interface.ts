@@ -3783,6 +3783,20 @@ export interface GoogleExclusionOptionView {
   checked: boolean;
 }
 
+/** A refusal naming the request field it is about, so the BFF can attach it to that field. */
+export interface GoogleDemographicFieldRefusal {
+  field: string;
+  message: string;
+}
+
+/** The exclusion lists a targeted or observed demographic is compared with, as the request carries them. */
+export interface GoogleDemographicExclusionLists {
+  ageRanges?: unknown;
+  genders?: unknown;
+  incomeRanges?: unknown;
+  parentalStatuses?: unknown;
+}
+
 /** One dimension of Display's demographic targeting on the Implementation tab: the list it writes, its legend and its checkboxes. */
 export interface GoogleDemographicTargetingGroupView {
   key: keyof GoogleDisplayDemographics;

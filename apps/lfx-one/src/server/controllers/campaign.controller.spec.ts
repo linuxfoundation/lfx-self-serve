@@ -4008,6 +4008,20 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(legacyCreate).toHaveBeenCalledTimes(1);
     });
 
+    it('refuses a demographic targeting object whose list is not a list by name while the cutover is dark', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ displayDemographics: { ageRanges: '18-24' } } as never), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayDemographics' });
+    });
+
     it('still serves a demographic targeting object whose every list is empty on the legacy road', async () => {
       isServerFeatureEnabled.mockReturnValue(false);
       legacyServes();
