@@ -417,7 +417,11 @@ describe('Member360ResultComponent', () => {
     const original = JSON.stringify(envelope);
     const view = render(envelope);
     expect(view.query('member-360-result').textContent).toContain('CRM (not connected yet), Web research');
-    const sourceText = (source: string) => view.query(`member-360-source-${source}`).textContent?.replace(/\s+/g, ' ').trim();
+    const sourceText = (source: string) =>
+      Array.from(view.query(`member-360-source-${source}`).querySelectorAll('td'))
+        .map((cell) => cell.textContent?.trim())
+        .filter(Boolean)
+        .join(' ');
     expect(sourceText('lfx_platform')).toBe('LFX Platform: used');
     expect(sourceText('uploaded_trackers')).toBe('Trackers: unavailable');
     expect(sourceText('hubspot')).toBe('CRM: not connected yet');
@@ -458,7 +462,11 @@ describe('Member360ResultComponent', () => {
     const team = view.query('member-360-team-marketing');
     const rows = () => Array.from(team.querySelectorAll('[data-testid="member-360-action-row"]')).map((row) => row.textContent?.replace(/\s+/g, ' ').trim());
     expect(team.textContent).toContain('Marketing · 5 actions');
-    expect(view.query('member-360-team-summary-marketing').textContent?.replace(/\s+/g, ' ')).toContain('2 High 2 Medium 1 Low Next due 20 Nov');
+    expect(
+      Array.from(view.query('member-360-team-summary-marketing').querySelectorAll('span'))
+        .map((span) => span.textContent?.trim())
+        .join(' ')
+    ).toBe('2 High 2 Medium 1 Low Next due 20 Nov');
     expect(rows()).toHaveLength(3);
     expect(rows()[0]).toContain('Org 2');
     expect(rows()[0]).toContain('Due 22 Nov');
