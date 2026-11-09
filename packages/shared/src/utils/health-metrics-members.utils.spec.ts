@@ -471,6 +471,22 @@ describe('buildHealthMetricsMembersGrowthView', () => {
     expect(current.d.match(/C/g)).toHaveLength(10);
   });
 
+  it('keeps every curve segment between its two totals, even a flat month before a jump', () => {
+    const view = build('YTD', { 2025: [0, 0, 100, 100, 100, 500, 500, 500, 500, 500, 500, 500], 2026: [1] }, new Date(2026, 0, 1));
+    const numbers = view.lines[0].d.replace(/[MC]/g, ' ').trim().split(/\s+/).map(Number);
+    // After the move, each cubic is two handles and an end point: its handles' y must sit within its two ends' y.
+    let start = numbers[1];
+    for (let index = 2; index < numbers.length; index += 6) {
+      const [, y1, , y2, , end] = numbers.slice(index, index + 6);
+      const [low, high] = [Math.min(start, end), Math.max(start, end)];
+      expect(y1).toBeGreaterThanOrEqual(low);
+      expect(y1).toBeLessThanOrEqual(high);
+      expect(y2).toBeGreaterThanOrEqual(low);
+      expect(y2).toBeLessThanOrEqual(high);
+      start = end;
+    }
+  });
+
   it('lists each month’s years newest first, leaving out this year past today', () => {
     const columns = build().columns;
 

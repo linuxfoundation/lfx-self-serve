@@ -135,6 +135,27 @@ describe('MembersGrowthComponent', () => {
     expect(lines().every((line) => line.getAttribute('stroke-opacity') === '1')).toBe(true);
   });
 
+  it('highlights a year from the keyboard too, and a tap toggles it', async () => {
+    await render();
+    const legend = query('members-growth-legend-2024') as HTMLButtonElement;
+
+    legend.dispatchEvent(new Event('focus'));
+    await settle();
+    expect(lines().map((line) => line.getAttribute('stroke-opacity'))).toEqual(['0.15', '1', '0.15', '0.15']);
+    expect(legend.getAttribute('aria-pressed')).toBe('true');
+
+    legend.dispatchEvent(new Event('blur'));
+    await settle();
+    expect(lines().every((line) => line.getAttribute('stroke-opacity') === '1')).toBe(true);
+
+    legend.click();
+    await settle();
+    expect(legend.getAttribute('aria-pressed')).toBe('true');
+    legend.click();
+    await settle();
+    expect(legend.getAttribute('aria-pressed')).toBe('false');
+  });
+
   it('shows a month’s popup while it is hovered or focused', async () => {
     await render();
     const month = query('members-growth-month-11')!;

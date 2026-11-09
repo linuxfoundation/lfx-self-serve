@@ -262,16 +262,40 @@ function emptyGrowthView(): HealthMetricsMembersGrowthView {
   return { measured: false, yMax: '', lines: [], columns: [], ariaLabel: '' };
 }
 
-/** A smooth path through the points: each segment a cubic whose handles follow its neighbours, as the design curves it. */
+/**
+ * A smooth path through the points, as the design curves it, with monotone (Fritsch–Carlson) handles: each segment
+ * stays between its two totals, so a flat month before a jump never dips or overshoots.
+ */
 function growthCurve(points: [number, number][]): string {
   if (points.length === 0) return '';
+  const slopes = points.slice(1).map(([x, y], index) => (y - points[index][1]) / (x - points[index][0]));
+  const tangents = points.map((_, index) => {
+    if (index === 0) return slopes[0] ?? 0;
+    if (index === points.length - 1) return slopes[index - 1];
+    return slopes[index - 1] * slopes[index] <= 0 ? 0 : (slopes[index - 1] + slopes[index]) / 2;
+  });
+  slopes.forEach((slope, index) => {
+    if (slope === 0) {
+      tangents[index] = 0;
+      tangents[index + 1] = 0;
+      return;
+    }
+    const a = tangents[index] / slope;
+    const b = tangents[index + 1] / slope;
+    const length = a * a + b * b;
+    if (length > 9) {
+      const scale = 3 / Math.sqrt(length);
+      tangents[index] = scale * a * slope;
+      tangents[index + 1] = scale * b * slope;
+    }
+  });
+
   let d = `M${round1(points[0][0])} ${round1(points[0][1])}`;
   for (let index = 0; index < points.length - 1; index++) {
-    const [p0, p1, p2] = [points[index - 1] ?? points[index], points[index], points[index + 1]];
-    const p3 = points[index + 2] ?? p2;
-    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
-    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
-    d += ` C${round1(c1[0])} ${round1(c1[1])} ${round1(c2[0])} ${round1(c2[1])} ${round1(p2[0])} ${round1(p2[1])}`;
+    const [x1, y1] = points[index];
+    const [x2, y2] = points[index + 1];
+    const third = (x2 - x1) / 3;
+    d += ` C${round1(x1 + third)} ${round1(y1 + tangents[index] * third)} ${round1(x2 - third)} ${round1(y2 - tangents[index + 1] * third)} ${round1(x2)} ${round1(y2)}`;
   }
   return d;
 }
