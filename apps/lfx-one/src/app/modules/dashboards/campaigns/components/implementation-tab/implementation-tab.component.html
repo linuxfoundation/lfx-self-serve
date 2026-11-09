@@ -210,6 +210,19 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-ad-groups-error-live">
   {{ displayAdGroupsError() ?? '' }}
 </div>
+<!-- The Display audience pickers' notes, why Create is held for Display audiences, and the held note (#5262). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-audience-picker-live">
+  {{ displayAudiencePickerAnnouncement() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-audiences-error-live">
+  {{ displayAudiencesError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-audiences-held-live">
+  {{ displayAudiencesHeldMessage() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-audiences-block-live">
+  {{ displayAudiencesBlockMessage() }}
+</div>
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-ad-groups-held-live">
   {{ displayAdGroupsHeldMessage() }}
 </div>
@@ -1514,6 +1527,53 @@
               [text]="true"
               (onClick)="onDemandGenDemographicsClearAll()"
               data-testid="implementation-demand-gen-demographics-block-clear" />
+          </div>
+        </div>
+      }
+
+      <!--
+        Retained Display audiences the request cannot carry (#5262), on the Demand Gen block's terms: listed here
+        while Display's creative section, where their chips sit, is not on screen. Create is held while it shows; Remove is offered in
+        every state.
+      -->
+      @if (displayAudiencesBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-display-audiences-block-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (!displayCreativeShown()) {
+            <ul class="flex flex-col gap-0.5" data-testid="implementation-display-audiences-block-list">
+              @for (held of displayAudiencesRetained(); track $index) {
+                <li class="break-all">{{ held.owner }}: {{ displayAudienceNames().get(held.audience) ?? held.audience }}</li>
+              }
+            </ul>
+          }
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryCreateCapabilities.emit()"
+                data-testid="implementation-display-audiences-block-retry" />
+            }
+            <lfx-button
+              [label]="displayAudiencesRetained().length === 1 ? 'Remove audience' : 'Remove audiences'"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="onDisplayAudiencesRemoveAll()"
+              data-testid="implementation-display-audiences-block-remove" />
           </div>
         </div>
       }
@@ -2997,6 +3057,7 @@
                       </div>
                     }
                   </div>
+                  <ng-container *ngTemplateOutlet="displayAudiencesTemplate; context: { $implicit: '' + i, audiences: group.controls.audiences.controls }" />
                   <div>
                     <lfx-button
                       label="Remove ad group"
@@ -3160,8 +3221,129 @@
               <p class="mt-2 text-xs text-red-600" data-testid="implementation-demand-gen-demographics-error">{{ error }}</p>
             }
           }
+          <!--
+            Display audiences (#5262): the single ad group's four lists while not split (each named group has its
+            own above), the user lists the whole campaign excludes, split or not, and the interest search the
+            interest pickers share. Shown to a caller who may send them, and to anyone while the form holds some,
+            so they can be removed.
+          -->
+          @if (section.channel === 'display') {
+            <div class="mt-4 flex flex-col gap-3" data-testid="implementation-display-audiences">
+              @if (displayAudiencesAvailable()) {
+                <p class="text-xs text-gray-500">
+                  The user lists, custom audiences, custom affinity segments and interests picked for an ad group are its targeting. Google Ads may still show
+                  its ads to people beyond them: optimized targeting is left at Google's default, which can widen reach.
+                </p>
+                <!-- Not a nested form: the tab is one form already, so Enter searches here and is kept from submitting it. -->
+                <div class="flex items-end gap-2" (keydown.enter)="onDisplayInterestSearch(); $event.preventDefault()">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-700" for="display-interest-search">Search interests</label>
+                    <lfx-input-text
+                      [form]="displayInterestSearchForm"
+                      control="q"
+                      inputId="display-interest-search"
+                      type="text"
+                      size="small"
+                      placeholder="e.g. cloud computing"
+                      [maxlength]="interestQueryMaxLength"
+                      data-testid="implementation-display-interest-search" />
+                  </div>
+                  <lfx-button
+                    label="Search"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="onDisplayInterestSearch()"
+                    data-testid="implementation-display-interest-search-submit" />
+                </div>
+              }
+              @if (!displayAdGroupsActive()) {
+                <ng-container
+                  *ngTemplateOutlet="displayAudiencesTemplate; context: { $implicit: 'single', audiences: campaignForm.controls.displayAudiences.controls }" />
+              }
+              <ng-container
+                *ngTemplateOutlet="
+                  displayAudienceListTemplate;
+                  context: {
+                    $implicit: 'excluded',
+                    kind: 'audienceSegments',
+                    label: 'Excluded user lists',
+                    addLabel: 'Add to excluded user lists',
+                    list: campaignForm.controls.displayExcludedUserLists,
+                  }
+                " />
+              @if (displayAudiencesHeldMessage()) {
+                <p class="text-xs text-gray-500" data-testid="implementation-display-audiences-held">{{ displayAudiencesHeldMessage() }}</p>
+              }
+              @if (displayAudiencesError(); as error) {
+                <p class="text-xs text-red-600" data-testid="implementation-display-audiences-error">{{ error }}</p>
+              }
+            </div>
+          }
         </div>
       }
+
+      <!-- One Display audience target's four lists (#5262): the single ad group's for 'single', else named group i's. -->
+      <ng-template #displayAudiencesTemplate lfxDisplayAudiencesContext let-target let-audiences="audiences">
+        @for (entry of displayAudienceKinds; track entry.kind) {
+          <ng-container
+            *ngTemplateOutlet="
+              displayAudienceListTemplate;
+              context: { $implicit: target + '-' + entry.kind, kind: entry.kind, label: entry.label, addLabel: entry.addLabel, list: audiences[entry.kind] }
+            " />
+        }
+      </ng-template>
+
+      <!--
+        One Display audience list (#5262): its picks as chips with Remove, then a picker over the account's
+        entries of its kind not yet picked. A pick adds the resource name and clears the picker, so the same
+        entry can be picked again after a Remove.
+      -->
+      <ng-template #displayAudienceListTemplate lfxDisplayAudienceListContext let-id let-kind="kind" let-label="label" let-addLabel="addLabel" let-list="list">
+        @if (displayAudiencesAvailable() || list.value.length > 0) {
+          <div class="flex flex-col gap-1" [attr.data-testid]="'implementation-display-audience-' + id">
+            <span class="text-xs font-medium text-gray-700" [id]="'display-audience-' + id + '-label'" tabindex="-1">{{ label }}</span>
+            @if (list.value.length > 0) {
+              <div class="flex flex-wrap items-center gap-1">
+                @for (resourceName of list.value; track resourceName; let n = $index) {
+                  @let name = displayAudienceNames().get(resourceName) ?? resourceName;
+                  <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                    {{ name }}
+                    <button
+                      type="button"
+                      (click)="removeDisplayAudience(list, resourceName, id)"
+                      class="ml-0.5 text-blue-600 hover:text-blue-800"
+                      [attr.aria-label]="'Remove ' + name"
+                      [attr.data-testid]="'implementation-display-audience-remove-' + id + '-' + n">
+                      <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                }
+              </div>
+            }
+            @if (displayAudiencesAvailable()) {
+              @let picker = displayAudiencePickers()[kind];
+              @if (picker.status === 'loaded' && picker.audiences.length > 0) {
+                <lfx-ui-combobox
+                  #displayAudienceCombobox
+                  [label]="addLabel"
+                  placeholder="Search by name"
+                  emptyText="Nothing matches"
+                  size="small"
+                  (valueChange)="onDisplayAudiencePicked(list, $event, displayAudienceCombobox)"
+                  [attr.data-testid]="'implementation-display-audience-picker-' + id">
+                  @for (option of displayAudienceUnpicked()[id] ?? []; track option.resourceName) {
+                    <lfx-ui-option [value]="option.resourceName" [label]="option.name" />
+                  }
+                </lfx-ui-combobox>
+              }
+              @if (displayAudiencePickerNotes()[kind]; as note) {
+                <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-display-audience-note-' + id">{{ note }}</p>
+              }
+            }
+          </div>
+        }
+      </ng-template>
 
       <!--
         The Audience of one Demand Gen ad group (#5244): the single one for a null context, else named

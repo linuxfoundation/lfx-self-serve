@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics and Performance Max search themes, Search ad images, business logo and business name, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics, Display audiences and Performance Max search themes, Search ad images, business logo and business name, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -346,7 +346,22 @@ For each ad group:
 
 Every ad group needs a complete ad. Until every ad group has a name and a complete ad, a message under the ad groups explains what to fix and **Create Campaign** stays unavailable. The same happens if you remove every ad group while the checkbox is ticked: add one, or untick the checkbox.
 
-While the campaign is split, the single Display ad you entered is kept but not sent, and a note under the checkbox says so. Untick the checkbox to send the single ad instead. Your ad groups are then kept but not sent, and the note says that too. Placement exclusions cover every ad group. Ad groups do not take their own audiences here.
+While the campaign is split, the single Display ad you entered is kept but not sent, and a note under the checkbox says so. Untick the checkbox to send the single ad instead. Your ad groups are then kept but not sent, and the note says that too. Placement exclusions cover every ad group. Each ad group takes its own audiences: see Audiences (Display).
+
+## Audiences (Display)
+
+A Display ad group can target existing audiences from the Google Ads account: user lists, custom audiences, custom affinity segments and interests (Google's affinity and in-market categories). The audiences picked for an ad group are its targeting. Google Ads may still show its ads to people beyond them: optimized targeting is left at Google's default, which can widen reach. The audiences themselves are built in Google Ads; here you pick ones the account already has. The campaign can also exclude user lists. Only the LF marketing team sees these pickers, because every foundation shares one Google Ads account.
+
+- In the **Display Creative** section, the campaign's single ad group has four pickers: **User lists**, **Custom audiences**, **Custom affinity segments** and **Interests**. When the campaign is split into named ad groups, each ad group has its own four pickers instead.
+- **Excluded user lists** keeps the campaign's ads away from people on those lists. It covers the whole campaign, every ad group included, whether or not the campaign is split. A user list cannot be both targeted and excluded.
+- Each picker lists the account's entries by name. Type part of a name to narrow the list, then choose one. Each pick is shown by name with a remove button. Google Ads takes up to 20 in each list; with more, a message says so and **Create Campaign** stays unavailable.
+- Google's interests are a long list, so the picker shows the first 500 by name. Type in **Search interests** and choose **Search** (or press Enter) to list the interests whose names contain what you typed.
+- While the campaign is split, audiences picked for the single ad group are kept but not sent, and a note says so. Untick **Split into named ad groups** to send them. An ad group's audiences are likewise kept but not sent while the checkbox is unticked.
+- If a list cannot be read, a note under its picker says why. If the account has none of a kind, or more than the picker shows, a note says that too.
+- If an audience would be refused by Google Ads, for example one from another Google Ads account, a message at the end of the **Display Creative** section says why and **Create Campaign** stays unavailable until you remove it.
+- If a saved campaign holds Display audiences that cannot be sent, a notice under the targeting settings says why and lists them. **Create Campaign** stays unavailable until they are sent or removed, so they are never dropped. The notice says you are not on the LF marketing team, that Display audiences are not available on this deployment, that your access is still being checked, that it can be checked once the brief is saved, or that it could not be checked, with **Retry**. Choose **Remove audience** (**Remove audiences** for several) to create without them.
+
+Leave the pickers alone and the campaign is created exactly as before, with no audiences.
 
 ## If something is wrong
 
