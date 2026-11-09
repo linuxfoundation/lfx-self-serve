@@ -176,7 +176,7 @@ export class CommitteeSettingsTabComponent {
   });
 
   // Project mailing lists (loaded when committee has a project_uid — used by the picker dialog)
-  public projectMailingLists: Signal<GroupsIOMailingList[]> = this.initProjectMailingLists();
+  private readonly fetchedProjectMailingLists: Signal<GroupsIOMailingList[]> = this.initProjectMailingLists();
 
   // Associated mailing lists (queried directly by committee_uid tag)
   public readonly fetchedAssociatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
@@ -189,6 +189,22 @@ export class CommitteeSettingsTabComponent {
     const overrides = this.associatedMlOverrides();
     if (overrides.size === 0) return this.fetchedAssociatedMailingLists();
     return this.fetchedAssociatedMailingLists().map((ml) => {
+      const override = overrides.get(ml.uid);
+      return override ? { ...ml, sync_mode: override.sync_mode } : ml;
+    });
+  });
+
+  // Same override patch applied to the project-wide snapshot the picker reads — a drawer save (via
+  // onSyncSettingsUpdated) only ever patches associatedMlOverrides, it never fires refreshProjectMl$
+  // (that subject exists specifically so a sync-only save does NOT trigger this heavier project-wide
+  // refetch — see initProjectMailingLists' doc comment). Without this, the picker's `mailingLists`
+  // input and its directionChanged comparison both read the stale pre-drawer sync_mode, so re-opening
+  // the picker right after a drawer save could issue a no-op PUT or let a second list be saved as
+  // automatic (#4899 review: Greptile, Cursor bugbot, Copilot all flagged this independently).
+  public projectMailingLists: Signal<GroupsIOMailingList[]> = computed(() => {
+    const overrides = this.associatedMlOverrides();
+    if (overrides.size === 0) return this.fetchedProjectMailingLists();
+    return this.fetchedProjectMailingLists().map((ml) => {
       const override = overrides.get(ml.uid);
       return override ? { ...ml, sync_mode: override.sync_mode } : ml;
     });
