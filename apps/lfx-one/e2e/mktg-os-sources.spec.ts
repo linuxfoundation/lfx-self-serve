@@ -392,6 +392,37 @@ test.describe('Marketing OS new run Sources', () => {
     await page.screenshot({ path: test.info().outputPath('stale-public-questions.png'), fullPage: true });
   });
 
+  test('a ZIP over 150 KB is refused at pick time in the footnote’s words and never listed', async ({ page }) => {
+    const sources = await setupFreshSources(page);
+    await sources.open();
+    await page.getByTestId('mktg-run-sources-edit').getByRole('button').click();
+    await page
+      .getByTestId('mktg-intake-logo-files-upload')
+      .locator('input[type=file]')
+      .first()
+      .setInputFiles({ name: 'package.zip', mimeType: 'application/zip', buffer: Buffer.alloc(151 * 1024, 0) });
+    await expect(page.getByTestId('mktg-intake-logo-files-error')).toContainText(
+      'package.zip is 151 KB. Keep a ZIP small: SVG files only, under 150 KB; the full logo package linked on a brand page is usually too large to send.'
+    );
+    await expect(page.getByTestId('mktg-intake-logo-files-list')).toHaveCount(0);
+    expect(sources.generated).toHaveLength(0);
+    await page.screenshot({ path: test.info().outputPath('zip-over-150kb-refused.png'), fullPage: true });
+  });
+
+  test('a ZIP under 150 KB is read and listed on the form', async ({ page }) => {
+    const sources = await setupFreshSources(page);
+    await sources.open();
+    await page.getByTestId('mktg-run-sources-edit').getByRole('button').click();
+    await page
+      .getByTestId('mktg-intake-logo-files-upload')
+      .locator('input[type=file]')
+      .first()
+      .setInputFiles({ name: 'svg-logos.zip', mimeType: 'application/zip', buffer: Buffer.alloc(100 * 1024, 0) });
+    await expect(page.getByTestId('mktg-intake-logo-files-list')).toContainText('svg-logos.zip');
+    await expect(page.getByTestId('mktg-intake-logo-files-error')).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath('zip-under-150kb-listed.png'), fullPage: true });
+  });
+
   test('Drive and duplicate source warnings leave Start enabled', async ({ page }) => {
     const sources = await setupFreshSources(page);
     await sources.open();

@@ -1162,6 +1162,31 @@ describe('AccountContextService — family roll-up', () => {
     expect(next?.accountId).toBe(UID_C);
   });
 
+  /**
+   * Cursor on PR #4415. With the grants settled below the minimum and no persona seeds, the stored
+   * sentinel fell through to the placeholder path and stayed in the cookie — so the next bootstrap
+   * restored the combined view during its unsettled window and flickered before demoting again.
+   */
+  it('replaces an ineligible roll-up cookie with a held organization when there are no seeds', () => {
+    cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+    grants.inheritedWriterSet.set(new Set([UID_B]));
+
+    service.initializeUserOrganizations([]);
+
+    expect(service.selectedAccount().uid).toBe(UID_B);
+    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_B });
+    // The stub has no display fields, so the canonical fetch has to be the thing that fills them.
+    expect(httpGet).toHaveBeenCalled();
+  });
+
+  it('clears an ineligible roll-up cookie when there is nothing to fall back to', () => {
+    cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+
+    service.initializeUserOrganizations([]);
+
+    expect(cookies.get(COOKIE)).toBeUndefined();
+  });
+
   describe('orgListPinUid', () => {
     it('answers null while the roll-up is selected', () => {
       service.initializeUserOrganizations([seedA, seedB]);

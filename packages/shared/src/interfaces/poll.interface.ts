@@ -1181,7 +1181,7 @@ export interface PollCommentResult {
 export interface CommentResponseView extends PollCommentResponse {
   /** `comment_text` split into paragraphs via `splitIntoParagraphs` */
   paragraphs: string[];
-  /** Position in the rendered list — the prompt's full response list on the Comments tab, the preview list on the Overview. The Comments tab tracks text-only responses by it, a privacy-safe identity across pages; the Overview tracks by `previewKey`. */
+  /** Position in the rendered list — the prompt's response list on Comments or the Overview preview list. Text-only responses track by this privacy-safe identity; the Overview tracks by `previewKey`. */
   position: number;
   /** UI-only question text for answers flattened into the Overview preview. */
   promptText?: string;
@@ -1190,20 +1190,15 @@ export interface CommentResponseView extends PollCommentResponse {
 }
 
 /**
- * Results view model for one comment prompt's results page
- * @description PollCommentResult with `responses` decorated for display and sliced to the
- * current page; `totalResponses` and `first` keep the pre-slice count and page offset so the
- * paginator can render against the full list. Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
+ * Results view model for one comment prompt's continuous response list
+ * @description PollCommentResult with all returned `responses` decorated for display.
+ * Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
  */
-export interface CommentResultPageView extends Omit<PollCommentResult, 'responses'> {
-  /** Page-sliced responses with display-ready paragraph splits */
+export interface CommentResultView extends Omit<PollCommentResult, 'responses'> {
+  /** All returned responses with display-ready paragraph splits */
   responses: CommentResponseView[];
-  /** Post-BFF-cap response count before pagination slicing; the pre-cap total lives in `total_responses` */
+  /** Post-BFF-cap response count; the pre-cap total lives in `total_responses` */
   totalResponses: number;
-  /** Offset of the first visible response within the full responses list */
-  first: number;
-  /** Current page size (responses per page) */
-  rows: number;
 }
 
 /**

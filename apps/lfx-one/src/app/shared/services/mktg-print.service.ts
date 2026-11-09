@@ -87,8 +87,14 @@ export class MktgPrintService {
     return preparation;
   }
 
-  /** Called in the click task; creates the frame immediately, then prints once its own loader is idle. */
-  public printNow(bodyClass: string): void {
+  /**
+   * Called in the click task; creates the frame immediately, then prints once its own loader is idle.
+   * `title` names the PDF the browser saves: it titles the frame's document (WebKit names the file
+   * from the printed frame's title) and, while the dialog is open, the tab's (Chromium's print preview
+   * names the file from the top-level `document.title`). The tab's own title comes back when the
+   * print is over; without a `title` the page's own title stands everywhere.
+   */
+  public printNow(bodyClass: string, title?: string): void {
     const request = ++this.request;
     if (!isPlatformBrowser(this.platformId) || !this.document.defaultView) return;
     this.cleanupFrame?.();
@@ -111,9 +117,19 @@ export class MktgPrintService {
     // Never switch the app to print media: its shell rules could hide the iframe itself.
     let fallback: ReturnType<typeof setTimeout> | undefined;
     let focused: HTMLElement | null = null;
+    // The tab's title before the print named it; null until the swap, and again once restored.
+    let previousTitle: string | null = null;
     const cleanup = () => {
       clearTimeout(fallback);
       view.removeEventListener('afterprint', cleanup);
+      // Restore the tab's title exactly once, and only while it is still the one the print set: the
+      // app may have retitled the page meanwhile (a navigation while the dialog was open), and that
+      // title is not ours to undo. Every cleanup path comes through here: afterprint, the linger
+      // timer, a superseding print and clear().
+      if (previousTitle !== null) {
+        if (this.document.title === title) this.document.title = previousTitle;
+        previousTitle = null;
+      }
       // Removing a focused frame drops focus on the body. Return it to the control that opened the
       // dialog, but only while focus is still in the frame or nowhere: cleanup also runs from the
       // iOS linger timer, a superseding print and clear(), when the user may be in another field.
@@ -141,7 +157,7 @@ export class MktgPrintService {
     doc.body.className = this.document.body.className;
     doc.body.classList.add(bodyClass);
     doc.body.style.cssText = this.document.body.style.cssText;
-    doc.title = this.document.title;
+    doc.title = title ?? this.document.title;
     const base = doc.createElement('base');
     base.href = this.document.baseURI;
     doc.head.appendChild(base);
@@ -186,6 +202,11 @@ export class MktgPrintService {
       // iOS may omit afterprint: keep the frame through its asynchronous preview, then reclaim it;
       // clear() and the next print remove it at once without relying on that event.
       fallback = setTimeout(cleanup, MKTG_PRINT_FRAME_LINGER_MS);
+      // Chromium's Save as PDF names the file from the tab's title, not the printed frame's.
+      if (title !== undefined) {
+        previousTitle = this.document.title;
+        this.document.title = title;
+      }
       view.print();
     });
   }

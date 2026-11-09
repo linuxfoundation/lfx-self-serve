@@ -1714,10 +1714,10 @@ export const GOOGLE_ADS_MAX_RADIUS = { MILES: 500, KILOMETERS: 800 } as const;
 /**
  * The Google channels whose campaign criteria accept proximity (radius) targeting.
  *
- * Every channel EXCEPT Demand Gen — the same four as {@link GOOGLE_CHANNELS_WITH_LANGUAGES}, but
- * gated by a DIFFERENT upstream validator: this one is `validateGeoPlan`'s own, the language fence
- * is `validateCriteriaPlan`'s. They are two constants rather than one because upstream is free to
- * move either fence without the other. Demand Gen attaches location criteria at the AD GROUP level, where this
+ * Every channel EXCEPT Demand Gen. {@link GOOGLE_CHANNELS_WITH_LANGUAGES} named the same four until
+ * campaign-service v1.0.31 opened languages on Demand Gen (#459) and left this fence where it was,
+ * which is why the two are separate constants: this one is `validateGeoPlan`'s own, the language
+ * fence is `validateCriteriaPlan`'s. Demand Gen attaches location criteria at the AD GROUP level, where this
  * client has not verified that a proximity criterion is accepted, so upstream refuses it on that
  * channel before any mutate rather than creating a paid campaign to find out.
  *
@@ -1861,32 +1861,27 @@ export const GOOGLE_ADS_MAX_LANGUAGES = 40;
 export const GOOGLE_ADS_LANGUAGE_ID_PATTERN = /^[0-9]+$/;
 
 /**
- * The Google channels whose campaign-level criteria accept a language list.
+ * The Google channels that accept a language list.
  *
- * Every channel EXCEPT Demand Gen. `validateCriteriaPlan` is the one gate: it refuses the whole
- * non-location criteria set on the Demand Gen path only, because that channel attaches targeting at
- * the ad group level. Performance Max narrows the set — it refuses device bid modifiers and
- * campaign-level demographic exclusions — but takes languages, which Google documents as a PMax
- * campaign criterion; Video and Display take the un-narrowed set. Widening the fence to every
- * non-Search channel would refuse creates Google accepts, which is the over-refusal these guards
- * exist to avoid.
+ * Every channel. `validateCriteriaPlan` (campaign-service v1.0.31) refuses no language on any of
+ * them. On Demand Gen the list does not become a campaign criterion: the campaign refuses one, so
+ * campaign-service attaches the languages to the AD GROUP instead (#459,
+ * `createDemandGenAdGroupTargeting`). The request field is the same `languages` either way.
  *
  * Video is listed because upstream accepts it there, not because this client can reach it — the
  * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
  *
- * A create that carries languages on Demand Gen FAILS upstream with nothing created, so callers gate
- * the control and the payload on this list rather than sending the value and hoping.
+ * Kept as a list although it names every channel, so the control, the payload and the BFF still
+ * gate on one place if upstream fences a channel again.
  */
-export const GOOGLE_CHANNELS_WITH_LANGUAGES = ['search', 'performance-max', 'video', 'display'] as const;
+export const GOOGLE_CHANNELS_WITH_LANGUAGES = ['search', 'demand-gen', 'performance-max', 'video', 'display'] as const;
 
 /**
  * The Google channels whose campaign-level criteria accept an ad schedule.
  *
- * The same four as {@link GOOGLE_CHANNELS_WITH_LANGUAGES}, and for once the same upstream gate:
- * `validateCriteriaPlan` refuses languages, ad schedules, device bid modifiers and demographic
- * exclusions together on Demand Gen, then splits the remainder on Performance Max — which keeps
- * languages and AD SCHEDULES (Google documents both as PMax campaign criteria) and refuses only the
- * device and demographic halves.
+ * Every channel (campaign-service v1.0.31). Demand Gen takes ad schedules as campaign criteria since
+ * #474, but only WITHOUT a bid modifier: see {@link GOOGLE_CHANNELS_WITHOUT_SCHEDULE_BID_MODIFIERS}.
+ * Performance Max keeps them because Google documents them as a PMax campaign criterion.
  *
  * It is a separate constant rather than a reuse of the language list for the reason the proximity
  * fence is separate: the two happen to name the same channels today, and upstream is free to move
@@ -1896,7 +1891,14 @@ export const GOOGLE_CHANNELS_WITH_LANGUAGES = ['search', 'performance-max', 'vid
  * Video is listed because upstream accepts it there, not because this client can reach it — the
  * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
  */
-export const GOOGLE_CHANNELS_WITH_AD_SCHEDULES = ['search', 'performance-max', 'video', 'display'] as const;
+export const GOOGLE_CHANNELS_WITH_AD_SCHEDULES = ['search', 'demand-gen', 'performance-max', 'video', 'display'] as const;
+
+/**
+ * The channels that take an ad schedule only WITHOUT a bid modifier: Demand Gen. `validateCriteriaPlan`
+ * (campaign-service v1.0.31) refuses any schedule carrying a `bidModifier` there, under every bidding
+ * strategy, because the validateOnly probe that opened Demand Gen schedules (#474) sent none.
+ */
+export const GOOGLE_CHANNELS_WITHOUT_SCHEDULE_BID_MODIFIERS = ['demand-gen'] as const;
 
 /**
  * Upstream's own bound on a Google Ads ad-schedule list (`campaign_criteria.go`'s `maxAdSchedules`).
@@ -1984,69 +1986,78 @@ export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
 /**
  * The Google channels whose campaign-level criteria accept a device bid modifier.
  *
- * THREE channels, not the four that take languages and ad schedules. `validateCriteriaPlan` refuses
- * the whole non-location set on Demand Gen, then SPLITS the remainder on Performance Max: languages
- * and ad schedules stay (Google documents both as PMax campaign criteria), while device bid
- * modifiers are refused by their own branch, because Performance Max's automated bidding owns the
- * bid and sets no device adjustment.
+ * Four channels: Search, Video, Display, and Demand Gen, which `validateCriteriaPlan`
+ * (campaign-service v1.0.31) takes only as an exclusion — see
+ * {@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}. Performance Max is left out here: upstream now
+ * takes a Performance Max device exclusion too (#500), but this client does not offer it yet, so the
+ * channel stays fenced and a list set elsewhere is held rather than sent.
  *
- * Keeping this list separate from {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS} mirrors the
- * two separate upstream branches rather than the one answer they happen to give today. Upstream
- * refuses them with different messages for different reasons — a bid Performance Max does not set,
- * against demographics it takes as asset-group signals — and either could move without the other.
+ * Kept separate from {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS} because upstream fences the
+ * two in separate branches, for separate reasons, and they already differ on Demand Gen, which takes
+ * device exclusions and refuses demographic exclusions.
  *
  * NOT a rule about automated bidding, which is a different rule with a different shape:
  * `validateBiddingPlan` refuses a NON-ZERO device modifier under every strategy but Manual CPC, on
  * every channel, and `googleDeviceBidModifierRefusal` judges that with the effective strategy.
  * Widening this fence to every automated channel would refuse the device EXCLUSIONS (the 0 opt-out)
  * that Google honours. So on Display and Video, which offer no Manual CPC here, this list carries
- * exclusions only.
+ * exclusions only, as it does on Demand Gen for the channel reason above.
  *
  * Video is listed because upstream accepts it there, not because this client can reach it — the
  * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
  */
-export const GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS = ['search', 'video', 'display'] as const;
+export const GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS = ['search', 'demand-gen', 'video', 'display'] as const;
+
+/**
+ * The channels that take a device only as an EXCLUSION (a bid modifier of 0): Demand Gen.
+ * `validateCriteriaPlan` (campaign-service v1.0.31) refuses any other modifier there, under every
+ * bidding strategy, because the validateOnly probe that opened Demand Gen devices (#474) sent only 0.
+ */
+export const GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY = ['demand-gen'] as const;
 
 /**
  * The Google channels whose campaign-level criteria accept a demographic exclusion.
  *
- * The same three as {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS} today, and a separate constant
- * for the reason given there: upstream fences the two in separate branches, for separate reasons.
- * Performance Max excludes demographics through asset-group signals, which this client does not
- * create, so a campaign-level exclusion is refused rather than silently absent from a paid campaign.
+ * {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS} without Demand Gen, and a separate constant
+ * because upstream fences the two in separate branches, for separate reasons. `validateCriteriaPlan`
+ * refuses demographic exclusions on Demand Gen, where Google refuses them on the audience-grouped ad
+ * group. Performance Max excludes demographics through asset-group signals, which this client does
+ * not create, so a campaign-level exclusion is refused rather than silently absent from a paid campaign.
  */
 export const GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS = ['search', 'video', 'display'] as const;
 
 /**
- * Upstream's bound on a device bid modifier list (`campaign_criteria.go`'s
- * `maxDeviceBidModifiers`).
- *
- * It tracks the SIZE OF {@link GOOGLE_ADS_DEVICES} rather than Google's own enum size, and upstream
- * holds a test asserting the two agree. The cap's whole claim is "a longer list must contain a
- * duplicate", which stops being true the moment the accepted vocabulary and this number drift — so
- * a device added below must raise this, and a spec here pins them together.
- */
-export const GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS = 3;
-
-/**
- * The `Device` enum this client accepts on a bid modifier (`campaign_criteria.go`'s `deviceTypes`).
+ * The `Device` enum this client accepts on a bid modifier on every channel but Demand Gen
+ * (`campaign_criteria.go`'s `deviceTypes`).
  *
  * Compared after trimming and upper-casing, so `" mobile "` is MOBILE.
  *
  * Two of Google's values are deliberately absent. `OTHER` is a reporting bucket rather than
- * something a campaign bids on. `CONNECTED_TV` is a NAMED GAP: Google accepts TV screens on Display
- * and Video campaigns, so on those two the omission is this client's limitation rather than
- * Google's, and upstream states it as one. It stays closed because opening it is a live-API
- * question — whether a `CONNECTED_TV` criterion carries a bid modifier at all — and guessing wrong
- * lands at the criteria mutate, AFTER the budget and campaign are committed.
+ * something a campaign bids on. `CONNECTED_TV` is a NAMED GAP on these channels: Google accepts TV
+ * screens on Display and Video campaigns, so there the omission is campaign-service's limitation
+ * rather than Google's, and upstream states it as one. Demand Gen takes it: see
+ * {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}.
+ *
+ * Its length is also upstream's cap on the list (`validateDeviceBidModifiers` caps at the size of
+ * the channel's vocabulary): a longer list must repeat a device.
  */
 export const GOOGLE_ADS_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET'] as const;
 
-/** What the Implementation tab's device control calls each {@link GOOGLE_ADS_DEVICES} value, in Google's own words. */
+/**
+ * Demand Gen's device vocabulary (`campaign_criteria.go`'s `demandGenDeviceTypes`): {@link
+ * GOOGLE_ADS_DEVICES} plus `CONNECTED_TV`, which a validateOnly probe accepted as a Demand Gen
+ * exclusion (#474). Every entry on Demand Gen is an exclusion — see
+ * {@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}. Also the order the device control lists rows
+ * and keeps entries in, since it is the widest vocabulary.
+ */
+export const GOOGLE_ADS_DEMAND_GEN_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV'] as const;
+
+/** What the Implementation tab's device control calls each {@link GOOGLE_ADS_DEMAND_GEN_DEVICES} value, in Google's own words. */
 export const GOOGLE_ADS_DEVICE_LABELS = {
   MOBILE: 'Mobile phones',
   DESKTOP: 'Computers',
   TABLET: 'Tablets',
+  CONNECTED_TV: 'TV screens',
 } as const;
 
 /**
@@ -4670,6 +4681,7 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'conversionActions', label: 'conversion actions', normalized: true },
   { field: 'demandGenCreative', label: 'Demand Gen creative', normalized: true },
   { field: 'demandGenVideoCreative', label: 'Demand Gen video ad', normalized: true },
+  { field: 'demandGenAdGroups', label: 'Demand Gen ad groups', normalized: true },
   { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
   { field: 'displayCreative', label: 'Display creative', normalized: true },
 ] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string; normalized?: true }[];
@@ -4795,28 +4807,47 @@ export const GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS: Readonly<Record<string, readonl
 };
 
 /**
- * The Google channels that accept campaign ad extensions — the six this application collects
- * (sitelinks, callouts, structured snippets, calls, promotions and prices), and the lead form it
- * does not collect yet.
+ * The Google channels this application sends campaign ad extensions OTHER THAN SITELINKS on — the
+ * callouts, structured snippets, calls, promotions and prices it collects. Sitelinks have their own
+ * fence, {@link GOOGLE_CHANNELS_WITH_SITELINKS}.
  *
- * Search and nothing else, and upstream is categorical about it: `validateAssetPlan`
- * (`internal/platform/googleads/assets.go`) refuses the whole extension set with "supported on
- * Search campaigns only, not on <kind>" the moment any of the seven lists is non-empty on another
- * channel. That refusal happens at preflight, before the budget mutate, so sending a callout on a
- * Performance Max create does not produce a campaign without callouts — it produces no campaign.
+ * Search only. Upstream's `validateAssetPlan` (`internal/platform/googleads/assets.go`, campaign-service
+ * v1.0.31) refuses every one of them on Demand Gen ("ad extensions other than sitelinks ... are not
+ * supported on DEMAND_GEN") and on Display and Video, and refuses calls, promotions and prices on
+ * Performance Max. It does take callouts and structured snippets on Performance Max (#461), but this
+ * application has not opened that pairing, so this list stays narrower than upstream there rather
+ * than wider. Every refusal happens at preflight, before the budget mutate, so sending a callout on a
+ * Demand Gen create does not produce a campaign without callouts — it produces no campaign.
  *
- * This is the opposite shape from {@link GOOGLE_CHANNELS_WITH_CREATIVE}, which excludes `search`:
- * the two together say that every Google channel carries exactly one kind of ad content, and which
- * kind is decided by the channel.
+ * This is the opposite shape from {@link GOOGLE_CHANNELS_WITH_CREATIVE}, which excludes `search`.
  */
 export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
+
+/**
+ * The Google channels this application sends sitelink extensions on: Search and Demand Gen.
+ *
+ * Upstream's `validateAssetPlan` (`internal/platform/googleads/assets.go`, campaign-service v1.0.31)
+ * accepts sitelinks alone on Demand Gen (#474): the live KubeCon NA 2026 Demand Gen campaigns carry
+ * them, and a `validateOnly` probe accepted the asset and its SITELINK campaign link. Demand Gen
+ * sitelinks go through the same `validateSitelinks` rules as Search (cap, text and description
+ * widths, both description lines or neither, final URL) and the same `createCampaignAssets` link;
+ * the only difference is upstream tags the destination with Demand Gen's `utm_medium=display`
+ * rather than Search's (#479). This application sends the raw URL on both channels.
+ *
+ * A separate list from {@link GOOGLE_CHANNELS_WITH_AD_EXTENSIONS} because upstream fences the two for
+ * different reasons — sitelinks were probed on Demand Gen and the other kinds were not — and either
+ * could move without the other. Performance Max is left out although upstream takes sitelinks
+ * there too (#461): this application has not opened extensions on that channel.
+ */
+export const GOOGLE_CHANNELS_WITH_SITELINKS = ['search', 'demand-gen'] as const;
 
 /**
  * The Google channels that accept audience segments — Search and nothing else.
  *
  * Upstream attaches audience criteria to the ad group the Search cascade builds, and refuses them
  * on every other channel rather than dropping them (`internal/platform/googleads/campaign.go`:
- * "audience segments are not supported on %s"): Demand Gen's ad group takes no criteria and
+ * "audience segments are not supported on %s"): Demand Gen's ad group is audience-grouped, so Google
+ * refuses a user list attached to it directly (it takes one Audience and languages instead, #459), and
  * Performance Max has no ad group to hang them on. A separate list from
  * {@link GOOGLE_CHANNELS_WITH_AD_EXTENSIONS} although it holds the same one channel, because the two
  * fences are upstream's for different reasons and either could move without the other.
@@ -5126,6 +5157,39 @@ export const GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS = [
 /** The `googleAdsConfig` key the Demand Gen video ad rides under, beside {@link GOOGLE_CREATIVE_REQUEST_KEYS}. */
 export const GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY = 'demandGenVideoCreative' satisfies keyof CampaignCreateRequest;
 
+/** The `googleAdsConfig` key the named Demand Gen ad groups ride under (#5226), INSTEAD of both creative keys. */
+export const GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY = 'demandGenAdGroups' satisfies keyof CampaignCreateRequest;
+
+/**
+ * The most named ad groups one Demand Gen campaign takes: campaign-service's `maxDemandGenAdGroups`
+ * (`internal/platform/googleads/demandgen_adgroups.go`). A service bound, not Google's: every group's
+ * images are fetched before the budget, and every group adds its own mutates after the campaign exists.
+ */
+export const GOOGLE_DEMAND_GEN_MAX_AD_GROUPS = 5;
+
+/**
+ * Why the Implement tab holds Create when Demand Gen is split into ad groups but none is left. Upstream
+ * reads an empty `demandGenAdGroups` as no split, so the campaign would be created with no ad at all.
+ */
+export const GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY = 'Add at least one ad group, or turn the split off to send the single ad instead.';
+
+/** Google's limit on an ad group's name, in characters: campaign-service's `maxAdGroupNameRunes` (`adgroup_ad.go`). */
+export const GOOGLE_ADS_MAX_AD_GROUP_NAME_RUNES = 255;
+
+/**
+ * What campaign-service appends to the event name to name a Demand Gen ad group (`demandGenAdGroupName`
+ * in `demandgen.go`). A named group's full name is `<event name> - Display | <its name>`.
+ */
+export const GOOGLE_DEMAND_GEN_AD_GROUP_NAME_SUFFIX = ' - Display';
+
+/**
+ * What campaign-service appends to a named Demand Gen ad group's full name to name its video ad
+ * (`demandGenVideoAdNameSuffix`, `internal/platform/googleads/demandgen_video_creative.go`). The ad's
+ * name is held to Google's 255 characters too (`validateDemandGenVideoAdName`), so a video group's
+ * full name has 11 fewer to spare than an image group's.
+ */
+export const GOOGLE_DEMAND_GEN_VIDEO_AD_NAME_SUFFIX = ' - Video ad';
+
 /**
  * How far a stored image's aspect ratio may sit from its Google slot's target, as a fraction of the
  * target — campaign-service's `demandGenAspectTolerance`, which every Google slot is held to (Google
@@ -5354,9 +5418,11 @@ export const GOOGLE_BIDDING_STRATEGY_LABELS = {
  * Which strategies each channel will accept, copied set-for-set from campaign-service.
  *
  * Reproduced rather than widened, and the five sets genuinely disagree:
- * `searchBiddingStrategies` is every name; `demandGenBiddingStrategies` is Maximize Clicks ALONE
- * (a live `validateOnly` mutate returned `BIDDING_STRATEGY_TYPE_INCOMPATIBLE_WITH_SHARED_BUDGET`
- * for the others); `performanceMaxBiddingStrategies` is the four conversion-oriented ones, since
+ * `searchBiddingStrategies` is every name; `demandGenBiddingStrategies` (campaign-service v1.0.31,
+ * #474) is Maximize Clicks, Maximize Conversions, Target CPA and Maximize Conversion Value, each
+ * accepted by a validateOnly probe with the non-shared budget every LFX create makes, and NOT Target
+ * ROAS, which was not probed (a target ROAS is refused there under any strategy too — see
+ * {@link GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS}); `performanceMaxBiddingStrategies` is the four conversion-oriented ones, since
  * Performance Max has no manual bidding at all; `videoBiddingStrategies` is the two Google's
  * VIDEO_ACTION documentation names; and `displayBiddingStrategies` is the five automated ones —
  * manual CPC is omitted there because the client's Display ad-group payload carries no bid field,
@@ -5367,7 +5433,7 @@ export const GOOGLE_BIDDING_STRATEGY_LABELS = {
  */
 export const GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL = {
   search: GOOGLE_BIDDING_STRATEGIES,
-  'demand-gen': ['maximize-clicks'],
+  'demand-gen': ['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value'],
   'performance-max': ['maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas'],
   video: ['maximize-conversions', 'target-cpa'],
   display: ['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas'],
@@ -5398,6 +5464,15 @@ export const GOOGLE_BIDDING_DEFAULT_BY_CHANNEL = {
  */
 export const GOOGLE_BIDDING_CPA_STRATEGIES = ['maximize-conversions', 'target-cpa'] as const;
 export const GOOGLE_BIDDING_ROAS_STRATEGIES = ['maximize-conversion-value', 'target-roas'] as const;
+
+/**
+ * The channels that take no target ROAS under any strategy: Demand Gen. `validateBiddingPlan`
+ * (campaign-service v1.0.31) refuses a `targetRoas` there even under Maximize Conversion Value,
+ * because the probe that opened that strategy on Demand Gen (#474) sent no target. A target CPA is
+ * accepted there and sent in the same `targetCpa` field; campaign-service builds Demand Gen's
+ * standalone `targetCpa` strategy from it.
+ */
+export const GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS = ['demand-gen'] as const;
 
 /**
  * The two spellings whose target is REQUIRED rather than optional.
@@ -5528,6 +5603,16 @@ export const GOOGLE_USER_LIST_PICKER_EMPTY = 'This Google Ads account has no use
 
 /** What the audience segment picker says when upstream returned only part of the account's lists. */
 export const GOOGLE_USER_LIST_PICKER_TRUNCATED = "This account has more user lists than the picker shows. If one isn't listed, enter its resource name below.";
+
+/** Google's UserListType values in the words the Google Ads UI uses for them; the picker shows any other value in sentence case. */
+export const GOOGLE_USER_LIST_TYPE_LABELS: Readonly<Record<string, string>> = {
+  CRM_BASED: 'Customer list',
+  RULE_BASED: 'Website visitors',
+  LOGICAL: 'Combined list',
+  SIMILAR: 'Similar audience',
+  BASIC: 'Remarketing list',
+  LOOKALIKE: 'Lookalike',
+};
 
 /**
  * The numeric bounds campaign-service applies to the three money/ratio fields, in whole units of

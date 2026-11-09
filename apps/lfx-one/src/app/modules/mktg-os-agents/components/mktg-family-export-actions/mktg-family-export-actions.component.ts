@@ -29,7 +29,7 @@ import {
   MktgSlidesExportMode,
   MktgSlidesExportPhase,
 } from '@lfx-one/shared/interfaces';
-import { mktgFamilyExportAgentKeys } from '@lfx-one/shared/utils';
+import { mktgFamilyExportAgentKeys, mktgPrintDocumentTitle } from '@lfx-one/shared/utils';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -176,7 +176,7 @@ export class MktgFamilyExportActionsComponent {
     if (!target || !members || !this.canPrint()) return;
     // A completed preparation may precede its render callback; keep this print in the click task.
     if (this.markPdfReady() && this.pdfScope === JSON.stringify([target, members])) {
-      this.print.printNow(MKTG_FAMILY_PRINT_BODY_CLASS);
+      this.print.printNow(MKTG_FAMILY_PRINT_BODY_CLASS, this.pdfTitle());
       return;
     }
     this.printing.set(true);
@@ -321,6 +321,21 @@ export class MktgFamilyExportActionsComponent {
         this.lookup.set(lookup);
         this.checking.set(false);
       });
+  }
+
+  /**
+   * The saved PDF's name, like the deck's title: the project, the family and the newest member revision's
+   * date, so the same set of members always gives the same name. The family binds several revisions, so
+   * it carries no version.
+   */
+  private pdfTitle(): string {
+    const view = this.printView();
+    return mktgPrintDocumentTitle(
+      view?.projectName ?? this.context.activeContext()?.name ?? 'Project',
+      this.familyName(),
+      null,
+      view?.newestRevisionAt ?? null
+    );
   }
 
   /** Readiness requires both completed font preparation and the current mounted document. Never prints asynchronously. */

@@ -159,6 +159,58 @@ describe('MktgPrintService isolated frame', () => {
     expect(framePrint).toHaveBeenCalledOnce();
   });
 
+  it('titles the frame as the caller names the PDF, and after the page when the caller names nothing', () => {
+    document.title = 'Document · LFX';
+    configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Synthetic Foundation · Messaging framework · v2 · 2026-11-05');
+    expect(currentFrame().contentDocument?.title).toBe('Synthetic Foundation · Messaging framework · v2 · 2026-11-05');
+    // The tab keeps its own title until the dialog opens: the frame is still loading here.
+    expect(document.title).toBe('Document · LFX');
+    service.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    expect(currentFrame().contentDocument?.title).toBe('Document · LFX');
+  });
+
+  it('names the tab as the PDF while the dialog is open, for Chromium, and gives its title back on afterprint', async () => {
+    document.title = 'Document · LFX';
+    configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Synthetic Foundation · Brand kit · v1 · 2026-11-05');
+    await releaseFrame();
+    expect(framePrint).toHaveBeenCalledOnce();
+    expect(document.title).toBe('Synthetic Foundation · Brand kit · v1 · 2026-11-05');
+    currentFrame().contentWindow?.dispatchEvent(new Event('afterprint'));
+    expect(document.title).toBe('Document · LFX');
+    // Restored once: a later cleanup path (the linger timer is cleared; clear() finds no frame) leaves it.
+    service.clear();
+    vi.advanceTimersByTime(MKTG_PRINT_FRAME_LINGER_MS);
+    expect(document.title).toBe('Document · LFX');
+  });
+
+  it.each([
+    ['the linger fallback', () => vi.advanceTimersByTime(MKTG_PRINT_FRAME_LINGER_MS)],
+    ['a superseding print', () => service.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS)],
+    ['clear()', () => service.clear()],
+  ])('gives the tab its title back on %s too, when afterprint never comes', async (_path, teardown) => {
+    document.title = 'Document · LFX';
+    configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Synthetic Foundation · Brand kit · v1 · 2026-11-05');
+    await releaseFrame();
+    expect(document.title).toBe('Synthetic Foundation · Brand kit · v1 · 2026-11-05');
+    teardown();
+    expect(document.title).toBe('Document · LFX');
+  });
+
+  it('leaves a title the app changed while the dialog was open, and never touches the tab when the caller names nothing', async () => {
+    document.title = 'Document · LFX';
+    configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Synthetic Foundation · Brand kit · v1 · 2026-11-05');
+    await releaseFrame();
+    document.title = 'Positioning & brand · LFX';
+    currentFrame().contentWindow?.dispatchEvent(new Event('afterprint'));
+    expect(document.title).toBe('Positioning & brand · LFX');
+    service.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    await releaseFrame();
+    expect(framePrint).toHaveBeenCalledTimes(2);
+    expect(document.title).toBe('Positioning & brand · LFX');
+    currentFrame().contentWindow?.dispatchEvent(new Event('afterprint'));
+    expect(document.title).toBe('Positioning & brand · LFX');
+  });
+
   it('waits for the cloned sheet before frame fonts and image decode, within one total cap', async () => {
     configure();
     const loaded = service.ensureFontStylesheet('https://fonts.example/print.css');

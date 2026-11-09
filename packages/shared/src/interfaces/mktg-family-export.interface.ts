@@ -89,6 +89,8 @@ export interface MktgFamilyPrintView {
   brand: MktgPrintBrand;
   projectName: string;
   printedAt: string;
+  /** When the newest of the printed member revisions was stored (ISO), for the PDF's name; null when none carries a date. */
+  newestRevisionAt: string | null;
   fontFamily: string | null;
   weights: readonly number[];
 }

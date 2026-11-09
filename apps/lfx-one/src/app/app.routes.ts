@@ -99,6 +99,8 @@ function orgLensPageRoutes(): Routes {
       // Componentless parent so both children share its data.
       path: 'initiatives',
       data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your organization.', icon: 'fa-light fa-box-dollar' },
+      // The crowdfunding list and stats take one `orgUid`, so the roll-up redirects (#4415).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       children: [
         {
           path: '',

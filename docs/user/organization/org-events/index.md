@@ -1,14 +1,14 @@
 ---
 title: Events and Event Attendees
-description: How the Organization lens Events page and People → Event Attendees count and list people at events, what each filter (Range, Foundation, Count, Show, Counted by) does, and what is shown about each person.
+description: How the Organization lens Events page and People → Event Attendees count and list people at events, what each filter (Range, Foundation, Count, Show, Counted by) does, what is shown about each person, and what the attendees and speakers panels for an event show.
 audience: [all]
 product_area: Organization
-tags: [organization, org, org-lens, events, event-attendees, registered, attended, counted-by, company-email, filters, all-employees]
+tags: [organization, org, org-lens, events, event-attendees, registered, attended, counted-by, company-email, filters, all-employees, speakers]
 last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
-These steps apply to anyone with access to at least one organization in the Organization lens. The Events page, People → Event Attendees and the **Event Attendees** and **Event Speakers** cards on the [Org Overview](../org-overview/) all use the same definitions, so the same selection gives the same number on each of them.
+These steps apply to anyone with access to at least one organization in the Organization lens. The Events page, People → Event Attendees and the **Event Attendees** and **Event Speakers** cards on the [Org Overview](../org-overview/) all use the same definitions, so the same selection gives the same number on each of them. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee with no other role on an organization sees only its **EasyCLA** page, not these pages.
 
 ## What is counted
 
@@ -49,6 +49,17 @@ Open **Events** in the Organization lens sidebar. The three tiles at the top, **
 | **Counted by** (under More filters) | See [Counted by](#counted-by).                                                                                                                                                                            |
 
 The **Event Attendees** column header and cells explain what the number counts when you point at them. Select an attendee count to open the people behind it.
+
+### What do the attendees and speakers panels show?
+
+Selecting an event's attendee count or speaker count opens a panel that names the organization's people at that event. Both panels have a **Search people...** box that matches names and job titles, and list each person with their job title when known. Email addresses are never shown.
+
+| Panel     | Opens from                                                                     | What it shows                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Attendees | The **Event Attendees** count                                                  | The title is the organization's name followed by **Attendees**, and the line under it is the event name and how many people are counted, such as **14 counted**. Everyone counted under the current **Counted by** is listed by name, so the list matches the count; by default that is **Company email or employee** (see [Who is listed](#who-is-listed)). Each person carries the **Count** you picked: **Registered or attended**, **Registered** or **Attended**. A count of **0** cannot be selected |
+| Speakers  | The **Event Speakers** count, shown as accepted / submitted, such as **2 / 5** | The title is the organization's name followed by **Speakers**, and the line under it is the event name and how many of the organization's speaker proposals were accepted and submitted, such as **2 accepted of 5 submitted**. Each speaker is marked **Accepted** or **Submitted**. A count of **0 / 0** cannot be selected                                                                                                                                                                              |
+
+When a panel has no one to show, it says **No attendees found for this event.** or **No speakers found for this event.** A search that matches no one says **No attendees match your search.** or **No speakers match your search.** If the attendees panel fails to load, it says **Could not load attendees. Close this panel and open it again to retry.** The speakers panel has no separate error message: if it fails to load, it shows **No speakers found for this event.**, so close it and open it again before you rely on an empty list.
 
 The filters are kept in the page address (`?range=`, `?foundation=`, `?participation=`, `?eventScope=`, `?attribution=`), left out while they are at their defaults, and carried when you switch between the Upcoming and Past tabs. **Clear filters** returns all of them, and the search and status, to their defaults.
 

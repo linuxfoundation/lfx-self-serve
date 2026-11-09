@@ -15,6 +15,7 @@ import {
   brandKitChapterSummaries,
   brandKitContrastRatio,
   brandKitFoundIn,
+  brandKitInkOnAccent,
   brandKitLabelInk,
   brandKitLuminance,
   buildBrandKitBookView,
@@ -232,6 +233,20 @@ describe('the book’s view model', () => {
     }
     expect(cards.find((card) => card.name === 'Ink')?.ink).toBe('white');
     expect(cards.find((card) => card.name === 'White')?.ink).toBe('#20232A');
+  });
+
+  it('inks text on the accent white only when white reaches WCAG AA there (4.5:1), else in the kit’s dark, as the renderer and the deck do', () => {
+    const onAccent = (accent: string): number => brandKitContrastRatio(brandKitLuminance(accent), 1);
+    // A coral that the kit's own contrast table grades as failing against white (2.8:1): the dark, never white.
+    expect(onAccent('#FF702D')).toBeLessThan(4.5);
+    expect(brandKitInkOnAccent('#FF702D', '#000000')).toBe('#000000');
+    expect(brandKitInkOnAccent('#F37625', '#4D4E4E')).toBe('#4D4E4E');
+    // A dark accent that passes: white.
+    expect(onAccent('#1F4E79')).toBeGreaterThanOrEqual(4.5);
+    expect(brandKitInkOnAccent('#1F4E79', '#20232A')).toBe('white');
+    // The edges: a white accent takes the dark; a black one white.
+    expect(brandKitInkOnAccent('#FFFFFF', '#20232A')).toBe('#20232A');
+    expect(brandKitInkOnAccent('#000000', '#20232A')).toBe('white');
   });
 
   it('prints the version the page shows, the kit’s own draft version when none is given', () => {

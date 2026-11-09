@@ -79,6 +79,7 @@ describe('BrandKitWebViewComponent', () => {
     // This fixture explicitly supplies the independently approved print payload.
     fixture.componentRef.setInput('approvedKit', kit);
     fixture.componentRef.setInput('approvedVersion', 1);
+    fixture.componentRef.setInput('approvedCreatedAt', '2026-10-20T23:30:00Z');
     await fixture.whenStable();
   };
 
@@ -461,6 +462,14 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-imagery')?.textContent).toContain('Structure.');
       expect(query('brand-kit-web-view-imagery')?.textContent).toContain('Hackers');
       expect(query('brand-kit-web-view-elements')?.textContent).toContain('Primary button');
+      // The renderer's Primary button: the kit's dark fill with white text, never white on an accent that fails AA.
+      const primary = Array.from(query('brand-kit-web-view-elements')?.querySelectorAll<HTMLElement>('span') ?? []).find(
+        (span) => span.textContent === 'Primary button'
+      );
+      const probe = document.createElement('span');
+      probe.style.background = brandKitTestRevision().kit.dark;
+      expect(primary?.style.background).toBe(probe.style.background);
+      expect(primary?.classList.contains('text-white')).toBe(true);
     });
 
     it('Usage: the four example usages set in the kit, with their formats', async () => {
@@ -612,6 +621,9 @@ describe('BrandKitWebViewComponent', () => {
       const frame = document.querySelector<HTMLIFrameElement>('[data-testid="lfx-print-frame"]');
       expect(frame?.contentDocument?.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
       expect(frame?.contentDocument?.querySelector('lfx-mktg-brand-kit-print')).not.toBeNull();
+      // The frame's title names the saved PDF like the deck: the project, the asset, the approved revision and that revision's own date.
+      expect(frame?.contentDocument?.title).toBe('Synthetic project · Brand kit · v1 · 2026-10-20');
+      expect(frame?.contentDocument?.querySelector('[data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project Brand kit');
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
       expect(print).not.toHaveBeenCalled();
 

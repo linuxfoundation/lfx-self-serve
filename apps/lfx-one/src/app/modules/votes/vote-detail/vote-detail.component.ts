@@ -76,7 +76,6 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { resolveVoteCanManage } from '@shared/utils/write-access.util';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
 import {
   BehaviorSubject,
@@ -213,8 +212,8 @@ export class VoteDetailComponent {
   private readonly refreshTick = signal<number>(0);
   /** The vote a ballot was cast on from this page — it reads as submitted before the refreshed (indexed) response catches up. */
   private readonly submittedBallotFor = signal<string | null>(null);
-  /** Comment paginator state owned here so a page survives switching tabs (bound two-way into lfx-vote-comment-results). */
-  protected readonly commentPaginatorState = signal<Map<string, PaginatorState>>(new Map());
+  /** Comment-question expansion choices survive tab switches and same-vote refreshes. */
+  protected readonly commentExpansionState = signal<Map<string, boolean>>(new Map());
 
   // === Route Params (toSignal) ===
   protected readonly voteId: Signal<string | null> = this.initVoteId();
@@ -457,7 +456,7 @@ export class VoteDetailComponent {
       this.route.paramMap.pipe(
         map((params) => params.get('id')),
         distinctUntilChanged(),
-        tap(() => this.commentPaginatorState.set(new Map()))
+        tap(() => this.commentExpansionState.set(new Map()))
       ),
       { initialValue: null }
     );

@@ -188,7 +188,7 @@
                     } @else {
                       <lfx-vote-comment-results
                         [commentResults]="commentResults()"
-                        [(pageState)]="commentPaginatorState"
+                        [(expansionState)]="commentExpansionState"
                         [showBallotLinks]="showNamedBallotLinks()"
                         [anonymous]="commentsAnonymous()"
                         [anonymousReason]="commentAnonymityReason()"
@@ -257,9 +257,10 @@
             </div>
           }
         } @else {
-          @for (question of rankedQuestions(); track question.questionId) {
+          @for (question of rankedQuestions(); track question.questionId; let idx = $index) {
             <lfx-vote-ranked-question-results
               [question]="question"
+              [questionNumber]="rankedQuestions().length > 1 ? idx + 1 : undefined"
               [variant]="audience()"
               [showVoterLinks]="showNamedBallotLinks()"
               (viewVoters)="onViewVoters($event)" />

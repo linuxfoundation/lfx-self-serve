@@ -4,6 +4,7 @@
 import {
   GOOGLE_ADS_AGE_RANGE_MAP,
   GOOGLE_ADS_AGE_RANGES,
+  GOOGLE_ADS_DEMAND_GEN_DEVICES,
   GOOGLE_ADS_DEVICES,
   GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
@@ -22,12 +23,15 @@ import {
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY,
+  GOOGLE_CHANNELS_WITHOUT_SCHEDULE_BID_MODIFIERS,
   GOOGLE_DEVICE_ADJUSTMENT_IGNORED_STRATEGIES,
   googleAdsEchoed,
   googleAdsTrimSpace,
   isCanonicalGoogleAdsResourceId,
 } from '../constants/campaign.constants';
 import type {
+  GoogleAdsDevice,
   GoogleBiddingStrategy,
   GoogleCampaignChannel,
   NormalizedGoogleAdSchedule,
@@ -151,14 +155,32 @@ export function googleBidAdjustmentRangeText(): string {
  * adjustment ({@link GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES} that
  * {@link GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL} lists there), so a refusal or hint only suggests a
  * strategy the operator can pick: both on Search, Maximize Clicks on Display, none on Performance
- * Max or Video. None on Demand Gen either, although it offers Maximize Clicks: it takes no ad
- * schedules at all ({@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}), and upstream refuses a Demand Gen
- * schedule modifier whatever the strategy.
+ * Max or Video. None on Demand Gen either, although it offers Maximize Clicks: `validateCriteriaPlan`
+ * refuses a Demand Gen schedule modifier whatever the strategy
+ * ({@link GOOGLE_CHANNELS_WITHOUT_SCHEDULE_BID_MODIFIERS}).
  */
 export function googleScheduleAdjustmentStrategiesOn(channel: GoogleCampaignChannel): GoogleBiddingStrategy[] {
   if (!(GOOGLE_CHANNELS_WITH_AD_SCHEDULES as readonly string[]).includes(channel)) return [];
+  if (googleChannelRefusesScheduleAdjustments(channel)) return [];
   const offered = GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel] as readonly GoogleBiddingStrategy[];
   return GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES.filter((strategy) => offered.includes(strategy));
+}
+
+/**
+ * Whether `channel` refuses an ad-schedule bid modifier under every strategy: Demand Gen, where
+ * `validateCriteriaPlan` (campaign-service v1.0.31) takes a schedule only without one.
+ */
+export function googleChannelRefusesScheduleAdjustments(channel: GoogleCampaignChannel): boolean {
+  return (GOOGLE_CHANNELS_WITHOUT_SCHEDULE_BID_MODIFIERS as readonly string[]).includes(channel);
+}
+
+/**
+ * The one sentence that says why no ad-schedule bid adjustment is sent on a channel that refuses one
+ * ({@link googleChannelRefusesScheduleAdjustments}). Shared by the refusal below and the
+ * Implementation tab's hint and held notice, so the three say the same.
+ */
+export function googleChannelScheduleAdjustmentRefusedSentence(channel: GoogleCampaignChannel): string {
+  return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns take an ad schedule only without a bid adjustment, so LFX One doesn't send one.`;
 }
 
 /** Whether Google applies an ad-schedule bid adjustment under the effective `strategy`. */
@@ -198,6 +220,10 @@ export function googleScheduleAdjustmentIgnoredSentence(strategyLabel: string): 
  * test would refuse the ordinary split-day schedule, which is the over-refusal these mirrors exist
  * to avoid.
  *
+ * BEFORE all of that, the channel: on Demand Gen ({@link googleChannelRefusesScheduleAdjustments})
+ * any present modifier is refused, as `validateCriteriaPlan` refuses it before it calls
+ * `validateAdSchedules`.
+ *
  * THEN the strategy, in a second pass over the whole list, so every entry's own refusal wins first,
  * as {@link googleDeviceBidModifierRefusal} orders its strategy pass. Any PRESENT modifier is refused
  * unless {@link googleStrategyTakesScheduleAdjustments} — 1, the 0% adjustment, included, since
@@ -217,6 +243,14 @@ export function googleAdScheduleRefusal(schedules: NormalizedGoogleAdSchedule[],
   const perDay = new Map<string, { start: number; end: number }[]>();
   // Accepted intervals by wire key, carrying the modifier a repeat must agree with.
   const seen = new Map<string, number | undefined>();
+
+  if (googleChannelRefusesScheduleAdjustments(channel)) {
+    for (const [index, schedule] of schedules.entries()) {
+      if (schedule.bidModifier !== undefined) {
+        return `The Google Ads ad schedule ${index + 1} has a bid modifier of ${schedule.bidModifier}. ${googleChannelScheduleAdjustmentRefusedSentence(channel)} Clear its bid adjustment, then create again.`;
+      }
+    }
+  }
 
   for (const [index, schedule] of schedules.entries()) {
     const shown = `ad schedule ${index + 1}`;
@@ -322,6 +356,34 @@ export function googleChannelOffersManualCpc(channel: GoogleCampaignChannel): bo
 }
 
 /**
+ * The device vocabulary campaign-service accepts on `channel` (`deviceTypesFor` in
+ * `campaign_criteria.go`): {@link GOOGLE_ADS_DEMAND_GEN_DEVICES} on Demand Gen, which adds
+ * `CONNECTED_TV`, and {@link GOOGLE_ADS_DEVICES} elsewhere. Its length is also upstream's cap on the
+ * list. Performance Max has a vocabulary of its own upstream, but this client offers no devices there
+ * ({@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}), so it gets the default here.
+ */
+export function googleAdsDevicesOn(channel: GoogleCampaignChannel): readonly GoogleAdsDevice[] {
+  return channel === 'demand-gen' ? GOOGLE_ADS_DEMAND_GEN_DEVICES : GOOGLE_ADS_DEVICES;
+}
+
+/**
+ * Whether `channel` takes a device only as an exclusion (a bid modifier of 0), under every strategy:
+ * Demand Gen ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}).
+ */
+export function googleChannelTakesDeviceExclusionsOnly(channel: GoogleCampaignChannel): boolean {
+  return (GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY as readonly string[]).includes(channel);
+}
+
+/**
+ * The one sentence that says why no device bid adjustment is sent on a channel that takes a device
+ * only as an exclusion ({@link googleChannelTakesDeviceExclusionsOnly}). Shared by the refusal below
+ * and the Implementation tab's hint and held notice, so the three say the same.
+ */
+export function googleChannelDeviceAdjustmentRefusedSentence(channel: GoogleCampaignChannel): string {
+  return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns take a device only as an exclusion, so LFX One doesn't send a device bid adjustment there.`;
+}
+
+/**
  * The one sentence that says why a device bid adjustment is not sent under the effective `strategy`.
  * Shared by the refusal below and the Implementation tab's hint and held notice, so the three say the
  * same.
@@ -352,8 +414,11 @@ export function googleDeviceAdjustmentNotSentSentence(strategy: string): string 
  * not decidable from a single entry. The cap is checked by the caller against the SUBMITTED
  * length, as upstream does.
  *
- * Mirrors the per-entry branches in upstream's order: the device vocabulary, then the repeat, then
- * the bid modifier. A caller who writes `TABLET` twice with two different adjustments is refused
+ * FIRST the channel: on Demand Gen ({@link googleChannelTakesDeviceExclusionsOnly}) any modifier but
+ * `0` is refused, as `validateCriteriaPlan` refuses it before it calls `validateDeviceBidModifiers`.
+ *
+ * Then the per-entry branches in upstream's order: the channel's device vocabulary
+ * ({@link googleAdsDevicesOn}), then the repeat, then the bid modifier. A caller who writes `TABLET` twice with two different adjustments is refused
  * on the repeat and never reaches the range check, exactly as upstream.
  *
  * THEN the strategy, in a second pass over the whole list, because upstream runs it later and
@@ -377,12 +442,21 @@ export function googleDeviceAdjustmentNotSentSentence(strategy: string): string 
  * from 0.
  */
 export function googleDeviceBidModifierRefusal(devices: NormalizedGoogleDeviceBidModifier[], strategy: string, channel: GoogleCampaignChannel): string | null {
+  if (googleChannelTakesDeviceExclusionsOnly(channel)) {
+    for (const [index, entry] of devices.entries()) {
+      if (entry.bidModifier !== undefined && entry.bidModifier !== 0) {
+        // Echoed bounded: this runs before the vocabulary check, so the device is still the caller's text.
+        return `The Google Ads device bid modifier ${index + 1} gives ${googleAdsEchoed(googleAdsTrimSpace(entry.device).toUpperCase())} a bid modifier of ${entry.bidModifier}. ${googleChannelDeviceAdjustmentRefusedSentence(channel)} Set it to 0 to exclude the device or remove it, then create again.`;
+      }
+    }
+  }
+  const vocabulary = googleAdsDevicesOn(channel);
   const seen = new Set<string>();
   for (const [index, entry] of devices.entries()) {
     const shown = `device bid modifier ${index + 1}`;
     const device = googleAdsTrimSpace(entry.device).toUpperCase();
-    if (!(GOOGLE_ADS_DEVICES as readonly string[]).includes(device)) {
-      return `The Google Ads ${shown} names ${googleAdsEchoed(entry.device)}, which is not one of ${GOOGLE_ADS_DEVICES.join(', ')}. Fix it and create again.`;
+    if (!(vocabulary as readonly string[]).includes(device)) {
+      return `The Google Ads ${shown} names ${googleAdsEchoed(entry.device)}, which is not one of ${vocabulary.join(', ')} on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns. Fix it and create again.`;
     }
     if (seen.has(device)) {
       return `The Google Ads device bid modifiers name ${device} more than once. Google accepts one criterion per device, so the second adjustment would be the one silently dropped — remove one and create again.`;

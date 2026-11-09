@@ -303,6 +303,26 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.pageState()).toBe('could-not-load');
   });
 
+  /**
+   * Cursor on PR #4415. `selectedHeld` returns false for the roll-up in the outage branches by
+   * design, and `contractorProbeUid` keyed on exactly that — so a contractor in roll-up mode during
+   * an outage probed the reserved sentinel. The server refuses it and `settled` waits on the
+   * verdict, parking them on the skeleton until the doomed request finished.
+   */
+  it('never probes the roll-up sentinel for a contractor, even during an outage', () => {
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
+    h.isContractor.set(true);
+    h.canSelectRollUp.set(false);
+    h.lookupOutcome.set('failed');
+
+    // `settled` is what forces the probe: it waits on the verdict whenever a uid is owed, whatever
+    // `pageState` decides first. Reading it is the whole point of the test — the probe signal is
+    // lazy, so asserting on `readCheck` without driving `settled` proves nothing.
+    expect(h.service.settled()).toBe(true);
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.selectedHeld()).toBe(false);
+  });
+
   it('counts an inherited grant as holding the selection', () => {
     h.selectedAccount.set(account(HELD));
     h.inheritedAuditorSet.set(new Set([HELD]));

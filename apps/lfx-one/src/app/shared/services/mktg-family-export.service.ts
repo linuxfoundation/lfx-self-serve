@@ -139,6 +139,11 @@ export class MktgFamilyExportService {
         const faqResponse = responses.find((response) => response.type.agentKey === 'faq');
         const faq = faqResponse ? faqAssetOfRevision(faqResponse.markdown, faqResponse.sidecar) : null;
         if (faqResponse && !faq) throw new Error('The approved FAQ could not be read.');
+        // The newest member revision names the PDF, so the same set of members always gives the same name.
+        const newestRevisionAt = responses
+          .map((response) => response.revision.createdAt)
+          .filter((createdAt): createdAt is string => !!createdAt && Number.isFinite(Date.parse(createdAt)))
+          .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
         return {
           framework,
           kit: book,
@@ -147,6 +152,7 @@ export class MktgFamilyExportService {
           brand,
           projectName,
           printedAt: new Date().toISOString(),
+          newestRevisionAt: newestRevisionAt ?? null,
           fontFamily: book?.fontUrl ? book.type.family : brand.fontFamily,
           weights: book?.weights.map((weight) => weight.weight) ?? MKTG_PRINT_FONT_WEIGHTS,
         };

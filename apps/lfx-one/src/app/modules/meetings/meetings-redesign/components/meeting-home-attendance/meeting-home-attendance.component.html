@@ -7,32 +7,15 @@
     attendance().label
   }}</span>
 
-  <ng-template #bar>
-    <span class="flex h-[5px] overflow-hidden rounded-full bg-gray-200">
-      @for (segment of attendance().segments; track segment.kind) {
-        <span class="h-full flex-none" [class]="segmentBg[segment.kind]" [style.width.%]="segment.percent"></span>
-      }
-    </span>
-  </ng-template>
-
-  @if (variant() === 'row' && tooltipItems().length) {
-    <!-- The 4px padding widens the hover target of the 5px bar. -->
-    <span
-      role="img"
-      tabindex="0"
-      class="-my-[4px] block cursor-default py-[4px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-      [attr.aria-label]="attendance().ariaLabel"
-      [lfxUiTooltip]="attendance().ariaLabel"
-      [lfxUiTooltipItems]="tooltipItems()"
-      lfxUiTooltipSide="bottom"
-      data-testid="meetings-home-attendance-bar">
-      <ng-container [ngTemplateOutlet]="bar" />
-    </span>
-  } @else {
-    <span role="img" class="block" [attr.aria-label]="attendance().ariaLabel" data-testid="meetings-home-attendance-bar">
-      <ng-container [ngTemplateOutlet]="bar" />
-    </span>
-  }
+  <span
+    role="img"
+    class="flex h-[5px] overflow-hidden rounded-full bg-gray-200"
+    [attr.aria-label]="attendance().ariaLabel"
+    data-testid="meetings-home-attendance-bar">
+    @for (segment of attendance().segments; track segment.kind) {
+      <span class="h-full flex-none" [class]="segmentBg[segment.kind]" [style.width.%]="segment.percent"></span>
+    }
+  </span>
 
   @if (variant() === 'card' && attendance().answers.length) {
     <!-- The bar's label already speaks these counts. -->

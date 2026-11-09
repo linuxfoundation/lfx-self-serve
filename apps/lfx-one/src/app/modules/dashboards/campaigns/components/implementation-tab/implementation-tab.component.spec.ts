@@ -44,6 +44,8 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY,
+  GOOGLE_DEMAND_GEN_MAX_AD_GROUPS,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL,
   META_OBJECTIVE_LABELS,
@@ -6458,6 +6460,354 @@ describe('ImplementationTabComponent demand gen video ad', () => {
 });
 
 /**
+ * Demand Gen split into named ad groups (#5226): each group a name and its own image or video ad, sent
+ * as `demandGenAdGroups` in place of the single ad, and held on the rules campaign-service refuses.
+ */
+describe('ImplementationTabComponent demand gen ad groups', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const IMAGE_COMPLETE = {
+    headlines: 'One headline',
+    descriptions: 'A description',
+    businessName: 'Acme',
+    logoImages: 'https://example.com/logo.png',
+    marketingImages: 'https://example.com/a.png',
+  };
+  const VIDEO_COMPLETE = {
+    youtubeVideoIds: 'dQw4w9WgXcQ',
+    headlines: 'Join us in Salt Lake City',
+    longHeadlines: 'Four days of cloud native talks and labs',
+    descriptions: 'Register today',
+    businessName: 'Acme',
+    logoImages: 'https://example.com/logo.png',
+  };
+
+  const find = (f: ComponentFixture<ImplementationTabComponent>, testId: string): HTMLElement | null =>
+    f.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  /** Turn the split on through its checkbox handler, as a click does, and fill the groups. */
+  const split = (c: Record<string, any>, groups: { name: string; format?: 'image' | 'video'; creative?: Record<string, string> }[]): void => {
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(true);
+    c['onDemandGenAdGroupsSplitChange']();
+    for (let i = 1; i < groups.length; i++) c['addDemandGenAdGroup']();
+    groups.forEach((group, i) => {
+      const controls = c['campaignForm'].controls.demandGenAdGroups.at(i).controls;
+      controls.name.setValue(group.name);
+      controls.format.setValue(group.format ?? 'image');
+      controls[group.format === 'video' ? 'videoCreative' : 'creative'].patchValue(group.creative ?? IMAGE_COMPLETE);
+    });
+  };
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('offers the split on Demand Gen alone, and the first group once it is on', () => {
+    const display = seedChannel(fixture, { includeDisplay: true });
+    fixture.detectChanges();
+    expect(find(fixture, 'implementation-demand-gen-ad-groups-split')).toBeNull();
+    expect(display['demandGenAdGroupsActive']()).toBe(false);
+
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    fixture.detectChanges();
+    expect(find(fixture, 'implementation-demand-gen-ad-groups-split')).not.toBeNull();
+    expect(find(fixture, 'implementation-demand-gen-ad-groups')).toBeNull();
+
+    split(c, [{ name: 'Retargeting' }]);
+    fixture.detectChanges();
+    expect(find(fixture, 'implementation-demand-gen-ad-group-0')).not.toBeNull();
+    expect(find(fixture, 'implementation-demand-gen-ad-group-name-0')).not.toBeNull();
+    expect(find(fixture, 'implementation-demand-gen-ad-group-0-marketingImages')).not.toBeNull();
+    // The single ad's format choice and fields give way to the groups, and neither of its creatives
+    // is one the request could carry.
+    expect(c['googleCreativeGroupsInReach']().has('demandGenCreative')).toBe(false);
+    expect(find(fixture, 'implementation-creative-demand-gen-format')).toBeNull();
+    expect(find(fixture, 'implementation-creative-demand-gen-headlines')).toBeNull();
+  });
+
+  it('adds groups up to five, and removes one', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    split(c, [{ name: 'a' }]);
+    for (let i = 0; i < 6; i++) c['addDemandGenAdGroup']();
+    fixture.detectChanges();
+    expect(c['campaignForm'].controls.demandGenAdGroups.length).toBe(GOOGLE_DEMAND_GEN_MAX_AD_GROUPS);
+    expect(find(fixture, 'implementation-demand-gen-ad-group-add')).toBeNull();
+
+    c['removeDemandGenAdGroup'](0);
+    fixture.detectChanges();
+    expect(c['campaignForm'].controls.demandGenAdGroups.length).toBe(GOOGLE_DEMAND_GEN_MAX_AD_GROUPS - 1);
+    expect(find(fixture, 'implementation-demand-gen-ad-group-add')).not.toBeNull();
+  });
+
+  it('sends the groups, each with its chosen format, and no campaign-level creative', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['campaignForm'].controls.demandGenCreative.patchValue(IMAGE_COMPLETE);
+    split(c, [
+      { name: ' Retargeting ', format: 'video', creative: VIDEO_COMPLETE },
+      { name: 'Prospecting', creative: IMAGE_COMPLETE },
+    ]);
+    // Typed into the second group's other format: kept, not sent.
+    c['campaignForm'].controls.demandGenAdGroups.at(1).controls.videoCreative.patchValue({ headlines: 'Not sent' });
+
+    expect(c['googleCreativePayload']()).toEqual({});
+    expect(c['googleDemandGenAdGroupsPayload']()).toEqual({
+      demandGenAdGroups: [
+        {
+          name: 'Retargeting',
+          videoCreative: {
+            youtubeVideoIds: ['dQw4w9WgXcQ'],
+            headlines: ['Join us in Salt Lake City'],
+            longHeadlines: ['Four days of cloud native talks and labs'],
+            descriptions: ['Register today'],
+            businessName: 'Acme',
+            logoImages: ['https://example.com/logo.png'],
+          },
+        },
+        {
+          name: 'Prospecting',
+          creative: {
+            headlines: ['One headline'],
+            descriptions: ['A description'],
+            businessName: 'Acme',
+            logoImages: ['https://example.com/logo.png'],
+            marketingImages: ['https://example.com/a.png'],
+          },
+        },
+      ],
+    });
+    expect(c['demandGenAdGroupsError']()).toBeNull();
+    expect(c['googleCreativeEmptyWarning']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it.each([
+    ['a blank name', [{ name: '  ' }], 'ad group 1 needs a name'],
+    ['a name repeated ignoring case', [{ name: 'Retargeting' }, { name: 'RETARGETING' }], 'ad group 2 has the same name as ad group 1'],
+    ['a full name over 255 characters', [{ name: 'x'.repeat(240) }], 'over Google'],
+    ['a group with no ad', [{ name: 'a', creative: {} }], 'ad group 1 has no ad'],
+    ['an image ad below its minimums', [{ name: 'a', creative: { headlines: 'One headline' } }], 'ad group 1: the image ad needs'],
+    ['a video ad that fails its rules', [{ name: 'a', format: 'video' as const, creative: { ...VIDEO_COMPLETE, logoImages: '' } }], 'exactly one logo'],
+  ])('holds Create on %s, saying why and announcing it', (_label, groups, fragment) => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    split(c, groups);
+    fixture.detectChanges();
+
+    expect(c['demandGenAdGroupsError']()).toContain(fragment);
+    expect(c['canSubmit']()).toBe(false);
+    expect(find(fixture, 'implementation-demand-gen-ad-groups-error')?.textContent).toContain(fragment);
+    expect(find(fixture, 'implementation-demand-gen-ad-groups-error-live')?.textContent).toContain(fragment);
+  });
+
+  it('keeps what was entered either way, and says what is not sent', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['campaignForm'].controls.demandGenCreative.patchValue({ headlines: 'A single headline' });
+    c['campaignForm'].controls.demandGenVideoCreative.patchValue({ headlines: 'A video headline' });
+    split(c, [{ name: 'Retargeting' }]);
+    fixture.detectChanges();
+    // The format's own note gives way: its choice is not on screen while split.
+    expect(c['demandGenFormatHeldMessage']()).toBe('');
+    expect(c['demandGenAdGroupsHeldMessage']()).toContain('single Demand Gen ad you entered is kept but not sent');
+    expect(find(fixture, 'implementation-demand-gen-ad-groups-held-live')?.textContent).toContain('kept but not sent');
+    expect(find(fixture, 'implementation-demand-gen-ad-groups-split')?.querySelector('input')?.getAttribute('aria-describedby')).toBe(
+      'implementation-demand-gen-ad-groups-held'
+    );
+
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(false);
+    fixture.detectChanges();
+    expect(c['campaignForm'].controls.demandGenCreative.controls.headlines.value).toBe('A single headline');
+    expect(c['campaignForm'].controls.demandGenAdGroups.at(0).controls.name.value).toBe('Retargeting');
+    expect(c['demandGenAdGroupsHeldMessage']()).toBe(
+      'The ad group you entered is kept but not sent while the campaign is not split. Turn the split on to send it instead.'
+    );
+    expect(c['googleDemandGenAdGroupsPayload']()).toEqual({});
+    expect(c['demandGenAdGroupsError']()).toBeNull();
+    expect(find(fixture, 'implementation-demand-gen-ad-groups-held')?.textContent).toContain('kept but not sent');
+  });
+
+  it('says nothing is held when the split is turned on and off with nothing entered', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(true);
+    c['onDemandGenAdGroupsSplitChange']();
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(false);
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.demandGenAdGroups.length).toBe(1);
+    expect(c['demandGenAdGroupsHeldMessage']()).toBe('');
+    expect(find(fixture, 'implementation-demand-gen-ad-groups-held')).toBeNull();
+  });
+
+  it("counts text typed only inside a group's ad as entered", () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(true);
+    c['onDemandGenAdGroupsSplitChange']();
+    c['campaignForm'].controls.demandGenAdGroups.at(0).controls.videoCreative.patchValue({ headlines: 'A video headline' });
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(false);
+    fixture.detectChanges();
+
+    expect(c['demandGenAdGroupsHeldMessage']()).toBe(
+      'The ad group you entered is kept but not sent while the campaign is not split. Turn the split on to send it instead.'
+    );
+  });
+
+  it('holds Create when the split is on with every ad group removed', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    split(c, [{ name: 'Retargeting' }]);
+    c['removeDemandGenAdGroup'](0);
+    fixture.detectChanges();
+
+    expect(c['googleDemandGenAdGroupsPayload']()).toEqual({ demandGenAdGroups: [] });
+    expect(c['demandGenAdGroupsError']()).toBe(GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  it('adds the first ad group when the split checkbox itself is ticked', () => {
+    seedChannel(fixture, { includeDemandGen: true });
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    const box = find(fixture, 'implementation-demand-gen-ad-groups-split')?.querySelector('input') as HTMLInputElement;
+    box.click();
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.demandGenAdGroupsSplit.value).toBe(true);
+    expect(c['campaignForm'].controls.demandGenAdGroups.length).toBe(1);
+    expect(find(fixture, 'implementation-demand-gen-ad-group-name-0')).not.toBeNull();
+  });
+
+  it('does not hold Create on a value left in a group the create does not send', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    split(c, [{ name: 'a', creative: { ...IMAGE_COMPLETE, headlines: 'h'.repeat(31) } }]);
+    expect(c['campaignForm'].invalid).toBe(true);
+
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(false);
+    // The enabling effect runs on the next change detection, as it does on screen.
+    fixture.detectChanges();
+    expect(c['campaignForm'].invalid).toBe(false);
+    expect(c['canSubmit']()).toBe(true);
+
+    // And the other way: the single ad, not sent while split, cannot hold Create either.
+    c['campaignForm'].controls.demandGenCreative.patchValue({ headlines: 'h'.repeat(31) });
+    c['campaignForm'].controls.demandGenAdGroups.at(0).controls.creative.patchValue(IMAGE_COMPLETE);
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(true);
+    fixture.detectChanges();
+    expect(c['campaignForm'].invalid).toBe(false);
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /** Off is byte-identical: the request a create makes with groups typed but the split off is the one it made before they existed. */
+  it.each([
+    ['an image ad', 'demandGenCreative', IMAGE_COMPLETE],
+    ['a video ad', 'demandGenVideoCreative', VIDEO_COMPLETE],
+    ['no ad', null, {}],
+  ] as const)('sends the same request with the split off, carrying %s', async (_label, key, creative) => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const requestFrom = async (f: ComponentFixture<ImplementationTabComponent>, withGroups: boolean): Promise<string> => {
+      const c = seedChannel(f, { includeDemandGen: true });
+      if (key === 'demandGenVideoCreative') c['campaignForm'].controls.demandGenAdFormat.setValue('video');
+      if (key !== null) c['campaignForm'].controls[key].patchValue(creative);
+      if (withGroups) {
+        split(c, [{ name: 'Retargeting' }, { name: 'Prospecting', format: 'video', creative: VIDEO_COMPLETE }]);
+        c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(false);
+      }
+      f.detectChanges();
+      expect(c['canSubmit']()).toBe(true);
+      createCampaign.mockClear();
+      c['submit']();
+      await f.whenStable();
+      return JSON.stringify(createCampaign.mock.calls[0][0]);
+    };
+
+    const before = await requestFrom(fixture, false);
+    const other = TestBed.createComponent(ImplementationTabComponent);
+    other.detectChanges();
+    await other.whenStable();
+    const after = await requestFrom(other, true);
+
+    expect(after).toBe(before);
+    expect(after).not.toContain('demandGenAdGroups');
+  });
+
+  it('carries the split and the groups through the draft, and restores them', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    let captured: CampaignImplementationDraft | null = null;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    split(c, [{ name: 'Retargeting', format: 'video', creative: VIDEO_COMPLETE }]);
+    c['emitDraft']();
+
+    const draft = captured as unknown as CampaignImplementationDraft;
+    expect(draft.demandGenAdGroupsSplit).toBe(true);
+    expect(draft.demandGenAdGroups?.[0]).toMatchObject({ name: 'Retargeting', format: 'video', videoCreative: { youtubeVideoIds: 'dQw4w9WgXcQ' } });
+
+    c['campaignForm'].controls.demandGenAdGroupsSplit.setValue(false);
+    c['campaignForm'].controls.demandGenAdGroups.clear();
+    restoreGoogleDraft(fixture, c, {
+      includeDemandGen: true,
+      demandGenAdGroupsSplit: true,
+      demandGenAdGroups: [
+        { name: 'Retargeting', format: 'video', creative: {}, videoCreative: { youtubeVideoIds: 'abc123', gone: 'x' } },
+        { name: 'Prospecting', format: 'image', creative: { headlines: 'Join us' }, videoCreative: {} },
+      ],
+    });
+
+    const groups = c['campaignForm'].controls.demandGenAdGroups;
+    expect(c['campaignForm'].controls.demandGenAdGroupsSplit.value).toBe(true);
+    expect(groups.length).toBe(2);
+    expect(groups.at(0).controls.format.value).toBe('video');
+    expect(groups.at(0).controls.videoCreative.controls['youtubeVideoIds'].value).toBe('abc123');
+    expect(groups.at(1).controls.creative.controls['headlines'].value).toBe('Join us');
+    expect(c['demandGenAdGroupsActive']()).toBe(true);
+    fixture.detectChanges();
+    expect(find(fixture, 'implementation-demand-gen-ad-group-1')).not.toBeNull();
+  });
+
+  it('restores a saved name that is not a string as a blank name the judge then names', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    restoreGoogleDraft(fixture, c, {
+      includeDemandGen: true,
+      demandGenAdGroupsSplit: true,
+      demandGenAdGroups: [{ name: 7, format: 'image', creative: { headlines: 'Join us' }, videoCreative: {} }] as never,
+    });
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.demandGenAdGroups.at(0).controls.name.value).toBe('');
+    expect(c['demandGenAdGroupsError']()).toContain('ad group 1 needs a name');
+  });
+
+  describe('focus after adding or removing an ad group', () => {
+    const focused = (): string | null => {
+      const active = document.activeElement as HTMLElement | null;
+      return active?.id || active?.closest('[data-testid]')?.getAttribute('data-testid') || null;
+    };
+    const settle = async (): Promise<void> => {
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+
+    beforeEach(() => document.body.appendChild(fixture.nativeElement));
+    afterEach(() => fixture.nativeElement.remove());
+
+    it("moves focus to a new group's name, and on removal to the group in its place, the last, or Add", async () => {
+      const c = seedChannel(fixture, { includeDemandGen: true });
+      split(c, [{ name: 'Retargeting' }]);
+      await settle();
+
+      c['addDemandGenAdGroup']();
+      await settle();
+      expect(focused()).toBe('demand-gen-ad-group-1-name');
+
+      c['removeDemandGenAdGroup'](0);
+      await settle();
+      expect(focused()).toBe('demand-gen-ad-group-0-name');
+
+      c['removeDemandGenAdGroup'](0);
+      await settle();
+      expect(focused()).toBe('implementation-demand-gen-ad-group-add');
+    });
+  });
+});
+
+/**
  * The results step's Reddit notice. Uses `configureGoogleTab` deliberately: that helper is a
  * plain ImplementationTabComponent harness with nothing Google-specific in its providers, and
  * the results step renders straight off the `results` signal with no capability gate.
@@ -7939,8 +8289,9 @@ describe('ImplementationTabComponent google location targets held by the capabil
  *
  * The control is a `<select>` over the supported table's own keys, so the guards left are the ones
  * a select cannot express — the cap, not adding a code twice — plus the CHANNEL gate, which the geo
- * sibling has no equivalent of: upstream's `validateCriteriaPlan` refuses the whole non-location
- * criteria set on Demand Gen, so the section and the payload both close there.
+ * sibling has no equivalent of. Every channel takes languages since campaign-service v1.0.31 (Demand
+ * Gen attaches them to its ad group, #459), so the gate is open everywhere and the section and the
+ * payload follow `GOOGLE_CHANNELS_WITH_LANGUAGES` if upstream fences a channel again.
  */
 describe('ImplementationTabComponent google languages', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
@@ -8020,6 +8371,7 @@ describe('ImplementationTabComponent google languages', () => {
 
   it.each([
     ['search', { includeSearch: true }],
+    ['demand-gen', { includeDemandGen: true }],
     ['performance-max', { includePerformanceMax: true }],
     ['display', { includeDisplay: true }],
   ])('opens the section on %s, which upstream accepts campaign languages on', (channel, patch) => {
@@ -8041,76 +8393,18 @@ describe('ImplementationTabComponent google languages', () => {
   });
 
   /**
-   * The one closed channel, and the reason the gate exists at all. `validateCriteriaPlan` refuses
-   * languages, device bid modifiers, demographics and ad schedules together on Demand Gen, so a
-   * control offered here would be offering a refusal.
+   * Demand Gen takes languages since campaign-service v1.0.31 (`validateCriteriaPlan`, #459: on the ad
+   * group), so a list picked on Search survives a switch to Demand Gen and is sent there.
    */
-  it('closes the section on demand-gen', () => {
-    const c = seedChannel(fixture, { includeDemandGen: true });
-
-    expect(c['googleLanguagesChannel']()).toBeNull();
-  });
-
-  it('withholds a list picked under one channel once the selection moves to demand-gen', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
-    c['addGoogleLanguage'](c['googleLanguageOptions'][0].code);
-    expect(c['googleLanguagesPayload']()).toHaveProperty('languages');
-
-    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
-    fixture.detectChanges();
-
-    // HELD, not cleared: the chips survive so switching back restores the operator's choice, but
-    // the payload carries nothing a Demand Gen create would be refused for.
-    expect(c['googleLanguages']()).toHaveLength(1);
-    expect(c['googleLanguagesPayload']()).toEqual({});
-  });
-
-  /**
-   * Held is not silent. The section disappears on Demand Gen, so without this notice the operator
-   * would read nothing about the campaign now serving in every language; switching back clears it.
-   */
-  it('says the held list will not be sent on demand-gen, and clears the notice on a switch back', () => {
+  it('keeps sending a list picked under one channel once the selection moves to demand-gen', () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleLanguage']('DE');
-    const notice = () => fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-withheld"]');
-    fixture.detectChanges();
-    expect(notice()).toBeNull();
 
     c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
     fixture.detectChanges();
-    expect(c['googleLanguagesWithheldOn']()).toBe('Demand Gen');
-    expect(notice()?.textContent).toContain('serve in every language');
 
-    c['campaignForm'].patchValue({ includeSearch: true, includeDemandGen: false });
-    fixture.detectChanges();
-    expect(notice()).toBeNull();
     expect(c['googleLanguagesPayload']()).toEqual({ languages: ['DE'] });
-  });
-
-  /**
-   * The announcement half of the notice above (#3568). The live region is mounted BEFORE the notice
-   * text exists, so a screen reader sees its content change rather than a region inserted with its
-   * text, which is not reliably announced. The visible `<p>` carries no role, so the sentence is not
-   * read twice.
-   */
-  it('announces the held list through a region mounted before the notice appears', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
-    c['addGoogleLanguage']('DE');
-    fixture.detectChanges();
-    const live = () => fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-withheld-live"]');
-    const region = live();
-    expect(region?.getAttribute('role')).toBe('status');
-    expect(region?.getAttribute('aria-live')).toBe('polite');
-    expect(region?.textContent?.trim()).toBe('');
-
-    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
-    fixture.detectChanges();
-
-    expect(live()).toBe(region);
-    expect(region?.textContent).toContain('serve in every language');
-    const notice = fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-withheld"]');
-    expect(notice?.hasAttribute('role')).toBe(false);
-    expect(notice?.textContent?.trim()).toBe(c['googleLanguagesWithheldMessage']());
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-section"]')).not.toBeNull();
   });
 
   /**
@@ -8132,26 +8426,17 @@ describe('ImplementationTabComponent google languages', () => {
     expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['languages']).toEqual(['DE']);
   });
 
-  it('submits no languages on demand-gen, holding the picked list', async () => {
+  it('submits a picked language on demand-gen', async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
-    const c = seedChannel(fixture, { includeSearch: true });
-    c['addGoogleLanguage']('DE');
-    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    c['addGoogleLanguage']('EN');
     fixture.detectChanges();
     expect(c['canSubmit']()).toBe(true);
 
     c['submit']();
     await fixture.whenStable();
 
-    expect(createCampaign).toHaveBeenCalled();
-    expect(createCampaign.mock.calls[0][0]).not.toHaveProperty('languages');
-    expect(c['googleLanguages']()).toEqual(['DE']);
-  });
-
-  it('shows no withheld notice on demand-gen when no language was picked', () => {
-    const c = seedChannel(fixture, { includeDemandGen: true });
-
-    expect(c['googleLanguagesWithheldOn']()).toBeNull();
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['languages']).toEqual(['EN']);
   });
 
   /**
@@ -8253,12 +8538,13 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
   }
 
   // Display and Performance Max default to Maximize Conversions, under which the window's -20% is
-  // refused (Google would not bid it), so their payload is built but Create waits on it.
+  // refused (Google would not bid it), so their payload is built but Create waits on it. Demand Gen
+  // refuses it on the channel (`validateCriteriaPlan`), whatever the strategy.
   it.each([
     ['search', { includeSearch: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, false],
     ['display', { includeDisplay: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, true],
     ['performance-max', { includePerformanceMax: true }, { adSchedules: [MONDAY_EVENINGS] }, true],
-    ['demand-gen', { includeDemandGen: true }, {}, false],
+    ['demand-gen', { includeDemandGen: true }, { adSchedules: [MONDAY_EVENINGS], deviceBidModifiers: [NO_TABLETS] }, true],
   ])(
     'builds the payload %s accepts, holds the rest, and holds Create on an adjustment its default strategy ignores',
     (_channel, patch, expected, heldByStrategy) => {
@@ -8296,21 +8582,95 @@ describe('ImplementationTabComponent google ad schedules and devices', () => {
     expect(c['googleTargetingPayload']()).toEqual({});
   });
 
-  it('renders the panel on Search and not on Demand Gen, where it says what is held', () => {
-    seedTargeting({ includeSearch: true });
+  it('renders the panel on Demand Gen, with TV screens and no Adjust bid, and holds nothing', async () => {
+    seedTargeting({ includeDemandGen: true });
     const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
     expect(query('implementation-google-ad-schedule')).not.toBeNull();
-    expect(query('implementation-google-devices')).not.toBeNull();
+    expect(query('implementation-google-device-CONNECTED_TV')?.textContent).toContain('TV screens');
+    expect(query('implementation-google-devices-hint')?.textContent).toContain('Demand Gen campaigns take a device only as an exclusion');
+    expect(query('implementation-google-ad-schedule-hint')?.textContent).toContain('Demand Gen campaigns take an ad schedule only without a bid adjustment');
     expect(query('implementation-google-targeting-withheld')).toBeNull();
+  });
 
-    (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
-    fixture.detectChanges();
+  /**
+   * `validateCriteriaPlan`'s Demand Gen arm (campaign-service v1.0.31): a window only without a bid
+   * modifier, and a device only as an exclusion, under every strategy — Maximize Clicks included,
+   * which takes a schedule adjustment on Search and Display. Both are held with a reason, in the live
+   * region too, and Create waits.
+   */
+  describe('on demand gen', () => {
+    const query = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
 
-    expect(query('implementation-google-targeting-panel')).toBeNull();
-    expect(query('implementation-google-targeting-withheld')?.textContent).toContain(
-      'Demand Gen campaigns do not take ad schedules or device bid adjustments, so the 1 ad schedule window and 1 device setting you set will not be sent.'
-    );
-    expect(query('implementation-google-targeting-withheld-live')?.textContent).toContain('Demand Gen campaigns do not take ad schedules');
+    it('holds a window adjustment set on Search, says why, and lets Create go once it is cleared', () => {
+      const c = seedChannel(fixture, { includeDemandGen: true });
+      c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-clicks');
+      c['onGoogleAdSchedulesChange']([MONDAY_EVENINGS]);
+      fixture.detectChanges();
+
+      expect(c['googleAdSchedulesError']()).toContain('Demand Gen campaigns take an ad schedule only without a bid adjustment');
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-google-schedule-adjustments-held')?.textContent).toContain(
+        "Demand Gen campaigns take an ad schedule only without a bid adjustment, so LFX One doesn't send one. The bid adjustment on 1 ad schedule window is kept for a switch back, and Create Campaign waits until you clear it."
+      );
+      expect(query('implementation-google-schedule-adjustments-held-live')?.textContent).toContain('kept for a switch back');
+
+      const unadjusted: CampaignAdSchedule = { ...MONDAY_EVENINGS };
+      delete unadjusted.bidModifier;
+      c['onGoogleAdSchedulesChange']([unadjusted]);
+      fixture.detectChanges();
+      expect(c['googleAdSchedulesError']()).toBeNull();
+      expect(c['googleTargetingPayload']()).toEqual({ adSchedules: [unadjusted] });
+    });
+
+    it('holds a device adjustment set under Manual CPC on Search, says why, and sends exclusions', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['onGoogleDeviceBidModifiersChange']([{ device: 'MOBILE', bidModifier: 1.25 }]);
+      c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+      fixture.detectChanges();
+
+      expect(c['googleDeviceBidModifiersError']()).toContain('Demand Gen campaigns take a device only as an exclusion');
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-google-device-adjustments-held')?.textContent).toContain(
+        "Demand Gen campaigns take a device only as an exclusion, so LFX One doesn't send a device bid adjustment there. The adjustment on Mobile phones is kept for a switch back, and Create Campaign waits until you set it to Default bid or Exclude."
+      );
+
+      c['onGoogleDeviceBidModifiersChange']([NO_TABLETS, { device: 'CONNECTED_TV', bidModifier: 0 }]);
+      fixture.detectChanges();
+      expect(c['googleDeviceBidModifiersError']()).toBeNull();
+      expect(c['googleDeviceAdjustmentsHeldMessage']()).toBe('');
+      expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [NO_TABLETS, { device: 'CONNECTED_TV', bidModifier: 0 }] });
+    });
+
+    it('holds a TV screens exclusion after a switch to Search, says so, and sends the rest', () => {
+      const c = seedChannel(fixture, { includeDemandGen: true });
+      c['onGoogleDeviceBidModifiersChange']([NO_TABLETS, { device: 'CONNECTED_TV', bidModifier: 0 }]);
+      c['campaignForm'].patchValue({ includeDemandGen: false, includeSearch: true });
+      fixture.detectChanges();
+
+      expect(query('implementation-google-device-CONNECTED_TV')).toBeNull();
+      expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [NO_TABLETS] });
+      expect(c['googleDeviceBidModifiersError']()).toBeNull();
+      expect(query('implementation-google-targeting-withheld')?.textContent).toContain(
+        'Search campaigns do not take TV screens, so the 1 device setting you set will not be sent.'
+      );
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+      fixture.detectChanges();
+      expect(c['googleTargetingPayload']()).toEqual({ deviceBidModifiers: [NO_TABLETS, { device: 'CONNECTED_TV', bidModifier: 0 }] });
+    });
+
+    it('round-trips a TV screens exclusion through a draft', () => {
+      const c = seedChannel(fixture, { includeDemandGen: true });
+      let emitted: CampaignImplementationDraft | undefined;
+      fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+      c['onGoogleDeviceBidModifiersChange']([{ device: 'CONNECTED_TV', bidModifier: 0 }]);
+      expect(emitted?.googleDeviceBidModifiers).toEqual([{ device: 'CONNECTED_TV', bidModifier: 0 }]);
+
+      c['googleDeviceBidModifiers'].set([]);
+      restoreGoogleDraft(fixture, c, { googleDeviceBidModifiers: [{ device: 'CONNECTED_TV', bidModifier: 0 }] });
+      expect(c['googleDeviceBidModifiers']()).toEqual([{ device: 'CONNECTED_TV', bidModifier: 0 }]);
+    });
   });
 
   it('holds Create on the shared refusal and shows it under the panel', () => {
@@ -9329,6 +9689,46 @@ describe('ImplementationTabComponent google user list picker', () => {
     fixture.detectChanges();
     pick(LIST_B);
     expect(c['googleAudienceSegments']()).toEqual([LIST_B]);
+  });
+
+  describe('focus when a pick hides the picker', () => {
+    let focused: HTMLElement[];
+
+    beforeEach(() => {
+      focused = [];
+      vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+        focused.push(this);
+      });
+    });
+
+    const pickAndRender = async (c: Record<string, unknown>, resourceName: string): Promise<void> => {
+      (c['onGoogleUserListPicked'] as (value: string) => void).call(c, resourceName);
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+
+    it('moves focus to the typed box when the pick takes the last list on offer', async () => {
+      await setup(() => of(LISTS));
+      const c = seedSearch();
+
+      await pickAndRender(c, LIST_A);
+      expect(focused).toEqual([]);
+
+      await pickAndRender(c, LIST_B);
+      expect(query('implementation-google-user-list-picker')).toBeNull();
+      expect(focused).toEqual([query('implementation-google-audience-segment-add')]);
+    });
+
+    it("moves focus to the newest chip's Remove button when the pick reaches the cap", async () => {
+      await setup(() => of(LISTS));
+      const c = seedSearch();
+      c['googleAudienceSegments'].set(Array.from({ length: GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS - 1 }, (_, i) => `customers/1/userLists/${i + 1}`));
+      fixture.detectChanges();
+
+      await pickAndRender(c, LIST_A);
+      expect(query('implementation-google-audience-segment-add')).toBeNull();
+      expect(focused).toEqual([query(`implementation-google-audience-segment-remove-${GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS - 1}`)]);
+    });
   });
 
   it('sends the same audienceSegments for a picked list as for the same list typed', async () => {
@@ -10390,19 +10790,43 @@ describe('ImplementationTabComponent google sitelinks', () => {
     expect(c['googleSitelinks']().map((s: CampaignSitelink) => s.text)).toEqual(['Second']);
   });
 
-  /** Search only, and WITHHELD elsewhere rather than refused — exactly as the callouts are. */
-  it('offers sitelinks on Search and withholds them on a non-Search channel', () => {
+  /**
+   * Search and Demand Gen (`GOOGLE_CHANNELS_WITH_SITELINKS`; `validateAssetPlan` takes sitelinks alone
+   * on Demand Gen since campaign-service v1.0.31), and WITHHELD elsewhere rather than refused.
+   */
+  it.each([
+    ['Demand Gen', { includeDemandGen: true }, true],
+    ['Display', { includeDisplay: true }, false],
+    ['Performance Max', { includePerformanceMax: true }, false],
+  ])('offers sitelinks on Search, and after a switch to %s sends them only where the channel takes them', (_label, channel, sent) => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink('Register'));
 
+    expect(c['googleSitelinksAvailable']()).toBe(true);
     expect(c['googleSitelinksPayload']()).toEqual({ sitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] });
 
-    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
     fixture.detectChanges();
 
-    expect(c['googleSitelinksPayload']()).toEqual({});
-    // Held, not discarded — the list is still there if Search is re-ticked.
+    expect(c['googleSitelinksAvailable']()).toBe(sent);
+    expect(c['googleSitelinksPayload']()).toEqual(sent ? { sitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] } : {});
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-sitelinks-section"]') !== null).toBe(sent);
+    // Held, not discarded — the list is still there if the operator switches back.
     expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /**
+   * Sitelinks ONLY: upstream refuses every other extension on Demand Gen, so the callout, snippet,
+   * call, promotion and price controls stay hidden there while the sitelink control shows.
+   */
+  it('shows the sitelink control on Demand Gen and none of the other extension controls', () => {
+    seedChannel(fixture, { includeDemandGen: true });
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    expect(find('implementation-google-sitelinks-section')).not.toBeNull();
+    for (const id of ['callouts', 'structured-snippets', 'call-extensions', 'promotions', 'prices']) {
+      expect(find(`implementation-google-${id}-section`)).toBeNull();
+    }
   });
 
   /** Omitted rather than sent empty, so the upstream default is reached by the absent-key route. */
@@ -10483,25 +10907,37 @@ describe('ImplementationTabComponent google sitelinks', () => {
     expect(c['addGoogleSitelink'](sitelink('Register', { finalUrl }))).toBe(false);
   });
 
-  it('says out loud that sitelinks are withheld after a switch away from Search, in the notice and its live region', () => {
+  it('says out loud that sitelinks are withheld after a switch to Display, in the notice and its live region', () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
     // Mounted, empty, before there is anything to say.
     expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe('');
 
     c['addGoogleSitelink'](sitelink('Register'));
-    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true });
     fixture.detectChanges();
 
     const notice = find('implementation-google-sitelinks-withheld')?.textContent ?? '';
-    expect(notice).toContain('Demand Gen campaigns do not take sitelinks');
+    expect(notice).toContain('Display campaigns do not take sitelinks');
     expect(notice).toContain('the 1 you added');
+    expect(notice).toContain('Switch to Search or Demand Gen to keep them');
     expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe(c['googleSitelinksWithheldWarning']());
     expect(find('implementation-google-sitelinks-withheld')?.getAttribute('role')).toBeNull();
   });
 
   it('shows no sitelinks notice when none were added', () => {
-    const c = seedChannel(fixture, { includeDemandGen: true });
+    const c = seedChannel(fixture, { includeDisplay: true });
+
+    expect(c['googleSitelinksWithheldWarning']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-sitelinks-withheld"]')).toBeNull();
+  });
+
+  /** Demand Gen takes them, so a list carried there is sent, not withheld, and nothing says otherwise. */
+  it('shows no sitelinks notice on Demand Gen, where they are sent', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
 
     expect(c['googleSitelinksWithheldWarning']()).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-sitelinks-withheld"]')).toBeNull();
@@ -10511,11 +10947,11 @@ describe('ImplementationTabComponent google sitelinks', () => {
   it('still names the channel while the capability answer has not come back', () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleSitelink'](sitelink('Register'));
-    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true });
     fixture.componentRef.setInput('googleCreativeEnabled', null);
     fixture.detectChanges();
 
-    expect(c['googleSitelinksWithheldWarning']()).toContain('Demand Gen campaigns do not take sitelinks');
+    expect(c['googleSitelinksWithheldWarning']()).toContain('Display campaigns do not take sitelinks');
     expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
   });
 
@@ -10532,7 +10968,8 @@ describe('ImplementationTabComponent google sitelinks', () => {
   /** Through `submit()`, so deleting the payload spread fails here and not only in a helper test. */
   it.each([
     ['Search', { includeSearch: true }, [{ text: 'Register', finalUrl: 'https://events.example.org/register' }]],
-    ['Demand Gen, after a switch from Search', { includeDemandGen: true }, undefined],
+    ['Demand Gen, after a switch from Search', { includeDemandGen: true }, [{ text: 'Register', finalUrl: 'https://events.example.org/register' }]],
+    ['Display, after a switch from Search', { includeDisplay: true }, undefined],
   ])('sends the sitelinks on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedChannel(fixture, { includeSearch: true });
@@ -10546,6 +10983,33 @@ describe('ImplementationTabComponent google sitelinks', () => {
 
     expect(createCampaign).toHaveBeenCalled();
     expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['sitelinks']).toEqual(expected);
+  });
+
+  /**
+   * A Demand Gen create with no sitelinks entered is byte-identical to one built before sitelinks
+   * reached Demand Gen — and lists Demand Gen does not take (here a callout and a snippet typed under
+   * Search) are held, not sent, so they leave it identical too.
+   */
+  it('builds a byte-identical Demand Gen request when no sitelinks are entered, whatever else is held', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const submitDemandGen = async (seed: (c: Record<string, any>) => void): Promise<string> => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      seed(c);
+      c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+      fixture.detectChanges();
+      c['submit']();
+      await fixture.whenStable();
+      return JSON.stringify(createCampaign.mock.calls[createCampaign.mock.calls.length - 1][0]);
+    };
+
+    const bare = await submitDemandGen(() => undefined);
+    const held = await submitDemandGen((c) => {
+      c['addGoogleCallout']('Free To Attend');
+      c['addGoogleStructuredSnippet']('Types', ['Talks', 'Labs', 'Demos']);
+    });
+
+    expect(bare).not.toContain('sitelinks');
+    expect(held).toBe(bare);
   });
 
   it('leaves the list alone when the draft carries no sitelinks key', () => {
@@ -11374,7 +11838,7 @@ describe('ImplementationTabComponent google extensions capability block', () => 
    * so the block holds its tongue. Silent, but not silence: the channel warning is already telling
    * the true reason, which is asserted here so the pair can never both go quiet.
    */
-  it.each([['includeDemandGen'], ['includePerformanceMax']])('says nothing on %s, where the answer would change nothing', (channel) => {
+  it.each([['includeDisplay'], ['includePerformanceMax']])('says nothing on %s, where the answer would change nothing', (channel) => {
     const c = seedWithheld(null, 'failed', 'brief-1');
     c['campaignForm'].patchValue({ includeSearch: false, [channel]: true });
     fixture.detectChanges();
@@ -11382,6 +11846,22 @@ describe('ImplementationTabComponent google extensions capability block', () => 
     expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
     expect(c['googleCalloutsWithheldWarning']()).toContain('do not take callouts');
     expect(c['googleSitelinksWithheldWarning']()).toContain('do not take sitelinks');
+  });
+
+  /**
+   * Demand Gen splits the two reasons by kind: the sitelinks would go out once the check passes, so
+   * the block counts them; the callout would not, so the block leaves it to the callout warning.
+   */
+  it('counts only the sitelinks on Demand Gen, and leaves the callout to its channel warning', () => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    const message = c['googleExtensionsCapabilityBlock']()?.message ?? '';
+    expect(message).toContain('the 1 sitelink on this brief');
+    expect(message).not.toContain('callout');
+    expect(c['googleCalloutsWithheldWarning']()).toContain('Demand Gen campaigns do not take callouts');
+    expect(c['googleSitelinksWithheldWarning']()).toBeNull();
   });
 
   it('says nothing while no Google channel is ticked', () => {
@@ -11528,6 +12008,35 @@ describe('ImplementationTabComponent google bidding', () => {
 
     expect(c['googleTakesTargetRoas']()).toBe(true);
     expect(c['googleTakesTargetCpa']()).toBe(false);
+  });
+
+  /**
+   * `demandGenBiddingStrategies` (campaign-service v1.0.31, #474): conversion bidding on Demand Gen,
+   * with a target CPA sent in the same `targetCpa` field (campaign-service builds the standalone
+   * strategy from it), and never a target ROAS — `validateBiddingPlan` refuses one there even under
+   * Maximize Conversion Value, so the field is not offered and a value typed on Display is withheld.
+   */
+  it('offers demand gen conversion bidding and a target CPA, never a target ROAS', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversion-value');
+    c['campaignForm'].controls.googleTargetRoas.setValue('4');
+    expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'maximize-conversion-value', targetRoas: 4 });
+
+    c['campaignForm'].patchValue({ includeDisplay: false, includeDemandGen: true });
+    fixture.detectChanges();
+    expect(c['googleBiddingOptions']().map((o: { value: string }) => o.value)).toEqual([
+      'maximize-clicks',
+      'maximize-conversions',
+      'target-cpa',
+      'maximize-conversion-value',
+    ]);
+    expect(c['googleTakesTargetRoas']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-target-roas"]')).toBeNull();
+    expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'maximize-conversion-value' });
+
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
+    c['campaignForm'].controls.googleTargetCpa.setValue('25');
+    expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'target-cpa', targetCpa: 25 });
   });
 
   /** The CPC bid is manual CPC's alone, and manual CPC is Search's alone. */
@@ -17141,5 +17650,54 @@ describe('ImplementationTabComponent create another campaign', () => {
     fixture.detectChanges();
 
     expect(q('implementation-platform-result-reused')?.textContent?.trim()).toBe('Existing mid-funnel campaign returned; nothing new was created.');
+  });
+});
+
+/**
+ * #5262 W1a opened Demand Gen bidding, languages, ad schedules and devices. A create that touches
+ * none of them must send exactly the request it sent before, on Demand Gen and on every other
+ * channel this screen can create. The literal was captured from the tab at the base commit and
+ * matched byte for byte after the change.
+ */
+describe('ImplementationTabComponent google request with no targeting touched', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it.each([
+    ['search', { includeSearch: true }],
+    ['display', { includeDisplay: true }],
+    ['performance-max', { includePerformanceMax: true }],
+    ['demand-gen', { includeDemandGen: true }],
+  ])('sends the same %s request it sent before', async (channel, patch) => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, patch);
+    fixture.detectChanges();
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(JSON.stringify(createCampaign.mock.calls[0][0])).toBe(
+      JSON.stringify({
+        eventName: 'KubeCon EU 2026',
+        eventSlug: 'kubecon-eu-2026',
+        countryCode: 'US',
+        registrationUrl: 'https://example.com',
+        campaignTypes: [channel],
+        budgetUsd: 500,
+        startDate: '2026-09-01',
+        endDate: '2026-09-30',
+        keywords: [{ term: 'cloud native conference', matchType: 'Phrase', intentLevel: 'High', notes: '' }],
+        headlines: ['Join us at KubeCon'],
+        descriptions: ['Register today for KubeCon EU 2026.'],
+        geoTargets: ['US'],
+        platforms: ['google-ads'],
+      })
+    );
   });
 });

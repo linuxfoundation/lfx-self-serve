@@ -44,6 +44,8 @@ import {
   BRAND_KIT_LOGO_FILE_NAME_REGEX,
   BRAND_KIT_LOGO_SLOTS,
   BRAND_KIT_MAX_LOGO_FILE_CHARS,
+  BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS,
+  BRAND_KIT_MAX_LOGO_ZIP_BYTES,
   BRAND_KIT_FRAMEWORK_TEXT_FIELD_STATUSES,
   BRAND_KIT_MAX_LOGO_FILES,
   BRAND_KIT_MAX_FRAMEWORK_CHARS,
@@ -92,6 +94,7 @@ import {
 } from '../interfaces/brand-kit.interface';
 import { MktgRunAnswer, MktgRunQuestion } from '../interfaces/mktg-run.interface';
 import { buildMktgArtifactObjectKey } from './mktg-artifact.utils';
+import { formatFileSize } from './file.utils';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
 import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
 import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
@@ -274,10 +277,20 @@ export function validateBrandKitLogoFiles(files: unknown): BrandKitValidationRes
       if (value === undefined) {
         continue;
       }
+      const zip = typeof name === 'string' && brandKitLogoFileKind(name.trim()) === 'zip';
       if (typeof value !== 'string' || !value) {
         errors.push(`${at}.${key} must be a non-empty string`);
+      } else if (zip && key === 'text') {
+        // A package is bytes: as text its length says nothing about the 150 KB the cap below measures, so it is refused outright.
+        errors.push(`${at}.text: a ZIP goes as base64`);
       } else if (value.length > BRAND_KIT_MAX_LOGO_FILE_CHARS) {
         errors.push(`${at}.${key} is over ${BRAND_KIT_MAX_LOGO_FILE_CHARS.toLocaleString('en-US')} characters — give the file as a link instead`);
+      } else if (zip && value.length > BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS) {
+        // The picker's cap, re-checked where it is trusted, on the trimmed name the rest of the check and the controller use:
+        // a crafted request cannot carry the package the form refuses.
+        errors.push(
+          `${at}.base64: a ZIP must stay under ${formatFileSize(BRAND_KIT_MAX_LOGO_ZIP_BYTES)} (SVG files only); the full logo package linked on a brand page is usually too large to send`
+        );
       } else {
         payloadChars += value.length;
       }

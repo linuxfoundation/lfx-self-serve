@@ -1,9 +1,9 @@
 ---
 title: Projects and project detail
-description: How to read the Projects table for the selected organization, filter and export it, manage shared workspaces, and open a project's detail page to see the organization's influence, its leaderboard standing, and the influence trend.
+description: How to read the Projects table for the selected organization, filter and export it, manage shared workspaces, and open a project's detail page to see the organization's influence, its leaderboard standing, how each organization's leaderboard score breaks down, and the influence trend.
 audience: [all]
 product_area: Organization
-tags: [organization, org, org-lens, projects, project-detail, workspaces, influence, leaderboard, health, contributors, participants]
+tags: [organization, org, org-lens, projects, project-detail, workspaces, influence, leaderboard, score-breakdown, health, contributors, participants]
 last_updated: 2026-11-06
 intercom_collection: Organization
 ---
@@ -243,13 +243,59 @@ What the leaderboards rank depends on the metric you choose:
 
 Each board has the columns **#**, **Organization**, and the score. Type in **Search** above a board to find an organization by name. The boards show 10, 25, or 50 rows per page.
 
-With **Calculated Influence**, select a row to open that organization's score breakdown, with its **Total score** and **How this score is calculated**. **Activity Count** rows do not open a breakdown.
+With **Calculated Influence**, select a row to open that organization's score breakdown, with its **Total score** and **How this score is calculated**. **Activity Count** rows do not open a breakdown. See [What does a leaderboard score breakdown show?](#what-does-a-leaderboard-score-breakdown-show).
 
 When a board has no rows, it says **No ranked organizations for this project yet.** When a search matches nothing, it says **No organizations match your search.** For a project outside the Linux Foundation, the ecosystem board is marked **Non-LF**.
 
 ### What does the Influence Trend chart show?
 
 **Influence Trend** shows how the project's combined influence is shared among organizations over the time range. Each band is one of the 10 organizations with the most influence, and **All others** adds up the rest, so the bands always total 100%. When there is no trend to show, it says **No data available.**
+
+## What does a leaderboard score breakdown show?
+
+A score breakdown shows how one organization earned its influence score on the project, category by category. It opens when you select a row on the **Technical Influence Leaderboard** or the **Ecosystem Influence Leaderboard**, which are the boards shown with **Calculated Influence**. On a keyboard, move to a row and press Enter or Space. It follows the page's time range and **Organization scope**.
+
+1. The panel's title is the organization's name. The line under it names the project and **Technical Influence** or **Ecosystem Influence**.
+2. A summary sentence gives the organization's band and score, such as **Acme has a Contributing technical influence in Kubernetes and a score of 6.25**. When they are known, it also gives the organization's share of the project's contribution activity (technical) or collaboration activity (ecosystem), and its rank, such as **#3 out of 120 companies participating in the project**.
+3. A list of categories, introduced by **The % of** the organization's **score that each category contributes, and the points it earned**. Each category shows its points and a bar for its share of the total score, highest points first. Most also show the organization's count, or its count against the project's or the foundation's total, depending on the category, such as **(12 of 340)**.
+4. **Total score**: the sum of the points. It is the same score as the leaderboard row.
+5. **How this score is calculated**: how each category earns points, and how the score maps to a band.
+
+The technical score has four categories: **Maintainer roles**, **Contributors**, **Commits** and **PRs Opened**. The ecosystem score has ten: **Collaboration Activities**, **Meeting Attendance**, **Event Attendance**, **Committee Members**, **Board Members**, **Event Speakers**, **Meetup Attendance**, **Event sponsorship - attendees reached**, **Certified Individuals** and **Membership Tier**. A category marked **(not tracked for this project)** has no activity recorded for the project at all. **Membership Tier** has no count: its points come from the organization's Linux Foundation membership tier.
+
+### Why are some categories locked?
+
+Four ecosystem categories, **Meeting Attendance**, **Event Attendance**, **Meetup Attendance** and **Certified Individuals**, come from individual participation records that LFX does not publish. You see their figures only in your own organization's breakdown, the row highlighted and marked **You**. In any other organization's breakdown they are listed last with a lock in place of their points, and the panel says **Locked categories are based on individual participation records that LFX does not publish.** Their points are still part of that organization's **Total score**. Technical categories are never locked.
+
+### How are the points calculated?
+
+Each category earns points on its own, with no preset weights, and the points are added up to the total score.
+
+| Score     | Categories                                                                                                        | Points                                                                                                                                                                                                                      |
+| --------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Technical | **Maintainer roles**                                                                                              | 10 points when the organization has maintainers on the project in the time range. Only organizations with code contributions in that range are scored, so an organization can hold maintainer roles and still earn 0 points |
+| Technical | **Contributors**, **PRs Opened**                                                                                  | 0.1 point for each 0.1% share of the project's total, plus 1 point for any share above 0%                                                                                                                                   |
+| Technical | **Commits**                                                                                                       | Scored like Contributors, but from all commit credit, including co-authored commits. The count and share shown are authored commits only, so an organization can show 0 authored commits and still earn points              |
+| Ecosystem | **Collaboration Activities**, **Meeting Attendance**, **Committee Members**, **Event Speakers**                   | 0.1 point for each 0.1% share of the project's or foundation's total, plus 1 point for any share above 0%                                                                                                                   |
+| Ecosystem | **Board Members**                                                                                                 | 1 point when the organization has at least one board member on the project's foundation                                                                                                                                     |
+| Ecosystem | **Event Attendance**, **Meetup Attendance**, **Certified Individuals**, **Event sponsorship - attendees reached** | 0, 0.33, 0.66 or 1 point for no share, a share up to 25%, up to 50%, or over 50%                                                                                                                                            |
+| Ecosystem | **Membership Tier**                                                                                               | 1 point for Premier, 0.66 point for Strategic, otherwise 0                                                                                                                                                                  |
+
+The count next to **Maintainer roles** is the maintainer roles the organization holds on the project against every organization's roles, with people marked as team members in LFX left out. It is counted separately from the points.
+
+The total score maps to a band:
+
+| Band              | Technical score | Ecosystem score |
+| ----------------- | --------------- | --------------- |
+| **Silent**        | 0               | 0–2             |
+| **Participating** | 1–4             | 3–10            |
+| **Contributing**  | 5–14            | 11–19           |
+| **Leading**       | 15 or more      | 20 or more      |
+
+### What if the breakdown does not load?
+
+- **This breakdown could not be loaded. Close the panel and try again.** The request failed. Close the panel and select the row again.
+- **A detailed breakdown is not available for this organization.** There is no breakdown on record for that organization on this project.
 
 ## Why did Projects or a project detail page fail to load?
 

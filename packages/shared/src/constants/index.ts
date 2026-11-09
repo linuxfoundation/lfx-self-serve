@@ -18,6 +18,7 @@ export * from './file-upload.constants';
 export * from './font-sizes.constants';
 export * from './meeting.constants';
 export * from './meeting-list.constants';
+export * from './meeting-attendee-grid.constants';
 export * from './meeting-registrant.constants';
 export * from './public-live-meeting.constants';
 export * from './public-past-meeting.constants';

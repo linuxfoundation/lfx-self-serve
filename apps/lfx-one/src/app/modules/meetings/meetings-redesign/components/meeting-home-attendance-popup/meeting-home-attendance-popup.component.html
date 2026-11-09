@@ -1,0 +1,51 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<div
+  cdkOverlayOrigin
+  #origin="cdkOverlayOrigin"
+  role="button"
+  tabindex="0"
+  [id]="panelId + '-trigger'"
+  class="block cursor-default rounded-[4px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+  [attr.aria-describedby]="visible() ? panelId : null"
+  [attr.aria-label]="triggerLabel()"
+  (pointerenter)="onPointerEnter($event)"
+  (pointerleave)="onPointerLeave($event)"
+  (focus)="onFocus()"
+  (focusout)="onFocusOut($event)"
+  (click)="show()"
+  (keydown.enter)="show()"
+  (keydown.space)="$event.preventDefault(); show()"
+  data-testid="meetings-home-attendance-trigger">
+  <lfx-meeting-home-attendance variant="row" [attendance]="attendance()" />
+</div>
+
+<ng-template
+  cdkConnectedOverlay
+  [cdkConnectedOverlayOrigin]="origin"
+  [cdkConnectedOverlayOpen]="visible()"
+  [cdkConnectedOverlayPositions]="positions"
+  [cdkConnectedOverlayPush]="true"
+  [cdkConnectedOverlayViewportMargin]="8"
+  [cdkConnectedOverlayDisableClose]="true"
+  (overlayKeydown)="onOverlayKeydown($event)"
+  (overlayOutsideClick)="close()"
+  (detach)="close()">
+  <div
+    role="tooltip"
+    tabindex="-1"
+    class="flex flex-col rounded-[16px] bg-white p-[12px] shadow-menu outline-none"
+    [id]="panelId"
+    (pointerenter)="cancelHide()"
+    (pointerleave)="onPointerLeave($event)"
+    (focusout)="onFocusOut($event)"
+    data-testid="meetings-home-attendance-popup">
+    @if (people(); as people) {
+      <lfx-meeting-attendee-grid [people]="people" [past]="past()" [showViewAll]="false" />
+    } @else {
+      <lfx-ui-spinner class="self-center" [size]="16" label="Loading invited people" data-testid="meetings-home-attendance-popup-loading" />
+    }
+  </div>
+</ng-template>
