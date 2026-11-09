@@ -332,9 +332,10 @@ export interface MailingListAssociationUpdateResult {
 /** One linked group in the mailing list table, with its canonical group-details link. */
 export interface MailingListGroupLink {
   uid: string;
-  name: string;
-  /** Group-details link commands from the list's own project tier (`/foundation/...` vs `/project/...`). */
-  commands: string[];
+  /** Group name; null when the linked group carries none. */
+  name: string | null;
+  /** Group-details link commands from the list's own project tier (`/foundation/...` vs `/project/...`); null when the group has no uid to open. */
+  commands: string[] | null;
 }
 
 /**

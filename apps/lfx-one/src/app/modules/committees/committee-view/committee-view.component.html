@@ -155,7 +155,7 @@
           </div>
         </div>
       }
-      <!-- Context-transition notice — shown when the user arrived from Me Lens My Groups.
+      <!-- Context-transition notice — shown when the user arrived from a Me Lens list (My Groups, Surveys or Votes).
            Explains the lens switch so the sidebar/context change isn't surprising.
            Uses `is_foundation` to pick "foundation" vs "project" context label.
            Always uses project_name — foundation_name is not populated by the enrichment layer. -->
@@ -169,7 +169,7 @@
           <i class="fa-light fa-circle-info text-gray-400 shrink-0" aria-hidden="true"></i>
           <span>
             You're viewing this group in its {{ scopeLabel }} context: <span class="font-medium text-gray-800">{{ scopeName }}</span
-            >. Some options may differ from your personal Groups view.
+            >. Some options may differ from your personal view.
           </span>
           <button
             type="button"
@@ -177,7 +177,7 @@
             (click)="goBack()"
             data-testid="committee-view-context-notice-back">
             <i class="fa-light fa-angle-left text-xs" aria-hidden="true"></i>
-            Back to Groups
+            Back to {{ backLabel() }}
           </button>
         </div>
       }

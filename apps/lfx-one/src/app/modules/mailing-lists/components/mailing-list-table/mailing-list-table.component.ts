@@ -21,7 +21,7 @@ import {
   MAILING_LIST_MAX_VISIBLE_GROUPS,
 } from '@lfx-one/shared';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
-import { FilterOption, GroupsIOMailingList, MailingListGroupLink, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
+import { FilterOption, GroupLinkState, GroupsIOMailingList, MailingListGroupLink, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
 import { getEntityCommands, getMailingListCommands, getMailingListGroupsIoUrl, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { GroupEmailPipe } from '@pipes/group-email.pipe';
 import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
@@ -82,6 +82,8 @@ export class MailingListTableComponent {
 
   // Constants
   protected readonly maxVisibleGroups = MAILING_LIST_MAX_VISIBLE_GROUPS;
+  // Group links return to this list; this layout is never the Me lens, so no lens is restored.
+  protected readonly groupLinkState: GroupLinkState = { backLabel: MAILING_LIST_LABEL.plural, backPath: '/mailing-lists', fromMeLens: false };
   protected readonly mailingListLabelPlural = MAILING_LIST_LABEL.plural;
   protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly audienceAccess = MailingListAudienceAccess;
@@ -192,14 +194,14 @@ export class MailingListTableComponent {
   }
 
   private buildGroupLinks(mailingList: GroupsIOMailingList): MailingListGroupLink[] {
-    return (mailingList.committees ?? [])
-      .filter((committee) => !!committee.uid?.trim())
-      .slice(0, this.maxVisibleGroups)
-      .map((committee) => ({
+    return (mailingList.committees ?? []).slice(0, this.maxVisibleGroups).map((committee) => {
+      const uid = committee.uid?.trim();
+      return {
         uid: committee.uid,
-        name: committee.name?.trim() || 'Unnamed group',
-        commands: getEntityCommands('groups', committee.uid, mailingList.is_foundation) ?? ['/groups', committee.uid],
-      }));
+        name: committee.name?.trim() || null,
+        commands: uid ? (getEntityCommands('groups', uid, mailingList.is_foundation) ?? ['/groups', uid]) : null,
+      };
+    });
   }
 
   private initTableRows(): Signal<MailingListTableRowVm[]> {

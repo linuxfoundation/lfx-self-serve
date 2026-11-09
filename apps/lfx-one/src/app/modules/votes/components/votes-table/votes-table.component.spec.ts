@@ -2003,9 +2003,15 @@ describe('VotesTableComponent — group links', () => {
     expect(el('votes-group-text-v1')?.textContent?.trim()).toBe('Alpha Group');
   });
 
-  it('sends Me lens navigation state so the group page returns to Votes', async () => {
+  it('sends Me lens navigation state so the group page returns to Votes and restores Me', async () => {
     await render([vote('v1', { committee_uid: 'committee-1' })], { isMeLens: true });
 
     expect(fixture.componentInstance['groupLinkState']()).toEqual({ backLabel: 'Votes', backPath: '/votes', fromMeLens: true });
+  });
+
+  it('still returns to Votes, without switching lens, outside the Me lens', async () => {
+    await render([vote('v1', { committee_uid: 'committee-1' })]);
+
+    expect(fixture.componentInstance['groupLinkState']()).toEqual({ backLabel: 'Votes', backPath: '/votes', fromMeLens: false });
   });
 });

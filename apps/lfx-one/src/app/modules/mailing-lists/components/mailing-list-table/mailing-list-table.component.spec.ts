@@ -3,7 +3,8 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
-import { provideRouter } from '@angular/router';
+import { By } from '@angular/platform-browser';
+import { provideRouter, RouterLink } from '@angular/router';
 import { MailingListAudienceAccess } from '@lfx-one/shared/enums';
 import type { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
@@ -272,6 +273,26 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
       expect(second?.getAttribute('href')).toContain('/committee-2');
       const tagTexts = Array.from(fixture.nativeElement.querySelectorAll('lfx-tag') as NodeListOf<HTMLElement>).map((tag) => tag.textContent?.trim());
       expect(tagTexts).not.toContain('Technical Steering Committee');
+    });
+
+    it('returns to Mailing Lists from the group page', async () => {
+      await renderMaintainer(linked);
+
+      const link = fixture.debugElement.query(By.css('[data-testid="mailing-list-group-link-list-1-committee-1"]')).injector.get(RouterLink);
+      expect(link.state).toEqual({ backLabel: 'Mailing Lists', backPath: '/mailing-lists', fromMeLens: false });
+    });
+
+    it('keeps the name of a linked group that has no uid as plain text, without dropping it from the visible entries', async () => {
+      await renderMaintainer({
+        ...linked,
+        committees: [
+          { uid: '', name: 'Orphan Group' },
+          { uid: 'committee-2', name: 'Marketing' },
+        ],
+      });
+
+      expect(fixture.nativeElement.querySelector('[data-testid="mailing-list-group-text-list-1-0"]')?.textContent?.trim()).toBe('Orphan Group');
+      expect(fixture.nativeElement.querySelector('[data-testid="mailing-list-group-link-list-1-committee-2"]')).not.toBeNull();
     });
 
     it('shows a dash when the list has no linked groups', async () => {

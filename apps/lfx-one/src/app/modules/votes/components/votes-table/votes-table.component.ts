@@ -144,7 +144,7 @@ export class VotesTableComponent {
   // Merged UNDER each row's own derived params — the committee tab passes its committee_uid here so a
   // row missing the field still admits committee writers; per-row values always win (dashboard spans projects).
   public readonly editQueryParamsFallback = input<Record<string, string>>({});
-  // Me lens group links carry state so the group page returns to this list instead of Groups.
+  // Group links carry state so the group page returns to this list instead of Groups, and restores the Me lens when that is where the user was.
   public readonly isMeLens = input<boolean>(false);
   public readonly quickFilter = input<MyVotesQuickFilter | null>(null);
   public readonly quickFilterNowMs = input<number>(0);
@@ -219,7 +219,7 @@ export class VotesTableComponent {
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
-  protected readonly groupLinkState: Signal<GroupLinkState | undefined> = this.initGroupLinkState();
+  protected readonly groupLinkState: Signal<GroupLinkState> = this.initGroupLinkState();
   // Phone layout (cards) below the sm breakpoint; false through the first render so it matches the SSR table, then swaps.
   protected readonly isMobile: Signal<boolean> = injectIsMobileViewport();
   // 44px is an exact [44px]: the 14px html root makes min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets).
@@ -564,8 +564,8 @@ export class VotesTableComponent {
   }
 
   // === Private Initializers ===
-  private initGroupLinkState(): Signal<GroupLinkState | undefined> {
-    return computed(() => (this.isMeLens() ? { backLabel: VOTE_LABEL.plural, backPath: '/votes', fromMeLens: true } : undefined));
+  private initGroupLinkState(): Signal<GroupLinkState> {
+    return computed(() => ({ backLabel: VOTE_LABEL.plural, backPath: '/votes', fromMeLens: this.isMeLens() }));
   }
 
   private initStatusTabOptions(): Signal<FilterPillOption[]> {

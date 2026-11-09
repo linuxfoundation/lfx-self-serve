@@ -236,11 +236,11 @@ describe('SurveysTableComponent — row-scoped draft edit access', () => {
       expect(link.state).toEqual({ backLabel: 'Surveys', backPath: '/surveys', fromMeLens: true });
     });
 
-    it('passes no navigation state outside the Me lens', () => {
+    it('still returns to Surveys, without switching lens, outside the Me lens', () => {
       render([survey('s1', ['primary'])], { isMeLens: false });
 
       const link = fixture.debugElement.query(By.css('[data-testid="surveys-group-link-s1"]')).injector.get(RouterLink);
-      expect(link.state).toBeUndefined();
+      expect(link.state).toEqual({ backLabel: 'Surveys', backPath: '/surveys', fromMeLens: false });
     });
 
     it('lists surveys without a group as "No group" in the Group filter', () => {
