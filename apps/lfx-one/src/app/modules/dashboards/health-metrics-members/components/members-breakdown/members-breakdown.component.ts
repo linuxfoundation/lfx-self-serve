@@ -130,7 +130,7 @@ export class MembersBreakdownComponent {
     );
   }
 
-  /** Re-settles the re-projected metrics row; a read in flight or failed settles on its own. */
+  /** Re-counts the sub-nav badge for the new period; a read in flight or failed settles on its own. */
   private onRangeChange(): void {
     if (this.loadFailed() || this.loading()) return;
 

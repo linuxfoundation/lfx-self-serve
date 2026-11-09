@@ -245,6 +245,27 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
     expect(build(rows).rows.map((row) => row.label)).not.toContain('Former');
   });
 
+  it('keeps a measured zero as measured, with zero totals', () => {
+    const view = build(tier('Platinum Membership', 1, [0, 0, 0, 0, 0, 0, 0, 0]));
+
+    expect(view.measured).toBe(true);
+    expect(view.count).toBe(0);
+    expect(view.rows.find((row) => row.key === 'members')?.cells[7]).toBe('0');
+  });
+
+  it('gives a tier the reserved icon only for the reserved name itself', () => {
+    const view = build([...tier('Gold Legacy Membership', 1, [1, 1, 1, 1, 1, 1, 1, 1]), ...tier('Silver Member', 2, [2, 2, 2, 2, 2, 2, 2, 2])]);
+
+    expect(view.rows.filter((row) => row.kind === 'tier').map((row) => [row.label, row.icon])).toEqual([
+      ['Gold Legacy', null],
+      ['Silver', 'silver'],
+    ]);
+  });
+
+  it('ignores rows before the first year shown', () => {
+    expect(build([{ year: 2018, tier: 'Gold', sortRank: 1, memberCount: 5, revenueUsd: 5000 }]).measured).toBe(false);
+  });
+
   it('starts at a later first year, and is unmeasured with no rows', () => {
     const view = build(tier('Gold', 1, [0, 0, 0, 0, 0, 5, 6, 7]).slice(5));
 

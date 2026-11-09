@@ -15,7 +15,6 @@ import type { FilterPillOption } from './dashboard-metric.interface';
 import type { FilterOption } from './filter.interface';
 import type { HealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.interface';
 import type { HealthMetricsChartTipView, HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
-import type { HealthMetricsOverviewKpiView } from './health-metrics-overview.interface';
 
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsMembersSectionKey = (typeof HEALTH_METRICS_MEMBERS_SECTIONS)[number]['key'];

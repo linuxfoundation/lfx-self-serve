@@ -171,7 +171,7 @@ export function buildHealthMetricsMembersGrowthView(
     });
   if (years.length === 0) return emptyGrowthView();
 
-  const top = breakdownScaleStep(Math.max(1, ...years.flatMap(([, values]) => values))) * 4;
+  const top = chartScaleStep(Math.max(1, ...years.flatMap(([, values]) => values))) * 4;
   const plot = HEALTH_METRICS_MEMBERS_GROWTH_PLOT;
   const spacing = (plot.width - 2 * plot.insetX) / 11;
   const x = (month: number): number => plot.insetX + month * spacing;
@@ -856,7 +856,7 @@ function collectBreakdownTiers(rows: HealthMetricsMembersTierYear[]): BreakdownT
 }
 
 /** The smallest whole, evenly readable step (e.g. 750 for a 3,000 top) whose four steps reach the top. */
-function breakdownScaleStep(top: number): number {
+function chartScaleStep(top: number): number {
   const magnitude = 10 ** Math.floor(Math.log10(Math.max(top, 4) / 4));
   return (
     [1, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 8, 10].map((factor) => factor * magnitude).find((step) => Number.isInteger(step) && step * 4 >= top) ?? magnitude * 10
