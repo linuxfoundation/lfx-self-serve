@@ -253,6 +253,33 @@ describe('mktgReportUnmirroredGaps', () => {
       ).toBe(false);
     });
 
+    it('takes the quoted question from the wrapper only, never a quoted word elsewhere: a nested or section quote hides no gap that merely holds the word', () => {
+      // The nested wrapper reduces to the whole question, not to “open”: a gap about the licence is unrelated.
+      expect(
+        mktgReportGapMirrorsReason(
+          'The open source licence is not named.',
+          'The question “What does “open” mean here?” was left unanswered, so the framework fills that gap with a placeholder.'
+        )
+      ).toBe(false);
+      // No wrapper: the reason is compared whole, so the quoted "Pricing" does not stand for a gap about pricing.
+      expect(
+        mktgReportGapMirrorsReason('Pricing tiers are not published on the site.', 'The section "Pricing" asks "How much is it?" and no page answers it.')
+      ).toBe(false);
+    });
+
+    it('needs the reduction for a wrapped question against a gap that carries it with more words, in straight or curly quotes', () => {
+      // Whole against whole neither side contains the other; the question taken from the wrapper is inside the gap.
+      expect(mktgReportGapMirrorsReason('Not answered: How much is it? (no page states it)', 'The question "How much is it?" was not answered.')).toBe(true);
+      expect(mktgReportGapMirrorsReason('Not answered: How much is it? (no page states it)', 'The question “How much is it?” was left unanswered.')).toBe(true);
+    });
+
+    it('leaves a reason that does not start with the wrapper whole, so its quoted question is not taken', () => {
+      // Not the agents' wrapper: compared whole, neither side contains the other, so the gap stays listed (the safe side).
+      expect(
+        mktgReportGapMirrorsReason('Not answered: How much is it? (no page states it)', 'Earlier the question "How much is it?" was raised and not answered.')
+      ).toBe(false);
+    });
+
     it('folds whitespace and case, matches containment either way, and keeps an unrelated gap', () => {
       expect(mktgReportGapMirrorsReason('not answered:  how  much does membership cost?', 'How much does MEMBERSHIP cost?')).toBe(true);
       expect(mktgReportGapMirrorsReason('How much does membership cost?', 'Not answered: how much does membership cost? (no page states it)')).toBe(true);
