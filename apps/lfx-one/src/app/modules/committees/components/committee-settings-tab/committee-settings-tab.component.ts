@@ -104,8 +104,8 @@ export class CommitteeSettingsTabComponent {
   public slackWebhookRemovalStaged = signal(false);
   private mlLoadingInternal = signal(true);
 
-  // Subject to trigger associated-ML list refresh — sync-direction changes (onSyncSettingsUpdated,
-  // retryMlRefresh) only need this one, since they never add/remove a list from the project.
+  // Associated-ML refresh. Drawer saves (onSyncSettingsUpdated) and retryMlRefresh fire only this
+  // one; association changes also fire refreshProjectMl$.
   private refreshMl$ = new Subject<void>();
 
   // Subject to trigger project-ML list refresh — only emitted from association-change paths
@@ -1053,14 +1053,9 @@ export class CommitteeSettingsTabComponent {
   }
 
   private initProjectMailingLists(): Signal<GroupsIOMailingList[]> {
-    // Also refreshes on refreshProjectMl$, not just on committee() changing — the added/removed/
-    // directionChanged loops in saveMailingListAssociation() read this snapshot to find each list's
-    // current sync_mode for the releasesAutoSyncSlot gate, so a stale pre-save copy (e.g. one still
-    // showing auto_c_to_ml after a drawer save turned it off) can misjudge whether that save is
-    // freeing this committee's auto-sync slot (#4899 review). refreshProjectMl$ is its own subject,
-    // not the shared refreshMl$ — only an association change (link/unlink/direction) can affect
-    // what this signal should return, unlike a sync-settings-only save (onSyncSettingsUpdated,
-    // retryMlRefresh), which fires refreshMl$ alone.
+    // Also refreshes on refreshProjectMl$ (association changes: link/unlink/picker direction) so the
+    // snapshot reflects server state after those saves. A drawer sync-only save does NOT refetch
+    // here; projectMailingLists' overlay keeps sync_mode current instead.
     // Same keyed last-good-data fallback as initAssociatedMailingLists() above — a transient fetch
     // error otherwise empties the Add List picker instead of just leaving it stale (#4899 review).
     let lastGoodProjectLists: { uid: string; lists: GroupsIOMailingList[] } | null = null;

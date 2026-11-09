@@ -277,7 +277,7 @@ export class MailingListSyncSettingsComponent {
     // trigger a refetch (#4899 review; this previously regressed a fix from 323dbfa78 the same way).
     // Drawer instances reuse `siblingCandidates`; the switchMap re-runs whenever the parent passes a
     // new array (every save via associatedMlOverrides, every refresh). Standalone instances fetch
-    // once per committeeUid+nonce; retrySiblingLookup() bumps the nonce to force a refetch.
+    // once per committeeUid+nonce+mailingListUid; retrySiblingLookup() bumps the nonce to force a refetch.
     const lookupKey = computed(() => {
       // mailingListUid both establishes this computed's dependency on `mailingList` (needed so a save
       // that replaces the parent's `associatedMailingLists()` entry, and thus this input, re-runs the
