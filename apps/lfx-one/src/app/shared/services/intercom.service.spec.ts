@@ -206,17 +206,16 @@ describe('IntercomService', () => {
       expect(window.intercomSettings?.hide_default_launcher).toBe(true);
     });
 
-    it('should keep the default launcher hidden on restore when a phone boot replaced it', () => {
+    it('should leave a phone boot untouched, since the compact launcher (#4865) already replaces the bubble', () => {
       vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query }));
       service.boot({ app_id: 'test-app-id' });
+      const settingsAfterBoot = { ...window.intercomSettings };
 
       service.setLauncherHidden(true);
       service.setLauncherHidden(false);
 
-      expect(queuedCommands().slice(1)).toEqual([
-        ['update', { hide_default_launcher: true }],
-        ['update', { hide_default_launcher: true }],
-      ]);
+      expect(queuedCommands().slice(1)).toEqual([]);
+      expect(window.intercomSettings).toEqual(settingsAfterBoot);
     });
 
     it('should keep the default launcher hidden on restore when the boot hid it explicitly', () => {

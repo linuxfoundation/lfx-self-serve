@@ -74,7 +74,8 @@ export class IntercomService {
     this.customLauncherActive.set(Object.keys(launcherSettings).length > 0);
     this.bootHidesLauncher = options.hide_default_launcher === true || this.customLauncherActive();
     // A boot that lands while a surface has the bubble hidden must not bring it back (#5416).
-    const bootLauncherSettings: IntercomSettings = this.launcherHidden ? { ...launcherSettings, hide_default_launcher: true } : launcherSettings;
+    const bootLauncherSettings: IntercomSettings =
+      this.launcherHidden && !this.customLauncherActive() ? { ...launcherSettings, hide_default_launcher: true } : launcherSettings;
 
     this.loadIntercomScript(options.app_id, options.api_base, bootLauncherSettings);
     window.Intercom!('boot', { ...options, ...bootLauncherSettings });
@@ -102,8 +103,9 @@ export class IntercomService {
   // Hides or restores the default launcher bubble for a surface whose bottom-right controls it would
   // cover, like the meeting composer drawer's footer (#5416). Uses Intercom's own
   // `hide_default_launcher` setting rather than CSS on the widget's internal markup. Restoring goes
-  // back to the boot-time choice, so a boot that hid the bubble (explicitly, or for the phone compact
-  // launcher of #4865) keeps it hidden.
+  // back to the boot-time choice, so a boot that hid the bubble explicitly keeps it hidden.
+  // Phones are left alone entirely: a phone boot already swaps the bubble for the compact shell
+  // launcher (#4865), so no Intercom command is sent there.
   // The value is mirrored on `intercomSettings` because update() replays those settings, and before
   // boot it is only recorded for boot() to apply.
   public setLauncherHidden(hidden: boolean): void {
@@ -111,6 +113,9 @@ export class IntercomService {
       return;
     }
     this.launcherHidden = hidden;
+    if (this.customLauncherActive()) {
+      return;
+    }
     const hideDefaultLauncher = hidden || this.bootHidesLauncher;
     if (window.intercomSettings) {
       window.intercomSettings.hide_default_launcher = hideDefaultLauncher;
