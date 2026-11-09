@@ -8,12 +8,8 @@
 // source in words. One reading for every surface; a v1 report, or any other
 // agent's report, has none of it and renders as it always did.
 
-import {
-  BRAND_KIT_CHAPTER_BASIS_LF,
-  BRAND_KIT_CHAPTER_BASIS_PROJECT,
-  BRAND_KIT_CHAPTERS,
-  BRAND_KIT_REPORT_ASSET_LABELS,
-} from '../constants/brand-kit.constants';
+import { BRAND_KIT_CHAPTER_BASIS_LF, BRAND_KIT_CHAPTER_BASIS_PROJECT, BRAND_KIT_CHAPTERS } from '../constants/brand-kit.constants';
+import { MKTG_REPORT_ASSET_LABELS } from '../constants/mktg-asset.constants';
 import type {
   BrandKitApproveFindings,
   BrandKitChapterRuleBasis,
@@ -25,6 +21,7 @@ import type {
 } from '../interfaces/brand-kit.interface';
 import type { MktgAssetReport } from '../interfaces/mktg-asset.interface';
 import { brandKitConflictSourceLabel, brandKitFailedSourceTitle } from './brand-kit-sources.utils';
+import { mktgReportAssetLabel } from './mktg-report-v2.utils';
 
 /** The rule paths of the report are the envelope's: `chapters.<id>` followed by a member or an index. */
 const RULE_PATH_PREFIX = 'chapters.';
@@ -32,30 +29,49 @@ const RULE_PATH_PREFIX = 'chapters.';
 /** `kind: source` — how the agent writes where a conflicting value was seen. */
 
 /**
- * A report that carries a v2 field: a Brand Kit's. The fields are optional on
- * the type, so a v1 kit report passes too and simply has none of them.
+ * A report that carries a kit-only v2 field (the rules, the colour conflicts),
+ * which only a Brand Kit writes: the guard the kit-only readers below use to
+ * reach those fields. It is a shape test, not the document's type: a report
+ * without either key is read as any agent's, and whether a document IS the
+ * kit is the document type's to say. The findings are every agent's, read
+ * from the generic report.
  */
 function isBrandKitReport(report: MktgAssetReport): report is BrandKitReport {
-  return 'rules' in report || 'color_conflicts' in report || 'findings' in report;
+  return 'rules' in report || 'color_conflicts' in report;
 }
 
 /**
  * What a v2 report's approve dialog lists first, in the Sources tab's words:
  * each source the agent could not read with its plain reason and detail, and
- * each asset it did not find with its label, reason and fix. Both empty for a
- * v1 report or another agent's, whose dialog keeps its own list.
+ * each asset it did not find with its label (or its id as written), reason
+ * and fix. Any agent's report with findings; both empty for a v1 report,
+ * whose dialog keeps its own list.
  */
 export function brandKitApproveFindings(report: MktgAssetReport | null | undefined): BrandKitApproveFindings {
-  const findings = report && isBrandKitReport(report) ? report.findings : undefined;
+  const findings = report?.findings;
   if (!findings) return { failed: [], missing: [] };
   return {
     failed: findings.sources_failed.map((failed) => ({ title: brandKitFailedSourceTitle(failed.source), text: failed.reason, detail: failed.detail ?? null })),
     missing: findings.missing_assets.map((missing) => ({
-      title: BRAND_KIT_REPORT_ASSET_LABELS[missing.asset],
+      title: mktgReportAssetLabel(missing.asset, MKTG_REPORT_ASSET_LABELS),
       text: missing.reason,
       fix: missing.fix ?? null,
     })),
   };
+}
+
+/**
+ * The gaps lines of a v2 report that no missing asset stands for, as written: the approve dialog lists them under Gaps
+ * after the two findings groups, so an approver is told of every open gap. A gap is mirrored when some
+ * `findings.missing_assets[].reason`, trimmed, is a substring of the gap line (the FAQ's gap is its question; the
+ * boilerplates' is "Not answered: <question>"). Empty for a v1 report (its gaps list as before). Agent-agnostic: the
+ * dialog, which knows the document type, leaves the group out for the Brand Kit.
+ */
+export function mktgReportUnmirroredGaps(report: MktgAssetReport | null | undefined): string[] {
+  const findings = report?.findings;
+  if (!report || !findings) return [];
+  const reasons = findings.missing_assets.map((missing) => missing.reason.trim()).filter((reason) => reason.length > 0);
+  return report.gaps.filter((gap) => !reasons.some((reason) => gap.includes(reason)));
 }
 
 /** The v2 rules of a report; empty for a v1 report or another agent's. */
@@ -139,7 +155,7 @@ export function brandKitColorConflictViews(report: MktgAssetReport | null | unde
 export function mktgReportHasOpenGaps(report: MktgAssetReport | null | undefined): boolean {
   if (!report) return false;
   if (report.gaps.length > 0) return true;
-  const findings = isBrandKitReport(report) ? report.findings : undefined;
+  const findings = report.findings;
   if (findings && (findings.sources_failed.length > 0 || findings.missing_assets.length > 0)) return true;
   return report.sources_failed.length > 0;
 }

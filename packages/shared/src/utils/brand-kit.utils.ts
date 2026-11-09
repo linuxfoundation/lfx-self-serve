@@ -60,14 +60,11 @@ import {
   BRAND_KIT_REFUSAL_CLAUSE,
   BRAND_KIT_REFUSAL_OPENINGS,
   BRAND_KIT_REPORT_ASSETS,
-  BRAND_KIT_REPORT_BARE_URL_REGEX,
   BRAND_KIT_REPORT_CONFLICT_VALUES,
   BRAND_KIT_REPORT_LIST_MAX,
   BRAND_KIT_REPORT_RULE_BASES,
   BRAND_KIT_REPORT_RULES_MAX,
   BRAND_KIT_REPORT_SOURCE_KINDS,
-  BRAND_KIT_REPORT_TEXT_MAX_CHARS,
-  BRAND_KIT_REPORT_V2,
   BRAND_KIT_REPORT_WARNING_CODES,
   BRAND_KIT_REQUIRED_HEADINGS,
   BRAND_KIT_SHA256_REGEX,
@@ -96,6 +93,7 @@ import { MktgRunAnswer, MktgRunQuestion } from '../interfaces/mktg-run.interface
 import { buildMktgArtifactObjectKey } from './mktg-artifact.utils';
 import { formatFileSize } from './file.utils';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { mktgReportV2Errors } from './mktg-report-v2.utils';
 import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
 import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
 
@@ -1022,50 +1020,12 @@ export function findBrandKitReportErrors(report: unknown): string[] {
 /**
  * The v2 fields (brand-kit ≥ 2.2.0), each checked only when present: absent means the v1 report. A present field with
  * a bad shape is an error, so our agent's malformed output surfaces instead of vanishing from the Sources tab. The
- * limits are the contract's as written: reason, text and fix are trimmed sentences of 1–300 characters and never a
- * bare URL; `detail` and a conflict's `name` are non-empty text with no cap; each list holds at most 50 entries, the
- * rules at most 200; a conflict lists 2–4 values.
+ * version and the findings are the family's check (mktgReportV2Errors) with the kit's closed `kind`, `asset` and
+ * `code` enums; the kit's own fields follow the contract as written: a conflict's `name` is non-empty text with no
+ * cap, the conflicts hold at most 50 entries and the rules at most 200; a conflict lists 2–4 values.
  */
 function reportV2Errors(report: UnknownRecord): string[] {
-  const errors: string[] = [];
-  if (report['version'] !== undefined && report['version'] !== BRAND_KIT_REPORT_V2) {
-    errors.push(`report.version must be ${BRAND_KIT_REPORT_V2} when present`);
-  }
-  const findings = report['findings'];
-  if (findings !== undefined) {
-    if (!isRecord(findings) || !onlyKeys(findings, ['sources_failed', 'missing_assets', 'warnings'])) {
-      errors.push('report.findings must be an object of { sources_failed, missing_assets, warnings }');
-    } else {
-      const failedOk = (entry: unknown): boolean =>
-        isRecord(entry) &&
-        onlyKeys(entry, ['source', 'kind', 'reason', 'detail']) &&
-        isText(entry['source']) &&
-        isOneOf(entry['kind'], BRAND_KIT_REPORT_SOURCE_KINDS) &&
-        isSentence(entry['reason']) &&
-        (entry['detail'] === undefined || isText(entry['detail']));
-      const missingOk = (entry: unknown): boolean =>
-        isRecord(entry) &&
-        onlyKeys(entry, ['asset', 'reason', 'fix']) &&
-        isOneOf(entry['asset'], BRAND_KIT_REPORT_ASSETS) &&
-        isSentence(entry['reason']) &&
-        (entry['fix'] === undefined || isSentence(entry['fix']));
-      const warningOk = (entry: unknown): boolean =>
-        isRecord(entry) &&
-        onlyKeys(entry, ['code', 'text', 'source']) &&
-        isOneOf(entry['code'], BRAND_KIT_REPORT_WARNING_CODES) &&
-        isSentence(entry['text']) &&
-        (entry['source'] === undefined || isText(entry['source']));
-      if (!isListOf(findings['sources_failed'], failedOk)) {
-        errors.push('report.findings.sources_failed must be a list of { source, kind, reason, detail? }');
-      }
-      if (!isListOf(findings['missing_assets'], missingOk)) {
-        errors.push('report.findings.missing_assets must be a list of { asset, reason, fix? }');
-      }
-      if (!isListOf(findings['warnings'], warningOk)) {
-        errors.push('report.findings.warnings must be a list of { code, text, source? }');
-      }
-    }
-  }
+  const errors = mktgReportV2Errors(report, { kinds: BRAND_KIT_REPORT_SOURCE_KINDS, assets: BRAND_KIT_REPORT_ASSETS, codes: BRAND_KIT_REPORT_WARNING_CODES });
   const valueOk = (entry: unknown): boolean => isRecord(entry) && onlyKeys(entry, ['hex', 'source']) && isHex(entry['hex']) && isText(entry['source']);
   const conflictOk = (entry: unknown): boolean =>
     isRecord(entry) &&
@@ -1093,15 +1053,6 @@ function reportV2Errors(report: UnknownRecord): string[] {
     errors.push(`report.rules must be a list of at most ${BRAND_KIT_REPORT_RULES_MAX} { path, basis, uses? }`);
   }
   return errors;
-}
-
-/**
- * A report sentence: trimmed text of 1–300 characters that is not a bare URL (a URL inside a sentence is fine; a
- * reason that is only an address belongs in `source`). The looser reading of the agent's own rule, so the UI never
- * rejects what the agent accepts.
- */
-function isSentence(value: unknown): value is string {
-  return isText(value) && value === value.trim() && value.length <= BRAND_KIT_REPORT_TEXT_MAX_CHARS && !BRAND_KIT_REPORT_BARE_URL_REGEX.test(value);
 }
 
 /** A report list: at most `max` entries (50 unless the contract says otherwise), each of the given shape. */

@@ -145,14 +145,20 @@
             <p class="text-xs text-gray-500" data-testid="mktg-boilerplates-view-sources-read-empty">Nothing was read.</p>
           }
         </div>
+        <!-- The agent's own words for what failed: a v2 report's findings (source, plain reason, small detail, as the kit's Failed sources card),
+             a v1 report's list as before. The UI never rewrites a reason. -->
+        @let findingsView = reportFindings();
         <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4">
           <h3 class="text-sm font-semibold text-gray-900">Could not be read</h3>
-          @if (report().sources_failed.length > 0) {
+          @if (findingsView.failed.length > 0) {
             <ul class="flex flex-col gap-1.5 text-sm" data-testid="mktg-boilerplates-view-sources-failed">
-              @for (failed of report().sources_failed; track $index) {
+              @for (failed of findingsView.failed; track $index) {
                 <li class="flex flex-col">
-                  <span class="text-gray-800">{{ failed.name }}</span>
-                  <span class="text-xs text-amber-700">{{ failed.reason }}</span>
+                  <span class="text-gray-800">{{ failed.title }}</span>
+                  <span class="text-xs text-amber-700">{{ failed.text }}</span>
+                  @if (failed.detail) {
+                    <span class="text-xs text-gray-500" data-testid="mktg-boilerplates-view-sources-failed-detail">{{ failed.detail }}</span>
+                  }
                 </li>
               }
             </ul>
@@ -160,8 +166,12 @@
             <p class="text-xs text-gray-500" data-testid="mktg-boilerplates-view-sources-failed-empty">{{ noSourceFailedNote }}</p>
           }
         </div>
+        <!-- A v2 report: the kit's Missing assets and Warnings cards; a v1 report adds nothing here. -->
+        @if (findingsView.hasFindings) {
+          <lfx-mktg-report-findings [view]="findingsView" />
+        }
         <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4">
-          <h3 class="text-sm font-semibold text-gray-900">Gaps</h3>
+          <h3 class="text-sm font-semibold text-gray-900">{{ gapsTitle }}</h3>
           @if (report().gaps.length > 0) {
             <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800" data-testid="mktg-boilerplates-view-gaps">
               @for (gap of report().gaps; track $index) {

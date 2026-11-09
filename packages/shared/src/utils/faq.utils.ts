@@ -76,6 +76,7 @@ import {
   validateFoundationMessageAnswers,
 } from './foundation-message.utils';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { mktgReportV2Errors } from './mktg-report-v2.utils';
 import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
 import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
 
@@ -687,7 +688,13 @@ export function validateFaqEnvelope(candidate: unknown): FaqValidationResult {
     errors.push('content_sha256 must be 64 lowercase hex characters');
   }
   errors.push(...findFaqContentErrors(envelope['content']));
-  if (!isFoundationMessageReport(envelope['report'])) {
+  // The report is the framework agent's shape. A malformed PRESENT v2 field (version, findings) is named as the kit and
+  // the framework name it, so the agent's bad output surfaces by field; a v1 fault keeps today's one line.
+  const report = envelope['report'];
+  const v2Errors = isObject(report) ? mktgReportV2Errors(report) : [];
+  if (v2Errors.length) {
+    errors.push(...v2Errors);
+  } else if (!isFoundationMessageReport(report)) {
     errors.push('report must be { sources_read, sources_failed, gaps, notes }');
   }
   errors.push(...checksErrors(envelope['checks']));

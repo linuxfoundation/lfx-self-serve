@@ -2,17 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import type { BrandKitReport, MktgAssetReport } from '@lfx-one/shared/interfaces';
+import type { BrandKitReport, MktgApproveGapsDialogData, MktgAssetReport } from '@lfx-one/shared/interfaces';
 import { brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
+import { boilerplatesReportV2Envelope, faqReportV2Envelope, frameworkReportV2Fixture } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 import { DynamicDialogConfig } from 'primeng/dynamicdialog';
 import { describe, expect, it } from 'vitest';
 import { MktgApproveGapsDialogComponent } from './mktg-approve-gaps-dialog.component';
 
 describe('Approval with open gaps dialog', () => {
-  const render = async (report: MktgAssetReport): Promise<HTMLElement> => {
+  /** Opens the dialog as the document view does: the report, and whether the document is the Brand Kit's (by type). */
+  const render = async (report: MktgAssetReport, brandKit = false): Promise<HTMLElement> => {
+    const data: MktgApproveGapsDialogData = { report, brandKit };
     TestBed.configureTestingModule({
       imports: [MktgApproveGapsDialogComponent],
-      providers: [{ provide: DynamicDialogConfig, useValue: { data: report } }],
+      providers: [{ provide: DynamicDialogConfig, useValue: { data } }],
     });
     const fixture = TestBed.createComponent(MktgApproveGapsDialogComponent);
     await fixture.whenStable();
@@ -20,6 +23,8 @@ describe('Approval with open gaps dialog', () => {
   };
   const query = (root: HTMLElement, testId: string): HTMLElement | null => root.querySelector(`[data-testid="${testId}"]`);
   const queryAll = (root: HTMLElement, testId: string): HTMLElement[] => Array.from(root.querySelectorAll(`[data-testid="${testId}"]`));
+  /** The texts of an item's spans: title, reason, and the detail or fix when printed. */
+  const lines = (item: HTMLElement): string[] => Array.from(item.querySelectorAll('span')).map((span) => span.textContent?.trim() ?? '');
 
   it('lists a v1 report as text', async () => {
     const report: MktgAssetReport = { sources_read: [], sources_failed: [{ name: 'Docs', reason: '404' }], gaps: ['<b>Missing</b>'], notes: '' };
@@ -48,14 +53,13 @@ describe('Approval with open gaps dialog', () => {
         chosen: '#000000',
       },
     ];
-    const root = await render(report);
+    const root = await render(report, true);
     // The dialog opens read from its top: the content itself holds focus, not the footer button.
     expect(document.activeElement).toBe(query(root, 'mktg-document-view-approve-confirm'));
     // A v2 report: the top list is the Sources tab's two groups (source, plain reason, small detail; asset label, reason, fix), then the gaps.
     expect(root.textContent).not.toContain('brand-guidelines — HTTP 404');
     const failed = query(root, 'mktg-document-view-approve-failed');
     expect(failed?.querySelector('h3')?.textContent).toBe('Failed sources');
-    const lines = (item: HTMLElement): string[] => Array.from(item.querySelectorAll('span')).map((span) => span.textContent?.trim() ?? '');
     expect(queryAll(root, 'mktg-document-view-approve-failed-item').map(lines)).toEqual([
       ['https://synthetic-foundation.example/brand-guidelines', 'This page does not exist on the site (the server answered 404).', 'HTTP 404'],
       [
@@ -73,8 +77,10 @@ describe('Approval with open gaps dialog', () => {
       'The site’s header links a logo image (synthetic-logo-838x203.svg) that was not read in this run, so the kit shows placeholder marks.',
       'Fix: Upload the primary file as SVG in the form, or a ZIP of the SVG files under 150 KB; the full package linked on synthetic-foundation.example/brand is likely too large to send.',
     ]);
-    // The gaps bullets are not repeated on a v2 report; Missing assets stands for them.
+    // The gaps bullets are not repeated on a v2 report; Missing assets stands for them, and the kit's dialog takes no Gaps
+    // group even for a gap no asset's reason mirrors (this one).
     expect(root.textContent).not.toContain('No logo files');
+    expect(query(root, 'mktg-document-view-approve-gaps')).toBeNull();
 
     const conflicts = query(root, 'mktg-document-view-approve-conflicts');
     expect(conflicts?.querySelector('h3')?.textContent).toBe('Colour conflicts');
@@ -120,6 +126,99 @@ describe('Approval with open gaps dialog', () => {
     expect(root.textContent).not.toContain('lf-reference');
   });
 
+  it('shows the framework agent’s real v2 findings the same way: its failed source alone, no Missing section, nothing of the kit’s', async () => {
+    const framework = await render(frameworkReportV2Fixture());
+    expect(query(framework, 'mktg-document-view-approve-failed')?.querySelector('h3')?.textContent).toBe('Failed sources');
+    expect(queryAll(framework, 'mktg-document-view-approve-failed-item').map(lines)).toEqual([
+      ['https://aaif.io/press', 'This page does not exist on the site (the server answered 404).', 'HTTP 404'],
+    ]);
+    expect(query(framework, 'mktg-document-view-approve-missing')).toBeNull();
+    // The legacy failed line is not printed twice.
+    expect(framework.textContent).not.toContain('https://aaif.io/press — HTTP 404');
+    expect(query(framework, 'mktg-document-view-approve-conflicts')).toBeNull();
+    expect(query(framework, 'mktg-document-view-approve-rules')).toBeNull();
+    // No gap on this envelope: no Gaps group.
+    expect(query(framework, 'mktg-document-view-approve-gaps')).toBeNull();
+  });
+
+  it('shows the boilerplates agent’s real v2 findings: its open question by the family label with its fix, no Failed section, and its unmirrored gaps under Gaps', async () => {
+    const boilerplates = await render(boilerplatesReportV2Envelope().report);
+    expect(query(boilerplates, 'mktg-document-view-approve-failed')).toBeNull();
+    expect(query(boilerplates, 'mktg-document-view-approve-missing')?.querySelector('h3')?.textContent).toBe('Missing assets');
+    expect(queryAll(boilerplates, 'mktg-document-view-approve-missing-item').map(lines)).toEqual([
+      [
+        'Open question',
+        'The question "Should the 100-word boilerplate name individual member companies?" was not answered, so the boilerplates were written without it.',
+        'Fix: Answer it on a redraft, or add the fact to the request notes.',
+      ],
+    ]);
+    // The gaps no missing asset's reason mirrors are listed under Gaps, as written: both of this envelope's, since its reason
+    // wraps the question rather than repeating the gap line.
+    const gaps = query(boilerplates, 'mktg-document-view-approve-gaps');
+    expect(gaps?.querySelector('h3')?.textContent).toBe('Gaps');
+    expect(queryAll(boilerplates, 'mktg-document-view-approve-gaps-item').map((item) => item.textContent?.trim())).toEqual([
+      'Whether to name the Gold and Silver members: the framework names none.',
+      'Not answered: Should the 100-word boilerplate name individual member companies?',
+    ]);
+  });
+
+  it('adds no Gaps group when every gap is mirrored by a missing asset (the FAQ’s real envelope)', async () => {
+    const faq = await render(faqReportV2Envelope().report);
+    expect(queryAll(faq, 'mktg-document-view-approve-missing-item')).toHaveLength(1);
+    expect(query(faq, 'mktg-document-view-approve-gaps')).toBeNull();
+  });
+
+  it('lists the framework’s LFX standard metrics refusal under Failed sources: the source, the agent’s reason, the detail', async () => {
+    const report: MktgAssetReport = {
+      sources_read: [],
+      sources_failed: [],
+      gaps: [],
+      notes: '',
+      version: 2,
+      findings: {
+        sources_failed: [
+          {
+            source: 'LFX standard metrics',
+            kind: 'lfx_metrics',
+            reason:
+              'LFX standard metrics could not be read in this run, so no figure in the messaging framework comes from LFX; the figures shown come from the pages and documents read.',
+            detail: 'scope guard refused',
+          },
+        ],
+        missing_assets: [],
+        warnings: [],
+      },
+    };
+    const root = await render(report);
+    expect(queryAll(root, 'mktg-document-view-approve-failed-item').map(lines)).toEqual([
+      [
+        'LFX standard metrics',
+        'LFX standard metrics could not be read in this run, so no figure in the messaging framework comes from LFX; the figures shown come from the pages and documents read.',
+        'scope guard refused',
+      ],
+    ]);
+    expect(query(root, 'mktg-document-view-approve-missing')).toBeNull();
+    expect(query(root, 'mktg-document-view-approve-gaps')).toBeNull();
+  });
+
+  it('leaves the Gaps group out for the Brand Kit by its document type, whatever the report’s shape, and lists it for any other document', async () => {
+    // A findings-only report without the kit's own keys: the kit validator accepts this shape too.
+    const report: MktgAssetReport = {
+      sources_read: [],
+      sources_failed: [],
+      gaps: ['The member count is not stated.'],
+      notes: '',
+      version: 2,
+      findings: { sources_failed: [], missing_assets: [{ asset: 'logo_symbol', reason: 'No symbol was uploaded.' }], warnings: [] },
+    };
+    const kit = await render(report, true);
+    expect(query(kit, 'mktg-document-view-approve-missing')).not.toBeNull();
+    expect(query(kit, 'mktg-document-view-approve-gaps')).toBeNull();
+    TestBed.resetTestingModule();
+    const other = await render(report);
+    expect(queryAll(other, 'mktg-document-view-approve-gaps-item').map((item) => item.textContent?.trim())).toEqual(['The member count is not stated.']);
+  });
+
   it('lists leftover gaps the old way when a v2 report has nothing in either findings group', async () => {
     const report: BrandKitReport = {
       sources_read: [],
@@ -131,7 +230,7 @@ describe('Approval with open gaps dialog', () => {
       color_conflicts: [],
       rules: [{ path: 'chapters.voice', basis: 'project' }],
     };
-    const root = await render(report);
+    const root = await render(report, true);
     expect(root.querySelector('ul')?.textContent).toContain('Missing evidence');
     expect(query(root, 'mktg-document-view-approve-failed')).toBeNull();
     expect(query(root, 'mktg-document-view-approve-missing')).toBeNull();
@@ -148,7 +247,7 @@ describe('Approval with open gaps dialog', () => {
       color_conflicts: [],
       rules: [{ path: 'chapters.voice', basis: 'project' }],
     };
-    const root = await render(report);
+    const root = await render(report, true);
     expect(root.querySelector('ul')).toBeNull();
     expect(query(root, 'mktg-document-view-approve-failed')).toBeNull();
     expect(query(root, 'mktg-document-view-approve-missing')).toBeNull();

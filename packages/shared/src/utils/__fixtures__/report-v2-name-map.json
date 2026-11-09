@@ -1,0 +1,11 @@
+{
+  "$comment": "Where each synthetic member organisation name in the FAQ envelope beside this file stands for a real one: the Platinum members the AAIF launch press release names, in its order (the FAQ envelope quotes that list, so the substitution is auditable from the public page without printing the names). Applied to every occurrence in the envelope (its content and its inputs_record; none in report or checks), after which content_sha256 was recomputed.",
+  "Member Org One": "the Platinum member list in the AAIF launch press release, position 1",
+  "Member Org Two": "the Platinum member list in the AAIF launch press release, position 2",
+  "Member Org Three": "the Platinum member list in the AAIF launch press release, position 3",
+  "Member Org Four": "the Platinum member list in the AAIF launch press release, position 4",
+  "Member Org Five": "the Platinum member list in the AAIF launch press release, position 5",
+  "Member Org Six": "the Platinum member list in the AAIF launch press release, position 6",
+  "Member Org Seven": "the Platinum member list in the AAIF launch press release, position 7",
+  "Member Org Eight": "the Platinum member list in the AAIF launch press release, position 8"
+}
