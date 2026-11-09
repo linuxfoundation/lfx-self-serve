@@ -152,6 +152,16 @@ export class CommitteeSettingsTabComponent {
   // pipeline's tap below), or on committee change (see the constructor).
   private readonly associatedMlOverrides = signal<ReadonlyMap<string, GroupsIOMailingList>>(new Map());
 
+  // Mailing list uids suppressed from associatedMailingLists()/fetchedAssociatedMailingLists after a
+  // successful unlink, until a refresh confirms the index no longer returns them — a successful but
+  // stale getMailingListsByCommittee response (eventual-consistency lag, not a fetch error) can
+  // otherwise resurrect a just-removed row and re-unlock its Auto Sync card; saving that restored
+  // card would send its old committee_uid in a full-resource PUT and silently relink the list
+  // (#4899 review). Cleared automatically once a refetch no longer contains the uid (see the refresh
+  // pipeline's tap below), or immediately on an intentional relink of the same uid (see
+  // clearUnlinkedMlSuppression's call sites), or on committee change (see the constructor).
+  private readonly unlinkedMlUids = signal<ReadonlySet<string>>(new Set());
+
   // Form
   public form = new FormGroup({
     // pattern(/\S/) rejects a whitespace-only name, which `required` alone accepts and persistSettings would then silently drop.
@@ -201,10 +211,24 @@ export class CommitteeSettingsTabComponent {
   // input and its directionChanged comparison both read the stale pre-drawer sync_mode, so re-opening
   // the picker right after a drawer save could issue a no-op PUT or let a second list be saved as
   // automatic (#4899 review: Greptile, Cursor bugbot, Copilot all flagged this independently).
+  //
+  // For a list this committee is linked to, prefer associatedMailingLists()'s sync_mode over the raw
+  // override map: once the associated-list refresh confirms a drawer save, it deletes the override
+  // (see initAssociatedMailingLists' refresh-pipeline tap), but fetchedProjectMailingLists only
+  // refetches on refreshProjectMl$ (a sync-only save never fires it), so without this the picker would
+  // fall straight back to the pre-save fetched project snapshot the moment the override clears,
+  // flashing the old direction and running its active-sync lock/change detection against stale data
+  // (#4899 review). associatedMailingLists() already reflects whichever is current — the override
+  // while pending, the confirmed fetched value once it lands — so looking it up there instead
+  // supersedes the override lookup for any uid linked to this committee; a project list not linked
+  // here still falls back to the raw override/fetched value.
   public projectMailingLists: Signal<GroupsIOMailingList[]> = computed(() => {
     const overrides = this.associatedMlOverrides();
-    if (overrides.size === 0) return this.fetchedProjectMailingLists();
+    const associatedByUid = new Map(this.associatedMailingLists().map((ml) => [ml.uid, ml]));
+    if (overrides.size === 0 && associatedByUid.size === 0) return this.fetchedProjectMailingLists();
     return this.fetchedProjectMailingLists().map((ml) => {
+      const confirmed = associatedByUid.get(ml.uid);
+      if (confirmed) return { ...ml, sync_mode: confirmed.sync_mode };
       const override = overrides.get(ml.uid);
       return override ? { ...ml, sync_mode: override.sync_mode } : ml;
     });
@@ -365,6 +389,9 @@ export class CommitteeSettingsTabComponent {
       .subscribe((c) => {
         if (this.lastOverridesCommitteeUid !== undefined && this.lastOverridesCommitteeUid !== c.uid) {
           this.associatedMlOverrides.set(new Map());
+          // Same leak as the override above — a suppressed uid from a different committee must not
+          // hide an unrelated mailing list of the same uid on this one (#4899 review).
+          this.unlinkedMlUids.set(new Set());
         }
         this.lastOverridesCommitteeUid = c.uid;
       });
@@ -455,6 +482,7 @@ export class CommitteeSettingsTabComponent {
           this.messageService.add({ severity: 'success', summary: 'Removed', detail: `${ml.group_name} removed from this group` });
           this.clearMlOverride(ml.uid);
           this.pruneLastGoodAssociatedList(ml.uid);
+          this.suppressUnlinkedMl(ml.uid);
           // Locked before refreshMl$ fires — autoSyncButtonDisabled must stay disabled across the
           // gap between this successful PUT and the refetch it triggers settling (#4899 review).
           this.refreshingMl.set(true);
@@ -647,6 +675,27 @@ export class CommitteeSettingsTabComponent {
     this.lastGoodAssociatedLists = { ...this.lastGoodAssociatedLists, lists: this.lastGoodAssociatedLists.lists.filter((l) => l.uid !== uid) };
   }
 
+  // See unlinkedMlUids' doc comment above — called alongside clearMlOverride()/pruneLastGoodAssociatedList()
+  // from every successful unlink path so a stale-but-successful refetch can't resurrect the removed row.
+  private suppressUnlinkedMl(uid: string): void {
+    const uids = this.unlinkedMlUids();
+    if (uids.has(uid)) return;
+    const next = new Set(uids);
+    next.add(uid);
+    this.unlinkedMlUids.set(next);
+  }
+
+  // Lifts the suppression set by suppressUnlinkedMl() above the moment the same uid is intentionally
+  // relinked (via the Add List picker), so the just-relinked row isn't hidden by a leftover suppression
+  // from an earlier unlink in the same session (#4899 review).
+  private clearUnlinkedMlSuppression(uid: string): void {
+    const uids = this.unlinkedMlUids();
+    if (!uids.has(uid)) return;
+    const next = new Set(uids);
+    next.delete(uid);
+    this.unlinkedMlUids.set(next);
+  }
+
   private openPickerDialog(committeeUid: string, projectUid: string, projectSlug: string | undefined): void {
     const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
 
@@ -818,6 +867,16 @@ export class CommitteeSettingsTabComponent {
             if (r.success && removedUids.has(r.uid)) {
               this.clearMlOverride(r.uid);
               this.pruneLastGoodAssociatedList(r.uid);
+              this.suppressUnlinkedMl(r.uid);
+            }
+          }
+          // An intentional relink (via this same picker) must not stay hidden behind a leftover
+          // suppression from an earlier unlink in this session (#4899 review — see
+          // clearUnlinkedMlSuppression's doc comment).
+          const addedUids = new Set(added);
+          for (const r of results) {
+            if (r.success && addedUids.has(r.uid)) {
+              this.clearUnlinkedMlSuppression(r.uid);
             }
           }
           // Replace (not just clear) the override for a successful direction change — leaving it
@@ -929,9 +988,19 @@ export class CommitteeSettingsTabComponent {
             // (another refreshMl$/committee() emission) would otherwise unlock sibling cards while
             // the replacement request is still in flight (#4899 review).
             tap((lists) => {
-              this.lastGoodAssociatedLists = { uid: c!.uid, lists };
               this.refreshingMl.set(false);
               this.mlRefreshFailed.set(false);
+              // Confirm absence: once this committee's refetch no longer contains a uid suppressed
+              // by suppressUnlinkedMl() after a successful unlink, stop suppressing it — see
+              // unlinkedMlUids' doc comment (#4899 review).
+              const suppressed = this.unlinkedMlUids();
+              if (suppressed.size > 0) {
+                const fetchedUids = new Set(lists.map((l) => l.uid));
+                const stillStale = new Set([...suppressed].filter((uid) => fetchedUids.has(uid)));
+                if (stillStale.size !== suppressed.size) {
+                  this.unlinkedMlUids.set(stillStale);
+                }
+              }
               // Drop any override whose value the real fetch now confirms — once the query index
               // catches up, the override would otherwise keep masking a further legitimate change
               // to the same list made outside this component (#4899 review).
@@ -949,10 +1018,27 @@ export class CommitteeSettingsTabComponent {
                 }
               }
             }),
+            // Drop any row still suppressed post-unlink (#4899 review — see unlinkedMlUids' doc
+            // comment). Applied after the tap above so a just-confirmed absence isn't re-filtered
+            // here, and stored as the last-good snapshot so a subsequent failed refresh's fallback
+            // doesn't resurrect a suppressed row either.
+            map((lists) => {
+              const suppressed = this.unlinkedMlUids();
+              const filtered = suppressed.size === 0 ? lists : lists.filter((ml) => !suppressed.has(ml.uid));
+              this.lastGoodAssociatedLists = { uid: c!.uid, lists: filtered };
+              return filtered;
+            }),
             catchError((error) => {
               console.error('Failed to refresh associated mailing lists', error);
               // Leave refreshingMl locked rather than unlocking sibling cards against this stale
               // fallback — it only clears again once a refresh actually succeeds (#4899 review).
+              // Set unconditionally (not just left alone) so a failure on a committee-input-driven
+              // refresh — which never flipped refreshingMl true to begin with, unlike the
+              // onSyncSettingsUpdated/retryMlRefresh/removeMailingList/saveMailingListAssociation
+              // paths — still locks the drawer's sync controls (which gate on refreshingMl, not
+              // mlRefreshFailed; see the template's lockedBySibling binding) instead of leaving them
+              // enabled against stale or empty data (#4899 review).
+              this.refreshingMl.set(true);
               // mlRefreshFailed surfaces a retry affordance instead of leaving the drawer locked
               // with no way out (#4899 review).
               this.mlRefreshFailed.set(true);

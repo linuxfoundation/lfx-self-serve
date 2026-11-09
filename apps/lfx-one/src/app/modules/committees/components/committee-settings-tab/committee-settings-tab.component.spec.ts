@@ -1152,9 +1152,14 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
 
     expect((component as any).projectMailingLists()).toEqual(PROJECT_LISTS);
 
-    component.onSyncSettingsUpdated(makeMl({ uid: 'proj-ml-1' }));
+    // onSyncSettingsUpdated only fires refreshMl$, not refreshProjectMl$ (see initProjectMailingLists'
+    // doc comment), so it would never exercise the mocked second GET here — use removeMailingList
+    // instead, which is one of the paths that actually fires refreshProjectMl$ (#4899 review).
+    const mlService = TestBed.inject(MailingListService) as unknown as { getMailingListsByProject: ReturnType<typeof vi.fn> };
+    component.removeMailingList(makeMl({ uid: 'other-ml' }));
     await fixture.whenStable();
 
+    expect(mlService.getMailingListsByProject).toHaveBeenCalledTimes(2);
     expect((component as any).projectMailingLists()).toEqual(PROJECT_LISTS);
   });
 
