@@ -202,6 +202,22 @@ describe('googleDisplayDemographicsRefusal', () => {
   });
 });
 
+describe('campaign-level age and gender exclusions with non-ASCII padding (upstream trims, no non-ASCII refusal)', () => {
+  it('refuses observing GENDER when every gender is excluded, one of them padded with a no-break space', () => {
+    expect(googleObservedDemographicsRefusal(['GENDER'], 'search', { genders: ['MALE', 'FEMALE', 'UNDETERMINED\u00a0'] })).toContain(
+      'Every gender is excluded'
+    );
+  });
+
+  it('refuses targeting a gender the campaign excludes with a no-break space after it', () => {
+    expect(googleDisplayDemographicsRefusal({ genders: ['FEMALE'] }, 'display', { genders: ['FEMALE\u00a0'] })).toContain('both target and exclude');
+  });
+
+  it('keeps the non-ASCII refusal for income exclusions, which upstream resolves through validateEnumExclusions', () => {
+    expect(googleDisplayDemographicsRefusal({ incomeRanges: ['UNDETERMINED'] }, 'display', { incomeRanges: ['UNDETERMINED\u00a0'] })).toBeNull();
+  });
+});
+
 describe('googleDisplayDemographicsCarried', () => {
   it('is true only when a list names a value', () => {
     expect(googleDisplayDemographicsCarried({ genders: ['MALE'] })).toBe(true);

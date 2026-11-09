@@ -20,6 +20,7 @@ import {
   googleUpperCodeList,
 } from '@lfx-one/shared/utils/campaign-google-criteria.utils';
 import {
+  GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS,
   googleAdGroupDemographicExclusionsRefusal,
   googleDisplayDemographicsCarried,
   googleDisplayDemographicsRefusal,
@@ -6071,7 +6072,7 @@ export class CampaignController {
         // The one object field asks for something when any of its four lists is asked for by the same
         // test — a malformed non-list included, named as the flat lists are.
         if (entry.field === 'displayDemographics' && value !== null && typeof value === 'object' && !Array.isArray(value)) {
-          return ['ageRanges', 'genders', 'incomeRanges', 'parentalStatuses'].some((key) => asked((value as Record<string, unknown>)[key]));
+          return GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS.some((key) => asked((value as Record<string, unknown>)[key]));
         }
         return asked(value);
       }) ?? null
@@ -8193,7 +8194,7 @@ export class CampaignController {
     if (googleDisplayDemographicsCarried(display) && (GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_TARGETING as readonly string[]).includes(channel)) {
       const lists = display as Record<string, unknown>;
       const targeting: Record<string, string[]> = {};
-      for (const key of ['ageRanges', 'genders', 'incomeRanges', 'parentalStatuses']) {
+      for (const key of GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS) {
         const list = googleUpperCodeList(lists[key]);
         if (list.length > 0) targeting[key] = list;
       }

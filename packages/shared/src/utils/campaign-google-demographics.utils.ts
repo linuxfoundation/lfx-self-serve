@@ -83,6 +83,17 @@ function resolvedSet(raw: unknown, allowed: Readonly<Record<string, string>>): S
 }
 
 /**
+ * The resolved enums of a campaign-level age-range or gender exclusion list, as upstream resolved
+ * them. `validateExcludedAgeRanges` and `validateExcludedGenders` only trim (Go's `TrimSpace`) and
+ * upper-case, with no non-ASCII refusal, unlike `validateEnumExclusions`. So `'UNDETERMINED\u00a0'`
+ * is excluded upstream and must count here.
+ */
+function resolvedCampaignExclusionSet(raw: unknown, allowed: Readonly<Record<string, string>>): Set<string> {
+  if (!isStringList(raw)) return new Set();
+  return new Set(raw.map((entry) => googleAdsTrimSpace(entry).toUpperCase()).flatMap((key) => (Object.hasOwn(allowed, key) ? [allowed[key]] : [])));
+}
+
+/**
  * Why upstream would refuse the ad-group income-range and parental-status exclusions
  * (linuxfoundation/lfx-v2-campaign-service#473), or `null`. `validateAdGroupDemographicExclusions`
  * branch by branch: the income channel fence, then parental status on Search (Google refuses it on
@@ -145,8 +156,8 @@ export function googleObservedDemographicsRefusal(raw: unknown, channel: unknown
     return `Google Ads accepts at most ${GOOGLE_ADS_MAX_OBSERVED_DEMOGRAPHIC_ENTRIES} observed demographic entries, and this campaign has ${raw.length}. Only ${GOOGLE_ADS_OBSERVED_DEMOGRAPHICS.join(', ')} are distinct; remove the repeats and create again.`;
   }
   const remaining: Record<string, { all: readonly string[]; excluded: Set<string>; noun: string }> = {
-    AGE_RANGE: { all: ALL_AGE_RANGES, excluded: resolvedSet(exclusions.ageRanges, GOOGLE_ADS_AGE_RANGE_MAP), noun: 'age range' },
-    GENDER: { all: ALL_GENDERS, excluded: resolvedSet(exclusions.genders, GENDER_MAP), noun: 'gender' },
+    AGE_RANGE: { all: ALL_AGE_RANGES, excluded: resolvedCampaignExclusionSet(exclusions.ageRanges, GOOGLE_ADS_AGE_RANGE_MAP), noun: 'age range' },
+    GENDER: { all: ALL_GENDERS, excluded: resolvedCampaignExclusionSet(exclusions.genders, GENDER_MAP), noun: 'gender' },
     INCOME_RANGE: { all: ALL_INCOME_RANGES, excluded: resolvedSet(exclusions.incomeRanges, GOOGLE_ADS_INCOME_RANGE_MAP), noun: 'income range' },
   };
   for (const entry of raw) {
@@ -194,6 +205,9 @@ const DISPLAY_TARGETING_LISTS = [
   },
 ] as const;
 
+/** The keys of a Display demographic targeting object (`displayDemographics`), in upstream's order. */
+export const GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS: readonly string[] = DISPLAY_TARGETING_LISTS.map(({ key }) => key);
+
 /** Whether a Display demographic targeting object names any value — the test upstream's flag gate and its preflight both use. */
 export function googleDisplayDemographicsCarried(raw: unknown): boolean {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return false;
@@ -227,7 +241,12 @@ export function googleDisplayDemographicsRefusal(raw: unknown, channel: unknown,
     if (refusal) return refusal;
   }
   for (const { key, exclusion, noun, allowed } of DISPLAY_TARGETING_LISTS) {
-    const excluded = resolvedSet(exclusions[exclusion], allowed);
+    // Ages and genders are campaign-level exclusions, resolved without the non-ASCII refusal;
+    // incomes and parental statuses go through `validateEnumExclusions`, which keeps it.
+    const excluded =
+      exclusion === 'ageRanges' || exclusion === 'genders'
+        ? resolvedCampaignExclusionSet(exclusions[exclusion], allowed)
+        : resolvedSet(exclusions[exclusion], allowed);
     const clash = ((obj[key] as string[] | undefined | null) ?? []).find((entry) => excluded.has(resolvedEnum(entry, allowed) ?? ''));
     if (clash !== undefined) {
       return `Google Ads cannot both target and exclude the ${noun} ${googleAdsEchoed(clash)}. Remove it from one of the two and create again.`;
