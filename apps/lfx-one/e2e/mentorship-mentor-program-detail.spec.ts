@@ -48,7 +48,7 @@ const PROGRAM: MentorshipMentorProgramDetail['program'] = {
   slug: 'test-program-alpha',
   name: 'Test Program Alpha',
   projectName: 'Test Project',
-  status: 'open',
+  status: 'accepting',
   stats: { mentees: 2, tasksToReview: 1, applicants: 3 },
 };
 
@@ -141,7 +141,7 @@ test.describe('Mentor program detail — loaded', () => {
   test('shows the program header and each tab with its count', async ({ page }) => {
     await expect(page.getByTestId('mentorship-mentor-program-detail-title')).toHaveText('Test Program Alpha', { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentorship-mentor-program-detail-season')).toHaveText('Test Project');
-    await expect(page.getByTestId('mentorship-mentor-program-detail-status')).toHaveText(MENTORSHIP_PROGRAM_STATUS_LABELS.open);
+    await expect(page.getByTestId('mentorship-mentor-program-detail-status')).toHaveText(MENTORSHIP_PROGRAM_STATUS_LABELS.accepting);
 
     await expect(page.getByTestId('mentorship-mentor-program-detail-tab-tasks')).toHaveText(/Tasks\s*1/);
     await expect(page.getByTestId('mentorship-mentor-program-detail-tab-mentees')).toHaveText(/Mentees\s*2/);

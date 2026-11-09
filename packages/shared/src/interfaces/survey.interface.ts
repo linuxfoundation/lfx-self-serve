@@ -156,6 +156,12 @@ export type SurveyTableRow = Survey & {
   editCommands: string[];
   /** Edit-link query params: the row's own project slug + committee scope */
   editQueryParams: Record<string, string>;
+  /** Display name of the primary committee, or 'Unknown' when the survey has none */
+  groupName: string;
+  /** Canonical group details commands for the primary committee; null when the survey has no committee uid */
+  groupCommands: string[] | null;
+  /** Group-link query params: the row's own project slug, so the group opens in its project context */
+  groupQueryParams: Record<string, string> | null;
 };
 
 /**
@@ -452,6 +458,16 @@ export interface RenderedSurveyEmail {
 }
 
 /**
+ * Email bodies sent to the survey service when creating a survey
+ */
+export interface SurveyEmailBodies {
+  /** HTML body with Go template placeholders */
+  html: string;
+  /** Plain-text body with Go template placeholders */
+  text: string;
+}
+
+/**
  * Data handed to the sent-email dialog
  */
 export interface SurveySentEmailDialogData {
@@ -606,6 +622,71 @@ export interface SurveyReviewFormValue {
   emailSubject: string;
   /** Email body content */
   emailBody: string;
+}
+
+/**
+ * SurveyMonkey survey template
+ * @description Upstream `GET /surveys/templates` item (lfx-v2-survey-service, proxied from ITX)
+ */
+export interface SurveyTemplate {
+  /** SurveyMonkey survey ID, sent as `survey_monkey_id` on create */
+  id: string;
+  /** Template title */
+  title: string;
+  /** SurveyMonkey nickname (may be empty) */
+  nickname?: string;
+  /** SurveyMonkey API link (may be empty) */
+  href?: string;
+}
+
+/**
+ * Survey template dropdown option
+ * @description A {@link SurveyTemplate} mapped for the NPS Survey Template select
+ */
+export interface SurveyTemplateOption {
+  /** Template title */
+  label: string;
+  /** SurveyMonkey survey ID */
+  value: string;
+}
+
+/**
+ * Survey wizard template-list state
+ * @description Load status plus title-sorted options for the template picker and review step
+ */
+export interface SurveyTemplatesState {
+  /** Fetch status */
+  status: 'loading' | 'ready' | 'error';
+  /** Options sorted by title; empty unless `status` is `ready` */
+  options: SurveyTemplateOption[];
+}
+
+/**
+ * Survey wizard template-list authorization target
+ * @description Query scope for `GET /api/surveys/templates`; upstream admits a project writer or a committee writer
+ */
+export interface SurveyTemplateAccessTarget {
+  /** Project UID (v2) the survey belongs to */
+  projectUid: string;
+  /** Committee UID (v2) for a committee writer, when the wizard has one */
+  committeeUid: string | null;
+}
+
+/**
+ * Survey email audience
+ * @description Which default email draft a template gets. ITX templates carry no category, so it is derived from the template title.
+ */
+export type SurveyEmailAudience = 'general' | 'maintainer';
+
+/**
+ * Survey email draft
+ * @description Default subject and body the wizard's Email Draft step starts from
+ */
+export interface SurveyEmailDraft {
+  /** Email subject line */
+  subject: string;
+  /** Plain-text email body with template variables */
+  body: string;
 }
 
 /**

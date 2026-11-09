@@ -11,7 +11,7 @@ import { MEETINGS_HOME_JOIN_URL, MEETINGS_HOME_RECORDING_URL, MEETINGS_HOME_SUMM
 import { gotoMeetingsHome, homeRow, homeRows, homeToast, MEETINGS_HOME_TEST_OPTIONS, rightColumn } from './helpers/meetings-home.helper';
 import { stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
 
-const UPCOMING_TITLES = [TITLES.oneOff, TITLES.series, TITLES.series, TITLES.other];
+const UPCOMING_TITLES = [TITLES.next, TITLES.oneOff, TITLES.series, TITLES.series, TITLES.other];
 
 const rowTitles = (page: Page) => homeRows(page).getByTestId('meetings-home-row-title');
 const search = (page: Page) => page.getByRole('searchbox', { name: 'Search meetings' });
@@ -49,10 +49,9 @@ test.describe('Meetings home page', () => {
       await expect(page.getByRole('tab', { name: 'Upcoming, 5 meetings' })).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByRole('tab', { name: 'Past, 2 meetings' })).toHaveAttribute('aria-selected', 'false');
 
-      await expect(page.getByTestId('meetings-home-day-group-label')).toHaveText(['Tomorrow', 'This week', 'This month', 'December']);
+      await expect(page.getByTestId('meetings-home-day-group-label')).toHaveText(['Today', 'Tomorrow', 'This week', 'This month', 'December']);
+      // The Next card's meeting stays in the list, so the tab count matches the rows.
       await expect(rowTitles(page)).toHaveText(UPCOMING_TITLES);
-      // The Next card's meeting is left out of the list.
-      await expect(homeRow(page, TITLES.next)).toHaveCount(0);
 
       const rail = rightColumn(page);
       await expect(rail.getByTestId('meetings-home-next-card-title')).toHaveText(TITLES.next);
@@ -85,6 +84,7 @@ test.describe('Meetings home page', () => {
       await search(page).fill('zzz-no-such-meeting');
       const noResults = page.getByTestId('meetings-home-no-results');
       await expect(noResults).toContainText('No results found');
+      await expect(noResults).toContainText('No meetings match your search');
       await page.getByTestId('meetings-home-no-results-reset').click();
       await expect(search(page)).toHaveValue('');
       await expect(rowTitles(page)).toHaveText(UPCOMING_TITLES);
@@ -131,7 +131,7 @@ test.describe('Meetings home page', () => {
       const row = homeRow(page, TITLES.oneOff);
 
       await row.getByTestId('meetings-home-rsvp-accepted').click();
-      await expect(homeToast(page, 'Response saved: Going')).toBeVisible();
+      await expect(homeToast(page, 'Meeting RSVP set to “Going”')).toBeVisible();
       await expect(row.getByTestId('meetings-home-rsvp-status')).toContainText('Going');
       expect(mocks.rsvpPosts).toEqual([expect.objectContaining({ response: 'accepted', scope: 'all' })]);
       await expect(page.getByTestId('meetings-home-pending-rsvps-count')).toHaveText('2');
@@ -160,28 +160,30 @@ test.describe('Meetings home page', () => {
 
       await homeRow(page, TITLES.oneOff).getByTestId('meetings-home-row-actions-trigger').click();
       await page.getByRole('menuitem', { name: 'Copy Link' }).click();
-      await expect(homeToast(page, 'Meeting Link Copied')).toBeVisible();
+      await expect(homeToast(page, 'Meeting link copied to clipboard')).toBeVisible();
     });
   });
 
   test.describe('Empty states', () => {
-    test('no upcoming meetings shows the empty state without Create for a non-writer', async ({ page }) => {
+    test('no upcoming meetings shows the empty state, with Create Meeting only in the header', async ({ page }) => {
       await gotoMeetingsHome(page, { emptyUpcoming: true });
 
-      await expect(page.getByTestId('meetings-home-empty-upcoming')).toContainText('No upcoming meetings');
+      const empty = page.getByTestId('meetings-home-empty-upcoming');
+      await expect(empty).toContainText('No upcoming meetings');
+      await expect(empty.getByRole('button')).toHaveCount(0);
       await expect(rightColumn(page).getByTestId('meetings-home-next-card-empty')).toContainText('Your calendar is clear');
       await expect(search(page)).toHaveCount(0);
-      await expect(page.getByTestId('meetings-home-empty-create')).toHaveCount(0);
-      await expect(page.getByTestId('meetings-home-create')).toHaveCount(0);
+      await expect(page.getByTestId('meetings-home-create')).toContainText('Create Meeting');
     });
 
-    test('no upcoming meetings offers Create Meeting to a meeting writer', async ({ page }) => {
-      await gotoMeetingsHome(page, { emptyUpcoming: true, canWrite: true });
+    test('Create Meeting opens the target picker, which says so when the viewer can create nowhere', async ({ page }) => {
+      await page.route('**/api/create-picker/**', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: [], committees: [] }) })
+      );
+      await gotoMeetingsHome(page);
 
-      await expect(page.getByTestId('meetings-home-empty-upcoming')).toBeVisible();
-      await expect(page.getByTestId('meetings-home-empty-create')).toContainText('Create Meeting');
-      // The empty state's button replaces the header one.
-      await expect(page.getByTestId('meetings-home-create')).toHaveCount(0);
+      await page.getByTestId('meetings-home-create').click();
+      await expect(page.getByTestId('create-target-empty-state')).toHaveText('Nothing here yet — try searching for a project or group.');
     });
   });
 
@@ -223,7 +225,7 @@ test.describe('Meetings home page', () => {
       // The stub feed still lists the meeting, so the row must stay gone after the refetch.
       const refetch = page.waitForResponse('**/api/user/meetings*');
       await dialog.getByRole('button', { name: 'Delete Meeting' }).click();
-      await expect(homeToast(page, 'Meeting deleted successfully.')).toBeVisible();
+      await expect(homeToast(page, 'Meeting deleted')).toBeVisible();
       await refetch;
       await expect(homeRow(page, TITLES.oneOff)).toHaveCount(0);
       expect(mocks.deletes).toEqual(['home-e2e-one-off']);
@@ -257,7 +259,7 @@ test.describe('Meetings home page', () => {
       const refetch = page.waitForResponse('**/api/user/meetings*');
       await confirm.getByRole('button', { name: 'Cancel Occurrence' }).click();
 
-      await expect(homeToast(page, 'Occurrence cancelled')).toBeVisible();
+      await expect(homeToast(page, 'Meeting occurrence cancelled')).toBeVisible();
       await refetch;
       await expect(seriesRowOn(page, '13')).toHaveCount(0);
       await expect(seriesRowOn(page, '6')).toHaveCount(1);
@@ -272,10 +274,10 @@ test.describe('Meetings home page', () => {
 
       await openRowAction(page, homeRow(page, TITLES.oneOff), 'Remove Myself');
       const dialog = page.getByRole('alertdialog', { name: 'Remove Yourself' });
-      await expect(dialog).toContainText(`Remove yourself from "${TITLES.oneOff}"?`);
+      await expect(dialog).toContainText(`Remove yourself from “${TITLES.oneOff}”?`);
       await dialog.getByRole('button', { name: 'Remove Me' }).click();
 
-      await expect(homeToast(page, 'You have been removed from this meeting.')).toBeVisible();
+      await expect(homeToast(page, 'Removed from meeting')).toBeVisible();
       await expect(homeRow(page, TITLES.oneOff)).toHaveCount(0);
       await expect(page.getByTestId('meetings-home-pending-rsvps-count')).toHaveText('2');
       expect(mocks.selfRemovals).toEqual(['home-e2e-one-off']);
@@ -283,24 +285,26 @@ test.describe('Meetings home page', () => {
   });
 
   test.describe('Pending RSVPs', () => {
-    test('answering from the popover drops each date until the button hides', async ({ page }) => {
+    test('answering from the drawer drops each date until the drawer closes and the button hides', async ({ page }) => {
       const mocks = await gotoMeetingsHome(page);
 
       await page.getByTestId('meetings-home-pending-rsvps-button').click();
-      const popover = page.getByRole('dialog', { name: 'Pending RSVPs' });
-      const rows = popover.getByTestId('meetings-home-pending-rsvps-row');
+      const drawer = page.getByRole('dialog', { name: 'Pending RSVPs' });
+      const rows = drawer.getByTestId('meetings-home-pending-rsvps-row');
       await expect(rows).toHaveCount(3);
+      await expect(drawer.getByTestId('ui-drawer-subtitle')).toHaveText('3 waiting for a response');
 
       await rows.filter({ hasText: TITLES.oneOff }).getByTestId('meetings-home-rsvp-accepted').click();
       await expect(rows).toHaveCount(2);
       await expect(page.getByTestId('meetings-home-pending-rsvps-count')).toHaveText('2');
+      await expect(drawer.getByTestId('ui-drawer-subtitle')).toHaveText('2 waiting for a response');
 
       await rows.filter({ hasText: 'Nov 6' }).getByTestId('meetings-home-rsvp-declined').click();
       const scope = page.getByRole('dialog', { name: 'RSVP to recurring meeting' });
       await scope.getByRole('radio', { name: 'All occurrences' }).check();
       await scope.getByTestId('meetings-home-rsvp-scope-ok').click();
 
-      await expect(popover).toHaveCount(0);
+      await expect(drawer).toHaveCount(0);
       await expect(page.getByTestId('meetings-home-pending-rsvps-button')).toHaveCount(0);
       expect(mocks.rsvpPosts).toEqual([
         expect.objectContaining({ response: 'accepted', scope: 'all' }),
@@ -310,35 +314,41 @@ test.describe('Meetings home page', () => {
   });
 
   test.describe('Recording and AI Summary', () => {
-    test('the Last meeting card opens the recording and summary dialogs', async ({ page }) => {
+    test('the Last meeting card opens the recording in a new tab, copies its link and opens the summary dialog', async ({ page }) => {
+      await page.context().route('https://zoom.example.test/**', (route) => route.fulfill({ body: '' }));
       await gotoMeetingsHome(page);
       const rail = rightColumn(page);
+      const recording = rail.getByTestId('meetings-home-last-card-recording');
 
-      await rail.getByTestId('meetings-home-last-card-recording').click();
-      const recording = page.getByRole('dialog', { name: 'Meeting Recording' });
-      await expect(recording).toContainText(MEETINGS_HOME_RECORDING_URL);
-      await recording.getByRole('button', { name: 'Close' }).click();
-      await expect(recording).toBeHidden();
+      const popup = page.waitForEvent('popup');
+      await recording.getByRole('button', { name: 'Recording', exact: true }).click();
+      expect((await popup).url()).toContain(MEETINGS_HOME_RECORDING_URL);
+      await recording.getByRole('button', { name: 'Copy recording link' }).click();
+      await expect(homeToast(page, 'Recording link copied to clipboard')).toBeVisible();
 
       await rail.getByTestId('meetings-home-last-card-summary').click();
-      const summary = page.getByRole('dialog', { name: 'Meeting Summary' });
+      const summary = page.getByRole('dialog', { name: 'AI Summary' });
       await expect(summary).toContainText(MEETINGS_HOME_SUMMARY_TEXT);
     });
 
     test('a past row offers Recording and AI Summary only when it has them', async ({ page }) => {
+      // The split button needs a centre column wider than 900px.
+      await page.setViewportSize({ width: 1920, height: 900 });
       await gotoMeetingsHome(page, { query: '?time=past' });
 
       await expect(homeRow(page, TITLES.pastOlder)).toBeVisible();
       await expect(homeRow(page, TITLES.pastOlder).getByTestId('meetings-home-row-artifacts')).toHaveCount(0);
       const row = homeRow(page, TITLES.pastRecent);
 
+      await page.context().route('https://zoom.example.test/**', (route) => route.fulfill({ body: '' }));
+      const popup = page.waitForEvent('popup');
       await row.getByRole('button', { name: 'Recording', exact: true }).click();
-      const recording = page.getByRole('dialog', { name: 'Meeting Recording' });
-      await expect(recording).toContainText(MEETINGS_HOME_RECORDING_URL);
-      await recording.getByRole('button', { name: 'Close' }).click();
+      expect((await popup).url()).toContain(MEETINGS_HOME_RECORDING_URL);
+      await row.getByRole('button', { name: 'Copy recording link' }).click();
+      await expect(homeToast(page, 'Recording link copied to clipboard')).toBeVisible();
 
       await row.getByRole('button', { name: 'AI Summary', exact: true }).click();
-      await expect(page.getByRole('dialog', { name: 'Meeting Summary' })).toContainText(MEETINGS_HOME_SUMMARY_TEXT);
+      await expect(page.getByRole('dialog', { name: 'AI Summary' })).toContainText(MEETINGS_HOME_SUMMARY_TEXT);
     });
   });
 
@@ -383,20 +393,19 @@ test.describe('Meetings home page', () => {
 
       await panel.getByTestId('meetings-home-filters-apply').click();
       await expect(page.getByTestId('meetings-home-filters-chips')).toContainText('Foundation: Alpha Foundation');
-      await expect(rowTitles(page)).toHaveText([TITLES.oneOff, TITLES.other]);
+      await expect(rowTitles(page)).toHaveText([TITLES.next, TITLES.oneOff, TITLES.other]);
     });
   });
 
   test.describe('Paging', () => {
-    test('a list longer than one page loads the rest on scroll and says so', async ({ page }) => {
+    test('a list longer than one page loads the rest on scroll', async ({ page }) => {
       await gotoMeetingsHome(page, { extraCount: 20 });
 
       await expect(homeRows(page)).toHaveCount(20);
-      await expect(page.getByTestId('meetings-home-all-loaded')).toHaveCount(0);
 
       await homeRows(page).last().scrollIntoViewIfNeeded();
-      await expect(homeRows(page)).toHaveCount(24);
-      await expect(page.getByTestId('meetings-home-all-loaded')).toHaveText('All 24 meetings loaded');
+      await expect(homeRows(page)).toHaveCount(25);
+      await expect(page.getByRole('tab', { name: 'Upcoming, 25 meetings' })).toBeVisible();
     });
   });
 });

@@ -100,6 +100,8 @@ import {
   HealthMetricsEventsGeographyQuery,
   HealthMetricsEventsForecastCurve,
   HealthMetricsEventsForecastCurveQuery,
+  HealthMetricsEventsSnapshot,
+  HealthMetricsEventsSnapshotQuery,
   HealthMetricsEventsForecastQuery,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastQuery,
@@ -113,15 +115,13 @@ import {
   HealthMetricsEventsSpeakersQuery,
   HealthMetricsEventsSponsorship,
   HealthMetricsEventsSponsorshipQuery,
-  HealthMetricsMembersBridge,
-  HealthMetricsMembersBridgeQuery,
   HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskQuery,
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryQuery,
   HealthMetricsMembersDirectoryTiers,
-  HealthMetricsMembersMovements,
-  HealthMetricsMembersMovementsQuery,
+  HealthMetricsMembersGrowth,
+  HealthMetricsMembersGrowthQuery,
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardAttendanceQuery,
   HealthMetricsMembersChurn,
@@ -1198,6 +1198,19 @@ export class AnalyticsService {
     );
   }
 
+  /** One event's registration weeks and sponsorship packages, for the event dialog's Snapshot tab. */
+  public getEventsSnapshot(query: HealthMetricsEventsSnapshotQuery): Observable<HealthMetricsEventsSnapshot> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug, eventId: query.eventId };
+
+    // Errors propagate so the tab says it failed instead of showing every change as none.
+    return this.http.get<HealthMetricsEventsSnapshot>('/api/analytics/events-snapshot', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-snapshot failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
   /** Every closed event in the four periods, with each period's header totals, for the Events tab. */
   public getEventsPast(query: HealthMetricsEventsPastQuery): Observable<HealthMetricsEventsPast> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
@@ -1307,6 +1320,18 @@ export class AnalyticsService {
     );
   }
 
+  public getMembersGrowth(query: HealthMetricsMembersGrowthQuery): Observable<HealthMetricsMembersGrowth> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate so the section shows its error state, not a foundation with no new members.
+    return this.http.get<HealthMetricsMembersGrowth>('/api/analytics/members-growth', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-growth failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
   public getMembersTiers(query: HealthMetricsMembersTiersQuery): Observable<HealthMetricsMembersTiers> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
 
@@ -1314,36 +1339,6 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsMembersTiers>('/api/analytics/members-tiers', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] members-tiers failed', { query, error });
-        return throwError(() => error);
-      })
-    );
-  }
-
-  public getMembersBridge(query: HealthMetricsMembersBridgeQuery): Observable<HealthMetricsMembersBridge> {
-    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
-
-    // Errors propagate so the section shows its error state, not a year with no movement.
-    return this.http.get<HealthMetricsMembersBridge>('/api/analytics/members-bridge', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] members-bridge failed', { query, error });
-        return throwError(() => error);
-      })
-    );
-  }
-
-  public getMembersMovements(query: HealthMetricsMembersMovementsQuery): Observable<HealthMetricsMembersMovements> {
-    const params: Record<string, string> = {
-      foundationSlug: query.foundationSlug,
-      year: String(query.year),
-      movementType: query.movementType,
-      offset: String(query.offset),
-      pageSize: String(query.pageSize),
-    };
-
-    // Errors propagate so the drawer shows its error state, not a bar with no organizations behind it.
-    return this.http.get<HealthMetricsMembersMovements>('/api/analytics/members-movements', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] members-movements failed', { query, error });
         return throwError(() => error);
       })
     );

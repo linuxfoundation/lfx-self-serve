@@ -196,6 +196,18 @@ describe('AeoGeoService', () => {
     expect((await service.getResult(req, 'session-a', 'project-1')).status).toBe('ready');
     expect(mocks.persistGeneration).toHaveBeenCalledWith(req, expect.anything(), envelope, 'project-1', 'session-a');
   });
+  it('accepts an envelope carrying the Plan-2 quality ledger and reads the same report from it', async () => {
+    // aeo-geo ≥ 2.1.0 adds a top-level `quality` ledger; its shape is the agent's and nothing here reads it.
+    const quality = { reads: [{ key: 'home', kind: 'page', required: true, outcome: 'complete', pages_read: 1, bytes: 51234, truncated: false }] };
+    const service = new AeoGeoService();
+    mocks.getRawEventPayloads.mockResolvedValue([aeoGeoFinalizeFixture(report())]);
+    const plain = await service.getResult(req, 'session-a', 'project-1');
+    mocks.getRawEventPayloads.mockResolvedValue([aeoGeoFinalizeFixture({ ...report(), quality })]);
+    const withLedger = await service.getResult(req, 'session-a', 'project-1');
+    expect(plain.status).toBe('ready');
+    expect(withLedger).toEqual(plain);
+    expect(mocks.persistGeneration).toHaveBeenLastCalledWith(req, expect.anything(), { ...report(), quality }, 'project-1', 'session-a');
+  });
   it('retries persistence on the next poll, reporting success only when the revision write succeeds', async () => {
     mocks.getRawEventPayloads.mockResolvedValue([aeoGeoFinalizeFixture(report())]);
     const receipt = { s3_key: 'aeo-geo/project-1/report.md', project: 'project-1', version: 1, content_sha256: report().content_sha256 };

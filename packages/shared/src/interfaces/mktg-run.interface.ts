@@ -376,6 +376,8 @@ export interface MktgIntakeLogoFilesConfig {
   maxFiles: number;
   /** Largest file, in characters once read (SVG text, or base64 bytes). */
   maxFileChars: number;
+  /** Largest ZIP, in bytes as picked: a package is refused before any read. */
+  maxZipBytes: number;
   /** All files together, in characters — one request body carries them. */
   maxPayloadChars: number;
   /** Accepted file extensions, lowercase with the dot. */
@@ -892,9 +894,12 @@ export type MktgAssetViewKind = 'messaging-framework' | 'boilerplates' | 'faq';
 export interface MktgFrameworkAsset {
   kind: 'messaging-framework';
   content: FoundationMessageContent;
-  report: FoundationMessageReport;
+  /** The run's report from the revision's sidecar; null when the sidecar has none (a hand-copied record): nothing is made up in its place. */
+  report: FoundationMessageReport | null;
   checks: FoundationMessageChecks;
   mode: FoundationMessageMode;
+  /** The day the run read its sources (`inputs_record.date_read`, YYYY-MM-DD); null when the record lacks a valid one. The print's "figures as of". */
+  dateRead?: string | null;
 }
 
 /**

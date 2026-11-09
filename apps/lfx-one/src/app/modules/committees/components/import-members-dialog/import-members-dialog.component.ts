@@ -12,7 +12,7 @@ import { FileUploadComponent } from '@components/file-upload/file-upload.compone
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
-  COMMITTEE_INVITE_CONCURRENCY,
+  MEMBER_IMPORT_CONCURRENCY,
   MEMBER_IMPORT_FATAL_HTTP_STATUSES,
   MEMBER_IMPORT_MAX_FILE_BYTES,
   MEMBER_IMPORT_MAX_RECORDS,
@@ -49,7 +49,7 @@ import { catchError, from, map, mergeMap, Observable, of, switchMap } from 'rxjs
  *
  * The file is read and validated locally into a read-only preview; nothing is written until the
  * user confirms. Confirmed rows are created one POST per member through the same direct-add route
- * as Add Member (bounded by COMMITTEE_INVITE_CONCURRENCY), so the per-member server checks still
+ * as Add Member (at most MEMBER_IMPORT_CONCURRENCY at a time), so the per-member server checks still
  * apply. Each row keeps its own outcome; Retry resubmits failed rows only, and Close returns the
  * cumulative added/conflict counts so the roster refreshes. Never resolves organizations, creates
  * invitations, or changes permissions.
@@ -263,7 +263,7 @@ export class ImportMembersDialogComponent {
   }
 
   /**
-   * Creates the given rows, at most COMMITTEE_INVITE_CONCURRENCY at a time, recording each outcome as
+   * Creates the given rows, at most MEMBER_IMPORT_CONCURRENCY at a time, recording each outcome as
    * it settles. mergeMap calls the project function only when a slot frees, so a fatal response stops
    * every not-yet-started row; in-flight requests are left to settle rather than cancelled, because a
    * cancelled request may still have been committed upstream.
@@ -302,7 +302,7 @@ export class ImportMembersDialogComponent {
               return of({ rowNumber: row.rowNumber, status: 'failed' as const, reason });
             })
           );
-        }, COMMITTEE_INVITE_CONCURRENCY),
+        }, MEMBER_IMPORT_CONCURRENCY),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({

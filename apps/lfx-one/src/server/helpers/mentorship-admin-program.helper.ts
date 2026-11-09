@@ -3,9 +3,11 @@
 
 import { MENTORSHIP_PROGRAM_LOGO_HINT_STATUSES } from '@lfx-one/shared/constants';
 import {
+  MentorshipMentorProgramStatus,
   MentorshipProgram,
   MentorshipProgramMentor,
   MentorshipProgramStatus,
+  MentorshipProgramTermDates,
   MentorshipProgramTermRow,
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamMemberManagementRow,
@@ -47,20 +49,83 @@ export const mapMentorshipAdminProgram = (item: MentorshipUpstreamAdministeredPr
   };
 };
 
+/** The UTC calendar day (`YYYY-MM-DD`) of an upstream timestamp, or `undefined` when it is missing or not a date. */
+const toUtcDay = (value: string | undefined): string | undefined => {
+  const time = toTime(value);
+  return time === undefined ? undefined : new Date(time).toISOString().slice(0, 10);
+};
+
+/** An upstream timestamp in ms, or `undefined` when it is missing or not a date. */
+const toTime = (value: string | undefined): number | undefined => {
+  const time = value ? Date.parse(value) : Number.NaN;
+  return Number.isNaN(time) ? undefined : time;
+};
+
+/**
+ * A published program's status from its terms, by the rule upstream's `admin_status` uses (lfx-mentorship
+ * `sqlPublishedProgramTermStatus`). Deleted terms are ignored and the first match wins:
+ * - `completed`: a closed term and no open one
+ * - `accepting`: an open term whose application window holds today, by UTC calendar day with both days included
+ * - `in-progress`: an open term whose start and end hold now
+ * - `upcoming`: an open term with an application end whose application start is after today, or no open term at all
+ * - `in-progress`: any other open term
+ */
+export const mentorshipPublishedProgramStatus = (terms: readonly MentorshipProgramTermDates[], now: Date): MentorshipMentorProgramStatus => {
+  const open = terms.filter((term) => term.status === 'open');
+  if (open.length === 0) {
+    return terms.some((term) => term.status === 'closed') ? 'completed' : 'upcoming';
+  }
+
+  const today = now.toISOString().slice(0, 10);
+  const nowMs = now.getTime();
+  const accepting = open.some((term) => {
+    const start = toUtcDay(term.application_start_date);
+    const end = toUtcDay(term.application_end_date);
+    return start !== undefined && end !== undefined && start <= today && today <= end;
+  });
+  if (accepting) return 'accepting';
+
+  const running = open.some((term) => {
+    const start = toTime(term.start_date_time);
+    const end = toTime(term.end_date_time);
+    return start !== undefined && end !== undefined && start <= nowMs && nowMs <= end;
+  });
+  if (running) return 'in-progress';
+
+  const comingSoon = open.some((term) => {
+    const start = toUtcDay(term.application_start_date);
+    return !!term.application_end_date && start !== undefined && start > today;
+  });
+  return comingSoon ? 'upcoming' : 'in-progress';
+};
+
+/** A published program's status from the management summary alone, for a page whose terms read failed. */
+const publishedStatusFromSummary = (
+  summary?: Pick<MentorshipUpstreamProgramManagementSummary, 'has_open_term' | 'has_closed_term'>
+): MentorshipProgramStatus => {
+  if (summary && !summary.has_open_term) {
+    return summary.has_closed_term ? 'completed' : 'upcoming';
+  }
+  return 'in-progress';
+};
+
 /**
  * Builds the page header from the upstream program header. The header route has no `admin_status`, so the status is
  * grouped here the way upstream groups it: a program that is not published reads from its own status, and a published
- * one is `completed` when it has only closed terms, else `open`. Without the management summary a published program
- * reads `open`. A status this does not know reads as `pending-review` with `unknownStatus` set, so the caller can log it.
+ * one reads from its terms (`mentorshipPublishedProgramStatus`). When the terms could not be read, the management
+ * summary settles `completed` (only closed terms) and `upcoming` (no terms), and anything else reads `in-progress`.
+ * A status this does not know reads as `pending-review` with `unknownStatus` set, so the caller can log it.
  */
 export const mapMentorshipAdminHeaderProgram = (
   header: MentorshipUpstreamProgramHeader,
-  summary?: Pick<MentorshipUpstreamProgramManagementSummary, 'has_open_term' | 'has_closed_term'>
+  summary?: Pick<MentorshipUpstreamProgramManagementSummary, 'has_open_term' | 'has_closed_term'>,
+  terms?: readonly MentorshipProgramTermDates[],
+  now: Date = new Date()
 ): { program: MentorshipProgram; unknownStatus: boolean } => {
   const { program: item } = header;
   let status: MentorshipProgramStatus | undefined;
   if (item.status === 'published') {
-    status = summary?.has_closed_term && !summary.has_open_term ? 'completed' : 'open';
+    status = terms ? mentorshipPublishedProgramStatus(terms, now) : publishedStatusFromSummary(summary);
   } else if (Object.hasOwn(MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS, item.status)) {
     status = MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS[item.status];
   }

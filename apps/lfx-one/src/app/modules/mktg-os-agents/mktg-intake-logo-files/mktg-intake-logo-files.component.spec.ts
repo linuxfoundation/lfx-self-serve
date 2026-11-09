@@ -162,6 +162,35 @@ describe('MktgIntakeLogoFilesComponent', () => {
     expect(component.busy()).toBe(true);
   });
 
+  it('refuses a ZIP over 150 KB at pick time in the footnote’s words, never reading it, and reads one at the cap', async () => {
+    // The live caps: the ZIP rule is the footnote's 150 KB, under the generic per-file cap, so only a package meets it.
+    fixture.componentRef.setInput('config', liveConfig);
+    await fixture.whenStable();
+    useHandReader();
+    component['onFilesSelected'](fileEvent(new File([new Uint8Array(liveConfig.maxZipBytes + 1)], 'package.zip')));
+    expect(component['errorText']()).toBe(
+      'package.zip is 150 KB. Keep a ZIP small: SVG files only, under 150 KB; the full logo package linked on a brand page is usually too large to send.'
+    );
+    fixture.detectChanges();
+    expect(query('mktg-intake-logo-files-error')?.textContent).toContain('Keep a ZIP small: SVG files only, under 150 KB');
+    expect(HandFileReader.instances).toHaveLength(0);
+    expect(names()).toEqual([]);
+
+    component['onFilesSelected'](fileEvent(new File([new Uint8Array(liveConfig.maxZipBytes)], 'edge.zip')));
+    expect(HandFileReader.instances).toHaveLength(1);
+    expect(HandFileReader.instances[0].read).toBe('dataUrl');
+    HandFileReader.instances[0].finish(`data:application/zip;base64,${'A'.repeat(204_800)}`);
+    await settled();
+    expect(names()).toEqual(['edge.zip']);
+    expect(component['errorText']()).toBe('');
+
+    // The rule is for a package only: an SVG and a PNG over 150 KB are read as before.
+    component['onFilesSelected'](fileEvent(new File(['x'.repeat(liveConfig.maxZipBytes + 1)], 'big.svg')));
+    component['onFilesSelected'](fileEvent(new File([new Uint8Array(liveConfig.maxZipBytes + 1)], 'big.png')));
+    expect(component['errorText']()).toBe('');
+    expect(HandFileReader.instances).toHaveLength(3);
+  });
+
   it('counts the reads in flight against the payload cap, so one pick of several large files is not all read', () => {
     useHandReader();
     // 24 bytes are 32 base64 characters each: under the per-file cap of 40, but two of them pass the payload cap of 60.

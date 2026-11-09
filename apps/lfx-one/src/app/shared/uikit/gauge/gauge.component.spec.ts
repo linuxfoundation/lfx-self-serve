@@ -146,4 +146,58 @@ describe('UiGaugeComponent', () => {
     expect(arc()?.getAttribute('class')).toContain('stroke-ui-accent-500');
     expect(value()).toBeNull();
   });
+
+  it('draws a thin ring with square ends', async () => {
+    await set('weight', 'thin');
+
+    expect(arc()?.getAttribute('stroke-width')).toBe('8');
+    expect(arc()?.getAttribute('stroke-linecap')).toBe('butt');
+    expect(arc()?.getAttribute('r')).toBe('45');
+    expect(host.querySelector('circle')?.getAttribute('stroke-width')).toBe('8');
+  });
+
+  it('keeps the default ring at 10 units with round ends', () => {
+    expect(arc()?.getAttribute('stroke-width')).toBe('10');
+    expect(arc()?.getAttribute('stroke-linecap')).toBe('round');
+  });
+
+  it('takes a size in px for a cell the scale lacks, without the number below 64px', async () => {
+    await set('size', 52);
+
+    expect(host.style.width).toBe('52px');
+    expect(host.style.height).toBe('52px');
+    expect(value()).toBeNull();
+  });
+
+  it('lets the caller set the level colour, whatever the value', async () => {
+    await set('level', 'low');
+
+    expect(arc()?.getAttribute('class')).toContain('stroke-ui-danger-600');
+
+    await set('level', 'mid');
+
+    expect(arc()?.getAttribute('class')).toContain('stroke-ui-warning-500');
+  });
+
+  it('draws an outlined ring with no arc, no number and no value attributes when empty', async () => {
+    await set('weight', 'thin');
+    await set('empty', true);
+
+    const empty = host.querySelector('[data-testid="ui-gauge-empty"]');
+    expect(arc()).toBeNull();
+    expect(empty?.getAttribute('stroke-width')).toBe('5');
+    expect(empty?.getAttribute('class')).toContain('stroke-ui-background-100');
+    expect(value()).toBeNull();
+    expect(host.hasAttribute('aria-valuenow')).toBe(false);
+    expect(host.hasAttribute('aria-valuetext')).toBe(false);
+    expect(host.getAttribute('aria-label')).toBe('Health score');
+    // Not a progressbar, which without a value reads as still loading.
+    expect(host.getAttribute('role')).toBe('img');
+  });
+
+  it('falls back to 64px for a px size that cannot draw a ring', async () => {
+    await set('size', 0);
+
+    expect(host.style.width).toBe('64px');
+  });
 });

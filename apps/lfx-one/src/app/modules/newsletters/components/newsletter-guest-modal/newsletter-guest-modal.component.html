@@ -1,0 +1,126 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!--
+  Deliberately not lfx-ui-modal / UiModalService: this modal is the page itself for a signed-out reader —
+  it cannot be dismissed (no close, no Escape, no backdrop click), it blurs the page behind it, and it
+  renders as part of the route template rather than a CDK overlay opened imperatively. Focus is trapped
+  with cdkTrapFocus and labelled by the heading, as the uikit modal does; the trap and aria-modal are released
+  while Transcend's consent manager (outside this dialog) is open from Cookie settings.
+-->
+<div class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-gray-900/20 px-4 py-8 backdrop-blur-sm" data-testid="newsletter-guest-modal">
+  <div
+    role="dialog"
+    [attr.aria-modal]="preferencesOpen() ? null : 'true'"
+    [attr.aria-labelledby]="labelledBy"
+    [cdkTrapFocus]="!preferencesOpen()"
+    [cdkTrapFocusAutoCapture]="true"
+    (focusin)="onDialogFocusIn()"
+    class="my-auto flex w-full max-w-xl flex-col items-center gap-6 rounded-xl bg-white px-6 py-10 text-center shadow-xl sm:px-14 sm:py-12">
+    @if (foundation()?.logo_url; as logoUrl) {
+      <img
+        [src]="logoUrl"
+        [alt]="foundationName() + ' logo'"
+        class="h-16 w-16 rounded-full border border-gray-200 bg-white object-contain p-1.5"
+        data-testid="newsletter-guest-modal-logo" />
+    } @else {
+      <div
+        class="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-2xl font-semibold text-blue-600"
+        aria-hidden="true"
+        data-testid="newsletter-guest-modal-monogram">
+        {{ monogram() }}
+      </div>
+    }
+
+    <h2 [id]="labelledBy" class="font-display text-2xl text-gray-900 sm:text-3xl" data-testid="newsletter-guest-modal-heading">
+      Be the first to hear about new stories from {{ foundationName() }}
+    </h2>
+
+    <div class="flex max-w-md flex-col gap-2">
+      <p class="text-base text-gray-600" data-testid="newsletter-guest-modal-description">{{ description() }}</p>
+      @if (mode() === 'shared') {
+        <p class="text-sm text-gray-500" data-testid="newsletter-guest-modal-confirm-copy">
+          After you continue, we'll email you a confirmation link. Confirm it, and future issues will arrive in your inbox automatically.
+        </p>
+      }
+    </div>
+
+    <!-- The field's own error is not announced; this live region tells screen-reader users when Continue fails. -->
+    <p class="sr-only" role="alert" aria-live="assertive" data-testid="newsletter-guest-modal-live">{{ errorMessage() }}</p>
+
+    <form class="flex w-full max-w-sm flex-col items-stretch gap-5 text-left" (submit)="onSubmit($event)" novalidate data-testid="newsletter-guest-modal-form">
+      <lfx-ui-input
+        label="Your email"
+        type="email"
+        autocomplete="email"
+        placeholder="Enter your work email address"
+        [(value)]="emailValue"
+        [disabled]="mode() === 'invite'"
+        [error]="errorMessage()"
+        data-testid="newsletter-guest-modal-email" />
+      @if (!blocked()) {
+        <div class="flex justify-center">
+          <lfx-ui-button type="submit" size="large" [loading]="loading()" [disabled]="!canContinue()" data-testid="newsletter-guest-modal-continue">
+            Continue
+          </lfx-ui-button>
+        </div>
+      }
+    </form>
+
+    @if (!blocked()) {
+      <p class="max-w-sm text-xs text-gray-500" data-testid="newsletter-guest-modal-consent">
+        This site uses cookies. By continuing, you agree to the use of your email in accordance with our
+        <a
+          [href]="legalLinks.privacyPolicy"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="underline underline-offset-2 hover:text-blue-600"
+          data-testid="newsletter-guest-modal-privacy"
+          >Privacy Policy</a
+        >
+        and
+        <a
+          [href]="legalLinks.termsOfUse"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="underline underline-offset-2 hover:text-blue-600"
+          data-testid="newsletter-guest-modal-terms"
+          >Terms of Use</a
+        >.
+        <button
+          type="button"
+          class="underline underline-offset-2 hover:text-blue-600"
+          (click)="onCookieSettings()"
+          data-testid="newsletter-guest-modal-cookie-settings">
+          Cookie settings
+        </button>
+      </p>
+    } @else {
+      <!-- Nothing to agree to without Continue, but the page may hide Transcend's prompt, so cookie preferences stay reachable. -->
+      <p class="flex flex-wrap justify-center gap-x-3 text-xs text-gray-500" data-testid="newsletter-guest-modal-legal">
+        <span>This site uses cookies.</span>
+        <a [href]="legalLinks.privacyPolicy" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-blue-600"
+          >Privacy Policy</a
+        >
+        <a [href]="legalLinks.termsOfUse" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-blue-600">Terms of Use</a>
+        <button
+          type="button"
+          class="underline underline-offset-2 hover:text-blue-600"
+          (click)="onCookieSettings()"
+          data-testid="newsletter-guest-modal-cookie-settings">
+          Cookie settings
+        </button>
+      </p>
+    }
+
+    <p class="text-sm text-gray-600">
+      Already have an account?
+      <a
+        [attr.href]="signInHref()"
+        class="font-medium text-gray-900 underline underline-offset-2 hover:text-blue-600"
+        data-testid="newsletter-guest-modal-sign-in"
+        >Sign in</a
+      >
+    </p>
+  </div>
+</div>

@@ -34,7 +34,7 @@ import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
-import { cfOrgDonationsGuard, orgLensClaM3EnabledGuard } from './shared/guards/org-lens-flag.guard';
+import { cfOrgDonationsGuard } from './shared/guards/org-lens-flag.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
@@ -58,11 +58,7 @@ const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/or
 function orgLensPageRoutes(): Routes {
   return [
     {
-      // Componentless parent, so the dark-launch guard is declared once and later M3
-      // children (list, sign, managers, …) inherit it. A looser copy would be a way
-      // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
       path: 'easycla',
-      canMatch: [orgLensClaM3EnabledGuard],
       data: {
         lens: 'org',
         title: 'EasyCLA',
@@ -268,9 +264,18 @@ export const routes: Routes = [
     canMatch: [voteAnonymousSsrMatchGuard],
     loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
   },
-  // Anonymous SSR of the newsletter permalink (#4940): a chrome-less share preview whose Open Graph tags
-  // carry the issue subject, so a link-preview crawler (LinkedIn, X) never unfurls the login page. The
-  // guard matches only on the server for a signed-out request; browsers fall through to the shell below.
+  // Newsletter invite / subscription-confirmation landing (#5235): chrome-less, no authGuard. Signed out,
+  // the guest modal reads the signed token from the URL fragment; signed in, the page hands over to the
+  // `/newsletters/my/:foundationSlug?invite=` confirm card. Declared ahead of the shell.
+  {
+    path: 'newsletters/invite',
+    pathMatch: 'full',
+    loadComponent: () =>
+      import('./modules/newsletters/newsletter-invite-guest/newsletter-invite-guest.component').then((m) => m.NewsletterInviteGuestComponent),
+  },
+  // Signed-out newsletter permalink: a chrome-less page. On the server its Open Graph tags carry the issue
+  // subject, so a link-preview crawler (LinkedIn, X) never unfurls the login page (#4940); in the browser a
+  // signed-out reader gets the member-benefit email prompt (#5235). Signed-in visitors fall through to the shell.
   {
     path: 'newsletters/:projectSlug/:id',
     pathMatch: 'full',
@@ -518,6 +523,17 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
       },
+      // Every mentorship program of the lens foundation and its sub-projects (lfx-mentorship#398), scoped by `data.lens`.
+      {
+        path: 'foundation/mentorship',
+        title: 'Mentorship Programs',
+        data: { lens: 'foundation' },
+        // The list, program and wizard share this parent, so a `?project=` change between them (Back/Forward to an older
+        // selection) must re-run projectQueryParamGuard, as on project/participating-orgs.
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
+        canActivate: [projectQueryParamGuard],
+        loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_LENS_ROUTES),
+      },
       // Formations queue (GH-1958) — dark-launched behind `formation-enabled` (CanMatch), auditor-only
       // (CanActivate). As of GH-2367 the queue scopes to the selected foundation's formations via
       // ProjectContextService.selectedFoundation (the whole subtree since GH-2368's upstream
@@ -649,6 +665,16 @@ export const routes: Routes = [
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
+      },
+      // Every mentorship program of the lens project (lfx-mentorship#398) — the Mentorship Admin pages, scoped by `data.lens`.
+      {
+        path: 'project/mentorship',
+        title: 'Mentorship Programs',
+        data: { lens: 'project' },
+        // As on foundation/mentorship: a `?project=` change between the list, program and wizard re-runs the guard.
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
+        canActivate: [projectQueryParamGuard],
+        loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_LENS_ROUTES),
       },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
       {

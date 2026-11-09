@@ -261,7 +261,7 @@ export class MeetingComposerHostComponent {
       )
       .subscribe(() => this.lensService.clearContextLens());
 
-    // The sticky create toast sits above the drawer, so opening the composer retires it; only the newest survives.
+    // The create toast sits above the drawer, so opening the composer retires it; only the newest survives.
     toObservable(this.composer.isOpen)
       .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe(() => this.createdToast?.dismiss());
@@ -505,11 +505,6 @@ export class MeetingComposerHostComponent {
       position: MEETING_COMPOSER_TOAST_POSITION,
       message: 'Meeting created',
       description: data.meetingTitle,
-      // Sticky, not timed. The toast carries the only two routes back to the meeting now that creating
-      // doesn't navigate, and a fixed lifetime put them out of reach of anyone who needs longer than a
-      // few seconds to read and target them.
-      duration: 0,
-      dismissible: true,
       actions: [
         { label: 'Edit meeting', run: () => this.onEditCreatedMeeting(data) },
         { label: 'View meeting', run: () => void this.router.navigateByUrl(data.meetingUrl, { state: data.meetingLinkState }) },

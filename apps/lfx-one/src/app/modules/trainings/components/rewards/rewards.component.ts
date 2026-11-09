@@ -5,6 +5,7 @@ import { Clipboard } from '@angular/cdk/clipboard';
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
 import { RewardPromotion, RewardsState, RewardsSummaryResponse } from '@lfx-one/shared/interfaces';
 import { EMPTY_REWARD_PROMOTIONS, isCouponRedeemable } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -24,7 +25,7 @@ const SUMMARY_LOAD_FALLBACK = 'Rewards are temporarily unavailable. Please try a
 
 @Component({
   selector: 'lfx-rewards',
-  imports: [AvailableIncentivesComponent, ButtonComponent, ConfirmDialogModule, DatePipe, MyCouponsComponent, SkeletonModule],
+  imports: [AvailableIncentivesComponent, ButtonComponent, ConfirmDialogModule, DatePipe, MyCouponsComponent, RouterLink, SkeletonModule],
   templateUrl: './rewards.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

@@ -93,6 +93,20 @@ describe('UiChipComponent', () => {
     expect(button.className).toContain('focus-visible:shadow-focus');
   });
 
+  it('has no prefix by default and shows a regular-weight key before the label when given', async () => {
+    expect(host.querySelector('[data-testid="ui-chip-prefix"]')).toBeNull();
+
+    fixture.componentRef.setInput('prefix', 'Project:');
+    fixture.componentRef.setInput('label', 'CNCF');
+    await fixture.whenStable();
+
+    const prefix = host.querySelector('[data-testid="ui-chip-prefix"]') as HTMLElement;
+    expect(prefix.textContent).toBe('Project:');
+    expect(prefix.className).toContain('font-normal');
+    expect(host.querySelector('[data-testid="ui-chip-label"]')?.textContent).toBe('Project: CNCF');
+    expect(dismiss()?.getAttribute('aria-label')).toBe('Remove Project: CNCF');
+  });
+
   it('keeps a 24px hit area on both sizes and a circle that fits inside the badge', async () => {
     expect(dismiss()?.className).toContain('after:h-[24px]');
     expect(dismiss()?.className).toContain('after:w-[24px]');

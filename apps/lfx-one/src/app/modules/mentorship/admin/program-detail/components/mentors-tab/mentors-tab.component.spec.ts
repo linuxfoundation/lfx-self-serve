@@ -339,6 +339,24 @@ describe('MentorsTabComponent', () => {
       expect(fixture.componentInstance['canInvite']()).toBe(true);
     });
 
+    it.each([
+      ['lfid "priya" has no LF account', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE],
+      [
+        'the primary email of lfid "priya" belongs to another Mentorship user',
+        "This person's LF email address is already used by another Mentorship account, so they can't be invited.",
+      ],
+    ])('on a 422 for "%s" names that reason', (reason, message) => {
+      const body = { error: `eligibility criteria not met: ${reason}`, code: 'VALIDATION_ERROR' };
+      inviteProgramMentor.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422, error: body })));
+      const toast = toasts();
+      pick();
+
+      fixture.componentInstance['onInviteMentor']();
+
+      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: message });
+      expect(fixture.componentInstance['form'].controls.invitee.value).toMatchObject({ lfid: 'priya' });
+    });
+
     it('shows the server text when the invite is refused during impersonation', () => {
       const body = { code: MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE, message: 'Read only while impersonating.' };
       inviteProgramMentor.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: body })));

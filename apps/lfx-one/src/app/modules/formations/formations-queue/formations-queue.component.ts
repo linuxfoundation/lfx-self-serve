@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
+import { ButtonComponent } from '@components/button/button.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { FormationService } from '@services/formation.service';
 import { ProjectApplicationService } from '@services/project-application.service';
@@ -20,9 +21,12 @@ import {
   createEmptyFormationsQueueResponse,
   FORMATIONS_QUEUE_PAGE_TAB_OPTIONS,
   LF_FOUNDATION_ROOT_SLUG,
+  PROJECT_APPLICATION_FROM_FOUNDATION_COPY,
+  PROJECT_APPLICATION_PARENT_QUERY_PARAM,
   PROJECT_APPLICATION_TABS,
 } from '@lfx-one/shared/constants';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, switchMap } from 'rxjs';
+import { withProposalsPendingCount } from '@lfx-one/shared/utils';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, filter, finalize, map, of, switchMap } from 'rxjs';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { FormationPageTabsComponent } from '../components/formation-page-tabs/formation-page-tabs.component';
@@ -37,7 +41,14 @@ import { ProjectApplicationsPanelComponent } from '../components/project-applica
  */
 @Component({
   selector: 'lfx-formations-queue',
-  imports: [FormationPageTabsComponent, FormationsTableComponent, ProjectApplicationsPanelComponent, StatCardGridComponent, PageHeaderComponent],
+  imports: [
+    ButtonComponent,
+    FormationPageTabsComponent,
+    FormationsTableComponent,
+    ProjectApplicationsPanelComponent,
+    StatCardGridComponent,
+    PageHeaderComponent,
+  ],
   templateUrl: './formations-queue.component.html',
   styleUrl: './formations-queue.component.scss',
 })
@@ -48,8 +59,8 @@ export class FormationsQueueComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
-  protected readonly pageTabOptions: FilterPillOption[] = FORMATIONS_QUEUE_PAGE_TAB_OPTIONS;
   protected readonly tabs = PROJECT_APPLICATION_TABS;
+  protected readonly proposeLabel = PROJECT_APPLICATION_FROM_FOUNDATION_COPY.proposeButton;
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly filters = signal<FormationsQueueFilterState>({ subStage: undefined, search: '' });
@@ -64,6 +75,13 @@ export class FormationsQueueComponent {
   /** The proposals tab exists only on The Linux Foundation, and only for formation-team members. */
   protected readonly showProposalsTab = computed(
     () => this.projectContextService.selectedFoundation()?.slug === LF_FOUNDATION_ROOT_SLUG && this.isFormationTeam() === true
+  );
+  /**
+   * The page tabs, with the pending-proposals count (#5229) on the Project proposals tab once the shared staff read
+   * has landed. No count while it is unread, failed or zero — never a guessed "(0)".
+   */
+  protected readonly pageTabOptions: Signal<FilterPillOption[]> = computed(() =>
+    withProposalsPendingCount(FORMATIONS_QUEUE_PAGE_TAB_OPTIONS, this.projectApplicationService.pendingStaffCount())
   );
   /** A `?tab=proposals` link the caller can't use falls back to the formations list. */
   protected readonly pageTab: Signal<ProjectApplicationTab> = computed(() =>
@@ -83,6 +101,17 @@ export class FormationsQueueComponent {
     return this.pageTab() === PROJECT_APPLICATION_TABS.formations;
   });
 
+  /**
+   * `?parent=<selected foundation uid>` for the "Propose a project" button (#5187), or `null` before a foundation is
+   * selected. The foundation is only a prefill hint for the formation team; it grants and places nothing, so any
+   * viewer of this page may start a proposal from it — including on The Linux Foundation, where `showProposalsTab`
+   * is deliberately unchanged.
+   */
+  protected readonly proposeQueryParams: Signal<Record<string, string> | null> = computed(() => {
+    const uid = this.projectContextService.selectedFoundation()?.uid;
+    return uid ? { [PROJECT_APPLICATION_PARENT_QUERY_PARAM]: uid } : null;
+  });
+
   private readonly response: Signal<FormationsQueueResponse> = this.initResponse();
   protected readonly rows = computed(() => this.response().rows);
   /** The server's pre-filter counts, passed through to the table so its pill labels can carry them. */
@@ -96,6 +125,14 @@ export class FormationsQueueComponent {
       ? `${foundation.name}'s formations between Prospect and Active.`
       : 'Every foundation, project, and child project between Prospect and Active.';
   });
+
+  public constructor() {
+    // The count needs the staff queue even while the Formations tab is showing. The read is shared with the
+    // proposals panel (joined while in flight), and is made only for callers who can see the tab at all.
+    toObservable(this.showProposalsTab)
+      .pipe(filter(Boolean), takeUntilDestroyed())
+      .subscribe(() => this.projectApplicationService.refreshStaff());
+  }
 
   protected onPageTabChange(tab: string): void {
     // Returning to Formations recreates the table with its default pill and search, so reset the filters to
@@ -204,8 +241,7 @@ export class FormationsQueueComponent {
         {
           value: t.on_hold,
           label: 'On hold',
-          // Where the stage is changed — the sidebar card says the same of stage and legal entity.
-          subLine: 'Paused in the admin tool',
+          subLine: 'Paused by the formation team',
           icon: 'fa-light fa-pause',
           iconContainerClass: 'bg-amber-50 text-amber-600',
         },

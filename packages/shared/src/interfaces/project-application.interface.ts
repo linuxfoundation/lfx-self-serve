@@ -100,6 +100,12 @@ export interface UpstreamProjectApplication {
 /** Browser → BFF create body. The BFF adds the signed-in identity; the browser never sends it. */
 export interface CreateProjectApplicationRequest {
   application: ProjectApplicationAnswers;
+  /**
+   * The foundation the applicant started from (#5187) — a prefill hint for the formation team's accept form,
+   * never a placement and never an access grant. Optional; the BFF forwards it only when it is a UUID and
+   * answers 400 (`target_parent_uid`) for any other non-null value.
+   */
+  target_parent_uid?: string | null;
 }
 
 /** BFF → formation-service create body. */
@@ -107,6 +113,8 @@ export interface UpstreamCreateProjectApplicationRequest {
   submitter_username: string;
   submitter_name: string;
   submitter_email: string;
+  /** Omitted unless the browser sent a valid foundation uid (#5187). */
+  target_parent_uid?: string;
   application: ProjectApplicationAnswers;
 }
 
@@ -166,6 +174,8 @@ export interface ProjectApplicationRow extends ProjectApplication {
 /** Data handed to the accept dialog. */
 export interface ProjectApplicationAcceptDialogData {
   projectName: string;
+  /** The foundation the applicant started from, resolved by the drawer (#5187); prefills the parent, which the reviewer can change. */
+  suggestedParent?: Project;
   /** Slug an earlier, failed accept recorded; prefilled so a retry keeps the project that may already exist. */
   projectSlug?: string;
 }

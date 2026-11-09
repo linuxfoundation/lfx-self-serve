@@ -417,10 +417,18 @@ private validateReadOnlyQuery(sqlText: string): void {
     }
   }
 
-  // Ensure query starts with SELECT or WITH (for CTEs)
-  if (!/^\s*SELECT\b/i.test(normalizedSql) && !/^\s*WITH\b/i.test(normalizedSql)) {
+  // Ensure query starts with SELECT or WITH (for CTEs). Leading comments are skipped so a query can be documented
+  // above its SELECT; the write-operation scan above already covers the whole text, comments included.
+  const statementStart = this.stripLeadingComments(normalizedSql);
+  if (!/^SELECT\b/i.test(statementStart) && !/^WITH\b/i.test(statementStart)) {
     throw new Error('Only SELECT queries are allowed');
   }
+}
+
+// Drops the whitespace, `--` line comments and block comments that precede a statement. `execute()` uses the same
+// helper to name its trace span, so a commented query is not traced as `--`.
+private stripLeadingComments(sql: string): string {
+  return sql.replace(/^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/, '');
 }
 ```
 

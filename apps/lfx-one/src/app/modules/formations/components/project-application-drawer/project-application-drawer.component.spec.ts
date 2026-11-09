@@ -36,6 +36,7 @@ interface DrawerAccess {
   statusCallout: () => ProjectApplicationStatusCallout | null;
   showUpdated: () => boolean;
   submitterEmailLink: () => ProjectApplicationAnswerLink | null;
+  startedFrom: () => Project | null;
   drawerPt: () => DrawerPassThroughOptions;
 }
 
@@ -60,13 +61,14 @@ function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectA
 }
 
 describe('ProjectApplicationDrawerComponent (#3037)', () => {
-  const setup = async (mode: ProjectApplicationViewMode, application = buildApplication()) => {
+  const setup = async (mode: ProjectApplicationViewMode, application = buildApplication(), startedFrom: Project | null = null) => {
     TestBed.resetTestingModule();
     const service = {
       withdraw: vi.fn(() => of({ application: buildApplication({ state: 'withdrawn', revision: 5 }), etag: '5' })),
       deny: vi.fn(() => of({ application: buildApplication({ state: 'denied', revision: 5 }), etag: '5' })),
       accept: vi.fn(() => of({ application: buildApplication({ state: 'accepted', revision: 6 }), etag: '6' })),
       remove: vi.fn(() => of(undefined)),
+      getStartedFrom: vi.fn(() => of(startedFrom)),
       revise: vi.fn(() => of({ application: buildApplication({ revision: 5, application: { project_name: 'Renamed' } }), etag: '5' })),
     };
     const messages = { add: vi.fn() };
@@ -286,5 +288,82 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     component.onDeny();
     expect(staleCount()).toBe(0);
     expect(messages.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Only the formation team can perform this action' }));
+  });
+
+  describe('started from (#5187)', () => {
+    const FOUNDATION_UID = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    const FOUNDATION = { uid: FOUNDATION_UID, name: 'Agentic AI Foundation', slug: 'aaif' } as Project;
+    const withHint = (): ProjectApplication => buildApplication({ target_parent_uid: FOUNDATION_UID });
+
+    it('resolves the foundation for the formation team, and shows "Started from" in the header', async () => {
+      const { fixture, component, service } = await setup('staff', withHint(), FOUNDATION);
+      fixture.componentRef.setInput('visible', true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(service.getStartedFrom).toHaveBeenCalledWith(FOUNDATION_UID);
+      expect(component.startedFrom()).toEqual(FOUNDATION);
+      expect(document.body.querySelector('[data-testid="project-application-drawer-started-from"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'Started from: Agentic AI Foundation'
+      );
+    });
+
+    it.each([
+      ['carries no target_parent_uid', buildApplication(), FOUNDATION],
+      ['names a project that does not resolve', withHint(), null],
+    ])('shows nothing when the proposal %s', async (_label, application, resolved) => {
+      const { fixture, component } = await setup('staff', application, resolved);
+      fixture.componentRef.setInput('visible', true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.startedFrom()).toBeNull();
+      expect(document.body.querySelector('[data-testid="project-application-drawer-started-from"]')).toBeNull();
+    });
+
+    it('never looks the foundation up for a submitter', async () => {
+      const { component, service } = await setup('submitter', withHint(), FOUNDATION);
+      expect(service.getStartedFrom).not.toHaveBeenCalled();
+      expect(component.startedFrom()).toBeNull();
+    });
+
+    it('hands the resolved foundation to the accept dialog as the suggested parent', async () => {
+      const { component, dialog } = await setup('staff', withHint(), FOUNDATION);
+      component.onAccept();
+      const [, config] = dialog.open.mock.calls[0] as unknown as [unknown, { data: { suggestedParent?: Project } }];
+      expect(config.data.suggestedParent).toEqual(FOUNDATION);
+    });
+
+    it("never carries one proposal's foundation into the next while its lookup is pending", async () => {
+      const { fixture, component, service, dialog } = await setup('staff', withHint(), FOUNDATION);
+      await fixture.whenStable();
+      expect(component.startedFrom()).toEqual(FOUNDATION);
+
+      const nextUid = '11111111-2222-4333-8444-555555555555';
+      const pending = new Subject<Project | null>();
+      service.getStartedFrom.mockReturnValue(pending);
+      fixture.componentRef.setInput('application', buildApplication({ uid: 'other-proposal', target_parent_uid: nextUid }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(service.getStartedFrom).toHaveBeenLastCalledWith(nextUid);
+      expect(component.startedFrom()).toBeNull();
+      component.onAccept();
+      const [, config] = dialog.open.mock.calls[0] as unknown as [unknown, { data: object }];
+      expect(config.data).not.toHaveProperty('suggestedParent');
+
+      const next = { uid: nextUid, name: 'Second Foundation', slug: 'second' } as Project;
+      pending.next(next);
+      expect(component.startedFrom()).toEqual(next);
+    });
+
+    it('opens the accept dialog with no suggested parent when nothing resolved', async () => {
+      const { component, dialog } = await setup('staff', withHint(), null);
+      component.onAccept();
+      const [, config] = dialog.open.mock.calls[0] as unknown as [unknown, { data: object }];
+      expect(config.data).not.toHaveProperty('suggestedParent');
+    });
   });
 });

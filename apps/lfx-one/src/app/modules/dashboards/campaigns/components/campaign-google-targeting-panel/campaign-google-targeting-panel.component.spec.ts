@@ -184,6 +184,89 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
     expect(schedules.at(-1)?.[0]).not.toHaveProperty('bidModifier');
   });
 
+  it('bounds the schedule adjustment at -90%, the lowest Google takes on a schedule, and no longer offers -100%', () => {
+    render({ adSchedules: [{ dayOfWeek: 'MONDAY', startHour: 0, startMinute: 0, endHour: 24, endMinute: 0 }] });
+
+    const box = query<HTMLInputElement>('implementation-google-ad-schedule-adjustment-0') as HTMLInputElement;
+    expect(box.min).toBe('-90');
+    expect(box.max).toBe('900');
+    const hint = query('implementation-google-ad-schedule-hint')?.textContent ?? '';
+    expect(hint).toContain('A bid adjustment runs from -90% to +900%; leave it blank for none.');
+    expect(hint).not.toContain('-100%');
+
+    // -90% is a bid modifier of 0.1, the bottom of Google's schedule range.
+    type('implementation-google-ad-schedule-adjustment-0', '-90');
+    expect(schedules.at(-1)?.[0].bidModifier).toBe(0.1);
+  });
+
+  it('offers no adjustment box while the strategy ignores schedule adjustments, says why, and keeps the windows editable', async () => {
+    const reason = 'Google Ads applies an ad schedule bid adjustment only under Manual CPC or Maximize Clicks.';
+    render({ adSchedules: [{ dayOfWeek: 'MONDAY', startHour: 0, startMinute: 0, endHour: 24, endMinute: 0 }] });
+    fixture.componentRef.setInput('scheduleAdjustBlockedReason', reason);
+    fixture.detectChanges();
+
+    expect(query('implementation-google-ad-schedule-adjustment-0')).toBeNull();
+    expect(query('implementation-google-ad-schedule-clear-0')).toBeNull();
+    const hint = query('implementation-google-ad-schedule-hint')?.textContent ?? '';
+    expect(hint).toContain(reason);
+    expect(hint).not.toContain('-90% to +900%');
+
+    await pick('implementation-google-ad-schedule-day-0', 'Friday');
+    expect(schedules.at(-1)?.[0].dayOfWeek).toBe('FRIDAY');
+    fixture.componentRef.setInput('adSchedules', schedules.at(-1));
+    clickAdd();
+    expect(schedules.at(-1)).toHaveLength(2);
+  });
+
+  it('holds an adjustment read-only (still reachable, not disabled) while the strategy ignores it, and Clear drops only the adjustment', () => {
+    render({
+      adSchedules: [
+        { dayOfWeek: 'MONDAY', startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, bidModifier: 1.5 },
+        { dayOfWeek: 'TUESDAY', startHour: 9, startMinute: 0, endHour: 17, endMinute: 0 },
+      ],
+    });
+    fixture.componentRef.setInput('scheduleAdjustBlockedReason', 'Held under Target CPA.');
+    fixture.detectChanges();
+
+    const box = query<HTMLInputElement>('implementation-google-ad-schedule-adjustment-0') as HTMLInputElement;
+    expect(box.value).toBe('50');
+    expect(box.readOnly).toBe(true);
+    expect(box.getAttribute('aria-readonly')).toBe('true');
+    expect(box.disabled).toBe(false);
+    expect(query('implementation-google-ad-schedule-adjustment-1')).toBeNull();
+    expect(query('implementation-google-ad-schedule-clear-1')).toBeNull();
+
+    // A change event from a stale box writes nothing: the held value can only be cleared.
+    const writes = schedules.length;
+    type('implementation-google-ad-schedule-adjustment-0', '20');
+    expect(schedules).toHaveLength(writes);
+
+    const clear = query('implementation-google-ad-schedule-clear-0')?.querySelector('button') as HTMLButtonElement;
+    // The accessible name starts with the visible label (WCAG 2.5.3).
+    expect(clear.getAttribute('aria-label')).toBe('Clear adjustment on ad schedule window 1');
+    clear.click();
+    expect(schedules.at(-1)).toEqual([
+      { dayOfWeek: 'MONDAY', startHour: 9, startMinute: 0, endHour: 17, endMinute: 0 },
+      { dayOfWeek: 'TUESDAY', startHour: 9, startMinute: 0, endHour: 17, endMinute: 0 },
+    ]);
+  });
+
+  it("moves focus to the window's remove button after Clear, since the Clear button leaves the row", async () => {
+    const held = { dayOfWeek: 'MONDAY' as const, startHour: 9, startMinute: 0 as const, endHour: 17, endMinute: 0 as const, bidModifier: 1.5 };
+    render({ adSchedules: [{ ...held, dayOfWeek: 'SUNDAY' }, held] });
+    fixture.componentRef.setInput('scheduleAdjustBlockedReason', 'Held under Target CPA.');
+    fixture.detectChanges();
+
+    (query('implementation-google-ad-schedule-clear-1')?.querySelector('button') as HTMLButtonElement).click();
+    // The tab feeds the cleared list back, as it does in the app.
+    fixture.componentRef.setInput('adSchedules', schedules.at(-1));
+    fixture.detectChanges();
+    await settle();
+
+    expect(query('implementation-google-ad-schedule-clear-1')).toBeNull();
+    expect(document.activeElement).toBe(query('implementation-google-ad-schedule-remove-1')?.querySelector('button'));
+  });
+
   it('shows each picker with the value of the list it is given', () => {
     render({
       adSchedules: [{ dayOfWeek: 'FRIDAY', startHour: 9, startMinute: 15, endHour: 24, endMinute: 0 }],
@@ -243,6 +326,8 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
     await pick('implementation-google-device-mode-MOBILE', 'Adjust bid');
     fixture.componentRef.setInput('deviceBidModifiers', devices.at(-1));
     fixture.detectChanges();
+    const deviceBox = query<HTMLInputElement>('implementation-google-device-adjustment-MOBILE') as HTMLInputElement;
+    expect([deviceBox.min, deviceBox.max]).toEqual(['-90', '900']);
     type('implementation-google-device-adjustment-MOBILE', '25');
     expect(devices.at(-1)).toEqual([
       { device: 'MOBILE', bidModifier: 1.25 },
@@ -254,6 +339,30 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
     expect(devices.at(-1)).toEqual([{ device: 'MOBILE', bidModifier: 1.25 }]);
   });
 
+  it('lists a row per device it is given, TV screens on Demand Gen, and excludes it', async () => {
+    render({});
+    expect(query('implementation-google-device-CONNECTED_TV')).toBeNull();
+
+    fixture.componentRef.setInput('devices', ['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV']);
+    fixture.componentRef.setInput('deviceAdjustBlockedReason', 'Exclusions only.');
+    fixture.detectChanges();
+    expect(query('implementation-google-device-CONNECTED_TV')?.textContent).toContain('TV screens');
+    expect(await optionLabels('implementation-google-device-mode-CONNECTED_TV')).toEqual(['Default bid', 'Exclude']);
+
+    await pick('implementation-google-device-mode-CONNECTED_TV', 'Exclude');
+    expect(devices.at(-1)).toEqual([{ device: 'CONNECTED_TV', bidModifier: 0 }]);
+  });
+
+  it('keeps a TV screens entry the rows do not list when another device changes, so a held exclusion survives', async () => {
+    render({ devices: [{ device: 'CONNECTED_TV', bidModifier: 0 }] });
+
+    await pick('implementation-google-device-mode-MOBILE', 'Exclude');
+    expect(devices.at(-1)).toEqual([
+      { device: 'MOBILE', bidModifier: 0 },
+      { device: 'CONNECTED_TV', bidModifier: 0 },
+    ]);
+  });
+
   it('offers Adjust bid under Manual CPC and says the adjustment range', async () => {
     render({});
 
@@ -262,7 +371,7 @@ describe('CampaignGoogleTargetingPanelComponent', () => {
   });
 
   it('offers only Default bid and Exclude while the strategy refuses adjustments, says why, and still excludes', async () => {
-    const reason = 'Google Ads takes a device bid adjustment only under Manual CPC bidding, and this campaign bids with Maximize Conversions.';
+    const reason = "Google Ads doesn't apply a device bid adjustment under Maximize Conversions, except a -100% exclusion, so LFX One doesn't send one.";
     render({});
     fixture.componentRef.setInput('deviceAdjustBlockedReason', reason);
     fixture.detectChanges();

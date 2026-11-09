@@ -1,0 +1,216 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!--
+  The three errors, announced. Always mounted while the panel is, and only their text changes, as in
+  the exclusions panel: a live region inserted with its text already present is not reliably announced.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-search-ads-live">
+  {{ pathsError() ?? '' }} {{ adsError() ?? '' }} {{ negativeKeywordsError() ?? '' }}
+</div>
+
+<div class="flex flex-col gap-4" data-testid="implementation-google-search-ads-panel">
+  <fieldset
+    class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+    aria-describedby="google-search-networks-hint"
+    data-testid="implementation-google-search-networks">
+    <legend class="float-left mb-1 text-xs font-medium text-gray-700">Networks</legend>
+    <p id="google-search-networks-hint" class="text-xs text-gray-500">
+      The campaign always shows on Google Search. Tick this to also show it on Google's search partner sites, which can add reach at a different cost.
+    </p>
+    <lfx-ui-checkbox
+      label="Include Google search partners"
+      [checked]="searchPartners()"
+      (checkedChange)="searchPartners.set($event)"
+      data-testid="implementation-google-search-partners" />
+  </fieldset>
+
+  <fieldset
+    class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+    [attr.aria-describedby]="pathsDescribedBy()"
+    data-testid="implementation-google-search-paths">
+    <legend class="float-left mb-1 text-xs font-medium text-gray-700">Display path</legend>
+    <p id="google-search-paths-hint" class="text-xs text-gray-500">
+      Shown after your domain in the ad, as in example.com/kubecon/na. Up to {{ maxPathWidth }} characters each, with no spaces or / ? # & =. Path 2 needs path
+      1. An extra ad with no path of its own uses these.
+    </p>
+    <div class="flex flex-wrap items-end gap-2">
+      <lfx-ui-input
+        class="w-48"
+        label="Path 1"
+        size="small"
+        [value]="path1()"
+        (valueChange)="path1.set($event)"
+        data-testid="implementation-google-search-path1" />
+      <lfx-ui-input
+        class="w-48"
+        label="Path 2"
+        size="small"
+        [value]="path2()"
+        (valueChange)="path2.set($event)"
+        data-testid="implementation-google-search-path2" />
+    </div>
+    @if (pathsError(); as message) {
+      <p id="google-search-paths-error" class="text-xs text-red-600" data-testid="implementation-google-search-paths-error">{{ message }}</p>
+    }
+  </fieldset>
+
+  <fieldset
+    class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+    [attr.aria-describedby]="adsDescribedBy()"
+    data-testid="implementation-google-search-ads">
+    <legend class="float-left mb-1 text-xs font-medium text-gray-700">More ads ({{ additionalAds().length + 1 }}/{{ maxAds }})</legend>
+    <p id="google-search-ads-hint" class="text-xs text-gray-500">
+      The headlines and descriptions above are ad 1. Add up to {{ maxAds - 1 }} more responsive search ads to the same ad group, each with its own copy, so
+      Google can show the one that works best.
+    </p>
+    @for (ad of additionalAds(); track $index; let i = $index) {
+      <fieldset class="flex flex-col gap-3 rounded-md border border-gray-200 p-4" [attr.data-testid]="'implementation-google-search-ad-' + (i + 2)">
+        <legend class="float-left text-xs font-medium text-gray-700">Ad {{ i + 2 }}</legend>
+        <div class="flex flex-col gap-2">
+          <span class="text-xs text-gray-700">Headlines ({{ ad.headlines.length }}/{{ maxHeadlines }}, up to {{ charLimits.searchHeadline }} characters)</span>
+          @for (headline of ad.headlines; track $index; let h = $index) {
+            <div class="flex items-center gap-2">
+              <lfx-ui-input
+                class="flex-1"
+                size="small"
+                [ariaLabel]="'Ad ' + (i + 2) + ' headline ' + (h + 1)"
+                [value]="headline"
+                (valueChange)="setLine(i, 'headlines', h, $event)"
+                [attr.data-testid]="'implementation-google-search-ad-' + (i + 2) + '-headline-' + h" />
+              @if (ad.headlines.length > 1) {
+                <button
+                  type="button"
+                  (click)="removeLine(i, 'headlines', h)"
+                  [attr.data-testid]="'implementation-google-search-ad-' + (i + 2) + '-remove-headline-' + h"
+                  class="text-gray-400 hover:text-red-500"
+                  [attr.aria-label]="'Remove ad ' + (i + 2) + ' headline ' + (h + 1)">
+                  <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                </button>
+              }
+            </div>
+          }
+          <lfx-button
+            class="self-start"
+            label="Add headline"
+            icon="fa-light fa-plus"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="ad.headlines.length >= maxHeadlines"
+            [ariaLabel]="'Add a headline to ad ' + (i + 2)"
+            (onClick)="addLine(i, 'headlines')"
+            [attr.data-testid]="'implementation-google-search-ad-' + (i + 2) + '-add-headline'" />
+        </div>
+        <div class="flex flex-col gap-2">
+          <span class="text-xs text-gray-700"
+            >Descriptions ({{ ad.descriptions.length }}/{{ maxDescriptions }}, up to {{ charLimits.searchDescription }} characters)</span
+          >
+          @for (description of ad.descriptions; track $index; let d = $index) {
+            <div class="flex items-center gap-2">
+              <lfx-ui-textarea
+                class="flex-1"
+                [ariaLabel]="'Ad ' + (i + 2) + ' description ' + (d + 1)"
+                [maxlength]="charLimits.searchDescription"
+                [value]="description"
+                (valueChange)="setLine(i, 'descriptions', d, $event)"
+                [attr.data-testid]="'implementation-google-search-ad-' + (i + 2) + '-description-' + d" />
+              @if (ad.descriptions.length > 1) {
+                <button
+                  type="button"
+                  (click)="removeLine(i, 'descriptions', d)"
+                  [attr.data-testid]="'implementation-google-search-ad-' + (i + 2) + '-remove-description-' + d"
+                  class="text-gray-400 hover:text-red-500"
+                  [attr.aria-label]="'Remove ad ' + (i + 2) + ' description ' + (d + 1)">
+                  <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                </button>
+              }
+            </div>
+          }
+          <lfx-button
+            class="self-start"
+            label="Add description"
+            icon="fa-light fa-plus"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="ad.descriptions.length >= maxDescriptions"
+            [ariaLabel]="'Add a description to ad ' + (i + 2)"
+            (onClick)="addLine(i, 'descriptions')"
+            [attr.data-testid]="'implementation-google-search-ad-' + (i + 2) + '-add-description'" />
+        </div>
+        <div class="flex flex-wrap items-end gap-2">
+          <lfx-ui-input
+            class="w-48"
+            label="Path 1"
+            size="small"
+            [value]="ad.path1 ?? ''"
+            (valueChange)="setAdPath(i, 'path1', $event)"
+            [attr.data-testid]="'implementation-google-search-ad-' + (i + 2) + '-path1'" />
+          <lfx-ui-input
+            class="w-48"
+            label="Path 2"
+            size="small"
+            [value]="ad.path2 ?? ''"
+            (valueChange)="setAdPath(i, 'path2', $event)"
+            [attr.data-testid]="'implementation-google-search-ad-' + (i + 2) + '-path2'" />
+          <lfx-button
+            label="Remove ad"
+            icon="fa-light fa-trash"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            [ariaLabel]="'Remove ad ' + (i + 2)"
+            (onClick)="removeAd(i)"
+            [attr.data-testid]="'implementation-google-search-ad-' + (i + 2) + '-remove'" />
+        </div>
+      </fieldset>
+    }
+    <lfx-button
+      class="self-start"
+      label="Add another ad"
+      icon="fa-light fa-plus"
+      size="small"
+      severity="secondary"
+      [outlined]="true"
+      [disabled]="!canAddAd()"
+      (onClick)="addAd()"
+      data-testid="implementation-google-search-add-ad" />
+    @if (adsError(); as message) {
+      <p id="google-search-ads-error" class="text-xs text-red-600" data-testid="implementation-google-search-ads-error">{{ message }}</p>
+    }
+  </fieldset>
+
+  <fieldset
+    class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+    [attr.aria-describedby]="negativesDescribedBy()"
+    data-testid="implementation-google-search-negatives">
+    <legend class="float-left mb-1 text-xs font-medium text-gray-700">Negative keywords ({{ negativeKeywordCount() }}/{{ negativeRules.maxKeywords }})</legend>
+    <p id="google-search-negatives-hint" class="text-xs text-gray-500">
+      Searches the campaign never pays for, added when it is created. One per line, up to {{ negativeRules.maxTextLength }} characters, using letters, digits,
+      spaces and & ' - . Filled in from the brief's suggestions; leave it empty to add none. You can add more from Optimize once the campaign is live.
+    </p>
+    <div class="flex flex-wrap items-start gap-2">
+      <lfx-ui-textarea
+        class="min-w-0 flex-1"
+        label="Keywords"
+        [value]="negativeKeywordsText()"
+        (valueChange)="negativeKeywordsText.set($event)"
+        data-testid="implementation-google-search-negatives-text" />
+      <lfx-ui-select
+        class="w-32"
+        label="Match type"
+        size="small"
+        [value]="negativeKeywordMatchType()"
+        (valueChange)="onMatchType($event)"
+        data-testid="implementation-google-search-negatives-match-type">
+        @for (option of negativeRules.matchTypes; track option.value) {
+          <lfx-ui-option [value]="option.value" [label]="option.label" />
+        }
+      </lfx-ui-select>
+    </div>
+    @if (negativeKeywordsError(); as message) {
+      <p id="google-search-negatives-error" class="text-xs text-red-600" data-testid="implementation-google-search-negatives-error">{{ message }}</p>
+    }
+  </fieldset>
+</div>

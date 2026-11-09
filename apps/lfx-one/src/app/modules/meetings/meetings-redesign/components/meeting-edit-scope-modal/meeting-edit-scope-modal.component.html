@@ -3,38 +3,24 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <lfx-ui-modal heading="Edit meeting" data-testid="meetings-home-edit-scope-modal">
-  <div class="flex flex-col gap-[4px] rounded-[12px] border border-gray-200 bg-gray-50 px-[14px] py-[12px]" data-testid="meetings-home-edit-scope-info">
-    @if (project) {
-      <span class="flex min-w-0 items-start gap-[6px] text-[12px] text-gray-600">
-        <lfx-ui-avatar class="mt-px flex-none" shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
-        <span class="min-w-0 break-words">{{ project.name }}</span>
-      </span>
-    }
-    <span class="text-[14px] font-medium leading-[20px] text-gray-900">{{ row.title }}</span>
-    <span class="flex flex-wrap items-center gap-x-[6px] gap-y-[4px] text-[12px] text-gray-500">
-      <span>{{ when }}</span>
-      @if (meetingType) {
-        <span aria-hidden="true">·</span>
-        <span class="inline-flex items-center gap-[5px]"><i class="text-[11px]" [class]="meetingType.icon" aria-hidden="true"></i>{{ meetingType.label }}</span>
-      }
-      <span aria-hidden="true">·</span>
-      <span class="inline-flex items-center gap-[5px]"><i class="fa-light fa-arrows-rotate text-[11px]" aria-hidden="true"></i>Recurring</span>
-    </span>
-  </div>
+  <lfx-meeting-dialog-context [row]="row" [origin]="origin" data-testid="meetings-home-edit-scope-info" />
 
   <p class="text-[14px] leading-[20px] text-gray-700">This is a recurring meeting. What would you like to edit?</p>
 
   <lfx-ui-radio-group ariaLabel="What to edit" [(value)]="scope" data-testid="meetings-home-edit-scope-options">
     <span class="flex flex-col gap-[4px] self-stretch">
       <lfx-ui-radio class="[&_label]:font-medium" value="occurrence" label="A single occurrence" data-testid="meetings-home-edit-scope-occurrence" />
-      <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600"
+      <!-- The uikit radio has no description slot, so a click on the description picks the option too. -->
+      <span
+        class="cursor-pointer pl-[24px] text-[12px] leading-[16px] text-gray-500"
+        (click)="scope.set('occurrence')"
+        data-testid="meetings-home-edit-scope-occurrence-description"
         >Change the time, title, or agenda of one occurrence without changing the rest of the series.</span
       >
       @if (scope() === 'occurrence') {
         <div class="mt-[6px] pl-[24px]">
           <lfx-ui-select
             label="Occurrence"
-            size="small"
             placeholder="Select an occurrence"
             [(value)]="occurrenceId"
             data-testid="meetings-home-edit-scope-occurrence-select">
@@ -47,7 +33,12 @@
     </span>
     <span class="flex flex-col gap-[4px]">
       <lfx-ui-radio class="[&_label]:font-medium" value="series" label="The entire series" data-testid="meetings-home-edit-scope-series" />
-      <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600">Edit the title, schedule, guests, and settings for every upcoming occurrence.</span>
+      <span
+        class="cursor-pointer pl-[24px] text-[12px] leading-[16px] text-gray-500"
+        (click)="scope.set('series')"
+        data-testid="meetings-home-edit-scope-series-description"
+        >Edit the title, schedule, guests, and settings for every upcoming occurrence.</span
+      >
     </span>
   </lfx-ui-radio-group>
 

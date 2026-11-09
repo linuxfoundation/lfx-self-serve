@@ -131,6 +131,11 @@ export const CROWDFUNDING_ATTRIBUTION_TYPES = ['personal', 'organization', 'proj
 export const CROWDFUNDING_ATTRIBUTION_NAME_MAX_CHARS = 255;
 export const CROWDFUNDING_ATTRIBUTION_LOGO_URL_MAX_CHARS = 2048;
 
+// Elevator pitch (initiative description) limits. The visible text is capped for the reader; the
+// stored HTML is capped by the upstream service, which counts runes of the raw markup.
+export const CROWDFUNDING_DESCRIPTION_MAX_CHARS = 500;
+export const CROWDFUNDING_DESCRIPTION_MAX_HTML_CHARS = 1500;
+
 // Choices in the Edit attribution dialog, in display order.
 export const CROWDFUNDING_ATTRIBUTION_TYPE_OPTIONS: { label: string; value: CrowdfundingAttributionType }[] = [
   { label: 'Personal', value: 'personal' },

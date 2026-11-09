@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, DefaultUrlSerializer, NavigationEnd, Router, UrlTree } from '@angular/router';
-import { Committee, Project, ProjectContext, Survey } from '@lfx-one/shared/interfaces';
+import { SURVEY_EMAIL_DRAFTS } from '@lfx-one/shared/constants';
+import { Committee, Project, ProjectContext, Survey, SurveyTemplate } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -12,7 +14,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SurveyService } from '@services/survey.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SurveyManageComponent } from './survey-manage.component';
@@ -33,6 +35,7 @@ describe('SurveyManageComponent write-access eviction', () => {
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
   let activeLens: ReturnType<typeof signal<'project' | 'foundation'>>;
   let getSurvey: ReturnType<typeof vi.fn>;
+  let getSurveyTemplates: ReturnType<typeof vi.fn>;
   let getProject: ReturnType<typeof vi.fn>;
   let fetchCommittee: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
@@ -115,6 +118,7 @@ describe('SurveyManageComponent write-access eviction', () => {
     activeContext = signal<ProjectContext | null>({ uid: 'stale-project-uid', name: 'Stale Project', slug: 'stale-project' });
     activeLens = signal<'project' | 'foundation'>('project');
     getSurvey = vi.fn().mockReturnValue(surveyResponse$.asObservable());
+    getSurveyTemplates = vi.fn().mockReturnValue(of([]));
     getProject = vi.fn().mockReturnValue(projectResponse$.asObservable());
     fetchCommittee = vi.fn((uid: string) => {
       if (uid === PRIMARY_UID) return primaryResponse$.asObservable();
@@ -149,7 +153,10 @@ describe('SurveyManageComponent write-access eviction', () => {
             navigateByUrl,
           },
         },
-        { provide: SurveyService, useValue: { getSurvey, createSurvey: vi.fn().mockReturnValue(of(survey())) } },
+        {
+          provide: SurveyService,
+          useValue: { getSurvey, createSurvey: vi.fn().mockReturnValue(of(survey())), getSurveyTemplates },
+        },
         { provide: ProjectService, useValue: { getProject } },
         { provide: CommitteeService, useValue: { fetchCommittee, getCommittee: vi.fn().mockReturnValue(of(null)) } },
         {
@@ -184,8 +191,13 @@ describe('SurveyManageComponent write-access eviction', () => {
   });
 
   it('retains the editor after primary denial while a delayed secondary committee grants write access', async () => {
+    getSurveyTemplates.mockImplementation((_projectUid: string, committeeUid: string) =>
+      committeeUid === SECONDARY_UID ? of([{ id: 'template-1', title: 'Board Survey' }]) : throwError(() => new HttpErrorResponse({ status: 403 }))
+    );
     await mountEditor();
     await loadSurvey();
+    expect(getSurveyTemplates).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.surveyTemplates().status).toBe('loading');
     await settleProject(false);
     expect(fetchCommittee).toHaveBeenCalledExactlyOnceWith(PRIMARY_UID);
     expectEditorRetained();
@@ -193,11 +205,16 @@ describe('SurveyManageComponent write-access eviction', () => {
     await settleCommittee(primaryResponse$, PRIMARY_UID, false);
     expect(fetchCommittee.mock.calls).toEqual([[PRIMARY_UID], [SECONDARY_UID]]);
     expectEditorRetained();
+    expect(getSurveyTemplates).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.surveyTemplates().status).toBe('loading');
 
     await settleCommittee(secondaryResponse$, SECONDARY_UID, true);
     expectEditorRetained();
     // The active project's own write flag stays false: committee admission must survive it.
     expect(getProject).toHaveBeenCalledTimes(1);
+    expect(getSurveyTemplates).toHaveBeenCalledExactlyOnceWith(PROJECT_UID, SECONDARY_UID);
+    expect(fixture.componentInstance.surveyTemplates()).toEqual({ status: 'ready', options: [{ label: 'Board Survey', value: 'template-1' }] });
+    expect(fixture.componentInstance.form().get('surveyTemplate')?.enabled).toBe(true);
   });
 
   it.each(['project', 'foundation'] as const)('evicts to the %s safe overview only after every associated committee denies', async (lens) => {
@@ -225,5 +242,326 @@ describe('SurveyManageComponent write-access eviction', () => {
     expectEditorRetained();
     expect(fetchCommittee).not.toHaveBeenCalled();
     expect(getProject).toHaveBeenCalledExactlyOnceWith(PROJECT_SLUG, false);
+  });
+});
+
+describe('SurveyManageComponent survey templates (#5124)', () => {
+  const ACTIVE_PROJECT_UID = 'active-project-uid';
+  const SURVEY_PROJECT_UID = 'survey-project-uid';
+  const URL_COMMITTEE_UID = 'url-committee';
+  const SURVEY_COMMITTEE_UID = 'survey-committee';
+  const serializer = new DefaultUrlSerializer();
+
+  let getSurveyTemplates: ReturnType<typeof vi.fn>;
+  let getSurvey: ReturnType<typeof vi.fn>;
+
+  const surveyCommittee = (uid: string) => ({
+    committee_id: uid,
+    committee_uid: uid,
+    committee_name: uid,
+    project_id: SURVEY_PROJECT_UID,
+    project_uid: SURVEY_PROJECT_UID,
+    project_name: 'Survey Project',
+    total_recipients: 0,
+    total_responses: 0,
+    nps_value: 0,
+    num_detractors: 0,
+    num_passives: 0,
+    num_promoters: 0,
+  });
+
+  const editSurvey = {
+    uid: 'survey-uid',
+    survey_title: 'Test survey',
+    survey_status: 'draft',
+    survey_cutoff_date: null,
+    is_nps_survey: false,
+    is_project_survey: false,
+    project_uid: SURVEY_PROJECT_UID,
+    project_slug: 'survey-project',
+    project_name: 'Survey Project',
+    is_foundation: false,
+    committees: [surveyCommittee(SURVEY_COMMITTEE_UID), surveyCommittee('second-committee')],
+    committee_category: 'Technical',
+    total_responses: 0,
+    total_recipients: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    last_modified_at: '2026-01-01T00:00:00Z',
+    creator_name: 'Test Creator',
+  } as Survey;
+
+  const mount = async ({ surveyId, committeeUid }: { surveyId?: string; committeeUid?: string }): Promise<ComponentFixture<SurveyManageComponent>> => {
+    const params = convertToParamMap(surveyId ? { id: surveyId } : {});
+    const queryParams = convertToParamMap(committeeUid ? { committee_uid: committeeUid } : {});
+    const activeContext = signal<ProjectContext | null>({ uid: ACTIVE_PROJECT_UID, name: 'Active Project', slug: 'active-project' });
+    const url = surveyId ? `/surveys/${surveyId}/edit` : '/surveys/create';
+
+    TestBed.configureTestingModule({
+      imports: [SurveyManageComponent],
+      providers: [
+        {
+          provide: ActivatedRoute,
+          useValue: { paramMap: of(params), queryParamMap: of(queryParams), snapshot: { paramMap: params, queryParamMap: queryParams } },
+        },
+        {
+          provide: Router,
+          useValue: {
+            url: committeeUid ? `${url}?committee_uid=${committeeUid}` : url,
+            events: new Subject<NavigationEnd>().asObservable(),
+            parseUrl: vi.fn((value: string) => serializer.parse(value)),
+            createUrlTree: vi.fn((commands: string[], options: { queryParams: Record<string, string> }) => {
+              const tree = serializer.parse(commands.join('/'));
+              tree.queryParams = options.queryParams;
+              return tree;
+            }),
+            navigate: vi.fn().mockResolvedValue(true),
+            navigateByUrl: vi.fn().mockResolvedValue(true),
+          },
+        },
+        { provide: SurveyService, useValue: { getSurvey, getSurveyTemplates } },
+        { provide: ProjectService, useValue: { getProject: vi.fn().mockReturnValue(of({ writer: true } as Project)) } },
+        { provide: CommitteeService, useValue: { fetchCommittee: vi.fn().mockReturnValue(of(null)), getCommittee: vi.fn().mockReturnValue(of(null)) } },
+        {
+          provide: ProjectContextService,
+          useValue: {
+            activeContext,
+            canWrite: signal(true),
+            setProject: vi.fn((context: ProjectContext) => activeContext.set(context)),
+            setFoundation: vi.fn((context: ProjectContext) => activeContext.set(context)),
+            setRouteLensKind: vi.fn(),
+          },
+        },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        { provide: PersonaService, useValue: { currentPersona: signal('maintainer') } },
+        { provide: ConfirmationService, useValue: { confirm: vi.fn() } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).overrideComponent(SurveyManageComponent, {
+      set: { imports: [], template: '<form data-testid="survey-editor"></form>', styles: [], styleUrls: [] },
+    });
+
+    const fixture = TestBed.createComponent(SurveyManageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture;
+  };
+
+  beforeEach(() => {
+    getSurveyTemplates = vi.fn().mockReturnValue(of([]));
+    getSurvey = vi.fn().mockReturnValue(of(editSurvey));
+  });
+
+  it('scopes create mode to the active project and the ?committee_uid= group', async () => {
+    await mount({ committeeUid: URL_COMMITTEE_UID });
+
+    expect(getSurveyTemplates).toHaveBeenCalledExactlyOnceWith(ACTIVE_PROJECT_UID, URL_COMMITTEE_UID);
+  });
+
+  it("scopes edit mode to the survey's own project and its first committee", async () => {
+    await mount({ surveyId: 'survey-uid' });
+
+    expect(getSurveyTemplates).toHaveBeenCalledExactlyOnceWith(SURVEY_PROJECT_UID, SURVEY_COMMITTEE_UID);
+  });
+
+  it('reports an upstream failure as an error state with a locked picker, and refetches on retry', async () => {
+    getSurveyTemplates.mockReturnValueOnce(throwError(() => new Error('upstream down'))).mockReturnValueOnce(of([{ id: '1', title: 'Board Survey' }]));
+    const fixture = await mount({});
+    const component = fixture.componentInstance;
+
+    expect(component.surveyTemplates()).toEqual({ status: 'error', options: [] });
+    expect(component.form().get('surveyTemplate')?.disabled).toBe(true);
+
+    component.retryTemplates();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getSurveyTemplates).toHaveBeenCalledTimes(2);
+    expect(component.surveyTemplates()).toEqual({ status: 'ready', options: [{ label: 'Board Survey', value: '1' }] });
+    expect(component.form().get('surveyTemplate')?.enabled).toBe(true);
+  });
+
+  it('locks a selected template and Next while a retry is loading, then unlocks them on success', async () => {
+    const pending = new Subject<SurveyTemplate[]>();
+    const templates = [{ id: '1', title: 'Board Survey' }];
+    getSurveyTemplates.mockReturnValueOnce(of(templates)).mockReturnValueOnce(pending.asObservable());
+    const fixture = await mount({});
+    const component = fixture.componentInstance;
+    component.form().patchValue({ committees: [{ uid: 'c-1', name: 'Board' }], surveyTemplate: '1' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.canGoNext()).toBe(true);
+
+    component.retryTemplates();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.surveyTemplates().status).toBe('loading');
+    expect(component.form().get('surveyTemplate')?.disabled).toBe(true);
+    expect(component.canGoNext()).toBe(false);
+
+    pending.next(templates);
+    pending.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.form().get('surveyTemplate')?.enabled).toBe(true);
+    expect(component.canGoNext()).toBe(true);
+  });
+
+  it.each([{ templates: [] }, { templates: [{ id: '2', title: 'Replacement Survey' }] }])(
+    'clears a selected template omitted from a successful refresh (%j) and blocks navigation and submission',
+    async ({ templates: refreshedTemplates }) => {
+      getSurveyTemplates.mockReturnValueOnce(of([{ id: '1', title: 'Board Survey' }])).mockReturnValueOnce(of(refreshedTemplates));
+      const fixture = await mount({});
+      const component = fixture.componentInstance;
+      component.form().patchValue({
+        committees: [{ uid: 'c-1', name: 'Board' }],
+        surveyTemplate: '1',
+        cutoffDate: new Date(Date.now() + 86_400_000),
+      });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(component.canGoNext()).toBe(true);
+
+      component.retryTemplates();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(component.surveyTemplates().status).toBe('ready');
+      expect(component.form().get('surveyTemplate')?.value).toBe('');
+      expect(component.form().get('surveyTemplate')?.hasError('required')).toBe(true);
+      expect(component.canGoNext()).toBe(false);
+      component.nextStep();
+      expect(component.currentStep()).toBe(1);
+      component.onSubmit();
+      expect(TestBed.inject(ConfirmationService).confirm).not.toHaveBeenCalled();
+    }
+  );
+
+  it('preserves a selected template still present in a synchronously refreshed list', async () => {
+    getSurveyTemplates.mockReturnValueOnce(of([{ id: '1', title: 'Board Survey' }])).mockReturnValueOnce(of([{ id: '1', title: 'Renamed Board Survey' }]));
+    const fixture = await mount({});
+    const component = fixture.componentInstance;
+    component.form().patchValue({ committees: [{ uid: 'c-1', name: 'Board' }], surveyTemplate: '1' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    component.retryTemplates();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component.form().get('surveyTemplate')?.value).toBe('1');
+    expect(component.canGoNext()).toBe(true);
+  });
+
+  it.each([new HttpErrorResponse({ status: 503 }), new Error('network unavailable')])(
+    'shows an error after the owning survey fails (%s), then refetches it before loading templates',
+    async (error) => {
+      const pendingSurvey = new Subject<Survey>();
+      getSurvey.mockReturnValueOnce(throwError(() => error)).mockReturnValueOnce(pendingSurvey.asObservable());
+      getSurveyTemplates.mockReturnValue(of([{ id: '1', title: 'Board Survey' }]));
+      const fixture = await mount({ surveyId: 'survey-uid' });
+      const component = fixture.componentInstance;
+
+      expect(component.surveyTemplates()).toEqual({ status: 'error', options: [] });
+      expect(component.form().get('surveyTemplate')?.disabled).toBe(true);
+      expect(component.canGoNext()).toBe(false);
+      expect(getSurveyTemplates).not.toHaveBeenCalled();
+      expect(TestBed.inject(ProjectService).getProject).not.toHaveBeenCalled();
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+
+      component.retryTemplates();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(getSurvey).toHaveBeenNthCalledWith(2, 'survey-uid', undefined, { skipCache: true });
+      expect(component.surveyTemplates()).toEqual({ status: 'loading', options: [] });
+      expect(getSurveyTemplates).not.toHaveBeenCalled();
+      expect(component.form().get('surveyTemplate')?.disabled).toBe(true);
+
+      pendingSurvey.next(editSurvey);
+      pendingSurvey.complete();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(getSurveyTemplates).toHaveBeenCalledExactlyOnceWith(SURVEY_PROJECT_UID, SURVEY_COMMITTEE_UID);
+      expect(component.surveyTemplates()).toEqual({ status: 'ready', options: [{ label: 'Board Survey', value: '1' }] });
+      expect(component.form().get('surveyTemplate')?.enabled).toBe(true);
+    }
+  );
+
+  it('keeps recovery available when retrying the owning survey also fails', async () => {
+    getSurvey.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const fixture = await mount({ surveyId: 'survey-uid' });
+    const component = fixture.componentInstance;
+
+    component.retryTemplates();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getSurvey).toHaveBeenCalledTimes(2);
+    expect(component.surveyTemplates()).toEqual({ status: 'error', options: [] });
+    expect(component.form().get('surveyTemplate')?.disabled).toBe(true);
+    expect(getSurveyTemplates).not.toHaveBeenCalled();
+  });
+
+  it('preserves the not-found redirect for an owning-survey 404', async () => {
+    getSurvey.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+    await mount({ surveyId: 'survey-uid' });
+
+    expect(TestBed.inject(Router).navigate).toHaveBeenCalledExactlyOnceWith(['/surveys']);
+    expect(getSurveyTemplates).not.toHaveBeenCalled();
+  });
+
+  it('sorts options by title', async () => {
+    getSurveyTemplates.mockReturnValue(
+      of([
+        { id: '2', title: 'Zeta Survey', nickname: '', href: '' },
+        { id: '1', title: 'Alpha Survey', nickname: '', href: '' },
+      ])
+    );
+    const fixture = await mount({});
+
+    expect(fixture.componentInstance.surveyTemplates().options).toEqual([
+      { label: 'Alpha Survey', value: '1' },
+      { label: 'Zeta Survey', value: '2' },
+    ]);
+  });
+
+  describe('email draft follows the chosen template', () => {
+    const templates = [
+      { id: 'board', title: 'Board Satisfaction Survey' },
+      { id: 'maint', title: 'Maintainer Survey' },
+    ];
+
+    it('starts from the general draft', async () => {
+      const fixture = await mount({});
+      const form = fixture.componentInstance.form();
+
+      expect(form.get('emailSubject')?.value).toBe(SURVEY_EMAIL_DRAFTS.general.subject);
+      expect(form.get('emailBody')?.value).toBe(SURVEY_EMAIL_DRAFTS.general.body);
+    });
+
+    it('swaps in the maintainer draft for a maintainer template, and back for any other', async () => {
+      getSurveyTemplates.mockReturnValue(of(templates));
+      const form = (await mount({})).componentInstance.form();
+
+      form.get('surveyTemplate')?.setValue('maint');
+      expect(form.get('emailSubject')?.value).toBe(SURVEY_EMAIL_DRAFTS.maintainer.subject);
+      expect(form.get('emailBody')?.value).toBe(SURVEY_EMAIL_DRAFTS.maintainer.body);
+
+      form.get('surveyTemplate')?.setValue('board');
+      expect(form.get('emailSubject')?.value).toBe(SURVEY_EMAIL_DRAFTS.general.subject);
+      expect(form.get('emailBody')?.value).toBe(SURVEY_EMAIL_DRAFTS.general.body);
+    });
+
+    it('never overwrites an edited field, while still swapping an untouched one', async () => {
+      getSurveyTemplates.mockReturnValue(of(templates));
+      const form = (await mount({})).componentInstance.form();
+      form.get('emailSubject')?.setValue('Quick check-in from the board');
+
+      form.get('surveyTemplate')?.setValue('maint');
+
+      expect(form.get('emailSubject')?.value).toBe('Quick check-in from the board');
+      expect(form.get('emailBody')?.value).toBe(SURVEY_EMAIL_DRAFTS.maintainer.body);
+    });
   });
 });

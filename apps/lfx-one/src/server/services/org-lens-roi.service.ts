@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_LENS_ROI_CACHE_KEY, ORG_LENS_ROI_COVERAGE_REASONS, ORG_LENS_ROI_METHODS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  ORG_LENS_ROI_CACHE_KEY,
+  ORG_LENS_ROI_COVERAGE_REASONS,
+  ORG_LENS_ROI_METHODS,
+  ORG_LENS_ROI_VALUE_DRIVERS_MIN_PROJECTS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
   OrgLensRoiAnnual,
   OrgLensRoiAnnualRow,
@@ -22,6 +28,9 @@ import type {
   OrgLensRoiProjectWarehouseRow,
   OrgLensRoiSummary,
   OrgLensRoiSummaryWarehouseRow,
+  OrgLensRoiValueDriverRow,
+  OrgLensRoiValueDrivers,
+  OrgLensRoiValueDriversWarehouseRow,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -163,6 +172,46 @@ export class OrgLensRoiService {
         return { rows, total: rows.reduce((sum, row) => sum + row.expenditure, 0) };
       },
       OrgLensRoiService.isInvestmentBreakdown
+    );
+  }
+
+  /**
+   * How much more or less return the organization's portfolio earns from each value driver category
+   * than the typical organization-project pair (lf-dbt#3163). Portfolio-wide, so it is not affected by the project
+   * picker. An organization with no decomposition returns empty `rows`, which is a real answer rather
+   * than an error.
+   */
+  public async getValueDrivers(req: Request, accountId: string, method: OrgLensRoiMethod): Promise<OrgLensRoiValueDrivers> {
+    return withOrgCache(
+      accountId,
+      `${ORG_LENS_ROI_CACHE_KEY.valueDrivers}:${method}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        logger.debug(req, 'get_org_lens_roi_value_drivers', 'Cache miss; querying Snowflake', { account_id: accountId, method });
+        // platinum_lfx_one_org_lens_roi_value_decomposition (lf-dbt#3163), keyed by ACCOUNT_ID like its
+        // siblings. It carries a CONTEXT row for the controls, which is not a value driver and is
+        // excluded here. The minimum project count is enforced here because the table does not
+        // (lf-dbt#3163 recommends at least 5).
+        const sql = `
+        SELECT
+          CATEGORY,
+          N_PROJECTS,
+          PCT_DEVIATION_FROM_TYPICAL_MARKUP
+        FROM ${this.valueDriversTable()}
+        WHERE ACCOUNT_ID = ? AND MARKUP_METHOD = ? AND COMPONENT = 'DRIVER' AND N_PROJECTS >= ?
+      `;
+        const result = await this.snowflakeService.execute<OrgLensRoiValueDriversWarehouseRow>(sql, [
+          accountId,
+          method,
+          ORG_LENS_ROI_VALUE_DRIVERS_MIN_PROJECTS,
+        ]);
+        const rows: OrgLensRoiValueDriverRow[] = result.rows.map((row) => ({
+          category: row.CATEGORY,
+          pctDeviation: Number(row.PCT_DEVIATION_FROM_TYPICAL_MARKUP),
+        }));
+        return { method, nProjects: Number(result.rows.at(0)?.N_PROJECTS ?? 0), rows } satisfies OrgLensRoiValueDrivers;
+      },
+      OrgLensRoiService.isValueDrivers
     );
   }
 
@@ -555,6 +604,18 @@ export class OrgLensRoiService {
     });
   }
 
+  private static isValueDrivers(value: unknown): boolean {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+    const drivers = value as Record<string, unknown>;
+    if (!OrgLensRoiService.isFiniteNumber(drivers['nProjects'])) return false;
+    if (!Array.isArray(drivers['rows'])) return false;
+    return drivers['rows'].every((row) => {
+      if (row === null || typeof row !== 'object') return false;
+      const entry = row as Record<string, unknown>;
+      return typeof entry['category'] === 'string' && OrgLensRoiService.isFiniteNumber(entry['pctDeviation']);
+    });
+  }
+
   private static isInvestmentBreakdown(value: unknown): boolean {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
     const breakdown = value as Record<string, unknown>;
@@ -665,6 +726,10 @@ export class OrgLensRoiService {
 
   private investmentBreakdownTable(): string {
     return `${resolveLfxOnePlatinumSchema()}.ORG_LENS_ROI_INVESTMENT_BREAKDOWN`;
+  }
+
+  private valueDriversTable(): string {
+    return `${resolveLfxOnePlatinumSchema()}.ORG_LENS_ROI_VALUE_DECOMPOSITION`;
   }
 
   private projectsTable(): string {

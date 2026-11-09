@@ -6,6 +6,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { CROWDFUNDING_FUND_TYPE_ICONS, CROWDFUNDING_FUND_TYPE_LABELS } from '@lfx-one/shared/constants';
 import { RecurringDonation } from '@lfx-one/shared/interfaces';
+import { stripHtml } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-recurring-donation-initiative-header',
@@ -18,4 +19,6 @@ export class RecurringDonationInitiativeHeaderComponent {
 
   protected readonly fundTypeIcon = computed(() => CROWDFUNDING_FUND_TYPE_ICONS[this.donation().fundType]);
   protected readonly fundTypeLabel = computed(() => CROWDFUNDING_FUND_TYPE_LABELS[this.donation().fundType]);
+  // The initiative description is rich-text HTML; this one-line summary shows its text only.
+  protected readonly description = computed(() => stripHtml(this.donation().description));
 }

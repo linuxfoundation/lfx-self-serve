@@ -107,8 +107,8 @@
 
       <!-- Search and Filters -->
       <div class="px-5 pt-4 pb-3">
-        <div class="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div class="flex-1 relative">
+        <div class="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
+          <div class="flex-1 relative sm:min-w-56">
             <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true"></i>
             <label for="org-events-search-id" class="sr-only">Search events</label>
             <input
@@ -133,6 +133,86 @@
               [ngModel]="selectedStatus()"
               (ngModelChange)="selectedStatus.set($event)" />
           </div>
+          @if (isPastTab()) {
+            <div class="w-full sm:w-40">
+              <lfx-select
+                [form]="filterForm"
+                control="timeRange"
+                size="small"
+                [options]="timeRangeOptions"
+                styleClass="w-full"
+                ariaLabel="Filter by time range"
+                dataTest="org-events-time-range-filter" />
+            </div>
+          }
+          <div class="w-full sm:w-52">
+            <lfx-select
+              [form]="filterForm"
+              control="foundation"
+              size="small"
+              [filter]="true"
+              filterPlaceholder="Search foundations"
+              emptyFilterMessage="No foundations match."
+              [options]="foundationOptions()"
+              styleClass="w-full"
+              ariaLabel="Filter by foundation"
+              dataTest="org-events-foundation-filter" />
+          </div>
+          <div class="w-full sm:w-40" [attr.title]="countDisabledTitle()" data-testid="org-events-participation-filter">
+            <lfx-select
+              [form]="filterForm"
+              control="participation"
+              size="small"
+              [options]="participationOptions"
+              styleClass="w-full"
+              [ariaLabel]="participationLabel"
+              [tooltip]="countTooltip()"
+              tooltipPosition="top"
+              dataTest="org-events-participation-select" />
+          </div>
+          <div class="w-full sm:w-52">
+            <lfx-select
+              [form]="filterForm"
+              control="scope"
+              size="small"
+              [options]="scopeOptions"
+              styleClass="w-full"
+              [ariaLabel]="scopeLabel"
+              dataTest="org-events-scope-filter" />
+          </div>
+          <lfx-more-filters-toggle
+            [(expanded)]="moreFiltersExpanded"
+            [count]="hiddenFilterCount()"
+            controls="org-events-more-filters"
+            dataTest="org-events-more-filters-toggle" />
+          @if (canClearFilters()) {
+            <button
+              type="button"
+              class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 sm:self-auto"
+              data-testid="org-events-clear-filters"
+              (click)="clearFilters()">
+              Clear filters
+            </button>
+          }
+        </div>
+        <!-- Secondary filters, behind "More filters" -->
+        <div
+          id="org-events-more-filters"
+          class="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center"
+          [class.hidden]="!moreFiltersExpanded()"
+          data-testid="org-events-more-filters">
+          <div class="w-full sm:w-56">
+            <lfx-select
+              [form]="filterForm"
+              control="attribution"
+              size="small"
+              [options]="attributionOptions"
+              styleClass="w-full"
+              [ariaLabel]="attributionLabel"
+              [tooltip]="attributionTooltip()"
+              tooltipPosition="top"
+              dataTest="org-events-attribution-filter" />
+          </div>
         </div>
       </div>
 
@@ -145,6 +225,7 @@
               [loading]="upcomingEventsLoading()"
               [sortField]="upcomingSortField()"
               [sortOrder]="upcomingSortOrder()"
+              [attendeesCaption]="upcomingAttendeesCaption()"
               (pageChange)="onUpcomingPageChange($event)"
               (sortChange)="onUpcomingSortChange($event)"
               (attendeesClick)="onAttendeesClick($event)"
@@ -160,6 +241,7 @@
               [loading]="pastEventsLoading()"
               [sortField]="pastSortField()"
               [sortOrder]="pastSortOrder()"
+              [attendeesCaption]="pastAttendeesCaption()"
               [showAction]="false"
               emptyStateTitle="No past events"
               emptyStateSubtitle="No past events were found for your organization."
@@ -181,6 +263,8 @@
       [eventId]="activeDrawerEvent()?.eventId ?? ''"
       [eventName]="activeDrawerEvent()?.eventName ?? ''"
       [attendeeCount]="activeDrawerEvent()?.orgAttendeeCount ?? 0"
+      [attribution]="drawerAttribution()"
+      [participation]="drawerParticipation()"
       data-testid="org-events-attendees-drawer" />
     <lfx-event-speakers-drawer
       [visible]="speakersDrawerVisible()"

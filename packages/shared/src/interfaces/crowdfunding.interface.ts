@@ -46,6 +46,8 @@ export interface InitiativeBase {
   fundingStatus?: FundingStatus;
   /** Who the initiative is run on behalf of. Absent when upstream omits it; treat as personal. */
   attribution?: InitiativeAttribution;
+  /** Display name of the initiative's owner. CF sends it only on the lens list and the manage read (lfx-crowdfunding#452). */
+  creator?: string;
 }
 
 export type InitiativesResponse = OffsetPaginatedResponse<InitiativeBase>;
@@ -113,6 +115,8 @@ export interface OrgDonation {
   recurring: boolean;
   initiativeId?: string;
   initiativeName?: string;
+  /** Slug of the initiative's public crowdfunding page (`/initiatives/{slug}`). */
+  initiativeSlug?: string;
   donorName: string;
   donorEmail: string;
   amountCents: number;
@@ -121,6 +125,11 @@ export interface OrgDonation {
 }
 
 export type OrgDonationsResponse = OffsetPaginatedResponse<OrgDonation>;
+
+/** An Org lens donations row with its initiative's public crowdfunding page URL, when CF sent a slug. */
+export interface OrgDonationRow extends OrgDonation {
+  initiativeUrl?: string;
+}
 
 export interface FundingGoal {
   id: string;

@@ -32,6 +32,34 @@ describe('release build inputs (#4736)', () => {
     expect(files).toContain(resolve(appRoot, 'src/server/server.ts'));
   });
 
+  it('keeps specs out of the application program and type-checks them through their own projects', () => {
+    expect(typescriptInputs('tsconfig.app.json').some((file) => file.endsWith('.spec.ts'))).toBe(false);
+    const appSpecs = typescriptInputs('tsconfig.spec.json').filter((file) => file.endsWith('.spec.ts'));
+    const serverSpecs = typescriptInputs('tsconfig.server-spec.json').filter((file) => file.endsWith('.spec.ts'));
+    expect(appSpecs.length).toBeGreaterThan(0);
+    expect(serverSpecs.length).toBeGreaterThan(0);
+    expect(appSpecs.every((file) => file.startsWith(resolve(appRoot, 'src/app')))).toBe(true);
+    expect(serverSpecs.every((file) => file.startsWith(resolve(appRoot, 'src/server')))).toBe(true);
+    // Every spec under src/ must land in one of the two spec projects, or it is neither type-checked nor linted.
+    const allSpecs = typescriptInputs('tsconfig.json').filter((file) => file.endsWith('.spec.ts'));
+    expect(new Set([...appSpecs, ...serverSpecs])).toEqual(new Set(allSpecs));
+    const { scripts } = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'));
+    expect(scripts['check-types']).toContain('tsc --noEmit -p tsconfig.spec.json');
+    expect(scripts['check-types']).toContain('tsc --noEmit -p tsconfig.server-spec.json');
+  });
+
+  it('lints specs through the project that type-checks them', async () => {
+    const eslint = new ESLint({ cwd: appRoot });
+    const appSpec = await eslint.calculateConfigForFile(resolve(appRoot, 'src/app/shared/uikit/button/button.component.spec.ts'));
+    const serverSpec = await eslint.calculateConfigForFile(resolve(appRoot, 'src/server/server-logger.spec.ts'));
+    expect(appSpec.languageOptions.parserOptions.project).toBe('./tsconfig.spec.json');
+    expect(serverSpec.languageOptions.parserOptions.project).toBe('./tsconfig.server-spec.json');
+    const { scripts } = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'));
+    // Three ESLint processes (app + stories, app specs, server specs); one holding every program outgrows the default heap.
+    expect(scripts['lint']).toBe('node scripts/run-eslint.mjs --fix');
+    expect(scripts['lint:check']).toBe('node scripts/run-eslint.mjs');
+  });
+
   it('keeps stories in the separate Storybook TypeScript configuration', () => {
     const files = typescriptInputs('.storybook/tsconfig.json');
     expect(files.some((file) => file.endsWith('.stories.ts'))).toBe(true);

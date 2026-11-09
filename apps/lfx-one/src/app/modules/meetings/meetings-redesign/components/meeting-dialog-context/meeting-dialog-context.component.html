@@ -1,0 +1,18 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+@if (origin() === 'drawer') {
+  <div class="border-t border-gray-200" aria-hidden="true" data-testid="meeting-dialog-context-divider"></div>
+} @else {
+  <div class="flex flex-col gap-[4px] border-y border-gray-200 px-[24px] py-[16px]" data-testid="meeting-dialog-context-block">
+    @if (project(); as project) {
+      <span class="flex min-w-0 items-center gap-[6px] whitespace-nowrap text-[12px] text-gray-900" data-testid="meeting-dialog-context-project">
+        <lfx-meeting-project-logo [src]="project.logo" />
+        <span class="min-w-0 truncate" [attr.title]="project.name">{{ project.name }}</span>
+      </span>
+    }
+    <span class="text-[14px] font-medium leading-[20px] text-gray-900" data-testid="meeting-dialog-context-title">{{ row().title }}</span>
+    <span class="text-[12px] leading-[16px] text-gray-500" data-testid="meeting-dialog-context-when">{{ when() }}</span>
+  </div>
+}

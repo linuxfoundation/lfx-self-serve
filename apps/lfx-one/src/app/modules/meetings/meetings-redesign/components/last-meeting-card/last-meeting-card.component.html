@@ -29,18 +29,22 @@
           >{{ row.startTime | date: 'MMM' }}</span
         >
         <span class="flex flex-auto items-center justify-center text-[18px] leading-none text-gray-900">{{ row.startTime | date: 'd' }}</span>
-        <span class="absolute -right-[11px] -top-[11px] flex">
+        <!-- Restricted and Private together: two stacked 8px dots, no icons -->
+        @let stacked = visibilityBadges().length > 1;
+        <span class="absolute flex" [class]="stacked ? '-right-[7px] -top-[7px] flex-col gap-[2px]' : '-right-[11px] -top-[11px]'">
           @for (badge of visibilityBadges(); track badge.kind) {
             <span
               role="img"
               tabindex="0"
-              class="box-content inline-flex h-[17px] w-[17px] cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-              [class]="visibilityBg[badge.kind]"
+              class="box-content inline-flex cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              [class]="visibilityBg[badge.kind] + (stacked ? ' h-[8px] w-[8px]' : ' h-[17px] w-[17px]')"
               [attr.aria-label]="badge.title"
               [lfxUiTooltip]="badge.description ?? ''"
               [lfxUiTooltipTitle]="badge.title"
               [attr.data-testid]="'meetings-home-last-card-visibility-' + badge.kind">
-              <i class="text-[9px]" [class]="badge.icon" aria-hidden="true"></i>
+              @if (!stacked) {
+                <i class="text-[9px]" [class]="badge.icon" aria-hidden="true"></i>
+              }
             </span>
           }
         </span>
@@ -63,7 +67,7 @@
             [lfxUiTooltipDisabled]="!projectTruncated()"
             (click)="onLinkClick($event, url)"
             data-testid="meetings-home-last-card-project">
-            <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
+            <lfx-meeting-project-logo [src]="project.logo" />
             <span
               #projectName
               class="min-w-0 truncate underline decoration-transparent underline-offset-[3px] transition-colors duration-150 group-hover/eyebrow:decoration-current group-focus-visible/eyebrow:decoration-current motion-reduce:transition-none"
@@ -74,7 +78,7 @@
           <span
             class="mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-[12px] text-gray-500"
             data-testid="meetings-home-last-card-project">
-            <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
+            <lfx-meeting-project-logo [src]="project.logo" />
             <span
               #projectName
               class="min-w-0 truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
@@ -92,7 +96,7 @@
           <a
             class="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
             [href]="link.url"
-            (click)="onLinkClick($event, link.url)"
+            (click)="onTitleClick($event)"
             data-testid="meetings-home-last-card-title"
             >{{ row.title }}</a
           >
@@ -101,12 +105,18 @@
 
       <span class="truncate text-[12px] text-gray-500" data-testid="meetings-home-last-card-when">{{ when() }}</span>
 
-      @if (meetingType() || recurrenceTooltip() || summaryAwaitingReview()) {
+      @if (meetingType() || groups().length || recurrenceTooltip()) {
         <span class="mt-[6px] flex flex-wrap items-center gap-[6px]">
           @if (meetingType(); as type) {
             <!-- Muted tag text per the design; the library outline badge uses neutral-900. -->
             <lfx-ui-badge class="!text-gray-600" variant="outline" size="sm" data-testid="meetings-home-last-card-type"
               ><i [class]="type.icon" aria-hidden="true"></i>{{ type.label }}</lfx-ui-badge
+            >
+          }
+          @for (group of groups(); track group) {
+            <!-- A long group name truncates inside the card; the title keeps it whole. -->
+            <lfx-ui-badge class="max-w-full !text-gray-600" variant="outline" size="sm" [attr.title]="group" data-testid="meetings-home-last-card-group"
+              ><i class="fa-light fa-users" aria-hidden="true"></i><span class="min-w-0 truncate">{{ group }}</span></lfx-ui-badge
             >
           }
           @if (recurrenceTooltip(); as tooltip) {
@@ -119,26 +129,41 @@
               aria-label="Recurring"
               [lfxUiTooltip]="tooltip"
               data-testid="meetings-home-last-card-recurring"
-              ><i class="fa-light fa-arrows-rotate" aria-hidden="true"></i>Recurring</lfx-ui-badge
+              ><i class="fa-light fa-arrows-repeat" aria-hidden="true"></i>Recurring</lfx-ui-badge
             >
-          }
-          @if (summaryAwaitingReview()) {
-            <lfx-ui-badge tone="warning" size="sm" data-testid="meetings-home-last-card-summary-pending">Awaiting your review</lfx-ui-badge>
           }
         </span>
       }
     </div>
 
+    @if (attendance(); as attendance) {
+      <lfx-meeting-home-attendance class="mb-[14px] mt-[4px]" [attendance]="attendance" data-testid="meetings-home-last-card-attendance" />
+    }
+
     @if (recordingUrl() || summaryContent()) {
       <div class="flex flex-col gap-[8px]">
-        @if (recordingUrl()) {
-          <lfx-ui-button variant="recording" icon="fa-light fa-play" fullWidth (click)="openRecording($event)" data-testid="meetings-home-last-card-recording">
-            Recording
-          </lfx-ui-button>
+        @if (recordingUrl(); as recordingUrl) {
+          <!-- Full width: the main half grows and the copy half stays square. -->
+          <lfx-ui-split-button
+            class="w-full [&>lfx-ui-button>button]:w-full [&>lfx-ui-button]:flex-auto"
+            label="Recording"
+            variant="recording"
+            icon="fa-light fa-play"
+            secondaryIcon="fa-light fa-link"
+            secondaryTooltip="Copy recording link"
+            (click)="$event.stopPropagation()"
+            (triggered)="openRecording(recordingUrl)"
+            (secondaryTriggered)="copyRecordingLink(recordingUrl)"
+            data-testid="meetings-home-last-card-recording" />
         }
         @if (summaryContent()) {
-          <lfx-ui-button variant="secondary" icon="fa-light fa-sparkles" fullWidth (click)="openSummary($event)" data-testid="meetings-home-last-card-summary">
-            AI Summary
+          <lfx-ui-button
+            [variant]="summaryAwaitingReview() ? 'secondary-accent' : 'secondary'"
+            [icon]="summaryAwaitingReview() ? '' : 'fa-light fa-sparkles'"
+            fullWidth
+            (click)="openSummary($event)"
+            data-testid="meetings-home-last-card-summary">
+            {{ summaryAwaitingReview() ? 'Review summary' : 'AI Summary' }}
           </lfx-ui-button>
         }
       </div>

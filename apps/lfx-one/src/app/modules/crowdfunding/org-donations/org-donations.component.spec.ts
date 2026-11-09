@@ -71,6 +71,25 @@ describe('OrgDonationsComponent (#415)', () => {
     expect(service.getOrgDonations).toHaveBeenCalledTimes(1);
   });
 
+  it('links the initiative to its crowdfunding page when CF sends its slug', async () => {
+    rows = [
+      { ...donation(), initiativeSlug: 'synthetic-fund' },
+      { ...donation(), id: 'synthetic-donation-2' },
+    ];
+    accountContext.selectedAccount.set({ accountId: '', accountName: 'Synthetic Org', uid: ORG_UID });
+    await fixture.whenStable();
+
+    const link = root().querySelector<HTMLAnchorElement>('[data-testid="org-donation-initiative-link-synthetic-donation-1"]');
+    expect(link?.textContent?.trim()).toBe('Synthetic Fund');
+    expect(link?.getAttribute('href')).toMatch(/[^/]\/initiatives\/synthetic-fund$/);
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+
+    // No slug: plain name.
+    expect(root().querySelector('[data-testid="org-donation-initiative-link-synthetic-donation-2"]')).toBeNull();
+    expect(root().querySelector('[data-testid="org-donation-row-synthetic-donation-2"]')?.textContent).toContain('Synthetic Fund');
+  });
+
   it('notes that only matched donations appear when the list is empty', async () => {
     accountContext.selectedAccount.set({ accountId: '', accountName: 'Synthetic Org', uid: ORG_UID });
     await fixture.whenStable();

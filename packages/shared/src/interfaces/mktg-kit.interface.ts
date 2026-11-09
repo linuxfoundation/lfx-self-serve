@@ -15,6 +15,8 @@ export interface MktgKitAsset {
   /** Sentence noun phrase for the Family's next-steps caption. */
   captionName?: string;
   description: string;
+  /** The family book's opener line for the document: what it holds, in a sentence (the design board's words). */
+  bookSummary?: string;
   agentKey?: MktgDocumentAgentKey;
 }
 

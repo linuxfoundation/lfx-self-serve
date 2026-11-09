@@ -49,6 +49,42 @@
         ariaLabel="Filter by time range"
         dataTest="org-people-event-attendees-time-range-filter" />
     </div>
+    <div class="w-full md:w-40">
+      <lfx-select
+        [form]="filterForm"
+        control="participation"
+        size="small"
+        [options]="participationOptions"
+        styleClass="w-full"
+        [ariaLabel]="participationLabel"
+        [tooltip]="participationTooltip()"
+        tooltipPosition="top"
+        dataTest="org-people-event-attendees-participation-filter" />
+    </div>
+    <lfx-more-filters-toggle
+      [(expanded)]="moreFiltersExpanded"
+      [count]="hiddenFilterCount()"
+      controls="org-people-event-attendees-more-filters"
+      dataTest="org-people-event-attendees-more-filters-toggle" />
+  </div>
+  <!-- Secondary filters, behind "More filters" -->
+  <div
+    id="org-people-event-attendees-more-filters"
+    class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4"
+    [class.hidden]="!moreFiltersExpanded()"
+    data-testid="org-people-event-attendees-more-filters">
+    <div class="w-full md:w-56">
+      <lfx-select
+        [form]="filterForm"
+        control="attribution"
+        size="small"
+        [options]="attributionOptions"
+        styleClass="w-full"
+        [ariaLabel]="attributionLabel"
+        [tooltip]="attributionTooltip()"
+        tooltipPosition="top"
+        dataTest="org-people-event-attendees-attribution-filter" />
+    </div>
   </div>
 
   @if (fetchError()) {
@@ -79,6 +115,7 @@
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-event-attendees-stat-attendees">
           <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().attendees | number }}</div>
           <div class="mt-1 text-xs text-gray-500">Attendees</div>
+          <div class="mt-0.5 text-[11px] text-gray-400" data-testid="org-people-event-attendees-attendees-caption">{{ attendeesCaption() }}</div>
         </div>
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-event-attendees-stat-events">
           <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().events | number }}</div>
@@ -167,40 +204,57 @@
           <tbody>
             @let expanded = expansion();
             @let allExpandedRows = expandedRowsMap();
-            @for (row of visibleRows(); track row.personKey) {
-              @let isExpanded = !!expanded[row.personKey];
-              @let eventRows = allExpandedRows[row.personKey];
+            @for (row of visibleRows(); track row.participantRef) {
+              @let isExpanded = !!expanded[row.participantRef];
+              @let eventRows = allExpandedRows[row.participantRef];
               <tr
                 class="cursor-pointer border-b border-gray-100 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 role="button"
                 tabindex="0"
-                [attr.data-testid]="'org-people-event-attendees-row-' + row.personKey"
+                [attr.data-testid]="'org-people-event-attendees-row-' + row.participantRef"
                 [attr.aria-expanded]="isExpanded"
                 [attr.aria-label]="'Toggle events for ' + row.name"
-                (click)="toggleRow(row.personKey)"
-                (keydown)="onRowKeydown($event, row.personKey)">
+                (click)="toggleRow(row.participantRef)"
+                (keydown)="onRowKeydown($event, row.participantRef)">
                 <td class="px-2 py-3 align-middle">
                   <i class="fa-light fa-chevron-right block text-xs text-gray-400 transition-transform" [class.rotate-90]="isExpanded" aria-hidden="true"></i>
                 </td>
                 <td class="px-4 py-3 align-middle">
-                  <button
-                    type="button"
-                    class="flex min-w-0 items-center gap-3 bg-transparent p-0 text-left"
-                    [attr.data-testid]="'org-people-event-attendees-row-' + row.personKey + '-name'"
-                    (click)="onPersonClick(row, $event)">
-                    <span
-                      class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
-                      [class]="row.avatarColorClass"
-                      aria-hidden="true">
-                      {{ row.initials }}
-                    </span>
-                    <span class="flex min-w-0 flex-col">
-                      <span class="truncate font-medium text-gray-900 hover:text-blue-600">{{ row.name }}</span>
-                      @if (row.title) {
-                        <span class="truncate text-xs text-gray-500">{{ row.title }}</span>
-                      }
-                    </span>
-                  </button>
+                  @if (row.personKey) {
+                    <button
+                      type="button"
+                      class="flex min-w-0 items-center gap-3 bg-transparent p-0 text-left"
+                      [attr.data-testid]="'org-people-event-attendees-row-' + row.participantRef + '-name'"
+                      (click)="onPersonClick(row, $event)">
+                      <span
+                        class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                        [class]="row.avatarColorClass"
+                        aria-hidden="true">
+                        {{ row.initials }}
+                      </span>
+                      <span class="flex min-w-0 flex-col">
+                        <span class="truncate font-medium text-gray-900 hover:text-blue-600">{{ row.name }}</span>
+                        @if (row.title) {
+                          <span class="truncate text-xs text-gray-500">{{ row.title }}</span>
+                        }
+                      </span>
+                    </button>
+                  } @else {
+                    <div class="flex min-w-0 items-center gap-3" [attr.data-testid]="'org-people-event-attendees-row-' + row.participantRef + '-name'">
+                      <span
+                        class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                        [class]="row.avatarColorClass"
+                        aria-hidden="true">
+                        {{ row.initials }}
+                      </span>
+                      <span class="flex min-w-0 flex-col">
+                        <span class="truncate font-medium text-gray-900">{{ row.name }}</span>
+                        @if (row.title) {
+                          <span class="truncate text-xs text-gray-500">{{ row.title }}</span>
+                        }
+                      </span>
+                    </div>
+                  }
                 </td>
                 <td class="px-4 py-3 align-middle">
                   @if (row.role === 'Speaker') {
@@ -235,7 +289,7 @@
                 </td>
               </tr>
               @if (isExpanded) {
-                <tr class="bg-slate-50" [attr.data-testid]="'org-people-event-attendees-row-' + row.personKey + '-detail-row'">
+                <tr class="bg-slate-50" [attr.data-testid]="'org-people-event-attendees-row-' + row.participantRef + '-detail-row'">
                   <td colspan="6" class="p-0">
                     <div class="px-4 pb-4 pt-3 sm:pl-16">
                       <div class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Events ({{ eventRows.length }})</div>

@@ -19,7 +19,7 @@ const meta: Meta<UiButtonComponent> = {
       control: 'select',
       options: ['primary', 'secondary', 'secondary-accent', 'tertiary', 'tertiary-accent', 'danger', 'danger-tertiary', 'recording'],
     },
-    size: { control: 'select', options: ['small', 'default', 'large'] },
+    size: { control: 'select', options: ['tiny', 'small', 'default', 'large'] },
   },
   decorators: [applicationConfig({ providers: [provideRouter([{ path: '**', children: [] }])] })],
   args: {
@@ -48,6 +48,7 @@ export const Danger: Story = { args: { variant: 'danger' } };
 export const DangerTertiary: Story = { args: { variant: 'danger-tertiary' } };
 /** Not in the LFX UI Library: the epic's proposed green action, flagged for the design team. */
 export const Recording: Story = { args: { variant: 'recording', icon: 'fa-light fa-circle-dot' } };
+export const Tiny: Story = { args: { size: 'tiny', variant: 'secondary' } };
 export const Small: Story = { args: { size: 'small', variant: 'secondary' } };
 export const Large: Story = { args: { size: 'large', variant: 'secondary' } };
 export const WithLeadingIcon: Story = { args: { icon: 'fa-light fa-plus' } };
@@ -112,7 +113,7 @@ export const Matrix: Story = {
   render: () => ({
     template: `
       <div class="flex flex-col gap-[16px]">
-        @for (size of ['small', 'default', 'large']; track size) {
+        @for (size of ['tiny', 'small', 'default', 'large']; track size) {
           <div class="flex flex-wrap items-center gap-[8px]">
             @for (variant of ['primary','secondary','secondary-accent','tertiary','tertiary-accent','danger','danger-tertiary','recording']; track variant) {
               <lfx-ui-button [variant]="variant" [size]="size" icon="fa-light fa-circle">{{ variant }}</lfx-ui-button>

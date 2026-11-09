@@ -114,7 +114,16 @@ writer's lock. S3 passes the original ETag through `If-Match`.
 The optional `approvals` map on the same current record stores each revision's
 `approvedAt` and opaque effective-sub `approvedBy`; it is never part of hashed
 revision bytes. Missing or malformed optional annotations mean no approvals,
-not a corrupt critical pointer. Approve uses the existing `writeCurrent` CAS to
+not a corrupt critical pointer. Since the brand kit's report v2, a brand kit
+approval also records `accepted` beside them: the stable keys of what the
+revision's sidecar report showed at that moment (`mktgAcceptedSnapshotOf`:
+failed sources by `source`, or the v1 `name`; missing assets by `asset`;
+warnings by `code|text`; gaps by their exact text; colour conflicts by
+`name`), empty lists when the sidecar has no report. Other documents'
+approvals are unchanged: no `accepted` is written or returned for them. The
+read is tolerant (`readMktgRevisionAccepted`): a malformed snapshot is dropped
+and the approval kept, as for approvals made before it existed, and the view
+then derives what it can. Approve uses the existing `writeCurrent` CAS to
 add an annotation and select that revision atomically. Already approved and
 current is a no-op; selecting an earlier approval preserves its original
 approval time and actor. Make current only moves selection: it never approves
@@ -173,9 +182,10 @@ The Family page eagerly checks last export independently of its document-list re
 A failed check disables export rather than guessing Create. Download PDF composes
 the approved-current framework, brand kit, boilerplates and FAQ in exporter order,
 with one family cover and contents. The family print body class selects a shared
-portrait layout. Family and standalone kit PDFs use the same five-chapter native
-portrait component, not scaled landscape artwork; the existing kit JSON/book view
-model supplies its text and embedded logo assets without new API fields.
+portrait layout. Family and standalone kit PDFs use the same portrait-book component
+(fixed portrait frames; see [the brand kit's portrait book](../frontend/marketing-kit.md#the-brand-kits-portrait-book-download-pdf)),
+not scaled landscape artwork; the existing kit JSON/book view model supplies its
+text and embedded logo assets without new API fields.
 Slides exports the same supported approved assets.
 Neither export changes the on-screen asset rendering or grants Google Drive access.
 
@@ -241,10 +251,32 @@ emails are persisted as attribution in these objects, and no personal attributio
 is embedded in immutable revision bytes.
 Names are resolved at read time through `UserService.getUserInfo` and the existing
 NATS `USER_METADATA_READ` directory lookup, which accepts Auth0 subjects. Lookups
-are memoized per request and bounded like revision reads. A stored author whose
-name is empty or whose lookup failed renders “name unavailable”; only an absent
-author record renders the historical no-name label. Failures warn once per ID
-and never fail a document read. There is no username fallback.
+are memoized per request and bounded like revision reads. On top of that memo,
+`MktgDocumentAuthorService` keeps one process-wide map of the last display name
+the directory returned per subject, shared by every consumer in the process
+(revisions, comments, runs, redrafts), so the revision GET and the poll cycle a
+client interleaves agree about an approver instead of flipping between a name and
+none. The map is stale-if-error (RFC 5861 §4): only a successful lookup writes it,
+and a failed lookup — one that throws (a timeout, a 503, an invalid body) or one
+the directory answers with `success: false`, which lfx-v2-auth-service does for
+any upstream error (an M2M token failure, an Auth0 rate limit or 5xx), not only a
+miss — serves the subject's last known name while that name is within
+`MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS` (one hour) of its last success, logging
+`served_stale: true`, never the name. It holds at most
+`MKTG_DOCUMENT_AUTHOR_CACHE_LIMIT` (500) subjects, the least recently resolved
+dropped first, and sweeps expired entries whenever it writes. A successful answer
+with an empty display name clears the entry and renders no name; the one-hour
+window is the privacy bound for a user removed from the directory, whose name
+lingers at most that long. A failure is never remembered. The cache is per
+process, so each BFF replica, an evicted subject or an expired entry answers with
+no name until a lookup succeeds; a shared cache, or the revision storing the
+approver's display name at approval time, is the follow-up, as is a typed
+not-found code from lfx-v2-auth-service so a removed user clears at once (error
+strings are never matched).
+A stored author whose name is empty, or whose lookup failed with no name to serve,
+renders “name unavailable”; only an absent author record renders the historical
+no-name label. Failures warn once per ID and request and never fail a document
+read. There is no username fallback.
 
 Detail, revision, and Make current responses expose `revisionId`, `changedAt` and
 name-only `changedBy` as `current`; neither stored user IDs nor the internal
@@ -476,7 +508,7 @@ Persistence receipts carry the exact `document_location` with `agent_key`,
 `document_id`, `revision_id`; it is not a lookup of whichever revision is current.
 UI models normalize this to their camel-case location. JSON content, sidecars,
 CAS publication, current selection and attribution stay on the shared writer.
-`getRawEventPayloads` reads up to four offset pages of 500 raw events, stopping on a short page or `has_more=false`. It de-duplicates event IDs and sorts chronologically, then replaces user/trigger content with `mktg_session_turn_started`. Only a four-page read that still has more events appends `mktg_session_events_truncated`; a full final page does not. These content-free markers prevent an old
+`getRawEventPayloads` reads offset pages of 500 raw events, sized from the API's `pagination.total_count` under the absolute cap `MKTG_RAW_EVENTS_MAX_PAGES` (20 pages, 10,000 events); when the total is absent it stops on a short page or `has_more=false`. It de-duplicates event IDs and sorts chronologically, then replaces user/trigger content with `mktg_session_turn_started`. Only a read that reaches the cap with more events left appends `mktg_session_events_truncated`. Concurrent polls of one session share one in-flight read (single-flight, per process). These content-free markers prevent an old
 completion or finalize replay from ending a queued/truncated turn. Reasoning
 MIME is filtered before any text, questions, envelope or reply extraction.
 
@@ -522,10 +554,14 @@ Only the effective opaque subject is stored for authorship; an impersonated
 target without a subject remains unattributed. Display names are resolved on
 reads through `MktgDocumentAuthorService`, which also owns revision attribution.
 The comments service shares that helper instance with its revision reader, so
-both use one per-request name cache, with bounded fan-out. Lookup failures resolve
-to `{ name: null }` without failing the comments read; thrown errors retain
-structured `err` metadata, and unsuccessful directory responses warn without
-inventing an error. Explicit public projection excludes subjects, request IDs
+both use one per-request name memo and the process-wide last-known-name map
+described under revision attribution (500 subjects, one hour since the last
+success, success-only writes), with bounded fan-out. A failed lookup — thrown, or
+answered `success: false` — serves the author's last known name within that
+window, logging `served_stale: true`, and otherwise resolves to `{ name: null }`
+without failing the comments read; thrown errors retain structured `err`
+metadata, and an unsuccessful directory response warns without inventing an
+error. Explicit public projection excludes subjects, request IDs
 and the private send ledger. Bodies
 and attribution are not logged. Direct asset editing and revision overwrite are
 never allowed; redrafts append ordinary Drafts through the existing writer.

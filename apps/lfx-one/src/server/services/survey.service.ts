@@ -20,6 +20,7 @@ import {
   SurveyResponseRecord,
   SurveyResponsesPage,
   SurveyResyncPreview,
+  SurveyTemplate,
 } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -194,6 +195,33 @@ export class SurveyService {
     });
 
     return survey;
+  }
+
+  /**
+   * Lists the SurveyMonkey templates for the survey wizard (#5124).
+   * Upstream authorizes `writer` on `project_uid` OR `writer` on `committee_uid`; both are passed
+   * through unchanged. No caching: a shared cache would bypass that per-user check.
+   */
+  public async getSurveyTemplates(req: Request, projectUid: string, committeeUid?: string): Promise<SurveyTemplate[]> {
+    logger.debug(req, 'get_survey_templates', 'Fetching survey templates', {
+      project_uid: projectUid,
+      committee_uid: committeeUid,
+    });
+
+    const params: Record<string, string> = { project_uid: projectUid };
+
+    if (committeeUid) {
+      params['committee_uid'] = committeeUid;
+    }
+
+    const templates = await this.microserviceProxy.proxyRequest<SurveyTemplate[] | null>(req, 'LFX_V2_SERVICE', '/surveys/templates', 'GET', params);
+    const result = templates ?? [];
+
+    logger.debug(req, 'get_survey_templates', 'Completed survey templates fetch', {
+      template_count: result.length,
+    });
+
+    return result;
   }
 
   /**

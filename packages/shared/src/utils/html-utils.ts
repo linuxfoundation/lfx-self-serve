@@ -234,6 +234,45 @@ export function escapeHtml(text: string | null | undefined): string {
 }
 
 /**
+ * Turns a plain-text body into paragraph HTML, leaving a value that already holds markup as is.
+ *
+ * Rich-text fields can still carry values written before they were rich: plain text whose line
+ * breaks a browser would collapse once rendered as HTML. Blank lines become `<p>` boundaries and
+ * single newlines become `<br>`, after escaping, so the text renders (and loads into the editor)
+ * the way it was written. Mirrors the public crowdfunding site's `renderDescription`. The output is
+ * NOT sanitized: pass it to a sink that sanitizes, such as Angular's `[innerHTML]`.
+ * Pure string ops — SSR-safe.
+ *
+ * @param value - Plain text or an HTML fragment
+ * @returns The value unchanged when it contains a tag, otherwise escaped paragraph HTML
+ *
+ * @example
+ * ```typescript
+ * plainTextToHtml('One\ntwo\n\nThree')
+ * // Returns: "<p>One<br>two</p><p>Three</p>"
+ *
+ * plainTextToHtml('<p>Already <strong>HTML</strong></p>')
+ * // Returns: "<p>Already <strong>HTML</strong></p>"
+ * ```
+ */
+export function plainTextToHtml(value: string | null | undefined): string {
+  if (!value) return '';
+  // `[^<>]*` keeps the tag test linear on inputs like `<a<a<a...`.
+  if (/<[a-z][^<>]*>/i.test(value)) return value;
+  return (
+    value
+      .replace(/\r\n?/g, '\n')
+      // Trimmed first so leading / trailing newlines do not become stray <br>s.
+      .trim()
+      // A run of blank lines (whitespace only) ends a paragraph, consumed whole.
+      .split(/\n(?:[^\S\n]*\n)+/)
+      .filter((paragraph) => paragraph.trim())
+      .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`)
+      .join('')
+  );
+}
+
+/**
  * Strips HTML-like tag sequences until the string is stable. The inner
  * `[^<>]*` class is load-bearing: it disallows nested `<` inside a tag body,
  * which prevents the engine from trying every `<` position on adversarial
@@ -271,6 +310,49 @@ function stripTagsToStable(s: string): string {
 export function stripHtml(html: string | null | undefined): string {
   if (!html) return '';
   return decodeHtmlEntities(stripTagsToStable(html)).trim();
+}
+
+/**
+ * A plain-text opening of an HTML document (e.g. a sent newsletter body), at most `maxLength`
+ * characters, cut at a word boundary with a trailing ellipsis when shortened. `<style>`, `<script>`
+ * and other non-text elements are dropped with their contents, block boundaries become spaces, and
+ * whitespace collapses — so the result is safe to show as text, never as HTML.
+ */
+export function htmlTextExcerpt(html: string | null | undefined, maxLength: number): string {
+  if (!html || maxLength <= 0) return '';
+  const text = sanitizeHtml(html.replace(/<(\/?)(p|div|br|h[1-6]|li|tr|td|th|table|section|article|blockquote)\b/gi, ' <$1$2'), {
+    allowedTags: [],
+    allowedAttributes: {},
+    nonTextTags: ['style', 'script', 'textarea', 'option', 'noscript', 'title', 'head'],
+  });
+  const collapsed = decodeHtmlEntities(text).replace(/\s+/g, ' ').trim();
+  if (collapsed.length <= maxLength) return collapsed;
+
+  const cut = collapsed.slice(0, maxLength - 1);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > maxLength / 2 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
+/**
+ * The `src` of the first image in an HTML document that is a public `https:` URL, skipping
+ * tracking-pixel-sized images (an explicit width or height of 2px or less), or null when there is none.
+ */
+export function firstHtmlImageUrl(html: string | null | undefined): string | null {
+  if (!html) return null;
+  let found: string | null = null;
+  sanitizeHtml(html, {
+    allowedTags: ['img'],
+    allowedAttributes: { img: ['src', 'width', 'height'] },
+    exclusiveFilter: (frame) => {
+      if (found || frame.tag !== 'img') return false;
+      const { src, width, height } = frame.attribs;
+      const tiny = [width, height].some((size) => size !== undefined && Number.parseInt(size, 10) <= 2);
+      const url = canonicalHttpUrl(src);
+      if (!tiny && url.startsWith('https:')) found = url;
+      return false;
+    },
+  });
+  return found;
 }
 
 /**

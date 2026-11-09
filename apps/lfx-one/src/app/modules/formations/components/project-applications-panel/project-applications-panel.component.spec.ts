@@ -3,8 +3,10 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import type { ProjectApplication, ProjectApplicationViewMode } from '@lfx-one/shared/interfaces';
 import { ProjectApplicationService } from '@services/project-application.service';
 import { ProjectService } from '@services/project.service';
@@ -49,16 +51,18 @@ function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectA
 describe('ProjectApplicationsPanelComponent (#3037)', () => {
   let service: ProjectApplicationService;
   let getApplications: MockInstance<ProjectApplicationService['getApplications']>;
+  let getProject: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     TestBed.resetTestingModule();
+    getProject = vi.fn(() => of(null));
     await TestBed.configureTestingModule({
       imports: [ProjectApplicationsPanelComponent],
       providers: [
         provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])) } },
+        { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])), getProject } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
         DialogService,
@@ -196,5 +200,180 @@ describe('ProjectApplicationsPanelComponent (#3037)', () => {
     expect(staff.fixture.nativeElement.querySelector('[data-testid="project-applications-submitter-a"]')).not.toBeNull();
     const mine = await mount('submitter', [buildApplication({ uid: 'a' })]);
     expect(mine.fixture.nativeElement.querySelector('[data-testid="project-applications-submitter-a"]')).toBeNull();
+  });
+
+  describe('started from (#5187)', () => {
+    const AAIF_UID = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    /** Funded, active, membership-style: what `computeIsFoundation` accepts. */
+    const AAIF = {
+      uid: AAIF_UID,
+      name: 'Agentic AI Foundation',
+      stage: 'Active',
+      funding: 'Funded',
+      funding_model: ['Membership'],
+      legal_entity_type: 'Corporation',
+    };
+    const startedFrom = (fixture: ComponentFixture<ProjectApplicationsPanelComponent>, uid: string): string | null =>
+      (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="project-applications-started-from-${uid}"]`)?.textContent?.trim() ?? null;
+
+    const settle = async (fixture: ComponentFixture<ProjectApplicationsPanelComponent>): Promise<void> => {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('shows "Started from: {foundation}" on a staff row once the name resolves, reading each foundation once', async () => {
+      getProject.mockReturnValue(of(AAIF));
+      const { fixture } = await mount('staff', [
+        buildApplication({ uid: 'a', target_parent_uid: AAIF_UID }),
+        buildApplication({ uid: 'b', target_parent_uid: AAIF_UID }),
+        buildApplication({ uid: 'c' }),
+      ]);
+      await settle(fixture);
+
+      expect(startedFrom(fixture, 'a')).toBe('Started from: Agentic AI Foundation');
+      expect(startedFrom(fixture, 'b')).toBe('Started from: Agentic AI Foundation');
+      expect(startedFrom(fixture, 'c')).toBeNull();
+      expect(getProject).toHaveBeenCalledTimes(1);
+      expect(getProject).toHaveBeenCalledWith(AAIF_UID, false);
+    });
+
+    it('shows nothing for a foundation that does not resolve', async () => {
+      const { fixture } = await mount('staff', [buildApplication({ uid: 'a', target_parent_uid: AAIF_UID })]);
+      await settle(fixture);
+
+      expect(startedFrom(fixture, 'a')).toBeNull();
+    });
+
+    it('shows nothing when the named project is not a foundation, so a submitter-chosen uid is not presented as where it started', async () => {
+      getProject.mockReturnValue(of({ ...AAIF, funding: 'Unfunded', funding_model: [] }));
+      const { fixture } = await mount('staff', [buildApplication({ uid: 'a', target_parent_uid: AAIF_UID })]);
+      await settle(fixture);
+
+      expect(startedFrom(fixture, 'a')).toBeNull();
+    });
+
+    it('does not show or look anything up in the submitter list', async () => {
+      getProject.mockReturnValue(of(AAIF));
+      const { fixture } = await mount('submitter', [buildApplication({ uid: 'a', target_parent_uid: AAIF_UID })]);
+      await settle(fixture);
+
+      expect(startedFrom(fixture, 'a')).toBeNull();
+      expect(getProject).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('ProjectApplicationsPanelComponent — deep link (#5229)', () => {
+  const KNOWN = '3f2b8c1e-7a4d-4e1b-9c2a-5d6e7f8a9b0c';
+  const OTHER = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+  let navigate: MockInstance<Router['navigate']>;
+
+  const mount = async (mode: ProjectApplicationViewMode, param: string | null, fetched: ProjectApplication[], platform = 'browser') => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [ProjectApplicationsPanelComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: platform },
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(param !== null ? { tab: 'proposals', application: param } : {})) } },
+        { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])), getProject: vi.fn(() => of(null)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        DialogService,
+      ],
+    }).compileComponents();
+    navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    vi.spyOn(TestBed.inject(ProjectApplicationService), 'getApplications').mockReturnValue(of(fetched));
+    const fixture = TestBed.createComponent(ProjectApplicationsPanelComponent);
+    fixture.componentRef.setInput('mode', mode);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture.componentInstance as unknown as { selectedUid: () => string | null; drawerVisible: () => boolean };
+  };
+
+  it('opens the drawer for a known uid once, and strips the param', async () => {
+    const panel = await mount('staff', KNOWN, [buildApplication({ uid: OTHER }), buildApplication({ uid: KNOWN })]);
+    expect(panel.selectedUid()).toBe(KNOWN);
+    expect(panel.drawerVisible()).toBe(true);
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate.mock.calls[0][1]).toMatchObject({ queryParams: { application: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  });
+
+  it('matches the uid case-insensitively', async () => {
+    const panel = await mount('staff', KNOWN.toUpperCase(), [buildApplication({ uid: KNOWN })]);
+    expect(panel.selectedUid()).toBe(KNOWN);
+  });
+
+  it('opens nothing for a uid that is not in the queue, but still strips the param', async () => {
+    const panel = await mount('staff', OTHER, [buildApplication({ uid: KNOWN })]);
+    expect(panel.selectedUid()).toBeNull();
+    expect(panel.drawerVisible()).toBe(false);
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate.mock.calls[0][1]).toMatchObject({ queryParams: { application: null }, replaceUrl: true });
+  });
+
+  it('opens nothing for a malformed uid, but still strips the param', async () => {
+    const panel = await mount('staff', 'not-a-uuid', [buildApplication({ uid: 'not-a-uuid' })]);
+    expect(panel.selectedUid()).toBeNull();
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('strips an empty param too, opening nothing', async () => {
+    const panel = await mount('staff', '', [buildApplication({ uid: KNOWN })]);
+    expect(panel.selectedUid()).toBeNull();
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing on the server, so SSR never turns the URL change into a redirect', async () => {
+    const panel = await mount('staff', KNOWN, [buildApplication({ uid: KNOWN })], 'server');
+    expect(panel.selectedUid()).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('is not consumed by a failed read, so a retry still opens the proposal', async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [ProjectApplicationsPanelComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap({ tab: 'proposals', application: KNOWN })) } },
+        { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])), getProject: vi.fn(() => of(null)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        DialogService,
+      ],
+    }).compileComponents();
+    const router = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    vi.spyOn(TestBed.inject(ProjectApplicationService), 'getApplications')
+      .mockReturnValueOnce(throwError(() => new Error('boom')))
+      .mockReturnValue(of([buildApplication({ uid: KNOWN })]));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fixture = TestBed.createComponent(ProjectApplicationsPanelComponent);
+    fixture.componentRef.setInput('mode', 'staff');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const panel = fixture.componentInstance as unknown as { selectedUid: () => string | null; retry: () => void };
+    expect(panel.selectedUid()).toBeNull();
+    expect(router).not.toHaveBeenCalled();
+
+    panel.retry();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(panel.selectedUid()).toBe(KNOWN);
+    expect(router).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores the param in submitter mode', async () => {
+    const panel = await mount('submitter', KNOWN, [buildApplication({ uid: KNOWN })]);
+    expect(panel.selectedUid()).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

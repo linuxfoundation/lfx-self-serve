@@ -80,6 +80,9 @@ export const MKTG_REVISION_ID_REGEX = /^((?!000000)[0-9]{6}-[0-9a-f]{64}|legacy-
 export const MKTG_DOCUMENT_READ_CONCURRENCY = 4;
 export const MKTG_DOCUMENT_WRITE_ATTEMPTS = 8;
 export const MKTG_DOCUMENT_CURRENT_KEY = 'current.json';
+/** The last successfully resolved display name per subject, served when a directory lookup fails: at most this many subjects, each for this long after its last success. */
+export const MKTG_DOCUMENT_AUTHOR_CACHE_LIMIT = 500;
+export const MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS = 60 * 60 * 1000;
 
 /** The catalog's display name for an agent, so a rename in MKTG_AGENTS reaches the Documents area. */
 function catalogAgentName(catalogAgentId: string): string {

@@ -21,3 +21,19 @@ describe('isBrowserCredentialUrlPath vote links (#4363)', () => {
     expect(isBrowserCredentialUrlPath()).toBe(expected);
   });
 });
+
+describe('isBrowserCredentialUrlPath newsletter invite landing (#5235)', () => {
+  afterEach(() => window.history.replaceState(null, '', '/'));
+
+  it.each([
+    ['/newsletters/invite#token=synthetic', true],
+    ['/newsletters/invite/', true],
+    ['/newsletters/invite', true],
+    ['/newsletters/acme/n-1', false],
+    ['/newsletters/my/acme?invite=c-1', false],
+  ])('%s -> %s', (url, expected) => {
+    window.history.replaceState(null, '', url);
+
+    expect(isBrowserCredentialUrlPath()).toBe(expected);
+  });
+});

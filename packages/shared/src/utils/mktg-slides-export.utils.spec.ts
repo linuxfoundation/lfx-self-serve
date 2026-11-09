@@ -14,13 +14,19 @@ import {
   MKTG_SLIDES_EXPORT_LOGO_NOTES,
   MKTG_SLIDES_EXPORT_RECORD_SCHEMA,
 } from '../constants/mktg-slides-export.constants';
-import { MktgSlidesExportBranded, MktgSlidesExportRecord } from '../interfaces/mktg-slides-export.interface';
+import {
+  MktgSlidesExportBranded,
+  MktgSlidesExportContent,
+  MktgSlidesExportLogoVariantCounts,
+  MktgSlidesExportRecord,
+} from '../interfaces/mktg-slides-export.interface';
 import {
   buildMktgSlidesExportPrefix,
   buildMktgSlidesExportRecordKey,
   classifyMktgSlidesExportFailure,
   isMktgSlidesExportStale,
   mktgSlidesExportBrandSummary,
+  mktgSlidesExportContentJson,
   mktgSlidesExportDeckLink,
   mktgSlidesExportDeckTitle,
   mktgSlidesExportFailed,
@@ -115,6 +121,13 @@ describe('renderMktgSlidesExportFormMessage', () => {
         'DECK ID: none (create a new deck from the LF 2025 template)',
         'DECK TITLE: Example Project · Messaging framework · 2026-10-19',
         'LOGO URL: none',
+        'LOGO SYMBOL URL: none',
+        'LOGO REVERSED URL: none',
+        'LOGO ONE-COLOR URL: none',
+        'LOGO SYMBOL REVERSED URL: none',
+        'ICON DARK URLS: none',
+        'ICON LIGHT URLS: none',
+        'ICON HIGHLIGHT URL: none',
         'ASSETS: framework, kit',
         '--- ASSETS (JSON) ---',
         '{',
@@ -137,7 +150,7 @@ describe('renderMktgSlidesExportFormMessage', () => {
       { project_name: 'Example Project', deck_id: DECK_ID, logo_url: 'https://cdn.example.test/logo.png', assets: { kit: {} } },
       new Date('2026-10-19T23:30:00Z')
     );
-    expect(text.split('\n').slice(0, 8)).toEqual([
+    expect(text.split('\n').slice(0, 15)).toEqual([
       'BATCH INTAKE SUBMISSION (Slides export)',
       'PROJECT NAME: Example Project',
       'RUN DATE: 2026-10-19',
@@ -145,7 +158,78 @@ describe('renderMktgSlidesExportFormMessage', () => {
       `DECK ID: ${DECK_ID}`,
       'DECK TITLE: Example Project · Messaging · 2026-10-19',
       'LOGO URL: https://cdn.example.test/logo.png',
+      'LOGO SYMBOL URL: none',
+      'LOGO REVERSED URL: none',
+      'LOGO ONE-COLOR URL: none',
+      'LOGO SYMBOL REVERSED URL: none',
+      'ICON DARK URLS: none',
+      'ICON LIGHT URLS: none',
+      'ICON HIGHLIGHT URL: none',
       'ASSETS: kit',
+    ]);
+  });
+
+  it('renders every logo variant URL on its own head line, right after the primary, in the exporter’s order', () => {
+    const text = renderMktgSlidesExportFormMessage({
+      project_name: 'P',
+      run_date: '2026-10-19',
+      folder_id: FOLDER_ID,
+      logo_url: 'https://cdn.example.test/primary.png',
+      logo_symbol_url: 'https://cdn.example.test/symbol.png',
+      logo_reversed_url: 'https://cdn.example.test/reversed.png',
+      logo_one_color_url: 'https://cdn.example.test/one-color.png',
+      logo_symbol_reversed_url: 'https://cdn.example.test/symbol-reversed.png',
+      assets: { kit: {} },
+    });
+    expect(text.split('\n').slice(6, 15)).toEqual([
+      'LOGO URL: https://cdn.example.test/primary.png',
+      'LOGO SYMBOL URL: https://cdn.example.test/symbol.png',
+      'LOGO REVERSED URL: https://cdn.example.test/reversed.png',
+      'LOGO ONE-COLOR URL: https://cdn.example.test/one-color.png',
+      'LOGO SYMBOL REVERSED URL: https://cdn.example.test/symbol-reversed.png',
+      'ICON DARK URLS: none',
+      'ICON LIGHT URLS: none',
+      'ICON HIGHLIGHT URL: none',
+      'ASSETS: kit',
+    ]);
+  });
+
+  it('renders the kit’s icon sets on three head lines after the logo lines: each set’s URLs space-separated in the board’s order, the highlight alone', () => {
+    const dark = Array.from({ length: 8 }, (_, index) => `https://cdn.example.test/icon-dark-${index}.png`);
+    const light = Array.from({ length: 8 }, (_, index) => `https://cdn.example.test/icon-light-${index}.png`);
+    const text = renderMktgSlidesExportFormMessage({
+      project_name: 'P',
+      run_date: '2026-10-19',
+      folder_id: FOLDER_ID,
+      icon_dark_urls: dark,
+      icon_light_urls: light,
+      icon_highlight_url: 'https://cdn.example.test/icon-highlight.png',
+      assets: { kit: {} },
+    });
+    expect(text.split('\n').slice(11, 15)).toEqual([
+      `ICON DARK URLS: ${dark.join(' ')}`,
+      `ICON LIGHT URLS: ${light.join(' ')}`,
+      'ICON HIGHLIGHT URL: https://cdn.example.test/icon-highlight.png',
+      'ASSETS: kit',
+    ]);
+  });
+
+  it('renders the variant lines as `none` when only some variants were drawn, so the exporter’s parser always finds its labels', () => {
+    const text = renderMktgSlidesExportFormMessage({
+      project_name: 'P',
+      run_date: '2026-10-19',
+      folder_id: FOLDER_ID,
+      logo_url: 'https://cdn.example.test/primary.png',
+      logo_reversed_url: 'https://cdn.example.test/reversed.png',
+      logo_one_color_url: 'https://cdn.example.test/one-color.png',
+      assets: { kit: {} },
+    });
+    expect(text.split('\n').slice(6, 11)).toEqual([
+      'LOGO URL: https://cdn.example.test/primary.png',
+      'LOGO SYMBOL URL: none',
+      'LOGO REVERSED URL: https://cdn.example.test/reversed.png',
+      'LOGO ONE-COLOR URL: https://cdn.example.test/one-color.png',
+      'LOGO SYMBOL REVERSED URL: none',
     ]);
   });
 
@@ -180,6 +264,20 @@ describe('validateMktgSlidesExportEnvelope', () => {
   it('accepts an update, whose deck carries no title or folder', () => {
     const update = envelope({ mode: 'update', deck: { id: DECK_ID, link: mktgSlidesExportDeckLink(DECK_ID), title: null, folder_id: null } });
     expect(validateMktgSlidesExportEnvelope(update).valid).toBe(true);
+  });
+
+  it('accepts a 1.1.2 envelope whose branded block counts the logo variants, and keeps them in the hashed content JSON', () => {
+    // The validator checks named keys only, so the 1.1.2 counts pass through; the content JSON is hashed as emitted, counts included.
+    const logoVariants: MktgSlidesExportLogoVariantCounts = { primary: 9, symbol: 2, reversed: 3, one_color: 1, symbol_reversed: 1 };
+    const branded: MktgSlidesExportBranded = { ...BRANDED, logo_variants: logoVariants };
+    const content: MktgSlidesExportContent = {
+      assets: ['kit'],
+      slides: [{ index: 1, kind: 'title', layout: 'TITLE', title: 'Example Project', object_id: 'sx1_s01' }],
+      branded,
+    };
+    expect(validateMktgSlidesExportEnvelope(envelope({ content }))).toEqual({ valid: true, errors: [] });
+    expect(JSON.parse(mktgSlidesExportContentJson(content))).toMatchObject({ branded: { logo_variants: logoVariants } });
+    expect(mktgSlidesExportContentJson(content)).toBe(JSON.stringify(content));
   });
 
   it('refuses a deck link that is not the deck’s own Slides address', () => {

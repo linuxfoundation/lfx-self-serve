@@ -17,9 +17,20 @@
       [attr.aria-describedby]="scheduleDescribedBy()"
       data-testid="implementation-google-ad-schedule">
       <legend class="float-left mb-1 text-xs font-medium text-gray-700">Ad schedule ({{ adSchedules().length }}/{{ maxAdSchedules }})</legend>
-      <p id="google-ad-schedule-hint" class="text-xs text-gray-500">
-        Times are in the Google Ads account's time zone. With no windows the campaign serves all day, every day. A bid adjustment runs from -90% to +900%, or
-        -100% to stop serving in that window; leave it blank for none. Errors give Google's bid modifier, where -20% is 0.8.
+      <!--
+        A schedule adjustment runs from -90% (bid modifier 0.1) to +900%: Google refuses 0 on an ad schedule, where it is only a
+        device exclusion, so a time is switched off by leaving it out. Under Smart Bidding Google ignores the adjustment, so the box
+        is offered only under Manual CPC and Maximize Clicks, and never on Demand Gen, which takes a window only without one; the
+        tab's reason says which rule is in force.
+      -->
+      <p id="google-ad-schedule-hint" class="text-xs text-gray-500" data-testid="implementation-google-ad-schedule-hint">
+        Times are in the Google Ads account's time zone. With no windows the campaign serves all day, every day; with windows, only in them.
+        @if (scheduleAdjustBlockedReason(); as reason) {
+          {{ reason }}
+        } @else {
+          A bid adjustment runs from {{ adjustmentRange }}; leave it blank for none.
+        }
+        Errors give Google's bid modifier, where -20% is 0.8.
       </p>
 
       @for (row of scheduleRows(); track $index; let i = $index) {
@@ -66,18 +77,35 @@
             commit, without rewriting the box under the cursor. lfx-input-text binds a FormGroup, which this
             list-driven panel deliberately does not hold (see the class JSDoc).
           -->
-          <div class="flex flex-col gap-1">
-            <label class="text-xs text-gray-700" [for]="'google-ad-schedule-adjustment-' + i">Bid adjustment (%)</label>
-            <input
-              type="number"
-              step="1"
-              [id]="'google-ad-schedule-adjustment-' + i"
-              [value]="row.adjustment ?? ''"
-              (change)="onScheduleAdjustment(i, $event)"
-              placeholder="None"
-              class="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              [attr.data-testid]="'implementation-google-ad-schedule-adjustment-' + i" />
-          </div>
+          @if (scheduleAdjustBlockedReason() === null || row.held) {
+            <!-- A held adjustment stays readable (read-only, still focusable and announced) until it is cleared. -->
+            <div class="flex flex-col gap-1">
+              <label class="text-xs text-gray-700" [for]="'google-ad-schedule-adjustment-' + i">Bid adjustment (%)</label>
+              <input
+                type="number"
+                step="1"
+                [min]="minAdjustment"
+                [max]="maxAdjustment"
+                [id]="'google-ad-schedule-adjustment-' + i"
+                [value]="row.adjustment ?? ''"
+                [readOnly]="row.held"
+                [attr.aria-readonly]="row.held || null"
+                (change)="onScheduleAdjustment(i, $event)"
+                placeholder="None"
+                class="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 read-only:bg-gray-50 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                [attr.data-testid]="'implementation-google-ad-schedule-adjustment-' + i" />
+            </div>
+            @if (row.held) {
+              <lfx-button
+                label="Clear adjustment"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                [ariaLabel]="'Clear adjustment on ad schedule window ' + (i + 1)"
+                (onClick)="clearScheduleAdjustment(i)"
+                [attr.data-testid]="'implementation-google-ad-schedule-clear-' + i" />
+            }
+          }
           <lfx-button
             icon="fa-light fa-trash"
             size="small"
@@ -119,15 +147,16 @@
       data-testid="implementation-google-devices">
       <legend class="float-left mb-1 text-xs font-medium text-gray-700">Devices</legend>
       <!--
-        Adjust bid is offered only under Manual CPC: campaign-service refuses a non-zero device bid modifier under any other
-        strategy, while an exclusion (a modifier of 0) is accepted under every one. The tab's reason says which strategy is in
-        force and how to get Manual CPC back.
+        Adjust bid is offered only under Manual CPC, and never on Demand Gen or Performance Max: campaign-service refuses a
+        non-zero device bid modifier under any other strategy, and on those two under every one, while an exclusion (a modifier
+        of 0) is accepted everywhere. The tab's reason says which rule is in force and, on Search, how to get Manual CPC back.
+        The rows are the channel's devices, from the tab: Demand Gen and Performance Max add TV screens.
       -->
       <p id="google-devices-hint" class="text-xs text-gray-500" data-testid="implementation-google-devices-hint">
         @if (deviceAdjustBlockedReason(); as reason) {
           {{ reason }} Excluding a device stops the campaign serving there.
         } @else {
-          Adjust the bid on a device from -90% to +900%, or exclude it to stop serving there.
+          Adjust the bid on a device from {{ adjustmentRange }}, or exclude it to stop serving there.
         }
         Errors give Google's bid modifier, where -20% is 0.8.
       </p>
@@ -151,6 +180,8 @@
               <input
                 type="number"
                 step="1"
+                [min]="minAdjustment"
+                [max]="maxAdjustment"
                 [id]="'google-device-adjustment-' + row.device"
                 [value]="row.adjustment ?? 0"
                 [readOnly]="row.held"

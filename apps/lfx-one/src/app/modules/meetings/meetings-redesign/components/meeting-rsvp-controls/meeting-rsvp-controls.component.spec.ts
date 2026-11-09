@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CdkMenuTrigger } from '@angular/cdk/menu';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingHomeRow, MeetingRsvp, MeetingRsvpSubmitError, RsvpScope } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
@@ -131,15 +133,15 @@ describe('MeetingRsvpControlsComponent', () => {
     it('saves straight away for all dates and confirms with a dark toast', async () => {
       const fixture = await render(buildRow(buildMeeting()));
 
-      expect(query(fixture, 'meetings-home-rsvp-accepted')?.textContent?.trim()).toBe('Yes');
-      expect(query(fixture, 'meetings-home-rsvp-declined')?.textContent?.trim()).toBe('No');
-      expect(query(fixture, 'meetings-home-rsvp-maybe')?.textContent?.trim()).toBe('Maybe');
+      const buttons = Array.from(query(fixture, 'meetings-home-rsvp')?.querySelectorAll('button') ?? []);
+      expect(buttons.map((item) => item.textContent?.trim())).toEqual(['Yes', 'Maybe', 'No']);
+      expect(buttons.every((item) => item.querySelector('i.fa-light'))).toBe(true);
       expect(button(fixture, 'meetings-home-rsvp-accepted').getAttribute('aria-label')).toBe('RSVP Yes to Synthetic sync');
       await press(fixture, 'meetings-home-rsvp-accepted');
 
       expect(openModal).not.toHaveBeenCalled();
       expect(submit).toHaveBeenCalledWith(expect.objectContaining({ id: 'synthetic-meeting' }), undefined, 'accepted', 'all');
-      expect(showToast).toHaveBeenCalledWith({ variant: 'dark', message: 'Response saved: Going', description: 'Synthetic sync — This meeting' });
+      expect(showToast).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting RSVP set to “Going”' });
     });
 
     it('shows the saving answer as loading and ignores other answers until the save settles', async () => {
@@ -193,10 +195,10 @@ describe('MeetingRsvpControlsComponent', () => {
       await press(fixture, 'meetings-home-rsvp-declined');
 
       expect(showToast).toHaveBeenCalledWith({
-        variant: 'dark',
+        variant: 'error',
+        position: 'bottom-center',
         message: 'RSVP Failed',
         description: 'Only invited users are allowed to RSVP to this meeting.',
-        duration: 5000,
       });
       expect(button(fixture, 'meetings-home-rsvp-accepted').disabled).toBe(false);
     });
@@ -214,7 +216,7 @@ describe('MeetingRsvpControlsComponent', () => {
 
       closed.next('this_and_following');
       expect(submit).toHaveBeenCalledWith(expect.objectContaining({ id: 'synthetic-meeting' }), OCCURRENCE_ID, 'declined', 'this_and_following');
-      expect(showToast).toHaveBeenCalledWith({ variant: 'dark', message: 'Response saved: Not going', description: 'Synthetic sync — Oct 1 and following' });
+      expect(showToast).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting RSVP set to “Not going” for this and following occurrences' });
     });
 
     it('saves nothing when the dialog is cancelled', async () => {
@@ -236,7 +238,8 @@ describe('MeetingRsvpControlsComponent', () => {
 
       expect(submit).not.toHaveBeenCalled();
       expect(showToast).toHaveBeenCalledWith({
-        variant: 'dark',
+        variant: 'warning',
+        position: 'bottom-center',
         message: 'RSVP Not Saved',
         description: 'Another response to this meeting is still saving. Try again.',
         duration: 5000,
@@ -254,21 +257,27 @@ describe('MeetingRsvpControlsComponent', () => {
   });
 
   describe('answered', () => {
-    it('shows the answer as a badge with the dates it covers', async () => {
+    it('shows the answer as a badge without the dates it covers', async () => {
       const rsvp = buildRsvp({ response_type: 'maybe', scope: 'single', occurrence_id: OCCURRENCE_ID });
       const fixture = await render(buildRow(buildMeeting(RECURRING), { myRsvp: rsvp }));
 
       expect(query(fixture, 'meetings-home-rsvp-accepted')).toBeNull();
       expect(query(fixture, 'meetings-home-rsvp-status')?.textContent?.trim()).toBe('Maybe');
       expect(query(fixture, 'meetings-home-rsvp-status')?.getAttribute('aria-label')).toBe('Your RSVP: Maybe. Change');
-      expect(query(fixture, 'meetings-home-rsvp-scope')?.textContent?.trim()).toBe('Oct 1 only');
+      expect(query(fixture, 'meetings-home-rsvp-scope')).toBeNull();
     });
 
-    it('has no dates note for a one-time meeting', async () => {
+    it('shows the answer for a one-time meeting', async () => {
       const fixture = await render(buildRow(buildMeeting(), { myRsvp: buildRsvp() }));
 
       expect(query(fixture, 'meetings-home-rsvp-status')?.textContent?.trim()).toBe('Going');
-      expect(query(fixture, 'meetings-home-rsvp-scope')).toBeNull();
+    });
+
+    it('opens the change menu from the badge end edge', async () => {
+      const fixture = await render(buildRow(buildMeeting(), { myRsvp: buildRsvp() }));
+      const trigger = fixture.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
+
+      expect(trigger.menuPosition[0]).toEqual({ originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' });
     });
 
     it('lets a recurring answer be picked again to change the dates it covers', async () => {

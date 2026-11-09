@@ -3,24 +3,7 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <lfx-ui-modal heading="RSVP to recurring meeting" data-testid="meetings-home-rsvp-scope-modal">
-  <div class="flex flex-col gap-[4px] rounded-[12px] border border-gray-200 bg-gray-50 px-[14px] py-[12px]" data-testid="meetings-home-rsvp-scope-info">
-    @if (project) {
-      <span class="flex min-w-0 items-start gap-[6px] text-[12px] text-gray-600">
-        <lfx-ui-avatar class="mt-px flex-none" shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
-        <span class="min-w-0 break-words">{{ project.name }}</span>
-      </span>
-    }
-    <span class="text-[14px] font-medium leading-[20px] text-gray-900">{{ row.title }}</span>
-    <span class="flex flex-wrap items-center gap-x-[6px] gap-y-[4px] text-[12px] text-gray-500">
-      <span>{{ when }}</span>
-      @if (meetingType) {
-        <span aria-hidden="true">·</span>
-        <span class="inline-flex items-center gap-[5px]"><i class="text-[11px]" [class]="meetingType.icon" aria-hidden="true"></i>{{ meetingType.label }}</span>
-      }
-      <span aria-hidden="true">·</span>
-      <span class="inline-flex items-center gap-[5px]"><i class="fa-light fa-arrows-rotate text-[11px]" aria-hidden="true"></i>Recurring</span>
-    </span>
-  </div>
+  <lfx-meeting-dialog-context [row]="row" [origin]="origin" data-testid="meetings-home-rsvp-scope-info" />
 
   <p class="text-[14px] leading-[20px] text-gray-700" data-testid="meetings-home-rsvp-scope-text">
     You are responding “{{ responseLabel }}” to a recurring meeting. Apply it to:
@@ -33,14 +16,11 @@
 
   <lfx-ui-radio-group ariaLabel="Apply RSVP to" [(value)]="scope" data-testid="meetings-home-rsvp-scope-options">
     @for (option of options; track option.value) {
-      <span class="flex flex-col gap-[4px]">
-        <lfx-ui-radio
-          class="[&_label]:font-medium"
-          [value]="option.value"
-          [label]="option.label"
-          [attr.data-testid]="'meetings-home-rsvp-scope-' + option.value" />
-        <span class="pl-[24px] text-[13px] leading-[18px] text-gray-600">{{ option.description }}</span>
-      </span>
+      <lfx-ui-radio
+        class="[&_label]:font-medium"
+        [value]="option.value"
+        [label]="option.label"
+        [attr.data-testid]="'meetings-home-rsvp-scope-' + option.value" />
     }
   </lfx-ui-radio-group>
 

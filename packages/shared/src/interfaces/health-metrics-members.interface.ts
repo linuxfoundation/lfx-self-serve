@@ -5,23 +5,23 @@ import type {
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS,
   HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISKS,
   HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
-  HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
-  HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
+  HEALTH_METRICS_MEMBERS_RESERVED_TIERS,
   HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS,
   HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-members.constants';
 import type { FilterPillOption } from './dashboard-metric.interface';
 import type { FilterOption } from './filter.interface';
 import type { HealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.interface';
-import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsChartTipView, HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsOverviewKpiView } from './health-metrics-overview.interface';
 
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsMembersSectionKey = (typeof HEALTH_METRICS_MEMBERS_SECTIONS)[number]['key'];
 
-/** A read a deep link waits on: a section, or `bridge`, the second read inside `#tiers`. */
-export type HealthMetricsMembersDataSectionKey = HealthMetricsMembersSectionKey | 'bridge';
+/** A read a deep link waits on: one per section. */
+export type HealthMetricsMembersDataSectionKey = HealthMetricsMembersSectionKey;
 
 /** Members' sub-nav badge, keyed to its own sections. */
 export interface HealthMetricsMembersSubNavItem extends HealthMetricsL2SubNavItem {
@@ -39,201 +39,232 @@ export interface HealthMetricsMembersTierYear {
   tier: string;
   sortRank: number;
   memberCount: number | null;
-  newMemberCount: number | null;
   revenueUsd: number | null;
-  /** The tier's share of its year's members and revenue, 0–100, as the model states them. */
-  memberSharePct: number | null;
-  revenueSharePct: number | null;
-  isPartialYear: boolean;
-}
-
-/** The foundation's revenue across every domain for one period, from the Overview revenue model. */
-export interface HealthMetricsMembersFoundationRevenue {
-  range: HealthMetricsL2Range;
-  totalUsd: number;
 }
 
 export interface HealthMetricsMembersTiers {
-  /** Newest year first, then `tier_sort_rank`, then tier name; the view re-sorts years for display. */
+  /** Newest year first, then `tier_sort_rank`, then tier name. */
   rows: HealthMetricsMembersTierYear[];
-  /** A period the Overview model has no total for is left out, so its share reads as not available. */
-  foundationRevenue: HealthMetricsMembersFoundationRevenue[];
 }
 
-/** The Members / Revenue toggle over the hero. */
-export type HealthMetricsMembersTiersMode = 'members' | 'revenue';
+/** Diamond, Platinum, Gold or Silver: the tiers with a colour and an icon of their own. */
+export type HealthMetricsMembersReservedTier = (typeof HEALTH_METRICS_MEMBERS_RESERVED_TIERS)[number];
 
-export interface HealthMetricsMembersTiersModeOption {
-  id: HealthMetricsMembersTiersMode;
-  label: string;
+/** A tier icon's fill, and the CSS mask that cuts it to shape. */
+export interface HealthMetricsMembersTierIcon {
+  background: string;
+  mask: string;
+  radius: string;
 }
 
-export interface HealthMetricsMembersTiersStatView {
-  key: string;
-  label: string;
-  value: string;
-  /** `null` renders no delta; `not available` renders as text. */
-  delta: string | null;
-  deltaDirection: 'up' | 'down' | 'neutral';
-  /** What a measured delta compares against, e.g. `vs 2024`; `null` when there is none to state. */
-  baseline: string | null;
-  /** Drawn in the design's green, e.g. new members. */
-  positive: boolean;
-}
-
-/** One year column of the matrix and one bar of the composition chart. */
-export interface HealthMetricsMembersTiersYearView {
-  year: number;
-  isCurrent: boolean;
-  isPartial: boolean;
-  /** `null` when every tier's count is unmeasured. */
-  totalMembers: number | null;
-  totalMembersLabel: string;
-  totalRevenueLabel: string;
-}
-
-export interface HealthMetricsMembersTiersCellView {
-  year: number;
-  /** The tier's members or revenue for the year, following the mode. */
-  value: number | null;
-  /** `—` for a measured zero or an unmeasured value. */
-  label: string;
-  /** The model's share of that year's members or revenue, 0–100, following the mode; `null` when unmeasured. */
-  sharePct: number | null;
-}
-
-export interface HealthMetricsMembersTiersTierView {
-  tier: string;
+/** A palette colour for the other tiers, and the reserved tier it could be mistaken for. */
+export interface HealthMetricsMembersBreakdownPaletteEntry {
   color: string;
-  /** One cell per year column, in the same order. */
-  cells: HealthMetricsMembersTiersCellView[];
+  resembles: HealthMetricsMembersReservedTier | null;
 }
 
-export interface HealthMetricsMembersTiersView {
-  /** False when the foundation has no tier rows at all. */
-  measured: boolean;
-  /** False when the selected period's year has no tier rows. */
-  yearMeasured: boolean;
-  metaLabel: string;
-  headline: HealthMetricsMembersTiersStatView;
-  side: HealthMetricsMembersTiersStatView[];
-  years: HealthMetricsMembersTiersYearView[];
-  tiers: HealthMetricsMembersTiersTierView[];
-}
+export type HealthMetricsMembersBreakdownViewMode = 'chart' | 'table';
 
-/** One year's tier rows summed; a figure is `null` when no row in the year measures it. */
-export interface HealthMetricsMembersTiersYearSummary {
-  measured: boolean;
-  isPartial: boolean;
-  members: number | null;
-  newMembers: number | null;
-  revenue: number | null;
-}
-
-/** `GET /api/analytics/members-bridge` — every year's bridge; the section re-projects it per period client-side. */
-export interface HealthMetricsMembersBridgeQuery {
-  foundationSlug: string;
-}
-
-/** A `MEMBERSHIP_WATERFALL` movement: the four that change the base between its start and end totals. */
-export type HealthMetricsMembersMovementType = Exclude<HealthMetricsMembersBridgeStepType, 'start_of_year' | 'today'>;
-
-/** A bridge step: the start-of-year total, a movement, or the closing total the model calls `today`. */
-export type HealthMetricsMembersBridgeStepType = (typeof HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES)[number];
-
-/** One `MEMBERSHIP_WATERFALL` row. `null` is unmeasured, never zero. */
-export interface HealthMetricsMembersBridgeStep {
-  year: number;
-  movementType: HealthMetricsMembersBridgeStepType;
-  sortOrder: number;
-  isPartialYear: boolean;
-  memberCount: number | null;
-  /** Negative for downgrades and churn; the model's own sign, never re-derived. */
-  signedMemberCount: number | null;
-  revenueImpactUsd: number | null;
-}
-
-export interface HealthMetricsMembersBridge {
-  /** Newest year first, then `sort_order`. */
-  steps: HealthMetricsMembersBridgeStep[];
-}
-
-/** The movements a bar opens as a named list; churn lives in `#churn` instead. */
-export type HealthMetricsMembersMovementListType = (typeof HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES)[number];
-
-/** `GET /api/analytics/members-movements` — one page of the organizations behind one bar. */
-export interface HealthMetricsMembersMovementsQuery {
-  foundationSlug: string;
-  year: number;
-  movementType: HealthMetricsMembersMovementListType;
-  offset: number;
-  pageSize: number;
-}
-
-/** One `MEMBERSHIP_MOVEMENT_DETAIL` row. Dates are ISO `YYYY-MM-DD`. */
-export interface HealthMetricsMembersMovement {
-  accountId: string;
-  accountName: string;
-  membershipTier: string | null;
-  duesImpactUsd: number | null;
-  movementDate: string | null;
-  lastEngagedDate: string | null;
-}
-
-export interface HealthMetricsMembersMovements {
-  rows: HealthMetricsMembersMovement[];
-  /** Every organization behind the bar, so the drawer can check it against the bar's count. */
-  totalRecords: number;
-}
-
-/** A bar's colour: the start and end totals are neutral, gains green, losses red. */
-export type HealthMetricsMembersBridgeTone = 'neutral' | 'gain' | 'loss';
-
-/** One bar of the selected year's bridge, positioned as a share of the chart's height. */
-export interface HealthMetricsMembersBridgeBarView {
-  movementType: HealthMetricsMembersBridgeStepType;
+export interface HealthMetricsMembersBreakdownViewOption {
+  value: HealthMetricsMembersBreakdownViewMode;
+  /** The tooltip and screen-reader name of the icon-only option. */
   label: string;
-  countLabel: string;
-  tone: HealthMetricsMembersBridgeTone;
+  icon: string;
+}
+
+/** One stacked segment, positioned as a share of the chart's height. */
+export interface HealthMetricsMembersBreakdownSegmentView {
+  key: string;
+  color: string;
   bottomPct: number;
   heightPct: number;
-  /** The list the bar opens; `null` for the totals, churn, and an empty movement. */
-  listType: HealthMetricsMembersMovementListType | null;
-  /** True for a churn bar with members to show, which goes to `#churn`. */
-  opensChurn: boolean;
-  memberCount: number | null;
+}
+
+/** One year's column: its stack, the labels under it and its popup. */
+export interface HealthMetricsMembersBreakdownColumnView {
+  year: number;
+  /** e.g. `2026 YTD` for the running year. */
+  label: string;
+  membersLabel: string;
+  /** Bottom to top. */
+  segments: HealthMetricsMembersBreakdownSegmentView[];
+  tip: HealthMetricsChartTipView;
+  /** The popup's figures in a sentence, for a screen reader on the focused column. */
   ariaLabel: string;
 }
 
-/** `#tiers` bridge, re-projected per period from the every-year response. */
-export interface HealthMetricsMembersBridgeView {
-  /** Any year has a bridge. */
+export interface HealthMetricsMembersBreakdownLegendItemView {
+  label: string;
+  color: string;
+  /** A divider before the item, setting the grey tiers apart. */
+  divided: boolean;
+}
+
+export type HealthMetricsMembersBreakdownRowKind = 'tier' | 'total' | 'change';
+
+export interface HealthMetricsMembersBreakdownCellView {
+  label: string;
+  /** A change row's direction; `null` for any other cell and for a change with nothing to compare. */
+  tone: 'up' | 'down' | null;
+}
+
+/** One row of the table view: a tier, a total, or the change under a total. */
+export interface HealthMetricsMembersBreakdownRowView {
+  key: string;
+  label: string;
+  kind: HealthMetricsMembersBreakdownRowKind;
+  icon: HealthMetricsMembersReservedTier | null;
+  /** One per year, in the columns' order. */
+  cells: HealthMetricsMembersBreakdownCellView[];
+}
+
+/** The breakdown table's class strings, by row kind where they differ. */
+export interface HealthMetricsMembersBreakdownTableClasses {
+  label: Record<HealthMetricsMembersBreakdownRowKind, string>;
+  cell: Record<HealthMetricsMembersBreakdownRowKind, string>;
+  lastCell: Record<HealthMetricsMembersBreakdownRowKind, string>;
+  change: Record<'up' | 'down', string>;
+  cellBase: string;
+  rowRule: string;
+  cellRule: string;
+  totalRule: string;
+}
+
+/** A table row as drawn: its rules, and each cell's type and fill as classes. */
+export interface HealthMetricsMembersBreakdownTableRow {
+  key: string;
+  label: string;
+  icon: HealthMetricsMembersReservedTier | null;
+  rowClass: string;
+  labelClass: string;
+  cells: { label: string; cellClass: string }[];
+}
+
+/** `#breakdown`, built over the loaded years; only the metrics row follows the selected period. */
+export interface HealthMetricsMembersBreakdownView {
+  /** False when no year in the chart has a tier row. */
   measured: boolean;
-  /** The selected period's year has a bridge. */
-  yearMeasured: boolean;
+  kpis: HealthMetricsOverviewKpiView[];
+  /** The y axis, top to bottom. */
+  yTicks: string[];
+  columns: HealthMetricsMembersBreakdownColumnView[];
+  legend: HealthMetricsMembersBreakdownLegendItemView[];
+  rows: HealthMetricsMembersBreakdownRowView[];
+  /** The selected year's members, for the sub-nav badge; `null` when unmeasured. */
+  count: number | null;
+}
+
+/** `GET /api/analytics/members-growth` — every year's months at once, so the view switch never re-reads. */
+export interface HealthMetricsMembersGrowthQuery {
+  foundationSlug: string;
+}
+
+/** One `MEMBERSHIP_GROWTH_MONTHLY` row: new members from January through the month. `null` is unmeasured. */
+export interface HealthMetricsMembersGrowthMonth {
   year: number;
-  heading: string;
-  bars: HealthMetricsMembersBridgeBarView[];
-  /** Set when start + the signed movements does not equal the end total the model reports. */
-  reconcileNote: string | null;
+  /** 1 to 12. */
+  month: number;
+  cumulative: number | null;
 }
 
-/** Fixed copy for one movement list's drawer. */
-export interface HealthMetricsMembersMovementDrawerCopy {
-  title: string;
-  pastTitle: string;
-  subtitle: string;
-  note: string;
-  verb: string;
+export interface HealthMetricsMembersGrowth {
+  /** Newest year first, then month. */
+  months: HealthMetricsMembersGrowthMonth[];
 }
 
-/** One organization in a movement drawer. */
-export interface HealthMetricsMembersMovementRowView {
-  accountId: string;
-  accountName: string;
-  detail: string;
-  duesLabel: string;
-  loss: boolean;
+/** Highlights draws the earlier years as one range; All years draws each as its own line. */
+export type HealthMetricsMembersGrowthViewMode = 'highlights' | 'all';
+
+export interface HealthMetricsMembersGrowthViewOption {
+  value: HealthMetricsMembersGrowthViewMode;
+  label: string;
+}
+
+/** One line, as an SVG path over the chart's 600-wide viewBox. */
+export interface HealthMetricsMembersGrowthPathView {
+  key: string;
+  d: string;
+  color: string;
+  width: number;
+  dashed: boolean;
+}
+
+/** Where an end label sits beside its point: below and right, right and just below, or right and centred. */
+export type HealthMetricsMembersGrowthLabelPlacement = 'below-right' | 'right-below' | 'right';
+
+/** The end labels' offsets by placement, and their weights; applied via [class], so Tailwind's safelist carries them. */
+export interface HealthMetricsMembersGrowthLabelClasses {
+  placement: Record<HealthMetricsMembersGrowthLabelPlacement, string>;
+  strong: string;
+  regular: string;
+}
+
+/** An end label before it is laid out: where it sits off its point, its weight, and whether it stacks with December's. */
+export interface HealthMetricsMembersGrowthEndLabel {
+  key: string;
+  text: string;
+  leftPct: number;
+  topPct: number;
+  color: string;
+  placement: HealthMetricsMembersGrowthLabelPlacement;
+  strong: boolean;
+  stacks: boolean;
+}
+
+/** An end label's box in pixels, so labels that stack can be pushed apart. */
+export interface HealthMetricsMembersGrowthLabelBox {
+  offsetPx: Record<HealthMetricsMembersGrowthLabelPlacement, number>;
+  heightPx: number;
+  gapPx: number;
+}
+
+/** A label on the plot, positioned in percent of the plot box, with its offset and weight classes. */
+export interface HealthMetricsMembersGrowthLabelView {
+  key: string;
+  text: string;
+  leftPct: number;
+  topPct: number;
+  color: string;
+  classes: string;
+}
+
+/** A month's hover and focus target, with its popup. */
+export interface HealthMetricsMembersGrowthColumnView {
+  month: number;
+  label: string;
+  leftPct: number;
+  tip: HealthMetricsChartTipView;
+  ariaLabel: string;
+}
+
+/** A legend swatch: a line (solid or dashed, via `background`) or the range's band. */
+export interface HealthMetricsMembersGrowthLegendItemView {
+  label: string;
+  background: string;
+  band: boolean;
+}
+
+/** `#growth`: this year against last year and the earlier years, cumulative by month. */
+export interface HealthMetricsMembersGrowthView {
+  /** False when the foundation has no month rows. */
+  measured: boolean;
+  kpis: HealthMetricsOverviewKpiView[];
+  /** The y axis, top to bottom. */
+  yTicks: string[];
+  monthLabels: string[];
+  /** Earlier years first, so this year draws on top. */
+  paths: HealthMetricsMembersGrowthPathView[];
+  /** The earlier years' range; empty in All years, or with no year from the band's first year on. */
+  bandPath: string;
+  /** This month's x in the viewBox, for the Today line. */
+  todayX: number;
+  todayPct: number;
+  /** This year's point today, drawn hollow. */
+  todayDot: { leftPct: number; topPct: number };
+  labels: HealthMetricsMembersGrowthLabelView[];
+  columns: HealthMetricsMembersGrowthColumnView[];
+  legend: HealthMetricsMembersGrowthLegendItemView[];
+  ariaLabel: string;
 }
 
 /** A `MEMBERSHIP_DIRECTORY` NPS category, and the values the directory's NPS filter accepts. */

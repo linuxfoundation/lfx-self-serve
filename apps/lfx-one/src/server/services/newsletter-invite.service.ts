@@ -19,6 +19,7 @@ import {
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
 } from '@lfx-one/shared/constants';
 import {
+  ApiRequestOptions,
   Committee,
   FoundationNewsletterGroup,
   MyNewsletter,
@@ -42,12 +43,13 @@ import { computeIsFoundation, emailDomain, isFilterSafeIdentifier, isPersonalEma
 import { Request } from 'express';
 
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { buildNewsletterInviteAcceptUrl, renderNewsletterInviteEmail } from '../helpers/newsletter-invite-email.helper';
+import { buildNewsletterInviteAcceptUrl, renderNewsletterInviteEmail, requireAppBaseUrl } from '../helpers/newsletter-invite-email.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
 import { getEffectiveName, getEffectiveUsername } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
+import { createNewsletterInviteToken } from '../utils/newsletter-guest-token.util';
 import { CommitteeService } from './committee.service';
 import { EmailVerificationService } from './email-verification.service';
 import { EmailService } from './email.service';
@@ -66,7 +68,8 @@ import { ProjectService } from './project.service';
  * - Invite: an employee of a member of the card's foundation, in that foundation's newsletter
  *   group, emails a coworker whose domain is also that foundation's member. A foundation without a
  *   membership roster of its own (an internal LF project) uses The Linux Foundation's. The email
- *   links to the foundation drill-down — the link carries no credential.
+ *   carries a signed, expiring link bound to the invitee's address (#5235): signed out, it opens the
+ *   guest landing (`NewsletterGuestService`); signed in, the foundation drill-down confirm card.
  * - Landing: whoever signs in is checked from scratch against the same foundation's members on
  *   their own verified emails, then confirms; the add is the same M2M group add the reader page uses.
  */
@@ -188,13 +191,12 @@ export class NewsletterInviteService {
 
     const result: NewsletterInviteResult = { email, foundation_name: entry.foundation.name };
     const cooldownKey = `${entry.group.uid}|${email}`;
-    if (this.invitedRecently(cooldownKey)) {
+    // Claim the cooldown before any await so a double-click or retry cannot send twice; released
+    // again if the send fails, so the sender can retry.
+    if (!this.claimRecipientCooldown(cooldownKey)) {
       logger.info(req, operation, 'Invitee was already emailed about this list recently — not emailed again', { committee_uid: entry.group.uid });
       return result;
     }
-    // Claim the cooldown before any await so a double-click or retry cannot send twice; released
-    // again if the send fails, so the sender can retry.
-    NewsletterInviteService.recentInvites.set(cooldownKey, Date.now());
     if (await this.memberBenefitService.isEmailInGroup(req, m2mToken, entry.group.uid, email)) {
       logger.info(req, operation, 'Invitee is already on the newsletter list — not emailed', { committee_uid: entry.group.uid });
       return result;
@@ -204,12 +206,12 @@ export class NewsletterInviteService {
       inviter_name: this.inviterName(getEffectiveName(req) || getEffectiveUsername(req) || ''),
       company_name: this.singleLine(inviteeCompany.company_name || eligibility.match.company_name || 'your company'),
       foundation_name: this.singleLine(entry.foundation.name),
-      accept_url: buildNewsletterInviteAcceptUrl(this.appBaseUrl(), entry.foundation.slug, entry.group.uid),
+      accept_url: buildNewsletterInviteAcceptUrl(requireAppBaseUrl(), createNewsletterInviteToken(entry.group.uid, email)),
     });
     try {
       await this.emailService.sendEmail(req, { to: email, ...rendered });
     } catch (error) {
-      NewsletterInviteService.recentInvites.delete(cooldownKey);
+      this.releaseRecipientCooldown(cooldownKey);
       throw error;
     }
 
@@ -250,6 +252,68 @@ export class NewsletterInviteService {
       status,
     });
     return { status, email: evaluation.match.email, committee_name: group.name, company_name: evaluation.match.company_name };
+  }
+
+  /** A committee by uid (M2M, query-service), only if it is a Newsletter-category group. */
+  public async getNewsletterCommittee(req: Request, m2mToken: string, committeeUid: string): Promise<Committee | null> {
+    if (!isFilterSafeIdentifier(committeeUid)) return null;
+    const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      { type: 'committee', tags: [`committee_uid:${committeeUid}`], page_size: 1 },
+      undefined,
+      undefined,
+      { bearerToken: m2mToken }
+    );
+    const committee = response?.resources?.[0]?.data;
+    return committee?.uid === committeeUid && committee.category === NEWSLETTER_COMMITTEE_CATEGORY ? committee : null;
+  }
+
+  /** The invite landing's foundation — strict: an unresolved project is a retryable 503, never an "invalid invite". */
+  public async resolveFoundation(req: Request, projectUid: string | undefined, options?: ApiRequestOptions): Promise<ResolvedNewsletterFoundation | null> {
+    if (!projectUid) return null;
+    const { resolved, unresolvedProjectUids } = await this.resolveFoundations(req, [projectUid], options);
+    if (unresolvedProjectUids.length > 0) this.throwFoundationUnavailable(unresolvedProjectUids[0]);
+    return resolved.get(projectUid) ?? null;
+  }
+
+  public normalizeInviteEmail(rawEmail: unknown, operation: string): string {
+    const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
+    // EMAIL_REGEX alone admits `,`, `"`, `<`… in the local part; the invite pattern keeps `to` a plain address.
+    if (!email || email.length > 254 || !EMAIL_REGEX.test(email) || !NEWSLETTER_INVITE_EMAIL_PATTERN.test(email)) {
+      throw ServiceValidationError.forField('email', 'Enter a valid email address', { operation, service: 'newsletter_invite' });
+    }
+    const domain = emailDomain(email);
+    if (!domain || isPersonalEmailDomain(domain)) {
+      throw new ServiceValidationError(
+        [{ field: 'email', message: 'Use a company email address', code: NEWSLETTER_INVITE_PERSONAL_EMAIL_ERROR_CODE }],
+        'Validation failed for email',
+        { operation, service: 'newsletter_invite' }
+      );
+    }
+    return email;
+  }
+
+  /**
+   * Claims the per-recipient email cooldown for `key` (`<group uid>|<email>`): false when that address
+   * was already emailed about that list within the window, so it is not emailed again.
+   */
+  public claimRecipientCooldown(key: string): boolean {
+    if (this.invitedRecently(key)) return false;
+    NewsletterInviteService.recentInvites.set(key, Date.now());
+    return true;
+  }
+
+  /** Releases a claimed cooldown after a failed send, so a retry can go out. */
+  public releaseRecipientCooldown(key: string): void {
+    NewsletterInviteService.recentInvites.delete(key);
+  }
+
+  /** Strips line breaks so upstream text cannot fold into a header. */
+  public singleLine(value: string): string {
+    return value.replace(/[\r\n]+/g, ' ').trim();
   }
 
   /**
@@ -481,31 +545,6 @@ export class NewsletterInviteService {
     return { groups: byFoundation, unresolvedProjectUids };
   }
 
-  /** A committee by uid (M2M, query-service), only if it is a Newsletter-category group. */
-  private async getNewsletterCommittee(req: Request, m2mToken: string, committeeUid: string): Promise<Committee | null> {
-    if (!isFilterSafeIdentifier(committeeUid)) return null;
-    const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(
-      req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      { type: 'committee', tags: [`committee_uid:${committeeUid}`], page_size: 1 },
-      undefined,
-      undefined,
-      { bearerToken: m2mToken }
-    );
-    const committee = response?.resources?.[0]?.data;
-    return committee?.uid === committeeUid && committee.category === NEWSLETTER_COMMITTEE_CATEGORY ? committee : null;
-  }
-
-  /** The invite landing's foundation — strict: an unresolved project is a retryable 503, never an "invalid invite". */
-  private async resolveFoundation(req: Request, projectUid: string | undefined): Promise<ResolvedNewsletterFoundation | null> {
-    if (!projectUid) return null;
-    const { resolved, unresolvedProjectUids } = await this.resolveFoundations(req, [projectUid]);
-    if (unresolvedProjectUids.length > 0) this.throwFoundationUnavailable(unresolvedProjectUids[0]);
-    return resolved.get(projectUid) ?? null;
-  }
-
   /**
    * project uid → owning foundation: the project itself when it is a foundation or has no parent,
    * else its parent when that parent is a confirmed foundation, else the project itself — the same
@@ -515,12 +554,14 @@ export class NewsletterInviteService {
    * `getProjectsByIds` is fail-soft (an outage reads as "no such project"), so a project or parent
    * that does not come back is reported in `unresolvedProjectUids` rather than guessed at.
    */
+  /** `options.bearerToken` scopes an M2M override to the project reads (the signed-out guest reader has no session). */
   private async resolveFoundations(
     req: Request,
-    projectUids: string[]
+    projectUids: string[],
+    options?: ApiRequestOptions
   ): Promise<{ resolved: Map<string, ResolvedNewsletterFoundation>; unresolvedProjectUids: string[] }> {
     const [owners, rootUid] = await Promise.all([
-      this.projectService.getProjectsByIds(req, new Set(projectUids)),
+      this.projectService.getProjectsByIds(req, new Set(projectUids), options),
       resolveRootProjectUid(req, this.natsService),
     ]);
     const parentOf = (project: Project): string | undefined => collapseRootParentUid(project.parent_uid, rootUid) || undefined;
@@ -530,7 +571,7 @@ export class NewsletterInviteService {
       const parentUid = parentOf(owner);
       if (!computeIsFoundation(owner) && parentUid && !owners.has(parentUid)) parentUids.add(parentUid);
     }
-    const parents = parentUids.size > 0 ? await this.projectService.getProjectsByIds(req, parentUids) : new Map<string, Project>();
+    const parents = parentUids.size > 0 ? await this.projectService.getProjectsByIds(req, parentUids, options) : new Map<string, Project>();
 
     const resolved = new Map<string, ResolvedNewsletterFoundation>();
     const unresolvedProjectUids: string[] = [];
@@ -579,23 +620,6 @@ export class NewsletterInviteService {
     });
   }
 
-  private normalizeInviteEmail(rawEmail: unknown, operation: string): string {
-    const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
-    // EMAIL_REGEX alone admits `,`, `"`, `<`… in the local part; the invite pattern keeps `to` a plain address.
-    if (!email || email.length > 254 || !EMAIL_REGEX.test(email) || !NEWSLETTER_INVITE_EMAIL_PATTERN.test(email)) {
-      throw ServiceValidationError.forField('email', 'Enter a valid email address', { operation, service: 'newsletter_invite' });
-    }
-    const domain = emailDomain(email);
-    if (!domain || isPersonalEmailDomain(domain)) {
-      throw new ServiceValidationError(
-        [{ field: 'email', message: 'Use a company email address', code: NEWSLETTER_INVITE_PERSONAL_EMAIL_ERROR_CODE }],
-        'Validation failed for email',
-        { operation, service: 'newsletter_invite' }
-      );
-    }
-    return email;
-  }
-
   private invitedRecently(key: string): boolean {
     const now = Date.now();
     // Expired entries are dropped at most once a minute, not on every call.
@@ -625,17 +649,5 @@ export class NewsletterInviteService {
     return cleaned.length > NEWSLETTER_INVITE_INVITER_NAME_MAX_LENGTH
       ? `${cleaned.slice(0, NEWSLETTER_INVITE_INVITER_NAME_MAX_LENGTH - 1).trimEnd()}…`
       : cleaned;
-  }
-
-  /** Strips line breaks so upstream text cannot fold into a header. */
-  private singleLine(value: string): string {
-    return value.replace(/[\r\n]+/g, ' ').trim();
-  }
-
-  /** The app origin for the accept link; never guessed — a wrong origin would mail out dead links. */
-  private appBaseUrl(): string {
-    const baseUrl = process.env['PCC_BASE_URL'];
-    if (!baseUrl) throw new Error('PCC_BASE_URL is not configured; cannot build newsletter invite links');
-    return baseUrl;
   }
 }

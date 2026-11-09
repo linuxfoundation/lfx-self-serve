@@ -8,6 +8,7 @@ const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
 // The utils barrel pulls Angular into this plain-Node run; the real range helpers are what run here.
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-events-filters.utils')),
 }));
 const { withOrgCache } = vi.hoisted(() => ({
   withOrgCache: vi.fn<
@@ -341,5 +342,87 @@ describe('OrgInvolvementService.getContributorsMonthly — the default organizat
     expect(headlineSql()).not.toMatch(/insights/i);
     expect(String(trendCall()[0])).toContain('SELECT MONTH_START_DATE, UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS AS UNIQUE_CONTRIBUTORS');
     expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v5:all');
+  });
+});
+
+describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)', () => {
+  const monthlyRow = (month: Date): Record<string, unknown> => ({
+    ACCOUNT_ID: 'acc-1',
+    ACCOUNT_NAME: 'Account One',
+    MONTH_START_DATE: month,
+    ATTENDEES_ALL_ALL: 400,
+    SPEAKERS_ALL: 100,
+    TOTAL_ATTENDEES_ALL_ALL: 600,
+    TOTAL_SPEAKERS_ALL: 200,
+    ATTENDEES_ALL_VERIFIED: 80,
+    SPEAKERS_VERIFIED: 15,
+    TOTAL_ATTENDEES_ALL_VERIFIED: 120,
+    TOTAL_SPEAKERS_VERIFIED: 25,
+  });
+
+  beforeEach(() => {
+    execute.mockReset();
+  });
+
+  it('reads the Employee match, registered-or-attended columns: monthly distinct people as the sparkline, the distinct total as the headline', async () => {
+    execute.mockResolvedValue({ rows: [monthlyRow(new Date(2030, 0, 15)), monthlyRow(new Date(2030, 1, 15))] });
+
+    const response = await new OrgInvolvementService().getEventAttendanceMonthly('acc-1');
+
+    expect(response).toEqual({
+      accountId: 'acc-1',
+      accountName: 'Account One',
+      // The headline is the distinct total, not the sum of the two monthly points (80 + 80).
+      totalAttended: 120,
+      totalSpeakers: 25,
+      attendeesMonthlyData: [80, 80],
+      speakersMonthlyData: [15, 15],
+      monthlyLabels: ['Jan 2030', 'Feb 2030'],
+    });
+  });
+
+  it('selects only the default Employee match columns: no Self-reported only, All or coverage columns', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await new OrgInvolvementService().getEventAttendanceMonthly('acc-1');
+
+    const [sql] = execute.mock.calls[0] as [string];
+    expect(sql).not.toMatch(/SELF_REPORTED|_ALL_ALL|SPEAKERS_ALL|COMPANY_EMAIL|_ACCOUNT\b|COVERAGE/);
+  });
+
+  it('selects the dbt columns and binds only the account', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await new OrgInvolvementService().getEventAttendanceMonthly('acc-1');
+
+    const [sql, binds] = execute.mock.calls[0] as [string, string[]];
+    expect(sql).toContain('ORG_EVENT_PARTICIPATION_MONTHLY');
+    expect(sql).toContain('ATTENDEES_ALL_VERIFIED');
+    expect(sql).toContain('TOTAL_ATTENDEES_ALL_VERIFIED');
+    expect(sql).toContain('TOTAL_SPEAKERS_VERIFIED');
+    expect(sql).not.toMatch(/REGISTRATION_COUNT|TOTAL_REGISTRATIONS|TOTAL_ATTENDED/);
+    expect(binds).toEqual(['acc-1']);
+  });
+
+  it('returns the zero response for an account with no rows', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    expect(await new OrgInvolvementService().getEventAttendanceMonthly('acc-1')).toEqual({
+      accountId: 'acc-1',
+      accountName: '',
+      totalAttended: 0,
+      totalSpeakers: 0,
+      attendeesMonthlyData: [],
+      speakersMonthlyData: [],
+      monthlyLabels: [],
+    });
+  });
+
+  it('caches under the versioned key', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await new OrgInvolvementService().getEventAttendanceMonthly('acc-1');
+
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('events:v5');
   });
 });

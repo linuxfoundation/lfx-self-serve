@@ -3,6 +3,8 @@
 
 import {
   DEFAULT_ORG_EMPLOYMENT,
+  DEFAULT_ORG_EVENTS_ATTRIBUTION,
+  DEFAULT_ORG_EVENTS_PARTICIPATION,
   EMAIL_REGEX,
   ORG_EMPLOYMENT_OPTIONS,
   ORG_LENS_DEFAULT_TIME_RANGE,
@@ -10,7 +12,7 @@ import {
   ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
   PERSON_KEY_PATTERN,
 } from '@lfx-one/shared/constants';
-import type { OrgEmploymentFilter, OrgLensTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
+import type { OrgAllEmployeesResponse, OrgEmploymentFilter, OrgLensTimeRange, OrgProjectScope, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
 import {
   isFilterSafeIdentifier,
   isFilterSafeUsername,
@@ -22,8 +24,10 @@ import {
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { parseOptionalOrgCommitFilters, parseOrgCommitFilters, parseOrgScope, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
+import { parseOrgEventsFilters } from '../helpers/org-events-filters.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
@@ -81,9 +85,12 @@ export class OrgLensPeopleController {
         org_scope: orgScope,
       });
 
-      const response = live
-        ? await this.directoryService.getLive(req, orgUid, range, filters, teamMembers, orgScope)
-        : await this.service.getAllEmployees(orgUid, range, filters, teamMembers, orgScope);
+      // The summary behind the Event Attendees tile does not depend on the roster, so both reads run together.
+      const rosterRead = live
+        ? this.directoryService.getLive(req, orgUid, range, filters, teamMembers, orgScope)
+        : this.service.getAllEmployees(orgUid, range, filters, teamMembers, orgScope);
+      const [roster, eventAttendeesTotal] = await Promise.all([rosterRead, this.readEventAttendeesTotal(req, orgUid, range, filters.projectScope)]);
+      const response = this.withEventAttendeesTotal(roster, eventAttendeesTotal);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -505,28 +512,29 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/trainees[?range=30d|90d|365d|730d|all] — the range's trainees, details and filter options for the Trainees tab (LFXV2-1876, default: the Org Lens default range). */
+  /** GET /api/orgs/:orgUid/lens/people/trainees[?range=30d|90d|365d|730d|all] — the range's trainees, current employees' course rows and outside learners for the Trainees tab (LFXV2-1876, default: the Org Lens default range); the cards come from /training/stats and the dropdowns from /training/filter-options. */
   public async getTrainees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_trainees';
 
     try {
       assertOrgUid(orgUid, operation);
+      // Memoized per request: the route gate already ran it. The qualification decides whether the shared Valkey entry may serve this caller.
+      const qualification = await assertOrgLensRead(req, orgUid, operation);
       const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation) ?? ORG_LENS_DEFAULT_TIME_RANGE;
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         time_range: range,
       });
 
-      const response = await this.traineesService.getTrainees(orgUid, range);
+      const response = await this.traineesService.getTrainees(orgUid, range, qualification);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
         time_range: range,
         trainee_count: response.trainees.length,
+        outside_learner_count: response.outsideLearners.length,
         detail_count: response.details.length,
-        foundation_count: response.foundationOptions.length,
-        course_count: response.courseOptions.length,
       });
 
       res.setHeader('Cache-Control', 'no-store');
@@ -536,7 +544,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/event-attendees — bundled rows + details + stats + filter options for the Event Attendees tab (LFXV2-1875). */
+  /** GET /api/orgs/:orgUid/lens/people/event-attendees?range&attribution&participation — person × event rows + summary + filter options for the Event Attendees tab (LFXV2-1875, lfx-self-serve#4598). */
   public async getEventAttendees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const startTime = logger.startOperation(req, 'get_org_lens_people_event_attendees', {
@@ -546,11 +554,12 @@ export class OrgLensPeopleController {
     try {
       assertOrgUid(orgUid, 'get_org_lens_people_event_attendees');
 
-      const response = await this.eventAttendeesService.getEventAttendees(orgUid);
+      const { range, attribution, participation } = parseOrgEventsFilters(req, 'get_org_lens_people_event_attendees');
+      const response = await this.eventAttendeesService.getEventAttendees(orgUid, { range, attribution, participation });
 
       logger.success(req, 'get_org_lens_people_event_attendees', startTime, {
         org_uid: orgUid,
-        attendee_count: response.attendees.length,
+        attendee_count: response.summary.attendeesCount,
         detail_count: response.details.length,
         foundation_count: response.foundationOptions.length,
         event_count: response.eventOptions.length,
@@ -602,6 +611,43 @@ export class OrgLensPeopleController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * The All Employees Event Attendees tile is the number the People -> Event Attendees tab shows as Attendees at its defaults
+   * (Employee match, registered or attended; lfx-self-serve#4598, #5158, #5315): the same warehouse summary row, through the same reader and
+   * cache entry, so the two cannot drift. Events are LF constructs, so the Non-LF project scope keeps the listed-employee count
+   * (`undefined`), as does the unranged roster read. A summary that cannot be read gives `null`, which marks the tile unavailable
+   * instead of counting something else; it never fails the roster, and it never rejects.
+   */
+  private async readEventAttendeesTotal(
+    req: Request,
+    orgUid: string,
+    range: OrgLensTimeRange | null,
+    projectScope: OrgProjectScope
+  ): Promise<number | null | undefined> {
+    if (range === null || projectScope === 'non_lf') {
+      return undefined;
+    }
+    try {
+      const { attendeesCount } = await this.eventAttendeesService.readSummary(orgUid, range, DEFAULT_ORG_EVENTS_ATTRIBUTION, DEFAULT_ORG_EVENTS_PARTICIPATION);
+      return attendeesCount;
+    } catch (error) {
+      logger.warning(req, 'get_org_lens_people_all', 'Event attendee summary read failed, the tile is marked unavailable', {
+        err: error,
+        org_uid: orgUid,
+      });
+      return null;
+    }
+  }
+
+  private withEventAttendeesTotal(response: OrgAllEmployeesResponse, eventAttendeesTotal: number | null | undefined): OrgAllEmployeesResponse {
+    if (eventAttendeesTotal === undefined) {
+      return response;
+    }
+    return eventAttendeesTotal === null
+      ? { ...response, eventAttendeesTotal }
+      : { ...response, eventAttendeesTotal, stats: { ...response.stats, eventAttendees: eventAttendeesTotal } };
   }
 
   private assertPersonKey(personKey: string | undefined, operation: string): asserts personKey is string {

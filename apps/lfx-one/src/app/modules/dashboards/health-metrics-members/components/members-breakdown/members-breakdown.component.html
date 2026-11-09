@@ -1,0 +1,142 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="members-breakdown">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      variant="compact"
+      icon="fa-light fa-triangle-exclamation"
+      title="Membership by tier unavailable"
+      subtitle="We could not load membership by tier for this foundation. Refresh the page to try again."
+      data-testid="members-breakdown-error" />
+  } @else if (loading()) {
+    <p-skeleton height="28rem" borderRadius="0.5rem" data-testid="members-breakdown-loading" aria-hidden="true" />
+  } @else if (!empty()) {
+    @let breakdown = view();
+    <lfx-overview-kpi-strip [kpis]="breakdown.kpis" testId="members-breakdown-kpis" variant="section" />
+
+    <div class="mb-[16px] mt-[4px] flex flex-wrap items-center justify-between gap-x-[12px] gap-y-[4px]">
+      <span class="text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500">Total members by year, by tier</span>
+      <lfx-ui-switch size="small" ariaLabel="Breakdown view" [value]="mode()" (valueChange)="onModeChange($event)" data-testid="members-breakdown-view">
+        @for (option of viewOptions; track option.value) {
+          <lfx-ui-switch-option [value]="option.value" [label]="option.label" [icon]="option.icon" iconOnly />
+        }
+      </lfx-ui-switch>
+    </div>
+
+    @if (mode() === 'chart') {
+      <!-- The y labels centre on the gridlines, so their column overhangs the plot by half a label each way. -->
+      <div class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-[8px] pt-[16px]" data-testid="members-breakdown-chart">
+        <div class="-my-[6px] flex h-[232px] flex-col justify-between text-right text-[11px] leading-[12px] text-gray-400" aria-hidden="true">
+          @for (tick of breakdown.yTicks; track $index) {
+            <span>{{ tick }}</span>
+          }
+        </div>
+        <div
+          class="relative flex h-[220px] border-b border-gray-200 bg-[linear-gradient(theme(colors.gray.100)_1px,transparent_1px)] bg-[length:100%_25%]"
+          role="list"
+          aria-label="Members per tier by year">
+          @for (column of breakdown.columns; track column.year; let index = $index) {
+            <div
+              class="relative flex-1 rounded-[6px] outline-none transition-colors duration-150 hover:bg-[var(--ui-neutral-alpha-50)] focus-visible:bg-[var(--ui-neutral-alpha-50)] focus-visible:ring-2 focus-visible:ring-blue-500"
+              role="listitem"
+              tabindex="0"
+              [attr.aria-label]="column.ariaLabel"
+              [attr.data-testid]="'members-breakdown-column-' + column.year"
+              (mouseenter)="showTip(index, $event)"
+              (focus)="showTip(index, $event)"
+              (mouseleave)="hideTip(index)"
+              (blur)="hideTip(index)"
+              (keydown.escape)="hideTip(index)">
+              <div class="absolute bottom-0 left-1/2 h-full w-[44px] max-w-[70%] -translate-x-1/2" aria-hidden="true">
+                @for (segment of column.segments; track segment.key) {
+                  <span
+                    class="absolute inset-x-0 shadow-[inset_0_1px_0_theme(colors.white)]"
+                    [style.bottom.%]="segment.bottomPct"
+                    [style.height.%]="segment.heightPct"
+                    [style.background]="segment.color"
+                    [attr.data-testid]="'members-breakdown-segment-' + column.year + '-' + segment.key"></span>
+                }
+              </div>
+              @if (tip(); as open) {
+                @if (open.index === index) {
+                  <lfx-health-metrics-chart-tip
+                    class="pointer-events-none absolute top-1/2 z-10 -translate-y-1/2"
+                    [class]="open.flip ? 'right-[calc(50%+12px)]' : 'left-[calc(50%+12px)]'"
+                    aria-hidden="true"
+                    [tip]="column.tip" />
+                }
+              }
+            </div>
+          }
+        </div>
+        <div class="col-start-2 mt-[6px] flex" aria-hidden="true">
+          @for (column of breakdown.columns; track column.year) {
+            <div class="flex min-w-0 flex-1 flex-col items-center text-center text-[11px]">
+              <span class="max-w-full truncate text-gray-500">{{ column.label }}</span>
+              <span class="text-gray-400">{{ column.membersLabel }}</span>
+            </div>
+          }
+        </div>
+      </div>
+
+      <div class="flex flex-wrap justify-center gap-x-[16px] gap-y-[6px]" aria-hidden="true" data-testid="members-breakdown-legend">
+        @for (item of breakdown.legend; track item.label) {
+          @if (item.divided) {
+            <span class="h-[14px] w-px self-center bg-gray-200" data-testid="members-breakdown-legend-divider"></span>
+          }
+          <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+            ><span class="h-[8px] w-[8px] rounded-full" [style.background]="item.color"></span>{{ item.label }}</span
+          >
+        }
+      </div>
+    } @else {
+      <!-- Only the table scrolls sideways below 560px; the last year is set off by a dashed rule and an accent wash. -->
+      <div class="min-w-0 overflow-x-auto" data-testid="members-breakdown-table">
+        <div class="relative flex min-w-[560px] flex-col" role="table" aria-label="Total members by year, by tier">
+          <div
+            class="grid min-h-[40px] bg-gray-50 shadow-[inset_0_-1px_0_var(--ui-neutral-alpha-200)]"
+            [style.grid-template-columns]="gridColumns()"
+            role="row">
+            <span class="flex items-center whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600" role="columnheader">Tier</span>
+            @for (column of breakdown.columns; track column.year) {
+              <span
+                class="flex min-w-0 items-center justify-end whitespace-nowrap px-[10px] text-[12px] font-medium leading-[16px] text-gray-600"
+                role="columnheader"
+                ><span class="min-w-0 truncate">{{ column.label }}</span></span
+              >
+            }
+          </div>
+          @for (row of tableRows(); track row.key) {
+            <div
+              class="grid"
+              [class]="row.rowClass"
+              [style.grid-template-columns]="gridColumns()"
+              role="row"
+              [attr.data-testid]="'members-breakdown-row-' + row.key">
+              <span class="flex min-w-0 items-center gap-[8px] whitespace-nowrap px-[10px] py-[11px] leading-[18px]" [class]="row.labelClass" role="rowheader">
+                @if (row.icon; as icon) {
+                  <lfx-health-metrics-tier-icon [tier]="icon" />
+                }
+                <span class="truncate" [attr.title]="row.label">{{ row.label }}</span>
+              </span>
+              @for (cell of row.cells; track $index) {
+                <!-- A figure too wide for a narrow column ends in an ellipsis, as the design clips it. -->
+                <span [class]="cell.cellClass" role="cell"
+                  ><span class="min-w-0 truncate">{{ cell.label }}</span></span
+                >
+              }
+            </div>
+          }
+          <!-- The dashed rule down the last year's left edge, over the header and every row. -->
+          <div class="pointer-events-none absolute inset-0 z-[1] grid" [style.grid-template-columns]="gridColumns()" aria-hidden="true">
+            <span
+              class="w-px bg-[repeating-linear-gradient(to_bottom,theme(colors.gray.900)_0_4px,transparent_4px_9px)]"
+              [style.grid-column]="breakdown.columns.length + 1"></span>
+          </div>
+        </div>
+      </div>
+    }
+  }
+</div>

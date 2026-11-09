@@ -15,14 +15,13 @@ import { UiToastService } from './toast.service';
   selector: 'lfx-ui-test-host',
   imports: [UiToastComponent],
   template:
-    '<lfx-ui-toast [variant]="variant()" [description]="description()" [actions]="actions()" [duration]="duration()" [dismissible]="dismissible()" (dismissed)="dismissed()">Committee created.</lfx-ui-toast><button id="outside" type="button">Outside</button>',
+    '<lfx-ui-toast [variant]="variant()" [description]="description()" [actions]="actions()" [duration]="duration()" (dismissed)="dismissed()">Committee created.</lfx-ui-toast><button id="outside" type="button">Outside</button>',
 })
 class TestHostComponent {
   public readonly variant = signal<UiToastVariant>('default');
   public readonly description = signal('');
   public readonly actions = signal<UiToastAction[]>([]);
   public readonly duration = signal<number | null>(null);
-  public readonly dismissible = signal(true);
   public dismissed = vi.fn();
 }
 
@@ -80,6 +79,13 @@ describe('UiToastComponent', () => {
     expect(toast().classList).toContain(fill);
     expect(toast().classList).toContain('rounded-ui-md');
     expect(toast().classList).toContain('shadow-modal');
+  });
+
+  it('hugs its content up to the 420px library width, then wraps', async () => {
+    await setup();
+    expect(toast().classList).toContain('w-fit');
+    expect(toast().classList).toContain('max-w-[min(420px,calc(100vw-32px))]');
+    expect(toast().classList).not.toContain('w-[420px]');
   });
 
   describe('dark', () => {
@@ -176,105 +182,73 @@ describe('UiToastComponent', () => {
     });
 
     it('pauses while focus is inside it', async () => {
-      await setup();
-      const dismiss = toast().querySelector('[data-testid="ui-toast-dismiss"]') as HTMLElement;
+      await setup((instance) => instance.actions.set([{ label: 'Undo', run: vi.fn() }]));
+      const action = toast().querySelector('[data-testid="ui-toast-action"]') as HTMLElement;
       await advance(2000);
-      focusIn(dismiss);
+      focusIn(action);
       await advance(60000);
       expect(host.dismissed).not.toHaveBeenCalled();
 
-      focusOut(dismiss, root.querySelector('#outside'));
-      await advance(3000);
+      focusOut(action, root.querySelector('#outside'));
+      await advance(6000);
       expect(host.dismissed).toHaveBeenCalledTimes(1);
     });
 
     it('stays paused when focus moves between its own buttons', async () => {
-      await setup((instance) => instance.actions.set([{ label: 'Undo', run: vi.fn() }]));
-      const action = toast().querySelector('[data-testid="ui-toast-action"]') as HTMLElement;
-      const dismiss = toast().querySelector('[data-testid="ui-toast-dismiss"]') as HTMLElement;
-      focusIn(action);
-      focusOut(action, dismiss);
-      focusIn(dismiss);
+      await setup((instance) =>
+        instance.actions.set([
+          { label: 'Undo', run: vi.fn() },
+          { label: 'View', run: vi.fn() },
+        ])
+      );
+      const [first, second] = Array.from(toast().querySelectorAll<HTMLElement>('[data-testid="ui-toast-action"]'));
+      focusIn(first);
+      focusOut(first, second);
+      focusIn(second);
       await advance(60000);
       expect(host.dismissed).not.toHaveBeenCalled();
     });
 
     it('stays paused while the pointer is over it even after focus leaves', async () => {
-      await setup();
-      const dismiss = toast().querySelector('[data-testid="ui-toast-dismiss"]') as HTMLElement;
+      await setup((instance) => instance.actions.set([{ label: 'Undo', run: vi.fn() }]));
+      const action = toast().querySelector('[data-testid="ui-toast-action"]') as HTMLElement;
       pointer('pointerenter');
-      focusIn(dismiss);
-      focusOut(dismiss, null);
+      focusIn(action);
+      focusOut(action, null);
       await advance(60000);
       expect(host.dismissed).not.toHaveBeenCalled();
     });
   });
 
-  describe('dismiss button', () => {
-    it('is named Dismiss and dismisses on press', async () => {
-      await setup();
+  describe('close button', () => {
+    it.each(['default', 'success', 'warning', 'dark'] as const)('is absent on the %s variant', async (variant) => {
+      await setup((instance) => instance.variant.set(variant));
+      expect(toast().querySelector('button')).toBeNull();
+    });
+
+    it('is named Dismiss on an error and dismisses on press', async () => {
+      await setup((instance) => instance.variant.set('error'));
       const dismiss = toast().querySelector('[data-testid="ui-toast-dismiss"]') as HTMLButtonElement;
       expect(dismiss.getAttribute('aria-label')).toBe('Dismiss');
       expect(dismiss.type).toBe('button');
+      expect(dismiss.classList).toContain('shrink-0');
       dismiss.click();
       expect(host.dismissed).toHaveBeenCalledTimes(1);
     });
 
-    it('can be hidden', async () => {
-      await setup((instance) => instance.dismissible.set(false));
-      expect(toast().querySelector('[data-testid="ui-toast-dismiss"]')).toBeNull();
-    });
-
-    it('stays when an error opts out and has no action, so the toast can always be closed', async () => {
-      await setup((instance) => {
-        instance.variant.set('error');
-        instance.dismissible.set(false);
-      });
-      expect(toast().querySelector('[data-testid="ui-toast-dismiss"]')).not.toBeNull();
-    });
-
-    it('stays when a toast with no timeout and no action opts out', async () => {
-      await setup((instance) => {
-        instance.duration.set(0);
-        instance.dismissible.set(false);
-      });
-      expect(toast().querySelector('[data-testid="ui-toast-dismiss"]')).not.toBeNull();
-    });
-
-    it('keeps the forced dismiss button when duration changes after the countdown was set', async () => {
-      await setup((instance) => {
-        instance.duration.set(0);
-        instance.dismissible.set(false);
-      });
-      host.duration.set(5000);
-      await flush();
-      await advance(60000);
-      expect(host.dismissed).not.toHaveBeenCalled();
-      expect(toast().querySelector('[data-testid="ui-toast-dismiss"]')).not.toBeNull();
-    });
-
-    it('can be hidden on an error that has an action to close it', async () => {
-      await setup((instance) => {
-        instance.variant.set('error');
-        instance.dismissible.set(false);
-        instance.actions.set([{ label: 'Retry', run: vi.fn() }]);
-      });
-      expect(toast().querySelector('[data-testid="ui-toast-dismiss"]')).toBeNull();
+    it('returns focus to where it came from when pressed', async () => {
+      await setup((instance) => instance.variant.set('error'));
+      const outside = root.querySelector('#outside') as HTMLButtonElement;
+      const dismiss = toast().querySelector('[data-testid="ui-toast-dismiss"]') as HTMLButtonElement;
+      outside.focus();
+      dismiss.focus();
+      dismiss.click();
+      expect(document.activeElement).toBe(outside);
     });
   });
 
   describe('focus return', () => {
     const outside = () => root.querySelector('#outside') as HTMLButtonElement;
-
-    it('returns focus to where it came from when the dismiss button is pressed', async () => {
-      await setup();
-      const dismiss = toast().querySelector('[data-testid="ui-toast-dismiss"]') as HTMLButtonElement;
-      outside().focus();
-      dismiss.focus();
-      expect(document.activeElement).toBe(dismiss);
-      dismiss.click();
-      expect(document.activeElement).toBe(outside());
-    });
 
     it('returns focus before an action runs, so the action can move it on purpose', async () => {
       const seen: (Element | null)[] = [];
@@ -287,34 +261,38 @@ describe('UiToastComponent', () => {
     });
 
     it('keeps the first origin when focus moves between the toast buttons', async () => {
-      await setup((instance) => instance.actions.set([{ label: 'Undo', run: vi.fn() }]));
-      const action = toast().querySelector('[data-testid="ui-toast-action"]') as HTMLButtonElement;
-      const dismiss = toast().querySelector('[data-testid="ui-toast-dismiss"]') as HTMLButtonElement;
+      await setup((instance) =>
+        instance.actions.set([
+          { label: 'Undo', run: vi.fn() },
+          { label: 'View', run: vi.fn() },
+        ])
+      );
+      const [first, second] = Array.from(toast().querySelectorAll<HTMLButtonElement>('[data-testid="ui-toast-action"]'));
       outside().focus();
-      action.focus();
-      dismiss.focus();
-      dismiss.click();
+      first.focus();
+      second.focus();
+      second.click();
       expect(document.activeElement).toBe(outside());
     });
 
     it('leaves focus alone when the origin is no longer on the page', async () => {
-      await setup();
-      const dismiss = toast().querySelector('[data-testid="ui-toast-dismiss"]') as HTMLButtonElement;
+      await setup((instance) => instance.actions.set([{ label: 'Undo', run: vi.fn() }]));
+      const action = toast().querySelector('[data-testid="ui-toast-action"]') as HTMLButtonElement;
       const origin = outside();
       origin.focus();
-      dismiss.focus();
+      action.focus();
       const focus = vi.spyOn(origin, 'focus');
       origin.remove();
-      dismiss.click();
+      action.click();
       expect(focus).not.toHaveBeenCalled();
     });
 
     it('does not move focus when it was not inside the toast', async () => {
-      await setup();
+      await setup((instance) => instance.actions.set([{ label: 'Undo', run: vi.fn() }]));
       const focus = vi.spyOn(outside(), 'focus');
       outside().focus();
       focus.mockClear();
-      (toast().querySelector('[data-testid="ui-toast-dismiss"]') as HTMLButtonElement).click();
+      (toast().querySelector('[data-testid="ui-toast-action"]') as HTMLButtonElement).click();
       expect(focus).not.toHaveBeenCalled();
     });
   });
@@ -452,6 +430,18 @@ describe('UiToastService', () => {
     expect(centre.style.marginBottom).toBe('16px');
   });
 
+  it('lines each toast up with its stack edge: right for bottom-right, centre for bottom-centre', async () => {
+    service.show({ message: 'Saved.' });
+    service.show({ message: 'Link copied.', variant: 'dark' });
+    await flush();
+    const regionOf = (message: string) =>
+      toasts()
+        .find((toast) => toast.textContent?.includes(message))
+        ?.closest('[data-testid="ui-toast-region"]') as HTMLElement;
+    expect(regionOf('Saved.').classList).toContain('items-end');
+    expect(regionOf('Link copied.').classList).toContain('items-center');
+  });
+
   it('marks the pane with the toast pane class so a popover does not treat a click on it as outside', () => {
     expect((region()?.closest('.cdk-overlay-pane') as HTMLElement).classList.contains(UI_TOAST_PANE_CLASS)).toBe(true);
   });
@@ -490,21 +480,37 @@ describe('UiToastService', () => {
     expect(toasts()).toHaveLength(0);
   });
 
-  it('removes a toast when its dismiss button is pressed and leaves the others', async () => {
-    service.show({ message: 'Stays.' });
-    service.show({ message: 'Goes.' });
+  it('still times a toast shown with a duration of 0', async () => {
+    service.show({ message: 'Saved.', duration: 0 });
     await flush();
-    (toasts()[0].querySelector('[data-testid="ui-toast-dismiss"]') as HTMLButtonElement).click();
+    await vi.advanceTimersByTimeAsync(5000);
+    await flush();
+    expect(toasts()).toHaveLength(0);
+  });
+
+  it('keeps an error shown with a duration of 0', async () => {
+    service.show({ message: 'Could not send.', variant: 'error', duration: 0 });
+    await flush();
+    await vi.advanceTimersByTimeAsync(60000);
+    await flush();
+    expect(toasts()).toHaveLength(1);
+  });
+
+  it('removes a toast when its action is pressed and leaves the others', async () => {
+    service.show({ message: 'Stays.' });
+    service.show({ message: 'Goes.', actions: [{ label: 'Undo', run: vi.fn() }] });
+    await flush();
+    (toasts()[0].querySelector('[data-testid="ui-toast-action"]') as HTMLButtonElement).click();
     await flush();
     expect(messages()).toEqual(['Stays.']);
   });
 
   it('passes the variant, actions and duration to the toast', async () => {
     const run = vi.fn();
-    service.show({ message: 'Could not send.', variant: 'error', actions: [{ label: 'Retry', run }], dismissible: false });
+    service.show({ message: 'Could not send.', variant: 'error', actions: [{ label: 'Retry', run }] });
     await flush();
     expect(toasts()[0].getAttribute('role')).toBe('alert');
-    expect(toasts()[0].querySelector('[data-testid="ui-toast-dismiss"]')).toBeNull();
+    expect(toasts()[0].querySelector('[data-testid="ui-toast-dismiss"]')).not.toBeNull();
     (toasts()[0].querySelector('[data-testid="ui-toast-action"]') as HTMLButtonElement).click();
     await flush();
     expect(run).toHaveBeenCalledTimes(1);
@@ -514,11 +520,11 @@ describe('UiToastService', () => {
   it('returns focus to where it came from when `ref.dismiss()` removes a toast that holds focus', async () => {
     const origin = document.createElement('button');
     document.body.appendChild(origin);
-    const ref = service.show({ message: 'Saved.' });
+    const ref = service.show({ message: 'Saved.', actions: [{ label: 'Undo', run: vi.fn() }] });
     await flush();
-    const dismiss = toasts()[0].querySelector('[data-testid="ui-toast-dismiss"]') as HTMLButtonElement;
+    const action = toasts()[0].querySelector('[data-testid="ui-toast-action"]') as HTMLButtonElement;
     origin.focus();
-    dismiss.focus();
+    action.focus();
     ref.dismiss();
     await flush();
     expect(toasts()).toHaveLength(0);
@@ -526,16 +532,16 @@ describe('UiToastService', () => {
     origin.remove();
   });
 
-  it('still returns focus when the browser reports the removed button as focus leaving with no target', async () => {
+  it('still returns focus when the browser reports the removed action as focus leaving with no target', async () => {
     const origin = document.createElement('button');
     document.body.appendChild(origin);
-    const ref = service.show({ message: 'Saved.' });
+    const ref = service.show({ message: 'Saved.', actions: [{ label: 'Undo', run: vi.fn() }] });
     await flush();
-    const dismiss = toasts()[0].querySelector('[data-testid="ui-toast-dismiss"]') as HTMLButtonElement;
+    const action = toasts()[0].querySelector('[data-testid="ui-toast-action"]') as HTMLButtonElement;
     origin.focus();
-    dismiss.focus();
+    action.focus();
     // Chromium blurs the focused button while removing it, before the toast is destroyed.
-    dismiss.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+    action.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
     ref.dismiss();
     await flush();
     expect(document.activeElement).toBe(origin);
@@ -546,13 +552,13 @@ describe('UiToastService', () => {
     const origin = document.createElement('button');
     document.body.appendChild(origin);
     const focus = vi.spyOn(origin, 'focus');
-    const ref = service.show({ message: 'Saved.' });
+    const ref = service.show({ message: 'Saved.', actions: [{ label: 'Undo', run: vi.fn() }] });
     await flush();
-    const dismiss = toasts()[0].querySelector('[data-testid="ui-toast-dismiss"]') as HTMLButtonElement;
+    const action = toasts()[0].querySelector('[data-testid="ui-toast-action"]') as HTMLButtonElement;
     origin.focus();
-    dismiss.focus();
+    action.focus();
     focus.mockClear();
-    dismiss.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+    action.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
     await flush();
     ref.dismiss();
     await flush();

@@ -83,6 +83,17 @@ describe('MeetingEditScopeModalComponent', () => {
     expect(close).toHaveBeenCalledWith({ scope: 'series', proceed: true });
   });
 
+  it('picks an option from a click on its description', async () => {
+    const fixture = await render(buildData(MEETING, SECOND));
+
+    query(fixture, 'meetings-home-edit-scope-series-description')?.click();
+    await fixture.whenStable();
+
+    expect(radio(fixture, 'series').checked).toBe(true);
+    button(fixture, 'meetings-home-edit-scope-continue').click();
+    expect(close).toHaveBeenCalledWith({ scope: 'series', proceed: true });
+  });
+
   it('closes with nothing on Cancel', async () => {
     const fixture = await render(buildData(MEETING, FIRST));
 

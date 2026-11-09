@@ -12,7 +12,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccountContextService } from './account-context.service';
 import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
-import { FeatureFlagService } from './feature-flag.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 // Spec 050: the organization a `/org/{segment}/…` address names is adopted by the path-param guard
@@ -35,11 +34,9 @@ describe('AccountContextService — address-adopted selection', () => {
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
   };
-  let claM3Flag: WritableSignal<boolean>;
 
   beforeEach(() => {
     cookies = new Map();
-    claM3Flag = signal(false);
     grants = {
       writerSet: signal(new Set<string>()),
       auditorSet: signal(new Set<string>()),
@@ -61,7 +58,6 @@ describe('AccountContextService — address-adopted selection', () => {
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn().mockReturnValue(of([])) } },
         { provide: OrgRoleGrantsService, useValue: grants },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => claM3Flag } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
       ],
     });
@@ -241,15 +237,9 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.hasOrgSelectorAccess()).toBe(true);
     });
 
-    it('is true for a CLA-only organization alone while org-lens-cla-m3-enabled is on', () => {
+    it('is true for a CLA-only organization alone', () => {
       grants.claManagerOrgSet.set(new Set([UID_A]));
-      claM3Flag.set(true);
       expect(service.hasOrgSelectorAccess()).toBe(true);
-    });
-
-    it('ignores CLA-only organizations while org-lens-cla-m3-enabled is off', () => {
-      grants.claManagerOrgSet.set(new Set([UID_A]));
-      expect(service.hasOrgSelectorAccess()).toBe(false);
     });
   });
 
@@ -409,8 +399,10 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
         },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext } },
-        { provide: OrgRoleGrantsService, useValue: { writerSet: signal(new Set()), auditorSet: signal(new Set()), isStaff: signal(false) } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: { writerSet: signal(new Set()), auditorSet: signal(new Set()), isStaff: signal(false), claManagerOrgSet: signal(new Set()) },
+        },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
       ],
     });

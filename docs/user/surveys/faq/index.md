@@ -4,7 +4,7 @@ description: Frequently asked questions about creating, sending, and responding 
 audience: [all]
 product_area: Surveys
 tags: [surveys, faq, nps, feedback, reminders, results]
-last_updated: 2026-11-02
+last_updated: 2026-11-05
 intercom_collection: Surveys
 ---
 
@@ -14,7 +14,7 @@ People who can manage surveys for the project or foundation, or who are a writer
 
 ## Can I write my own questions?
 
-No. Choose a template under **NPS Survey Template** and the questions come from it. You write the email that introduces the survey. See [Create a Survey](../create-survey/).
+No. Choose a template under **NPS Survey Templates** and the questions come from it. You write the email that introduces the survey. See [Create a Survey](../create-survey/).
 
 ## What is NPS and how does it work?
 

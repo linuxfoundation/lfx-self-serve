@@ -25,6 +25,7 @@ import { expect, Page, Route } from '@playwright/test';
 import { mockProjects } from '../fixtures/mock-data';
 import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
+import { pinMktgOsFlags } from './mktg-os-flags.helper';
 import { waitForHydration } from './meeting-composer-guests.helper';
 
 export const LINKEDIN_RUN_TIMEOUT = 20000;
@@ -119,7 +120,7 @@ export async function setupLinkedin(
     mailing_list_count: 0,
   };
   await ApiMockHelper.setupProjectSlugMock(page, { writer: options.writer ?? true });
-  await page.addInitScript(() => localStorage.setItem('lfx-feature-flag-overrides', JSON.stringify({ 'mktg-os-agents-enabled': true })));
+  await pinMktgOsFlags(page);
   await page.route('**/api/user/personas*', (route) =>
     json(route, { personas: ['executive-director'], personaProjects: {}, projects: [], organizations: [], isRootWriter: true })
   );

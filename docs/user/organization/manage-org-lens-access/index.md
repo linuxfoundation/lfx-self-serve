@@ -4,11 +4,11 @@ description: See who can open your organization in the Organization lens, and ad
 audience: [all]
 product_area: Organization
 tags: [organization, org-lens, access, admin, viewer, invite, remove, people, company]
-last_updated: 2026-11-02
+last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
-The **Org Lens Access** tab lists the people who have been granted Admin or Viewer access directly on your organization, plus anyone who has been invited and has not yet accepted. An Admin can add people, change their role, and remove their access there. Some people can open your organization in other ways, for example through access to a related organization or as Linux Foundation staff. They are not listed on this tab, and you cannot change or remove their access here. Org Lens access is separate from committee or group membership: removing someone from a committee does not change their Org Lens access, and removing their Org Lens access does not change their committees.
+The **Org Lens Access** tab lists the people who have been granted Admin or Viewer access directly on your organization, plus anyone who has been invited and has not yet accepted. An Admin can add people, change their role, and remove their access there. Some people can open your organization in other ways, for example through access to a related organization. They are not listed on this tab, and you cannot change or remove their access here. Org Lens access is separate from committee or group membership: removing someone from a committee does not change their Org Lens access, and removing their Org Lens access does not change their committees.
 
 These steps apply to Admins and Viewers of the organization. Only an Admin can make changes; a Viewer can see the list but not change it. A CLA Manager with no other role on the organization sees only **EasyCLA** and cannot open **People**.
 

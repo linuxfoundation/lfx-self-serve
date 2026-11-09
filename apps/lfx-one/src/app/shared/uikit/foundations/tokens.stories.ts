@@ -67,6 +67,7 @@ export const Shadows: Story = {
         <div class="h-24 w-40 rounded-ui-lg bg-ui-background-100 shadow-fullscreen p-3 label-14">shadow-fullscreen</div>
         <div class="h-24 w-40 rounded-ui-sm bg-ui-background-100 shadow-focus p-3 label-14">shadow-focus</div>
         <div class="h-24 w-40 rounded-ui-md bg-ui-background-100 edge hover:edge-hover p-3 label-14">edge (hover: edge-hover)</div>
+        <div class="h-24 w-40 rounded-ui-md bg-ui-background-100 edge-control hover:edge-control-hover p-3 label-14">edge-control (hover: edge-control-hover)</div>
       </div>
     `,
   }),

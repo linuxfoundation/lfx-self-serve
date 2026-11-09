@@ -23,6 +23,8 @@ import { TooltipModule } from 'primeng/tooltip';
 })
 export class InitiativeCardComponent {
   public readonly initiative = input.required<InitiativeBase>();
+  /** Show who created the initiative; the lens pages set it (lfx-crowdfunding#452). */
+  public readonly showCreator = input(false);
   public readonly cardClick = output<string>();
 
   protected readonly fundTypeLabel = computed(() => CROWDFUNDING_FUND_TYPE_LABELS[this.initiative().initiativeType]);
@@ -38,7 +40,10 @@ export class InitiativeCardComponent {
     const name = this.initiative().attribution?.name;
     return this.attributionIcon() && name ? `On behalf of ${name}` : '';
   });
-  protected readonly cardLabel = computed(() => [this.initiative().name, this.attributionTooltip()].filter(Boolean).join(', '));
+  protected readonly creator = computed(() => (this.showCreator() ? (this.initiative().creator ?? '') : ''));
+  protected readonly cardLabel = computed(() =>
+    [this.initiative().name, this.attributionTooltip(), this.creator() ? `Created by ${this.creator()}` : ''].filter(Boolean).join(', ')
+  );
 
   protected readonly progressPercent = this.initProgressPercent();
 

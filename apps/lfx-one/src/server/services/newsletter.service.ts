@@ -199,6 +199,17 @@ export class NewsletterService {
   }
 
   /**
+   * The newest sent issue addressed to a newsletter group, or null when it has sent none. The
+   * committee-scoped upstream list is sent-only and ordered by `sent_at` descending, so the first row
+   * of the first page is the latest. Only the signed-out guest reader calls this, with an M2M token
+   * (`options.bearerToken`), after it has verified the reader in-app.
+   */
+  public async getLatestCommitteeNewsletter(req: Request, committeeUid: string, options?: ApiRequestOptions): Promise<CommitteeNewsletter | null> {
+    const page = await this.newsletterClient.listCommitteeNewsletters(req, committeeUid, undefined, options);
+    return page.newsletters?.[0] ?? null;
+  }
+
+  /**
    * Tab counts for the project newsletter list. The upstream list has no totals, so this walks
    * the unfiltered list (cursor-chained, so sequential) while reading opt-outs in parallel.
    * A failed opt-out read only drops that count; a failed list read fails the request.

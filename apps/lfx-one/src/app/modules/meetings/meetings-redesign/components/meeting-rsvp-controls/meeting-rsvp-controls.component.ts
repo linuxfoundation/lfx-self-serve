@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkMenuTrigger } from '@angular/cdk/menu';
+import { ConnectedPosition } from '@angular/cdk/overlay';
 import { DOCUMENT } from '@angular/common';
 import {
   afterNextRender,
@@ -28,7 +29,7 @@ import {
   RsvpScope,
   UiButtonSize,
 } from '@lfx-one/shared/interfaces';
-import { getMeetingRsvpScopeLabel, isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
+import { getMeetingRsvpToastMessage, isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
@@ -43,7 +44,7 @@ import { take } from 'rxjs';
 import { MeetingRsvpScopeModalComponent } from '../meeting-rsvp-scope-modal/meeting-rsvp-scope-modal.component';
 
 /**
- * The viewer's RSVP on one upcoming date: Yes / No / Maybe until answered, then a status badge whose menu changes it.
+ * The viewer's RSVP on one upcoming date: Yes / Maybe / No until answered, then a status badge whose menu changes it.
  * @description A recurring meeting asks which dates the answer covers first. Renders nothing when the viewer can't respond.
  */
 @Component({
@@ -66,23 +67,26 @@ export class MeetingRsvpControlsComponent {
   private readonly statusTrigger = viewChild<ElementRef<HTMLButtonElement>>('statusTrigger');
 
   public readonly row = input.required<MeetingHomeRow>();
-  /** Size of the Yes / No / Maybe buttons: 24px in the list and the Pending RSVPs popover. */
+  /** Size of the Yes / Maybe / No buttons: 28px in the list and the Pending RSVPs popover. */
   public readonly size = input<UiButtonSize>('small');
 
   /** The answer being saved; the BFF holds the request until the new answer is indexed (up to 5s). */
   protected readonly saving = signal<RsvpResponse | null>(null);
   protected readonly choices = MEETINGS_HOME_RSVP_CHOICES;
-  protected readonly iconColor: Record<RsvpResponse, string> = { accepted: 'text-blue-600', declined: 'text-red-600', maybe: 'text-amber-600' };
+  // The badge sits at the row's end, so its menu opens from the badge's end edge.
+  protected readonly menuPositions: ConnectedPosition[] = [
+    { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' },
+    { originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom' },
+    { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' },
+    { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom' },
+  ];
+  protected readonly iconColor: Record<RsvpResponse, string> = { accepted: 'text-emerald-600', declined: 'text-red-600', maybe: 'text-amber-600' };
   /** This row is saving, or another date of the same series is: a second write could be confirmed out of order. */
   protected readonly busy: Signal<boolean> = computed(() => !!this.saving() || this.rsvpService.submittingMeetingIds().has(this.row().meeting.id));
   protected readonly visible: Signal<boolean> = this.initVisible();
   protected readonly current: Signal<MeetingRsvpChoice | null> = computed(
     () => this.choices.find((choice) => choice.response === this.row().myRsvp?.response_type) ?? null
   );
-  protected readonly scopeLabel: Signal<string | null> = computed(() => {
-    const rsvp = this.row().myRsvp;
-    return rsvp && this.row().meeting.recurrence ? getMeetingRsvpScopeLabel(rsvp) : null;
-  });
 
   protected choose(response: RsvpResponse): void {
     const row = this.row();
@@ -103,7 +107,8 @@ export class MeetingRsvpControlsComponent {
       // Another date of the series started saving while the dialog was open.
       if (this.busy())
         this.toast.show({
-          variant: 'dark',
+          variant: 'warning',
+          position: 'bottom-center',
           message: 'RSVP Not Saved',
           description: 'Another response to this meeting is still saving. Try again.',
           duration: 5000,
@@ -130,14 +135,12 @@ export class MeetingRsvpControlsComponent {
       .pipe(take(1))
       .subscribe({
         next: (rsvp: MeetingRsvp) => {
-          const label = this.choices.find((choice) => choice.response === rsvp.response_type)?.label ?? '';
-          const scopeLabel = row.meeting.recurrence ? getMeetingRsvpScopeLabel(rsvp) : 'This meeting';
-          this.toast.show({ variant: 'dark', message: `Response saved: ${label}`, description: `${row.title} — ${scopeLabel}` });
+          this.toast.show({ variant: 'dark', message: getMeetingRsvpToastMessage(rsvp, !!row.meeting.recurrence) });
           this.keepFocusOnRsvp();
         },
         error: (error: MeetingRsvpSubmitError) => {
           this.saving.set(null);
-          this.toast.show({ variant: 'dark', message: 'RSVP Failed', description: error.message, duration: 5000 });
+          this.toast.show({ variant: 'error', position: 'bottom-center', message: 'RSVP Failed', description: error.message });
         },
         complete: () => this.saving.set(null),
       });

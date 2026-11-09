@@ -10,8 +10,9 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { environment } from '@environments/environment';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_ORG_DONATIONS } from '@lfx-one/shared/constants';
-import { InitiativesLoadError, OrgDonationsResponse } from '@lfx-one/shared/interfaces';
+import { InitiativesLoadError, OrgDonationRow, OrgDonationsResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { of } from 'rxjs';
@@ -28,6 +29,9 @@ export class OrgDonationsComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
   private readonly crowdfundingService = inject(CrowdfundingService);
   private readonly accountContext = inject(AccountContextService);
+
+  // Public crowdfunding site, without the trailing slash.
+  private readonly crowdfundingUrl = environment.urls.crowdfunding.replace(/\/+$/, '');
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   protected readonly isLoading = signal(true);
@@ -47,7 +51,12 @@ export class OrgDonationsComponent {
     computation: ({ orgUid }) => ({ orgUid, offset: 0 }),
   });
   private readonly donationsState: Signal<OrgDonationsResponse> = this.initDonations();
-  protected readonly donations = computed(() => this.donationsState().data);
+  protected readonly donations: Signal<OrgDonationRow[]> = computed(() =>
+    this.donationsState().data.map((d) => ({
+      ...d,
+      initiativeUrl: d.initiativeSlug ? `${this.crowdfundingUrl}/initiatives/${encodeURIComponent(d.initiativeSlug)}` : undefined,
+    }))
+  );
   protected readonly hasMore = computed(() => this.donationsState().data.length < this.donationsState().total);
 
   // ─── Protected Methods ─────────────────────────────────────────────────────

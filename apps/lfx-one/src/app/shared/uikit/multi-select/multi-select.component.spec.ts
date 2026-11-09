@@ -499,6 +499,7 @@ describe('UiMultiSelectComponent', () => {
   });
 
   it('is out of the tab order and ignores the pointer when disabled, and closes if disabled while open', async () => {
+    expect(trigger().className).toContain('edge-control-hover');
     await open();
     await set('disabled', true);
     expect(panel()).toBeNull();
@@ -513,6 +514,7 @@ describe('UiMultiSelectComponent', () => {
 
     expect((trigger() as HTMLButtonElement).disabled).toBe(true);
     expect(panel()).toBeNull();
+    expect(trigger().className).not.toContain('edge-control-hover');
   });
 
   it('gives each instance its own ids', () => {

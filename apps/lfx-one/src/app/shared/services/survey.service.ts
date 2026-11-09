@@ -12,6 +12,7 @@ import {
   SurveyResponseItem,
   SurveyResponsesPage,
   SurveyResyncPreview,
+  SurveyTemplate,
 } from '@lfx-one/shared/interfaces';
 import { catchError, EMPTY, expand, map, Observable, of, reduce, shareReplay, take, tap, throwError } from 'rxjs';
 
@@ -153,6 +154,21 @@ export class SurveyService {
   public getResyncPreview(surveyUid: string, committeeUid?: string): Observable<SurveyResyncPreview> {
     const params = committeeUid ? new HttpParams().set('committee_uid', committeeUid) : undefined;
     return this.http.get<SurveyResyncPreview>(`/api/surveys/${encodeURIComponent(surveyUid)}/resync-preview`, { params }).pipe(take(1));
+  }
+
+  /** SurveyMonkey templates for the survey wizard; upstream admits a project or committee writer (#5124). */
+  public getSurveyTemplates(projectUid: string, committeeUid?: string | null): Observable<SurveyTemplate[]> {
+    let params = new HttpParams().set('project_uid', projectUid);
+    if (committeeUid) {
+      params = params.set('committee_uid', committeeUid);
+    }
+    return this.http.get<SurveyTemplate[]>('/api/surveys/templates', { params }).pipe(
+      take(1),
+      catchError((error) => {
+        console.error('Failed to load survey templates:', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   /** Sends the survey to committee members added since launch (#4340). */

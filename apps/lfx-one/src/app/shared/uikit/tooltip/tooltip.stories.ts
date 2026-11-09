@@ -10,7 +10,7 @@ const meta: Meta<UiTooltipDirective> = {
   title: 'Uikit/Tooltip',
   component: UiTooltipDirective,
   decorators: [moduleMetadata({ imports: [UiTooltipDirective, UiButtonComponent] })],
-  args: { text: 'Copy link', title: '', shortcut: [], side: 'top', delay: 300, disabled: false },
+  args: { text: 'Copy link', title: '', icon: '', shortcut: [], side: 'top', delay: 300, disabled: false },
   render: (args) => ({
     // Storybook copies props onto the directive instance, so nest them to keep `disabled` and the other signal inputs intact.
     props: { cfg: args },
@@ -18,10 +18,11 @@ const meta: Meta<UiTooltipDirective> = {
       <div class="flex justify-center p-[96px]">
         <button
           type="button"
-          class="inline-flex h-ui-medium w-[40px] items-center justify-center rounded-ui-sm border border-ui-neutral-alpha-200 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 focus:outline-none focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight]"
+          class="inline-flex h-ui-medium w-[40px] items-center justify-center rounded-ui-sm border border-ui-neutral-alpha-300 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 focus:outline-none focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight]"
           [attr.aria-label]="cfg.text"
           [lfxUiTooltip]="cfg.text"
           [lfxUiTooltipTitle]="cfg.title"
+          [lfxUiTooltipIcon]="cfg.icon"
           [lfxUiTooltipShortcut]="cfg.shortcut"
           [lfxUiTooltipSide]="cfg.side"
           [lfxUiTooltipDelay]="cfg.delay"
@@ -41,6 +42,10 @@ export const WithShortcut: Story = { args: { shortcut: ['⌘', 'C'] } };
 /** A bold title with a smaller description; up to 240px wide. */
 export const Rich: Story = {
   args: { title: 'Health score', text: 'Weighted from contributor activity, release cadence and issue response time over 90 days.' },
+};
+/** A white 11px icon before the title. */
+export const RichWithIcon: Story = {
+  args: { title: 'Restricted', icon: 'fa-solid fa-lock', text: 'Only invited people can join' },
 };
 export const Bottom: Story = { args: { side: 'bottom' } };
 export const Left: Story = { args: { side: 'left' } };

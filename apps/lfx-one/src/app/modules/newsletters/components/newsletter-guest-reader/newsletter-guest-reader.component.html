@@ -1,0 +1,107 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex min-h-screen flex-col bg-gray-50" data-testid="newsletter-guest-reader">
+  <header class="flex items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 py-3 sm:px-8">
+    <div class="flex min-w-0 items-center gap-3">
+      @if (shownFoundation()?.logo_url; as logoUrl) {
+        <img [src]="logoUrl" alt="" class="h-8 w-8 shrink-0 rounded-full border border-gray-200 bg-white object-contain p-0.5" />
+      }
+      <span
+        class="line-clamp-2 text-sm font-semibold text-gray-900 sm:line-clamp-1"
+        [attr.title]="shownFoundation()?.name ?? null"
+        data-testid="newsletter-guest-reader-foundation">
+        {{ shownFoundation()?.name ?? 'Newsletter' }}
+      </span>
+    </div>
+    <a
+      [attr.href]="signInHref()"
+      class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-100"
+      data-testid="newsletter-guest-reader-sign-in"
+      >Sign in</a
+    >
+  </header>
+
+  <!-- max-w-[600px] throughout = the newsletter email body width, matching the signed-in reader. -->
+  <main class="flex w-full flex-1 flex-col items-center gap-4 px-4 py-6 sm:px-8">
+    @if (issue(); as current) {
+      @if (current.confirmation_sent) {
+        <p class="w-full max-w-[600px] rounded-md bg-blue-50 px-4 py-3 text-sm text-blue-800" data-testid="newsletter-guest-reader-confirm-note">
+          We sent a link to {{ current.masked_email }} — confirm it to get future issues by email.
+        </p>
+      }
+      @if (current.newsletter; as newsletter) {
+        @if (newsletter.sent_at) {
+          <p class="w-full max-w-[600px] text-xs text-gray-500" data-testid="newsletter-guest-reader-sent-at">
+            Sent {{ newsletter.sent_at | date: 'mediumDate' }}
+          </p>
+        }
+        <lfx-newsletter-preview
+          class="w-full lg:max-w-[600px]"
+          [subject]="newsletter.subject"
+          [bodyHtml]="newsletter.body_html"
+          [displayName]="current.foundation.name"
+          data-testid="newsletter-guest-reader-preview"></lfx-newsletter-preview>
+      } @else {
+        <div
+          class="flex w-full max-w-[600px] flex-col items-center gap-2 rounded-xl border border-gray-200 bg-white p-8 text-center"
+          data-testid="newsletter-guest-reader-empty">
+          <p class="text-base font-medium text-gray-900">No issues yet</p>
+          <p class="text-sm text-gray-600">
+            You're on the list — the first {{ current.foundation.name }} newsletter will arrive at {{ current.masked_email }}.
+          </p>
+        </div>
+      }
+    } @else if (teaser(); as preview) {
+      <!-- Behind the modal only: decorative, never focusable. The excerpt is plain text, never HTML. -->
+      <article
+        class="relative flex w-full max-w-[600px] flex-col gap-4 overflow-hidden rounded-xl border border-gray-200 bg-white p-8"
+        aria-hidden="true"
+        inert
+        data-testid="newsletter-guest-reader-teaser">
+        <h1 class="font-display text-2xl text-gray-900" data-testid="newsletter-guest-reader-teaser-subject">{{ preview.subject }}</h1>
+        @if (preview.image_url; as imageUrl) {
+          <img [src]="imageUrl" alt="" class="max-h-72 w-full rounded object-cover" data-testid="newsletter-guest-reader-teaser-image" />
+        }
+        <p class="text-base leading-relaxed text-gray-700" data-testid="newsletter-guest-reader-teaser-excerpt">{{ preview.excerpt }}</p>
+        @for (width of placeholderLines; track $index) {
+          <div class="h-3 rounded bg-gray-200" [style.width.%]="width"></div>
+        }
+        <div class="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-white to-transparent"></div>
+      </article>
+    } @else {
+      <div
+        class="flex w-full max-w-[600px] flex-col gap-4 rounded-xl border border-gray-200 bg-white p-8"
+        aria-hidden="true"
+        data-testid="newsletter-guest-reader-placeholder">
+        <div class="h-6 w-3/4 rounded bg-gray-200"></div>
+        <div class="h-40 w-full rounded bg-gray-100"></div>
+        @for (width of placeholderLines; track $index) {
+          <div class="h-3 rounded bg-gray-200" [style.width.%]="width"></div>
+        }
+      </div>
+    }
+  </main>
+
+  <footer class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 py-4 text-xs text-gray-500" data-testid="newsletter-guest-reader-footer">
+    <a
+      [href]="legalLinks.privacyPolicy"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="hover:text-gray-900 hover:underline"
+      data-testid="newsletter-guest-reader-privacy"
+      >Privacy Policy</a
+    >
+    <a
+      [href]="legalLinks.termsOfUse"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="hover:text-gray-900 hover:underline"
+      data-testid="newsletter-guest-reader-terms"
+      >Terms of Use</a
+    >
+    <button type="button" class="hover:text-gray-900 hover:underline" (click)="onCookieSettings()" data-testid="newsletter-guest-reader-cookie-settings">
+      Cookie settings
+    </button>
+  </footer>
+</div>

@@ -29,6 +29,7 @@ import {
   MentorshipAdminMentorInviteRequest,
   MentorshipAdminMentorStatus,
   MentorshipAdminMentorStatusUpdate,
+  MentorshipAdminProgramListOptions,
   MentorshipAttendanceType,
   MentorshipProgramVisibilityAction,
 } from '@lfx-one/shared/interfaces';
@@ -58,25 +59,51 @@ export class MentorshipAdminController {
         throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_admin_programs' });
       }
 
-      // A repeated `search` or `status` is a 400, not silently dropped; a blank one means no filter.
-      const search = parseTrimmedString(getStrictStringQueryParam(req, 'search', 'get_mentorship_admin_programs'));
-      const rawStatus = parseTrimmedString(getStrictStringQueryParam(req, 'status', 'get_mentorship_admin_programs'));
-      if (rawStatus !== undefined && !isMentorshipProgramStatus(rawStatus)) {
-        throw ServiceValidationError.forField('status', `status must be one of: ${MENTORSHIP_PROGRAM_STATUSES.join(', ')}`, {
-          operation: 'get_mentorship_admin_programs',
-        });
-      }
-
-      const { offset, limit } = parseMentorshipAdminPaging(req.query, {
-        defaultLimit: MENTORSHIP_PROGRAM_PAGE_SIZE,
-        maxLimit: MENTORSHIP_PROGRAMS_MAX_LIMIT,
-        operation: 'get_mentorship_admin_programs',
-      });
-
-      const programs = await this.mentorshipAdminService.getPrograms(req, { search, status: rawStatus, offset, limit });
+      const options = this.parseProgramListOptions(req, 'get_mentorship_admin_programs');
+      const programs = await this.mentorshipAdminService.getPrograms(req, options);
 
       // The search text stays out of this metadata; the request URL is logged as on every route.
-      logger.success(req, 'get_mentorship_admin_programs', startTime, { status: rawStatus, offset, limit, result_count: programs.data.length });
+      logger.success(req, 'get_mentorship_admin_programs', startTime, {
+        status: options.status,
+        offset: options.offset,
+        limit: options.limit,
+        result_count: programs.data.length,
+      });
+
+      res.json(programs);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/admin/projects/:projectUid/programs — every program of the project, for the Project lens (lfx-mentorship#398)
+  public async getProjectPrograms(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_mentorship_admin_project_programs';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const projectUid = this.requireUuidParam(req, 'projectUid', operation);
+      // The Foundation lens also lists the foundation's sub-projects' programs.
+      const rawIncludeSubprojects = parseTrimmedString(getStrictStringQueryParam(req, 'includeSubprojects', operation));
+      if (rawIncludeSubprojects !== undefined && rawIncludeSubprojects !== 'true' && rawIncludeSubprojects !== 'false') {
+        throw ServiceValidationError.forField('includeSubprojects', 'includeSubprojects must be true or false', { operation });
+      }
+      const options = { ...this.parseProgramListOptions(req, operation), includeSubprojects: rawIncludeSubprojects === 'true' };
+      const programs = await this.mentorshipAdminService.getProjectPrograms(req, projectUid, options);
+
+      // The search text stays out of this metadata; the request URL is logged as on every route.
+      logger.success(req, operation, startTime, {
+        projectUid,
+        include_subprojects: options.includeSubprojects,
+        status: options.status,
+        offset: options.offset,
+        limit: options.limit,
+        result_count: programs.data.length,
+      });
 
       res.json(programs);
     } catch (error) {
@@ -701,7 +728,24 @@ export class MentorshipAdminController {
     return { type, status: rawStatus as MentorshipAdminMenteeStatusFilter | undefined };
   }
 
-  private requireUuidParam(req: Request, name: 'programId' | 'applicationId' | 'termId' | 'memberId' | 'taskId', operation: string): string {
+  /** The filters and page an admin program list shares: a repeated `search` or `status` is a 400, a blank one means no filter. */
+  private parseProgramListOptions(req: Request, operation: string): MentorshipAdminProgramListOptions {
+    const search = parseTrimmedString(getStrictStringQueryParam(req, 'search', operation));
+    const status = parseTrimmedString(getStrictStringQueryParam(req, 'status', operation));
+    if (status !== undefined && !isMentorshipProgramStatus(status)) {
+      throw ServiceValidationError.forField('status', `status must be one of: ${MENTORSHIP_PROGRAM_STATUSES.join(', ')}`, { operation });
+    }
+
+    const { offset, limit } = parseMentorshipAdminPaging(req.query, {
+      defaultLimit: MENTORSHIP_PROGRAM_PAGE_SIZE,
+      maxLimit: MENTORSHIP_PROGRAMS_MAX_LIMIT,
+      operation,
+    });
+
+    return { search, status, offset, limit };
+  }
+
+  private requireUuidParam(req: Request, name: 'programId' | 'applicationId' | 'termId' | 'memberId' | 'taskId' | 'projectUid', operation: string): string {
     const value = typeof req.params[name] === 'string' ? req.params[name].trim() : '';
     if (!isUuid(value)) {
       throw ServiceValidationError.forField(name, `${name} must be a UUID.`, { operation });

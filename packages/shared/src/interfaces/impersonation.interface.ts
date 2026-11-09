@@ -82,3 +82,21 @@ export interface ImpersonationSuggestion {
 export interface RecentImpersonation extends ImpersonationSuggestion {
   lastUsedAt: number;
 }
+
+/**
+ * One user as returned by the auth-service `lfx.auth-service.user.search` reply. `username` is the LFID; `email`
+ * is present only when the identity provider has verified it.
+ */
+export interface ImpersonationUserSearchResult {
+  user_id: string;
+  username: string;
+  name?: string;
+  email?: string;
+}
+
+/**
+ * Response of `GET /api/impersonate/users`: the people the picker can offer, best match first.
+ */
+export interface ImpersonationUserSearchResponse {
+  results: ImpersonationSuggestion[];
+}

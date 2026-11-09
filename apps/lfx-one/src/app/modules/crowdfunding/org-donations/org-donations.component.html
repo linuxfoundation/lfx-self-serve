@@ -54,7 +54,18 @@
                     <tr class="hover:bg-gray-50 transition-colors" [attr.data-testid]="'org-donation-row-' + item.id">
                       <td class="px-4 py-3">
                         <div class="flex items-center gap-2">
-                          <span class="font-medium text-gray-900">{{ item.initiativeName }}</span>
+                          @if (item.initiativeUrl) {
+                            <a
+                              class="font-medium text-gray-900 hover:text-blue-600 hover:underline"
+                              [href]="item.initiativeUrl"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              [attr.data-testid]="'org-donation-initiative-link-' + item.id"
+                              >{{ item.initiativeName }}</a
+                            >
+                          } @else {
+                            <span class="font-medium text-gray-900">{{ item.initiativeName }}</span>
+                          }
                           @if (item.recurring) {
                             <lfx-tag value="Recurring" severity="info" [rounded]="true" />
                           }

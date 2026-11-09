@@ -25,7 +25,7 @@
           size="small"
           severity="secondary"
           [outlined]="true"
-          styleClass="shrink-0"
+          styleClass="shrink-0 whitespace-nowrap"
           (onClick)="downloadTemplate()"
           data-testid="import-members-template-btn">
         </lfx-button>
@@ -61,6 +61,7 @@
           [customUpload]="true"
           [chooseLabel]="fileName() ? 'Choose a different file' : 'Choose CSV file'"
           chooseIcon="fa-light fa-file-csv"
+          chooseStyleClass="p-button-sm"
           [disabled]="!canChooseFile()"
           dataTest="import-members-file-input"
           (onSelect)="onFileSelect($event)">

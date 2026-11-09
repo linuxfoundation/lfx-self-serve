@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { CanMatchFn, Router, UrlTree } from '@angular/router';
-import { CF_ORG_DONATIONS_FLAG, ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { CF_ORG_DONATIONS_FLAG } from '@lfx-one/shared/constants';
 import { orgLensPagePath } from '@lfx-one/shared/utils';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
@@ -50,12 +50,8 @@ const orgLensFlagGuard =
 
     if (!featureFlagService.providerReady()) {
       const ready = await featureFlagService.waitForReady({ guard, flag });
-      // Provider never became ready in time (LD slow / unreachable) → fail CLOSED, deliberately
-      // unlike `myClasEnabledGuard`, which fails open. That guard's flag is enabled for all
-      // production users, so allowing the route grants access they already have; this one is a dark
-      // launch, so the same behaviour would show an unfinished page to any Org Lens viewer whenever
-      // LaunchDarkly is slow — turning an outage into a release. waitForReady() reports the timeout
-      // to RUM.
+      // Provider never became ready in time (LD slow / unreachable) → fail CLOSED.
+      // waitForReady() reports the timeout to RUM.
       if (!ready) {
         return fallback();
       }
@@ -64,5 +60,4 @@ const orgLensFlagGuard =
     return featureFlagService.getBooleanFlag(flag, false)() ? true : fallback();
   };
 
-export const orgLensClaM3EnabledGuard = orgLensFlagGuard(ORG_LENS_CLA_M3_ENABLED_FLAG, 'orgLensClaM3EnabledGuard');
 export const cfOrgDonationsGuard = orgLensFlagGuard(CF_ORG_DONATIONS_FLAG, 'cfOrgDonationsGuard');

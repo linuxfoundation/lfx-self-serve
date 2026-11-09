@@ -226,6 +226,30 @@ export class SurveyController {
   }
 
   /**
+   * GET /surveys/templates?project_uid=&committee_uid= — SurveyMonkey templates for the wizard (#5124).
+   */
+  public async getSurveyTemplates(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_survey_templates';
+    const projectUid = req.query['project_uid'];
+    const startTime = logger.startOperation(req, operation, { project_uid: projectUid });
+
+    try {
+      if (typeof projectUid !== 'string' || !isUuid(projectUid)) {
+        next(ServiceValidationError.forField('project_uid', 'project_uid must be a valid UUID', { operation, service: 'survey_controller', path: req.path }));
+        return;
+      }
+      const committeeUid = this.parseCommitteeUid(req, operation);
+
+      const templates = await this.surveyService.getSurveyTemplates(req, projectUid, committeeUid);
+
+      logger.success(req, operation, startTime, { template_count: templates.length });
+      res.json(templates);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /surveys/:uid/resync — sends the survey to committee members added since launch (#4340).
    */
   public async resyncRecipients(req: Request, res: Response, next: NextFunction): Promise<void> {

@@ -25,6 +25,8 @@ export class MicroserviceError extends BaseApiError {
       originalError?: Error;
       transportFailure?: boolean;
       clientMessage?: string;
+      /** Response-only fields excluded from generic error logging. */
+      details?: Record<string, unknown>;
     } = {}
   ) {
     super(message, statusCode, code, {
@@ -34,6 +36,7 @@ export class MicroserviceError extends BaseApiError {
       originalError: options.originalError,
       transportFailure: options.transportFailure,
       clientMessage: options.clientMessage,
+      details: options.details,
     });
 
     this.errorBody = options.errorBody;

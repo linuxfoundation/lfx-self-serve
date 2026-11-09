@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CdkMenuTrigger } from '@angular/cdk/menu';
 import { OverlayContainer } from '@angular/cdk/overlay';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -48,6 +50,15 @@ class BothTooltipsHostComponent {}
   template: `<lfx-ui-button lfxUiTooltip="Copy link" ariaLabel="Copy" [iconOnly]="true" icon="fa-light fa-copy" />`,
 })
 class TooltipHostComponent {}
+
+@Component({
+  selector: 'lfx-ui-button-tooltip-icon-host',
+  imports: [UiButtonComponent],
+  template: `<lfx-ui-button lfxUiTooltip="Only invited people can join" lfxUiTooltipTitle="Restricted" lfxUiTooltipIcon="fa-solid fa-lock"
+    >Join</lfx-ui-button
+  >`,
+})
+class TooltipIconHostComponent {}
 
 @Component({
   selector: 'lfx-ui-button-disabled-tooltip-host',
@@ -113,7 +124,7 @@ describe('UiButtonComponent', () => {
 
   it.each([
     ['primary', 'border-transparent'],
-    ['secondary', 'border-ui-neutral-alpha-200'],
+    ['secondary', 'border-ui-neutral-alpha-300'],
     ['secondary-accent', 'border-ui-accent-300'],
     ['tertiary', 'border-transparent'],
     ['tertiary-accent', 'border-transparent'],
@@ -151,7 +162,8 @@ describe('UiButtonComponent', () => {
   });
 
   it.each([
-    ['small', 'h-ui-tiny', 'rounded-[10px]', 'px-[8px]', 'button-12', '[&>i]:text-[12px]'],
+    ['tiny', 'h-ui-tiny', 'rounded-[10px]', 'px-[8px]', 'button-12', '[&>i]:text-[12px]'],
+    ['small', 'h-ui-xsmall', 'rounded-[11px]', 'px-[8px]', 'text-[13px]/[18px]', '[&>i]:text-[13px]'],
     ['default', 'h-ui-small', 'rounded-ui-sm', 'px-[10px]', 'button-14', '[&>i]:text-[14px]'],
     ['large', 'h-ui-medium', 'rounded-[14px]', 'px-[16px]', 'button-14', '[&>i]:text-[18px]'],
   ])('sizes %s with height, radius, padding, type role and icon size', async (size, height, radius, padding, type, icon) => {
@@ -216,19 +228,21 @@ describe('UiButtonComponent', () => {
     expect(el().getAttribute('aria-label')).toBe('Next');
   });
 
-  it('disables the native button and flattens it to the disabled look', async () => {
+  it('disables the native button and fades its own colours to 45% without hover or pressed steps', async () => {
     await set('disabled', true);
     expect((el() as HTMLButtonElement).disabled).toBe(true);
-    expect(el().classList).toContain('bg-ui-neutral-50');
-    expect(el().classList).toContain('text-ui-neutral-500');
-    expect(el().classList).not.toContain('bg-ui-accent-500');
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining(['opacity-45', 'bg-ui-accent-500', 'text-ui-white']));
+    expect(Array.from(el().classList).filter((name) => /^(hover|active):/.test(name))).toEqual([]);
   });
 
-  it('gives a disabled bordered button the neutral border', async () => {
-    await set('variant', 'secondary-accent');
+  it('keeps the border of a disabled bordered button', async () => {
+    await set('variant', 'secondary');
     await set('disabled', true);
-    expect(el().classList).toContain('border-ui-neutral-alpha-200');
-    expect(el().classList).not.toContain('border-ui-accent-500');
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining(['opacity-45', 'border-ui-neutral-alpha-300', 'bg-ui-background-100']));
+  });
+
+  it('does not fade an enabled button', () => {
+    expect(el().classList).not.toContain('opacity-45');
   });
 
   it('keeps a disabled tertiary button transparent without a border', async () => {
@@ -291,12 +305,24 @@ describe('UiButtonComponent', () => {
     expect(el().getAttribute('href')).toBe('/meetings/create');
   });
 
+  it('opens an external href in a new tab without an opener, and drops it while disabled', async () => {
+    await set('href', 'https://zoom.example.test/j/1');
+    expect(el().tagName).toBe('A');
+    expect(el().getAttribute('href')).toBe('https://zoom.example.test/j/1');
+    expect(el().getAttribute('target')).toBe('_blank');
+    expect(el().getAttribute('rel')).toBe('noopener noreferrer');
+    expect(el().classList).toContain('!no-underline');
+    await set('disabled', true);
+    expect(el().hasAttribute('href')).toBe(false);
+    expect(el().getAttribute('aria-disabled')).toBe('true');
+  });
+
   it('pins a link label colour in every state and never underlines it', async () => {
     await set('variant', 'tertiary-accent');
     await set('link', '/meetings');
     expect(Array.from(el().classList)).toEqual(expect.arrayContaining(['!no-underline', '!text-ui-accent-500']));
     await set('disabled', true);
-    expect(el().classList).toContain('!text-ui-neutral-500');
+    expect(el().classList).toContain('!text-ui-accent-500');
   });
 
   it('adds no link pins to a button', () => {
@@ -327,7 +353,8 @@ describe('UiButtonComponent', () => {
     });
 
     it.each([
-      ['small', '12px'],
+      ['tiny', '12px'],
+      ['small', '13px'],
       ['large', '18px'],
     ])('sizes the spinner to the icon on a %s button: %s', async (size, width) => {
       await set('size', size);
@@ -471,6 +498,14 @@ describe('UiButtonComponent', () => {
       expect(wrapper.getAttribute('aria-describedby')).toBeNull();
     });
 
+    it('forwards the tooltip title icon to the inner button', async () => {
+      const host = TestBed.createComponent(TooltipIconHostComponent);
+      await host.whenStable();
+      const tooltip = host.debugElement.query(By.directive(UiTooltipDirective)).injector.get(UiTooltipDirective);
+      expect(tooltip.icon()).toBe('fa-solid fa-lock');
+      expect(tooltip.title()).toBe('Restricted');
+    });
+
     describe('while disabled', () => {
       let host: ComponentFixture<DisabledTooltipHostComponent>;
       const tooltip = () => TestBed.inject(OverlayContainer).getContainerElement().querySelector('[data-testid="ui-tooltip"]');
@@ -590,6 +625,18 @@ describe('UiButtonComponent menu', () => {
     expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
     expect(inner.getAttribute('aria-expanded')).toBeNull();
     expect(document.activeElement).toBe(inner);
+  });
+
+  it('opens the menu from the start edge by default', async () => {
+    const host = await mount(MENU_HOST_TEMPLATE);
+    const trigger = host.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
+    expect(trigger.menuPosition[0]).toEqual({ originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' });
+  });
+
+  it('opens the menu from the end edge with menuAlign="end"', async () => {
+    const host = await mount(MENU_HOST_TEMPLATE.replace('<lfx-ui-button ', '<lfx-ui-button menuAlign="end" '));
+    const trigger = host.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
+    expect(trigger.menuPosition[0]).toEqual({ originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' });
   });
 
   it('adds no popup semantics without a menu', async () => {

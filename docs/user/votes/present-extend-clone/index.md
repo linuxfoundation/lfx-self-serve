@@ -65,24 +65,37 @@ The row shows the new deadline right away. You can only extend a vote that is st
 
 ## Send a summary
 
-**Send summary** emails the results to everyone who was invited to vote. It is available only on ended votes.
+**Send summary** emails the results to everyone who was invited to vote. It is available only on ended votes, to people who can manage the vote.
 
 1. Select **⋮ → Send summary** on an ended vote.
-2. Confirm. The message warns that sending can't be undone.
-3. Wait for the result. While you stay on this page, the vote's row shows a spinner and **Sending summary…** under the vote's name until LFX reports the result (on a phone, below the name and status at the top of the vote's card). Its **⋮ → Sending summary…** item is unavailable, preventing another send for that vote from this page while the request is in progress. The vote's other menu actions, and the summaries of other ended votes, stay available. Screen readers announce when sending starts and when it finishes; the result itself appears in the message described below. The indicator only shows that LFX is still working on the request. It does not mean the emails have been delivered.
+2. Review who will receive it. The **Send summary** dialog shows the vote name, how many voters and how many email addresses there are, and two lists:
+   - **Ready to receive:** voters with an email address, with their name and address.
+   - **No email address:** voters who can't receive the summary because there is no email address on file.
+3. Select **Send**. To leave without sending anything, select **Cancel**.
+4. Select **Send now** to confirm. Emails can't be recalled once sent. Select **Back** to return to the list instead.
 
-The indicator and duplicate-click protection apply only while you stay on this page. Reloading, leaving and returning, or opening another tab does not preserve this state or confirm that sending stopped. Check with voters before sending again, since another send may duplicate summaries already sent.
+The list is for review only. You can't add or remove voters from it. If several voters share an email address, the dialog says so, and that address receives one summary. If no voter has an email address, the dialog says **Nobody can be emailed** and **Send** stays unavailable. If the vote has no invited voters, the dialog says so. If the list can't load, select **Retry**.
 
-Each result message names the vote so you can distinguish summaries sent at the same time. After you send, LFX reports what it knows about each invited voter:
+While sending is in progress, the vote's row shows a spinner and **Sending summary…** under its name (on a phone, below the name and status at the top of its card). Select **Hide while sending** to return to the table and use other row actions or send another vote's summary. This hides only the dialog; it does not cancel the send. The **⋮ → Sending summary…** item reopens the pending send, not a second request. Screen readers announce when sending starts and when it finishes; open **Send summary** to inspect the result. The indicator means LFX is still waiting for the request, not that emails have been delivered.
 
-- **Sent:** the email service accepted the summary for sending to the voter's email address. Delivery to their inbox is not confirmed.
-- **Skipped:** the voter has no email address on file, so nothing was sent to them. Skipped voters are reported, never silently left out.
-- **Failed:** the email could not be sent to the voter.
-- **Unconfirmed:** LFX couldn't confirm whether the email went out, for example after a timeout, lost connection, or an email-service error after sending may have started. Some of these emails may already have been delivered, so check with voters before sending again. Sending again may send duplicate summaries.
+Recipient lists and results show the voter's username when no display name is available. If neither is available, LFX uses the email address, or **—** when there is no address either.
 
-If any voter was skipped, failed or unconfirmed, LFX does not show a complete-success message. If every attempted send fails, the error still reports how many failed and how many voters were skipped for having no email address. If none of the invited voters has an email address, LFX tells you that no summaries were sent. If you try to send before the vote has closed, LFX says the vote hasn't closed yet. The summary is sent only when you ask for it. It is never sent automatically.
+Keyboard users can Tab into each scrollable recipient list and use the arrow or Page Down keys to inspect more rows. Selecting **Send** moves focus to the confirmation question; **Back** and a rejected send return focus to **Send**. Selecting **Send now**, or reopening a pending send, moves focus to **Hide while sending** while the request remains pending. If results are already available, focus moves to the results summary instead. Selecting **Retry** moves focus to **Cancel** while loading, then to **Send** when recipients are ready, **Retry** if loading fails again, or **Cancel** when nobody can be emailed. Screen readers announce recipient loading when the dialog opens and when you retry. Another vote's send finishing does not move focus away from the results you are inspecting.
 
-If pre-send checks find that you need to sign in again or that the vote is no longer available, LFX says that nothing was sent and explains the issue instead of asking you to retry the same send.
+While the summary is sending, **Cancel**, **Back**, and the header **X** are unavailable; use **Hide while sending** to leave the dialog without cancelling the send. A screen-reader status announces that sending is in progress and that hiding does not cancel it. LFX waits up to five minutes for a response. If that deadline expires, it shows review-based **Unconfirmed** results and allows you to close the dialog; the server may still be sending emails, so this is not a cancellation and LFX does not automatically retry. When detailed results are available, the dialog keeps the vote name visible and shows each voter grouped by outcome:
+
+- **Sent:** the email service confirmed the send. LFX doesn't track whether the email reached the inbox or was opened.
+- **Not sent:** the email was not sent.
+- **Missing email:** the voter has no email address on file, so nothing could be sent.
+- **Unconfirmed:** LFX couldn't confirm the send, for example after a timeout, a lost connection, or an email-service error after sending may have started. The email may already have arrived, so sending again could create duplicates. Check with voters before sending again.
+
+Voters who share an email address share that address's outcome. The results summary and group totals include each voter, including voters who share an address. When LFX receives detailed send results, they reflect the voters at the moment of sending, so they can differ from the list you reviewed if voters changed in between.
+
+If LFX can't obtain detailed send results, for example after a lost connection, timeout, or a response from an older server, the dialog explicitly labels its counts as based on the **earlier review**, not confirmed send outcomes. Voters who had an email address are shown as **Unconfirmed**. Voters who lacked an address appear under **No email at review**, which does not mean they were definitely skipped when sending. The actual send-time recipients and outcomes are unknown: addresses may have changed, and newly added voters may not appear in these lists. Check with voters before sending again, because emails may already have arrived.
+
+If you hide the dialog or navigate elsewhere in LFX while sending, the operation continues. Return to the same vote and select **⋮ → Sending summary…** while it is pending, or **⋮ → Send summary** after it finishes, to inspect that attempt rather than starting another send. Select **Close** or the header **X** on the results to dismiss the retained attempt; reopening after either loads a fresh review. This information is kept only in memory in the current app session, scoped to the user identity known to that tab. Refreshing the page or an identity change observed by the app clears it. Explicit login, logout, and impersonation transitions reload the app; automatic impersonation expiry or a session change in another tab may not immediately update this tab's identity. Restoring retained results does not revalidate the server session; new recipient reviews and send requests still require server-side access checks. Clearing this state does not cancel server-side sending. Check with voters before sending again, including from another tab, because emails may already have arrived. There is no resend action in the results dialog.
+
+If you try to send before the vote has closed, LFX says the vote hasn't closed yet. If pre-send checks find that you need to sign in again or that the vote is no longer available, LFX says that nothing was sent and explains the issue instead of asking you to retry the same send. The summary is sent only when you ask for it. It is never sent automatically.
 
 ## Clone a vote
 

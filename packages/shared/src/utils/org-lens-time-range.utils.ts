@@ -38,18 +38,3 @@ export function orgLensTimeRangeDays(range: Exclude<OrgLensTimeRange, 'all'>): n
 export function orgLensTimeRangeUrlParam(range: OrgLensTimeRange): OrgLensTimeRange | null {
   return range === ORG_LENS_DEFAULT_TIME_RANGE ? null : range;
 }
-
-/**
- * First UTC day (`YYYY-MM-DD`) a bounded range counts, `null` for all time — the client-side match
- * of `DATEADD(day, -N, CURRENT_DATE())`. Lexically comparable to ISO dates and timestamps.
- */
-export function orgLensTimeRangeStartDate(range: OrgLensTimeRange, now: Date = new Date()): string | null {
-  if (range === 'all') return null;
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - orgLensTimeRangeDays(range)));
-  return start.toISOString().slice(0, 10);
-}
-
-/** Today's UTC date (`YYYY-MM-DD`) — the match of `CURRENT_DATE()` for "has ended" checks. */
-export function orgLensUtcToday(now: Date = new Date()): string {
-  return now.toISOString().slice(0, 10);
-}

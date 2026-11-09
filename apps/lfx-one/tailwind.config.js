@@ -34,9 +34,11 @@ import {
   HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES,
   HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
+  HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
   HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER,
@@ -47,6 +49,9 @@ import {
   lfxColors,
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
+  MEETING_ATTENDEE_STATUS_INFO,
+  MEETING_DETAILS_FEATURES,
+  MEETING_HOME_ATTENDANCE_BG_CLASSES,
   MEETING_VISIBILITY_BG_CLASSES,
   MENTION_SENTIMENT_CONFIG,
   MENTORSHIP_ADMIN_MENTOR_ACTION_APPEARANCE,
@@ -66,6 +71,7 @@ import {
   MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES,
   MONITOR_PLATFORM_BUTTON_COLORS,
   ORG_MEETINGS_KPI_ICON_CLASS,
+  ORG_TRAINING_STAT_TILES,
 } from '@lfx-one/shared/src/constants/index.ts';
 import plugin from 'tailwindcss/plugin';
 import PrimeUI from 'tailwindcss-primeui';
@@ -78,9 +84,9 @@ import uiTokens from './scripts/ui-tokens/tokens.json' with { type: 'json' };
 // Generated utilities: colours `*-ui-{background|neutral|neutral-alpha|accent|success|warning|danger|feature}-<step>`,
 // `*-ui-focus`, `*-ui-overlay`, `*-ui-white`, `*-ui-black` (kept under the `ui` key so the library's `neutral`/`red`/`amber` names cannot collide
 // with Tailwind's palettes); `shadow-{border|small|medium|large|tooltip|menu|modal|fullscreen|focus}`;
-// `rounded-ui-{xs|sm|md|lg|full}`; `h-ui-{tiny|small|medium|large|menu-item|row}`; `duration-ui-{fast|base|slow}`;
+// `rounded-ui-{xs|sm|md|lg|full}`; `h-ui-{tiny|xsmall|small|medium|large|menu-item|row}`; `duration-ui-{fast|base|slow}`;
 // `ease-ui` (spring), `ease-ui-standard`; `text-<role>` and `<role>` type
-// classes; `edge`, `edge-hover`. The 14px root font makes rem scale, so every size is a literal px value.
+// classes; `edge`, `edge-hover`, `edge-control`, `edge-control-hover`. The 14px root font makes rem scale, so every size is a literal px value.
 // Any `ui-<family>-<step>` colour token is picked up, so a new role family needs no change here.
 const uiVar = (name) => `var(${uiVarName(name)})`;
 const uiColors = {};
@@ -99,8 +105,6 @@ const uiVarMap = (tokens, prefix, keyPrefix = '') =>
   Object.fromEntries(tokens.filter((t) => t.name.startsWith(prefix)).map((t) => [`${keyPrefix}${t.name.slice(prefix.length)}`, uiVar(t.name)]));
 const uiMotion = (prefix) => uiVarMap(uiTokens.motion.tokens, prefix, 'ui-');
 const uiTypeStyles = uiTokens.type.groups.flatMap((group) => group.styles.map((style) => ({ ...style, family: style.family ?? group.family })));
-// Type-role classes set the library's cv11/ss01, so uikit text and content projected into uikit containers (modal body, table cells, collapse panels) get them; the app body is unchanged.
-const FONT_FEATURES_UI = '"cv11", "ss01"';
 const uiFontSizes = Object.fromEntries(uiTypeStyles.map((s) => [s.name, [s.fontSize, { lineHeight: s.lineHeight }]]));
 
 /** @type {import('tailwindcss').Config} */
@@ -153,6 +157,12 @@ export default {
     ...Object.values(MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Meetings home visibility badge fills (MEETING_VISIBILITY_BG_CLASSES in @lfx-one/shared, not scanned here)
     ...Object.values(MEETING_VISIBILITY_BG_CLASSES),
+    // Meetings home attendance bar and legend fills (MEETING_HOME_ATTENDANCE_BG_CLASSES, not scanned here)
+    ...Object.values(MEETING_HOME_ATTENDANCE_BG_CLASSES),
+    // Meetings attendee grid status dots (MEETING_ATTENDEE_STATUS_INFO, not scanned here)
+    ...Object.values(MEETING_ATTENDEE_STATUS_INFO).flatMap((info) => [info.dotClass, info.legendDotClass]),
+    // Meeting details drawer feature badge icon colours (MEETING_DETAILS_FEATURES, not scanned here)
+    ...MEETING_DETAILS_FEATURES.map((feature) => feature.iconClass),
     // Social Listening platform icon colors (MENTION_PLATFORM_CONFIG in @lfx-one/shared, not scanned here)
     ...Object.values(MENTION_PLATFORM_CONFIG).map((c) => c.colorClass),
     // Social Listening analytics distribution bars (barClass on MENTION_PLATFORM_CONFIG / MENTION_SENTIMENT_CONFIG)
@@ -171,6 +181,8 @@ export default {
     ...Object.values(DELTA_DIRECTION_TEXT_CLASS).flatMap((classes) => classes.split(' ')),
     // Groups dashboard engagement stat cards (GROUPS_ENGAGEMENT_ICON_CLASS in @lfx-one/shared, not scanned here)
     ...Object.values(GROUPS_ENGAGEMENT_ICON_CLASS).flatMap((classes) => classes.split(' ')),
+    // Org Lens Training & Certifications stat strip icon tints (ORG_TRAINING_STAT_TILES in @lfx-one/shared, not scanned here)
+    ...ORG_TRAINING_STAT_TILES.flatMap((tile) => tile.iconClass.split(' ')),
     // Formation readiness strip — per-segment fill colors (FORMATION_ITEM_SEGMENT_COLORS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ITEM_SEGMENT_COLORS),
     // Formation checklist — row/section-header grid templates (container-query variants)
@@ -253,6 +265,16 @@ export default {
     // Engagement attendance bar fills and the board hero colour, per attendance tone — applied via [class] / [ngClass].
     ...Object.values(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS),
     ...Object.values(HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS),
+    // Members breakdown table cells and rules (HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES)
+      .flatMap((value) => (typeof value === 'string' ? [value] : Object.values(value)))
+      .flatMap((classes) => classes.split(' ')),
+    // Member growth end labels (HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES in @lfx-one/shared) — applied via [class].
+    ...[
+      ...Object.values(HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES.placement),
+      HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES.strong,
+      HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES.regular,
+    ].flatMap((classes) => classes.split(' ')),
     // Training course type pills (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES).flatMap((c) => c.split(' ')),
   ],
@@ -458,8 +480,9 @@ export default {
       addUtilities({
         '.edge': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-200')}` },
         '.edge-hover': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-300')}` },
-        // cv11/ss01 for uikit text that sets a size without a type role.
-        '.font-features-ui': { fontFeatureSettings: FONT_FEATURES_UI },
+        // Form fields (input, textarea, select, multi-select, combobox) use a stronger ring than cards.
+        '.edge-control': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-300')}` },
+        '.edge-control-hover': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-400')}` },
         // Library icon box (bundle.css `i[class*="fa-"]`): Font Awesome 7 sizes a glyph with --fa-width (1.25em); the library keeps 1em.
         '.ui-icon': { '--fa-width': '1em', height: '1em', flexShrink: '0' },
       });
@@ -470,7 +493,6 @@ export default {
             `.${s.name}`,
             {
               fontFamily: uiVar(`font-${s.family}`),
-              fontFeatureSettings: FONT_FEATURES_UI,
               fontSize: s.fontSize,
               lineHeight: s.lineHeight,
               fontWeight: String(s.fontWeight),

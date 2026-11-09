@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES,
   MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
@@ -30,14 +31,26 @@ export interface MentorshipProgramStats {
 }
 
 /**
- * Program status as the admin list shows it (upstream `admin_status`, `_` written as `-`):
- * - `open` — published, with an open term or no terms yet
+ * Program status as the admin list shows it (upstream `admin_status`, `_` written as `-`). A published program reads
+ * from its terms (deleted terms ignored), the first match winning:
+ * - `completed` — a closed term and no open one
+ * - `accepting` — an open term inside its application window (UTC calendar days, both included)
+ * - `in-progress` — an open term inside its term window
+ * - `upcoming` — an open term whose application window has not opened, or no terms yet
+ * - `in-progress` — any other open term (applications closed but not started, ended but not closed, or undated)
+ *
+ * The rest come from the program's own status:
  * - `pending-review` — pending, awaiting review
- * - `completed` — published, with only closed terms
  * - `rejected` — rejected
  * - `hidden` — hidden
  */
 export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[number];
+
+/** The term fields a published program's status is read from. */
+export type MentorshipProgramTermDates = Pick<
+  MentorshipUpstreamProgramTerm,
+  'status' | 'start_date_time' | 'end_date_time' | 'application_start_date' | 'application_end_date'
+>;
 
 /** A program admin's visibility change on the program-detail header: `hide` a published program, `unhide` a hidden one. */
 export type MentorshipProgramVisibilityAction = 'hide' | 'unhide';
@@ -75,6 +88,29 @@ export type MentorshipProgramsResponse = {
   data: MentorshipProgram[];
   total: number;
 };
+
+/**
+ * One page of an admin program list, as the BFF sends it upstream: the caller's programs (Me lens Admin) or a project's
+ * programs (Project lens Mentorship Programs). The two lists share these filters.
+ */
+export interface MentorshipAdminProgramListOptions {
+  search?: string;
+  status?: MentorshipProgramStatus;
+  /** From 0. */
+  offset: number;
+  /** From 1 to `MENTORSHIP_PROGRAMS_MAX_LIMIT`. */
+  limit: number;
+  /** A project's list only: also the programs of its sub-projects, at any depth (the Foundation lens). */
+  includeSubprojects?: boolean;
+}
+
+/** The filters an admin program list page has applied: the search text, the status and, in the Project lens, the project. */
+export interface MentorshipAdminProgramListFilters {
+  search: string;
+  status: MentorshipProgramStatus | null;
+  /** The Project lens's project; `''` on the Me lens Admin. */
+  projectUid: string;
+}
 
 /** Admin program-detail underline tabs. */
 export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)[number]['value'];
@@ -193,6 +229,28 @@ export type MentorshipAdminDecisionStatus = (typeof MENTORSHIP_ADMIN_DECISION_ST
 export interface MentorshipAdminApplicationStatusUpdate {
   status: MentorshipAdminDecisionStatus;
   attendanceType?: MentorshipAttendanceType;
+}
+
+/** A Current Mentees decision, by its success toast: `ungraduated` is an undone graduation, `reopened` a re-open. */
+export type MentorshipAdminDecisionOutcome = keyof typeof MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES;
+
+/**
+ * Copy for one reason the mentorship service gives when it refuses a write. `match` is a fragment of the service's
+ * error text ("eligibility criteria not met: <reason>"), compared ignoring case, which is not written for a reader;
+ * `message` is what the toast says instead.
+ */
+export interface MentorshipUpstreamReasonMessage {
+  match: string;
+  message: string;
+}
+
+/**
+ * How a decision's 422 toast reads: `lead` goes in front of the matched reason's copy, and `fallback` stands alone
+ * when upstream names no reason this app knows.
+ */
+export interface MentorshipAdminDecisionRefusal {
+  lead: string;
+  fallback: string;
 }
 
 /** A reviewer note an admin saved, announced so whichever Current Mentees tab is on screen writes it into its row. */

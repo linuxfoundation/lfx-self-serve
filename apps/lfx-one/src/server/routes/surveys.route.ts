@@ -19,6 +19,9 @@ router.get('/', (req, res, next) => surveyController.getSurveys(req, res, next))
 // GET /surveys/my-surveys - get surveys the current user has been invited to
 router.get('/my-surveys', (req, res, next) => surveyController.getMySurveys(req, res, next));
 
+// GET /surveys/templates - SurveyMonkey templates for the survey wizard (#5124)
+router.get('/templates', (req, res, next) => surveyController.getSurveyTemplates(req, res, next));
+
 // GET /surveys/:uid/my-response - current user's submitted response (Me lens drawer)
 router.get('/:uid/my-response', (req, res, next) => surveyController.getMyResponse(req, res, next));
 

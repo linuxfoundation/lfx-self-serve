@@ -154,7 +154,7 @@ export const OnNativeButton: Story = {
       <div class="flex min-h-[240px] justify-center pt-[48px]">
         <button
           type="button"
-          class="inline-flex h-ui-medium items-center gap-[8px] rounded-ui-sm border border-ui-neutral-alpha-200 bg-ui-background-100 px-[16px] button-14 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 focus:outline-none focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight]"
+          class="inline-flex h-ui-medium items-center gap-[8px] rounded-ui-sm border border-ui-neutral-alpha-300 bg-ui-background-100 px-[16px] button-14 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 focus:outline-none focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight]"
           [lfxUiPopover]="share"
           lfxUiPopoverLabel="Share this page">
           <i class="fa-light fa-share-nodes" aria-hidden="true"></i>Share

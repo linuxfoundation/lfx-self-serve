@@ -14,6 +14,7 @@ const {
   getRegistrationHistory,
   getRegistrationsGrowth,
   getRevenue,
+  getSnapshot,
   getSpeakers,
   getSponsorship,
 } = vi.hoisted(() => ({
@@ -26,6 +27,7 @@ const {
   getRegistrationHistory: vi.fn(),
   getRegistrationsGrowth: vi.fn(),
   getRevenue: vi.fn(),
+  getSnapshot: vi.fn(),
   getSpeakers: vi.fn(),
   getSponsorship: vi.fn(),
 }));
@@ -43,6 +45,7 @@ vi.mock('../services/health-metrics-events.service', () => ({
     public getOrganizations = getOrganizations;
     public getSponsorship = getSponsorship;
     public getGeography = getGeography;
+    public getSnapshot = getSnapshot;
   },
   // Mirrors the service: the Events views carry no columns for the oldest range.
   isSupportedEventsRange: (range: string) => range !== 'COMPLETED_YEAR_4',
@@ -73,6 +76,7 @@ import {
   HEALTH_METRICS_EVENTS_PAST_UNMEASURED,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED,
   HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED,
+  HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED,
   HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_UNMEASURED,
 } from '@lfx-one/shared/constants';
@@ -84,6 +88,7 @@ type Handler =
   | 'getEventsRegistrationForecast'
   | 'getEventsRegistrationForecastCurve'
   | 'getEventsRegistrationHistory'
+  | 'getEventsSnapshot'
   | 'getEventsPast'
   | 'getEventsAtAGlance'
   | 'getEventsRegistrationsGrowth'
@@ -215,6 +220,50 @@ describe('AnalyticsController.getEventsRegistrationHistory', () => {
     getRegistrationHistory.mockRejectedValue(failure);
 
     const { next, promise } = call('getEventsRegistrationHistory', { foundationSlug: 'acme', eventId: 'evt-1' });
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getEventsSnapshot', () => {
+  beforeEach(() => {
+    getSnapshot.mockReset();
+    getSnapshot.mockResolvedValue(HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED);
+  });
+
+  it('passes the foundation and event to the service', async () => {
+    const { res, next, promise } = call('getEventsSnapshot', { foundationSlug: 'acme', eventId: 'evt_1-A' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getSnapshot).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', eventId: 'evt_1-A' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED);
+  });
+
+  it('requires the foundation even when the event is given', async () => {
+    const { next, promise } = call('getEventsSnapshot', { eventId: 'evt-1' });
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it.each<Record<string, string>>([{ foundationSlug: 'acme' }, { foundationSlug: 'acme', eventId: "evt'1" }])(
+    'rejects a missing or malformed event id (%o)',
+    async (query) => {
+      const { next, promise } = call('getEventsSnapshot', query);
+      await promise;
+
+      expect(rejectedField(next)).toBe('eventId');
+      expect(getSnapshot).not.toHaveBeenCalled();
+    }
+  );
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getSnapshot.mockRejectedValue(failure);
+
+    const { next, promise } = call('getEventsSnapshot', { foundationSlug: 'acme', eventId: 'evt-1' });
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

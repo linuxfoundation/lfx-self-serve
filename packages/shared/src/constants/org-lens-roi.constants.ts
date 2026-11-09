@@ -37,6 +37,7 @@ export const ORG_LENS_ROI_CACHE_KEY = {
   /** Both are additionally keyed by the project slug — see the reads in `org-lens-roi.service.ts`. */
   projectDetail: 'roi-project-detail:v1',
   projectAnnual: 'roi-project-annual:v1',
+  valueDrivers: 'roi-value-drivers:v1',
 } as const;
 
 /** Order must match the warehouse seed's display order. */
@@ -114,17 +115,18 @@ export const ORG_LENS_ROI_KPI_EXPLANATION = {
   bcr: 'Total return divided by investment. A benefit-cost ratio of 5× means every dollar of modelled investment is associated with five dollars of modelled return. Always exactly one more than ROI.',
 } as const;
 
-/** The four complementary views of the projects section, in tab order. */
-export const ORG_LENS_ROI_PROJECT_VIEWS = ['bar', 'sankey', 'bubble', 'table'] as const;
+/** The complementary views of the projects section, in tab order. */
+export const ORG_LENS_ROI_PROJECT_VIEWS = ['table', 'bar', 'sankey', 'drivers', 'bubble'] as const;
 
 export const ORG_LENS_ROI_PROJECT_VIEW_LABELS: Record<(typeof ORG_LENS_ROI_PROJECT_VIEWS)[number], string> = {
   bar: 'Investment vs return',
   sankey: 'Where it flows',
   bubble: 'Efficiency',
   table: 'All projects',
+  drivers: 'Value drivers',
 };
 
-/** The three views driven by the shared project selection; the table always pages the complete set. */
+/** The three views driven by the shared project selection; the table and value drivers always cover the complete portfolio. */
 export const ORG_LENS_ROI_PROJECT_SELECTION_VIEWS = ['bar', 'sankey', 'bubble'] as const;
 
 /** How many projects the shared picker starts with, taken from the top by return. */
@@ -221,4 +223,53 @@ export const ORG_LENS_ROI_BUBBLE_AXIS_MAX_LABELS = 6;
 export const ORG_LENS_ROI_BUBBLE_FILL = {
   profitable: hexToRgba(lfxColors.emerald[600], 0.45),
   lossMaking: hexToRgba(lfxColors.amber[500], 0.55),
+} as const;
+
+/** The warehouse taxonomy's category names, with the one-line gloss the chart shows beneath each. */
+export const ORG_LENS_ROI_VALUE_DRIVER_CATEGORIES = [
+  { category: 'Revenue Boosters', subtitle: 'Productivity, standards' },
+  { category: 'Strategic', subtitle: 'Talent, competitive intel' },
+  { category: 'Prosocial', subtitle: 'Ecosystem goodwill' },
+  { category: 'Risk Mitigation', subtitle: 'Tech debt, longevity' },
+  { category: 'Direct Cost Savings', subtitle: 'Shared R&D' },
+] as const;
+
+/**
+ * The decomposition is shown only for organizations with at least this many projects. lf-dbt#3163
+ * recommends it (docs/lfx_roi/user-guide/interpreting-results.md): below it the two markup methods
+ * stop agreeing on category values. The warehouse table does not enforce it, so the BFF does.
+ */
+export const ORG_LENS_ROI_VALUE_DRIVERS_MIN_PROJECTS = 5;
+
+/**
+ * A bar longer than this share of the plot width (zero line at the centre, so 50 is the plot edge)
+ * carries its value label inside the bar: outside it the label would run past the plot edge or into
+ * the category column.
+ */
+export const ORG_LENS_ROI_VALUE_DRIVERS_LABEL_INSIDE_PCT = 38;
+
+export const ORG_LENS_ROI_VALUE_DRIVERS_COLORS = {
+  moreThanAverage: lfxColors.emerald[600],
+  lessThanAverage: lfxColors.amber[500],
+} as const;
+
+/**
+ * Wording is tied to the warehouse model (lf-dbt#3163, docs/lfx_roi/decomposition.md):
+ * `PCT_DEVIATION_FROM_TYPICAL_MARKUP` is the percent by which a category moves the portfolio's
+ * markup away from the typical organization-project pair. The UI says "return" for it, since that is
+ * the page's own vocabulary. Keep these claims in step with that doc.
+ */
+export const ORG_LENS_ROI_VALUE_DRIVERS_COPY = {
+  howToRead:
+    'Each bar shows how much a value driver contributes to your portfolio’s return, relative to the typical organization-project pair. The middle line is the typical pair. A bar to the right (green) means that driver contributes more return than it does for a typical pair. A bar to the left (amber) means it contributes less. A bar of +14% means 14% more return than typical from that driver.',
+  typical:
+    'Typical is the average across all organization-project pairs LFX models. A bar at 0 means your portfolio is typical for that driver, not that the driver provides no value.',
+  association:
+    'These are associations, not proven causes. Each category is built from measurable activity that tends to go with higher return, not from anything your organization reported.',
+  fit: 'The model explains only part of the variation in return, and the bars show that explained part.',
+  methodDifference: 'Direct cost savings (shared R&D) can differ noticeably between the two estimation methods. The other categories mostly agree.',
+  directional: 'Value driver decomposition can be sensitive to small portfolios. Treat these results as directional.',
+  moreLegend: 'More return than typical',
+  lessLegend: 'Less return than typical',
+  axisCenter: 'Typical',
 } as const;

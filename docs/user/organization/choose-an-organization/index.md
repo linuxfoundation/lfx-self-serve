@@ -4,11 +4,11 @@ description: Pick the organization you are viewing in the Organization lens, swi
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, switcher, switch-organization, url, not-found, access]
-last_updated: 2026-11-03
+last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
-These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer), a CLA (Contributor License Agreement) Manager, an initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager), or Linux Foundation staff. Admin and viewer access to an organization is granted by that organization's own Organization Lens administrators, not by the Linux Foundation.
+These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer), a CLA (Contributor License Agreement) Manager, or an initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager). Admin and viewer access to an organization is granted by that organization's own Organization Lens administrators, not by the Linux Foundation.
 
 The Organization lens always shows one organization at a time. The organization switcher at the top of the sidebar names the organization you are viewing, and every page in the lens (**Dashboard**, **Memberships**, **Projects**, and the rest) is about that organization.
 
@@ -21,7 +21,7 @@ You choose an organization from the organization switcher at the top of the side
 3. Select the organization switcher at the top of the sidebar. It shows the organization's logo, its name, and your role on it.
 4. Select an organization from the list. A check mark marks the one you are viewing.
 
-The first time you open the Organization lens, LFX selects one of your organizations for you. It is not always the one where you have the most access, so check the name in the organization switcher and switch if you need a different one. Linux Foundation staff with no organizations assigned to them get no selection. The **Dashboard** says **No organization selected** until you search for an organization in the switcher and select it. Your browser remembers the organization you last selected for 30 days.
+The first time you open the Organization lens, LFX selects one of your organizations for you. It is not always the one where you have the most access, so check the name in the organization switcher and switch if you need a different one. Your browser remembers the organization you last selected for 30 days.
 
 If you can open only one organization, the switcher shows that organization without a list to open, because there is nothing to switch to.
 
@@ -32,7 +32,7 @@ Open the organization switcher at the top of the sidebar and select another orga
 1. Select the organization switcher at the top of the sidebar.
 2. Select the organization you want. On a keyboard, use the arrow keys to move through the list and press Enter to select.
 
-After a switch, the browser's Back button returns you to the organization you were viewing before. If the address you switched from had no organization in it, such as `/org` or `/org/projects`, Back takes you to the page you visited before that one instead. If you switched from a page that says a link does not open an organization, Back returns you to that page. An **Employees** selection on a page does not carry over to the new organization, because it was a list of the previous organization's people.
+After a switch, the browser's Back button returns you to the organization you were viewing before. If the address you switched from had no organization in it, such as `/org` or `/org/projects`, Back takes you to the page you visited before that one instead. If you switched from a page that says why a link did not open an organization, Back returns you to that page. An **Employees** selection on a page does not carry over to the new organization, because it was a list of the previous organization's people.
 
 ## What does my role in the organization switcher mean?
 
@@ -48,16 +48,13 @@ The line under the organization's name in the switcher is your role on that orga
 
 In the list of organizations, hovering over an inherited role shows **Inherited from your access to** followed by the related organization's name. If the line says **Organization** instead of a role, you have no admin role on that organization.
 
-## Why can't I search for an organization in the switcher?
+## Why is an organization missing from the switcher?
 
-Only Linux Foundation staff can search the switcher. Everyone else sees a list of the organizations they have access to, with no search box. If you have an admin or viewer role on any organization, the list leaves out organizations where your only role is CLA Manager or initial CLA Manager designee. Manage those organizations' corporate CLAs in the [Corporate CLA Console](https://corporate.lfcla.com).
+The organization switcher lists the organizations where you have an admin or viewer role, including a role inherited from a related organization. It lists organizations where your only role is CLA Manager or initial CLA Manager designee only when you have no admin or viewer role on any organization, and each of those opens on its **EasyCLA** page. So if you are an admin or viewer on even one organization, an organization where you are only a CLA Manager or initial CLA Manager designee is missing from the switcher.
 
-For Linux Foundation staff, the switcher opens with a **Search organizations...** box. Type at least two characters to search every organization. Until you do, an empty list shows **Search for any organization…**. When the results include organizations you are not assigned to, the ones you are assigned to are listed under **Your organizations** and the rest under **All organizations**. Each organization under **All organizations** carries a **Member** or **Non-member** label for its Linux Foundation membership.
+Messages in the switcher:
 
-Other messages in the switcher:
-
-- **No organizations found** — nothing matches your search, or you have no organizations to list.
-- **Search is unavailable right now. Try again shortly.** — the search could not run. Try again in a moment.
+- **No organizations found** — you have no organizations to list.
 - **Some of your organizations may be missing from this list. Retry to reload.** — part of your list did not load. Select **Retry** to reload it. You can still select the organizations that are listed.
 
 ## What does the organization in a page address mean?
@@ -79,9 +76,7 @@ When a link names an organization that does not exist, that you do not have acce
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **You do not have access to this organization**, with **This link points to an organization that is not on your list.**                                              | The organization in the link is not one you have access to, but you have access to others. Select one of the organizations listed under the message to open it. If your list has not loaded, no organizations are listed. To get access to the organization in the link, select **Ask for access to the organization in this link**.                                                                     |
 | **You do not have access to this organization**, with **Access is granted by the organization's own Organization Lens administrators, not by the Linux Foundation.** | You do not have access to any organization in the Organization lens. Ask your organization's Organization Lens administrators to grant you access. If you are not sure who they are, your company's open source program office (OSPO) is a good place to start. For help, select **Contact support**. To see public open source activity without access, select **See public activity in LFX Insights**. |
-| **This link does not open an organization**                                                                                                                          | For Linux Foundation staff: LFX could not open an organization from this link. Usually no organization matches it, but a lookup that failed for a moment shows the same message. Try the link again, search for the organization in the switcher, or select **Go to Organization Lens**.                                                                                                                 |
 | **Some organizations could not be loaded**                                                                                                                           | A temporary problem loading your organizations. Nothing has been removed from your access. Select **Retry**.                                                                                                                                                                                                                                                                                             |
-| **We could not confirm your staff access**                                                                                                                           | The staff access check did not complete, and your permissions have not changed. Select **Retry**. If it keeps failing, select **Still failing? Send this reference to support** and include the reference shown on the page.                                                                                                                                                                             |
 
 ## Related sections
 

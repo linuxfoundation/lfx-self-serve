@@ -320,6 +320,17 @@ export class AllEmployeesComponent {
 
   protected readonly stats: Signal<OrgAllEmployeeStats> = computed(() => this.initStats());
 
+  // The Event Attendees tile shows the summary number the server read. Without it (the summary could not be read, or the roster
+  // read failed) the tile says so instead of counting the rows in hand, a different metric. Non-LF projects have no events and
+  // keep counting the listed employees.
+  protected readonly eventAttendeesUnavailable: Signal<boolean> = computed(() => {
+    if (this.selectedFilters().projectScope === 'non_lf') {
+      return false;
+    }
+    const current = this.response();
+    return !(current.accountId === this.currentAccountId() && typeof current.eventAttendeesTotal === 'number');
+  });
+
   protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => this.initFoundationOptions());
 
   // Bake per-row derivatives (initials, avatar color) once per response; downstream filter/sort layers carry them through for free.
@@ -657,9 +668,19 @@ export class AllEmployeesComponent {
     return [ORG_ALL_EMPLOYEE_CODE_NOTE[this.selectedEmployment()], ORG_SCOPE_CAPTION_PHRASE[orgScope]].filter(Boolean).join(' ');
   }
 
-  /** Tiles count the reconciled rows of the selected view, so someone who is current again carries their stored activity into them. */
+  /**
+   * Tiles count the reconciled rows of the selected view, so someone who is current again carries their stored activity into them.
+   * The Event Attendees tile is the exception (lfx-self-serve#4598): it is the People -> Event Attendees tab's Attendees number
+   * for the range, which the server reads from the same warehouse summary, so the two agree whatever the employment view.
+   * The server leaves it out for the Non-LF project scope (events are LF constructs), and then the tile counts the listed rows;
+   * when the summary cannot be read it sends `null` and the tile says it is unavailable.
+   */
   private initStats(): OrgAllEmployeeStats {
-    return computeOrgAllEmployeeStats(this.rosterRows());
+    const stats = computeOrgAllEmployeeStats(this.rosterRows());
+    const current = this.response();
+    return current.accountId === this.currentAccountId() && typeof current.eventAttendeesTotal === 'number'
+      ? { ...stats, eventAttendees: current.eventAttendeesTotal }
+      : stats;
   }
 
   /**

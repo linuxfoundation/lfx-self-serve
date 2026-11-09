@@ -10,6 +10,7 @@
     icon="fa-light fa-bars-filter"
     popoverLabel="Filters"
     popoverPadding="none"
+    popoverAlign="end"
     [popover]="panel"
     [popoverWidth]="344"
     [ariaLabel]="buttonLabel()"
@@ -81,6 +82,7 @@
         <div class="flex min-h-[40px] items-center px-[10px]">
           <lfx-ui-toggle
             label="Organized by me"
+            labelPosition="start"
             [checked]="draft().organizedByMe"
             (checkedChange)="setOrganizedByMe($event)"
             data-testid="meetings-home-filters-organized" />
@@ -88,6 +90,7 @@
         <div class="flex min-h-[40px] items-center px-[10px]">
           <lfx-ui-toggle
             label="Hide declined meeting series"
+            labelPosition="start"
             [checked]="draft().hideDeclined"
             (checkedChange)="setHideDeclined($event)"
             data-testid="meetings-home-filters-hide-declined" />

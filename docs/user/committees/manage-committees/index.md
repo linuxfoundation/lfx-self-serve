@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-11-03
+last_updated: 2026-11-06
 intercom_collection: Committees
 ---
 
@@ -50,7 +50,7 @@ To change only the name, type, parent, join mode, features, or chat channel, you
 ## Add or remove members
 
 1. Open the group and go to the **Members** tab.
-2. Select **Add Member**, search for the person by name or email (or paste emails), and confirm. Members who can only send invitations see **Invite Someone** instead.
+2. Select **Add Member**, search for the person by name or email (or paste emails), and confirm. If the group has voting, you can also set the new member's **Voting status** when adding them. Voting status dates can still be set from **Edit**. (This applies when you add members directly, not when you send invitations.) For managers, **Add Member** followed by **Import Members** appears on the right of the member filter pills, above search and dropdown filters. On narrower screens, the controls wrap as needed. Members who can only send invitations see **Invite Someone** instead.
 3. Each row has an actions menu with **Send Message** (opens an email to the member), **Edit** (change role, voting status, or permission), and **Remove** (asks you to confirm).
 
 The roster shows **Name**, **Email** (hidden from visitors), **Organization**, and, when the group has voting, **Role** and **Voting Status**. When engagement metrics are turned on for your account, **Meetings** and **Engagement** columns appear for people with access to them. The last column is **Permission**.
@@ -77,7 +77,7 @@ If you can manage a group's members, you can add many people at once from a CSV 
 ### Import from the Members tab
 
 1. Open the group and go to its **Members** tab.
-2. Select **Import Members**, to the left of **Add Member**. The button becomes available after the complete member roster and pending invitations finish loading. If the roster fails, use **Retry** in its error message. Import also refreshes both lists before opening the dialog; if either fresh list cannot be loaded completely, no import opens and you can try again.
+2. Select **Import Members**, after **Add Member** on the right of the member filter pills. The button becomes available after the complete member roster and pending invitations finish loading. If the roster fails, use **Retry** in its error message. Import also refreshes both lists before opening the dialog; if either fresh list cannot be loaded completely, no import opens and you can try again.
 3. Select **Download template**. The template contains only the columns that apply to this group. Open **Column reference** to see which columns are required and the complete accepted role and appointed-by values.
 4. Fill in one member per row and save the file as **CSV UTF-8 (comma delimited)**. Keep the template's lowercase column names; column order does not matter, and any other column is rejected.
 5. Select **Choose CSV file**. Nothing is added yet — you see a preview of every row first.

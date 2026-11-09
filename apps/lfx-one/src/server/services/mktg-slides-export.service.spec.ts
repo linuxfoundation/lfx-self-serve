@@ -17,6 +17,13 @@ const store = vi.hoisted(() => ({
   publicImages: new Map<string, Buffer>(),
   clock: 0,
   failPublicPut: false,
+  /** The 1-based ordinals of the public image uploads of a test that throw (the bucket failing on one PNG, not all). */
+  failPublicPutOrdinals: [] as number[],
+  /** The PNGs whose upload throws, by content: the variants upload at once, so one of them is picked by its bytes, not its turn. */
+  failPublicPutImages: [] as Buffer[],
+  /** Answer every public image upload with a URL longer than the exporter accepts. */
+  longUrls: false,
+  publicPuts: 0,
 }));
 const guildMocks = vi.hoisted(() => ({ createSession: vi.fn(), getRawEventPayloads: vi.fn() }));
 const loggerMocks = vi.hoisted(() => ({
@@ -42,11 +49,13 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-envelope.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/brand-kit.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/brand-kit-icons.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-slides-export.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-family-export.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/boilerplates.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/faq.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-run-failure.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-asset.utils')),
   readFoundationMessageContent: (text: string): unknown => {
     try {
       const value = JSON.parse(text) as Record<string, unknown>;
@@ -65,9 +74,11 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-rebuild.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-asset.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/brand-kit.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/brand-kit-icons.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-slides-export.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-family-export.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-kit.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
 }));
 vi.mock('./logger.service', () => ({ logger: loggerMocks }));
 vi.mock('./project.service', () => ({
@@ -124,16 +135,17 @@ vi.mock('./object-store.service', () => ({
       return object ? { body: object.body, metadata: object.metadata, etag: String(object.lastModified.getTime()) } : null;
     }
     public async putPublicImage(_req: unknown, key: string, buffer: Buffer): Promise<{ url: string | null }> {
-      if (store.failPublicPut) {
+      store.publicPuts += 1;
+      if (store.failPublicPut || store.failPublicPutOrdinals.includes(store.publicPuts) || store.failPublicPutImages.some((image) => image.equals(buffer))) {
         throw new Error('bucket unavailable');
       }
       store.publicImages.set(key, buffer);
-      return { url: `https://cdn.example.test/${key}` };
+      return { url: store.longUrls ? `https://cdn.example.test/${'x'.repeat(2000)}/${key}` : `https://cdn.example.test/${key}` };
     }
   },
 }));
 
-import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
+import { BRAND_KIT_ICON_SAMPLES, MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
 import type { MktgDocumentType, MktgSlidesExportStartInput } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -141,6 +153,9 @@ import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-k
 import { isMktgSlidesExportStale } from '../../../../../packages/shared/src/utils/mktg-slides-export.utils';
 import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID } from '../constants';
 import { ConflictError } from '../errors';
+import { brandKitIconSvg } from '../utils/mktg-brand-kit-icons.util';
+import { rasterizeLogoSvg } from '../utils/mktg-logo-png.util';
+import { recolourLogoPngSvg } from '../utils/mktg-logo-variants.util';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { MktgSlidesExportService } from './mktg-slides-export.service';
 import { ObjectStoreService } from './object-store.service';
@@ -174,10 +189,52 @@ async function approveNewest(documentStore: MktgDocumentStoreService, type: Mktg
   await documentStore.approveRevision(req, PROJECT, type, 'living', revision.id);
 }
 
-async function seedKit(documentStore: MktgDocumentStoreService, options: { svg?: string | null; placeholder?: boolean } = {}): Promise<void> {
+/** A synthetic lockup with content to recolour: a filled mark on the left half, a stroke-only rule on the right. */
+const LOCKUP_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><path d="M1 1h8v8H1z" fill="#1f6feb"/><path d="M11 5h8" stroke="#d62" stroke-width="2" fill="none"/></svg>';
+/** The crop of LOCKUP_SVG that is its mark alone. */
+const SYMBOL_VIEWBOX = '0 0 10 10';
+const LOGO_URL = new RegExp(`^https://cdn\\.example\\.test/mktg-slides-logos/${PROJECT}/[0-9a-f]{64}\\.png$`);
+
+/** The head lines of the sent intake that carry the logo URLs, by label. */
+function sentLogoLines(): Record<string, string> {
+  const lines: Record<string, string> = {};
+  for (const line of sentMessage().split('\n').slice(6, 11)) {
+    const [label, value] = line.split(': ');
+    lines[label] = value;
+  }
+  return lines;
+}
+
+/** The head lines of the sent intake that carry the icon URLs, by label: the two sets split into their URLs, the highlight alone. */
+function sentIconLines(): { dark: string[]; light: string[]; highlight: string } {
+  const [dark, light, highlight] = sentMessage()
+    .split('\n')
+    .slice(11, 14)
+    .map((line) => line.slice(line.indexOf(': ') + 2));
+  const urls = (value: string): string[] => (value === 'none' ? [] : value.split(' '));
+  return { dark: urls(dark), light: urls(light), highlight };
+}
+
+/** How many images the icons add to the bucket: the eight in the dark, the eight in white, the one highlight. */
+const ICON_IMAGES = BRAND_KIT_ICON_SAMPLES.length * 2 + 1;
+
+async function seedKit(
+  documentStore: MktgDocumentStoreService,
+  options: { svg?: string | null; placeholder?: boolean; symbolViewBox?: string | null; symbol?: string | null; reversed?: string | null } = {}
+): Promise<void> {
   const kit = brandKitTestRevision();
   if (options.svg !== undefined) {
     kit.chapters.logo.files.primary = options.svg === null ? null : { ref: 'logo.svg', svg: options.svg };
+  }
+  if (options.symbol !== undefined) {
+    kit.chapters.logo.files.symbol = options.symbol === null ? null : { ref: 'symbol.svg', svg: options.symbol };
+  }
+  if (options.reversed !== undefined) {
+    kit.chapters.logo.files.reversed = options.reversed === null ? null : { ref: 'reversed.svg', svg: options.reversed };
+  }
+  if (options.symbolViewBox !== undefined) {
+    kit.chapters.logo.symbol_viewbox = options.symbolViewBox;
   }
   if (options.placeholder !== undefined) {
     kit.chapters.logo.placeholder = options.placeholder;
@@ -282,6 +339,10 @@ describe('MktgSlidesExportService', () => {
     store.publicImages.clear();
     store.clock = 0;
     store.failPublicPut = false;
+    store.failPublicPutOrdinals = [];
+    store.failPublicPutImages = [];
+    store.longUrls = false;
+    store.publicPuts = 0;
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
     directoryMocks.getUserInfo.mockResolvedValue({ success: true, data: { name: 'The writer' } });
     guildMocks.createSession.mockResolvedValue('session-1');
@@ -355,6 +416,59 @@ describe('MktgSlidesExportService', () => {
       expect(assets.kit).toEqual(documentKit);
       expect(assets.boilerplates).toEqual(bp);
       expect(assets.faq).toEqual([{ q: 'What is this project?', a: 'A synthetic project.' }]);
+    });
+
+    it('sends the framework member wrapped with its revision number and date on a family export, as the kit member is sent (deck lane ask)', async () => {
+      await seedFramework(documentStore);
+      await seedFramework(documentStore, 'Search, open. Twice.');
+      await seedKit(documentStore);
+
+      const started = await service.startFamilyExport(req, familyInput);
+
+      expect(started.snapshot.members.find((member) => member.agentKey === 'foundation-message')).toMatchObject({ revisionNumber: 2 });
+      const assets = JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]) as Record<string, Record<string, unknown>>;
+      expect(assets['framework']['version']).toBe(2);
+      expect(typeof assets['framework']['generated_at']).toBe('string');
+      expect(Number.isNaN(Date.parse(assets['framework']['generated_at'] as string))).toBe(false);
+      expect(assets['framework']['content']).toMatchObject({ mf: { tagline: 'Search, open. Twice.' }, mh: { umbrella: 'Open search.', pillars: [] } });
+    });
+
+    it('sends the kit member’s approved revision number as the kit’s version on a family export, as the document export does', async () => {
+      await seedFramework(documentStore);
+      await seedKit(documentStore);
+      await seedKit(documentStore);
+
+      const started = await service.startFamilyExport(req, familyInput);
+
+      expect(started.snapshot.members.find((member) => member.agentKey === 'brand-kit')).toMatchObject({ revisionNumber: 2 });
+      const assets = JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]) as Record<string, Record<string, unknown>>;
+      expect(assets['kit']['version']).toBe(2);
+    });
+
+    it('sends the kit’s logo and every variant on a family export too, through the same path as a document export', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedFramework(documentStore);
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
+
+      const started = await service.startFamilyExport(req, familyInput);
+
+      const lines = sentLogoLines();
+      expect(Object.keys(lines)).toEqual(['LOGO URL', 'LOGO SYMBOL URL', 'LOGO REVERSED URL', 'LOGO ONE-COLOR URL', 'LOGO SYMBOL REVERSED URL']);
+      for (const url of Object.values(lines)) {
+        expect(url).toMatch(LOGO_URL);
+      }
+      expect(started.logoNote).toBeNull();
+      expect(loggerMocks.info).toHaveBeenCalledWith(
+        req,
+        'mktg_family_export_start',
+        expect.any(String),
+        expect.objectContaining({ logo_variants: ['symbol', 'reversed', 'one_color', 'symbol_reversed'], has_icons: true })
+      );
+      // The kit's icons too, through the same path as a document export.
+      const icons = sentIconLines();
+      expect(icons.dark).toHaveLength(8);
+      expect(icons.light).toHaveLength(8);
+      expect(icons.highlight).toMatch(LOGO_URL);
     });
 
     it('refuses an unreadable approved asset with family-specific copy before calling Guild', async () => {
@@ -559,12 +673,13 @@ describe('MktgSlidesExportService', () => {
       expect(lines[3]).toBe(`FOLDER ID: ${MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID}`);
       expect(lines[4]).toBe('DECK ID: none (create a new deck from the LF 2025 template)');
       expect(lines[5]).toMatch(/^DECK TITLE: Example Project · Messaging framework · \d{4}-\d{2}-\d{2}$/);
-      expect(lines[7]).toBe('ASSETS: framework, kit');
+      expect(lines[14]).toBe('ASSETS: framework, kit');
       const assets = JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]) as Record<string, Record<string, unknown>>;
       expect(assets['framework']['mh']).toEqual({ umbrella: 'Open search.', pillars: [] });
       expect(assets['kit']).toMatchObject({ dark: '#4D4E4E', accent: '#F37625', font: 'Montserrat' });
       // No public image URL in this environment: the logo is not sent, and the start says why.
       expect(lines[6]).toBe('LOGO URL: none');
+      expect(lines.slice(7, 11)).toEqual(['LOGO SYMBOL URL: none', 'LOGO REVERSED URL: none', 'LOGO ONE-COLOR URL: none', 'LOGO SYMBOL REVERSED URL: none']);
       expect(started.logoNote).toBe('not-public');
       expect(store.publicImages.size).toBe(0);
     });
@@ -588,6 +703,17 @@ describe('MktgSlidesExportService', () => {
       expect(assets['kit']['kit']).toMatchObject({ dark: '#4D4E4E', accent: '#F37625', font: 'Montserrat' });
       expect(Object.keys(assets['kit']['chapters'] as object)).toEqual(expect.arrayContaining(['logo', 'color', 'type', 'visual', 'usage', 'voice']));
       expect(assets['kit']).toMatchObject({ projectName: expect.any(String), version: expect.any(Number) });
+    });
+
+    it('sends the approved revision number as the kit’s version, not the envelope’s draft version, so the deck’s cover says what the page says', async () => {
+      await seedKit(documentStore);
+      await seedKit(documentStore);
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      expect(started.revision.number).toBe(2);
+      const assets = JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]) as Record<string, Record<string, unknown>>;
+      expect(assets['kit']['version']).toBe(2);
     });
 
     it("exports a framework in the LF look when the project's kit cannot be read, instead of failing", async () => {
@@ -626,6 +752,249 @@ describe('MktgSlidesExportService', () => {
       expect(started.logoNote).toBeNull();
     });
 
+    it('draws and publishes the symbol, reversed, one-colour and reversed-symbol PNGs beside the primary and sends all five URLs', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(Object.keys(lines)).toEqual(['LOGO URL', 'LOGO SYMBOL URL', 'LOGO REVERSED URL', 'LOGO ONE-COLOR URL', 'LOGO SYMBOL REVERSED URL']);
+      for (const url of Object.values(lines)) {
+        expect(url).toMatch(LOGO_URL);
+      }
+      // Five different images, each under its own content-addressed key (beside the kit's seventeen icon images).
+      expect(new Set(Object.values(lines)).size).toBe(5);
+      expect(store.publicImages.size).toBe(5 + ICON_IMAGES);
+      const sizeOf = (label: string): { width: number; height: number } | null =>
+        pngSize(store.publicImages.get(lines[label].replace('https://cdn.example.test/', '')) as Buffer);
+      // The lockups keep the primary's 2:1; the symbol crops are square — each PNG fitted on its own longest side.
+      expect(sizeOf('LOGO URL')).toEqual({ width: 1200, height: 600 });
+      expect(sizeOf('LOGO REVERSED URL')).toEqual({ width: 1200, height: 600 });
+      expect(sizeOf('LOGO ONE-COLOR URL')).toEqual({ width: 1200, height: 600 });
+      expect(sizeOf('LOGO SYMBOL URL')).toEqual({ width: 1200, height: 1200 });
+      expect(sizeOf('LOGO SYMBOL REVERSED URL')).toEqual({ width: 1200, height: 1200 });
+      expect(loggerMocks.info).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_start',
+        'Composed the Slides export intake',
+        expect.objectContaining({ has_logo: true, logo_variants: ['symbol', 'reversed', 'one_color', 'symbol_reversed'] })
+      );
+      // The client payload is unchanged: the start answers with the primary's note only.
+      expect(started.logoNote).toBeNull();
+      expect(Object.keys(started).sort()).toEqual(['logoNote', 'mode', 'revision', 'sessionId']);
+    });
+
+    it('sends no symbol lines when the kit has neither a symbol file nor a symbol viewBox, and still the reversed and one-colour lockups', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: null });
+
+      await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL URL']).toBe('none');
+      expect(lines['LOGO REVERSED URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO ONE-COLOR URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
+      expect(store.publicImages.size).toBe(3 + ICON_IMAGES);
+    });
+
+    it('sends the primary alone, four `none` lines after it, when every variant fails to publish; the start’s note stays the primary’s', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
+      store.failPublicPutOrdinals = [2, 3, 4, 5];
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO URL']).toMatch(LOGO_URL);
+      expect(Object.entries(lines).filter(([label]) => label !== 'LOGO URL')).toEqual([
+        ['LOGO SYMBOL URL', 'none'],
+        ['LOGO REVERSED URL', 'none'],
+        ['LOGO ONE-COLOR URL', 'none'],
+        ['LOGO SYMBOL REVERSED URL', 'none'],
+      ]);
+      expect(started.logoNote).toBeNull();
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'mktg_slides_export_logo', expect.any(String), expect.objectContaining({ image: 'symbol' }));
+      expect(loggerMocks.info).toHaveBeenCalledWith(req, 'mktg_slides_export_start', expect.any(String), expect.objectContaining({ logo_variants: [] }));
+    });
+
+    it('drops the one variant whose upload throws and still sends the others', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
+      // The variants upload at once, so the reversed lockup is picked by its bytes: the drawn primary recoloured white, as the server draws it.
+      const primaryPng = (await rasterizeLogoSvg(LOCKUP_SVG)).png as Uint8Array;
+      store.failPublicPutImages = [Buffer.from((await rasterizeLogoSvg(recolourLogoPngSvg(primaryPng, 'white') as string)).png as Uint8Array)];
+
+      await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO REVERSED URL']).toBe('none');
+      for (const label of ['LOGO URL', 'LOGO SYMBOL URL', 'LOGO ONE-COLOR URL', 'LOGO SYMBOL REVERSED URL']) {
+        expect(lines[label]).toMatch(LOGO_URL);
+      }
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'mktg_slides_export_logo', expect.any(String), expect.objectContaining({ image: 'reversed' }));
+      expect(loggerMocks.info).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_start',
+        expect.any(String),
+        expect.objectContaining({ logo_variants: ['symbol', 'one_color', 'symbol_reversed'] })
+      );
+    });
+
+    it('drops a variant that cannot be drawn — an uploaded reversed file that sets live text — and still sends the others', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, {
+        svg: LOCKUP_SVG,
+        symbolViewBox: SYMBOL_VIEWBOX,
+        reversed: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><text x="0" y="2" font-size="2">Orbit</text></svg>',
+      });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO REVERSED URL']).toBe('none');
+      expect(lines['LOGO SYMBOL REVERSED URL']).toMatch(LOGO_URL);
+      expect(started.logoNote).toBeNull();
+      expect(loggerMocks.debug).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_logo',
+        expect.any(String),
+        expect.objectContaining({ variant: 'reversed', derived: false, reason: 'live-text' })
+      );
+    });
+
+    it('recolours from the drawn PNGs, so a primary whose root says nothing of its size still gets every variant', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // A primary with no viewBox and no size: the rasterizer sizes it, and the recolours read only what it drew.
+      await seedKit(documentStore, {
+        svg: "<svg xmlns='http://www.w3.org/2000/svg'><path d='M1 1h8v8H1z' fill='#1f6feb'/></svg>",
+        symbol: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" fill="#1f6feb"/></svg>',
+      });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      for (const value of Object.values(sentLogoLines())) {
+        expect(value).toMatch(LOGO_URL);
+      }
+      expect(started.logoNote).toBeNull();
+      expect(store.publicImages.size).toBe(5 + ICON_IMAGES);
+      expect(loggerMocks.warning).not.toHaveBeenCalled();
+    });
+
+    it('draws the symbol once and recolours the reversed symbol from it, and skips the reversed symbol when the symbol did not draw', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // An uploaded symbol that sets live text: it does not draw, so neither symbol line is sent, and only the symbol is logged (at debug: it is an upload).
+      await seedKit(documentStore, {
+        svg: LOCKUP_SVG,
+        symbol: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><text x="0" y="6" font-size="6">S</text></svg>',
+      });
+
+      await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO SYMBOL URL']).toBe('none');
+      expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
+      expect(lines['LOGO REVERSED URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO ONE-COLOR URL']).toMatch(LOGO_URL);
+      expect(loggerMocks.debug).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_logo',
+        expect.any(String),
+        expect.objectContaining({ variant: 'symbol', derived: false, reason: 'live-text' })
+      );
+      expect(loggerMocks.warning).not.toHaveBeenCalled();
+    });
+
+    it('drops a variant that draws as nothing — a symbol cropped out of empty space — with a warning, and still sends the others', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // The top-right of LOCKUP_SVG holds neither the mark nor the rule.
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: '10 0 10 3' });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO REVERSED URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO ONE-COLOR URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL URL']).toBe('none');
+      expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
+      expect(started.logoNote).toBeNull();
+      expect(store.publicImages.size).toBe(3 + ICON_IMAGES);
+      // One line for the crop; the reversed symbol, which is recoloured from it, goes without a second one.
+      expect(loggerMocks.warning).toHaveBeenCalledTimes(1);
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_logo',
+        expect.any(String),
+        expect.objectContaining({ variant: 'symbol', derived: true, reason: 'blank' })
+      );
+    });
+
+    it('drops the symbol and the reversed symbol, with one warning, when the rasterizer aborts on the crop, and still sends the lockups', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // A lockup whose own user-space filter region lies far outside the symbol crop: the rasterizer's native code aborts on the crop.
+      await seedKit(documentStore, {
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><defs><filter id="s" filterUnits="userSpaceOnUse" x="140" y="20" width="60" height="60"><feDropShadow dx="1" dy="1" stdDeviation="1"/></filter></defs><rect x="10" y="10" width="30" height="30" fill="#1f6feb"/><rect x="150" y="30" width="40" height="40" fill="#d62" filter="url(#s)"/></svg>',
+        symbolViewBox: '0 0 50 50',
+      });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const lines = sentLogoLines();
+      expect(lines['LOGO URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO REVERSED URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO ONE-COLOR URL']).toMatch(LOGO_URL);
+      expect(lines['LOGO SYMBOL URL']).toBe('none');
+      expect(lines['LOGO SYMBOL REVERSED URL']).toBe('none');
+      expect(started.logoNote).toBeNull();
+      expect(store.publicImages.size).toBe(3 + ICON_IMAGES);
+      expect(loggerMocks.warning).toHaveBeenCalledTimes(1);
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_logo',
+        expect.any(String),
+        expect.objectContaining({ variant: 'symbol', derived: true, reason: 'render-failed', detail: expect.stringMatching(/^child exited/) })
+      );
+    });
+
+    it('says the logo was not drawn, and sends no variant, when the rasterizer aborts on the primary itself', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      // A logo whose own user-space filter region lies entirely off its canvas: the rasterizer aborts on the plain render.
+      await seedKit(documentStore, {
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><defs><filter id="o" filterUnits="userSpaceOnUse" x="100" y="100" width="20" height="10"><feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0"/></filter></defs><g filter="url(#o)"><path d="M1 1h8v8H1z" fill="#1f6feb"/></g></svg>',
+        symbolViewBox: SYMBOL_VIEWBOX,
+      });
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      expect(started.logoNote).toBe('not-drawn');
+      // No logo image; the icons, drawn from the server's own shapes, are untouched by the logo's failure.
+      expect(store.publicImages.size).toBe(ICON_IMAGES);
+      expect(Object.values(sentLogoLines())).toEqual(['none', 'none', 'none', 'none', 'none']);
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_logo',
+        expect.any(String),
+        expect.objectContaining({ reason: 'render-failed', detail: expect.stringMatching(/^child exited/) })
+      );
+    });
+
+    it('publishes no variant when the primary itself could not be published', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
+      store.failPublicPutOrdinals = [1];
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      expect(started.logoNote).toBe('not-published');
+      // The one logo upload, then the icons' seventeen: the icons go after the logo and do not depend on it.
+      expect(store.publicPuts).toBe(1 + ICON_IMAGES);
+      expect(Object.values(sentLogoLines())).toEqual(['none', 'none', 'none', 'none', 'none']);
+      expect(sentIconLines().dark).toHaveLength(8);
+    });
+
     it('sends no logo, and says why, when the SVG reaches outside itself, sets live text, cannot be drawn, or cannot be published', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
       const kitInput = input({ type: BRAND_KIT, agentKey: 'brand-kit' });
@@ -641,7 +1010,8 @@ describe('MktgSlidesExportService', () => {
         svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><text x="0" y="2" font-size="2">Orbit</text></svg>',
       });
       expect((await service.startExport(req, kitInput)).logoNote).toBe('live-text');
-      expect(store.publicImages.size).toBe(0);
+      // No logo image reached the bucket; the kit's icons, which need no logo, did.
+      expect(store.publicImages.size).toBe(ICON_IMAGES);
       expect(loggerMocks.warning).toHaveBeenCalledWith(
         req,
         'mktg_slides_export_logo',
@@ -666,8 +1036,96 @@ describe('MktgSlidesExportService', () => {
       await seedKit(documentStore, { placeholder: true });
 
       expect((await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }))).logoNote).toBe('no-logo');
-      expect(store.publicImages.size).toBe(0);
       expect(sentMessage()).toContain('\nLOGO URL: none\n');
+      // A placeholder logo is no logo, but the icons are the kit's own colours on the server's own shapes: they still go.
+      expect(store.publicImages.size).toBe(ICON_IMAGES);
+      expect(sentIconLines().dark).toHaveLength(8);
+    });
+
+    it('draws the kit’s eight iconography samples in its dark, in white and the third in its highlight, publishes the seventeen PNGs and sends the three icon lines', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore);
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      const icons = sentIconLines();
+      expect(icons.dark).toHaveLength(8);
+      expect(icons.light).toHaveLength(8);
+      expect(icons.highlight).toMatch(LOGO_URL);
+      for (const url of [...icons.dark, ...icons.light]) {
+        expect(url).toMatch(LOGO_URL);
+      }
+      // Seventeen different images under the same content-addressed prefix as the logo: an icon in one colour is one key.
+      expect(new Set([...icons.dark, ...icons.light, icons.highlight]).size).toBe(ICON_IMAGES);
+      // Beside them the primary lockup and its two recolours (reversed, one-colour): the fixture's lockup carries ink.
+      expect(store.publicImages.size).toBe(3 + ICON_IMAGES);
+      const bytesOf = (url: string): Buffer => store.publicImages.get(url.replace('https://cdn.example.test/', '')) as Buffer;
+      // Each drawn square at the icon side, not the logo's.
+      expect(pngSize(bytesOf(icons.dark[0]))).toEqual({ width: 240, height: 240 });
+      expect(pngSize(bytesOf(icons.highlight))).toEqual({ width: 240, height: 240 });
+      // The fields are the server's own drawing: the dark set is the shared shapes stroked in the kit's dark, the light set in
+      // white, the highlight is the third icon (Global) in the kit's spark — byte for byte what the rasterizer gives for them.
+      const kit = brandKitTestRevision();
+      const drawn = async (shapes: (typeof BRAND_KIT_ICON_SAMPLES)[number]['shapes'], stroke: string): Promise<Buffer> =>
+        Buffer.from((await rasterizeLogoSvg(brandKitIconSvg(shapes, stroke) as string, { requireInk: true, sidePx: 240 })).png as Uint8Array);
+      expect(bytesOf(icons.dark[0]).equals(await drawn(BRAND_KIT_ICON_SAMPLES[0].shapes, kit.kit.dark))).toBe(true);
+      expect(bytesOf(icons.light[7]).equals(await drawn(BRAND_KIT_ICON_SAMPLES[7].shapes, '#FFFFFF'))).toBe(true);
+      expect(bytesOf(icons.highlight).equals(await drawn(BRAND_KIT_ICON_SAMPLES[2].shapes, kit.kit.spark))).toBe(true);
+      expect(loggerMocks.info).toHaveBeenCalledWith(req, 'mktg_slides_export_start', expect.any(String), expect.objectContaining({ has_icons: true }));
+      expect(loggerMocks.warning).not.toHaveBeenCalledWith(req, 'mktg_slides_export_icons', expect.any(String), expect.anything());
+      // The client payload is unchanged: the icons are the intake's alone.
+      expect(Object.keys(started).sort()).toEqual(['logoNote', 'mode', 'revision', 'sessionId']);
+    });
+
+    it('sends none of the icon fields, with one warning, when one icon PNG cannot be published, and the export goes on', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, { svg: LOCKUP_SVG, symbolViewBox: SYMBOL_VIEWBOX });
+      // The icons upload at once, so the one that fails is picked by its bytes: the white Code icon as the server draws it.
+      const code = BRAND_KIT_ICON_SAMPLES.find((icon) => icon.id === 'code') as (typeof BRAND_KIT_ICON_SAMPLES)[number];
+      const white = await rasterizeLogoSvg(brandKitIconSvg(code.shapes, '#FFFFFF') as string, { requireInk: true, sidePx: 240 });
+      store.failPublicPutImages = [Buffer.from(white.png as Uint8Array)];
+
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      expect(started.sessionId).toBe('session-1');
+      expect(sentIconLines()).toEqual({ dark: [], light: [], highlight: 'none' });
+      expect(sentLogoLines()['LOGO URL']).toMatch(LOGO_URL);
+      // One line from the upload itself, one from the icons as a whole; nothing from the logo, which went through.
+      expect(loggerMocks.warning.mock.calls.map((call) => call[1])).toEqual(['mktg_slides_export_logo', 'mktg_slides_export_icons']);
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_icons',
+        'An iconography sample could not be published — exporting without the icons',
+        expect.objectContaining({ image: { set: 'light', icon: 'code' }, reason: 'not-published', failed: 1 })
+      );
+      expect(loggerMocks.info).toHaveBeenCalledWith(req, 'mktg_slides_export_start', expect.any(String), expect.objectContaining({ has_icons: false }));
+    });
+
+    it('sends none of the icon fields where there is no public image URL, as for the logo', async () => {
+      await seedKit(documentStore);
+
+      await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      expect(sentIconLines()).toEqual({ dark: [], light: [], highlight: 'none' });
+      expect(store.publicImages.size).toBe(0);
+      expect(loggerMocks.warning).not.toHaveBeenCalled();
+    });
+
+    it('sends none of the icon fields when an icon URL would be over the cap, with the reason', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore);
+      store.longUrls = true;
+
+      await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      expect(sentIconLines()).toEqual({ dark: [], light: [], highlight: 'none' });
+      expect(sentLogoLines()['LOGO URL']).toBe('none');
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_icons',
+        expect.any(String),
+        expect.objectContaining({ reason: 'not-public', failed: ICON_IMAGES })
+      );
     });
 
     it('exports the older revision a page names after a newer one is stored — by its hash or its id — and keeps the deck with it', async () => {

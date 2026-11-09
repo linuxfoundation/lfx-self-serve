@@ -260,7 +260,7 @@ describe('UserService', () => {
   it("never replays the previous viewer's past feeds before the identity effect runs", async () => {
     const feeds = [
       () => service.getUserPastMeetings(),
-      () => service.getUserPastMeetings({ includeArtifacts: true }),
+      () => service.getUserPastMeetings({ includeArtifactsAndAttendance: true }),
       () => service.getUserLatestPastMeetings(),
     ];
     httpGet.mockImplementation((url: string) => of(url.startsWith('/api/user/') ? [{ id: 'synthetic-a-meeting' }] : { profile: {} }));
@@ -336,20 +336,36 @@ describe('UserService', () => {
       expect(rows).toEqual([{ id: 'synthetic-past-meeting' }]);
     });
 
-    it('getUserPastMeetings caches the artifacts feed apart from the plain feed', () => {
+    it('getUserMeetings caches the attendance feed apart from the plain feed', () => {
+      httpGet.mockImplementation((url: string, options?: { params?: Record<string, string> }) =>
+        url === '/api/user/meetings' ? of([{ id: options?.params?.['include'] ?? 'plain' } as Meeting]) : of({ profile: {} })
+      );
+
+      let plain: string[] = [];
+      let withAttendance: string[] = [];
+      service.getUserMeetings().subscribe((meetings) => (plain = meetings.map((meeting) => meeting.id)));
+      service.getUserMeetings({ includeAttendance: true }).subscribe((meetings) => (withAttendance = meetings.map((meeting) => meeting.id)));
+
+      expect(plain).toEqual(['plain']);
+      expect(withAttendance).toEqual(['attendance']);
+      expect(service.getUserMeetings({ includeAttendance: true })).toBe(service.getUserMeetings({ includeAttendance: true }));
+      expect(service.getUserMeetings()).not.toBe(service.getUserMeetings({ includeAttendance: true }));
+    });
+
+    it('getUserPastMeetings caches the artifacts and attendance feed apart from the plain feed', () => {
       httpGet.mockImplementation((url: string, options?: { params?: Record<string, string> }) =>
         url === '/api/user/past-meetings' ? of([{ id: options?.params?.['include'] ?? 'plain' } as PastMeeting]) : of({ profile: {} })
       );
 
       let plain: string[] = [];
-      let withArtifacts: string[] = [];
+      let withDetails: string[] = [];
       service.getUserPastMeetings().subscribe((meetings) => (plain = meetings.map((meeting) => meeting.id)));
-      service.getUserPastMeetings({ includeArtifacts: true }).subscribe((meetings) => (withArtifacts = meetings.map((meeting) => meeting.id)));
+      service.getUserPastMeetings({ includeArtifactsAndAttendance: true }).subscribe((meetings) => (withDetails = meetings.map((meeting) => meeting.id)));
 
       expect(plain).toEqual(['plain']);
-      expect(withArtifacts).toEqual(['artifacts']);
-      expect(service.getUserPastMeetings({ includeArtifacts: true })).toBe(service.getUserPastMeetings({ includeArtifacts: true }));
-      expect(service.getUserPastMeetings()).not.toBe(service.getUserPastMeetings({ includeArtifacts: true }));
+      expect(withDetails).toEqual(['artifacts,attendance']);
+      expect(service.getUserPastMeetings({ includeArtifactsAndAttendance: true })).toBe(service.getUserPastMeetings({ includeArtifactsAndAttendance: true }));
+      expect(service.getUserPastMeetings()).not.toBe(service.getUserPastMeetings({ includeArtifactsAndAttendance: true }));
     });
 
     it('getUserLatestPastMeetings does not cache a failed request', () => {

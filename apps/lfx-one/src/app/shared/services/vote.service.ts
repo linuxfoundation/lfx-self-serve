@@ -43,6 +43,7 @@ import {
   VoteListResponse,
   VoteStatusCounts,
   VoteSummary,
+  VoteSummaryPreviewResponse,
   VoteVoter,
 } from '@lfx-one/shared/interfaces';
 import { computeVoteRowParticipation, isVoteClosingSoon } from '@lfx-one/shared/utils';
@@ -407,6 +408,11 @@ export class VoteService {
   public sendReminders(voteUid: string, recipientIds: string[]): Observable<SendVoteReminderResponse> {
     const body: SendVoteReminderRequest = { recipient_ids: recipientIds };
     return this.http.post<SendVoteReminderResponse>(`/api/votes/${encodeURIComponent(voteUid)}/reminders`, body).pipe(take(1));
+  }
+
+  /** Who the on-demand close summary would reach: ready and missing-email voters, plus unique-address counts — vote managers only, ended votes (#4830). */
+  public getVoteSummaryPreview(voteUid: string): Observable<VoteSummaryPreviewResponse> {
+    return this.http.get<VoteSummaryPreviewResponse>(`/api/votes/${encodeURIComponent(voteUid)}/summary-recipients`).pipe(take(1));
   }
 
   /** Sends the on-demand close summary to every invited voter — vote managers only, after the vote has ended (#3662). */

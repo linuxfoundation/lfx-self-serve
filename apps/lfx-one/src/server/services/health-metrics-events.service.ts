@@ -14,6 +14,7 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED,
   HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
@@ -56,6 +57,10 @@ import type {
   HealthMetricsEventsRevenueEvent,
   HealthMetricsEventsRevenuePeriod,
   HealthMetricsEventsRevenueQuery,
+  HealthMetricsEventsSnapshot,
+  HealthMetricsEventsSnapshotPackage,
+  HealthMetricsEventsSnapshotQuery,
+  HealthMetricsEventsSnapshotWeek,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersOrganization,
   HealthMetricsEventsSpeakersPeriod,
@@ -86,6 +91,8 @@ const SPEAKERS_LIST_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEAKER_P
 const ORGANIZATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_ORG_OVERVIEW';
 const SPONSORSHIP_SUMMARY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIP_SUMMARY';
 const REGISTRATION_COUNTRY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_COUNTRY';
+const WEEK_OVER_WEEK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS_WEEK_OVER_WEEK';
+const SPONSORSHIPS_BY_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER';
 
 /**
  * Mirrors dbt's `health_metrics_period_filter`, which the headline totals use. The view has no
@@ -137,6 +144,32 @@ interface RegistrationHistoryRow {
   EVENT_REGISTRATION_TYPE: string | null;
   REGISTRATIONS: number | null;
   PRIOR_YEAR: number | null;
+}
+
+interface SnapshotWeekRow {
+  WEEK_START_DATE: string | null;
+  WEEK_END_DATE: string | null;
+  REGISTRATIONS: number | null;
+  REGISTRATIONS_DELTA: number | null;
+  REGISTRATION_REVENUE_USD: number | null;
+  REGISTRATION_REVENUE_DELTA_USD: number | null;
+  IN_7D: boolean | null;
+  IN_30D: boolean | null;
+  IN_90D: boolean | null;
+  TODAY: string | null;
+}
+
+interface SnapshotTierRow {
+  SPONSORSHIP_TIER: string | null;
+  SOLD: number | null;
+  SOLD_7D: number | null;
+  SOLD_30D: number | null;
+  SOLD_90D: number | null;
+  REVENUE_USD: number | null;
+  REVENUE_7D_USD: number | null;
+  REVENUE_30D_USD: number | null;
+  REVENUE_90D_USD: number | null;
+  TODAY: string | null;
 }
 
 interface ForecastCurveRow {
@@ -395,6 +428,87 @@ export class HealthMetricsEventsService {
     if (result.rows.length === 0) return HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED;
 
     return { eventId: query.eventId, formats: groupHistoryRows(result.rows) };
+  }
+
+  /**
+   * One event's Snapshot: its registration weeks over the last 90 days and its sponsorship packages with the counts
+   * and revenue sold in each trailing period. The tier view carries no foundation, so the week view scopes the event.
+   */
+  public async getSnapshot(req: Request, query: HealthMetricsEventsSnapshotQuery): Promise<HealthMetricsEventsSnapshot> {
+    const weeksSql = `
+      SELECT
+        TO_VARCHAR(week_start_date, 'YYYY-MM-DD') AS week_start_date,
+        TO_VARCHAR(week_end_date, 'YYYY-MM-DD') AS week_end_date,
+        registrations_count AS registrations,
+        registrations_count_delta AS registrations_delta,
+        registration_revenue_usd,
+        registration_revenue_usd_delta AS registration_revenue_delta_usd,
+        is_in_trailing_7_days AS in_7d,
+        is_in_trailing_30_days AS in_30d,
+        is_in_trailing_90_days AS in_90d,
+        TO_VARCHAR(CURRENT_DATE(), 'YYYY-MM-DD') AS today
+      FROM ${WEEK_OVER_WEEK_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+        AND event_id = ?
+      ORDER BY week_start_date ASC
+    `;
+    // Every tier in the view is USD; a line in another currency would be summed as if it were.
+    const tiersSql = `
+      SELECT
+        t.sponsorship_tier,
+        t.total_sponsorship_count AS sold,
+        t.sponsorship_count_last_7_days AS sold_7d,
+        t.sponsorship_count_last_30_days AS sold_30d,
+        t.sponsorship_count_last_90_days AS sold_90d,
+        t.total_sponsorship_revenue AS revenue_usd,
+        t.sponsorship_rev_last_7_days AS revenue_7d_usd,
+        t.sponsorship_rev_last_30_days AS revenue_30d_usd,
+        t.sponsorship_rev_last_90_days AS revenue_90d_usd,
+        TO_VARCHAR(CURRENT_DATE(), 'YYYY-MM-DD') AS today
+      FROM ${SPONSORSHIPS_BY_TIER_VIEW} t
+      WHERE t.event_id = ?
+        AND t.currency_code = 'USD'
+        AND EXISTS (
+          SELECT 1
+          FROM ${WEEK_OVER_WEEK_VIEW} w
+          WHERE w.foundation_slug = ?
+            AND w.is_all_projects = TRUE
+            AND w.event_id = t.event_id
+        )
+      ORDER BY t.sponsorship_tier ASC
+    `;
+
+    const [weeks, tiers] = await Promise.all([
+      executeSnowflakeViewRead<SnapshotWeekRow>(this.snowflakeService, req, weeksSql, [query.foundationSlug, query.eventId], {
+        view: WEEK_OVER_WEEK_VIEW,
+        operation: 'get_events_snapshot_weeks',
+        clientMessage: 'The event snapshot is unavailable right now.',
+      }),
+      executeSnowflakeViewRead<SnapshotTierRow>(this.snowflakeService, req, tiersSql, [query.eventId, query.foundationSlug], {
+        view: SPONSORSHIPS_BY_TIER_VIEW,
+        operation: 'get_events_snapshot_tiers',
+        clientMessage: 'The event snapshot is unavailable right now.',
+      }),
+    ]);
+
+    if (weeks.rows.length === 0 && tiers.rows.length === 0) return HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED;
+
+    logger.debug(req, 'get_events_snapshot', 'Read snapshot rows', { event_id: query.eventId, weeks: weeks.rows.length, tiers: tiers.rows.length });
+
+    const sum = (pick: (row: SnapshotTierRow) => number | null): number => tiers.rows.reduce((total, row) => total + Number(pick(row) ?? 0), 0);
+
+    return {
+      today: weeks.rows[0]?.TODAY ?? tiers.rows[0]?.TODAY ?? null,
+      weeks: weeks.rows.filter((row) => row.WEEK_START_DATE && row.WEEK_END_DATE).map(mapSnapshotWeek),
+      packages: groupSnapshotPackages(tiers.rows),
+      sponsorshipRevenueUsd: sum((row) => row.REVENUE_USD),
+      sponsorshipRevenueInPeriodUsd: {
+        '7d': sum((row) => row.REVENUE_7D_USD),
+        '30d': sum((row) => row.REVENUE_30D_USD),
+        '90d': sum((row) => row.REVENUE_90D_USD),
+      },
+    };
   }
 
   /**
@@ -1402,6 +1516,40 @@ function mapRegistrationsGrowthYear(row: RegistrationsGrowthRow): HealthMetricsE
     inPersonAttendees: toNullableNumber(row.IN_PERSON_ATTENDEES),
     virtualAttendees: toNullableNumber(row.VIRTUAL_ATTENDEES),
   };
+}
+
+function mapSnapshotWeek(row: SnapshotWeekRow): HealthMetricsEventsSnapshotWeek {
+  return {
+    weekStartDate: row.WEEK_START_DATE ?? '',
+    weekEndDate: row.WEEK_END_DATE ?? '',
+    registrations: Number(row.REGISTRATIONS ?? 0),
+    registrationsDelta: Number(row.REGISTRATIONS_DELTA ?? 0),
+    registrationRevenueUsd: Number(row.REGISTRATION_REVENUE_USD ?? 0),
+    registrationRevenueDeltaUsd: Number(row.REGISTRATION_REVENUE_DELTA_USD ?? 0),
+    inPeriod: { '7d': row.IN_7D === true, '30d': row.IN_30D === true, '90d': row.IN_90D === true },
+  };
+}
+
+/**
+ * One package per tier name, its lines across projects added up, and an unnamed tier as Other; tax and fee lines sell
+ * no package, so they drop out here and stay in the revenue. Priciest per package first, so Diamond leads.
+ */
+function groupSnapshotPackages(rows: SnapshotTierRow[]): HealthMetricsEventsSnapshotPackage[] {
+  const byTier = new Map<string, HealthMetricsEventsSnapshotPackage>();
+  for (const row of rows) {
+    const tier = row.SPONSORSHIP_TIER?.trim() || 'Other';
+
+    const current = byTier.get(tier) ?? { tier, sold: 0, soldInPeriod: { '7d': 0, '30d': 0, '90d': 0 }, revenueUsd: 0 };
+    current.sold += Number(row.SOLD ?? 0);
+    current.revenueUsd += Number(row.REVENUE_USD ?? 0);
+    current.soldInPeriod['7d'] += Number(row.SOLD_7D ?? 0);
+    current.soldInPeriod['30d'] += Number(row.SOLD_30D ?? 0);
+    current.soldInPeriod['90d'] += Number(row.SOLD_90D ?? 0);
+    byTier.set(tier, current);
+  }
+
+  const unitPrice = (item: HealthMetricsEventsSnapshotPackage): number => item.revenueUsd / item.sold;
+  return [...byTier.values()].filter((item) => item.sold > 0).sort((a, b) => unitPrice(b) - unitPrice(a) || a.tier.localeCompare(b.tier));
 }
 
 function toNullableNumber(value: unknown): number | null {

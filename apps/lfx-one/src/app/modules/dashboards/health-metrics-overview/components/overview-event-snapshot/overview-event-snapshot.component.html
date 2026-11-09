@@ -1,0 +1,103 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[24px]" data-testid="overview-snapshot">
+  @switch (status()) {
+    @case ('loading') {
+      <p-skeleton height="300px" borderRadius="8px" aria-hidden="true" data-testid="overview-snapshot-loading" />
+    }
+    @case ('failed') {
+      <p class="m-0 text-[13px] text-gray-500" data-testid="overview-snapshot-error">The snapshot could not be loaded. Close this and try again.</p>
+    }
+    @default {
+      @for (section of sections(); track section.key; let first = $first) {
+        <section class="flex flex-col gap-[16px]" [attr.data-testid]="'overview-snapshot-' + section.key">
+          <div class="flex min-h-[28px] items-center justify-between gap-[12px]">
+            <h3 class="m-0 text-[16px] font-semibold leading-[24px] text-gray-900">{{ section.title }}</h3>
+            @if (first) {
+              <lfx-ui-switch
+                size="small"
+                ariaLabel="Snapshot period"
+                [value]="period()"
+                (valueChange)="onPeriodChange($event)"
+                data-testid="overview-snapshot-period">
+                @for (option of periods; track option.value) {
+                  <lfx-ui-switch-option [value]="option.value" [label]="option.label" />
+                }
+              </lfx-ui-switch>
+            }
+          </div>
+
+          <!-- Only the table scrolls sideways on a narrow screen, so the dialog never does. -->
+          <div class="min-w-0 overflow-x-auto">
+            <div class="flex min-w-[674px] flex-col" role="table" [attr.aria-label]="section.title">
+              <div
+                class="grid min-h-[44px] grid-cols-[minmax(180px,1.6fr)_minmax(130px,1fr)_minmax(150px,1fr)_minmax(150px,1fr)] gap-[16px] whitespace-nowrap bg-gray-50 px-[8px] text-[12px] font-medium leading-[16px] text-gray-600 shadow-[inset_0_-1px_0_var(--ui-neutral-alpha-200)]"
+                role="row">
+                <span role="columnheader"><span class="sr-only">Metric</span></span>
+                <span class="flex items-center justify-end text-gray-900" role="columnheader" data-testid="overview-snapshot-start">{{
+                  section.startHeader
+                }}</span>
+                <span class="flex items-center justify-end px-[12px] text-gray-900" role="columnheader" data-testid="overview-snapshot-end">{{
+                  section.endHeader
+                }}</span>
+                <span role="columnheader"><span class="sr-only">Change</span></span>
+              </div>
+              @for (row of section.rows; track row.key) {
+                <!-- The Totals row draws a dark rule above it, over the row before's own. -->
+                <div
+                  class="relative grid grid-cols-[minmax(180px,1.6fr)_minmax(130px,1fr)_minmax(150px,1fr)_minmax(150px,1fr)] gap-[16px] bg-white px-[8px] text-[14px] leading-[20px] text-gray-900"
+                  [class]="
+                    row.totals
+                      ? '-mt-px shadow-[inset_0_1px_0_var(--ui-neutral-900),inset_0_-1px_0_var(--ui-neutral-alpha-100)]'
+                      : 'shadow-[inset_0_-1px_0_var(--ui-neutral-alpha-100)]'
+                  "
+                  role="row"
+                  [attr.data-testid]="'overview-snapshot-row-' + row.key">
+                  <span class="flex min-w-0 items-center gap-[6px] py-[12px] font-medium" role="rowheader"
+                    >{{ row.label }}
+                    @if (row.tip; as tip) {
+                      <i
+                        class="fa-light fa-circle-question cursor-help rounded-full text-[13px] text-gray-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                        role="img"
+                        tabindex="0"
+                        [attr.aria-label]="tip"
+                        [lfxUiTooltip]="tip"></i>
+                    }
+                  </span>
+                  <span class="flex items-center justify-end py-[12px]" role="cell">{{ row.startLabel }}</span>
+                  <span
+                    class="flex items-center justify-end bg-blue-100 p-[12px]"
+                    [class]="
+                      row.totals
+                        ? 'shadow-[inset_0_1px_0_var(--ui-neutral-900),inset_0_-1px_0_var(--ui-neutral-alpha-100)]'
+                        : 'shadow-[inset_0_-1px_0_var(--ui-neutral-alpha-100)]'
+                    "
+                    role="cell"
+                    >{{ row.endLabel }}</span
+                  >
+                  <span class="flex items-center justify-end py-[12px]" role="cell"
+                    ><lfx-ui-badge variant="subtle" [tone]="row.change.tone" [attr.data-testid]="'overview-snapshot-change-' + row.key">
+                      @if (row.change.icon; as icon) {
+                        <i [class]="icon" aria-hidden="true"></i>
+                      }
+                      {{ row.change.label }}</lfx-ui-badge
+                    ></span
+                  >
+                </div>
+              }
+              @if (section.emptyCopy; as empty) {
+                <div
+                  class="px-[8px] py-[12px] text-[13px] leading-[20px] text-gray-500 shadow-[inset_0_-1px_0_var(--ui-neutral-alpha-100)]"
+                  data-testid="overview-snapshot-empty">
+                  {{ empty }}
+                </div>
+              }
+            </div>
+          </div>
+        </section>
+      }
+    }
+  }
+</div>

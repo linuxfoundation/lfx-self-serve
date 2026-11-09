@@ -66,6 +66,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/linkedin-post-presentation.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/aeo-geo.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-asset.utils')),
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
@@ -184,6 +185,7 @@ import { guardBrandKitText } from '@lfx-one/shared/utils/brand-kit.utils';
 import { BoilerplatesService } from './boilerplates.service';
 import { GuildService } from './guild.service';
 import { MktgDocumentRunService } from './mktg-document-run.service';
+import { resetMktgDocumentAuthorNamesForTests } from './mktg-document-author.service';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 
 const req = {
@@ -255,6 +257,7 @@ describe('MktgDocumentStoreService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     store.objects.clear();
+    resetMktgDocumentAuthorNamesForTests();
     store.clock = 0;
     store.conditionalWrites = [];
     store.reads = [];
@@ -678,12 +681,93 @@ describe('MktgDocumentStoreService', () => {
       expect(store.reads.filter((key) => key.endsWith('current.json'))).toHaveLength(1);
       expect(revisionKeys().map((key) => storedObject(key).body)).toEqual(bytes);
       expect(record.revisionId).toBe(first.id);
-      expect(record.approvals[first.id]).toEqual({ approvedAt: record.changedAt, approvedBy: 'auth0|not-the-lfid' });
+      // An envelope without a report still gets its snapshot, empty: the key is present on every approval made from now on.
+      const accepted = { sources_failed: [], missing_assets: [], warnings: [], gaps: [], color_conflicts: [] };
+      expect(record.approvals[first.id]).toEqual({ approvedAt: record.changedAt, approvedBy: 'auth0|not-the-lfid', accepted });
       expect(result?.approvedCurrent).toEqual({ revisionId: first.id, number: 1 });
-      expect(result?.approval).toEqual({ approvedAt: record.changedAt, approvedBy: { name: 'The writer' } });
+      expect(result?.approval).toEqual({ approvedAt: record.changedAt, approvedBy: { name: 'The writer' }, accepted });
       expect(JSON.stringify(result)).not.toContain('auth0|');
       expect(JSON.stringify(result)).not.toContain('revisionIds');
       expect([...store.objects.keys()].filter((key) => !revisionKeys().includes(key))).toEqual([key]);
+    });
+
+    it('writes what the report showed into the approval as its snapshot, and reads it back with the approval', async () => {
+      const full = {
+        ...envelope('# Reported'),
+        report: {
+          sources_read: ['https://synthetic.example/'],
+          sources_failed: [{ name: 'https://synthetic.example/legacy', reason: 'HTTP 404' }],
+          gaps: ['No stacked logo was supplied.'],
+          notes: '',
+          version: 2,
+          findings: {
+            sources_failed: [{ source: 'https://synthetic.example/brand', kind: 'brand_page', reason: 'The page does not exist.', detail: 'HTTP 404' }],
+            missing_assets: [{ asset: 'logo_stacked', reason: 'No stacked logo was uploaded.' }],
+            warnings: [{ code: 'font_unverified', text: 'The typeface could not be verified.' }],
+          },
+          color_conflicts: [
+            {
+              name: 'Coral',
+              values: [
+                { hex: '#FF702D', source: 'brand_page: x' },
+                { hex: '#FF7D2D', source: 'stylesheet: y' },
+              ],
+              chosen: '#FF702D',
+            },
+          ],
+        },
+      };
+      const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, full, 'reported');
+      const result = await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
+      const accepted = {
+        sources_failed: ['https://synthetic.example/brand'],
+        missing_assets: ['logo_stacked'],
+        warnings: ['font_unverified|The typeface could not be verified.'],
+        gaps: ['No stacked logo was supplied.'],
+        color_conflicts: ['Coral'],
+      };
+      const record = JSON.parse(storedObject(key).body);
+      expect(record.approvals[first.id]).toEqual({ approvedAt: record.changedAt, approvedBy: 'auth0|not-the-lfid', accepted });
+      expect(result?.approval).toEqual({ approvedAt: record.changedAt, approvedBy: { name: 'The writer' }, accepted });
+      const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      expect(detail?.revisions.find((revision) => revision.id === first.id)?.approval?.accepted).toEqual(accepted);
+    });
+
+    it('snapshots a v1 report by its legacy failed names, and a revision without a report with empty lists', async () => {
+      const v1 = { ...envelope('# Legacy'), report: { sources_read: [], sources_failed: [{ name: 'logo.zip', reason: 'cut' }], gaps: ['A gap.'], notes: '' } };
+      const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, v1, 'legacy');
+      const result = await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
+      expect(result?.approval?.accepted).toEqual({ sources_failed: ['logo.zip'], missing_assets: [], warnings: [], gaps: ['A gap.'], color_conflicts: [] });
+      const bare = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Bare'), 'bare');
+      const second = await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', bare.id);
+      expect(second?.approval?.accepted).toEqual({ sources_failed: [], missing_assets: [], warnings: [], gaps: [], color_conflicts: [] });
+    });
+
+    it('records no snapshot for another document’s approval, whose payload stays as it was', async () => {
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Synthetic framework'), PROJECT, 'framework-1');
+      const first = (await service.getDocument(req, PROJECT, FRAMEWORK, 'living'))?.revisions[0];
+      if (!first) throw new Error('Missing synthetic framework revision');
+      const result = await service.approveRevision(req, PROJECT, FRAMEWORK, 'living', first.id);
+      const record = JSON.parse(storedObject(`documents/${PROJECT}/${FRAMEWORK.agentKey}/living/current.json`).body);
+      expect(record.approvals[first.id]).toEqual({ approvedAt: record.changedAt, approvedBy: 'auth0|not-the-lfid' });
+      expect(result?.approval).toEqual({ approvedAt: record.changedAt, approvedBy: { name: 'The writer' } });
+      const detail = await service.getDocument(req, PROJECT, FRAMEWORK, 'living');
+      expect(detail?.revisions.find((revision) => revision.id === first.id)?.approval).toEqual({
+        approvedAt: record.changedAt,
+        approvedBy: { name: 'The writer' },
+      });
+    });
+
+    it('drops a malformed stored snapshot and keeps the approval', async () => {
+      const { first } = await twoRevisions();
+      await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
+      const record = JSON.parse(storedObject(key).body);
+      record.approvals[first.id].accepted = { sources_failed: 'not a list', gaps: [] };
+      storedObject(key).body = JSON.stringify(record);
+      const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      const approval = detail?.revisions.find((revision) => revision.id === first.id)?.approval;
+      expect(approval).toEqual({ approvedAt: record.changedAt, approvedBy: { name: 'The writer' } });
+      expect(detail?.approvedCurrent).toEqual({ revisionId: first.id, number: 1 });
     });
 
     it('does not write when the current revision is already approved', async () => {
@@ -1305,7 +1389,7 @@ describe('MktgDocumentStoreService', () => {
     });
 
     it.each([new Error('NATS timeout'), new ResourceNotFoundError('User'), new MicroserviceError('NATS unavailable', 503, 'SERVICE_UNAVAILABLE')])(
-      'lookup failure %s shows no name without failing reads and warns once per ID',
+      'lookup failure %s with no earlier success shows no name without failing reads and warns once per ID',
       async (failure) => {
         await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
         await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Two'), 'two');
@@ -1319,7 +1403,23 @@ describe('MktgDocumentStoreService', () => {
       }
     );
 
-    it('handles an unsuccessful directory response directly and warns once for the stored author', async () => {
+    it('serves the last known name when the directory fails after an earlier success, and says so in the log', async () => {
+      await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
+      expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions[0].author).toEqual({ name: 'The writer' });
+      const err = new Error('NATS timeout');
+      directoryMocks.getUserInfo.mockRejectedValue(err);
+      const outage = { ...req } as Request;
+      const detail = await service.getDocument(outage, PROJECT, BRAND_KIT, 'living');
+      expect(detail?.revisions[0].author).toEqual({ name: 'The writer' });
+      expect(detail?.current?.changedBy).toEqual({ name: 'The writer' });
+      expect(loggerMocks.warning).toHaveBeenCalledExactlyOnceWith(outage, 'mktg_document_store_author', 'Author lookup failed — showing the last known name', {
+        err,
+        served_stale: true,
+      });
+      expect(JSON.stringify([...store.objects.values()])).not.toContain('The writer');
+    });
+
+    it('handles an unsuccessful directory response with no earlier success as no name and warns once for the stored author', async () => {
       await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
       directoryMocks.getUserInfo.mockResolvedValue({ success: false, error: 'user not found' });
       const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
@@ -1327,6 +1427,19 @@ describe('MktgDocumentStoreService', () => {
       expect(detail?.current?.changedBy).toEqual({ name: null });
       expect(directoryMocks.getUserInfo).toHaveBeenCalledTimes(1);
       expect(loggerMocks.warning).toHaveBeenCalledExactlyOnceWith(req, 'mktg_document_store_author', 'Author lookup failed — showing no name');
+    });
+
+    it('serves the last known name on an unsuccessful directory response after an earlier success, saying so in the log', async () => {
+      await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
+      expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions[0].author).toEqual({ name: 'The writer' });
+      directoryMocks.getUserInfo.mockResolvedValue({ success: false, error: 'failed to get M2M token' });
+      const limited = { ...req } as Request;
+      const detail = await service.getDocument(limited, PROJECT, BRAND_KIT, 'living');
+      expect(detail?.revisions[0].author).toEqual({ name: 'The writer' });
+      expect(detail?.current?.changedBy).toEqual({ name: 'The writer' });
+      expect(loggerMocks.warning).toHaveBeenCalledExactlyOnceWith(limited, 'mktg_document_store_author', 'Author lookup failed — showing the last known name', {
+        served_stale: true,
+      });
     });
 
     it('bounds distinct directory reads and discards the memo between requests', async () => {
@@ -1949,11 +2062,12 @@ describe('MktgDocumentStoreService', () => {
       const unavailable = { ...req } as Request;
       for (let index = 0; index < 2; index++) {
         expect((await service.getRevision(unavailable, PROJECT, LINKEDIN, reloaded.runDocumentId('session-link'), written.id))?.linkedinPost).toMatchObject({
-          author: { name: null },
+          author: { name: 'The writer' },
           isAuthor: true,
         });
       }
       expect(loggerMocks.warning.mock.calls.filter((call) => call[1] === 'mktg_document_store_author')).toHaveLength(1);
+      expect(loggerMocks.warning.mock.calls.find((call) => call[1] === 'mktg_document_store_author')?.[3]).toMatchObject({ served_stale: true });
       directoryMocks.getUserInfo.mockResolvedValue({ success: true, username: 'not-a-display-name', data: {} });
       expect(
         (await service.getRevision({ ...req } as Request, PROJECT, LINKEDIN, reloaded.runDocumentId('session-link'), written.id))?.linkedinPost?.author

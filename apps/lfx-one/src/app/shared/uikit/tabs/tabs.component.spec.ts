@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { OverlayContainer } from '@angular/cdk/overlay';
+import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiTabItem } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -89,7 +90,10 @@ describe('UiTabsComponent', () => {
 
     expect(list.className).toContain('gap-[24px]');
     expect(list.className).toContain('overflow-x-auto');
-    expect((fixture.nativeElement as HTMLElement).className).toContain('flow-root');
+    expect(list.className).toContain('shrink-0');
+    expect(list.className).toContain('max-w-full');
+    expect((fixture.nativeElement as HTMLElement).className).toContain('flex-wrap');
+    expect((fixture.nativeElement as HTMLElement).className).toContain('gap-[16px]');
     expect((fixture.nativeElement as HTMLElement).className).toContain('shadow-[inset_0_-1px_0_0]');
     expect((fixture.nativeElement as HTMLElement).className).toContain('shadow-ui-neutral-alpha-200');
     expect((fixture.nativeElement as HTMLElement).className).not.toContain('var(');
@@ -98,7 +102,7 @@ describe('UiTabsComponent', () => {
     expect(tab('upcoming').className).toContain('pb-[14px]');
     expect(tab('upcoming').className).toContain('gap-[7px]');
     expect(tab('upcoming').className).toContain('aria-selected:after:h-[2px]');
-    expect(tab('upcoming').className).toContain('text-ui-neutral-500');
+    expect(tab('upcoming').className).toContain('text-ui-neutral-700');
     expect(tab('upcoming').className).toContain('hover:text-ui-neutral-900');
     expect(tab('upcoming').className).toContain('duration-ui-base');
     expect(tab('upcoming').className).toContain('focus-visible:shadow-focus');
@@ -281,5 +285,23 @@ describe('UiTabsComponent', () => {
   it('moves focus to the newly selected tab', async () => {
     await press('upcoming', 'ArrowRight');
     expect(document.activeElement).toBe(tab('past'));
+  });
+
+  it('renders projected content after the tablist, inside the ruled host', async () => {
+    @Component({
+      selector: 'lfx-ui-test-tabs-host',
+      imports: [UiTabsComponent],
+      template: `<lfx-ui-tabs [tabs]="tabs"><span data-testid="trailing">Search</span></lfx-ui-tabs>`,
+    })
+    class HostComponent {
+      protected readonly tabs = tabs;
+    }
+    const host = TestBed.createComponent(HostComponent);
+    await host.whenStable();
+
+    const tabsHost = host.nativeElement.querySelector('lfx-ui-tabs') as HTMLElement;
+    expect(tabsHost.lastElementChild?.getAttribute('data-testid')).toBe('trailing');
+    expect(tabsHost.firstElementChild?.getAttribute('role')).toBe('tablist');
+    host.destroy();
   });
 });

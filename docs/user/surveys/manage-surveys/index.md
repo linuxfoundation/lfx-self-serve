@@ -4,7 +4,7 @@ description: How to find surveys, read the survey list, and understand statuses 
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, manage, status, filters, open, closed, scheduled]
-last_updated: 2026-10-28
+last_updated: 2026-11-06
 intercom_collection: Surveys
 ---
 
@@ -37,7 +37,7 @@ The list shows 10 surveys per page. When you have more, you can switch to 25 or 
 | --------------- | -------------------------------------------------------------------------------------------------------------- |
 | **Survey Name** | The survey's name. Select it to open its results.                                                              |
 | **Survey Type** | For example **NPS Survey**.                                                                                    |
-| **Group**       | The group the survey was sent to.                                                                              |
+| **Group**       | The group the survey was sent to. Select it to open the group's details page.                                  |
 | **Responses**   | How many people responded. Hover over the number to see "X of Y responses" and the percentage.                 |
 | **Due**         | The cutoff date, with a countdown such as "Closes in 5 days", "Closes tomorrow", or "Closes today" while open. |
 | **Status**      | **Open**, **Closed**, **Scheduled**, or **Draft**.                                                             |

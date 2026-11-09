@@ -1,0 +1,82 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-symbol-intro">{{ intro() }}</p>
+  @if (hasSymbol()) {
+    <div [lfxPpRect]="[x, 250, w]">
+      <div class="pp-lab pp-lab--dark">Variants</div>
+      <div class="kp-tiles kp-tiles--under-label" data-testid="brand-kit-symbol-variants">
+        <div>
+          <div class="pp-tile kp-tile"><lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" [height]="80" /></div>
+          <div class="pp-cap">Full color</div>
+        </div>
+        <!-- The reversed and one-colour variants are derived by filter only from a one-ink symbol; a multi-colour symbol
+             would flatten, and a full-colour symbol under these labels would be a false label, so the tiles say so. -->
+        <div>
+          <div class="pp-tile pp-tile--dark kp-tile">
+            @if (v.derivable.symbol) {
+              <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" mode="reversed" [height]="80" />
+            } @else {
+              <span class="kp-tile-missing" data-testid="brand-kit-symbol-variant-missing">Not supplied</span>
+            }
+          </div>
+          <div class="pp-cap">Reversed</div>
+        </div>
+        <div>
+          <div class="pp-tile kp-tile">
+            @if (v.derivable.symbol) {
+              <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" mode="mono" [height]="80" />
+            } @else {
+              <span class="kp-tile-missing" data-testid="brand-kit-symbol-variant-missing">Not supplied</span>
+            }
+          </div>
+          <div class="pp-cap">One-color black</div>
+        </div>
+      </div>
+    </div>
+    <div [lfxPpRect]="[x, 470, w]">
+      <div class="pp-lab pp-lab--dark">In shape</div>
+      <div class="kp-shapes" data-testid="brand-kit-symbol-shapes">
+        @for (shape of shapes(); track shape.caption) {
+          <div class="kp-shape-column">
+            <div class="kp-shape-stage" [class.kp-shape-stage--mist]="shape.onWhite">
+              <div
+                class="kp-shape"
+                [style.width.px]="shape.side"
+                [style.height.px]="shape.side"
+                [style.border-radius]="shape.radius"
+                [style.background]="shape.ground">
+                <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" [mode]="shape.mode" [height]="shape.box" [innerWidth]="shape.innerWidth" />
+              </div>
+            </div>
+            <div class="pp-cap">{{ shape.caption }}</div>
+          </div>
+        }
+      </div>
+      @if (wide()) {
+        <div class="pp-cap" data-testid="brand-kit-symbol-wide-note">{{ wideNote }}</div>
+      }
+    </div>
+    <div class="kp-padding-row" [lfxPpRect]="[x, 720, w]">
+      <div class="kp-padding-demo" data-testid="brand-kit-symbol-padding">
+        <div class="kp-padding-demo-inset"></div>
+        <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" mode="reversed" [height]="100" [innerWidth]="demoInnerWidth" />
+      </div>
+      <div class="flex-1">
+        <div class="pp-lab pp-lab--dark">Padding in a shape</div>
+        <p class="pp-body pp-body-gap-tight" data-testid="brand-kit-symbol-rule">
+          One X of padding from the symbol to the edge of the circle or rounded square, where X is the height of the symbol.{{ accentClause() }}
+        </p>
+      </div>
+    </div>
+  }
+</lfx-mktg-portrait-page>

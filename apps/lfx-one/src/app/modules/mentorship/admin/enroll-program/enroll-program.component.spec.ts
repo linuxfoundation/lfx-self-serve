@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, model, output } from '@angular/core';
+import { Component, input, model, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -38,6 +38,7 @@ import {
   MentorshipProgramTermRow,
 } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
@@ -66,6 +67,8 @@ class StubDetailsStepComponent {
   public readonly logoFile = model<File | null>(null);
   public readonly programId = input('');
   public readonly currentLogoUrl = input('');
+  public readonly lockedProject = input<MentorshipLfProject | null>(null);
+  public readonly parentProject = input<MentorshipLfProject | null>(null);
   public readonly ciiLookupStatusChange = output<MentorshipCiiLookupStatus>();
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
 }
@@ -164,6 +167,7 @@ describe('EnrollProgramComponent', () => {
         provideHttpClientTesting(),
         { provide: MessageService, useValue: { add: toast } },
         { provide: MentorshipAdminService, useValue: { createProgram, uploadProgramLogo } },
+        { provide: ProjectContextService, useValue: { activeContext: signal(null), activeContextUid: signal('') } },
       ],
     });
 
@@ -595,7 +599,17 @@ describe('EnrollProgramComponent — edit mode', () => {
       return of(value);
     });
 
+  /** The route's lens, read when the wizard is created: unset is the Me lens. */
+  let routeLens: string | undefined;
+  /** Creates the wizard again, e.g. after changing `routeLens`. */
+  const createWizard = (): void => {
+    fixture = TestBed.createComponent(EnrollProgramComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+  };
+
   beforeEach(async () => {
+    routeLens = undefined;
     toast = vi.fn();
     calls = [];
     service = {
@@ -613,9 +627,27 @@ describe('EnrollProgramComponent — edit mode', () => {
         provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({ programId: PROGRAM_ID }) } } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              queryParamMap: convertToParamMap({ programId: PROGRAM_ID }),
+              get data() {
+                return { lens: routeLens };
+              },
+            },
+          },
+        },
         { provide: MessageService, useValue: { add: toast } },
         { provide: MentorshipAdminService, useValue: service },
+        {
+          provide: ProjectContextService,
+          // A lens wizard waits for its lens project, so a Projects lens edit has one resolved; the Me lens has none.
+          useValue: {
+            activeContext: () => (routeLens ? { uid: 'proj-gridflow', name: 'GridFlow', slug: 'gridflow' } : null),
+            activeContextUid: () => (routeLens ? 'proj-gridflow' : ''),
+          },
+        },
       ],
     });
 
@@ -628,11 +660,18 @@ describe('EnrollProgramComponent — edit mode', () => {
       },
     }).compileComponents();
 
-    fixture = TestBed.createComponent(EnrollProgramComponent);
-    component = fixture.componentInstance;
     router = TestBed.inject(Router);
     vi.spyOn(router, 'navigate').mockResolvedValue(true);
-    fixture.detectChanges();
+    createWizard();
+  });
+
+  it('goes back to the Project lens’s program page after an update opened from the Project lens', () => {
+    routeLens = 'project';
+    createWizard();
+
+    clickUpdate();
+
+    expect(router.navigate).toHaveBeenCalledWith(['/project/mentorship', PROGRAM_ID], { queryParams: { project: 'gridflow' } });
   });
 
   it('fills the form from the program and shows the edit title, the Update button and the closed terms', () => {
@@ -791,5 +830,184 @@ describe('EnrollProgramComponent — edit mode', () => {
 
     expect(await component.canLeave()).toBe(true);
     expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ header: 'Discard changes' }));
+  });
+});
+
+describe('EnrollProgramComponent — from a lens (lfx-mentorship#398)', () => {
+  const PROJECT_UID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+  const LENS_PROJECT: MentorshipLfProject = { id: PROJECT_UID, name: 'GridFlow', slug: 'gridflow', logoUrl: 'https://cdn.example/gridflow.png' };
+
+  let fixture: ComponentFixture<EnrollProgramComponent>;
+  let component: EnrollProgramComponent;
+  let router: Router;
+  /** The lens context; `null` while it is still resolving. */
+  let activeContext: ReturnType<typeof signal<{ uid: string; name: string; slug: string; logoUrl: string } | null>>;
+
+  const detailsStep = (): StubDetailsStepComponent => fixture.debugElement.query(By.directive(StubDetailsStepComponent))?.componentInstance;
+
+  const create = async (lens: 'project' | 'foundation', resolved = true): Promise<void> => {
+    activeContext = signal(resolved ? { uid: PROJECT_UID, name: 'GridFlow', slug: 'gridflow', logoUrl: 'https://cdn.example/gridflow.png' } : null);
+    TestBed.configureTestingModule({
+      imports: [EnrollProgramComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}), data: { lens } } } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MentorshipAdminService, useValue: { createProgram: vi.fn(), uploadProgramLogo: vi.fn() } },
+        {
+          provide: ProjectContextService,
+          useValue: { activeContext: () => activeContext(), activeContextUid: () => activeContext()?.uid ?? '' },
+        },
+      ],
+    });
+
+    await TestBed.overrideComponent(EnrollProgramComponent, {
+      remove: {
+        imports: [EnrollStepperComponent, EnrollDetailsStepComponent, EnrollSetupStepComponent, EnrollPrerequisitesStepComponent],
+      },
+      add: {
+        imports: [StubStepperComponent, StubDetailsStepComponent, StubSetupStepComponent, StubPrerequisitesStepComponent],
+      },
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(EnrollProgramComponent);
+    component = fixture.componentInstance;
+    router = TestBed.inject(Router);
+    vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    fixture.detectChanges();
+  };
+
+  it('enrolls for the Projects lens’s project only, picked up front, and goes back to its Mentorship Programs', async () => {
+    await create('project');
+
+    expect(component['form'].controls.projectId.value).toBe(PROJECT_UID);
+    expect(component['selectedProject']()).toEqual(LENS_PROJECT);
+    expect(detailsStep().lockedProject()).toEqual(LENS_PROJECT);
+    expect(detailsStep().parentProject()).toBeNull();
+    expect(component['backToLabel']).toBe('Mentorship Programs');
+
+    // The preset project is not an unsaved answer, so leaving the untouched form does not ask.
+    expect(await component.canLeave()).toBe(true);
+    component['onCancel']();
+    expect(router.navigate).toHaveBeenCalledWith(['/project/mentorship'], { queryParams: { project: 'gridflow' } });
+  });
+
+  it('offers the Foundation lens’s foundation and its sub-projects, with nothing picked up front', async () => {
+    await create('foundation');
+
+    expect(component['form'].controls.projectId.value).toBe('');
+    expect(detailsStep().lockedProject()).toBeNull();
+    expect(detailsStep().parentProject()).toEqual(LENS_PROJECT);
+
+    component['onCancel']();
+    expect(router.navigate).toHaveBeenCalledWith(['/foundation/mentorship'], { queryParams: { project: 'gridflow' } });
+  });
+
+  it('waits for the lens’s project before it shows the form, so the picker never lists every project', async () => {
+    await create('project', false);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="mentorship-enroll-loading"]')).not.toBeNull();
+    expect(detailsStep()).toBeUndefined();
+
+    activeContext.set({ uid: PROJECT_UID, name: 'GridFlow', slug: 'gridflow', logoUrl: 'https://cdn.example/gridflow.png' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(detailsStep().lockedProject()).toEqual(LENS_PROJECT);
+    expect(component['form'].controls.projectId.value).toBe(PROJECT_UID);
+  });
+
+  /** A lens switch kept in place: the admin stayed at the discard prompt, so the context changed under the open wizard. */
+  const switchLensTo = async (uid: string, slug: string): Promise<void> => {
+    activeContext.set({ uid, name: 'Other', slug, logoUrl: '' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  it('follows a Projects lens switch, so the program is never enrolled under the previous project', async () => {
+    await create('project');
+
+    await switchLensTo('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47', 'other');
+
+    expect(component['form'].controls.projectId.value).toBe('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47');
+    expect(component['selectedProject']()?.id).toBe('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47');
+    expect(await component.canLeave()).toBe(true);
+    component['onCancel']();
+    expect(router.navigate).toHaveBeenCalledWith(['/project/mentorship'], { queryParams: { project: 'other' } });
+  });
+
+  it('clears a pick made under the previous foundation after a Foundation lens switch', async () => {
+    await create('foundation');
+    component['form'].controls.projectId.setValue('sub-project-uid');
+    component['selectedProject'].set({ id: 'sub-project-uid', name: 'Sub', slug: 'sub' });
+
+    await switchLensTo('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47', 'other-foundation');
+
+    expect(component['form'].controls.projectId.value).toBe('');
+    expect(component['selectedProject']()).toBeNull();
+  });
+
+  /** The program was created but its logo upload failed: the answers are locked and Retry uploads the logo only. */
+  const partialSave = (): void => {
+    component['createdProgram'].set(PROGRAM);
+    component['logoUploadFailed'].set(true);
+    component['submitPhase'].set('failed');
+    component['form'].disable({ emitEvent: false });
+  };
+
+  it('keeps the Foundation lens enrollment’s project after a partial save, so Retry still has it', async () => {
+    await create('foundation');
+    const subProject = { id: 'sub-project-uid', name: 'Sub', slug: 'sub' };
+    component['form'].controls.projectId.setValue(subProject.id);
+    component['selectedProject'].set(subProject);
+    partialSave();
+
+    await switchLensTo('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47', 'other-foundation');
+
+    expect(component['form'].controls.projectId.value).toBe(subProject.id);
+    expect(component['selectedProject']()).toEqual(subProject);
+  });
+
+  it('keeps the Projects lens enrollment’s project after a partial save, not the project switched to', async () => {
+    await create('project');
+    partialSave();
+
+    await switchLensTo('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47', 'other');
+
+    expect(component['form'].controls.projectId.value).toBe(PROJECT_UID);
+    expect(component['selectedProject']()).toEqual(LENS_PROJECT);
+  });
+
+  /** A lens switch while the create request is out, then that create fails: the answers unlock with no program saved. */
+  const switchDuringFailedCreate = async (uid: string, slug: string): Promise<void> => {
+    component['submitPhase'].set('creating');
+    await switchLensTo(uid, slug);
+    component['submitPhase'].set('failed');
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  it('applies a Projects lens switch made during a create once that create fails', async () => {
+    await create('project');
+
+    await switchDuringFailedCreate('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47', 'other');
+
+    expect(component['form'].controls.projectId.value).toBe('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47');
+    expect(component['selectedProject']()?.id).toBe('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47');
+  });
+
+  it('clears a Foundation lens pick after a switch made during a create that fails', async () => {
+    await create('foundation');
+    component['form'].controls.projectId.setValue('sub-project-uid');
+    component['selectedProject'].set({ id: 'sub-project-uid', name: 'Sub', slug: 'sub' });
+
+    await switchDuringFailedCreate('0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47', 'other-foundation');
+
+    expect(component['form'].controls.projectId.value).toBe('');
+    expect(component['selectedProject']()).toBeNull();
   });
 });

@@ -77,7 +77,15 @@
                     <dt class="text-sm font-medium text-gray-900">{{ row.question }}</dt>
                     @if (row.answered) {
                       <dd class="flex flex-wrap items-start gap-2">
-                        <span class="grow basis-64 text-sm leading-relaxed text-gray-800">{{ row.answer }}</span>
+                        <!-- The answer is the agent's restricted Markdown: a plain sentence stays one paragraph; a lead-in and its "- " lines
+                             become a paragraph and a list. The host neutralises `prose` so a plain answer keeps today's size, colour and line
+                             height; `p`/`li` inherit the host's size and leading because styles.scss's base rule gives a bare `p` its own; the
+                             list markers take the answer's text colour, not the typography plugin's light bullets. -->
+                        <lfx-markdown-renderer
+                          class="grow basis-64 text-sm leading-relaxed text-gray-800 [&_.prose]:text-inherit [&_.prose]:leading-[inherit] [&_p]:[font-size:inherit] [&_p]:[line-height:inherit] [&_li]:[font-size:inherit] [&_li]:[line-height:inherit] [&_li]:marker:text-gray-800"
+                          [content]="row.answer"
+                          [restricted]="true"
+                          [attr.data-testid]="'mktg-faq-view-answer-' + g + '-' + q" />
                         @if (row.source) {
                           <span
                             class="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-1.5 text-2xs text-gray-500"

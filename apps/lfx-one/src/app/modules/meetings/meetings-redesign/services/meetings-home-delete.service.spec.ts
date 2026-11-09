@@ -79,7 +79,7 @@ describe('MeetingsHomeDeleteService', () => {
     confirmResult.next(true);
 
     expect(store.removeMeeting).toHaveBeenCalledWith('synthetic-meeting');
-    expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Success', description: 'Meeting deleted successfully.' });
+    expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting deleted' });
     expect(userService.refreshUserMeetings).toHaveBeenCalledWith();
     expect(userService.refreshUserPastMeetings).toHaveBeenCalledWith();
   });
@@ -118,11 +118,32 @@ describe('MeetingsHomeDeleteService', () => {
 
       expect(store.removeOccurrence).toHaveBeenCalledWith('synthetic-meeting', FIRST.occurrence_id);
       expect(store.removeMeeting).not.toHaveBeenCalled();
-      expect(toastShow).toHaveBeenCalledWith({
-        variant: 'dark',
-        message: 'Occurrence cancelled',
-        description: 'This occurrence was cancelled. The rest of the series is unchanged.',
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting occurrence cancelled' });
+    });
+
+    it('cancels a given date without asking for the scope and reports whether it was cancelled', () => {
+      const results: boolean[] = [];
+      service.cancelOccurrence(row(SERIES, SECOND), SECOND, 'drawer').subscribe((cancelled) => results.push(cancelled));
+
+      expect(openedWith(MeetingDeleteScopeModalComponent)).toBeUndefined();
+      expect((openedWith(MeetingDeleteModalComponent)?.[1] as { data: unknown }).data).toEqual({
+        row: row(SERIES, SECOND),
+        occurrence: SECOND,
+        origin: 'drawer',
       });
+      confirmResult.next(true);
+
+      expect(results).toEqual([true]);
+      expect(store.removeOccurrence).toHaveBeenCalledWith('synthetic-meeting', SECOND.occurrence_id);
+    });
+
+    it('reports a dismissed cancel as not cancelled', () => {
+      const results: boolean[] = [];
+      service.cancelOccurrence(row(SERIES, SECOND), SECOND).subscribe((cancelled) => results.push(cancelled));
+      confirmResult.next(undefined);
+
+      expect(results).toEqual([false]);
+      expect(store.removeOccurrence).not.toHaveBeenCalled();
     });
 
     it.each([

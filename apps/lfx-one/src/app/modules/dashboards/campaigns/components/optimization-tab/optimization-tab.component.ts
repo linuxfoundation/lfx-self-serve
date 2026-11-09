@@ -198,9 +198,9 @@ export class OptimizationTabComponent implements OnInit {
    * negative-keyword editor this tab opens.
    *
    * A suggestion the editor opens pre-filled with, never a value this tab sends: nothing leaves
-   * until the operator presses that editor's own button. Unlike callouts and sitelinks, negative
-   * keywords have no create-time path upstream at all, so the brief's list can only ever arrive
-   * here, after the campaign exists.
+   * until the operator presses that editor's own button. A Search campaign may already carry them
+   * from its create (the Implement tab sends the same list, #4991); every other platform takes
+   * negatives only here, after the campaign exists.
    *
    * `null` is a brief that carries none — generated before this shipped, or a generation that
    * produced nothing — and the editors open blank, as they did before this input.

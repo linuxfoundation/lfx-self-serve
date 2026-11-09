@@ -125,6 +125,11 @@
                             (onClick)="switchTab('comments')"
                             data-testid="vote-detail-overview-all-comments" />
                         </div>
+                        @if (commentPromptCount() === 1) {
+                          <p class="text-sm font-medium text-gray-900 break-words" data-testid="vote-detail-overview-comment-prompt">
+                            {{ recentComments()[0].promptText }}
+                          </p>
+                        }
                         <!-- Same row, anonymity rules and ballot links as the Comments tab (#4448). -->
                         <div class="flex flex-col gap-3">
                           @for (response of recentComments(); track response.previewKey) {
@@ -188,7 +193,7 @@
                     } @else {
                       <lfx-vote-comment-results
                         [commentResults]="commentResults()"
-                        [(pageState)]="commentPaginatorState"
+                        [(expansionState)]="commentExpansionState"
                         [showBallotLinks]="showNamedBallotLinks()"
                         [anonymous]="commentsAnonymous()"
                         [anonymousReason]="commentAnonymityReason()"
@@ -205,6 +210,7 @@
                   <lfx-card data-testid="vote-detail-voters">
                     <lfx-vote-voters
                       [vote]="voteData"
+                      [refreshTick]="votersRefreshTick()"
                       [commentPrompts]="commentPrompts()"
                       [initialChoice]="votersChoice()"
                       [initialBallotUid]="votersBallot()" />
@@ -256,9 +262,10 @@
             </div>
           }
         } @else {
-          @for (question of rankedQuestions(); track question.questionId) {
+          @for (question of rankedQuestions(); track question.questionId; let idx = $index) {
             <lfx-vote-ranked-question-results
               [question]="question"
+              [questionNumber]="rankedQuestions().length > 1 ? idx + 1 : undefined"
               [variant]="audience()"
               [showVoterLinks]="showNamedBallotLinks()"
               (viewVoters)="onViewVoters($event)" />

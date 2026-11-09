@@ -5,7 +5,16 @@ import { describe, expect, it } from 'vitest';
 import { MKTG_HOST_ASSET_STATES } from '../constants/mktg-asset.constants';
 import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
 import type { MktgRevisionResponse, MktgRevisionSummary } from '../interfaces/mktg-document-store.interface';
-import { describeMktgAcceptedGaps, describeMktgAssetReadiness, mktgAssetHeaderFallback, mktgAssetHeaderMetadata } from './mktg-asset.utils';
+import {
+  describeMktgAcceptedGaps,
+  describeMktgAcceptedItem,
+  describeMktgAssetReadiness,
+  mktgAcceptedSnapshotOf,
+  mktgAssetHeaderFallback,
+  mktgAssetHeaderMetadata,
+  mktgWarningAcceptedKey,
+  readMktgRevisionAccepted,
+} from './mktg-asset.utils';
 
 describe('Asset readiness', () => {
   it('uses singular source when the only source failed', () => {
@@ -46,6 +55,60 @@ describe('Accepted gaps caption', () => {
     expect(describeMktgAcceptedGaps(withGaps, null, 3)).toBeNull();
     expect(describeMktgAcceptedGaps({ ...withGaps, gaps: [] }, approval, 3)).toBeNull();
     expect(describeMktgAcceptedGaps(null, approval, 3)).toBeNull();
+  });
+});
+
+describe('The approval snapshot', () => {
+  it('takes the stable keys out of a v2 report: sources, assets, code|text, gap text, conflict name', () => {
+    const snapshot = mktgAcceptedSnapshotOf({
+      sources_read: [],
+      sources_failed: [{ name: 'legacy.svg', reason: 'cut' }],
+      gaps: ['A gap.', 42],
+      notes: '',
+      findings: {
+        sources_failed: [{ source: 'https://a.example/brand', kind: 'brand_page', reason: 'Gone.' }, { kind: 'page' }],
+        missing_assets: [{ asset: 'logo_stacked', reason: 'None.' }, 'junk'],
+        warnings: [{ code: 'font_unverified', text: 'Unverified.' }, { code: 'no_text' }],
+      },
+      color_conflicts: [{ name: 'Coral', values: [], chosen: '#FF702D' }, { values: [] }],
+    });
+    expect(snapshot).toEqual({
+      sources_failed: ['https://a.example/brand'],
+      missing_assets: ['logo_stacked'],
+      warnings: ['font_unverified|Unverified.'],
+      gaps: ['A gap.'],
+      color_conflicts: ['Coral'],
+    });
+  });
+
+  it('falls back to the v1 failed names when there are no findings, and to empty lists when there is no report', () => {
+    expect(mktgAcceptedSnapshotOf({ sources_failed: [{ name: 'logo.zip', reason: 'cut' }], gaps: [] })).toEqual({
+      sources_failed: ['logo.zip'],
+      missing_assets: [],
+      warnings: [],
+      gaps: [],
+      color_conflicts: [],
+    });
+    expect(mktgAcceptedSnapshotOf(undefined)).toEqual({ sources_failed: [], missing_assets: [], warnings: [], gaps: [], color_conflicts: [] });
+  });
+
+  it('reads a stored snapshot back only when all five lists are lists of strings', () => {
+    const good = { sources_failed: [], missing_assets: ['logo_stacked'], warnings: [], gaps: ['A gap.'], color_conflicts: [] };
+    expect(readMktgRevisionAccepted(good)).toEqual(good);
+    expect(readMktgRevisionAccepted({ ...good, extra: true })).toEqual(good);
+    expect(readMktgRevisionAccepted({ ...good, gaps: 'A gap.' })).toBeNull();
+    expect(readMktgRevisionAccepted({ ...good, warnings: [1] })).toBeNull();
+    const { color_conflicts, ...missing } = good;
+    void color_conflicts;
+    expect(readMktgRevisionAccepted(missing)).toBeNull();
+    expect(readMktgRevisionAccepted(null)).toBeNull();
+    expect(readMktgRevisionAccepted([])).toBeNull();
+  });
+
+  it('words the marker with the version when known', () => {
+    expect(describeMktgAcceptedItem(3)).toBe('Accepted when v3 was approved');
+    expect(describeMktgAcceptedItem(null)).toBe('Accepted at approval');
+    expect(mktgWarningAcceptedKey({ code: 'color_conflict', text: 'Coral differs.' })).toBe('color_conflict|Coral differs.');
   });
 });
 

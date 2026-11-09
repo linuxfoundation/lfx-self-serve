@@ -131,12 +131,12 @@ describe('UiTextareaComponent', () => {
   });
 
   it('disables the field and drops the hover ring', async () => {
-    expect(field().className).toContain('edge-hover');
+    expect(field().className).toContain('edge-control-hover');
 
     await set('disabled', true);
 
     expect(field().disabled).toBe(true);
-    expect(field().className).not.toContain('edge-hover');
+    expect(field().className).not.toContain('edge-control-hover');
   });
 
   it('marks required for assistive technology', async () => {

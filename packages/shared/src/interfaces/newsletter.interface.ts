@@ -1107,3 +1107,124 @@ export type NewsletterListLoadResult =
       arming?: NewsletterListItem[];
     }
   | { kind: 'optout'; response: NewsletterOptOutListResponse };
+
+/** Signed newsletter invite token payload (BFF-internal): a newsletter group, the address it was sent to, and an expiry (epoch ms). */
+export interface NewsletterInviteTokenPayload {
+  c: string;
+  e: string;
+  exp: number;
+}
+
+/**
+ * Signed browser-session cookie of a signed-out newsletter reader (BFF-internal): the email they read as,
+ * the newsletter group and foundation it is good for, and whether the email was proven (`v`, an invite or
+ * confirmation link) or only typed on a shared link.
+ */
+export interface NewsletterGuestSession {
+  e: string;
+  c: string;
+  f: string;
+  v: boolean;
+  /** Expiry (epoch ms), signed with the rest — the server's bound on the session, independent of the browser. */
+  exp: number;
+}
+
+/** A sent issue a signed-out reader opened from a shared link, with the group and foundation that make it a member benefit (BFF-internal). */
+export interface NewsletterGuestSharedTarget {
+  newsletter: Newsletter;
+  group: NewsletterMemberBenefitGroup;
+  resolved: ResolvedNewsletterFoundation;
+}
+
+/** An issue to show a guest, and the guest session (without its expiry, which the controller stamps) that may read it (BFF-internal). */
+export interface NewsletterGuestGrant {
+  issue: NewsletterGuestIssue;
+  session: Omit<NewsletterGuestSession, 'exp'>;
+}
+
+/** Outcome of reading a signed newsletter invite token. */
+export type NewsletterInviteTokenCheck = { status: 'valid'; payload: NewsletterInviteTokenPayload } | { status: 'expired' | 'invalid' };
+
+/** State of a newsletter invite link opened while signed out. */
+export type NewsletterGuestInviteStatus = 'valid' | 'expired' | 'invalid' | 'not_eligible';
+
+/** Response of POST /public/api/newsletters/invites/inspect. */
+export interface NewsletterGuestInviteInfo {
+  status: NewsletterGuestInviteStatus;
+  /** Every status but `invalid`/`expired`. */
+  foundation?: NewsletterFoundationSummary;
+  /** Every status but `invalid`/`expired`: the organization whose member companies get this newsletter. */
+  membership_name?: string;
+  /** The newsletter group the invite adds to — also where the signed-in confirm card is opened. */
+  committee_uid?: string;
+  /** The invited address, masked for display (`ja***@exam***.org`) — the link may have been forwarded. */
+  masked_email?: string;
+  /** `valid` only: the member company the address matched. */
+  company_name?: string;
+  /** `valid` only: a preview of the group's latest issue, shown behind the modal. Absent when it has sent none. */
+  teaser?: NewsletterGuestTeaser;
+}
+
+/** A preview of a sent issue shown, blurred, behind the signed-out reader's email prompt — never the issue body itself. */
+export interface NewsletterGuestTeaser {
+  subject: string;
+  /** The issue's first public `https:` image, or null. */
+  image_url: string | null;
+  /** Plain-text opening of the issue, at most `NEWSLETTER_GUEST_TEASER_MAX_LENGTH` characters. */
+  excerpt: string;
+}
+
+/** Body of POST /public/api/newsletters/invites/inspect and /accept. */
+export interface NewsletterGuestInviteRequest {
+  token: string;
+}
+
+/** Body of POST /public/api/newsletters/:projectSlug/:newsletterUid/guest-access. */
+export interface NewsletterGuestAccessRequest {
+  email: string;
+}
+
+/** The parts of a sent issue a signed-out member-company reader sees. */
+export interface NewsletterGuestNewsletter {
+  id: string;
+  subject: string;
+  sent_at: string | null;
+  body_html: string;
+}
+
+/** A newsletter issue shown to a signed-out member-company reader. */
+export interface NewsletterGuestIssue {
+  foundation: NewsletterFoundationSummary;
+  /** The address the reader is reading as, masked for display (`ja***@exam***.org`). */
+  masked_email: string;
+  /** Null when the newsletter group has not sent an issue yet. */
+  newsletter: NewsletterGuestNewsletter | null;
+  /** True after a shared-link read: a confirmation link was emailed, and the address joins the list only once it is opened. */
+  confirmation_sent: boolean;
+}
+
+/** Response of the guest issue reads: `issue` is null when there is no guest session for this foundation. */
+export interface NewsletterGuestIssueResponse {
+  issue: NewsletterGuestIssue | null;
+  /** Shared-link read only: the issue's foundation, for the email prompt — absent when the link is not a member-benefit issue. */
+  foundation?: NewsletterFoundationSummary;
+  /** Shared-link read only: the organization whose member companies get this newsletter. */
+  membership_name?: string;
+  /** Shared-link read without a guest session only: a preview of the issue, shown behind the email prompt. */
+  teaser?: NewsletterGuestTeaser;
+}
+
+/** Data the shared-link subscription confirmation email is rendered from. */
+export interface NewsletterGuestConfirmEmailContext {
+  company_name: string;
+  foundation_name: string;
+  confirm_url: string;
+}
+
+/** Load state of a signed-out newsletter guest page. */
+export interface NewsletterGuestPageState {
+  /** `unavailable`: the issue is not one the member benefit opens; `error`: the lookup itself failed (retryable). */
+  status: 'loading' | 'prompt' | 'reading' | 'unavailable' | 'error';
+  invite?: NewsletterGuestInviteInfo;
+  issue?: NewsletterGuestIssue;
+}

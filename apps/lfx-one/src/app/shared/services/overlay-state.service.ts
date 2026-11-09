@@ -5,8 +5,8 @@ import { computed, Injectable, signal } from '@angular/core';
 
 // Tracks which overlays are currently on screen so shell-level chrome (the support launcher) can get
 // out of their way. Consumers register an id when they open and unregister when they close or are
-// destroyed; ids are idempotent so a double open/close is safe. Today the only registered overlay is
-// the meeting-join guests drawer; other drawers, dialogs and sticky bars opt in by calling this API.
+// destroyed; ids are idempotent so a double open/close is safe. Drawers, dialogs and sticky bars opt
+// in by calling this API.
 @Injectable({
   providedIn: 'root',
 })

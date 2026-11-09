@@ -144,7 +144,12 @@ function pastMeeting(id: string, title: string, start: string): Partial<PastMeet
 /** Two past rows: yesterday, with a recording and an AI summary, and last month. The most recent is also the Last meeting card. */
 export function buildMeetingsHomePast(): Partial<PastMeeting>[] {
   return [
-    { ...pastMeeting(MEETINGS_HOME_IDS.pastRecent, MEETINGS_HOME_TITLES.pastRecent, '2026-11-03T15:00:00Z'), has_recording: true, has_ai_summary: true },
+    {
+      ...pastMeeting(MEETINGS_HOME_IDS.pastRecent, MEETINGS_HOME_TITLES.pastRecent, '2026-11-03T15:00:00Z'),
+      has_recording: true,
+      recording_share_url: MEETINGS_HOME_RECORDING_URL,
+      has_ai_summary: true,
+    },
     pastMeeting(MEETINGS_HOME_IDS.pastOlder, MEETINGS_HOME_TITLES.pastOlder, '2026-10-20T15:00:00Z'),
   ];
 }

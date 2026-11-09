@@ -12,9 +12,8 @@ import {
   IMPERSONATION_TARGET_USER_NOT_FOUND_CODE,
   IMPERSONATION_USER_NOT_FOUND_MESSAGE,
 } from '@lfx-one/shared/constants';
-import { ImpersonationSuggestion, RecentImpersonation, UserSearchResult } from '@lfx-one/shared/interfaces';
+import { ImpersonationSuggestion, RecentImpersonation } from '@lfx-one/shared/interfaces';
 import { ImpersonationService } from '@services/impersonation.service';
-import { SearchService } from '@services/search.service';
 import { UserService } from '@services/user.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -34,18 +33,8 @@ interface DialogHarness {
   onSuggestionSelected: (event: AutoCompleteSelectEvent) => void;
 }
 
-function directoryRow(overrides: Partial<UserSearchResult>): UserSearchResult {
-  return {
-    uid: 'uid-1',
-    email: 'jane.doe@example.com',
-    first_name: 'Jane',
-    last_name: 'Doe',
-    job_title: null,
-    organization: null,
-    type: 'committee_member',
-    username: 'jdoe',
-    ...overrides,
-  };
+function person(overrides: Partial<ImpersonationSuggestion> = {}): ImpersonationSuggestion {
+  return { targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', name: 'Jane Doe', ...overrides };
 }
 
 describe('ImpersonationDialogComponent', () => {
@@ -67,12 +56,12 @@ describe('ImpersonationDialogComponent', () => {
         provideHttpClientTesting(),
         { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
         { provide: DynamicDialogConfig, useValue: { closable: true, data: dialogData } },
-        { provide: SearchService, useValue: { searchUsers } },
         { provide: UserService, useValue: { user: signal(currentUser), impersonator: signal(currentImpersonator) } },
         {
           provide: ImpersonationService,
           useValue: {
             startImpersonation,
+            searchUsers,
             getRecentImpersonations: () => recents,
             addRecentImpersonation: vi.fn(),
           },
@@ -387,7 +376,7 @@ describe('ImpersonationDialogComponent', () => {
       expect(dialog().suggestions()).toEqual([recent]);
     });
 
-    it('lists every recent for an empty query without searching the directory', async () => {
+    it('lists every recent for an empty query without searching', async () => {
       expect(await search('')).toEqual([recent]);
       expect(searchUsers).not.toHaveBeenCalled();
     });
@@ -398,45 +387,47 @@ describe('ImpersonationDialogComponent', () => {
       expect(searchUsers).not.toHaveBeenCalled();
     });
 
-    it('searches the directory as the admin once the query has two characters', async () => {
-      await search('ja');
+    it('does not search for two characters, which is less than the search needs', async () => {
+      expect(await search('al')).toEqual([recent]);
 
-      expect(searchUsers).toHaveBeenCalledWith('ja', 'committee_member', true);
+      expect(searchUsers).not.toHaveBeenCalled();
     });
 
-    it('sends the typed text to the directory with its case intact', async () => {
+    it('searches once the query has three characters', async () => {
+      await search('jan');
+
+      expect(searchUsers).toHaveBeenCalledWith('jan');
+    });
+
+    it('sends the typed text to the search with its case intact', async () => {
       await search('  Jane.Doe@Example.com ');
 
-      expect(searchUsers).toHaveBeenCalledWith('Jane.Doe@Example.com', 'committee_member', true);
+      expect(searchUsers).toHaveBeenCalledWith('Jane.Doe@Example.com');
     });
 
-    it('lists directory people with their username as the target and a composed name', async () => {
-      searchUsers.mockReturnValue(of([directoryRow({})]));
+    it('lists the people the search finds with their username as the target', async () => {
+      searchUsers.mockReturnValue(of([person()]));
 
       expect(await search('jane')).toEqual([{ targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', name: 'Jane Doe' }]);
     });
 
-    it('lists matching recents ahead of directory people and does not repeat a person', async () => {
-      searchUsers.mockReturnValue(
-        of([directoryRow({ username: 'jdoe' }), directoryRow({ uid: 'uid-2', username: 'ASmith', email: 'alex.smith@example.com' })])
-      );
+    it('lists matching recents ahead of found people and does not repeat a person', async () => {
+      searchUsers.mockReturnValue(of([person({ username: 'ASmith', targetUser: 'ASmith', email: 'alex.smith@example.com' }), person({ username: 'jdoe' })]));
 
-      const suggestions = await search('al');
+      const suggestions = await search('ale');
 
-      // The recent leads; its directory row (same username, different case) is not listed again.
+      // The recent leads; the found row for the same person (same username, different case) is not listed again.
       expect(suggestions.map((s) => s.username)).toEqual(['asmith', 'jdoe']);
     });
 
-    it('leaves out a directory person with no LF account', async () => {
-      searchUsers.mockReturnValue(
-        of([directoryRow({ username: null }), directoryRow({ uid: 'uid-2', username: '  ' }), directoryRow({ uid: 'uid-3', username: 'jdoe' })])
-      );
+    it('keeps the order the search returned', async () => {
+      searchUsers.mockReturnValue(of([person({ username: 'zed', targetUser: 'zed' }), person({ username: 'amy', targetUser: 'amy' })]));
 
-      expect((await search('jane')).map((s) => s.username)).toEqual(['jdoe']);
+      expect((await search('jane')).map((s) => s.username)).toEqual(['zed', 'amy']);
     });
 
     it('cancels a pending lookup and restores the recents when the field is cleared', async () => {
-      searchUsers.mockReturnValue(of([directoryRow({})]));
+      searchUsers.mockReturnValue(of([person()]));
       expect((await search('jane')).map((s) => s.username)).toEqual(['jdoe']);
 
       dialog().onSearchCleared();
@@ -445,10 +436,10 @@ describe('ImpersonationDialogComponent', () => {
       expect(dialog().suggestions()).toEqual([recent]);
     });
 
-    it('falls back to the recents when the directory search yields nothing', async () => {
+    it('falls back to the recents when the search yields nothing', async () => {
       searchUsers.mockReturnValue(of([]));
 
-      expect(await search('al')).toEqual([recent]);
+      expect(await search('ale')).toEqual([recent]);
     });
   });
 

@@ -87,6 +87,8 @@ import {
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramsUrl,
   buildMentorshipPublicUrl,
+  getMentorshipAdminBasePath,
+  getMentorshipLensQueryParams,
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
   normalizeMentorshipMenteeTaskStatus,
@@ -159,7 +161,30 @@ import {
   toMentorshipUtcInstant,
   buildMentorshipGraduateTaskWarning,
   mentorshipMenteeApplyBlockedState,
+  mentorshipUpstreamReasonMessage,
 } from './mentorship.utils';
+
+describe('mentorshipUpstreamReasonMessage', () => {
+  const entries = [
+    { match: 'not open for this term', message: 'the term is closed.' },
+    { match: 'program is hidden', message: 'the program is hidden.' },
+  ];
+
+  it('picks the copy of the first entry the upstream text contains, ignoring case', () => {
+    expect(mentorshipUpstreamReasonMessage(entries, 'Eligibility criteria not met: The program is hidden')).toBe('the program is hidden.');
+  });
+
+  it('matches an entry written in upstream casing', () => {
+    const cased = [{ match: 'belongs to another Mentorship user', message: 'in use.' }];
+    expect(mentorshipUpstreamReasonMessage(cased, 'eligibility criteria not met: the primary email of lfid "x" belongs to another Mentorship user')).toBe(
+      'in use.'
+    );
+  });
+
+  it.each([undefined, null, '', 'eligibility criteria not met: some new rule'])('answers undefined for %j', (message) => {
+    expect(mentorshipUpstreamReasonMessage(entries, message)).toBeUndefined();
+  });
+});
 
 describe('mentorshipMenteeApplyBlockedState', () => {
   it('picks the state for the rule named in the upstream message, ignoring case', () => {
@@ -911,12 +936,33 @@ describe('buildMentorshipProgramsUrl', () => {
   });
 });
 
+describe('getMentorshipAdminBasePath', () => {
+  it('keeps the Project and Foundation lenses on their Mentorship Programs and every other lens on the Me lens Admin', () => {
+    expect(getMentorshipAdminBasePath('project')).toBe('/project/mentorship');
+    expect(getMentorshipAdminBasePath('foundation')).toBe('/foundation/mentorship');
+    expect(getMentorshipAdminBasePath('me')).toBe('/mentorship/admin');
+    expect(getMentorshipAdminBasePath('org')).toBe('/mentorship/admin');
+    expect(getMentorshipAdminBasePath(undefined)).toBe('/mentorship/admin');
+  });
+});
+
+describe('getMentorshipLensQueryParams', () => {
+  it('names the lens project on the Project and Foundation lenses only, once it is known', () => {
+    expect(getMentorshipLensQueryParams('project', 'gridflow')).toEqual({ project: 'gridflow' });
+    expect(getMentorshipLensQueryParams('foundation', 'lf-energy')).toEqual({ project: 'lf-energy' });
+    expect(getMentorshipLensQueryParams('project', undefined)).toEqual({});
+    expect(getMentorshipLensQueryParams('project', '')).toEqual({});
+    expect(getMentorshipLensQueryParams('me', 'gridflow')).toEqual({});
+    expect(getMentorshipLensQueryParams(undefined, 'gridflow')).toEqual({});
+  });
+});
+
 describe('getMentorshipProgramDetailTabs', () => {
   it('shows a pending program the Terms tab only', () => {
     expect(getMentorshipProgramDetailTabs('pending-review').map((tab) => tab.value)).toEqual(['terms']);
   });
 
-  it.each(['open', 'completed', 'rejected', 'hidden'] as const)('shows a %s program all four tabs in order', (status) => {
+  it.each(['accepting', 'in-progress', 'upcoming', 'completed', 'rejected', 'hidden'] as const)('shows a %s program all four tabs in order', (status) => {
     expect(getMentorshipProgramDetailTabs(status).map((tab) => tab.value)).toEqual(['current-mentees', 'past-mentees', 'mentors', 'terms']);
   });
 });

@@ -24,7 +24,7 @@ describe('MentorProgramsComponent', () => {
     slug: name.toLowerCase().replace(/\s+/g, '-'),
     name,
     projectName: 'LF Energy',
-    status: 'open',
+    status: 'accepting',
     stats: { mentees: 3, tasksToReview: 4, applicants: 5 },
   });
 

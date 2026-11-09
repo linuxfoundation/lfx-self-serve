@@ -57,6 +57,7 @@
             [createUrl]="crowdfundingUrl"
             [hasMore]="initiativesHasMore()"
             [loadingMore]="loadingMore()"
+            [showCreator]="isLensPage"
             (loadMore)="onLoadMoreInitiatives()"
             (initiativeClick)="onInitiativeClick($event)" />
         }

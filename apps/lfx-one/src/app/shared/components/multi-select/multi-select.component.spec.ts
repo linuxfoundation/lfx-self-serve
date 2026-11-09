@@ -10,6 +10,43 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { MultiSelectComponent } from './multi-select.component';
 
+describe('MultiSelectComponent — display', () => {
+  let fixture: ComponentFixture<MultiSelectComponent>;
+
+  afterEach(() => fixture?.destroy());
+
+  const render = async (display?: 'comma' | 'chip'): Promise<MultiSelect> => {
+    await TestBed.configureTestingModule({ imports: [MultiSelectComponent], providers: [provideNoopAnimations()] }).compileComponents();
+
+    fixture = TestBed.createComponent(MultiSelectComponent);
+    fixture.componentRef.setInput('form', new FormGroup({ picks: new FormControl<string[]>(['a']) }));
+    fixture.componentRef.setInput('control', 'picks');
+    fixture.componentRef.setInput('options', [
+      { label: 'Alpha', value: 'a' },
+      { label: 'Beta', value: 'b' },
+    ]);
+    if (display !== undefined) {
+      fixture.componentRef.setInput('display', display);
+    }
+    await fixture.whenStable();
+
+    return fixture.debugElement.query(By.directive(MultiSelect)).componentInstance as MultiSelect;
+  };
+
+  it('lists the selection as comma-separated text by default', async () => {
+    const multiSelect = await render();
+
+    expect(multiSelect.display).toBe('comma');
+  });
+
+  it('lists the selection as chips when opted in', async () => {
+    const multiSelect = await render('chip');
+
+    expect(multiSelect.display).toBe('chip');
+    expect(fixture.nativeElement.querySelector('.p-multiselect-chip-item')).toBeTruthy();
+  });
+});
+
 describe('MultiSelectComponent — placeholderOnly', () => {
   let fixture: ComponentFixture<MultiSelectComponent>;
 

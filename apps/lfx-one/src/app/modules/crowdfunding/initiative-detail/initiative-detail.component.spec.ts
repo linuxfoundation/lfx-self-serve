@@ -98,3 +98,47 @@ describe('InitiativeDetailComponent Edit attribution visibility (lfx-crowdfundin
     expect(page.canEditAttribution()).toBe(true);
   });
 });
+
+describe('InitiativeDetailComponent creator (lfx-crowdfunding#452)', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  interface Page {
+    isLensPage: boolean;
+    initiative: Signal<InitiativeDetail | null>;
+    onInitiativeSaved(updated: InitiativeDetail): void;
+  }
+
+  const setup = (lens: string): Page => {
+    TestBed.configureTestingModule({
+      imports: [InitiativeDetailComponent],
+      providers: [
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { data: { lens }, queryParams: {} }, paramMap: of(convertToParamMap({ slug: 'synthetic-initiative' })) },
+        },
+        { provide: CrowdfundingService, useValue: { getInitiativeBySlug: () => of({ ...detail(), creator: 'Synthetic Owner' }) } },
+        { provide: OrgLensNavigationService, useValue: { orgLensLink: () => ['/org', 'initiatives'] } },
+        { provide: DialogService, useValue: { open: () => ({ onClose: new Subject() }) } },
+        { provide: MessageService, useValue: { add: () => undefined } },
+      ],
+    });
+    TestBed.overrideComponent(InitiativeDetailComponent, { set: { imports: [], template: '' } });
+    const fixture = TestBed.createComponent(InitiativeDetailComponent);
+    fixture.detectChanges();
+    return fixture.componentInstance as unknown as Page;
+  };
+
+  it.each(['org', 'project', 'foundation'])('shows the creator on the %s lens page', (lens) => {
+    expect(setup(lens).isLensPage).toBe(true);
+  });
+
+  it('hides the creator in the Me lens', () => {
+    expect(setup('me').isLensPage).toBe(false);
+  });
+
+  it('keeps the creator after a settings save, whose response carries none', () => {
+    const page = setup('org');
+    page.onInitiativeSaved({ ...detail(), isOwner: false, name: 'Renamed' });
+    expect(page.initiative()).toMatchObject({ name: 'Renamed', creator: 'Synthetic Owner' });
+  });
+});

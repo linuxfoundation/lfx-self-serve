@@ -23,8 +23,15 @@ import {
   CAMPAIGN_ALERT_THRESHOLDS,
   CAMPAIGN_PLATFORMS,
   MONITOR_PLATFORM_BUTTON_COLORS,
+  CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_TYPES,
+  CAMPAIGN_SEND_STAGES,
+  CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS,
+  CAMPAIGN_SURVEY_STAGES,
+  CAMPAIGN_SURVEY_TYPES,
+  CAMPAIGN_EMAIL_STAGES,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
+  DEFAULT_CAMPAIGN_SURVEY_TYPE_ID,
   DEFAULT_REDDIT_CALL_TO_ACTION,
   DEFAULT_REDDIT_OBJECTIVE,
   GOOGLE_ADS_AGE_RANGE_MAP,
@@ -32,32 +39,51 @@ import {
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_DEMAND_GEN_DEVICES,
+  GOOGLE_ADS_DEVICE_LABELS,
   GOOGLE_ADS_DEVICES,
   GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_LANGUAGE_LABELS,
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
-  GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS,
+  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
+  GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MAX_PROXIMITY_TARGETS,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
+  GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES,
+  GOOGLE_ADS_MAX_SEARCH_THEME_RUNES,
   GOOGLE_CAMPAIGN_CHANNELS,
+  GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
+  GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS,
+  GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
+  GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS,
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
+  GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY,
+  GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  GOOGLE_CREATIVE_SECTION_NOTICES,
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_CREATIVE_SHARED_CAPS,
+  GOOGLE_SEARCH_ASSETS_NOTICE,
+  MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
+  MAX_GOOGLE_GEO_LIST_ENTRIES,
   MAX_REDDIT_HEADLINE_LENGTH,
+  MICROSOFT_MAX_GEO_TARGETS,
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
   META_SELECTABLE_OBJECTIVES,
@@ -509,6 +535,85 @@ describe('CAMPAIGN_EMAIL_TYPES', () => {
   });
 });
 
+describe('CAMPAIGN_SURVEY_TYPES', () => {
+  it('has a default id that actually exists in the list', () => {
+    // Same failure as the email default one block up: a renamed id leaves `selectedEmailStage()`
+    // undefined, the brief lookup addresses no row, and the planner looks permanently empty.
+    expect(CAMPAIGN_SURVEY_TYPES.some((t) => t.id === DEFAULT_CAMPAIGN_SURVEY_TYPE_ID)).toBe(true);
+  });
+
+  it('maps every type to a stage campaign-service enumerates', () => {
+    // The survey surface's own vocabulary. Upstream refuses a stage outside it with a 400.
+    //
+    // Spelled out BY HAND rather than derived from `CAMPAIGN_SURVEY_STAGES`: this is the copy of
+    // campaign-service's `emailstage.SurveyNames()` that an added stage has to be checked against,
+    // and deriving it from the constant under test would make the assertion true by construction
+    // while the server went on refusing the new value.
+    const upstream = new Set(['Survey Promo', 'Survey Reminder', 'Survey Closing', 'Report Promo']);
+    for (const t of CAMPAIGN_SURVEY_TYPES) {
+      expect(upstream.has(t.stage), `${t.id} -> ${t.stage}`).toBe(true);
+    }
+  });
+
+  it('gives every type at least one keyword to rank clones by', () => {
+    for (const t of CAMPAIGN_SURVEY_TYPES) {
+      expect(t.keywords.length, t.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('shares no stage with the email surface', () => {
+    // The two surfaces are separate identity spaces upstream: `(email, 'Survey Promo')` and
+    // `(survey, 'Final Countdown')` are both refused by the delivery/stage pair rule. Offering a
+    // stage on the wrong surface would offer a choice the server rejects.
+    const emailStages = new Set<string>(CAMPAIGN_EMAIL_TYPES.map((t) => t.stage));
+    for (const t of CAMPAIGN_SURVEY_TYPES) {
+      expect(emailStages.has(t.stage), `${t.stage} appears on both surfaces`).toBe(false);
+    }
+  });
+});
+
+describe('CAMPAIGN_SEND_STAGES', () => {
+  it('is exactly the email and survey vocabularies together, in that order', () => {
+    // The BFF validates a brief lookup's stage against this, so a stage missing here is a 400
+    // for a brief campaign-service would have opened.
+    expect([...CAMPAIGN_SEND_STAGES]).toEqual([...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES]);
+  });
+});
+
+describe('CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS', () => {
+  it('offers one email or the full three-send series, nothing in between', () => {
+    // A series copies ONE configured workflow whose send-step count must equal the brief count,
+    // so only the length that matches it can build. A two-send option would always end in a 409.
+    expect(CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS.map((o) => o.count)).toEqual([1, 3]);
+    for (const option of CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS) {
+      expect(option.label.trim(), String(option.count)).not.toBe('');
+      expect(option.description.trim(), String(option.count)).not.toBe('');
+      // One stage per email, every one a real survey stage, opening on the promo.
+      expect(option.stages.length, String(option.count)).toBe(option.count);
+      expect(option.stages[0]).toBe('Survey Promo');
+      for (const stage of option.stages) {
+        expect((CAMPAIGN_SURVEY_STAGES as readonly string[]).includes(stage), stage).toBe(true);
+      }
+    }
+    expect(CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS.find((o) => o.count === 3)?.stages).toEqual(['Survey Promo', 'Survey Reminder', 'Survey Closing']);
+  });
+});
+
+describe('CAMPAIGN_DELIVERY_TYPES', () => {
+  it('offers the three surfaces campaign-service accepts', () => {
+    // The dropdown IS the contract here: the BFF derives its validation set from this list, so a
+    // surface missing from it is unreachable and one that upstream does not know is a 400.
+    expect(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id)).toEqual(['paid-marketing', 'email', 'survey']);
+  });
+
+  it('gives every surface a label and a breadcrumb label', () => {
+    for (const d of CAMPAIGN_DELIVERY_TYPES) {
+      expect(d.label.trim(), d.id).not.toBe('');
+      expect(d.breadcrumbLabel.trim(), d.id).not.toBe('');
+    }
+  });
+});
+
 describe('isCanonicalGoogleAdsResourceId', () => {
   /**
    * The controller refuses malformed keyword ids with "must each be a positive integer id" BEFORE
@@ -576,7 +681,7 @@ describe('Google bidding catalogue', () => {
    */
   it.each([
     ['search', ['manual-cpc', 'maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas']],
-    ['demand-gen', ['maximize-clicks']],
+    ['demand-gen', ['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value']],
     ['performance-max', ['maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas']],
     ['video', ['maximize-conversions', 'target-cpa']],
     ['display', ['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas']],
@@ -585,12 +690,13 @@ describe('Google bidding catalogue', () => {
   });
 
   /**
-   * Demand Gen is the one set a reader is most likely to "fix": every other automated strategy
-   * looks like it should work there. A live `validateOnly` mutate returned
-   * `BIDDING_STRATEGY_TYPE_INCOMPATIBLE_WITH_SHARED_BUDGET` for all of them.
+   * Demand Gen is the one set a reader is most likely to "complete": `demandGenBiddingStrategies`
+   * (campaign-service v1.0.31) leaves out Target ROAS because it was not probed, and
+   * `validateBiddingPlan` refuses a target ROAS there under Maximize Conversion Value too.
    */
-  it('keeps demand gen at maximize-clicks alone', () => {
-    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL['demand-gen']).toHaveLength(1);
+  it('keeps target roas off demand gen, as a strategy and as a target', () => {
+    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL['demand-gen']).not.toContain('target-roas');
+    expect([...GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS]).toEqual(['demand-gen']);
   });
 
   /**
@@ -664,14 +770,12 @@ describe('Google bidding catalogue', () => {
 
 describe('Google conversion actions', () => {
   /**
-   * Not a Search-versus-the-rest split: `campaign.selective_optimization` is defined for SEARCH,
-   * DISPLAY and VIDEO. Demand Gen has no such field and Performance Max selects conversions through
-   * a resource that cannot be addressed until the campaign exists, so both REFUSE a list rather
-   * than dropping it — the section has to be withheld there, not offered and discarded.
+   * campaign-service v1.0.31 applies the list as a campaign-level custom conversion goal
+   * (`applyCampaignConversionGoal`) on every channel. Demand Gen is offered it (#5262); Performance
+   * Max is left out by choice, since its live reference campaign uses the account's goals.
    */
-  it('admits exactly the three channels upstream accepts a list on', () => {
-    expect([...GOOGLE_CONVERSION_ACTION_CHANNELS]).toEqual(['search', 'video', 'display']);
-    expect(GOOGLE_CONVERSION_ACTION_CHANNELS).not.toContain('demand-gen');
+  it('admits every channel but performance max', () => {
+    expect([...GOOGLE_CONVERSION_ACTION_CHANNELS]).toEqual(['search', 'demand-gen', 'video', 'display']);
     expect(GOOGLE_CONVERSION_ACTION_CHANNELS).not.toContain('performance-max');
   });
 
@@ -713,6 +817,35 @@ describe('Google conversion actions', () => {
   });
 });
 
+describe('Google location caps', () => {
+  /**
+   * `maxGeoTargets` in `internal/platform/googleads/geo.go`, 500 since campaign-service v1.0.32
+   * (#515), applied to the targeted and excluded lists SEPARATELY. Written as literals so a drift
+   * in the constant fails here rather than moving every spec that reads it.
+   */
+  it('caps each geo list at 500, as upstream does', () => {
+    expect(GOOGLE_ADS_MAX_GEO_TARGETS).toBe(500);
+    expect(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS).toBe(500);
+  });
+
+  /** Upstream raised only `maxGeoTargets`; `maxProximityTargets` and Microsoft's own cap are unchanged. */
+  it('leaves the radius and Microsoft location caps where they were', () => {
+    expect(GOOGLE_ADS_MAX_PROXIMITY_TARGETS).toBe(20);
+    expect(MICROSOFT_MAX_GEO_TARGETS).toBe(30);
+  });
+
+  /**
+   * The resource bound on both geo lists must sit ABOVE both caps, or a list at its cap would be
+   * refused by the generic bound before the named refusal; the shared creative bound stays at 100.
+   */
+  it('bounds the geo lists above their caps without widening the shared list bound', () => {
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBeGreaterThan(GOOGLE_ADS_MAX_GEO_TARGETS);
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBeGreaterThan(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS);
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBe(2000);
+    expect(MAX_GOOGLE_CREATIVE_LIST_ENTRIES).toBe(100);
+  });
+});
+
 describe('Google channel enums and creative catalogue', () => {
   /**
    * The monitoring GAQL filters `campaign.advertising_channel_type` with these literals, and the
@@ -730,13 +863,12 @@ describe('Google channel enums and creative catalogue', () => {
   });
 
   /**
-   * Search builds its ad from the shared headline/description copy, and the Google Ads API cannot
-   * create a Video campaign at all — so neither collects a channel creative, and offering one would
-   * build a form whose only possible outcome is a refusal.
+   * The Google Ads API cannot create a Video campaign at all, so Video collects no creative: offering
+   * one would build a form whose only possible outcome is a refusal. Search collects its campaign
+   * assets (#5262); its ad copy stays the shared headline/description arrays.
    */
-  it('collects a creative only for the three channels that carry one', () => {
-    expect([...GOOGLE_CHANNELS_WITH_CREATIVE]).toEqual(['demand-gen', 'performance-max', 'display']);
-    expect(GOOGLE_CHANNELS_WITH_CREATIVE).not.toContain('search');
+  it('collects a creative for the four channels that carry one, and never for Video', () => {
+    expect([...GOOGLE_CHANNELS_WITH_CREATIVE]).toEqual(['demand-gen', 'performance-max', 'display', 'search']);
     expect(GOOGLE_CHANNELS_WITH_CREATIVE).not.toContain('video');
   });
 
@@ -754,6 +886,7 @@ describe('Google channel enums and creative catalogue', () => {
       'demand-gen': 'demandGenCreative',
       'performance-max': 'performanceMaxCreative',
       display: 'displayCreative',
+      search: 'searchAssets',
     });
   });
 
@@ -767,6 +900,7 @@ describe('Google channel enums and creative catalogue', () => {
       'demand-gen': 'Demand Gen',
       'performance-max': 'Performance Max',
       display: 'Display',
+      search: 'Search',
     });
   });
 
@@ -832,6 +966,7 @@ describe('Google channel enums and creative catalogue', () => {
       'demand-gen': ['businessName'],
       'performance-max': ['businessName'],
       display: ['longHeadline', 'businessName'],
+      search: [],
     });
   });
 
@@ -853,6 +988,7 @@ describe('Google channel enums and creative catalogue', () => {
     expect(GOOGLE_CREATIVE_EITHER_OR_RULES['demand-gen'].map((r) => r.controls)).toEqual([['marketingImages', 'squareMarketingImages']]);
     expect(GOOGLE_CREATIVE_EITHER_OR_RULES.display).toEqual([]);
     expect(GOOGLE_CREATIVE_EITHER_OR_RULES['performance-max']).toEqual([]);
+    expect(GOOGLE_CREATIVE_EITHER_OR_RULES.search).toEqual([]);
   });
 
   /** The independent requirement on Performance Max and Display, which is what makes their empty rule lists correct. */
@@ -882,6 +1018,40 @@ describe('Google channel enums and creative catalogue', () => {
       [['marketingImages', 'squareMarketingImages'], 15],
       [['logoImages', 'squareLogoImages'], 5],
     ]);
+    expect(shape('search')).toEqual([[['adImages', 'landscapeAdImages'], 20]]);
+  });
+
+  /**
+   * campaign-service v1.0.35 `search_assets.go` (#477, #538): `searchImageSlots`' three rows and the caps
+   * beside them, and a 25-wide business name. None is required, so nothing carries `min` or
+   * `requiredOnce`: `validateSearchAssets` accepts any one of the four alone.
+   */
+  it('states the Search assets exactly as campaign-service v1.0.35 slots and caps them', () => {
+    expect(GOOGLE_CREATIVE_FIELD_SPECS.search).toEqual([
+      { control: 'businessName', label: 'Business name', kind: 'text', width: 25, hint: 'Optional.' },
+      expect.objectContaining({ control: 'adImages', kind: 'list', max: 20, image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 } }),
+      expect.objectContaining({ control: 'landscapeAdImages', kind: 'list', max: 20, image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 } }),
+      expect.objectContaining({ control: 'businessLogoImages', kind: 'list', max: 1, image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 } }),
+    ]);
+    for (const field of GOOGLE_CREATIVE_FIELD_SPECS.search as readonly GoogleCreativeFieldSpec[]) {
+      expect(field.min).toBeUndefined();
+      expect(field.requiredOnce).toBeUndefined();
+    }
+    // The asset plan names Search's slots by the request's own keys (`searchCatalog`, `slot_catalog.go`).
+    expect(GOOGLE_ASSET_PLAN_SLOT_CONTROLS.search).toEqual({
+      adImages: 'adImages',
+      landscapeAdImages: 'landscapeAdImages',
+      businessLogoImages: 'businessLogoImages',
+    });
+  });
+
+  /** Search serves on its ads with its assets empty, so it alone gets the optional line instead of the empty-shell one. */
+  it('warns of an empty shell on every creative section but Search', () => {
+    expect([...GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE]).toEqual(['search']);
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      const expected = channel === 'search' ? GOOGLE_SEARCH_ASSETS_NOTICE : GOOGLE_CREATIVE_REQUIRED_NOTICE;
+      expect(GOOGLE_CREATIVE_SECTION_NOTICES[channel]).toBe(expected);
+    }
   });
 
   /**
@@ -1221,11 +1391,11 @@ describe('MONITOR_PLATFORM_BUTTON_COLORS', () => {
 });
 
 describe('Google Ads campaign criteria vocabularies', () => {
-  it('caps the device bid modifier list at the number of devices it accepts, as upstream does', () => {
-    // The cap's whole claim is "a longer list must repeat a device", and `maxDeviceBidModifiers`
-    // upstream tracks `len(deviceTypes)` with a test of its own saying so. A device added to the
-    // vocabulary without raising the cap would refuse a list that repeats nothing.
-    expect(GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS).toBe(GOOGLE_ADS_DEVICES.length);
+  it('mirrors the two device vocabularies upstream accepts, and labels every device', () => {
+    // `deviceTypes` and `demandGenDeviceTypes`: the same three, and Demand Gen adds CONNECTED_TV.
+    expect([...GOOGLE_ADS_DEVICES]).toEqual(['MOBILE', 'DESKTOP', 'TABLET']);
+    expect([...GOOGLE_ADS_DEMAND_GEN_DEVICES]).toEqual([...GOOGLE_ADS_DEVICES, 'CONNECTED_TV']);
+    expect(Object.keys(GOOGLE_ADS_DEVICE_LABELS)).toEqual([...GOOGLE_ADS_DEMAND_GEN_DEVICES]);
   });
 
   it('accepts both spellings of every age range, since upstream resolves them to the same enum', () => {
@@ -1251,14 +1421,31 @@ describe('Google Ads campaign criteria vocabularies', () => {
     expect(GOOGLE_ADS_GENDERS).toContain('UNDETERMINED');
   });
 
-  it('fences both criteria off the same two channels today, from two separate lists', () => {
-    // Separate constants because `validateCriteriaPlan` fences them in separate branches for
-    // separate reasons — a bid Performance Max does not set, against demographics it takes as
-    // asset-group signals — so either could move without the other.
-    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('demand-gen');
-    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('performance-max');
+  it('fences devices and demographics from two separate lists, which differ on demand gen and performance max', () => {
+    // Separate constants because `validateCriteriaPlan` fences them in separate branches. Demand
+    // Gen (linuxfoundation/lfx-v2-campaign-service#474) and Performance Max (linuxfoundation/lfx-v2-campaign-service#500) take device exclusions and refuse demographic exclusions.
+    expect([...GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS]).toEqual([...GOOGLE_CAMPAIGN_CHANNELS]);
+    expect([...GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY]).toEqual(['demand-gen', 'performance-max']);
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('demand-gen');
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('performance-max');
+  });
+
+  it('fences sitelinks, callouts and snippets, and the other extensions apart, as upstream does', () => {
+    // `validateAssetPlan` (v1.0.31) takes sitelinks alone on Demand Gen (linuxfoundation/lfx-v2-campaign-service#474) and refuses every
+    // other extension list there.
+    expect([...GOOGLE_CHANNELS_WITH_SITELINKS]).toEqual(['search', 'demand-gen', 'performance-max']);
+    // Performance Max takes sitelinks, callouts and structured snippets (linuxfoundation/lfx-v2-campaign-service#461) and refuses calls,
+    // promotions, prices and lead forms ("supported on Search campaigns only").
+    expect([...GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS]).toEqual(['search', 'performance-max']);
+    expect([...GOOGLE_CHANNELS_WITH_AD_EXTENSIONS]).toEqual(['search']);
+  });
+
+  it('takes search themes on performance max alone, up to 50 of 80 runes each', () => {
+    // `validatePerformanceMaxSignals` (v1.0.31, linuxfoundation/lfx-v2-campaign-service#461): asset group signals, and only Performance Max
+    // has asset groups. `maxSearchThemes` and `maxSearchThemeRunes` in `pmax_signals.go`.
+    expect([...GOOGLE_CHANNELS_WITH_SEARCH_THEMES]).toEqual(['performance-max']);
+    expect(GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES).toBe(50);
+    expect(GOOGLE_ADS_MAX_SEARCH_THEME_RUNES).toBe(80);
   });
 
   it('caps each demographic exclusion list at 20, the per-list bound upstream checks twice', () => {

@@ -198,6 +198,14 @@ export interface OrgAllEmployeesResponse {
   accountId: string;
   rows: OrgAllEmployeeRow[];
   stats: OrgAllEmployeeStats;
+  /**
+   * People who registered or attended foundation events in the request's range, credited by company email or as employees
+   * (lfx-self-serve#4598, #5158): the warehouse participation summary row the People -> Event Attendees tab shows as Attendees at its
+   * defaults, so the Event Attendees tile equals that number. Absent (`undefined`) for the Non-LF project scope and for the
+   * unranged roster read: events are LF constructs, and the tile then counts the listed employees. `null` when the summary could
+   * not be read: the tile says it is unavailable instead of switching to a different number.
+   */
+  eventAttendeesTotal?: number | null;
   foundations: OrgAllEmployeeFoundationOption[];
   /**
    * Off-roster read only (lfx-self-serve#4730): lowercased LF usernames of the people with code credited to this account
