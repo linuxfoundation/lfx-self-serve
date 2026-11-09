@@ -8284,16 +8284,16 @@ export class ImplementationTabComponent implements OnInit {
   private seedDisplayCreative(brief: CampaignBriefOutput): void {
     const channel = 'display';
     const copy = this.generatedGoogleImageAdCopy(brief, channel);
-    // On campaign-service's de-duplication key, as the lists above are, so a candidate differing from a
-    // seeded line only in case does not repeat it.
-    const taken = new Set([...copy.headlines, ...copy.descriptions].map((value) => googleAdsToLower(value)));
+    // On campaign-service's de-duplication key ({@link creativeRepeatKey}), as the lists above are, so a
+    // candidate differing from a seeded line only in case or a Go-trimmed space does not repeat it.
+    const taken = new Set([...copy.headlines, ...copy.descriptions].map((value) => this.creativeRepeatKey(value)));
     const candidates = [
       ...this.fittingCreativeCopy(channel, 'longHeadline', this.asArray(this.generatedDemandGenCopy(brief)?.['headlines'])),
       ...this.fittingCreativeCopy(channel, 'longHeadline', this.asArray(this.generatedCopy(brief, ['google_search'])?.['descriptions'])),
     ];
     this.seedGoogleCreative(channel, {
       headlines: copy.headlines.join('\n'),
-      longHeadline: candidates.find((value) => !taken.has(googleAdsToLower(value))) ?? '',
+      longHeadline: candidates.find((value) => !taken.has(this.creativeRepeatKey(value))) ?? '',
       descriptions: copy.descriptions.join('\n'),
       businessName: copy.businessName,
       callToActionText: copy.callToActionText,
@@ -8378,18 +8378,27 @@ export class ImplementationTabComponent implements OnInit {
       .filter((value): value is string => typeof value === 'string')
       .map((value) => this.trimCreativeLine(value.replace(/\s*[\r\n]+\s*/g, ' ')))
       .filter((value) => value !== '' && (spec.width === undefined || googleCreativeFieldWidth(control, value) <= spec.width));
-    // De-duplicated on campaign-service's own key, `strings.ToLower` of the `strings.TrimSpace`d line
-    // (`validateCreativeText`, `demandgen_creative.go`, v1.0.35), which REFUSES a list holding two lines
-    // equal under it. The line is already trimmed as it will be sent, and Go's trim of that changes
-    // nothing more, so the key is campaign-service's. The first spelling is kept, so "Join us" and
-    // "join us" seed one line, not a refusal.
+    // De-duplicated on campaign-service's own key ({@link creativeRepeatKey}), which REFUSES a list
+    // holding two lines equal under it. The first spelling is kept, so "Join us" and "join us" seed one
+    // line, not a refusal.
     const seen = new Set<string>();
     return fitting.filter((value) => {
-      const key = googleAdsToLower(value);
+      const key = this.creativeRepeatKey(value);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+  }
+
+  /**
+   * campaign-service's repeat key for a creative line: `strings.ToLower` of the `strings.TrimSpace`d
+   * line (`validateCreativeText`, `demandgen_creative.go`, v1.0.35). The line the seed holds is already
+   * trimmed as the payload trims it ({@link trimCreativeLine}, JS `trim()`), but that trim keeps a
+   * trailing U+0085 that Go's strips, so "Join us" and "Join us\u0085" would both be sent and refused as
+   * a repeat; Go's trim ({@link googleAdsTrimSpace}) is applied again before lower-casing for that.
+   */
+  private creativeRepeatKey(line: string): string {
+    return googleAdsToLower(googleAdsTrimSpace(line));
   }
 
   /** The first values up to the creative field's catalogue `max`, or all of them when it states none. */

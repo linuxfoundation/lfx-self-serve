@@ -17815,6 +17815,45 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(payload['headlines']).toEqual(['Join us', 'Register now']);
   });
 
+  /**
+   * PR #5389 review: JS `trim()` keeps a trailing U+0085 that Go's `strings.TrimSpace` strips, so the
+   * payload carries "Join us\u0085" and campaign-service refuses it as a repeat of "Join us".
+   */
+  it.each([
+    ['Demand Gen', 'includeDemandGen', 'demandGenCreative'],
+    ['Display', 'includeDisplay', 'displayCreative'],
+  ] as const)('seeds one %s headline for two that Go trims to the same line, a trailing U+0085 included', (_label, channel, key) => {
+    seed(brief({ google_search: { headlines: ['Join us', 'Join us\u0085', '\u0085join US', 'Register now'], descriptions: [] } }));
+    show(channel);
+
+    const payload = component()['googleCreativePayload']()[key] as Record<string, unknown>;
+    expect(JSON.parse(JSON.stringify(payload['headlines']))).toEqual(['Join us', 'Register now']);
+  });
+
+  it('seeds one Performance Max headline for two that Go trims to the same line, a trailing U+0085 included', () => {
+    seed(brief({ google_search: { headlines: ['Join us', 'Join us\u0085', 'Register now'], descriptions: [] } }));
+
+    const pmax = component()['campaignForm'].controls['performanceMaxCreative'].getRawValue();
+    expect(lines(pmax['headlines'])).toEqual(['Join us', 'Register now']);
+  });
+
+  it('skips a long headline candidate that repeats a seeded line once Go trims a U+0085', () => {
+    const descriptions = ['D1', 'D2', 'D3', 'D4', 'D5', 'Join us\u0085', 'D7'];
+    seed(brief({ google_search: { headlines: [], descriptions }, google_display: { headlines: ['Join us'] } }));
+
+    expect(group('displayCreative')['longHeadline']).toBe('D7');
+
+    // And the other way round: the seeded headline carries the U+0085, the candidate does not.
+    seed(
+      brief({
+        google_search: { headlines: [], descriptions: ['D1', 'D2', 'D3', 'D4', 'D5', 'Join us', 'D7'] },
+        google_display: { headlines: ['Join us\u0085'] },
+      })
+    );
+
+    expect(group('displayCreative')['longHeadline']).toBe('D7');
+  });
+
   it('skips a long headline candidate that repeats a seeded line in another case', () => {
     // The five descriptions take D1-D5; "join us" repeats the seeded headline "Join us" in another case.
     const descriptions = ['D1', 'D2', 'D3', 'D4', 'D5', 'join us', 'D7'];
