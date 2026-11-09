@@ -100,13 +100,13 @@ describe('OrgLensEmptyStateComponent', () => {
   it('offers no support action in any registry state', () => {
     const allowedKinds = new Set<string | undefined>([undefined, 'retry', 'reset-filters', 'org-list']);
     for (const [state, copy] of Object.entries(ORG_LENS_EMPTY_STATE_COPY)) {
+      expect(copy.reason, `${state}: reason must not mention support (#5447)`).not.toMatch(/support/i);
       for (const action of [copy.primary, copy.secondary]) {
         if (!action) {
           continue;
         }
         expect(allowedKinds.has(action.action), `${state}: action kind "${action.action}" is not allowed (#5447)`).toBe(true);
         expect(action.label, `${state}: "${action.label}" must not point at support (#5447)`).not.toMatch(/support/i);
-        expect(copy.reason, `${state}: reason must not mention support (#5447)`).not.toMatch(/support/i);
         if (action.route) {
           expect(action.route[0], `${state}: route must stay on the profile (#5447)`).toMatch(/^\/(profile|org)$/);
         }
