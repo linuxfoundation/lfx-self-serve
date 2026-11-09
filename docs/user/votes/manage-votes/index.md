@@ -4,7 +4,7 @@ description: How to find, edit, delete, vote on, and send reminders for votes in
 audience: [all]
 product_area: Votes
 tags: [votes, manage, drafts, cast, results, reminders, mailing-list, copy-link]
-last_updated: 2026-10-30
+last_updated: 2026-11-09
 intercom_collection: Votes
 ---
 
@@ -16,6 +16,8 @@ This article is for people who manage votes for a project, foundation, or group,
 2. Switch to your **Project** or **Foundation** lens, then select **Votes** from the left navigation sidebar.
 3. The dashboard opens on the **Active** tab. Select **All**, **Draft**, or **Ended** to see votes with other statuses.
 4. Use the search box and the group filter to narrow the list.
+
+In the **Group** column, select a group's name to open its details page. A vote with no group shows a dash. On a group's own **Votes** tab the name is plain text, since you are already on that group's page.
 
 ## What each row offers
 

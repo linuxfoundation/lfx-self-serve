@@ -329,6 +329,12 @@ export interface VoteTableRow extends Vote {
   editCommands: string[];
   /** Per-row edit-link query params — `project` from the row's own project_slug, `committee_uid` from its committee. A table-level record can't express per-row projects (dashboard rows span projects). */
   editQueryParams: Record<string, string>;
+  /** Group name shown in the Group column; null when the vote has no named group. */
+  groupName: string | null;
+  /** Canonical group-details link commands from the vote's own project tier; null when there is no group uid, or the table is already showing that group. */
+  groupCommands: string[] | null;
+  /** `?project=` for the group link — present only when the vote carries a `project_slug`. */
+  groupQueryParams: { project: string } | null;
 }
 
 /** Vote shape as returned by the query service indexer; uses `vote_uid` (v2 PK) not `uid`. Normalize before passing downstream. */

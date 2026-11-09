@@ -45,6 +45,7 @@ import {
   Vote,
 } from '@lfx-one/shared/interfaces';
 import {
+  COMMITTEE_BACK_PATHS,
   COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
   COMMITTEE_VALID_TABS,
   VOTE_INVITATION_COUNT_REFRESH_MS,
@@ -216,12 +217,17 @@ export class CommitteeViewComponent {
 
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
   /**
-   * True when the user arrived from the Me Lens My Groups page — used to show a context-transition notice.
-   * Reads an explicit `fromMeLens` boolean from navigation state (set by both the table anchor and
-   * the card grid link) rather than inferring it from the display label, so renaming the label
+   * True when the user arrived from a Me Lens list — My Groups (table anchor and card grid link) or the
+   * Surveys and Votes group links — used to show a context-transition notice.
+   * Reads an explicit `fromMeLens` boolean from navigation state rather inferring it from the display label, so renaming the label
    * can never silently suppress the notice (addresses GH review on coupling to a label literal).
    */
   protected readonly fromMeLens: boolean = this.router.getCurrentNavigation()?.extras?.state?.['fromMeLens'] === true;
+  /**
+   * List route the back button and browser back return to. Set by the page that linked here (e.g. `/surveys`)
+   * through navigation state; anything outside `COMMITTEE_BACK_PATHS` falls back to the Groups list.
+   */
+  protected readonly backPath: string = this.resolveBackPath(this.router.getCurrentNavigation()?.extras?.state?.['backPath']);
 
   // Set when a server-side read is denied and the terminal decision is left to the client. Only
   // one read is ever in flight (switchMap), so a plain field is enough.
@@ -715,7 +721,7 @@ export class CommitteeViewComponent {
     }
 
     syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
-    restoreMeLensOnBrowserBack(this.router, this.lensService, this.destroyRef, this.fromMeLens, '/groups');
+    restoreMeLensOnBrowserBack(this.router, this.lensService, this.destroyRef, this.fromMeLens, this.backPath);
 
     bindLfxDocumentTitle(computed(() => this.committee()?.name));
 
@@ -792,7 +798,7 @@ export class CommitteeViewComponent {
     if (this.fromMeLens) {
       this.lensService.setLens('me');
     }
-    this.router.navigate(['/', 'groups']);
+    this.router.navigate([this.backPath]);
   }
 
   /**
@@ -1996,5 +2002,10 @@ export class CommitteeViewComponent {
     const username = this.userService.viewerUsername()?.toLowerCase();
     if (!email && !username) return false;
     return auditors?.some((u) => (email && u.email?.toLowerCase() === email) || (username && u.username?.toLowerCase() === username)) ?? false;
+  }
+
+  /** Accepts a `backPath` navigation-state value only when it is an allowed list route. */
+  private resolveBackPath(requested: unknown): string {
+    return typeof requested === 'string' && COMMITTEE_BACK_PATHS.includes(requested) ? requested : '/groups';
   }
 }
