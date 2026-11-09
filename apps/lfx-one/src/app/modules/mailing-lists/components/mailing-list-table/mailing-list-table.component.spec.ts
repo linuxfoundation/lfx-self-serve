@@ -241,4 +241,43 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
       expect(confirm).not.toHaveBeenCalled();
     });
   });
+
+  describe('linked group links', () => {
+    const linked: GroupsIOMailingList = {
+      ...baseList,
+      is_foundation: false,
+      committees: [
+        { uid: 'committee-1', name: 'Technical Steering Committee' },
+        { uid: 'committee-2', name: 'Marketing' },
+      ],
+    };
+
+    const renderMaintainer = async (list: GroupsIOMailingList): Promise<void> => {
+      await render([list]);
+      fixture.componentRef.setInput('isMaintainer', true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('links each linked group name to its group details page, not a bordered tag', async () => {
+      await renderMaintainer(linked);
+
+      const first: HTMLAnchorElement | null = fixture.nativeElement.querySelector('[data-testid="mailing-list-group-link-list-1-committee-1"]');
+      const second: HTMLAnchorElement | null = fixture.nativeElement.querySelector('[data-testid="mailing-list-group-link-list-1-committee-2"]');
+
+      expect(first?.textContent?.trim()).toBe('Technical Steering Committee');
+      expect(first?.getAttribute('href')).toContain('/committee-1');
+      expect(first?.getAttribute('href')).toContain('project=test-project');
+      expect(second?.getAttribute('href')).toContain('/committee-2');
+      const tagTexts = Array.from(fixture.nativeElement.querySelectorAll('lfx-tag') as NodeListOf<HTMLElement>).map((tag) => tag.textContent?.trim());
+      expect(tagTexts).not.toContain('Technical Steering Committee');
+    });
+
+    it('shows a dash when the list has no linked groups', async () => {
+      await renderMaintainer(baseList);
+
+      expect(fixture.nativeElement.querySelector('[data-testid^="mailing-list-group-link-"]')).toBeNull();
+    });
+  });
 });

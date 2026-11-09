@@ -1940,3 +1940,72 @@ describe('VotesTableComponent — Close vote (#4740)', () => {
     expect(add).not.toHaveBeenCalled();
   });
 });
+
+describe('VotesTableComponent — group links', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
+        { provide: MessageService, useValue: {} },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    }).compileComponents();
+  });
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+  });
+
+  async function render(votes: Vote[], inputs: Record<string, unknown> = {}): Promise<void> {
+    fixture = TestBed.createComponent(VotesTableComponent);
+    fixture.componentRef.setInput('votes', votes);
+    Object.entries(inputs).forEach(([name, value]) => fixture.componentRef.setInput(name, value));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+  const el = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+  it('links the group name to the group details page without a bordered chip', async () => {
+    await render([vote('v1', { committee_uid: 'committee-1', project_slug: 'proj', is_foundation: false })]);
+
+    const link = el('votes-group-link-v1') as HTMLAnchorElement;
+    expect(link.textContent?.trim()).toBe('Alpha Group');
+    expect(link.getAttribute('href')).toContain('/committee-1');
+    expect(link.getAttribute('href')).toContain('project=proj');
+    expect(fixture.nativeElement.querySelector('.border-gray-300.rounded')).toBeNull();
+  });
+
+  it('shows plain text, not a link, when the vote has no group uid', async () => {
+    await render([vote('v1')]);
+
+    expect(el('votes-group-link-v1')).toBeNull();
+    expect(el('votes-group-text-v1')?.textContent?.trim()).toBe('Alpha Group');
+  });
+
+  it('shows a dash when the vote has no group at all', async () => {
+    await render([vote('v1', { committee_name: undefined })]);
+
+    expect(el('votes-group-text-v1')?.textContent?.trim()).toBe('-');
+  });
+
+  it('does not link back to the group whose page the table is on', async () => {
+    await render([vote('v1', { committee_uid: 'committee-1' })], { editQueryParamsFallback: { committee_uid: 'committee-1' } });
+
+    expect(el('votes-group-link-v1')).toBeNull();
+    expect(el('votes-group-text-v1')?.textContent?.trim()).toBe('Alpha Group');
+  });
+
+  it('sends Me lens navigation state so the group page returns to Votes', async () => {
+    await render([vote('v1', { committee_uid: 'committee-1' })], { isMeLens: true });
+
+    expect(fixture.componentInstance['groupLinkState']()).toEqual({ backLabel: 'Votes', backPath: '/votes', fromMeLens: true });
+  });
+});

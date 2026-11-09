@@ -7,7 +7,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
@@ -91,6 +91,7 @@ import { VoteSummaryDialogComponent } from '../vote-summary-dialog/vote-summary-
     EmptyStateComponent,
     NgTemplateOutlet,
     UiSpinnerComponent,
+    RouterLink,
   ],
   // ExtendVoteDeadlineDialogComponent is deliberately not here — it's opened dynamically via DialogService.
   providers: [ConfirmationService, DialogService],
@@ -114,6 +115,7 @@ export class VotesTableComponent {
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
+  protected readonly groupLinkState = computed(() => (this.isMeLens() ? { backLabel: VOTE_LABEL.plural, backPath: '/votes', fromMeLens: true } : undefined));
   protected readonly PollStatus = PollStatus;
   protected readonly VoteResponseStatus = VoteResponseStatus;
   protected readonly VoteRowParticipationState = VoteRowParticipationState;
@@ -142,6 +144,8 @@ export class VotesTableComponent {
   // Merged UNDER each row's own derived params — the committee tab passes its committee_uid here so a
   // row missing the field still admits committee writers; per-row values always win (dashboard spans projects).
   public readonly editQueryParamsFallback = input<Record<string, string>>({});
+  // Me lens group links carry state so the group page returns to this list instead of Groups.
+  public readonly isMeLens = input<boolean>(false);
   public readonly quickFilter = input<MyVotesQuickFilter | null>(null);
   public readonly quickFilterNowMs = input<number>(0);
   public readonly scopeActive = input<boolean>(false);
@@ -810,9 +814,17 @@ export class VotesTableComponent {
     if (vote.project_slug) editQueryParams['project'] = vote.project_slug;
     if (vote.committee_uid) editQueryParams['committee_uid'] = vote.committee_uid;
 
+    // The committee tab already sits on this group's page, so a link back to it would be a no-op.
+    const viewedCommitteeUid = this.editQueryParamsFallback()['committee_uid'];
+    const groupUid = vote.committee_uid?.trim();
+    const showGroupLink = !!groupUid && groupUid !== viewedCommitteeUid;
+
     return {
       ...vote,
       endedEarlyTooltip,
+      groupName: vote.committee_name?.trim() || null,
+      groupCommands: showGroupLink ? (getEntityCommands('groups', groupUid, vote.is_foundation) ?? ['/groups', groupUid]) : null,
+      groupQueryParams: vote.project_slug ? { project: vote.project_slug } : null,
       participation: computeVoteRowParticipation(vote, this.voteService.isAwaitingInvitationCount(vote.uid)),
       editCommands,
       editQueryParams,

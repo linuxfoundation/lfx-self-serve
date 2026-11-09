@@ -4,7 +4,7 @@ description: How to find mailing lists, join or leave one, open a list's page, a
 audience: [all]
 product_area: Mailing Lists
 tags: [mailing-lists, join, leave, subscribe, filters, edit, linked groups]
-last_updated: 2026-10-28
+last_updated: 2026-11-09
 intercom_collection: Mailing Lists
 ---
 
@@ -33,6 +33,8 @@ Each row shows the list's name, its email address, and an **Open on Groups.io** 
 | Project or foundation, can manage lists | **Mailing List**, **Description**, **Public**, **Posting**, **Linked Groups**, **Subscribers**                            |
 | Project or foundation, other users      | **Mailing List**, **Description**, **Linked Groups**, **Public**, **Subscribers**, and a **Join** button where it applies |
 | Your own view                           | **Mailing List**, **Description**, **My Subscription**, **Public**, and a leave button                                    |
+
+In the **Linked Groups** column, select a group's name to open its details page.
 
 A **Public** check mark means the list's archive is public. A **Member** badge next to a list name means you are already subscribed. **My Subscription** shows how you receive email from the list, for example **Individual**, **Digest**, or **None**. It shows **Subscribed** when no delivery mode is available.
 

@@ -21,12 +21,11 @@ import {
   MAILING_LIST_MAX_VISIBLE_GROUPS,
 } from '@lfx-one/shared';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
-import { FilterOption, GroupsIOMailingList, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
-import { getMailingListCommands, getMailingListGroupsIoUrl, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
+import { FilterOption, GroupsIOMailingList, MailingListGroupLink, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
+import { getEntityCommands, getMailingListCommands, getMailingListGroupsIoUrl, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { GroupEmailPipe } from '@pipes/group-email.pipe';
 import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
 import { RemainingGroupsTooltipPipe } from '@pipes/remaining-groups-tooltip.pipe';
-import { SliceLinkedGroupsPipe } from '@pipes/slice-linked-groups.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
 import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
@@ -50,7 +49,6 @@ import { TooltipModule } from 'primeng/tooltip';
     GroupEmailPipe,
     MailingListTypeLabelPipe,
     RemainingGroupsTooltipPipe,
-    SliceLinkedGroupsPipe,
     StripHtmlPipe,
     EmptyStateComponent,
     ConfirmDialogModule,
@@ -193,6 +191,17 @@ export class MailingListTableComponent {
       });
   }
 
+  private buildGroupLinks(mailingList: GroupsIOMailingList): MailingListGroupLink[] {
+    return (mailingList.committees ?? [])
+      .slice(0, this.maxVisibleGroups)
+      .filter((committee) => !!committee.uid?.trim())
+      .map((committee) => ({
+        uid: committee.uid,
+        name: committee.name?.trim() || 'Unnamed group',
+        commands: getEntityCommands('groups', committee.uid, mailingList.is_foundation) ?? ['/groups', committee.uid],
+      }));
+  }
+
   private initTableRows(): Signal<MailingListTableRowVm[]> {
     return computed(() => {
       const joinedUids = this.myMailingListUids();
@@ -206,6 +215,7 @@ export class MailingListTableComponent {
         return {
           ...mailingList,
           viewCommands: getMailingListCommands(mailingList),
+          groupLinks: this.buildGroupLinks(mailingList),
           linkQueryParams: getMailingListLinkQueryParams(mailingList),
           groupsIoUrl: getMailingListGroupsIoUrl(mailingList),
           isMember: joinedUids.has(mailingList.uid),
