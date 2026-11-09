@@ -27,6 +27,10 @@ router.post('/', (req, res, next) => mailingListController.createMailingList(req
 router.put('/:id', (req, res, next) => mailingListController.updateMailingList(req, res, next));
 router.delete('/:id', (req, res, next) => mailingListController.deleteMailingList(req, res, next));
 
+// Committee ↔ Mailing List Sync routes
+router.get('/:id/sync-diff', (req, res, next) => mailingListController.getSyncDiff(req, res, next));
+router.post('/:id/sync-apply', blockDuringImpersonation, (req, res, next) => mailingListController.applySyncDiff(req, res, next));
+
 // Mailing List Member routes
 router.get('/:id/members', (req, res, next) => mailingListController.getMembers(req, res, next));
 router.get('/:id/members/count', (req, res, next) => mailingListController.getMembersCount(req, res, next));

@@ -14,6 +14,9 @@ import {
   MyMailingList,
   QueryServiceCountResponse,
   QueryServiceResponse,
+  SyncApplyRequest,
+  SyncApplyResult,
+  SyncDiff,
   UpdateGroupsIOServiceRequest,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
@@ -34,6 +37,11 @@ import { ProjectService } from './project.service';
  * Supports Groups.io provider with extensible design for future providers
  */
 export class MailingListService {
+  // Matches (with headroom) the 5-minute server-side poll timeout the upstream sync-diff/
+  // sync-apply endpoints use against ITX's job engine — see lfx-v2-mailing-list-service's
+  // internal/service/sync_job_poll.go.
+  private static readonly syncJobTimeoutMs = 330_000;
+
   private accessCheckService: AccessCheckService;
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
@@ -352,6 +360,62 @@ export class MailingListService {
     await this.pollUntilResourceRemoved(req, 'delete_mailing_list', 'groupsio_mailing_list', 'groupsio_mailing_list_uid', mailingListId, {
       mailing_list_uid: mailingListId,
     });
+  }
+
+  // ============================================
+  // Committee ↔ Mailing List Sync (sync-diff / sync-apply)
+  // ============================================
+
+  /**
+   * Previews the pending changes between a committee's roster and its linked mailing list.
+   * The upstream call blocks until ITX's internal sync job completes (polled server-side,
+   * up to 5 minutes) — there is no separate job-status endpoint to poll from here.
+   */
+  public async getSyncDiff(req: Request, mailingListId: string): Promise<SyncDiff> {
+    const diff = await this.microserviceProxy.proxyRequest<SyncDiff>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/sync-diff`,
+      'GET',
+      undefined,
+      undefined,
+      undefined,
+      { timeoutMs: MailingListService.syncJobTimeoutMs }
+    );
+
+    logger.debug(req, 'get_sync_diff', 'Fetched sync diff', {
+      mailing_list_uid: mailingListId,
+      adds: diff.adds.length,
+      removes: diff.removes.length,
+      conflicts: diff.conflicts.length,
+    });
+
+    return diff;
+  }
+
+  /**
+   * Applies an admin-approved subset of a sync-diff's adds/removes. Like `getSyncDiff`, this
+   * blocks on the upstream job completing server-side (up to 5 minutes).
+   */
+  public async applySyncDiff(req: Request, mailingListId: string, data: SyncApplyRequest): Promise<SyncApplyResult> {
+    const result = await this.microserviceProxy.proxyRequest<SyncApplyResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/sync-apply`,
+      'POST',
+      undefined,
+      data,
+      undefined,
+      { timeoutMs: MailingListService.syncJobTimeoutMs }
+    );
+
+    logger.info(req, 'apply_sync_diff', 'Applied sync diff', {
+      mailing_list_uid: mailingListId,
+      added: result.added.length,
+      removed: result.removed.length,
+    });
+
+    return result;
   }
 
   // ============================================
