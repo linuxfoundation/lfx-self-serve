@@ -28,6 +28,7 @@ export class NewsletterPreviewDrawerComponent {
   // through to the preview so it renders in a sandboxed iframe rather than the
   // frontend chrome. See NewsletterPreviewComponent.fullDocument.
   public readonly fullDocument = input<boolean>(false);
+  public readonly sendDate = input<string | null | undefined>(undefined);
 
   // === Inputs (drawer header) ===
   // Defaults keep the sender-side "Preview" framing used by the manage and

@@ -30,7 +30,7 @@ import type {
   PersonaType,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, NEWSLETTER_ENHANCED_EDITOR_FLAG, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 test.setTimeout(60_000);
@@ -38,8 +38,9 @@ test.setTimeout(60_000);
 const PAGE_LOAD_TIMEOUT = 20_000;
 const ELEMENT_TIMEOUT = 10_000;
 
-// The block composer is gated to NEWSLETTER_BLOCKS_PROJECT_SLUGS, so this suite
-// runs as the AAIF pilot project (otherwise the composer + toggle are hidden).
+// The block composer is gated to NEWSLETTER_BLOCKS_PROJECT_SLUGS and the
+// newsletter-enhanced-editor flag, so this suite runs as the AAIF pilot project
+// with the flag pinned on (otherwise the composer + toggle are hidden).
 const MOCK_FOUNDATION_SLUG = 'agentic-ai-foundation';
 const MOCK_FOUNDATION_UID = 'f0000000-0000-0000-0000-000000000001';
 const MOCK_NEWSLETTER_ID = 'n0000000-0000-0000-0000-000000000ccc';
@@ -269,6 +270,10 @@ async function gotoContentStep(page: Page): Promise<void> {
 
 test.describe('Newsletter composer in the wizard — Phase 1', () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(([storageKey, flagKey]) => window.localStorage.setItem(storageKey, JSON.stringify({ [flagKey]: true })), [
+      FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
+      NEWSLETTER_ENHANCED_EDITOR_FLAG,
+    ] as const);
     await setPersonaCookie(page);
     await stubPersona(page);
     await stubNavLensItems(page);

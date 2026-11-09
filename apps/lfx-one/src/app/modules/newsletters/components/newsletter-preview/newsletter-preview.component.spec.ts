@@ -32,6 +32,13 @@ describe('NewsletterPreviewComponent', () => {
     expect(frame?.getAttribute('srcdoc')).not.toContain('%%SEND_DATE%%');
   });
 
+  it('shows the send date, not today, on a sent issue', async () => {
+    fixture.componentRef.setInput('sendDate', '2026-11-03T18:00:00Z');
+    const frame = await render({ bodyHtml: '<!doctype html><html><head></head><body><p>%%SEND_DATE%%</p></body></html>' });
+
+    expect(frame?.getAttribute('srcdoc')).toContain('November 3, 2026');
+  });
+
   it.each([
     ['a body that starts with a doctype', { bodyHtml: '<!doctype html><html><head></head><body><p>Hi</p></body></html>' }],
     ['the fullDocument input', { bodyHtml: '<p>Hi</p>', fullDocument: true }],

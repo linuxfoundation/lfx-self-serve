@@ -22,6 +22,10 @@ export class NewsletterPreviewComponent {
   // any bodyHtml has loaded. Detection below already covers the normal case, so
   // most callers can leave this unset.
   public readonly fullDocument = input<boolean>(false);
+  // When the newsletter was or will be sent. A stored layout body keeps its
+  // send-date token after the send, so a sent issue has to show this date.
+  // Unset means an unscheduled draft, which shows today.
+  public readonly sendDate = input<string | null | undefined>(undefined);
 
   // Computed
   public readonly hasContent: Signal<boolean> = computed(() => Boolean(this.subject().trim() || this.bodyHtml().trim()));
@@ -43,9 +47,11 @@ export class NewsletterPreviewComponent {
   // isolated frame and cannot script or reach the host page. A <base
   // target="_blank"> is added so every link opens in a new tab rather than inside
   // the frame, which most sites refuse to be loaded in.
-  public readonly trustedDocument: Signal<SafeHtml> = computed(() =>
-    this.sanitizer.bypassSecurityTrustHtml(withBlankLinkTarget(withNewsletterPreviewDate(this.bodyHtml())))
-  );
+  public readonly trustedDocument: Signal<SafeHtml> = computed(() => {
+    const sendDate = this.sendDate();
+    const html = withNewsletterPreviewDate(this.bodyHtml(), sendDate ? new Date(sendDate) : undefined);
+    return this.sanitizer.bypassSecurityTrustHtml(withBlankLinkTarget(html));
+  });
 }
 
 /** Adds `<base target="_blank">` to a complete HTML document so its links open in a new tab. */

@@ -279,6 +279,7 @@
     [subject]="n.subject"
     [bodyHtml]="n.body_html"
     [displayName]="''"
-    [fullDocument]="!!n.body_layout">
+    [fullDocument]="!!n.body_layout"
+    [sendDate]="n.sent_at ?? n.scheduled_at">
   </lfx-newsletter-preview-drawer>
 }

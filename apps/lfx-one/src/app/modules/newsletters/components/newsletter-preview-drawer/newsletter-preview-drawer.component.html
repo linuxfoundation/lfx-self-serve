@@ -43,7 +43,13 @@
   </ng-template>
 
   <div class="bg-slate-100 py-6 px-4 sm:px-8 min-h-full" data-testid="newsletter-preview-drawer-body">
-    <lfx-newsletter-preview [subject]="subject()" [bodyHtml]="bodyHtml()" [logoUrl]="logoUrl()" [displayName]="displayName()" [fullDocument]="fullDocument()">
+    <lfx-newsletter-preview
+      [subject]="subject()"
+      [bodyHtml]="bodyHtml()"
+      [logoUrl]="logoUrl()"
+      [displayName]="displayName()"
+      [fullDocument]="fullDocument()"
+      [sendDate]="sendDate()">
     </lfx-newsletter-preview>
   </div>
 

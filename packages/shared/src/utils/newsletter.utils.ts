@@ -57,10 +57,10 @@ export function combinedViewCount(opens: number | null | undefined, pageViews: n
 }
 
 /**
- * Replaces the send-date token in a draft's rendered HTML with today's date, in the same format and
- * timezone the service uses at send time, so a preview shows what a send today would show.
+ * Replaces the send-date token in a newsletter's stored HTML, in the same format and timezone the
+ * service uses at send time. The stored body keeps the token even after the send.
  * @param html - The rendered newsletter HTML
- * @param now - The date to show
+ * @param now - The date to show: the send date when there is one, otherwise today
  * @returns The HTML with every send-date token filled in
  */
 export function withNewsletterPreviewDate(html: string, now: Date = new Date()): string {

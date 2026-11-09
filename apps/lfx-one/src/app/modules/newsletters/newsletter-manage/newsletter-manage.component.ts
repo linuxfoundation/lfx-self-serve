@@ -114,10 +114,7 @@ export class NewsletterManageComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
-  private readonly enhancedEditorEnabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(
-    NEWSLETTER_ENHANCED_EDITOR_FLAG,
-    NEWSLETTER_ENHANCED_EDITOR_DEFAULT
-  );
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
@@ -195,6 +192,10 @@ export class NewsletterManageComponent {
   public readonly displayName: Signal<string> = computed(() => this.activeContext()?.name ?? '');
   private readonly fetchedLogoUrl = signal<string | undefined>(undefined);
   public readonly logoUrl: Signal<string | undefined> = computed(() => this.activeContext()?.logoUrl || this.fetchedLogoUrl());
+  private readonly enhancedEditorEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(
+    NEWSLETTER_ENHANCED_EDITOR_FLAG,
+    NEWSLETTER_ENHANCED_EDITOR_DEFAULT
+  );
   // The block composer + its template library are gated to the pilot projects
   // (see NEWSLETTER_BLOCKS_PROJECT_SLUGS) and the feature flag for NEW authoring;
   // everyone else uses the basic editor only.
