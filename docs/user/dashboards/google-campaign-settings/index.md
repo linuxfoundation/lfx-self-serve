@@ -36,7 +36,7 @@ tags:
     audience signals,
     implement,
   ]
-last_updated: 2026-11-09
+last_updated: 2026-11-10
 intercom_collection: Dashboards
 ---
 
@@ -345,6 +345,7 @@ A Demand Gen ad group can be narrowed by age, gender, household income and paren
 - An ad group takes one Audience. While an ad group has an Audience picked, its **Demographics** are replaced by a note, and while it has demographics ticked, its **Audience** picker is replaced by a note. Remove one to set the other.
 - While the campaign is split, the single ad group's demographics are kept but not sent, and a note under **Split into named ad groups** says so. An ad group's demographics are likewise kept but not sent while the checkbox is unticked.
 - If demographics would be refused by Google Ads, for example beside an Audience on a saved campaign, a message at the end of the **Demand Gen Creative** section says why and **Create Campaign** stays unavailable until you fix it.
+- While an ad group has demographics ticked, **Clear demographics** under its boxes unticks them all at once. Use it when a saved campaign holds a value that has no box, which cannot be unticked one by one.
 - If a saved campaign holds demographics that cannot be sent, a notice under the targeting settings says why and lists the ad groups when the **Demand Gen Creative** section is not shown. **Create Campaign** stays unavailable until they are sent or cleared. The notice says that Demand Gen demographics are not available on this deployment, that the check is still running, that it can be made once the brief is saved, or that it could not be made, with **Retry**. Choose **Clear demographics** to create without them.
 
 Tick nothing and the campaign is created exactly as before, with no demographic Audience.
