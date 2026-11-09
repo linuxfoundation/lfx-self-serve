@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { environment } from '@environments/environment';
 import { MeetingHomeAttendance, MeetingReconcileDialogData, PastMeetingParticipant, PastMeetingSummary } from '@lfx-one/shared/interfaces';
@@ -20,7 +20,7 @@ import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiSplitButtonComponent } from '@shared/uikit/split-button/split-button.component';
-import { catchError, distinctUntilChanged, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, map, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { MeetingsHomeDialogsService } from '../../../services/meetings-home-dialogs.service';
 import { MeetingsHomeStore } from '../../../services/meetings-home.store';
@@ -74,6 +74,8 @@ export class MeetingDetailsToolsComponent {
   protected readonly participants: Signal<PastMeetingParticipant[] | null | undefined> = this.initParticipants();
   protected readonly attendance: Signal<MeetingHomeAttendance | null | undefined> = this.initAttendance();
   protected readonly summaryAwaitingApproval: Signal<boolean> = computed(() => isPastMeetingSummaryAwaitingApproval(this.artifactsService.summary()));
+  /** "{n} invited" for a non-organizer before the date ends: the guest list's length, else the invitee count. */
+  protected readonly invitedCount: Signal<number> = this.initInvitedCount();
 
   protected openRecording(url: string): void {
     this.dialogs.openRecording(url);
@@ -150,6 +152,43 @@ export class MeetingDetailsToolsComponent {
         ? { invited: list.length, attended: list.filter((participant) => participant.is_attended).length }
         : (feed ?? { invited: meeting.participant_count ?? 0, attended: meeting.attended_count ?? 0 });
       return getPastMeetingAttendance(summary, { withAbsent: true });
+    });
+  }
+
+  private initInvitedCount(): Signal<number> {
+    // The BFF counts registrants for an invited non-organizer only, on the public meeting endpoint.
+    const request = computed(() => {
+      const meeting = this.context.meeting();
+      // Invited at open, registered here, or removed here: the count stays loaded through Remove Myself.
+      const removed = this.meetingService.removedRegistrationMeetingIds().has(meeting.id);
+      const invited = !!this.context.row().meeting.invited || this.context.invited() || removed;
+      const fetch = !this.context.organizer() && invited && !this.ended();
+      return fetch ? { id: meeting.id, password: meeting.password ?? null } : null;
+    });
+    // Whether the loaded count was fetched before Remove Myself, so it still holds the viewer.
+    const includesViewer = signal(false);
+    const registrantCount = toSignal(
+      toObservable(request).pipe(
+        distinctUntilChanged((a, b) => a?.id === b?.id && a?.password === b?.password),
+        switchMap((params) => {
+          if (!params) return of(0);
+          // Read when the request starts: a removal that lands while it is in flight is not in the count.
+          const beforeRemoval = !this.meetingService.removedRegistrationMeetingIds().has(params.id);
+          return this.meetingService.getPublicMeeting(params.id, params.password).pipe(
+            tap(() => includesViewer.set(beforeRemoval)),
+            map((response) => ('registrant_count' in response.meeting ? (response.meeting.registrant_count ?? 0) : 0)),
+            catchError(() => of(0))
+          );
+        })
+      ),
+      { initialValue: 0 }
+    );
+    return computed(() => {
+      if (this.context.organizer() || this.ended()) return 0;
+      if (this.context.canViewGuests()) return this.context.guestCount() ?? 0;
+      const removedSelf = this.meetingService.removedRegistrationMeetingIds().has(this.context.meeting().id);
+      // shortcut: assumes one registration per viewer. revisit: if Remove Myself returns how many it removed.
+      return Math.max(0, registrantCount() - (removedSelf && includesViewer() ? 1 : 0));
     });
   }
 }

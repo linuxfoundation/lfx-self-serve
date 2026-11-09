@@ -60,6 +60,13 @@ export function buildRegistrantGuestRows(
   });
 }
 
+/** Whether a guest is the viewer, by email or username in any case. */
+export function isMeetingGuestViewer(person: Pick<MeetingHostCandidate, 'email' | 'username'>, viewer: MeetingGuestViewer): boolean {
+  const email = person.email?.trim().toLowerCase();
+  const username = person.username?.trim().toLowerCase();
+  return (!!email && email === viewer.email?.trim().toLowerCase()) || (!!username && username === viewer.username?.trim().toLowerCase());
+}
+
 /** Organizer actions on an upcoming registrant row; null for participants, invitees and once the meeting has ended. */
 export function getMeetingGuestRowActions(row: MeetingGuestRow, organizer: boolean, ended: boolean): MeetingGuestRowActions | null {
   const registrant = row.registrant;
@@ -234,9 +241,8 @@ function toRow(
     .filter(Boolean)
     .join(' · ');
   const email = person.email?.trim().toLowerCase() || null;
-  const username = person.username?.trim().toLowerCase() || null;
   const role = resolveMeetingGuestRole(person, organizerKeys) ?? 'guest';
-  const you = (!!email && email === viewer.email?.trim().toLowerCase()) || (!!username && username === viewer.username?.trim().toLowerCase());
+  const you = isMeetingGuestViewer(person, viewer);
   return {
     uid: person.uid,
     name: you ? `${name} (You)` : name,

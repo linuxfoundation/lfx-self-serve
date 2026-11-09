@@ -113,8 +113,7 @@ export class MeetingDetailsGuestsComponent {
   protected readonly resending = signal<ReadonlySet<string>>(new Set());
   protected readonly hostUpdating = signal<ReadonlySet<string>>(new Set());
   protected readonly deleting = signal(false);
-  /** Kept until the drawer closes, like the legacy guest list, so a change shows without refetching. */
-  private readonly removedUids = signal<ReadonlySet<string>>(new Set());
+  /** Host changes made here, applied without a refetch until the drawer closes. */
   private readonly hostOverrides = signal<ReadonlyMap<string, boolean>>(new Map());
   private confirmRef: DialogRef<boolean> | null = null;
 
@@ -457,7 +456,7 @@ export class MeetingDetailsGuestsComponent {
         next: (response) => {
           this.deleting.set(false);
           if (response.summary.successful > 0) {
-            this.removedUids.update((uids) => this.withUid(uids, uid, true));
+            this.context.removedRegistrantUids.update((uids) => this.withUid(uids, uid, true));
             this.shareChanges();
             this.showSuccess(`${this.registrantLabel(registrant, 'The guest')} removed from the meeting`);
             this.context.refreshList();
@@ -479,7 +478,7 @@ export class MeetingDetailsGuestsComponent {
 
   /** Removed rows drop out and host changes re-label and re-sort the rows, all without a refetch. */
   private applyChanges(rows: MeetingGuestRow[]): MeetingGuestRow[] {
-    const removed = this.removedUids();
+    const removed = this.context.removedRegistrantUids();
     const overrides = this.hostOverrides();
     if (!removed.size && !overrides.size) return rows;
     let relabeled = false;

@@ -136,6 +136,7 @@ describe('MeetingDetailsDrawerComponent', () => {
             clearRemovedRegistration,
             removedRegistrationMeetingIds: signal(new Set<string>()),
             getMeetingRegistrants: () => of([]),
+            getPublicMeeting: () => of({ meeting: {} }),
             getPastMeetingParticipants: () => of([]),
             getPastMeetingRecording: () => of({ sessions: [{ total_size: 1, share_url: 'https://zoom.example/rec' }] }),
             getPastMeetingTranscript: () => of({ recording_files: [] }),
