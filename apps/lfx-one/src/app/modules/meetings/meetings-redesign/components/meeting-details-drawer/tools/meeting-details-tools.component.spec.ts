@@ -12,6 +12,7 @@ import { Meeting, MeetingDetailsState, MeetingHomeRow, MeetingRegistrant, Meetin
 import { hasMeetingFullAccess } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
+import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -21,6 +22,7 @@ import { MeetingsHomeStore } from '../../../services/meetings-home.store';
 import { MeetingAttendeeGridComponent } from '../../meeting-attendee-grid/meeting-attendee-grid.component';
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsReconcileDialogComponent } from '../reconcile/meeting-details-reconcile-dialog.component';
 import { MeetingDetailsArtifactsService } from './meeting-details-artifacts.service';
 import { MeetingDetailsToolsComponent } from './meeting-details-tools.component';
 
@@ -67,6 +69,9 @@ describe('MeetingDetailsToolsComponent', () => {
   let copyRecordingLink: ReturnType<typeof vi.fn>;
   let applySummaryChange: ReturnType<typeof vi.fn>;
   let windowOpen: ReturnType<typeof vi.fn>;
+  let modalOpen: ReturnType<typeof vi.fn>;
+  let participantsVersion: WritableSignal<number>;
+  let refreshParticipants: ReturnType<typeof vi.fn>;
 
   const settle = async (): Promise<void> => {
     await fixture.whenStable();
@@ -112,6 +117,9 @@ describe('MeetingDetailsToolsComponent', () => {
     copyRecordingLink = vi.fn();
     applySummaryChange = vi.fn();
     windowOpen = vi.fn();
+    modalOpen = vi.fn(() => ({ closed: new Subject<void>(), close: vi.fn() }));
+    participantsVersion = signal(0);
+    refreshParticipants = vi.fn();
     const row = computed<MeetingHomeRow>(() => ({
       key: meeting().id,
       meeting: meeting(),
@@ -132,6 +140,8 @@ describe('MeetingDetailsToolsComponent', () => {
       pastMeetingId,
       tab,
       canViewGuests,
+      participantsVersion,
+      refreshParticipants,
     };
 
     TestBed.configureTestingModule({
@@ -152,6 +162,7 @@ describe('MeetingDetailsToolsComponent', () => {
         { provide: MeetingsHomeEditService, useValue: { edit } },
         { provide: MeetingsHomeStore, useValue: { applySummaryChange } },
         { provide: MeetingsHomeDialogsService, useValue: { openSummary, openRecording, copyRecordingLink } },
+        { provide: UiModalService, useValue: { open: modalOpen } },
       ],
     });
     TestBed.inject(DOCUMENT).defaultView!.open = windowOpen as unknown as Window['open'];
@@ -259,6 +270,33 @@ describe('MeetingDetailsToolsComponent', () => {
 
       expect(text('meetings-home-attendance-label')).toBe('1 of 2 attended · 50%');
       expect(find('meeting-details-attendance-grid')).toBeNull();
+    });
+
+    it('reloads the participants in place when they change', async () => {
+      meetingService['getPastMeetingParticipants'].mockReturnValue(of([{ is_attended: false }, { is_attended: false }]));
+      await render({}, 'ended');
+      expect(text('meetings-home-attendance-label')).toBe('0 of 2 attended · 0%');
+
+      meetingService['getPastMeetingParticipants'].mockReturnValue(of([{ is_attended: true }, { is_attended: false }]));
+      participantsVersion.update((version) => version + 1);
+      await settle();
+      expect(meetingService['getPastMeetingParticipants']).toHaveBeenCalledTimes(2);
+      expect(text('meetings-home-attendance-label')).toBe('1 of 2 attended · 50%');
+    });
+
+    it('offers Reconcile Attendance to an organizer only, and refreshes the participants on a change', async () => {
+      await render({}, 'ended');
+      expect(find('meeting-details-reconcile')).toBeNull();
+      fixture.destroy();
+
+      await render({ organizer: true }, 'ended');
+      await click('meeting-details-reconcile');
+      expect(modalOpen).toHaveBeenCalledWith(MeetingDetailsReconcileDialogComponent, {
+        data: { row: expect.objectContaining({ key: 'synthetic-meeting' }), pastMeetingId: 'synthetic-meeting-1762362000000', onChange: expect.any(Function) },
+        describedBy: true,
+      });
+      modalOpen.mock.calls[0][1].data.onChange();
+      expect(refreshParticipants).toHaveBeenCalled();
     });
 
     it('falls back to the past feed’s counts on a past row', async () => {

@@ -147,6 +147,19 @@ describe('MeetingDetailsContext', () => {
     expect(context.invited()).toBe(false);
   });
 
+  it('reloads the participants now and after 1s, and the past list behind the drawer', () => {
+    vi.useFakeTimers();
+    const refreshUserPastMeetings = vi.fn();
+    TestBed.overrideProvider(UserService, { useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings } });
+    const context = create(buildRow(PAST as unknown as Meeting));
+
+    context.refreshParticipants();
+    expect(context.participantsVersion()).toBe(1);
+    expect(refreshUserPastMeetings).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1000);
+    expect(context.participantsVersion()).toBe(2);
+  });
+
   it('counts a past row viewer as a member', () => {
     const context = create(buildRow({ ...(PAST as unknown as Meeting), visibility: 'private' } as Meeting));
 

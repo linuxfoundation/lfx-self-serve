@@ -91,6 +91,7 @@ describe('MeetingDetailsGuestsComponent', () => {
   let occurrence: WritableSignal<MeetingOccurrence | null>;
   let hosts: WritableSignal<readonly MeetingHostCandidate[]>;
   let guestCount: WritableSignal<number | null>;
+  let participantsVersion: WritableSignal<number>;
   let composerOpen: ReturnType<typeof vi.fn>;
   let modalOpen: ReturnType<typeof vi.fn>;
   let closeDialog: ReturnType<typeof vi.fn>;
@@ -116,6 +117,7 @@ describe('MeetingDetailsGuestsComponent', () => {
     occurrence = signal(null);
     hosts = signal([]);
     guestCount = signal(null);
+    participantsVersion = signal(0);
     removedIds = signal(new Set<string>());
     meetingService = {
       getMeetingDetail: vi.fn(() => of(current())),
@@ -152,6 +154,7 @@ describe('MeetingDetailsGuestsComponent', () => {
             hosts,
             guestCount,
             pastMeetingId: signal('synthetic-past-id'),
+            participantsVersion,
             refreshList,
           },
         },
@@ -214,6 +217,28 @@ describe('MeetingDetailsGuestsComponent', () => {
     expect(query('meeting-details-guests-email')?.textContent?.trim()).toBe('ada@acme.example');
     expect(query('meeting-details-guests-summary')?.textContent).toContain('0 attended / 1 invited');
     expect(query('meeting-details-guests-search')?.querySelector('input')?.getAttribute('placeholder')).toBe('Search participants');
+  });
+
+  it('reloads the participants in place when they change, keeping the rows and count until the new list lands', async () => {
+    state.set('ended');
+    await render();
+    expect(guestCount()).toBe(1);
+
+    const next = new Subject<PastMeetingParticipant[]>();
+    meetingService['getPastMeetingParticipants'].mockReturnValueOnce(next);
+    participantsVersion.set(1);
+    await fixture.whenStable();
+    expect(query('meeting-details-guests-loading')).toBeNull();
+    expect(all('meeting-details-guests-row')).toHaveLength(1);
+    expect(guestCount()).toBe(1);
+
+    next.next([
+      { uid: 'p-1', first_name: 'Ada', last_name: 'Lane', email: 'ada@acme.example', host: false, is_attended: true, is_invited: true },
+      { uid: 'p-2', first_name: 'Bo', last_name: 'Kim', email: 'bo@acme.example', host: false, is_attended: true, is_invited: false },
+    ] as PastMeetingParticipant[]);
+    await fixture.whenStable();
+    expect(all('meeting-details-guests-row')).toHaveLength(2);
+    expect(guestCount()).toBe(2);
   });
 
   it('shows no participants when the past meeting record does not exist yet', async () => {
