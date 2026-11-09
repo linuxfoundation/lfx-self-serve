@@ -1406,6 +1406,12 @@ describe('CampaignController.createCampaign cutover', () => {
       { demandGenVideoCreative: { headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `H${i}`) } },
     ],
     ['an oversized video ad scalar', { demandGenVideoCreative: { businessName: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }],
+    // Search's campaign assets (#5262), a creative key like the others.
+    [
+      'a Search ad image list above the entry cap',
+      { searchAssets: { adImages: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `https://x.example/${i}.png`) } },
+    ],
+    ['an oversized Search business name', { searchAssets: { businessName: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }],
     // The named Demand Gen ad groups (#5226): the list, a name, and each group's creatives.
     [
       'an ad group list above the entry cap',
@@ -3562,6 +3568,9 @@ describe('CampaignController.createCampaign cutover', () => {
     ['deviceBidModifiers', Array.from({ length: 101 }, () => ({ device: 'MOBILE', bidModifier: 1.2 }))],
     ['excludedAgeRanges', Array.from({ length: 101 }, () => '18-24')],
     ['excludedGenders', Array.from({ length: 101 }, () => 'MALE')],
+    ['excludedIncomeRanges', Array.from({ length: 101 }, () => 'INCOME_RANGE_0_50')],
+    ['excludedParentalStatuses', Array.from({ length: 101 }, () => 'PARENT')],
+    ['observedDemographics', Array.from({ length: 101 }, () => 'GENDER')],
   ])('bounds a %s list before the envelope normalizes it, since that runs ahead of the named cap', async (field, list) => {
     // The named caps (20, 42, 3 and 20) are the operator-facing refusal and still fire first for any
     // plausible list. This ceiling only stops `createConfigEnvelope` — which runs BEFORE them and
@@ -3808,6 +3817,10 @@ describe('CampaignController.createCampaign cutover', () => {
       deviceBidModifiers: [{ device: 'MOBILE', bidModifier: 0 }],
       excludedAgeRanges: ['AGE_RANGE_18_24'],
       excludedGenders: ['FEMALE'],
+      excludedIncomeRanges: ['INCOME_RANGE_0_50'],
+      excludedParentalStatuses: ['PARENT'],
+      observedDemographics: ['GENDER'],
+      displayDemographics: { genders: ['FEMALE'] },
       sitelinks: [{ text: 'Schedule', finalUrl: 'https://events.example/schedule' }],
       callouts: ['Hands-on labs'],
       structuredSnippets: [{ header: 'Types', values: ['Talks', 'Labs', 'Demos'] }],
@@ -3824,6 +3837,7 @@ describe('CampaignController.createCampaign cutover', () => {
       demandGenAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Build with open source'] } }],
       demandGenAds: [{ name: 'Teaser', creative: { headlines: ['Build with open source'] } }],
       demandGenAudience: 'customers/1234567890/audiences/42',
+      demandGenDemographics: { genders: ['FEMALE'] },
       performanceMaxCreative: { businessName: 'Example Foundation' },
       performanceMaxSearchThemes: ['kubernetes conference'],
       displayCreative: { headlines: ['Join us this spring'] },
@@ -3834,6 +3848,7 @@ describe('CampaignController.createCampaign cutover', () => {
       searchPartners: true,
       excludedPlacements: ['spam.example'],
       displayAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us this spring'] } }],
+      searchAssets: { businessName: 'Example Foundation' },
     };
     const CASES = GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.map(({ field, label }) => [field, label] as const);
 
@@ -3875,6 +3890,22 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(legacyCreate).not.toHaveBeenCalled();
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenVideoCreative' });
+    });
+
+    // Pinned outside the table, which is derived from the constant and so cannot notice the entry going missing.
+    it('refuses a Search create carrying its campaign assets by name while the cutover is dark (#5262)', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ searchAssets: { adImages: ['https://cdn.example.org/square.png'] } }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'searchAssets' });
     });
 
     it('refuses a Display create split into ad groups by name while the cutover is dark (#475)', async () => {
@@ -3996,6 +4027,34 @@ describe('CampaignController.createCampaign cutover', () => {
       legacyServes();
 
       await controller.createCampaign(buildReq(googleBody({ searchPartners: false }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(legacyCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a demographic targeting object whose list is not a list by name while the cutover is dark', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ displayDemographics: { ageRanges: '18-24' } } as never), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'displayDemographics' });
+    });
+
+    it('still serves a demographic targeting object whose every list is empty on the legacy road', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ displayDemographics: { ageRanges: [], genders: null } }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
 
       expect(next).not.toHaveBeenCalled();
       expect(legacyCreate).toHaveBeenCalledTimes(1);
@@ -5235,6 +5294,124 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(config).not.toHaveProperty('excludedGenders');
   });
 
+  describe('ad-group demographics at create (linuxfoundation/lfx-v2-campaign-service#473, #497, #499)', () => {
+    const query = { project: 'tlf', brief_id: 'b-1' };
+    const ok = (): void => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000497', error: null });
+    };
+    const config = (): Record<string, unknown> => envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+
+    it('dispatches Search income exclusions and observed dimensions, normalized', async () => {
+      ok();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ excludedIncomeRanges: [' income_range_0_50 '], observedDemographics: ['age_range', 'GENDER'] }), query),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(config()['excludedIncomeRanges']).toEqual(['INCOME_RANGE_0_50']);
+      expect(config()['observedDemographics']).toEqual(['AGE_RANGE', 'GENDER']);
+      expect(config()).not.toHaveProperty('displayDemographics');
+    });
+
+    it('dispatches Display income and parental exclusions and positive targeting, an empty list left out', async () => {
+      ok();
+
+      await controller.createCampaign(
+        buildReq(
+          googleBody({
+            campaignTypes: ['display'],
+            excludedIncomeRanges: ['UNDETERMINED'],
+            excludedParentalStatuses: ['not_a_parent'],
+            displayDemographics: { ageRanges: ['25-34', 'AGE_RANGE_35_44'], genders: [], incomeRanges: ['INCOME_RANGE_90_UP'], parentalStatuses: ['parent'] },
+          }),
+          query
+        ),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(config()['excludedIncomeRanges']).toEqual(['UNDETERMINED']);
+      expect(config()['excludedParentalStatuses']).toEqual(['NOT_A_PARENT']);
+      expect(config()['displayDemographics']).toEqual({
+        ageRanges: ['25-34', 'AGE_RANGE_35_44'],
+        incomeRanges: ['INCOME_RANGE_90_UP'],
+        parentalStatuses: ['PARENT'],
+      });
+    });
+
+    it('omits every ad-group demographic field when none was set', async () => {
+      ok();
+
+      await controller.createCampaign(
+        buildReq(
+          googleBody({
+            campaignTypes: ['display'],
+            excludedIncomeRanges: [],
+            excludedParentalStatuses: [],
+            observedDemographics: [],
+            displayDemographics: { genders: [] },
+          }),
+          query
+        ),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      for (const key of ['excludedIncomeRanges', 'excludedParentalStatuses', 'observedDemographics', 'displayDemographics']) {
+        expect(config()).not.toHaveProperty(key);
+      }
+    });
+
+    it.each([
+      ['excludedIncomeRanges', { campaignTypes: ['demand-gen'], excludedIncomeRanges: ['INCOME_RANGE_0_50'] }, 'income-range'],
+      ['excludedParentalStatuses', { excludedParentalStatuses: ['PARENT'] }, 'Search'],
+      ['excludedParentalStatuses', { campaignTypes: ['video'], excludedParentalStatuses: ['PARENT'] }, 'only on Display'],
+      ['excludedIncomeRanges', { campaignTypes: ['display'], excludedIncomeRanges: ['50-60'] }, 'INCOME_RANGE_0_50'],
+      ['excludedParentalStatuses', { campaignTypes: ['display'], excludedParentalStatuses: {} }, 'list'],
+      ['observedDemographics', { campaignTypes: ['display'], observedDemographics: ['GENDER'] }, 'Search campaigns only'],
+      ['observedDemographics', { observedDemographics: ['PARENTAL_STATUS'] }, 'parental status'],
+      ['observedDemographics', { excludedGenders: ['MALE', 'FEMALE', 'UNDETERMINED'], observedDemographics: ['GENDER'] }, 'Every gender is excluded'],
+      ['displayDemographics', { displayDemographics: { genders: ['MALE'] } }, 'Display campaigns only'],
+      ['displayDemographics', { campaignTypes: ['display'], displayDemographics: ['MALE'] }, 'must be'],
+      [
+        'displayDemographics',
+        { campaignTypes: ['display'], displayDemographics: { ageRanges: ['18-24'] }, excludedAgeRanges: ['AGE_RANGE_18_24'] },
+        'both target and exclude',
+      ],
+    ])('refuses %s by name before dispatch (%j)', async (field, overrides, expected) => {
+      await controller.createCampaign(buildReq(googleBody(overrides as never), query), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.statusCode).toBe(400);
+      expect(error.field).toBe(field);
+      expect(error.message).toContain(expected);
+    });
+
+    it('judges the exclusions before the observed dimensions, as preflightCampaignKind does', async () => {
+      await controller.createCampaign(buildReq(googleBody({ excludedIncomeRanges: ['NOPE'], observedDemographics: ['DEVICE'] }), query), res, next);
+
+      expect(refusalFrom().field).toBe('excludedIncomeRanges');
+    });
+
+    it('bounds each Display targeting list before the envelope normalizes it', async () => {
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['display'], displayDemographics: { genders: Array.from({ length: 101 }, () => 'MALE') } } as never), query),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ field: 'displayDemographics.genders' });
+      expect(refusalFrom().message).toContain('100');
+    });
+  });
+
   describe('Search ads, display paths and negatives at create (#4991)', () => {
     it('sends the one ad exactly as before when no further ad is added, with the paths at campaign level', async () => {
       createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000004991', error: null });
@@ -5829,6 +6006,156 @@ describe('CampaignController.createCampaign cutover', () => {
     });
   });
 
+  describe('Demand Gen demographics (linuxfoundation/lfx-v2-campaign-service#498, #518)', () => {
+    const AUDIENCE = 'customers/1234567890/audiences/42';
+    const IMAGE = { headlines: ['Join us'] };
+    const VIDEO = {
+      youtubeVideoIds: ['dQw4w9WgXcQ'],
+      logoImages: ['https://cdn.example/logo.png'],
+      headlines: ['Join us'],
+      longHeadlines: ['Four days of cloud native talks'],
+      descriptions: ['Register today'],
+      businessName: 'Example Foundation',
+    };
+    const marketingOps = vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict);
+    const create = async (fields: Record<string, unknown>, campaignTypes = ['demand-gen']): Promise<void> => {
+      await controller.createCampaign(buildReq(googleBody({ campaignTypes, ...fields } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    };
+    const accepted = (): void => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000498', error: null });
+    };
+    const config = (): Record<string, unknown> => envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+
+    it("forwards the single ad group's demographics normalized, an empty list left out, without asking global_marketing_ops", async () => {
+      accepted();
+
+      await create({ demandGenCreative: IMAGE, demandGenDemographics: { ageRanges: [' 25-34', '35-44', '45-54', 'undetermined'], genders: [] } });
+
+      expect(next).not.toHaveBeenCalled();
+      expect(config()['demandGenDemographics']).toEqual({ ageRanges: ['25-34', '35-44', '45-54', 'UNDETERMINED'] });
+      expect(marketingOps).not.toHaveBeenCalled();
+    });
+
+    it('forwards them beside a video ad as beside an image ad', async () => {
+      accepted();
+
+      await create({ demandGenVideoCreative: VIDEO, demandGenDemographics: { parentalStatuses: ['parent'] } });
+
+      expect(next).not.toHaveBeenCalled();
+      expect(config()['demandGenDemographics']).toEqual({ parentalStatuses: ['PARENT'] });
+    });
+
+    it("forwards each named group's own demographics, and none for a group without", async () => {
+      accepted();
+
+      await create({
+        demandGenAdGroups: [
+          { name: 'Retargeting', creative: IMAGE, demographics: { incomeRanges: ['income_range_90_up'] } },
+          { name: 'Prospecting', videoCreative: VIDEO, audience: AUDIENCE },
+        ],
+      });
+
+      expect(next).not.toHaveBeenCalled();
+      expect(config()['demandGenAdGroups']).toEqual([
+        { name: 'Retargeting', demographics: { incomeRanges: ['INCOME_RANGE_90_UP'] }, creative: { headlines: ['Join us'] } },
+        { name: 'Prospecting', audience: AUDIENCE, videoCreative: VIDEO },
+      ]);
+      expect(config()).not.toHaveProperty('demandGenDemographics');
+    });
+
+    it('leaves the request byte-identical when no demographics are set', async () => {
+      accepted();
+      await create({ demandGenCreative: IMAGE });
+      const without = JSON.stringify(config());
+      createCampaigns.mockClear();
+
+      await create({ demandGenCreative: IMAGE, demandGenDemographics: null });
+
+      expect(JSON.stringify(config())).toBe(without);
+      expect(without).not.toContain('demographics');
+    });
+
+    it.each([
+      ['demandGenDemographics', 'on another channel', { demandGenDemographics: { genders: ['MALE'] } }, ['search'], 'Demand Gen ad group only'],
+      ['demandGenDemographics', 'that Go cannot decode', { demandGenCreative: IMAGE, demandGenDemographics: ['MALE'] }, undefined, 'must be an object'],
+      ['demandGenDemographics', 'naming nothing', { demandGenCreative: IMAGE, demandGenDemographics: {} }, undefined, 'set but name nothing'],
+      [
+        'demandGenDemographics',
+        'beside the Demand Gen audience',
+        { demandGenCreative: IMAGE, demandGenAudience: AUDIENCE, demandGenDemographics: { genders: ['MALE'] } },
+        undefined,
+        'cannot both be set',
+      ],
+      [
+        'demandGenDemographics',
+        'holding only Unknown',
+        { demandGenCreative: IMAGE, demandGenDemographics: { genders: ['UNDETERMINED'] } },
+        undefined,
+        'holds only Unknown',
+      ],
+      [
+        'demandGenDemographics',
+        'restricting nobody',
+        { demandGenCreative: IMAGE, demandGenDemographics: { genders: ['MALE', 'FEMALE', 'UNDETERMINED'] } },
+        undefined,
+        'restrict nobody',
+      ],
+      [
+        'demandGenDemographics',
+        'naming user lists',
+        { demandGenCreative: IMAGE, demandGenDemographics: { genders: ['MALE'], audienceSegments: ['customers/1234567890/userLists/1'] } },
+        undefined,
+        'sends only age, gender, income and parental status',
+      ],
+      [
+        'demandGenAdGroups',
+        "beside the group's own audience",
+        { demandGenAdGroups: [{ name: 'a', creative: IMAGE, audience: AUDIENCE, demographics: { genders: ['MALE'] } }] },
+        undefined,
+        'sets both an audience and demographics',
+      ],
+      [
+        'demandGenAdGroups',
+        'off the vocabulary in a group',
+        {
+          demandGenAdGroups: [
+            { name: 'a', creative: IMAGE },
+            { name: 'b', creative: IMAGE, demographics: { ageRanges: ['30-50'] } },
+          ],
+        },
+        undefined,
+        'in the demographics of Demand Gen ad group 2',
+      ],
+    ])('refuses %s %s by name before any upstream call', async (field, _label, fields, campaignTypes, fragment) => {
+      await create(fields as Record<string, unknown>, campaignTypes as string[] | undefined);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field, message: expect.stringContaining(fragment as string) });
+    });
+
+    it('judges the ad groups before the demographics, as preflightCampaignKind does', async () => {
+      await create({ demandGenAdGroups: [{ name: ' ', creative: IMAGE, demographics: { genders: ['NOPE'] } }] });
+
+      expect(refusalFrom().field).toBe('demandGenAdGroups');
+      expect(refusalFrom().message).not.toContain('NOPE');
+    });
+
+    it.each([
+      ['demandGenDemographics', { demandGenDemographics: { genders: Array.from({ length: 101 }, () => 'MALE') } }, 'demandGenDemographics.genders'],
+      [
+        'demandGenAdGroups',
+        { demandGenAdGroups: [{ name: 'a', creative: IMAGE, demographics: { ageRanges: Array.from({ length: 101 }, () => '25-34') } }] },
+        'demandGenAdGroups.demographics.ageRanges',
+      ],
+    ])('bounds %s before the envelope normalizes it', async (_label, fields, field) => {
+      await create(fields);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ field });
+      expect(refusalFrom().message).toContain('100');
+    });
+  });
+
   describe('Demand Gen audiences (#5244)', () => {
     const AUDIENCE = 'customers/1234567890/audiences/42';
     const IMAGE = { headlines: ['Join us'] };
@@ -6361,13 +6688,49 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(refusalFrom()).toMatchObject({ field: 'demandGenVideoCreative', message: expect.stringContaining('not both') });
     });
 
+    // #1614 (F13): Google refused "Register" at adGroupAds:mutate, after the campaign existed, and
+    // campaign-service checks only the call to action's length, so the BFF holds it to the list.
     it.each([
-      ['a watch URL in place of an id', { youtubeVideoIds: ['https://www.youtube.com/watch?v=dQw4w9WgXcQ'] }, 'is a link'],
-      ['a second logo', { logoImages: ['https://cdn.example/a.png', 'https://cdn.example/b.png'] }, 'exactly one logo'],
-      ['a headline wider than 40', { headlines: ['日'.repeat(21)] }, 'longer than the 40 characters'],
-      ['no long headline', { longHeadlines: [] }, 'at least 1 long headline'],
-      ['a call to action Google refuses', { callToAction: 'REGISTER' }, 'call to action'],
-    ])('refuses %s by name, as campaign-service would before the budget', async (_label, overrides, fragment) => {
+      [
+        'a Display call to action off the documented list',
+        { campaignTypes: ['display'], displayCreative: { headlines: ['Join us'], callToActionText: 'Register' } },
+      ],
+      [
+        'a Display ad group call to action off the list',
+        { campaignTypes: ['display'], displayAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us'], callToActionText: 'Register' } }] },
+      ],
+      ['any Demand Gen image call to action', { campaignTypes: ['demand-gen'], demandGenCreative: { headlines: ['Join us'], callToActionText: 'Learn More' } }],
+    ])('refuses %s by name, creating nothing', async (_label, overrides) => {
+      await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'callToActionText', message: expect.stringContaining('does not accept') });
+    });
+
+    it('sends a listed Display call to action unchanged', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005228', error: null });
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['display'], displayCreative: { headlines: ['Join us'], callToActionText: 'Learn More' } }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['displayCreative']).toMatchObject({ callToActionText: 'Learn More' });
+    });
+
+    it.each([
+      ['a watch URL in place of an id', { youtubeVideoIds: ['https://www.youtube.com/watch?v=dQw4w9WgXcQ'] }, 'is a link', 'demandGenVideoCreative'],
+      ['a second logo', { logoImages: ['https://cdn.example/a.png', 'https://cdn.example/b.png'] }, 'exactly one logo', 'demandGenVideoCreative'],
+      ['a headline wider than 40', { headlines: ['日'.repeat(21)] }, 'longer than the 40 characters', 'demandGenVideoCreative'],
+      ['no long headline', { longHeadlines: [] }, 'at least 1 long headline', 'demandGenVideoCreative'],
+      // Reported against the call to action itself (#1614), still in upstream's order: it is checked last.
+      ['a call to action Google refuses', { callToAction: 'REGISTER' }, 'call to action', 'callToAction'],
+    ])('refuses %s by name, as campaign-service would before the budget', async (_label, overrides, fragment, field) => {
       await controller.createCampaign(
         buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenVideoCreative: { ...VIDEO, ...overrides } }), { project: 'tlf', brief_id: 'b-1' }),
         res,
@@ -6375,7 +6738,62 @@ describe('CampaignController.createCampaign cutover', () => {
       );
 
       expect(createCampaigns).not.toHaveBeenCalled();
-      expect(refusalFrom()).toMatchObject({ field: 'demandGenVideoCreative', message: expect.stringContaining(fragment) });
+      expect(refusalFrom()).toMatchObject({ field, message: expect.stringContaining(fragment) });
+    });
+
+    // The ad and ad group judges wrap the video ad's sentence; the field is the call to action there too (#1614).
+    it.each([
+      [
+        'an ad of the single ad group',
+        {
+          demandGenAds: [
+            { name: 'Teaser', videoCreative: { ...VIDEO, callToAction: 'REGISTER' } },
+            { name: 'Recap', videoCreative: VIDEO },
+          ],
+        },
+      ],
+      ['a named ad group', { demandGenAdGroups: [{ name: 'Retargeting', videoCreative: { ...VIDEO, callToAction: 'REGISTER' } }] }],
+      [
+        'an ad inside a named ad group',
+        {
+          demandGenAdGroups: [
+            {
+              name: 'Retargeting',
+              ads: [
+                { name: 'Teaser', videoCreative: { ...VIDEO, callToAction: 'REGISTER' } },
+                { name: 'Recap', videoCreative: VIDEO },
+              ],
+            },
+          ],
+        },
+      ],
+    ])('reports a refused video call to action in %s against callToAction', async (_label, overrides) => {
+      await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'callToAction', message: expect.stringContaining("video ad's call to action") });
+    });
+
+    it('keeps the enclosing field for an ad refused for anything else', async () => {
+      await controller.createCampaign(
+        buildReq(
+          googleBody({
+            campaignTypes: ['demand-gen'],
+            demandGenAds: [
+              { name: 'Teaser', videoCreative: { ...VIDEO, longHeadlines: [] } },
+              { name: 'Recap', videoCreative: VIDEO },
+            ],
+          }),
+          {
+            project: 'tlf',
+            brief_id: 'b-1',
+          }
+        ),
+        res,
+        next
+      );
+
+      expect(refusalFrom()).toMatchObject({ field: 'demandGenAds' });
     });
 
     it('neither sends nor judges a video ad left under another channel', async () => {
@@ -11493,12 +11911,15 @@ describe('CampaignController.createCampaign Google stored images', () => {
     isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceGoogleAssets ? assets : cutover));
   };
 
+  // A Search create also carries the ad copy and a keyword, without which it is refused before any creative is read.
+  const searchCopy = { headlines: ['H1'], descriptions: ['D1'], keywords: [{ term: 'kubernetes', matchType: 'Exact' }] };
   const body = (channel: string, key: string, creative: Record<string, unknown>): Record<string, unknown> => ({
     platforms: ['google-ads'],
     campaignTypes: [channel],
     budgetUsd: 1000,
     startDate: '2026-04-01',
     endDate: '2026-04-30',
+    ...(channel === 'search' ? searchCopy : {}),
     [key]: creative,
   });
 
@@ -11516,6 +11937,7 @@ describe('CampaignController.createCampaign Google stored images', () => {
     ['demand-gen', 'demandGenCreative', 'logoImages'],
     ['performance-max', 'performanceMaxCreative', 'marketingImages'],
     ['display', 'displayCreative', 'squareLogoImages'],
+    ['search', 'searchAssets', 'businessLogoImages'],
   ])('forwards a %s asset ref as { imageAssetId } beside the pasted URLs, in order', async (channel, key, field) => {
     flagsWith(true, true);
     createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
@@ -11555,6 +11977,70 @@ describe('CampaignController.createCampaign Google stored images', () => {
     );
 
     expect(sentCreative('demandGenCreative')['logoImages']).toEqual([{ imageAssetId: ASSET }]);
+  });
+
+  /**
+   * #5262: Search's campaign assets ride under `searchAssets` on the Search branch, normalized as every
+   * creative is: each list trimmed with its blanks dropped, the business name trimmed, a field that
+   * empties out omitted. campaign-service judges every count, shape and width (`validateSearchAssets`).
+   */
+  it('forwards the Search campaign assets on a Search create, normalized', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        body('search', 'searchAssets', {
+          adImages: [' https://cdn.example.org/square.png ', '  ', { imageAssetId: ASSET }],
+          landscapeAdImages: ['https://cdn.example.org/wide.png'],
+          businessLogoImages: [],
+          businessName: '  Example Foundation  ',
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentCreative('searchAssets')).toEqual({
+      adImages: ['https://cdn.example.org/square.png', { imageAssetId: ASSET }],
+      landscapeAdImages: ['https://cdn.example.org/wide.png'],
+      businessName: 'Example Foundation',
+    });
+  });
+
+  /** A Search create whose assets are all blank sends no `searchAssets` key, which campaign-service reads as none asked for. */
+  it('sends no searchAssets key when every Search asset is blank', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body('search', 'searchAssets', { adImages: ['  '], businessName: ' ' }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect('searchAssets' in (createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>)['googleAdsConfig']).toBe(false);
+  });
+
+  /** campaign-service refuses `searchAssets` off Search; the BFF sends only the selected channel's creative, so it never reaches there. */
+  it.each(['performance-max', 'display'])('does not send searchAssets on a %s create', async (channel) => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body(channel, 'searchAssets', { businessName: 'Example Foundation' }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect('searchAssets' in (createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>)['googleAdsConfig']).toBe(false);
   });
 
   /** `youtubeVideoIds` is a list but not an image slot, so an object there is dropped as before. */
@@ -11683,6 +12169,26 @@ describe('CampaignController.createCampaign Google stored images', () => {
         code: 'FIELD_VALIDATION_ERROR',
       },
     ]);
+  });
+
+  it('refuses a stored Search ad image when the Google-assets flag is off, naming the entry and creating nothing (#5262)', async () => {
+    flagsWith(false, true);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(body('search', 'searchAssets', { landscapeAdImages: ['https://cdn.example.org/wide.png', { imageAssetId: ASSET }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([expect.objectContaining({ field: 'searchAssets.landscapeAdImages[1].imageAssetId' })]);
   });
 
   it.each([

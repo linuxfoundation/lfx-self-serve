@@ -1019,8 +1019,6 @@ export interface MktgAgentIntake {
   documentName: string;
   /** One-paragraph intro under the form title. */
   intro: string;
-  /** The intro while Download PDF is behind its flag (MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG off); `intro` when absent. */
-  introSlidesOnly?: string;
   /**
    * Batch-mode preamble lines prepended to the composed chat message — the
    * agent's own form-mode wording, quoted verbatim so its MODE RULES trigger.

@@ -508,7 +508,7 @@ Persistence receipts carry the exact `document_location` with `agent_key`,
 `document_id`, `revision_id`; it is not a lookup of whichever revision is current.
 UI models normalize this to their camel-case location. JSON content, sidecars,
 CAS publication, current selection and attribution stay on the shared writer.
-`getRawEventPayloads` reads up to four offset pages of 500 raw events, stopping on a short page or `has_more=false`. It de-duplicates event IDs and sorts chronologically, then replaces user/trigger content with `mktg_session_turn_started`. Only a four-page read that still has more events appends `mktg_session_events_truncated`; a full final page does not. These content-free markers prevent an old
+`getRawEventPayloads` reads offset pages of 500 raw events, sized from the API's `pagination.total_count` under the absolute cap `MKTG_RAW_EVENTS_MAX_PAGES` (20 pages, 10,000 events); when the total is absent it stops on a short page or `has_more=false`. It de-duplicates event IDs and sorts chronologically, then replaces user/trigger content with `mktg_session_turn_started`. Only a read that reaches the cap with more events left appends `mktg_session_events_truncated`. Concurrent polls of one session share one in-flight read (single-flight, per process). These content-free markers prevent an old
 completion or finalize replay from ending a queued/truncated turn. Reasoning
 MIME is filtered before any text, questions, envelope or reply extraction.
 

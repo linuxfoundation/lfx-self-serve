@@ -13,6 +13,7 @@ import type { GoogleCreativeFieldSpec } from '../interfaces/campaign.interface';
 import {
   GOOGLE_CREATIVE_WIRE_FIELDS,
   GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS,
+  googleCallToActionRefusal,
   googleCreativeFieldWidth,
   googleCreativeImageFit,
   googleCreativeImageRequirement,
@@ -204,5 +205,52 @@ describe('the creative wire tables', () => {
     expect(GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS.images).toEqual(['logoImages']);
     expect(GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS.lists).toContain('youtubeVideoIds');
     expect(Object.values(GOOGLE_CREATIVE_WIRE_FIELDS).map((w) => w.key)).not.toContain(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY);
+  });
+});
+
+describe('googleCallToActionRefusal (#1614, F13)', () => {
+  it('passes a listed Display call to action, and none', () => {
+    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: 'Learn More' } }, 'display')).toBeNull();
+    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: '  ' } }, 'display')).toBeNull();
+    expect(googleCallToActionRefusal({ displayCreative: { headlines: ['Join us'] } }, 'display')).toBeNull();
+  });
+
+  it('refuses an unlisted Display call to action, on the single ad and in a named ad group', () => {
+    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: 'Register' } }, 'display')?.message).toContain('does not accept "Register"');
+    expect(googleCallToActionRefusal({ displayAdGroups: [{ name: 'A', creative: { callToActionText: 'Register' } }] }, 'display')?.message).toContain(
+      'Register'
+    );
+  });
+
+  it('refuses any Demand Gen image call to action, since Google documents none for it', () => {
+    expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: 'Learn More' } }, 'demand-gen')?.message).toContain('call to action');
+  });
+
+  it('refuses an unlisted Demand Gen video call to action and passes a listed one', () => {
+    expect(googleCallToActionRefusal({ demandGenVideoCreative: { callToAction: 'REGISTER' } }, 'demand-gen')?.message).toContain('REGISTER');
+    expect(googleCallToActionRefusal({ demandGenVideoCreative: { callToAction: 'SIGN_UP' } }, 'demand-gen')).toBeNull();
+  });
+
+  it('reads several Demand Gen ads, named ad groups and their ads', () => {
+    expect(googleCallToActionRefusal({ demandGenAds: [{ name: 'a', creative: { callToActionText: 'Go' } }] }, 'demand-gen')?.message).toContain('"Go"');
+    expect(googleCallToActionRefusal({ demandGenAdGroups: [{ name: 'g', videoCreative: { callToAction: 'GET_STARTED' } }] }, 'demand-gen')?.message).toContain(
+      'GET_STARTED'
+    );
+    expect(
+      googleCallToActionRefusal({ demandGenAdGroups: [{ name: 'g', ads: [{ name: 'a', creative: { callToActionText: 'Go' } }] }] }, 'demand-gen')?.message
+    ).toContain('"Go"');
+  });
+
+  it('names the field it refuses: callToActionText on the image and Display ads, callToAction on the video ad', () => {
+    expect(googleCallToActionRefusal({ displayCreative: { callToActionText: 'Register' } }, 'display')?.field).toBe('callToActionText');
+    expect(googleCallToActionRefusal({ demandGenCreative: { callToActionText: 'Register' } }, 'demand-gen')?.field).toBe('callToActionText');
+    expect(googleCallToActionRefusal({ demandGenVideoCreative: { callToAction: 'REGISTER' } }, 'demand-gen')?.field).toBe('callToAction');
+    expect(googleCallToActionRefusal({ demandGenAds: [{ name: 'a', videoCreative: { callToAction: 'REGISTER' } }] }, 'demand-gen')?.field).toBe('callToAction');
+  });
+
+  it('reads only the channel being created', () => {
+    const body = { displayCreative: { callToActionText: 'Register' }, demandGenCreative: { callToActionText: 'Register' } };
+    expect(googleCallToActionRefusal(body, 'performance-max')).toBeNull();
+    expect(googleCallToActionRefusal(body, 'search')).toBeNull();
   });
 });

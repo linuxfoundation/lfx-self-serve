@@ -3,29 +3,6 @@
 
 export const AKRITES_ENABLED_FLAG = 'akrites-enabled';
 export const MKTG_OS_AGENTS_ENABLED_FLAG = 'mktg-os-agents-enabled';
-/**
- * Dark-launch gate for Marketing OS "Download PDF" (#5302). Default false: the in-app PDFs are being rebuilt
- * as landscape book pages, and until that lands the PDF comes from the exported Google Slides deck
- * (File → Download → PDF). LaunchDarkly targeting is the rollout switch, never the code default: everything
- * below comes back by flipping the flag, with no deploy.
- *
- * Off, the entry buttons are hidden — the AEO/GEO report row of the document view, the messaging framework
- * view, the brand kit web view and the family export card — and the copy that names a PDF changes so no screen
- * promises one: the kit footer's PDF sentence and the family card's PDF note are hidden; the family card's
- * approval note and sr-only format hint, the Slides export panel's disabled reason, the family intro and the
- * Brand Kit intake intro read their `…_SLIDES_ONLY` / `introSlidesOnly` wordings; Export to Google Slides takes
- * the solid style where it is now the row's one action; and the family card skips its PDF preparation. On,
- * every screen and string is today's.
- *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag` in each component that renders one of
- * these; it gates no endpoint, and the print components, the print service and the print-only DOM stay. On
- * SSR (no provider) it reads the default, the off state. In the browser the components render under the route
- * `mktgOsAgentsEnabledGuard` gates, so the value is resolved before the first render in production, or under
- * a local override that pins BOTH this key and `mktg-os-agents-enabled`; with only the module key pinned the
- * guard returns before the provider is READY, and the PDF buttons can appear once LaunchDarkly resolves
- * (non-production builds only).
- */
-export const MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG = 'mktg-os-pdf-download-enabled';
 export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
 /**
  * Dark-launch gate for the Org Lens Crowdfunding Donations page (lfx-crowdfunding#415): the route (`cfOrgDonationsGuard`,

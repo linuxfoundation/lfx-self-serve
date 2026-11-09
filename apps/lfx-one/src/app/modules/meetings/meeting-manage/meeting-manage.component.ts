@@ -296,18 +296,24 @@ export class MeetingManageComponent {
         this.updateCanProceed();
       });
 
-    // When Board meeting type is selected, default to private + restricted access.
-    // When switching away from Board, reset to public + unrestricted defaults so the
-    // user isn't left with Board-level settings silently applied to a non-Board meeting.
-    // The user can freely override visibility and restriction after the default is applied.
+    // Selecting Board, or switching away from it, reaffirms the form's own private + restricted
+    // default — the resting state is private/restricted either way, so there's nothing left to
+    // "undo" on leaving Board. Kept as its own patch (rather than relying on the form's initial
+    // value alone) so a user who manually loosened access while on Board gets it reset on leaving,
+    // same as before this default changed. The user can freely override visibility and restriction
+    // after the default is applied.
+    //
+    // Not edit mode: hydration writes `meeting_type` like any other field, so the subscription
+    // would fire mid-patch and overwrite the access settings the meeting was actually saved with.
     this.form()
       .get('meeting_type')
       ?.valueChanges.pipe(startWith(this.form().get('meeting_type')?.value as string), pairwise(), takeUntilDestroyed(this.destroyRef))
       .subscribe(([previousType, currentType]: [string, string]) => {
-        if (currentType === MeetingType.BOARD) {
+        if (this.isEditMode()) {
+          return;
+        }
+        if (currentType === MeetingType.BOARD || previousType === MeetingType.BOARD) {
           this.form().patchValue({ visibility: MeetingVisibility.PRIVATE, restricted: true });
-        } else if (previousType === MeetingType.BOARD) {
-          this.form().patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
         }
       });
 
@@ -1292,8 +1298,8 @@ export class MeetingManageComponent {
       {
         // Step 1: Meeting Type
         meeting_type: new FormControl('', [Validators.required]),
-        visibility: new FormControl(MeetingVisibility.PUBLIC),
-        restricted: new FormControl(false),
+        visibility: new FormControl(MeetingVisibility.PRIVATE),
+        restricted: new FormControl(true),
 
         // Step 2: Meeting Details
         title: new FormControl('', [Validators.required]),

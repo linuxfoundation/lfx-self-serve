@@ -5,8 +5,10 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { signal } from '@angular/core';
+import { MailingListSyncMode } from '@lfx-one/shared/enums';
 import { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
@@ -43,6 +45,7 @@ describe('MailingListPickerDialogComponent indexed domains', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
         { provide: ProjectService, useValue: { getProjectStrict: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(MailingListPickerDialogComponent);
@@ -87,6 +90,7 @@ describe('MailingListPickerDialogComponent write access', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
         { provide: ProjectService, useValue: { getProjectStrict: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(MailingListPickerDialogComponent);
@@ -146,6 +150,7 @@ describe('MailingListPickerDialogComponent create new list access', () => {
         { provide: MessageService, useValue: { add: messageAdd } },
         { provide: PersonaService, useValue: { currentPersona: persona } },
         { provide: ProjectService, useValue: { getProjectStrict } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
       ],
     }).compileComponents();
 
@@ -215,5 +220,134 @@ describe('MailingListPickerDialogComponent create new list access', () => {
 
     expect(navigate).not.toHaveBeenCalled();
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+  });
+});
+
+// #4026: per-linked-list sync direction control, gated behind MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG.
+describe('MailingListPickerDialogComponent sync direction', () => {
+  let fixture: ComponentFixture<MailingListPickerDialogComponent>;
+  let dialogClose: ReturnType<typeof vi.fn>;
+
+  const MAILING_LISTS: GroupsIOMailingList[] = [
+    { uid: 'ml-synced', group_name: 'synced', domain: 'lists.example.org', writer: true, sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST },
+    { uid: 'ml-manual', group_name: 'manual', domain: 'lists.example.org', writer: true },
+    { uid: 'ml-unlinked', group_name: 'unlinked', domain: 'lists.example.org', writer: true },
+    {
+      uid: 'ml-elsewhere',
+      group_name: 'elsewhere',
+      domain: 'lists.example.org',
+      writer: true,
+      sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+    },
+  ] as GroupsIOMailingList[];
+
+  async function setup(flagEnabled: boolean): Promise<void> {
+    dialogClose = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [MailingListPickerDialogComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: DynamicDialogConfig,
+          useValue: {
+            data: {
+              mailingLists: MAILING_LISTS,
+              associatedUids: new Set<string>(['ml-synced', 'ml-manual']),
+              committeeUid: 'committee-1',
+            },
+          },
+        },
+        { provide: DynamicDialogRef, useValue: { close: dialogClose } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: ProjectService, useValue: { getProjectStrict: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(flagEnabled)) } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(MailingListPickerDialogComponent);
+    await fixture.whenStable();
+  }
+
+  it('hides the sync direction column when the feature flag is off', async () => {
+    await setup(false);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-ml-picker-direction-cell"]')).toBeNull();
+    fixture.componentInstance.save();
+    expect(dialogClose).toHaveBeenCalledWith(expect.objectContaining({ syncModes: new Map() }));
+  });
+
+  it('shows the sync direction column seeded from each list’s persisted sync_mode when the flag is on', async () => {
+    await setup(true);
+
+    expect(fixture.componentInstance.mlDirectionForm.get('ml-synced')?.value).toBe(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST);
+    expect(fixture.componentInstance.mlDirectionForm.get('ml-manual')?.value).toBe(MailingListSyncMode.MANUAL);
+  });
+
+  it('disables every other direction control once one list has an automatic direction', async () => {
+    await setup(true);
+
+    expect(fixture.componentInstance.activeAutoSyncUid()).toBe('ml-synced');
+    expect(fixture.componentInstance.mlDirectionForm.get('ml-manual')?.disabled).toBe(true);
+  });
+
+  it('frees the active-sync slot once that list is set back to manual', async () => {
+    await setup(true);
+
+    fixture.componentInstance.mlDirectionForm.get('ml-synced')?.setValue(MailingListSyncMode.MANUAL);
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.activeAutoSyncUid()).toBeNull();
+    expect(fixture.componentInstance.mlDirectionForm.get('ml-manual')?.disabled).toBe(false);
+  });
+
+  it('disables the direction control for a list that is not linked', async () => {
+    await setup(true);
+
+    expect(fixture.componentInstance.mlDirectionForm.get('ml-unlinked')?.disabled).toBe(true);
+  });
+
+  it('resets the direction to manual when a list is unlinked', async () => {
+    await setup(true);
+
+    fixture.componentInstance.mlDirectionForm.get('ml-manual')?.setValue(MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE);
+    fixture.componentInstance.toggleMailingList('ml-manual');
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.mlDirectionForm.get('ml-manual')?.value).toBe(MailingListSyncMode.MANUAL);
+  });
+
+  it('returns the chosen directions in save() when the flag is on', async () => {
+    await setup(true);
+
+    fixture.componentInstance.save();
+
+    expect(dialogClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        syncModes: new Map([
+          ['ml-synced', MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST],
+          ['ml-manual', MailingListSyncMode.MANUAL],
+          ['ml-unlinked', MailingListSyncMode.MANUAL],
+          ['ml-elsewhere', MailingListSyncMode.MANUAL],
+        ]),
+      })
+    );
+  });
+
+  it('seeds a list linked to another committee as Manual, not its inherited sync_mode', async () => {
+    await setup(true);
+
+    // ml-elsewhere carries AUTO_COMMITTEE_TO_MAILING_LIST from its own committee, but it isn't in
+    // associatedUids for this one — the #4880 safeguard must still seed Manual, since the admin
+    // never chose that direction for this committee.
+    expect(fixture.componentInstance.mlDirectionForm.get('ml-elsewhere')?.value).toBe(MailingListSyncMode.MANUAL);
+
+    fixture.componentInstance.toggleMailingList('ml-elsewhere');
+    fixture.componentInstance.save();
+
+    expect(dialogClose).toHaveBeenCalledWith(expect.objectContaining({ syncModes: expect.any(Map) }));
+    const syncModes = dialogClose.mock.calls[0][0].syncModes as Map<string, MailingListSyncMode>;
+    expect(syncModes.get('ml-elsewhere')).toBe(MailingListSyncMode.MANUAL);
   });
 });

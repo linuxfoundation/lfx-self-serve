@@ -10,6 +10,9 @@ import {
   GOOGLE_CREATIVE_RUNE_COUNTED_CONTROLS,
   GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
+  GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY,
+  GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY,
+  GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY,
   GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES,
   GOOGLE_ADS_MAX_SEARCH_THEME_RUNES,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
@@ -17,7 +20,13 @@ import {
   googleAdsToLower,
   googleAdsTrimSpace,
 } from '../constants/campaign.constants';
-import type { GoogleCreativeFieldSpec, GoogleCreativeImageShape, GoogleCreativeWireFields, StoredCreativeAsset } from '../interfaces/campaign.interface';
+import type {
+  GoogleCreativeFieldRefusal,
+  GoogleCreativeFieldSpec,
+  GoogleCreativeImageShape,
+  GoogleCreativeWireFields,
+  StoredCreativeAsset,
+} from '../interfaces/campaign.interface';
 import { googleAdsTextWeight } from './campaign-google-search-ads.utils';
 import { codePointLength } from './string.utils';
 
@@ -180,8 +189,8 @@ export function googleCreativeWireFields(key: string, fields: readonly GoogleCre
  *
  * One entry per channel's image creative. Demand Gen's second creative, its video ad, is
  * {@link GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS}. `video` has no entry on purpose — see
- * `GOOGLE_VIDEO_CREATE_SUPPORTED`. `search` has none either: its copy rides as top-level
- * `headlines`/`descriptions`/`keywords`, not under a creative key.
+ * `GOOGLE_VIDEO_CREATE_SUPPORTED`. `search`'s entry is its campaign assets, `searchAssets` (#5262);
+ * its ad copy rides as top-level `headlines`/`descriptions`/`keywords`, not under a creative key.
  */
 export const GOOGLE_CREATIVE_WIRE_FIELDS: Readonly<Record<string, GoogleCreativeWireFields>> = Object.fromEntries(
   GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => [
@@ -199,3 +208,80 @@ export const GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS: GoogleCreativeWireFields = goo
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
   GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS
 );
+
+/**
+ * The sentence for a closed-list creative value outside its list (#1614, F13): the Implement tab shows
+ * it under the field, and the BFF refuses a create with it, so both say the same thing.
+ */
+export function googleCreativeOptionMessage(label: string, value: string): string {
+  return `Google Ads does not accept "${googleAdsEchoed(value)}" as the ${label.toLowerCase()}. Choose one from the list, or None, and create again.`;
+}
+
+/** The first closed-list field of one creative whose value is outside its list, named with its sentence, or `null`. */
+function googleCreativeOptionsRefusal(fields: readonly GoogleCreativeFieldSpec[], creative: unknown): GoogleCreativeFieldRefusal | null {
+  if (creative === null || typeof creative !== 'object' || Array.isArray(creative)) return null;
+  const raw = creative as Record<string, unknown>;
+  for (const field of fields) {
+    if (field.options === undefined) continue;
+    const value = raw[field.control];
+    if (typeof value !== 'string') continue;
+    const trimmed = googleAdsTrimSpace(value);
+    if (trimmed !== '' && !field.options.some((option) => option.value === trimmed)) {
+      return { field: field.control, message: googleCreativeOptionMessage(field.label, trimmed) };
+    }
+  }
+  return null;
+}
+
+/**
+ * Why a create's Google call to action would be refused, or `null` (#1614, F13): the first creative on
+ * the request whose closed-list field — every Google call to action — holds a value outside its list.
+ *
+ * Read on the RAW body, because campaign-service does not check the text of the Demand Gen image ad's or
+ * the responsive display ad's call to action, and Google refuses an unlisted one only at
+ * `adGroupAds:mutate`, after the campaign and its ad group exist. Only the channel being created is
+ * read, as the BFF sends only that channel's creatives: Demand Gen's image and video ads, alone, as
+ * several ads, or in named ad groups; Display's single ad and named ad groups. Performance Max has no
+ * call-to-action field, and Search and Video have no creative here.
+ *
+ * The refusal names the field it is about — `callToActionText` on the image and Display ads,
+ * `callToAction` on the video ad — so the BFF reports the one the operator has to change.
+ */
+export function googleCallToActionRefusal(body: Readonly<Record<string, unknown>>, channel: unknown): GoogleCreativeFieldRefusal | null {
+  const entries = (list: unknown): Record<string, unknown>[] =>
+    Array.isArray(list) ? list.filter((entry): entry is Record<string, unknown> => entry !== null && typeof entry === 'object' && !Array.isArray(entry)) : [];
+  const imageFields = GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'];
+  const videoFields = GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS;
+  const demandGenAd = (ad: Record<string, unknown>): GoogleCreativeFieldRefusal | null =>
+    googleCreativeOptionsRefusal(imageFields, ad['creative']) ?? googleCreativeOptionsRefusal(videoFields, ad['videoCreative']);
+  if (channel === 'demand-gen') {
+    const single =
+      googleCreativeOptionsRefusal(imageFields, body[GOOGLE_CREATIVE_REQUEST_KEYS['demand-gen']]) ??
+      googleCreativeOptionsRefusal(videoFields, body[GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY]);
+    if (single !== null) return single;
+    for (const ad of entries(body[GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY])) {
+      const refusal = demandGenAd(ad);
+      if (refusal !== null) return refusal;
+    }
+    for (const group of entries(body[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY])) {
+      const refusal =
+        demandGenAd(group) ??
+        entries(group['ads'])
+          .map(demandGenAd)
+          .find((found) => found !== null) ??
+        null;
+      if (refusal !== null) return refusal;
+    }
+    return null;
+  }
+  if (channel === 'display') {
+    const displayFields = GOOGLE_CREATIVE_FIELD_SPECS['display'];
+    const single = googleCreativeOptionsRefusal(displayFields, body[GOOGLE_CREATIVE_REQUEST_KEYS['display']]);
+    if (single !== null) return single;
+    for (const group of entries(body[GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY])) {
+      const refusal = googleCreativeOptionsRefusal(displayFields, group['creative']);
+      if (refusal !== null) return refusal;
+    }
+  }
+  return null;
+}

@@ -20,6 +20,13 @@ import {
   googleUpperCodeList,
 } from '@lfx-one/shared/utils/campaign-google-criteria.utils';
 import {
+  googleAdGroupDemographicExclusionsRefusal,
+  googleDemandGenDemographicsRefusal,
+  googleDisplayDemographicsCarried,
+  googleDisplayDemographicsRefusal,
+  googleObservedDemographicsRefusal,
+} from '@lfx-one/shared/utils/campaign-google-demographics.utils';
+import {
   googleAdditionalSearchAdsRefusal,
   googleCreateNegativeKeywordsRefusal,
   googleSearchAdCopyWidthRefusal,
@@ -28,6 +35,7 @@ import {
 import {
   GOOGLE_CREATIVE_WIRE_FIELDS,
   GOOGLE_DEMAND_GEN_VIDEO_WIRE_FIELDS,
+  googleCallToActionRefusal,
   googlePerformanceMaxSearchThemesRefusal,
   googlePerformanceMaxShortDescriptionMissing,
 } from '@lfx-one/shared/utils/campaign-google-creative.utils';
@@ -189,8 +197,12 @@ import {
   GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
   GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_TARGETING,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
+  GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
+  GOOGLE_CHANNELS_WITH_OBSERVED_DEMOGRAPHICS,
+  GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
@@ -204,9 +216,12 @@ import {
   GOOGLE_DEMAND_GEN_AUDIENCE_RESOURCE_PATTERN,
   GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_CODE,
   GOOGLE_DEMAND_GEN_AUDIENCE_RESTRICTED_MESSAGE,
+  GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY,
   GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY,
   GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY,
+  GOOGLE_DEMAND_GEN_VIDEO_CALL_TO_ACTION_REFUSAL,
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
+  GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
@@ -1575,6 +1590,39 @@ export class CampaignController {
           return;
         }
 
+        // The ad-group demographics (linuxfoundation/lfx-v2-campaign-service#473, #497, #499), right after
+        // the criteria plan as `preflightCampaignKind` judges them: the income and parental exclusions,
+        // then Search's observed dimensions, then Display's positive targeting — the last two compared
+        // with the exclusions above, which upstream has accepted by then.
+        const demographicExclusions = {
+          ageRanges: body?.excludedAgeRanges,
+          genders: body?.excludedGenders,
+          incomeRanges: body?.excludedIncomeRanges,
+          parentalStatuses: body?.excludedParentalStatuses,
+        };
+        const adGroupDemographicRefusal = googleAdGroupDemographicExclusionsRefusal(body?.excludedIncomeRanges, body?.excludedParentalStatuses, googleChannel);
+        if (adGroupDemographicRefusal) {
+          next(
+            ServiceValidationError.forField(adGroupDemographicRefusal.field, adGroupDemographicRefusal.message, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+          return;
+        }
+        const observedRefusal = googleObservedDemographicsRefusal(body?.observedDemographics, googleChannel, demographicExclusions);
+        if (observedRefusal) {
+          next(ServiceValidationError.forField('observedDemographics', observedRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
+          return;
+        }
+        const displayDemographicsRefusal = googleDisplayDemographicsRefusal(body?.displayDemographics, googleChannel, demographicExclusions);
+        if (displayDemographicsRefusal) {
+          next(
+            ServiceValidationError.forField('displayDemographics', displayDemographicsRefusal, { operation: 'campaign_create', service: 'campaign_controller' })
+          );
+          return;
+        }
+
         // The Search ad group's further ads, every ad's display paths and the create-time negatives
         // (#4991). Each is refused BY NAME off Search rather than withheld, as upstream refuses it
         // (`preflightCampaignKind`); on Search each goes through the same shared judge the Implement
@@ -1632,7 +1680,7 @@ export class CampaignController {
         const adGroupsRefusal = this.googleDemandGenAdGroupsRefusal(body, googleChannel, adGroupEventName);
         if (adGroupsRefusal) {
           next(
-            ServiceValidationError.forField(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, adGroupsRefusal, {
+            ServiceValidationError.forField(this.googleCallToActionField(GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, adGroupsRefusal), adGroupsRefusal, {
               operation: 'campaign_create',
               service: 'campaign_controller',
             })
@@ -1646,7 +1694,30 @@ export class CampaignController {
         const adsRefusal = this.googleDemandGenAdsRefusal(body, googleChannel, adGroupEventName);
         if (adsRefusal) {
           next(
-            ServiceValidationError.forField(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, adsRefusal, { operation: 'campaign_create', service: 'campaign_controller' })
+            ServiceValidationError.forField(this.googleCallToActionField(GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, adsRefusal), adsRefusal, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+          return;
+        }
+
+        // The Demand Gen demographics (linuxfoundation/lfx-v2-campaign-service#498, #518), after the ad
+        // groups as `preflightCampaignKind` judges them: the single ad group's, then each group's own,
+        // through the same shared judge the Implement tab holds Create on. Judged on the RAW body, since
+        // the normalizer drops a value Go could not decode.
+        const demandGenDemographicsRefusal = googleDemandGenDemographicsRefusal(
+          body?.demandGenDemographics,
+          body?.demandGenAdGroups,
+          body?.demandGenAudience,
+          googleChannel
+        );
+        if (demandGenDemographicsRefusal) {
+          next(
+            ServiceValidationError.forField(demandGenDemographicsRefusal.field, demandGenDemographicsRefusal.message, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
           );
           return;
         }
@@ -1668,7 +1739,24 @@ export class CampaignController {
         const videoRefusal = this.googleDemandGenVideoRefusal(body, googleChannel);
         if (videoRefusal) {
           next(
-            ServiceValidationError.forField(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY, videoRefusal, { operation: 'campaign_create', service: 'campaign_controller' })
+            ServiceValidationError.forField(this.googleCallToActionField(GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY, videoRefusal), videoRefusal, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+          return;
+        }
+
+        // Every Google call to action held to its list (#1614): Google refuses an unlisted Demand Gen
+        // image or Display call to action only at `adGroupAds:mutate`, after the campaign exists, and
+        // campaign-service checks only its length. The Implement tab holds Create on the same judge.
+        const callToActionRefusal = googleCallToActionRefusal(body as unknown as Record<string, unknown>, googleChannel);
+        if (callToActionRefusal) {
+          next(
+            ServiceValidationError.forField(callToActionRefusal.field, callToActionRefusal.message, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
           );
           return;
         }
@@ -5808,7 +5896,7 @@ export class CampaignController {
   /**
    * {@link oversizedGoogleCreativeField} for one Demand Gen ad group or ad list (#5226): the list's
    * length, then each entry's name, its two creatives and, on a group (`groups` true), its `audience`
-   * (#5244) and its own `ads`, one level down only: an ad has no `audience`, and an ad's own `ads` is
+   * (#5244), its `demographics` (linuxfoundation/lfx-v2-campaign-service#518) and its own `ads`, one level down only: an ad has no `audience`, and an ad's own `ads` is
    * never sent, so neither is judged nor walked. The named Display ad groups (#475) are bounded through
    * it too, as a list with `groups` false.
    */
@@ -5818,7 +5906,7 @@ export class CampaignController {
       return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
     for (const entry of list) {
       if (!entry || typeof entry !== 'object') continue;
-      const { name, creative, videoCreative, ads, audience } = entry as Record<string, unknown>;
+      const { name, creative, videoCreative, ads, audience, demographics } = entry as Record<string, unknown>;
       if (typeof name === 'string' && this.boundedLength(name) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
         return { field: `${field}.name`, message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
       }
@@ -5829,6 +5917,7 @@ export class CampaignController {
       const found =
         this.oversizedBoundableField(`${field}.creative`, creative) ??
         this.oversizedBoundableField(`${field}.videoCreative`, videoCreative) ??
+        (groups ? this.oversizedBoundableField(`${field}.demographics`, demographics) : null) ??
         (groups ? this.oversizedDemandGenAdList(`${field}.ads`, ads, false) : null);
       if (found !== null) return found;
     }
@@ -6017,13 +6106,20 @@ export class CampaignController {
     for (const channel of Object.keys(GOOGLE_CREATIVE_REQUEST_KEYS) as GoogleCampaignChannel[]) {
       Object.assign(sent, this.googleCreative(body, channel));
     }
+    // An empty string asks for nothing too: the display paths are the only string fields here. So
+    // does `false`: `searchPartners` is the only boolean, and false is Google Search alone.
+    const asked = (value: unknown): boolean =>
+      value !== undefined && value !== null && value !== '' && value !== false && !(Array.isArray(value) && value.length === 0);
     return (
       GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.find((entry) => {
         if ('normalized' in entry) return entry.field in sent;
         const value = raw[entry.field];
-        // An empty string asks for nothing too: the display paths are the only string fields here. So
-        // does `false`: `searchPartners` is the only boolean, and false is Google Search alone.
-        return value !== undefined && value !== null && value !== '' && value !== false && !(Array.isArray(value) && value.length === 0);
+        // The one object field asks for something when any of its four lists is asked for by the same
+        // test — a malformed non-list included, named as the flat lists are.
+        if (entry.field === 'displayDemographics' && value !== null && typeof value === 'object' && !Array.isArray(value)) {
+          return GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS.some((key) => asked((value as Record<string, unknown>)[key]));
+        }
+        return asked(value);
       }) ?? null
     );
   }
@@ -6482,6 +6578,7 @@ export class CampaignController {
         // normalized only; `createCampaign` names every refusal first.
         ...this.googleDeviceBidModifiers(body, selectedChannels[0]),
         ...this.googleDemographicExclusions(body, selectedChannels[0]),
+        ...this.googleAdGroupDemographics(body, selectedChannels[0]),
         ...languages,
         // Sitelinks reach Demand Gen and Performance Max as well as Search, and callouts and snippets
         // Performance Max (campaign-service v1.0.31); the gate inside each helper withholds them on
@@ -6538,6 +6635,10 @@ export class CampaignController {
     // Normalized only, as the three above are — `createCampaign` names every call, promotion and
     // price refusal first.
     const assetExtensions = this.googleAssetExtensions(body);
+    // The campaign's ad images, business logo and business name (#5262), the one creative Search
+    // takes. Normalized only, as every creative is: campaign-service judges each count, shape and
+    // width before the budget mutate (`validateSearchAssets`), and the Implement tab first.
+    const searchAssets = this.googleCreative(body, 'search');
 
     return {
       budget,
@@ -6577,6 +6678,7 @@ export class CampaignController {
       // differently.
       ...this.googleDeviceBidModifiers(body, 'search'),
       ...this.googleDemographicExclusions(body, 'search'),
+      ...this.googleAdGroupDemographics(body, 'search'),
       ...searchLanguages,
       ...audienceSegments,
       ...campaignAudienceSegments,
@@ -6584,6 +6686,7 @@ export class CampaignController {
       ...sitelinks,
       ...structuredSnippets,
       ...assetExtensions,
+      ...searchAssets,
     };
   }
 
@@ -6769,6 +6872,17 @@ export class CampaignController {
     const sent = this.googleCreative(body, 'demand-gen');
     const groups = sent[GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY];
     return googleDemandGenAudiencesRefusal(sent[GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY], Array.isArray(groups) ? groups : undefined);
+  }
+
+  /**
+   * The field a Demand Gen refusal is reported against (#1614): the video ad's `callToAction` when the
+   * refusal is about it, else the enclosing key it was judged under. The video ad, ad and ad group
+   * judges each check the call to action LAST, as campaign-service's `validateDemandGenVideoSpec` does,
+   * and end their sentence with {@link GOOGLE_DEMAND_GEN_VIDEO_CALL_TO_ACTION_REFUSAL}, so keeping their
+   * order and naming the field here reports the control to change without reordering upstream's checks.
+   */
+  private googleCallToActionField(enclosing: string, refusal: string): string {
+    return refusal.endsWith(GOOGLE_DEMAND_GEN_VIDEO_CALL_TO_ACTION_REFUSAL) ? 'callToAction' : enclosing;
   }
 
   /**
@@ -7404,6 +7518,13 @@ export class CampaignController {
     candidates.push(['deviceBidModifiers', raw['deviceBidModifiers']]);
     candidates.push(['excludedAgeRanges', raw['excludedAgeRanges']]);
     candidates.push(['excludedGenders', raw['excludedGenders']]);
+    candidates.push(['excludedIncomeRanges', raw['excludedIncomeRanges']]);
+    candidates.push(['excludedParentalStatuses', raw['excludedParentalStatuses']]);
+    candidates.push(['observedDemographics', raw['observedDemographics']]);
+    // Objects of four lists, each bounded as a creative's fields are; a named Demand Gen group's own
+    // demographics are bounded with the group (`oversizedDemandGenAdList`).
+    candidates.push(['displayDemographics', raw['displayDemographics']]);
+    candidates.push([GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY, raw[GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY]]);
     // The first ad's display paths are bare strings, which `boundableEntries` yields nothing for, so
     // they are measured here; the trim the Search branch applies runs over them during normalisation.
     // So is the single Demand Gen ad group's Audience (#5244), which `googleDemandGenAudience` trims.
@@ -7646,9 +7767,9 @@ export class CampaignController {
    * 3. **The same applies to the whole creative.** If no field survives, no creative key is emitted
    *    and the create behaves exactly as it did before this existed.
    *
-   * Unknown channels — `search`, `video`, anything a future catalogue adds — return `{}` rather
-   * than throwing, so a channel gaining a creative upstream is one table entry here and not a
-   * crash in the meantime.
+   * Search's creative is its campaign assets, `searchAssets` (#5262). Unknown channels — `video`,
+   * anything a future catalogue adds — return `{}` rather than throwing, so a channel gaining a
+   * creative upstream is one table entry here and not a crash in the meantime.
    */
   private googleCreative(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
     const spec = GOOGLE_CREATIVE_WIRE_FIELDS[channel];
@@ -7658,7 +7779,8 @@ export class CampaignController {
     // refusal (`googleDemandGenVideoRefusal`) rather than having one silently dropped here.
     // The named ad groups and the single group's several ads (#5226) ride beside them on the same
     // terms, for the same refusals (`googleDemandGenAdGroupsRefusal`, `googleDemandGenAdsRefusal`), and
-    // so does the single ad group's Audience (#5244, `googleDemandGenAudienceRefusal`).
+    // so do the single ad group's Audience (#5244, `googleDemandGenAudienceRefusal`) and its
+    // demographics (`googleDemandGenDemographicsRefusal`).
     if (channel === 'demand-gen') {
       return {
         ...this.googleCreativeFrom(body, spec),
@@ -7668,6 +7790,10 @@ export class CampaignController {
         ...this.googleDemandGenAudience(
           GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY,
           (body as unknown as Record<string, unknown>)[GOOGLE_DEMAND_GEN_AUDIENCE_REQUEST_KEY]
+        ),
+        ...this.googleDemandGenDemographics(
+          GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY,
+          (body as unknown as Record<string, unknown>)[GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY]
         ),
       };
     }
@@ -7702,8 +7828,8 @@ export class CampaignController {
    * Each group keeps its position, so a refusal names the group the operator sees: an entry that is
    * not an object, or a name that is not a string, becomes a blank name the refusal then names. The
    * name is trimmed as Go trims; campaign-service sanitizes it further. Each creative is normalized
-   * exactly as the campaign-level one is, and omitted when it empties out, and so is its `audience`
-   * ({@link googleDemandGenAudience}). A group's several `ads` are
+   * exactly as the campaign-level one is, and omitted when it empties out, and so are its `audience`
+   * ({@link googleDemandGenAudience}) and its `demographics` ({@link googleDemandGenDemographics}). A group's several `ads` are
    * normalized as `demandGenAds` is ({@link googleDemandGenAdList}), and omitted when absent or empty.
    */
   private googleDemandGenAdGroups(body: CampaignCreateRequest): Record<string, unknown> {
@@ -7713,7 +7839,14 @@ export class CampaignController {
       const group = this.googleDemandGenAdEntry(entry);
       const raw = entry !== null && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>)['ads'] : undefined;
       const audience = entry !== null && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>)['audience'] : undefined;
-      return { ...group, ...this.googleDemandGenAudience('audience', audience), ...this.googleDemandGenAdList('ads', raw) };
+      const demographics =
+        entry !== null && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>)['demographics'] : undefined;
+      return {
+        ...group,
+        ...this.googleDemandGenAudience('audience', audience),
+        ...this.googleDemandGenDemographics('demographics', demographics),
+        ...this.googleDemandGenAdList('ads', raw),
+      };
     });
     return { [GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY]: groups };
   }
@@ -7728,6 +7861,25 @@ export class CampaignController {
     if (typeof value !== 'string') return {};
     const trimmed = googleAdsTrimSpace(value);
     return trimmed === '' ? {} : { [key]: trimmed };
+  }
+
+  /**
+   * One Demand Gen demographics object (linuxfoundation/lfx-v2-campaign-service#498, #518),
+   * `demandGenDemographics` or a group's `demographics`, under `key` and spread-ready: each of the four
+   * lists trimmed and upper-cased, repeats kept, and omitted when empty; `{}` when none is left or the
+   * value is not an object, so a create without one is byte-identical to one made before it existed.
+   * Normalizes only: `createCampaign` has named every refusal through `googleDemandGenDemographicsRefusal`
+   * first, an object naming nothing included, and upstream collapses a repeat itself.
+   */
+  private googleDemandGenDemographics(key: string, value: unknown): Record<string, Record<string, string[]>> {
+    if (!googleDisplayDemographicsCarried(value)) return {};
+    const lists = value as Record<string, unknown>;
+    const out: Record<string, string[]> = {};
+    for (const list of GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS) {
+      const normalized = googleUpperCodeList(lists[list]);
+      if (normalized.length > 0) out[list] = normalized;
+    }
+    return Object.keys(out).length === 0 ? {} : { [key]: out };
   }
 
   /**
@@ -8097,7 +8249,7 @@ export class CampaignController {
    * — trim, upper-case, and nothing else — and the per-list reasons live on the callers.
    *
    * Exclusion-only is Google's own shape at campaign level, not a narrowing this application chose:
-   * positive demographic targeting lives on the ad group, which this client does not create.
+   * positive demographic targeting lives on the ad group — see {@link googleAdGroupDemographics}.
    *
    * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS}, the other half of
    * Performance Max's split — it takes demographics as asset-group signals, which this client does
@@ -8114,6 +8266,35 @@ export class CampaignController {
       ...(ageRanges.length > 0 ? { excludedAgeRanges: ageRanges } : {}),
       ...(genders.length > 0 ? { excludedGenders: genders } : {}),
     };
+  }
+
+  /**
+   * The ad-group demographics, spread-ready, or `{}`: the income and parental-status exclusions
+   * (linuxfoundation/lfx-v2-campaign-service#473), Search's observed dimensions (#497) and Display's
+   * positive targeting (#499). Each is CHANNEL-GATED on its own shared fence, so a list kept on the
+   * tab under a channel that does not take it is not dispatched. Normalizes only — trim and
+   * upper-case, repeats kept — because `createCampaign` has already named every refusal through the
+   * shared judges, and upstream collapses a repeat itself. A Display list left empty is omitted.
+   */
+  private googleAdGroupDemographics(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    const incomes = googleUpperCodeList(body?.excludedIncomeRanges);
+    const parents = googleUpperCodeList(body?.excludedParentalStatuses);
+    const observed = googleUpperCodeList(body?.observedDemographics);
+    if (incomes.length > 0 && (GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS as readonly string[]).includes(channel)) out['excludedIncomeRanges'] = incomes;
+    if (parents.length > 0 && (GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS as readonly string[]).includes(channel)) out['excludedParentalStatuses'] = parents;
+    if (observed.length > 0 && (GOOGLE_CHANNELS_WITH_OBSERVED_DEMOGRAPHICS as readonly string[]).includes(channel)) out['observedDemographics'] = observed;
+    const display = body?.displayDemographics as unknown;
+    if (googleDisplayDemographicsCarried(display) && (GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_TARGETING as readonly string[]).includes(channel)) {
+      const lists = display as Record<string, unknown>;
+      const targeting: Record<string, string[]> = {};
+      for (const key of GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS) {
+        const list = googleUpperCodeList(lists[key]);
+        if (list.length > 0) targeting[key] = list;
+      }
+      out['displayDemographics'] = targeting;
+    }
+    return out;
   }
 
   /**

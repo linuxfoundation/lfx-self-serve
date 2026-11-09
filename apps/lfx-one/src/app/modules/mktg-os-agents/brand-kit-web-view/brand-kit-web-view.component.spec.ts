@@ -11,7 +11,6 @@ import { BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS, FOUNDATION_MESS
 import { BrandKitRevision } from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgPrintService } from '@services/mktg-print.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitReportV2Fixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2.fixture';
 import { brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
@@ -40,8 +39,6 @@ describe('BrandKitWebViewComponent', () => {
   let fixture: ComponentFixture<BrandKitWebViewComponent>;
   let print: ReturnType<typeof vi.spyOn>;
   let slidesExport: { last: Mock; start: Mock; poll: Mock };
-  /** The Download PDF flag (#5302), pinned on so the PDF tests see today's screens; one test turns it off. */
-  const pdfFlag = signal(true);
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => host().querySelector(`[data-testid="${testId}"]`);
@@ -55,7 +52,6 @@ describe('BrandKitWebViewComponent', () => {
 
   const configure = async (platformId: 'browser' | 'server', kit: BrandKitRevision = brandKitTestRevision(), url = '/'): Promise<void> => {
     activeContext.set({ slug: 'synthetic', name: 'Synthetic project' });
-    pdfFlag.set(true);
     slidesExport = {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
       start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
@@ -75,7 +71,6 @@ describe('BrandKitWebViewComponent', () => {
         { provide: PLATFORM_ID, useValue: platformId },
         provideMktgSlidesExportStub(slidesExport),
         { provide: MktgDependencyService, useValue: { documentsChanged$: NEVER } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => pdfFlag } },
       ],
     }).compileComponents();
     await TestBed.inject(Router).navigateByUrl(url);
@@ -187,34 +182,6 @@ describe('BrandKitWebViewComponent', () => {
       expect(slidesExport.start).toHaveBeenCalledWith({ ...target, mode: 'create' });
       expect(query('mktg-slides-export-running')).not.toBeNull();
       expect(button('brand-kit-web-view-export-slides')?.disabled).toBe(true);
-      expect(query('brand-kit-web-view-footer')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-        'PDF in portrait pages: logo, colour, typography, visual and voice. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.'
-      );
-    });
-
-    it('hides Download PDF, the footer’s PDF sentence and the whole book while its flag is off, Export to Google Slides solid and alone, restoring today’s row when it turns on (#5302)', async () => {
-      pdfFlag.set(false);
-      await fixture.whenStable();
-      const actions = query('brand-kit-web-view-actions');
-      expect(button('brand-kit-web-view-download-pdf')).toBeNull();
-      expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual(['Export to Google Slides']);
-      expect(button('brand-kit-web-view-export-slides')?.classList.contains('p-button-outlined')).toBe(false);
-      expect(query('brand-kit-web-view-footer-pdf')).toBeNull();
-      expect(query('brand-kit-web-view-footer')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-        'Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.'
-      );
-      // Nothing of the book is in the page without the flag: neither the button nor the print-only wrapper and its frames.
-      expect(query('brand-kit-web-view-print')).toBeNull();
-      expect(fixture.nativeElement.querySelectorAll('[data-testid="lfx-mktg-portrait-page"]')).toHaveLength(0);
-      pdfFlag.set(true);
-      await fixture.whenStable();
-      expect(query('brand-kit-web-view-print')).not.toBeNull();
-      expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual([
-        'Export to Google Slides',
-        'Download PDF',
-      ]);
-      expect(button('brand-kit-web-view-export-slides')?.classList.contains('p-button-outlined')).toBe(true);
-      expect(button('brand-kit-web-view-download-pdf')?.classList.contains('p-button-outlined')).toBe(false);
       expect(query('brand-kit-web-view-footer')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
         'PDF in portrait pages: logo, colour, typography, visual and voice. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.'
       );

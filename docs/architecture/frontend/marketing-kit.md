@@ -122,7 +122,7 @@ asset gives **Review and approve the <document>** linking to its missing approva
 **Create <asset>** linking to its run page. With nothing to create, **Review <n> drafts**
 (singular **Review the draft**) links to the first draft in family order. One-off families
 always offer **Create LinkedIn post** / **Create Member 360** on the plain run route.
-Fresh, fully approved living families with an exporter offer **Export the kit**: scroll to the export card and focus Download PDF (waiting for its approval read if necessary), or Export to Google Slides while the `mktg-os-pdf-download-enabled` flag is off, never export automatically. Unsupported families keep no primary. Only the blocked header has a caption naming the remaining unbuilt assets (catalogue sentence names, English conjunction): **Review and approve the framework** / **Then: boilerplates, FAQ and the brand kit**; other kinds have no caption.
+Fresh, fully approved living families with an exporter offer **Export the kit**: scroll to the export card and focus Download PDF (waiting for its approval read if necessary), never export automatically. Unsupported families keep no primary. Only the blocked header has a caption naming the remaining unbuilt assets (catalogue sentence names, English conjunction): **Review and approve the framework** / **Then: boilerplates, FAQ and the brand kit**; other kinds have no caption.
 No header renders while loading, after a failed read, without write access (including
 403), or for an unavailable agent. The service still distinguishes access denial from
 read failure; loading status remains mounted. Accessible names equal the primary label.
@@ -164,7 +164,6 @@ Create for an existing deck, shows progress and a dated revision-linked last exp
 and marks changed approved member sets stale. Families without an export target render only
 the export title and one unsupported line: no PDF/Slides buttons, Positioning PDF note or
 Drive note. Supported families keep both export buttons outlined, with reasons in words rather than repeated hover tooltips: **Available once the framework is approved: PDF and Slides use the approved current.**
-Download PDF, its PDF note and the card's PDF preparation are gated by the `mktg-os-pdf-download-enabled` flag (#5302, default off; `MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG`): off, the card shows Export to Google Slides alone, prepares no PDF, and its approval note and sr-only format hint read the Slides-only wordings (**Available once the framework is approved: Slides uses the approved current.**, **Export to Google Slides**), as do the family intro and the asset header's disabled Slides reason. On, every string is today's.
 Readers see disabled supported actions and the write-access note. A failed last-export lookup blocks creation until retried rather
 than guessing that no deck exists. Lookup starts independently of document-list loading;
 the slot stays available after a listing error/403. Browser family and document clients
@@ -180,9 +179,9 @@ cancel old reads. Kit and Agents never make these detail reads.
 
 ## The brand kit's portrait book (Download PDF)
 
-Behind `mktg-os-pdf-download-enabled`, the brand kit's Download PDF prints the kit as a
-book of fixed Letter-portrait pages, ported one to one from the product owner's portrait
-mock (its `principles.md` is the measurements' source of record). The book is the
+The brand kit's Download PDF prints the kit as a book of fixed Letter-portrait pages,
+ported one to one from the product owner's portrait mock (its `principles.md` is the
+measurements' source of record). The book is the
 **portrait print grammar**, which the framework and family prints build on, plus the
 kit's own pages.
 

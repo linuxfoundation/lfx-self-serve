@@ -149,6 +149,7 @@ import {
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
+  GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
@@ -158,12 +159,17 @@ import {
   GOOGLE_CHANNELS_WITH_PLACEMENT_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_TARGETING,
+  GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_OBSERVED_DEMOGRAPHICS,
+  GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CHANNELS_WITH_SEARCH_ADS,
   GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
+  GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE,
   GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CONVERSION_ACTION_PICKER_EMPTY,
@@ -172,8 +178,10 @@ import {
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_IMAGE_MAX_BYTES,
+  GOOGLE_CREATIVE_PREFILL_NOTICES,
+  GOOGLE_MIN_DAILY_BUDGET_USD,
   GOOGLE_CREATIVE_REQUEST_KEYS,
-  GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  GOOGLE_CREATIVE_SECTION_NOTICES,
   GOOGLE_CREATIVE_GROUPS,
   GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS,
   GOOGLE_DEMAND_GEN_AD_GROUPS_EMPTY,
@@ -182,7 +190,6 @@ import {
   GOOGLE_DISPLAY_AD_GROUPS_EMPTY,
   GOOGLE_DISPLAY_MAX_AD_GROUPS,
   GOOGLE_CREATIVE_SHARED_CAPS,
-  GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL,
@@ -197,6 +204,7 @@ import {
   GOOGLE_AUDIENCE_PICKER_REASONS,
   GOOGLE_AUDIENCE_PICKER_TRUNCATED,
   GOOGLE_DEMAND_GEN_AUDIENCE_HELD_WHILE_SPLIT,
+  GOOGLE_DEMAND_GEN_DEMOGRAPHICS_HELD_WHILE_SPLIT,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   DEFAULT_GOOGLE_DAILY_BUDGET_USD,
@@ -247,6 +255,7 @@ import type {
   CampaignCreateResult,
   CampaignGoogleAudienceSegmentsBlock,
   CampaignGoogleDemandGenAudienceBlock,
+  CampaignGoogleDemandGenDemographicsBlock,
   CampaignGoogleExtensionsCapabilityBlock,
   CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
@@ -294,6 +303,11 @@ import type {
   CreativeSlotAssignment,
   GoogleAdsAgeRange,
   GoogleAdsGender,
+  GoogleAdsIncomeRange,
+  GoogleAdsObservedDemographic,
+  GoogleAdsParentalStatus,
+  GoogleDisplayDemographics,
+  GoogleDemandGenDemographics,
   GoogleAdsGeoTargetOption,
   GoogleAdsGeoTargetSearchState,
   GoogleAdsGeoTargetSuggestion,
@@ -351,10 +365,12 @@ import {
   campaignBiddingPayload,
   campaignFlightDays,
   campaignLabelColumns,
-  dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
+  defaultCampaignEndDate,
+  googleSeededFlight,
   describeCampaignDispatchFailure,
   googleAdditionalSearchAdsRefusal,
+  googleAdsCampaignUrl,
   googleAdScheduleRefusal,
   googleAdsDevicesOn,
   googleAdsTextWeight,
@@ -373,9 +389,12 @@ import {
   googleCreativeFieldWidth,
   googleCreativeImageDrift,
   googleCreativeImageFit,
+  googleCreativeOptionMessage,
   googleDemandGenVideoCreativeRefusal,
   googleDemandGenAdGroupsRefusal,
   googleDemandGenAudiencesRefusal,
+  googleDemandGenDemographicsLeftOut,
+  googleDemandGenDemographicsRefusal,
   googleDemandGenAdsRefusal,
   googleDemandGenSingleAdGroupName,
   googleExcludedPlacementsRefusal,
@@ -384,7 +403,11 @@ import {
   googleDeviceAdjustmentNotSentSentence,
   googleDeviceBidModifierRefusal,
   googleExcludedAgeRangesRefusal,
+  googleAdGroupDemographicExclusionsRefusal,
+  googleDisplayDemographicsCarried,
+  googleDisplayDemographicsRefusal,
   googleExcludedGendersRefusal,
+  googleObservedDemographicsRefusal,
   googleExcludedGeoListRefusal,
   googlePerformanceMaxSearchThemesRefusal,
   googlePerformanceMaxShortDescriptionMissing,
@@ -412,6 +435,8 @@ import {
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CampaignCreateAnotherDialogComponent } from '../campaign-create-another-dialog/campaign-create-another-dialog.component';
+import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-demographic-targeting/campaign-google-demographic-targeting.component';
+import { CampaignGoogleDemographicsPanelComponent } from '../campaign-google-demographics-panel/campaign-google-demographics-panel.component';
 import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
 import { CampaignGoogleSearchAdsPanelComponent } from '../campaign-google-search-ads-panel/campaign-google-search-ads-panel.component';
 import { CampaignGoogleTargetingPanelComponent } from '../campaign-google-targeting-panel/campaign-google-targeting-panel.component';
@@ -420,6 +445,7 @@ import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-g
 import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
 import { DemandGenAdListContextDirective } from './demand-gen-ad-list-context.directive';
 import { DemandGenAudienceContextDirective } from './demand-gen-audience-context.directive';
+import { DemandGenDemographicsContextDirective } from './demand-gen-demographics-context.directive';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -438,6 +464,8 @@ type PlatformResultRow = CampaignPlatformResult & {
   outcome: 'created' | 'orphaned' | 'nothing-created' | 'unconfirmed';
   displayError: string | null;
   nextStep: string | null;
+  /** The Google Ads UI link for a Google row with an upstream campaign id (`googleAdsCampaignUrl`), else `''`. */
+  platformUrl: string;
 };
 
 /** See `ImplementationTabComponent.platformOutcomes` for why `ok` alone is not the test. */
@@ -447,13 +475,16 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
   // Pre-create rows only: an id-bearing row has a campaign upstream, and "create again" there is
   // the duplicate-spend move this panel exists to prevent.
   const nextStep = !result.ok && !result.campaignId ? (failure?.nextStep ?? null) : null;
+  // A created or orphaned Google row both have a real campaign upstream, so both get the link (#1614):
+  // an orphan is the one most in need of being found in the account.
+  const platformUrl = result.platform === 'google-ads' ? googleAdsCampaignUrl(result.campaignId) : '';
   if (result.ok) {
-    return { ...result, outcome: 'created', displayError, nextStep };
+    return { ...result, outcome: 'created', displayError, nextStep, platformUrl };
   }
   if (result.campaignId) {
-    return { ...result, outcome: 'orphaned', displayError, nextStep };
+    return { ...result, outcome: 'orphaned', displayError, nextStep, platformUrl };
   }
-  return { ...result, outcome: failure?.nothingCreated ? 'nothing-created' : 'unconfirmed', displayError, nextStep };
+  return { ...result, outcome: failure?.nothingCreated ? 'nothing-created' : 'unconfirmed', displayError, nextStep, platformUrl };
 }
 
 @Component({
@@ -472,8 +503,11 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     NgTemplateOutlet,
     DemandGenAdListContextDirective,
     DemandGenAudienceContextDirective,
+    DemandGenDemographicsContextDirective,
     SlicePipe,
     CampaignBiddingControlComponent,
+    CampaignGoogleDemographicTargetingComponent,
+    CampaignGoogleDemographicsPanelComponent,
     CampaignGoogleExclusionsPanelComponent,
     CampaignGoogleSearchAdsPanelComponent,
     CampaignGoogleTargetingPanelComponent,
@@ -1088,8 +1122,18 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
   protected readonly videoCreateUnsupportedReason = GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON;
-  protected readonly googleCreativeNotice = GOOGLE_CREATIVE_REQUIRED_NOTICE;
-  protected readonly performanceMaxPrefillNotice = GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE;
+  /** Each creative section's standing line, by channel: the empty-shell warning, or Search's optional-assets line (#5262). */
+  protected readonly googleCreativeNotices = GOOGLE_CREATIVE_SECTION_NOTICES;
+  /** The prefill notice of each channel the brief seeds; Search has none, because it is not seeded (#5262). */
+  protected readonly googleCreativePrefillNotices: Readonly<Partial<Record<GoogleCreativeChannel, string>>> = GOOGLE_CREATIVE_PREFILL_NOTICES;
+  /**
+   * The Google plan groups this tab sends no images for (#1614): every Google channel without a
+   * creative section here, which is Video alone now that Search sends its ad images and business logo
+   * (#5262). The coverage grid must not list a group whose slots no control can fill.
+   */
+  protected readonly googleSlotGroupsNotSent: readonly string[] = GOOGLE_CAMPAIGN_CHANNELS.filter(
+    (channel) => !(GOOGLE_CHANNELS_WITH_CREATIVE as readonly string[]).includes(channel)
+  ).map((channel) => `google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}`);
   /** {@link creativeFieldSelectOptions}' cache, keyed by the catalogue's own options array. */
   private readonly creativeSelectOptions = new Map<readonly GoogleCreativeFieldOption[], GoogleCreativeFieldOption[]>();
   protected readonly redditMaxBudget = REDDIT_MAX_BUDGET_USD;
@@ -1163,7 +1207,7 @@ export class ImplementationTabComponent implements OnInit {
     registrationUrl: ['', [Validators.required]],
     // The Google DAILY budget (#4847): campaign-service creates it with no period, which Google
     // treats as daily. Seeded from the brief's total divided over the flight, never the total itself.
-    budgetUsd: [DEFAULT_GOOGLE_DAILY_BUDGET_USD as number, [Validators.required, Validators.min(1)]],
+    budgetUsd: [DEFAULT_GOOGLE_DAILY_BUDGET_USD as number, [Validators.required, Validators.min(GOOGLE_MIN_DAILY_BUDGET_USD)]],
     // Typed `number`, not inferred. `CAMPAIGN_BUDGET_DEFAULTS` is `as const`, so the inferred
     // control type was the literal `70` — which is wrong for a slider the user drags, and made
     // any other value a type error to patch in (LFXV2-3229).
@@ -1220,6 +1264,8 @@ export class ImplementationTabComponent implements OnInit {
     demandGenCreative: this.buildCreativeGroup('demand-gen'),
     performanceMaxCreative: this.buildCreativeGroup('performance-max'),
     displayCreative: this.buildCreativeGroup('display'),
+    // The Search campaign's ad images, business logo and business name (#5262), on the same terms.
+    searchAssets: this.buildCreativeGroup('search'),
     // Demand Gen's second creative, the video ad (#5226), and the choice between the two. Both groups
     // are kept whichever is chosen, so switching back restores what was typed; only the chosen one
     // renders and is sent (`googleCreativeGroupFor`).
@@ -1238,6 +1284,10 @@ export class ImplementationTabComponent implements OnInit {
     // The single ad group's Audience resource name (#5244), set only by the picker or a restored draft.
     // Empty by default, which sends no `demandGenAudience`; held, not sent, while the campaign is split.
     demandGenAudience: this.fb.nonNullable.control(''),
+    // The single ad group's demographics (linuxfoundation/lfx-v2-campaign-service#498), which upstream
+    // builds into a new Audience. Empty by default, which sends no `demandGenDemographics`; held, not
+    // sent, while the campaign is split, as the Audience above is.
+    demandGenDemographics: this.fb.nonNullable.control<GoogleDemandGenDemographics>({}),
     demandGenAds: new FormArray<FormGroup<GoogleDemandGenAdControls>>([]),
     // The Display campaign split into named ad groups (#475), on the Demand Gen split's terms: off by
     // default, the groups kept whichever way it sits, and only an active split renders and sends them.
@@ -1849,6 +1899,15 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleExcludedGenders = signal<GoogleAdsGender[]>([]);
   protected readonly googleExcludedGeoTargets = signal<string[]>([]);
   /**
+   * The ad-group demographics, edited in `lfx-campaign-google-demographics-panel`: income and
+   * parental-status exclusions, Search's observed dimensions and Display's positive targeting.
+   * Empty is Google's own default, so leaving them alone changes nothing about the campaign.
+   */
+  protected readonly googleExcludedIncomeRanges = signal<GoogleAdsIncomeRange[]>([]);
+  protected readonly googleExcludedParentalStatuses = signal<GoogleAdsParentalStatus[]>([]);
+  protected readonly googleObservedDemographics = signal<GoogleAdsObservedDemographic[]>([]);
+  protected readonly googleDisplayDemographics = signal<GoogleDisplayDemographics>({});
+  /**
    * The Search campaign's first-ad display paths, its second and third ads, and its create-time
    * negative keywords (the editor's raw text and the one match type they all take), edited in
    * `lfx-campaign-google-search-ads-panel` (#4991). Empty sends the one ad and no negatives, exactly
@@ -1926,11 +1985,12 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleCallouts = signal<string[]>([]);
   /**
-   * The Performance Max copy the brief seeded (#4784), kept so the section's prefill notice can tell
-   * whether what is on screen is still that copy. Null when nothing was seeded; cleared by
+   * The copy the brief seeded into each Google image creative (#4784 for Performance Max, #1614 for
+   * Demand Gen and Display), kept so each section's prefill notice can tell whether what is on screen
+   * is still that copy. A channel is absent when nothing was seeded into it; emptied by
    * `resetGoogleFields`.
    */
-  private readonly performanceMaxSeed = signal<Record<string, string> | null>(null);
+  private readonly googleCreativeSeeds = signal<Partial<Record<GoogleCreativeChannel, Record<string, string>>>>({});
   /**
    * The brief's planning total the Google daily budget was divided from (#4847), shown beside the
    * field so the operator can compare it with the flight total. Null when the brief has no positive
@@ -3499,6 +3559,10 @@ export class ImplementationTabComponent implements OnInit {
     // A retained Demand Gen audience the request cannot carry (#5244), on the audience segments' terms:
     // held, never dropped, whatever the cutover.
     if (this.demandGenAudienceBlock() !== null) return false;
+    // Demand Gen demographics campaign-service would refuse (#498, #518).
+    if (googleSelected && this.demandGenDemographicsError() !== null) return false;
+    // Retained Demand Gen demographics the request cannot carry, held on the audience block's terms.
+    if (this.demandGenDemographicsBlock() !== null) return false;
     // The named Display ad groups campaign-service would refuse (#475).
     if (googleSelected && this.displayAdGroupsError() !== null) return false;
     // Performance Max search themes the BFF would refuse (#5262); the message is under the box.
@@ -3516,6 +3580,8 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && (this.googleAdSchedulesError() !== null || this.googleDeviceBidModifiersError() !== null)) return false;
     // A demographic exclusion or excluded location the BFF would refuse; the message is under the exclusions panel.
     if (googleSelected && (this.googleDemographicExclusionsError() !== null || this.googleExcludedGeoTargetsError() !== null)) return false;
+    // An ad-group demographic the BFF would refuse; the message is under the demographics panel.
+    if (googleSelected && this.googleAdGroupDemographicsError() !== null) return false;
     // A placement exclusion campaign-service would refuse (#462); the message is under the box.
     if (googleSelected && this.googleExcludedPlacementsError() !== null) return false;
     // A display path, further ad or negative keyword the BFF would refuse; the message is under the Search ads panel.
@@ -3719,6 +3785,16 @@ export class ImplementationTabComponent implements OnInit {
   private readonly googleBudgetInputs: Signal<GoogleBudgetInputs> = this.initGoogleBudgetInputs();
   protected readonly googleBudgetFlight: Signal<GoogleBudgetFlight | null> = this.initGoogleBudgetFlight();
   /**
+   * Whether the flight on screen spends more than the brief's total (#1614): the seed floors the daily
+   * budget at the minimum when the total cannot fund the flight, and the operator may raise it. Said
+   * beside the field rather than refused, because spending more than the plan is the operator's call.
+   */
+  protected readonly googleBudgetOverPlan: Signal<boolean> = computed(() => {
+    const flight = this.googleBudgetFlight();
+    const planned = this.googleBriefTotalBudget();
+    return flight !== null && planned !== null && flight.total > planned;
+  });
+  /**
    * Whether the Google daily budget is missing or below the control's minimum of 1. Shown under the
    * field, because on a Google create the same validator holds Create disabled and nothing else on
    * screen says why. The field renders only for a Google selection, so the message never shows
@@ -3732,7 +3808,8 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleFlightError: Signal<string | null> = this.initGoogleFlightError();
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
-  protected readonly performanceMaxPrefillShown: Signal<boolean> = this.initPerformanceMaxPrefillShown();
+  /** Which Google image creatives still show copy the brief seeded, by channel; drives each section's prefill notice. */
+  protected readonly googleCreativePrefillShown: Signal<Partial<Record<GoogleCreativeChannel, boolean>>> = this.initGoogleCreativePrefillShown();
   protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
   protected readonly googleCreativeSections: Signal<GoogleCreativeSection[]> = this.initGoogleCreativeSections();
   /**
@@ -3899,6 +3976,17 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleExcludedGeoTargetsAvailable = computed(() => this.googleBiddingChannel() !== null);
   /** The shared age-range refusal, else the gender one — the BFF's order — or `null`; `canSubmit` blocks on it. */
   protected readonly googleDemographicExclusionsError: Signal<string | null> = this.initGoogleDemographicExclusionsError();
+  /** Whether each ad-group demographic section shows and is sent: each fenced by the shared channel list the BFF refuses on. */
+  protected readonly googleIncomeExclusionsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS));
+  protected readonly googleParentalExclusionsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS));
+  protected readonly googleObservedDemographicsAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_OBSERVED_DEMOGRAPHICS));
+  protected readonly googleDemographicTargetingAvailable = computed(() => this.googleChannelIn(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_TARGETING));
+  /**
+   * The shared ad-group demographic refusal — exclusions, then observed dimensions, then Display
+   * targeting, the BFF's order — judged on exactly what the request will carry, or `null`.
+   * `canSubmit` blocks on it.
+   */
+  protected readonly googleAdGroupDemographicsError: Signal<string | null> = this.initGoogleAdGroupDemographicsError();
   /**
    * The shared excluded-location refusal, judged against the targeted list the request will ACTUALLY
    * send (`googleEffectiveGeoTargets`, event-country fallback included), which is the list the BFF
@@ -4054,6 +4142,35 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly demandGenAudienceBlockMessage = computed(() => this.demandGenAudienceBlock()?.message ?? '');
   /** The note when the single ad group's Audience is kept but not sent because the campaign is split; `''` otherwise. */
   protected readonly demandGenAudienceHeldMessage: Signal<string> = this.initDemandGenAudienceHeldMessage();
+  /**
+   * Per ad group on screen, keyed `single` or the group's index, whether its demographics name a value, so
+   * its fragment holds the Audience picker back and keeps the demographics on show beside a picked Audience.
+   */
+  protected readonly demandGenDemographicsNamed: Signal<Record<string, boolean>> = computed(() => {
+    void this.campaignFormRevision();
+    const form = this.campaignForm.controls;
+    return {
+      single: googleDisplayDemographicsCarried(form.demandGenDemographics.value),
+      ...Object.fromEntries(
+        form.demandGenAdGroups.controls.map((group, index) => [`${index}`, googleDisplayDemographicsCarried(group.controls.demographics.value)])
+      ),
+    };
+  });
+  /** Why campaign-service would refuse the Demand Gen demographics the create carries, holding Create, or `null` (#498, #518). */
+  protected readonly demandGenDemographicsError: Signal<string | null> = this.initDemandGenDemographicsError();
+  /**
+   * Per ad group, keyed `single` or the group's index, the note that a dimension naming every value and
+   * Unknown narrows nothing, so Google Ads leaves it out of the Audience (#519); absent when none does.
+   */
+  protected readonly demandGenDemographicsLeftOut: Signal<Record<string, string>> = this.initDemandGenDemographicsLeftOut();
+  /** The ad groups whose demographics {@link demandGenDemographicsBlock} holds, by name. */
+  protected readonly demandGenDemographicsRetained: Signal<string[]> = this.initDemandGenDemographicsRetained();
+  /** Why Create is held for Demand Gen demographics the draft still holds but the request cannot carry, or `null`. */
+  protected readonly demandGenDemographicsBlock: Signal<CampaignGoogleDemandGenDemographicsBlock | null> = this.initDemandGenDemographicsBlock();
+  /** The always-mounted live region's text for `demandGenDemographicsBlock`; `''` when nothing blocks. */
+  protected readonly demandGenDemographicsBlockMessage = computed(() => this.demandGenDemographicsBlock()?.message ?? '');
+  /** The note when the single ad group's demographics are kept but not sent because the campaign is split; `''` otherwise. */
+  protected readonly demandGenDemographicsHeldMessage: Signal<string> = this.initDemandGenDemographicsHeldMessage();
   protected readonly audiencePickerEmpty = GOOGLE_AUDIENCE_PICKER_EMPTY;
   protected readonly audiencePickerLoading = GOOGLE_AUDIENCE_PICKER_LOADING;
   protected readonly audiencePickerTruncated = GOOGLE_AUDIENCE_PICKER_TRUNCATED;
@@ -5299,6 +5416,26 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  protected onGoogleExcludedIncomeRangesChange(incomeRanges: GoogleAdsIncomeRange[]): void {
+    this.googleExcludedIncomeRanges.set(incomeRanges);
+    this.emitDraft();
+  }
+
+  protected onGoogleExcludedParentalStatusesChange(statuses: GoogleAdsParentalStatus[]): void {
+    this.googleExcludedParentalStatuses.set(statuses);
+    this.emitDraft();
+  }
+
+  protected onGoogleObservedDemographicsChange(dimensions: GoogleAdsObservedDemographic[]): void {
+    this.googleObservedDemographics.set(dimensions);
+    this.emitDraft();
+  }
+
+  protected onGoogleDisplayDemographicsChange(targeting: GoogleDisplayDemographics): void {
+    this.googleDisplayDemographics.set(targeting);
+    this.emitDraft();
+  }
+
   protected onGoogleExcludedGeoTargetsChange(excluded: string[]): void {
     this.googleExcludedGeoTargets.set(excluded);
     this.emitDraft();
@@ -5855,6 +5992,8 @@ export class ImplementationTabComponent implements OnInit {
       // The single ad group's Audience (#5244), on the same gate; absent unless one was picked and the
       // campaign is not split.
       ...(platforms.includes('google-ads') ? this.googleDemandGenAudiencePayload() : {}),
+      // The single ad group's demographics (#498), on the same terms as its Audience.
+      ...(platforms.includes('google-ads') ? this.googleDemandGenDemographicsPayload() : {}),
       // The named Display ad groups (#475), on the same terms.
       ...(platforms.includes('google-ads') ? this.googleDisplayAdGroupsPayload() : {}),
       // The Performance Max search themes (#5262), on the same gate, and already withheld unless the
@@ -6143,6 +6282,30 @@ export class ImplementationTabComponent implements OnInit {
       form.demandGenAudience.setValue('');
     } else {
       for (const group of form.demandGenAdGroups.controls) group.controls.audience.setValue('');
+    }
+    this.focusAfterDemandGenAudienceBlockRemoved();
+  }
+
+  /** The demographics control of ad group `group`, the single one for `null` (#498, #518). */
+  protected demandGenDemographicsControl(group: number | null): FormControl<GoogleDemandGenDemographics> {
+    return group === null ? this.campaignForm.controls.demandGenDemographics : this.campaignForm.controls.demandGenAdGroups.at(group).controls.demographics;
+  }
+
+  /** A tick in ad group `group`'s demographics, the single one for `null`; the form's own `valueChanges` emits the draft. */
+  protected onDemandGenDemographicsChange(group: number | null, demographics: GoogleDemandGenDemographics): void {
+    this.demandGenDemographicsControl(group).setValue(demographics);
+  }
+
+  /**
+   * {@link demandGenDemographicsBlock}'s way out: clear every demographics object it holds, for the split
+   * mode the request would use, then move focus as the audience block's Remove does.
+   */
+  protected onDemandGenDemographicsClearAll(): void {
+    const form = this.campaignForm.controls;
+    if (!form.demandGenAdGroupsSplit.value) {
+      form.demandGenDemographics.setValue({});
+    } else {
+      for (const group of form.demandGenAdGroups.controls) group.controls.demographics.setValue({});
     }
     this.focusAfterDemandGenAudienceBlockRemoved();
   }
@@ -7468,6 +7631,11 @@ export class ImplementationTabComponent implements OnInit {
     // The single ad group's Audience (#5244), a string only; its shape and account are judged on Create
     // (`demandGenAudienceError`), so a value the create would refuse is shown with its reason, not dropped.
     if (typeof draft.demandGenAudience === 'string') this.campaignForm.controls.demandGenAudience.setValue(draft.demandGenAudience);
+    // The single ad group's demographics (#498), present-only, string entries only; judged on Create
+    // (`demandGenDemographicsError`), so a value the create would refuse is shown with its reason.
+    if (draft.demandGenDemographics !== undefined) {
+      this.campaignForm.controls.demandGenDemographics.setValue(this.demographicsFromDraft(draft.demandGenDemographics));
+    }
     if (typeof draft.demandGenAdGroupsSplit === 'boolean') {
       this.campaignForm.controls.demandGenAdGroupsSplit.setValue(draft.demandGenAdGroupsSplit);
     }
@@ -7537,6 +7705,18 @@ export class ImplementationTabComponent implements OnInit {
     }
     if (draft.googleExcludedGeoTargets !== undefined) {
       this.googleExcludedGeoTargets.set([...draft.googleExcludedGeoTargets]);
+    }
+    if (draft.googleExcludedIncomeRanges !== undefined) {
+      this.googleExcludedIncomeRanges.set([...draft.googleExcludedIncomeRanges]);
+    }
+    if (draft.googleExcludedParentalStatuses !== undefined) {
+      this.googleExcludedParentalStatuses.set([...draft.googleExcludedParentalStatuses]);
+    }
+    if (draft.googleObservedDemographics !== undefined) {
+      this.googleObservedDemographics.set([...draft.googleObservedDemographics]);
+    }
+    if (draft.googleDisplayDemographics !== undefined) {
+      this.googleDisplayDemographics.set(this.copyDisplayDemographics(draft.googleDisplayDemographics));
     }
     // Copied on the same rule, and held rather than sent while a channel other than Search is
     // selected. The negatives' text restores over the brief's suggestions `populateFromBrief` seeded.
@@ -7744,37 +7924,28 @@ export class ImplementationTabComponent implements OnInit {
    * descriptions (90), and Demand Gen's business name is the business name. Images are never
    * generated, so they stay the operator's.
    *
-   * Every value is held to its field's own catalogue bounds (`GOOGLE_CREATIVE_FIELD_SPECS`): trimmed,
-   * measured with `googleCreativeFieldWidth` as the field validators measure it, de-duplicated and capped at
-   * the field's `max`, so the seed never puts a value on screen its own validator refuses. One
-   * description short enough for Google's short slot is kept in the set whenever the brief has one.
+   * Every value is held to its field's own catalogue bounds by {@link fittingCreativeCopy} and
+   * {@link cappedCreativeCopy}, so the seed never puts a value on screen its own validator refuses.
+   * One description short enough for Google's short slot is kept in the set whenever the brief has one.
    *
    * A brief with none of this copy leaves the group as `resetGoogleFields` left it, empty.
    */
   private seedPerformanceMaxCreative(brief: CampaignBriefOutput): void {
+    const channel = 'performance-max';
     const search = this.generatedCopy(brief, ['google_search']);
-    // `google_display` is the Demand Gen key the generator writes, and `demand_gen` the older one;
-    // `getDisplayCopy` on the Planning tab reads both, at the top level and under `platforms`.
-    const demandGen = this.generatedCopy(brief, ['google_display', 'demand_gen']);
-    // Typed as the shared spec, as `initGoogleCreativeSections` reads it: not every catalogue entry
-    // declares `width` or `max`, and the literal tuple type would refuse the lookup.
-    const specs: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS['performance-max'];
-    const fitting = (control: string, values: unknown): string[] => {
-      const spec = specs.find((field) => field.control === control);
-      if (spec === undefined || !Array.isArray(values)) return [];
-      // A line break inside one generated value would split it into extra entries of a one-per-line
-      // field, past the width and count it was checked against, so it is folded into a space.
-      const unique = [
-        ...new Set(values.filter((value): value is string => typeof value === 'string').map((value) => value.replace(/\s*[\r\n]+\s*/g, ' ').trim())),
-      ];
-      return unique.filter((value) => value !== '' && (spec.width === undefined || googleCreativeFieldWidth(control, value) <= spec.width));
-    };
-    const capped = (control: string, values: string[]): string[] => values.slice(0, specs.find((field) => field.control === control)?.max ?? values.length);
+    const demandGen = this.generatedDemandGenCopy(brief);
 
-    const headlines = capped('headlines', fitting('headlines', search?.['headlines']));
-    const longHeadlines = capped('longHeadlines', fitting('longHeadlines', demandGen?.['headlines']));
-    const descriptionPool = fitting('descriptions', [...this.asArray(search?.['descriptions']), ...this.asArray(demandGen?.['descriptions'])]);
-    const descriptions = capped('descriptions', descriptionPool);
+    const headlines = this.cappedCreativeCopy(channel, 'headlines', this.fittingCreativeCopy(channel, 'headlines', this.asArray(search?.['headlines'])));
+    const longHeadlines = this.cappedCreativeCopy(
+      channel,
+      'longHeadlines',
+      this.fittingCreativeCopy(channel, 'longHeadlines', this.asArray(demandGen?.['headlines']))
+    );
+    const descriptionPool = this.fittingCreativeCopy(channel, 'descriptions', [
+      ...this.asArray(search?.['descriptions']),
+      ...this.asArray(demandGen?.['descriptions']),
+    ]);
+    const descriptions = this.cappedCreativeCopy(channel, 'descriptions', descriptionPool);
     // Google's display width, which campaign-service's short-description rule counts in; a code-point
     // count would pick a CJK line upstream measures as too wide.
     const isShort = (value: string): boolean => googleAdsTextWeight(value) <= GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH;
@@ -7782,17 +7953,169 @@ export class ImplementationTabComponent implements OnInit {
     if (short !== undefined && !descriptions.some(isShort)) {
       descriptions[descriptions.length - 1] = short;
     }
-    const businessName = fitting('businessName', [demandGen?.['business_name']])[0] ?? '';
+    const businessName = this.fittingCreativeCopy(channel, 'businessName', [demandGen?.['business_name']])[0] ?? '';
 
-    if (headlines.length === 0 && longHeadlines.length === 0 && descriptions.length === 0 && businessName === '') return;
-    const seeded = {
+    this.seedGoogleCreative(channel, {
       headlines: headlines.join('\n'),
       longHeadlines: longHeadlines.join('\n'),
       descriptions: descriptions.join('\n'),
       businessName,
+    });
+  }
+
+  /**
+   * Prefill the Demand Gen image ad from the brief's generated copy (#1614), on Performance Max's
+   * terms: every value held to the field's catalogue bounds, de-duplicated, capped, never truncated.
+   *
+   * The Demand Gen copy (`google_display`) is written for this ad, so it comes first. Its headlines are
+   * generated up to 40 wide while this ad takes 30 (campaign-service's `maxHeadlineWeight`), so only
+   * the ones that fit are kept; the brief's Search headlines, written to the same 30, fill the slots
+   * that leaves, ahead of nothing being seeded. Descriptions are both copies' together, Demand Gen
+   * first, as the headlines are. The business name is the Demand Gen copy's. The call to action is
+   * seeded only when it is on the field's list (`listedCallToAction`), and this ad's list is empty
+   * (`GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION`), so it stays None.
+   *
+   * Only the image ad is seeded: the video ad (#5226) needs a long headline and a YouTube video the
+   * brief does not hold, and the named ad groups are the operator's own split.
+   */
+  private seedDemandGenCreative(brief: CampaignBriefOutput): void {
+    const channel = 'demand-gen';
+    const copy = this.generatedGoogleImageAdCopy(brief, channel);
+    this.seedGoogleCreative(channel, {
+      headlines: copy.headlines.join('\n'),
+      descriptions: copy.descriptions.join('\n'),
+      businessName: copy.businessName,
+      callToActionText: copy.callToActionText,
+    });
+  }
+
+  /**
+   * Prefill the responsive display ad from the brief's generated copy (#1614), on Demand Gen's terms:
+   * the headlines, descriptions, business name and call to action come from the same copy, by the same
+   * rules, because the brief writes one `google_display` set for both channels. The call to action is
+   * kept only when it is one of `GOOGLE_DISPLAY_CALLS_TO_ACTION`.
+   *
+   * The long headline (one value, 90 wide) is the first Demand Gen headline the headlines above did
+   * not already take — usually one of the 31-40 wide ones too long for them — and failing that the
+   * first Search description the descriptions did not take. A headline reads as a headline, so it is
+   * preferred over a description; skipping values already seeded keeps the ad from repeating one line
+   * in two of its fields. When every candidate is taken the field is left for the operator.
+   */
+  private seedDisplayCreative(brief: CampaignBriefOutput): void {
+    const channel = 'display';
+    const copy = this.generatedGoogleImageAdCopy(brief, channel);
+    // On campaign-service's de-duplication key, as the lists above are, so a candidate differing from a
+    // seeded line only in case does not repeat it.
+    const taken = new Set([...copy.headlines, ...copy.descriptions].map((value) => googleAdsToLower(value)));
+    const candidates = [
+      ...this.fittingCreativeCopy(channel, 'longHeadline', this.asArray(this.generatedDemandGenCopy(brief)?.['headlines'])),
+      ...this.fittingCreativeCopy(channel, 'longHeadline', this.asArray(this.generatedCopy(brief, ['google_search'])?.['descriptions'])),
+    ];
+    this.seedGoogleCreative(channel, {
+      headlines: copy.headlines.join('\n'),
+      longHeadline: candidates.find((value) => !taken.has(googleAdsToLower(value))) ?? '',
+      descriptions: copy.descriptions.join('\n'),
+      businessName: copy.businessName,
+      callToActionText: copy.callToActionText,
+    });
+  }
+
+  /**
+   * The headlines, descriptions, business name and call to action the Demand Gen image ad and the
+   * responsive display ad seed from (see {@link seedDemandGenCreative}): Demand Gen copy first, the
+   * Search copy filling what is left, each list fitted to and capped at the channel's own field.
+   */
+  private generatedGoogleImageAdCopy(
+    brief: CampaignBriefOutput,
+    channel: 'demand-gen' | 'display'
+  ): { headlines: string[]; descriptions: string[]; businessName: string; callToActionText: string } {
+    const search = this.generatedCopy(brief, ['google_search']);
+    const demandGen = this.generatedDemandGenCopy(brief);
+    const list = (control: string, key: string): string[] =>
+      this.cappedCreativeCopy(
+        channel,
+        control,
+        this.fittingCreativeCopy(channel, control, [...this.asArray(demandGen?.[key]), ...this.asArray(search?.[key])])
+      );
+    return {
+      headlines: list('headlines', 'headlines'),
+      descriptions: list('descriptions', 'descriptions'),
+      businessName: this.fittingCreativeCopy(channel, 'businessName', [demandGen?.['business_name']])[0] ?? '',
+      callToActionText: this.listedCallToAction(channel, demandGen?.['call_to_action']),
     };
-    this.performanceMaxSeed.set(seeded);
-    this.campaignForm.controls.performanceMaxCreative.patchValue(seeded);
+  }
+
+  /**
+   * The brief's call to action as the channel's field lists it (#1614, F13), or `''`: matched without
+   * regard to case, so the generator's "Learn More" or "learn more" both seed the listed spelling, and
+   * anything off the list — the generator's "Register", which Google refused live — seeds nothing.
+   */
+  private listedCallToAction(channel: 'demand-gen' | 'display', value: unknown): string {
+    if (typeof value !== 'string') return '';
+    const specs: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+    const wanted = googleAdsTrimSpace(value).toLowerCase();
+    return specs.find((field) => field.control === 'callToActionText')?.options?.find((option) => option.value.toLowerCase() === wanted)?.value ?? '';
+  }
+
+  /**
+   * The brief's Demand Gen copy. `google_display` is the key the generator writes, and `demand_gen`
+   * the older one; `getDisplayCopy` on the Planning tab reads both, at the top level and under
+   * `platforms`.
+   */
+  private generatedDemandGenCopy(brief: CampaignBriefOutput): Record<string, unknown> | undefined {
+    return this.generatedCopy(brief, ['google_display', 'demand_gen']);
+  }
+
+  /**
+   * Put one channel's seeded copy into its creative group and remember it for the prefill notice.
+   * A seed with no value at all leaves the group as `resetGoogleFields` left it, empty, with no notice.
+   */
+  private seedGoogleCreative(channel: GoogleCreativeChannel, seeded: Record<string, string>): void {
+    if (Object.values(seeded).every((value) => value === '')) return;
+    this.googleCreativeSeeds.update((seeds) => ({ ...seeds, [channel]: seeded }));
+    this.creativeGroup(GOOGLE_CREATIVE_REQUEST_KEYS[channel]).patchValue(seeded);
+  }
+
+  /**
+   * Generated values that fit one creative field, in order: strings only, each trimmed with any line
+   * break folded into a space, measured with `googleCreativeFieldWidth` as the field's validator
+   * measures it against the channel's `GOOGLE_CREATIVE_FIELD_SPECS` width, and de-duplicated without
+   * regard to case, as campaign-service judges a repeat. A value too wide is dropped, never truncated.
+   * Empty when the channel has no such field.
+   */
+  private fittingCreativeCopy(channel: GoogleCreativeChannel, control: string, values: unknown[]): string[] {
+    // Typed as the shared spec, as `initGoogleCreativeSections` reads it: not every catalogue entry
+    // declares `width` or `max`, and the literal tuple type would refuse the lookup.
+    const specs: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+    const spec = specs.find((field) => field.control === control);
+    if (spec === undefined) return [];
+    // A line break inside one generated value would split it into extra entries of a one-per-line
+    // field, past the width and count it was checked against, so it is folded into a space. Trimmed by
+    // `trimCreativeLine`, the trim `splitCreativeLines` gives every line before it reaches the wire, so
+    // the seed judges the very string the payload carries: a Go-style trim keeps a leading U+FEFF that
+    // the payload strips, and "\uFEFFJoin us" would seed beside "Join us" as a repeat on the wire.
+    const fitting = values
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => this.trimCreativeLine(value.replace(/\s*[\r\n]+\s*/g, ' ')))
+      .filter((value) => value !== '' && (spec.width === undefined || googleCreativeFieldWidth(control, value) <= spec.width));
+    // De-duplicated on campaign-service's own key, `strings.ToLower` of the `strings.TrimSpace`d line
+    // (`validateCreativeText`, `demandgen_creative.go`, v1.0.35), which REFUSES a list holding two lines
+    // equal under it. The line is already trimmed as it will be sent, and Go's trim of that changes
+    // nothing more, so the key is campaign-service's. The first spelling is kept, so "Join us" and
+    // "join us" seed one line, not a refusal.
+    const seen = new Set<string>();
+    return fitting.filter((value) => {
+      const key = googleAdsToLower(value);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  /** The first values up to the creative field's catalogue `max`, or all of them when it states none. */
+  private cappedCreativeCopy(channel: GoogleCreativeChannel, control: string, values: string[]): string[] {
+    const specs: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+    return values.slice(0, specs.find((field) => field.control === control)?.max ?? values.length);
   }
 
   /**
@@ -7812,6 +8135,15 @@ export class ImplementationTabComponent implements OnInit {
       }
     }
     return undefined;
+  }
+
+  /**
+   * A brief's saved platforms that can still be selected: every platform the picker enables, and X,
+   * whose capability may answer after the seed (see the platform restore in `populateFromBrief`).
+   */
+  private selectablePlatforms(platforms: readonly CampaignPlatform[]): CampaignPlatform[] {
+    const selectable = new Set<CampaignPlatform>([...CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id), 'twitter-ads']);
+    return platforms.filter((p) => selectable.has(p));
   }
 
   /** The value as an array when it is one, else empty: generated copy is untyped JSON. */
@@ -7893,12 +8225,15 @@ export class ImplementationTabComponent implements OnInit {
         adName: group.controls.adName.value,
         ads: group.controls.ads.controls.map((ad) => this.demandGenAdDraft(ad)),
         audience: group.controls.audience.value,
+        demographics: this.copyDisplayDemographics(group.controls.demographics.value),
       })),
       // The single ad group's several ads (#5226), on the same terms.
       demandGenAdName: this.campaignForm.controls.demandGenAdName.value,
       demandGenAds: this.campaignForm.controls.demandGenAds.controls.map((ad) => this.demandGenAdDraft(ad)),
       // The single ad group's Audience (#5244), split or not, so turning the split off restores it.
       demandGenAudience: this.campaignForm.controls.demandGenAudience.value,
+      // The single ad group's demographics (#498), split or not, on the Audience's terms.
+      demandGenDemographics: this.copyDisplayDemographics(this.campaignForm.controls.demandGenDemographics.value),
       displayAdGroupsSplit: this.campaignForm.controls.displayAdGroupsSplit.value,
       displayAdGroups: this.campaignForm.controls.displayAdGroups.controls.map((group) => ({
         name: group.controls.name.value,
@@ -7927,6 +8262,10 @@ export class ImplementationTabComponent implements OnInit {
       googleExcludedAgeRanges: [...this.googleExcludedAgeRanges()],
       googleExcludedGenders: [...this.googleExcludedGenders()],
       googleExcludedGeoTargets: [...this.googleExcludedGeoTargets()],
+      googleExcludedIncomeRanges: [...this.googleExcludedIncomeRanges()],
+      googleExcludedParentalStatuses: [...this.googleExcludedParentalStatuses()],
+      googleObservedDemographics: [...this.googleObservedDemographics()],
+      googleDisplayDemographics: this.copyDisplayDemographics(this.googleDisplayDemographics()),
       googleSearchPath1: this.googleSearchPath1(),
       googleSearchPath2: this.googleSearchPath2(),
       googleAdditionalSearchAds: this.googleAdditionalSearchAds().map((ad) => this.copySearchAd(ad)),
@@ -8106,9 +8445,22 @@ export class ImplementationTabComponent implements OnInit {
     // The brief's budget is a TOTAL for the flight and Google's is DAILY (#4847), so the total is
     // divided over the flight this seed opens with. Sending the total unchanged made every LFX
     // Google budget the whole plan per day.
+    //
+    // The flight runs to the event's first day when the brief names one after today (#1614), else to
+    // `defaultEndDate`; the daily budget is divided over that same flight, so the two cannot disagree.
+    // `googleSeededFlight` never seeds below the budget control's floor. It may shorten the flight to
+    // keep within the brief's total only when Google is the brief's ONLY platform: the end date is one
+    // control every selected platform's create reads, so shortening it for Google would cut a Meta or
+    // LinkedIn flight short too. Beside other platforms the end date is kept and Google seeds the floor,
+    // and `googleBudgetOverPlan` says that spends more than the brief plans.
     const briefTotal = brief.totalBudget ?? null;
-    const flightDays = campaignFlightDays(this.todayDate, this.defaultEndDate);
-    const seededDailyBudget = briefTotal !== null && flightDays !== null ? dailyBudgetFromTotal(briefTotal, flightDays) : null;
+    const seededPlatforms = brief.selectedPlatforms?.length ? this.selectablePlatforms(brief.selectedPlatforms) : this.selectedPlatforms();
+    const { endDate, dailyBudget: seededDailyBudget } = googleSeededFlight(
+      briefTotal,
+      this.todayDate,
+      defaultCampaignEndDate(details.dates, this.todayDate, this.defaultEndDate),
+      seededPlatforms.length === 1 && seededPlatforms[0] === 'google-ads'
+    );
     this.googleBriefTotalBudget.set(seededDailyBudget === null ? null : briefTotal);
     this.campaignForm.patchValue({
       eventName: details.name,
@@ -8117,7 +8469,7 @@ export class ImplementationTabComponent implements OnInit {
       registrationUrl: details.registrationUrl,
       budgetUsd: seededDailyBudget ?? DEFAULT_GOOGLE_DAILY_BUDGET_USD,
       startDate: this.todayDate,
-      endDate: this.defaultEndDate,
+      endDate,
       // The X fields are typed, never generated, so a new brief starts them blank. A same-event
       // refine gets them back from `twitterDraft` in `applyDraft`, which runs after this seed.
       twitterBudget: '',
@@ -8144,8 +8496,7 @@ export class ImplementationTabComponent implements OnInit {
       // (`twitterCreateEnabled`) overrides, and the capability may answer after this seed runs, so
       // filtering on it here would drop an X the operator chose. Kept, it is either created (an
       // explicit yes) or blocked with a Remove (`twitterCreateBlock`) — never sent unconfirmed.
-      const selectable = new Set<CampaignPlatform>([...CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id), 'twitter-ads']);
-      this.selectedPlatforms.set(brief.selectedPlatforms.filter((p) => selectable.has(p)));
+      this.selectedPlatforms.set(this.selectablePlatforms(brief.selectedPlatforms));
     }
 
     const searchCopy = this.generatedCopy(brief, ['google_search']);
@@ -8185,8 +8536,13 @@ export class ImplementationTabComponent implements OnInit {
     }
 
     // After `resetGoogleFields` emptied the creative groups, like the Search copy above; the draft
-    // restore runs after this seed, so an operator's own Performance Max copy still wins (#4784).
+    // restore runs after these seeds, so an operator's own copy still wins (#4784, #1614).
+    this.seedDemandGenCreative(brief);
     this.seedPerformanceMaxCreative(brief);
+    this.seedDisplayCreative(brief);
+    // The Search assets (#5262) are deliberately NOT seeded, though the brief holds a business name:
+    // campaign-service links them before the ad groups and returns on a refusal there, which leaves
+    // the campaign with no ad group, ad or keyword, so that step runs only when the operator asks.
 
     if (brief.linkedInCopy) {
       this.linkedInVariants.set(brief.linkedInCopy.variants);
@@ -8365,7 +8721,7 @@ export class ImplementationTabComponent implements OnInit {
    * sub-forms: they reach neither the draft nor a create until an entry is added.
    */
   private resetGoogleFields(): void {
-    this.performanceMaxSeed.set(null);
+    this.googleCreativeSeeds.set({});
     this.campaignForm.patchValue({
       searchBudgetPct: CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct,
       includeSearch: true,
@@ -8390,6 +8746,7 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.demandGenAdName.reset();
     this.campaignForm.controls.demandGenAds.clear();
     this.campaignForm.controls.demandGenAudience.reset();
+    this.campaignForm.controls.demandGenDemographics.reset();
     this.campaignForm.controls.displayAdGroupsSplit.reset();
     this.campaignForm.controls.displayAdGroups.clear();
     this.googleGeoTargets.set([]);
@@ -8402,6 +8759,10 @@ export class ImplementationTabComponent implements OnInit {
     this.googleExcludedAgeRanges.set([]);
     this.googleExcludedGenders.set([]);
     this.googleExcludedGeoTargets.set([]);
+    this.googleExcludedIncomeRanges.set([]);
+    this.googleExcludedParentalStatuses.set([]);
+    this.googleObservedDemographics.set([]);
+    this.googleDisplayDemographics.set({});
     this.googleSearchPath1.set('');
     this.googleSearchPath2.set('');
     this.googleAdditionalSearchAds.set([]);
@@ -8700,21 +9061,23 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Whether the Performance Max prefill notice is true right now (#4784): some field still holds the
-   * copy the brief seeded into it.
+   * Whether each Google creative's prefill notice is true right now (#4784, #1614): some field of the
+   * channel's image creative still holds the copy the brief seeded into it.
    *
    * Derived rather than latched. A restored draft overwrites the seed after it runs, and an operator
    * may clear or rewrite the copy, so a flag set at seed time would go on saying "filled in from the
    * brief" over empty fields or over copy they wrote. A draft saved straight from the seeded state —
    * the ordinary tab round trip — restores the same values, so the notice survives that.
    */
-  private initPerformanceMaxPrefillShown(): Signal<boolean> {
+  private initGoogleCreativePrefillShown(): Signal<Partial<Record<GoogleCreativeChannel, boolean>>> {
     return computed(() => {
       void this.campaignFormRevision();
-      const seed = this.performanceMaxSeed();
-      if (seed === null) return false;
-      const raw = this.campaignForm.controls.performanceMaxCreative.getRawValue() as Record<string, string>;
-      return Object.entries(seed).some(([field, value]) => value !== '' && raw[field] === value);
+      const shown: Partial<Record<GoogleCreativeChannel, boolean>> = {};
+      for (const [channel, seed] of Object.entries(this.googleCreativeSeeds()) as [GoogleCreativeChannel, Record<string, string>][]) {
+        const raw = this.creativeGroup(GOOGLE_CREATIVE_REQUEST_KEYS[channel]).getRawValue() as Record<string, string>;
+        shown[channel] = Object.entries(seed).some(([field, value]) => value !== '' && raw[field] === value);
+      }
+      return shown;
     });
   }
 
@@ -8782,7 +9145,7 @@ export class ImplementationTabComponent implements OnInit {
   private initGoogleBudgetInvalid(): Signal<boolean> {
     return computed(() => {
       const { daily } = this.googleBudgetInputs();
-      return typeof daily !== 'number' || !Number.isFinite(daily) || daily < 1;
+      return typeof daily !== 'number' || !Number.isFinite(daily) || daily < GOOGLE_MIN_DAILY_BUDGET_USD;
     });
   }
 
@@ -8924,8 +9287,8 @@ export class ImplementationTabComponent implements OnInit {
    *   campaign-service create path builds; with the cutover dark the legacy creator reads no
    *   creative key at all and the create still reports success.
    * - Search being ticked. `buildGoogleAdsConfig`'s Search branch emits `headlines`/`descriptions`
-   *   and never calls `googleCreative`, so a Search+Demand Gen pair discards the Demand Gen
-   *   creative even with the cutover on. The pair funds Demand Gen out of the budget split — it is
+   *   and calls `googleCreative` for `search` alone (its campaign assets, #5262), so a Search+Demand
+   *   Gen pair discards the Demand Gen creative even with the cutover on. The pair funds Demand Gen out of the budget split — it is
    *   a real selection, not an invalid one — which is exactly why the section has to go rather than
    *   the selection.
    */
@@ -9390,6 +9753,26 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  private initGoogleAdGroupDemographicsError(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel) return null;
+      const sent = this.googleAdGroupDemographicsPayload();
+      const demographics = this.googleDemographicExclusionsAvailable();
+      const exclusions = {
+        ageRanges: demographics ? this.googleExcludedAgeRanges() : [],
+        genders: demographics ? this.googleExcludedGenders() : [],
+        incomeRanges: sent.excludedIncomeRanges,
+        parentalStatuses: sent.excludedParentalStatuses,
+      };
+      return (
+        googleAdGroupDemographicExclusionsRefusal(sent.excludedIncomeRanges, sent.excludedParentalStatuses, channel)?.message ??
+        googleObservedDemographicsRefusal(sent.observedDemographics, channel, exclusions) ??
+        googleDisplayDemographicsRefusal(sent.displayDemographics, channel, exclusions)
+      );
+    });
+  }
+
   private initGoogleDemographicExclusionsError(): Signal<string | null> {
     return computed(() => {
       if (!this.googleDemographicExclusionsAvailable()) return null;
@@ -9572,6 +9955,32 @@ export class ImplementationTabComponent implements OnInit {
       if (demographics > 0) {
         kinds.push('demographic exclusions');
         held.push(`${demographics} demographic ${demographics === 1 ? 'exclusion' : 'exclusions'}`);
+      }
+      // The ad-group demographics, each held on its own fence: [sent here, how many, kind, one, many].
+      const t = this.googleDisplayDemographics();
+      const targeted = (t.ageRanges?.length ?? 0) + (t.genders?.length ?? 0) + (t.incomeRanges?.length ?? 0) + (t.parentalStatuses?.length ?? 0);
+      const adGroupHeld: [boolean, number, string, string, string][] = [
+        [this.googleIncomeExclusionsAvailable(), this.googleExcludedIncomeRanges().length, 'income exclusions', 'income exclusion', 'income exclusions'],
+        [
+          this.googleParentalExclusionsAvailable(),
+          this.googleExcludedParentalStatuses().length,
+          'parental-status exclusions',
+          'parental-status exclusion',
+          'parental-status exclusions',
+        ],
+        [
+          this.googleObservedDemographicsAvailable(),
+          this.googleObservedDemographics().length,
+          'observed demographics',
+          'observed demographic',
+          'observed demographics',
+        ],
+        [this.googleDemographicTargetingAvailable(), targeted, 'demographic targeting', 'targeted demographic', 'targeted demographics'],
+      ];
+      for (const [available, count, kind, one, many] of adGroupHeld) {
+        if (available || count === 0) continue;
+        kinds.push(kind);
+        held.push(`${count} ${count === 1 ? one : many}`);
       }
       if (held.length === 0) return '';
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take ${kinds.join(' or ')}, so the ${held.join(' and ')} you set will not be sent. Switch the channel back to keep them.`;
@@ -10426,11 +10835,12 @@ export class ImplementationTabComponent implements OnInit {
    * What a STARTED creative is still missing, in one sentence, or null when none is.
    *
    * The companion to {@link googleCreativeEmptyWarning}, and the two split on exactly the line
-   * campaign-service splits on. Each of the three creative validators opens with an `empty()` gate
+   * campaign-service splits on. Each of the four creative validators opens with an `empty()` gate
    * that ACCEPTS the creative and only then enforces its minimums (`demandgen_creative.go:277`,
-   * `pmax_creative.go:247`, `display_creative.go:169`). So a creative that has nothing in it is a
-   * create upstream makes — blocking it here would be the over-refusal this whole road forbids, and
-   * it gets the warning instead. A creative with something in it but below a minimum is a create
+   * `pmax_creative.go:247`, `display_creative.go:169`, and `validateSearchAssets` in
+   * `search_assets.go`). So a creative that has nothing in it is a create upstream makes — blocking
+   * it here would be the over-refusal this whole road forbids, and it gets the warning instead
+   * (except Search, which serves without one; see {@link googleCreativeEmptyWarning}). A creative with something in it but below a minimum is a create
    * upstream REFUSES, and surfacing that refusal before the round trip can never refuse more than
    * upstream would.
    *
@@ -10561,8 +10971,14 @@ export class ImplementationTabComponent implements OnInit {
       // ad: `demandGenAdGroupsError` holds Create on an empty one rather than warning. So does
       // `demandGenAdsError` on an empty first ad of several.
       const several = this.googleDemandGenAdsPayload().demandGenAds !== undefined;
+      // A channel that serves with its section empty (Search, #5262) is never named: it is not a shell.
+      const servesEmpty: readonly string[] = GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE;
       const empty = this.googleCreativeSections().filter(
-        (section) => section.fields.length > 0 && payload[section.groupName] === undefined && !(several && section.channel === 'demand-gen')
+        (section) =>
+          section.fields.length > 0 &&
+          payload[section.groupName] === undefined &&
+          !(several && section.channel === 'demand-gen') &&
+          !servesEmpty.includes(section.channel)
       );
       if (empty.length === 0) return null;
       const names = empty.map((section) => section.label).join(' and ');
@@ -10686,6 +11102,35 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * Income and parental-status exclusions, observed dimensions and Display targeting as the request
+   * carries them: each gated by the SAME computed its panel section renders on, omitted when empty
+   * (Google's default), entries copied.
+   */
+  private googleAdGroupDemographicsPayload(): Partial<CampaignCreateRequest> {
+    const payload: Partial<CampaignCreateRequest> = {};
+    const incomes = this.googleExcludedIncomeRanges();
+    if (this.googleIncomeExclusionsAvailable() && incomes.length > 0) payload.excludedIncomeRanges = [...incomes];
+    const parents = this.googleExcludedParentalStatuses();
+    if (this.googleParentalExclusionsAvailable() && parents.length > 0) payload.excludedParentalStatuses = [...parents];
+    const observed = this.googleObservedDemographics();
+    if (this.googleObservedDemographicsAvailable() && observed.length > 0) payload.observedDemographics = [...observed];
+    const targeting = this.googleDisplayDemographics();
+    if (this.googleDemographicTargetingAvailable() && googleDisplayDemographicsCarried(targeting))
+      payload.displayDemographics = this.copyDisplayDemographics(targeting);
+    return payload;
+  }
+
+  /** A copy of Display's targeting with only its non-empty lists, each copied. */
+  private copyDisplayDemographics(targeting: GoogleDisplayDemographics): GoogleDisplayDemographics {
+    const copy: GoogleDisplayDemographics = {};
+    if (targeting.ageRanges?.length) copy.ageRanges = [...targeting.ageRanges];
+    if (targeting.genders?.length) copy.genders = [...targeting.genders];
+    if (targeting.incomeRanges?.length) copy.incomeRanges = [...targeting.incomeRanges];
+    if (targeting.parentalStatuses?.length) copy.parentalStatuses = [...targeting.parentalStatuses];
+    return copy;
+  }
+
+  /**
    * Ad schedules, device adjustments, demographic exclusions and excluded locations as the request
    * carries them: each gated by the SAME computed its panel section renders on, omitted when empty
    * (Google's default), entries copied.
@@ -10702,6 +11147,7 @@ export class ImplementationTabComponent implements OnInit {
       if (ageRanges.length > 0) payload.excludedAgeRanges = [...ageRanges];
       if (genders.length > 0) payload.excludedGenders = [...genders];
     }
+    Object.assign(payload, this.googleAdGroupDemographicsPayload());
     const excluded = this.googleExcludedGeoTargets();
     if (this.googleExcludedGeoTargetsAvailable() && excluded.length > 0) payload.excludedGeoTargets = [...excluded];
     // Display placement exclusions (#462), one per non-blank line, trimmed; repeats are left for upstream to fold.
@@ -11087,7 +11533,7 @@ export class ImplementationTabComponent implements OnInit {
    *
    * Every control is a STRING, including the list fields, which hold one entry per line. The
    * alternative — a `FormArray` with add/remove rows per list — was rejected on size: Performance
-   * Max alone has seven list fields with caps up to twenty, and a row UI across all three channels
+   * Max alone has seven list fields with caps up to twenty, and a row UI across every channel
    * runs to thousands of lines of template for a form whose list entries are mostly pasted image
    * URLs. `splitCreativeLines` is the single place that turns the text back into the array the
    * wire carries.
@@ -11122,7 +11568,8 @@ export class ImplementationTabComponent implements OnInit {
    */
   private creativeFieldValidators(field: GoogleCreativeFieldSpec): ValidatorFn[] {
     if (field.kind === 'text') {
-      return field.width === undefined ? [] : [this.creativeTextBounds(field.control, field.width)];
+      const bounds = field.width === undefined ? [] : [this.creativeTextBounds(field.control, field.width)];
+      return field.options === undefined ? bounds : [...bounds, this.creativeOptionBound(field)];
     }
     return [this.creativeListBounds(field)];
   }
@@ -11147,7 +11594,8 @@ export class ImplementationTabComponent implements OnInit {
   private creativeFieldGuidance(field: GoogleCreativeFieldSpec): string {
     const parts: string[] = [];
     if (field.kind === 'text') {
-      if (field.width !== undefined) parts.push(`Up to ${field.width} characters.`);
+      // A select's choices are all inside the width, so the bound would only describe typing it cannot take.
+      if (field.width !== undefined && field.options === undefined) parts.push(`Up to ${field.width} characters.`);
     } else {
       if (field.min !== undefined && field.max !== undefined) parts.push(`${field.min}–${field.max} entries, one per line.`);
       else if (field.max !== undefined) parts.push(`Up to ${field.max} entries, one per line.`);
@@ -11175,6 +11623,10 @@ export class ImplementationTabComponent implements OnInit {
 
   /** {@link creativeFieldError} for a control already in hand: a named ad group's field (#5226) as well. */
   private creativeControlError(control: AbstractControl | null): string | null {
+    // Shown untouched: a value outside the list arrives without the operator typing it (a restored
+    // draft), the select cannot display it, and without the line Create would be held unexplained.
+    const option = control?.errors?.['creativeOption'] as { message: string } | undefined;
+    if (option !== undefined) return option.message;
     if (!control?.touched) return null;
     const errors = control.errors;
     if (!errors) return null;
@@ -11217,6 +11669,20 @@ export class ImplementationTabComponent implements OnInit {
       const length = googleCreativeFieldWidth(control, text);
       if (length <= width) return null;
       return { maxlength: { requiredLength: width, actualLength: length } };
+    };
+  }
+
+  /**
+   * A closed-list field's value held to its list (#1614): empty, or one of `field.options`. The select
+   * offers nothing else, so this catches what reaches the control another way — a restored draft or a
+   * brief saved before the field was a select — which Google would refuse only after the campaign
+   * exists. The same rule the BFF's `googleCallToActionRefusal` applies.
+   */
+  private creativeOptionBound(field: GoogleCreativeFieldSpec): ValidatorFn {
+    return (control: AbstractControl): ValidationErrors | null => {
+      const value = typeof control.value === 'string' ? googleAdsTrimSpace(control.value) : '';
+      if (value === '' || (field.options ?? []).some((option) => option.value === value)) return null;
+      return { creativeOption: { message: googleCreativeOptionMessage(field.label, value) } };
     };
   }
 
@@ -11348,13 +11814,19 @@ export class ImplementationTabComponent implements OnInit {
    * sends its name and the creative of its chosen format, built as the sections' creatives are; a
    * creative that empties out is omitted, which {@link demandGenAdGroupsError} then refuses. A group with
    * a second ad sends `ads` instead: its own ad first, under its ad name, then the others. A group's picked
-   * Audience goes last, trimmed, and only when it has one (#5244).
+   * Audience goes last, trimmed, and only when it has one (#5244), and so do its demographics, only when
+   * they name a value (linuxfoundation/lfx-v2-campaign-service#518).
    */
   private googleDemandGenAdGroupsPayload(): { demandGenAdGroups?: GoogleDemandGenAdGroup[] } {
     if (!this.demandGenAdGroupsActive()) return {};
     const groups = this.campaignForm.controls.demandGenAdGroups.controls.map((group): GoogleDemandGenAdGroup => {
       const audience = group.controls.audience.value.trim();
-      const withAudience = (entry: GoogleDemandGenAdGroup): GoogleDemandGenAdGroup => (audience === '' ? entry : { ...entry, audience });
+      const demographics = group.controls.demographics.value;
+      const withAudience = (entry: GoogleDemandGenAdGroup): GoogleDemandGenAdGroup => ({
+        ...entry,
+        ...(audience === '' ? {} : { audience }),
+        ...(googleDisplayDemographicsCarried(demographics) ? { demographics: this.copyDisplayDemographics(demographics) } : {}),
+      });
       if (group.controls.ads.length === 0) return withAudience(this.demandGenAdEntry(group.controls.name.value, group));
       return withAudience({
         name: group.controls.name.value.trim(),
@@ -11474,7 +11946,7 @@ export class ImplementationTabComponent implements OnInit {
           return 'The Demand Gen ads you entered are kept but not sent while the campaign is split into ad groups. Turn the split off to send them instead.';
         }
         if (!held && !single.some((groupName) => typed(this.creativeGroup(groupName).getRawValue()))) return '';
-        return 'The single Demand Gen ad you entered is kept but not sent while the campaign is split into ad groups. Turn the split off to send it instead.';
+        return 'The single Demand Gen ad is kept but not sent while the campaign is split into ad groups. Turn the split off to send it instead.';
       }
       // A group's own `format` is always set, so it is the name and the two creatives that say whether
       // anything was entered, not the group's top-level values.
@@ -11483,6 +11955,7 @@ export class ImplementationTabComponent implements OnInit {
           group.controls.name.value.trim() !== '' ||
           group.controls.ads.length > 0 ||
           group.controls.audience.value.trim() !== '' ||
+          googleDisplayDemographicsCarried(group.controls.demographics.value) ||
           typed(group.controls.creative.getRawValue()) ||
           typed(group.controls.videoCreative.getRawValue())
       );
@@ -11661,6 +12134,127 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  /**
+   * The single ad group's demographics as the create sends them (#498), each non-empty list copied, or
+   * `{}` when they name nothing or the campaign is split (they are then held), so a create without them
+   * is byte-identical to one made before they existed. Gated as {@link googleDemandGenAudiencePayload} is.
+   */
+  private googleDemandGenDemographicsPayload(): { demandGenDemographics?: GoogleDemandGenDemographics } {
+    const demographics = this.campaignForm.controls.demandGenDemographics.value;
+    return this.demandGenAdsShown() && googleDisplayDemographicsCarried(demographics)
+      ? { demandGenDemographics: this.copyDisplayDemographics(demographics) }
+      : {};
+  }
+
+  /**
+   * {@link demandGenDemographicsError}: the shared judge the BFF refuses the create on, over exactly what
+   * the create sends — the single ad group's demographics and Audience, or the named groups with their own.
+   */
+  private initDemandGenDemographicsError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const single = this.googleDemandGenDemographicsPayload().demandGenDemographics;
+      const groups = this.googleDemandGenAdGroupsPayload().demandGenAdGroups;
+      if (single === undefined && !(groups ?? []).some((group) => group.demographics !== undefined)) return null;
+      return googleDemandGenDemographicsRefusal(single, groups, this.googleDemandGenAudiencePayload().demandGenAudience, 'demand-gen')?.message ?? null;
+    });
+  }
+
+  /** {@link demandGenDemographicsLeftOut}: for the ad groups on screen, the dimensions Google Ads would leave out, as a sentence. */
+  private initDemandGenDemographicsLeftOut(): Signal<Record<string, string>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const notes: Record<string, string> = {};
+      const note = (key: string, demographics: GoogleDemandGenDemographics): void => {
+        const left = googleDemandGenDemographicsLeftOut(demographics);
+        if (left.length === 0) return;
+        notes[key] =
+          `Every ${joinAsSentenceList(left)} value is ticked, Unknown included, so ${left.length === 1 ? 'it narrows' : 'they narrow'} nothing and Google Ads leaves ${left.length === 1 ? 'it' : 'them'} out of the Audience.`;
+      };
+      if (this.demandGenAdsShown()) note('single', this.campaignForm.controls.demandGenDemographics.value);
+      if (this.demandGenAdGroupsActive()) {
+        for (const [index, group] of this.campaignForm.controls.demandGenAdGroups.controls.entries()) note(`${index}`, group.controls.demographics.value);
+      }
+      return notes;
+    });
+  }
+
+  /**
+   * {@link demandGenDemographicsRetained}: on a create that asks for Demand Gen, the ad groups whose
+   * demographics the split mode would send, read from the form itself for the reason
+   * {@link initDemandGenAudienceRetained} gives.
+   */
+  private initDemandGenDemographicsRetained(): Signal<string[]> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.showGoogleSection() || !this.selectedGoogleChannels().includes('demand-gen')) return [];
+      const form = this.campaignForm.controls;
+      if (!form.demandGenAdGroupsSplit.value) return googleDisplayDemographicsCarried(form.demandGenDemographics.value) ? ['Single ad group'] : [];
+      return form.demandGenAdGroups.controls.flatMap((group, index) =>
+        googleDisplayDemographicsCarried(group.controls.demographics.value) ? [group.controls.name.value.trim() || `Ad group ${index + 1}`] : []
+      );
+    });
+  }
+
+  /**
+   * Why Create is held for Demand Gen demographics the draft still holds but the request cannot carry, or
+   * `null`: {@link initDemandGenAudienceBlock}'s kinds and order but `restricted`, since no role gates
+   * them. Clear only when the create path serves the create, where Demand Gen's creative section shows
+   * them and {@link demandGenDemographicsError} judges them.
+   */
+  private initDemandGenDemographicsBlock(): Signal<CampaignGoogleDemandGenDemographicsBlock | null> {
+    return computed(() => {
+      const count = this.demandGenDemographicsRetained().length;
+      if (count === 0 || this.googleCreativeAvailable()) return null;
+      const held = count === 1 ? 'the Demand Gen demographics' : `the Demand Gen demographics of ${count} ad groups`;
+      if (this.googleCreativeEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Demand Gen demographics are not available on this deployment, so ${held} on this brief cannot be sent. Clear them to create the campaign.`,
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return {
+          kind: 'pending',
+          message: `Checking whether Demand Gen demographics can be sent. Create waits for the answer so ${held} on this brief are not dropped.`,
+        };
+      }
+      if (!this.briefPersistence().briefId) {
+        return { kind: 'unsaved', message: `Demand Gen demographics can't be checked until this brief is saved. Save the brief, or clear ${held} on it.` };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that Demand Gen demographics can be sent, so Create waits rather than dropping ${held} on this brief. Retry the check, or clear them.`,
+      };
+    });
+  }
+
+  /** {@link demandGenDemographicsHeldMessage}: Demand Gen's section is on screen, the campaign is split and the single ad group holds demographics. */
+  private initDemandGenDemographicsHeldMessage(): Signal<string> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.demandGenAdGroupsActive() || !googleDisplayDemographicsCarried(this.campaignForm.controls.demandGenDemographics.value)) return '';
+      return GOOGLE_DEMAND_GEN_DEMOGRAPHICS_HELD_WHILE_SPLIT;
+    });
+  }
+
+  /**
+   * Demand Gen demographics restored from a draft (#498, #518): an object's four lists, string entries
+   * only and empty lists left out, or `{}` for anything else, as the draft is in-memory but a non-string
+   * entry would render as no box and be sent as junk.
+   */
+  private demographicsFromDraft(saved: unknown): GoogleDemandGenDemographics {
+    if (saved === null || typeof saved !== 'object' || Array.isArray(saved)) return {};
+    const lists = saved as Record<string, unknown>;
+    const strings = (key: string): string[] => (Array.isArray(lists[key]) ? (lists[key] as unknown[]).filter((v): v is string => typeof v === 'string') : []);
+    return this.copyDisplayDemographics({
+      ageRanges: strings('ageRanges') as GoogleAdsAgeRange[],
+      genders: strings('genders') as GoogleAdsGender[],
+      incomeRanges: strings('incomeRanges') as GoogleAdsIncomeRange[],
+      parentalStatuses: strings('parentalStatuses') as GoogleAdsParentalStatus[],
+    });
+  }
+
   /** {@link demandGenAdGroupFieldErrors}: each touched ad group field's error, as {@link creativeFieldError} words it. */
   private initDemandGenAdGroupFieldErrors(): Signal<Record<string, string>> {
     return computed(() => {
@@ -11795,7 +12389,7 @@ export class ImplementationTabComponent implements OnInit {
       if (this.campaignForm.controls.displayAdGroupsSplit.value) {
         const held = Object.entries(this.googleHeldImages()).some(([key, images]) => key.split('.')[0] === 'displayCreative' && images.length > 0);
         if (!held && !typed(this.creativeGroup('displayCreative').getRawValue())) return '';
-        return 'The single Display ad you entered is kept but not sent while the campaign is split into ad groups. Turn the split off to send it instead.';
+        return 'The single Display ad is kept but not sent while the campaign is split into ad groups. Turn the split off to send it instead.';
       }
       const groups = this.campaignForm.controls.displayAdGroups.controls.filter(
         (group) => group.controls.name.value.trim() !== '' || typed(group.controls.creative.getRawValue())
@@ -11856,14 +12450,15 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * One named Demand Gen ad group's controls, filled from a saved draft entry when one is given: its name
-   * and first ad, its first ad's name, its second and later ads (#5226), and its Audience (#5244), a string
-   * only.
+   * and first ad, its first ad's name, its second and later ads (#5226), its Audience (#5244), a string
+   * only, and its demographics (linuxfoundation/lfx-v2-campaign-service#518), string entries only.
    */
   private buildDemandGenAdGroup(saved?: GoogleDemandGenAdGroupDraft): FormGroup<GoogleDemandGenAdGroupControls> {
     const group = new FormGroup<GoogleDemandGenAdGroupControls>({
       ...this.demandGenAdControls(saved),
       adName: this.fb.nonNullable.control(typeof saved?.adName === 'string' ? saved.adName : ''),
       audience: this.fb.nonNullable.control(typeof saved?.audience === 'string' ? saved.audience : ''),
+      demographics: this.fb.nonNullable.control<GoogleDemandGenDemographics>(this.demographicsFromDraft(saved?.demographics)),
       ads: new FormArray<FormGroup<GoogleDemandGenAdControls>>([]),
     });
     if (Array.isArray(saved?.ads)) this.restoreDemandGenAds(group.controls.ads, saved.ads);
@@ -11932,7 +12527,7 @@ export class ImplementationTabComponent implements OnInit {
       const held = Object.entries(this.googleHeldImages()).some(([key, images]) => key.startsWith(`${other.groupName}.`) && images.length > 0);
       if (!typed && !held) return '';
       const name = (format: GoogleDemandGenAdFormat): string => (format === 'video' ? 'video ad' : 'image ad');
-      return `The ${name(other.format)} you entered is kept but not sent while ${name(chosen)} is chosen: a Demand Gen campaign builds one ad. Choose ${name(other.format)} to send that one instead.`;
+      return `The ${name(other.format)} is kept but not sent while ${name(chosen)} is chosen: a Demand Gen campaign builds one ad. Choose ${name(other.format)} to send that one instead.`;
     });
   }
 
@@ -12176,7 +12771,16 @@ export class ImplementationTabComponent implements OnInit {
     if (typeof value !== 'string') return [];
     return value
       .split(/\r?\n/)
-      .map((line) => line.trim())
+      .map((line) => this.trimCreativeLine(line))
       .filter((line) => line !== '');
+  }
+
+  /**
+   * The one trim a creative line gets, wherever it is judged: the payload (`splitCreativeLines`) and the
+   * brief seed (`fittingCreativeCopy`) share it, so the seed de-duplicates the string that is sent.
+   * `String.prototype.trim`, which also strips a U+FEFF that Go's `strings.TrimSpace` would keep.
+   */
+  private trimCreativeLine(line: string): string {
+    return line.trim();
   }
 }

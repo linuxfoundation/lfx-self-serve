@@ -192,6 +192,16 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-audience-held-live">
   {{ demandGenAudienceHeldMessage() }}
 </div>
+<!-- Why Create is held for Demand Gen demographics, the single ad group's held while split, and retained ones the request cannot carry. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-demographics-error-live">
+  {{ demandGenDemographicsError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-demographics-held-live">
+  {{ demandGenDemographicsHeldMessage() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-demographics-block-live">
+  {{ demandGenDemographicsBlockMessage() }}
+</div>
 <!-- The single Demand Gen ad group's several ads' refusal (#5226); empty with one ad. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ads-error-live">
   {{ demandGenAdsError() ?? '' }}
@@ -478,6 +488,12 @@
                   The brief plans {{ planned | number: '1.0-2' }} in total.
                 }
               </span>
+              @if (googleBudgetOverPlan()) {
+                <span class="text-xs text-amber-700" data-testid="implementation-budget-over-plan"
+                  >This flight spends more than the brief plans. Lower the daily budget, which can't go below 1, or shorten the flight to stay within the
+                  plan.</span
+                >
+              }
               @if (googleBudgetInvalid()) {
                 <span id="implementation-budget-error" class="text-xs text-red-600" data-testid="implementation-budget-error"
                   >Enter a daily budget of at least 1.</span
@@ -1179,6 +1195,28 @@
           [demographicsError]="googleDemographicExclusionsError()"
           [excludedGeosError]="googleExcludedGeoTargetsError()" />
       }
+      <!--
+        Google Ads: ad-group demographics (linuxfoundation/lfx-v2-campaign-service#473, #497, #499) —
+        income and parental-status exclusions, Search's observed dimensions and Display's targeting,
+        each section on its own shared channel fence. The error is the shared refusal the BFF answers
+        the create with, and Create waits on it.
+      -->
+      @if (googleBiddingChannel()) {
+        <lfx-campaign-google-demographics-panel
+          [showIncomeExclusions]="googleIncomeExclusionsAvailable()"
+          [showParentalExclusions]="googleParentalExclusionsAvailable()"
+          [showObserved]="googleObservedDemographicsAvailable()"
+          [showTargeting]="googleDemographicTargetingAvailable()"
+          [excludedIncomeRanges]="googleExcludedIncomeRanges()"
+          (excludedIncomeRangesChange)="onGoogleExcludedIncomeRangesChange($event)"
+          [excludedParentalStatuses]="googleExcludedParentalStatuses()"
+          (excludedParentalStatusesChange)="onGoogleExcludedParentalStatusesChange($event)"
+          [observedDemographics]="googleObservedDemographics()"
+          (observedDemographicsChange)="onGoogleObservedDemographicsChange($event)"
+          [displayDemographics]="googleDisplayDemographics()"
+          (displayDemographicsChange)="onGoogleDisplayDemographicsChange($event)"
+          [error]="googleAdGroupDemographicsError()" />
+      }
       @if (googleTargetingWithheldMessage(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-targeting-withheld">
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
@@ -1429,6 +1467,53 @@
               [text]="true"
               (onClick)="onDemandGenAudiencesRemoveAll()"
               data-testid="implementation-demand-gen-audience-block-remove" />
+          </div>
+        </div>
+      }
+
+      <!--
+        Retained Demand Gen demographics the request cannot carry, on the audience block's terms: listed by
+        ad group while Demand Gen's creative section is not on screen. Create is held while it shows; Clear is
+        offered in every state.
+      -->
+      @if (demandGenDemographicsBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-demand-gen-demographics-block-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (!demandGenAdsShown() && !demandGenAdGroupsActive()) {
+            <ul class="flex flex-col gap-0.5" data-testid="implementation-demand-gen-demographics-block-list">
+              @for (owner of demandGenDemographicsRetained(); track $index) {
+                <li class="break-all">{{ owner }}</li>
+              }
+            </ul>
+          }
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryCreateCapabilities.emit()"
+                data-testid="implementation-demand-gen-demographics-block-retry" />
+            }
+            <lfx-button
+              label="Clear demographics"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="onDemandGenDemographicsClearAll()"
+              data-testid="implementation-demand-gen-demographics-block-clear" />
           </div>
         </div>
       }
@@ -2622,8 +2707,9 @@
         Google Ads: per-channel creative.
 
         One section per selected channel that carries a creative OBJECT rather than the two copy
-        arrays above — Demand Gen, Performance Max and Display. Search is absent because its copy IS
-        those arrays, and Video because Google Ads cannot create a Video campaign at all.
+        arrays above — Demand Gen, Performance Max, Display, and Search, whose object is its campaign
+        assets (ad images, business logo, business name, #5262) because its copy IS those arrays.
+        Video is absent because Google Ads cannot create a Video campaign at all.
 
         Everything rendered here comes from `googleCreativeSections()`, which resolves the shared
         field catalogue: the fields, their order, their bounds and their hints are stated once, in
@@ -2645,14 +2731,20 @@
           <h3 class="text-sm font-semibold text-gray-900">{{ section.label }} Creative</h3>
           <!--
             The notice sits on every section rather than once above them because a warning about
-            what an empty creative costs belongs beside the fields it is about. More than one
+            what an empty creative costs belongs beside the fields it is about. Search's says its
+            assets are optional instead, because its campaign serves without them. More than one
             section can be on screen — ticking Performance Max and Display renders both — and only
             `canSubmit` refuses that pair, so a single notice above the group would read as being
             about whichever section the operator happened to be looking at.
           -->
-          <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">{{ googleCreativeNotice }}</p>
-          @if (section.channel === 'performance-max' && performanceMaxPrefillShown()) {
-            <p class="mt-1 text-xs text-gray-500" data-testid="implementation-creative-prefill-notice-performance-max">{{ performanceMaxPrefillNotice }}</p>
+          <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">
+            {{ googleCreativeNotices[section.channel] }}
+          </p>
+          <!-- Only over the seeded image creative's own fields: not the Demand Gen video ad, nor a split. -->
+          @if (googleCreativePrefillShown()[section.channel] && section.format === 'image' && section.fields.length > 0) {
+            <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-prefill-notice-' + section.channel">
+              {{ googleCreativePrefillNotices[section.channel] }}
+            </p>
           }
           <!--
             Demand Gen split into named ad groups (#5226), each with its own image or video ad. On, the
@@ -2677,6 +2769,9 @@
             }
             @if (demandGenAudienceHeldMessage()) {
               <p class="mt-1 text-xs text-gray-500" data-testid="implementation-demand-gen-audience-held">{{ demandGenAudienceHeldMessage() }}</p>
+            }
+            @if (demandGenDemographicsHeldMessage()) {
+              <p class="mt-1 text-xs text-gray-500" data-testid="implementation-demand-gen-demographics-held">{{ demandGenDemographicsHeldMessage() }}</p>
             }
           }
           @if (section.channel === 'demand-gen' && demandGenAdGroupsActive()) {
@@ -2786,6 +2881,11 @@
                       context: { $implicit: i, ads: group.controls.ads, prefix: 'demand-gen-ad-group-' + i + '-ad' }
                     " />
                   <ng-container *ngTemplateOutlet="demandGenAudienceTemplate; context: { $implicit: i, audience: group.controls.audience }" />
+                  <ng-container
+                    *ngTemplateOutlet="
+                      demandGenDemographicsTemplate;
+                      context: { $implicit: i, demographics: group.controls.demographics, audience: group.controls.audience }
+                    " />
                   <div>
                     <lfx-button
                       label="Remove ad group"
@@ -3046,10 +3146,18 @@
               <p class="mt-2 text-xs text-red-600" data-testid="implementation-demand-gen-ads-error">{{ error }}</p>
             }
             <ng-container *ngTemplateOutlet="demandGenAudienceTemplate; context: { $implicit: null, audience: campaignForm.controls.demandGenAudience }" />
+            <ng-container
+              *ngTemplateOutlet="
+                demandGenDemographicsTemplate;
+                context: { $implicit: null, demographics: campaignForm.controls.demandGenDemographics, audience: campaignForm.controls.demandGenAudience }
+              " />
           }
           @if (section.channel === 'demand-gen') {
             @if (demandGenAudienceError(); as error) {
               <p class="mt-2 text-xs text-red-600" data-testid="implementation-demand-gen-audience-error">{{ error }}</p>
+            }
+            @if (demandGenDemographicsError(); as error) {
+              <p class="mt-2 text-xs text-red-600" data-testid="implementation-demand-gen-demographics-error">{{ error }}</p>
             }
           }
         </div>
@@ -3083,6 +3191,12 @@
                   <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
                 </button>
               </span>
+            } @else if (demandGenDemographicsNamed()[key]) {
+              <!-- Google Ads takes one Audience per Demand Gen ad group, and the demographics below build one. -->
+              <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-audience-held-by-demographics-' + key">
+                The demographics below are built into a new Audience for this ad group, and Google Ads takes one Audience per Demand Gen ad group. Clear the
+                demographics to pick an existing Audience instead.
+              </p>
             } @else {
               @switch (demandGenAudiencePicker().status) {
                 @case ('loaded') {
@@ -3121,6 +3235,46 @@
             }
           </div>
         }
+      </ng-template>
+
+      <!--
+        The demographics of one Demand Gen ad group (linuxfoundation/lfx-v2-campaign-service#498, #518): the
+        single one for a null context, else named group i. Upstream builds them into a new Audience, and an
+        ad group takes one Audience, so they are offered only while no Audience is picked; demographics a
+        restored draft holds beside one stay on show so they can be cleared, and the shared refusal holds
+        Create until one of the two goes.
+      -->
+      <ng-template
+        #demandGenDemographicsTemplate
+        lfxDemandGenDemographicsContext
+        let-group
+        let-demographicsControl="demographics"
+        let-audienceControl="audience">
+        @let key = group === null ? 'single' : '' + group;
+        <div class="mt-4 flex flex-col gap-2" [attr.data-testid]="'implementation-demand-gen-demographics-' + key">
+          @if (audienceControl.value !== '' && !demandGenDemographicsNamed()[key]) {
+            <span class="text-xs font-medium text-gray-700">Demographics</span>
+            <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-demographics-held-by-audience-' + key">
+              This ad group targets the Audience above, and Google Ads takes one Audience per Demand Gen ad group. Remove the Audience to set demographics
+              instead.
+            </p>
+          } @else {
+            <lfx-campaign-google-demographic-targeting
+              legend="Demographics (tick nothing in a group to reach all of it)"
+              [testId]="'implementation-demand-gen-demographics-targeting-' + key"
+              [optionTestIdPrefix]="'implementation-demand-gen-demographics-' + key + '-'"
+              [describedBy]="'demand-gen-demographics-' + key + '-hint'"
+              [targeting]="demographicsControl.value"
+              (targetingChange)="onDemandGenDemographicsChange(group, $event)" />
+            <p [id]="'demand-gen-demographics-' + key + '-hint'" class="text-xs text-gray-500">
+              Google Ads builds the ticked values into a new Audience for this ad group. Unknown adds the people Google could not classify and needs a value
+              ticked beside it. Demand Gen takes no observed demographics, so leave a group unticked to reach all of it.
+            </p>
+            @if (demandGenDemographicsLeftOut()[key]; as note) {
+              <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-demographics-left-out-' + key">{{ note }}</p>
+            }
+          }
+        </div>
       </ng-template>
 
       <!--
@@ -5027,6 +5181,7 @@
             [applyResult]="googleSuggestedApplyResult()"
             [applySeq]="googleSuggestedApplySeq()"
             [formFilled]="googleFormFilledSlots()"
+            [excludedGroups]="googleSlotGroupsNotSent"
             (applySuggested)="onApplySuggestedGoogleImages($event)" />
         </div>
       }
@@ -5367,6 +5522,17 @@
                 </p>
                 @if (pr.campaignId) {
                   <p class="text-xs text-gray-500">campaign {{ pr.campaignId }}</p>
+                }
+                @if (pr.platformUrl) {
+                  <a
+                    [href]="pr.platformUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                    data-testid="implementation-platform-result-link">
+                    Open in Google Ads
+                    <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                  </a>
                 }
               </div>
               <!-- campaign-service handed back an existing campaign instead of creating one (#4983):
