@@ -6,7 +6,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ApplicationRef, Component, input, output, signal } from '@angular/core';
 import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { provideRouter, Router } from '@angular/router';
+import { provideRouter, Router, RouterLink } from '@angular/router';
 import {
   Meeting,
   MeetingAttachment,
@@ -441,7 +441,9 @@ describe('MeetingCardComponent — invitee panels', () => {
     organizer: false,
   } as unknown as Meeting;
 
-  async function render(meeting: Meeting): Promise<HTMLElement> {
+  let renderedFixture: ComponentFixture<MeetingCardComponent>;
+
+  async function render(meeting: Meeting, inputs: Record<string, unknown> = {}): Promise<HTMLElement> {
     // The card's animate-on-scroll directive needs IntersectionObserver, which jsdom lacks.
     vi.stubGlobal(
       'IntersectionObserver',
@@ -499,6 +501,8 @@ describe('MeetingCardComponent — invitee panels', () => {
 
     const fixture = TestBed.createComponent(MeetingCardComponent);
     fixture.componentRef.setInput('meetingInput', meeting);
+    Object.entries(inputs).forEach(([name, value]) => fixture.componentRef.setInput(name, value));
+    renderedFixture = fixture;
     fixture.detectChanges();
     for (const block of await fixture.getDeferBlocks()) {
       await block.render(DeferBlockState.Complete);
@@ -550,6 +554,53 @@ describe('MeetingCardComponent — invitee panels', () => {
       } as Meeting);
 
       expect(groupNames(card)).toBe('Technical Steering Committee, Security Working Group');
+    });
+
+    it('links each group name to its group details page', async () => {
+      const card = await render({
+        ...INVITED,
+        project_slug: 'synthetic-project',
+        is_foundation: false,
+        committees: [
+          { uid: 'group-1', name: 'Technical Steering Committee' },
+          { uid: 'group-2', name: 'Security Working Group' },
+        ],
+      } as Meeting);
+
+      const first = card.querySelector('[data-testid="meeting-group-link-group-1"]') as HTMLAnchorElement;
+      const second = card.querySelector('[data-testid="meeting-group-link-group-2"]') as HTMLAnchorElement;
+      expect(first.textContent?.trim()).toBe('Technical Steering Committee');
+      expect(first.getAttribute('href')).toContain('/group-1');
+      expect(first.getAttribute('href')).toContain('project=synthetic-project');
+      expect(second.getAttribute('href')).toContain('/group-2');
+    });
+
+    it('shows the group the card is already on as plain text, not a link to itself', async () => {
+      const card = await render(
+        {
+          ...INVITED,
+          committees: [
+            { uid: 'group-1', name: 'Technical Steering Committee' },
+            { uid: 'group-2', name: 'Security Working Group' },
+          ],
+        } as Meeting,
+        { currentGroupUid: 'group-1' }
+      );
+
+      expect(card.querySelector('[data-testid="meeting-group-link-group-1"]')).toBeNull();
+      expect(card.querySelector('[data-testid="meeting-group-text-group-1"]')?.textContent?.trim()).toBe('Technical Steering Committee');
+      expect(card.querySelector('[data-testid="meeting-group-link-group-2"]')).not.toBeNull();
+    });
+
+    it('passes the back state it is given so the group page returns to the meetings list', async () => {
+      const state = { backLabel: 'Meetings', backPath: '/meetings', fromMeLens: true };
+      const card = await render({ ...INVITED, committees: [{ uid: 'group-1', name: 'Technical Steering Committee' }] } as Meeting, {
+        groupLinkState: state,
+      });
+
+      const link = renderedFixture.debugElement.query(By.css('[data-testid="meeting-group-link-group-1"]')).injector.get(RouterLink);
+      expect(link.state).toEqual(state);
+      expect(card).toBeTruthy();
     });
 
     it('leaves a group with no resolved name out instead of showing a blank', async () => {

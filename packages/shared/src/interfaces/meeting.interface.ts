@@ -128,6 +128,14 @@ export interface ImportantLinkFormValue {
 /** Voting-status values accepted by the meeting API for committee associations */
 export type MeetingAllowedVotingStatus = (typeof MEETING_ALLOWED_VOTING_STATUSES)[number];
 
+/** One group a meeting belongs to, with its canonical group-details link for the meeting card. */
+export interface MeetingGroupLink {
+  uid: string;
+  name: string;
+  /** Group-details link commands from the meeting's own project tier; null when the card is already on that group's page. */
+  commands: string[] | null;
+}
+
 /**
  * Committee payload for meeting API requests
  * @description Committee structure used in create/update meeting requests
