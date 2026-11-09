@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { createHash } from 'node:crypto';
+
 import {
   OrgInvolvementContributorsMonthlyResponse,
   OrgInvolvementEventAttendanceMonthlyResponse,
@@ -93,6 +95,33 @@ export class OrgInvolvementService {
       async () => {
         const fetched = await this.fetchContributorsMonthly(accountId, scope);
         degraded = fetched.trendMissing || fetched.teamMembersUnavailable;
+        return fetched.response;
+      },
+      OrgInvolvementService.hasAccountId,
+      () => !degraded
+    );
+  }
+
+  public async getFamilyContributorsMonthly(rollUpKey: string, accountIds: readonly string[]): Promise<OrgInvolvementContributorsMonthlyResponse> {
+    const companies = [...new Set(accountIds)].sort();
+    if (companies.length === 0) {
+      return { accountId: rollUpKey, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] };
+    }
+    const scopes = await Promise.all(companies.map((accountId) => resolveOrgScope(this.snowflakeService, accountId, DEFAULT_ORG_SCOPE)));
+    const insightsCompanies = companies.filter((_accountId, index) => scopes[index] === 'insights');
+    const allCompanies = companies.filter((_accountId, index) => scopes[index] !== 'insights');
+    const digest = createHash('sha256')
+      .update(JSON.stringify([insightsCompanies, allCompanies]))
+      .digest('hex')
+      .slice(0, 16);
+    let degraded = false;
+    return withOrgCache(
+      rollUpKey,
+      `contributors-family:v1:${digest}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        const fetched = await this.fetchFamilyContributorsMonthly(rollUpKey, companies, insightsCompanies, allCompanies);
+        degraded = fetched.teamMembersUnavailable;
         return fetched.response;
       },
       OrgInvolvementService.hasAccountId,
@@ -232,6 +261,75 @@ export class OrgInvolvementService {
         monthlyLabels: (trend.value ?? []).map((row) => formatMonthLabel(row.MONTH_START_DATE)),
       },
       trendMissing: trend.value === null,
+      teamMembersUnavailable: headline.teamMembersUnavailable || trend.teamMembersUnavailable,
+    };
+  }
+
+  private async fetchFamilyContributorsMonthly(
+    rollUpKey: string,
+    companies: readonly string[],
+    insightsCompanies: readonly string[],
+    allCompanies: readonly string[]
+  ): Promise<{ response: OrgInvolvementContributorsMonthlyResponse; teamMembersUnavailable: boolean }> {
+    const placeholders = (values: readonly string[]): string => values.map(() => '?').join(', ');
+    const scopeTerms = [
+      ...(insightsCompanies.length > 0 ? [`(account_id IN (${placeholders(insightsCompanies)}) AND insights_daily_code_activities > 0)`] : []),
+      ...(allCompanies.length > 0 && insightsCompanies.length > 0 ? [`account_id IN (${placeholders(allCompanies)})`] : []),
+    ];
+    const scopePredicate = insightsCompanies.length > 0 ? `AND (${scopeTerms.join(' OR ')})` : '';
+    const scopeBinds = insightsCompanies.length > 0 ? [...insightsCompanies, ...allCompanies] : [];
+
+    const headlineQuery = (teamMembers: OrgTeamMembersFilter): string => `
+      SELECT COUNT(DISTINCT person_key) AS ACTIVE_CONTRIBUTORS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
+      WHERE account_id IN (${placeholders(companies)})
+        ${orgContributorsActivityPredicate(ORG_LENS_DEFAULT_TIME_RANGE)}
+        ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope)}
+        ${orgTeamMembersPredicate(teamMembers)}
+        ${scopePredicate}
+    `;
+    const trendQuery = (teamMembers: OrgTeamMembersFilter): string => `
+      WITH months AS (
+        SELECT DATEADD(MONTH, -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('MONTH', CURRENT_DATE())) AS MONTH_START_DATE
+        FROM TABLE(GENERATOR(ROWCOUNT => 12))
+      ),
+      activity AS (
+        SELECT
+          person_key,
+          DATE_TRUNC('MONTH', activity_date) AS MONTH_START_DATE,
+          (TRUE ${orgTeamMembersPredicate(teamMembers)} ${scopePredicate}) AS IS_COUNTED
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
+        WHERE account_id IN (${placeholders(companies)})
+          AND activity_date >= (SELECT MIN(MONTH_START_DATE) FROM months)
+      )
+      SELECT m.MONTH_START_DATE, COUNT(DISTINCT IFF(a.IS_COUNTED, a.person_key, NULL)) AS UNIQUE_CONTRIBUTORS
+      FROM months AS m
+      LEFT JOIN activity AS a ON a.MONTH_START_DATE = m.MONTH_START_DATE
+      WHERE EXISTS (SELECT 1 FROM activity)
+      GROUP BY m.MONTH_START_DATE
+      ORDER BY m.MONTH_START_DATE ASC
+    `;
+
+    const [headline, trend] = await Promise.all([
+      readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_family_contributors', (teamMembers) =>
+        this.snowflakeService.execute<{ ACTIVE_CONTRIBUTORS: number | null }>(
+          headlineQuery(teamMembers),
+          [...companies, ...scopeBinds],
+          orgTeamMembersQueryOptions(teamMembers)
+        )
+      ),
+      readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_family_contributors_trend', (teamMembers) =>
+        this.snowflakeService.execute<ContributorsMonthlyRow>(trendQuery(teamMembers), [...scopeBinds, ...companies], orgTeamMembersQueryOptions(teamMembers))
+      ),
+    ]);
+
+    return {
+      response: {
+        accountId: rollUpKey,
+        totalActiveContributors: headline.value.rows[0]?.ACTIVE_CONTRIBUTORS ?? 0,
+        monthlyData: trend.value.rows.map((row) => row.UNIQUE_CONTRIBUTORS || 0),
+        monthlyLabels: trend.value.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
+      },
       teamMembersUnavailable: headline.teamMembersUnavailable || trend.teamMembersUnavailable,
     };
   }

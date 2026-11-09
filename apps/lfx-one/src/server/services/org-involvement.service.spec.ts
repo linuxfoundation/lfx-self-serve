@@ -345,6 +345,134 @@ describe('OrgInvolvementService.getContributorsMonthly — the default organizat
   });
 });
 
+describe('OrgInvolvementService.getFamilyContributorsMonthly', () => {
+  const ROLL_UP = 'family-001000000000000AAA';
+  const ALL_CO = '001000000000001AAA';
+  const INSIGHTS_CO = '001000000000002AAA';
+
+  beforeEach(() => {
+    execute.mockReset();
+    withOrgCache.mockClear();
+    resolveOrgScope.mockReset();
+    resolveOrgScope.mockImplementation(async (_snowflake: unknown, accountId: string) => (accountId === INSIGHTS_CO ? 'insights' : 'all'));
+    execute.mockImplementation(async (sql: string) =>
+      isContributorsTrend(sql)
+        ? {
+            rows: [
+              { MONTH_START_DATE: new Date(2030, 0, 15), UNIQUE_CONTRIBUTORS: 20 },
+              { MONTH_START_DATE: new Date(2030, 1, 15), UNIQUE_CONTRIBUTORS: 0 },
+            ],
+          }
+        : { rows: [{ ACTIVE_CONTRIBUTORS: 31 }] }
+    );
+  });
+
+  const headlineCall = (): unknown[] => execute.mock.calls.find(([query]) => !isContributorsTrend(String(query)))!;
+  const trendCall = (): unknown[] => execute.mock.calls.find(([query]) => isContributorsTrend(String(query)))!;
+
+  it('answers one headline and one trend for the family under the roll-up key, and stores the card', async () => {
+    const response = await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO]);
+
+    expect(response).toEqual({ accountId: ROLL_UP, totalActiveContributors: 31, monthlyData: [20, 0], monthlyLabels: ['Jan 2030', 'Feb 2030'] });
+    expect(withOrgCache.mock.calls.at(-1)?.[0]).toBe(ROLL_UP);
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toMatch(/^contributors-family:v1:[0-9a-f]{16}$/);
+    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(true);
+  });
+
+  it('counts distinct people across every company with the single-company headline rule, each company under its own scope', async () => {
+    await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO]);
+
+    const [sql, binds, options] = headlineCall();
+    expect(sql).toContain('COUNT(DISTINCT person_key) AS ACTIVE_CONTRIBUTORS');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY');
+    expect(sql).toContain('WHERE account_id IN (?, ?)');
+    expect(sql).toContain('AND activity_date >= DATEADD(day, -730, CURRENT_DATE())');
+    expect(sql).toContain('AND NOT COALESCE(is_cdp_team_member, FALSE)');
+    expect(sql).toContain('AND ((account_id IN (?) AND insights_daily_code_activities > 0) OR account_id IN (?))');
+    expect(binds).toEqual([ALL_CO, INSIGHTS_CO, INSIGHTS_CO, ALL_CO]);
+    expect(options).toEqual({ expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
+  });
+
+  it('rebuilds the 12-month trend across the family from the daily table, never adding the per-company view', async () => {
+    await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO]);
+
+    const [sql, binds] = trendCall();
+    expect(sql).toContain('FROM TABLE(GENERATOR(ROWCOUNT => 12))');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY');
+    expect(sql).not.toContain('ORG_CONTRIBUTORS_MONTHLY');
+    expect(sql).toContain('COUNT(DISTINCT IFF(a.IS_COUNTED, a.person_key, NULL)) AS UNIQUE_CONTRIBUTORS');
+    expect(sql).toContain(
+      '(TRUE AND NOT COALESCE(is_cdp_team_member, FALSE) AND ((account_id IN (?) AND insights_daily_code_activities > 0) OR account_id IN (?))) AS IS_COUNTED'
+    );
+    expect(sql).toContain('WHERE EXISTS (SELECT 1 FROM activity)');
+    expect(binds).toEqual([INSIGHTS_CO, ALL_CO, ALL_CO, INSIGHTS_CO]);
+  });
+
+  it('adds no scope predicate when no company has an Insights organization', async () => {
+    resolveOrgScope.mockImplementation(async () => 'all');
+
+    await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO]);
+
+    expect(String(headlineCall()[0])).not.toMatch(/insights/i);
+    expect(headlineCall()[1]).toEqual([ALL_CO, INSIGHTS_CO]);
+    expect(trendCall()[1]).toEqual([ALL_CO, INSIGHTS_CO]);
+  });
+
+  it('keeps only Insights-scoped rows, without an OR term, when every company has an Insights organization', async () => {
+    resolveOrgScope.mockImplementation(async () => 'insights');
+
+    await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO]);
+
+    expect(headlineCall()[0]).toContain('AND ((account_id IN (?, ?) AND insights_daily_code_activities > 0))');
+    expect(headlineCall()[0]).not.toContain(' OR ');
+  });
+
+  it('reads each company once and keys the cache on the set, whatever order or repeats it arrives in', async () => {
+    const service = new OrgInvolvementService();
+    await service.getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO, ALL_CO]);
+    const firstKey = withOrgCache.mock.calls.at(-1)?.[1];
+    await service.getFamilyContributorsMonthly(ROLL_UP, [INSIGHTS_CO, ALL_CO]);
+
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe(firstKey);
+    expect(execute.mock.calls.every(([, binds]) => (binds as string[]).length === 4)).toBe(true);
+
+    await service.getFamilyContributorsMonthly(ROLL_UP, [INSIGHTS_CO]);
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).not.toBe(firstKey);
+  });
+
+  it('answers the zero card without reading the warehouse for an empty set', async () => {
+    const response = await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, []);
+
+    expect(response).toEqual({ accountId: ROLL_UP, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] });
+    expect(execute).not.toHaveBeenCalled();
+    expect(withOrgCache).not.toHaveBeenCalled();
+  });
+
+  it('counts team members, and does not store the card, while the warehouse has no team-member flag yet', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('is_cdp_team_member')) throw invalidIdentifier('IS_CDP_TEAM_MEMBER');
+      return isContributorsTrend(sql) ? { rows: [] } : { rows: [{ ACTIVE_CONTRIBUTORS: 33 }] };
+    });
+
+    const response = await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO]);
+
+    expect(response.totalActiveContributors).toBe(33);
+    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
+  });
+
+  it.each([
+    ['headline', (sql: string) => !isContributorsTrend(sql)],
+    ['trend', isContributorsTrend],
+  ])('fails the card when the %s read fails', async (_name, failing) => {
+    execute.mockImplementation(async (sql: string) => {
+      if (failing(sql)) throw new Error('Warehouse timeout');
+      return { rows: [] };
+    });
+
+    await expect(new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, [ALL_CO, INSIGHTS_CO])).rejects.toThrow('Warehouse timeout');
+  });
+});
+
 describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)', () => {
   const monthlyRow = (month: Date): Record<string, unknown> => ({
     ACCOUNT_ID: 'acc-1',
