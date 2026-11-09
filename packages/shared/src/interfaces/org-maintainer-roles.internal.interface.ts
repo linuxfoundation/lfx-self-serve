@@ -16,7 +16,12 @@ export interface OrgMaintainerRoleOverlap {
  * The maintainer roles tables and the Overview trend view over ORG_MAINTAINER_ROLES (lfx-self-serve#4694); a read names
  * the one it may find missing. PROJECT_MAINTAINER_ROLES holds every role, with or without an account.
  */
-export type OrgMaintainerRolesTable = 'ORG_MAINTAINER_ROLES' | 'ORG_MAINTAINER_ROLES_MONTHLY' | 'ORG_MAINTAINER_ROLE_MONTHS' | 'PROJECT_MAINTAINER_ROLES';
+export type OrgMaintainerRolesTable =
+  | 'ORG_MAINTAINER_ROLES'
+  | 'ORG_MAINTAINER_ROLES_MONTHLY'
+  | 'ORG_MAINTAINER_ROLE_MONTHS'
+  | 'ORG_MAINTAINER_ROLES_RECENT'
+  | 'PROJECT_MAINTAINER_ROLES';
 
 /** A count of distinct maintainer roles. */
 export interface OrgMaintainerRolesCountRow {

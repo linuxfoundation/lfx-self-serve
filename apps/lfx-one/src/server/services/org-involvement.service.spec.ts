@@ -695,6 +695,7 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     { account: CHILD_CO, member: 'starts-this-month', segment: 'segment-2', activeMonths: [11, 11], inHeadline: true },
     { account: PARENT_CO, member: 'ended-before-window', segment: 'segment-2', activeMonths: null, inHeadline: true },
     { account: CHILD_CO, member: 'starts-later', segment: 'segment-2', activeMonths: null, inHeadline: false },
+    { account: PARENT_CO, member: 'ended-over-two-years-ago', segment: 'segment-3', activeMonths: null, inHeadline: false },
     { account: PARENT_CO, member: 'team', segment: 'segment-1', activeMonths: [0, 11], inHeadline: true, teamMember: true },
     { account: PAST_CO, member: 'past-only', segment: 'segment-3', activeMonths: null, inHeadline: true },
   ];
@@ -715,13 +716,17 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     execute.mockImplementation(async (sql: string, binds: unknown[]) => {
       const excludeTeam = sql.includes('NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)') || sql.includes('ACTIVE_ROLES_EXCLUDING_TEAM_MEMBERS');
       if (!isRolesTrend(sql)) {
-        const companies = sql.includes('ACCOUNT_ID IN (') ? binds.filter((bind) => typeof bind === 'string') : [binds[0]];
+        const family = sql.includes('ORG_MAINTAINER_ROLES_RECENT');
+        const companies = family ? binds : [binds[0]];
+        const windowed = family
+          ? sql.includes('AND IS_ACTIVE_LAST_TWO_YEARS')
+          : sql.includes('ROLE_END_DATE >= DATEADD(day, 0 - ?, CURRENT_DATE())') && binds.at(-1) === 730;
         return {
           rows: [
             {
               MAINTAINER_ROLES: distinct(
                 counted(
-                  ROLES.filter((role) => role.inHeadline),
+                  ROLES.filter((role) => !windowed || role.inHeadline),
                   companies,
                   excludeTeam
                 )
@@ -780,18 +785,18 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     expect(family).toEqual({ accountId: ROLL_UP, maintainerRoles: 1, monthlyData: [], monthlyLabels: [] });
   });
 
-  it('reads the headline with the single-company rule over every company of the family, binding the companies then 730 days', async () => {
+  it("selects the headline from the modeled two-year flag over the family's companies", async () => {
     await new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
 
     const [sql, binds, options] = headlineCall();
     expect(sql).toContain('SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES');
-    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES\n');
-    expect(sql).toContain('WHERE ACCOUNT_ID IN (?, ?)');
-    expect(sql).toContain('ROLE_START_DATE <= CURRENT_DATE() AND (ROLE_END_DATE IS NULL OR ROLE_END_DATE >= DATEADD(day, 0 - ?, CURRENT_DATE()))');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_RECENT\n');
+    expect(sql).toContain('WHERE ACCOUNT_ID IN (?, ?)\n        AND IS_ACTIVE_LAST_TWO_YEARS');
     expect(sql).toContain('AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)');
     expect(sql).not.toContain('IS_LF_PROJECT');
-    expect(binds).toEqual([PARENT_CO, CHILD_CO, 730]);
-    expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLES', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
+    expect(sql).not.toContain('ROLE_START_DATE');
+    expect(binds).toEqual([PARENT_CO, CHILD_CO]);
+    expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLES_RECENT', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
   });
 
   it("selects the trend from the modeled role-months over the family's companies, on the per-company view's months", async () => {
@@ -869,10 +874,10 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
   });
 
-  it('answers an unavailable headline, and does not store the card, while the roles table is missing', async () => {
+  it('serves the trend with an unavailable headline, and does not store the card, while the recent roles view is missing', async () => {
     const answer = execute.getMockImplementation()!;
     execute.mockImplementation(async (sql: string, binds: unknown[]) => {
-      if (!isRolesTrend(sql)) throw missing('ORG_MAINTAINER_ROLES');
+      if (sql.includes('ORG_MAINTAINER_ROLES_RECENT')) throw missing('ORG_MAINTAINER_ROLES_RECENT');
       return answer(sql, binds);
     });
 

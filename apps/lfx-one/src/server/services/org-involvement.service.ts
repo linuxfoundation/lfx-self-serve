@@ -485,13 +485,12 @@ export class OrgInvolvementService {
     rollUpKey: string,
     companies: readonly string[]
   ): Promise<{ response: OrgInvolvementMaintainersMonthlyResponse; rolesMissing: boolean }> {
-    const overlap = orgMaintainerRoleOverlap(ORG_OVERVIEW_MAINTAINER_ROLES_RANGE);
     const accountList = companies.map(() => '?').join(', ');
     const headlineQuery = (teamMembers: OrgTeamMembersFilter): string => `
       SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_RECENT
       WHERE ACCOUNT_ID IN (${accountList})
-        AND ${overlap.sql}
+        AND IS_ACTIVE_LAST_TWO_YEARS
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
         ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}
     `;
@@ -516,9 +515,9 @@ export class OrgInvolvementService {
       readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_family_maintainer_roles', (teamMembers) =>
         readMaintainerRoles<OrgMaintainerRolesCountRow>(
           this.snowflakeService,
-          'ORG_MAINTAINER_ROLES',
+          'ORG_MAINTAINER_ROLES_RECENT',
           headlineQuery(teamMembers),
-          [...companies, ...overlap.binds],
+          [...companies],
           orgTeamMembersQueryOptions(teamMembers)
         )
       ),
