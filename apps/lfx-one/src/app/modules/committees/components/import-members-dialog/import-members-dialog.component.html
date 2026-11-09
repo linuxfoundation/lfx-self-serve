@@ -98,6 +98,12 @@
           <lfx-tag [value]="addedCount() + ' added'" severity="success" data-testid="import-members-added-count" />
           <lfx-tag [value]="skippedCount() + ' skipped'" severity="secondary" data-testid="import-members-skipped-count" />
           <lfx-tag [value]="failedCount() + ' failed'" [severity]="failedCount() > 0 ? 'danger' : 'secondary'" data-testid="import-members-failed-count" />
+          @if (paused()) {
+            <lfx-tag [value]="waitingCount() + ' waiting'" severity="warn" data-testid="import-members-waiting-count" />
+          }
+          @if (notSubmittedCount() > 0) {
+            <lfx-tag [value]="notSubmittedCount() + ' not yet submitted'" severity="secondary" data-testid="import-members-not-submitted-count" />
+          }
         }
       </div>
 
@@ -117,17 +123,25 @@
             Review the rows below. Nothing is added until you confirm.
           }
         </p>
+      } @else if (phase() === 'importing' && paused()) {
+        <p role="status" class="text-sm text-amber-700" data-testid="import-members-paused-notice">
+          Paused to let the service catch up (pause {{ pauseCount() }} of {{ maxPauses }}). Resuming automatically in about {{ resumeInSeconds() }} seconds, at
+          {{ resumeAt() | date: 'mediumTime' }}. Select Stop import to end the import here; rows that were not sent stay Not yet submitted.
+        </p>
       } @else if (phase() === 'importing') {
         <p class="text-sm text-gray-600" data-testid="import-members-progress">Adding members: {{ batchSettled() }} of {{ batchTotal() }} done…</p>
       }
 
       @if (stopReason()) {
         <p role="alert" class="text-sm text-red-700" data-testid="import-members-stop-reason">
-          The import stopped: {{ stopReason() }} Rows that were not sent are marked Failed and can be retried.
+          The import stopped: {{ stopReason() }} Rows that were not sent are marked Not yet submitted and can be retried.
         </p>
       }
-      @if (phase() === 'results' && failedCount() > 0) {
-        <p class="text-sm text-gray-600">Retry sends only the failed rows; added and skipped rows are never sent again.</p>
+      @if (phase() === 'results' && (retryableCount() > 0 || failedCount() > 0)) {
+        <p class="text-sm text-gray-600" data-testid="import-members-retry-help">
+          Retry sends rows that are Not yet submitted and failed rows that can still succeed; added and skipped rows are never sent again. Rows the service
+          rejected as invalid need a corrected file.
+        </p>
       }
       @if (cleanupWarningCount() > 0) {
         <p class="text-sm text-amber-700" data-testid="import-members-cleanup-warning">
@@ -243,12 +257,21 @@
         (onClick)="startImport()"
         data-testid="import-members-submit-btn">
       </lfx-button>
+    } @else if (phase() === 'importing' && paused()) {
+      <lfx-button
+        label="Stop import"
+        icon="fa-light fa-circle-stop"
+        size="small"
+        severity="secondary"
+        (onClick)="stopImport()"
+        data-testid="import-members-stop-btn">
+      </lfx-button>
     } @else if (phase() === 'importing') {
       <lfx-button label="Adding members…" size="small" severity="info" [loading]="true" [disabled]="true" data-testid="import-members-submitting-btn">
       </lfx-button>
     } @else if (canRetry()) {
       <lfx-button
-        [label]="'Retry ' + failedCount() + ' failed'"
+        [label]="'Retry ' + retryableCount()"
         icon="fa-light fa-rotate-right"
         size="small"
         severity="info"

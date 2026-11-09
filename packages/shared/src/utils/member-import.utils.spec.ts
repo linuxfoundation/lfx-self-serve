@@ -6,12 +6,21 @@
 import { describe, expect, it } from 'vitest';
 
 import { APPOINTED_BY_OPTIONS, MEMBER_FORM_VOTING_STATUSES, MEMBER_ROLES } from '../constants/committees.constants';
-import { MEMBER_IMPORT_MAX_RECORDS, MEMBER_IMPORT_VOTING_COLUMNS } from '../constants/member-import.constants';
+import {
+  MEMBER_IMPORT_MAX_RECORDS,
+  MEMBER_IMPORT_PAUSE_DELAYS_MS,
+  MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS,
+  MEMBER_IMPORT_RETRY_AFTER_MAX_MS,
+  MEMBER_IMPORT_VOTING_COLUMNS,
+} from '../constants/member-import.constants';
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { MemberImportCells, MemberImportGroupRules } from '../interfaces/member-import.interface';
+import type { CommitteeMemberBulkCreateRowResult } from '../interfaces/member.interface';
+import type { MemberImportCells, MemberImportGroupRules, MemberImportRow } from '../interfaces/member-import.interface';
 import {
   buildMemberImportPayload,
+  classifyMemberImportBulkResult,
   getMemberImportFieldGuide,
+  getMemberImportRetryDelayMs,
   getMemberImportTemplateHeaders,
   parseMemberImportCsv,
   prepareMemberImportRows,
@@ -406,5 +415,94 @@ describe('prepareMemberImportRows', () => {
       { id: null, name: 'Acme Motors', website: 'https://acme-motors.example' },
       { id: null, name: 'Vendor Corp', website: 'https://vendor-corp.example' },
     ]);
+  });
+});
+
+describe('classifyMemberImportBulkResult', () => {
+  const row: MemberImportRow = {
+    rowNumber: 1,
+    email: 'ada@example.com',
+    normalizedEmail: 'ada@example.com',
+    cells: { email: 'ada@example.com' },
+    status: 'importing',
+    issues: [],
+    payload: { email: 'ada@example.com' },
+  };
+  const result = (patch: Partial<CommitteeMemberBulkCreateRowResult>): CommitteeMemberBulkCreateRowResult => ({
+    index: 0,
+    email: 'ada@example.com',
+    status: 'added',
+    retryable: false,
+    ...patch,
+  });
+
+  it('marks an added row added', () => {
+    expect(classifyMemberImportBulkResult(result({ status: 'added' }), row)).toMatchObject({ status: 'added', uncertain: false });
+  });
+
+  it('skips an existing member as a conflict', () => {
+    expect(classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'already_member' }), row)).toMatchObject({
+      status: 'skipped',
+      conflict: true,
+      reason: 'Already a member of this group.',
+    });
+  });
+
+  it('counts an uncertain row that is now already a member as added', () => {
+    const patch = classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'already_member' }), { ...row, uncertain: true });
+    expect(patch).toMatchObject({ status: 'added', uncertain: false });
+    expect(patch.conflict).toBeUndefined();
+  });
+
+  it('skips a duplicate within the request', () => {
+    expect(classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'duplicate_in_request' }), row)).toMatchObject({ status: 'skipped' });
+  });
+
+  it('fails an invalid row for good with the upstream message', () => {
+    const patch = classifyMemberImportBulkResult(result({ status: 'failed', reason: 'invalid', message: 'organization website is not a valid URL' }), row);
+    expect(patch).toMatchObject({ status: 'failed', retryable: false });
+    expect(patch.reason).toBe('organization website is not a valid URL. Fix this row in the file and import it again.');
+  });
+
+  it('waits on a temporary failure and records the uncertain outcome', () => {
+    expect(classifyMemberImportBulkResult(result({ status: 'failed', reason: 'temporary', retryable: true }), row)).toMatchObject({
+      status: 'waiting',
+      uncertain: true,
+    });
+  });
+
+  it('waits on a not-attempted row without changing its uncertainty', () => {
+    const patch = classifyMemberImportBulkResult(result({ status: 'failed', reason: 'not_attempted', retryable: true }), { ...row, uncertain: true });
+    expect(patch.status).toBe('waiting');
+    expect(patch).not.toHaveProperty('uncertain');
+  });
+});
+
+describe('getMemberImportRetryDelayMs', () => {
+  const now = Date.UTC(2026, 10, 9, 12, 0, 0);
+
+  it('reads Retry-After seconds', () => {
+    expect(getMemberImportRetryDelayMs('30', 0, now)).toBe(30_000);
+  });
+
+  it('reads a Retry-After HTTP-date', () => {
+    expect(getMemberImportRetryDelayMs(new Date(now + 45_000).toUTCString(), 0, now)).toBe(45_000);
+  });
+
+  it('falls back to the default for an unreadable Retry-After', () => {
+    expect(getMemberImportRetryDelayMs('abc', 2, now)).toBe(MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS);
+  });
+
+  it('caps a long Retry-After', () => {
+    expect(getMemberImportRetryDelayMs('999', 0, now)).toBe(MEMBER_IMPORT_RETRY_AFTER_MAX_MS);
+  });
+
+  it('never pauses for less than a second', () => {
+    expect(getMemberImportRetryDelayMs('0', 0, now)).toBe(1_000);
+  });
+
+  it('backs off by pause number without a header', () => {
+    expect([0, 1, 2].map((pause) => getMemberImportRetryDelayMs(null, pause, now))).toEqual([...MEMBER_IMPORT_PAUSE_DELAYS_MS]);
+    expect(MEMBER_IMPORT_PAUSE_DELAYS_MS).toEqual([15_000, 30_000, 60_000]);
   });
 });

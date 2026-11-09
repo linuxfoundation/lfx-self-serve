@@ -129,3 +129,44 @@ describe('CommitteeService detail cache aliases', () => {
     expect(http.get).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('CommitteeService.bulkCreateCommitteeMembers', () => {
+  const UID = '7cad5a8d-19d0-41a4-81a6-043453daf9ee';
+  const members = [{ email: 'ada@example.com' }, { email: 'grace@example.com' }];
+  const result = { results: [], added: 0, skipped: 0, failed: 0 };
+
+  let service: CommitteeService;
+  let http: { get: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    http = { get: vi.fn(), post: vi.fn(() => of(result)) };
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: http }] });
+    service = TestBed.inject(CommitteeService);
+  });
+
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('posts the rows to the bulk route without skip_notification by default', () => {
+    let received: unknown;
+    service.bulkCreateCommitteeMembers(UID, members).subscribe((value) => (received = value));
+
+    expect(http.post).toHaveBeenCalledWith(`/api/committees/${UID}/members/bulk`, { members }, { params: undefined });
+    expect(received).toBe(result);
+  });
+
+  it('sets skip_notification when notifications are off', () => {
+    service.bulkCreateCommitteeMembers(UID, members, { skipNotification: true }).subscribe();
+
+    const params = http.post.mock.calls[0][2]?.params as HttpParams;
+    expect(params.get('skip_notification')).toBe('true');
+  });
+
+  it('evicts the cached committee detail after the write', () => {
+    http.get.mockReturnValue(of({ uid: UID } as Committee));
+    service.getCommitteeDetail(UID).subscribe();
+    service.bulkCreateCommitteeMembers(UID, members).subscribe();
+    service.getCommitteeDetail(UID).subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+  });
+});

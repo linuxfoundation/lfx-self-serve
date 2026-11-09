@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -12,15 +12,18 @@ import { FileUploadComponent } from '@components/file-upload/file-upload.compone
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
-  MEMBER_IMPORT_CONCURRENCY,
+  COMMITTEE_INVITE_CONCURRENCY,
+  MEMBER_IMPORT_BULK_CHUNK_SIZE,
   MEMBER_IMPORT_FATAL_HTTP_STATUSES,
   MEMBER_IMPORT_MAX_FILE_BYTES,
+  MEMBER_IMPORT_MAX_PAUSES,
   MEMBER_IMPORT_MAX_RECORDS,
   MEMBER_IMPORT_STATUS_DISPLAY,
   MEMBER_IMPORT_TEMPLATE_FILENAME,
 } from '@lfx-one/shared/constants';
 import {
   CommitteeInvite,
+  CommitteeMemberBulkCreateResult,
   MemberImportDialogData,
   MemberImportDialogPhase,
   MemberImportDialogResult,
@@ -31,9 +34,11 @@ import {
   StagedCommitteeMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import {
+  classifyMemberImportBulkResult,
   committeeRequiresOrganization,
   downloadCsv,
   getMemberImportFieldGuide,
+  getMemberImportRetryDelayMs,
   getMemberImportTemplateHeaders,
   parseMemberImportCsv,
   prepareMemberImportRows,
@@ -42,23 +47,44 @@ import { CommitteeService } from '@services/committee.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { FileSelectEvent } from 'primeng/fileupload';
-import { catchError, from, map, mergeMap, Observable, of, switchMap } from 'rxjs';
+import {
+  catchError,
+  concat,
+  concatMap,
+  defer,
+  EMPTY,
+  from,
+  ignoreElements,
+  map,
+  mergeMap,
+  Observable,
+  of,
+  race,
+  Subject,
+  switchMap,
+  take,
+  tap,
+  timer,
+} from 'rxjs';
 
 /**
  * Import members into an existing group from a CSV (GH-3849).
  *
  * The file is read and validated locally into a read-only preview; nothing is written until the
- * user confirms. Confirmed rows are created one POST per member through the same direct-add route
- * as Add Member (at most MEMBER_IMPORT_CONCURRENCY at a time), so the per-member server checks still
- * apply. Each row keeps its own outcome; Retry resubmits failed rows only, and Close returns the
- * cumulative added/conflict counts so the roster refreshes. Never resolves organizations, creates
- * invitations, or changes permissions.
+ * user confirms. Confirmed rows are sent in chunks of MEMBER_IMPORT_BULK_CHUNK_SIZE, one chunk at a
+ * time, to the committee bulk member route (GH-5111), which applies the same per-member checks as
+ * Add Member and reports one result per row. Temporary limits and unknown outcomes pause the run
+ * and resubmit only the affected rows, at most MEMBER_IMPORT_MAX_PAUSES times; resubmitting is safe
+ * because upstream reports a row that was already written as an existing member. Each row keeps its
+ * own outcome; Retry resubmits rows that were not sent and failures that can still succeed, and
+ * Close returns the cumulative added/conflict counts so the roster refreshes. Never resolves
+ * organizations, creates invitations, or changes permissions.
  * In collect-only mode, confirmation returns validated member requests to the create or edit wizard
  * instead of writing them; the wizard saves them with Done or Update Group.
  */
 @Component({
   selector: 'lfx-import-members-dialog',
-  imports: [ReactiveFormsModule, ButtonComponent, CheckboxComponent, FileUploadComponent, TableComponent, TagComponent],
+  imports: [DatePipe, ReactiveFormsModule, ButtonComponent, CheckboxComponent, FileUploadComponent, TableComponent, TagComponent],
   templateUrl: './import-members-dialog.component.html',
   styleUrl: './import-members-dialog.component.scss',
 })
@@ -99,10 +125,19 @@ export class ImportMembersDialogComponent {
   public fileErrors = signal<string[]>([]);
   public reading = signal(false);
   public rows = signal<MemberImportRow[]>([]);
-  /** Set when an auth/not-found response stopped the run; unsent rows stay retryable. */
+  /** Set when an auth/not-found response, the pause cap or Stop import ended the run; unsent rows stay retryable. */
   public stopReason = signal<string | null>(null);
   public batchTotal = signal(0);
   public batchSettled = signal(0);
+  /** Epoch ms when a paused run resumes automatically; null while not paused. */
+  public resumeAt = signal<number | null>(null);
+  /** Length of the current pause, rounded up to whole seconds, for the paused notice. */
+  public resumeInSeconds = signal(0);
+  /** Automatic pauses taken by the current run (at most MEMBER_IMPORT_MAX_PAUSES). */
+  public pauseCount = signal(0);
+  public readonly maxPauses = MEMBER_IMPORT_MAX_PAUSES;
+  /** Ends the current pause early; in-flight requests are never cancelled. */
+  private readonly stopRequested = new Subject<void>();
 
   public readonly busy = computed(() => this.reading() || this.phase() === 'importing');
   public readonly readyCount = computed(() => this.countRows('ready'));
@@ -110,10 +145,14 @@ export class ImportMembersDialogComponent {
   public readonly skippedCount = computed(() => this.countRows('skipped'));
   public readonly addedCount = computed(() => this.countRows('added'));
   public readonly failedCount = computed(() => this.countRows('failed'));
+  public readonly waitingCount = computed(() => this.countRows('waiting'));
+  public readonly notSubmittedCount = computed(() => this.countRows('not_submitted'));
+  public readonly retryableCount = computed(() => this.rows().filter((row) => this.isRetryable(row)).length);
+  public readonly paused = computed(() => this.resumeAt() !== null);
   public readonly conflictCount = computed(() => this.rows().filter((row) => row.conflict).length);
   public readonly cleanupWarningCount = computed(() => this.rows().filter((row) => row.cleanupWarning).length);
   public readonly canImport = computed(() => this.phase() === 'preview' && this.readyCount() > 0 && this.invalidCount() === 0);
-  public readonly canRetry = computed(() => this.phase() === 'results' && this.failedCount() > 0);
+  public readonly canRetry = computed(() => this.phase() === 'results' && this.retryableCount() > 0);
   public readonly canChooseFile = computed(() => (this.phase() === 'select' || this.phase() === 'preview') && !this.busy());
   public readonly closeLabel = computed(() => (this.phase() === 'results' ? 'Close' : 'Cancel'));
   public readonly rowViews: Signal<MemberImportRowView[]> = this.initRowViews();
@@ -193,7 +232,16 @@ export class ImportMembersDialogComponent {
     if (!this.canRetry()) {
       return;
     }
-    this.submitRows(this.rows().filter((row) => row.status === 'failed'));
+    this.submitRows(this.rows().filter((row) => this.isRetryable(row)));
+  }
+
+  /** Ends a paused run: the waiting rows and every unsent chunk stay Not yet submitted for a later retry. */
+  public stopImport(): void {
+    if (!this.paused()) {
+      return;
+    }
+    this.stopReason.set('You stopped the import.');
+    this.stopRequested.next();
   }
 
   public close(): void {
@@ -243,9 +291,14 @@ export class ImportMembersDialogComponent {
         case 'preview':
           return `${this.readyCount()} ready, ${this.invalidCount()} invalid, ${this.skippedCount()} skipped.`;
         case 'importing':
+          if (this.paused()) {
+            return `Paused: resuming automatically in about ${this.resumeInSeconds()} seconds (pause ${this.pauseCount()} of ${MEMBER_IMPORT_MAX_PAUSES}).`;
+          }
           return `Adding members: ${this.batchSettled()} of ${this.batchTotal()} done.`;
-        case 'results':
-          return `${this.addedCount()} added, ${this.skippedCount()} skipped, ${this.failedCount()} failed.`;
+        case 'results': {
+          const notSubmitted = this.notSubmittedCount() > 0 ? `, ${this.notSubmittedCount()} not yet submitted` : '';
+          return `${this.addedCount()} added, ${this.skippedCount()} skipped, ${this.failedCount()} failed${notSubmitted}.`;
+        }
         default:
           return this.fileErrors().length > 0 ? 'The file could not be imported. See the errors below.' : '';
       }
@@ -263,63 +316,203 @@ export class ImportMembersDialogComponent {
   }
 
   /**
-   * Creates the given rows, at most MEMBER_IMPORT_CONCURRENCY at a time, recording each outcome as
-   * it settles. mergeMap calls the project function only when a slot frees, so a fatal response stops
-   * every not-yet-started row; in-flight requests are left to settle rather than cancelled, because a
-   * cancelled request may still have been committed upstream.
+   * Sends the given rows in chunks of MEMBER_IMPORT_BULK_CHUNK_SIZE, one bulk request at a time, and
+   * records each row's outcome. A chunk (including its invite cleanup and any pause) finishes before
+   * the next starts, so a stop leaves every later chunk unsent. In-flight requests are left to settle
+   * rather than cancelled, because a cancelled request may still have been committed upstream.
    */
   private submitRows(rows: MemberImportRow[]): void {
     if (rows.length === 0) {
       return;
     }
     const skipNotification = !this.form.controls.send_notification.value;
+    const targets = new Set(rows.map((row) => row.rowNumber));
+    const chunks: MemberImportRow[][] = [];
+    for (let start = 0; start < rows.length; start += MEMBER_IMPORT_BULK_CHUNK_SIZE) {
+      chunks.push(rows.slice(start, start + MEMBER_IMPORT_BULK_CHUNK_SIZE));
+    }
 
+    // `uncertain` survives a manual retry: an already_member answer then still means this import added the person.
+    this.rows.update((all) =>
+      all.map((row) => (targets.has(row.rowNumber) ? { ...row, status: 'not_submitted', reason: undefined, retryable: undefined } : row))
+    );
     this.stopReason.set(null);
+    this.pauseCount.set(0);
+    this.resumeAt.set(null);
     this.batchTotal.set(rows.length);
     this.batchSettled.set(0);
     this.form.controls.send_notification.disable();
     this.phase.set('importing');
 
-    from(rows)
+    from(chunks)
       .pipe(
-        mergeMap((row): Observable<Partial<MemberImportRow> & { rowNumber: number }> => {
-          const stopReason = this.stopReason();
-          if (stopReason || !row.payload) {
-            return of({ rowNumber: row.rowNumber, status: 'failed', reason: `Not sent: ${stopReason ?? 'missing member data.'}` });
-          }
-          this.patchRow(row.rowNumber, { status: 'importing', reason: undefined });
-          return this.committeeService.createCommitteeMember(this.committeeUid, row.payload, { skipNotification }).pipe(
-            switchMap(() => this.revokePendingInvite(row)),
-            map((cleanupWarning) => ({ rowNumber: row.rowNumber, status: 'added' as const, reason: undefined, cleanupWarning })),
-            catchError((err: HttpErrorResponse) => {
-              if (err.status === 409) {
-                return of({ rowNumber: row.rowNumber, status: 'skipped' as const, conflict: true, reason: 'Already a member of this group.' });
-              }
-              // Log only the status: raw errors may contain imported personal data.
-              console.error('CSV member import failed', { status: err.status });
-              const reason = this.failureReason(err);
-              this.stopForFatalError(err, reason);
-              return of({ rowNumber: row.rowNumber, status: 'failed' as const, reason });
-            })
-          );
-        }, MEMBER_IMPORT_CONCURRENCY),
+        concatMap((chunk) => this.submitChunk(chunk, skipNotification)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
-        next: ({ rowNumber, ...outcome }) => {
-          this.patchRow(rowNumber, outcome);
-          this.batchSettled.update((count) => count + 1);
-        },
         complete: () => {
           // takeUntilDestroyed also completes the stream when the dialog is torn down mid-import.
           if (this.destroyRef.destroyed) {
             return;
           }
+          this.resumeAt.set(null);
+          this.rows.update((all) => all.map((row) => (row.status === 'waiting' || row.status === 'importing' ? { ...row, status: 'not_submitted' } : row)));
           this.form.controls.send_notification.enable();
           this.phase.set('results');
           this.focusResultSummary();
         },
       });
+  }
+
+  /** Sends one chunk, applies its per-row results, and pauses then resubmits any rows that can be retried. */
+  private submitChunk(rows: MemberImportRow[], skipNotification: boolean): Observable<void> {
+    return defer(() => {
+      const stopReason = this.stopReason();
+      if (stopReason) {
+        this.patchRows(rows, { status: 'not_submitted', reason: `Not sent: ${stopReason}` });
+        return EMPTY;
+      }
+      const sendable = rows.filter((row) => row.payload);
+      const missing = rows.filter((row) => !row.payload);
+      this.patchRows(missing, { status: 'failed', reason: 'Not sent: missing member data.', retryable: false });
+      this.batchSettled.update((count) => count + missing.length);
+      if (sendable.length === 0) {
+        return EMPTY;
+      }
+
+      this.patchRows(sendable, { status: 'importing', reason: undefined });
+      return this.committeeService
+        .bulkCreateCommitteeMembers(
+          this.committeeUid,
+          sendable.map((row) => row.payload as NonNullable<MemberImportRow['payload']>),
+          { skipNotification }
+        )
+        .pipe(
+          switchMap((result) => this.applyChunkResult(sendable, result, skipNotification)),
+          catchError((err: unknown) => this.handleChunkError(sendable, err, skipNotification))
+        );
+    });
+  }
+
+  /** Maps each result back to its row by index, cleans up pending invites for new members, then resubmits waiting rows. */
+  private applyChunkResult(rows: MemberImportRow[], result: CommitteeMemberBulkCreateResult, skipNotification: boolean): Observable<void> {
+    const byIndex = new Map((result.results ?? []).map((rowResult) => [rowResult.index, rowResult]));
+    const added: MemberImportRow[] = [];
+    const waiting: MemberImportRow[] = [];
+    let settled = 0;
+
+    rows.forEach((row, index) => {
+      const current = this.findRow(row.rowNumber) ?? row;
+      const rowResult = byIndex.get(index);
+      const patch: Partial<MemberImportRow> = rowResult
+        ? classifyMemberImportBulkResult(rowResult, current)
+        : { status: 'waiting', uncertain: true, reason: 'No result came back for this row. It will be checked and sent again automatically.' };
+      this.patchRow(row.rowNumber, patch);
+      if (patch.status === 'waiting') {
+        waiting.push(row);
+      } else {
+        settled++;
+        if (patch.status === 'added') {
+          added.push(current);
+        }
+      }
+    });
+    this.batchSettled.update((count) => count + settled);
+
+    const cleanup$ = from(added).pipe(
+      mergeMap(
+        (row) =>
+          this.revokePendingInvite(row).pipe(
+            tap((cleanupWarning) => {
+              if (cleanupWarning) {
+                this.patchRow(row.rowNumber, { cleanupWarning });
+              }
+            })
+          ),
+        COMMITTEE_INVITE_CONCURRENCY
+      ),
+      ignoreElements()
+    );
+    return concat(
+      cleanup$,
+      defer(() => (waiting.length > 0 ? this.pauseThenResubmit(waiting, null, skipNotification) : EMPTY))
+    );
+  }
+
+  /** Request-level failures: 429 pauses, 401/403/404 stop the run, 400 fails the chunk, anything else is an unknown outcome. */
+  private handleChunkError(rows: MemberImportRow[], err: unknown, skipNotification: boolean): Observable<void> {
+    const httpError = err instanceof HttpErrorResponse ? err : null;
+    const status = httpError?.status ?? 0;
+    // Log only the status: raw errors may contain imported personal data.
+    console.error('CSV member import chunk failed', { status });
+
+    if (httpError && status === 429) {
+      // The BFF limiter rejects before proxying, so nothing was written. A missing header gets the default pause.
+      this.patchRows(rows, { status: 'waiting', reason: 'The service asked the import to slow down. It will resume automatically.' });
+      return this.pauseThenResubmit(rows, httpError.headers?.get('Retry-After') ?? '', skipNotification);
+    }
+    if (httpError && MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(status)) {
+      const reason = this.failureReason(httpError);
+      this.stopReason.set(this.stopReason() ?? reason);
+      this.patchRows(rows, { status: 'not_submitted', reason: `Not sent: ${reason}` });
+      return EMPTY;
+    }
+    if (httpError && status === 400) {
+      const message = extractErrorMessage(httpError, 'The service rejected these rows.');
+      this.patchRows(rows, { status: 'failed', retryable: false, reason: `${message} Fix the file and import it again.` });
+      this.batchSettled.update((count) => count + rows.length);
+      return EMPTY;
+    }
+
+    this.patchRows(rows, {
+      status: 'waiting',
+      uncertain: true,
+      reason: 'The outcome is unknown. These rows will be checked and sent again automatically.',
+    });
+    return this.pauseThenResubmit(rows, null, skipNotification);
+  }
+
+  /**
+   * Waits, then resubmits the rows as a new chunk. Stops the run instead once the pause budget is
+   * spent, and leaves the rows Not yet submitted when Stop import ends the pause early.
+   */
+  private pauseThenResubmit(rows: MemberImportRow[], retryAfter: string | null, skipNotification: boolean): Observable<void> {
+    return defer(() => {
+      const stopReason = this.stopReason();
+      if (stopReason) {
+        this.patchRows(rows, { status: 'not_submitted', reason: `Not sent: ${stopReason}` });
+        return EMPTY;
+      }
+      if (this.pauseCount() >= MEMBER_IMPORT_MAX_PAUSES) {
+        const reason = 'The service is still limiting requests. Wait a few minutes, then retry.';
+        this.stopReason.set(reason);
+        this.patchRows(rows, { status: 'not_submitted', reason: `Not sent: ${reason}` });
+        return EMPTY;
+      }
+
+      const delay = getMemberImportRetryDelayMs(retryAfter, this.pauseCount());
+      this.patchRows(rows, { status: 'waiting' });
+      this.pauseCount.update((count) => count + 1);
+      this.resumeInSeconds.set(Math.ceil(delay / 1000));
+      this.resumeAt.set(Date.now() + delay);
+
+      return race(
+        timer(delay).pipe(map(() => true)),
+        this.stopRequested.pipe(
+          take(1),
+          map(() => false)
+        )
+      ).pipe(
+        switchMap((resume) => {
+          this.resumeAt.set(null);
+          if (!resume) {
+            this.patchRows(rows, { status: 'not_submitted', reason: 'Import stopped before this row was sent.' });
+            return EMPTY;
+          }
+          return this.submitChunk(rows, skipNotification);
+        })
+      );
+    });
   }
 
   /** Emits the cleanup warning (or undefined) — a failed revoke never turns an added member into a failure. */
@@ -359,14 +552,28 @@ export class ImportMembersDialogComponent {
     if (err.status === 404) {
       return 'This group could not be found.';
     }
-    if (err.status === 429) {
-      return 'Too many requests. Wait a minute, then retry.';
-    }
     return extractErrorMessage(err, 'The member could not be added.');
   }
 
   private patchRow(rowNumber: number, patch: Partial<MemberImportRow>): void {
     this.rows.update((rows) => rows.map((row) => (row.rowNumber === rowNumber ? { ...row, ...patch } : row)));
+  }
+
+  private patchRows(targets: MemberImportRow[], patch: Partial<MemberImportRow>): void {
+    if (targets.length === 0) {
+      return;
+    }
+    const rowNumbers = new Set(targets.map((row) => row.rowNumber));
+    this.rows.update((rows) => rows.map((row) => (rowNumbers.has(row.rowNumber) ? { ...row, ...patch } : row)));
+  }
+
+  private findRow(rowNumber: number): MemberImportRow | undefined {
+    return this.rows().find((row) => row.rowNumber === rowNumber);
+  }
+
+  /** Not yet submitted rows, and failures that resubmitting can still fix (never invalid rows). */
+  private isRetryable(row: MemberImportRow): boolean {
+    return row.status === 'not_submitted' || (row.status === 'failed' && row.retryable !== false);
   }
 
   private countRows(status: MemberImportRow['status']): number {

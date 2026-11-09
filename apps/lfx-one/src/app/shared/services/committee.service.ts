@@ -13,6 +13,7 @@ import {
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeMemberBulkCreateResult,
   CommitteeOrganizationReference,
   CommitteeSettingsData,
   CommitteeUpdateData,
@@ -235,6 +236,23 @@ export class CommitteeService {
     const params = options?.skipNotification ? new HttpParams().set('skip_notification', 'true') : undefined;
 
     return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/members`, memberData, { params }).pipe(
+      take(1),
+      tap(() => this.evictCommitteeDetailCache(committeeId))
+    );
+  }
+
+  /**
+   * Adds up to 100 members in one request and returns one result per row, in submission order
+   * (GH-5111). `options.skipNotification` applies to every row, as for createCommitteeMember.
+   */
+  public bulkCreateCommitteeMembers(
+    committeeId: string,
+    members: CreateCommitteeMemberRequest[],
+    options?: CreateCommitteeMemberOptions
+  ): Observable<CommitteeMemberBulkCreateResult> {
+    const params = options?.skipNotification ? new HttpParams().set('skip_notification', 'true') : undefined;
+
+    return this.http.post<CommitteeMemberBulkCreateResult>(`/api/committees/${committeeId}/members/bulk`, { members }, { params }).pipe(
       take(1),
       tap(() => this.evictCommitteeDetailCache(committeeId))
     );
