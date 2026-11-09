@@ -10,8 +10,9 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import {
-  NEWSLETTER_BLOCKS_PROJECT_SLUGS,
   NEWSLETTER_COMMITTEE_CATEGORY,
+  NEWSLETTER_ENHANCED_EDITOR_DEFAULT,
+  NEWSLETTER_ENHANCED_EDITOR_FLAG,
   NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS,
   NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES,
   NEWSLETTER_STEP_TITLES,
@@ -39,11 +40,13 @@ import {
   formatTo12HourInTimezone,
   getTimezoneUtcOffsetString,
   getUserTimezone,
+  isNewsletterBlocksEnabled,
   isValidEmail,
   stripHtml,
 } from '@lfx-one/shared/utils';
 import { newsletterScheduleWindowValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -111,6 +114,10 @@ export class NewsletterManageComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
+  private readonly enhancedEditorEnabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(
+    NEWSLETTER_ENHANCED_EDITOR_FLAG,
+    NEWSLETTER_ENHANCED_EDITOR_DEFAULT
+  );
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
@@ -189,8 +196,8 @@ export class NewsletterManageComponent {
   private readonly fetchedLogoUrl = signal<string | undefined>(undefined);
   public readonly logoUrl: Signal<string | undefined> = computed(() => this.activeContext()?.logoUrl || this.fetchedLogoUrl());
   // The block composer + its template library are gated to the pilot projects
-  // (see NEWSLETTER_BLOCKS_PROJECT_SLUGS) for NEW authoring; every other project
-  // uses the basic editor only.
+  // (see NEWSLETTER_BLOCKS_PROJECT_SLUGS) and the feature flag for NEW authoring;
+  // everyone else uses the basic editor only.
   //
   // A draft that ALREADY carries a body_layout is always editable in the composer
   // regardless of the gate — otherwise the basic editor would edit body_html
@@ -205,11 +212,14 @@ export class NewsletterManageComponent {
   // owner is a pilot, so we withhold blocks rather than offer them for a
   // potentially non-pilot newsletter.
   public readonly blocksEnabled: Signal<boolean> = computed(() => {
-    if (this.bodyLayoutValue() !== null) return true;
     const route = this.routeProjectUid();
     const ctx = this.activeContext();
-    const contextIsOwner = !route || route === ctx?.uid;
-    return contextIsOwner && NEWSLETTER_BLOCKS_PROJECT_SLUGS.includes(ctx?.slug ?? '');
+    return isNewsletterBlocksEnabled({
+      hasLayout: this.bodyLayoutValue() !== null,
+      flagEnabled: this.enhancedEditorEnabled(),
+      contextIsOwner: !route || route === ctx?.uid,
+      projectSlug: ctx?.slug,
+    });
   });
   public readonly hasContext: Signal<boolean> = computed(() => this.projectUid().length > 0);
 

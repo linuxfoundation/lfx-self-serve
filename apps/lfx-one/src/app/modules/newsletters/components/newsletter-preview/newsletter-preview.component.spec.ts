@@ -26,6 +26,12 @@ describe('NewsletterPreviewComponent', () => {
     return fixture.nativeElement.querySelector('[data-testid="newsletter-preview-iframe"]') as HTMLIFrameElement | null;
   }
 
+  it('shows a date in place of the send-date token in a draft document', async () => {
+    const frame = await render({ bodyHtml: '<!doctype html><html><head></head><body><p>%%SEND_DATE%%</p></body></html>' });
+
+    expect(frame?.getAttribute('srcdoc')).not.toContain('%%SEND_DATE%%');
+  });
+
   it.each([
     ['a body that starts with a doctype', { bodyHtml: '<!doctype html><html><head></head><body><p>Hi</p></body></html>' }],
     ['the fullDocument input', { bodyHtml: '<p>Hi</p>', fullDocument: true }],

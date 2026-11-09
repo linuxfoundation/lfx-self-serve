@@ -36,7 +36,7 @@ import {
   NEWSLETTER_SPACING_MARGIN_KEY,
   NEWSLETTER_SPACING_PADDING_KEY,
 } from '@lfx-one/shared/constants';
-import { humanizeFieldKey, isValidUrl } from '@lfx-one/shared/utils';
+import { humanizeFieldKey, isValidUrl, withNewsletterPreviewDate } from '@lfx-one/shared/utils';
 import {
   NewsletterBlock,
   NewsletterBlockManifestEntry,
@@ -960,7 +960,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
             return of({ html: '', failed: false });
           }
           return this.newsletterService.renderPreview(projectUid, { body_layout: layout, wrapper_content: wrapperContent }).pipe(
-            map((response) => ({ html: response.body_html ?? '', failed: false })),
+            map((response) => ({ html: withNewsletterPreviewDate(response.body_html ?? ''), failed: false })),
             catchError((err: unknown) => {
               // A 400 (layout too large / malformed, from validateRenderPreviewPayload)
               // or 422 (unprocessable layout) is a DETERMINISTIC rejection of this

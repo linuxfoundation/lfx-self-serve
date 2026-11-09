@@ -3,7 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { addShareToTally, combinedViewCount, newsletterIssuePath, shareButtonAriaLabel, visibleShareCount } from './newsletter.utils';
+import {
+  addShareToTally,
+  combinedViewCount,
+  isNewsletterBlocksEnabled,
+  newsletterIssuePath,
+  shareButtonAriaLabel,
+  visibleShareCount,
+  withNewsletterPreviewDate,
+} from './newsletter.utils';
 
 describe('newsletterIssuePath', () => {
   it('builds the relative permalink path from a project slug and newsletter id', () => {
@@ -66,5 +74,39 @@ describe('combinedViewCount', () => {
 
   it('is null only when both halves are unknown', () => {
     expect(combinedViewCount(undefined, null)).toBeNull();
+  });
+});
+
+describe('withNewsletterPreviewDate', () => {
+  // 02:00 UTC on 10 Nov is still 9 Nov in Los Angeles, where the service renders the date.
+  const now = new Date('2026-11-10T02:00:00Z');
+
+  it('fills in every send-date token in the service format and timezone', () => {
+    expect(withNewsletterPreviewDate('<p>%%SEND_DATE%%</p><p>%%SEND_DATE%%</p>', now)).toBe('<p>November 9, 2026</p><p>November 9, 2026</p>');
+  });
+
+  it('leaves HTML with no token alone', () => {
+    expect(withNewsletterPreviewDate('<p>October 2, 2026</p>', now)).toBe('<p>October 2, 2026</p>');
+  });
+});
+
+describe('isNewsletterBlocksEnabled', () => {
+  const pilot = { hasLayout: false, flagEnabled: true, contextIsOwner: true, projectSlug: 'agentic-ai-foundation' };
+
+  it('allows new authoring with the flag on a pilot project the context owns', () => {
+    expect(isNewsletterBlocksEnabled(pilot)).toBe(true);
+  });
+
+  it.each([
+    ['the flag is off', { ...pilot, flagEnabled: false }],
+    ['the project is not a pilot', { ...pilot, projectSlug: 'cncf' }],
+    ['the context is not the owning project', { ...pilot, contextIsOwner: false }],
+    ['there is no project', { ...pilot, projectSlug: undefined }],
+  ])('blocks new authoring when %s', (_label, options) => {
+    expect(isNewsletterBlocksEnabled(options)).toBe(false);
+  });
+
+  it('keeps a draft with a layout in the composer even with the flag off', () => {
+    expect(isNewsletterBlocksEnabled({ hasLayout: true, flagEnabled: false, contextIsOwner: false })).toBe(true);
   });
 });

@@ -114,6 +114,11 @@ export const NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS = 72;
 // pilot for the blocks editor.
 export const NEWSLETTER_BLOCKS_PROJECT_SLUGS: readonly string[] = ['agentic-ai-foundation'];
 
+// The service leaves this token in a draft's rendered layout and fills it in at send time.
+export const NEWSLETTER_SEND_DATE_PLACEHOLDER = '%%SEND_DATE%%';
+// The service renders the send date in this timezone, so a preview has to match it.
+export const NEWSLETTER_DATE_TIME_ZONE = 'America/Los_Angeles';
+
 // The newsletter service rejects a rendered email over 100,000 bytes (422),
 // which keeps it under Gmail's ~102 KB clipping point. The block composer warns
 // as the email approaches that limit and shows the limit once it is reached.

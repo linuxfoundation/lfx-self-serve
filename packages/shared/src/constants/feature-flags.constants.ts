@@ -191,6 +191,16 @@ export const FORMATION_ENABLED_FLAG = 'formation-enabled';
  */
 export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
 /**
+ * Lets a user start new newsletters in the block composer, on top of the project gate in
+ * `NEWSLETTER_BLOCKS_PROJECT_SLUGS`. Off keeps the basic editor. A draft that already has a layout
+ * stays in the composer either way, because the basic editor can't edit it safely.
+ *
+ * **UI-only** — it does not gate the BFF or any endpoint.
+ */
+export const NEWSLETTER_ENHANCED_EDITOR_FLAG = 'newsletter-enhanced-editor';
+/** What {@link NEWSLETTER_ENHANCED_EDITOR_FLAG} reads as when LaunchDarkly has not answered. */
+export const NEWSLETTER_ENHANCED_EDITOR_DEFAULT = false;
+/**
  * What {@link MEETING_V2_ENABLED_FLAG} reads as in the browser when LaunchDarkly has not answered (unready
  * or unreachable). Every read of the flag — components and `meetingsV2Guard` — uses this one value, so
  * moving the fallback from the pre-v2 wizard to v2 is a single-line change here.

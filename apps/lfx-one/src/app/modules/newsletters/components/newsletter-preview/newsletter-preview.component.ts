@@ -3,6 +3,7 @@
 
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { withNewsletterPreviewDate } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-newsletter-preview',
@@ -42,7 +43,9 @@ export class NewsletterPreviewComponent {
   // isolated frame and cannot script or reach the host page. A <base
   // target="_blank"> is added so every link opens in a new tab rather than inside
   // the frame, which most sites refuse to be loaded in.
-  public readonly trustedDocument: Signal<SafeHtml> = computed(() => this.sanitizer.bypassSecurityTrustHtml(withBlankLinkTarget(this.bodyHtml())));
+  public readonly trustedDocument: Signal<SafeHtml> = computed(() =>
+    this.sanitizer.bypassSecurityTrustHtml(withBlankLinkTarget(withNewsletterPreviewDate(this.bodyHtml())))
+  );
 }
 
 /** Adds `<base target="_blank">` to a complete HTML document so its links open in a new tab. */

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NEWSLETTER_BLOCKS_PROJECT_SLUGS, NEWSLETTER_DATE_TIME_ZONE, NEWSLETTER_SEND_DATE_PLACEHOLDER } from '../constants/newsletter.constants';
 import { NewsletterShareTally } from '../interfaces/newsletter.interface';
 import { SocialShareChannel } from '../interfaces/social-share.interface';
 
@@ -53,4 +54,28 @@ export function shareButtonAriaLabel(visibleCount: number | null): string {
 export function combinedViewCount(opens: number | null | undefined, pageViews: number | null | undefined): number | null {
   if (opens == null && pageViews == null) return null;
   return (opens ?? 0) + (pageViews ?? 0);
+}
+
+/**
+ * Replaces the send-date token in a draft's rendered HTML with today's date, in the same format and
+ * timezone the service uses at send time, so a preview shows what a send today would show.
+ * @param html - The rendered newsletter HTML
+ * @param now - The date to show
+ * @returns The HTML with every send-date token filled in
+ */
+export function withNewsletterPreviewDate(html: string, now: Date = new Date()): string {
+  if (!html.includes(NEWSLETTER_SEND_DATE_PLACEHOLDER)) return html;
+  const date = new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeZone: NEWSLETTER_DATE_TIME_ZONE }).format(now);
+  return html.replaceAll(NEWSLETTER_SEND_DATE_PLACEHOLDER, date);
+}
+
+/**
+ * Whether the block composer is available for a newsletter. A draft that already has a layout is
+ * always editable in it, because the basic editor would edit body_html while the layout stays
+ * authoritative upstream. New authoring needs the feature flag and a pilot project, and the pilot
+ * slug only counts when the active context is the newsletter's owning project.
+ */
+export function isNewsletterBlocksEnabled(options: { hasLayout: boolean; flagEnabled: boolean; contextIsOwner: boolean; projectSlug?: string }): boolean {
+  if (options.hasLayout) return true;
+  return options.flagEnabled && options.contextIsOwner && NEWSLETTER_BLOCKS_PROJECT_SLUGS.includes(options.projectSlug ?? '');
 }
