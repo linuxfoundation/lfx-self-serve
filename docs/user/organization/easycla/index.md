@@ -4,7 +4,7 @@ description: View and manage an organization's corporate CLAs in the Organizatio
 audience: [all]
 product_area: Organization
 tags: [organization, easycla, cla, ccla, cla-manager, approval-list, signing]
-last_updated: 2026-11-06
+last_updated: 2026-11-09
 intercom_collection: Organization
 ---
 
@@ -47,7 +47,7 @@ A CLA Manager role that was just added or just removed can take about 30 minutes
 
 **We couldn't load your CLAs** is two different failures, and the text under the title says which one:
 
-- **You don't have an EasyCLA role at this organization.** The page then offers **contact support** if you need EasyCLA assistance. That button opens support. It is not the reason the page is empty.
+- **You don't have an EasyCLA role at this organization.** The page tells you to ask your company's CLA Managers to give you a role and links to **how EasyCLA access works**. It is not the reason the page is empty.
 - **Something went wrong fetching this organization's corporate CLAs.** Refresh the page to try again. That failure is not a statement about your role.
 
 If you have an admin or viewer role on any organization, the organization switcher lists only the organizations where you have that role, and leaves out organizations where your only role is CLA Manager or initial CLA Manager designee. Whether a company is a Linux Foundation member does not by itself decide whether it appears. See [Why is an organization missing from the switcher?](../choose-an-organization/#why-is-an-organization-missing-from-the-switcher).
@@ -196,7 +196,7 @@ The switch is labelled **Auto Acknowledge** on Overview.
 
 A sanctioned organization is shown as unavailable: the card has no status pill, and the Overview heading ends with **Unavailable**. EasyCLA does not show a standing banner on the page.
 
-Signing that organization, and changing its corporate CLA, is refused. If you answer **Are you authorized to be a CLA Manager for your organization?** while signing for that organization, the error says **Your organization cannot sign this CLA at this time. Contact support for more information.** A refusal at any other step is an error shown when you try that step. Neither is a banner above the page.
+Signing that organization, and changing its corporate CLA, is refused. If you answer **Are you authorized to be a CLA Manager for your organization?** while signing for that organization, the error says **Your organization cannot sign this CLA at this time.** A refusal at any other step is an error shown when you try that step. Neither is a banner above the page.
 
 **Unavailable** does not tell you whether a signature already exists. A sanctioned agreement that was signed still shows its signed date, its CLA Managers, and **Download signed CCLA PDF**, which works when you are a CLA Manager named on that agreement. An agreement that was never signed does not offer the download, and Overview does not walk you through how to start signing.
 

@@ -121,7 +121,7 @@ On an agreement that is not signed yet, identify the initial CLA Manager while s
 
 ## Why does EasyCLA say "We couldn't load your CLAs"?
 
-**We couldn't load your CLAs** is the title for two different failures. **You don't have an EasyCLA role at this organization** means this page has nothing to show you, and **contact support** is there if you need EasyCLA assistance. **Something went wrong fetching this organization's corporate CLAs** means the load failed — refresh the page. The title alone does not say which one you hit. See [Who can see EasyCLA, and who can change a corporate CLA?](../easycla/#who-can-see-easycla-and-who-can-change-a-corporate-cla).
+**We couldn't load your CLAs** is the title for two different failures. **You don't have an EasyCLA role at this organization** means this page has nothing to show you, and the page tells you to ask your company's CLA Managers for a role or to read **how EasyCLA access works**. **Something went wrong fetching this organization's corporate CLAs** means the load failed — refresh the page. The title alone does not say which one you hit. See [Who can see EasyCLA, and who can change a corporate CLA?](../easycla/#who-can-see-easycla-and-who-can-change-a-corporate-cla).
 
 ## What does Auto Acknowledge do?
 
@@ -136,7 +136,7 @@ You sign a corporate CLA (CCLA) from **Sign CLA** on EasyCLA, either yourself in
 
 ## What does a sanctioned organization look like?
 
-A sanctioned organization has no status pill, and the Overview heading ends with **Unavailable**. There is no banner on the page. Signing and changes are refused. Answering the CLA Manager question while signing for that organization shows **Your organization cannot sign this CLA at this time. Contact support for more information.** Any other refused step shows an error when you try it. See [What does a sanctioned organization look like on EasyCLA?](../easycla/#what-does-a-sanctioned-organization-look-like-on-easycla).
+A sanctioned organization has no status pill, and the Overview heading ends with **Unavailable**. There is no banner on the page. Signing and changes are refused. Answering the CLA Manager question while signing for that organization shows **Your organization cannot sign this CLA at this time.** Any other refused step shows an error when you try it. See [What does a sanctioned organization look like on EasyCLA?](../easycla/#what-does-a-sanctioned-organization-look-like-on-easycla).
 
 ## How do I remove someone from my organization?
 

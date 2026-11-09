@@ -4,7 +4,7 @@ description: What the Involvement section of the Foundation lens overview shows 
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, foundation, organization, involvement, membership-tier, contributors, maintainers, event-attendees, event-speakers, certifications, training]
-last_updated: 2026-11-06
+last_updated: 2026-11-09
 intercom_collection: Dashboards
 ---
 
@@ -61,12 +61,12 @@ When a part of a panel has nothing to show, it says so for the foundation, such 
 
 When one of the cards fails to load, the section shows a single message in place of all the cards.
 
-| Message                                                          | What it means and what to do                                                                                                                    |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Please select a foundation project to view organization data** | No foundation is selected. Select one in the context picker in the top navigation                                                               |
-| **This section could not be loaded**                             | Something went wrong loading the figures. The rest of the page is unaffected. Select **Retry**                                                  |
-| **You do not have access to this organization**                  | Access to the organization's figures is granted by its own Organization Lens administrators. Ask them for access, or select **Contact support** |
-| **Access could not be verified**                                 | Your access could not be checked right now. This is temporary and does not change your permissions. Select **Retry**                            |
+| Message                                                          | What it means and what to do                                                                                                                                                                 |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Please select a foundation project to view organization data** | No foundation is selected. Select one in the context picker in the top navigation                                                                                                            |
+| **This section could not be loaded**                             | Something went wrong loading the figures. The rest of the page is unaffected. Select **Retry**                                                                                               |
+| **You do not have access to this organization**                  | Access to the organization's figures is granted by its own Organization Lens administrators. Ask them for access, or select **How access to a company is granted** to read how access works. |
+| **Access could not be verified**                                 | Your access could not be checked right now. This is temporary and does not change your permissions. Select **Retry**                                                                         |
 
 ## How is this different from the Org Overview?
 
