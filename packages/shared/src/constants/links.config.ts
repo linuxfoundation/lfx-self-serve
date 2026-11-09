@@ -14,7 +14,5 @@ export const LINKS_CONFIG = {
    */
   DOCS: {
     COMPANY_LENS_ACCESS: '/docs/organization/choose-an-organization',
-    COMPANY_LENS_OVERVIEW: '/docs/organization/org-overview',
-    COMPANY_LENS_EASYCLA: '/docs/organization/easycla',
   },
 };
