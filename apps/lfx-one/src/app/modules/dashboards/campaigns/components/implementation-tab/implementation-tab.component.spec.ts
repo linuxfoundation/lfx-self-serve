@@ -41,7 +41,6 @@ import {
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CREATIVE_FIELD_SPECS,
-  GOOGLE_CREATIVE_PREFILL_NOTICES,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
@@ -17838,18 +17837,28 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(prefilled('search')).toBe(false);
   });
 
-  /** #5262: the Search business name is the brief's one business name, as every other channel's is; the brief holds no image to seed. */
-  it('fills the Search business name from the brief, and nothing else in its section', () => {
+  /**
+   * #5262: the Search assets are never seeded, not even the business name the other three channels take
+   * from the brief. campaign-service links them before the ad groups and returns on a refusal there,
+   * leaving the campaign without its ads, so they are sent only when the operator adds them.
+   */
+  it('leaves the Search assets empty, with no notice, while the other channels take the business name', () => {
     seed(brief(generated));
 
-    expect(group('searchAssets')).toEqual({ businessName: 'CNCF', adImages: '', landscapeAdImages: '', businessLogoImages: '' });
-    expect(prefilled('search')).toBe(true);
+    expect(group('searchAssets')).toEqual({ businessName: '', adImages: '', landscapeAdImages: '', businessLogoImages: '' });
+    expect(prefilled('search')).toBe(false);
+    expect(group('demandGenCreative')['businessName']).toBe('CNCF');
+    expect(group('displayCreative')['businessName']).toBe('CNCF');
+    expect(component()['campaignForm'].controls.performanceMaxCreative.getRawValue()['businessName']).toBe('CNCF');
     fixture.componentRef.setInput('demandGenEnabled', true);
     fixture.componentRef.setInput('googleChannelsEnabled', true);
     fixture.componentRef.setInput('googleCreativeEnabled', true);
     component()['campaignForm'].patchValue({ includeSearch: true });
     fixture.detectChanges();
-    expect(notice('search')?.trim()).toBe(GOOGLE_CREATIVE_PREFILL_NOTICES.search);
+    const sections: { channel: string }[] = component()['googleCreativeSections']();
+    expect(sections.map((section) => section.channel)).toEqual(['search']);
+    expect(notice('search')).toBeUndefined();
+    expect(component()['googleCreativeWirePayload']()).toEqual({});
   });
 
   it('fills the display ad, taking as long headline the first Demand Gen headline the headlines did not take', () => {

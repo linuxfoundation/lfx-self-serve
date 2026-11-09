@@ -1124,7 +1124,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly videoCreateUnsupportedReason = GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON;
   /** Each creative section's standing line, by channel: the empty-shell warning, or Search's optional-assets line (#5262). */
   protected readonly googleCreativeNotices = GOOGLE_CREATIVE_SECTION_NOTICES;
-  protected readonly googleCreativePrefillNotices = GOOGLE_CREATIVE_PREFILL_NOTICES;
+  /** The prefill notice of each channel the brief seeds; Search has none, because it is not seeded (#5262). */
+  protected readonly googleCreativePrefillNotices: Readonly<Partial<Record<GoogleCreativeChannel, string>>> = GOOGLE_CREATIVE_PREFILL_NOTICES;
   /**
    * The Google plan groups this tab sends no images for (#1614): every Google channel without a
    * creative section here, which is Video alone now that Search sends its ad images and business logo
@@ -8045,19 +8046,6 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Prefill the Search campaign's business name from the brief (#5262): the Demand Gen copy's
-   * `business_name`, the one business name a brief holds and the one every other Google channel seeds,
-   * held to the field's width and never truncated. Nothing else: the brief holds no image, so the ad
-   * images and the business logo stay the operator's.
-   */
-  private seedSearchAssets(brief: CampaignBriefOutput): void {
-    const channel = 'search';
-    this.seedGoogleCreative(channel, {
-      businessName: this.fittingCreativeCopy(channel, 'businessName', [this.generatedDemandGenCopy(brief)?.['business_name']])[0] ?? '',
-    });
-  }
-
-  /**
    * The brief's call to action as the channel's field lists it (#1614, F13), or `''`: matched without
    * regard to case, so the generator's "Learn More" or "learn more" both seed the listed spelling, and
    * anything off the list — the generator's "Register", which Google refused live — seeds nothing.
@@ -8552,7 +8540,9 @@ export class ImplementationTabComponent implements OnInit {
     this.seedDemandGenCreative(brief);
     this.seedPerformanceMaxCreative(brief);
     this.seedDisplayCreative(brief);
-    this.seedSearchAssets(brief);
+    // The Search assets (#5262) are deliberately NOT seeded, though the brief holds a business name:
+    // campaign-service links them before the ad groups and returns on a refusal there, which leaves
+    // the campaign with no ad group, ad or keyword, so that step runs only when the operator asks.
 
     if (brief.linkedInCopy) {
       this.linkedInVariants.set(brief.linkedInCopy.variants);
@@ -9297,8 +9287,8 @@ export class ImplementationTabComponent implements OnInit {
    *   campaign-service create path builds; with the cutover dark the legacy creator reads no
    *   creative key at all and the create still reports success.
    * - Search being ticked. `buildGoogleAdsConfig`'s Search branch emits `headlines`/`descriptions`
-   *   and never calls `googleCreative`, so a Search+Demand Gen pair discards the Demand Gen
-   *   creative even with the cutover on. The pair funds Demand Gen out of the budget split — it is
+   *   and calls `googleCreative` for `search` alone (its campaign assets, #5262), so a Search+Demand
+   *   Gen pair discards the Demand Gen creative even with the cutover on. The pair funds Demand Gen out of the budget split — it is
    *   a real selection, not an invalid one — which is exactly why the section has to go rather than
    *   the selection.
    */
@@ -10845,11 +10835,12 @@ export class ImplementationTabComponent implements OnInit {
    * What a STARTED creative is still missing, in one sentence, or null when none is.
    *
    * The companion to {@link googleCreativeEmptyWarning}, and the two split on exactly the line
-   * campaign-service splits on. Each of the three creative validators opens with an `empty()` gate
+   * campaign-service splits on. Each of the four creative validators opens with an `empty()` gate
    * that ACCEPTS the creative and only then enforces its minimums (`demandgen_creative.go:277`,
-   * `pmax_creative.go:247`, `display_creative.go:169`). So a creative that has nothing in it is a
-   * create upstream makes — blocking it here would be the over-refusal this whole road forbids, and
-   * it gets the warning instead. A creative with something in it but below a minimum is a create
+   * `pmax_creative.go:247`, `display_creative.go:169`, and `validateSearchAssets` in
+   * `search_assets.go`). So a creative that has nothing in it is a create upstream makes — blocking
+   * it here would be the over-refusal this whole road forbids, and it gets the warning instead
+   * (except Search, which serves without one; see {@link googleCreativeEmptyWarning}). A creative with something in it but below a minimum is a create
    * upstream REFUSES, and surfacing that refusal before the round trip can never refuse more than
    * upstream would.
    *
@@ -11542,7 +11533,7 @@ export class ImplementationTabComponent implements OnInit {
    *
    * Every control is a STRING, including the list fields, which hold one entry per line. The
    * alternative — a `FormArray` with add/remove rows per list — was rejected on size: Performance
-   * Max alone has seven list fields with caps up to twenty, and a row UI across all three channels
+   * Max alone has seven list fields with caps up to twenty, and a row UI across every channel
    * runs to thousands of lines of template for a form whose list entries are mostly pasted image
    * URLs. `splitCreativeLines` is the single place that turns the text back into the array the
    * wire carries.

@@ -204,14 +204,14 @@ The lists apply to the whole campaign, including any ad group added later, for e
 
 A Search campaign can show images, a business logo and a business name beside its ads. The **Search Creative** section appears below **Negative keywords** when Search is the campaign type. Every field in it is optional: leave them empty and the campaign serves on its ads alone.
 
-- **Business name**: up to 25 characters. Chinese, Japanese, Korean and other full-width characters count as two. It starts with the business name from the brief, when the brief has one that fits.
+- **Business name**: up to 25 characters. Chinese, Japanese, Korean and other full-width characters count as two.
 - **Square ad images (1:1)**: square images of at least 300 x 300 pixels.
 - **Landscape ad images (1.91:1)**: landscape images of at least 600 x 314 pixels. Google Ads takes up to 20 ad images, square and landscape together.
 - **Business logo (1:1)**: one square image of at least 128 x 128 pixels.
 
 Paste one `https://` image link per line, or pick or upload images from the brief's image library where it is offered. Each image can be up to 5 MB. If you add more ad images or logos than Google Ads takes, a message says so and **Create Campaign** stays unavailable until you remove some.
 
-Each image's size and shape are checked before anything is created. The images, logo and business name are then added to the campaign after it is created, all together or not at all. If Google Ads refuses them, the campaign has already been created without them.
+Each image's size and shape are checked before anything is created. The images, logo and business name are then added to the campaign after it is created, all together or not at all. They are added before the campaign's ads, so if Google Ads refuses them, the campaign has already been created without them and without its ads and keywords. Finish it in Google Ads, or create it again here with images, a logo and a business name Google Ads accepts. That is why nothing in this section is filled in from the brief, not even the business name the other campaign types start with: they are sent only when you add them.
 
 ## Copy, dates and budget filled in from the brief
 
@@ -226,9 +226,8 @@ When you open the **Implement** tab for a brief, some fields start with values f
 - **Demand Gen Creative** (image ad): headlines, descriptions and the business name. Headlines come from the brief's Demand Gen copy first, keeping only those of 30 characters or fewer, and then from its Search headlines. A longer headline is left out, not shortened.
 - **Display Creative**: headlines, descriptions and the business name, chosen the same way, plus a **Long headline**: the first Demand Gen headline the headlines did not use, or else the first Search description the descriptions did not use. A call to action from the brief is kept only if it is one Google accepts (see below).
 - **Performance Max Creative**: headlines, long headlines, descriptions and the business name.
-- **Search Creative**: the business name, the same one the other campaign types use. The brief has no images, so the image fields start empty.
 
-A note on each of these creative sections says the copy came from the brief, while it still does. On Demand Gen, Display and Performance Max, copy from the brief makes the ad a started one, so add the required images below it to create the ad, or clear the copy to create the campaign without one. On Search, clear the business name to create the campaign without one. Copy you typed before you left the tab is kept when you come back.
+A note on each of these creative sections says the copy came from the brief, while it still does. Copy from the brief makes the ad a started one, so add the required images below it to create the ad, or clear the copy to create the campaign without one. The **Search Creative** section is never filled in from the brief (see [Images, logo and business name](#images-logo-and-business-name-search-only)). Copy you typed before you left the tab is kept when you come back.
 
 ### Call to action
 

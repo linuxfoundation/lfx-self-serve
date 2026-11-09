@@ -5630,12 +5630,14 @@ export const GOOGLE_CREATIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
  * members would refuse the half upstream takes, and putting it on one would name the wrong field —
  * so the rule lives here, over the pair.
  *
- * Performance Max and Display are deliberately empty, and so is Search, whose assets are each optional: each requires both marketing arrays
+ * Performance Max and Display are deliberately empty: each requires both marketing arrays
  * SEPARATELY, which their two `min: 1` catalogue entries already express (#4848). The authority
  * for Display is Google's `ResponsiveDisplayAdInfo`, which refuses an ad missing either shape;
  * campaign-service mirrors it in `display_creative.go` from the release carrying
  * lfx-v2-campaign-service#437, and `pmax_creative.go` already does for Performance Max. An empty
  * list is the honest statement of that, and it keeps every creative-bearing channel indexable here.
+ * Search is empty for another reason: each of its assets is optional and stands alone
+ * (`validateSearchAssets`, `search_assets.go`).
  *
  * The messages are clauses, completed by the channel's section title at the point of use, so one
  * sentence names both the channel and what it is missing.
@@ -5805,7 +5807,9 @@ export const GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE =
  * seeded copy makes the Demand Gen image ad and the responsive display ad started creatives, which
  * campaign-service refuses without their required images, and each channel still creates with no
  * creative at all ({@link GOOGLE_CREATIVE_REQUIRED_NOTICE}), so each note gives both ways forward.
- * Search's seed is the business name alone (#5262), which needs nothing beside it.
+ * Search has no entry: its assets are never seeded (#5262), because campaign-service links them before
+ * the ad groups and a refusal there leaves the campaign without its ads, so they are sent only when
+ * the operator adds them.
  */
 export const GOOGLE_CREATIVE_PREFILL_NOTICES = {
   'demand-gen':
@@ -5813,8 +5817,7 @@ export const GOOGLE_CREATIVE_PREFILL_NOTICES = {
   'performance-max': GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   display:
     'Headlines, the long headline, descriptions, the business name and a call to action Google accepts are filled in from the brief where it has them. Add the required images below to create this ad, or clear the copy to create the campaign without one.',
-  search: 'The business name is filled in from the brief. Clear it to create the campaign without one.',
-} as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
+} as const satisfies Partial<Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>>;
 
 /**
  * Why a Google channel's creative is worth filling in, stated per channel.
@@ -5857,10 +5860,13 @@ export const GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE = ['search'] as const;
  * The standing line on the Search creative section (#5262), in place of
  * {@link GOOGLE_CREATIVE_REQUIRED_NOTICE}. campaign-service links these assets to the campaign after
  * it exists (`createSearchCampaignAssets`, `search_assets.go`), in one request that either links them
- * all or none of them.
+ * all or none of them, and BEFORE the ad groups: `CreateCampaign` returns on a refusal there before
+ * `createAdGroupsAndAds` runs (`campaign.go`, v1.0.35), so a refused asset leaves the campaign with
+ * no ad group, ad or keyword. The line says so, because nothing else at create time does, and it is
+ * why the Implementation tab never seeds them: they are sent only when the operator adds them.
  */
 export const GOOGLE_SEARCH_ASSETS_NOTICE =
-  'Optional. Ad images, a business logo and a business name are linked to the Search campaign after it is created. Leave them empty and the campaign serves on its ads alone.';
+  'Optional. Ad images, a business logo and a business name are linked to the Search campaign after it is created and before its ads are added. If Google Ads refuses them, the campaign is left without its ads and keywords, and has to be finished in Google Ads or recreated, so none is filled in from the brief: they are sent only when you add them. Leave them empty and the campaign serves on its ads alone.';
 
 /** The standing line on each Google creative section: the empty-shell warning, except on Search ({@link GOOGLE_SEARCH_ASSETS_NOTICE}). */
 export const GOOGLE_CREATIVE_SECTION_NOTICES = {
