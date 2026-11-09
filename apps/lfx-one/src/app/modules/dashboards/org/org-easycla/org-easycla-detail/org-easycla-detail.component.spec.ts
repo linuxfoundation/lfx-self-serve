@@ -2532,7 +2532,7 @@ describe('OrgEasyclaDetailComponent', () => {
     const link = byTestId(fixture, 'org-easycla-detail-role-missing-docs-link') as HTMLAnchorElement | null;
 
     expect(link?.tagName).toBe('A');
-    expect(link?.getAttribute('href')).toContain('/docs/user/organization/easycla/');
+    expect(link?.getAttribute('href')).toBe('/docs/organization/easycla');
     expect(link?.textContent?.trim()).toBe('how EasyCLA access works');
     expect(byTestId(fixture, 'org-easycla-detail-role-missing-state')?.querySelector('button, [lfxOpenIntercom]')).toBeNull();
     consoleError.mockRestore();

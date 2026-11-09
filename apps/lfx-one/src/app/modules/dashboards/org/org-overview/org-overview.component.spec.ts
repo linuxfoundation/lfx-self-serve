@@ -102,7 +102,7 @@ describe('OrgOverviewComponent page gate', () => {
     expect(has('org-overview-empty-state')).toBe(true);
     const link = fixture.nativeElement.querySelector('[data-testid="org-overview-empty-docs-link"]') as HTMLAnchorElement | null;
     expect(link?.tagName).toBe('A');
-    expect(link?.getAttribute('href')).toContain('/docs/user/organization/choose-an-organization/');
+    expect(link?.getAttribute('href')).toBe('/docs/organization/choose-an-organization');
     expect(has('org-overview-empty-contact-support')).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="org-overview-empty-state"] button')).toBeNull();
   });
