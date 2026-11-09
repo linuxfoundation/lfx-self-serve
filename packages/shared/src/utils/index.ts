@@ -175,6 +175,7 @@ export * from './linkedin-post-presentation.utils';
 export * from './linkedin-post-run.utils';
 export * from './member-360-ranking.utils';
 export * from './member-360.utils';
+export * from './member-360-result.utils';
 export * from './mktg-family-export.utils';
 export * from './mktg-family-print.utils';
 export * from './aeo-geo.utils';

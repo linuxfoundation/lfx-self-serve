@@ -417,9 +417,10 @@ describe('Member360ResultComponent', () => {
     const original = JSON.stringify(envelope);
     const view = render(envelope);
     expect(view.query('member-360-result').textContent).toContain('CRM (not connected yet), Web research');
-    expect(view.query('member-360-method').textContent).toContain('LFX Platform: used');
-    expect(view.query('member-360-method').textContent).toContain('Trackers: unavailable');
-    expect(view.query('member-360-method').textContent).toContain('CRM: not connected yet');
+    const sourceText = (source: string) => view.query(`member-360-source-${source}`).textContent?.replace(/\s+/g, ' ').trim();
+    expect(sourceText('lfx_platform')).toBe('LFX Platform: used');
+    expect(sourceText('uploaded_trackers')).toBe('Trackers: unavailable');
+    expect(sourceText('hubspot')).toBe('CRM: not connected yet');
     expect(view.query('member-360-result').textContent).not.toMatch(/not wired|not_wired/);
     expect(JSON.stringify(envelope)).toBe(original);
   });
@@ -441,6 +442,53 @@ describe('Member360ResultComponent', () => {
       if (previous) Object.defineProperty(navigator, 'clipboard', previous);
       else Reflect.deleteProperty(navigator, 'clipboard');
     }
+  });
+  it('orders each team High first, folds it to three rows and drops the repeated team label', () => {
+    const envelope = member360Fixture();
+    const template = envelope.tabs.actions_by_team[0];
+    envelope.tabs.actions_by_team = ['Low', 'Medium', 'High', 'High', 'Medium'].map((priority, index) => ({
+      ...template,
+      owner: 'Marketing',
+      priority: priority as typeof template.priority,
+      member_organization: `Org ${index}`,
+      recommended_action: `Marketing: invite org ${index} to speak.`,
+      suggested_deadline: `2026-11-2${index}`,
+    }));
+    const view = render(envelope);
+    const team = view.query('member-360-team-marketing');
+    const rows = () => Array.from(team.querySelectorAll('[data-testid="member-360-action-row"]')).map((row) => row.textContent?.replace(/\s+/g, ' ').trim());
+    expect(team.textContent).toContain('Marketing · 5 actions');
+    expect(view.query('member-360-team-summary-marketing').textContent?.replace(/\s+/g, ' ')).toContain('2 High 2 Medium 1 Low Next due 20 Nov');
+    expect(rows()).toHaveLength(3);
+    expect(rows()[0]).toContain('Org 2');
+    expect(rows()[0]).toContain('Due 22 Nov');
+    expect(rows()[0]).toContain('Invite org 2 to speak.');
+    expect(team.textContent).not.toContain('Marketing: invite');
+    const toggle = view.query('member-360-show-all-marketing');
+    expect(toggle.textContent?.trim()).toBe('Show all 5 actions');
+    toggle.click();
+    view.fixture.detectChanges();
+    expect(rows()).toHaveLength(5);
+    expect(rows()[4]).toContain('Org 0');
+    expect(toggle.textContent?.trim()).toBe('Show fewer');
+    expect(view.query('member-360-team-sales').textContent).toContain('No actions for this team.');
+  });
+  it('groups evidence by category and shows method weights, peer medians and run times', () => {
+    const view = render();
+    const envelope = view.component.envelope();
+    expect(view.query('member-360-evidence').querySelectorAll('[data-testid^="member-360-evidence-group-"]')).toHaveLength(
+      new Set(envelope.tabs.evidence.map((row) => row.category)).size
+    );
+    expect(view.query('member-360-baselines').textContent).not.toContain('{');
+    expect(view.query('member-360-method').textContent).not.toMatch(/merged: (true|false)/);
+    view.fixture.componentRef.setInput('history', [
+      { documentId: 'run-0123456789abcdef01234567', createdAt: '2026-11-09T21:09:00Z', updatedAt: '2026-11-09T21:09:00Z' },
+      { documentId: 'run-older', createdAt: '2026-11-09T20:33:00Z', updatedAt: '2026-11-09T20:33:00Z' },
+    ]);
+    view.fixture.detectChanges();
+    expect(view.query('member-360-history-row-run-0123456789abcdef01234567').textContent).toContain('Q4 2026 ·');
+    expect(view.query('member-360-history-row-run-older').textContent).toMatch(/\d{1,2} Nov, \d{2}:\d{2}/);
+    expect(view.query('member-360-history-open-run-older')).not.toBeNull();
   });
   it('leaves workbook export to the document header', () => {
     expect(render().fixture.nativeElement.querySelector('[data-testid="member-360-download"]')).toBeNull();

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatCurrency, isPlatformBrowser, JsonPipe, NgClass } from '@angular/common';
+import { DatePipe, DecimalPipe, formatCurrency, formatDate, isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
@@ -14,7 +14,6 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ProjectContextService } from '@services/project-context.service';
 import { debounceTime, distinctUntilChanged, map, merge, tap } from 'rxjs';
 import {
-  ACTION_OWNERS,
   CATEGORY_LABELS,
   CATEGORY_SCORE_KEYS,
   MEMBER_360_HEAT_ORDER,
@@ -24,8 +23,22 @@ import {
   MEMBER_360_RENEWAL_RED_DAYS,
   MEMBER_360_RENEWAL_AMBER_DAYS,
   MEMBER_360_TIER_TONES,
+  MEMBER_360_FOLDED_ROWS,
 } from '@lfx-one/shared/constants';
-import { rankMember360Rows, mktgKitRootPath, mktgRunRouteFor, member360SourceLabel, member360SourceStatusText } from '@lfx-one/shared/utils';
+import {
+  rankMember360Rows,
+  mktgKitRootPath,
+  mktgRunRouteFor,
+  member360ActionTeams,
+  member360ActionText,
+  member360EvidenceGroups,
+  member360EvidenceSource,
+  member360QuarterLabel,
+  member360SourceLabel,
+  member360SourceStatusText,
+  member360TierGroupLabel,
+  member360WeightRows,
+} from '@lfx-one/shared/utils';
 import { TooltipModule } from 'primeng/tooltip';
 import { Member360DisplayRow, Member360Envelope, Member360RankingRow, Member360SummaryCard, MktgDocumentListItem } from '@lfx-one/shared/interfaces';
 
@@ -33,8 +46,8 @@ import { Member360DisplayRow, Member360Envelope, Member360RankingRow, Member360S
   selector: 'lfx-member-360-result',
   imports: [
     DatePipe,
+    DecimalPipe,
     ReactiveFormsModule,
-    JsonPipe,
     NgClass,
     RouterLink,
     ButtonComponent,
@@ -55,7 +68,6 @@ export class Member360ResultComponent {
   public readonly envelope = input.required<Member360Envelope>();
   public readonly history = input<MktgDocumentListItem[]>([]);
   public readonly documentId = input.required<string>();
-  protected readonly owners = ACTION_OWNERS;
   protected readonly tierOptions = MEMBER_360_TIER_OPTIONS;
   protected readonly ownerOptions = MEMBER_360_OWNER_OPTIONS;
   protected readonly columns = MEMBER_360_SORT_COLUMNS;
@@ -96,20 +108,55 @@ export class Member360ResultComponent {
       .map(([tier, count]) => `${count} ${tier.toLowerCase()}`)
       .join(' · ')
   );
+  protected readonly foldedRows = MEMBER_360_FOLDED_ROWS;
+  /** Lists opened past their first rows ("team:sales", "evidence:events", "notes"); every list starts folded. */
+  protected readonly unfolded = signal<ReadonlySet<string>>(new Set());
   protected readonly teams = computed(() =>
-    this.owners.map((owner) => ({
-      key: owner.toLowerCase().replace(/ /g, '-'),
-      owner,
-      actions: this.envelope().tabs.actions_by_team.filter((action) => action.owner === owner),
+    member360ActionTeams(this.envelope().tabs.actions_by_team).map((team) => ({
+      ...team,
+      nextDueText: this.dayText(team.nextDue),
+      priorityCounts: team.priorityCounts.map((count) => ({ ...count, priorityClass: this.priorityClass(count.priority) })),
+      rows: team.actions.map((action) => ({
+        action,
+        text: member360ActionText(action),
+        dueText: this.dayText(action.suggested_deadline),
+        priorityClass: this.priorityClass(action.priority),
+      })),
+    }))
+  );
+  protected readonly evidenceGroups = computed(() =>
+    member360EvidenceGroups(this.envelope().tabs.evidence).map((group) => ({
+      ...group,
+      rows: group.rows.map((row) => ({ ...row, sourceText: member360EvidenceSource(row.source) })),
     }))
   );
   protected readonly method = computed(() => this.envelope().tabs.method);
   protected readonly methodSources = computed(() =>
     this.method().data_sources.map((source) => ({ ...source, label: member360SourceLabel(source.label), statusText: member360SourceStatusText(source.status) }))
   );
-  protected readonly weights = computed(() =>
-    MEMBER_360_HEAT_ORDER.map((key) => ({ label: CATEGORY_LABELS[key], value: this.method().weights_used[key], original: this.method().weights_default[key] }))
+  protected readonly weights = computed(() => member360WeightRows(this.method()));
+  /** Peer-median columns: the scoring categories any tier baseline reports, in heat order. */
+  protected readonly medianColumns = computed(() =>
+    MEMBER_360_HEAT_ORDER.filter((key) => this.method().tier_baselines.some((baseline) => baseline.medians[key] !== undefined)).map((key) => ({
+      key,
+      label: CATEGORY_LABELS[key],
+    }))
   );
+  protected readonly baselines = computed(() => {
+    const envelope = this.envelope();
+    const projectName = envelope.lfx_project_name ?? envelope.project_name;
+    return this.method().tier_baselines.map((baseline) => ({
+      ...baseline,
+      label: member360TierGroupLabel(baseline.baseline_group, projectName),
+      medianValues: this.medianColumns().map((column) => baseline.medians[column.key] ?? null),
+    }));
+  });
+  protected readonly decayText = computed(() =>
+    this.method()
+      .quarter_decay.map((decay) => `${decay.quarter.replace(/^(\d{4})-(Q\d)$/, '$2')} ${decay.factor}×`)
+      .join(' · ')
+  );
+  protected readonly historyRows = computed(() => this.history().map((run) => ({ ...run, quarter: member360QuarterLabel(run.createdAt) })));
 
   public constructor() {
     // Restore shared links and browser history without writing another entry.
@@ -178,14 +225,23 @@ export class Member360ResultComponent {
   protected toggle(member: number): void {
     this.expanded.update((current) => (current === member ? null : member));
   }
+  protected isUnfolded(key: string): boolean {
+    return this.unfolded().has(key);
+  }
+  protected toggleFold(key: string): void {
+    this.unfolded.update((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
   protected async copyTeam(owner: string): Promise<void> {
     if (!isPlatformBrowser(this.platformId)) return;
-    const actions = this.teams().find((team) => team.owner === owner)?.actions ?? [];
+    const rows = this.teams().find((team) => team.owner === owner)?.rows ?? [];
     try {
       await navigator.clipboard.writeText(
-        actions
-          .map((action) => `${action.member_organization}: ${action.recommended_action} (${action.priority}; ${action.suggested_deadline ?? 'no deadline'})`)
-          .join('\n')
+        rows.map(({ action, text }) => `${action.member_organization}: ${text} (${action.priority}; ${action.suggested_deadline ?? 'no deadline'})`).join('\n')
       );
       this.notice.set(`${owner} list copied.`);
     } catch {
@@ -244,6 +300,16 @@ export class Member360ResultComponent {
       trendAriaLabel: trend === null ? 'no trend' : null,
       trendState: trend ?? 'none',
     };
+  }
+  /** "20 Nov" for an ISO day; any other deadline the agent wrote is shown as written. */
+  private dayText(day: string | null): string | null {
+    if (day === null) return null;
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? formatDate(day, 'd MMM', 'en-US') : day;
+  }
+  private priorityClass(priority: string): string {
+    if (priority === 'High') return 'bg-red-50 text-red-800';
+    if (priority === 'Medium') return 'bg-amber-50 text-amber-800';
+    return 'bg-gray-100 text-gray-700';
   }
   private renewalNote(): string {
     const count = this.renewals().length;
