@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, mentor, program-admin, programs, applications, tasks]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-11-09
 intercom_collection: Mentorship
 ---
 
@@ -42,13 +42,17 @@ Go to **app.lfx.dev** and select **Mentorship** from the left navigation sidebar
 
 ## Program status
 
-| Status             | Meaning                                           |
-| ------------------ | ------------------------------------------------- |
-| **Open**           | Approved and running                              |
-| **Pending Review** | Awaiting Linux Foundation review after enrollment |
-| **Completed**      | The program's terms have finished                 |
-| **Rejected**       | Not approved during review                        |
-| **Hidden**         | Removed from public listings                      |
+An approved program takes its status from its terms; when more than one fits, the first one in the table applies.
+
+| Status             | Meaning                                                                         |
+| ------------------ | ------------------------------------------------------------------------------- |
+| **Accepting**      | Approved, and a term is taking applications today                               |
+| **In Progress**    | Approved, and a term is running, or its applications have closed                |
+| **Upcoming**       | Approved, and a term's applications have not opened yet, or it has no terms yet |
+| **Pending Review** | Awaiting Linux Foundation review after enrollment                               |
+| **Completed**      | The program's terms have finished                                               |
+| **Rejected**       | Not approved during review                                                      |
+| **Hidden**         | Removed from public listings                                                    |
 
 **Rejected** applies only to a program. An application that is turned down is **Declined**.
 
