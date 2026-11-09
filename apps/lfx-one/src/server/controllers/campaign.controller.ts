@@ -20,7 +20,6 @@ import {
   googleUpperCodeList,
 } from '@lfx-one/shared/utils/campaign-google-criteria.utils';
 import {
-  GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS,
   googleAdGroupDemographicExclusionsRefusal,
   googleDisplayDemographicsCarried,
   googleDisplayDemographicsRefusal,
@@ -218,6 +217,7 @@ import {
   GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY,
   GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY,
   GOOGLE_DEMAND_GEN_VIDEO_REQUEST_KEY,
+  GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS,
   GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,

@@ -2,9 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  CampaignFunnelStage,
-  CampaignLabelOption,
-  CampaignTactic,
   AudienceBuildMode,
   AudienceCustomOperator,
   AudienceCustomReuseRecommendation,
@@ -12,8 +9,8 @@ import type {
   AudienceOptInLookup,
   AudienceOptInSignal,
   AudienceSignal,
-  AudienceStepKey,
   AudienceSpeakerScope,
+  AudienceStepKey,
   BriefMetricsActionRule,
   CampaignBiddingPlatform,
   CampaignBiddingPlatformRule,
@@ -24,22 +21,25 @@ import type {
   CampaignDeliveryTypeOption,
   CampaignEmailSegment,
   CampaignEmailTypeOption,
-  CampaignSurveyEmailCountOption,
-  CampaignSurveyTypeOption,
+  CampaignFunnelStage,
   CampaignGoalOption,
-  CampaignOptimizeControlLever,
-  CampaignOptimizeLever,
   CampaignKeyword,
+  CampaignLabelOption,
   CampaignNegativeKeywordMatchType,
   CampaignNegativeKeywordMatchTypeOption,
   CampaignNegativeKeywordOutcome,
   CampaignNegativeKeywordPlatformRules,
+  CampaignOptimizeControlLever,
+  CampaignOptimizeLever,
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
   CampaignServiceMonitorProvider,
   CampaignStatus,
+  CampaignSurveyEmailCountOption,
+  CampaignSurveyTypeOption,
   CampaignTabOption,
+  CampaignTactic,
   CampaignToggleAction,
   CampaignToggleStatus,
   CreativeAssetMimeType,
@@ -50,6 +50,7 @@ import type {
   GoogleCreativeGroup,
   GoogleCreativeSharedCap,
   GoogleDeviceBidMode,
+  GoogleDisplayDemographics,
   KeywordActionOutcome,
   KeywordActionPlatform,
   LinkedInGeoTarget,
@@ -6035,3 +6036,15 @@ export const CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES: readonly string[] = [
   '; nothing was created',
   '; the connection is not at fault',
 ];
+
+/**
+ * The keys of a Display demographic targeting object (`displayDemographics`), in the order
+ * campaign-service v1.0.35's `validateDisplayDemographics` judges them. Typed against
+ * `GoogleDisplayDemographics`, so a renamed or added key fails to compile here.
+ */
+export const GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS = [
+  'ageRanges',
+  'genders',
+  'incomeRanges',
+  'parentalStatuses',
+] as const satisfies readonly (keyof GoogleDisplayDemographics)[];

@@ -205,9 +205,6 @@ const DISPLAY_TARGETING_LISTS = [
   },
 ] as const;
 
-/** The keys of a Display demographic targeting object (`displayDemographics`), in upstream's order. */
-export const GOOGLE_DISPLAY_DEMOGRAPHIC_KEYS: readonly string[] = DISPLAY_TARGETING_LISTS.map(({ key }) => key);
-
 /** Whether a Display demographic targeting object names any value — the test upstream's flag gate and its preflight both use. */
 export function googleDisplayDemographicsCarried(raw: unknown): boolean {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return false;
