@@ -8246,13 +8246,14 @@ export class ImplementationTabComponent implements OnInit {
    *
    * Performance Max was the one Google channel whose copy a person still had to write, although the
    * brief already holds copy of the right shape: Search headlines fit its headlines (both 30 wide),
-   * Demand Gen headlines (40) fit its long headlines (90), Search and Demand Gen descriptions fit its
+   * Demand Gen headlines fit its long headlines (90), Search and Demand Gen descriptions fit its
    * descriptions (90), and Demand Gen's business name is the business name. Images are never
    * generated, so they stay the operator's.
    *
    * Every value is held to its field's own catalogue bounds by {@link fittingCreativeCopy} and
    * {@link cappedCreativeCopy}, so the seed never puts a value on screen its own validator refuses.
-   * One description short enough for Google's short slot is kept in the set whenever the brief has one.
+   * One description short enough for Google's short slot is kept in the set whenever the brief has one,
+   * and a brief generated since #5494 always has one (`ensureShortGoogleDescription` in the BFF).
    *
    * A brief with none of this copy leaves the group as `resetGoogleFields` left it, empty.
    */
@@ -8294,9 +8295,9 @@ export class ImplementationTabComponent implements OnInit {
    * terms: every value held to the field's catalogue bounds, de-duplicated, capped, never truncated.
    *
    * The Demand Gen copy (`google_display`) is written for this ad, so it comes first. Its headlines are
-   * generated up to 40 wide while this ad takes 30 (campaign-service's `maxHeadlineWeight`), so only
-   * the ones that fit are kept; the brief's Search headlines, written to the same 30, fill the slots
-   * that leaves, ahead of nothing being seeded. Descriptions are both copies' together, Demand Gen
+   * generated to this ad's 30 (campaign-service's `maxHeadlineWeight`, #5384), but a brief generated
+   * before that holds headlines up to 40 wide, so only the ones that fit are kept; the brief's Search
+   * headlines, written to the same 30, fill the slots that leaves, ahead of nothing being seeded. Descriptions are both copies' together, Demand Gen
    * first, as the headlines are. The business name is the Demand Gen copy's. The call to action is
    * seeded only when it is on the field's list (`listedCallToAction`), and this ad's list is empty
    * (`GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION`), so it stays None.
@@ -8322,8 +8323,8 @@ export class ImplementationTabComponent implements OnInit {
    * kept only when it is one of `GOOGLE_DISPLAY_CALLS_TO_ACTION`.
    *
    * The long headline (one value, 90 wide) is the first Demand Gen headline the headlines above did
-   * not already take — usually one of the 31-40 wide ones too long for them — and failing that the
-   * first Search description the descriptions did not take. A headline reads as a headline, so it is
+   * not already take (on a brief generated before #5384, usually one of the 31-40 wide ones too long
+   * for them), and failing that the first Search description the descriptions did not take. A headline reads as a headline, so it is
    * preferred over a description; skipping values already seeded keeps the ad from repeating one line
    * in two of its fields. When every candidate is taken the field is left for the operator.
    */
