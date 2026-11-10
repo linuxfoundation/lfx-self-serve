@@ -35,7 +35,6 @@
               [outlined]="true"
               size="small"
               [disabled]="provider.id === 'gitlab'"
-              [class.pointer-events-none]="provider.id === 'gitlab'"
               (onClick)="onSelectProvider(provider)"
               [attr.data-testid]="'provider-action-' + provider.id" />
             @if (provider.id === 'gitlab') {
