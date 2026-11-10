@@ -1,18 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DOCUMENT } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { environment } from '@environments/environment';
 import { MeetingHomeAttendance, MeetingReconcileDialogData, PastMeetingParticipant, PastMeetingSummary } from '@lfx-one/shared/interfaces';
-import {
-  getMeetingShareUrl,
-  getPastMeetingAttendance,
-  isHostKeyVisible,
-  isPastMeetingCalendarRow,
-  isPastMeetingSummaryAwaitingApproval,
-} from '@lfx-one/shared/utils';
+import { getPastMeetingAttendance, isHostKeyVisible, isPastMeetingCalendarRow, isPastMeetingSummaryAwaitingApproval } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -59,7 +51,6 @@ export class MeetingDetailsToolsComponent {
   private readonly dialogs = inject(MeetingsHomeDialogsService);
   private readonly modal = inject(UiModalService);
   private readonly store = inject(MeetingsHomeStore);
-  private readonly document = inject(DOCUMENT);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly context = inject(MeetingDetailsContext);
   protected readonly artifactsService = inject(MeetingDetailsArtifactsService);
@@ -108,11 +99,10 @@ export class MeetingDetailsToolsComponent {
     ref.closed.pipe(take(1)).subscribe(() => stopClosingOnDestroy());
   }
 
-  /** The transcript is read on the past meeting page. */
   protected openTranscript(): void {
     const pastMeetingId = this.context.pastMeetingId();
-    const url = pastMeetingId ? getMeetingShareUrl(environment.urls.home, pastMeetingId) : null;
-    if (url) this.document.defaultView?.open(url, '_blank', 'noopener,noreferrer');
+    if (!pastMeetingId) return;
+    this.dialogs.openTranscript(pastMeetingId, { ...this.context.shownRow(), meeting: this.context.meeting() }, { origin: 'drawer' });
   }
 
   private initParticipants(): Signal<PastMeetingParticipant[] | null | undefined> {
